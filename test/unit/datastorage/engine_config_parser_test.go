@@ -22,6 +22,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
+	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
 // ========================================
@@ -32,65 +33,33 @@ import (
 // Test Plan: docs/testing/45/TEST_PLAN.md
 // ========================================
 
-const ansibleSchemaBaseYAML = `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: ansible-test-workflow
-spec:
-  metadata:
-    workflowName: ansible-test-workflow
-    version: "1.0.0"
-    description:
-      what: Tests ansible engine config extraction
-      whenToUse: When validating ansible workflow registration
-      whenNotToUse: N/A
-      preconditions: None
-  actionType: RestartPod
-  labels:
-    signalType: OOMKilled
-    severity: [critical]
-    component: pod
-    environment: [production]
-    priority: P0
-  parameters:
-    - name: NAMESPACE
-      type: string
-      description: Target namespace
-      required: true
-`
+// ansibleTestCRD returns a CRD with ansible execution and engineConfig.
+func ansibleTestCRD() *models.WorkflowSchemaCRD {
+	crd := testutil.NewTestWorkflowCRD("ansible-test-workflow", "RestartPod", "ansible")
+	crd.Spec.Execution.Bundle = "https://github.com/kubernaut/playbooks.git"
+	crd.Spec.Execution.BundleDigest = "abc123def456"
+	crd.Spec.Execution.EngineConfig = map[string]interface{}{
+		"playbookPath":    "playbooks/restart_pod.yml",
+		"jobTemplateName": "restart-pod",
+		"inventoryName":   "production",
+	}
+	return crd
+}
 
-const validAnsibleSchemaYAML = ansibleSchemaBaseYAML + `  execution:
-    engine: ansible
-    bundle: https://github.com/kubernaut/playbooks.git
-    bundleDigest: abc123def456
-    engineConfig:
-      playbookPath: playbooks/restart_pod.yml
-      jobTemplateName: restart-pod
-      inventoryName: production
-`
+// tektonWithBundleDigestCRD returns a CRD with tekton execution and explicit bundleDigest.
+func tektonWithBundleDigestCRD() *models.WorkflowSchemaCRD {
+	crd := testutil.NewTestWorkflowCRD("tekton-digest-test", "RestartPod", "tekton")
+	crd.Spec.Execution.Bundle = "quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	crd.Spec.Execution.BundleDigest = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	return crd
+}
 
-const ansibleSchemaNoEngineConfigYAML = ansibleSchemaBaseYAML + `  execution:
-    engine: ansible
-    bundle: https://github.com/kubernaut/playbooks.git
-`
-
-const ansibleSchemaEmptyPlaybookPathYAML = ansibleSchemaBaseYAML + `  execution:
-    engine: ansible
-    bundle: https://github.com/kubernaut/playbooks.git
-    engineConfig:
-      jobTemplateName: some-template
-`
-
-const tektonSchemaWithBundleDigestYAML = ansibleSchemaBaseYAML + `  execution:
-    engine: tekton
-    bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-    bundleDigest: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-`
-
-const tektonSchemaInlineDigestYAML = ansibleSchemaBaseYAML + `  execution:
-    engine: tekton
-    bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-`
+// tektonInlineDigestCRD returns a CRD with tekton execution and inline digest in bundle URL.
+func tektonInlineDigestCRD() *models.WorkflowSchemaCRD {
+	crd := testutil.NewTestWorkflowCRD("tekton-inline-digest-test", "RestartPod", "tekton")
+	crd.Spec.Execution.Bundle = "quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	return crd
+}
 
 var _ = Describe("Schema Parser EngineConfig Extraction [BR-WE-016]", func() {
 	var parser *schema.Parser
@@ -101,7 +70,8 @@ var _ = Describe("Schema Parser EngineConfig Extraction [BR-WE-016]", func() {
 
 	Context("ExtractEngineConfig", func() {
 		It("UT-WE-016-005: should extract engineConfig from ansible workflow schema", func() {
-			parsedSchema, err := parser.Parse(validAnsibleSchemaYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(ansibleTestCRD())
+			parsedSchema, err := parser.Parse(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 
 			engineConfig := parser.ExtractEngineConfig(parsedSchema)
@@ -117,7 +87,8 @@ var _ = Describe("Schema Parser EngineConfig Extraction [BR-WE-016]", func() {
 		})
 
 		It("UT-WE-016-005b: should return nil engineConfig for tekton schema", func() {
-			parsedSchema, err := parser.Parse(tektonSchemaWithBundleDigestYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(tektonWithBundleDigestCRD())
+			parsedSchema, err := parser.Parse(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 
 			engineConfig := parser.ExtractEngineConfig(parsedSchema)
@@ -127,7 +98,8 @@ var _ = Describe("Schema Parser EngineConfig Extraction [BR-WE-016]", func() {
 
 	Context("ExtractBundleDigest", func() {
 		It("UT-WE-016-006: should extract explicit bundleDigest field", func() {
-			parsedSchema, err := parser.Parse(tektonSchemaWithBundleDigestYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(tektonWithBundleDigestCRD())
+			parsedSchema, err := parser.Parse(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 
 			digest := parser.ExtractBundleDigest(parsedSchema)
@@ -135,7 +107,8 @@ var _ = Describe("Schema Parser EngineConfig Extraction [BR-WE-016]", func() {
 		})
 
 		It("UT-WE-016-006b: should extract digest from inline @sha256: in bundle URL", func() {
-			parsedSchema, err := parser.Parse(tektonSchemaInlineDigestYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(tektonInlineDigestCRD())
+			parsedSchema, err := parser.Parse(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 
 			digest := parser.ExtractBundleDigest(parsedSchema)
@@ -143,7 +116,8 @@ var _ = Describe("Schema Parser EngineConfig Extraction [BR-WE-016]", func() {
 		})
 
 		It("UT-WE-016-006c: should extract bundleDigest for ansible schema (git commit SHA)", func() {
-			parsedSchema, err := parser.Parse(validAnsibleSchemaYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(ansibleTestCRD())
+			parsedSchema, err := parser.Parse(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 
 			digest := parser.ExtractBundleDigest(parsedSchema)
@@ -153,7 +127,11 @@ var _ = Describe("Schema Parser EngineConfig Extraction [BR-WE-016]", func() {
 
 	Context("Ansible validation in Validate()", func() {
 		It("UT-WE-016-007: should reject ansible schema without engineConfig", func() {
-			_, err := parser.ParseAndValidate(ansibleSchemaNoEngineConfigYAML)
+			crd := ansibleTestCRD()
+			crd.Spec.Execution.EngineConfig = nil
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
+			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
 
 			var validationErr *models.SchemaValidationError
@@ -162,7 +140,13 @@ var _ = Describe("Schema Parser EngineConfig Extraction [BR-WE-016]", func() {
 		})
 
 		It("UT-WE-016-007b: should reject ansible schema with empty playbookPath", func() {
-			_, err := parser.ParseAndValidate(ansibleSchemaEmptyPlaybookPathYAML)
+			crd := ansibleTestCRD()
+			crd.Spec.Execution.EngineConfig = map[string]interface{}{
+				"jobTemplateName": "some-template",
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
+			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
 
 			var validationErr *models.SchemaValidationError
@@ -171,7 +155,8 @@ var _ = Describe("Schema Parser EngineConfig Extraction [BR-WE-016]", func() {
 		})
 
 		It("UT-WE-016-007c: should accept valid ansible schema with engineConfig", func() {
-			parsedSchema, err := parser.ParseAndValidate(validAnsibleSchemaYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(ansibleTestCRD())
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedSchema.Execution.Engine).To(Equal("ansible"))
 		})

@@ -23,8 +23,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
 // ========================================
@@ -45,40 +48,24 @@ import (
 //
 // ========================================
 
-// validWorkflowSchemaYAML is a minimal valid workflow-schema.yaml per BR-WORKFLOW-004
-// CRD format: apiVersion/kind/metadata/spec envelope with spec content
-const validWorkflowSchemaYAML = `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: oomkill-scale-down
-spec:
-  metadata:
-    workflowName: oomkill-scale-down
-    version: "1.0.0"
-    description:
-      what: Restarts a pod that was OOMKilled to restore service
-      whenToUse: OOMKilled events where the pod is managed by a controller
-      whenNotToUse: When the crash is caused by a persistent code bug
-      preconditions: Pod is managed by a Deployment or StatefulSet
-  actionType: RestartPod
-  labels:
-    severity: [critical]
-    environment: [production]
-    component: pod
-    priority: p1
-  execution:
-    engine: tekton
-    bundle: quay.io/kubernaut/oomkill-workflow:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-  parameters:
-    - name: NAMESPACE
-      type: string
-      required: true
-      description: Target namespace
-    - name: POD_NAME
-      type: string
-      required: true
-      description: Target pod name
-`
+// baseOCITestCRD returns the baseline CRD used by OCI extractor tests.
+// Uses lowercase priority "p1" to verify normalization in UT-DS-017-010.
+func baseOCITestCRD() *models.WorkflowSchemaCRD {
+	crd := testutil.NewTestWorkflowCRD("oomkill-scale-down", "RestartPod", "tekton")
+	crd.Spec.Description = sharedtypes.StructuredDescription{
+		What:          "Restarts a pod that was OOMKilled to restore service",
+		WhenToUse:     "OOMKilled events where the pod is managed by a controller",
+		WhenNotToUse:  "When the crash is caused by a persistent code bug",
+		Preconditions: "Pod is managed by a Deployment or StatefulSet",
+	}
+	crd.Spec.Labels.Priority = "p1"
+	crd.Spec.Execution.Bundle = "quay.io/kubernaut/oomkill-workflow:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
+		{Name: "POD_NAME", Type: "string", Required: true, Description: "Target pod name"},
+	}
+	return crd
+}
 
 var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 
@@ -90,17 +77,16 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 		})
 
 		It("UT-DS-017-001: should parse actionType from top-level field", func() {
-			// BR-WORKFLOW-004: actionType is a required top-level field
-			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(baseOCITestCRD())
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedSchema.ActionType).To(Equal("RestartPod"),
 				"actionType should be parsed from top-level field")
 		})
 
 		It("UT-DS-017-002: should extract labels with camelCase keys", func() {
-			// BR-WORKFLOW-004: JSONB labels use camelCase keys
-			// DD-WORKFLOW-016: environment is []string (JSONB array)
-			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(baseOCITestCRD())
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 
 			labelsJSON, err := parser.ExtractLabels(parsedSchema)
@@ -115,12 +101,9 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 		})
 
 		It("UT-DS-017-010: should normalize lowercase priority to uppercase (OpenAPI enum compliance)", func() {
-			// BR-WORKFLOW-004 + OpenAPI spec: MandatoryLabels.priority enum is [P0, P1, P2, P3, "*"]
-			// OCI images may contain lowercase priority in workflow-schema.yaml
-			// ExtractLabels MUST normalize to uppercase to pass ogen response validation
-			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(baseOCITestCRD())
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
-			// validWorkflowSchemaYAML contains "priority: p1" (lowercase)
 			Expect(parsedSchema.Labels.Priority).To(Equal("p1"), "raw parsed value should be lowercase")
 
 			labelsJSON, err := parser.ExtractLabels(parsedSchema)
@@ -133,49 +116,26 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 		})
 
 		It("UT-DS-017-002b: should parse environment as []string (array format)", func() {
-			// DD-WORKFLOW-016: Environment is strictly []string
-			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(baseOCITestCRD())
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedSchema.Labels.Environment).To(Equal([]string{"production"}))
 
-			// Multi-value array format
-			arrayYAML := `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: multi-env-test
-spec:
-  metadata:
-    workflowName: multi-env-test
-    version: "1.0.0"
-    description:
-      what: Test
-      whenToUse: Test
-  actionType: RestartPod
-  labels:
-    severity: [critical]
-    environment: [staging, production]
-    component: pod
-    priority: p1
-  execution:
-    engine: tekton
-    bundle: ghcr.io/kubernaut/workflows/multi-env-test@sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
-  parameters:
-    - name: PARAM
-      type: string
-      required: true
-      description: A param
-`
-			parsedArray, err := parser.ParseAndValidate(arrayYAML)
+			crd := testutil.NewTestWorkflowCRD("multi-env-test", "RestartPod", "tekton")
+			crd.Spec.Labels.Environment = []string{"staging", "production"}
+			multiEnvYAML := testutil.MarshalWorkflowCRD(crd)
+
+			parsedArray, err := parser.ParseAndValidate(multiEnvYAML)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedArray.Labels.Environment).To(Equal([]string{"staging", "production"}))
 		})
 
 		It("UT-DS-017-008: should parse structured description", func() {
-			// BR-WORKFLOW-004: description is structured (what, whenToUse, whenNotToUse, preconditions)
-			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(baseOCITestCRD())
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 
-			desc := parsedSchema.Metadata.Description
+			desc := parsedSchema.Description
 			Expect(desc.What).To(ContainSubstring("Restarts a pod"))
 			Expect(desc.WhenToUse).To(ContainSubstring("OOMKilled events"))
 			Expect(desc.WhenNotToUse).To(ContainSubstring("persistent code bug"))
@@ -183,37 +143,16 @@ spec:
 		})
 
 		It("UT-DS-017-019: should accept schema without signalName (DD-WORKFLOW-016)", func() {
-			// DD-WORKFLOW-016: signalName is optional metadata, not required for registration
-			noSignalNameYAML := `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: no-signal-name
-spec:
-  metadata:
-    workflowName: no-signal-name
-    version: "1.0.0"
-    description:
-      what: Workflow without signalName
-      whenToUse: When signalName is optional
-  actionType: RestartPod
-  labels:
-    severity: [critical]
-    environment: [production]
-    component: pod
-    priority: p1
-  parameters:
-    - name: PARAM
-      type: string
-      required: true
-      description: A param
-  execution:
-    engine: tekton
-    bundle: quay.io/test/no-signal:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-`
-			parsedSchema, err := parser.ParseAndValidate(noSignalNameYAML)
+			crd := testutil.NewTestWorkflowCRD("no-signal-name", "RestartPod", "tekton")
+			crd.Spec.Description = sharedtypes.StructuredDescription{
+				What:      "Workflow without signalName",
+				WhenToUse: "When signalName is optional",
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred(), "schema without signalName should be accepted")
 
-			// Labels JSONB should NOT contain signalName key when empty (Issue #274: signalName removed)
 			labelsJSON, err := parser.ExtractLabels(parsedSchema)
 			Expect(err).ToNot(HaveOccurred())
 			var labels map[string]interface{}
@@ -224,8 +163,8 @@ spec:
 		})
 
 		It("UT-DS-017-009: should extract structured description as JSON", func() {
-			// BR-WORKFLOW-004: description stored as JSONB in DB
-			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(baseOCITestCRD())
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 
 			descJSON, err := parser.ExtractDescription(parsedSchema)
@@ -238,36 +177,17 @@ spec:
 		})
 
 		It("UT-DS-212-001: ExtractLabels must NOT include custom labels (#212)", func() {
-			schemaWithCustom := `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: test-custom
-spec:
-  metadata:
-    workflowName: test-custom
-    version: "1.0.0"
-    description:
-      what: Test
-      whenToUse: Test
-  actionType: RestartPod
-  labels:
-    severity: [critical]
-    environment: [production]
-    component: pod
-    priority: P1
-  customLabels:
-    constraint: cost-constrained
-    team: payments
-  execution:
-    engine: job
-    bundle: quay.io/test/wf:v1@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-  parameters:
-    - name: NAMESPACE
-      type: string
-      required: true
-      description: Target namespace
-`
-			parsedSchema, err := parser.ParseAndValidate(schemaWithCustom)
+			crd := baseOCITestCRD()
+			crd.Metadata.Name = "test-custom"
+			crd.Spec.Labels.Priority = "P1"
+			crd.Spec.CustomLabels = map[string]string{
+				"constraint": "cost-constrained",
+				"team":       "payments",
+			}
+			crd.Spec.Execution.Engine = "job"
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 
 			labelsJSON, err := parser.ExtractLabels(parsedSchema)
@@ -282,36 +202,17 @@ spec:
 		})
 
 		It("UT-DS-212-002: ExtractCustomLabels must return custom labels as map[string][]string (#212)", func() {
-			schemaWithCustom := `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: test-custom
-spec:
-  metadata:
-    workflowName: test-custom
-    version: "1.0.0"
-    description:
-      what: Test
-      whenToUse: Test
-  actionType: RestartPod
-  labels:
-    severity: [critical]
-    environment: [production]
-    component: pod
-    priority: P1
-  customLabels:
-    constraint: cost-constrained
-    team: payments
-  execution:
-    engine: job
-    bundle: quay.io/test/wf:v1@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-  parameters:
-    - name: NAMESPACE
-      type: string
-      required: true
-      description: Target namespace
-`
-			parsedSchema, err := parser.ParseAndValidate(schemaWithCustom)
+			crd := baseOCITestCRD()
+			crd.Metadata.Name = "test-custom"
+			crd.Spec.Labels.Priority = "P1"
+			crd.Spec.CustomLabels = map[string]string{
+				"constraint": "cost-constrained",
+				"team":       "payments",
+			}
+			crd.Spec.Execution.Engine = "job"
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 
 			customLabels := parser.ExtractCustomLabels(parsedSchema)
@@ -322,14 +223,14 @@ spec:
 
 	Context("C3: OCI Schema Extraction — Happy Path", func() {
 		It("UT-DS-017-003: should extract workflow-schema.yaml from OCI image", func() {
-			// DD-WORKFLOW-017: Pull image, find /workflow-schema.yaml, parse it
-			mockPuller := oci.NewMockImagePuller(validWorkflowSchemaYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(baseOCITestCRD())
+			mockPuller := oci.NewMockImagePuller(yamlContent)
 
 			extractor := oci.NewSchemaExtractor(mockPuller, schema.NewParser())
 
 			result, err := extractor.ExtractFromImage(context.Background(), "quay.io/test/workflow:v1.0.0")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Schema.Metadata.WorkflowName).To(Equal("oomkill-scale-down"))
+			Expect(result.Schema.WorkflowName).To(Equal("oomkill-scale-down"))
 			Expect(result.Schema.ActionType).To(Equal("RestartPod"))
 			Expect(result.Digest).To(HavePrefix("sha256:"),
 				"digest must be a valid sha256 content-addressable identifier")
@@ -348,10 +249,14 @@ spec:
 		})
 
 		It("UT-DS-043-001: workflow requiring HPA-enabled targets is correctly represented after parsing", func() {
-			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
-    hpaEnabled: "true"
-    pdbProtected: "true"
-`
+			crd := baseOCITestCRD()
+			crd.Spec.DetectedLabels = &models.DetectedLabelsSchema{
+				HPAEnabled:      "true",
+				PDBProtected:    "true",
+				PopulatedFields: []string{"hpaEnabled", "pdbProtected"},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedSchema.DetectedLabels.HPAEnabled).To(Equal("true"))
@@ -359,25 +264,34 @@ spec:
 		})
 
 		It("UT-DS-043-002: workflow requiring any GitOps tool is correctly represented after parsing", func() {
-			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
-    gitOpsTool: "*"
-`
+			crd := baseOCITestCRD()
+			crd.Spec.DetectedLabels = &models.DetectedLabelsSchema{
+				GitOpsTool:      "*",
+				PopulatedFields: []string{"gitOpsTool"},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedSchema.DetectedLabels.GitOpsTool).To(Equal("*"))
 		})
 
 		It("UT-DS-043-003: workflow with no infrastructure requirements has nil detectedLabels", func() {
-			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(baseOCITestCRD())
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedSchema.DetectedLabels).To(BeNil(),
 				"absence of detectedLabels in YAML means no infrastructure constraints")
 		})
 
 		It("UT-DS-043-004: workflow author gets actionable error for invalid boolean value", func() {
-			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
-    hpaEnabled: "false"
-`
+			crd := baseOCITestCRD()
+			crd.Spec.DetectedLabels = &models.DetectedLabelsSchema{
+				HPAEnabled:      "false",
+				PopulatedFields: []string{"hpaEnabled"},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("hpaEnabled"))
@@ -386,9 +300,13 @@ spec:
 		})
 
 		It("UT-DS-043-005: workflow author gets actionable error for invalid gitOpsTool", func() {
-			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
-    gitOpsTool: "terraform"
-`
+			crd := baseOCITestCRD()
+			crd.Spec.DetectedLabels = &models.DetectedLabelsSchema{
+				GitOpsTool:      "terraform",
+				PopulatedFields: []string{"gitOpsTool"},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("gitOpsTool"))
@@ -396,9 +314,13 @@ spec:
 		})
 
 		It("UT-DS-043-006: workflow author gets actionable error for invalid serviceMesh", func() {
-			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
-    serviceMesh: "consul"
-`
+			crd := baseOCITestCRD()
+			crd.Spec.DetectedLabels = &models.DetectedLabelsSchema{
+				ServiceMesh:     "consul",
+				PopulatedFields: []string{"serviceMesh"},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("serviceMesh"))
@@ -406,16 +328,23 @@ spec:
 		})
 
 		It("UT-DS-043-007: all 8 detectedLabels fields survive YAML-to-model conversion with exact values", func() {
-			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
-    gitOpsManaged: "true"
-    gitOpsTool: "argocd"
-    pdbProtected: "true"
-    hpaEnabled: "true"
-    stateful: "true"
-    helmManaged: "true"
-    networkIsolated: "true"
-    serviceMesh: "istio"
-`
+			crd := baseOCITestCRD()
+			crd.Spec.DetectedLabels = &models.DetectedLabelsSchema{
+				GitOpsManaged:   "true",
+				GitOpsTool:      "argocd",
+				PDBProtected:    "true",
+				HPAEnabled:      "true",
+				Stateful:        "true",
+				HelmManaged:     "true",
+				NetworkIsolated: "true",
+				ServiceMesh:     "istio",
+				PopulatedFields: []string{
+					"gitOpsManaged", "gitOpsTool", "pdbProtected", "hpaEnabled",
+					"stateful", "helmManaged", "networkIsolated", "serviceMesh",
+				},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -439,11 +368,15 @@ spec:
 		})
 
 		It("UT-DS-043-008: multi-field combination mirrors real demo scenario schemas", func() {
-			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
-    pdbProtected: "true"
-    hpaEnabled: "true"
-    gitOpsTool: "*"
-`
+			crd := baseOCITestCRD()
+			crd.Spec.DetectedLabels = &models.DetectedLabelsSchema{
+				PDBProtected:    "true",
+				HPAEnabled:      "true",
+				GitOpsTool:      "*",
+				PopulatedFields: []string{"pdbProtected", "hpaEnabled", "gitOpsTool"},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -462,11 +395,15 @@ spec:
 		})
 
 		It("UT-DS-043-009: OCI extraction pipeline preserves detectedLabels end-to-end", func() {
-			yamlWithDetected := validWorkflowSchemaYAML + `  detectedLabels:
-    hpaEnabled: "true"
-    gitOpsTool: "argocd"
-`
-			mockPuller := oci.NewMockImagePuller(yamlWithDetected)
+			crd := baseOCITestCRD()
+			crd.Spec.DetectedLabels = &models.DetectedLabelsSchema{
+				HPAEnabled:      "true",
+				GitOpsTool:      "argocd",
+				PopulatedFields: []string{"hpaEnabled", "gitOpsTool"},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
+			mockPuller := oci.NewMockImagePuller(yamlContent)
 			extractor := oci.NewSchemaExtractor(mockPuller, schema.NewParser())
 
 			result, err := extractor.ExtractFromImage(context.Background(), "quay.io/test/detected:v1.0.0")
@@ -476,7 +413,29 @@ spec:
 		})
 
 		It("UT-DS-043-010: unknown field in detectedLabels is rejected with error naming the field", func() {
-			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
+			// Tier 3: Raw YAML — tests parser error for unknown YAML key that cannot
+			// be represented by the DetectedLabelsSchema struct.
+			yamlContent := `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: unknown-field-test
+spec:
+  version: "1.0.0"
+  description:
+    what: Test
+    whenToUse: Test
+  actionType: RestartPod
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: P1
+  parameters:
+    - name: PARAM
+      type: string
+      required: true
+      description: A param
+  detectedLabels:
     hpaEnabled: "true"
     customField: "true"
 `
@@ -487,7 +446,33 @@ spec:
 		})
 
 		It("UT-DS-043-011: empty detectedLabels section produces empty struct, not nil", func() {
-			yamlContent := validWorkflowSchemaYAML + `  detectedLabels: {}
+			// Tier 3: Raw YAML — tests explicit empty `detectedLabels: {}` which
+			// cannot be expressed as a non-nil *DetectedLabelsSchema with zero
+			// PopulatedFields (MarshalYAML would omit it entirely).
+			yamlContent := `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: empty-detected-labels-test
+spec:
+  version: "1.0.0"
+  description:
+    what: Test
+    whenToUse: Test
+  actionType: RestartPod
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: P1
+  execution:
+    engine: tekton
+    bundle: quay.io/test/wf:v1@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+  parameters:
+    - name: PARAM
+      type: string
+      required: true
+      description: A param
+  detectedLabels: {}
 `
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
@@ -518,11 +503,12 @@ spec:
 			),
 
 			Entry("UT-DS-017-005: /workflow-schema.yaml missing from image",
-				oci.NewMockImagePuller(""), // empty = no schema file
+				oci.NewMockImagePuller(""),
 				"quay.io/test/no-schema:v1.0.0",
 				"workflow-schema.yaml",
 			),
 
+			// Tier 3: Raw YAML — deliberately malformed syntax for parser error path
 			Entry("UT-DS-017-006: schema YAML is malformed",
 				oci.NewMockImagePuller(`this is: [not valid: yaml`),
 				"quay.io/test/bad-yaml:v1.0.0",
@@ -530,28 +516,12 @@ spec:
 			),
 
 			Entry("UT-DS-017-007: schema missing required fields (actionType)",
-				oci.NewMockImagePuller(`apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: incomplete
-spec:
-  metadata:
-    workflowName: incomplete
-    version: "1.0.0"
-    description:
-      what: Incomplete workflow
-      whenToUse: Testing validation
-  labels:
-    severity: [critical]
-    environment: [production]
-    component: pod
-    priority: p1
-  parameters:
-    - name: PARAM
-      type: string
-      required: true
-      description: A param
-`),
+				func() oci.ImagePuller {
+					crd := testutil.NewTestWorkflowCRD("incomplete", "RestartPod", "tekton")
+					crd.Spec.ActionType = ""
+					crd.Spec.Execution = nil
+					return oci.NewMockImagePuller(testutil.MarshalWorkflowCRD(crd))
+				}(),
 				"quay.io/test/incomplete:v1.0.0",
 				"actionType",
 			),

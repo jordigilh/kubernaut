@@ -24,8 +24,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
+	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
 // mockWorkflowCatalogClient implements weclient.WorkflowCatalogClient for testing.
@@ -38,38 +40,17 @@ func (m *mockWorkflowCatalogClient) GetWorkflowByID(_ context.Context, _ ogencli
 	return m.response, m.err
 }
 
-// buildTestSchema builds a minimal valid workflow schema YAML with an optional
-// dependencies section appended. Eliminates YAML boilerplate across tests.
-func buildTestSchema(dependenciesYAML string) string {
-	base := `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: test-workflow
-spec:
-  metadata:
-    workflowName: test-workflow
-    version: "1.0.0"
-    description:
-      what: "Test workflow"
-      whenToUse: "Testing"
-  actionType: CertificateRenewal
-  labels:
-    severity: [critical]
-    component: deployment
-    environment: [production]
-    priority: P1
-  execution:
-    engine: job
-    bundle: "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-  parameters:
-    - name: TARGET_NAMESPACE
-      type: string
-      required: true
-      description: Target namespace for certificate renewal`
-	if dependenciesYAML != "" {
-		return base + "\n" + dependenciesYAML
+// buildTestSchema builds a minimal valid workflow schema YAML with optional
+// dependencies. Uses the builder pattern to avoid brittle string concatenation.
+func buildTestSchema(deps *models.WorkflowDependencies) string {
+	crd := testutil.NewTestWorkflowCRD("test-workflow", "CertificateRenewal", "job")
+	crd.Spec.Labels.Component = "deployment"
+	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Target namespace for certificate renewal"},
 	}
-	return base
+	crd.Spec.Dependencies = deps
+	return testutil.MarshalWorkflowCRD(crd)
 }
 
 var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
@@ -81,9 +62,9 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 
 	Context("GetWorkflowDependencies", func() {
 		It("UT-WE-006-001: should extract secret dependencies from workflow content", func() {
-			content := buildTestSchema(`  dependencies:
-    secrets:
-      - name: gitea-repo-creds`)
+			content := buildTestSchema(&models.WorkflowDependencies{
+				Secrets: []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+			})
 			mock := &mockWorkflowCatalogClient{
 				response: &ogenclient.RemediationWorkflow{Content: content},
 			}
@@ -97,11 +78,10 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 		})
 
 		It("UT-WE-006-002: should extract both secrets and configMaps", func() {
-			content := buildTestSchema(`  dependencies:
-    secrets:
-      - name: gitea-repo-creds
-    configMaps:
-      - name: remediation-config`)
+			content := buildTestSchema(&models.WorkflowDependencies{
+				Secrets:    []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+				ConfigMaps: []models.ResourceDependency{{Name: "remediation-config"}},
+			})
 			mock := &mockWorkflowCatalogClient{
 				response: &ogenclient.RemediationWorkflow{Content: content},
 			}
@@ -116,7 +96,7 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 		})
 
 		It("UT-WE-006-003: should return nil when workflow has no dependencies", func() {
-			content := buildTestSchema("")
+			content := buildTestSchema(nil)
 			mock := &mockWorkflowCatalogClient{
 				response: &ogenclient.RemediationWorkflow{Content: content},
 			}

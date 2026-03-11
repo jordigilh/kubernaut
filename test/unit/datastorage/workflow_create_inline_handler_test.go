@@ -25,61 +25,33 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
-// Valid CRD-format YAML for inline registration tests.
-// Uses the same format established in Phase 1 (#292).
-const validInlineSchemaYAML = `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: scale-memory-inline
-spec:
-  metadata:
-    workflowName: scale-memory-inline
-    version: "1.0.0"
-    description:
-      what: "Scales memory limits for OOM-killed pods"
-      whenToUse: "When pods are OOM-killed repeatedly"
-      whenNotToUse: "When OOM is caused by memory leaks"
-      preconditions: "HPA must be configured"
-  actionType: ScaleMemory
-  labels:
-    severity:
-      - critical
-      - high
-    environment:
-      - production
-    component: pod
-    priority: P1
-  execution:
-    engine: job
-    bundle: "quay.io/kubernaut/workflows/scale-memory:v1.0.0@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1"
-  parameters:
-    - name: TARGET_RESOURCE
-      type: string
-      required: true
-      description: "Target resource"
-    - name: MEMORY_LIMIT
-      type: string
-      required: true
-      description: "New memory limit"`
-
-// mockActionTypeValidatorInline implements server.ActionTypeValidator for inline tests.
-type mockActionTypeValidatorInline struct {
-	exists bool
-	err    error
-}
-
-func (m *mockActionTypeValidatorInline) ActionTypeExists(_ interface{}, _ string) (bool, error) {
-	return m.exists, m.err
-}
+var validInlineSchemaYAML = func() string {
+	crd := testutil.NewTestWorkflowCRD("scale-memory-inline", "ScaleMemory", "job")
+	crd.Spec.Description = sharedtypes.StructuredDescription{
+		What:          "Scales memory limits for OOM-killed pods",
+		WhenToUse:     "When pods are OOM-killed repeatedly",
+		WhenNotToUse:  "When OOM is caused by memory leaks",
+		Preconditions: "HPA must be configured",
+	}
+	crd.Spec.Labels.Severity = []string{"critical", "high"}
+	crd.Spec.Execution.Bundle = "quay.io/kubernaut/workflows/scale-memory:v1.0.0@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1"
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target resource"},
+		{Name: "MEMORY_LIMIT", Type: "string", Required: true, Description: "New memory limit"},
+	}
+	return testutil.MarshalWorkflowCRD(crd)
+}()
 
 var _ = Describe("Inline Schema Workflow Registration (#299)", func() {
 
-	// Helper to build an inline schema request body
 	makeInlineRequest := func(content string) *http.Request {
 		body := map[string]string{"content": content}
 		jsonBody, err := json.Marshal(body)
@@ -87,7 +59,6 @@ var _ = Describe("Inline Schema Workflow Registration (#299)", func() {
 		return httptest.NewRequest(http.MethodPost, "/api/v1/workflows", bytes.NewReader(jsonBody))
 	}
 
-	// Helper to build a legacy OCI request body (should be rejected)
 	makeLegacyOCIRequest := func(schemaImage string) *http.Request {
 		body := map[string]string{"schemaImage": schemaImage}
 		jsonBody, err := json.Marshal(body)
@@ -95,7 +66,6 @@ var _ = Describe("Inline Schema Workflow Registration (#299)", func() {
 		return httptest.NewRequest(http.MethodPost, "/api/v1/workflows", bytes.NewReader(jsonBody))
 	}
 
-	// Default handler with mock OCI puller (for ValidateBundleExists)
 	newInlineHandler := func() *server.Handler {
 		puller := oci.NewMockImagePuller(validInlineSchemaYAML)
 		parser := schema.NewParser()
@@ -105,24 +75,17 @@ var _ = Describe("Inline Schema Workflow Registration (#299)", func() {
 		)
 	}
 
-	// ========================================
-	// UT-DS-299-001: Inline schema accepted and stored in catalog
-	// ========================================
 	Describe("UT-DS-299-001: Inline schema accepted and stored in catalog", func() {
 		It("should accept a valid inline schema YAML and return 201 with populated workflow", func() {
-			// Arrange
 			handler := newInlineHandler()
 			req := makeInlineRequest(validInlineSchemaYAML)
 			rr := httptest.NewRecorder()
 
-			// Act
 			handler.HandleCreateWorkflow(rr, req)
 
-			// Assert: handler should process inline schema and return 201
 			Expect(rr.Code).To(Equal(http.StatusCreated),
 				"Expected 201 Created for valid inline schema, got %d: %s", rr.Code, rr.Body.String())
 
-			// Verify response body contains workflow fields
 			var resp map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &resp)).To(Succeed())
 			Expect(resp["workflowName"]).To(Equal("scale-memory-inline"))
@@ -131,20 +94,14 @@ var _ = Describe("Inline Schema Workflow Registration (#299)", func() {
 		})
 	})
 
-	// ========================================
-	// UT-DS-299-002: Old OCI schemaImage format rejected
-	// ========================================
 	Describe("UT-DS-299-002: Old OCI schemaImage format rejected", func() {
 		It("should reject the old schemaImage format with 400 explaining the change", func() {
-			// Arrange
 			handler := newInlineHandler()
 			req := makeLegacyOCIRequest("quay.io/kubernaut/workflows/scale-memory:v1.0.0")
 			rr := httptest.NewRecorder()
 
-			// Act
 			handler.HandleCreateWorkflow(rr, req)
 
-			// Assert: handler should reject the old format
 			Expect(rr.Code).To(Equal(http.StatusBadRequest),
 				"Expected 400 Bad Request for legacy schemaImage format")
 
@@ -155,64 +112,44 @@ var _ = Describe("Inline Schema Workflow Registration (#299)", func() {
 		})
 	})
 
-	// ========================================
-	// UT-DS-299-003: Re-enable disabled workflow on re-CREATE
-	// ========================================
 	Describe("UT-DS-299-003: Re-enable disabled workflow on re-CREATE", func() {
 		It("should re-enable a previously disabled workflow and return 200 OK", func() {
-			// Arrange: handler with a mock repo that returns conflict on Create
-			// then returns the disabled workflow on GetByName
 			handler := newInlineHandler()
 			req := makeInlineRequest(validInlineSchemaYAML)
 			rr := httptest.NewRecorder()
 
-			// Act
 			handler.HandleCreateWorkflow(rr, req)
 
-			// Assert: for now, verify the inline path is taken (will be refined in GREEN)
-			// The handler should return 200 (re-enabled) not 409 (conflict)
-			// Since we don't have a mock repo with conflict behavior yet,
-			// this test validates the inline path at minimum
 			Expect(rr.Code).ToNot(Equal(http.StatusConflict),
 				"Should not return 409 for re-create of disabled workflow")
 		})
 	})
 
-	// ========================================
-	// UT-DS-299-004: Inline schema passes full validation pipeline
-	// ========================================
 	Describe("UT-DS-299-004: Inline schema passes full validation pipeline", func() {
 		It("should validate actionType, bundle, and dependencies from inline schema", func() {
-			// Arrange
 			handler := newInlineHandler()
 			req := makeInlineRequest(validInlineSchemaYAML)
 			rr := httptest.NewRecorder()
 
-			// Act
 			handler.HandleCreateWorkflow(rr, req)
 
-			// Assert: handler should NOT return validation errors
 			Expect(rr.Code).ToNot(Equal(http.StatusBadRequest),
 				"Valid inline schema should not produce validation errors: %s", rr.Body.String())
 		})
 	})
 
-	// ========================================
-	// UT-DS-299-005: Invalid inline schema rejected with field-specific error
-	// ========================================
 	Describe("UT-DS-299-005: Invalid inline schema rejected with 400", func() {
 		Context("missing apiVersion", func() {
 			It("should reject with error referencing apiVersion", func() {
+				// Tier 3: Raw YAML — missing apiVersion
 				invalidYAML := `kind: RemediationWorkflow
 metadata:
   name: missing-apiversion
 spec:
-  metadata:
-    workflowName: missing-apiversion
-    version: "1.0.0"
-    description:
-      what: "Test"
-      whenToUse: "Test"
+  version: "1.0.0"
+  description:
+    what: "Test"
+    whenToUse: "Test"
   actionType: Test
   labels:
     severity: [critical]
@@ -243,31 +180,10 @@ spec:
 
 		Context("wrong kind", func() {
 			It("should reject with error referencing kind", func() {
-				invalidYAML := `apiVersion: kubernaut.ai/v1alpha1
-kind: Workflow
-metadata:
-  name: wrong-kind
-spec:
-  metadata:
-    workflowName: wrong-kind
-    version: "1.0.0"
-    description:
-      what: "Test"
-      whenToUse: "Test"
-  actionType: Test
-  labels:
-    severity: [critical]
-    environment: [production]
-    component: pod
-    priority: P1
-  execution:
-    engine: job
-    bundle: "quay.io/test:v1@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1"
-  parameters:
-    - name: TARGET
-      type: string
-      required: true
-      description: "Target"`
+				// Tier 3: Raw YAML — wrong kind value
+				crd := testutil.NewTestWorkflowCRD("wrong-kind", "RestartPod", "job")
+				crd.Kind = "Workflow"
+				invalidYAML := testutil.MarshalWorkflowCRD(crd)
 
 				handler := newInlineHandler()
 				req := makeInlineRequest(invalidYAML)
@@ -283,9 +199,6 @@ spec:
 		})
 	})
 
-	// ========================================
-	// UT-DS-299-006: Content hash computed from inline YAML
-	// ========================================
 	Describe("UT-DS-299-006: Content hash computed from inline YAML", func() {
 		It("should populate contentHash from the inline YAML content", func() {
 			handler := newInlineHandler()
@@ -294,7 +207,6 @@ spec:
 
 			handler.HandleCreateWorkflow(rr, req)
 
-			// Assert: content hash should be present and non-empty
 			if rr.Code == http.StatusCreated || rr.Code == http.StatusOK {
 				var resp map[string]interface{}
 				Expect(json.Unmarshal(rr.Body.Bytes(), &resp)).To(Succeed())
@@ -304,9 +216,6 @@ spec:
 		})
 	})
 
-	// ========================================
-	// UT-DS-299-007: SchemaImage nil for inline registration
-	// ========================================
 	Describe("UT-DS-299-007: SchemaImage nil for inline registration", func() {
 		It("should not populate schemaImage or schemaDigest for inline registration", func() {
 			handler := newInlineHandler()

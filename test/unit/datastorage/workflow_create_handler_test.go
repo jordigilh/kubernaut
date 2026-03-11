@@ -26,7 +26,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
 // mockActionTypeValidator implements server.ActionTypeValidator for testing.
@@ -53,46 +56,20 @@ func (m *mockActionTypeValidator) ActionTypeExists(ctx context.Context, actionTy
 // Database interactions are validated at the integration test tier.
 // ========================================
 
-const validInlineRegistrationSchemaYAML = `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: scale-memory
-spec:
-  metadata:
-    workflowName: scale-memory
-    version: "v1.0.0"
-    description:
-      what: Increases memory limits for OOMKilled pods
-      whenToUse: When pods are OOMKilled due to insufficient memory
-      whenNotToUse: When OOM is caused by a memory leak
-      preconditions: Pod managed by a Deployment or StatefulSet
-  actionType: IncreaseMemoryLimits
-  labels:
-    signalType: OOMKilled
-    severity: [critical]
-    component: pod
-    environment: [production]
-    priority: P0
-  parameters:
-    - name: MEMORY_INCREASE_PERCENT
-      type: integer
-      description: Percentage to increase memory limit
-      default: "25"
-      required: true
-  execution:
-    engine: tekton
-    bundle: quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-`
-
-const invalidInlineRegistrationSchemaYAML = `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: broken
-spec:
-  metadata:
-    workflowName: broken
-    version: "v0.1.0"
-`
+var validInlineRegistrationSchemaYAML = func() string {
+	crd := testutil.NewTestWorkflowCRD("scale-memory", "IncreaseMemoryLimits", "tekton")
+	crd.Spec.Description = sharedtypes.StructuredDescription{
+		What:          "Increases memory limits for OOMKilled pods",
+		WhenToUse:     "When pods are OOMKilled due to insufficient memory",
+		WhenNotToUse:  "When OOM is caused by a memory leak",
+		Preconditions: "Pod managed by a Deployment or StatefulSet",
+	}
+	defValue := "25"
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "MEMORY_INCREASE_PERCENT", Type: "integer", Description: "Percentage to increase memory limit", Default: defValue, Required: true},
+	}
+	return testutil.MarshalWorkflowCRD(crd)
+}()
 
 var _ = Describe("Inline Workflow Registration Handler (DD-WORKFLOW-017)", func() {
 
@@ -149,8 +126,16 @@ var _ = Describe("Inline Workflow Registration Handler (DD-WORKFLOW-017)", func(
 
 	Describe("UT-WF-017-004: Content missing required spec fields returns 400", func() {
 		It("should return 400 when content lacks required workflow spec fields", func() {
+			// Tier 3: Raw YAML — intentionally incomplete schema
+			invalidYAML := `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: broken
+spec:
+  version: "v0.1.0"
+`
 			handler := server.NewHandler(nil)
-			req := makeInlineRequest(invalidInlineRegistrationSchemaYAML)
+			req := makeInlineRequest(invalidYAML)
 			rr := httptest.NewRecorder()
 
 			handler.HandleCreateWorkflow(rr, req)
@@ -164,17 +149,16 @@ var _ = Describe("Inline Workflow Registration Handler (DD-WORKFLOW-017)", func(
 
 	Describe("UT-WF-017-005: Invalid schema returns 400", func() {
 		It("should return 400 when the schema is invalid (missing required fields)", func() {
+			// Tier 3: Raw YAML — intentionally missing labels, actionType, execution
 			const minimalInvalidSchemaYAML = `apiVersion: kubernaut.ai/v1alpha1
 kind: RemediationWorkflow
 metadata:
   name: no-labels
 spec:
-  metadata:
-    workflowName: no-labels
-    version: "v1.0.0"
-    description:
-      what: Missing labels, parameters and actionType
-      whenToUse: Never
+  version: "v1.0.0"
+  description:
+    what: Missing labels, parameters and actionType
+    whenToUse: Never
   parameters:
     - name: DUMMY
       type: string
@@ -229,37 +213,10 @@ spec:
 	// ========================================
 
 	Describe("UT-WF-017-008: Invalid action_type rejected with 400 (BR-WORKFLOW-016-001)", func() {
-		const invalidActionTypeSchemaYAML = `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: invalid-action
-spec:
-  metadata:
-    workflowName: invalid-action
-    version: "v1.0.0"
-    description:
-      what: Tests invalid action type rejection
-      whenToUse: When testing taxonomy validation
-      whenNotToUse: N/A
-      preconditions: None
-  actionType: NonExistentAction
-  labels:
-    signalType: OOMKilled
-    severity: [critical]
-    component: pod
-    environment: [production]
-    priority: P0
-  parameters:
-    - name: PARAM_A
-      type: string
-      description: A test parameter
-      required: true
-  execution:
-    engine: tekton
-    bundle: quay.io/kubernaut/test:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-`
-
 		It("should return 400 when action_type is not in the taxonomy", func() {
+			crd := testutil.NewTestWorkflowCRD("invalid-action", "NonExistentAction", "tekton")
+			invalidActionTypeYAML := testutil.MarshalWorkflowCRD(crd)
+
 			validator := &mockActionTypeValidator{
 				existsFn: func(ctx context.Context, actionType string) (bool, error) {
 					validTypes := map[string]bool{
@@ -271,7 +228,7 @@ spec:
 				},
 			}
 			handler := server.NewHandler(nil, server.WithActionTypeValidator(validator))
-			req := makeInlineRequest(invalidActionTypeSchemaYAML)
+			req := makeInlineRequest(invalidActionTypeYAML)
 			rr := httptest.NewRecorder()
 
 			handler.HandleCreateWorkflow(rr, req)

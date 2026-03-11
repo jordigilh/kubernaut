@@ -20,7 +20,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
 // ========================================
@@ -39,43 +42,29 @@ import (
 //
 // ========================================
 
-// validSchemaWithDependencies is a workflow schema that declares dependencies
-const validSchemaWithDependencies = `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: fix-certificate-gitops-v1
-spec:
-  metadata:
-    workflowName: fix-certificate-gitops-v1
-    version: "1.0.0"
-    description:
-      what: Reverts a bad Git commit that broke a cert-manager ClusterIssuer
-      whenToUse: When a GitOps-managed cert-manager Certificate is stuck NotReady
-  actionType: GitRevertCommit
-  labels:
-    signalName: CertManagerCertNotReady
-    severity: [critical, high]
-    environment: ["*"]
-    component: certificate
-    priority: "*"
-  execution:
-    engine: job
-    bundle: quay.io/kubernaut/fix-cert:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-  dependencies:
-    secrets:
-      - name: gitea-repo-creds
-    configMaps:
-      - name: remediation-config
-  parameters:
-    - name: GIT_REPO_URL
-      type: string
-      required: true
-      description: URL of the Git repository (without credentials)
-    - name: TARGET_NAMESPACE
-      type: string
-      required: true
-      description: Namespace of the affected Certificate
-`
+// depsTestCRD returns a CRD with dependencies pre-configured.
+func depsTestCRD() *models.WorkflowSchemaCRD {
+	crd := testutil.NewTestWorkflowCRD("fix-certificate-gitops-v1", "GitRevertCommit", "job")
+	crd.Spec.Description = sharedtypes.StructuredDescription{
+		What:      "Reverts a bad Git commit that broke a cert-manager ClusterIssuer",
+		WhenToUse: "When a GitOps-managed cert-manager Certificate is stuck NotReady",
+	}
+	crd.Spec.Labels = models.WorkflowSchemaLabels{
+		Severity:    []string{"critical", "high"},
+		Environment: []string{"*"},
+		Component:   "certificate",
+		Priority:    "*",
+	}
+	crd.Spec.Dependencies = &models.WorkflowDependencies{
+		Secrets:    []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+		ConfigMaps: []models.ResourceDependency{{Name: "remediation-config"}},
+	}
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "GIT_REPO_URL", Type: "string", Required: true, Description: "URL of the Git repository (without credentials)"},
+		{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected Certificate"},
+	}
+	return crd
+}
 
 var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 
@@ -87,7 +76,8 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-001: should parse dependencies section with secrets and configMaps", func() {
-			parsedSchema, err := parser.ParseAndValidate(validSchemaWithDependencies)
+			yamlContent := testutil.MarshalWorkflowCRD(depsTestCRD())
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedSchema.Dependencies.Secrets).To(HaveLen(1))
 			Expect(parsedSchema.Dependencies.Secrets[0].Name).To(Equal("gitea-repo-creds"))
@@ -96,15 +86,18 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-002: should accept schema without dependencies section (backward compatible)", func() {
-			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(baseOCITestCRD())
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedSchema.Dependencies).To(BeNil(),
 				"absence of dependencies in YAML means no infrastructure dependencies")
 		})
 
 		It("UT-DS-006-003: should accept schema with empty dependencies section", func() {
-			yamlContent := validWorkflowSchemaYAML + `  dependencies: {}
-`
+			crd := baseOCITestCRD()
+			crd.Spec.Dependencies = &models.WorkflowDependencies{}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedSchema.Dependencies.Secrets).To(BeEmpty())
@@ -112,10 +105,12 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-004: should accept schema with only secrets, no configMaps", func() {
-			yamlContent := validWorkflowSchemaYAML + `  dependencies:
-    secrets:
-      - name: gitea-repo-creds
-`
+			crd := baseOCITestCRD()
+			crd.Spec.Dependencies = &models.WorkflowDependencies{
+				Secrets: []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedSchema.Dependencies.Secrets).To(HaveLen(1))
@@ -123,10 +118,12 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-005: should accept schema with only configMaps, no secrets", func() {
-			yamlContent := validWorkflowSchemaYAML + `  dependencies:
-    configMaps:
-      - name: remediation-config
-`
+			crd := baseOCITestCRD()
+			crd.Spec.Dependencies = &models.WorkflowDependencies{
+				ConfigMaps: []models.ResourceDependency{{Name: "remediation-config"}},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedSchema.Dependencies.Secrets).To(BeEmpty())
@@ -134,14 +131,19 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-006: should parse multiple secrets and configMaps", func() {
-			yamlContent := validWorkflowSchemaYAML + `  dependencies:
-    secrets:
-      - name: gitea-repo-creds
-      - name: tls-certificates
-    configMaps:
-      - name: remediation-config
-      - name: alert-thresholds
-`
+			crd := baseOCITestCRD()
+			crd.Spec.Dependencies = &models.WorkflowDependencies{
+				Secrets: []models.ResourceDependency{
+					{Name: "gitea-repo-creds"},
+					{Name: "tls-certificates"},
+				},
+				ConfigMaps: []models.ResourceDependency{
+					{Name: "remediation-config"},
+					{Name: "alert-thresholds"},
+				},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedSchema.Dependencies.Secrets).To(HaveLen(2))
@@ -157,10 +159,12 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-010: should reject secret with empty name", func() {
-			yamlContent := validWorkflowSchemaYAML + `  dependencies:
-    secrets:
-      - name: ""
-`
+			crd := baseOCITestCRD()
+			crd.Spec.Dependencies = &models.WorkflowDependencies{
+				Secrets: []models.ResourceDependency{{Name: ""}},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("dependencies.secrets"))
@@ -169,10 +173,12 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-011: should reject configMap with empty name", func() {
-			yamlContent := validWorkflowSchemaYAML + `  dependencies:
-    configMaps:
-      - name: ""
-`
+			crd := baseOCITestCRD()
+			crd.Spec.Dependencies = &models.WorkflowDependencies{
+				ConfigMaps: []models.ResourceDependency{{Name: ""}},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("dependencies.configMaps"))
@@ -181,11 +187,15 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-012: should reject duplicate secret names", func() {
-			yamlContent := validWorkflowSchemaYAML + `  dependencies:
-    secrets:
-      - name: gitea-repo-creds
-      - name: gitea-repo-creds
-`
+			crd := baseOCITestCRD()
+			crd.Spec.Dependencies = &models.WorkflowDependencies{
+				Secrets: []models.ResourceDependency{
+					{Name: "gitea-repo-creds"},
+					{Name: "gitea-repo-creds"},
+				},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("dependencies.secrets"))
@@ -195,11 +205,15 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-013: should reject duplicate configMap names", func() {
-			yamlContent := validWorkflowSchemaYAML + `  dependencies:
-    configMaps:
-      - name: remediation-config
-      - name: remediation-config
-`
+			crd := baseOCITestCRD()
+			crd.Spec.Dependencies = &models.WorkflowDependencies{
+				ConfigMaps: []models.ResourceDependency{
+					{Name: "remediation-config"},
+					{Name: "remediation-config"},
+				},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("dependencies.configMaps"))
@@ -209,12 +223,13 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-014: should allow same name in different categories (secret vs configMap)", func() {
-			yamlContent := validWorkflowSchemaYAML + `  dependencies:
-    secrets:
-      - name: shared-name
-    configMaps:
-      - name: shared-name
-`
+			crd := baseOCITestCRD()
+			crd.Spec.Dependencies = &models.WorkflowDependencies{
+				Secrets:    []models.ResourceDependency{{Name: "shared-name"}},
+				ConfigMaps: []models.ResourceDependency{{Name: "shared-name"}},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred(),
 				"same name in different categories should be allowed")
@@ -231,7 +246,8 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-020: should extract dependencies from schema with deps", func() {
-			parsedSchema, err := parser.ParseAndValidate(validSchemaWithDependencies)
+			yamlContent := testutil.MarshalWorkflowCRD(depsTestCRD())
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 
 			deps := parser.ExtractDependencies(parsedSchema)
@@ -242,7 +258,8 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-021: should return nil when schema has no dependencies", func() {
-			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
+			yamlContent := testutil.MarshalWorkflowCRD(baseOCITestCRD())
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 
 			deps := parser.ExtractDependencies(parsedSchema)
