@@ -51,6 +51,7 @@ datastorage:
 
 # -- AIAnalysis controller
 aianalysis:
+  replicas: 1
   rego:
     confidenceThreshold: null  # nil = use Rego default (0.8 per BR-AI-076)
   resources:
@@ -63,6 +64,7 @@ aianalysis:
 
 # -- SignalProcessing controller
 signalprocessing:
+  replicas: 1
   resources:
     requests:
       cpu: 100m
@@ -73,6 +75,7 @@ signalprocessing:
 
 # -- RemediationOrchestrator controller
 remediationorchestrator:
+  replicas: 1
   resources:
     requests:
       cpu: 100m
@@ -94,6 +97,8 @@ remediationorchestrator:
 
 # -- WorkflowExecution controller
 workflowexecution:
+  workflowNamespace: kubernaut-workflows  # namespace for Job/PipelineRun execution
+  replicas: 1
   resources:
     requests:
       cpu: 100m
@@ -104,6 +109,7 @@ workflowexecution:
 
 # -- Notification controller
 notification:
+  replicas: 1
   # -- Enable Slack delivery channel. When false (default), only console/log delivery is active.
   # Requires a K8s Secret with the Slack webhook URL (see credentials below).
   slack:
@@ -126,6 +132,12 @@ notification:
 
 # -- EffectivenessMonitor controller
 effectivenessmonitor:
+  replicas: 1
+  external:
+    prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+    prometheusEnabled: true
+    alertManagerUrl: "http://kube-prometheus-stack-alertmanager.monitoring.svc:9093"
+    alertManagerEnabled: true
   resources:
     requests:
       memory: 64Mi
@@ -159,6 +171,7 @@ holmesgptApi:
 
 # -- AuthWebhook admission controller
 authwebhook:
+  replicas: 1
   resources:
     requests:
       memory: 128Mi
@@ -169,7 +182,8 @@ authwebhook:
 
 # -- Event Exporter (forwards K8s Warning events to Gateway)
 eventExporter:
-  image: ghcr.io/resmoio/kubernetes-event-exporter:latest
+  replicas: 1
+  image: ghcr.io/resmoio/kubernetes-event-exporter:v1.7
   resources:
     requests:
       memory: 32Mi
@@ -188,6 +202,7 @@ eventExporter:
 #     Chart auto-creates postgresql-secret and datastorage-db-secret.
 #   Option C (BYO #256): Set postgresql.enabled=false and configure externalPostgresql.
 postgresql:
+  replicas: 1
   enabled: true  # set false to skip in-chart PostgreSQL and use externalPostgresql instead
   image: postgres:16-alpine
   auth:
@@ -225,6 +240,7 @@ externalPostgresql:
 #     Empty password ("") is allowed for development.
 #   Option C (BYO #256): Set redis.enabled=false and configure externalRedis.
 redis:
+  replicas: 1
   enabled: true  # set false to skip in-chart Redis and use externalRedis instead
   image: quay.io/jordigilh/redis:7-alpine
   existingSecret: ""  # name of pre-created K8s Secret; when set, chart skips Secret creation
@@ -247,6 +263,10 @@ externalRedis:
   port: 6379
   existingSecret: ""  # K8s Secret with redis-secrets.yaml key
   password: ""
+
+# -- NetworkPolicies (optional, restricts inter-service traffic)
+networkPolicies:
+  enabled: false  # enable to create NetworkPolicy resources
 
 # -- Hooks (post-install Jobs)
 hooks:

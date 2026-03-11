@@ -23,8 +23,38 @@ Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Na
 Kubernaut is designed to work with kube-prometheus-stack.
 Install it separately for full alerting and remediation capabilities.
 
-=== CRD Upgrades ===
+=== Upgrading ===
 
-Helm does not upgrade CRDs on `helm upgrade`. To update CRDs:
+CRDs are NOT upgraded automatically by `helm upgrade`. To update CRDs:
 
-   kubectl apply -f charts/kubernaut/crds/
+   kubectl apply --server-side --force-conflicts -f charts/kubernaut/crds/
+
+Run this BEFORE `helm upgrade` when CRD schemas have changed between versions.
+
+TLS certificates are automatically renewed during upgrade if they expire
+within 30 days.
+
+=== Uninstalling ===
+
+   helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+IMPORTANT -- Data Retention:
+  - PostgreSQL and Redis PVCs are RETAINED after uninstall (helm.sh/resource-policy: keep).
+    To remove them manually:
+
+      kubectl delete pvc postgresql-data redis-data -n {{ .Release.Namespace }}
+
+  - CRDs and their data are NOT removed. To delete CRDs:
+
+      kubectl delete -f charts/kubernaut/crds/
+
+  - The kubernaut-workflows namespace may contain active Jobs or PipelineRuns.
+    Verify it is empty or clean up before uninstalling if it gets stuck:
+
+      kubectl get jobs -n {{ include "kubernaut.workflowNamespace" . }}
+
+=== Known Limitations ===
+
+  - Single installation per cluster: cluster-scoped resources (ClusterRoles,
+    WebhookConfigurations) use static names and will conflict if multiple
+    releases are installed in different namespaces.

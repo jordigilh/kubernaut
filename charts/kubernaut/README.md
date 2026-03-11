@@ -52,6 +52,8 @@ helm install kubernaut charts/kubernaut \
 
 ## Configuration
 
+All values are validated against `values.schema.json`. Run `helm lint` to check your overrides before installing.
+
 ### Global Settings
 
 | Parameter | Description | Default |
@@ -96,26 +98,58 @@ helm install kubernaut charts/kubernaut \
 
 | Parameter | Description | Default |
 |---|---|---|
+| `notification.replicas` | Number of replicas | `1` |
 | `notification.slack.enabled` | Enable Slack delivery channel | `false` |
 | `notification.slack.channel` | Default Slack channel | `#kubernaut-alerts` |
 | `notification.credentials` | Projected volume sources from K8s Secrets | See `values.yaml` |
 
-### Controllers
+### Controllers (Common Parameters)
 
-All controllers (`aianalysis`, `signalprocessing`, `remediationorchestrator`, `workflowexecution`, `effectivenessmonitor`, `authwebhook`) accept:
+All controllers (`aianalysis`, `signalprocessing`, `remediationorchestrator`, `workflowexecution`, `effectivenessmonitor`, `authwebhook`, `notification`) accept:
 
 | Parameter | Description | Default |
 |---|---|---|
-| `<controller>.resources.requests.cpu` | CPU request | Varies |
-| `<controller>.resources.requests.memory` | Memory request | Varies |
-| `<controller>.resources.limits.cpu` | CPU limit | Varies |
-| `<controller>.resources.limits.memory` | Memory limit | Varies |
+| `<controller>.replicas` | Number of replicas | `1` |
+| `<controller>.resources` | CPU/memory requests and limits | See `values.yaml` |
+| `<controller>.podSecurityContext` | Pod-level security context override | Restricted profile defaults |
+| `<controller>.containerSecurityContext` | Container-level security context override | Restricted profile defaults |
+| `<controller>.nodeSelector` | Per-component node selector (overrides global) | `{}` |
+| `<controller>.tolerations` | Per-component tolerations (overrides global) | `[]` |
+| `<controller>.affinity` | Pod affinity/anti-affinity rules | `{}` |
+| `<controller>.topologySpreadConstraints` | Topology spread constraints | `[]` |
+| `<controller>.pdb.enabled` | Create a PodDisruptionBudget | `false` |
+| `<controller>.pdb.minAvailable` | PDB minimum available pods | -- |
+| `<controller>.pdb.maxUnavailable` | PDB maximum unavailable pods | -- |
+
+### WorkflowExecution
+
+| Parameter | Description | Default |
+|---|---|---|
+| `workflowexecution.workflowNamespace` | Namespace for Job/PipelineRun execution | `kubernaut-workflows` |
+
+### EffectivenessMonitor
+
+| Parameter | Description | Default |
+|---|---|---|
+| `effectivenessmonitor.external.prometheusUrl` | Prometheus URL | `http://kube-prometheus-stack-prometheus.monitoring:9090` |
+| `effectivenessmonitor.external.prometheusEnabled` | Enable Prometheus integration | `true` |
+| `effectivenessmonitor.external.alertManagerUrl` | AlertManager URL | `http://kube-prometheus-stack-alertmanager.monitoring:9093` |
+| `effectivenessmonitor.external.alertManagerEnabled` | Enable AlertManager integration | `true` |
+
+### Event Exporter
+
+| Parameter | Description | Default |
+|---|---|---|
+| `eventExporter.replicas` | Number of replicas | `1` |
+| `eventExporter.image` | Container image | `ghcr.io/resmoio/kubernetes-event-exporter:v1.7` |
+| `eventExporter.resources` | CPU/memory requests and limits | See `values.yaml` |
 
 ### PostgreSQL
 
 | Parameter | Description | Default |
 |---|---|---|
 | `postgresql.enabled` | Deploy in-chart PostgreSQL | `true` |
+| `postgresql.replicas` | Number of replicas | `1` |
 | `postgresql.image` | PostgreSQL container image | `postgres:16-alpine` |
 | `postgresql.auth.existingSecret` | Pre-created Secret name | `""` |
 | `postgresql.auth.username` | Database username | `slm_user` |
@@ -142,6 +176,7 @@ Set `postgresql.enabled=false` and configure these values to use a pre-existing 
 | Parameter | Description | Default |
 |---|---|---|
 | `redis.enabled` | Deploy in-chart Redis | `true` |
+| `redis.replicas` | Number of replicas | `1` |
 | `redis.image` | Redis container image | `quay.io/jordigilh/redis:7-alpine` |
 | `redis.existingSecret` | Pre-created Secret name | `""` |
 | `redis.password` | Redis password | `""` |
@@ -158,6 +193,140 @@ Set `redis.enabled=false` and configure these values to use a pre-existing Redis
 | `externalRedis.port` | External Redis port | `6379` |
 | `externalRedis.existingSecret` | Pre-created Secret name | `""` |
 | `externalRedis.password` | Redis password | `""` |
+
+### Hooks
+
+| Parameter | Description | Default |
+|---|---|---|
+| `hooks.tlsCerts.image` | kubectl image for TLS cert generation | `bitnami/kubectl:1.32` |
+| `hooks.migrations.image` | PostgreSQL image for migrations | `postgres:16-alpine` |
+| `hooks.migrations.gooseVersion` | goose CLI version | `v3.24.1` |
+
+### Network Policies
+
+| Parameter | Description | Default |
+|---|---|---|
+| `networkPolicies.enabled` | Create NetworkPolicy resources | `false` |
+
+When enabled, NetworkPolicies restrict ingress/egress traffic for gateway, datastorage, and authwebhook. DNS egress (port 53) is always allowed.
+
+## Security Hardening
+
+### Pod Security
+
+All Deployments and hook Jobs run with a restricted security profile by default:
+
+**Pod-level** (`securityContext`):
+- `runAsNonRoot: true`
+- `runAsUser: 65534` (nobody) for application containers; `999` for postgresql/redis
+- `seccompProfile.type: RuntimeDefault`
+
+**Container-level** (`securityContext`):
+- `allowPrivilegeEscalation: false`
+- `readOnlyRootFilesystem: true` (where supported)
+- `capabilities.drop: ["ALL"]`
+
+Override per-component via `<component>.podSecurityContext` and `<component>.containerSecurityContext`:
+
+```yaml
+gateway:
+  podSecurityContext:
+    runAsUser: 1000
+  containerSecurityContext:
+    readOnlyRootFilesystem: false
+```
+
+### Service Accounts
+
+PostgreSQL and Redis run with dedicated ServiceAccounts that have `automountServiceAccountToken: false`, preventing unnecessary API token mounting.
+
+## High Availability
+
+### Replicas
+
+All components default to 1 replica. Scale for production:
+
+```yaml
+gateway:
+  replicas: 3
+datastorage:
+  replicas: 2
+```
+
+### Pod Disruption Budgets
+
+Enable PDBs for critical components:
+
+```yaml
+gateway:
+  pdb:
+    enabled: true
+    minAvailable: 1
+datastorage:
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+```
+
+### Affinity and Topology Spread
+
+Spread pods across nodes or zones:
+
+```yaml
+gateway:
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app
+                  operator: In
+                  values: ["gateway"]
+            topologyKey: kubernetes.io/hostname
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app: gateway
+```
+
+### Scheduling
+
+Per-component `nodeSelector` and `tolerations` override global settings:
+
+```yaml
+gateway:
+  nodeSelector:
+    node-type: kubernaut
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "kubernaut"
+      effect: "NoSchedule"
+```
+
+## TLS Certificate Management
+
+The chart manages TLS certificates for the admission webhooks automatically via Helm hooks:
+
+1. **Pre-install/pre-upgrade** (`tls-cert-gen`): Generates a self-signed CA and server certificate, stored as the `authwebhook-tls` Secret and `authwebhook-ca` ConfigMap.
+2. **Post-install/post-upgrade** (`tls-cabundle-patch`): Patches the `caBundle` field on MutatingWebhookConfiguration and ValidatingWebhookConfiguration.
+3. **Post-delete** (`tls-cleanup`): Removes the `authwebhook-tls` Secret and `authwebhook-ca` ConfigMap.
+
+**Automatic renewal**: On `helm upgrade`, if the certificate expires within 30 days, it is automatically regenerated.
+
+**Upgrade behavior**: On upgrade, the chart uses `lookup` to inject the existing CA bundle into webhook configurations at render time, so webhooks remain functional throughout the upgrade process. The post-install patch provides a redundant update.
+
+**Recovery**: If the `authwebhook-ca` ConfigMap is accidentally deleted while `authwebhook-tls` still exists, delete the `authwebhook-tls` Secret and run `helm upgrade` to regenerate both:
+
+```bash
+kubectl delete secret authwebhook-tls -n kubernaut-system
+helm upgrade kubernaut kubernaut/kubernaut -n kubernaut-system -f my-values.yaml
+```
 
 ## Credential Management
 
@@ -207,17 +376,56 @@ kubectl apply --server-side --force-conflicts -f charts/kubernaut/crds/
 
 Run this **before** `helm upgrade` when CRD schemas have changed between versions.
 
+## Upgrading
+
+```bash
+# 1. Update CRDs if schema changed
+kubectl apply --server-side --force-conflicts -f charts/kubernaut/crds/
+
+# 2. Upgrade the release
+helm upgrade kubernaut kubernaut/kubernaut \
+  -n kubernaut-system -f my-values.yaml
+```
+
+Key upgrade behaviors:
+
+- **TLS certificates** are renewed automatically if expiring within 30 days.
+- **Database migrations** run automatically via the post-upgrade hook.
+- **PVCs** are not modified (immutable for bound claims).
+- **ConfigMaps and Secrets** are updated to reflect new values.
+
 ## Uninstalling
 
 ```bash
 helm uninstall kubernaut -n kubernaut-system
 ```
 
-CRDs and their data are **not** removed by `helm uninstall`. To remove CRDs:
+### What is retained after uninstall
+
+| Resource | Behavior | Manual cleanup |
+|---|---|---|
+| PostgreSQL PVC (`postgresql-data`) | **Retained** (`resource-policy: keep`) | `kubectl delete pvc postgresql-data -n kubernaut-system` |
+| Redis PVC (`redis-data`) | **Retained** (`resource-policy: keep`) | `kubectl delete pvc redis-data -n kubernaut-system` |
+| CRDs (9 definitions) | **Retained** (standard Helm behavior) | `kubectl delete -f charts/kubernaut/crds/` |
+| CR instances | **Retained** until CRDs are deleted | Deleted when parent CRD is deleted |
+| TLS Secret and CA ConfigMap | **Deleted** by post-delete hook | -- |
+| Cluster-scoped RBAC | **Deleted** by Helm | -- |
+| `kubernaut-workflows` namespace | **Deleted** by Helm | May get stuck if it contains active Jobs; see below |
+
+If the `kubernaut-workflows` namespace gets stuck in `Terminating` state:
 
 ```bash
-kubectl delete -f charts/kubernaut/crds/
+# Check for remaining resources
+kubectl get all -n kubernaut-workflows
+# Delete stuck resources
+kubectl delete jobs --all -n kubernaut-workflows
 ```
+
+## Known Limitations
+
+- **Single installation per cluster**: Cluster-scoped resources (ClusterRoles, ClusterRoleBindings, WebhookConfigurations) use static names. Installing multiple releases in different namespaces will cause conflicts.
+- **Init container timeouts**: The `wait-for-postgres` init containers in DataStorage and the migration Job have no timeout. If PostgreSQL is unavailable, these containers will block indefinitely.
+- **Event Exporter probes**: The event-exporter container does not expose health endpoints, so no liveness or readiness probes are configured.
 
 ## Architecture
 
@@ -232,6 +440,12 @@ Kubernaut consists of 9 microservices, each deployed as a Kubernetes Deployment:
 - **Notification**: Delivers notifications to Slack and console
 - **AuthWebhook**: Kubernetes admission webhooks for SOC2 attribution
 - **DataStorage**: Audit trail persistence with PostgreSQL and Redis
+
+Supporting infrastructure:
+
+- **Event Exporter**: Forwards Kubernetes Warning events to the Gateway
+- **PostgreSQL**: Audit trail and workflow state persistence
+- **Redis**: Dead letter queue for failed events
 
 ## License
 

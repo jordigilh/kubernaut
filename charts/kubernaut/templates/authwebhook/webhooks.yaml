@@ -1,3 +1,8 @@
+{{- $caConfigMap := lookup "v1" "ConfigMap" .Release.Namespace "authwebhook-ca" -}}
+{{- $caBundle := "" -}}
+{{- if and $caConfigMap $caConfigMap.data -}}
+{{-   $caBundle = index $caConfigMap.data "ca.crt" | default "" | b64enc -}}
+{{- end -}}
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
@@ -13,7 +18,7 @@ webhooks:
         name: authwebhook
         namespace: {{ .Release.Namespace }}
         path: /mutate-workflowexecution
-      caBundle: ""
+      caBundle: {{ $caBundle | quote }}
     failurePolicy: Fail
     matchPolicy: Equivalent
     rules:
@@ -31,7 +36,7 @@ webhooks:
         name: authwebhook
         namespace: {{ .Release.Namespace }}
         path: /mutate-remediationapprovalrequest
-      caBundle: ""
+      caBundle: {{ $caBundle | quote }}
     failurePolicy: Fail
     matchPolicy: Equivalent
     rules:
@@ -49,7 +54,7 @@ webhooks:
         name: authwebhook
         namespace: {{ .Release.Namespace }}
         path: /mutate-remediationrequest
-      caBundle: ""
+      caBundle: {{ $caBundle | quote }}
     failurePolicy: Fail
     matchPolicy: Equivalent
     rules:
@@ -75,7 +80,7 @@ webhooks:
         name: authwebhook
         namespace: {{ .Release.Namespace }}
         path: /validate-notificationrequest-delete
-      caBundle: ""
+      caBundle: {{ $caBundle | quote }}
     failurePolicy: Fail
     matchPolicy: Equivalent
     rules:
@@ -93,12 +98,12 @@ webhooks:
         name: authwebhook
         namespace: {{ .Release.Namespace }}
         path: /validate-remediationworkflow
-      caBundle: ""
+      caBundle: {{ $caBundle | quote }}
     failurePolicy: Fail
     matchPolicy: Equivalent
     namespaceSelector:
       matchLabels:
-        kubernetes.io/metadata.name: kubernaut-system
+        kubernetes.io/metadata.name: {{ .Release.Namespace }}
     rules:
       - apiGroups: ["kubernaut.ai"]
         apiVersions: ["v1alpha1"]
@@ -114,12 +119,12 @@ webhooks:
         name: authwebhook
         namespace: {{ .Release.Namespace }}
         path: /validate-actiontype
-      caBundle: ""
+      caBundle: {{ $caBundle | quote }}
     failurePolicy: Fail
     matchPolicy: Equivalent
     namespaceSelector:
       matchLabels:
-        kubernetes.io/metadata.name: kubernaut-system
+        kubernetes.io/metadata.name: {{ .Release.Namespace }}
     rules:
       - apiGroups: ["kubernaut.ai"]
         apiVersions: ["v1alpha1"]

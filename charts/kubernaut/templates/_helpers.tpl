@@ -1,11 +1,4 @@
 {{/*
-Expand the name of the chart.
-*/}}
-{{- define "kubernaut.name" -}}
-{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
-{{- end }}
-
-{{/*
 Create a default fully qualified app name.
 */}}
 {{- define "kubernaut.fullname" -}}
@@ -29,6 +22,7 @@ helm.sh/chart: {{ include "kubernaut.chart" . }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/part-of: kubernaut
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
@@ -176,6 +170,29 @@ redis.{{ .Release.Namespace }}.svc.cluster.local:6379
 {{- end }}
 
 {{/*
+Return the in-cluster DataStorage service URL.
+Derives the FQDN from .Release.Namespace so the chart works in any namespace.
+*/}}
+{{- define "kubernaut.datastorage.url" -}}
+http://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8080
+{{- end }}
+
+{{/*
+Return the in-cluster Gateway service URL.
+*/}}
+{{- define "kubernaut.gateway.url" -}}
+http://gateway-service.{{ .Release.Namespace }}.svc.cluster.local:8080
+{{- end }}
+
+{{/*
+Return the namespace used for workflow execution (Jobs, PipelineRuns).
+Defaults to "kubernaut-workflows".
+*/}}
+{{- define "kubernaut.workflowNamespace" -}}
+{{- .Values.workflowexecution.workflowNamespace | default "kubernaut-workflows" -}}
+{{- end }}
+
+{{/*
 Render a namespace-scoped Role + RoleBinding for configmaps/secrets read access (#229).
 Keeps sensitive resources out of ClusterRoles while providing necessary namespace-local access.
 Usage: {{ include "kubernaut.nsRoleForSecrets" (dict "name" "gateway" "serviceAccount" "gateway" "Release" .Release "labels" (include "kubernaut.labels" .)) }}
@@ -210,4 +227,41 @@ subjects:
   - kind: ServiceAccount
     name: {{ .serviceAccount }}
     namespace: {{ .Release.Namespace }}
+{{- end }}
+
+{{/*
+Render optional affinity and topologySpreadConstraints for a component pod spec.
+Usage: {{ include "kubernaut.affinity" .Values.gateway | nindent 6 }}
+*/}}
+{{- define "kubernaut.affinity" -}}
+{{- with .affinity }}
+affinity:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .topologySpreadConstraints }}
+topologySpreadConstraints:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}
+
+{{/*
+Default pod-level securityContext for the restricted PodSecurity profile.
+Override per-component via <component>.podSecurityContext in values.yaml.
+Usage: {{ include "kubernaut.podSecurityContext" .Values.gateway | nindent 6 }}
+*/}}
+{{- define "kubernaut.podSecurityContext" -}}
+{{- $defaults := dict "runAsNonRoot" true "runAsUser" 65534 "fsGroup" 65534 "seccompProfile" (dict "type" "RuntimeDefault") -}}
+{{- $override := .podSecurityContext | default dict -}}
+{{- toYaml (merge $override $defaults) }}
+{{- end }}
+
+{{/*
+Default container-level securityContext for the restricted PodSecurity profile.
+Override per-component via <component>.containerSecurityContext in values.yaml.
+Usage: {{ include "kubernaut.containerSecurityContext" .Values.gateway | nindent 10 }}
+*/}}
+{{- define "kubernaut.containerSecurityContext" -}}
+{{- $defaults := dict "allowPrivilegeEscalation" false "readOnlyRootFilesystem" true "capabilities" (dict "drop" (list "ALL")) -}}
+{{- $override := .containerSecurityContext | default dict -}}
+{{- toYaml (merge $override $defaults) }}
 {{- end }}

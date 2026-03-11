@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: kubernaut-workflows
+  name: {{ include "kubernaut.workflowNamespace" . }}
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
 ---
@@ -19,7 +19,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: kubernaut-workflow-runner
-  namespace: kubernaut-workflows
+  namespace: {{ include "kubernaut.workflowNamespace" . }}
   labels:
     app: kubernaut-workflow-runner
     {{- include "kubernaut.labels" . | nindent 4 }}
@@ -143,7 +143,7 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: kubernaut-workflow-runner
-    namespace: kubernaut-workflows
+    namespace: {{ include "kubernaut.workflowNamespace" . }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -161,11 +161,11 @@ data:
       leaderElection: false
       leaderElectionId: workflowexecution.kubernaut.ai
     execution:
-      namespace: kubernaut-workflows
+      namespace: {{ include "kubernaut.workflowNamespace" . }}
       cooldownPeriod: 1m
       serviceAccount: kubernaut-workflow-runner
     datastorage:
-      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      url: "{{ include "kubernaut.datastorage.url" . }}"
       timeout: 10s
       buffer:
         bufferSize: 10000
@@ -182,7 +182,7 @@ metadata:
     app: workflowexecution-controller
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.workflowexecution.replicas }}
   selector:
     matchLabels:
       app: workflowexecution-controller
@@ -196,17 +196,41 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: workflowexecution-controller
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.workflowexecution | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.workflowexecution | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.workflowexecution "global" .Values.global) | nindent 6 }}
       containers:
         - name: workflowexecution-controller
           image: {{ include "kubernaut.image" (dict "service" "workflowexecution" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.workflowexecution | nindent 12 }}
           args:
             - "--config=/etc/config/workflowexecution.yaml"
           ports:
             - name: metrics
               containerPort: 9090
               protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           volumeMounts:
             - name: config
               mountPath: /etc/config

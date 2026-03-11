@@ -1,5 +1,15 @@
 {{- if .Values.redis.enabled }}
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: redis
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: redis
+    {{- include "kubernaut.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: redis
@@ -26,7 +36,7 @@ metadata:
     app: redis
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.redis.replicas | default 1 }}
   selector:
     matchLabels:
       app: redis
@@ -35,10 +45,23 @@ spec:
       labels:
         app: redis
     spec:
+      serviceAccountName: redis
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      {{- include "kubernaut.affinity" .Values.redis | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.redis "global" .Values.global) | nindent 6 }}
       containers:
         - name: redis
           image: {{ .Values.redis.image }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - name: redis
               containerPort: 6379
@@ -53,12 +76,14 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
+            failureThreshold: 3
           livenessProbe:
             exec:
               command: ["redis-cli", "ping"]
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
+            failureThreshold: 3
       volumes:
         - name: redis-data
           persistentVolumeClaim:
@@ -72,6 +97,8 @@ metadata:
   labels:
     app: redis
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/resource-policy": keep
 spec:
   accessModes:
     - ReadWriteOnce

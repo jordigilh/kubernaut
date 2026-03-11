@@ -32,6 +32,10 @@
         }
       }
     },
+    "securityContext": {
+      "description": "Kubernetes securityContext (pod or container level)",
+      "type": "object"
+    },
     "serviceConfig": {
       "description": "Kubernetes Service configuration",
       "type": "object",
@@ -54,6 +58,25 @@
       "type": "object",
       "additionalProperties": { "type": "string" }
     },
+    "pdb": {
+      "description": "PodDisruptionBudget configuration",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "minAvailable": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
+        "maxUnavailable": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }
+      }
+    },
+    "affinity": {
+      "description": "Kubernetes affinity rules",
+      "type": "object"
+    },
+    "topologySpreadConstraints": {
+      "description": "Kubernetes topology spread constraints",
+      "type": "array",
+      "items": { "type": "object" }
+    },
     "toleration": {
       "type": "object",
       "additionalProperties": false,
@@ -64,6 +87,11 @@
         "effect": { "type": "string" },
         "tolerationSeconds": { "type": "integer" }
       }
+    },
+    "tolerations": {
+      "description": "Pod tolerations (overrides global.tolerations for this component)",
+      "type": "array",
+      "items": { "$ref": "#/definitions/toleration" }
     }
   },
   "properties": {
@@ -140,7 +168,14 @@
               }
             }
           }
-        }
+        },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "datastorage": {
@@ -155,7 +190,14 @@
           "description": "Name of pre-created Secret with db-secrets.yaml key; overrides chart-managed datastorage-db-secret"
         },
         "resources": { "$ref": "#/definitions/resources" },
-        "service": { "$ref": "#/definitions/serviceConfig" }
+        "service": { "$ref": "#/definitions/serviceConfig" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "aianalysis": {
@@ -163,6 +205,7 @@
       "description": "AIAnalysis controller",
       "additionalProperties": false,
       "properties": {
+        "replicas": { "type": "integer", "default": 1 },
         "rego": {
           "type": "object",
           "additionalProperties": false,
@@ -173,7 +216,14 @@
             }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" }
+        "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "signalprocessing": {
@@ -181,7 +231,15 @@
       "description": "SignalProcessing controller",
       "additionalProperties": false,
       "properties": {
-        "resources": { "$ref": "#/definitions/resources" }
+        "replicas": { "type": "integer", "default": 1 },
+        "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "remediationorchestrator": {
@@ -189,6 +247,7 @@
       "description": "RemediationOrchestrator controller",
       "additionalProperties": false,
       "properties": {
+        "replicas": { "type": "integer", "default": 1 },
         "resources": { "$ref": "#/definitions/resources" },
         "config": {
           "type": "object",
@@ -227,7 +286,14 @@
               }
             }
           }
-        }
+        },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "workflowexecution": {
@@ -235,7 +301,20 @@
       "description": "WorkflowExecution controller",
       "additionalProperties": false,
       "properties": {
-        "resources": { "$ref": "#/definitions/resources" }
+        "replicas": { "type": "integer", "default": 1 },
+        "workflowNamespace": {
+          "type": "string",
+          "description": "Namespace for Job/PipelineRun execution",
+          "default": "kubernaut-workflows"
+        },
+        "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "notification": {
@@ -243,6 +322,7 @@
       "description": "Notification controller",
       "additionalProperties": false,
       "properties": {
+        "replicas": { "type": "integer", "default": 1 },
         "slack": {
           "type": "object",
           "additionalProperties": false,
@@ -273,7 +353,14 @@
             }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" }
+        "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "effectivenessmonitor": {
@@ -281,7 +368,26 @@
       "description": "EffectivenessMonitor controller",
       "additionalProperties": false,
       "properties": {
-        "resources": { "$ref": "#/definitions/resources" }
+        "replicas": { "type": "integer", "default": 1 },
+        "external": {
+          "type": "object",
+          "description": "External monitoring service URLs",
+          "additionalProperties": false,
+          "properties": {
+            "prometheusUrl": { "type": "string" },
+            "prometheusEnabled": { "type": "boolean" },
+            "alertManagerUrl": { "type": "string" },
+            "alertManagerEnabled": { "type": "boolean" }
+          }
+        },
+        "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "holmesgptApi": {
@@ -305,7 +411,14 @@
             "timeoutSeconds": { "type": "integer", "default": 120 },
             "temperature": { "type": "number", "default": 0.7 }
           }
-        }
+        },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "authwebhook": {
@@ -313,7 +426,15 @@
       "description": "AuthWebhook admission controller",
       "additionalProperties": false,
       "properties": {
-        "resources": { "$ref": "#/definitions/resources" }
+        "replicas": { "type": "integer", "default": 1 },
+        "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "eventExporter": {
@@ -321,11 +442,19 @@
       "description": "Event Exporter (forwards K8s Warning events to Gateway)",
       "additionalProperties": false,
       "properties": {
+        "replicas": { "type": "integer", "default": 1 },
         "image": {
           "type": "string",
-          "default": "ghcr.io/resmoio/kubernetes-event-exporter:latest"
+          "default": "ghcr.io/resmoio/kubernetes-event-exporter:v1.7"
         },
-        "resources": { "$ref": "#/definitions/resources" }
+        "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "postgresql": {
@@ -333,6 +462,7 @@
       "description": "PostgreSQL (DataStorage backend). Set enabled=false to use externalPostgresql (BYO #256)",
       "additionalProperties": false,
       "properties": {
+        "replicas": { "type": "integer", "default": 1 },
         "enabled": {
           "type": "boolean",
           "default": true,
@@ -380,7 +510,9 @@
             }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" }
+        "resources": { "$ref": "#/definitions/resources" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "externalPostgresql": {
@@ -415,6 +547,7 @@
       "description": "Redis (DataStorage DLQ). Set enabled=false to use externalRedis (BYO #256)",
       "additionalProperties": false,
       "properties": {
+        "replicas": { "type": "integer", "default": 1 },
         "enabled": {
           "type": "boolean",
           "default": true,
@@ -446,7 +579,9 @@
             }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" }
+        "resources": { "$ref": "#/definitions/resources" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "externalRedis": {
@@ -466,6 +601,18 @@
           "description": "K8s Secret with redis-secrets.yaml key"
         },
         "password": { "type": "string", "default": "" }
+      }
+    },
+    "networkPolicies": {
+      "type": "object",
+      "description": "NetworkPolicies to restrict inter-service traffic",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Create NetworkPolicy resources when true"
+        }
       }
     },
     "hooks": {
@@ -497,7 +644,9 @@
               "default": "bitnami/kubectl:latest"
             }
           }
-        }
+        },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     }
   }

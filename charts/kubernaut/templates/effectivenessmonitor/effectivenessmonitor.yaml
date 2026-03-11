@@ -13,7 +13,7 @@ data:
       stabilizationWindow: 30s
       validityWindow: 120s
     datastorage:
-      url: http://data-storage-service.kubernaut-system.svc.cluster.local:8080
+      url: {{ include "kubernaut.datastorage.url" . }}
       timeout: 10s
       buffer:
         bufferSize: 100
@@ -26,10 +26,10 @@ data:
       leaderElection: false
       leaderElectionId: "effectivenessmonitor.kubernaut.ai"
     external:
-      prometheusUrl: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
-      prometheusEnabled: true
-      alertManagerUrl: http://kube-prometheus-stack-alertmanager.monitoring.svc:9093
-      alertManagerEnabled: true
+      prometheusUrl: {{ .Values.effectivenessmonitor.external.prometheusUrl | default "http://kube-prometheus-stack-prometheus.monitoring.svc:9090" }}
+      prometheusEnabled: {{ .Values.effectivenessmonitor.external.prometheusEnabled | default true }}
+      alertManagerUrl: {{ .Values.effectivenessmonitor.external.alertManagerUrl | default "http://kube-prometheus-stack-alertmanager.monitoring.svc:9093" }}
+      alertManagerEnabled: {{ .Values.effectivenessmonitor.external.alertManagerEnabled | default true }}
       connectionTimeout: 10s
 ---
 apiVersion: v1
@@ -100,7 +100,7 @@ metadata:
     app: effectivenessmonitor-controller
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.effectivenessmonitor.replicas }}
   selector:
     matchLabels:
       app: effectivenessmonitor-controller
@@ -114,11 +114,16 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: effectivenessmonitor-controller
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.effectivenessmonitor | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.effectivenessmonitor | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.effectivenessmonitor "global" .Values.global) | nindent 6 }}
       containers:
         - name: controller
           image: {{ include "kubernaut.image" (dict "service" "effectivenessmonitor" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.effectivenessmonitor | nindent 12 }}
           args:
             - "--config=/etc/effectivenessmonitor/effectivenessmonitor.yaml"
           ports:
@@ -132,12 +137,16 @@ spec:
               port: 8081
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /healthz
               port: 8081
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             - name: config
               mountPath: /etc/effectivenessmonitor
