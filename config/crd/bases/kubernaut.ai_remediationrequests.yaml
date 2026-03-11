@@ -85,7 +85,6 @@ spec:
                   Uses shared type for API contract alignment with SignalProcessing CRD
                   DD-GATEWAY-011: DEPRECATED - Moved to status.deduplication
                   Gateway Team Fix (2025-12-12): Made optional to unblock Gateway integration tests
-                  RO Team: See docs/handoff/NOTICE_GW_CRD_SCHEMA_FIX_SPEC_DEDUPLICATION.md
                 properties:
                   correlationId:
                     description: Optional correlation ID for grouping related signals

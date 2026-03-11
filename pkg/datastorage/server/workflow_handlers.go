@@ -473,19 +473,19 @@ func (h *Handler) buildWorkflowCommon(
 	}
 
 	desc := models.StructuredDescription{
-		What:          parsedSchema.Metadata.Description.What,
-		WhenToUse:     parsedSchema.Metadata.Description.WhenToUse,
-		WhenNotToUse:  parsedSchema.Metadata.Description.WhenNotToUse,
-		Preconditions: parsedSchema.Metadata.Description.Preconditions,
+		What:          parsedSchema.Description.What,
+		WhenToUse:     parsedSchema.Description.WhenToUse,
+		WhenNotToUse:  parsedSchema.Description.WhenNotToUse,
+		Preconditions: parsedSchema.Description.Preconditions,
 	}
 
 	execEngine := models.ExecutionEngine(schemaParser.ExtractExecutionEngine(parsedSchema))
 
 	workflow := &models.RemediationWorkflow{
-		WorkflowName:    parsedSchema.Metadata.WorkflowName,
-		Version:         parsedSchema.Metadata.Version,
+		WorkflowName:    parsedSchema.WorkflowName,
+		Version:         parsedSchema.Version,
 		SchemaVersion:   parsedSchema.SchemaVersion,
-		Name:            parsedSchema.Metadata.WorkflowName,
+		Name:            parsedSchema.WorkflowName,
 		Description:     desc,
 		Content:         rawContent,
 		Parameters:      &rawParams,

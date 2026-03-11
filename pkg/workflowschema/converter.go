@@ -32,18 +32,17 @@ import (
 )
 
 // SpecToSchema converts a CRD RemediationWorkflowSpec to the DS WorkflowSchema model.
+// workflowName is derived from the CRD's metadata.name (no longer in spec per #329).
 // Used by the AW handler when forwarding CRD content to DS for registration.
-func SpecToSchema(spec rwv1alpha1.RemediationWorkflowSpec) (*models.WorkflowSchema, error) {
+func SpecToSchema(workflowName string, spec rwv1alpha1.RemediationWorkflowSpec) (*models.WorkflowSchema, error) {
 	schema := &models.WorkflowSchema{
-		Metadata: models.WorkflowSchemaMetadata{
-			WorkflowName: spec.Metadata.WorkflowName,
-			Version:      spec.Metadata.Version,
-			Description: models.WorkflowDescription{
-				What:          spec.Metadata.Description.What,
-				WhenToUse:     spec.Metadata.Description.WhenToUse,
-				WhenNotToUse:  spec.Metadata.Description.WhenNotToUse,
-				Preconditions: spec.Metadata.Description.Preconditions,
-			},
+		WorkflowName: workflowName,
+		Version:      spec.Version,
+		Description: models.WorkflowDescription{
+			What:          spec.Description.What,
+			WhenToUse:     spec.Description.WhenToUse,
+			WhenNotToUse:  spec.Description.WhenNotToUse,
+			Preconditions: spec.Description.Preconditions,
 		},
 		ActionType: spec.ActionType,
 		Labels: models.WorkflowSchemaLabels{
@@ -55,8 +54,8 @@ func SpecToSchema(spec rwv1alpha1.RemediationWorkflowSpec) (*models.WorkflowSche
 		CustomLabels: spec.CustomLabels,
 	}
 
-	for _, m := range spec.Metadata.Maintainers {
-		schema.Metadata.Maintainers = append(schema.Metadata.Maintainers, models.WorkflowMaintainer{
+	for _, m := range spec.Maintainers {
+		schema.Maintainers = append(schema.Maintainers, models.WorkflowMaintainer{
 			Name:  m.Name,
 			Email: m.Email,
 		})
@@ -106,18 +105,16 @@ func SpecToSchema(spec rwv1alpha1.RemediationWorkflowSpec) (*models.WorkflowSche
 }
 
 // SchemaToSpec converts a DS WorkflowSchema model to a CRD RemediationWorkflowSpec.
+// The caller must set CRD metadata.name = schema.WorkflowName separately.
 // Used when populating CRD objects from parsed workflow schemas.
 func SchemaToSpec(schema *models.WorkflowSchema) (*rwv1alpha1.RemediationWorkflowSpec, error) {
 	spec := &rwv1alpha1.RemediationWorkflowSpec{
-		Metadata: rwv1alpha1.RemediationWorkflowMetadata{
-			WorkflowName: schema.Metadata.WorkflowName,
-			Version:      schema.Metadata.Version,
-			Description: rwv1alpha1.RemediationWorkflowDescription{
-				What:          schema.Metadata.Description.What,
-				WhenToUse:     schema.Metadata.Description.WhenToUse,
-				WhenNotToUse:  schema.Metadata.Description.WhenNotToUse,
-				Preconditions: schema.Metadata.Description.Preconditions,
-			},
+		Version: schema.Version,
+		Description: rwv1alpha1.RemediationWorkflowDescription{
+			What:          schema.Description.What,
+			WhenToUse:     schema.Description.WhenToUse,
+			WhenNotToUse:  schema.Description.WhenNotToUse,
+			Preconditions: schema.Description.Preconditions,
 		},
 		ActionType: schema.ActionType,
 		Labels: rwv1alpha1.RemediationWorkflowLabels{
@@ -129,8 +126,8 @@ func SchemaToSpec(schema *models.WorkflowSchema) (*rwv1alpha1.RemediationWorkflo
 		CustomLabels: schema.CustomLabels,
 	}
 
-	for _, m := range schema.Metadata.Maintainers {
-		spec.Metadata.Maintainers = append(spec.Metadata.Maintainers, rwv1alpha1.RemediationWorkflowMaintainer{
+	for _, m := range schema.Maintainers {
+		spec.Maintainers = append(spec.Maintainers, rwv1alpha1.RemediationWorkflowMaintainer{
 			Name:  m.Name,
 			Email: m.Email,
 		})
