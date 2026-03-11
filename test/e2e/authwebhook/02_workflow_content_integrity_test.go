@@ -245,94 +245,11 @@ var _ = Describe("Workflow Content Integrity E2E Tests (BR-WORKFLOW-006)", Seria
 		})
 	})
 
-	// ========================================
-	// E2E-INTEGRITY-005: Two CRDs with same workflow identity → supersede
-	// ========================================
-	Describe("E2E-INTEGRITY-005: Two CRDs same workflow identity triggers supersede", func() {
-		It("should supersede the old workflow and return a new UUID for the second CRD", func() {
-			suffix := uuid.New().String()[:8]
-			crdNameA := fmt.Sprintf("e2e-integrity-005a-%s", suffix)
-			crdNameB := fmt.Sprintf("e2e-integrity-005b-%s", suffix)
-
-			// CRD-A: first registration
-			rwA := buildRemediationWorkflowCRD(crdNameA, "1.0.0", "Version A of workflow")
-			Expect(k8sClient.Create(ctx, rwA)).To(Succeed())
-
-			updatedA := waitForCRDStatus(crdNameA, 30*time.Second)
-			uuidA := updatedA.Status.WorkflowID
-
-			// CRD-B: same workflow identity, different CRD name and content → triggers supersede
-			rwB := buildRemediationWorkflowCRD(crdNameB, "1.0.0", "Version B of workflow - supersedes A")
-			Expect(k8sClient.Create(ctx, rwB)).To(Succeed())
-
-			updatedB := waitForCRDStatus(crdNameB, 30*time.Second)
-			uuidB := updatedB.Status.WorkflowID
-
-			Expect(uuidB).ToNot(Equal(uuidA),
-				"Second CRD should have a different UUID (supersede)")
-
-			// Verify old workflow is superseded in DS
-			Eventually(func() string {
-				return queryDSWorkflowStatus(uuidA)
-			}, 30*time.Second, 2*time.Second).Should(Equal("superseded"),
-				"First workflow should be marked as superseded in DS")
-		})
-	})
-
-	// ========================================
-	// E2E-INTEGRITY-006: CRD status includes supersede metadata
-	// BR-WORKFLOW-006: CRD status should reflect when a supersede occurred
-	// ========================================
-	Describe("E2E-INTEGRITY-006: CRD status includes supersede metadata", func() {
-		It("should populate .status.superseded and .status.supersededId on the new CRD", func() {
-			suffix := uuid.New().String()[:8]
-			crdNameA := fmt.Sprintf("e2e-integrity-006a-%s", suffix)
-			crdNameB := fmt.Sprintf("e2e-integrity-006b-%s", suffix)
-
-			// CRD-A: first registration
-			rwA := buildRemediationWorkflowCRD(crdNameA, "1.0.0", "Original for supersede metadata test")
-			Expect(k8sClient.Create(ctx, rwA)).To(Succeed())
-
-			updatedA := waitForCRDStatus(crdNameA, 30*time.Second)
-			uuidA := updatedA.Status.WorkflowID
-
-			// CRD-B: supersedes A
-			rwB := buildRemediationWorkflowCRD(crdNameB, "1.0.0", "Supersede metadata test - new content")
-			Expect(k8sClient.Create(ctx, rwB)).To(Succeed())
-
-			// Wait for CRD-B status
-			updatedB := &rwv1alpha1.RemediationWorkflow{}
-			Eventually(func() string {
-				if err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      crdNameB,
-					Namespace: sharedNamespace,
-				}, updatedB); err != nil {
-					return ""
-				}
-				return updatedB.Status.WorkflowID
-			}, 30*time.Second, 1*time.Second).ShouldNot(BeEmpty())
-
-			// These assertions test fields that don't yet exist in RemediationWorkflowStatus.
-			// They will fail in RED phase and drive the GREEN implementation:
-			// 1. Add Superseded/SupersededID to RemediationWorkflowStatus CRD type
-			// 2. Populate them in mapOgenWorkflowToResult (DS response must expose them)
-			// 3. Write them in updateCRDStatus
-			Expect(updatedB.Status.WorkflowID).ToNot(Equal(uuidA))
-
-			// TODO(GREEN): These fields need to be added to RemediationWorkflowStatus
-			// and propagated from DS response → AW → CRD status.
-			// Uncomment when the fields are added to the CRD type:
-			//
-			// Expect(updatedB.Status.Superseded).To(BeTrue(),
-			// 	"CRD status should indicate a supersede occurred")
-			// Expect(updatedB.Status.SupersededID).To(Equal(uuidA),
-			// 	"CRD status should reference the superseded workflow UUID")
-
-			// For now, verify via DS API that supersede happened
-			Eventually(func() string {
-				return queryDSWorkflowStatus(uuidA)
-			}, 30*time.Second, 2*time.Second).Should(Equal("superseded"),
-				"First workflow should be marked as superseded in DS")
-		})
-	})
+	// E2E-INTEGRITY-005 and E2E-INTEGRITY-006 (supersede-by-create) were removed
+	// in #329. The scenario they tested — two CRDs with different metadata.name but
+	// the same workflowName triggering supersede — is no longer architecturally
+	// possible because metadata.name IS the workflow identity post-#329. Kubernetes
+	// name-uniqueness within a namespace prevents two CRDs from sharing the same
+	// workflow identity via CREATE. The delete+recreate paths (INTEGRITY-003/004)
+	// cover the remaining content-hash-based lifecycle transitions.
 })
