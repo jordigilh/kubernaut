@@ -46,8 +46,6 @@ import (
 // - Temporal drift: label removed mid-lifecycle triggers blocking
 // - Auto-unblock: label added back, RR unblocks on next reconciliation
 //
-// Test Plan: docs/services/crd-controllers/05-remediationorchestrator/RO_SCOPE_VALIDATION_TEST_PLAN_V1.0.md
-//
 // TDD: Tests define expected behavior before implementation verification.
 
 var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope", "integration"), func() {

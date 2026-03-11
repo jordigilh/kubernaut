@@ -162,7 +162,6 @@ Case studies should **never be archived**. If content becomes obsolete:
 
 - [Controller Refactoring Pattern Library](../patterns/CONTROLLER_REFACTORING_PATTERN_LIBRARY.md) - References NT case study
 - [Design Decisions](../decisions/) - Architectural decision records
-- [Handoff Documents](../../handoff/) - Ephemeral team communications (will be archived)
 
 ---
 

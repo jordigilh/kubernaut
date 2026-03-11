@@ -532,7 +532,6 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// CRITICAL: Uses apiReader (non-cached client) for immediate consistency
 	// WHY: Cached client has 5-50ms sync delay → race condition → duplicate locks
 	// IMPACT: 3-24 API req/sec (production load) - acceptable per impact analysis
-	// See: docs/services/stateless/gateway-service/GW_API_SERVER_IMPACT_ANALYSIS_DISTRIBUTED_LOCKING_JAN18_2026.md
 	var lockManager *processing.DistributedLockManager
 	podName := os.Getenv("POD_NAME")
 	namespace := os.Getenv("POD_NAMESPACE")
@@ -1426,7 +1425,6 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 // These classifications are now owned by Signal Processing service per DD-CATEGORIZATION-001.
 // AlertManager/webhook callers don't need this information - they only need to know
 // if the alert was accepted (HTTP status code).
-// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 type ProcessingResponse struct {
 	Status                      string `json:"status"` // "created", "duplicate", "accepted", or "rejected"
 	Message                     string `json:"message"`
@@ -1949,7 +1947,6 @@ func (s *Server) handleDuplicateSignal(ctx context.Context, signal *types.Normal
 // Note: Environment, Priority, and RemediationPath removed from Gateway (2025-12-06)
 // Signal Processing service now owns classification and path decision
 // per DD-CATEGORIZATION-001 and DD-WORKFLOW-001 (risk_tolerance in CustomLabels)
-// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.NormalizedSignal, start time.Time) (*ProcessingResponse, error) {
 	logger := middleware.GetLogger(ctx)
 

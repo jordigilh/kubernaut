@@ -534,7 +534,7 @@ After successful setup:
 
 ## Support and Documentation
 
-- **Architecture Guide**: `docs/deployment/HOLMESGPT_HYBRID_ARCHITECTURE.md`
+- **Architecture Guide**: `docs/operations/deployment/HOLMESGPT_HYBRID_ARCHITECTURE.md`
 - **Toolset Configuration**: `config/holmesgpt-hybrid-toolset.yaml`
 - **Setup Scripts**: `scripts/setup-holmesgpt-environment.sh`
 - **HolmesGPT Documentation**: Official HolmesGPT documentation

@@ -38,8 +38,8 @@ guides/
 
 | Type | Purpose | Location |
 |------|---------|----------|
-| **Tutorial** | Learning-oriented, step-by-step | `docs/getting-started/` |
-| **Guide** (you are here) | Task-oriented, problem-solving | `docs/guides/` |
+| **Tutorial** | Learning-oriented, step-by-step | `docs/development/getting-started/` |
+| **Guide** (you are here) | Task-oriented, problem-solving | `docs/development/guides/` |
 | **Reference** | Information-oriented, facts | `docs/reference/` |
 
 ---

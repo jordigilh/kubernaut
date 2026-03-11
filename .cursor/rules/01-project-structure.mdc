@@ -4,83 +4,93 @@ alwaysApply: false
 # Kubernaut Project Structure Guide
 
 ## Core Architecture
-The project follows a layered architecture with clear separation of concerns:
 
-- **Main Binaries**: [cmd/](mdc:cmd/) contains multiple binaries
-  - [cmd/prometheus-alerts-slm/](mdc:cmd/prometheus-alerts-slm/) - Main kubernaut service
-  - [cmd/dynamic-toolset-server/](mdc:cmd/dynamic-toolset-server/) - Dynamic toolset server
+Kubernaut is an AIOps platform for intelligent Kubernetes remediation. It follows a microservices architecture with CRD-based communication between controllers.
 
-- **Core Packages**: [pkg/](mdc:pkg/) contains business logic
-  - [pkg/ai/](mdc:pkg/ai/) - AI/ML components including HolmesGPT integration
-  - [pkg/workflow/](mdc:pkg/workflow/) - Workflow engine and orchestration
-  - [pkg/platform/](mdc:pkg/platform/) - Kubernetes and multi-cluster operations
-  - [pkg/storage/](mdc:pkg/storage/) - Vector databases and persistence
-  - [pkg/intelligence/](mdc:pkg/intelligence/) - Pattern recognition and learning
+### Main Binaries (`cmd/`)
 
-- **Testing**: [test/](mdc:test/) follows three-tier strategy
-  - [test/unit/](mdc:test/unit/) - Pure algorithmic/mathematical logic (35%)
-  - [test/integration/](mdc:test/integration/) - Cross-component scenarios (40%)
-  - [test/e2e/](mdc:test/e2e/) - Complete workflow scenarios (25%)
+Each binary maps to a Kubernetes Deployment:
 
-- **Internal**: [internal/](mdc:internal/) for private packages
-  - [internal/database/](mdc:internal/database/) - Database connections
-  - [internal/config/](mdc:internal/config/) - Configuration management
+- [cmd/gateway/](mdc:cmd/gateway/) - Signal ingestion (Prometheus alerts, K8s events)
+- [cmd/signalprocessing/](mdc:cmd/signalprocessing/) - Signal enrichment and classification
+- [cmd/aianalysis/](mdc:cmd/aianalysis/) - AI-powered root cause analysis via HolmesGPT
+- [cmd/remediationorchestrator/](mdc:cmd/remediationorchestrator/) - Remediation lifecycle orchestration
+- [cmd/workflowexecution/](mdc:cmd/workflowexecution/) - Workflow execution (Job, Tekton, Ansible)
+- [cmd/effectivenessmonitor/](mdc:cmd/effectivenessmonitor/) - Post-remediation effectiveness assessment
+- [cmd/notification/](mdc:cmd/notification/) - Notification delivery (Slack, file, webhook)
+- [cmd/datastorage/](mdc:cmd/datastorage/) - REST API for audit, workflow catalog, action history
+- [cmd/authwebhook/](mdc:cmd/authwebhook/) - Kubernetes admission webhook for validation
+- [cmd/must-gather/](mdc:cmd/must-gather/) - Diagnostic collection tool
 
-## Key Entry Points
-- **Main Service**: [cmd/prometheus-alerts-slm/main.go](mdc:cmd/prometheus-alerts-slm/main.go)
-- **Configuration**: [config/](mdc:config/) directory contains YAML configs
-- **Deployment**: [deploy/](mdc:deploy/) for Kubernetes manifests
-- **Documentation**: [docs/](mdc:docs/) comprehensive technical documentation
+### CRD API Types (`api/`)
 
-## Package Dependencies
-- Always import internal packages using full module path: `github.com/jordigilh/kubernaut/pkg/...`
-- Use interfaces defined in [pkg/workflow/engine/interfaces.go](mdc:pkg/workflow/engine/interfaces.go)
-- Follow dependency injection patterns established in [pkg/testutil/mock_factory.go](mdc:pkg/testutil/mock_factory.go)
+Custom Resource Definitions that form the inter-service communication protocol:
 
-## Documentation Structure
-- **Complete Guide**: [docs/DOCS_DIRECTORY_STRUCTURE_GUIDE.md](mdc:docs/DOCS_DIRECTORY_STRUCTURE_GUIDE.md) - Authoritative reference for documentation organization
+- [api/remediation/](mdc:api/remediation/) - `RemediationRequest`, `RemediationApprovalRequest`
+- [api/signalprocessing/](mdc:api/signalprocessing/) - `SignalProcessing`
+- [api/aianalysis/](mdc:api/aianalysis/) - `AIAnalysis`
+- [api/workflowexecution/](mdc:api/workflowexecution/) - `WorkflowExecution`
+- [api/effectivenessassessment/](mdc:api/effectivenessassessment/) - `EffectivenessAssessment`
+- [api/notification/](mdc:api/notification/) - `NotificationRequest`
+- [api/actiontype/](mdc:api/actiontype/) - `ActionType`
+- [api/remediationworkflow/](mdc:api/remediationworkflow/) - `RemediationWorkflow`
 
-### Key Documentation Directories
+### Business Logic (`pkg/`)
 
-- **[docs/architecture/decisions/](mdc:docs/architecture/decisions/)** - Permanent design decisions (DD-*, ADR-*)
-  - Format: `DD-[CATEGORY]-NNN-title.md` (e.g., `DD-AUTH-013-http-status-codes.md`)
-  - Use for: Architectural decisions with long-term impact, technical choices affecting multiple services
-  - Examples: DD-AUTH-011 (RBAC strategy), DD-WORKFLOW-002 (workflow catalog), ADR-036 (auth/authz strategy)
+Each service has a corresponding package under `pkg/`:
 
-- **[docs/handoff/](mdc:docs/handoff/)** - Session summaries and implementation status (~2,776 files)
-  - Format: `[SERVICE]_[TOPIC]_[STATUS]_[DATE].md` (e.g., `DS_E2E_COMPLETE_JAN_26_2026.md`)
-  - Use for: AI session summaries, implementation status, triage reports, work-in-progress snapshots
-  - **CRITICAL**: AI assistants must ALWAYS create session handoffs here, NEVER in project root
+- [pkg/gateway/](mdc:pkg/gateway/) - Gateway server, processing pipeline, distributed locking
+- [pkg/signalprocessing/](mdc:pkg/signalprocessing/) - Rego policy evaluation, enrichment
+- [pkg/aianalysis/](mdc:pkg/aianalysis/) - Phase management, metrics
+- [pkg/remediationorchestrator/](mdc:pkg/remediationorchestrator/) - Routing, scope blocking
+- [pkg/workflowexecution/](mdc:pkg/workflowexecution/) - Execution engines, conditions
+- [pkg/effectivenessmonitor/](mdc:pkg/effectivenessmonitor/) - Scoring, conditions
+- [pkg/notification/](mdc:pkg/notification/) - Delivery, status, phase management
+- [pkg/datastorage/](mdc:pkg/datastorage/) - OCI schema, repository, validation, reconstruction
+- [pkg/authwebhook/](mdc:pkg/authwebhook/) - Webhook handler
+- [pkg/holmesgpt/](mdc:pkg/holmesgpt/) - HolmesGPT API client
+- [pkg/shared/](mdc:pkg/shared/) - Shared utilities (auth, hotreload, sanitization, types)
+- [pkg/audit/](mdc:pkg/audit/) - Audit trail helpers
+- [pkg/k8sutil/](mdc:pkg/k8sutil/) - Kubernetes client utilities
+- [pkg/workflowschema/](mdc:pkg/workflowschema/) - Workflow schema parsing
 
-- **[docs/development/](mdc:docs/development/)** - Development guides and standards
-  - `methodology/` - APDC, TDD, development processes
-  - `business-requirements/` - BR-* requirements
-  - `testing/` - Test plans and strategies
-  
-- **[docs/testing/](mdc:docs/testing/)** - Test documentation and scenarios
+### Internal Packages (`internal/`)
 
-- **[docs/plans/](mdc:docs/plans/)** - Implementation plans and roadmaps
+- [internal/controller/](mdc:internal/controller/) - CRD controller implementations (one per controller type)
+- [internal/config/](mdc:internal/config/) - Shared configuration types
+- [internal/version/](mdc:internal/version/) - Build version info
 
-- **[docs/services/](mdc:docs/services/)** - Service-specific documentation
+### Testing (`test/`)
 
-### Documentation Rules for AI Assistants
+Three-tier testing strategy (80% per-tier coverage target):
 
-**CRITICAL**: 
-- ❌ **NEVER** create documents in project root (except README.md, LICENSE, PROJECT)
-- ✅ **Session summaries** → `docs/handoff/[TOPIC]_[STATUS]_[DATE].md`
-- ✅ **Design decisions** → `docs/architecture/decisions/DD-[CATEGORY]-NNN-title.md`
-- ✅ **Triage reports** → `docs/handoff/` or `docs/triage/`
+- [test/unit/](mdc:test/unit/) - Pure logic tests (per-service subdirs)
+- [test/integration/](mdc:test/integration/) - Cross-component with real I/O (per-service subdirs)
+- [test/e2e/](mdc:test/e2e/) - Full Kind cluster tests (per-service subdirs)
+- [test/infrastructure/](mdc:test/infrastructure/) - Shared test infrastructure helpers
+- [test/shared/](mdc:test/shared/) - Shared test validators and helpers
 
-**Quick Decision**:
-```
-Design decision with long-term impact? → docs/architecture/decisions/
-Session summary or implementation status? → docs/handoff/
-Service-specific guide? → docs/services/[service-name]/
-Development standard? → docs/development/
-Temporary triage? → docs/triage/ (later consolidate)
-```
+## Documentation (`docs/`)
+
+Organized into 7 top-level directories:
+
+- [docs/architecture/](mdc:docs/architecture/) - ADRs, DDs, diagrams, case studies, patterns
+- [docs/design/](mdc:docs/design/) - CRD design specifications
+- [docs/requirements/](mdc:docs/requirements/) - Business requirements (BR-*) and module docs
+- [docs/testing/](mdc:docs/testing/) - Test plans, guidelines, patterns, per-issue test docs
+- [docs/operations/](mdc:docs/operations/) - Deployment, build, CI/CD, troubleshooting, runbooks
+- [docs/development/](mdc:docs/development/) - Methodology (APDC), guidelines, getting-started, guides
+- [docs/services/](mdc:docs/services/) - Per-service documentation (stateless + CRD controllers)
+
+User-facing documentation lives at [kubernaut-docs](https://jordigilh.github.io/kubernaut-docs/).
+
+## Deployment
+
+- [charts/kubernaut/](mdc:charts/kubernaut/) - Helm chart (primary deployment method)
+- [deploy/](mdc:deploy/) - Per-service Kustomize manifests, action types, CRDs
 
 ## Build System
-- Use [Makefile](mdc:Makefile) for all build operations
-- Development workflow: `make bootstrap-dev`, `make test-integration-dev`, `make cleanup-dev`
-- Testing: `make test` (unit), `make test-integration` (integration), `make test-e2e` (end-to-end)
+
+- [Makefile](mdc:Makefile) - All build operations
+- [docker/](mdc:docker/) - Per-service Dockerfiles
+- `make test` (unit), `make test-integration` (integration), `make test-e2e` (E2E)

@@ -951,7 +951,7 @@ curl http://gateway:9090/metrics | grep gateway_retry_worker_utilization
 
 ### Design Decision
 
-**See**: [DD-GATEWAY-008](../../architecture/decisions/DD-GATEWAY-008-k8s-api-retry-strategy.md) for comprehensive analysis of retry strategy alternatives, performance implications, and rollback plan.
+**See**: Gateway implementation documentation for comprehensive analysis of retry strategy alternatives, performance implications, and rollback plan.
 
 ---
 
@@ -1158,7 +1158,7 @@ The Gateway service loads configuration from:
 - [Deduplication](./deduplication.md) - Fingerprint-based deduplication strategy
 - [Security Configuration](./security-configuration.md) - RBAC and authentication
 - [Observability & Logging](./observability-logging.md) - Metrics and logging
-- [Deployment Guide](../../deploy/gateway/README.md) - Kubernetes deployment instructions
+- [Deployment Guide](../../../../deploy/gateway/README.md) - Kubernetes deployment instructions
 
 ---
 

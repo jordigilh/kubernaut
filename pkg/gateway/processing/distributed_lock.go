@@ -50,8 +50,6 @@ import (
 // - Peak load (8 signals/sec): 24 API req/sec (low)
 // - Design target (1000 signals/sec): 3000 API req/sec (30-60% of K8s API capacity)
 //
-// See: docs/services/stateless/gateway-service/GW_API_SERVER_IMPACT_ANALYSIS_DISTRIBUTED_LOCKING_JAN18_2026.md
-//
 // Lock Lifecycle:
 //  1. AcquireLock(fingerprint) - Creates or claims Lease
 //  2. Process signal (create CRD)

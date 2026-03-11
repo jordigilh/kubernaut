@@ -256,7 +256,6 @@ func patchWebhookConfigsWithCABundle(kubeconfigPath string, writer io.Writer) er
 // Per DD-TEST-008: Workaround for K8s v1.35.0 prober_manager bug
 // kubectl wait relies on kubelet probes which are broken (prober_manager.go:197 error affects ALL pods)
 // Solution: Poll Pod.Status.Conditions directly via K8s API (bypasses kubelet probe mechanism)
-// See: docs/handoff/AUTHWEBHOOK_POD_READINESS_ISSUE_JAN09.md
 func waitForAuthWebhookPodReady(kubeconfigPath, namespace string, writer io.Writer) error {
 	ctx := context.Background()
 

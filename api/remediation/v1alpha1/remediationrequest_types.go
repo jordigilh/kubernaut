@@ -62,9 +62,6 @@ import (
 // ### References:
 // - Implementation Plan: docs/implementation/V1.0_RO_CENTRALIZED_ROUTING_IMPLEMENTATION_PLAN.md
 // - Design Decision: docs/architecture/decisions/DD-RO-002-centralized-routing-responsibility.md
-// - Proposal: docs/handoff/TRIAGE_RO_CENTRALIZED_ROUTING_PROPOSAL.md
-// - WE Team Input: docs/handoff/QUESTIONS_FOR_WE_TEAM_RO_ROUTING.md
-// - Confidence Assessment: docs/handoff/CONFIDENCE_ASSESSMENT_RO_CENTRALIZED_ROUTING_V2.md (98%)
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -83,7 +80,6 @@ import (
 // 🏛️ Viceversa Pattern: Consumers use these constants for compile-time safety.
 //
 // Reference: docs/requirements/BR-COMMON-001-phase-value-format-standard.md
-// Reference: docs/handoff/RO_VICEVERSA_PATTERN_IMPLEMENTATION.md
 //
 // +kubebuilder:validation:Enum=Pending;Processing;Analyzing;AwaitingApproval;Executing;Verifying;Blocked;Completed;Failed;TimedOut;Skipped;Cancelled
 type RemediationPhase string
@@ -309,7 +305,6 @@ type RemediationRequestSpec struct {
 	// Uses shared type for API contract alignment with SignalProcessing CRD
 	// DD-GATEWAY-011: DEPRECATED - Moved to status.deduplication
 	// Gateway Team Fix (2025-12-12): Made optional to unblock Gateway integration tests
-	// RO Team: See docs/handoff/NOTICE_GW_CRD_SCHEMA_FIX_SPEC_DEDUPLICATION.md
 	Deduplication sharedtypes.DeduplicationInfo `json:"deduplication,omitempty"`
 
 	// Storm Detection

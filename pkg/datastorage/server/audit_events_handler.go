@@ -468,5 +468,4 @@ type queryFilters struct {
 // - ✅ Structured logs (all operations logged)
 // - ✅ DLQ records (failed writes captured)
 //
-// See: docs/handoff/DS_AUDIT_ARCHITECTURE_CHANGES_NOTIFICATION.md
 // ========================================

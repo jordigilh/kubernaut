@@ -15,7 +15,7 @@
 > | v1.6 | 2026-01-09 | **NEW BR-GATEWAY-181**: Signal Pass-Through Architecture. Gateway MUST preserve external severity/environment/priority values WITHOUT transformation. Removes hardcoded severity mappings. Enables customer extensibility (Sev1-4, P0-P4 schemes). | [DD-SEVERITY-001](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md), [TRIAGE-SEVERITY-EXTENSIBILITY](../../../architecture/decisions/TRIAGE-SEVERITY-EXTENSIBILITY.md) |
 > | v1.5 | 2025-12-07 | BR-GATEWAY-038: Rate limiting code REMOVED (middleware + tests). Proxy delegation complete. | [ADR-048](../../../architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md) |
 > | v1.4 | 2025-12-07 | BR-GATEWAY-038 (Rate Limiting): Delegated to Ingress/Route proxy. Gateway middleware DEPRECATED. | [ADR-048](../../../architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md) |
-> | v1.3 | 2025-12-06 | Classification code REMOVED from Gateway (not placeholder). Updated BR-007, BR-014-017 to reflect file deletions. | [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md) |
+> | v1.3 | 2025-12-06 | Classification code REMOVED from Gateway (not placeholder). Updated BR-007, BR-014-017 to reflect file deletions. | - |
 > | v1.2 | 2025-12-03 | Added BR-GATEWAY-TARGET-RESOURCE-VALIDATION for resource info validation | [DD-GATEWAY-NON-K8S-SIGNALS](../../../architecture/decisions/DD-GATEWAY-NON-K8S-SIGNALS.md) |
 > | v1.1 | 2025-11-11 | 5 BRs deprecated (007, 014-017) - moved to Signal Processing | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) |
 > | v1.0 | 2025-10-04 | Initial business requirements | - |
@@ -113,7 +113,6 @@ This document provides a comprehensive list of all business requirements for the
 **Tests**: ~~`test/unit/gateway/priority_classification_test.go`~~ **DELETED** (2025-12-06)
 **Migration Target**: Signal Processing Service (BR-SP-070 to BR-SP-072)
 **Decision Reference**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
-**Removal Reference**: [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md)
 
 ### **BR-GATEWAY-008: Storm Detection** ❌ **REMOVED**
 **Status**: ❌ **REMOVED** (December 13, 2025)
@@ -174,7 +173,6 @@ This document provides a comprehensive list of all business requirements for the
 **Tests**: ~~`test/unit/gateway/processing/environment_classification_test.go`~~ **DELETED** (2025-12-06)
 **Migration Target**: Signal Processing Service (BR-SP-051)
 **Decision Reference**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
-**Removal Reference**: [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md)
 
 ### **BR-GATEWAY-016: Environment Classification - Namespace Pattern** ⚠️ **DEPRECATED - REMOVED (2025-12-06)**
 **Description**: ~~Gateway must classify environment from namespace patterns (prod-*, staging-*, dev-*)~~ **REMOVED**: Environment classification completely removed from Gateway (2025-12-06).
@@ -194,7 +192,6 @@ This document provides a comprehensive list of all business requirements for the
 **Tests**: ~~`test/unit/gateway/processing/environment_classification_test.go`~~ **DELETED** (2025-12-06)
 **Migration Target**: Signal Processing Service (BR-SP-053)
 **Decision Reference**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
-**Removal Reference**: [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md)
 
 ### **BR-GATEWAY-018: CRD Metadata Generation**
 **Description**: Gateway must generate RemediationRequest CRD metadata (labels, annotations)

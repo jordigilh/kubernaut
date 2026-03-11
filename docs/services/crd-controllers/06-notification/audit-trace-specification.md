@@ -463,8 +463,6 @@ func TestNotificationWithAuditE2E(t *testing.T) {
 - [ADR-032 v1.3: Data Access Layer Isolation](../../../architecture/decisions/ADR-032-data-access-layer-isolation.md)
 - [DD-009: Audit Write Error Recovery (DLQ)](../../../architecture/decisions/DD-009-audit-write-error-recovery.md)
 - [Notification Controller Database Integration](./database-integration.md)
-- [Data Storage Implementation Plan V4.8](../../stateless/data-storage/implementation/IMPLEMENTATION_PLAN_V4.8.md)
-- [Notification Controller Refactoring Plan V0.1](./implementation/REFACTORING_PLAN_V0.1.md) ← **TO BE CREATED**
 
 ---
 

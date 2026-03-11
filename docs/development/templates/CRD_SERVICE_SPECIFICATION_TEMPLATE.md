@@ -110,9 +110,9 @@ docs/services/crd-controllers/
 
 **Rapid Development**: Use gap remediation templates to save 40-60% implementation time.
 
-**Template Library**: [docs/templates/crd-controller-gap-remediation/](../../templates/crd-controller-gap-remediation/)
+**Template Library**: *REMOVED in v1.0 restructure* (was `docs/templates/crd-controller-gap-remediation/`)
 
-**Key Templates**:
+**Key Templates** *(templates removed; reference for historical context)*:
 1. **`cmd-main-template.go.template`**: Main entry point with configuration, health checks, and controller manager setup
 2. **`config-template.go.template`**: Configuration package with YAML + environment variable overrides
 3. **`config-test-template.go.template`**: Configuration unit tests
@@ -121,7 +121,7 @@ docs/services/crd-controllers/
 6. **`makefile-targets-template`**: Standard Makefile targets for building and deployment
 7. **`configmap-template.yaml`**: Kubernetes ConfigMap for controller configuration
 
-**Usage Guide**: See [GAP_REMEDIATION_GUIDE.md](../../templates/crd-controller-gap-remediation/GAP_REMEDIATION_GUIDE.md) for step-by-step instructions.
+**Usage Guide**: *REMOVED in v1.0 restructure* (was `docs/templates/crd-controller-gap-remediation/GAP_REMEDIATION_GUIDE.md`).
 
 **Standards Compliance**: All templates follow:
 - [DD-005 Observability Standards](../../architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md) - Metrics and logging

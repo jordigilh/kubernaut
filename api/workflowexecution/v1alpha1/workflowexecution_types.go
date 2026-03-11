@@ -73,7 +73,6 @@ import (
 //
 // **Status**: WorkflowExecution controller is already in "pure executor" state
 // **Verified**: December 17, 2025
-// **Evidence**: docs/handoff/WE_PURE_EXECUTOR_VERIFICATION.md
 //
 // **Functions That DO NOT Exist** (Routing Removed):
 // - ❌ CheckCooldown() - Not found in codebase
@@ -111,8 +110,6 @@ import (
 // ### 📚 References:
 // - Implementation Plan: docs/services/.../05-remediationorchestrator/implementation/V1.0_CENTRALIZED_ROUTING_IMPLEMENTATION_PLAN.md
 // - Design Decision: docs/architecture/decisions/DD-RO-002-centralized-routing-responsibility.md (planned)
-// - Proposal: docs/handoff/TRIAGE_RO_CENTRALIZED_ROUTING_PROPOSAL.md
-// - Implementation Status: docs/handoff/TRIAGE_V1.0_IMPLEMENTATION_STATUS.md
 // - Confidence Assessment: 98% (WE team validated PLAN, not implementation)
 //
 // ### ⏰ Timeline:

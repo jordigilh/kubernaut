@@ -18,7 +18,6 @@ package server
 
 // ========================================
 // METRICS HELPERS (V1.0 REFACTOR)
-// 📋 Authority: docs/handoff/DS_REFACTORING_OPPORTUNITIES.md (Opportunity 2.2)
 // ========================================
 //
 // These helpers reduce 10+ instances of inline metrics recording patterns

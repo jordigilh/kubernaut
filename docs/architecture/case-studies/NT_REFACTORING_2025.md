@@ -319,11 +319,10 @@ grep "Namespace:" pkg/notification/metrics/metrics.go
 
 ### Pattern References
 - [Controller Refactoring Pattern Library](../patterns/CONTROLLER_REFACTORING_PATTERN_LIBRARY.md) - Complete pattern catalog
-- [Cross-Service Refactoring Patterns](../../handoff/CROSS_SERVICE_REFACTORING_PATTERNS_DEC_20_2025.md) - Comparative analysis
 
 ### Design Decisions
-- [DD-005](../decisions/DD-005-observability-standards.md) - Observability Standards
-- [DD-METRICS-001](../decisions/DD-METRICS-001-controller-metrics-wiring.md) - Metrics Wiring Pattern
+- [DD-005](../decisions/DD-005-OBSERVABILITY-STANDARDS.md) - Observability Standards
+- [DD-METRICS-001](../decisions/DD-METRICS-001-controller-metrics-wiring-pattern.md) - Metrics Wiring Pattern
 
 ### Reference Implementations
 - `pkg/remediationorchestrator/` - Gold standard reference

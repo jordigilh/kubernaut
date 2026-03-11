@@ -26,7 +26,6 @@ limitations under the License.
 // - Follows TESTING_GUIDELINES.md anti-pattern avoidance
 //
 // Authority:
-// - docs/services/crd-controllers/02-aianalysis/implementation/appendices/APPENDIX_B_ERROR_HANDLING_PHILOSOPHY.md
 // - docs/development/business-requirements/TESTING_GUIDELINES.md
 package aianalysis
 

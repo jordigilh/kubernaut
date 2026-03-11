@@ -250,7 +250,7 @@ make test-gateway
 | Decision | Purpose |
 |----------|---------|
 | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) | Categorization delegation to SignalProcessing |
-| [DD-GATEWAY-008](../../../architecture/decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md) | ❌ Superseded by DD-GATEWAY-015 (Storm detection removed) |
+| DD-GATEWAY-008 | ❌ Superseded by DD-GATEWAY-015 (Storm detection removed) |
 | [DD-GATEWAY-009](../../../architecture/decisions/DD-GATEWAY-009-state-based-deduplication.md) | State-based deduplication |
 | [DD-GATEWAY-011](../../../architecture/decisions/DD-GATEWAY-011-shared-status-deduplication.md) | Status-based deduplication (Redis deprecated) |
 | [DD-GATEWAY-015](../../../architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md) | Storm detection removal |
@@ -343,24 +343,6 @@ make test-gateway
 
 **Document Status**: ✅ Complete
 **Last Updated**: 2025-12-15
-
----
-
-## 📚 Handoff Documentation
-
-### Production Ready Documents
-- **[GATEWAY_ALL_WORK_COMPLETE_2025-12-15.md](../../../handoff/GATEWAY_ALL_WORK_COMPLETE_2025-12-15.md)** - Comprehensive work summary
-- **[GATEWAY_FINAL_STATUS_PRE_RO_SEGMENTED_E2E.md](../../../handoff/GATEWAY_FINAL_STATUS_PRE_RO_SEGMENTED_E2E.md)** - Pre-RO testing status
-- **[GATEWAY_ALL_TESTING_TIERS_COMPLETE.md](../../../handoff/GATEWAY_ALL_TESTING_TIERS_COMPLETE.md)** - Complete test verification
-
-### Implementation Documents
-- **[GATEWAY_GAP8_GAP10_IMPLEMENTATION_PLAN.md](../../../handoff/GATEWAY_GAP8_GAP10_IMPLEMENTATION_PLAN.md)** - GAP-8/GAP-10 implementation
-- **[GATEWAY_RBAC_FIX_COMPLETE.md](../../../handoff/GATEWAY_RBAC_FIX_COMPLETE.md)** - RBAC permission fix
-- **[TRIAGE_GATEWAY_E2E_SKIPPED_TEST.md](../../../handoff/TRIAGE_GATEWAY_E2E_SKIPPED_TEST.md)** - E2E test triage
-
-### Cross-Team Handoff
-- **[HANDOFF_RO_STORM_FIELDS_REMOVAL.md](../../../handoff/HANDOFF_RO_STORM_FIELDS_REMOVAL.md)** - RO team action item (DD-GATEWAY-015)
-- **[CONFIDENCE_ASSESSMENT_RR_SPEC_IMMUTABILITY.md](../../../handoff/CONFIDENCE_ASSESSMENT_RR_SPEC_IMMUTABILITY.md)** - Spec immutability verification
 
 ---
 

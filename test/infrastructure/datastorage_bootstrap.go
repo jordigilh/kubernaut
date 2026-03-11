@@ -564,7 +564,6 @@ func waitForDSBootstrapRedisReady(infra *DSBootstrapInfra, writer io.Writer) err
 //   - Linux CI/CD: --network=host (Option D) - Container can reach localhost directly
 //   - macOS: Bridge network (Option A) - Requires IPv6 disabled + kubeconfig rewrite to IPv4
 //
-// Reference: docs/handoff/DD_AUTH_014_MACOS_PODMAN_LIMITATION.md
 func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectRoot string, writer io.Writer) error {
 	cfg := infra.Config
 	configDir := filepath.Join(projectRoot, cfg.ConfigDir)

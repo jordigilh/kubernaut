@@ -731,7 +731,6 @@ func patchWebhookConfigurations(kubeconfigPath string, writer io.Writer) error {
 
 // createKindClusterWithConfig creates a Kind cluster with a specific config file
 // REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
-// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
 func createKindClusterWithConfig(clusterName, kubeconfigPath, configPath string, writer io.Writer) error {
 	opts := KindClusterOptions{
 		ClusterName:               clusterName,

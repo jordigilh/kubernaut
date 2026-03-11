@@ -182,7 +182,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 
 		// DD-E2E-K8S-CLIENT-001: Create suite-level K8s client (same pattern as RO/AIAnalysis)
 		// This prevents rate limiter contention by reusing 1 client per process instead of
-		// creating ~100 clients (1 per test). See docs/handoff/E2E_RATE_LIMITER_ROOT_CAUSE_JAN13_2026.md
+		// creating ~100 clients (1 per test).
 		logger.Info("Creating Kubernetes client for this process (DD-E2E-K8S-CLIENT-001)")
 		cfg, err := config.GetConfig()
 		Expect(err).ToNot(HaveOccurred(), "Failed to get kubeconfig")

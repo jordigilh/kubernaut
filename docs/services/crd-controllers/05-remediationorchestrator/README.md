@@ -181,14 +181,14 @@
 
 ## 🎓 Development Methodology
 
-**Mandatory Process**: Follow APDC-Enhanced TDD workflow per [.cursor/rules/00-core-development-methodology.mdc](../../../../.cursor/rules/00-core-development-methodology.mdc)
+**Mandatory Process**: Follow APDC-Enhanced TDD workflow per [.cursor/rules/00-kubernaut-core-rules.mdc](../../../../.cursor/rules/00-kubernaut-core-rules.mdc)
 
 **Quick Reference**:
 ```
 ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 ```
 
-**See**: [Implementation Checklist](./implementation-checklist.md) for complete APDC phase breakdown.
+**See**: [Migration & Current State](./migration-current-state.md) for complete APDC phase breakdown.
 
 ---
 

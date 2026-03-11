@@ -137,7 +137,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Does NOT start controllers (moved to Phase 2 for per-process isolation)
 	//
 	// DD-TEST-010: Multi-Controller Pattern for Parallel Test Execution
-	// Authority: docs/architecture/decisions/DD-TEST-010-multi-controller-pattern.md
+	// Authority: docs/architecture/decisions/DD-TEST-010-controller-per-process-architecture.md
 	// ======================================================================
 
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
@@ -162,7 +162,6 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// DD-AUTH-014: Force envtest to bind to IPv4 by pre-setting SecureServing.Address
 	// Problem: envtest defaults to "localhost" which Go resolves to [::1] on macOS
 	// Solution: Explicitly set Address to "127.0.0.1" before calling Start()
-	// Reference: docs/handoff/DD_AUTH_014_MACOS_PODMAN_LIMITATION.md
 	_ = os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s") // Explicitly ignore - test setup
 
 	sharedTestEnv := &envtest.Environment{
@@ -239,7 +238,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	//
 	// DD-TEST-010: Multi-Controller Pattern for Parallel Test Execution
 	// DD-AUTH-014: DataStorage client uses real ServiceAccount token (from Phase 1)
-	// Authority: docs/architecture/decisions/DD-TEST-010-multi-controller-pattern.md
+	// Authority: docs/architecture/decisions/DD-TEST-010-controller-per-process-architecture.md
 	// ======================================================================
 
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))

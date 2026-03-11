@@ -1392,7 +1392,6 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 
 func createKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
 	// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
-	// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
 	opts := KindClusterOptions{
 		ClusterName:    clusterName,
 		KubeconfigPath: kubeconfigPath,

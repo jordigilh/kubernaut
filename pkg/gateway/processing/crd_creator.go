@@ -117,7 +117,6 @@ func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, m
 // CRD CREATION RETRY WITH SHARED BACKOFF
 // 📋 Shared Utility: pkg/shared/backoff | ✅ Production-Ready | Confidence: 95%
 // 📋 TDD REFACTOR Phase 2: Simplified method with extracted error handlers
-// See: docs/handoff/TEAM_ANNOUNCEMENT_SHARED_BACKOFF.md
 // ========================================
 //
 // createCRDWithRetry implements retry logic with exponential backoff for transient K8s API errors.
@@ -284,7 +283,6 @@ func getErrorTypeString(err error) string {
 //
 // Note: Environment and Priority classification removed from Gateway (2025-12-06)
 // These are now owned by Signal Processing service per DD-CATEGORIZATION-001.
-// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 //
 // Returns:
 // - *RemediationRequest: Created CRD with populated fields

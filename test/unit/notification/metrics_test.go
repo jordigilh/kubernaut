@@ -28,7 +28,6 @@ import (
 // Prometheus Metrics Unit Tests (DD-005 V3.0 / DD-METRICS-001)
 // ========================================
 //
-// Authority: docs/handoff/NT_REMAINING_WORK_STATUS_DEC_17_2025.md
 // Priority: P3 - Nice-to-have (E2E metrics tests already exist)
 //
 // Test Coverage:

@@ -116,7 +116,7 @@ Use Kubernetes Lease resources for distributed mutual exclusion across service r
 
 ### **What Was Done** (December 30, 2025)
 
-1. ✅ **Created ADR-052**: [ADR-052-distributed-locking-pattern.md](../architecture/decisions/ADR-052-distributed-locking-pattern.md)
+1. ✅ **Created ADR-052**: [ADR-052-distributed-locking-pattern.md](../ADR-052-distributed-locking-pattern.md)
    - **Size**: Comprehensive pattern documentation
    - **Approach**: Hybrid (pattern + when-to-use guidelines)
    - **Implementation**: Independent (copy-adapt, not shared library)
@@ -128,7 +128,6 @@ Use Kubernetes Lease resources for distributed mutual exclusion across service r
    - All content preserved in ADR-052
 
 3. ✅ **Updated Cross-References**:
-   - [CROSS_TEAM_DISTRIBUTED_LOCKING_PATTERN_DEC_30_2025.md](../shared/CROSS_TEAM_DISTRIBUTED_LOCKING_PATTERN_DEC_30_2025.md) → Points to ADR-052
    - Gateway Implementation Plan → References ADR-052
    - RO Implementation Plan → References ADR-052
 

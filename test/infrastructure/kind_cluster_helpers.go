@@ -224,7 +224,6 @@ func CreateHostDirectoryIfNeeded(path string, perm os.FileMode, writer io.Writer
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // PHASE 1 REFACTORING: Unified Kind Cluster Creation
-// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // KindClusterOptions configures Kind cluster creation behavior
@@ -282,7 +281,6 @@ type KindClusterOptions struct {
 //	}
 //	err := infrastructure.CreateKindClusterWithConfig(opts, writer)
 //
-// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
 func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🔧 Creating Kind cluster: %s\n", opts.ClusterName)
 

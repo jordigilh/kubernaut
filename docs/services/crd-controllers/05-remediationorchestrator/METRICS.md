@@ -129,7 +129,7 @@ metrics.NoActionNeededTotal.WithLabelValues(
 
 ## Related Documents
 
-- [DD-005: Metrics Naming Compliance](../../../architecture/decisions/DD-005-metrics-naming-compliance.md)
+- [DD-005: Observability Standards](../../../architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md)
 - [BR-ORCH-036: Manual Review Notification](../../../requirements/BR-ORCH-036-manual-review-notification.md)
 - [BR-ORCH-037: WorkflowNotNeeded Handling](../../../requirements/BR-ORCH-037-workflow-not-needed.md)
 

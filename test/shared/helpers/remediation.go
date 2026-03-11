@@ -391,7 +391,6 @@ func NewCompletedWorkflowExecution(name, namespace string) *workflowexecutionv1.
 // NewSkippedWorkflowExecution was removed in V1.0.
 // V1.0 Decision: RemediationOrchestrator makes routing decisions BEFORE creating WorkflowExecution.
 // Duplicate detection (BR-ORCH-033) is now handled at RO level, not WFE level.
-// See: docs/handoff/WE_TEAM_V1.0_API_BREAKING_CHANGES_REQUIRED.md for migration guide
 
 // ============================================================================
 // NotificationRequest Factory (BR-ORCH-001, BR-ORCH-034)

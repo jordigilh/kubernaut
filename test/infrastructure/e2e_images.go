@@ -25,7 +25,6 @@ import (
 // 2. Hybrid Pattern: BuildImageForKind() → create cluster → LoadImageToKind()
 //
 // The hybrid pattern eliminates cluster idle time during image builds (~18% faster).
-// See: docs/testing/e2e/E2E_PATTERN_PERFORMANCE_ANALYSIS_JAN07.md
 //
 // Related:
 // - datastorage_bootstrap.go: DataStorage infrastructure bootstrap

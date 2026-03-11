@@ -70,7 +70,6 @@ type MiddlewareSettings struct {
 //
 // Note: Environment and Priority settings removed (2025-12-06)
 // Environment/Priority classification now owned by Signal Processing per DD-CATEGORIZATION-001.
-// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 type ProcessingSettings struct {
 	Deduplication DeduplicationSettings `yaml:"deduplication"`
 	CRD           CRDSettings           `yaml:"crd"`
@@ -160,7 +159,7 @@ func (r *RetrySettings) Validate() error {
 			"Use 3-5 for production (recommended: 3)",
 		)
 		err.Impact = "Retry logic will not function properly"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#retry"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
 		return err
 	}
 	if r.MaxAttempts > 10 {
@@ -171,7 +170,7 @@ func (r *RetrySettings) Validate() error {
 			"Reduce to 3-5 to avoid excessive retry delays",
 		)
 		err.Impact = "May cause slow request processing during failures"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#retry"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
 		return err
 	}
 
@@ -184,7 +183,7 @@ func (r *RetrySettings) Validate() error {
 			"Use 100ms-500ms (recommended: 100ms)",
 		)
 		err.Impact = "Negative backoff is invalid"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#retry"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
 		return err
 	}
 	if r.InitialBackoff > 5*time.Second {
@@ -195,7 +194,7 @@ func (r *RetrySettings) Validate() error {
 			"Reduce to 100ms-500ms for faster failure detection",
 		)
 		err.Impact = "High initial backoff may cause slow failure detection"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#retry"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
 		return err
 	}
 
@@ -208,7 +207,7 @@ func (r *RetrySettings) Validate() error {
 			fmt.Sprintf("Set maxBackoff to at least %v", r.InitialBackoff),
 		)
 		err.Impact = "Invalid exponential backoff configuration"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#retry"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
 		return err
 	}
 	if r.MaxBackoff > 30*time.Second {
@@ -219,7 +218,7 @@ func (r *RetrySettings) Validate() error {
 			"Reduce to 5s (recommended) to avoid long request delays",
 		)
 		err.Impact = "Excessive backoff may cause long request delays"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#retry"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
 		return err
 	}
 
@@ -300,7 +299,7 @@ func (c *ServerConfig) Validate() error {
 			"Use ':8080' or '0.0.0.0:8080'",
 		)
 		err.Impact = "Gateway server will fail to start"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#server"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
 		return err
 	}
 
@@ -314,7 +313,7 @@ func (c *ServerConfig) Validate() error {
 			"Use 100 (recommended), 0 for unlimited",
 		)
 		err.Impact = "Invalid throttle configuration"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#server"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
 		return err
 	}
 	if c.Server.MaxConcurrentRequests > 10000 {
@@ -325,7 +324,7 @@ func (c *ServerConfig) Validate() error {
 			"Use 100-1000 for production (recommended: 100)",
 		)
 		err.Impact = "May not provide effective overload protection"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#server"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
 		return err
 	}
 
@@ -338,7 +337,7 @@ func (c *ServerConfig) Validate() error {
 			"Use 30s (recommended) to prevent webhook timeouts",
 		)
 		err.Impact = "Webhook requests may timeout prematurely"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#server"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
 		return err
 	}
 	if c.Server.WriteTimeout > 0 && c.Server.WriteTimeout < 5*time.Second {
@@ -349,7 +348,7 @@ func (c *ServerConfig) Validate() error {
 			"Use 30s (recommended) to prevent response failures",
 		)
 		err.Impact = "Response writes may fail prematurely"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#server"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
 		return err
 	}
 	if c.Server.IdleTimeout > 0 && c.Server.IdleTimeout < 30*time.Second {
@@ -360,7 +359,7 @@ func (c *ServerConfig) Validate() error {
 			"Use 120s (recommended) to reduce connection churn",
 		)
 		err.Impact = "May increase connection establishment overhead"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#server"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
 		return err
 	}
 

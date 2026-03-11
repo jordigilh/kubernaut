@@ -53,7 +53,6 @@ import (
 // REFERENCES:
 // - Best Practice: test/integration/signalprocessing/audit_integration_test.go
 // - Best Practice: test/integration/gateway/audit_integration_test.go
-// - Triage Doc: docs/handoff/AUDIT_INFRASTRUCTURE_TESTING_ANTI_PATTERN_TRIAGE_DEC_26_2025.md
 // - DD-API-001: OpenAPI client mandatory for REST API communication
 
 var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit", "flow"), func() {

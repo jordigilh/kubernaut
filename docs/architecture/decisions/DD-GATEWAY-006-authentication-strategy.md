@@ -256,7 +256,7 @@ spec:
 4. Simplify `StartTestGateway()` helper
 
 ### Phase 3: Documentation (Immediate - v1.0)
-1. Create `docs/deployment/gateway-security.md` with Network Policies + TLS configuration
+1. Create `docs/operations/deployment/gateway-security.md` with Network Policies + TLS configuration
 2. Update `docs/services/stateless/gateway-service/README.md` with security architecture
 3. Document deployment prerequisites and security requirements
 4. Update `IMPLEMENTATION_PLAN_V2.12.md` to reflect authentication removal
@@ -549,7 +549,7 @@ spec:
 4. Simplify `StartTestGateway()` helper
 
 ### Phase 3: Documentation (Immediate - v1.0)
-1. Create `docs/deployment/gateway-security.md` with Network Policies + TLS configuration
+1. Create `docs/operations/deployment/gateway-security.md` with Network Policies + TLS configuration
 2. Update `docs/services/stateless/gateway-service/README.md` with security architecture
 3. Document deployment prerequisites and security requirements
 4. Update `IMPLEMENTATION_PLAN_V2.12.md` to reflect authentication removal
@@ -842,7 +842,7 @@ spec:
 4. Simplify `StartTestGateway()` helper
 
 ### Phase 3: Documentation (Immediate - v1.0)
-1. Create `docs/deployment/gateway-security.md` with Network Policies + TLS configuration
+1. Create `docs/operations/deployment/gateway-security.md` with Network Policies + TLS configuration
 2. Update `docs/services/stateless/gateway-service/README.md` with security architecture
 3. Document deployment prerequisites and security requirements
 4. Update `IMPLEMENTATION_PLAN_V2.12.md` to reflect authentication removal
@@ -1137,7 +1137,7 @@ spec:
 4. Simplify `StartTestGateway()` helper
 
 ### Phase 3: Documentation (Immediate - v1.0)
-1. Create `docs/deployment/gateway-security.md` with Network Policies + TLS configuration
+1. Create `docs/operations/deployment/gateway-security.md` with Network Policies + TLS configuration
 2. Update `docs/services/stateless/gateway-service/README.md` with security architecture
 3. Document deployment prerequisites and security requirements
 4. Update `IMPLEMENTATION_PLAN_V2.12.md` to reflect authentication removal
@@ -1430,7 +1430,7 @@ spec:
 4. Simplify `StartTestGateway()` helper
 
 ### Phase 3: Documentation (Immediate - v1.0)
-1. Create `docs/deployment/gateway-security.md` with Network Policies + TLS configuration
+1. Create `docs/operations/deployment/gateway-security.md` with Network Policies + TLS configuration
 2. Update `docs/services/stateless/gateway-service/README.md` with security architecture
 3. Document deployment prerequisites and security requirements
 4. Update `IMPLEMENTATION_PLAN_V2.12.md` to reflect authentication removal
@@ -1723,7 +1723,7 @@ spec:
 4. Simplify `StartTestGateway()` helper
 
 ### Phase 3: Documentation (Immediate - v1.0)
-1. Create `docs/deployment/gateway-security.md` with Network Policies + TLS configuration
+1. Create `docs/operations/deployment/gateway-security.md` with Network Policies + TLS configuration
 2. Update `docs/services/stateless/gateway-service/README.md` with security architecture
 3. Document deployment prerequisites and security requirements
 4. Update `IMPLEMENTATION_PLAN_V2.12.md` to reflect authentication removal

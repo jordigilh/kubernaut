@@ -161,7 +161,6 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// DD-AUTH-014: Force envtest to bind to IPv4 (critical for macOS!)
 	// Problem: envtest defaults to "localhost" which Go resolves to [::1] on macOS
 	// Solution: Explicitly set Address to "127.0.0.1" before calling Start()
-	// Reference: docs/handoff/DD_AUTH_014_ENVTEST_IPV6_BLOCKER.md
 	_ = os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s") // Explicitly ignore - test setup
 	
 	sharedTestEnv := &envtest.Environment{

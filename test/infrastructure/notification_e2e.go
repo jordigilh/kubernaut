@@ -308,7 +308,6 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 
 	// 1+2. Build and Load Data Storage image with dynamic tag (consolidated)
 	// REFACTORED: Now uses consolidated BuildAndLoadImageToKind() (Phase 3)
-	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
 	// BUG FIX: Capture returned image name to ensure deployment uses correct tag
 	clusterName := "notification-e2e" // Matches CreateNotificationCluster
 	_, _ = fmt.Fprintf(writer, "🔨 Building and loading Data Storage image...\n")

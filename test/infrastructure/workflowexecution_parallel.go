@@ -31,7 +31,6 @@ import (
 // with parallel infrastructure setup to reduce total setup time.
 //
 // Phase 2 E2E Stabilization: Parallel Infrastructure Optimization
-// Reference: docs/handoff/WE_E2E_INFRASTRUCTURE_STABILIZATION_PLAN.md (Phase 2)
 // Pattern: test/infrastructure/signalprocessing.go:246 (SetupSignalProcessingInfrastructureParallel)
 //
 // Parallel Execution Strategy:

@@ -44,8 +44,4 @@ package remediationorchestrator
 // - Terminal phase skip logic (Completed/Failed/Blocked/Skipped)
 // - Phase start time nil handling
 //
-// For Detailed Analysis:
-// - docs/handoff/RO_TIMEOUT_TESTS_TRIAGE_DEC_24_2025.md
-// - docs/handoff/RO_TIMEOUT_TESTS_MIGRATION_COMPLETE_DEC_24_2025.md
-// - docs/handoff/RO_TIMEOUT_TESTS_DELETION_COMPLETE_DEC_24_2025.md
 // ========================================

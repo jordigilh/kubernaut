@@ -186,7 +186,6 @@ func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, 
 // - Non-Terminal: Pending, Processing, Analyzing, AwaitingApproval, Executing, Verifying, Blocked
 //
 // 🏛️ Compliance: BR-COMMON-001 (Phase Format), Viceversa Pattern (Cross-Service Consumption)
-// See: docs/handoff/TEAM_NOTIFICATION_GATEWAY_PHASE_COMPLIANCE.md
 func IsTerminalPhase(phase remediationv1alpha1.RemediationPhase) bool {
 	switch phase {
 	case remediationv1alpha1.PhaseCompleted,

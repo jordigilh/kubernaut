@@ -193,7 +193,6 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 
 			// BUSINESS VALIDATION: Query for audit events with proper filters
 			// FIX: Enhanced error visibility + longer timeout to handle audit buffer flush (1s interval)
-			// See: docs/handoff/E2E_FAILURES_DS_RO_TRIAGE_JAN_29_2026.md
 			// Use separate queries with EventCategory + EventType filters for performance (BR-AUDIT-006)
 			By("Querying DataStorage for RAR audit events")
 			correlationID := testRR.Name // Per DD-AUDIT-CORRELATION-002
@@ -536,7 +535,6 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 
 			// Wait for BOTH webhook and orchestration approval audit events to be persisted
 			// FIX: Enhanced error visibility + longer timeout to handle audit buffer flush (1s interval)
-			// See: docs/handoff/E2E_FAILURES_DS_RO_TRIAGE_JAN_29_2026.md
 			// Two-Event Pattern: webhook (WHO) + orchestration approval (WHAT/WHY)
 			Eventually(func() ([2]int, error) {
 				// Query webhook events with all 3 required filters (correlationID, EventCategory, EventType)

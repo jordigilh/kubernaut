@@ -62,7 +62,6 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// - Uses BuildImageForKind() for all images
 	// - Returns dynamic image names for later use
 	// - No manual tag generation
-	// - Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
 	_, _ = fmt.Fprintln(writer, "  ├── Data Storage (1-2 min)")
 	_, _ = fmt.Fprintln(writer, "  ├── HolmesGPT-API (2-3 min)")
@@ -464,7 +463,6 @@ func DeleteAIAnalysisCluster(clusterName, kubeconfigPath string, testsFailed boo
 
 func createAIAnalysisKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
 	// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
-	// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
 	opts := KindClusterOptions{
 		ClusterName:               clusterName,
 		KubeconfigPath:            kubeconfigPath,
@@ -713,7 +711,6 @@ spec:
 func deployAIAnalysisControllerManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
 	// Per Consolidated API Migration (January 2026):
 	// Use dynamic image name parameter (built by BuildImageForKind)
-	// Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	_, _ = fmt.Fprintln(writer, "  Applying AIAnalysis controller manifest (image already in Kind)...")
 	// Deploy controller with RBAC (extracted from deployAIAnalysisController)
 	manifest := fmt.Sprintf(`

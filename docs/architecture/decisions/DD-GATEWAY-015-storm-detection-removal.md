@@ -670,8 +670,8 @@ count(kube_customresource_remediation_kubernaut_ai_remediationrequest_status_ded
 
 ## References
 
-- [DD-GATEWAY-015: Storm Detection Logic Removal](../architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md)
-- [DD-AIANALYSIS-004: Storm Context NOT Exposed to LLM](../architecture/decisions/DD-AIANALYSIS-004-storm-context-not-exposed.md)
+- [DD-GATEWAY-015: Storm Detection Logic Removal](./DD-GATEWAY-015-storm-detection-removal.md)
+- [DD-AIANALYSIS-004: Storm Context NOT Exposed to LLM](./DD-AIANALYSIS-004-storm-context-not-exposed.md)
 ```
 
 #### Step 2: Update DESIGN_DECISIONS.md Index
