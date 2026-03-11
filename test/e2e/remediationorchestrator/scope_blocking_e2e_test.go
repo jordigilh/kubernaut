@@ -40,8 +40,6 @@ import (
 // in a Kind cluster. The controller processes RRs and applies scope
 // validation as Check #1 in the blocking pipeline (ADR-053).
 //
-// Test Plan: docs/services/crd-controllers/05-remediationorchestrator/RO_SCOPE_VALIDATION_TEST_PLAN_V1.0.md
-//
 // Defense-in-depth overlap:
 // - Unit tests: CheckUnmanagedResource() isolation (test/unit/remediationorchestrator/routing/)
 // - Integration tests: Scope blocking with envtest (test/integration/remediationorchestrator/)

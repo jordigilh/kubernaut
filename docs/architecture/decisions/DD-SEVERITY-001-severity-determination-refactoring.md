@@ -21,7 +21,7 @@
 - ✅ **Cross-Service Coordination**: Clear tracking for multi-service initiatives
 
 **New Documents Created**:
-- `docs/implementation/DD-SEVERITY-001-implementation-plan.md` - HOW + WHEN (tasks, timeline, status)
+- DD-SEVERITY-001-implementation-plan (HOW + WHEN; implementation doc directory removed)
 - `docs/testing/test-plans/DD-SEVERITY-001-E2E-SCENARIOS.md` - Sprint N+1 E2E focus
 
 **Changes to This Document**:

@@ -157,7 +157,6 @@ func StartHolmesGPTAPIIntegrationInfrastructure(writer io.Writer, envtestKubecon
 	// - Data Storage (for audit event validation - external dependency)
 	//
 	// HTTP API testing deferred to E2E test suite (future implementation)
-	// See: docs/handoff/HAPI_INTEGRATION_TEST_ARCHITECTURE_FIX_JAN_04_2026.md
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "ℹ️  HAPI Integration Test Pattern:\n")
 	_, _ = fmt.Fprintf(writer, "   • HAPI business logic called DIRECTLY (no HTTP, no container)\n")

@@ -28,6 +28,9 @@ holmesgpt-api/venv-*-test/
 /*.md
 !/README.md
 !/CHANGELOG*.md
+!/CONTRIBUTING.md
+!/CODE_OF_CONDUCT.md
+!/SECURITY.md
 
 # Root ephemeral files (test artifacts, build metadata)
 /watch_*
@@ -114,6 +117,9 @@ TDD_*.md
 SKIPPED_*.md
 HEALTH_*.md
 UNIT_TEST_*.md
+
+# GitHub community files (exempt from ephemeral patterns above)
+!.github/**/*.md
 
 # Session and infrastructure ephemeral files
 *SESSION*.md
@@ -220,10 +226,8 @@ SESSION_*.txt
 GOOD_*.md
 OVERNIGHT_*.md
 
-# EXCEPTIONS: Allow all files in docs/handoff/ and docs/triage/ (cross-team documentation)
+# EXCEPTIONS: Allow docs/triage/ (cross-team documentation)
 # Must be at the END of the file to override all ignore patterns above
-!docs/handoff/
-!docs/handoff/**
 !docs/triage/
 !docs/triage/**
 

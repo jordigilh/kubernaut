@@ -181,14 +181,14 @@
 
 ## 🎓 Development Methodology
 
-**Mandatory Process**: Follow APDC-Enhanced TDD workflow per [.cursor/rules/00-core-development-methodology.mdc](../../../../.cursor/rules/00-core-development-methodology.mdc)
+**Mandatory Process**: Follow APDC-Enhanced TDD workflow per [.cursor/rules/00-kubernaut-core-rules.mdc](../../../../.cursor/rules/00-kubernaut-core-rules.mdc)
 
 **Quick Reference**:
 ```
 ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 ```
 
-**See**: [Implementation Checklist](./implementation-checklist.md) for complete APDC phase breakdown.
+**See**: [Migration & Current State](./migration-current-state.md) for complete APDC phase breakdown.
 
 ---
 
@@ -258,7 +258,7 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 - ✅ **Confirmed all 14 specification documents are complete** (not stubs)
 - ✅ **Added dedicated BR files** (BR-ORCH-001, BR-ORCH-025-034)
 - ✅ **Added BR_MAPPING.md** for test coverage tracking
-- ✅ **API contract alignment** with Gateway, SP, AI, WE teams (see docs/handoff/)
+- ✅ **API contract alignment** with Gateway, SP, AI, WE teams
 - ✅ **Added DD-RO-001** for resource lock deduplication handling
 - 📊 **Total documentation**: ~9,875 lines across 14 specification documents
 

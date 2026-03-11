@@ -6,14 +6,12 @@ spec:
   # Detected Labels Test Workflow Schema (BR-WORKFLOW-004, ADR-043 v1.3)
   # Used by: DataStorage E2E -- detected_labels_search_e2e_test.go
   # Purpose: Validates full OCI registration -> search with detectedLabels scoring
-  metadata:
-    workflowName: detected-labels-test-v1
-    version: "1.0.0"
-    description:
-      what: "Test workflow for detectedLabels end-to-end validation"
-      whenToUse: "For E2E testing that OCI-registered detectedLabels affect search scoring"
-      whenNotToUse: "Not intended for production use"
-      preconditions: "DataStorage service running with action_type_taxonomy seeded"
+  version: "1.0.0"
+  description:
+    what: "Test workflow for detectedLabels end-to-end validation"
+    whenToUse: "For E2E testing that OCI-registered detectedLabels affect search scoring"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "DataStorage service running with action_type_taxonomy seeded"
   
   actionType: ScaleReplicas
   

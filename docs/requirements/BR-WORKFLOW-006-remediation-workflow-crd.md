@@ -66,14 +66,13 @@ Workflow registration in Kubernaut must be Kubernetes-native to support GitOps w
 
 ### Spec Fields
 
-The `.spec` maps to the workflow-schema.yaml content per BR-WORKFLOW-004, structured as a Kubernetes resource:
+The `.spec` maps to the workflow-schema.yaml content per BR-WORKFLOW-004, structured as a Kubernetes resource. The workflow name is provided by `metadata.name`; the DS-assigned UUID is in `status.workflowId`.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `spec.metadata.workflowId` | string | Yes | Unique workflow identifier (name + version) |
-| `spec.metadata.version` | string | Yes | Semantic version (e.g., "1.0.0") |
-| `spec.metadata.description` | object | Yes | Structured description: `what`, `whenToUse`, `whenNotToUse`, `preconditions` |
-| `spec.metadata.maintainers` | array | No | Maintainer name/email pairs |
+| `spec.version` | string | Yes | Semantic version (e.g., "1.0.0") |
+| `spec.description` | object | Yes | Structured description: `what`, `whenToUse`, `whenNotToUse`, `preconditions` |
+| `spec.maintainers` | array | No | Maintainer name/email pairs |
 | `spec.actionType` | string | Yes | Action type from taxonomy (PascalCase) |
 | `spec.labels` | object | Yes | `severity`, `environment`, `component`, `priority` |
 | `spec.customLabels` | map | No | Operator-defined key-value labels |
@@ -189,8 +188,8 @@ Operators creating/deleting `RemediationWorkflow` CRDs need standard Kubernetes 
 - `spec.labels.priority`: Required
 - `spec.parameters`: MinItems=1
 - `spec.execution.engine`: Enum `tekton|job|ansible`
-- `spec.metadata.workflowId`: Required, MaxLength=255
-- `spec.metadata.version`: Required, MaxLength=50
+- `metadata.name`: Required, MaxLength=255 (workflow name)
+- `spec.version`: Required, MaxLength=50
 
 ### DS-Level (Server-Side)
 

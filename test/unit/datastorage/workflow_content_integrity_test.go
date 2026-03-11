@@ -35,16 +35,18 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
 // mockWorkflowIntegrityRepo implements server.WorkflowContentIntegrityRepository for unit tests.
 // Simulates pre-existing workflows in the catalog to test content integrity decisions.
 type mockWorkflowIntegrityRepo struct {
-	activeWorkflow   *models.RemediationWorkflow
-	disabledWorkflow *models.RemediationWorkflow
-	createdWorkflows []*models.RemediationWorkflow
+	activeWorkflow    *models.RemediationWorkflow
+	disabledWorkflow  *models.RemediationWorkflow
+	createdWorkflows  []*models.RemediationWorkflow
 	updateStatusCalls []statusUpdateCall
-	createErr        error
+	createErr         error
 }
 
 type statusUpdateCall struct {
@@ -82,61 +84,32 @@ func (m *mockWorkflowIntegrityRepo) UpdateStatus(_ context.Context, workflowID, 
 }
 
 // Workflow YAML variants for integrity tests. Same name+version, different content.
-const integrityBaseYAML = `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: integrity-test-wf
-spec:
-  metadata:
-    workflowName: integrity-test-wf
-    version: "1.0.0"
-    description:
-      what: "Scales memory limits for OOM-killed pods"
-      whenToUse: "When pods are OOM-killed repeatedly"
-  actionType: ScaleMemory
-  labels:
-    severity:
-      - critical
-    environment:
-      - production
-    component: pod
-    priority: P1
-  execution:
-    engine: job
-    bundle: "quay.io/kubernaut/workflows/scale-memory:v1.0.0@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1"
-  parameters:
-    - name: TARGET_RESOURCE
-      type: string
-      required: true
-      description: "Target resource"`
+var integrityBaseYAML = func() string {
+	crd := testutil.NewTestWorkflowCRD("integrity-test-wf", "ScaleMemory", "job")
+	crd.Spec.Description = sharedtypes.StructuredDescription{
+		What:      "Scales memory limits for OOM-killed pods",
+		WhenToUse: "When pods are OOM-killed repeatedly",
+	}
+	crd.Spec.Execution.Bundle = "quay.io/kubernaut/workflows/scale-memory:v1.0.0@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1"
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target resource"},
+	}
+	return testutil.MarshalWorkflowCRD(crd)
+}()
 
-const integrityModifiedYAML = `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: integrity-test-wf
-spec:
-  metadata:
-    workflowName: integrity-test-wf
-    version: "1.0.0"
-    description:
-      what: "Rolls back a deployment experiencing CrashLoopBackOff"
-      whenToUse: "When pods are crash-looping due to a bad config"
-  actionType: RollbackDeployment
-  labels:
-    severity:
-      - critical
-    environment:
-      - production
-    component: deployment
-    priority: P1
-  execution:
-    engine: job
-    bundle: "quay.io/kubernaut/workflows/rollback:v1.0.0@sha256:def456abc123def456abc123def456abc123def456abc123def456abc123def4"
-  parameters:
-    - name: TARGET_RESOURCE
-      type: string
-      required: true
-      description: "Target deployment"`
+var integrityModifiedYAML = func() string {
+	crd := testutil.NewTestWorkflowCRD("integrity-test-wf", "RollbackDeployment", "job")
+	crd.Spec.Description = sharedtypes.StructuredDescription{
+		What:      "Rolls back a deployment experiencing CrashLoopBackOff",
+		WhenToUse: "When pods are crash-looping due to a bad config",
+	}
+	crd.Spec.Labels.Component = "deployment"
+	crd.Spec.Execution.Bundle = "quay.io/kubernaut/workflows/rollback:v1.0.0@sha256:def456abc123def456abc123def456abc123def456abc123def456abc123def4"
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target deployment"},
+	}
+	return testutil.MarshalWorkflowCRD(crd)
+}()
 
 var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 
@@ -158,7 +131,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 	}
 
 	// ========================================
-	// UT-DS-INTEGRITY-001: Active + same hash → 200, same UUID (idempotent)
+	// UT-DS-INTEGRITY-001: Active + same hash -> 200, same UUID (idempotent)
 	// BR-WORKFLOW-006: Idempotent re-apply of unchanged workflow
 	// ========================================
 	Describe("UT-DS-INTEGRITY-001: Active workflow with same content hash", func() {
@@ -197,7 +170,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 	})
 
 	// ========================================
-	// UT-DS-INTEGRITY-002: Active + different hash → 201, new UUID, old superseded
+	// UT-DS-INTEGRITY-002: Active + different hash -> 201, new UUID, old superseded
 	// BR-WORKFLOW-006: Spec change for same name+version supersedes old record
 	// ========================================
 	Describe("UT-DS-INTEGRITY-002: Active workflow with different content hash", func() {
@@ -240,7 +213,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 	})
 
 	// ========================================
-	// UT-DS-INTEGRITY-003: Disabled + same hash → 200, same UUID (re-enabled)
+	// UT-DS-INTEGRITY-003: Disabled + same hash -> 200, same UUID (re-enabled)
 	// BR-WORKFLOW-006: Re-enable unchanged disabled workflow
 	// ========================================
 	Describe("UT-DS-INTEGRITY-003: Disabled workflow with same content hash", func() {
@@ -282,7 +255,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 	})
 
 	// ========================================
-	// UT-DS-INTEGRITY-004: Disabled + different hash → 201, new UUID
+	// UT-DS-INTEGRITY-004: Disabled + different hash -> 201, new UUID
 	// BR-WORKFLOW-006: Different content for disabled workflow creates new record
 	// ========================================
 	Describe("UT-DS-INTEGRITY-004: Disabled workflow with different content hash", func() {
@@ -344,7 +317,6 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 
 			Expect(rr.Code).To(Equal(http.StatusCreated))
 
-			// Verify old workflow was marked superseded, NOT deleted
 			Expect(mockRepo.updateStatusCalls).To(HaveLen(1),
 				"Old workflow should be status-updated, not deleted")
 			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("superseded"),
@@ -387,11 +359,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 	})
 
 	// ========================================
-	// UT-DS-INTEGRITY-007: Concurrent Create race (none found → 23505) → idempotent 200
-	// BR-WORKFLOW-006: When two concurrent requests for the same workflow both pass
-	// the active-lookup (both see nil), one wins the INSERT and the other gets a
-	// PostgreSQL 23505 unique constraint violation from uq_workflow_name_version_active.
-	// The losing request must retry the lookup and return 200 OK (idempotent).
+	// UT-DS-INTEGRITY-007: Concurrent Create race (none found -> 23505) -> idempotent 200
 	// ========================================
 	Describe("UT-DS-INTEGRITY-007: Concurrent create race — 23505 on INSERT retries to idempotent 200", func() {
 		It("should return 200 OK when Create fails with 23505 and retry finds the committed workflow", func() {
@@ -437,19 +405,17 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 // raceConditionIntegrityRepo simulates the race condition where two concurrent
 // CreateWorkflow requests both pass the GetActiveByNameAndVersion check (returning nil),
 // one wins the INSERT, and the other gets a PostgreSQL 23505 unique constraint violation.
-// On retry (after the fix), the losing request should find the winner's committed workflow.
 type raceConditionIntegrityRepo struct {
-	getActiveCalls   atomic.Int32
-	activeOnRetry    *models.RemediationWorkflow
-	createdWorkflows []*models.RemediationWorkflow
+	getActiveCalls atomic.Int32
+	activeOnRetry  *models.RemediationWorkflow
 }
 
 func (m *raceConditionIntegrityRepo) GetActiveByNameAndVersion(_ context.Context, _, _ string) (*models.RemediationWorkflow, error) {
 	call := m.getActiveCalls.Add(1)
 	if call == 1 {
-		return nil, nil // First call: no active workflow (race window — other request not yet committed)
+		return nil, nil
 	}
-	return m.activeOnRetry, nil // Retry after 23505: the concurrent insert has committed
+	return m.activeOnRetry, nil
 }
 
 func (m *raceConditionIntegrityRepo) GetLatestDisabledByNameAndVersion(_ context.Context, _, _ string) (*models.RemediationWorkflow, error) {

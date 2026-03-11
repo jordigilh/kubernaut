@@ -60,7 +60,7 @@ var _ = Describe("SanitizeString - P2-1 Regression Tests", func() {
 	// Before P2-1: SQL keywords were removed, causing data loss
 	// After P2-1: SQL keywords preserved, parameterized queries prevent SQL injection
 	//
-	// See: DATA-STORAGE-CODE-TRIAGE.md - Finding #2
+	// Finding #2: Unnecessary SQL keyword removal
 
 	Context("Data Preservation - SQL Keywords in Legitimate Strings", func() {
 		// BR-STORAGE-011: Input sanitization should preserve legitimate data

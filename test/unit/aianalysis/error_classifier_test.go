@@ -44,7 +44,6 @@ import (
 // Test Plan Mapping:
 // - AA-UNIT-ERR-001 to AA-UNIT-ERR-016 (16 error classification tests)
 //   Moved from integration tier per assessment: "no test logic in production code"
-//   See: docs/handoff/AA_MOCK_HAPI_ERROR_INJECTION_ASSESSMENT_DEC_24_2025.md
 //
 // TDD Approach:
 // - RED: Test fails because error classifier doesn't classify correctly

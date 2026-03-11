@@ -31,6 +31,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
+	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
 // Test Plan: docs/testing/DD-WORKFLOW-017/execution_bundle_test_plan_v1.0.md
@@ -38,78 +39,38 @@ import (
 // Authority: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions)
 // TDD Phase: RED
 
-// baseSchemaPrefix provides a valid schema where only the execution section varies.
-// All fields satisfy BR-WORKFLOW-004 non-execution requirements.
-const baseSchemaPrefix = `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: exec-bundle-test
-spec:
-  metadata:
-    workflowName: exec-bundle-test
-    version: "v1.0.0"
-    description:
-      what: Tests execution.bundle validation
-      whenToUse: When validating digest enforcement
-      whenNotToUse: N/A
-      preconditions: None
-  actionType: RestartPod
-  labels:
-    signalType: OOMKilled
-    severity: [critical]
-    component: pod
-    environment: [production]
-    priority: P0
-  parameters:
-    - name: NAMESPACE
-      type: string
-      description: Target namespace
-      required: true
-`
+// baseBundleTestCRD returns a valid CRD for bundle validation tests.
+// Tests mutate the Execution field to vary the bundle reference.
+func baseBundleTestCRD() *models.WorkflowSchemaCRD {
+	return testutil.NewTestWorkflowCRD("exec-bundle-test", "RestartPod", "tekton")
+}
 
-// UT-DS-017-011: digest-only execution.bundle (positive)
-const validDigestOnlyBundleSchemaYAML = baseSchemaPrefix + `  execution:
-    engine: tekton
-    bundle: quay.io/kubernaut/workflows/scale-memory-bundle@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-`
+func bundleTestYAML(bundleRef string) string {
+	crd := baseBundleTestCRD()
+	crd.Spec.Execution.Bundle = bundleRef
+	return testutil.MarshalWorkflowCRD(crd)
+}
 
-// UT-DS-017-012: tag+digest execution.bundle (positive)
-const validTagDigestBundleSchemaYAML = baseSchemaPrefix + `  execution:
-    engine: tekton
-    bundle: quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-`
+var (
+	validDigestOnlyBundleSchemaYAML   = bundleTestYAML("quay.io/kubernaut/workflows/scale-memory-bundle@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
+	validTagDigestBundleSchemaYAML    = bundleTestYAML("quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
+	tagOnlyBundleSchemaYAML           = bundleTestYAML("quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0")
+	emptyBundleSchemaYAML             = bundleTestYAML("")
+	wrongAlgorithmBundleSchemaYAML    = bundleTestYAML("quay.io/kubernaut/test@md5:abc123def456")
+	shortDigestBundleSchemaYAML       = bundleTestYAML("quay.io/kubernaut/test@sha256:abc123")
+	noExecutionSectionSchemaYAML      string
+	executionNoBundleSchemaYAML       string
+)
 
-// UT-DS-017-013: tag-only execution.bundle (negative — must be rejected)
-const tagOnlyBundleSchemaYAML = baseSchemaPrefix + `  execution:
-    engine: tekton
-    bundle: quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0
-`
+func init() {
+	crd := baseBundleTestCRD()
+	crd.Spec.Execution = nil
+	noExecutionSectionSchemaYAML = testutil.MarshalWorkflowCRD(crd)
 
-// UT-DS-017-014: no execution section (negative — must be rejected)
-const noExecutionSectionSchemaYAML = baseSchemaPrefix
-
-// UT-DS-017-015: empty bundle string (negative — must be rejected)
-const emptyBundleSchemaYAML = baseSchemaPrefix + `  execution:
-    engine: tekton
-    bundle: ""
-`
-
-// UT-DS-017-016: execution section without bundle field (negative — must be rejected)
-const executionNoBundleSchemaYAML = baseSchemaPrefix + `  execution:
-    engine: tekton
-`
-
-// UT-DS-017-017: non-sha256 digest algorithm (negative — must be rejected)
-const wrongAlgorithmBundleSchemaYAML = baseSchemaPrefix + `  execution:
-    engine: tekton
-    bundle: quay.io/kubernaut/test@md5:abc123def456
-`
-
-// UT-DS-017-018: short sha256 digest (negative — must be rejected)
-const shortDigestBundleSchemaYAML = baseSchemaPrefix + `  execution:
-    engine: tekton
-    bundle: quay.io/kubernaut/test@sha256:abc123
-`
+	crd2 := baseBundleTestCRD()
+	crd2.Spec.Execution.Bundle = ""
+	executionNoBundleSchemaYAML = testutil.MarshalWorkflowCRD(crd2)
+}
 
 var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 

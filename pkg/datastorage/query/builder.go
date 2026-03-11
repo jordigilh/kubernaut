@@ -265,7 +265,6 @@ func (b *Builder) Build() (string, []interface{}, error) {
 // BuildCount builds a COUNT(*) SQL query with filters (no pagination, ordering)
 // 🚨 FIX: Separate COUNT query for accurate pagination metadata
 // This fixes the critical bug where pagination.total was set to len(array) instead of database count
-// See: docs/services/stateless/data-storage/implementation/DATA-STORAGE-INTEGRATION-TEST-TRIAGE.md
 //
 // Returns:
 //   - SQL query string with COUNT(*) instead of SELECT *

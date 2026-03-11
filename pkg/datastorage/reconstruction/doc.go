@@ -41,5 +41,4 @@
 //
 // - Implementation Plan: docs/development/SOC2/RR_RECONSTRUCTION_V1_1_IMPLEMENTATION_PLAN_JAN10.md
 // - Test Plan: docs/development/SOC2/SOC2_AUDIT_RR_RECONSTRUCTION_TEST_PLAN.md
-// - API Design: docs/handoff/RR_RECONSTRUCTION_API_DESIGN_DEC_18_2025.md
 package reconstruction

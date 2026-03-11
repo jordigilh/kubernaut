@@ -6,14 +6,12 @@ spec:
   # All 8 DetectedLabels Fields Test (BR-WORKFLOW-004, ADR-043 v1.3)
   # Used by: DataStorage E2E -- E2E-DS-043-005
   # Purpose: Validates all 8 detectedLabels fields survive full OCI -> DB -> HTTP round-trip
-  metadata:
-    workflowName: detected-labels-all-fields-v1
-    version: "1.0.0"
-    description:
-      what: "Test workflow with all 8 detectedLabels fields populated"
-      whenToUse: "For E2E testing that all detectedLabels fields survive the production pipeline"
-      whenNotToUse: "Not intended for production use"
-      preconditions: "DataStorage service running with action_type_taxonomy seeded"
+  version: "1.0.0"
+  description:
+    what: "Test workflow with all 8 detectedLabels fields populated"
+    whenToUse: "For E2E testing that all detectedLabels fields survive the production pipeline"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "DataStorage service running with action_type_taxonomy seeded"
   
   actionType: RestartPod
   

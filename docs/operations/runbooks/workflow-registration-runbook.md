@@ -122,7 +122,7 @@ kubectl auth can-i patch remediationworkflows/status \
   -n kubernaut-system
 
 # Step 4: Verify DS actually registered the workflow
-# (replace <workflow-id> with the spec.metadata.workflowId from the CRD)
+# (replace <workflow-id> with the metadata.name from the CRD)
 kubectl exec -n kubernaut-system deploy/data-storage -- \
   wget -q -O- "http://localhost:8080/api/v1/workflows?name=<workflow-id>" 2>&1
 ```

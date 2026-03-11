@@ -114,7 +114,6 @@ func main() {
 
 	// DD-AUTH-014: Allow PORT environment variable to override config (SME Option D)
 	// This enables --network=host mode in integration tests where container must listen on external port
-	// Reference: docs/handoff/DD_AUTH_014_ENVTEST_IPV6_BLOCKER.md (Option D)
 	if portEnv := os.Getenv("PORT"); portEnv != "" {
 		if port, err := strconv.Atoi(portEnv); err == nil {
 			cfg.Server.Port = port

@@ -245,5 +245,4 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 	// Reason: Integration tests cannot manipulate CreationTimestamp to simulate timeouts
 	//         without actual time passing. Unit tests can test the timeout detection logic
 	//         directly with controlled timestamps.
-	// Documentation: docs/handoff/RO_TIMEOUT_TESTS_MIGRATION_COMPLETE_DEC_24_2025.md
 })

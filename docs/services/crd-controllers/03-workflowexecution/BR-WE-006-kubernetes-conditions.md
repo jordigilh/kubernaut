@@ -340,7 +340,7 @@
 ## References
 
 - Kubernetes API Conventions: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-- AIAnalysis Conditions Implementation: `docs/handoff/AIANALYSIS_CONDITIONS_IMPLEMENTATION_STATUS.md`
+- AIAnalysis Conditions Implementation: (internal development reference, removed in v1.0)
 - WorkflowExecution CRD Schema: `api/workflowexecution/v1alpha1/workflowexecution_types.go`
 
 ---

@@ -5,188 +5,77 @@ description: "Documentation standards and architecture guidelines for kubernaut"
 
 # Documentation Standards for Kubernaut
 
-## Documentation Philosophy
-Kubernaut maintains comprehensive documentation following the **Diátaxis** framework:
-- **Tutorials**: Learning-oriented guidance for getting started
-- **How-to Guides**: Problem-oriented solutions for specific tasks
-- **Technical Reference**: Information-oriented API and configuration details
-- **Explanation**: Understanding-oriented architectural concepts and decisions
-
 ## Documentation Structure
-### Core Documentation
-**Location**: [docs/](mdc:docs/)
+
+### In-Repo Documentation (`docs/`)
+
+Technical documentation for developers and contributors, organized into 7 directories:
+
+- **[docs/architecture/](mdc:docs/architecture/)** - Architectural Decision Records (ADRs), Design Decisions (DDs), diagrams, case studies, shared utilities patterns
+- **[docs/design/](mdc:docs/design/)** - CRD design specifications (`design/CRD/`)
+- **[docs/requirements/](mdc:docs/requirements/)** - Business requirements (`BR-*`), module documentation
+- **[docs/testing/](mdc:docs/testing/)** - Test plans, testing guidelines, patterns reference, per-issue test documentation
+- **[docs/operations/](mdc:docs/operations/)** - Deployment guides, build guides, CI/CD, troubleshooting, runbooks
+- **[docs/development/](mdc:docs/development/)** - APDC methodology, coding guidelines, getting-started guides, technical debt tracking
+- **[docs/services/](mdc:docs/services/)** - Per-service documentation split into `stateless/` and `crd-controllers/`
+
+### User-Facing Documentation
+
+The public documentation site lives in a separate repository and is published at:
+[https://jordigilh.github.io/kubernaut-docs/](https://jordigilh.github.io/kubernaut-docs/)
+
+### Root-Level Files
+
 - [README.md](mdc:README.md) - Project overview and quick start
-- [docs/ARCHITECTURE.md](mdc:docs/ARCHITECTURE.md) - System architecture and design decisions
-- [docs/DEPLOYMENT.md](mdc:docs/DEPLOYMENT.md) - Production deployment strategies
-- [docs/TESTING_FRAMEWORK.md](mdc:docs/TESTING_FRAMEWORK.md) - Comprehensive testing approach
+- [CONTRIBUTING.md](mdc:CONTRIBUTING.md) - Contribution guidelines
+- [CODE_OF_CONDUCT.md](mdc:CODE_OF_CONDUCT.md) - Community code of conduct
+- [SECURITY.md](mdc:SECURITY.md) - Security vulnerability reporting
+- [CHANGELOG.md](mdc:CHANGELOG.md) - Release changelog
 
-### Development Guides
-- [docs/development/HOLMESGPT_DEPLOYMENT.md](mdc:docs/development/HOLMESGPT_DEPLOYMENT.md) - HolmesGPT integration guide
-- [docs/development/e2e-testing/](mdc:docs/development/e2e-testing/) - E2E testing setup and execution
+## Where to Put New Documentation
 
-### Analysis and Planning
-- [docs/COMPETITIVE_ANALYSIS.md](mdc:docs/COMPETITIVE_ANALYSIS.md) - Market positioning
-- [docs/VECTOR_DATABASE_ANALYSIS.md](mdc:docs/VECTOR_DATABASE_ANALYSIS.md) - Storage architecture decisions
-- [docs/RAG_ENHANCEMENT_ANALYSIS.md](mdc:docs/RAG_ENHANCEMENT_ANALYSIS.md) - AI enhancement strategies
+| Document Type | Location |
+|---|---|
+| Architectural decision (long-term impact) | `docs/architecture/decisions/DD-[CATEGORY]-NNN-title.md` or `ADR-NNN-title.md` |
+| Business requirement | `docs/requirements/BR-[CATEGORY]-NNN-title.md` |
+| Test plan for an issue/BR | `docs/testing/[ISSUE-ID]/TEST_PLAN.md` |
+| Service-specific guide | `docs/services/{stateless,crd-controllers}/[service-name]/` |
+| Deployment or operational guide | `docs/operations/deployment/` or `docs/operations/runbooks/` |
+| Development methodology or standards | `docs/development/` |
+| Troubleshooting guide | `docs/operations/troubleshooting/` |
 
 ## Code Documentation Standards
+
 ### Package Documentation
-```go
-// Package workflow provides intelligent Kubernetes remediation workflow
-// orchestration with AI-powered decision making and learning capabilities.
-//
-// The workflow engine supports multi-step remediation sequences, dynamic
-// template generation, and effectiveness assessment for continuous improvement.
-//
-// Key components:
-//   - WorkflowEngine: Core orchestration and execution
-//   - IntelligentWorkflowBuilder: AI-generated workflow creation
-//   - EffectivenessAssessor: Learning from action outcomes
-//
-// Example usage:
-//   engine := workflow.NewEngine(config)
-//   workflow, err := engine.CreateWorkflow(ctx, alertData)
-//   if err != nil {
-//       return fmt.Errorf("workflow creation failed: %w", err)
-//   }
-package workflow
-```
-
-### Function Documentation
-- Document all exported functions and methods
-- Include parameter descriptions and expected types
-- Describe return values and potential errors
+- Document all exported functions, methods, and interfaces
+- Include parameter descriptions and potential errors
 - Provide usage examples for complex functions
-- Document any side effects or state changes
 
-### Interface Documentation
-```go
-// WorkflowEngine defines the core interface for orchestrating
-// intelligent Kubernetes remediation workflows.
-type WorkflowEngine interface {
-    // CreateWorkflow generates a new workflow based on alert context
-    // and historical patterns. Returns an error if workflow generation
-    // fails or if insufficient context is available.
-    CreateWorkflow(ctx context.Context, alert AlertData) (*Workflow, error)
+### Test Documentation
+- Use Ginkgo/Gomega BDD framework
+- Reference business requirements in test descriptions (e.g., `BR-AI-008`)
+- Reference test plan IDs when available (e.g., `UT-WF-197-001`)
 
-    // ExecuteWorkflow runs the specified workflow with safety validation
-    // and progress monitoring. Execution can be cancelled via context.
-    ExecuteWorkflow(ctx context.Context, workflow *Workflow) error
-}
-```
+## Architectural Decision Records
 
-## Architecture Documentation Guidelines
-### Architectural Decision Records (ADRs)
-Store architectural decisions in [docs/adr/](mdc:docs/adr/) following this format:
-- **Title**: Short noun phrase describing the decision
+Store in [docs/architecture/decisions/](mdc:docs/architecture/decisions/):
+- **Design Decisions**: `DD-[CATEGORY]-NNN-title.md`
+- **Architecture Decision Records**: `ADR-NNN-title.md`
 - **Status**: Proposed, Accepted, Deprecated, Superseded
-- **Context**: Business and technical context requiring the decision
-- **Decision**: The change being proposed or accepted
-- **Consequences**: Positive and negative implications
-
-### System Diagrams
-- Use Mermaid for architecture diagrams in markdown
-- Include sequence diagrams for complex workflows
-- Maintain up-to-date component relationship diagrams
-- Document data flow and integration patterns
 
 ## Testing Documentation
-### Test Strategy Documentation
-**Location**: [docs/testing/README.md](mdc:docs/testing/README.md)
-- Document the three-tier testing approach (80% per-tier coverage target)
-- Include test execution instructions and CI/CD integration
-- Maintain test coverage reports and confidence metrics
 
-### Test Case Documentation
-```go
-var _ = Describe("BR-AI-008: AI Effectiveness Assessment", func() {
-    // Business Requirement: The system shall assess the effectiveness
-    // of executed actions and adjust future recommendations accordingly.
-
-    Context("with historical action data", func() {
-        It("should calculate confidence scores based on past outcomes", func() {
-            // Test implementation validates business outcome,
-            // not implementation details
-        })
-    })
-})
-```
-
-## API Documentation
-### REST API Documentation
-- Use OpenAPI/Swagger specifications for REST endpoints
-- Document request/response schemas with examples
-- Include authentication and authorization requirements
-- Provide curl examples for common use cases
-
-### Configuration Documentation
-```yaml
-# AI Services Configuration
-ai_services:
-  holmesgpt:
-    enabled: true                    # Enable HolmesGPT integration
-    endpoint: "http://localhost:8090" # HolmesGPT service endpoint
-    timeout: "300s"                  # Request timeout duration
-
-  llm_providers:
-    openai:
-      api_key: "${OPENAI_API_KEY}"   # OpenAI API key from environment
-      model: "gpt-4"                 # Default model for analysis
-      max_tokens: 4000               # Maximum tokens per request
-```
-
-## Maintenance Documentation
-### Change Log Standards
-- Follow [Keep a Changelog](https://keepachangelog.com/) format
-- Categorize changes: Added, Changed, Deprecated, Removed, Fixed, Security
-- Include version numbers and release dates
-- Reference related issues and pull requests
-
-### Troubleshooting Guides
-- Document common problems and solutions
-- Include diagnostic commands and log interpretation
-- Provide escalation procedures for complex issues
-- Maintain FAQ section for frequent questions
+Location: [docs/testing/](mdc:docs/testing/)
+- [docs/testing/README.md](mdc:docs/testing/README.md) - Testing strategy overview
+- [docs/testing/TESTING_PATTERNS_QUICK_REFERENCE.md](mdc:docs/testing/TESTING_PATTERNS_QUICK_REFERENCE.md) - Daily patterns reference
+- [docs/testing/ANTI_PATTERN_DETECTION.md](mdc:docs/testing/ANTI_PATTERN_DETECTION.md) - Anti-pattern detection guide
+- Per-issue test plans in `docs/testing/[ISSUE-ID]/`
 
 ## Writing Style Guidelines
-### Technical Writing Standards
-- Use clear, concise language avoiding jargon
-- Write in active voice when possible
+
+- Use clear, concise language
+- Write in active voice
 - Use present tense for current functionality
 - Include concrete examples and code snippets
 - Structure content with clear headings and bullet points
-
-### Code Examples
 - Ensure all code examples are tested and functional
-- Include necessary imports and context
-- Use meaningful variable names and comments
-- Show error handling patterns
-- Provide complete, runnable examples when possible
-
-## Documentation Workflow
-### Creation and Updates
-1. **Plan**: Identify documentation needs during feature development
-2. **Draft**: Create initial documentation alongside code changes
-3. **Review**: Include documentation review in pull request process
-4. **Update**: Maintain documentation currency with code changes
-5. **Validate**: Test documentation examples and instructions
-
-### Quality Assurance
-- Review documentation for technical accuracy
-- Test all instructions and code examples
-- Validate links and references
-- Ensure consistency with project terminology
-- Check for outdated information during releases
-
-## Tools and Automation
-### Documentation Generation
-- Use Go's built-in documentation tools: `go doc`
-- Generate API documentation from code comments
-- Automate diagram updates from configuration changes
-- Include documentation checks in CI/CD pipeline
-
-### Link Validation
-- Implement automated link checking for markdown files
-- Validate internal references and file paths
-- Check external links for availability
-- Include link validation in pull request checks

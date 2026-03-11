@@ -80,7 +80,7 @@ Project-specific templates enforcing Kubernaut standards.
 - ✅ **Customization**: Templates include placeholders for controller-specific logic
 - ✅ **Documentation**: Templates include inline guidance and examples
 
-**Template Library Location**: `docs/templates/crd-controller-gap-remediation/`
+**Template Library Location**: `docs/templates/crd-controller-gap-remediation/` *(REMOVED in v1.0 restructure)*
 
 **Templates Provided**:
 1. **`cmd-main-template.go.template`**: Main entry point with configuration, health checks, controller manager setup
@@ -93,7 +93,7 @@ Project-specific templates enforcing Kubernaut standards.
 
 **Scaffolding Tool**: Makefile target `make scaffold-controller` for interactive directory creation
 
-**Usage Guide**: `docs/templates/crd-controller-gap-remediation/GAP_REMEDIATION_GUIDE.md`
+**Usage Guide**: `docs/templates/crd-controller-gap-remediation/GAP_REMEDIATION_GUIDE.md` *(REMOVED in v1.0 restructure)*
 
 ---
 
@@ -194,7 +194,7 @@ Project-specific templates enforcing Kubernaut standards.
 **Description**: Kubernaut-specific templates with placeholders for controller customization.
 
 **Approach**:
-- Templates in `docs/templates/crd-controller-gap-remediation/`
+- Templates in `docs/templates/crd-controller-gap-remediation/` *(REMOVED in v1.0 restructure)*
 - `.template` suffix to prevent Go build errors
 - Placeholders: `{{CONTROLLER_NAME}}`, `{{PACKAGE_PATH}}`, `{{CRD_GROUP}}/{{CRD_VERSION}}/{{CRD_KIND}}`
 - Makefile target: `make scaffold-controller` for directory creation
@@ -213,7 +213,7 @@ Project-specific templates enforcing Kubernaut standards.
 
 **Cons**:
 - ⚠️ **Maintenance Burden**: Templates must be updated when standards change
-  - **Mitigation**: Templates live in `docs/templates/` with versioning and changelog
+  - **Mitigation**: Templates lived in `docs/templates/` (REMOVED in v1.0 restructure)
 - ⚠️ **Manual Placeholder Replacement**: No automated `sed` script (user does find-replace)
   - **Mitigation**: Clear instructions in `GAP_REMEDIATION_GUIDE.md`, limited placeholders (5 total)
 - ⚠️ **Template Divergence**: Risk of templates diverging from production controllers
@@ -264,7 +264,7 @@ Project-specific templates enforcing Kubernaut standards.
 ## Implementation
 
 **Primary Implementation Files**:
-- **Template Library**: `docs/templates/crd-controller-gap-remediation/`
+- **Template Library**: `docs/templates/crd-controller-gap-remediation/` *(REMOVED in v1.0 restructure)*
   - `cmd-main-template.go.template` - Main entry point
   - `config-template.go.template` - Configuration package
   - `config-test-template.go.template` - Config tests
@@ -273,9 +273,9 @@ Project-specific templates enforcing Kubernaut standards.
   - `makefile-targets-template` - Build targets
   - `configmap-template.yaml` - K8s ConfigMap
 
-- **Usage Guide**: `docs/templates/crd-controller-gap-remediation/GAP_REMEDIATION_GUIDE.md`
+- **Usage Guide**: `docs/templates/crd-controller-gap-remediation/GAP_REMEDIATION_GUIDE.md` *(REMOVED in v1.0 restructure)*
 - **Scaffolding Tool**: `Makefile` target `scaffold-controller` (lines 342-390)
-- **Integration Documentation**: `docs/development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md` (lines 72-96)
+- **Integration Documentation**: `docs/development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md` (lines 72-96) *(code templates REMOVED in v1.0 restructure)*
 - **Main README Reference**: `README.md` (lines 531-547)
 
 **Scaffolding Workflow**:
@@ -473,7 +473,7 @@ When a service requires domain-specific documentation not covered by common patt
 ### Template Reference
 
 - **Documentation Template**: `docs/development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md`
-- **Code Templates**: `docs/templates/crd-controller-gap-remediation/`
+- **Code Templates**: `docs/templates/crd-controller-gap-remediation/` *(REMOVED in v1.0 restructure)*
 
 ---
 

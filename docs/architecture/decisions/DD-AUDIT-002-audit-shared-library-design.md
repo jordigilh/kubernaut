@@ -60,7 +60,7 @@ Service → dsgen.AuditEventRequest (with helpers) → BufferedStore →
 
 **Decision Rationale**: Preventing mock-hidden integration issues (primary concern) + significant simplification
 
-See: `docs/handoff/TRIAGE_AUDIT_ARCHITECTURE_SIMPLIFICATION.md` for complete analysis
+(internal development reference, removed in v1.0)
 
 ---
 
@@ -122,7 +122,7 @@ See: `docs/handoff/TRIAGE_AUDIT_ARCHITECTURE_SIMPLIFICATION.md` for complete ana
 3. Verify/add audit events for workflow update/disable operations
 4. Update tests to reflect new audit scope
 
-See: `docs/handoff/DS_AUDIT_ARCHITECTURE_CHANGES_NOTIFICATION.md` for detailed implementation guidance
+(internal development reference, removed in v1.0)
 
 ---
 

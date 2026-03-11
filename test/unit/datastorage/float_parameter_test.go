@@ -22,6 +22,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
+	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
 // ========================================
@@ -31,63 +32,12 @@ import (
 // Test Plan: docs/testing/45/TEST_PLAN.md
 // ========================================
 
-const floatParamBaseYAML = `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: float-param-test
-spec:
-  metadata:
-    workflowName: float-param-test
-    version: "1.0.0"
-    description:
-      what: Tests float parameter type
-      whenToUse: When validating float parameter support
-      whenNotToUse: N/A
-      preconditions: None
-  actionType: ScaleMemory
-  labels:
-    signalType: MemoryPressure
-    severity: [medium]
-    component: pod
-    environment: [production]
-    priority: P1
-`
-
-const floatParamValidSchemaYAML = floatParamBaseYAML + `  parameters:
-    - name: THRESHOLD
-      type: float
-      description: Memory threshold percentage
-      required: true
-      minimum: 0.0
-      maximum: 1.0
-  execution:
-    engine: tekton
-    bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-`
-
-const intParamBackwardCompatYAML = floatParamBaseYAML + `  parameters:
-    - name: REPLICAS
-      type: integer
-      description: Number of replicas
-      required: true
-      minimum: 1
-      maximum: 10
-  execution:
-    engine: tekton
-    bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-`
-
-const floatParamWithDecimalBoundsYAML = floatParamBaseYAML + `  parameters:
-    - name: CPU_LIMIT
-      type: float
-      description: CPU limit in cores
-      required: true
-      minimum: 0.25
-      maximum: 8.0
-  execution:
-    engine: tekton
-    bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-`
+// floatParamBaseCRD returns a CRD tailored for float parameter tests.
+func floatParamBaseCRD() *models.WorkflowSchemaCRD {
+	crd := testutil.NewTestWorkflowCRD("float-param-test", "ScaleMemory", "tekton")
+	crd.Spec.Labels.Severity = []string{"medium"}
+	return crd
+}
 
 var _ = Describe("Float Parameter Type [BR-WORKFLOW-005]", func() {
 	var parser *schema.Parser
@@ -98,20 +48,41 @@ var _ = Describe("Float Parameter Type [BR-WORKFLOW-005]", func() {
 
 	Context("schema validation", func() {
 		It("UT-WF-005-001: should accept float parameter type in schema", func() {
-			parsedSchema, err := parser.ParseAndValidate(floatParamValidSchemaYAML)
+			crd := floatParamBaseCRD()
+			min, max := 0.0, 1.0
+			crd.Spec.Parameters = []models.WorkflowParameter{
+				{Name: "THRESHOLD", Type: "float", Description: "Memory threshold percentage", Required: true, Minimum: &min, Maximum: &max},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedSchema.Parameters[0].Type).To(Equal("float"))
 		})
 
 		It("UT-WF-005-002: should parse float minimum/maximum bounds", func() {
-			parsedSchema, err := parser.ParseAndValidate(floatParamWithDecimalBoundsYAML)
+			crd := floatParamBaseCRD()
+			min, max := 0.25, 8.0
+			crd.Spec.Parameters = []models.WorkflowParameter{
+				{Name: "CPU_LIMIT", Type: "float", Description: "CPU limit in cores", Required: true, Minimum: &min, Maximum: &max},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(*parsedSchema.Parameters[0].Minimum).To(BeNumerically("~", 0.25, 0.001))
 			Expect(*parsedSchema.Parameters[0].Maximum).To(BeNumerically("~", 8.0, 0.001))
 		})
 
 		It("UT-WF-005-004: should maintain integer min/max backward compatibility", func() {
-			parsedSchema, err := parser.ParseAndValidate(intParamBackwardCompatYAML)
+			crd := floatParamBaseCRD()
+			min, max := 1.0, 10.0
+			crd.Spec.Parameters = []models.WorkflowParameter{
+				{Name: "REPLICAS", Type: "integer", Description: "Number of replicas", Required: true, Minimum: &min, Maximum: &max},
+			}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(*parsedSchema.Parameters[0].Minimum).To(BeNumerically("==", 1))
 			Expect(*parsedSchema.Parameters[0].Maximum).To(BeNumerically("==", 10))

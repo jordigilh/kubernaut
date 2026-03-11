@@ -6,14 +6,12 @@ spec:
   # Duplicate Test Workflow Schema (BR-WORKFLOW-004)
   # Used by: DataStorage E2E — 18_workflow_duplicate_api_test.go (DS-BUG-001)
   # This workflow is created twice to test 409 Conflict duplicate detection
-  metadata:
-    workflowName: duplicate-test-v1
-    version: "1.0.0"
-    description:
-      what: "Test workflow for duplicate creation detection"
-      whenToUse: "For E2E testing of RFC 9110 Section 15.5.10 duplicate resource handling"
-      whenNotToUse: "Not intended for production use"
-      preconditions: "DataStorage service running"
+  version: "1.0.0"
+  description:
+    what: "Test workflow for duplicate creation detection"
+    whenToUse: "For E2E testing of RFC 9110 Section 15.5.10 duplicate resource handling"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "DataStorage service running"
   
   actionType: RestartPod
   

@@ -44,6 +44,7 @@ import (
 	emaudit "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/audit"
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
 	emmetrics "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/metrics"
+	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/startup"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -228,35 +229,21 @@ func main() {
 		setupLog.Info("AlertManager disabled in configuration, alert resolution check will be skipped")
 	}
 
-	// ========================================
-	// FAIL-FAST READINESS CHECK (E2E-EM-FF-001)
-	// ========================================
-	// Verify connectivity to enabled external services at startup.
-	// If an enabled service is unreachable, the controller exits immediately
-	// rather than running in a degraded state with silent failures.
+	// Best-effort readiness check (Issue #331): Prometheus and AlertManager are
+	// optional enrichment sources, not startup dependencies. Connectivity is
+	// verified when enabled and configured; failures are logged as warnings.
 	startupCtx, startupCancel := context.WithTimeout(context.Background(), cfg.External.ConnectionTimeout+5*time.Second)
 	defer startupCancel()
 
-	if cfg.External.PrometheusEnabled && promClient != nil {
-		setupLog.Info("Fail-fast: verifying Prometheus connectivity...")
-		if err := promClient.Ready(startupCtx); err != nil {
-			setupLog.Error(err, "FATAL: Prometheus is enabled but unreachable at startup",
-				"url", cfg.External.PrometheusURL,
-			)
-			os.Exit(1)
-		}
-		setupLog.Info("Prometheus connectivity verified")
-	}
-
-	if cfg.External.AlertManagerEnabled && amClient != nil {
-		setupLog.Info("Fail-fast: verifying AlertManager connectivity...")
-		if err := amClient.Ready(startupCtx); err != nil {
-			setupLog.Error(err, "FATAL: AlertManager is enabled but unreachable at startup",
-				"url", cfg.External.AlertManagerURL,
-			)
-			os.Exit(1)
-		}
-		setupLog.Info("AlertManager connectivity verified")
+	readiness := startup.CheckExternalServices(startupCtx, setupLog, startup.ExternalServicesConfig{
+		PrometheusEnabled:   cfg.External.PrometheusEnabled,
+		PrometheusURL:       cfg.External.PrometheusURL,
+		AlertManagerEnabled: cfg.External.AlertManagerEnabled,
+		AlertManagerURL:     cfg.External.AlertManagerURL,
+	}, promClient, amClient)
+	if readiness.Error != nil {
+		setupLog.Error(readiness.Error, "External service configuration error")
+		os.Exit(1)
 	}
 
 	// ========================================

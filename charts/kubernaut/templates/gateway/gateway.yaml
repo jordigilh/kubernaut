@@ -16,7 +16,7 @@ data:
       writeTimeout: 30s
       idleTimeout: 120s
     datastorage:
-      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      url: "{{ include "kubernaut.datastorage.url" . }}"
       timeout: 10s
       buffer:
         bufferSize: 10000
@@ -117,11 +117,16 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: gateway
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.gateway | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.gateway | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.gateway "global" .Values.global) | nindent 6 }}
       containers:
         - name: gateway
           image: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.gateway | nindent 12 }}
           args:
             - "--config=/etc/gateway/config.yaml"
           ports:

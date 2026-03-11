@@ -1,41 +1,35 @@
-# Notification Controller - Multi-Architecture Dockerfile using Red Hat UBI9
-# Supports: linux/amd64, linux/arm64
-# Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
+# Notification Controller - Multi-Architecture Dockerfile using Red Hat UBI9 (ADR-027)
+#
+# Build targets (Issue #80):
+#   production:  scratch runtime -- zero CVE surface, no shell (release.yml)
+#   development: ubi9-minimal runtime -- debug tools, coverage support (ci-pipeline.yml)
+#
+# Usage:
+#   Production:  podman build --target production -t notification:v1.0 -f docker/notification-controller-ubi9.Dockerfile .
+#   Development: podman build --build-arg GOFLAGS=-cover -t notification:dev -f docker/notification-controller-ubi9.Dockerfile .
 
-# Build stage - Red Hat UBI9 Go 1.24 toolset
+# ============================================================================
+# Stage 1: Build (native cross-compile, no QEMU needed for Go)
+# ============================================================================
 FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
 
-# Switch to root for package installation
-USER root
-
-# Install build dependencies
-RUN dnf update -y && \
-	dnf install -y git ca-certificates tzdata && \
-	dnf clean all
-
-# Switch back to default user for security
-USER 1001
-
-# Set working directory
-WORKDIR /opt/app-root/src
-
-# Copy go mod files
-COPY --chown=1001:0 go.mod go.sum ./
-
-# Copy entire codebase (notification controller depends on multiple pkg/* packages)
-COPY --chown=1001:0 . .
-
-# GOFLAGS: Optional build flags (e.g., -cover for E2E coverage profiling per E2E_COVERAGE_COLLECTION.md)
 ARG GOFLAGS=""
-ARG APP_VERSION=dev
+ARG APP_VERSION=v1.0.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
-# Build the notification controller binary
-# -mod=mod: Automatically download dependencies during build (per DD-BUILD-001)
-# CGO_ENABLED=0 for static linking (no C dependencies)
-# GOOS=linux for Linux targets
-# GOARCH will be set automatically by podman's --platform flag
+USER root
+RUN dnf update -y && \
+	dnf install -y git ca-certificates tzdata && \
+	dnf clean all
+USER 1001
+
+WORKDIR /opt/app-root/src
+COPY --chown=1001:0 go.mod go.sum ./
+COPY --chown=1001:0 . .
+
+# DD-TEST-007: Coverage builds use simple flags (no -a, -installsuffix, -extldflags)
+# GOARCH set automatically by podman's --platform flag
 RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	echo "Building with coverage instrumentation (no symbol stripping)..."; \
 	CGO_ENABLED=0 GOOS=linux GOFLAGS="${GOFLAGS}" go build \
@@ -52,54 +46,30 @@ RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	./cmd/notification/main.go; \
     fi
 
-# Runtime stage - Red Hat UBI9 minimal runtime image
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
-
-# Install runtime dependencies
-RUN microdnf update -y && \
-	microdnf install -y ca-certificates tzdata && \
-	microdnf clean all
-
-# Create non-root user for security
-RUN useradd -r -u 1001 -g root notification-controller-user
-
-# Copy the binary from builder stage
-COPY --from=builder /opt/app-root/src/manager /usr/local/bin/manager
-
-# Set proper permissions
-RUN chmod +x /usr/local/bin/manager
-
-# Switch to non-root user for security
-USER notification-controller-user
-
-# Expose ports (controller + health)
+# ============================================================================
+# Stage 2a: Production runtime (scratch -- zero CVE surface, Issue #80)
+# Trust chain artifacts (CA certs, timezone, passwd) copied from builder which
+# installs ca-certificates and tzdata via dnf.
+# ============================================================================
+FROM scratch AS production
+COPY --from=builder /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/ssl/certs/ca-certificates.crt
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder /opt/app-root/src/manager /manager
+USER nobody
 EXPOSE 8080 8081
-
-# Health check using the built-in health endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-	CMD ["/usr/bin/curl", "-f", "http://localhost:8081/healthz"] || exit 1
-
-# Set entrypoint
-ENTRYPOINT ["/usr/local/bin/manager"]
-
-# Default: no arguments (configuration via environment variables or Kubernetes ConfigMaps)
-# Do NOT copy config files into the image - use ConfigMaps for runtime configuration
+ENTRYPOINT ["/manager"]
 CMD []
 
-# OCI standard labels
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
 	org.opencontainers.image.title="kubernaut-notification"
-
-# Red Hat UBI9 compatible metadata labels (REQUIRED per ADR-027)
 LABEL name="kubernaut-notification-controller" \
 	vendor="Kubernaut" \
-	version="1.1.0" \
-	release="1" \
 	summary="Kubernaut Notification Controller - CRD-based Notification Management" \
-	description="A Kubernetes controller component of Kubernaut that manages NotificationRequest custom resources for delivering notifications to multiple channels (Console, Slack) with automatic retry, exponential backoff, and at-least-once delivery guarantees." \
+	description="Manages NotificationRequest custom resources for delivering notifications to multiple channels (Console, Slack) with automatic retry, exponential backoff, and at-least-once delivery guarantees." \
 	maintainer="jgil@redhat.com" \
 	component="notification-controller" \
 	part-of="kubernaut" \
@@ -107,3 +77,24 @@ LABEL name="kubernaut-notification-controller" \
 	io.k8s.display-name="Kubernaut Notification Controller" \
 	io.openshift.tags="kubernaut,notification,controller,crd,kubernetes,slack,console"
 
+# ============================================================================
+# Stage 2b: Development/E2E runtime (ubi9-minimal -- debug + coverage, DD-TEST-007)
+# Default stage when no --target is specified (backwards compatible with CI).
+# ============================================================================
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest AS development
+RUN microdnf update -y && \
+	microdnf install -y ca-certificates tzdata && \
+	microdnf clean all
+RUN useradd -r -u 1001 -g root notification-controller-user
+COPY --from=builder /opt/app-root/src/manager /usr/local/bin/manager
+RUN chmod +x /usr/local/bin/manager
+USER notification-controller-user
+EXPOSE 8080 8081
+ENTRYPOINT ["/usr/local/bin/manager"]
+CMD []
+
+LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
+	org.opencontainers.image.version="${APP_VERSION}" \
+	org.opencontainers.image.revision="${GIT_COMMIT}" \
+	org.opencontainers.image.created="${BUILD_DATE}" \
+	org.opencontainers.image.title="kubernaut-notification"

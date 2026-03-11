@@ -312,7 +312,7 @@ image: quay.io/jordigilh/service-name:v1.2.3
 ```
 
 ### Registry Documentation
-**Location**: `docs/deployment/CONTAINER_REGISTRY.md`
+**Location**: `docs/operations/deployment/CONTAINER_REGISTRY.md`
 **Content**: Registry access, credentials, policies
 
 ## 🔗 **Integration Points**

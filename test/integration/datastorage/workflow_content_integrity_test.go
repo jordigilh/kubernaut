@@ -37,6 +37,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
 // createIntegrityTestServer creates an in-process httptest.Server with real PostgreSQL
@@ -169,33 +171,16 @@ func countWorkflowsByName(workflowName string) int {
 }
 
 func integrityTestYAML(testID, description string) string {
-	return fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: %s
-spec:
-  metadata:
-    workflowName: %s
-    version: "1.0.0"
-    description:
-      what: "%s"
-      whenToUse: "Integration test"
-  actionType: IncreaseMemoryLimits
-  labels:
-    severity:
-      - critical
-    environment:
-      - production
-    component: pod
-    priority: P1
-  execution:
-    engine: job
-    bundle: "quay.io/kubernaut/workflows/scale-memory:v1.0.0@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1"
-  parameters:
-    - name: TARGET_RESOURCE
-      type: string
-      required: true
-      description: "Target resource"`, testID, testID, description)
+	crd := testutil.NewTestWorkflowCRD(testID, "IncreaseMemoryLimits", "job")
+	crd.Spec.Description = sharedtypes.StructuredDescription{
+		What:      description,
+		WhenToUse: "Integration test",
+	}
+	crd.Spec.Execution.Bundle = "quay.io/kubernaut/workflows/scale-memory:v1.0.0@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1"
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target resource"},
+	}
+	return testutil.MarshalWorkflowCRD(crd)
 }
 
 var _ = Describe("Workflow Content Integrity Integration Tests (BR-WORKFLOW-006)", func() {

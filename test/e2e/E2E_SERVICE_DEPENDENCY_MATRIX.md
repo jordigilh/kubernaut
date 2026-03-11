@@ -216,7 +216,7 @@ Phase 4: Deploy services (PostgreSQL + Redis in parallel)
 Phase 5: Wait for services ready
 ```
 
-**Authority**: `docs/handoff/E2E_PATTERN_PERFORMANCE_ANALYSIS_JAN07.md`
+**Authority**: (internal development reference, removed in v1.0)
 
 **Reference Implementation**: 
 - `test/infrastructure/remediationorchestrator_e2e_hybrid.go` (authoritative)
@@ -305,7 +305,7 @@ make test-e2e-gateway  # Builds locally as before
 - `test/infrastructure/shared_integration_utils.go` - Shared utilities
 
 ### Performance Analysis
-- `docs/handoff/E2E_PATTERN_PERFORMANCE_ANALYSIS_JAN07.md` - Hybrid pattern validation
+- (internal development reference, removed in v1.0)
 
 ---
 

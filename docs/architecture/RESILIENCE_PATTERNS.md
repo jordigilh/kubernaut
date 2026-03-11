@@ -526,7 +526,6 @@ func TestResiliencePatterns(t *testing.T) {
 - [Alert Processing Flow](ALERT_PROCESSING_FLOW.md)
 - [Production Monitoring](PRODUCTION_MONITORING.md)
 - [Performance Requirements](PERFORMANCE_REQUIREMENTS.md)
-- [Health Monitoring Integration](../deployment/MILESTONE_1_CONFIGURATION_OPTIONS.md)
 
 ---
 

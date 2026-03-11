@@ -6,14 +6,12 @@ spec:
   # DD-WE-006 Test Workflow: Ansible with Secret Dependency (BR-WE-015)
   # Used by: WorkflowExecution E2E (Ansible Secret dependency injection tests)
   # Authority: DD-WE-006, BR-WE-014, BR-WE-015
-  metadata:
-    workflowName: test-dep-secret-ansible
-    version: "1.0.0"
-    description:
-      what: "Ansible workflow that declares a Secret dependency for E2E testing of AWX credential injection"
-      whenToUse: "For E2E validation of dependencies.secrets injection via ephemeral AWX credentials"
-      whenNotToUse: "Not intended for production use"
-      preconditions: "AWX deployed, Secret 'e2e-dep-secret-ansible' in execution namespace"
+  version: "1.0.0"
+  description:
+    what: "Ansible workflow that declares a Secret dependency for E2E testing of AWX credential injection"
+    whenToUse: "For E2E validation of dependencies.secrets injection via ephemeral AWX credentials"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "AWX deployed, Secret 'e2e-dep-secret-ansible' in execution namespace"
   
   actionType: RestartPod
   

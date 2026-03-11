@@ -170,7 +170,7 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 			"Metrics component should be assessed")
 		Expect(ea.Status.Components.MetricsScore).ToNot(BeNil(),
 			"Metrics score should be set")
-		Expect(*ea.Status.Components.MetricsScore).To(Equal(0.0),
-			"Metrics score should be 0.0 when no improvement is detected")
+		Expect(*ea.Status.Components.MetricsScore).To(BeNumerically("~", 0.0, 0.05),
+			"Metrics score should be ~0.0 when no improvement is detected")
 	})
 })

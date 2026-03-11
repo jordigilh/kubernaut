@@ -68,6 +68,7 @@ func (p *Parser) Parse(content string) (*models.WorkflowSchema, error) {
 
 	spec := &crd.Spec
 	spec.SchemaVersion = models.APIVersionToSchemaVersion[crd.APIVersion]
+	spec.WorkflowName = crd.Metadata.Name
 
 	return spec, nil
 }
@@ -94,13 +95,13 @@ func validateCRDEnvelope(crd *models.WorkflowSchemaCRD) error {
 	return nil
 }
 
-// ParseAndValidate parses and validates workflow-schema.yaml content
+// ParseAndValidate parses and validates workflow-schema.yaml content.
 // Validates:
-// - Valid YAML structure
-// - Required fields (metadata, actionType, labels, parameters)
-// - Mandatory labels (signalType, severity, environment, component, priority)
+// - Valid YAML structure and CRD envelope (apiVersion, kind, metadata.name)
+// - Required fields (version, description, actionType, labels, parameters)
+// - Mandatory labels (severity, environment, component, priority)
 // - Structured description (what, whenToUse required)
-// Returns error if validation fails
+// Returns error if validation fails.
 func (p *Parser) ParseAndValidate(content string) (*models.WorkflowSchema, error) {
 	schema, err := p.Parse(content)
 	if err != nil {
@@ -118,16 +119,16 @@ func (p *Parser) ParseAndValidate(content string) (*models.WorkflowSchema, error
 // CRD envelope validation (apiVersion, kind) is handled by Parse/validateCRDEnvelope.
 // SchemaVersion is derived from apiVersion and already populated by Parse.
 func (p *Parser) Validate(schema *models.WorkflowSchema) error {
-	// Validate Metadata
-	if schema.Metadata.WorkflowName == "" {
-		return models.NewSchemaValidationError("metadata.workflowName", "workflowName is required")
+	// Validate required identification fields
+	if schema.WorkflowName == "" {
+		return models.NewSchemaValidationError("metadata.name", "metadata.name is required (provides workflow name)")
 	}
-	if schema.Metadata.Version == "" {
-		return models.NewSchemaValidationError("metadata.version", "version is required")
+	if schema.Version == "" {
+		return models.NewSchemaValidationError("version", "version is required")
 	}
 
 	// Validate structured description
-	if err := models.ValidateDescription(&schema.Metadata.Description); err != nil {
+	if err := models.ValidateDescription(&schema.Description); err != nil {
 		return err
 	}
 
@@ -298,7 +299,7 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 
 	// Build labels map from label fields (camelCase keys)
 	// DD-WORKFLOW-001 v2.7: severity always stored as JSONB array. No wildcard.
-	// DD-WORKFLOW-016: signalType is optional, environment/severity are []string for JSONB array storage
+	// DD-WORKFLOW-016: environment/severity are []string for JSONB array storage
 	labels := map[string]interface{}{
 		"severity": []string(schema.Labels.Severity),
 	}
@@ -351,7 +352,7 @@ func (p *Parser) ExtractDescription(schema *models.WorkflowSchema) (json.RawMess
 		return nil, fmt.Errorf("schema is nil")
 	}
 
-	descJSON, err := json.Marshal(schema.Metadata.Description)
+	descJSON, err := json.Marshal(schema.Description)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal description: %w", err)
 	}

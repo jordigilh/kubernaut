@@ -714,7 +714,7 @@ spec:
 **File 1**: `pkg/gateway/processing/distributed_lock_test.go` (NEW)
 **File 2**: `test/integration/gateway/distributed_locking_test.go` (NEW)
 **File 3**: `test/e2e/gateway/distributed_locking_test.go` (NEW)
-**File 4**: `docs/handoff/DD_GATEWAY_013_IMPLEMENTATION_COMPLETE_DEC_30_2025.md` (NEW)
+**File 4**: (internal development reference, removed in v1.0)
 
 ---
 

@@ -78,12 +78,12 @@ Stakeholder-facing materials demonstrating kubernaut's business value and ROI.
 New to Kubernaut? Start here for quick setup and integration examples.
 
 - **[APDC Quick Reference](development/methodology/APDC_QUICK_REFERENCE.md)** - 🆕 Essential APDC methodology commands and concepts
-- **[Quick Reference Card](getting-started/QUICK_REFERENCE_CARD.md)** - Essential commands and concepts
-- **[Integration Example](getting-started/INTEGRATION_EXAMPLE.md)** - Step-by-step integration walkthrough
+- **[Quick Reference Card](development/getting-started/QUICK_REFERENCE_CARD.md)** - Essential commands and concepts
+- **[Integration Example](development/getting-started/INTEGRATION_EXAMPLE.md)** - Step-by-step integration walkthrough
 - **Setup Guides**:
-  - **[LLM Setup Guide](getting-started/setup/LLM_SETUP_GUIDE.md)** - Configure AI language models
-  - **[PgVector Setup Guide](getting-started/setup/PGVECTOR_SETUP_GUIDE.md)** - Vector database configuration
-  - **[Deployment Guide](getting-started/setup/DEPLOYMENT.md)** - Production deployment instructions
+  - **[LLM Setup Guide](development/getting-started/setup/LLM_SETUP_GUIDE.md)** - Configure AI language models
+  - **[PgVector Setup Guide](development/getting-started/setup/PGVECTOR_SETUP_GUIDE.md)** - Vector database configuration
+  - **[Deployment Guide](development/getting-started/setup/DEPLOYMENT.md)** - Production deployment instructions
 
 ### 🏗️ **Architecture & Design**
 Comprehensive system architecture with 630+ business requirements coverage.
@@ -102,9 +102,7 @@ Comprehensive system architecture with 630+ business requirements coverage.
 ### 🚀 **Deployment & Operations**
 Production deployment and operational configuration.
 
-- **[Environment Variables](deployment/ENVIRONMENT_VARIABLES.md)** - Complete configuration reference
-- **[Configuration Options](deployment/MILESTONE_1_CONFIGURATION_OPTIONS.md)** - Milestone 1 specific settings
-- **[Vector Database Setup](deployment/VECTOR_DATABASE_SETUP.md)** - Production vector database configuration
+- **[Environment Variables](operations/deployment/ENVIRONMENT_VARIABLES.md)** - Complete configuration reference
 
 ### 👨‍💻 **Development**
 Resources for contributors and developers extending Kubernaut.
@@ -200,8 +198,8 @@ Advanced technical topics and deep-dive analysis.
 | I want to... | Go to... |
 |---------------|----------|
 | **See business value & ROI** | [Value Proposition](value-proposition/) |
-| **Get started quickly** | [Getting Started](getting-started/) |
-| **Deploy to production** | [Deployment](deployment/) |
+| **Get started quickly** | [Getting Started](development/getting-started/) |
+| **Deploy to production** | [Deployment](operations/deployment/) |
 | **Understand the architecture** | [Architecture](ARCHITECTURE.md) |
 | **Contribute code** | [Development](development/) |
 | **Check project status** | [Status](status/) |

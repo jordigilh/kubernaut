@@ -364,7 +364,7 @@ if errors.IsRetryableHTTPStatus(statusCode) {
 
 ### Service Migration Announcement
 
-**Document**: `docs/handoff/SHARED_ERROR_CLASSIFICATION_MIGRATION_DEC_20_2025.md`
+**Document**: (internal development reference, removed in v1.0)
 
 **Recipients**:
 - [x] **AIAnalysis (AA)**: P1 - Create library and migrate (Week 1)

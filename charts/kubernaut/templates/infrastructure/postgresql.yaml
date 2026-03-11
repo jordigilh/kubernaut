@@ -1,3 +1,14 @@
+{{- if .Values.postgresql.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgresql
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: postgresql
+    {{- include "kubernaut.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -25,7 +36,7 @@ metadata:
     app: postgresql
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.postgresql.replicas | default 1 }}
   selector:
     matchLabels:
       app: postgresql
@@ -34,10 +45,21 @@ spec:
       labels:
         app: postgresql
     spec:
+      serviceAccountName: postgresql
+      {{- $pscDefaults := dict "seccompProfile" (dict "type" "RuntimeDefault") }}
+      {{- $pscOverride := .Values.postgresql.podSecurityContext | default dict }}
+      securityContext:
+        {{- toYaml (merge $pscOverride $pscDefaults) | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.postgresql | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.postgresql "global" .Values.global) | nindent 6 }}
       containers:
         - name: postgresql
           image: {{ .Values.postgresql.image }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          {{- $cscDefaults := dict "allowPrivilegeEscalation" false "capabilities" (dict "drop" (list "ALL")) }}
+          {{- $cscOverride := .Values.postgresql.containerSecurityContext | default dict }}
+          securityContext:
+            {{- toYaml (merge $cscOverride $cscDefaults) | nindent 12 }}
           ports:
             - name: postgresql
               containerPort: 5432
@@ -70,12 +92,14 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
+            failureThreshold: 3
           livenessProbe:
             exec:
               command: ["pg_isready", "-U", {{ .Values.postgresql.auth.username | quote }}, "-d", {{ .Values.postgresql.auth.database | quote }}]
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
+            failureThreshold: 3
       volumes:
         - name: postgresql-data
           persistentVolumeClaim:
@@ -89,6 +113,8 @@ metadata:
   labels:
     app: postgresql
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/resource-policy": keep
 spec:
   accessModes:
     - ReadWriteOnce
@@ -98,3 +124,4 @@ spec:
   resources:
     requests:
       storage: {{ .Values.postgresql.storage.size }}
+{{- end }}

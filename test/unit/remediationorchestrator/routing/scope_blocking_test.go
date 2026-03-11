@@ -42,8 +42,6 @@ import (
 //   - BR-SCOPE-010: RO Scope Blocking
 //   - ADR-053: Resource Scope Management Architecture
 //
-// Test Plan: docs/services/crd-controllers/05-remediationorchestrator/RO_SCOPE_VALIDATION_TEST_PLAN_V1.0.md
-//
 // Test IDs: UT-RO-010-001 through UT-RO-010-009
 
 var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {

@@ -26,7 +26,6 @@ import (
 // ========================================
 // KUBERNETES CONDITIONS (BR-WE-006)
 // 📋 Design Decision: BR-WE-006 | ✅ Approved Design | Confidence: 95%
-// See: docs/handoff/REQUEST_WE_KUBERNETES_CONDITIONS_IMPLEMENTATION.md
 // ========================================
 //
 // Kubernetes Conditions provide standardized status information for WorkflowExecution CRD.

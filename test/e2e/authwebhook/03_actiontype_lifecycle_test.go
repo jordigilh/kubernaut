@@ -217,13 +217,10 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 				Namespace: testNamespace,
 			},
 			Spec: rwv1alpha1.RemediationWorkflowSpec{
-				Metadata: rwv1alpha1.RemediationWorkflowMetadata{
-					WorkflowName: "e2e-rw-for-at",
-					Version:      "1.0.0",
-					Description: rwv1alpha1.RemediationWorkflowDescription{
-						What:      "E2E workflow for ActionType cross-update",
-						WhenToUse: "During E2E testing",
-					},
+				Version: "1.0.0",
+				Description: rwv1alpha1.RemediationWorkflowDescription{
+					What:      "E2E workflow for ActionType cross-update",
+					WhenToUse: "During E2E testing",
 				},
 				ActionType: "E2ERestartPod",
 				Labels: rwv1alpha1.RemediationWorkflowLabels{

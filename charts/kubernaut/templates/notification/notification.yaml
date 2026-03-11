@@ -79,7 +79,7 @@ data:
       credentials:
         dir: "/etc/notification/credentials"
     datastorage:
-      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      url: "{{ include "kubernaut.datastorage.url" . }}"
       timeout: 10s
       buffer:
         bufferSize: 10000
@@ -138,7 +138,7 @@ metadata:
     control-plane: controller-manager
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.notification.replicas }}
   selector:
     matchLabels:
       app: notification-controller
@@ -154,11 +154,16 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: notification-controller
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.notification | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.notification | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.notification "global" .Values.global) | nindent 6 }}
       containers:
         - name: manager
           image: {{ include "kubernaut.image" (dict "service" "notification" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.notification | nindent 12 }}
           env:
             - name: CONFIG_PATH
               value: "/etc/notification/config.yaml"
@@ -182,6 +187,8 @@ spec:
               port: 8081
             initialDelaySeconds: 15
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /readyz
@@ -206,6 +213,7 @@ spec:
           configMap:
             name: notification-controller-config
         - name: credentials
+          {{- if .Values.notification.credentials }}
           projected:
             sources:
             {{- range .Values.notification.credentials }}
@@ -215,6 +223,9 @@ spec:
                     - key: {{ .secretKey | default "webhook-url" }}
                       path: {{ .name }}
             {{- end }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
         - name: notification-output
           emptyDir: {}
       terminationGracePeriodSeconds: 10

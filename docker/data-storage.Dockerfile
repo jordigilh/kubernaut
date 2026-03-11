@@ -1,8 +1,18 @@
 # Data Storage Service - Multi-Architecture Dockerfile using Red Hat UBI9
 # Supports: linux/amd64, linux/arm64
 # Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
+#
+# Build targets (Issue #80):
+#   production:  scratch runtime -- zero CVE surface, no shell (release.yml)
+#   development: ubi9-minimal runtime -- debug tools, coverage support (ci-pipeline.yml)
+#
+# Usage:
+#   Production:  podman build --target production -t data-storage:v1.0 -f docker/data-storage.Dockerfile .
+#   Development: podman build --build-arg GOFLAGS=-cover -t data-storage:dev -f docker/data-storage.Dockerfile .
 
-# Build stage - Red Hat UBI9 Go 1.25 toolset (latest stable)
+# ============================================================================
+# Stage 1: Build (native cross-compile, no QEMU needed for Go)
+# ============================================================================
 FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
 
 # Auto-detect target architecture from --platform flag
@@ -13,7 +23,7 @@ ARG GOOS=linux
 ARG GOARCH=${TARGETARCH:-amd64}
 # Support coverage profiling for E2E tests (E2E_COVERAGE_COLLECTION.md)
 ARG GOFLAGS=""
-ARG APP_VERSION=dev
+ARG APP_VERSION=v1.0.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
@@ -66,61 +76,29 @@ RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	./cmd/datastorage/main.go; \
 	fi
 
-# Runtime stage - Red Hat UBI9 minimal runtime image
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
-
-# Install runtime dependencies
-RUN microdnf update -y && \
-	microdnf install -y ca-certificates tzdata && \
-	microdnf clean all
-
-# Create non-root user for security
-RUN useradd -r -u 1001 -g root data-storage-user
-
-# Copy the binary from builder stage
-COPY --from=builder /opt/app-root/src/data-storage /usr/local/bin/data-storage
-
-# Copy OpenAPI spec for validation middleware (BR-STORAGE-034)
+# ============================================================================
+# Stage 2a: Production runtime (scratch -- zero CVE surface, Issue #80)
+# Trust chain artifacts (CA certs, timezone, passwd) copied from builder which
+# installs ca-certificates and tzdata via dnf.
+# ============================================================================
+FROM scratch AS production
+COPY --from=builder /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/ssl/certs/ca-certificates.crt
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder /opt/app-root/src/data-storage /data-storage
 COPY --from=builder /opt/app-root/src/api/openapi/data-storage-v1.yaml /usr/local/share/kubernaut/api/openapi/data-storage-v1.yaml
-
-# Set proper permissions
-RUN chmod +x /usr/local/bin/data-storage
-
-# Switch to non-root user for security
-USER data-storage-user
-
-# Expose ports (HTTP + Metrics)
+USER nobody
 EXPOSE 8080 9090
-
-# Health check using HTTP endpoint
-# Fixed: Use shell syntax (not JSON array + shell) to avoid /bin/sh syntax errors
-# The || exit 1 requires shell processing, so we use shell form (no JSON array)
-# DD-AUTH-014: Use PORT env var for host network compatibility (defaults to 8080)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-	CMD /usr/bin/curl -f http://localhost:${PORT:-8080}/health || exit 1
-
-# Set entrypoint
-ENTRYPOINT ["/usr/local/bin/data-storage"]
-
-# Default: no arguments (rely on environment variables or mounted ConfigMap)
-# Configuration can be provided via:
-#   1. Environment variables (recommended for Kubernetes)
-#   2. ConfigMap mounted at /etc/data-storage/config.yaml
-#   3. Command-line flag: --config /path/to/config.yaml
+ENTRYPOINT ["/data-storage"]
 CMD []
 
-# OCI standard labels
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
 	org.opencontainers.image.title="kubernaut-datastorage"
-
-# Red Hat UBI9 compatible metadata labels (REQUIRED per ADR-027)
 LABEL name="kubernaut-data-storage" \
 	vendor="Kubernaut" \
-	version="0.1.0" \
-	release="1" \
 	summary="Kubernaut Data Storage Service - Audit Trail Persistence" \
 	description="A microservice component of Kubernaut that provides persistent storage for remediation audit trails, dual-write to PostgreSQL and vector databases, with pgvector integration for semantic search capabilities." \
 	maintainer="jgil@redhat.com" \
@@ -130,4 +108,25 @@ LABEL name="kubernaut-data-storage" \
 	io.k8s.display-name="Kubernaut Data Storage Service" \
 	io.openshift.tags="kubernaut,data-storage,audit,postgres,pgvector,database,persistence,microservice"
 
+# ============================================================================
+# Stage 2b: Development/E2E runtime (ubi9-minimal -- debug + coverage, DD-TEST-007)
+# Default stage when no --target is specified (backwards compatible with CI).
+# ============================================================================
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest AS development
+RUN microdnf update -y && \
+	microdnf install -y ca-certificates tzdata && \
+	microdnf clean all
+RUN useradd -r -u 1001 -g root data-storage-user
+COPY --from=builder /opt/app-root/src/data-storage /usr/local/bin/data-storage
+COPY --from=builder /opt/app-root/src/api/openapi/data-storage-v1.yaml /usr/local/share/kubernaut/api/openapi/data-storage-v1.yaml
+RUN chmod +x /usr/local/bin/data-storage
+USER data-storage-user
+EXPOSE 8080 9090
+ENTRYPOINT ["/usr/local/bin/data-storage"]
+CMD []
 
+LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
+	org.opencontainers.image.version="${APP_VERSION}" \
+	org.opencontainers.image.revision="${GIT_COMMIT}" \
+	org.opencontainers.image.created="${BUILD_DATE}" \
+	org.opencontainers.image.title="kubernaut-datastorage"

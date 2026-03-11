@@ -326,7 +326,7 @@ deliveryOrchestrator := delivery.NewOrchestrator(
 
 ## References
 
-- **SP Team Proposal**: `docs/handoff/NT_MVP_E2E_CHANNEL_ARCHITECTURE_DEC_22_2025.md`
+- **SP Team Proposal**: (internal development reference, removed in v1.0)
 - **TDD Methodology**: `.cursor/rules/00-core-development-methodology.mdc`
 - **Testing Strategy**: `.cursor/rules/03-testing-strategy.mdc`
 - **Notification Test Plan**: `docs/services/crd-controllers/06-notification/TEST_PLAN_NT_V1_0_MVP.md`

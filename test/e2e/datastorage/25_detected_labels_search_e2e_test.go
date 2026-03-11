@@ -90,13 +90,13 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 			workflows, ok := listResp.(*dsgen.WorkflowDiscoveryResponse)
 			Expect(ok).To(BeTrue())
 			for _, wf := range workflows.Workflows {
-				if wf.WorkflowName == "e2e-stub-workflow" {
+				if wf.WorkflowName == "e2e-stub" {
 					registeredWorkflowID = wf.WorkflowId.String()
 					break
 				}
 			}
 			Expect(registeredWorkflowID).ToNot(BeEmpty(),
-				"should find existing e2e-stub-workflow workflow")
+				"should find existing e2e-stub workflow")
 			logger.Info("Found existing workflow", "uuid", registeredWorkflowID)
 		default:
 			Fail(fmt.Sprintf("Unexpected CreateWorkflow response type: %T", resp))
@@ -195,13 +195,13 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 
 		var foundMatchingWorkflow bool
 		for _, wf := range matchWorkflows.Workflows {
-			if wf.WorkflowName == "e2e-stub-workflow" {
+			if wf.WorkflowName == "e2e-stub" {
 				foundMatchingWorkflow = true
 				break
 			}
 		}
 		Expect(foundMatchingWorkflow).To(BeTrue(),
-			"e2e-stub-workflow (hpaEnabled=true) should appear when filtering by hpaEnabled=true")
+			"e2e-stub (hpaEnabled=true) should appear when filtering by hpaEnabled=true")
 
 		By("searching with non-matching detected_labels filter (networkIsolated=true)")
 		nonMatchResp, err := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
@@ -220,7 +220,7 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 
 		var foundInNonMatch bool
 		for _, wf := range nonMatchWorkflows.Workflows {
-			if wf.WorkflowName == "e2e-stub-workflow" {
+			if wf.WorkflowName == "e2e-stub" {
 				foundInNonMatch = true
 				break
 			}
@@ -262,14 +262,14 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 			}
 
 			for _, wf := range workflows.Workflows {
-				if wf.WorkflowName == "e2e-stub-workflow" {
+				if wf.WorkflowName == "e2e-stub" {
 					foundWorkflow = true
 					return true
 				}
 			}
 			return false
 		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-			"e2e-stub-workflow should appear in discovery results")
+			"e2e-stub should appear in discovery results")
 
 		Expect(foundWorkflow).To(BeTrue())
 
@@ -351,13 +351,13 @@ var _ = Describe("E2E-DS-043-005: All 8 DetectedLabels Fields OCI -> DB -> HTTP 
 			workflows, ok := listResp.(*dsgen.WorkflowDiscoveryResponse)
 			Expect(ok).To(BeTrue())
 			for _, wf := range workflows.Workflows {
-				if wf.WorkflowName == "detected-labels-all-fields-v1" {
+				if wf.WorkflowName == "e2e-all-labels" {
 					allFieldsWorkflowID = wf.WorkflowId.String()
 					break
 				}
 			}
 			Expect(allFieldsWorkflowID).ToNot(BeEmpty(),
-				"should find existing detected-labels-all-fields-v1 workflow")
+				"should find existing e2e-all-labels workflow")
 			logger.Info("Found existing all-8-fields workflow", "uuid", allFieldsWorkflowID)
 		default:
 			Fail(fmt.Sprintf("Unexpected CreateWorkflow response type: %T", resp))

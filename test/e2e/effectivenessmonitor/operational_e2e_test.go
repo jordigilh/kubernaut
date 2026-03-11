@@ -37,7 +37,7 @@ import (
 //
 // Scenarios:
 //   - E2E-EM-VW-001: Delayed assessment -> EA marked expired
-//   - E2E-EM-FF-001: EM started without Prometheus -> pod fails to start
+//   - E2E-EM-FF-001: EM started without Prometheus -> pod boots with warning (#331)
 //   - E2E-EM-GS-001: SIGTERM handled within shutdown timeout
 
 var _ = Describe("EffectivenessMonitor Operational E2E Tests", Label("e2e"), func() {
@@ -88,22 +88,17 @@ var _ = Describe("EffectivenessMonitor Operational E2E Tests", Label("e2e"), fun
 	})
 
 	// ========================================================================
-	// E2E-EM-FF-001: Fail-Fast Startup
+	// E2E-EM-FF-001: Best-Effort Startup (formerly Fail-Fast)
+	// Per #331: Prometheus/AlertManager are optional enrichment sources.
+	// EM boots with a warning when they are unreachable instead of crashing.
 	// ========================================================================
-	Describe("Fail-Fast Startup (FF)", func() {
-		It("E2E-EM-FF-001: should fail to start when Prometheus is unreachable", func() {
+	Describe("Best-Effort Startup (FF)", func() {
+		It("E2E-EM-FF-001: should start successfully when Prometheus is unreachable", func() {
 			By("Creating an EM deployment with Prometheus URL pointing to a non-existent service")
-			// This test verifies that the EM controller exits with a FATAL error
-			// when it cannot reach an enabled Prometheus at startup.
-			//
-			// Strategy: Deploy a second EM instance (em-ff-test) with a bad Prometheus URL.
-			// Verify the pod enters CrashLoopBackOff or has restart count > 0.
 
 			ffNamespace := createTestNamespace("em-ff-e2e")
 			defer deleteTestNamespace(ffNamespace)
 
-			// Get the actual EM image from the running deployment (built by SetupEMInfrastructure).
-			// The image has a dynamically generated tag, so we can't hardcode it.
 			imageCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 				"get", "deployment", "effectivenessmonitor-controller",
 				"-n", "kubernaut-system",
@@ -179,21 +174,34 @@ spec:
 			cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 			cmd.Stdin = strings.NewReader(manifest)
 			output, err := cmd.CombinedOutput()
-			Expect(err).ToNot(HaveOccurred(), "Failed to deploy fail-fast test: %s", string(output))
+			Expect(err).ToNot(HaveOccurred(), "Failed to deploy best-effort test: %s", string(output))
 
-			By("Waiting for the pod to enter CrashLoopBackOff or have restart count > 0")
+			By("Waiting for the pod to become Running with zero restarts")
 			Eventually(func() bool {
-				podListCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+				phaseCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 					"get", "pods", "-n", ffNamespace, "-l", "app=em-ff-test",
-					"-o", "jsonpath={.items[0].status.containerStatuses[0].restartCount}")
-				out, err := podListCmd.Output()
+					"-o", "jsonpath={.items[0].status.phase}")
+				out, err := phaseCmd.Output()
 				if err != nil {
 					return false
 				}
-				// If restart count > 0, the pod has crashed at least once
-				return string(out) != "" && string(out) != "0"
+				return string(out) == "Running"
 			}, 90*time.Second, 3*time.Second).Should(BeTrue(),
-				"EM pod should crash when Prometheus is unreachable (fail-fast)")
+				"EM pod should reach Running despite unreachable Prometheus (#331 best-effort)")
+
+			By("Verifying zero restarts (no crash)")
+			restartCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+				"get", "pods", "-n", ffNamespace, "-l", "app=em-ff-test",
+				"-o", "jsonpath={.items[0].status.containerStatuses[0].restartCount}")
+			restartOut, err := restartCmd.Output()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(string(restartOut)).To(Equal("0"),
+				"EM pod should not have restarted (best-effort startup)")
+
+			// Log assertion intentionally omitted: the test namespace runs without
+			// RBAC so controller-runtime cache errors flood the logs, pushing the
+			// Prometheus warning out of --tail range. Running + 0 restarts is
+			// sufficient proof of best-effort startup (#331).
 		})
 	})
 

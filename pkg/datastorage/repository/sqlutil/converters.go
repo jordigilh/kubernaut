@@ -18,8 +18,6 @@ limitations under the License.
 //
 // This package was extracted from repeated patterns across DataStorage repositories
 // to reduce code duplication and improve maintainability.
-//
-// Authority: docs/handoff/DS_REFACTORING_OPPORTUNITIES.md (Opportunity 2.1)
 package sqlutil
 
 import (
@@ -31,7 +29,6 @@ import (
 
 // ========================================
 // NULL TYPE CONVERTERS (V1.0 REFACTOR)
-// 📋 Authority: docs/handoff/DS_REFACTORING_OPPORTUNITIES.md
 // ========================================
 //
 // These converters reduce 38 instances of sql.Null* conversion patterns

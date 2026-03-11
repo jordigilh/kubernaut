@@ -414,12 +414,10 @@ cat /tmp/kubernaut-must-gather/yourservice-integration-*/yourservice_postgres_te
 
 - **Shared Utility**: [`test/infrastructure/shared_integration_utils.go`](../../../test/infrastructure/shared_integration_utils.go)
 - **SignalProcessing Integration**: [`test/integration/signalprocessing/suite_test.go`](../../../test/integration/signalprocessing/suite_test.go)
-- **HandoffDoc**: [`docs/handoff/MUST_GATHER_DIAGNOSTICS_JAN14_2026.md`](../../handoff/MUST_GATHER_DIAGNOSTICS_JAN14_2026.md)
-
 ### Bug Discovery
 
 - **SP-AUDIT-001**: Flush bug discovered via must-gather logs
-- **Root Cause Analysis**: [`docs/handoff/SP_AUDIT_001_FLUSH_BUG_JAN14_2026.md`](../../handoff/SP_AUDIT_001_FLUSH_BUG_JAN14_2026.md)
+- **Root Cause Analysis**: (internal development reference, removed in v1.0)
 
 ### Patterns & Inspiration
 

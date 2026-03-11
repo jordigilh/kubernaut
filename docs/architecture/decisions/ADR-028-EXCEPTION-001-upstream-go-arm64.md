@@ -332,7 +332,7 @@ podman scan quay.io/jordigilh/golang:1.25-bookworm
 - [ADR-028: Container Image Registry and Base Image Policy](./ADR-028-container-registry-policy.md)
 
 ### Issue Tracking
-- **Root Cause Analysis**: `docs/handoff/WE_E2E_RUNTIME_CRASH_JAN09.md`
+- **Root Cause Analysis**: (internal development reference, removed in v1.0)
 - **Validation Tests**: Kind cluster logs in `/tmp/workflowexecution-e2e-logs-*`
 
 ### External References

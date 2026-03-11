@@ -6,14 +6,12 @@ spec:
   # Test Intentional Failure Job Workflow Schema (BR-WORKFLOW-004)
   # Authority: ADR-043
   # E2E Testing: Validates failure handling in WorkflowExecution controller's Job backend
-  metadata:
-    workflowName: test-job-intentional-failure
-    version: "1.0.0"
-    description:
-      what: "Intentionally failing workflow using Kubernetes Job backend for E2E testing"
-      whenToUse: "For E2E validation of failure detection and error propagation"
-      whenNotToUse: "Not intended for production use"
-      preconditions: "Kubernetes cluster with Job support"
+  version: "1.0.0"
+  description:
+    what: "Intentionally failing workflow using Kubernetes Job backend for E2E testing"
+    whenToUse: "For E2E validation of failure detection and error propagation"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "Kubernetes cluster with Job support"
   
   actionType: RestartPod
   

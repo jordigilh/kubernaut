@@ -4624,7 +4624,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 	// ========================================
 	// P1: MarkFailedWithReason - CRD Enum Coverage (Unit Test Plan v1.0.0)
 	// Target: 62.1% → 75%+ coverage
-	// Test Plan: docs/services/crd-controllers/03-workflowexecution/unit-test-plan.md
 	// ========================================
 
 	Describe("P1: MarkFailedWithReason - CRD Enum Coverage", func() {
@@ -4956,7 +4955,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 	// ========================================
 	// P2: updateStatus - Behavioral Coverage (Unit Test Plan v1.0.0)
 	// Target: 60.0% → 70%+ coverage
-	// Test Plan: docs/services/crd-controllers/03-workflowexecution/unit-test-plan.md
 	// ========================================
 
 	Describe("P2: updateStatus - Behavioral Coverage", func() {
@@ -5133,7 +5131,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 	// ========================================
 	// P3: sanitizeLabelValue - Edge Cases (Unit Test Plan v1.0.0)
 	// Target: 75.0% → 85%+ coverage
-	// Test Plan: docs/services/crd-controllers/03-workflowexecution/unit-test-plan.md
 	// Note: Testing indirectly through BuildPipelineRun (sanitizeLabelValue is private)
 	// ========================================
 

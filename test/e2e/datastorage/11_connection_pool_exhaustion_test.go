@@ -223,7 +223,6 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 				GinkgoWriter.Printf("⏱️  Total burst duration: %v\n", totalDuration)
 
 				// NOTE: Connection pool metrics deferred to V1.1 (data-driven decision)
-				// See: docs/handoff/DS_V1.0_V1.1_ROADMAP.md for implementation plan
 				// When implemented, verify: datastorage_db_connection_wait_time_seconds histogram
 			})
 		})

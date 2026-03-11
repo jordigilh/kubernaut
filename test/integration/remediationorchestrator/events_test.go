@@ -330,7 +330,6 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 	// IT-RO-095-03: Timeout event trail — NOT FEASIBLE in envtest.
 	// CreationTimestamp is immutable (set by K8s API server), so we cannot create
 	// an RR with an expired StartTime. Covered by unit tests (timeout_detector_test.go).
-	// Ref: docs/handoff/RO_TIMEOUT_TESTS_TRIAGE_DEC_24_2025.md
 
 	Context("IT-RO-095-04: Consecutive failure blocking event trail", func() {
 		It("should emit RemediationCreated and ConsecutiveFailureBlocked when target at threshold", func() {

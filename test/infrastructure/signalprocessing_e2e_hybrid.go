@@ -65,7 +65,6 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	// - Uses BuildImageForKind() for all images
 	// - Returns dynamic image names for later use
 	// - No manual tag generation (PHASE 0 removed)
-	// - Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	phase1Start := time.Now()
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Start: %s\n", phase1Start.Format("15:04:05.000"))
@@ -172,7 +171,6 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	// Per Consolidated API Migration (January 2026):
 	// - Uses LoadImageToKind() for all images
 	// - Uses image names from builtImages map
-	// - Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	phase3Start := time.Now()
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Start: %s\n", phase3Start.Format("15:04:05.000"))
@@ -446,7 +444,6 @@ func BuildSignalProcessingImageWithCoverage(writer io.Writer) error {
 // createSignalProcessingKindCluster creates a Kind cluster for SignalProcessing E2E tests
 // createSignalProcessingKindCluster creates a Kind cluster for SignalProcessing E2E tests
 // REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
-// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
 func createSignalProcessingKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
 	opts := KindClusterOptions{
 		ClusterName:    clusterName,
@@ -873,7 +870,6 @@ func signalProcessingControllerCoverageManifestWithPolicy(imageName, imagePullPo
 	// Per Consolidated API Migration (January 2026):
 	// Accept dynamic image name as parameter (built by BuildImageForKind)
 	// No longer generates own tag - uses pre-built image
-	// Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 
 	return fmt.Sprintf(`
 apiVersion: v1
@@ -1086,7 +1082,6 @@ spec:
 func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName string, writer io.Writer) error {
 	// Per Consolidated API Migration (January 2026):
 	// Accept dynamic image name as parameter (built by BuildImageForKind)
-	// Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 
 	// Use dynamic imagePullPolicy based on environment (CI/CD registry vs local)
 	imagePullPolicy := GetImagePullPolicy()

@@ -161,19 +161,18 @@ metadata:
 # ============================================
 spec:
   # ============================================
-  # WORKFLOW METADATA (Required)
+  # WORKFLOW IDENTITY (Required)
+  # Workflow name comes from metadata.name
   # ============================================
-  metadata:
-    workflowId: string  # REQUIRED - lowercase alphanumeric with hyphens
-    version: string     # REQUIRED - semantic version (e.g., "1.0.0")
-    description:        # REQUIRED - structured description for LLM and operators
-      what: string        # REQUIRED - one sentence describing what the workflow does
-      whenToUse: string   # REQUIRED - root cause conditions
-      whenNotToUse: string  # OPTIONAL - exclusion conditions
-      preconditions: string # OPTIONAL - conditions to verify
-    maintainers:        # OPTIONAL
-      - name: string
-        email: string
+  version: string     # REQUIRED - semantic version (e.g., "1.0.0")
+  description:        # REQUIRED - structured description for LLM and operators
+    what: string        # REQUIRED - one sentence describing what the workflow does
+    whenToUse: string   # REQUIRED - root cause conditions
+    whenNotToUse: string  # OPTIONAL - exclusion conditions
+    preconditions: string # OPTIONAL - conditions to verify
+  maintainers:        # OPTIONAL
+    - name: string
+      email: string
 
   # ============================================
   # ACTION TYPE (Required)
@@ -267,17 +266,15 @@ kind: RemediationWorkflow
 metadata:
   name: oomkill-scale-down
 spec:
-  metadata:
-    workflowId: oomkill-scale-down
-    version: "1.0.0"
-    description:
-      what: "Scale down deployment replicas to reduce memory pressure"
-      whenToUse: "When pods are OOMKilled and temporary capacity reduction is acceptable"
-      whenNotToUse: "When OOM is caused by memory leaks requiring code fix"
-      preconditions: "Pod is managed by a Deployment or StatefulSet"
-    maintainers:
-      - name: Platform Team
-        email: platform@example.com
+  version: "1.0.0"
+  description:
+    what: "Scale down deployment replicas to reduce memory pressure"
+    whenToUse: "When pods are OOMKilled and temporary capacity reduction is acceptable"
+    whenNotToUse: "When OOM is caused by memory leaks requiring code fix"
+    preconditions: "Pod is managed by a Deployment or StatefulSet"
+  maintainers:
+    - name: Platform Team
+      email: platform@example.com
 
   actionType: ScaleReplicas
 
@@ -360,10 +357,10 @@ Validation is performed in two stages by the parser at `pkg/datastorage/schema/p
 
 | Field | Rule |
 |-------|------|
-| `spec.metadata.workflowId` | Required. Lowercase alphanumeric with hyphens. |
-| `spec.metadata.version` | Required. Semantic version string. |
-| `spec.metadata.description.what` | Required. |
-| `spec.metadata.description.whenToUse` | Required. |
+| `metadata.name` | Required. Workflow name; lowercase alphanumeric with hyphens. |
+| `spec.version` | Required. Semantic version string. |
+| `spec.description.what` | Required. |
+| `spec.description.whenToUse` | Required. |
 | `spec.actionType` | Required. PascalCase from action type taxonomy. |
 | `spec.labels.severity` | Required. Array of severity values. |
 | `spec.labels.environment` | Required. Array of environment values. |

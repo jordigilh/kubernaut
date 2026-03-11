@@ -136,10 +136,7 @@ Time Saved: ~3 hours
 
 ## 🔗 **Related Decisions**
 
-- **Day 9.1 Implementation**: `docs/handoff/SOC2_DAY9_1_COMPLETE_JAN07.md`
-- **Day 9.1.6 E2E Tests**: `docs/handoff/SOC2_DAY9_1_6_TESTS_COMPLETE_JAN07.md`
-- **cert-manager E2E**: `docs/handoff/SOC2_DAY9_CERTMANAGER_E2E_JAN07.md`
-- **SOC2 Plan**: `docs/development/SOC2/SOC2_WEEK2_COMPLETE_PLAN_V1_1_JAN07.md`
+- **SOC2 Plan**: SOC2_WEEK2_COMPLETE_PLAN_V1_1_JAN07 (document removed)
 
 ---
 

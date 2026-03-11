@@ -1,14 +1,13 @@
 # Test Intentional Failure Tekton Workflow Schema (BR-WORKFLOW-004)
 # Authority: ADR-043
 # E2E Testing: Validates failure handling in WorkflowExecution controller
-metadata:
-  workflowName: test-intentional-failure
-  version: "1.0.0"
-  description:
-    what: "Intentionally failing workflow for E2E testing of failure handling"
-    whenToUse: "For E2E validation of failure detection and error propagation"
-    whenNotToUse: "Not intended for production use"
-    preconditions: "Tekton Pipelines installed in the cluster"
+# Workflow name: test-intentional-failure (from CRD metadata.name per #329)
+version: "1.0.0"
+description:
+  what: "Intentionally failing workflow for E2E testing of failure handling"
+  whenToUse: "For E2E validation of failure detection and error propagation"
+  whenNotToUse: "Not intended for production use"
+  preconditions: "Tekton Pipelines installed in the cluster"
 
 actionType: RestartPod
 

@@ -31,7 +31,7 @@ data:
       timeout: "180s"
       sessionPollInterval: "15s"
     datastorage:
-      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      url: "{{ include "kubernaut.datastorage.url" . }}"
       timeout: "10s"
       buffer:
         bufferSize: 20000
@@ -139,7 +139,7 @@ metadata:
     app: aianalysis-controller
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.aianalysis.replicas }}
   selector:
     matchLabels:
       app: aianalysis-controller
@@ -153,11 +153,16 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: aianalysis-controller
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.aianalysis | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.aianalysis | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.aianalysis "global" .Values.global) | nindent 6 }}
       containers:
         - name: aianalysis
           image: {{ include "kubernaut.image" (dict "service" "aianalysis" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.aianalysis | nindent 12 }}
           env:
             - name: CONFIG_PATH
               value: /etc/aianalysis/config.yaml
@@ -168,6 +173,14 @@ spec:
             - containerPort: 8080
             - containerPort: 9090
             - containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /healthz

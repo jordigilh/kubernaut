@@ -438,8 +438,11 @@ def build_workflow_schema(prs, donor_index):
         "workflow-schema.yaml  \u2022  OCI image  \u2022  tag + digest (DD-WORKFLOW-002 v2.4)")
 
     schema_yaml = (
+        'apiVersion: kubernaut.ai/v1alpha1\n'
+        'kind: RemediationWorkflow\n'
         'metadata:\n'
-        '  workflowId: oomkill-increase-memory-v1\n'
+        '  name: oomkill-increase-memory-v1\n'
+        'spec:\n'
         '  version: "1.0.0"\n'
         '  description:\n'
         '    what: "Increases memory limits for OOMKill pods"\n'
@@ -447,37 +450,36 @@ def build_workflow_schema(prs, donor_index):
         '    whenNotToUse: "OOM caused by a memory leak"\n'
         '    preconditions: "Managed by Deployment or SS"\n'
         '\n'
-        'actionType: IncreaseMemoryLimits\n'
+        '  actionType: IncreaseMemoryLimits\n'
         '\n'
-        'labels:\n'
-        '  signalType: OOMKilled\n'
-        '  severity: [critical, high]\n'
-        '  environment: [production, staging, test]\n'
-        '  component: "*"\n'
-        '  priority: "*"\n'
+        '  labels:\n'
+        '    severity: [critical, high]\n'
+        '    environment: [production, staging, test]\n'
+        '    component: "*"\n'
+        '    priority: "*"\n'
         '\n'
-        'execution:\n'
-        '  engine: job\n'
-        '  # V1.0: tag + SHA256 digest for audit trail\n'
-        '  containerImage: quay.io/kubernaut-cicd/\n'
-        '    workflows/oomkill-increase-memory:v1.0.0\n'
-        '    @sha256:a3ed95caeb02ffe68cdd9fd8440...\n'
+        '  execution:\n'
+        '    engine: job\n'
+        '    # V1.0: tag + SHA256 digest for audit trail\n'
+        '    bundle: quay.io/kubernaut-cicd/\n'
+        '      workflows/oomkill-increase-memory:v1.0.0\n'
+        '      @sha256:a3ed95caeb02ffe68cdd9fd8440...\n'
         '\n'
-        'customLabels:\n'
-        '  team: platform-sre\n'
-        '  cost-profile: memory-intensive\n'
-        '  change-risk: low\n'
+        '  customLabels:\n'
+        '    team: platform-sre\n'
+        '    cost-profile: memory-intensive\n'
+        '    change-risk: low\n'
         '\n'
-        'parameters:\n'
-        '  - name: TARGET_RESOURCE_KIND\n'
-        '    type: string, required: true\n'
-        '  - name: TARGET_RESOURCE_NAME\n'
-        '    type: string, required: true\n'
-        '  - name: TARGET_NAMESPACE\n'
-        '    type: string, required: true\n'
-        '  - name: MEMORY_LIMIT_NEW\n'
-        '    type: string, required: true\n'
-        '    description: "New memory limit (128Mi, 1Gi)"'
+        '  parameters:\n'
+        '    - name: TARGET_RESOURCE_KIND\n'
+        '      type: string, required: true\n'
+        '    - name: TARGET_RESOURCE_NAME\n'
+        '      type: string, required: true\n'
+        '    - name: TARGET_NAMESPACE\n'
+        '      type: string, required: true\n'
+        '    - name: MEMORY_LIMIT_NEW\n'
+        '      type: string, required: true\n'
+        '      description: "New memory limit (128Mi, 1Gi)"'
     )
     _add_code_block(new_slide, schema_yaml,
                     CONTENT_LEFT, CONTENT_TOP, Emu(4800000), Emu(3900000),
@@ -488,7 +490,7 @@ def build_workflow_schema(prs, donor_index):
                  font_size=10, bold=True, color=ACCENT_BLUE)
 
     _add_bullets(new_slide, [
-        "containerImage with tag + digest ensures exact workflow binary is traceable in the audit trail",
+        "bundle with tag + digest ensures exact workflow binary is traceable in the audit trail",
         "actionType maps to the action taxonomy used by the LLM's three-step discovery protocol",
         "labels (mandatory) enable catalog filtering: severity, environment, component, priority",
         "customLabels (optional) are operator-defined key-value pairs for team/org-specific filtering \u2014 stored in their own JSONB column",

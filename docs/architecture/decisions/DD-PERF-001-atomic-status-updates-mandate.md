@@ -341,7 +341,7 @@ This decision does **NOT** require:
 ## 📚 **References**
 
 - **Reference Implementation**: `pkg/notification/status/manager.go`
-- **Performance Analysis**: `docs/handoff/NT_ATOMIC_STATUS_UPDATES_DEC_26_2025.md`
+- **Performance Analysis**: (internal development reference, removed in v1.0)
 - **K8s Best Practices**: [Optimistic Concurrency Control](https://kubernetes.io/docs/reference/using-api/api-concepts/#optimistic-concurrency)
 - **Related Pattern**: `docs/architecture/patterns/CONTROLLER_REFACTORING_PATTERN_LIBRARY.md` (Pattern 2: Status Manager)
 

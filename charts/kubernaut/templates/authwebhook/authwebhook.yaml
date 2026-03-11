@@ -70,7 +70,7 @@ data:
       certDir: /tmp/k8s-webhook-server/serving-certs
       healthProbeAddr: ":8081"
     datastorage:
-      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      url: "{{ include "kubernaut.datastorage.url" . }}"
       timeout: 30s
       buffer:
         bufferSize: 1000
@@ -87,7 +87,7 @@ metadata:
     app: authwebhook
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.authwebhook.replicas }}
   strategy:
     type: Recreate
   selector:
@@ -99,11 +99,16 @@ spec:
         app: authwebhook
     spec:
       serviceAccountName: authwebhook
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.authwebhook | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.authwebhook | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.authwebhook "global" .Values.global) | nindent 6 }}
       containers:
         - name: authwebhook
           image: {{ include "kubernaut.image" (dict "service" "authwebhook" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.authwebhook | nindent 12 }}
           args:
             - -config=/etc/authwebhook/authwebhook.yaml
           ports:

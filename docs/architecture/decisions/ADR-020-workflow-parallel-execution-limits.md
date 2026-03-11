@@ -548,7 +548,7 @@ kubernetes-burst: "60"
 
 1. **Kubernetes Client-Go Rate Limiting**: https://github.com/kubernetes/client-go/blob/master/util/flowcontrol/throttle.go
 2. **Worker Pool Pattern**: Standard Go concurrency pattern
-3. **Multi-Step Workflow Examples**: `docs/analysis/MULTI_STEP_WORKFLOW_EXAMPLES.md`
+3. **Multi-Step Workflow Examples**: MULTI_STEP_WORKFLOW_EXAMPLES (document removed)
 
 ---
 

@@ -308,8 +308,8 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 ## 📞 Support & Documentation
 
 ### User & Operations Guides
-- **Workflow Author's Guide**: [docs/guides/user/workflow-authoring.md](../../../guides/user/workflow-authoring.md) - How to create Tekton workflows
-- **Troubleshooting Guide**: [docs/troubleshooting/service-specific/workflowexecution-issues.md](../../../troubleshooting/service-specific/workflowexecution-issues.md) - Common issues and solutions
+- **Workflow Author's Guide**: [docs/development/guides/user/workflow-authoring.md](../../../development/guides/user/workflow-authoring.md) - How to create Tekton workflows
+- **Troubleshooting Guide**: [docs/operations/troubleshooting/service-specific/workflowexecution-issues.md](../../../operations/troubleshooting/service-specific/workflowexecution-issues.md) - Common issues and solutions
 - **Production Runbook**: [docs/operations/runbooks/workflowexecution-runbook.md](../../../operations/runbooks/workflowexecution-runbook.md) - Operational procedures
 
 ### Technical References

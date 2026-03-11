@@ -6,14 +6,12 @@ spec:
   # DD-WE-006 Test Workflow: Job with Secret Dependency (BR-WORKFLOW-004)
   # Used by: WorkflowExecution E2E (dependency injection tests)
   # Authority: DD-WE-006, BR-WE-014
-  metadata:
-    workflowName: test-dep-secret-job
-    version: "1.0.0"
-    description:
-      what: "Job workflow that declares a Secret dependency for DD-WE-006 E2E testing"
-      whenToUse: "For E2E validation of schema-declared dependency injection into Jobs"
-      whenNotToUse: "Not intended for production use"
-      preconditions: "Secret 'e2e-dep-secret' provisioned in execution namespace"
+  version: "1.0.0"
+  description:
+    what: "Job workflow that declares a Secret dependency for DD-WE-006 E2E testing"
+    whenToUse: "For E2E validation of schema-declared dependency injection into Jobs"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "Secret 'e2e-dep-secret' provisioned in execution namespace"
   
   actionType: RestartPod
   

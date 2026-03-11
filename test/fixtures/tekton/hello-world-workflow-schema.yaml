@@ -1,14 +1,13 @@
 # Test Hello World Tekton Workflow Schema (BR-WORKFLOW-004)
 # Authority: ADR-043
 # E2E Testing: Validates WorkflowExecution controller's Tekton integration
-metadata:
-  workflowName: test-hello-world
-  version: "1.0.0"
-  description:
-    what: "Simple hello-world workflow for E2E testing of WorkflowExecution controller"
-    whenToUse: "For E2E validation of Tekton-based workflow execution"
-    whenNotToUse: "Not intended for production use"
-    preconditions: "Tekton Pipelines installed in the cluster"
+# Workflow name: test-hello-world (from CRD metadata.name per #329)
+version: "1.0.0"
+description:
+  what: "Simple hello-world workflow for E2E testing of WorkflowExecution controller"
+  whenToUse: "For E2E validation of Tekton-based workflow execution"
+  whenNotToUse: "Not intended for production use"
+  preconditions: "Tekton Pipelines installed in the cluster"
 
 actionType: RestartPod
 

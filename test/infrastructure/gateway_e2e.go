@@ -70,7 +70,6 @@ const (
 // Total time: ~4-5 minutes (vs ~5.5 minutes standard pattern)
 // Savings: ~1 minute (18% faster) - cluster never sits idle
 //
-// Authority: docs/handoff/E2E_PATTERN_PERFORMANCE_ANALYSIS_JAN07.md
 // Pattern: Hybrid (build-before-cluster) - eliminates cluster idle time during builds
 // Reference: test/infrastructure/remediationorchestrator_e2e_hybrid.go (authoritative hybrid pattern)
 func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer, enableCoverage bool) error {
@@ -115,7 +114,6 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	buildResults := make(chan buildResult, 2)
 
 	// Build Gateway image using standardized BuildImageForKind (with registry pull fallback)
-	// Authority: docs/handoff/GATEWAY_VALIDATION_RESULTS_JAN07.md (Option A)
 	// Registry Strategy: Attempts pull from ghcr.io first, falls back to local build
 	go func() {
 		cfg := E2EImageConfig{
@@ -221,7 +219,6 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	results := make(chan result, 4)
 
 	// Goroutine 1: Load Gateway image (FIXED: Now uses split API!)
-	// Authority: docs/handoff/GATEWAY_VALIDATION_RESULTS_JAN07.md (Option A)
 	go func() {
 		err := loadGatewayImageToKind(gatewayImageName, clusterName, writer)
 		if err != nil {
@@ -352,7 +349,6 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		}
 	} else {
 		// Use standard deployment
-		// Authority: docs/handoff/GATEWAY_VALIDATION_RESULTS_JAN07.md (Option A - parameter-based)
 		if err := deployGatewayService(ctx, namespace, kubeconfigPath, gatewayImageName, writer); err != nil {
 			return fmt.Errorf("failed to deploy Gateway: %w", err)
 		}
@@ -472,7 +468,6 @@ func DeleteGatewayCluster(clusterName, kubeconfigPath string, testsFailed bool, 
 
 // createGatewayKindCluster creates a Kind cluster for Gateway E2E tests
 // REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
-// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
 func createGatewayKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
 	opts := KindClusterOptions{
 		ClusterName:             clusterName,
@@ -490,7 +485,6 @@ func createGatewayKindCluster(clusterName, kubeconfigPath string, writer io.Writ
 // loadGatewayImageToKind loads a pre-built Gateway image to Kind cluster.
 // This is Phase 3 of the hybrid E2E pattern (load after cluster creation).
 //
-// Authority: docs/handoff/GATEWAY_VALIDATION_RESULTS_JAN07.md (Option A)
 // Pattern: Load pre-built image using LoadImageToKind() helper
 func loadGatewayImageToKind(imageName, clusterName string, writer io.Writer) error {
 	// Use the consolidated LoadImageToKind() helper

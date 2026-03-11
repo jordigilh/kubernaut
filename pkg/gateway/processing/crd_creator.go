@@ -48,16 +48,16 @@ type RetryObserver interface {
 // CRDCreator converts NormalizedSignal to RemediationRequest CRD
 //
 // This component is responsible for:
-// 1. Generating unique CRD names (rr-<fingerprint-prefix>)
+// 1. Generating unique CRD names (rr-{fingerprint[:12]}-{uuid[:8]})
 // 2. Populating CRD spec from signal data
 // 3. Adding required labels for querying/filtering
 // 4. Creating CRD in Kubernetes via API
 // 5. Recording metrics (success/failure)
 //
-// CRD naming:
-// - Format: rr-<first-16-chars-of-fingerprint>
-// - Example: rr-a1b2c3d4e5f6789
-// - Reason: Unique, deterministic, short (Kubernetes name limit: 253 chars)
+// CRD naming (DD-AUDIT-CORRELATION-002):
+// - Format: rr-{fingerprint[:12]}-{uuid[:8]}
+// - Example: rr-b157a3a9e42f-1c2b5576
+// - Reason: Human-readable fingerprint prefix + UUID suffix for zero collision risk
 type CRDCreator struct {
 	k8sClient           k8s.ClientInterface  // TDD GREEN: Interface supports circuit breaker (BR-GATEWAY-093)
 	logger              logr.Logger           // DD-005: logr.Logger for unified logging
@@ -117,7 +117,6 @@ func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, m
 // CRD CREATION RETRY WITH SHARED BACKOFF
 // 📋 Shared Utility: pkg/shared/backoff | ✅ Production-Ready | Confidence: 95%
 // 📋 TDD REFACTOR Phase 2: Simplified method with extracted error handlers
-// See: docs/handoff/TEAM_ANNOUNCEMENT_SHARED_BACKOFF.md
 // ========================================
 //
 // createCRDWithRetry implements retry logic with exponential backoff for transient K8s API errors.
@@ -258,8 +257,8 @@ func getErrorTypeString(err error) string {
 //	apiVersion: remediation.kubernaut.ai/v1alpha1
 //	kind: RemediationRequest
 //	metadata:
-//	  name: rr-<fingerprint-prefix>
-//	  namespace: <signal-namespace>
+//	  name: rr-<fingerprint[:12]>-<uuid[:8]>
+//	  namespace: <controller-namespace>
 //	spec:
 //	  signalFingerprint: <fingerprint>
 //	  signalName: HighMemoryUsage
@@ -284,7 +283,6 @@ func getErrorTypeString(err error) string {
 //
 // Note: Environment and Priority classification removed from Gateway (2025-12-06)
 // These are now owned by Signal Processing service per DD-CATEGORIZATION-001.
-// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 //
 // Returns:
 // - *RemediationRequest: Created CRD with populated fields

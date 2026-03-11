@@ -221,7 +221,6 @@ func (d *DBAdapter) Query(filters map[string]string, limit, offset int) ([]*repo
 // CountTotal returns the total number of records matching the filters
 // 🚨 FIX: Separate COUNT(*) query for accurate pagination metadata
 // This fixes the critical bug where pagination.total was set to len(array) instead of database count
-// See: docs/services/stateless/data-storage/implementation/DATA-STORAGE-INTEGRATION-TEST-TRIAGE.md
 func (d *DBAdapter) CountTotal(filters map[string]string) (int64, error) {
 	d.logger.V(1).Info("DBAdapter.CountTotal called",
 		"filters", filters,

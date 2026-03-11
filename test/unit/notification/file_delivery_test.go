@@ -220,7 +220,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 		// - Scenario 4: Concurrent file delivery (validates distinct files without collisions)
 		// Rationale: Unit tests should not depend on filesystem timing or wall-clock time.
 		// E2E tests provide better validation of retry behavior with real controller reconciliation.
-		// For triage details, see: docs/services/crd-controllers/06-notification/FLAKY-UNIT-TEST-TRIAGE.md
 	})
 
 	Context("when validating message content", func() {

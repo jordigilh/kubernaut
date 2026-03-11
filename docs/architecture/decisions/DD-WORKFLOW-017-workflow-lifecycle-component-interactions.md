@@ -23,7 +23,7 @@
 - Updated scope: CRD-based registration is now in-scope for V1.0
 - Added cross-references to ADR-058 and BR-WORKFLOW-006
 - Phase 4 (Operational Management): disable via CRD DELETE in addition to REST PATCH
-- Superseded docs (DD-WORKFLOW-005, DD-WORKFLOW-007) moved to `docs/archived/`
+- Superseded docs (DD-WORKFLOW-005, DD-WORKFLOW-007) archived
 
 ### Version 1.0 (2026-02-05)
 
@@ -159,16 +159,14 @@ The operator creates a `RemediationWorkflow` CRD:
 apiVersion: kubernaut.ai/v1alpha1
 kind: RemediationWorkflow
 metadata:
-  name: scale-conservative-v1
+  name: scale-conservative
   namespace: kubernaut-system
 spec:
-  metadata:
-    workflowId: scale-conservative
-    version: "1.0.0"
-    description:
-      what: "Scales deployment replicas conservatively"
-      whenToUse: "When pods are under CPU pressure"
-      whenNotToUse: "When cluster is at capacity"
+  version: "1.0.0"
+  description:
+    what: "Scales deployment replicas conservatively"
+    whenToUse: "When pods are under CPU pressure"
+    whenNotToUse: "When cluster is at capacity"
   actionType: ScaleReplicas
   labels:
     severity: ["warning", "critical"]
@@ -665,8 +663,8 @@ This DD **supersedes**:
 
 | Document | Reason |
 |----------|--------|
-| **DD-WORKFLOW-005** | Registration now uses CRD + AW bridge (ADR-058). Moved to `docs/archived/`. |
-| **DD-WORKFLOW-007** | Manual registration now uses CRD. Moved to `docs/archived/`. CLI deferred to V1.2. |
+| **DD-WORKFLOW-005** | Registration now uses CRD + AW bridge (ADR-058). Archived. |
+| **DD-WORKFLOW-007** | Manual registration now uses CRD. Archived. CLI deferred to V1.2. |
 
 ---
 

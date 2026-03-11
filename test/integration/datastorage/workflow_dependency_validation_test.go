@@ -34,11 +34,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
 // ========================================
@@ -52,67 +55,89 @@ import (
 // Per TESTING_GUIDELINES.md: Integration tests use envtest for K8s
 // ========================================
 
-const (
-	depTestNamespace = "kubernaut-workflows"
+const depTestNamespace = "kubernaut-workflows"
 
-	// Base schema without dependencies for backward compat tests
-	depTestBaseSchema = `apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: dep-test-workflow
-spec:
-  metadata:
-    workflowName: dep-test-workflow
-    version: "1.0.0"
-    description:
-      what: Integration test workflow for dependency validation
-      whenToUse: When testing DD-WE-006
-  actionType: GitRevertCommit
-  labels:
-    severity: [critical]
-    environment: ["*"]
-    component: deployment
-    priority: "*"
-  execution:
-    engine: job
-    bundle: quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4
-  parameters:
-    - name: TARGET_NAMESPACE
-      type: string
-      required: true
-      description: Namespace of the affected resource
-`
-)
+var depTestBaseSchema = func() string {
+	crd := testutil.NewTestWorkflowCRD("dep-test-workflow", "GitRevertCommit", "job")
+	crd.Spec.Description = sharedtypes.StructuredDescription{
+		What:      "Integration test workflow for dependency validation",
+		WhenToUse: "When testing DD-WE-006",
+	}
+	crd.Spec.Labels.Severity = []string{"critical"}
+	crd.Spec.Labels.Environment = []string{"*"}
+	crd.Spec.Labels.Component = "deployment"
+	crd.Spec.Labels.Priority = "*"
+	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected resource"},
+	}
+	return testutil.MarshalWorkflowCRD(crd)
+}()
 
-// depTestBaseSchemaUnique returns the base schema with a unique workflowName for parallel-safe registration.
-// Use for specs that expect 201 Created (e.g. IT-DS-006-006) to avoid duplicate key across processes.
 func depTestBaseSchemaUnique() string {
 	uniqueID := fmt.Sprintf("dep-test-workflow-%d-%s", GinkgoParallelProcess(), uuid.New().String())
-	s := strings.Replace(depTestBaseSchema, "workflowName: dep-test-workflow", "workflowName: "+uniqueID, 1)
-	s = strings.Replace(s, "name: dep-test-workflow", "name: "+uniqueID, 1)
-	return s
+	crd := testutil.NewTestWorkflowCRD(uniqueID, "GitRevertCommit", "job")
+	crd.Spec.Description = sharedtypes.StructuredDescription{
+		What:      "Integration test workflow for dependency validation",
+		WhenToUse: "When testing DD-WE-006",
+	}
+	crd.Spec.Labels.Severity = []string{"critical"}
+	crd.Spec.Labels.Environment = []string{"*"}
+	crd.Spec.Labels.Component = "deployment"
+	crd.Spec.Labels.Priority = "*"
+	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected resource"},
+	}
+	return testutil.MarshalWorkflowCRD(crd)
 }
 
 func depTestSchemaWithSecrets(secretNames ...string) string {
-	if len(secretNames) == 0 {
-		return depTestBaseSchema
+	crd := testutil.NewTestWorkflowCRD("dep-test-workflow", "GitRevertCommit", "job")
+	crd.Spec.Description = sharedtypes.StructuredDescription{
+		What:      "Integration test workflow for dependency validation",
+		WhenToUse: "When testing DD-WE-006",
 	}
-	deps := "  dependencies:\n    secrets:\n"
-	for _, name := range secretNames {
-		deps += fmt.Sprintf("      - name: %s\n", name)
+	crd.Spec.Labels.Severity = []string{"critical"}
+	crd.Spec.Labels.Environment = []string{"*"}
+	crd.Spec.Labels.Component = "deployment"
+	crd.Spec.Labels.Priority = "*"
+	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected resource"},
 	}
-	return depTestBaseSchema + deps
+	if len(secretNames) > 0 {
+		deps := &models.WorkflowDependencies{}
+		for _, name := range secretNames {
+			deps.Secrets = append(deps.Secrets, models.ResourceDependency{Name: name})
+		}
+		crd.Spec.Dependencies = deps
+	}
+	return testutil.MarshalWorkflowCRD(crd)
 }
 
 func depTestSchemaWithConfigMaps(cmNames ...string) string {
-	if len(cmNames) == 0 {
-		return depTestBaseSchema
+	crd := testutil.NewTestWorkflowCRD("dep-test-workflow", "GitRevertCommit", "job")
+	crd.Spec.Description = sharedtypes.StructuredDescription{
+		What:      "Integration test workflow for dependency validation",
+		WhenToUse: "When testing DD-WE-006",
 	}
-	deps := "  dependencies:\n    configMaps:\n"
-	for _, name := range cmNames {
-		deps += fmt.Sprintf("      - name: %s\n", name)
+	crd.Spec.Labels.Severity = []string{"critical"}
+	crd.Spec.Labels.Environment = []string{"*"}
+	crd.Spec.Labels.Component = "deployment"
+	crd.Spec.Labels.Priority = "*"
+	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected resource"},
 	}
-	return depTestBaseSchema + deps
+	if len(cmNames) > 0 {
+		deps := &models.WorkflowDependencies{}
+		for _, name := range cmNames {
+			deps.ConfigMaps = append(deps.ConfigMaps, models.ResourceDependency{Name: name})
+		}
+		crd.Spec.Dependencies = deps
+	}
+	return testutil.MarshalWorkflowCRD(crd)
 }
 
 // createDepTestServer creates an in-process DS server with dependency validation enabled.

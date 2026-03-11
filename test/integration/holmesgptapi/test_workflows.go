@@ -19,6 +19,9 @@ package holmesgptapi
 import (
 	"crypto/sha256"
 	"fmt"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
 // HAPIWorkflowFixture defines test workflow data for HAPI integration tests
@@ -40,39 +43,25 @@ type HAPIWorkflowFixture struct {
 	ContentHash     string
 }
 
-// ToYAMLContent generates workflow YAML content in CRD format per BR-WORKFLOW-006
+// ToYAMLContent generates workflow YAML content in CRD format per BR-WORKFLOW-006.
+// Issue #330: Uses builder pattern instead of brittle fmt.Sprintf.
 func (wf *HAPIWorkflowFixture) ToYAMLContent() string {
-	return fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: %s
-spec:
-  metadata:
-    workflowName: %s
-    version: "%s"
-    description:
-      what: %s
-      whenToUse: Test workflow for %s
-  actionType: %s
-  labels:
-    severity: %s
-    component: %s
-    environment: %s
-    priority: %s
-  parameters:
-    - name: NAMESPACE
-      type: string
-      required: true
-      description: Target namespace for the operation
-    - name: TARGET_NAME
-      type: string
-      required: true
-      description: Target resource name
-  execution:
-    engine: tekton
-    bundle: %s`, wf.WorkflowName, wf.WorkflowName, wf.Version, wf.Description, wf.ActionType,
-		wf.ActionType,
-		wf.Severity, wf.Component, wf.Environment, wf.Priority, wf.ContainerImage)
+	crd := testutil.NewTestWorkflowCRD(wf.WorkflowName, wf.ActionType, "tekton")
+	crd.Spec.Version = wf.Version
+	crd.Spec.Description.What = wf.Description
+	crd.Spec.Description.WhenToUse = fmt.Sprintf("Test workflow for %s", wf.ActionType)
+	crd.Spec.Labels = models.WorkflowSchemaLabels{
+		Severity:    []string{wf.Severity},
+		Component:   wf.Component,
+		Environment: []string{wf.Environment},
+		Priority:    wf.Priority,
+	}
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace for the operation"},
+		{Name: "TARGET_NAME", Type: "string", Required: true, Description: "Target resource name"},
+	}
+	crd.Spec.Execution.Bundle = wf.ContainerImage
+	return testutil.MarshalWorkflowCRD(crd)
 }
 
 // GetHAPITestWorkflows returns test workflows for HAPI integration tests

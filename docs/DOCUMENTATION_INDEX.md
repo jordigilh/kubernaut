@@ -87,9 +87,9 @@ This index provides comprehensive navigation across all Kubernaut documentation 
 ### Deployment Guides
 | Environment | Documentation | Requirements Addressed |
 |------------|---------------|----------------------|
-| **Development** | [getting-started/](getting-started/) | Development environment setup |
-| **Integration** | [deployment/](deployment/) | Integration testing setup |
-| **Production** | [deployment/MILESTONE_1_CONFIGURATION_OPTIONS.md](deployment/MILESTONE_1_CONFIGURATION_OPTIONS.md) | Production deployment |
+| **Development** | [development/getting-started/](development/getting-started/) | Development environment setup |
+| **Integration** | [operations/deployment/](operations/deployment/) | Integration testing setup |
+| **Production** | [operations/deployment/](operations/deployment/) | Production deployment |
 
 ### Health Monitoring
 | Component | Monitoring Guide | Architecture Reference |
@@ -104,8 +104,7 @@ This index provides comprehensive navigation across all Kubernaut documentation 
 ### HolmesGPT Integration
 | Document | Purpose | Architecture Link |
 |----------|---------|------------------|
-| **[holmesgpt/DYNAMIC_TOOLSET_CONFIGURATION.md](holmesgpt/DYNAMIC_TOOLSET_CONFIGURATION.md)** | Toolset Management | [AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md) |
-| **[holmesgpt/INTEGRATION_IMPLEMENTATION_COMPLETE.md](holmesgpt/INTEGRATION_IMPLEMENTATION_COMPLETE.md)** | Implementation Status | [AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md) |
+| **[services/stateless/holmesgpt-api/toolset/DYNAMIC_TOOLSET_CONFIGURATION.md](services/stateless/holmesgpt-api/toolset/DYNAMIC_TOOLSET_CONFIGURATION.md)** | Toolset Management | [AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md) |
 
 ### Vector Database
 | Document | Purpose | Architecture Link |
@@ -159,7 +158,7 @@ This index provides comprehensive navigation across all Kubernaut documentation 
 - **Architecture Understanding**: Begin with [AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md)
 - **Implementation**: Follow [development/project guidelines.md](development/project%20guidelines.md)
 - **Testing**: Reference [TESTING_FRAMEWORK.md](TESTING_FRAMEWORK.md)
-- **Deployment**: Start with [getting-started/](getting-started/)
+- **Deployment**: Start with [development/getting-started/](development/getting-started/)
 - **Value Proposition**: Review [value-proposition/](value-proposition/) for stakeholder materials
 
 ---

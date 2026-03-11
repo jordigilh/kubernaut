@@ -165,6 +165,25 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  name: signalprocessing-rego-policy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: signalprocessing
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  policy.rego: |
+    package signalprocessing.customlabels
+    import rego.v1
+    labels[key] := value if {
+      some k, v in input.kubernetes.namespace.labels
+      startswith(k, "kubernaut.ai/label-")
+      key := trim_prefix(k, "kubernaut.ai/label-")
+      value := v
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
   name: signalprocessing-config
   namespace: {{ .Release.Namespace }}
   labels:
@@ -185,7 +204,7 @@ data:
       regoConfigMapKey: "policy.rego"
       hotReloadInterval: "30s"
     datastorage:
-      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      url: "{{ include "kubernaut.datastorage.url" . }}"
       timeout: "10s"
       buffer:
         bufferSize: 10000
@@ -264,7 +283,7 @@ metadata:
     app: signalprocessing-controller
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.signalprocessing.replicas }}
   selector:
     matchLabels:
       app: signalprocessing-controller
@@ -278,11 +297,16 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: signalprocessing-controller
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.signalprocessing | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.signalprocessing | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.signalprocessing "global" .Values.global) | nindent 6 }}
       containers:
         - name: signalprocessing-controller
           image: {{ include "kubernaut.image" (dict "service" "signalprocessing" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.signalprocessing | nindent 12 }}
           args:
             - "--config=/etc/signalprocessing/config.yaml"
           ports:
@@ -292,6 +316,22 @@ spec:
             - name: health
               containerPort: 8081
               protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           volumeMounts:
             - name: config
               mountPath: /etc/signalprocessing/config.yaml

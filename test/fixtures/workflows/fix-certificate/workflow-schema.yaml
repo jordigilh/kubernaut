@@ -5,14 +5,12 @@ metadata:
 spec:
   # Fix Certificate Workflow Schema (BR-WORKFLOW-004)
   # Used by: Full Pipeline E2E — 02_async_hash_deferral_test.go (cert-manager scenario)
-  metadata:
-    workflowName: fix-certificate
-    version: "1.0.0"
-    description:
-      what: "Recreates a missing or corrupted CA Secret backing a cert-manager ClusterIssuer to restore certificate issuance"
-      whenToUse: "When a cert-manager Certificate is stuck in NotReady because the CA Secret has been deleted or corrupted"
-      whenNotToUse: "When the Certificate failure is caused by DNS validation issues, incorrect certificate spec, or an expired root CA"
-      preconditions: "cert-manager is installed, the ClusterIssuer exists, and the failure is specifically due to a missing or corrupted CA Secret"
+  version: "1.0.0"
+  description:
+    what: "Recreates a missing or corrupted CA Secret backing a cert-manager ClusterIssuer to restore certificate issuance"
+    whenToUse: "When a cert-manager Certificate is stuck in NotReady because the CA Secret has been deleted or corrupted"
+    whenNotToUse: "When the Certificate failure is caused by DNS validation issues, incorrect certificate spec, or an expired root CA"
+    preconditions: "cert-manager is installed, the ClusterIssuer exists, and the failure is specifically due to a missing or corrupted CA Secret"
   
   actionType: FixCertificate
   

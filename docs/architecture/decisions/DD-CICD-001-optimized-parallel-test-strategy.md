@@ -649,7 +649,7 @@ jobs:
 ## 🔗 **Related Documentation**
 
 - **Current Workflow**: `.github/workflows/defense-in-depth-tests.yml`
-- **Podman Crash Triage**: `docs/handoff/TRIAGE_PODMAN_SERVER_CRASH_E2E_FAILURE.md`
+- **Podman Crash Triage**: (internal development reference, removed in v1.0)
 - **Testing Strategy**: `docs/testing/DEFENSE_IN_DEPTH_CI_CD_STRATEGY.md`
 - **Service Catalog**: `docs/architecture/KUBERNAUT_CRD_ARCHITECTURE.md`
 

@@ -1,0 +1,35 @@
+{{- range $name, $component := dict
+  "gateway" $.Values.gateway
+  "datastorage" $.Values.datastorage
+  "holmesgpt-api" $.Values.holmesgptApi
+  "notification-controller" $.Values.notification
+  "authwebhook" $.Values.authwebhook
+  "signalprocessing-controller" $.Values.signalprocessing
+  "remediationorchestrator-controller" $.Values.remediationorchestrator
+  "workflowexecution-controller" $.Values.workflowexecution
+  "effectivenessmonitor-controller" $.Values.effectivenessmonitor
+  "aianalysis-controller" $.Values.aianalysis
+  "event-exporter" $.Values.eventExporter
+}}
+{{- if and $component.pdb $component.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app: {{ $name }}
+    {{- include "kubernaut.labels" $ | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  {{- with $component.pdb.minAvailable }}
+  minAvailable: {{ . }}
+  {{- end }}
+  {{- with $component.pdb.maxUnavailable }}
+  maxUnavailable: {{ . }}
+  {{- end }}
+{{- end }}
+{{- end }}

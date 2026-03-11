@@ -22,6 +22,11 @@
 
 ## Changelog
 
+### Version 1.4 (2026-03-11)
+- **UPDATED**: Schema structure per issue #329
+  - Workflow name from `metadata.name` (CRD envelope); `version`, `description`, `maintainers` moved to top level of `spec`
+  - Removed nested `spec.metadata` (workflowId, version, description); `WorkflowSchemaMetadata` type no longer used
+
 ### Version 1.3 (2026-03-04)
 - **UPDATED**: Registration mechanism is now CRD-based via `RemediationWorkflow` CRD (BR-WORKFLOW-006, ADR-058)
   - Schema content is embedded in the CRD `.spec` and forwarded to DS by the AuthWebhook
@@ -36,7 +41,7 @@
   - Removed from: `MandatoryLabels` struct, search filter, parser, all fixtures
 
 ### Version 1.1 (2026-03-02)
-- **ADDED**: `schemaVersion` top-level required field (#255)
+- **ADDED**: `apiVersion` in CRD envelope (#255)
   - Distinguishes schema format generations (e.g., "1.0" vs "1.1" which adds `rbac` per DD-WE-005)
   - Validated by parser: required, must be in allowed set
   - Stored in `remediation_workflow_catalog.schema_version` (migration 031)
@@ -59,11 +64,11 @@ Kubernaut remediation workflows are packaged as OCI container images. Each image
 
 ### Design Principles
 
-1. **Plain configuration file** -- `workflow-schema.yaml` is not a Kubernetes resource. It has no `apiVersion` or `kind` fields. It is a configuration file with a defined schema.
+1. **CRD envelope format** -- `workflow-schema.yaml` uses the RemediationWorkflow CRD structure (`apiVersion`, `kind`, `metadata`, `spec`). Workflow name is provided by `metadata.name`; schema content (version, description, maintainers, etc.) is in `spec` per BR-WORKFLOW-006.
 2. **camelCase field names** -- Consistent with kubernaut configuration conventions.
 3. **Single source of truth** -- All workflow metadata is defined in this schema format. When embedded in a RemediationWorkflow CRD spec, the AuthWebhook forwards it to DS for validation and catalog population (BR-WORKFLOW-006, ADR-058).
 4. **Structured descriptions** -- Descriptions use a structured format (`what`, `whenToUse`, `whenNotToUse`, `preconditions`) that is useful for both operators and the LLM.
-5. **Versioned schema format** -- The `schemaVersion` field identifies the structural generation of the schema. This allows the platform to gate features (e.g., RBAC in v1.1) on schema version.
+5. **Versioned schema format** -- The `apiVersion` field identifies the structural generation of the schema. This allows the platform to gate features (e.g., RBAC in v1.1) on schema version.
 
 ---
 
@@ -72,9 +77,11 @@ Kubernaut remediation workflows are packaged as OCI container images. Each image
 ### Complete Example
 
 ```yaml
-schemaVersion: "1.0"
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: oomkill-restart-pod
+  name: oomkill-restart-pod
+spec:
   version: "1.0.0"
   description:
     what: "Delete and recreate a pod to recover from transient OOMKill failures"
@@ -85,85 +92,85 @@ metadata:
     - name: "Platform Team"
       email: "platform@example.com"
 
-actionType: RestartPod
+  actionType: RestartPod
 
-labels:
-  severity: [critical]
-  environment: [production]
-  component: pod
-  priority: p1
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: p1
 
-customLabels:
-  team: platform
-  costCenter: ops
+  customLabels:
+    team: platform
+    costCenter: ops
 
-detectedLabels:
-  hpaEnabled: "true"
-  gitOpsTool: "*"
+  detectedLabels:
+    hpaEnabled: "true"
+    gitOpsTool: "*"
 
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/oomkill-restart:v1.0.0
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut/oomkill-restart:v1.0.0
 
-dependencies:
-  secrets:
-    - name: app-credentials
-  configMaps:
-    - name: remediation-thresholds
+  dependencies:
+    secrets:
+      - name: app-credentials
+    configMaps:
+      - name: remediation-thresholds
 
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: "Target namespace containing the pod"
-  - name: POD_NAME
-    type: string
-    required: true
-    description: "Name of the pod to restart"
-  - name: GRACE_PERIOD
-    type: integer
-    required: false
-    description: "Graceful shutdown period in seconds"
-    default: 30
-    minimum: 0
-    maximum: 300
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: "Target namespace containing the pod"
+    - name: POD_NAME
+      type: string
+      required: true
+      description: "Name of the pod to restart"
+    - name: GRACE_PERIOD
+      type: integer
+      required: false
+      description: "Graceful shutdown period in seconds"
+      default: 30
+      minimum: 0
+      maximum: 300
 
-rollbackParameters:
-  - name: SNAPSHOT_ID
-    type: string
-    required: false
-    description: "Snapshot to restore if restart fails"
+  rollbackParameters:
+    - name: SNAPSHOT_ID
+      type: string
+      required: false
+      description: "Snapshot to restore if restart fails"
 ```
 
 ---
 
 ## Field Specification
 
-### Top-Level Fields
+### CRD Envelope Fields
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `schemaVersion` | string | Yes | Schema format version. Determines which structural fields are valid. Valid values: `"1.0"`. |
-| `metadata` | object | Yes | Workflow identification and description |
-| `actionType` | string | Yes | Action type from the taxonomy (PascalCase, e.g., `RestartPod`, `ScaleReplicas`). Must match a valid entry in `action_type_taxonomy`. |
-| `labels` | object | Yes | Mandatory matching/filtering criteria for workflow discovery |
-| `customLabels` | map[string]string | No | Operator-defined key-value labels for additional filtering |
-| `detectedLabels` | object | No | Author-declared infrastructure requirements (DD-WORKFLOW-001 v2.0). Matched against incident DetectedLabels from HAPI during workflow discovery. |
-| `execution` | object | No | Execution engine configuration |
-| `dependencies` | object | No | Infrastructure dependencies (Secrets, ConfigMaps) required by the workflow. Validated at registration and execution time. See DD-WE-006. |
-| `parameters` | array | Yes | Workflow input parameters (at least one required) |
-| `rollbackParameters` | array | No | Parameters needed for rollback |
+| `apiVersion` | string | Yes | API version (e.g., `kubernaut.ai/v1alpha1`). Determines schema format generation. |
+| `kind` | string | Yes | Must be `RemediationWorkflow`. |
+| `metadata.name` | string | Yes | Workflow name. Unique identifier; format: lowercase alphanumeric with hyphens (e.g., `oomkill-restart-pod`). Max 255 characters. |
 
-### `metadata` Fields
+### Spec Fields (Top-Level)
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `workflowId` | string | Yes | Unique workflow identifier. Format: lowercase alphanumeric with hyphens (e.g., `oomkill-restart-pod`). Max 255 characters. |
-| `version` | string | Yes | Semantic version (e.g., `1.0.0`). Max 50 characters. |
-| `description` | object | Yes | Structured description (see below) |
-| `maintainers` | array | No | Maintainer contact information |
+| `spec.version` | string | Yes | Semantic version (e.g., `1.0.0`). Max 50 characters. |
+| `spec.description` | object | Yes | Structured description (see below) |
+| `spec.maintainers` | array | No | Maintainer contact information |
+| `spec.actionType` | string | Yes | Action type from the taxonomy (PascalCase, e.g., `RestartPod`, `ScaleReplicas`). Must match a valid entry in `action_type_taxonomy`. |
+| `spec.labels` | object | Yes | Mandatory matching/filtering criteria for workflow discovery |
+| `spec.customLabels` | map[string]string | No | Operator-defined key-value labels for additional filtering |
+| `spec.detectedLabels` | object | No | Author-declared infrastructure requirements (DD-WORKFLOW-001 v2.0). Matched against incident DetectedLabels from HAPI during workflow discovery. |
+| `spec.execution` | object | No | Execution engine configuration |
+| `spec.dependencies` | object | No | Infrastructure dependencies (Secrets, ConfigMaps) required by the workflow. Validated at registration and execution time. See DD-WE-006. |
+| `spec.parameters` | array | Yes | Workflow input parameters (at least one required) |
+| `spec.rollbackParameters` | array | No | Parameters needed for rollback |
 
-### `metadata.description` Fields (Structured)
+### `spec.description` Fields (Structured)
 
 The description uses the same structured format as `action_type_taxonomy.description` (DD-WORKFLOW-016). This information is provided to the LLM during workflow selection to help it choose the right workflow for the incident.
 
@@ -174,7 +181,7 @@ The description uses the same structured format as `action_type_taxonomy.descrip
 | `whenNotToUse` | string | No | Specific exclusion conditions for this workflow. Only include when there is a genuinely useful exclusion. Do not include failure-based exclusions (handled by remediation history, DD-HAPI-016). |
 | `preconditions` | string | No | Conditions that must be verified through investigation that cannot be determined by catalog label filtering. |
 
-### `labels` Fields (Mandatory Matching Criteria)
+### `spec.labels` Fields (Mandatory Matching Criteria)
 
 These fields are used by the three-step discovery protocol (DD-HAPI-017) to filter workflows for a given incident context. They are stored in the `labels` JSONB column of `remediation_workflow_catalog`.
 
@@ -185,14 +192,14 @@ These fields are used by the three-step discovery protocol (DD-HAPI-017) to filt
 | `environment` | string[] | Yes | Any (e.g., `[production, staging]`, `[*]` for all) | Target environment(s). Always an array. Use `*` to match any environment. |
 | `priority` | string | Yes | `p0`, `p1`, `p2`, `p3`, `p4`, `*` for all | Business priority level |
 
-### `execution` Fields
+### `spec.execution` Fields
 
 | Field | Type | Required | Valid Values | Description |
 |-------|------|----------|--------------|-------------|
 | `engine` | string | No | `tekton`, `ansible`, `lambda`, `shell` | Execution engine type. Defaults to `tekton`. |
 | `bundle` | string | No | OCI image reference | Execution bundle or container image |
 
-### `dependencies` Fields (Infrastructure Dependencies)
+### `spec.dependencies` Fields (Infrastructure Dependencies)
 
 Declares Kubernetes Secrets and ConfigMaps that must exist in the execution namespace (`kubernaut-workflows`) for the workflow to function. These are infrastructure resources provisioned by operators at deployment time -- they are NOT provided by the LLM.
 
@@ -247,7 +254,7 @@ dependencies:
 
 ---
 
-### `detectedLabels` Fields (Infrastructure Requirements)
+### `spec.detectedLabels` Fields (Infrastructure Requirements)
 
 Author-declared infrastructure characteristics this workflow requires. Matched against incident DetectedLabels from HAPI LabelDetector during workflow discovery (DD-WORKFLOW-001 v2.0).
 
@@ -286,7 +293,7 @@ detectedLabels:
   serviceMesh: "istio"
 ```
 
-### `parameters` and `rollbackParameters` Fields
+### `spec.parameters` and `spec.rollbackParameters` Fields
 
 Each parameter is an object with the following fields:
 
@@ -303,7 +310,7 @@ Each parameter is an object with the following fields:
 | `default` | any | No | Default value if not provided |
 | `dependsOn` | array of strings | No | Parameter names that must be set first |
 
-### `maintainers` Fields
+### `spec.maintainers` Fields
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -327,11 +334,12 @@ When a workflow is registered via the RemediationWorkflow CRD (BR-WORKFLOW-006),
 
 ### Required Field Validation
 
-- `schemaVersion` must be present and must be a supported value (currently `"1.0"`)
-- All fields marked "Required: Yes" must be present and non-empty
-- `metadata.description.what` and `metadata.description.whenToUse` are always required
-- `metadata.description.whenNotToUse` and `metadata.description.preconditions` are optional
-- At least one parameter is required in `parameters`
+- `apiVersion` must be present and must be a supported value (currently `kubernaut.ai/v1alpha1`)
+- `metadata.name` must be present and non-empty (workflow name)
+- All spec fields marked "Required: Yes" must be present and non-empty
+- `spec.description.what` and `spec.description.whenToUse` are always required
+- `spec.description.whenNotToUse` and `spec.description.preconditions` are optional
+- At least one parameter is required in `spec.parameters`
 - Each parameter must have `name`, `type`, and `description`
 - Labels are validated: severity must be a non-empty array of values from [critical, high, medium, low]; environment must be a non-empty array; component and priority must be non-empty strings
 
@@ -345,12 +353,14 @@ When a workflow is registered via the RemediationWorkflow CRD (BR-WORKFLOW-006),
 
 ## Deprecated Fields
 
-The following fields from the previous schema format (ADR-043) are removed:
+The following fields from previous schema formats are removed:
 
 | Field | Reason |
 |-------|--------|
-| `apiVersion` | No Kubernetes association. This is a plain configuration file. |
-| `kind` | No Kubernetes association. |
+| `metadata.workflowId` | Workflow name now comes from CRD `metadata.name` (issue #329). |
+| `metadata.version` | Moved to `spec.version`. |
+| `metadata.description` | Moved to `spec.description`. |
+| `metadata.maintainers` | Moved to `spec.maintainers`. |
 | `labels.riskTolerance` | Never stored in the database, never queried, never used in discovery. Dead code. If needed in the future, use `customLabels`. |
 | `labels.businessCategory` | Moved to `customLabels` (operator-defined, not a mandatory matching criterion). |
 | `labels.signalType` / `labels.signalName` | Removed (#274). Signal names are adapter-specific and inconsistent. LLM selects by `actionType` + structured descriptions. See DD-WORKFLOW-016. |
@@ -361,7 +371,7 @@ The following fields from the previous schema format (ADR-043) are removed:
 
 | Context | Convention | Example |
 |---------|-----------|---------|
-| YAML field names | camelCase | `workflowId`, `signalType`, `actionType` |
+| YAML field names | camelCase | `workflowName`, `actionType` |
 | Action type values | PascalCase | `RestartPod`, `ScaleReplicas` |
 | Parameter names | UPPER_SNAKE_CASE | `NAMESPACE`, `POD_NAME` |
 | JSONB keys (DB storage) | camelCase | `{"signalType": "OOMKilled"}` |

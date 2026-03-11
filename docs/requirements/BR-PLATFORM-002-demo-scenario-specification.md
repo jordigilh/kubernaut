@@ -7,6 +7,10 @@
 **Status**: Pending
 **Date**: 2026-02-23
 
+> **Note**: Demo scenarios have been migrated to
+> [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios).
+> Paths referencing `deploy/demo/` in this document now correspond to paths in that repository.
+
 ---
 
 ## Business Need
@@ -417,7 +421,7 @@ Each scenario MUST be runnable independently. Platform and monitoring setup is h
 - `deploy/demo/scenarios/template.tape`: VHS tape template
 - `deploy/demo/scripts/workflow-mappings.sh`: Scenario-to-image mapping
 - `deploy/demo/scripts/build-demo-workflows.sh`: Workflow image build pipeline
-- `docs/guides/user/workflow-authoring.md`: Workflow schema authoring guide
+- `docs/development/guides/user/workflow-authoring.md`: Workflow schema authoring guide
 - `docs/architecture/decisions/ADR-043-workflow-schema-format.md`: Workflow schema format
 
 ### Shared Infrastructure (Not a Scenario)

@@ -86,9 +86,6 @@ package notification
 // - TESTING_GUIDELINES.md v2.5.0 (lines 1679-1900+)
 //   Section: "🚫 ANTI-PATTERN: Direct Audit Infrastructure Testing"
 //
-// **Triage Document**:
-// - docs/handoff/AUDIT_INFRASTRUCTURE_TESTING_ANTI_PATTERN_TRIAGE_DEC_26_2025.md
-//
 // **Correct Pattern Examples**:
 // - test/integration/signalprocessing/audit_integration_test.go (lines 97-196)
 // - test/integration/gateway/audit_integration_test.go (lines 171-226)

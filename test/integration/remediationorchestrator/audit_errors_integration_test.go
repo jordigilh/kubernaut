@@ -165,5 +165,4 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 	// Rationale: Error code mapping is pure business logic, best tested in unit tests
 	// Integration Scenario 1 already validates end-to-end error_details flow
 	// See: test/unit/remediationorchestrator/audit/manager_test.go - "Gap #7: Error Code Mapping Logic"
-	// See: docs/handoff/RO_GAP7_SCENARIO2_TIER_ANALYSIS_JAN10.md
 })

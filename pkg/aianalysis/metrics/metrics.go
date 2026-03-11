@@ -37,7 +37,6 @@ import (
 // DD-005 V3.0: Metric Name Constants (MANDATORY)
 // Per DD-005 Section 1.1: All services MUST define exported constants for metric names
 // to prevent typos and ensure test/production parity
-// Reference: docs/handoff/DD005_V3_METRIC_CONSTANTS_MANDATE_DEC_21_2025.md
 // ========================================
 
 // Metric name constants - DRY principle for tests and production

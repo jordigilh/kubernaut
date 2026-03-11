@@ -2201,7 +2201,6 @@ func expectCompletedSPStatusAssertions(ctx context.Context, k8sClient client.Cli
 // - Breaking changes caught during development
 //
 // Per architectural fix: Uses RemediationRequestRef for correlation_id
-// Authority: docs/handoff/TRIAGE_RO_DATASTORAGE_OPENAPI_CLIENT.md
 func queryAuditEvents(correlationID string) ([]dsgen.AuditEvent, error) {
 	// DataStorage is accessible via NodePort 30081 in Kind cluster
 	// We use the host port mapping: localhost:30081 → NodePort 30081

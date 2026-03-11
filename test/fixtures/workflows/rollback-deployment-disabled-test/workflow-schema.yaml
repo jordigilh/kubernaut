@@ -6,14 +6,12 @@ spec:
   # Rollback Deployment Disabled Test Workflow Schema (BR-WORKFLOW-004)
   # Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
   # This workflow is created and then DISABLED via PATCH to test discovery exclusion
-  metadata:
-    workflowName: rollback-deployment-disabled-test-v1
-    version: "1.0.0"
-    description:
-      what: "Rolls back a deployment (disabled variant for testing discovery exclusion)"
-      whenToUse: "For E2E testing of disabled workflow exclusion from discovery"
-      whenNotToUse: "Not intended for production use"
-      preconditions: "Deployment has previous revisions available"
+  version: "1.0.0"
+  description:
+    what: "Rolls back a deployment (disabled variant for testing discovery exclusion)"
+    whenToUse: "For E2E testing of disabled workflow exclusion from discovery"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "Deployment has previous revisions available"
   
   actionType: RollbackDeployment
   

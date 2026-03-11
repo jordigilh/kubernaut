@@ -642,8 +642,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 func createTestSignalProcessingCRD(namespace, name string) *signalprocessingv1alpha1.SignalProcessing {
 	// Generate unique RR name with timestamp to avoid stale audit event collisions
 	// Per DD-AUDIT-CORRELATION-001: RR name must be unique per remediation flow
-	// Per docs/handoff/SP_TEST_ROOT_CAUSE_STALE_AUDIT_EVENTS_JAN14_2026.md:
-	//   Correlation ID must be unique across test runs to avoid finding stale events from previous runs
+	// Correlation ID must be unique across test runs to avoid finding stale events from previous runs
 	timestamp := time.Now().UnixNano()
 	rrName := fmt.Sprintf("%s-rr-%d", name, timestamp) // e.g., "test-audit-event-rr-1737763995123456789"
 

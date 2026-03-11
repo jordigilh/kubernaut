@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jordigilh/kubernaut/test/testutil"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
@@ -1392,7 +1393,6 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 
 func createKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
 	// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
-	// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
 	opts := KindClusterOptions{
 		ClusterName:    clusterName,
 		KubeconfigPath: kubeconfigPath,
@@ -1871,25 +1871,9 @@ func buildDataStorageService(writer io.Writer) error {
 	return nil
 }
 
-// findWorkspaceRoot finds the workspace root by looking for go.mod
+// findWorkspaceRoot delegates to the shared testutil implementation.
 func findWorkspaceRoot() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	// Walk up the directory tree looking for go.mod
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir, nil
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("could not find go.mod in any parent directory")
-		}
-		dir = parent
-	}
+	return testutil.FindWorkspaceRoot()
 }
 
 func startDataStorageService(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {

@@ -329,7 +329,7 @@ kubectl rollout history deployment/authwebhook -n kubernaut-system
 
 ## 📚 **References**
 
-- **SOC2 Plan**: `docs/development/SOC2/SOC2_WEEK2_COMPLETE_PLAN_V1_1_JAN07.md`
+- **SOC2 Plan**: SOC2_WEEK2_COMPLETE_PLAN_V1_1_JAN07 (document removed)
 - **E2E Tests**: `test/e2e/authwebhook/`
 - **Webhook Implementation**: `cmd/authwebhook/main.go`
 - **cert-manager Docs**: https://cert-manager.io/docs/

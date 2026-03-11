@@ -102,7 +102,7 @@ ENTRYPOINT ["./entrypoint.sh"]
 CMD []
 
 # OCI standard labels
-ARG APP_VERSION=dev
+ARG APP_VERSION=v1.0.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \

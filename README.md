@@ -10,9 +10,21 @@
 
 Kubernaut closes the loop from Kubernetes alert to automated remediation. When something goes wrong in your cluster, Kubernaut detects the signal, sends it to an LLM for live root cause investigation with real `kubectl` access, selects a remediation workflow, and executes the fix — or escalates to a human with a full RCA when it can't.
 
-![CrashLoopBackOff demo — from alert to automated fix in under 5 minutes](deploy/demo/scenarios/crashloop/crashloop-lite.gif)
+![CrashLoopBackOff demo — from alert to automated fix in under 5 minutes](https://raw.githubusercontent.com/jordigilh/kubernaut-demo-scenarios/main/scenarios/crashloop/crashloop-lite.gif)
 
 **[Full Documentation](https://jordigilh.github.io/kubernaut-docs/)** · **[Demo Scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios)**
+
+---
+
+## Why
+
+Kubernetes operators spend hours manually triaging alerts, diagnosing root causes from scattered logs and metrics, and executing remediation steps from runbooks that drift out of date. The response depends on tribal knowledge, human availability, and often happens at 3am.
+
+Rule-based remediation tools help with known, deterministic problems — "if X, do Y." But when the same symptom has multiple root causes, or the right fix depends on context the rule can't see, they fall short.
+
+Kubernaut bridges that gap. It uses an LLM to investigate the actual root cause with live cluster access, selects the right remediation from a workflow catalog, executes it, and verifies the fix worked — escalating to humans only when it should. Rule-based tools are thermostats. Kubernaut is a diagnostician that also adjusts the thermostat.
+
+**[Why Kubernaut? — full comparison with rule-based tools](https://jordigilh.github.io/kubernaut-docs/getting-started/why-kubernaut/)**
 
 ---
 
@@ -85,7 +97,7 @@ We use **Ginkgo/Gomega BDD** for testing and follow a TDD workflow. See the [Dev
 
 ## Contributing
 
-See the [Contributing Guide](https://jordigilh.github.io/kubernaut-docs/contributing/) for guidelines. In short: create a feature branch, implement with tests, update docs, and open a PR.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. In short: create a feature branch, implement with tests, update docs, and open a PR.
 
 ---
 

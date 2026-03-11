@@ -268,7 +268,7 @@ case "Completed":
 
 ### **Notification Requirement**
 When ANY service changes phase values:
-1. Create individual team notifications in `docs/handoff/`
+1. Create individual team notifications (internal development reference, removed in v1.0)
 2. Update this BR's Service Compliance Matrix
 3. Run integration tests for ALL dependent services
 4. Document migration timeline if breaking change

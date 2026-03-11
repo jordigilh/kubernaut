@@ -151,7 +151,6 @@ func (s *auditClientSpy) getFailedEvents() []failedAnalysisEvent {
 // See:
 //   - pkg/aianalysis/handlers/error_classifier.go (classification logic)
 //   - pkg/shared/backoff/backoff.go (exponential backoff calculation)
-//   - docs/handoff/TEAM_ANNOUNCEMENT_SHARED_BACKOFF.md (mandate)
 //
 // ========================================
 

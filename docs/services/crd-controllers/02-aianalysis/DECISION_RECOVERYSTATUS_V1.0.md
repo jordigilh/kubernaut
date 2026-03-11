@@ -210,7 +210,7 @@ status:
 
 ### **Status**: ⏳ **PENDING HAPI TEAM CONFIRMATION**
 
-**Implementation Request**: See `docs/shared/REQUEST_HAPI_RECOVERYSTATUS_V1_0.md`
+**Implementation Request**: REQUEST_HAPI_RECOVERYSTATUS_V1_0 (document removed)
 
 ### **Effort Estimate**: 2-3 hours
 
@@ -287,7 +287,7 @@ if analysis.Spec.IsRecoveryAttempt {
 | `docs/services/crd-controllers/02-aianalysis/BR_MAPPING.md` | Recovery BRs | **4/4 BRs complete** |
 | `holmesgpt-api/src/extensions/recovery.py:603-609` | HAPI response | **Data available** |
 | `pkg/aianalysis/handlers/investigating.go` | Population logic | **NOT implemented** |
-| `docs/audits/v1.0-implementation-triage/AIANALYSIS_TRIAGE.md:67` | Status | **Deferred** |
+| AIANALYSIS_TRIAGE (audits dir removed) | Status | **Deferred** |
 
 ---
 

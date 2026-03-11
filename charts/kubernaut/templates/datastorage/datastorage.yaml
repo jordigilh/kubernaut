@@ -15,10 +15,10 @@ data:
       readTimeout: 30s
       writeTimeout: 30s
     database:
-      host: postgresql.kubernaut-system.svc.cluster.local
-      port: 5432
-      name: action_history
-      user: slm_user
+      host: {{ include "kubernaut.postgresql.host" . }}
+      port: {{ include "kubernaut.postgresql.port" . }}
+      name: {{ include "kubernaut.postgresql.database" . }}
+      user: {{ include "kubernaut.postgresql.username" . }}
       sslMode: disable
       maxOpenConns: 100
       maxIdleConns: 20
@@ -28,7 +28,7 @@ data:
       usernameKey: "username"
       passwordKey: "password"
     redis:
-      addr: redis.kubernaut-system.svc.cluster.local:6379
+      addr: {{ include "kubernaut.redis.addr" . }}
       db: 0
       dlqStreamName: dlq-stream
       dlqMaxLen: 1000
@@ -62,15 +62,33 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: data-storage-sa
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.datastorage | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.datastorage | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.datastorage "global" .Values.global) | nindent 6 }}
       initContainers:
         - name: wait-for-postgres
-          image: busybox:1.37
-          command: ['sh', '-c', 'until nc -z postgresql.kubernaut-system.svc.cluster.local 5432; do echo "waiting for postgresql..."; sleep 2; done']
+          image: {{ .Values.postgresql.image }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          command: ['sh', '-c', 'until pg_isready -h {{ include "kubernaut.postgresql.host" . }} -p {{ include "kubernaut.postgresql.port" . }}; do echo "waiting for postgresql..."; sleep 2; done']
       containers:
         - name: datastorage
           image: {{ include "kubernaut.image" (dict "service" "datastorage" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.datastorage | nindent 12 }}
           ports:
             - name: http
               containerPort: 8080

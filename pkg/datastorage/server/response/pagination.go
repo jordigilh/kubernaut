@@ -22,7 +22,6 @@ import (
 
 // ========================================
 // PAGINATION RESPONSE BUILDER (V1.0 REFACTOR)
-// 📋 Authority: docs/handoff/DS_REFACTORING_OPPORTUNITIES.md (Opportunity 3.3)
 // ========================================
 //
 // This helper reduces duplication in pagination response building

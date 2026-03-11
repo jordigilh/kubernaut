@@ -91,7 +91,6 @@ func (v *Validator) ValidateRemediationAudit(audit *models.RemediationAudit) err
 // - Provide false sense of security (blacklist approach incomplete)
 // - Add performance overhead (regex compilation)
 //
-// See: docs/services/stateless/data-storage/implementation/DATA-STORAGE-CODE-TRIAGE.md
 // Finding #2: Unnecessary SQL keyword removal
 func (v *Validator) SanitizeString(input string) string {
 	result := input

@@ -244,5 +244,5 @@ kubectl logs -n kubernaut-system -l app=mock-llm --tail=100
 
 - **Service Source**: `test/services/mock-llm/`
 - **Port Allocation**: `docs/architecture/decisions/DD-TEST-001-port-allocation-strategy.md`
-- **Migration Plan**: `docs/plans/MOCK_LLM_MIGRATION_PLAN.md`
-- **Test Plan**: `docs/plans/MOCK_LLM_TEST_PLAN.md`
+- **Migration Plan**: MOCK_LLM_MIGRATION_PLAN (document removed)
+- **Test Plan**: MOCK_LLM_TEST_PLAN (document removed)

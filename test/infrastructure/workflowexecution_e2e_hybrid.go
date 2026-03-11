@@ -97,7 +97,6 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// - Uses BuildImageForKind() for all images
 	// - Returns dynamic image names for later use
 	// - No manual tag generation (PHASE 0 removed)
-	// - Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
 	_, _ = fmt.Fprintln(writer, "  ├── WorkflowExecution controller (WITH COVERAGE)")
 	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image")
@@ -115,7 +114,6 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 
 	// Build WorkflowExecution controller with coverage in parallel
 	// TEMPORARY FIX (Jan 9, 2026): Disable coverage on ARM64 due to Go runtime crash
-	// See: docs/handoff/WE_E2E_RUNTIME_CRASH_JAN09.md
 	go func() {
 		// Disable coverage on ARM64 (Go runtime crash workaround)
 		enableCoverage := os.Getenv("E2E_COVERAGE") == "true" && runtime.GOARCH != "arm64"
@@ -244,7 +242,6 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// Per Consolidated API Migration (January 2026):
 	// - Uses LoadImageToKind() for all images
 	// - Uses image names from builtImages map
-	// - Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
 	_, _ = fmt.Fprintln(writer, "  ├── WorkflowExecution controller (coverage)")
 	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image")
@@ -355,7 +352,6 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// ═══════════════════════════════════════════════════════════════════════
 	// Per Consolidated API Migration (January 2026):
 	// - Use image names from builtImages map (built in Phase 1)
-	// - Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
 	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
 
@@ -645,7 +641,6 @@ func BuildWorkflowExecutionImageWithCoverage(projectRoot string, writer io.Write
 
 	// DD-TEST-007: E2E Coverage Collection
 	// TEMPORARY FIX (Jan 9, 2026): Disable coverage on ARM64 due to Go runtime crash
-	// See: docs/handoff/WE_E2E_RUNTIME_CRASH_JAN09.md
 	// Root cause: taggedPointerPack fatal error in Go 1.25.3 (Red Hat) on ARM64
 	// TODO: Re-enable after switching to upstream Go builder (Solution B)
 	if os.Getenv("E2E_COVERAGE") == "true" && runtime.GOARCH != "arm64" {

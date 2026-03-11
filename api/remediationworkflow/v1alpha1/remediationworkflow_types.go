@@ -23,9 +23,15 @@ import (
 
 // RemediationWorkflowSpec defines the desired state of RemediationWorkflow.
 // Maps to the spec content of a workflow-schema.yaml file per BR-WORKFLOW-004.
+// Workflow name is derived from the CRD's metadata.name (not duplicated in spec).
 type RemediationWorkflowSpec struct {
-	// Metadata contains workflow identification and description
-	Metadata RemediationWorkflowMetadata `json:"metadata"`
+	// Version is the semantic version (e.g., "1.0.0")
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=50
+	Version string `json:"version"`
+
+	// Description is a structured description for LLM and operator consumption
+	Description RemediationWorkflowDescription `json:"description"`
 
 	// ActionType is the action type from the taxonomy (PascalCase).
 	// +kubebuilder:validation:Required
@@ -50,6 +56,10 @@ type RemediationWorkflowSpec struct {
 	// +optional
 	Dependencies *RemediationWorkflowDependencies `json:"dependencies,omitempty"`
 
+	// Maintainers is optional maintainer information
+	// +optional
+	Maintainers []RemediationWorkflowMaintainer `json:"maintainers,omitempty"`
+
 	// Parameters defines the workflow input parameters
 	// +kubebuilder:validation:MinItems=1
 	Parameters []RemediationWorkflowParameter `json:"parameters"`
@@ -57,26 +67,6 @@ type RemediationWorkflowSpec struct {
 	// RollbackParameters defines parameters needed for rollback
 	// +optional
 	RollbackParameters []RemediationWorkflowParameter `json:"rollbackParameters,omitempty"`
-}
-
-// RemediationWorkflowMetadata contains workflow identification and description
-type RemediationWorkflowMetadata struct {
-	// WorkflowName is the human-readable workflow name (maps to DS workflow_name)
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MaxLength=255
-	WorkflowName string `json:"workflowName"`
-
-	// Version is the semantic version (e.g., "1.0.0")
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MaxLength=50
-	Version string `json:"version"`
-
-	// Description is a structured description for LLM and operator consumption
-	Description RemediationWorkflowDescription `json:"description"`
-
-	// Maintainers is optional maintainer information
-	// +optional
-	Maintainers []RemediationWorkflowMaintainer `json:"maintainers,omitempty"`
 }
 
 // RemediationWorkflowDescription provides structured information about a workflow
@@ -210,7 +200,7 @@ type RemediationWorkflowStatus struct {
 // +kubebuilder:printcolumn:name="Action",type=string,JSONPath=`.spec.actionType`
 // +kubebuilder:printcolumn:name="UUID",type=string,JSONPath=`.status.workflowId`
 // +kubebuilder:printcolumn:name="Engine",type=string,JSONPath=`.spec.execution.engine`
-// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.metadata.version`
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.version`
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.catalogStatus`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 

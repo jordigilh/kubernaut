@@ -15,7 +15,7 @@ This rule ensures **all major architectural decisions** are documented using the
 
 **Related Rules**:
 - [06-documentation-standards.mdc](mdc:.cursor/rules/06-documentation-standards.mdc) - General documentation standards
-- [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) - APDC methodology (Analysis includes decision documentation)
+- [00-kubernaut-core-rules.mdc](mdc:.cursor/rules/00-kubernaut-core-rules.mdc) - APDC methodology (Analysis includes decision documentation)
 
 ---
 
@@ -408,9 +408,8 @@ This rule integrates with APDC methodology:
 **Scenario**: Recovery context enrichment decision
 **DD-XXX**: DD-001
 **Referenced In**:
-- `docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md` (design status header)
 - `docs/requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md` (BR-WF-RECOVERY-011)
-- `docs/services/crd-controllers/01-remediationprocessor/controller-implementation.md` (code comments)
+- `docs/services/crd-controllers/01-signalprocessing/controller-implementation.md` (code comments)
 - `docs/services/crd-controllers/02-aianalysis/controller-implementation.md` (design status box)
 - `docs/services/crd-controllers/05-remediationorchestrator/controller-implementation.md` (function header)
 

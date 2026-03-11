@@ -5,14 +5,12 @@ metadata:
 spec:
   # Node Drain and Reboot Workflow Schema (BR-WORKFLOW-004)
   # Used by: AIAnalysis E2E, HolmesGPT-API E2E
-  metadata:
-    workflowName: node-drain-reboot-v1
-    version: "1.0.0"
-    description:
-      what: "Drains and reboots a node that is in NotReady state"
-      whenToUse: "When a node becomes NotReady and requires a reboot to recover"
-      whenNotToUse: "When the node issue is caused by network partitioning"
-      preconditions: "Node exists and is accessible via kubectl"
+  version: "1.0.0"
+  description:
+    what: "Drains and reboots a node that is in NotReady state"
+    whenToUse: "When a node becomes NotReady and requires a reboot to recover"
+    whenNotToUse: "When the node issue is caused by network partitioning"
+    preconditions: "Node exists and is accessible via kubectl"
   
   actionType: DrainNode
   

@@ -21,7 +21,7 @@ data:
       executing: "30m"
       verifying: "30m"
     datastorage:
-      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      url: "{{ include "kubernaut.datastorage.url" . }}"
       timeout: "10s"
       buffer:
         bufferSize: 30000
@@ -139,7 +139,7 @@ metadata:
     app: remediationorchestrator-controller
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.remediationorchestrator.replicas }}
   selector:
     matchLabels:
       app: remediationorchestrator-controller
@@ -153,11 +153,16 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: remediationorchestrator-controller
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.remediationorchestrator | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.remediationorchestrator | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.remediationorchestrator "global" .Values.global) | nindent 6 }}
       containers:
         - name: remediationorchestrator-controller
           image: {{ include "kubernaut.image" (dict "service" "remediationorchestrator" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.remediationorchestrator | nindent 12 }}
           args:
             - "--config=/etc/config/remediationorchestrator.yaml"
           ports:
@@ -167,6 +172,22 @@ spec:
             - name: metrics
               containerPort: 9090
               protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           volumeMounts:
             - name: config
               mountPath: /etc/config

@@ -1575,10 +1575,6 @@ Eventually(func() int {
   - `docs/architecture/decisions/DD-TEST-002-integration-test-container-orchestration.md`
 - **Implementation Guide**: `docs/development/testing/INTEGRATION_TEST_INFRASTRUCTURE_SETUP.md`
 
-**Historical Debugging Sessions** (for context):
-- RO Team: `docs/handoff/SHARED_RO_DS_INTEGRATION_DEBUG_DEC_20_2025.md` (Dec 20, 2025)
-- NT Team: `docs/handoff/NT_INTEGRATION_TEST_INFRASTRUCTURE_ISSUES_DEC_21_2025.md` (Dec 21, 2025)
-
 **Working Implementation**:
 - DataStorage: `test/integration/datastorage/suite_test.go` (sequential startup reference)
 
@@ -2985,7 +2981,7 @@ var _ = Describe("Reconstruction API Integration", func() {
 
 **Correction Applied**: January 12, 2026 - Refactored to call business logic directly, moved HTTP endpoint testing to E2E tier.
 
-**Reference**: `docs/development/SOC2/RECONSTRUCTION_TESTING_TIERS.md` - Clarifies integration vs E2E boundaries for reconstruction feature.
+**Reference**: RECONSTRUCTION_TESTING_TIERS - Clarifies integration vs E2E boundaries for reconstruction feature (document removed).
 
 #### When HTTP IS Acceptable
 

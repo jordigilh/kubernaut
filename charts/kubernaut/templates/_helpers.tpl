@@ -1,11 +1,4 @@
 {{/*
-Expand the name of the chart.
-*/}}
-{{- define "kubernaut.name" -}}
-{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
-{{- end }}
-
-{{/*
 Create a default fully qualified app name.
 */}}
 {{- define "kubernaut.fullname" -}}
@@ -29,6 +22,7 @@ helm.sh/chart: {{ include "kubernaut.chart" . }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/part-of: kubernaut
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
@@ -66,13 +60,21 @@ Usage: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.g
 
 {{/*
 Return the Secret name for PostgreSQL credentials.
-Uses existingSecret if set, otherwise the chart-managed "postgresql-secret".
+When using external PostgreSQL, falls through to the external auth settings.
 */}}
 {{- define "kubernaut.postgresql.secretName" -}}
-{{- if .Values.postgresql.auth.existingSecret -}}
-{{- .Values.postgresql.auth.existingSecret -}}
+{{- if .Values.postgresql.enabled -}}
+  {{- if .Values.postgresql.auth.existingSecret -}}
+    {{- .Values.postgresql.auth.existingSecret -}}
+  {{- else -}}
+    postgresql-secret
+  {{- end -}}
 {{- else -}}
-postgresql-secret
+  {{- if .Values.externalPostgresql.auth.existingSecret -}}
+    {{- .Values.externalPostgresql.auth.existingSecret -}}
+  {{- else -}}
+    postgresql-secret
+  {{- end -}}
 {{- end -}}
 {{- end }}
 
@@ -92,14 +94,102 @@ datastorage-db-secret
 
 {{/*
 Return the Secret name for Redis credentials.
-Uses existingSecret if set, otherwise the chart-managed "redis-secret".
+When using external Redis, falls through to the external settings.
 */}}
 {{- define "kubernaut.redis.secretName" -}}
-{{- if .Values.redis.existingSecret -}}
-{{- .Values.redis.existingSecret -}}
+{{- if .Values.redis.enabled -}}
+  {{- if .Values.redis.existingSecret -}}
+    {{- .Values.redis.existingSecret -}}
+  {{- else -}}
+    redis-secret
+  {{- end -}}
 {{- else -}}
-redis-secret
+  {{- if .Values.externalRedis.existingSecret -}}
+    {{- .Values.externalRedis.existingSecret -}}
+  {{- else -}}
+    redis-secret
+  {{- end -}}
 {{- end -}}
+{{- end }}
+
+{{/*
+Return the PostgreSQL host.
+Uses in-chart service DNS when postgresql.enabled, otherwise externalPostgresql.host.
+*/}}
+{{- define "kubernaut.postgresql.host" -}}
+{{- if .Values.postgresql.enabled -}}
+postgresql.{{ .Release.Namespace }}.svc.cluster.local
+{{- else -}}
+{{- required "externalPostgresql.host is required when postgresql.enabled=false" .Values.externalPostgresql.host -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Return the PostgreSQL port.
+*/}}
+{{- define "kubernaut.postgresql.port" -}}
+{{- if .Values.postgresql.enabled -}}
+5432
+{{- else -}}
+{{- .Values.externalPostgresql.port | default 5432 -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Return the PostgreSQL username (for config files / readiness probes).
+*/}}
+{{- define "kubernaut.postgresql.username" -}}
+{{- if .Values.postgresql.enabled -}}
+{{- .Values.postgresql.auth.username -}}
+{{- else -}}
+{{- .Values.externalPostgresql.auth.username | default "slm_user" -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Return the PostgreSQL database name.
+*/}}
+{{- define "kubernaut.postgresql.database" -}}
+{{- if .Values.postgresql.enabled -}}
+{{- .Values.postgresql.auth.database -}}
+{{- else -}}
+{{- .Values.externalPostgresql.auth.database | default "action_history" -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Return the Redis address (host:port).
+*/}}
+{{- define "kubernaut.redis.addr" -}}
+{{- if .Values.redis.enabled -}}
+redis.{{ .Release.Namespace }}.svc.cluster.local:6379
+{{- else -}}
+{{- $host := required "externalRedis.host is required when redis.enabled=false" .Values.externalRedis.host -}}
+{{- printf "%s:%d" $host (int (.Values.externalRedis.port | default 6379)) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Return the in-cluster DataStorage service URL.
+Derives the FQDN from .Release.Namespace so the chart works in any namespace.
+*/}}
+{{- define "kubernaut.datastorage.url" -}}
+http://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8080
+{{- end }}
+
+{{/*
+Return the in-cluster Gateway service URL.
+*/}}
+{{- define "kubernaut.gateway.url" -}}
+http://gateway-service.{{ .Release.Namespace }}.svc.cluster.local:8080
+{{- end }}
+
+{{/*
+Return the namespace used for workflow execution (Jobs, PipelineRuns).
+Defaults to "kubernaut-workflows".
+*/}}
+{{- define "kubernaut.workflowNamespace" -}}
+{{- .Values.workflowexecution.workflowNamespace | default "kubernaut-workflows" -}}
 {{- end }}
 
 {{/*
@@ -137,4 +227,41 @@ subjects:
   - kind: ServiceAccount
     name: {{ .serviceAccount }}
     namespace: {{ .Release.Namespace }}
+{{- end }}
+
+{{/*
+Render optional affinity and topologySpreadConstraints for a component pod spec.
+Usage: {{ include "kubernaut.affinity" .Values.gateway | nindent 6 }}
+*/}}
+{{- define "kubernaut.affinity" -}}
+{{- with .affinity }}
+affinity:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .topologySpreadConstraints }}
+topologySpreadConstraints:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}
+
+{{/*
+Default pod-level securityContext for the restricted PodSecurity profile.
+Override per-component via <component>.podSecurityContext in values.yaml.
+Usage: {{ include "kubernaut.podSecurityContext" .Values.gateway | nindent 6 }}
+*/}}
+{{- define "kubernaut.podSecurityContext" -}}
+{{- $defaults := dict "runAsNonRoot" true "seccompProfile" (dict "type" "RuntimeDefault") -}}
+{{- $override := .podSecurityContext | default dict -}}
+{{- toYaml (merge $override $defaults) }}
+{{- end }}
+
+{{/*
+Default container-level securityContext for the restricted PodSecurity profile.
+Override per-component via <component>.containerSecurityContext in values.yaml.
+Usage: {{ include "kubernaut.containerSecurityContext" .Values.gateway | nindent 10 }}
+*/}}
+{{- define "kubernaut.containerSecurityContext" -}}
+{{- $defaults := dict "allowPrivilegeEscalation" false "readOnlyRootFilesystem" true "capabilities" (dict "drop" (list "ALL")) -}}
+{{- $override := .containerSecurityContext | default dict -}}
+{{- toYaml (merge $override $defaults) }}
 {{- end }}

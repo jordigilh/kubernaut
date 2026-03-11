@@ -210,7 +210,6 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 	// - 10 test iterations validated timer reliability (0/10 bugs detected)
 	// - Timer firing correctly with ~1s intervals (sub-millisecond precision)
 	// - 50-90s delay never reproduced
-	// - Investigation: docs/handoff/RO_AUDIT_TIMER_INTERMITTENCY_ANALYSIS_DEC_27_2025.md
 	// - Test enabled with 90s timeout (conservative, timer works at ~1s)
 	Context("AE-INT-3: Completion Audit (Executing→Verifying→Completed)", func() {
 		It("should emit 'lifecycle_completed' audit event when RR completes successfully", func() {
@@ -480,7 +479,6 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 	// - 10 test iterations validated timer reliability (0/10 bugs detected)
 	// - Timer firing correctly with ~1s intervals (sub-millisecond precision)
 	// - 50-90s delay never reproduced
-	// - Investigation: docs/handoff/RO_AUDIT_TIMER_INTERMITTENCY_ANALYSIS_DEC_27_2025.md
 	// - Test enabled with 90s timeout (conservative, timer works at ~1s)
 	Context("AE-INT-5: Approval Requested Audit (Analyzing→AwaitingApproval)", func() {
 		It("should emit 'approval_requested' audit event when low confidence triggers approval", func() {

@@ -34,7 +34,7 @@
 ### Out of Scope
 
 - **RBAC provisioning**: `dependency-reader-rbac.yaml` Helm chart testing (infrastructure concern, not business logic)
-- **Demo scenario validation**: `deploy/demo/scenarios/` shell scripts (manual validation)
+- **Demo scenario validation**: [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) shell scripts (manual validation)
 - **OpenAPI spec changes**: No DS API changes required (dependencies parsed from existing `Content` field)
 - **CRD schema changes**: No WorkflowExecution CRD modifications (dependencies resolved on-demand, not propagated through CRDs)
 

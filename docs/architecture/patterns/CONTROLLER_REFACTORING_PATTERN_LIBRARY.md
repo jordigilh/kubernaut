@@ -1800,7 +1800,7 @@ After refactoring, create:
 
 3. **Brown Bag Session**: 30-min team presentation on key insights
 
-4. **Handoff Document** (Optional): `docs/handoff/[SERVICE]_REFACTORING_COMPLETE_[DATE].md`
+4. **Handoff Document** (Optional): (internal development reference, removed in v1.0)
    - Detailed play-by-play for immediate team reference
    - Will be archived, so extract key lessons to case study
 

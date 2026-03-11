@@ -6,14 +6,12 @@ spec:
   # Test Hello World Job Workflow Schema (BR-WORKFLOW-004)
   # Authority: ADR-043
   # E2E Testing: Validates WorkflowExecution controller's Kubernetes Job integration
-  metadata:
-    workflowName: test-job-hello-world
-    version: "1.0.0"
-    description:
-      what: "Simple hello-world workflow using Kubernetes Job backend for E2E testing"
-      whenToUse: "For E2E validation of Job-based workflow execution"
-      whenNotToUse: "Not intended for production use"
-      preconditions: "Kubernetes cluster with Job support"
+  version: "1.0.0"
+  description:
+    what: "Simple hello-world workflow using Kubernetes Job backend for E2E testing"
+    whenToUse: "For E2E validation of Job-based workflow execution"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "Kubernetes cluster with Job support"
   
   actionType: RestartPod
   

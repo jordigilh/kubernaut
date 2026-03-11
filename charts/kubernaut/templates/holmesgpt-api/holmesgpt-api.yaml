@@ -125,7 +125,7 @@ data:
       timeout_seconds: {{ .Values.holmesgptApi.llm.timeoutSeconds }}
       temperature: {{ .Values.holmesgptApi.llm.temperature }}
     data_storage:
-      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      url: "{{ include "kubernaut.datastorage.url" . }}"
     audit:
       flush_interval_seconds: 0.1
       buffer_size: 10000
@@ -154,11 +154,16 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: holmesgpt-api-sa
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.holmesgptApi | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.holmesgptApi | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.holmesgptApi "global" .Values.global) | nindent 6 }}
       containers:
         - name: holmesgpt-api
           image: {{ include "kubernaut.image" (dict "service" "holmesgpt-api" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.holmesgptApi | nindent 12 }}
           ports:
             - containerPort: 8080
           args:
@@ -166,12 +171,12 @@ spec:
             - "/etc/holmesgpt/config.yaml"
           env:
             - name: DATA_STORAGE_URL
-              value: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+              value: "{{ include "kubernaut.datastorage.url" . }}"
             - name: LITELLM_LOG
               value: "DEBUG"
           envFrom:
             - secretRef:
-                name: llm-credentials
+                name: {{ .Values.holmesgptApi.llm.credentialsSecretName }}
                 optional: true
           volumeMounts:
             - name: config
@@ -180,6 +185,22 @@ spec:
             - name: llm-credentials-file
               mountPath: /etc/holmesgpt/credentials
               readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             {{- toYaml (.Values.holmesgptApi.resources | default dict) | nindent 12 }}
       volumes:
@@ -188,7 +209,7 @@ spec:
             name: holmesgpt-api-config
         - name: llm-credentials-file
           secret:
-            secretName: llm-credentials
+            secretName: {{ .Values.holmesgptApi.llm.credentialsSecretName }}
             optional: true
 ---
 apiVersion: v1

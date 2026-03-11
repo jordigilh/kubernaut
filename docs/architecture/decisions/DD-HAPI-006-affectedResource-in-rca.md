@@ -387,7 +387,7 @@ metadata:
 
 ### Documentation (Created/Updated)
 1. **LLM Response Format Guide** (`holmesgpt-api/docs/LLM_RESPONSE_FORMAT.md`): Document `affectedResource` structure with `apiVersion` examples
-2. **Scope Management Handoff** (`docs/handoff/BR_SCOPE_COMPLETE_DEFINITION_JAN20_2026.md`): Reference RCA target with `apiVersion` in RO validation
+2. **Scope Management Handoff**: Reference RCA target with `apiVersion` in RO validation (internal development reference, removed in v1.0)
 
 ---
 

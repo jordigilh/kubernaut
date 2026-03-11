@@ -24,8 +24,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/ogenx"
+	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
 // DS-BUG-001: Duplicate Workflow Returns 500 Instead of 409
@@ -127,35 +129,20 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			firstWorkflowID := firstWorkflow.WorkflowId.Value.String()
 
 			// Step 2: Create with same name+version but different content (triggers supersede)
-			content2 := fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationWorkflow
-metadata:
-  name: %[1]s
-spec:
-  metadata:
-    workflowName: %[1]s
-    version: "1.0.0"
-    description:
-      what: "Updated content to trigger supersede (BR-WORKFLOW-006)"
-      whenToUse: "DS-BUG-001 supersede path E2E test"
-  actionType: ScaleReplicas
-  labels:
-    severity: [critical]
-    environment: [production]
-    component: pod
-    priority: P0
-  detectedLabels:
-    hpaEnabled: "true"
-    gitOpsTool: "argocd"
-  execution:
-    engine: tekton
-    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
-  parameters:
-    - name: TARGET_RESOURCE
-      type: string
-      required: true
-      description: "Target resource for remediation"
-`, uniqueName)
+			supersedeCRD := testutil.NewTestWorkflowCRD(uniqueName, "ScaleReplicas", "tekton")
+			supersedeCRD.Spec.Description.What = "Updated content to trigger supersede (BR-WORKFLOW-006)"
+			supersedeCRD.Spec.Description.WhenToUse = "DS-BUG-001 supersede path E2E test"
+			supersedeCRD.Spec.Labels.Priority = "P0"
+			supersedeCRD.Spec.Execution.Bundle = e2eBundleRef
+			supersedeCRD.Spec.Parameters = []models.WorkflowParameter{
+				{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target resource for remediation"},
+			}
+			supersedeCRD.Spec.DetectedLabels = &models.DetectedLabelsSchema{
+				HPAEnabled:      "true",
+				GitOpsTool:      "argocd",
+				PopulatedFields: []string{"hpaEnabled", "gitOpsTool"},
+			}
+			content2 := testutil.MarshalWorkflowCRD(supersedeCRD)
 
 			GinkgoWriter.Printf("\n Creating workflow with different content (expecting 201 Created - supersede)...\n")
 			supersede := &ogenclient.CreateWorkflowInlineRequest{Content: content2}

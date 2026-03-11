@@ -109,8 +109,7 @@ if [ -n "$STAGED_ALL" ]; then
     STAGED_DIFF=$(git diff --cached -U0 -- $STAGED_ALL | \
         grep -v '^---' | grep -v '^+++' | \
         grep '^+' | \
-        grep -v 'pre-commit:allow-sensitive' | \
-        grep -v 'deploy/demo/credentials/.*-example' || true)
+        grep -v 'pre-commit:allow-sensitive' || true)
 
     LEAK_MATCHES=""
 

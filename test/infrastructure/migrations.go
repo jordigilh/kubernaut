@@ -16,8 +16,7 @@ limitations under the License.
 
 // Package infrastructure provides shared E2E test infrastructure for all services.
 //
-// This file implements the shared migration library requested in:
-// docs/handoff/REQUEST_SHARED_E2E_MIGRATION_LIBRARY.md
+// This file implements the shared migration library.
 //
 // ALL services that emit audit events need the audit_events table:
 //   - WorkflowExecution: workflowexecution.workflow.*
@@ -101,7 +100,6 @@ type Migration struct {
 //
 // NOTE: This list is a TECHNICAL DEBT item. It must be manually updated when migrations are added.
 // For E2E tests using all migrations, auto-discovery via DiscoverMigrations() is preferred.
-// Reference: docs/handoff/TRIAGE_MIGRATIONS_GO_OBSOLETE_LISTS.md
 var AllMigrations = []Migration{
 	// Core schema
 	{

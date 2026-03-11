@@ -1,3 +1,4 @@
+{{- if eq .Values.tls.mode "hook" }}
 # Job 1: Generate TLS certificates (pre-install/pre-upgrade).
 # Runs BEFORE chart resources so the authwebhook pod can mount the TLS secret.
 # Stores the CA cert in a ConfigMap for the post-install caBundle patch job.
@@ -13,6 +14,7 @@ metadata:
     "helm.sh/hook-weight": "5"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
+  ttlSecondsAfterFinished: 86400
   backoffLimit: 3
   template:
     metadata:
@@ -21,10 +23,33 @@ spec:
     spec:
       serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
       restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Mi
       containers:
         - name: tls-cert-gen
           image: {{ .Values.hooks.tlsCerts.image }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
           command:
             - /bin/sh
             - -c
@@ -33,15 +58,25 @@ spec:
               NAMESPACE="{{ .Release.Namespace }}"
               SERVICE="authwebhook"
 
+              RENEW=false
               if kubectl get secret authwebhook-tls -n "$NAMESPACE" >/dev/null 2>&1; then
-                echo "authwebhook-tls secret already exists, skipping cert generation."
-                if kubectl get configmap authwebhook-ca -n "$NAMESPACE" >/dev/null 2>&1; then
-                  echo "authwebhook-ca ConfigMap exists. Nothing to do."
+                echo "authwebhook-tls secret already exists, checking expiry..."
+                CERT_PEM=$(kubectl get secret authwebhook-tls -n "$NAMESPACE" -o jsonpath='{.data.tls\.crt}' | base64 -d)
+                if printf '%s' "$CERT_PEM" | openssl x509 -checkend $((30*86400)) -noout 2>/dev/null; then
+                  echo "  Certificate is valid for at least 30 more days."
+                  if kubectl get configmap authwebhook-ca -n "$NAMESPACE" >/dev/null 2>&1; then
+                    echo "  authwebhook-ca ConfigMap exists. Nothing to do."
+                    exit 0
+                  fi
+                  echo "WARNING: authwebhook-ca ConfigMap missing (legacy install)."
+                  echo "  Delete the authwebhook-tls secret and re-run helm upgrade to regenerate."
                   exit 0
+                else
+                  echo "  Certificate expires within 30 days (or is already expired). Regenerating..."
+                  RENEW=true
+                  kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
+                  kubectl delete configmap authwebhook-ca -n "$NAMESPACE" --ignore-not-found
                 fi
-                echo "WARNING: authwebhook-ca ConfigMap missing (legacy install)."
-                echo "  Delete the authwebhook-tls secret and re-run helm upgrade to regenerate."
-                exit 0
               fi
 
               TMPDIR=$(mktemp -d)
@@ -97,6 +132,7 @@ metadata:
     "helm.sh/hook-weight": "5"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
+  ttlSecondsAfterFinished: 86400
   backoffLimit: 3
   template:
     metadata:
@@ -105,10 +141,26 @@ spec:
     spec:
       serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
       restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
       containers:
         - name: tls-cabundle-patch
           image: {{ .Values.hooks.tlsCerts.image }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
           command:
             - /bin/sh
             - -c
@@ -144,8 +196,9 @@ spec:
                 ]"
 
               echo "==> Webhook CA bundle patching complete"
+{{- end }}
 ---
-# Shared RBAC for all Helm hooks (pre-install TLS cert + post-install migration).
+# Shared RBAC for all Helm hooks (TLS cert jobs + migration job).
 # Uses both pre- and post- phases so the SA exists across all hook jobs.
 # Only cleaned up on next install/upgrade (before-hook-creation), not on success.
 apiVersion: v1
@@ -156,7 +209,7 @@ metadata:
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade,post-install,post-upgrade
+    "helm.sh/hook": pre-install,pre-upgrade,post-install,post-upgrade,post-delete
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
 ---
@@ -167,13 +220,13 @@ metadata:
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade,post-install,post-upgrade
+    "helm.sh/hook": pre-install,pre-upgrade,post-install,post-upgrade,post-delete
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
 rules:
   - apiGroups: [""]
     resources: ["secrets", "configmaps"]
-    verbs: ["get", "create", "update", "patch"]
+    verbs: ["get", "create", "update", "patch", "delete"]
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
     verbs: ["get", "patch"]
@@ -194,7 +247,7 @@ metadata:
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade,post-install,post-upgrade
+    "helm.sh/hook": pre-install,pre-upgrade,post-install,post-upgrade,post-delete
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
 roleRef:
@@ -205,3 +258,59 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "kubernaut.fullname" . }}-hook-sa
     namespace: {{ .Release.Namespace }}
+{{- if eq .Values.tls.mode "hook" }}
+---
+# Job 3: Clean up hook-created resources on uninstall (post-delete).
+# Removes authwebhook-tls Secret and authwebhook-ca ConfigMap that are
+# created by kubectl (not tracked by Helm) and would otherwise be orphaned.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-tls-cleanup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-delete
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: tls-cleanup
+    spec:
+      serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: tls-cleanup
+          image: {{ .Values.hooks.tlsCerts.image }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              NAMESPACE="{{ .Release.Namespace }}"
+              echo "==> Cleaning up hook-created TLS resources..."
+              kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
+              kubectl delete configmap authwebhook-ca -n "$NAMESPACE" --ignore-not-found
+              echo "==> Cleanup complete"
+{{- end }}

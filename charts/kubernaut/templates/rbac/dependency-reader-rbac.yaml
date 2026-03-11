@@ -5,7 +5,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: datastorage-dep-reader
-  namespace: kubernaut-workflows
+  namespace: {{ include "kubernaut.workflowNamespace" . }}
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
 rules:
@@ -17,7 +17,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: datastorage-dep-reader
-  namespace: kubernaut-workflows
+  namespace: {{ include "kubernaut.workflowNamespace" . }}
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
 roleRef:
@@ -35,7 +35,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: workflowexecution-dep-reader
-  namespace: kubernaut-workflows
+  namespace: {{ include "kubernaut.workflowNamespace" . }}
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
 rules:
@@ -47,7 +47,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: workflowexecution-dep-reader
-  namespace: kubernaut-workflows
+  namespace: {{ include "kubernaut.workflowNamespace" . }}
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
 roleRef:

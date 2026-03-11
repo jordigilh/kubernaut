@@ -338,7 +338,6 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 
 	// 🚨 FIX: Get actual total count from database (not len(incidents))
 	// This fixes the critical pagination bug where total was page size instead of database count
-	// See: docs/services/stateless/data-storage/implementation/DATA-STORAGE-INTEGRATION-TEST-TRIAGE.md
 	totalCount, err := h.db.CountTotal(filters)
 	if err != nil {
 		h.logger.Error(err, "Database count query failed",

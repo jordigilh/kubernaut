@@ -91,12 +91,13 @@ Per-execution SA (wfe-<hash>)
 The workflow schema includes an `rbac` section that explicitly declares the Kubernetes RBAC rules the workflow requires. The WE controller uses these rules to provision a scoped SA per execution.
 
 ```yaml
-# workflow-schema.yaml
-rbac:
-  rules:
-    - apiGroups: ["autoscaling"]
-      resources: ["horizontalpodautoscalers"]
-      verbs: ["get", "patch"]
+# spec.rbac in RemediationWorkflow CRD
+spec:
+  rbac:
+    rules:
+      - apiGroups: ["autoscaling"]
+        resources: ["horizontalpodautoscalers"]
+        verbs: ["get", "patch"]
 ```
 
 ```
@@ -126,46 +127,50 @@ Per-execution SA (wfe-<hash>)
 
 ### Workflow Schema Extension
 
-Add an `rbac` field to the workflow schema:
+Add an `rbac` field to the workflow schema spec:
 
 ```yaml
-schemaVersion: "1.1"
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: patch-hpa-v1
+  name: patch-hpa-v1
+spec:
   version: "1.0.0"
+  actionType: PatchHPA
 
-actionType: PatchHPA
+  rbac:
+    rules:
+      - apiGroups: ["autoscaling"]
+        resources: ["horizontalpodautoscalers"]
+        verbs: ["get", "patch"]
 
-rbac:
-  rules:
-    - apiGroups: ["autoscaling"]
-      resources: ["horizontalpodautoscalers"]
-      verbs: ["get", "patch"]
+  labels:
+    severity: [low, medium, high, critical]
+    # ...
 
-labels:
-  signalName: HPAMaxedOut
-  severity: [low, medium, high, critical]
-  # ...
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/patch-hpa-job@sha256:...
 
-execution:
-  engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/patch-hpa-job@sha256:...
-
-parameters:
-  - name: TARGET_NAMESPACE
-    type: string
-    required: true
-  - name: TARGET_HPA
-    type: string
-    required: true
+  parameters:
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+    - name: TARGET_HPA
+      type: string
+      required: true
 ```
 
 ### Go Types
 
 ```go
-// WorkflowSchema gains an RBAC field
+// WorkflowSchema has Version, Description, Maintainers as direct fields (issue #329).
+// WorkflowName is derived from CRD metadata.name by the parser.
 type WorkflowSchema struct {
-    Metadata       WorkflowSchemaMetadata `yaml:"metadata" json:"metadata"`
+    WorkflowName   string                 `yaml:"-" json:"workflowName"`  // from CRD metadata.name
+    Version        string                 `yaml:"version" json:"version"`
+    Description    WorkflowDescription   `yaml:"description" json:"description"`
+    Maintainers    []WorkflowMaintainer   `yaml:"maintainers,omitempty" json:"maintainers,omitempty"`
     ActionType     string                 `yaml:"actionType" json:"actionType"`
     RBAC           *WorkflowRBAC          `yaml:"rbac,omitempty" json:"rbac,omitempty"`
     Labels         WorkflowSchemaLabels   `yaml:"labels" json:"labels"`
@@ -364,3 +369,4 @@ meaningful blast radius reduction while remaining safe.
 |------|---------|---------|
 | 2026-02-23 | 1.0 | Initial decision - schema-declared RBAC replacing shared SA |
 | 2026-03-02 | 1.1 | Added `schemaVersion: "1.1"` to RBAC schema examples (#255) |
+| 2026-03-11 | 1.2 | Updated schema structure per #329: metadata.name, spec.version, spec.description, spec.maintainers; removed WorkflowSchemaMetadata |

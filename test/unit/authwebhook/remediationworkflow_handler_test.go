@@ -103,13 +103,10 @@ func buildRemediationWorkflow(name, namespace string) *rwv1alpha1.RemediationWor
 			UID:       "crd-uid-001",
 		},
 		Spec: rwv1alpha1.RemediationWorkflowSpec{
-			Metadata: rwv1alpha1.RemediationWorkflowMetadata{
-				WorkflowName: name,
-				Version:      "1.0.0",
-				Description: rwv1alpha1.RemediationWorkflowDescription{
-					What:      "Test workflow",
-					WhenToUse: "During tests",
-				},
+			Version: "1.0.0",
+			Description: rwv1alpha1.RemediationWorkflowDescription{
+				What:      "Test workflow",
+				WhenToUse: "During tests",
 			},
 			ActionType: "ScaleMemory",
 			Labels: rwv1alpha1.RemediationWorkflowLabels{
