@@ -87,7 +87,7 @@ spec:
               set -e
 
               GOOSE_VERSION="{{ .Values.hooks.migrations.gooseVersion }}"
-              GOOSE_BIN="/usr/local/bin/goose"
+              GOOSE_BIN="/tmp/goose"
               ARCH=$(uname -m)
               case "$ARCH" in
                 x86_64)  GOOSE_ARCH="x86_64" ;;
@@ -117,7 +117,7 @@ spec:
               GOOSE_DBSTRING="host=$PGHOST user=$PGUSER password=$PGPASSWORD dbname=$PGDATABASE sslmode=disable"
 
               echo "==> Applying SQL migrations with goose (DD-012)"
-              goose -dir /migrations postgres "$GOOSE_DBSTRING" up
+              "$GOOSE_BIN" -dir /migrations postgres "$GOOSE_DBSTRING" up
 
               echo "==> Granting privileges..."
               psql -q <<'EOSQL'
