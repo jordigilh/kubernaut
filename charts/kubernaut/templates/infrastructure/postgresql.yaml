@@ -56,7 +56,7 @@ spec:
         - name: postgresql
           image: {{ .Values.postgresql.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
-          {{- $cscDefaults := dict "allowPrivilegeEscalation" false "capabilities" (dict "drop" (list "ALL")) }}
+          {{- $cscDefaults := dict "allowPrivilegeEscalation" false }}
           {{- $cscOverride := .Values.postgresql.containerSecurityContext | default dict }}
           securityContext:
             {{- toYaml (merge $cscOverride $cscDefaults) | nindent 12 }}

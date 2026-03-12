@@ -92,16 +92,20 @@ spec:
         app: event-exporter
     spec:
       serviceAccountName: event-exporter
+      {{- $pscDefaults := dict "seccompProfile" (dict "type" "RuntimeDefault") }}
+      {{- $pscOverride := .Values.eventExporter.podSecurityContext | default dict }}
       securityContext:
-        {{- include "kubernaut.podSecurityContext" .Values.eventExporter | nindent 8 }}
+        {{- toYaml (merge $pscOverride $pscDefaults) | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.eventExporter | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.eventExporter "global" .Values.global) | nindent 6 }}
       containers:
         - name: event-exporter
           image: {{ .Values.eventExporter.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          {{- $cscDefaults := dict "allowPrivilegeEscalation" false "capabilities" (dict "drop" (list "ALL")) }}
+          {{- $cscOverride := .Values.eventExporter.containerSecurityContext | default dict }}
           securityContext:
-            {{- include "kubernaut.containerSecurityContext" .Values.eventExporter | nindent 12 }}
+            {{- toYaml (merge $cscOverride $cscDefaults) | nindent 12 }}
           args:
             - -conf=/config/config.yaml
           volumeMounts:

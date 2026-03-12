@@ -71,6 +71,7 @@ spec:
           image: {{ .Values.postgresql.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           securityContext:
+            runAsNonRoot: false
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:

@@ -200,9 +200,11 @@ authwebhook:
 eventExporter:
   replicas: 1
   image: ghcr.io/resmoio/kubernetes-event-exporter:v1.7
-  # Safety default: third-party image may not declare a non-root USER.
-  podSecurityContext:
-    runAsUser: 65534
+  # Pod/container security context overrides (same Tier 2 rationale as postgresql/redis).
+  # No hardcoded runAsUser/fsGroup for OCP/Kind compatibility.
+  # On vanilla K8s with PodSecurity "restricted", add runAsUser and runAsNonRoot here.
+  podSecurityContext: {}
+  containerSecurityContext: {}
   resources:
     requests:
       memory: 32Mi
