@@ -2870,9 +2870,9 @@ components:
           type: array
           items:
             type: string
-            enum: [critical, high, medium, low]
+            enum: [critical, high, medium, low, "*"]
           minItems: 1
-          description: "Severity level(s) this workflow is designed for. Always an array. To match any severity, list all levels."
+          description: "Severity level(s) this workflow is designed for. Always an array. Use '*' to match any severity."
           example: [critical]
         component:
           type: string

@@ -298,7 +298,7 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 	}
 
 	// Build labels map from label fields (camelCase keys)
-	// DD-WORKFLOW-001 v2.7: severity always stored as JSONB array. No wildcard.
+	// DD-WORKFLOW-001 v2.8: severity always stored as JSONB array. Supports "*" wildcard.
 	// DD-WORKFLOW-016: environment/severity are []string for JSONB array storage
 	labels := map[string]interface{}{
 		"severity": []string(schema.Labels.Severity),

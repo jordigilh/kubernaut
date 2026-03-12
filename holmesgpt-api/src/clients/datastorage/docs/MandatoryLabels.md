@@ -6,7 +6,7 @@
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**severity** | **List[str]** | Severity level(s) this workflow is designed for. Always an array. To match any severity, list all levels. | 
+**severity** | **List[str]** | Severity level(s) this workflow is designed for. Always an array. Use &#39;*&#39; to match any severity. | 
 **component** | **str** | Kubernetes resource type this workflow targets (e.g., pod, deployment, node) | 
 **environment** | **List[str]** | Target environments (workflow can declare multiple, &#39;*&#39; matches all) | 
 **priority** | **str** | Business priority level (P0, P1, P2, P3, * for any) | 

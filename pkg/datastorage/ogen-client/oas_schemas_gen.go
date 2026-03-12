@@ -10001,8 +10001,7 @@ type LivenessCheckOK struct{}
 // 4 mandatory workflow labels (Issue #274: signalName removed per DD-WORKFLOW-016).
 // Ref: #/components/schemas/MandatoryLabels
 type MandatoryLabels struct {
-	// Severity level(s) this workflow is designed for. Always an array. To match any severity, list all
-	// levels.
+	// Severity level(s) this workflow is designed for. Always an array. Use '*' to match any severity.
 	Severity []MandatoryLabelsSeverityItem `json:"severity"`
 	// Kubernetes resource type this workflow targets (e.g., pod, deployment, node).
 	Component string `json:"component"`
@@ -10180,32 +10179,36 @@ func (s *MandatoryLabelsPriority) UnmarshalText(data []byte) error {
 type MandatoryLabelsSeverityItem string
 
 const (
-	MandatoryLabelsSeverityItemCritical MandatoryLabelsSeverityItem = "critical"
-	MandatoryLabelsSeverityItemHigh     MandatoryLabelsSeverityItem = "high"
-	MandatoryLabelsSeverityItemMedium   MandatoryLabelsSeverityItem = "medium"
-	MandatoryLabelsSeverityItemLow      MandatoryLabelsSeverityItem = "low"
+	MandatoryLabelsSeverityItem_critical MandatoryLabelsSeverityItem = "critical"
+	MandatoryLabelsSeverityItem_high     MandatoryLabelsSeverityItem = "high"
+	MandatoryLabelsSeverityItem_medium   MandatoryLabelsSeverityItem = "medium"
+	MandatoryLabelsSeverityItem_low      MandatoryLabelsSeverityItem = "low"
+	MandatoryLabelsSeverityItem_         MandatoryLabelsSeverityItem = "*"
 )
 
 // AllValues returns all MandatoryLabelsSeverityItem values.
 func (MandatoryLabelsSeverityItem) AllValues() []MandatoryLabelsSeverityItem {
 	return []MandatoryLabelsSeverityItem{
-		MandatoryLabelsSeverityItemCritical,
-		MandatoryLabelsSeverityItemHigh,
-		MandatoryLabelsSeverityItemMedium,
-		MandatoryLabelsSeverityItemLow,
+		MandatoryLabelsSeverityItem_critical,
+		MandatoryLabelsSeverityItem_high,
+		MandatoryLabelsSeverityItem_medium,
+		MandatoryLabelsSeverityItem_low,
+		MandatoryLabelsSeverityItem_,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
 func (s MandatoryLabelsSeverityItem) MarshalText() ([]byte, error) {
 	switch s {
-	case MandatoryLabelsSeverityItemCritical:
+	case MandatoryLabelsSeverityItem_critical:
 		return []byte(s), nil
-	case MandatoryLabelsSeverityItemHigh:
+	case MandatoryLabelsSeverityItem_high:
 		return []byte(s), nil
-	case MandatoryLabelsSeverityItemMedium:
+	case MandatoryLabelsSeverityItem_medium:
 		return []byte(s), nil
-	case MandatoryLabelsSeverityItemLow:
+	case MandatoryLabelsSeverityItem_low:
+		return []byte(s), nil
+	case MandatoryLabelsSeverityItem_:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -10215,17 +10218,20 @@ func (s MandatoryLabelsSeverityItem) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *MandatoryLabelsSeverityItem) UnmarshalText(data []byte) error {
 	switch MandatoryLabelsSeverityItem(data) {
-	case MandatoryLabelsSeverityItemCritical:
-		*s = MandatoryLabelsSeverityItemCritical
+	case MandatoryLabelsSeverityItem_critical:
+		*s = MandatoryLabelsSeverityItem_critical
 		return nil
-	case MandatoryLabelsSeverityItemHigh:
-		*s = MandatoryLabelsSeverityItemHigh
+	case MandatoryLabelsSeverityItem_high:
+		*s = MandatoryLabelsSeverityItem_high
 		return nil
-	case MandatoryLabelsSeverityItemMedium:
-		*s = MandatoryLabelsSeverityItemMedium
+	case MandatoryLabelsSeverityItem_medium:
+		*s = MandatoryLabelsSeverityItem_medium
 		return nil
-	case MandatoryLabelsSeverityItemLow:
-		*s = MandatoryLabelsSeverityItemLow
+	case MandatoryLabelsSeverityItem_low:
+		*s = MandatoryLabelsSeverityItem_low
+		return nil
+	case MandatoryLabelsSeverityItem_:
+		*s = MandatoryLabelsSeverityItem_
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

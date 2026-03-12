@@ -18743,14 +18743,16 @@ func (s *MandatoryLabelsSeverityItem) Decode(d *jx.Decoder) error {
 	}
 	// Try to use constant string.
 	switch MandatoryLabelsSeverityItem(v) {
-	case MandatoryLabelsSeverityItemCritical:
-		*s = MandatoryLabelsSeverityItemCritical
-	case MandatoryLabelsSeverityItemHigh:
-		*s = MandatoryLabelsSeverityItemHigh
-	case MandatoryLabelsSeverityItemMedium:
-		*s = MandatoryLabelsSeverityItemMedium
-	case MandatoryLabelsSeverityItemLow:
-		*s = MandatoryLabelsSeverityItemLow
+	case MandatoryLabelsSeverityItem_critical:
+		*s = MandatoryLabelsSeverityItem_critical
+	case MandatoryLabelsSeverityItem_high:
+		*s = MandatoryLabelsSeverityItem_high
+	case MandatoryLabelsSeverityItem_medium:
+		*s = MandatoryLabelsSeverityItem_medium
+	case MandatoryLabelsSeverityItem_low:
+		*s = MandatoryLabelsSeverityItem_low
+	case MandatoryLabelsSeverityItem_:
+		*s = MandatoryLabelsSeverityItem_
 	default:
 		*s = MandatoryLabelsSeverityItem(v)
 	}

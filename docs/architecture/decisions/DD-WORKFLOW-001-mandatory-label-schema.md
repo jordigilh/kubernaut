@@ -37,7 +37,17 @@
 
 ## 📝 **Changelog**
 
-### Version 2.7 (2026-02-15) **← CURRENT**
+### Version 2.8 (2026-03-02) **← CURRENT**
+Restore `"*"` wildcard for severity (consistency with environment/priority)
+
+**Changes**:
+- **RESTORED**: `"*"` wildcard for severity. `severity: ["*"]` matches any severity level.
+- **SQL Pattern**: `labels->'severity' ? $N OR labels->'severity' ? '*'` (with wildcard fallback, same as environment)
+- **OpenAPI**: `"*"` added to MandatoryLabels severity enum
+
+**Rationale**: All four mandatory labels now uniformly support `"*"` wildcards. This provides a consistent authoring model for workflow authors and avoids severity being the only label without wildcard support. Listing all four levels (`["critical", "high", "medium", "low"]`) remains a valid alternative.
+
+### Version 2.7 (2026-02-15)
 **BREAKING**: Severity changed to always-array (like environment)
 
 **Changes**:
@@ -46,8 +56,9 @@
   - After: `severity: ["critical"]` or `["critical", "high"]` (array, no wildcard)
 - **REMOVED**: `"*"` wildcard for severity. To match any severity, list all four levels: `["critical", "high", "medium", "low"]`
 - **SQL Pattern**: `labels->'severity' ? $N` (JSONB containment, same as environment)
+- **Note**: v2.8 restores `"*"` wildcard for consistency with other mandatory labels.
 
-**Rationale**: Aligns severity with environment (both now arrays). A single workflow can handle multiple severity levels without needing a wildcard. Pre-release only, no backwards compatibility required.
+**Rationale**: Aligns severity with environment (both now arrays). Pre-release only, no backwards compatibility required.
 
 **Breaking Impact**: Pre-release only. All workflow schemas must use array format for severity.
 
@@ -240,7 +251,7 @@ Labels are grouped by how they are populated:
 | # | Label | Type | Source | Wildcard | Description |
 |---|---|---|---|---|---|
 | 1 | `signal_type` | TEXT | K8s Event Reason | ❌ NO | What happened (OOMKilled, CrashLoopBackOff, NodeNotReady). **Optional for catalog matching** (v2.6: metadata only, not used as primary search key). SP continues to populate for signal classification. |
-| 2 | `severity` | ENUM[] | Alert/Event | ❌ NO | How bad (critical, high, medium, low). Always array in JSONB. No wildcard. |
+| 2 | `severity` | ENUM[] | Alert/Event | ✅ YES | How bad (critical, high, medium, low, `"*"`). Always array in JSONB. Supports `"*"` wildcard (v2.8). |
 | 3 | `component` | TEXT | K8s Resource | ❌ NO | What resource (pod, deployment, node) |
 
 **Derivation**: These labels are extracted directly from Kubernetes events, Prometheus alerts, or signal metadata. **No user configuration required.**
@@ -1077,10 +1088,10 @@ The `search_workflow_catalog` tool includes `rca_resource` for validation:
 
 **For MCP Workflow Search** (DD-LLM-001, DD-WORKFLOW-016):
 1. **Primary Key (v2.6)**: `action_type` is the required primary filter (replaces `signal_type` per DD-WORKFLOW-016)
-2. **Mandatory Label Filtering**: `severity` (array containment `?`), `environment` (array containment), `priority` (wildcard) used as SQL WHERE filters
+2. **Mandatory Label Filtering**: `severity` (array containment `?` with wildcard), `environment` (array containment with wildcard), `priority` (wildcard) used as SQL WHERE filters
 3. **Component Filtering**: `component` used as SQL WHERE filter with wildcard support
 4. **Signal Type (v2.6)**: Optional metadata on workflow entries, NOT used as primary search filter
-5. **Wildcard Support (Mandatory Labels)**: `environment`, `priority` support `'*'` (matches any value)
+5. **Wildcard Support (Mandatory Labels)**: `severity`, `environment`, `priority` support `'*'` (matches any value)
 6. **Wildcard Support (DetectedLabels)**: `gitOpsTool`, `serviceMesh` support `'*'` (matches any non-empty value)
 7. **Custom Label Filtering**: Each subdomain becomes a separate WHERE clause (see V1.5 format above)
 8. **Match Scoring**: Exact label matches + semantic similarity = final confidence score
@@ -1125,11 +1136,12 @@ signal_type:  # Domain-specific values from source systems (NO TRANSFORMATION)
   # RULE: Signal Processing MUST pass through domain-specific values unchanged
   # RULE: NO normalization, NO kebab-case conversion, NO transformation
 
-severity:  # From alert/event metadata. Always stored as JSONB array in workflow labels. No '*' wildcard.
+severity:  # From alert/event metadata. Always stored as JSONB array in workflow labels. Supports '*' wildcard (v2.8).
   - critical
   - high
   - medium
   - low
+  - "*"  # wildcard: matches any severity
 
 component:  # Kubernetes resource types (auto-detected from signal)
   - pod
@@ -1947,11 +1959,16 @@ custom_labels     JSONB
 
 ## 📋 **Changelog**
 
-### **v2.7** (2026-02-15) - CURRENT
+### **v2.8** (2026-03-02) - CURRENT
+- ✅ **RESTORED**: `"*"` wildcard for severity (consistency with environment/priority)
+- ✅ **OpenAPI**: `"*"` added to MandatoryLabels severity enum
+- ✅ **SQL Pattern**: `labels->'severity' ? $N OR labels->'severity' ? '*'` (with wildcard fallback)
+
+### **v2.7** (2026-02-15)
 - ✅ **BREAKING**: `severity` in MandatoryLabels changed from `string` to `[]string` (always array, like environment)
 - ✅ **REMOVED**: `"*"` wildcard for severity. To match any severity, list all four levels.
 - ✅ **SQL Pattern**: `labels->'severity' ? $N` (JSONB containment)
-- ✅ **Cross-reference**: DD-WORKFLOW-001 v2.7 changelog (top)
+- ✅ **Note**: v2.8 restores `"*"` wildcard
 
 ### **v2.6** (2026-02-05)
 - ✅ **BREAKING**: `action_type` added as mandatory label (Group C: Workflow-Defined, 10 types)
@@ -2007,11 +2024,11 @@ custom_labels     JSONB
 
 ---
 
-**Document Version**: 2.7
-**Last Updated**: February 15, 2026
+**Document Version**: 2.8
+**Last Updated**: March 2, 2026
 **Status**: ✅ **APPROVED** (95% confidence, action-type primary matching)
 **Authority**: ⭐ **AUTHORITATIVE** - Single source of truth for workflow label schema
-**Breaking Change (v2.7)**: Severity changed from string to JSONB array; no `*` wildcard. `action_type` replaces `signal_type` as primary catalog matching key (v2.6). Workflow registration now requires `action_type` from enforced taxonomy (DD-WORKFLOW-016).
+**v2.8**: Severity `"*"` wildcard restored for consistency with environment/priority. `action_type` replaces `signal_type` as primary catalog matching key (v2.6). Workflow registration now requires `action_type` from enforced taxonomy (DD-WORKFLOW-016).
 **Cross-Reference**: DD-WORKFLOW-002 v3.3, DD-HAPI-001, DD-WORKFLOW-016, DD-HAPI-016
 **Next Review**: After V1.0 implementation validates action-type matching accuracy
 

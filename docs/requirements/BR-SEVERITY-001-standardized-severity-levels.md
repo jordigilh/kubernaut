@@ -183,7 +183,7 @@ This table documents where each component enforces or references the canonical s
 
 **Note**: The Workflow Catalog does not use `unknown` because workflows are authored for specific, known conditions. An `unknown` severity assessment triggers human review (BR-HAPI-197), not workflow execution.
 
-**Workflow labels**: In the workflow catalog, severity is stored as a JSONB array (e.g., `["critical"]` or `["critical", "high"]`). A workflow can declare multiple severity levels to indicate it handles signals at any of those levels. The `*` wildcard is not used — to match any severity, list all four levels: `[critical, high, medium, low]`. Search queries use the JSONB `?` operator: `labels->'severity' ? $severity_filter`.
+**Workflow labels**: In the workflow catalog, severity is stored as a JSONB array (e.g., `["critical"]` or `["critical", "high"]`). A workflow can declare multiple severity levels to indicate it handles signals at any of those levels. The `"*"` wildcard is supported (DD-WORKFLOW-001 v2.8) — `severity: ["*"]` matches any severity. Alternatively, listing all four levels `["critical", "high", "medium", "low"]` achieves the same result. Search queries use the JSONB `?` operator: `labels->'severity' ? $severity_filter OR labels->'severity' ? '*'`.
 
 ---
 
@@ -217,7 +217,7 @@ Any CRD field that stores a canonical severity value MUST use `+kubebuilder:vali
 | AC-4 | SignalProcessing default Rego policy maps to all five levels | Rego unit test |
 | AC-5 | No component uses severity values outside this set (e.g., `warning`, `info`, `error`) | `grep` audit across codebase |
 | AC-6 | DD-SEVERITY-001 references this BR as the canonical definition | Document cross-reference |
-| AC-7 | Workflow catalog stores severity as a JSONB array in labels; no `*` wildcard; search uses the JSONB `?` operator (DD-WORKFLOW-001 v2.7) | Schema inspection + integration test |
+| AC-7 | Workflow catalog stores severity as a JSONB array in labels; `"*"` wildcard supported (DD-WORKFLOW-001 v2.8); search uses the JSONB `?` operator with wildcard fallback | Schema inspection + integration test |
 
 ---
 
