@@ -178,7 +178,7 @@ fi
 echo ""
 echo "🔍 Checking if CRD docs are up to date..."
 
-STAGED_TYPES=$(git diff --cached --name-only --diff-filter=ACM | grep 'api/.*_types\.go$' || true)
+STAGED_TYPES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '(api/.*_types\.go|pkg/shared/types/.*)$' || true)
 
 if [ -n "$STAGED_TYPES" ]; then
     if command -v make &>/dev/null && [ -f Makefile ]; then
