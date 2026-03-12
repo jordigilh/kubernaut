@@ -173,6 +173,32 @@ if [ -n "$STAGED_ALL" ]; then
 fi
 
 # ========================================
+# CHECK 5: CRD Docs Drift Detection
+# ========================================
+echo ""
+echo "🔍 Checking if CRD docs are up to date..."
+
+STAGED_TYPES=$(git diff --cached --name-only --diff-filter=ACM | grep 'api/.*_types\.go$' || true)
+
+if [ -n "$STAGED_TYPES" ]; then
+    if command -v make &>/dev/null && [ -f Makefile ]; then
+        TMPDIR=$(mktemp -d)
+        cp docs/generated/crds.md "$TMPDIR/crds-before.md" 2>/dev/null || true
+        make generate-crd-docs >/dev/null 2>&1 || true
+        if [ -f "$TMPDIR/crds-before.md" ] && ! diff -q "$TMPDIR/crds-before.md" docs/generated/crds.md >/dev/null 2>&1; then
+            echo "❌ VIOLATION: CRD docs are out of date"
+            echo "   Staged api/*_types.go changes require regenerating CRD docs."
+            echo "   Run: make generate-crd-docs"
+            echo "   Then stage: git add docs/generated/crds.md"
+            echo ""
+            cp "$TMPDIR/crds-before.md" docs/generated/crds.md
+            VIOLATIONS=$((VIOLATIONS + 1))
+        fi
+        rm -rf "$TMPDIR"
+    fi
+fi
+
+# ========================================
 # RESULT
 # ========================================
 echo ""
