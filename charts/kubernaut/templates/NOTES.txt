@@ -25,10 +25,6 @@ Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Na
    kubectl port-forward -n {{ .Release.Namespace }} svc/data-storage-service 8080:8080
    curl -s http://localhost:8080/api/v1/workflows | jq '.'
 
-4. Load ActionTypes (remediation catalog):
-
-   kubectl apply -f deploy/action-types/ -n {{ .Release.Namespace }}
-
 === Monitoring ===
 
 Kubernaut is designed to work with kube-prometheus-stack.
