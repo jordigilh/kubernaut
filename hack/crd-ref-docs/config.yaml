@@ -1,0 +1,30 @@
+processor:
+  ignoreTypes:
+    - ".*List$"
+  ignoreFields:
+    - "TypeMeta"
+
+render:
+  knownTypes:
+    - name: "ObjectMeta"
+      package: "k8s.io/apimachinery/pkg/apis/meta/v1"
+      link: "https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#objectmeta-v1-meta"
+    - name: "Time"
+      package: "k8s.io/apimachinery/pkg/apis/meta/v1"
+    - name: "Duration"
+      package: "k8s.io/apimachinery/pkg/apis/meta/v1"
+    - name: "Quantity"
+      package: "k8s.io/apimachinery/pkg/api/resource"
+    - name: "Condition"
+      package: "k8s.io/apimachinery/pkg/apis/meta/v1"
+      link: "https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#condition-v1-meta"
+    - name: "DetectedLabels"
+      package: "github.com/jordigilh/kubernaut/pkg/shared/types"
+    - name: "DeduplicationInfo"
+      package: "github.com/jordigilh/kubernaut/pkg/shared/types"
+    - name: "EnrichmentResults"
+      package: "github.com/jordigilh/kubernaut/pkg/shared/types"
+    - name: "KubernetesContext"
+      package: "github.com/jordigilh/kubernaut/pkg/shared/types"
+    - name: "BusinessClassification"
+      package: "github.com/jordigilh/kubernaut/pkg/shared/types"

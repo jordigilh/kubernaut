@@ -136,6 +136,21 @@ generate-holmesgpt-client: ogen ## Generate HolmesGPT-API client from OpenAPI sp
 	@PATH="$(LOCALBIN):$$PATH" go generate ./pkg/holmesgpt/client/...
 	@echo "✅ HolmesGPT-API client generated successfully"
 
+.PHONY: generate-crd-docs
+generate-crd-docs: crd-ref-docs ## Generate CRD API reference docs from Go types
+	@echo "📋 Generating CRD API reference from api/ types..."
+	@mkdir -p docs/generated
+	@$(CRD_REF_DOCS) \
+		--source-path=api/ \
+		--config=hack/crd-ref-docs/config.yaml \
+		--templates-dir=hack/crd-ref-docs/templates/markdown \
+		--renderer=markdown \
+		--output-path=docs/generated/crds.md \
+		--output-mode=single \
+		--max-depth=10
+	@hack/crd-ref-docs/clean-output.sh docs/generated/crds.md
+	@echo "✅ CRD docs generated: docs/generated/crds.md"
+
 .PHONY: fmt
 fmt: ## Format code
 	@echo "Formatting Go code..."
@@ -857,6 +872,7 @@ OGEN ?= $(LOCALBIN)/ogen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 GINKGO ?= $(LOCALBIN)/ginkgo
+CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
@@ -866,6 +882,7 @@ ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.1.0
 GINKGO_VERSION ?= v2.27.2
+CRD_REF_DOCS_VERSION ?= v0.3.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary
@@ -902,6 +919,11 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 ginkgo: $(GINKGO) ## Download ginkgo locally if necessary
 $(GINKGO): $(LOCALBIN)
 	$(call go-install-tool,$(GINKGO),github.com/onsi/ginkgo/v2/ginkgo,$(GINKGO_VERSION))
+
+.PHONY: crd-ref-docs
+crd-ref-docs: $(CRD_REF_DOCS) ## Download crd-ref-docs locally if necessary
+$(CRD_REF_DOCS): $(LOCALBIN)
+	$(call go-install-tool,$(CRD_REF_DOCS),github.com/elastic/crd-ref-docs,$(CRD_REF_DOCS_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
