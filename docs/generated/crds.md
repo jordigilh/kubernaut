@@ -434,7 +434,6 @@ _Appears in:_
 
 DeduplicationStatus tracks signal occurrence for deduplication.
 OWNER: Gateway Service (exclusive write access)
-Reference: , 
 
 _Appears in:_
 - [RemediationRequestStatus](#remediationrequeststatus)
@@ -520,8 +519,8 @@ _Appears in:_
 | Field| Type| Description|
 | ---| ---| ---|
 | `stabilizationWindow`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| StabilizationWindow is the duration to wait after remediation before assessment.<br />Set by the Remediation Orchestrator. The EM uses this to delay assessment<br />until the system stabilizes post-remediation.|
-| `hashComputeDelay`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| HashComputeDelay is the duration to defer post-remediation spec hash computation<br />after EA creation. Set by the RO for async-managed targets (GitOps, operator<br />CRDs) where spec changes propagate after the WorkflowExecution completes.<br />The EM computes the deferral deadline as: creation + HashComputeDelay.<br />Nil means compute immediately (sync workflows, backward compatible).<br />Reference: , , , Issue #277|
-| `alertCheckDelay`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| AlertCheckDelay is an additional duration to defer alert resolution checks<br />beyond the StabilizationWindow. Set by the RO for proactive (predictive) alerts<br />where the underlying Prometheus alert (e.g. predict_linear) requires extra time<br />to resolve after remediation.<br />The EM computes AlertManagerCheckAfter as:<br /> creation + StabilizationWindow + AlertCheckDelay<br />Nil means no additional delay (AlertManagerCheckAfter = PrometheusCheckAfter).<br />Reference: ADR-EM-001, , Issue #277|
+| `hashComputeDelay`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| HashComputeDelay is the duration to defer post-remediation spec hash computation<br />after EA creation. Set by the RO for async-managed targets (GitOps, operator<br />CRDs) where spec changes propagate after the WorkflowExecution completes.<br />The EM computes the deferral deadline as: creation + HashComputeDelay.<br />Nil means compute immediately (sync workflows, backward compatible).|
+| `alertCheckDelay`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| AlertCheckDelay is an additional duration to defer alert resolution checks<br />beyond the StabilizationWindow. Set by the RO for proactive (predictive) alerts<br />where the underlying Prometheus alert (e.g. predict_linear) requires extra time<br />to resolve after remediation.<br />The EM computes AlertManagerCheckAfter as:<br /> creation + StabilizationWindow + AlertCheckDelay<br />Nil means no additional delay (AlertManagerCheckAfter = PrometheusCheckAfter).|
 
 
 
@@ -562,14 +561,14 @@ _Appears in:_
 
 | Field| Type| Description|
 | ---| ---| ---|
-| `correlationID`| _string_| CorrelationID is the name of the parent RemediationRequest.<br />Used as the correlation ID for audit events (DD-AUDIT-CORRELATION-002).|
+| `correlationID`| _string_| CorrelationID is the name of the parent RemediationRequest.<br />Used as the correlation ID for audit events .|
 | `remediationRequestPhase`| _string_| RemediationRequestPhase is the RemediationRequest's OverallPhase at the time<br />the EA was created. Captured as an immutable spec field so the EM can branch<br />assessment logic based on the RR outcome (Verifying, Completed, Failed, TimedOut).<br />Verifying: happy path — WFE succeeded, EA created while RR awaits assessment (#280).<br />Previously stored as the mutable label kubernaut.ai/rr-phase; moved to spec<br />for immutability and security.|
 | `signalTarget`| _[TargetResource](#targetresource)_| SignalTarget is the resource that triggered the alert.<br />Source: RR.Spec.TargetResource (from Gateway alert extraction).<br />Used by: health assessment, alert resolution, metrics queries .|
 | `remediationTarget`| _[TargetResource](#targetresource)_| RemediationTarget is the resource the workflow modified.<br />Source: AA.Status.RootCauseAnalysis.AffectedResource (from HAPI RCA resolution).<br />Used by: spec hash computation, drift detection .|
 | `config`| _[EAConfig](#eaconfig)_| Config contains the assessment configuration parameters.|
 | `remediationCreatedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| RemediationCreatedAt is the creation timestamp of the parent RemediationRequest.<br />Set by the RO at EA creation time from rr.CreationTimestamp.<br />Used by the audit manager to compute resolution_time_seconds in the<br />assessment.completed event (CompletedAt - RemediationCreatedAt).|
 | `signalName`| _string_| SignalName is the original alert/signal name from the parent RemediationRequest.<br />Set by the RO at EA creation time from rr.Spec.SignalName.<br />Used by the audit manager to populate the signal_name field in assessment.completed<br />events (OBS-1: distinct from CorrelationID which is the RR name).|
-| `preRemediationSpecHash`| _string_| PreRemediationSpecHash is the canonical spec hash of the target resource BEFORE<br />remediation was applied. Copied from rr.Status.PreRemediationSpecHash by the RO<br />at EA creation time. The EM uses this to compare pre vs post-remediation state<br />for spec drift detection, eliminating the need to query DataStorage audit events.<br />Reference: ADR-EM-001,|
+| `preRemediationSpecHash`| _string_| PreRemediationSpecHash is the canonical spec hash of the target resource BEFORE<br />remediation was applied. Copied from rr.Status.PreRemediationSpecHash by the RO<br />at EA creation time. The EM uses this to compare pre vs post-remediation state<br />for spec drift detection, eliminating the need to query DataStorage audit events.|
 
 
 
@@ -589,7 +588,7 @@ _Appears in:_
 | `phase`| _string_| Phase is the current lifecycle phase of the assessment.|
 | `validityDeadline`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| ValidityDeadline is the absolute time after which the assessment expires.<br />Computed by the EM controller on first reconciliation as:<br /> EA.creationTimestamp + validityWindow (from EM config).<br />This follows Kubernetes spec/status convention: the RO sets desired state<br />(StabilizationWindow in spec), and the EM computes observed/derived state<br />(ValidityDeadline in status). This prevents misconfiguration where<br />StabilizationWindow > ValidityDeadline.|
 | `prometheusCheckAfter`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| PrometheusCheckAfter is the earliest time to query Prometheus for metrics.<br />Computed by the EM controller on first reconciliation as:<br /> EA.creationTimestamp + StabilizationWindow (from EA spec).<br />Stored in status to avoid recomputation on every reconcile and for<br />operator observability of the assessment timeline.|
-| `alertManagerCheckAfter`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| AlertManagerCheckAfter is the earliest time to check AlertManager for alert resolution.<br />Computed by the EM controller on first reconciliation as:<br /> EA.creationTimestamp + StabilizationWindow + AlertCheckDelay (if set).<br />When AlertCheckDelay is nil, equals PrometheusCheckAfter.<br />Stored in status to avoid recomputation on every reconcile and for<br />operator observability of the assessment timeline.<br />Reference: ADR-EM-001, Issue #277|
+| `alertManagerCheckAfter`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| AlertManagerCheckAfter is the earliest time to check AlertManager for alert resolution.<br />Computed by the EM controller on first reconciliation as:<br /> EA.creationTimestamp + StabilizationWindow + AlertCheckDelay (if set).<br />When AlertCheckDelay is nil, equals PrometheusCheckAfter.<br />Stored in status to avoid recomputation on every reconcile and for<br />operator observability of the assessment timeline.|
 | `components`| _[EAComponents](#eacomponents)_| Components tracks the completion state of each assessment component.|
 | `assessmentReason`| _string_| AssessmentReason describes why the assessment completed with this outcome.|
 | `completedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| CompletedAt is the timestamp when the assessment finished.|
@@ -717,8 +716,8 @@ _Appears in:_
 
 
 InvestigationSession tracks the async HAPI session lifecycle.
-BR-AA- AA controller session tracking
-BR-AA- Session regeneration on 404 (HAPI restart)
+ AA controller session tracking
+ Session regeneration on 404 (HAPI restart)
 
 _Appears in:_
 - [AIAnalysisStatus](#aianalysisstatus)
@@ -729,7 +728,7 @@ _Appears in:_
 | `generation`| _integer_| Generation counter tracking session regenerations (0 = first session, incremented on 404)|
 | `lastPolled`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| LastPolled timestamp of the last poll attempt|
 | `createdAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| CreatedAt timestamp when the current session was created|
-| `pollCount`| _integer_| PollCount tracks the number of poll attempts for observability<br />BR-AA- Constant 15s poll interval (configurable 1s–5m)|
+| `pollCount`| _integer_| PollCount tracks the number of poll attempts for observability<br /> Constant 15s poll interval (configurable 1s–5m)|
 
 
 
@@ -830,9 +829,9 @@ _Appears in:_
 | `priority`| _[NotificationPriority](#notificationpriority)_| Priority of notification (critical, high, medium, low)|
 | `subject`| _string_| Subject line for notification|
 | `body`| _string_| Notification body content|
-| `severity`| _string_| Severity from the originating signal (used for routing)<br />Issue #91: promoted from mutable label to immutable spec field|
-| `phase`| _string_| Phase that triggered this notification (for phase-timeout notifications)<br />Issue #91: promoted from mutable label to immutable spec field|
-| `reviewSource`| _string_| ReviewSource indicates what triggered manual review (for manual-review notifications)<br />Issue #91: promoted from mutable label to immutable spec field|
+| `severity`| _string_| Severity from the originating signal (used for routing)<br /> promoted from mutable label to immutable spec field|
+| `phase`| _string_| Phase that triggered this notification (for phase-timeout notifications)<br /> promoted from mutable label to immutable spec field|
+| `reviewSource`| _string_| ReviewSource indicates what triggered manual review (for manual-review notifications)<br /> promoted from mutable label to immutable spec field|
 | `metadata`| _object (keys:string, values:string)_| Refer to the Kubernetes API documentation for fields of `metadata`.|
 | `actionLinks`| _[ActionLink](#actionlink) array_| Action links to external services|
 | `retryPolicy`| _[RetryPolicy](#retrypolicy)_| Retry policy for delivery|
@@ -1137,7 +1136,6 @@ type-safe cross-service integration per the Viceversa Pattern.
 🏛️ Capitalized phase values per Kubernetes API conventions.
 🏛️ Viceversa Pattern: Consumers use these constants for compile-time safety.
 
-Reference: docs/requirements/-phase-value-format-standard.md
 
 _Appears in:_
 - [RemediationRequestStatus](#remediationrequeststatus)
@@ -1150,15 +1148,15 @@ _Validation:_
 | `Pending`| PhasePending is the initial state when RemediationRequest is created.<br />|
 | `Processing`| PhaseProcessing indicates SignalProcessing is enriching the signal.<br />|
 | `Analyzing`| PhaseAnalyzing indicates AIAnalysis is determining remediation workflow.<br />|
-| `AwaitingApproval`| PhaseAwaitingApproval indicates human approval is required.<br />Reference: (manual approval workflow)<br />|
+| `AwaitingApproval`| PhaseAwaitingApproval indicates human approval is required.|
 | `Executing`| PhaseExecuting indicates WorkflowExecution is running remediation.<br />|
-| `Verifying`| PhaseVerifying indicates remediation succeeded and EffectivenessAssessment is running.<br />Non-terminal: Gateway deduplicates signals while EA assesses remediation effectiveness.<br />RO transitions to Completed when EA reaches a terminal state or VerificationDeadline expires.<br />Reference: #280 (duplicate RR prevention for proactive alerts)<br />|
-| `Blocked`| PhaseBlocked indicates remediation cannot proceed due to external blocking condition.<br />This is a NON-terminal phase (Gateway deduplicates, prevents RR flood).<br />V1.0: Unified blocking for 6 scenarios (-ADDENDUM Blocked Phase Semantics):<br />- ConsecutiveFailures: After cooldown → Failed <br />- ResourceBusy: When resource available → Proceeds to execute<br />- RecentlyRemediated: After cooldown → Proceeds to execute <br />- ExponentialBackoff: After backoff window → Retries execution <br />- DuplicateInProgress: When original completes → Inherits outcome<br />- UnmanagedResource: Retries until scope label added or RR times out <br />Reference: -ADDENDUM (Blocked Phase Semantics)<br />|
+| `Verifying`| PhaseVerifying indicates remediation succeeded and EffectivenessAssessment is running.<br />Non-terminal: Gateway deduplicates signals while EA assesses remediation effectiveness.<br />RO transitions to Completed when EA reaches a terminal state or VerificationDeadline expires.|
+| `Blocked`| PhaseBlocked indicates remediation cannot proceed due to external blocking condition.<br />This is a NON-terminal phase (Gateway deduplicates, prevents RR flood).<br />V1.0: Unified blocking for 6 scenarios (-ADDENDUM Blocked Phase Semantics):<br />- ConsecutiveFailures: After cooldown → Failed <br />- ResourceBusy: When resource available → Proceeds to execute<br />- RecentlyRemediated: After cooldown → Proceeds to execute <br />- ExponentialBackoff: After backoff window → Retries execution <br />- DuplicateInProgress: When original completes → Inherits outcome<br />- UnmanagedResource: Retries until scope label added or RR times out|
 | `Completed`| PhaseCompleted is the terminal success state.<br />|
 | `Failed`| PhaseFailed is the terminal failure state.<br />|
-| `TimedOut`| PhaseTimedOut is the terminal timeout state.<br />Reference: (global timeout), (per-phase timeout)<br />|
-| `Skipped`| PhaseSkipped is the terminal state when remediation was not needed.<br />Reference: (resource lock deduplication)<br />|
-| `Cancelled`| PhaseCancelled is the terminal state when remediation was manually cancelled.<br />Gateway treats this as terminal (allows new RR creation for retry)<br />Reference: (state-based deduplication), (cancelled state handling)<br />|
+| `TimedOut`| PhaseTimedOut is the terminal timeout state.|
+| `Skipped`| PhaseSkipped is the terminal state when remediation was not needed.|
+| `Cancelled`| PhaseCancelled is the terminal state when remediation was manually cancelled.<br />Gateway treats this as terminal (allows new RR creation for retry)|
 
 
 
@@ -1225,7 +1223,7 @@ _Appears in:_
 | `signalLabels`| _object (keys:string, values:string)_| Signal labels and annotations extracted from provider-specific data<br />These are populated by Gateway Service after parsing providerData|
 | `signalAnnotations`| _object (keys:string, values:string)_||
 | `providerData`| _string_| Provider-specific fields in raw JSON format<br />Gateway adapter populates this based on signal source<br />Controllers parse this based on targetType/signalType<br />For Kubernetes (targetType="kubernetes"):<br /> \{"namespace": "...", "resource": \{"kind": "...", "name": "..."\}, "alertmanagerURL": "...", ...\}<br />For AWS (targetType="aws"):<br /> \{"region": "...", "accountId": "...", "instanceId": "...", "resourceType": "...", ...\}<br />For Datadog (targetType="datadog"):<br /> \{"monitorId": 123, "host": "...", "tags": [...], "metricQuery": "...", ...\}|
-| `originalPayload`| _string_| Complete original webhook payload for debugging and audit<br />Issue #96: stored as string to avoid base64 encoding in CEL validation|
+| `originalPayload`| _string_| Complete original webhook payload for debugging and audit<br /> stored as string to avoid base64 encoding in CEL validation|
 
 
 
@@ -1242,50 +1240,50 @@ _Appears in:_
 
 | Field| Type| Description|
 | ---| ---| ---|
-| `deduplication`| _[DeduplicationStatus](#deduplicationstatus)_| Deduplication tracks signal occurrence for this remediation.<br />OWNER: Gateway Service (exclusive write access)<br />Reference: ,|
+| `deduplication`| _[DeduplicationStatus](#deduplicationstatus)_| Deduplication tracks signal occurrence for this remediation.<br />OWNER: Gateway Service (exclusive write access)|
 | `observedGeneration`| _integer_| ObservedGeneration is the most recent generation observed by the controller.<br />Used to prevent duplicate reconciliations and ensure idempotency.<br />Per Standard pattern for all Kubernetes controllers.|
-| `overallPhase`| _[RemediationPhase](#remediationphase)_| Phase tracking for orchestration.<br />Uses typed RemediationPhase constants for type safety and cross-service integration.<br />🏛️ Capitalized phase values per Kubernetes API conventions.<br />Reference: (Blocked phase for consecutive failure cooldown)|
+| `overallPhase`| _[RemediationPhase](#remediationphase)_| Phase tracking for orchestration.<br />Uses typed RemediationPhase constants for type safety and cross-service integration.<br />🏛️ Capitalized phase values per Kubernetes API conventions.|
 | `message`| _string_| Human-readable message describing current status|
 | `startTime`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| Timestamps|
 | `completedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_||
-| `processingStartTime`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| ProcessingStartTime is when SignalProcessing phase started.<br />Used for per-phase timeout detection (default: 5 minutes).<br />Reference:|
-| `analyzingStartTime`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| AnalyzingStartTime is when AIAnalysis phase started.<br />Used for per-phase timeout detection (default: 10 minutes).<br />Reference:|
-| `executingStartTime`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| ExecutingStartTime is when WorkflowExecution phase started.<br />Used for per-phase timeout detection (default: 30 minutes).<br />Reference:|
-| `verificationDeadline`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| VerificationDeadline is the deadline for the Verifying phase.<br />Computed by RO as EA.Status.ValidityDeadline + 30s buffer.<br />If exceeded, RR transitions to Completed with Outcome "VerificationTimedOut".<br />Reference: #280 (Verifying phase timeout)|
+| `processingStartTime`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| ProcessingStartTime is when SignalProcessing phase started.<br />Used for per-phase timeout detection (default: 5 minutes).|
+| `analyzingStartTime`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| AnalyzingStartTime is when AIAnalysis phase started.<br />Used for per-phase timeout detection (default: 10 minutes).|
+| `executingStartTime`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| ExecutingStartTime is when WorkflowExecution phase started.<br />Used for per-phase timeout detection (default: 30 minutes).|
+| `verificationDeadline`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| VerificationDeadline is the deadline for the Verifying phase.<br />Computed by RO as EA.Status.ValidityDeadline + 30s buffer.<br />If exceeded, RR transitions to Completed with Outcome "VerificationTimedOut".|
 | `signalProcessingRef`| _[ObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectreference-v1-core)_| References to downstream CRDs|
 | `remediationProcessingRef`| _[ObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectreference-v1-core)_||
 | `aiAnalysisRef`| _[ObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectreference-v1-core)_||
 | `workflowExecutionRef`| _[ObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectreference-v1-core)_||
-| `notificationRequestRefs`| _[ObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectreference-v1-core) array_| NotificationRequestRefs tracks all notification CRDs created for this remediation.<br />Provides audit trail for compliance and instant visibility for debugging.<br />Reference:|
-| `effectivenessAssessmentRef`| _[ObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectreference-v1-core)_| EffectivenessAssessmentRef tracks the EffectivenessAssessment CRD created for this remediation.<br />Set by the RO after creating the EA CRD on terminal phase transitions.<br />Reference: ADR-EM-001|
-| `preRemediationSpecHash`| _string_| PreRemediationSpecHash is the canonical spec hash of the target resource captured<br />by the RO BEFORE launching the remediation workflow. This enables the EM to compare<br />pre vs post-remediation state without querying DataStorage audit events.<br />Set once by the RO during the transition to WorkflowExecution phase; immutable after.<br />Reference: ADR-EM-001,|
+| `notificationRequestRefs`| _[ObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectreference-v1-core) array_| NotificationRequestRefs tracks all notification CRDs created for this remediation.<br />Provides audit trail for compliance and instant visibility for debugging.|
+| `effectivenessAssessmentRef`| _[ObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectreference-v1-core)_| EffectivenessAssessmentRef tracks the EffectivenessAssessment CRD created for this remediation.<br />Set by the RO after creating the EA CRD on terminal phase transitions.|
+| `preRemediationSpecHash`| _string_| PreRemediationSpecHash is the canonical spec hash of the target resource captured<br />by the RO BEFORE launching the remediation workflow. This enables the EM to compare<br />pre vs post-remediation state without querying DataStorage audit events.<br />Set once by the RO during the transition to WorkflowExecution phase; immutable after.|
 | `approvalNotificationSent`| _boolean_| Approval notification tracking <br />Prevents duplicate notifications when AIAnalysis requires approval|
-| `skipReason`| _string_| SkipReason indicates why this remediation was skipped<br />Valid values:<br />- "ResourceBusy": Another workflow executing on same target<br />- "RecentlyRemediated": Target recently remediated, cooldown period active<br />- "ExponentialBackoff": Pre-execution failures, backoff window active<br />- "ExhaustedRetries": Max consecutive failures reached<br />- "PreviousExecutionFailed": Previous execution failed during workflow run<br />Only set when OverallPhase = "Skipped" or "Failed"<br />Reference: (centralized routing responsibility)|
-| `skipMessage`| _string_| SkipMessage provides human-readable details about why remediation was skipped<br />Examples:<br />- "Same workflow executed recently. Cooldown: 3m15s remaining"<br />- "Another workflow is running on target: wfe-abc123"<br />- "Backoff active. Next allowed: 2025-12-15T10:30:00Z"<br />Only set when OverallPhase = "Skipped" or "Failed"<br />Reference: (centralized routing responsibility)|
-| `blockingWorkflowExecution`| _string_| BlockingWorkflowExecution references the WorkflowExecution causing the block<br />Set for block reasons: ResourceBusy, RecentlyRemediated, ExponentialBackoff<br />Nil for: ConsecutiveFailures, DuplicateInProgress<br />Enables operators to investigate the blocking WFE for troubleshooting<br />Reference: -ADDENDUM (Blocked Phase Semantics)|
-| `duplicateOf`| _string_| DuplicateOf references the parent RemediationRequest that this is a duplicate of<br />V1.0: Set when OverallPhase = "Blocked" with BlockReason = "DuplicateInProgress"<br />Old behavior: Set when OverallPhase = "Skipped" due to resource lock deduplication<br />Reference: -ADDENDUM (Blocked Phase Semantics)|
+| `skipReason`| _string_| SkipReason indicates why this remediation was skipped<br />Valid values:<br />- "ResourceBusy": Another workflow executing on same target<br />- "RecentlyRemediated": Target recently remediated, cooldown period active<br />- "ExponentialBackoff": Pre-execution failures, backoff window active<br />- "ExhaustedRetries": Max consecutive failures reached<br />- "PreviousExecutionFailed": Previous execution failed during workflow run<br />Only set when OverallPhase = "Skipped" or "Failed"|
+| `skipMessage`| _string_| SkipMessage provides human-readable details about why remediation was skipped<br />Examples:<br />- "Same workflow executed recently. Cooldown: 3m15s remaining"<br />- "Another workflow is running on target: wfe-abc123"<br />- "Backoff active. Next allowed: 2025-12-15T10:30:00Z"<br />Only set when OverallPhase = "Skipped" or "Failed"|
+| `blockingWorkflowExecution`| _string_| BlockingWorkflowExecution references the WorkflowExecution causing the block<br />Set for block reasons: ResourceBusy, RecentlyRemediated, ExponentialBackoff<br />Nil for: ConsecutiveFailures, DuplicateInProgress<br />Enables operators to investigate the blocking WFE for troubleshooting|
+| `duplicateOf`| _string_| DuplicateOf references the parent RemediationRequest that this is a duplicate of<br />V1.0: Set when OverallPhase = "Blocked" with BlockReason = "DuplicateInProgress"<br />Old behavior: Set when OverallPhase = "Skipped" due to resource lock deduplication|
 | `duplicateCount`| _integer_| DuplicateCount tracks the number of duplicate remediations that were skipped<br />because this RR's workflow was already executing (resource lock)<br />Only populated on parent RRs that have duplicates|
 | `duplicateRefs`| _string array_| DuplicateRefs lists the names of RemediationRequests that were skipped<br />because they targeted the same resource as this RR<br />Only populated on parent RRs that have duplicates|
-| `blockReason`| _string_| BlockReason indicates why this remediation is blocked (non-terminal)<br />Valid values:<br />- "ConsecutiveFailures": Max consecutive failures reached, in cooldown <br />- "ResourceBusy": Another workflow is using the target resource<br />- "RecentlyRemediated": Target recently remediated, cooldown active <br />- "ExponentialBackoff": Pre-execution failures, backoff window active <br />- "DuplicateInProgress": Duplicate of an active remediation<br />Only set when OverallPhase = "Blocked"<br />Reference: -ADDENDUM (Blocked Phase Semantics)|
-| `blockMessage`| _string_| BlockMessage provides human-readable details about why remediation is blocked<br />Examples:<br />- "Another workflow is running on target deployment/my-app: wfe-abc123"<br />- "Recently remediated. Cooldown: 3m15s remaining"<br />- "Backoff active. Next retry: 2025-12-15T10:30:00Z"<br />- "Duplicate of active remediation rr-original-abc123"<br />- "3 consecutive failures. Cooldown expires: 2025-12-15T11:00:00Z"<br />Only set when OverallPhase = "Blocked"<br />Reference: -ADDENDUM (Blocked Phase Semantics)|
-| `blockedUntil`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| BlockedUntil indicates when blocking expires (time-based blocks)<br />Set for: ConsecutiveFailures, RecentlyRemediated, ExponentialBackoff<br />Nil for: ResourceBusy, DuplicateInProgress (event-based, cleared when condition resolves)<br />After this time passes, RR will retry or transition to Failed (for ConsecutiveFailures)<br />Reference: , -ADDENDUM (Blocked Phase Semantics)|
-| `nextAllowedExecution`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| NextAllowedExecution indicates when this RR can be retried after exponential backoff.<br />Set when RR fails due to pre-execution failures (infrastructure, validation, etc.).<br />Implements progressive delay: 1m, 2m, 4m, 8m, capped at 10m.<br />Formula: min(Base × 2^(failures-1), Max)<br />Nil means no exponential backoff is active.<br />Reference: (Exponential Backoff Cooldown)|
-| `consecutiveFailureCount`| _integer_| ConsecutiveFailureCount tracks how many times this fingerprint has failed consecutively.<br />Updated by RO when RR transitions to Failed phase.<br />Reset to 0 when RR completes successfully.<br />Reference:|
+| `blockReason`| _string_| BlockReason indicates why this remediation is blocked (non-terminal)<br />Valid values:<br />- "ConsecutiveFailures": Max consecutive failures reached, in cooldown <br />- "ResourceBusy": Another workflow is using the target resource<br />- "RecentlyRemediated": Target recently remediated, cooldown active <br />- "ExponentialBackoff": Pre-execution failures, backoff window active <br />- "DuplicateInProgress": Duplicate of an active remediation<br />Only set when OverallPhase = "Blocked"|
+| `blockMessage`| _string_| BlockMessage provides human-readable details about why remediation is blocked<br />Examples:<br />- "Another workflow is running on target deployment/my-app: wfe-abc123"<br />- "Recently remediated. Cooldown: 3m15s remaining"<br />- "Backoff active. Next retry: 2025-12-15T10:30:00Z"<br />- "Duplicate of active remediation rr-original-abc123"<br />- "3 consecutive failures. Cooldown expires: 2025-12-15T11:00:00Z"<br />Only set when OverallPhase = "Blocked"|
+| `blockedUntil`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| BlockedUntil indicates when blocking expires (time-based blocks)<br />Set for: ConsecutiveFailures, RecentlyRemediated, ExponentialBackoff<br />Nil for: ResourceBusy, DuplicateInProgress (event-based, cleared when condition resolves)<br />After this time passes, RR will retry or transition to Failed (for ConsecutiveFailures)|
+| `nextAllowedExecution`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| NextAllowedExecution indicates when this RR can be retried after exponential backoff.<br />Set when RR fails due to pre-execution failures (infrastructure, validation, etc.).<br />Implements progressive delay: 1m, 2m, 4m, 8m, capped at 10m.<br />Formula: min(Base × 2^(failures-1), Max)<br />Nil means no exponential backoff is active.|
+| `consecutiveFailureCount`| _integer_| ConsecutiveFailureCount tracks how many times this fingerprint has failed consecutively.<br />Updated by RO when RR transitions to Failed phase.<br />Reset to 0 when RR completes successfully.|
 | `failurePhase`| _string_| FailurePhase indicates which phase failed (e.g., "ai_analysis", "workflow_execution")<br />Only set when OverallPhase = "failed"|
 | `failureReason`| _string_| FailureReason provides a human-readable reason for the failure<br />Only set when OverallPhase = "failed"|
-| `requiresManualReview`| _boolean_| RequiresManualReview indicates that this remediation cannot proceed automatically<br />and requires operator intervention. Set when:<br />- WE skip reason is "ExhaustedRetries" (5+ consecutive pre-execution failures)<br />- WE skip reason is "PreviousExecutionFailed" (execution failure, cluster state unknown)<br />- AIAnalysis WorkflowResolutionFailed with LowConfidence or WorkflowNotFound<br />Reference: , ,|
-| `outcome`| _string_| Outcome indicates the remediation result when completed.<br />Values:<br />- "Remediated": Workflow executed successfully<br />- "NoActionRequired": AIAnalysis determined no action needed (problem self-resolved)<br />- "ManualReviewRequired": Requires operator intervention<br />- "VerificationTimedOut": EA assessment did not complete within deadline (#280)<br />Reference: ,|
+| `requiresManualReview`| _boolean_| RequiresManualReview indicates that this remediation cannot proceed automatically<br />and requires operator intervention. Set when:<br />- WE skip reason is "ExhaustedRetries" (5+ consecutive pre-execution failures)<br />- WE skip reason is "PreviousExecutionFailed" (execution failure, cluster state unknown)<br />- AIAnalysis WorkflowResolutionFailed with LowConfidence or WorkflowNotFound|
+| `outcome`| _string_| Outcome indicates the remediation result when completed.<br />Values:<br />- "Remediated": Workflow executed successfully<br />- "NoActionRequired": AIAnalysis determined no action needed (problem self-resolved)<br />- "ManualReviewRequired": Requires operator intervention<br />- "VerificationTimedOut": EA assessment did not complete within deadline (#280)|
 | `timeoutPhase`| _string_| TimeoutPhase indicates which phase timed out<br />Only set when OverallPhase = "timeout"|
 | `timeoutTime`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| TimeoutTime records when the timeout occurred<br />Only set when OverallPhase = "timeout"|
 | `retentionExpiryTime`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| RetentionExpiryTime indicates when this CRD should be cleaned up (24 hours after completion)|
-| `notificationStatus`| _string_| NotificationStatus tracks the delivery status of notification(s) for this remediation.<br />Values: "Pending", "InProgress", "Sent", "Failed", "Cancelled"<br />Status Mapping from NotificationRequest.Status.Phase:<br />- NotificationRequest Pending → "Pending"<br />- NotificationRequest Sending → "InProgress"<br />- NotificationRequest Sent → "Sent"<br />- NotificationRequest Failed → "Failed"<br />- NotificationRequest deleted by user → "Cancelled"<br />For bulk notifications , this reflects the status of the consolidated notification.<br />Reference: (notification status tracking)|
-| `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions represent observations of RemediationRequest state.<br />Standard condition types:<br />- "NotificationDelivered": True if notification sent successfully, False if cancelled/failed<br /> - Reason "DeliverySucceeded": Notification sent<br /> - Reason "UserCancelled": User deleted NotificationRequest before delivery<br /> - Reason "DeliveryFailed": NotificationRequest failed to deliver<br />Conditions follow Kubernetes API conventions (KEP-1623).<br />Reference: (user cancellation), (status tracking)|
-| `timeoutConfig`| _[TimeoutConfig](#timeoutconfig)_| TimeoutConfig provides operational timeout overrides for this remediation.<br />OWNER: Remediation Orchestrator (sets defaults on first reconcile)<br />MUTABLE BY: Operators (can adjust mid-remediation via kubectl edit)<br />Reference: (Global timeout), (Per-phase timeouts)<br /> Moved from spec to status to enable operator mutability + audit trail|
-| `lastModifiedBy`| _string_| LastModifiedBy tracks the last operator who modified this RR's status.<br />Populated by RemediationRequest mutating webhook.<br />Reference: (SOC2 CC8.1 Operator Attribution), Extension|
+| `notificationStatus`| _string_| NotificationStatus tracks the delivery status of notification(s) for this remediation.<br />Values: "Pending", "InProgress", "Sent", "Failed", "Cancelled"<br />Status Mapping from NotificationRequest.Status.Phase:<br />- NotificationRequest Pending → "Pending"<br />- NotificationRequest Sending → "InProgress"<br />- NotificationRequest Sent → "Sent"<br />- NotificationRequest Failed → "Failed"<br />- NotificationRequest deleted by user → "Cancelled"<br />For bulk notifications , this reflects the status of the consolidated notification.|
+| `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions represent observations of RemediationRequest state.<br />Standard condition types:<br />- "NotificationDelivered": True if notification sent successfully, False if cancelled/failed<br /> - Reason "DeliverySucceeded": Notification sent<br /> - Reason "UserCancelled": User deleted NotificationRequest before delivery<br /> - Reason "DeliveryFailed": NotificationRequest failed to deliver<br />Conditions follow Kubernetes API conventions (KEP-1623).|
+| `timeoutConfig`| _[TimeoutConfig](#timeoutconfig)_| TimeoutConfig provides operational timeout overrides for this remediation.<br />OWNER: Remediation Orchestrator (sets defaults on first reconcile)<br />MUTABLE BY: Operators (can adjust mid-remediation via kubectl edit)|
+| `lastModifiedBy`| _string_| LastModifiedBy tracks the last operator who modified this RR's status.<br />Populated by RemediationRequest mutating webhook.|
 | `lastModifiedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| LastModifiedAt tracks when the last status modification occurred.<br />Populated by RemediationRequest mutating webhook.|
 | `currentProcessingRef`| _[ObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectreference-v1-core)_| CurrentProcessingRef references the current SignalProcessing CRD|
-| `selectedWorkflowRef`| _[WorkflowReference](#workflowreference)_| SelectedWorkflowRef captures the workflow selected by AI for this remediation.<br />Populated from workflowexecution.selection.completed audit event.<br />Reference: (Workflow Selection)|
-| `executionRef`| _[ObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectreference-v1-core)_| ExecutionRef references the WorkflowExecution CRD for this remediation.<br />Populated from workflowexecution.execution.started audit event.<br />Reference: (Execution Reference)|
+| `selectedWorkflowRef`| _[WorkflowReference](#workflowreference)_| SelectedWorkflowRef captures the workflow selected by AI for this remediation.<br />Populated from workflowexecution.selection.completed audit event.|
+| `executionRef`| _[ObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectreference-v1-core)_| ExecutionRef references the WorkflowExecution CRD for this remediation.<br />Populated from workflowexecution.execution.started audit event.|
 
 
 
@@ -1647,7 +1645,7 @@ _Appears in:_
 
 
 SignalProcessing is the Schema for the signalprocessings API.
-DD-SIGNAL-PROCESSING-001: Renamed from RemediationProcessing per 
+ Renamed from RemediationProcessing per 
 
 
 
@@ -1777,7 +1775,6 @@ _Appears in:_
 TimeoutConfig provides fine-grained timeout configuration for remediations.
 Supports both global workflow timeout and per-phase timeouts for granular control.
 
-Reference: (Global timeout), (Per-phase timeouts)
 Design Decision: 
 
 _Appears in:_
@@ -1785,10 +1782,10 @@ _Appears in:_
 
 | Field| Type| Description|
 | ---| ---| ---|
-| `global`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| Global timeout for entire remediation workflow.<br />Overrides controller-level default (1 hour).<br />Reference: , AC-027-4|
-| `processing`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| Processing phase timeout (SignalProcessing enrichment).<br />Overrides controller-level default (5 minutes).<br />Reference: , AC-028-5|
-| `analyzing`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| Analyzing phase timeout (AIAnalysis investigation).<br />Overrides controller-level default (10 minutes).<br />Reference: , AC-028-5|
-| `executing`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| Executing phase timeout (WorkflowExecution remediation).<br />Overrides controller-level default (30 minutes).<br />Reference: , AC-028-5|
+| `global`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| Global timeout for entire remediation workflow.<br />Overrides controller-level default (1 hour).|
+| `processing`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| Processing phase timeout (SignalProcessing enrichment).<br />Overrides controller-level default (5 minutes).|
+| `analyzing`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| Analyzing phase timeout (AIAnalysis investigation).<br />Overrides controller-level default (10 minutes).|
+| `executing`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| Executing phase timeout (WorkflowExecution remediation).<br />Overrides controller-level default (30 minutes).|
 
 
 
