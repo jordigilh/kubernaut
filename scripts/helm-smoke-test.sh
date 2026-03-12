@@ -282,9 +282,7 @@ password: ${test_password}" \
     --from-literal="redis-secrets.yaml=password: \"${test_password}\"" \
     -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
 
-  kubectl create secret generic kubernaut-llm-credentials \
-    --from-literal=OPENAI_API_KEY=sk-smoke-test-placeholder \ # pre-commit:allow-sensitive
-    -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
+  kubectl create secret generic kubernaut-llm-credentials --from-literal=OPENAI_API_KEY=sk-smoke-test-placeholder -n "$NAMESPACE" >/dev/null 2>&1 || pass=false # pre-commit:allow-sensitive
 
   if $pass; then
     tap_ok "$desc (4 secrets created)"
