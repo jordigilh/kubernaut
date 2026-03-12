@@ -56,7 +56,7 @@ COPY --from=builder /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/ssl/c
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /opt/app-root/src/manager /manager
-USER nobody
+USER 65534
 EXPOSE 8080 8081
 ENTRYPOINT ["/manager"]
 CMD []
