@@ -63,7 +63,7 @@ jobs:
     outputs:
       code_changed: ${{ steps.filter.outputs.code }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -100,12 +100,12 @@ jobs:
     timeout-minutes: 8
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: true
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.25'
           cache: true
@@ -132,7 +132,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -167,20 +167,20 @@ jobs:
           - shared-packages  # pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: true
 
       - name: Set up Go
         if: matrix.service != 'holmesgpt-api'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.25'
           cache: true
 
       - name: Set up Python
         if: matrix.service == 'holmesgpt-api'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -258,7 +258,7 @@ jobs:
       
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-unit-${{ matrix.service }}
           path: coverage-reports/unit-${{ matrix.service }}.txt
@@ -266,7 +266,7 @@ jobs:
 
       - name: Upload full coverage profile
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-profile-unit-${{ matrix.service }}
           path: |
@@ -294,20 +294,20 @@ jobs:
   #         - holmesgpt-api
   #   steps:
   #     - name: Checkout code
-  #       uses: actions/checkout@v4
+  #       uses: actions/checkout@v5
   #       with:
   #         submodules: true
   #
   #     - name: Set up Go
   #       if: matrix.service != 'holmesgpt-api'
-  #       uses: actions/setup-go@v5
+  #       uses: actions/setup-go@v6
   #       with:
   #         go-version: '1.25'
   #         cache: true
   #
   #     - name: Set up Python
   #       if: matrix.service == 'holmesgpt-api'
-  #       uses: actions/setup-python@v5
+  #       uses: actions/setup-python@v6
   #       with:
   #         python-version: '3.12'
   #         cache: 'pip'
@@ -345,7 +345,7 @@ jobs:
   #
   #     - name: Upload coverage
   #       if: always()
-  #       uses: actions/upload-artifact@v4
+  #       uses: actions/upload-artifact@v6
   #       with:
   #         name: unit-test-coverage-${{ matrix.service }}
   #         path: |
@@ -415,12 +415,12 @@ jobs:
             context: test/services/mock-llm
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: true
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.25'
           cache: true
@@ -545,10 +545,10 @@ jobs:
             service_name: "HolmesGPT API"
             timeout: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true  # CRITICAL: holmesgpt is a submodule required for HAPI builds
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.25'
       - name: Generate OpenAPI specs
@@ -568,7 +568,7 @@ jobs:
       
       - name: Upload integration test log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: integration-log-${{ matrix.service }}-${{ github.run_id }}
           path: integration-${{ matrix.service }}.log
@@ -619,7 +619,7 @@ jobs:
       
       - name: Upload integration coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-integration-${{ matrix.service }}
           path: coverage-reports/integration-${{ matrix.service }}.txt
@@ -627,7 +627,7 @@ jobs:
 
       - name: Upload full integration coverage profile
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-profile-integration-${{ matrix.service }}
           path: |
@@ -656,7 +656,7 @@ jobs:
           fi
       - name: Upload must-gather logs as artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: must-gather-logs-integration-${{ matrix.service }}-${{ github.run_id }}
           path: must-gather-*.tar.gz
@@ -738,10 +738,10 @@ jobs:
             service_name: "Full Pipeline"
             timeout: 50
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true  # CRITICAL: holmesgpt is a submodule required for HAPI builds
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.25'
       - name: Generate OpenAPI specs
@@ -782,7 +782,7 @@ jobs:
           tkn version
       - name: Setup Python (for holmesgpt-api E2E)
         if: matrix.service == 'holmesgpt-api'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -838,7 +838,7 @@ jobs:
       
       - name: Upload E2E coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-e2e-${{ matrix.service }}
           path: coverage-reports/e2e-${{ matrix.service }}.txt
@@ -846,7 +846,7 @@ jobs:
 
       - name: Upload full E2E coverage profile
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-profile-e2e-${{ matrix.service }}
           path: |
@@ -898,7 +898,7 @@ jobs:
           fi
       - name: Upload must-gather logs as artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: must-gather-logs-e2e-${{ matrix.service }}-${{ github.run_id }}
           path: must-gather-e2e-*.tar.gz
@@ -929,11 +929,11 @@ jobs:
       pull-requests: write  # required for sticky-pull-request-comment to post/update PR comment
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download coverage summary reports
         if: always()
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: coverage-*
           path: coverage-reports
@@ -942,7 +942,7 @@ jobs:
 
       - name: Download full coverage profiles
         if: always()
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: coverage-profile-*
           path: coverage-profiles
