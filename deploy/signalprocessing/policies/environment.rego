@@ -14,9 +14,8 @@
 #
 # Input Schema:
 # {
-#   "namespace": { "name": "demo-diskpressure", "labels": {...} },
-#   "workload":  { "kind": "Node", "name": "worker-1", "labels": {...} },
-#   "signal":    { "labels": {...} }
+#   "namespace": { "labels": { "kubernaut.ai/environment": "production" } },
+#   "signal": { "labels": {...}, "annotations": {...} }
 # }
 #
 # Output Schema:
@@ -37,18 +36,6 @@ import rego.v1
 
 result := {"environment": lower(env), "source": "namespace-labels"} if {
     env := input.namespace.labels["kubernaut.ai/environment"]
-    env != ""
-}
-
-# ============================================================================
-# SECONDARY: Workload Labels (cluster-scoped resources like Node)
-# ============================================================================
-# For cluster-scoped alerts (e.g., KubeNodeDiskPressure) the namespace is nil.
-# Fall back to the target workload's labels for environment detection.
-
-result := {"environment": lower(env), "source": "workload-labels"} if {
-    not input.namespace.labels["kubernaut.ai/environment"]
-    env := input.workload.labels["kubernaut.ai/environment"]
     env != ""
 }
 

@@ -171,12 +171,17 @@ func (c *EnvironmentClassifier) evaluateRego(ctx context.Context, input map[stri
 }
 
 // buildRegoInput constructs the input map for Rego policy evaluation.
+// Per plan specification:
 //
-// Provides namespace, workload, and signal context so Rego policies can
-// classify environment from any source:
-//   - input.namespace.labels  (namespaced resources)
-//   - input.workload.labels   (cluster-scoped resources like Node)
-//   - input.signal.labels     (alert labels)
+//	input := map[string]interface{}{
+//	    "namespace": map[string]interface{}{
+//	        "name":   k8sCtx.Namespace.Name,
+//	        "labels": k8sCtx.Namespace.Labels,
+//	    },
+//	    "signal": map[string]interface{}{
+//	        "labels": signal.Labels,
+//	    },
+//	}
 func (c *EnvironmentClassifier) buildRegoInput(k8sCtx *signalprocessingv1alpha1.KubernetesContext, signal *signalprocessingv1alpha1.SignalData) map[string]interface{} {
 	input := map[string]interface{}{}
 
@@ -188,21 +193,6 @@ func (c *EnvironmentClassifier) buildRegoInput(k8sCtx *signalprocessingv1alpha1.
 		}
 	} else {
 		input["namespace"] = map[string]interface{}{
-			"name":   "",
-			"labels": map[string]interface{}{},
-		}
-	}
-
-	// Workload context (covers cluster-scoped resources like Node)
-	if k8sCtx != nil && k8sCtx.Workload != nil {
-		input["workload"] = map[string]interface{}{
-			"kind":   k8sCtx.Workload.Kind,
-			"name":   k8sCtx.Workload.Name,
-			"labels": ensureLabelsMap(k8sCtx.Workload.Labels),
-		}
-	} else {
-		input["workload"] = map[string]interface{}{
-			"kind":   "",
 			"name":   "",
 			"labels": map[string]interface{}{},
 		}
