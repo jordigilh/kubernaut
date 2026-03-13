@@ -25,7 +25,7 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
       initContainers:
         - name: wait-for-postgresql
-          image: {{ .Values.hooks.migrations.image }}
+          image: {{ include "kubernaut.postgresql.clientImage" . }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -50,7 +50,7 @@ spec:
               echo "PostgreSQL is ready."
       containers:
         - name: migrate
-          image: {{ .Values.hooks.migrations.image }}
+          image: {{ include "kubernaut.postgresql.clientImage" . }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
@@ -92,9 +92,15 @@ spec:
                 *)       echo "ERROR: Unsupported architecture: $ARCH"; exit 1 ;;
               esac
 
+              GOOSE_URL="https://github.com/pressly/goose/releases/download/${GOOSE_VERSION}/goose_linux_${GOOSE_ARCH}"
               echo "==> Installing goose ${GOOSE_VERSION} (${GOOSE_ARCH})..."
-              wget -qO "$GOOSE_BIN" \
-                "https://github.com/pressly/goose/releases/download/${GOOSE_VERSION}/goose_linux_${GOOSE_ARCH}"
+              if command -v curl &>/dev/null; then
+                curl -fsSL -o "$GOOSE_BIN" "$GOOSE_URL"
+              elif command -v wget &>/dev/null; then
+                wget -qO "$GOOSE_BIN" "$GOOSE_URL"
+              else
+                echo "ERROR: Neither curl nor wget available"; exit 1
+              fi
 
               echo "==> Verifying SHA256 checksum..."
               EXPECTED_x86_64="313ba1c77a367f431faf690fe817aad297722623b62395a8ac64281f54f6c415"

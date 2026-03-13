@@ -71,7 +71,11 @@ spec:
           image: {{ .Values.postgresql.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           securityContext:
+            {{- if eq (include "kubernaut.postgresql.variant" .) "ocp" }}
+            runAsNonRoot: true
+            {{- else }}
             runAsNonRoot: false
+            {{- end }}
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:

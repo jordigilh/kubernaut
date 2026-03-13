@@ -158,6 +158,55 @@ Return the PostgreSQL database name.
 {{- end }}
 
 {{/*
+Return the PostgreSQL variant ("upstream" or "ocp").
+*/}}
+{{- define "kubernaut.postgresql.variant" -}}
+{{- .Values.postgresql.variant | default "upstream" -}}
+{{- end }}
+
+{{/*
+Return the env var name for the PostgreSQL user, by variant.
+Secret keys are always POSTGRES_*; env var names differ per image.
+*/}}
+{{- define "kubernaut.postgresql.envVarUser" -}}
+{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_USER{{- else -}}POSTGRES_USER{{- end -}}
+{{- end }}
+
+{{/*
+Return the env var name for the PostgreSQL password, by variant.
+*/}}
+{{- define "kubernaut.postgresql.envVarPassword" -}}
+{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_PASSWORD{{- else -}}POSTGRES_PASSWORD{{- end -}}
+{{- end }}
+
+{{/*
+Return the env var name for the PostgreSQL database, by variant.
+*/}}
+{{- define "kubernaut.postgresql.envVarDatabase" -}}
+{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_DATABASE{{- else -}}POSTGRES_DB{{- end -}}
+{{- end }}
+
+{{/*
+Return the data directory mount path for the PostgreSQL variant.
+upstream: /var/lib/postgresql/data   ocp: /var/lib/pgsql/data
+*/}}
+{{- define "kubernaut.postgresql.dataDir" -}}
+{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}/var/lib/pgsql/data{{- else -}}/var/lib/postgresql/data{{- end -}}
+{{- end }}
+
+{{/*
+Return the PostgreSQL client image (for init containers and migration hooks).
+Uses hooks.migrations.image if set, otherwise falls back to postgresql.image.
+*/}}
+{{- define "kubernaut.postgresql.clientImage" -}}
+{{- if .Values.hooks.migrations.image -}}
+{{- .Values.hooks.migrations.image -}}
+{{- else -}}
+{{- .Values.postgresql.image -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Return the Redis address (host:port).
 */}}
 {{- define "kubernaut.redis.addr" -}}

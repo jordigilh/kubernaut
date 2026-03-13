@@ -202,6 +202,7 @@ All controllers (`aianalysis`, `signalprocessing`, `remediationorchestrator`, `w
 | Parameter | Description | Default |
 |---|---|---|
 | `postgresql.enabled` | Deploy in-chart PostgreSQL | `true` |
+| `postgresql.variant` | Image variant: `upstream` (postgres:16-alpine) or `ocp` (OpenShift ImageStream) | `upstream` |
 | `postgresql.replicas` | Number of replicas | `1` |
 | `postgresql.image` | PostgreSQL container image | `postgres:16-alpine` |
 | `postgresql.auth.existingSecret` | Pre-created Secret name | `""` |
@@ -210,6 +211,8 @@ All controllers (`aianalysis`, `signalprocessing`, `remediationorchestrator`, `w
 | `postgresql.auth.database` | Database name | `action_history` |
 | `postgresql.storage.size` | PVC size | `10Gi` |
 | `postgresql.storage.storageClassName` | StorageClass (empty = cluster default) | `""` |
+
+**OCP variant**: Set `postgresql.variant=ocp` and `postgresql.image` to the internal registry ImageStream reference (e.g., `image-registry.openshift-image-registry.svc:5000/openshift/postgresql:16-el9`). The chart maps the uniform Secret keys (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`) to the OCP-expected env var names (`POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`, `POSTGRESQL_DATABASE`) and adjusts the data directory mount path automatically.
 
 ### External PostgreSQL (BYO)
 
@@ -263,7 +266,7 @@ See [TLS and Certificate Management](https://jordigilh.github.io/kubernaut-docs/
 | Parameter | Description | Default |
 |---|---|---|
 | `hooks.tlsCerts.image` | kubectl image for TLS cert generation (hook mode only) | `bitnami/kubectl:latest` |
-| `hooks.migrations.image` | PostgreSQL image for migrations | `postgres:16-alpine` |
+| `hooks.migrations.image` | PostgreSQL client image for migrations (defaults to `postgresql.image`) | `""` |
 | `hooks.migrations.gooseVersion` | goose CLI version | `v3.24.1` |
 
 ### Network Policies

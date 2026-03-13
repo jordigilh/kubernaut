@@ -225,7 +225,12 @@ eventExporter:
 postgresql:
   replicas: 1
   enabled: true  # set false to skip in-chart PostgreSQL and use externalPostgresql instead
-  image: postgres:16-alpine
+  # variant: "upstream" (default) or "ocp".
+  #   upstream — postgres:16-alpine with POSTGRES_* env vars
+  #   ocp      — OpenShift PostgreSQL ImageStream with POSTGRESQL_* env vars,
+  #              runs non-root (UID 26), compatible with restricted-v2 SCC
+  variant: upstream
+  image: postgres:16-alpine  # OCP: image-registry.openshift-image-registry.svc:5000/openshift/postgresql:16-el9
   # Pod/container security context overrides.
   # Defaults: seccompProfile RuntimeDefault only (no runAsUser/fsGroup) for OCP/Kind compatibility.
   # On vanilla K8s with PodSecurity "restricted", add runAsUser and runAsNonRoot here.
@@ -300,7 +305,7 @@ networkPolicies:
 # -- Hooks (post-install Jobs)
 hooks:
   migrations:
-    image: postgres:16-alpine
+    image: ""  # defaults to postgresql.image; override only for airgap or custom PG client images
     gooseVersion: v3.24.1  # DD-012: goose CLI version for migration state tracking
   tlsCerts:
     image: bitnami/kubectl:latest

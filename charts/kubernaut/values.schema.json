@@ -510,6 +510,12 @@
           "default": true,
           "description": "Set false to skip in-chart PostgreSQL and use externalPostgresql instead"
         },
+        "variant": {
+          "type": "string",
+          "default": "upstream",
+          "enum": ["upstream", "ocp"],
+          "description": "PostgreSQL image variant: upstream (postgres:16-alpine) or ocp (OpenShift ImageStream)"
+        },
         "image": {
           "type": "string",
           "default": "postgres:16-alpine"
@@ -672,7 +678,8 @@
           "properties": {
             "image": {
               "type": "string",
-              "default": "postgres:16-alpine"
+              "default": "",
+              "description": "PostgreSQL client image for migrations; defaults to postgresql.image when empty"
             },
             "gooseVersion": {
               "type": "string",
