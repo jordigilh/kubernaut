@@ -194,15 +194,15 @@ kubectl create secret generic kubernaut-pg-credentials \
   --from-literal=POSTGRES_DB=action_history \
   -n kubernaut-system
 
-kubectl create secret generic kubernaut-ds-credentials \
+kubectl create secret generic kubernaut-ds-db-credentials \
   --from-literal=db-secrets.yaml=$'username: slm_user\npassword: <password>' \
   -n kubernaut-system
 
-kubectl create secret generic kubernaut-redis-credentials \
-  --from-literal=redis-secrets.yaml=$'password: <password>' \
+kubectl create secret generic kubernaut-valkey-credentials \
+  --from-literal=valkey-secrets.yaml=$'password: <password>' \
   -n kubernaut-system
 
-kubectl create secret generic kubernaut-llm-credentials \
+kubectl create secret generic llm-credentials \
   --from-literal=OPENAI_API_KEY=sk-... \
   -n kubernaut-system
 ```
@@ -211,9 +211,9 @@ kubectl create secret generic kubernaut-llm-credentials \
 **Acceptance Criteria**:
 - Each `kubectl create secret` returns exit code 0
 - `kubectl get secret kubernaut-pg-credentials -n kubernaut-system` exists
-- `kubectl get secret kubernaut-ds-credentials -n kubernaut-system` exists
-- `kubectl get secret kubernaut-redis-credentials -n kubernaut-system` exists
-- `kubectl get secret kubernaut-llm-credentials -n kubernaut-system` exists
+- `kubectl get secret kubernaut-ds-db-credentials -n kubernaut-system` exists
+- `kubectl get secret kubernaut-valkey-credentials -n kubernaut-system` exists
+- `kubectl get secret llm-credentials -n kubernaut-system` exists
 
 ---
 
@@ -222,20 +222,14 @@ kubectl create secret generic kubernaut-llm-credentials \
 **Authority**: README.md "Installation > Production"
 **Platform**: Kind (hook TLS), OCP (cert-manager TLS)
 
-**Given**: CRDs applied, namespace exists, 4 secrets provisioned (PRE-001 through PRE-003)
+**Given**: Namespace exists, 4 secrets provisioned (PRE-001 through PRE-003). Helm installs CRDs automatically.
 **When**: User runs the exact helm install command from README:
 ```bash
 helm install kubernaut charts/kubernaut/ \
   --namespace kubernaut-system \
-  --set postgresql.auth.existingSecret=kubernaut-pg-credentials \
-  --set datastorage.dbExistingSecret=kubernaut-ds-credentials \
-  --set redis.existingSecret=kubernaut-redis-credentials \
+  -f charts/kubernaut/values-demo.yaml \
   --set holmesgptApi.llm.provider=openai \
-  --set holmesgptApi.llm.model=gpt-4o \
-  --set holmesgptApi.llm.credentialsSecretName=kubernaut-llm-credentials \
-  --set gateway.auth.signalSources[0].name=alertmanager \
-  --set gateway.auth.signalSources[0].serviceAccount=alertmanager-kube-prometheus-stack-alertmanager \
-  --set gateway.auth.signalSources[0].namespace=monitoring
+  --set holmesgptApi.llm.model=gpt-4o
 ```
 With additional platform-specific flags:
 - Kind: `--set tls.mode=hook --set effectivenessmonitor.external.prometheusEnabled=false --set effectivenessmonitor.external.alertManagerEnabled=false`
