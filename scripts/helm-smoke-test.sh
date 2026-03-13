@@ -229,7 +229,7 @@ tls_flags() {
 production_secret_flags() {
   echo "--set postgresql.auth.existingSecret=kubernaut-pg-credentials"
   echo "--set datastorage.dbExistingSecret=kubernaut-ds-credentials"
-  echo "--set redis.existingSecret=kubernaut-redis-credentials"
+  echo "--set valkey.existingSecret=kubernaut-valkey-credentials"
   echo "--set holmesgptApi.llm.provider=openai"
   echo "--set holmesgptApi.llm.model=gpt-4o"
   echo "--set holmesgptApi.llm.credentialsSecretName=kubernaut-llm-credentials"
@@ -278,8 +278,8 @@ run_pre_003() {
 password: ${test_password}" \
     -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
 
-  kubectl create secret generic kubernaut-redis-credentials \
-    --from-literal="redis-secrets.yaml=password: \"${test_password}\"" \
+  kubectl create secret generic kubernaut-valkey-credentials \
+    --from-literal="valkey-secrets.yaml=password: \"${test_password}\"" \
     -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
 
   kubectl create secret generic kubernaut-llm-credentials --from-literal=OPENAI_API_KEY=sk-smoke-test-placeholder -n "$NAMESPACE" >/dev/null 2>&1 || pass=false # pre-commit:allow-sensitive
@@ -316,7 +316,7 @@ run_inst_003() {
   if helm install kubernaut "$CHART_PATH" \
     --namespace "$NAMESPACE" --create-namespace \
     --set postgresql.auth.password=devpass \
-    --set redis.password=redispass \
+    --set valkey.password=redispass \
     $flags \
     --timeout 5m >/dev/null 2>&1; then
     tap_ok "$desc"
@@ -438,8 +438,8 @@ run_uninst_001() {
   assert_resource_exists pvc postgresql-data "$NAMESPACE" \
     "ST-CHART-UNINST-001b: PostgreSQL PVC retained"
 
-  assert_resource_exists pvc redis-data "$NAMESPACE" \
-    "ST-CHART-UNINST-001c: Redis PVC retained"
+  assert_resource_exists pvc valkey-data "$NAMESPACE" \
+    "ST-CHART-UNINST-001c: Valkey PVC retained"
 
   local crd_count
   crd_count=$(kubectl get crds 2>/dev/null | grep -c "kubernaut.ai" || true)
@@ -453,7 +453,7 @@ run_uninst_001() {
 run_uninst_002() {
   local pass=true
 
-  kubectl delete pvc postgresql-data redis-data -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
+  kubectl delete pvc postgresql-data valkey-data -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
   kubectl delete -f "${CHART_PATH}/crds/" >/dev/null 2>&1 || pass=false
   kubectl delete namespace "$NAMESPACE" >/dev/null 2>&1 || pass=false
 
