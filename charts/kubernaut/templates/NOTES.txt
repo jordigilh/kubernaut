@@ -42,7 +42,8 @@ If deployed, configure AlertManager to send alerts to the Gateway:
 
 CRDs are NOT upgraded automatically by `helm upgrade`. To update CRDs:
 
-   kubectl apply --server-side --force-conflicts -f charts/kubernaut/crds/
+   helm pull oci://ghcr.io/jordigilh/kubernaut/charts/kubernaut --version <new-version> --untar
+   kubectl apply --server-side --force-conflicts -f kubernaut/crds/
 
 Run this BEFORE `helm upgrade` when CRD schemas have changed between versions.
 
@@ -65,9 +66,9 @@ IMPORTANT -- Data Retention:
 
       kubectl delete pvc postgresql-data valkey-data -n {{ .Release.Namespace }}
 
-  - CRDs and their data are NOT removed. To delete CRDs:
+  - CRDs and their data are NOT removed. To delete all Kubernaut CRDs:
 
-      kubectl delete -f charts/kubernaut/crds/
+      kubectl delete crd $(kubectl get crd -o name | grep kubernaut.ai)
 
   - The {{ include "kubernaut.workflowNamespace" . }} namespace may contain active Jobs or PipelineRuns.
     Verify it is empty or clean up before uninstalling if it gets stuck:
