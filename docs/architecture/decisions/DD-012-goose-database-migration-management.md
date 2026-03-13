@@ -19,7 +19,7 @@
 
 **Current State**:
 - Data Storage Service uses PostgreSQL 16+ with pgvector extension
-- Multiple migration files exist (`001_initial_schema.sql` through `012_adr033_multidimensional_tracking.sql`)
+- Single squashed migration file (`001_v1_schema.sql`) contains the complete v1 schema
 - No formal migration management tool documented
 - ADR-033 implementation (Day 12) requires applying schema changes to production
 
@@ -204,9 +204,8 @@ goose --version
 **Examples**:
 ```
 ✅ CORRECT:
-  001_initial_schema.sql
-  002_fix_partitioning.sql
-  012_adr033_multidimensional_tracking.sql
+  001_v1_schema.sql
+  002_v1.1_add_feature.sql
 
 ❌ INCORRECT:
   99-init-vector.sql          # Uses dash instead of underscore
@@ -302,12 +301,10 @@ func (s *Server) validateSchemaVersion() error {
 
 ```
 migrations/
-├── 001_initial_schema.sql
-├── 002_fix_partitioning.sql
-├── ...
-├── 012_adr033_multidimensional_tracking.sql
-└── testdata/
-    └── seed_test_data.sql  # Non-migration files go here
+├── 001_v1_schema.sql         # Complete v1 schema (squashed)
+├── testdata/
+│   └── seed_test_data.sql    # Non-migration files go here
+└── v0-archived/              # Historical migrations (not applied)
 ```
 
 **Rules**:

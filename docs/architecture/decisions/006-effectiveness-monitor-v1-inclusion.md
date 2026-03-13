@@ -173,7 +173,7 @@ Response: { "success_rate": 0.87, "total_executions": 150 }
    - `pkg/ai/insights/effectiveness_assessor.go` - Effectiveness calculator
 
 2. **Database Schema**:
-   - `migrations/006_effectiveness_assessment.sql` - PostgreSQL tables
+   - `migrations/001_v1_schema.sql` - PostgreSQL tables (effectiveness assessment section)
 
 3. **Dependencies**:
    - ✅ Data Storage Service (8085) - Action history, vector DB

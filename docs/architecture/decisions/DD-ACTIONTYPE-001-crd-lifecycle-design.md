@@ -66,7 +66,7 @@ kubectl get at --field-selector spec.name=RestartPod
 
 ## Database Schema Changes
 
-### Migration: `migrations/004_action_type_lifecycle.sql`
+### Migration: `migrations/001_v1_schema.sql` (action_type_taxonomy lifecycle columns)
 
 Add lifecycle columns to the existing `action_type_taxonomy` table:
 
