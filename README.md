@@ -47,16 +47,15 @@ Kubernaut bridges that gap. It uses an LLM to investigate the actual root cause 
 ## Installation
 
 ```bash
-# Install via Helm (from local chart during development)
-helm install kubernaut ./charts/kubernaut \
-  --namespace kubernaut-system --create-namespace \
-  -f charts/kubernaut/values.yaml
+helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --namespace kubernaut-system --create-namespace
 ```
 
-> When the chart is published to an OCI registry, installation will be:
+> **Development**: to install from a local checkout instead, run:
 > ```bash
-> helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
->   --namespace kubernaut-system --create-namespace
+> helm install kubernaut ./charts/kubernaut \
+>   --namespace kubernaut-system --create-namespace \
+>   -f charts/kubernaut/values.yaml
 > ```
 
 See the [Installation Guide](https://jordigilh.github.io/kubernaut-docs/getting-started/installation/) for prerequisites, configuration options, and production deployment.
