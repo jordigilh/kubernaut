@@ -451,6 +451,12 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 	_, _ = fmt.Fprintf(writer, "✅ ServiceAccount token retrieved for authenticated workflow registration\n")
 
+	// Seed ActionTypes BEFORE workflow registration (BuildAndRegisterTestWorkflows)
+	_, _ = fmt.Fprintln(writer, "\n🏷️  Seeding E2E ActionType CRDs (required before workflow registration)...")
+	if err := SeedE2EActionTypes(kubeconfigPath, WorkflowExecutionNamespace, writer); err != nil {
+		return fmt.Errorf("failed to seed E2E ActionTypes: %w", err)
+	}
+
 	// DD-WE-006: Grant data-storage-sa permission to read secrets in the execution
 	// namespace so dependency validation (ValidateDependencies) can verify that
 	// declared secret dependencies exist at registration time.

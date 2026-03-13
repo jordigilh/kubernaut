@@ -763,6 +763,11 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	err = infrastructure.RunGooseMigrations(ctx, targetDB, migrationsDir, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "goose migrations should succeed")
 
+	// 2b. Seed action_type_taxonomy (DD-WORKFLOW-016: FK constraint for workflow catalog)
+	GinkgoWriter.Println("  🏷️  Seeding action type taxonomy...")
+	err = infrastructure.SeedActionTypeTaxonomy(ctx, targetDB, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "action type taxonomy seeding should succeed")
+
 	// 3. Grant permissions
 	_, err = targetDB.ExecContext(ctx, `
 		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;

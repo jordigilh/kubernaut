@@ -520,7 +520,11 @@ func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, write
 		return fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}
 
-	return RunGooseMigrations(context.Background(), db, migrationsDir, writer)
+	ctx := context.Background()
+	if err := RunGooseMigrations(ctx, db, migrationsDir, writer); err != nil {
+		return err
+	}
+	return SeedActionTypeTaxonomy(ctx, db, writer)
 }
 
 // startDSBootstrapRedis starts the Redis container

@@ -1734,8 +1734,13 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 	}
 	migrationsDir := filepath.Join(workspaceRoot, "migrations")
 
-	if err := RunGooseMigrations(context.Background(), infra.DB, migrationsDir, writer); err != nil {
+	ctx := context.Background()
+	if err := RunGooseMigrations(ctx, infra.DB, migrationsDir, writer); err != nil {
 		return fmt.Errorf("goose migrations failed: %w", err)
+	}
+
+	if err := SeedActionTypeTaxonomy(ctx, infra.DB, writer); err != nil {
+		return fmt.Errorf("action type taxonomy seeding failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "  🔐 Granting permissions...")
