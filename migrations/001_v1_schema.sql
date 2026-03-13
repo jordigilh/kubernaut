@@ -1,4 +1,6 @@
--- Kubernaut v1.0 initial schema — squashed from 27 pre-release migrations (#279)
+-- Kubernaut v1 schema — single-file squash for clean v1.0.1 start
+-- Includes: base schema (27 pre-release), engine_config, content integrity,
+-- action_type lifecycle, and effectiveness assessment tables.
 --
 -- +goose Up
 -- +goose StatementBegin
@@ -166,6 +168,9 @@ CREATE INDEX idx_ro_operation_time ON retention_operations (operation_start);
 CREATE TABLE action_type_taxonomy (
     action_type TEXT PRIMARY KEY,
     description JSONB NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    disabled_at TIMESTAMP WITH TIME ZONE,
+    disabled_by TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -173,6 +178,9 @@ CREATE TABLE action_type_taxonomy (
 COMMENT ON TABLE action_type_taxonomy IS 'Curated taxonomy of remediation action types (DD-WORKFLOW-016)';
 COMMENT ON COLUMN action_type_taxonomy.action_type IS 'Action type identifier (e.g., ScaleReplicas, RestartPod)';
 COMMENT ON COLUMN action_type_taxonomy.description IS 'JSONB with camelCase keys: what, whenToUse, whenNotToUse, preconditions';
+COMMENT ON COLUMN action_type_taxonomy.status IS 'Lifecycle status: active, disabled, deprecated, archived, or superseded';
+COMMENT ON COLUMN action_type_taxonomy.disabled_at IS 'Timestamp when action type was soft-disabled';
+COMMENT ON COLUMN action_type_taxonomy.disabled_by IS 'Identity (K8s SA or user) who disabled the action type';
 
 -- 8. Remediation Workflow Catalog (UUID PK, schema_image, execution_bundle, description JSONB)
 CREATE TABLE remediation_workflow_catalog (
@@ -194,6 +202,7 @@ CREATE TABLE remediation_workflow_catalog (
     execution_bundle_digest VARCHAR(71),
     custom_labels JSONB NOT NULL DEFAULT '{}'::jsonb,
     detected_labels JSONB NOT NULL DEFAULT '{}'::jsonb,
+    engine_config JSONB,
     action_type TEXT NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'active',
     status_reason TEXT,
@@ -217,8 +226,7 @@ CREATE TABLE remediation_workflow_catalog (
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     created_by VARCHAR(255),
     updated_by VARCHAR(255),
-    CONSTRAINT uq_workflow_name_version UNIQUE (workflow_name, version),
-    CHECK (status IN ('active', 'disabled', 'deprecated', 'archived')),
+    CHECK (status IN ('active', 'disabled', 'deprecated', 'archived', 'superseded')),
     CHECK (expected_success_rate IS NULL OR (expected_success_rate >= 0 AND expected_success_rate <= 1)),
     CHECK (actual_success_rate IS NULL OR (actual_success_rate >= 0 AND actual_success_rate <= 1)),
     CHECK (total_executions >= 0),
@@ -236,6 +244,7 @@ CREATE INDEX idx_workflow_catalog_execution_bundle_digest ON remediation_workflo
 CREATE INDEX idx_workflow_catalog_custom_labels ON remediation_workflow_catalog USING GIN (custom_labels);
 CREATE INDEX idx_workflow_catalog_detected_labels ON remediation_workflow_catalog USING GIN (detected_labels);
 CREATE INDEX idx_workflow_action_type_status_version ON remediation_workflow_catalog(action_type, status, is_latest_version);
+CREATE UNIQUE INDEX uq_workflow_name_version_active ON remediation_workflow_catalog (workflow_name, version) WHERE status = 'active';
 
 COMMENT ON COLUMN remediation_workflow_catalog.description IS 'JSONB with camelCase keys (what, whenToUse, whenNotToUse, preconditions)';
 COMMENT ON COLUMN remediation_workflow_catalog.schema_image IS 'OCI image pulled at registration to extract /workflow-schema.yaml';
@@ -243,6 +252,7 @@ COMMENT ON COLUMN remediation_workflow_catalog.schema_digest IS 'SHA256 digest o
 COMMENT ON COLUMN remediation_workflow_catalog.execution_bundle IS 'OCI execution bundle reference (digest-pinned) for Tekton/Job runtime';
 COMMENT ON COLUMN remediation_workflow_catalog.execution_bundle_digest IS 'SHA256 digest portion of execution_bundle';
 COMMENT ON COLUMN remediation_workflow_catalog.labels IS 'JSONB labels use signalName key for semantic signal matching';
+COMMENT ON COLUMN remediation_workflow_catalog.engine_config IS 'Engine-specific configuration as JSONB (e.g., ansible playbookPath, inventoryName, jobTemplateName). NULL for tekton/job.';
 
 -- 9. Resource Action Traces Table (partitioned)
 CREATE TABLE resource_action_traces (
@@ -549,7 +559,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- =============================================================================
--- STORED PROCEDURES (003 - use signal_name, signal_severity)
+-- STORED PROCEDURES (use signal_name, signal_severity)
 -- =============================================================================
 CREATE OR REPLACE FUNCTION detect_scale_oscillation(p_namespace VARCHAR(63), p_kind VARCHAR(100), p_name VARCHAR(253), p_window_minutes INTEGER DEFAULT 120)
 RETURNS TABLE (direction_changes INTEGER, first_change TIMESTAMP WITH TIME ZONE, last_change TIMESTAMP WITH TIME ZONE, avg_effectiveness DECIMAL(4,3), duration_minutes DECIMAL(10,2), severity VARCHAR(20), action_sequence JSONB) AS $$
@@ -860,6 +870,194 @@ BEGIN
     END IF;
 END $$;
 
+-- =============================================================================
+-- EFFECTIVENESS ASSESSMENT TABLES (v1.1 feature, squashed in for clean start)
+-- =============================================================================
+
+-- 13. Action Assessments (pending effectiveness assessments)
+CREATE TABLE IF NOT EXISTS action_assessments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    trace_id VARCHAR(255) NOT NULL,
+    action_type VARCHAR(100) NOT NULL,
+    context_hash VARCHAR(64) NOT NULL,
+    alert_name VARCHAR(255) NOT NULL,
+    namespace VARCHAR(255) NOT NULL,
+    resource_name VARCHAR(255) NOT NULL,
+    executed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    scheduled_for TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW() + INTERVAL '5 minutes',
+    status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX idx_action_assessments_status_scheduled ON action_assessments(status, scheduled_for) WHERE status = 'pending';
+CREATE INDEX idx_action_assessments_trace_id ON action_assessments(trace_id);
+CREATE INDEX idx_action_assessments_context ON action_assessments(action_type, context_hash);
+
+-- 14. Effectiveness Results
+CREATE TABLE IF NOT EXISTS effectiveness_results (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    trace_id VARCHAR(255) NOT NULL UNIQUE,
+    action_type VARCHAR(100) NOT NULL,
+    overall_score FLOAT NOT NULL CHECK (overall_score >= 0 AND overall_score <= 1),
+    alert_resolved BOOLEAN NOT NULL,
+    metric_delta JSONB,
+    side_effects INTEGER DEFAULT 0,
+    confidence FLOAT NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+    assessed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    recommended_adjustments JSONB,
+    learning_contribution FLOAT NOT NULL DEFAULT 0.5 CHECK (learning_contribution >= 0 AND learning_contribution <= 1),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_effectiveness_results_action_type ON effectiveness_results(action_type);
+CREATE INDEX idx_effectiveness_results_assessed_at ON effectiveness_results(assessed_at);
+CREATE INDEX idx_effectiveness_results_score ON effectiveness_results(overall_score);
+CREATE INDEX idx_effectiveness_results_learning_query ON effectiveness_results(action_type, assessed_at DESC);
+
+-- 15. Action Confidence Scores (core learning mechanism)
+CREATE TABLE IF NOT EXISTS action_confidence_scores (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    action_type VARCHAR(100) NOT NULL,
+    context_hash VARCHAR(64) NOT NULL,
+    base_confidence FLOAT NOT NULL CHECK (base_confidence >= 0 AND base_confidence <= 1),
+    adjusted_confidence FLOAT NOT NULL CHECK (adjusted_confidence >= 0 AND adjusted_confidence <= 1),
+    adjustment_reason TEXT,
+    effectiveness_samples INTEGER DEFAULT 0,
+    last_updated TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE(action_type, context_hash)
+);
+
+CREATE INDEX idx_action_confidence_context ON action_confidence_scores(action_type, context_hash);
+CREATE INDEX idx_action_confidence_updated ON action_confidence_scores(last_updated);
+
+-- 16. Action Outcomes (for learning algorithms)
+CREATE TABLE IF NOT EXISTS action_outcomes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    trace_id VARCHAR(255) NOT NULL,
+    action_type VARCHAR(100) NOT NULL,
+    context_hash VARCHAR(64) NOT NULL,
+    success BOOLEAN NOT NULL,
+    alert_resolved BOOLEAN NOT NULL,
+    side_effects INTEGER DEFAULT 0,
+    effectiveness_score FLOAT NOT NULL CHECK (effectiveness_score >= 0 AND effectiveness_score <= 1),
+    execution_time BIGINT,
+    metrics_before JSONB,
+    metrics_after JSONB,
+    failure_reason TEXT,
+    executed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    assessed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_action_outcomes_context ON action_outcomes(action_type, context_hash);
+CREATE INDEX idx_action_outcomes_executed_at ON action_outcomes(executed_at);
+CREATE INDEX idx_action_outcomes_success ON action_outcomes(success);
+CREATE INDEX idx_action_outcomes_effectiveness ON action_outcomes(effectiveness_score);
+CREATE INDEX idx_action_outcomes_learning_query ON action_outcomes(action_type, context_hash, executed_at DESC);
+
+-- 17. Action Alternatives (alternative action recommendations)
+CREATE TABLE IF NOT EXISTS action_alternatives (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    failed_action_type VARCHAR(100) NOT NULL,
+    context_hash VARCHAR(64) NOT NULL,
+    alternative_action_type VARCHAR(100) NOT NULL,
+    success_rate FLOAT NOT NULL DEFAULT 0.5 CHECK (success_rate >= 0 AND success_rate <= 1),
+    sample_size INTEGER NOT NULL DEFAULT 0,
+    last_success_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE(failed_action_type, context_hash, alternative_action_type)
+);
+
+CREATE INDEX idx_action_alternatives_failed ON action_alternatives(failed_action_type, context_hash);
+CREATE INDEX idx_action_alternatives_success_rate ON action_alternatives(success_rate DESC);
+
+-- Effectiveness Views
+CREATE OR REPLACE VIEW effectiveness_trends AS
+SELECT
+    action_type,
+    DATE_TRUNC('day', assessed_at) as assessment_date,
+    COUNT(*) as total_assessments,
+    AVG(overall_score) as avg_effectiveness,
+    AVG(confidence) as avg_confidence,
+    COUNT(CASE WHEN alert_resolved THEN 1 END) as alerts_resolved,
+    COUNT(CASE WHEN alert_resolved THEN 1 END)::FLOAT / COUNT(*) as resolution_rate
+FROM effectiveness_results
+GROUP BY action_type, DATE_TRUNC('day', assessed_at)
+ORDER BY action_type, assessment_date;
+
+CREATE OR REPLACE VIEW low_confidence_actions AS
+SELECT
+    acs.action_type,
+    acs.context_hash,
+    acs.adjusted_confidence,
+    acs.adjustment_reason,
+    acs.effectiveness_samples,
+    acs.last_updated,
+    COALESCE(recent_outcomes.recent_success_rate, 0) as recent_success_rate,
+    COALESCE(recent_outcomes.recent_samples, 0) as recent_samples
+FROM action_confidence_scores acs
+LEFT JOIN (
+    SELECT
+        action_type,
+        context_hash,
+        AVG(CASE WHEN success THEN 1.0 ELSE 0.0 END) as recent_success_rate,
+        COUNT(*) as recent_samples
+    FROM action_outcomes
+    WHERE executed_at > NOW() - INTERVAL '7 days'
+    GROUP BY action_type, context_hash
+) recent_outcomes ON acs.action_type = recent_outcomes.action_type
+                 AND acs.context_hash = recent_outcomes.context_hash
+WHERE acs.adjusted_confidence < 0.5
+ORDER BY acs.adjusted_confidence ASC, acs.last_updated DESC;
+
+-- Effectiveness Function and Trigger
+CREATE OR REPLACE FUNCTION create_assessment_for_action_trace()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.execution_status = 'completed' THEN
+        INSERT INTO action_assessments (
+            trace_id, action_type, context_hash, alert_name,
+            namespace, resource_name, executed_at, scheduled_for
+        ) VALUES (
+            NEW.id::VARCHAR,
+            NEW.action_type,
+            encode(sha256(CONCAT(NEW.action_type, ':', COALESCE(NEW.alert_name, 'no-alert'))::bytea), 'hex'),
+            COALESCE(NEW.alert_name, 'no-alert'),
+            'unknown',
+            'unknown',
+            COALESCE(NEW.execution_end_time, NEW.action_timestamp),
+            NOW() + INTERVAL '5 minutes'
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_create_assessment_for_action_trace
+    AFTER UPDATE ON resource_action_traces
+    FOR EACH ROW
+    EXECUTE FUNCTION create_assessment_for_action_trace();
+
+-- Effectiveness Seed Data
+INSERT INTO action_confidence_scores (action_type, context_hash, base_confidence, adjusted_confidence, adjustment_reason)
+VALUES
+    ('restart_pod', 'default', 0.7, 0.7, 'Default confidence for pod restarts'),
+    ('scale_deployment', 'default', 0.75, 0.75, 'Default confidence for deployment scaling'),
+    ('delete_pod', 'default', 0.6, 0.6, 'Default confidence for pod deletion'),
+    ('rollback_deployment', 'default', 0.8, 0.8, 'Default confidence for deployment rollback')
+ON CONFLICT (action_type, context_hash) DO NOTHING;
+
+COMMENT ON TABLE action_assessments IS 'Pending effectiveness assessments for completed actions';
+COMMENT ON TABLE effectiveness_results IS 'Results of AI effectiveness assessments for learning';
+COMMENT ON TABLE action_confidence_scores IS 'Dynamic confidence scores that improve through learning';
+COMMENT ON TABLE action_outcomes IS 'Historical outcomes for training ML algorithms';
+COMMENT ON TABLE action_alternatives IS 'Alternative actions for failed patterns';
+COMMENT ON VIEW effectiveness_trends IS 'Daily trends in action effectiveness for monitoring';
+COMMENT ON VIEW low_confidence_actions IS 'Actions requiring attention due to poor performance';
+
 -- +goose StatementEnd
 
 -- +goose Down
@@ -868,11 +1066,14 @@ END $$;
 -- Drop in reverse dependency order
 
 -- Views
+DROP VIEW IF EXISTS low_confidence_actions;
+DROP VIEW IF EXISTS effectiveness_trends;
 DROP VIEW IF EXISTS incident_summary_view;
 DROP VIEW IF EXISTS oscillation_detection_summary;
 DROP VIEW IF EXISTS action_history_summary;
 
 -- Triggers (before functions)
+DROP TRIGGER IF EXISTS trigger_create_assessment_for_action_trace ON resource_action_traces;
 DROP TRIGGER IF EXISTS trigger_action_type_taxonomy_updated_at ON action_type_taxonomy;
 DROP TRIGGER IF EXISTS trigger_workflow_catalog_updated_at ON remediation_workflow_catalog;
 DROP TRIGGER IF EXISTS update_oscillation_patterns_updated_at ON oscillation_patterns;
@@ -881,7 +1082,14 @@ DROP TRIGGER IF EXISTS update_action_histories_updated_at ON action_histories;
 DROP TRIGGER IF EXISTS enforce_legal_hold ON audit_events;
 DROP TRIGGER IF EXISTS trg_set_audit_event_date ON audit_events;
 
--- Tables (CASCADE for partitioned tables drops partitions)
+-- Effectiveness tables (before resource_action_traces which they reference)
+DROP TABLE IF EXISTS action_alternatives;
+DROP TABLE IF EXISTS action_outcomes;
+DROP TABLE IF EXISTS action_confidence_scores;
+DROP TABLE IF EXISTS effectiveness_results;
+DROP TABLE IF EXISTS action_assessments;
+
+-- Core tables (CASCADE for partitioned tables drops partitions)
 DROP TABLE IF EXISTS notification_audit;
 DROP TABLE IF EXISTS audit_retention_policies;
 DROP TABLE IF EXISTS audit_events CASCADE;
@@ -896,6 +1104,7 @@ DROP TABLE IF EXISTS action_histories;
 DROP TABLE IF EXISTS resource_references;
 
 -- Functions
+DROP FUNCTION IF EXISTS create_assessment_for_action_trace();
 DROP FUNCTION IF EXISTS get_recent_actions(INTEGER, VARCHAR, VARCHAR);
 DROP FUNCTION IF EXISTS analyze_cascade_effects(INTEGER, INTERVAL, INTEGER);
 DROP FUNCTION IF EXISTS analyze_action_oscillation(VARCHAR, VARCHAR, VARCHAR, INTEGER);
