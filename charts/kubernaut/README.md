@@ -8,7 +8,7 @@ Kubernaut is an autonomous Kubernetes remediation platform that detects incident
 
 | Requirement | Version | Notes |
 |---|---|---|
-| Kubernetes | 1.32+ | selectableFields GA required |
+| Kubernetes | 1.31+ | selectableFields (beta in 1.31, GA in 1.32) |
 | Helm | 3.12+ | |
 | StorageClass | dynamic provisioning | For PostgreSQL and Valkey PVCs |
 | cert-manager | 1.12+ (production) | Required when `tls.mode=cert-manager`. Optional for dev (`tls.mode=hook` is default). |
@@ -46,8 +46,8 @@ helm install kubernaut charts/kubernaut/ \
   -n kubernaut-system \
   -f charts/kubernaut/values-demo.yaml \
   -f charts/kubernaut/values-ocp.yaml \
-  --set postgresql.auth.existingSecret=kubernaut-pg-credentials \
-  ...
+  --set holmesgptApi.llm.provider=openai \
+  --set holmesgptApi.llm.model=gpt-4o
 ```
 
 See `values-ocp.yaml` for the full set of OCP-specific overrides.
@@ -55,40 +55,31 @@ See `values-ocp.yaml` for the full set of OCP-specific overrides.
 ## Quick Start
 
 ```bash
-# 1. Install CRDs
-kubectl apply --server-side --force-conflicts -f charts/kubernaut/crds/
-
-# 2. Create namespace and secrets
+# 1. Create namespace and secrets
 kubectl create namespace kubernaut-system
 kubectl create secret generic kubernaut-pg-credentials \
   --from-literal=POSTGRES_USER=slm_user \
   --from-literal=POSTGRES_PASSWORD=<password> \
   --from-literal=POSTGRES_DB=action_history \
   -n kubernaut-system
-kubectl create secret generic kubernaut-ds-credentials \
+kubectl create secret generic kubernaut-ds-db-credentials \
   --from-literal=db-secrets.yaml=$'username: slm_user\npassword: <password>' \
   -n kubernaut-system
 kubectl create secret generic kubernaut-valkey-credentials \
   --from-literal=valkey-secrets.yaml=$'password: <password>' \
   -n kubernaut-system
-kubectl create secret generic kubernaut-llm-credentials \
+kubectl create secret generic llm-credentials \
   --from-literal=OPENAI_API_KEY=sk-... \
   -n kubernaut-system
 
-# 3. Install
+# 2. Install (Helm installs CRDs automatically on first install)
 helm install kubernaut charts/kubernaut/ \
   --namespace kubernaut-system \
-  --set postgresql.auth.existingSecret=kubernaut-pg-credentials \
-  --set datastorage.dbExistingSecret=kubernaut-ds-credentials \
-  --set valkey.existingSecret=kubernaut-valkey-credentials \
+  -f charts/kubernaut/values-demo.yaml \
   --set holmesgptApi.llm.provider=openai \
-  --set holmesgptApi.llm.model=gpt-4o \
-  --set holmesgptApi.llm.credentialsSecretName=kubernaut-llm-credentials \
-  --set gateway.auth.signalSources[0].name=alertmanager \
-  --set gateway.auth.signalSources[0].serviceAccount=alertmanager-kube-prometheus-stack-alertmanager \
-  --set gateway.auth.signalSources[0].namespace=monitoring
+  --set holmesgptApi.llm.model=gpt-4o
 
-# 4. Verify
+# 3. Verify
 kubectl get pods -n kubernaut-system
 ```
 
@@ -152,7 +143,7 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 | `gateway.replicas` | Number of gateway replicas | `1` |
 | `gateway.resources` | CPU/memory requests and limits | See `values.yaml` |
 | `gateway.service.type` | Kubernetes Service type | `ClusterIP` |
-| `gateway.auth.signalSources` | External signal sources requiring RBAC | `[]` |
+| `gateway.auth.signalSources` | External signal sources requiring RBAC | AlertManager for kube-prometheus-stack (see `values.yaml`) |
 
 ### DataStorage
 
@@ -313,12 +304,17 @@ When enabled, NetworkPolicies restrict ingress/egress traffic for gateway, datas
 
 ## Upgrading
 
+Helm does **not** upgrade CRDs on `helm upgrade`. When upgrading to a chart version with CRD schema changes, extract and apply the new CRDs first:
+
 ```bash
-# 1. Update CRDs if schema changed
-kubectl apply --server-side --force-conflicts -f charts/kubernaut/crds/
+# 1. Pull the new chart version and extract CRDs
+helm pull oci://ghcr.io/jordigilh/kubernaut/charts/kubernaut \
+  --version <new-version> --untar
+kubectl apply --server-side --force-conflicts -f kubernaut/crds/
 
 # 2. Upgrade the release
-helm upgrade kubernaut kubernaut/kubernaut \
+helm upgrade kubernaut oci://ghcr.io/jordigilh/kubernaut/charts/kubernaut \
+  --version <new-version> \
   -n kubernaut-system -f my-values.yaml
 ```
 
@@ -332,8 +328,21 @@ helm uninstall kubernaut -n kubernaut-system
 
 ```bash
 helm uninstall kubernaut -n kubernaut-system
+
+# Remove PVCs retained by resource policy
 kubectl delete pvc postgresql-data valkey-data -n kubernaut-system
-kubectl delete -f charts/kubernaut/crds/
+
+# Remove hook-created cluster resources (not tracked by Helm)
+kubectl delete clusterrole kubernaut-hook-role --ignore-not-found
+kubectl delete clusterrolebinding kubernaut-hook-rolebinding --ignore-not-found
+
+# Remove CRDs and all CR instances
+kubectl delete crd actiontypes.kubernaut.ai aianalyses.kubernaut.ai \
+  effectivenessassessments.kubernaut.ai notificationrequests.kubernaut.ai \
+  remediationapprovalrequests.kubernaut.ai remediationrequests.kubernaut.ai \
+  remediationworkflows.kubernaut.ai signalprocessings.kubernaut.ai \
+  workflowexecutions.kubernaut.ai
+
 kubectl delete namespace kubernaut-system
 ```
 
