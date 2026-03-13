@@ -187,7 +187,7 @@ if [ -n "$STAGED_TYPES" ]; then
         make generate-crd-docs >/dev/null 2>&1 || true
         if [ -f "$TMPDIR/crds-before.md" ] && ! diff -q "$TMPDIR/crds-before.md" docs/generated/crds.md >/dev/null 2>&1; then
             echo "❌ VIOLATION: CRD docs are out of date"
-            echo "   Staged api/*_types.go changes require regenerating CRD docs."
+            echo "   Staged api/*_types.go or pkg/shared/types/ changes require regenerating CRD docs."
             echo "   Run: make generate-crd-docs"
             echo "   Then stage: git add docs/generated/crds.md"
             echo ""
