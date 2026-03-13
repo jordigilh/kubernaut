@@ -43,6 +43,7 @@ data:
       exponentialBackoffMaxExponent: 4
       scopeBackoffBase: "5s"
       scopeBackoffMax: "5m"
+      noActionRequiredDelayHours: 24
       ineffectiveChainThreshold: 3
       recurrenceCountThreshold: 5
       ineffectiveTimeWindow: "4h"

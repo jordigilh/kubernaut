@@ -258,6 +258,7 @@ func main() {
 		ExponentialBackoffMaxExponent: cfg.Routing.ExponentialBackoffMaxExponent,
 		ScopeBackoffBase:            int64(cfg.Routing.ScopeBackoffBase / time.Second),
 		ScopeBackoffMax:             int64(cfg.Routing.ScopeBackoffMax / time.Second),
+		NoActionRequiredDelayHours:  cfg.Routing.NoActionRequiredDelayHours, // Issue #353
 		IneffectiveChainThreshold:   cfg.Routing.IneffectiveChainThreshold,
 		RecurrenceCountThreshold:    cfg.Routing.RecurrenceCountThreshold,
 		IneffectiveTimeWindow:       cfg.Routing.IneffectiveTimeWindow,
