@@ -10,7 +10,7 @@ Kubernaut is an autonomous Kubernetes remediation platform that detects incident
 |---|---|---|
 | Kubernetes | 1.32+ | selectableFields GA required |
 | Helm | 3.12+ | |
-| StorageClass | dynamic provisioning | For PostgreSQL and Redis PVCs |
+| StorageClass | dynamic provisioning | For PostgreSQL and Valkey PVCs |
 | cert-manager | 1.12+ (production) | Required when `tls.mode=cert-manager`. Optional for dev (`tls.mode=hook` is default). |
 
 **Workflow execution engine** (at least one):
@@ -22,6 +22,35 @@ Kubernaut is an autonomous Kubernetes remediation platform that detects incident
 **External monitoring** (recommended): [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) for alert-based signal ingestion and metrics enrichment.
 
 If Prometheus and AlertManager are not deployed, set `effectivenessmonitor.external.prometheusEnabled=false` and `effectivenessmonitor.external.alertManagerEnabled=false`.
+
+### OpenShift (OCP) Prerequisites
+
+Kubernaut requires PostgreSQL 16+ and uses Valkey 8 for its dead-letter queue. OCP clusters may not include these ImageStream tags by default. Import them from the Red Hat container catalog before installing the chart:
+
+```bash
+oc import-image postgresql:16-el9 \
+  --from=registry.redhat.io/rhel9/postgresql-16 \
+  -n openshift --confirm
+
+oc import-image valkey:8-el9 \
+  --from=registry.redhat.io/rhel9/valkey-8 \
+  -n openshift --confirm
+```
+
+Both commands are idempotent — safe to run even if the tags already exist (e.g., on OCP versions that ship these versions natively).
+
+The OCP overlay (`values-ocp.yaml`) switches PostgreSQL and Valkey to Red Hat catalog images, replaces `bitnami/kubectl` with `ose-cli` for hook jobs, and disables the event exporter (no Red Hat-supported equivalent; users should provide their own Kubernetes event forwarding if needed).
+
+```bash
+helm install kubernaut charts/kubernaut/ \
+  -n kubernaut-system \
+  -f charts/kubernaut/values-demo.yaml \
+  -f charts/kubernaut/values-ocp.yaml \
+  --set postgresql.auth.existingSecret=kubernaut-pg-credentials \
+  ...
+```
+
+See `values-ocp.yaml` for the full set of OCP-specific overrides.
 
 ## Quick Start
 
@@ -39,8 +68,8 @@ kubectl create secret generic kubernaut-pg-credentials \
 kubectl create secret generic kubernaut-ds-credentials \
   --from-literal=db-secrets.yaml=$'username: slm_user\npassword: <password>' \
   -n kubernaut-system
-kubectl create secret generic kubernaut-redis-credentials \
-  --from-literal=redis-secrets.yaml=$'password: <password>' \
+kubectl create secret generic kubernaut-valkey-credentials \
+  --from-literal=valkey-secrets.yaml=$'password: <password>' \
   -n kubernaut-system
 kubectl create secret generic kubernaut-llm-credentials \
   --from-literal=OPENAI_API_KEY=sk-... \
@@ -51,7 +80,7 @@ helm install kubernaut charts/kubernaut/ \
   --namespace kubernaut-system \
   --set postgresql.auth.existingSecret=kubernaut-pg-credentials \
   --set datastorage.dbExistingSecret=kubernaut-ds-credentials \
-  --set redis.existingSecret=kubernaut-redis-credentials \
+  --set valkey.existingSecret=kubernaut-valkey-credentials \
   --set holmesgptApi.llm.provider=openai \
   --set holmesgptApi.llm.model=gpt-4o \
   --set holmesgptApi.llm.credentialsSecretName=kubernaut-llm-credentials \
@@ -164,7 +193,7 @@ All controllers (`aianalysis`, `signalprocessing`, `remediationorchestrator`, `w
 |---|---|---|
 | `<controller>.replicas` | Number of replicas | `1` |
 | `<controller>.resources` | CPU/memory requests and limits | See `values.yaml` |
-| `<controller>.podSecurityContext` | Pod-level security context override | `runAsNonRoot: true` + `seccompProfile: RuntimeDefault` (Tier 1); `seccompProfile: RuntimeDefault` only (Tier 2: postgresql, redis) |
+| `<controller>.podSecurityContext` | Pod-level security context override | `runAsNonRoot: true` + `seccompProfile: RuntimeDefault` (Tier 1); `seccompProfile: RuntimeDefault` only (Tier 2: postgresql, valkey) |
 | `<controller>.containerSecurityContext` | Container-level security context override | `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]` |
 | `<controller>.nodeSelector` | Per-component node selector (overrides global) | `{}` |
 | `<controller>.tolerations` | Per-component tolerations (overrides global) | `[]` |
@@ -191,8 +220,11 @@ All controllers (`aianalysis`, `signalprocessing`, `remediationorchestrator`, `w
 
 ### Event Exporter
 
+Optional component that forwards Kubernetes Warning events to the Gateway. Disable when K8s event ingestion is not needed or when no supported image is available (e.g., on OCP where there is no Red Hat equivalent).
+
 | Parameter | Description | Default |
 |---|---|---|
+| `eventExporter.enabled` | Deploy the in-chart event exporter | `true` |
 | `eventExporter.replicas` | Number of replicas | `1` |
 | `eventExporter.image` | Container image | `ghcr.io/resmoio/kubernetes-event-exporter:v1.7` |
 | `eventExporter.resources` | CPU/memory requests and limits | See `values.yaml` |
@@ -227,28 +259,30 @@ Set `postgresql.enabled=false` and configure these values to use a pre-existing 
 | `externalPostgresql.auth.password` | Database password | `""` |
 | `externalPostgresql.auth.database` | Database name | `action_history` |
 
-### Redis
+### Valkey
+
+[Valkey](https://valkey.io/) is a BSD-licensed, Redis-compatible in-memory data store used for the DataStorage dead-letter queue.
 
 | Parameter | Description | Default |
 |---|---|---|
-| `redis.enabled` | Deploy in-chart Redis | `true` |
-| `redis.replicas` | Number of replicas | `1` |
-| `redis.image` | Redis container image | `quay.io/jordigilh/redis:7-alpine` |
-| `redis.existingSecret` | Pre-created Secret name | `""` |
-| `redis.password` | Redis password | `""` |
-| `redis.storage.size` | PVC size | `512Mi` |
-| `redis.storage.storageClassName` | StorageClass (empty = cluster default) | `""` |
+| `valkey.enabled` | Deploy in-chart Valkey | `true` |
+| `valkey.replicas` | Number of replicas | `1` |
+| `valkey.image` | Valkey container image | `valkey/valkey:8-alpine` |
+| `valkey.existingSecret` | Pre-created Secret name | `""` |
+| `valkey.password` | Valkey password | `""` |
+| `valkey.storage.size` | PVC size | `512Mi` |
+| `valkey.storage.storageClassName` | StorageClass (empty = cluster default) | `""` |
 
-### External Redis (BYO)
+### External Valkey/Redis (BYO)
 
-Set `redis.enabled=false` and configure these values to use a pre-existing Redis instance:
+Set `valkey.enabled=false` and configure these values to use a pre-existing Valkey or Redis instance:
 
 | Parameter | Description | Default |
 |---|---|---|
-| `externalRedis.host` | External Redis hostname (required) | `""` |
-| `externalRedis.port` | External Redis port | `6379` |
-| `externalRedis.existingSecret` | Pre-created Secret name | `""` |
-| `externalRedis.password` | Redis password | `""` |
+| `externalValkey.host` | External Valkey hostname (required) | `""` |
+| `externalValkey.port` | External Valkey port | `6379` |
+| `externalValkey.existingSecret` | Pre-created Secret name | `""` |
+| `externalValkey.password` | Valkey password | `""` |
 
 ### TLS
 
@@ -298,7 +332,7 @@ helm uninstall kubernaut -n kubernaut-system
 
 ```bash
 helm uninstall kubernaut -n kubernaut-system
-kubectl delete pvc postgresql-data redis-data -n kubernaut-system
+kubectl delete pvc postgresql-data valkey-data -n kubernaut-system
 kubectl delete -f charts/kubernaut/crds/
 kubectl delete namespace kubernaut-system
 ```

@@ -1,15 +1,52 @@
 # OCP overlay for OpenShift deployments.
 # Usage: helm install kubernaut charts/kubernaut -f charts/kubernaut/values-demo.yaml -f charts/kubernaut/values-ocp.yaml
 #
-# Layer this on top of values-demo.yaml (or your production values) to switch
-# PostgreSQL to the OCP ImageStream variant and enable cert-manager TLS.
+# Layer this on top of values-demo.yaml (or your production values) to:
+#   - Switch PostgreSQL and Valkey to Red Hat catalog images
+#   - Replace bitnami/kubectl with ose-cli for hook jobs
+#   - Disable the event exporter (no Red Hat-supported equivalent)
+#   - Override signal sources and Prometheus/AlertManager URLs for OCP monitoring
+#   - Enable cert-manager TLS
 #
-# PREREQUISITE: The postgresql:16-el9 ImageStream must exist in the openshift
-# namespace (default on OCP 4.14+).
+# PREREQUISITES: PostgreSQL 16 and Valkey 8 ImageStream tags in the openshift
+# namespace. OCP may not ship these by default. Import from the Red Hat
+# container catalog before installing the chart:
+#
+#   oc import-image postgresql:16-el9 \
+#     --from=registry.redhat.io/rhel9/postgresql-16 \
+#     -n openshift --confirm
+#
+#   oc import-image valkey:8-el9 \
+#     --from=registry.redhat.io/rhel9/valkey-8 \
+#     -n openshift --confirm
+#
+# Both commands are idempotent — safe to run even if the tags already exist.
 
 postgresql:
   variant: ocp
   image: image-registry.openshift-image-registry.svc:5000/openshift/postgresql:16-el9
+
+valkey:
+  image: image-registry.openshift-image-registry.svc:5000/openshift/valkey:8-el9
+
+eventExporter:
+  enabled: false
+
+hooks:
+  tlsCerts:
+    image: registry.redhat.io/openshift4/ose-cli-rhel9:latest
+
+gateway:
+  auth:
+    signalSources:
+      - name: alertmanager
+        serviceAccount: alertmanager-main
+        namespace: openshift-monitoring
+
+effectivenessmonitor:
+  external:
+    prometheusUrl: "http://prometheus-k8s.openshift-monitoring.svc:9091"
+    alertManagerUrl: "http://alertmanager-main.openshift-monitoring.svc:9094"
 
 tls:
   mode: cert-manager
