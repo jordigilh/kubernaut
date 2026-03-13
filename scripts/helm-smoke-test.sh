@@ -114,6 +114,23 @@ assert_exit_code() {
   fi
 }
 
+dump_pod_diagnostics() {
+  local ns="$1"
+  echo "# ── Must-gather: pod diagnostics (namespace: ${ns}) ──"
+  echo "# --- kubectl get pods -o wide ---"
+  kubectl get pods -n "$ns" -o wide 2>&1 || true
+  echo ""
+  echo "# --- kubectl get events --sort-by=.lastTimestamp ---"
+  kubectl get events -n "$ns" --sort-by='.lastTimestamp' 2>&1 | tail -40 || true
+  echo ""
+  local pod
+  for pod in $(kubectl get pods -n "$ns" --no-headers 2>/dev/null | grep -v "Running" | awk '{print $1}'); do
+    echo "# --- kubectl describe pod/${pod} ---"
+    kubectl describe pod/"$pod" -n "$ns" 2>&1 | tail -30 || true
+    echo ""
+  done
+}
+
 assert_pods_ready() {
   local expected_count="$1"
   local desc="${2:-ST-CHART-VERIFY-001: ${expected_count} pods reach 1/1 Running}"
@@ -123,6 +140,7 @@ assert_pods_ready() {
     local status
     status=$(kubectl get pods -n "$ns" --no-headers 2>&1)
     tap_not_ok "$desc" "Timeout waiting for pods. Current state: ${status}"
+    dump_pod_diagnostics "$ns"
     return 1
   fi
 
@@ -135,6 +153,7 @@ assert_pods_ready() {
     local status
     status=$(kubectl get pods -n "$ns" --no-headers 2>&1)
     tap_not_ok "$desc" "Expected ${expected_count} Running pods, got ${actual}. State: ${status}"
+    dump_pod_diagnostics "$ns"
     return 1
   fi
 }
