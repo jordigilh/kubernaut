@@ -27,6 +27,9 @@ spec:
         - name: wait-for-postgresql
           image: {{ include "kubernaut.postgresql.clientImage" . }}
           securityContext:
+            {{- if eq (include "kubernaut.postgresql.variant" .) "ocp" }}
+            runAsNonRoot: true
+            {{- end }}
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
@@ -52,6 +55,9 @@ spec:
         - name: migrate
           image: {{ include "kubernaut.postgresql.clientImage" . }}
           securityContext:
+            {{- if eq (include "kubernaut.postgresql.variant" .) "ocp" }}
+            runAsNonRoot: true
+            {{- end }}
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
             capabilities:

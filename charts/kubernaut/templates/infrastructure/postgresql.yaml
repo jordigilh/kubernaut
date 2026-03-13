@@ -47,6 +47,9 @@ spec:
     spec:
       serviceAccountName: postgresql
       {{- $pscDefaults := dict "seccompProfile" (dict "type" "RuntimeDefault") }}
+      {{- if eq (include "kubernaut.postgresql.variant" .) "ocp" }}
+      {{- $_ := set $pscDefaults "runAsNonRoot" true }}
+      {{- end }}
       {{- $pscOverride := .Values.postgresql.podSecurityContext | default dict }}
       securityContext:
         {{- toYaml (merge $pscOverride $pscDefaults) | nindent 8 }}

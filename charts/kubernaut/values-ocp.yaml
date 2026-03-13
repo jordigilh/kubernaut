@@ -1,0 +1,20 @@
+# OCP overlay for OpenShift deployments.
+# Usage: helm install kubernaut charts/kubernaut -f charts/kubernaut/values-demo.yaml -f charts/kubernaut/values-ocp.yaml
+#
+# Layer this on top of values-demo.yaml (or your production values) to switch
+# PostgreSQL to the OCP ImageStream variant and enable cert-manager TLS.
+#
+# PREREQUISITE: The postgresql:16-el9 ImageStream must exist in the openshift
+# namespace (default on OCP 4.14+).
+
+postgresql:
+  variant: ocp
+  image: image-registry.openshift-image-registry.svc:5000/openshift/postgresql:16-el9
+
+tls:
+  mode: cert-manager
+  certManager:
+    issuerRef:
+      name: ""  # set to your ClusterIssuer name (e.g., "letsencrypt-prod")
+      kind: ClusterIssuer
+      group: cert-manager.io
