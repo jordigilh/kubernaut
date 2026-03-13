@@ -26,6 +26,7 @@ import (
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	admissionv1 "k8s.io/api/admission/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -286,7 +287,7 @@ func (h *RemediationWorkflowHandler) refreshActionTypeWorkflowCount(actionType, 
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	count, err := h.atCounter.GetActiveWorkflowCount(ctx, actionType)
@@ -295,37 +296,51 @@ func (h *RemediationWorkflowHandler) refreshActionTypeWorkflowCount(actionType, 
 		return
 	}
 
-	// Find the ActionType CRD by listing all in the namespace and filtering by spec.name.
-	// Client-side filtering avoids requiring a cache field index, which may race with
-	// cache sync in webhook admission contexts.
 	atList := &atv1alpha1.ActionTypeList{}
-	if err := h.k8sClient.List(ctx, atList,
-		client.InNamespace(namespace),
-	); err != nil {
+	if err := h.k8sClient.List(ctx, atList, client.InNamespace(namespace)); err != nil {
 		logger.Error(err, "Failed to list ActionType CRDs")
 		return
 	}
 
-	found := false
 	for i := range atList.Items {
 		at := &atList.Items[i]
 		if at.Spec.Name != actionType {
 			continue
 		}
-		found = true
-		at.Status.ActiveWorkflowCount = count
-		if err := h.k8sClient.Status().Update(ctx, at); err != nil {
-			logger.Error(err, "Failed to patch ActionType CRD status.activeWorkflowCount",
+		if err := h.updateATWorkflowCountWithRetry(ctx, at.Name, at.Namespace, count); err != nil {
+			logger.Error(err, "Failed to update ActionType activeWorkflowCount after retries",
 				"crd", at.Name, "count", count)
 		} else {
 			logger.Info("ActionType CRD status.activeWorkflowCount updated",
 				"crd", at.Name, "count", count)
 		}
+		return
 	}
 
-	if !found {
-		logger.V(1).Info("No ActionType CRD found — cross-update skipped (may not be created yet)")
+	logger.V(1).Info("No ActionType CRD found — cross-update skipped (may not be created yet)")
+}
+
+const maxStatusUpdateRetries = 5
+
+// updateATWorkflowCountWithRetry performs a fresh Get + Status().Update in a
+// retry loop so that resource-version conflicts don't leave the count stale.
+func (h *RemediationWorkflowHandler) updateATWorkflowCountWithRetry(ctx context.Context, name, namespace string, count int) error {
+	key := client.ObjectKey{Namespace: namespace, Name: name}
+	for attempt := 0; attempt < maxStatusUpdateRetries; attempt++ {
+		at := &atv1alpha1.ActionType{}
+		if err := h.k8sClient.Get(ctx, key, at); err != nil {
+			return fmt.Errorf("get ActionType: %w", err)
+		}
+		at.Status.ActiveWorkflowCount = count
+		err := h.k8sClient.Status().Update(ctx, at)
+		if err == nil {
+			return nil
+		}
+		if !apierrors.IsConflict(err) {
+			return fmt.Errorf("status update: %w", err)
+		}
 	}
+	return fmt.Errorf("conflict after %d retries", maxStatusUpdateRetries)
 }
 
 // marshalCleanCRDContent produces a JSON representation of the CRD that only
