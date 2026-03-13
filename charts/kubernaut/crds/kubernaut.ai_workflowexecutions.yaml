@@ -93,10 +93,11 @@ spec:
                 default: tekton
                 description: |-
                   ExecutionEngine specifies the backend engine for workflow execution.
-                  "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job.
+                  "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job; "ansible" runs an AWX job.
                 enum:
                 - tekton
                 - job
+                - ansible
                 type: string
               parameters:
                 additionalProperties:

@@ -883,11 +883,13 @@ spec:
                     description: |-
                       ExecutionEngine specifies the backend engine for workflow execution.
                       Populated from HolmesGPT-API workflow recommendation.
-                      "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job.
+                      "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job;
+                      "ansible" dispatches an Ansible playbook via AAP/AWX.
                       When empty, defaults to "tekton" for backwards compatibility.
                     enum:
                     - tekton
                     - job
+                    - ansible
                     type: string
                   parameters:
                     additionalProperties:
