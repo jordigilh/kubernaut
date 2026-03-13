@@ -159,7 +159,7 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 | Parameter | Description | Default |
 |---|---|---|
 | `holmesgptApi.replicas` | Number of replicas | `1` |
-| `holmesgptApi.llm.provider` | LLM provider (e.g., `openai`, `azure`, `vertexai`) | `""` |
+| `holmesgptApi.llm.provider` | LLM provider (e.g., `openai`, `azure`, `vertex_ai`) | `""` |
 | `holmesgptApi.llm.model` | LLM model name | `""` |
 | `holmesgptApi.llm.endpoint` | Custom LLM endpoint URL | `""` |
 | `holmesgptApi.llm.maxRetries` | Maximum LLM call retries | `3` |
