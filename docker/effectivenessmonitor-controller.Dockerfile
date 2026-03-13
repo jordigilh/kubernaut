@@ -74,7 +74,7 @@ RUN microdnf update -y && \
 RUN useradd -r -u 65532 -g root nonroot
 COPY --from=builder /opt/app-root/src/effectivenessmonitor-controller /usr/local/bin/effectivenessmonitor-controller
 RUN chmod +x /usr/local/bin/effectivenessmonitor-controller
-USER nonroot
+USER 65532
 EXPOSE 9090 8081
 ENTRYPOINT ["/usr/local/bin/effectivenessmonitor-controller"]
 

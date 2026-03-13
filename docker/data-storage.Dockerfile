@@ -120,7 +120,7 @@ RUN useradd -r -u 1001 -g root data-storage-user
 COPY --from=builder /opt/app-root/src/data-storage /usr/local/bin/data-storage
 COPY --from=builder /opt/app-root/src/api/openapi/data-storage-v1.yaml /usr/local/share/kubernaut/api/openapi/data-storage-v1.yaml
 RUN chmod +x /usr/local/bin/data-storage
-USER data-storage-user
+USER 1001
 EXPOSE 8080 9090
 ENTRYPOINT ["/usr/local/bin/data-storage"]
 CMD []

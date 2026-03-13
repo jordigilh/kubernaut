@@ -88,7 +88,7 @@ RUN microdnf update -y && \
 RUN useradd -r -u 1001 -g root notification-controller-user
 COPY --from=builder /opt/app-root/src/manager /usr/local/bin/manager
 RUN chmod +x /usr/local/bin/manager
-USER notification-controller-user
+USER 1001
 EXPOSE 8080 8081
 ENTRYPOINT ["/usr/local/bin/manager"]
 CMD []

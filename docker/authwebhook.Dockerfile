@@ -108,7 +108,7 @@ RUN microdnf update -y && \
 RUN useradd -r -u 1001 -g root webhooks-user
 COPY --from=builder /opt/app-root/src/authwebhook /usr/local/bin/authwebhook
 RUN chmod +x /usr/local/bin/authwebhook
-USER webhooks-user
+USER 1001
 EXPOSE 9443
 ENTRYPOINT ["/usr/local/bin/authwebhook"]
 CMD []

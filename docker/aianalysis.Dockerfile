@@ -92,7 +92,7 @@ RUN microdnf update -y && \
 RUN useradd -r -u 1001 -g root aianalysis-user
 COPY --from=builder /opt/app-root/src/aianalysis-controller /usr/local/bin/aianalysis-controller
 RUN chmod +x /usr/local/bin/aianalysis-controller
-USER aianalysis-user
+USER 1001
 EXPOSE 9090 8081
 ENTRYPOINT ["/usr/local/bin/aianalysis-controller"]
 

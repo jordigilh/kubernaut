@@ -71,7 +71,7 @@ RUN microdnf update -y && \
 RUN useradd -r -u 65532 -g root nonroot
 COPY --from=builder /opt/app-root/src/signalprocessing-controller /usr/local/bin/signalprocessing-controller
 RUN chmod +x /usr/local/bin/signalprocessing-controller
-USER nonroot
+USER 65532
 EXPOSE 9090 8081
 ENTRYPOINT ["/usr/local/bin/signalprocessing-controller"]
 

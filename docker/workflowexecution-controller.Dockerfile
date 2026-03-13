@@ -89,7 +89,7 @@ RUN microdnf update -y && \
 RUN useradd -r -u 1001 -g root workflowexecution-user
 COPY --from=builder /opt/app-root/src/workflowexecution /usr/local/bin/workflowexecution
 RUN chmod +x /usr/local/bin/workflowexecution
-USER workflowexecution-user
+USER 1001
 EXPOSE 8080 9090 8081
 ENTRYPOINT ["/usr/local/bin/workflowexecution"]
 

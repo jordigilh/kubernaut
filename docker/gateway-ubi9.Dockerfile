@@ -93,7 +93,7 @@ RUN microdnf update -y && \
 RUN useradd -r -u 1001 -g root gateway-user
 COPY --from=builder /opt/app-root/src/gateway /usr/local/bin/gateway
 RUN chmod +x /usr/local/bin/gateway
-USER gateway-user
+USER 1001
 EXPOSE 8080 9090 8081
 ENTRYPOINT ["/usr/local/bin/gateway"]
 
