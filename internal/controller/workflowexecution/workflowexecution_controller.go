@@ -52,6 +52,7 @@ import (
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -476,6 +477,21 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	if depErr != nil {
 		markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", depErr.Error())
 		return ctrl.Result{}, markErr
+	}
+
+	// DD-WORKFLOW-017: Resolve engineConfig from DS catalog when not present on the WFE spec.
+	// Execution details like engineConfig come from the workflow catalog entry, not the HAPI pipeline.
+	if wfe.Spec.WorkflowRef.EngineConfig == nil && wfe.Spec.WorkflowRef.WorkflowID != "" && r.WorkflowQuerier != nil {
+		ecRaw, ecErr := r.WorkflowQuerier.GetWorkflowEngineConfig(ctx, wfe.Spec.WorkflowRef.WorkflowID)
+		if ecErr != nil {
+			logger.Error(ecErr, "Failed to resolve engineConfig from DS (non-fatal)",
+				"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+		} else if ecRaw != nil {
+			logger.Info("Resolved engineConfig from DS catalog",
+				"workflowID", wfe.Spec.WorkflowRef.WorkflowID,
+				"engine", wfe.Spec.ExecutionEngine)
+			wfe.Spec.WorkflowRef.EngineConfig = &apiextensionsv1.JSON{Raw: ecRaw}
+		}
 	}
 
 	createdName, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
