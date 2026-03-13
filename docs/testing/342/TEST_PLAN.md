@@ -259,7 +259,7 @@ With additional platform-specific flags:
 **Given**: CRDs applied, namespace exists, secrets provisioned, chart published to OCI registry
 **When**: User runs:
 ```bash
-helm install kubernaut oci://ghcr.io/jordigilh/kubernaut/charts/kubernaut \
+helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --version 1.0.0 \
   --namespace kubernaut-system \
   -f my-values.yaml
