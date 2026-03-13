@@ -485,8 +485,17 @@ func cancelAWXJob(jobID int) {
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := httpClient.Do(req)
-	Expect(err).ToNot(HaveOccurred(), "AWX cancel API call should succeed")
+	var resp *http.Response
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		resp, lastErr = httpClient.Do(req)
+		if lastErr == nil {
+			break
+		}
+		GinkgoWriter.Printf("AWX cancel attempt %d failed: %v\n", attempt+1, lastErr)
+		time.Sleep(1 * time.Second)
+	}
+	Expect(lastErr).ToNot(HaveOccurred(), "AWX cancel API call should succeed after retries")
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 
