@@ -743,7 +743,56 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 		}
 	}
 
-	// 8. Create API token for WE controller
+	// 8. Create credential-merge test template (#365)
+	// This template has a pre-configured Machine credential to reproduce the bug where
+	// LaunchJobTemplateWithCreds drops template credentials when sending ephemeral ones.
+	_, _ = fmt.Fprintf(writer, "   Creating credential-merge test infrastructure (#365)...\n")
+	machineCredBody := map[string]interface{}{
+		"name":            "e2e-machine-cred-365",
+		"description":     "E2E Machine credential for #365 credential merge test",
+		"credential_type": 1, // Machine credential type (built-in, always ID 1)
+		"organization":    cfg.OrganizationID,
+		"inputs": map[string]interface{}{
+			"username": "e2e-test-user",
+		},
+	}
+	machineCredResult, machineCredStatus, machineCredErr := awxAPIRequest("POST", awxBaseURL+"/api/v2/credentials/", machineCredBody, "")
+	if machineCredErr != nil || machineCredStatus != http.StatusCreated {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to create machine credential for #365 (non-fatal): HTTP %d, err: %v\n", machineCredStatus, machineCredErr)
+	} else {
+		machineCredID := int(machineCredResult["id"].(float64))
+		_, _ = fmt.Fprintf(writer, "   ✅ Machine Credential ID: %d\n", machineCredID)
+
+		credMergeBody := map[string]interface{}{
+			"name":                     "kubernaut-test-dep-secret-with-creds",
+			"description":              "E2E #365: template with pre-configured credential for merge testing",
+			"project":                  cfg.ProjectID,
+			"playbook":                 "playbooks/test-dep-secret.yml",
+			"inventory":                cfg.InventoryID,
+			"ask_variables_on_launch":  true,
+			"ask_credential_on_launch": true,
+		}
+		credMergeResult, credMergeStatus, credMergeErr := awxAPIRequest("POST", awxBaseURL+"/api/v2/job_templates/", credMergeBody, "")
+		if credMergeErr != nil || credMergeStatus != http.StatusCreated {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to create cred-merge template (non-fatal): HTTP %d, err: %v\n", credMergeStatus, credMergeErr)
+		} else {
+			credMergeTemplateID := int(credMergeResult["id"].(float64))
+			_, _ = fmt.Fprintf(writer, "   ✅ Cred-Merge Template ID: %d\n", credMergeTemplateID)
+
+			// Attach the machine credential to the template (POST to credentials sub-resource)
+			attachBody := map[string]interface{}{"id": machineCredID}
+			_, attachStatus, attachErr := awxAPIRequest("POST",
+				fmt.Sprintf("%s/api/v2/job_templates/%d/credentials/", awxBaseURL, credMergeTemplateID),
+				attachBody, "")
+			if attachErr != nil || (attachStatus != http.StatusNoContent && attachStatus != http.StatusOK && attachStatus != http.StatusCreated) {
+				_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to attach credential to template (non-fatal): HTTP %d, err: %v\n", attachStatus, attachErr)
+			} else {
+				_, _ = fmt.Fprintf(writer, "   ✅ Attached Machine Credential %d to Template %d\n", machineCredID, credMergeTemplateID)
+			}
+		}
+	}
+
+	// 9. Create API token for WE controller
 	_, _ = fmt.Fprintf(writer, "   Creating API token...\n")
 	tokenBody := map[string]interface{}{
 		"description": "Kubernaut WE controller E2E token",
