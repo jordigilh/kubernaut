@@ -322,6 +322,26 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				}
 				return ai.Status.Reason
 			}, timeout, interval).Should(Equal("WorkflowNotNeeded"))
+
+			By("E2E-RO-353-001: Verifying NextAllowedExecution suppression window (#353)")
+			Eventually(func() bool {
+				updatedRR := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR); err != nil {
+					return false
+				}
+				return updatedRR.Status.OverallPhase == remediationv1.PhaseCompleted &&
+					updatedRR.Status.NextAllowedExecution != nil
+			}, timeout, interval).Should(BeTrue(),
+				"Behavior: RR must reach Completed with NextAllowedExecution set through Helm->config->reconciler->handler->K8s chain (#353)")
+
+			updatedRR := &remediationv1.RemediationRequest{}
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR)).To(Succeed())
+			Expect(updatedRR.Status.NextAllowedExecution.Time.After(time.Now())).To(BeTrue(),
+				"Correctness: NextAllowedExecution must be strictly in the future so Gateway suppresses duplicates")
+			Expect(updatedRR.Status.NextAllowedExecution.Time).To(BeTemporally("~", time.Now().Add(24*time.Hour), 5*time.Minute),
+				"Accuracy: suppression window must match Helm default (24h)")
+			Expect(updatedRR.Status.Outcome).To(Equal("NoActionRequired"),
+				"Correctness: Outcome must be NoActionRequired")
 		})
 	})
 

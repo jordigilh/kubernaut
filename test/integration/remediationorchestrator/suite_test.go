@@ -410,13 +410,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		k8sManager.GetAPIReader(), // Cache-bypassed reader for fresh routing decisions
 		"",                        // No namespace filter - all namespaces
 		routing.Config{
-			ConsecutiveFailureThreshold: 3,
-			ConsecutiveFailureCooldown:  3600, // 1 hour
-			RecentlyRemediatedCooldown:  300,  // 5 minutes
-			ExponentialBackoffBase:      60,   // 1 minute
-			ExponentialBackoffMax:       3600, // 1 hour
-			ScopeBackoffBase:            5,    // 5 seconds (ADR-053)
-			ScopeBackoffMax:             300,  // 5 minutes (ADR-053)
+			ConsecutiveFailureThreshold:  3,
+			ConsecutiveFailureCooldown:   3600, // 1 hour
+			RecentlyRemediatedCooldown:   300,  // 5 minutes
+			ExponentialBackoffBase:       60,   // 1 minute
+			ExponentialBackoffMax:        3600, // 1 hour
+			ScopeBackoffBase:             5,    // 5 seconds (ADR-053)
+			ScopeBackoffMax:              300,  // 5 minutes (ADR-053)
+			NoActionRequiredDelayHours:   24,   // Issue #353: 24h suppression window
 		},
 		scopeMgr, // BR-SCOPE-010: Mandatory scope checker
 	)
