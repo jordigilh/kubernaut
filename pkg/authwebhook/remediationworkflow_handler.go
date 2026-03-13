@@ -324,6 +324,7 @@ const maxStatusUpdateRetries = 5
 
 // updateATWorkflowCountWithRetry performs a fresh Get + Status().Update in a
 // retry loop so that resource-version conflicts don't leave the count stale.
+// Fixes #367: stale activeWorkflowCount after conflict in fire-and-forget goroutine.
 func (h *RemediationWorkflowHandler) updateATWorkflowCountWithRetry(ctx context.Context, name, namespace string, count int) error {
 	key := client.ObjectKey{Namespace: namespace, Name: name}
 	for attempt := 0; attempt < maxStatusUpdateRetries; attempt++ {
