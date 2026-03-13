@@ -1,3 +1,4 @@
+{{- if .Values.eventExporter.enabled }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -118,3 +119,4 @@ spec:
         - name: config
           configMap:
             name: event-exporter-config
+{{- end }}

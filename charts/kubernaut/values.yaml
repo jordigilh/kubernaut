@@ -41,12 +41,10 @@ gateway:
     # External signal sources that need RBAC to call the Gateway.
     # Each entry creates a ClusterRoleBinding granting services/gateway-service/create.
     # Event Exporter is bound automatically (deployed by this chart).
-    signalSources: []
-    # Example for AlertManager deployed by kube-prometheus-stack:
-    # signalSources:
-    #   - name: alertmanager
-    #     serviceAccount: alertmanager-kube-prometheus-stack-alertmanager
-    #     namespace: monitoring
+    signalSources:
+      - name: alertmanager
+        serviceAccount: alertmanager-kube-prometheus-stack-alertmanager
+        namespace: monitoring
 
 # -- DataStorage service (audit trail, workflow catalog)
 datastorage:
@@ -197,10 +195,13 @@ authwebhook:
       cpu: 200m
 
 # -- Event Exporter (forwards K8s Warning events to Gateway)
+# Optional component — disable when K8s event ingestion is not needed or when
+# deploying on OCP where there is no Red Hat-supported equivalent image.
 eventExporter:
+  enabled: true
   replicas: 1
   image: ghcr.io/resmoio/kubernetes-event-exporter:v1.7
-  # Pod/container security context overrides (same Tier 2 rationale as postgresql/redis).
+  # Pod/container security context overrides (same Tier 2 rationale as postgresql/valkey).
   # No hardcoded runAsUser/fsGroup for OCP/Kind compatibility.
   # On vanilla K8s with PodSecurity "restricted", add runAsUser and runAsNonRoot here.
   podSecurityContext: {}
@@ -263,17 +264,18 @@ externalPostgresql:
     password: ""
     database: action_history
 
-# -- Redis (DataStorage DLQ)
+# -- Valkey (DataStorage DLQ)
+# Valkey is a BSD-licensed Redis-compatible in-memory data store.
 # Credential flow (#204):
-#   Option A (prod): Pre-create a Secret and set redis.existingSecret.
-#     Secret must have key redis-secrets.yaml containing "password: <pass>".
-#   Option B (dev):  Set redis.password via --set. Chart auto-creates redis-secret.
+#   Option A (prod): Pre-create a Secret and set valkey.existingSecret.
+#     Secret must have key valkey-secrets.yaml containing "password: <pass>".
+#   Option B (dev):  Set valkey.password via --set. Chart auto-creates valkey-secret.
 #     Empty password ("") is allowed for development.
-#   Option C (BYO #256): Set redis.enabled=false and configure externalRedis.
-redis:
+#   Option C (BYO #256): Set valkey.enabled=false and configure externalValkey.
+valkey:
   replicas: 1
-  enabled: true  # set false to skip in-chart Redis and use externalRedis instead
-  image: quay.io/jordigilh/redis:7-alpine
+  enabled: true  # set false to skip in-chart Valkey and use externalValkey instead
+  image: valkey/valkey:8-alpine
   # Pod/container security context overrides (same rationale as postgresql above).
   podSecurityContext: {}
   containerSecurityContext: {}
@@ -290,12 +292,12 @@ redis:
       memory: 256Mi
       cpu: 200m
 
-# -- External Redis (BYO #256). Used when redis.enabled=false.
-# Provide the host of an existing Redis instance.
-externalRedis:
-  host: ""          # required when redis.enabled=false (e.g., "redis.example.com")
+# -- External Valkey/Redis (BYO #256). Used when valkey.enabled=false.
+# Provide the host of an existing Valkey or Redis instance.
+externalValkey:
+  host: ""          # required when valkey.enabled=false (e.g., "valkey.example.com")
   port: 6379
-  existingSecret: ""  # K8s Secret with redis-secrets.yaml key
+  existingSecret: ""  # K8s Secret with valkey-secrets.yaml key
   password: ""
 
 # -- NetworkPolicies (optional, restricts inter-service traffic)

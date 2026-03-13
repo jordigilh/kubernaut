@@ -481,9 +481,14 @@
     },
     "eventExporter": {
       "type": "object",
-      "description": "Event Exporter (forwards K8s Warning events to Gateway)",
+      "description": "Event Exporter (forwards K8s Warning events to Gateway). Optional — disable when K8s event ingestion is not needed.",
       "additionalProperties": false,
       "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Deploy the in-chart event exporter. Set false when not needed or no supported image is available."
+        },
         "replicas": { "type": "integer", "default": 1 },
         "image": {
           "type": "string",
@@ -592,25 +597,25 @@
         }
       }
     },
-    "redis": {
+    "valkey": {
       "type": "object",
-      "description": "Redis (DataStorage DLQ). Set enabled=false to use externalRedis (BYO #256)",
+      "description": "Valkey (DataStorage DLQ). Redis-compatible in-memory store. Set enabled=false to use externalValkey (BYO #256)",
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
         "enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Set false to skip in-chart Redis and use externalRedis instead"
+          "description": "Set false to skip in-chart Valkey and use externalValkey instead"
         },
         "image": {
           "type": "string",
-          "default": "quay.io/jordigilh/redis:7-alpine"
+          "default": "valkey/valkey:8-alpine"
         },
         "existingSecret": {
           "type": "string",
           "default": "",
-          "description": "Name of pre-created K8s Secret; when set, chart skips Secret creation. Secret must have redis-secrets.yaml key"
+          "description": "Name of pre-created K8s Secret; when set, chart skips Secret creation. Secret must have valkey-secrets.yaml key"
         },
         "password": {
           "type": "string",
@@ -636,21 +641,21 @@
         "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
-    "externalRedis": {
+    "externalValkey": {
       "type": "object",
-      "description": "External Redis (BYO #256). Used when redis.enabled=false",
+      "description": "External Valkey/Redis (BYO #256). Used when valkey.enabled=false",
       "additionalProperties": false,
       "properties": {
         "host": {
           "type": "string",
           "default": "",
-          "description": "Required when redis.enabled=false (e.g., redis.example.com)"
+          "description": "Required when valkey.enabled=false (e.g., valkey.example.com)"
         },
         "port": { "type": "integer", "default": 6379 },
         "existingSecret": {
           "type": "string",
           "default": "",
-          "description": "K8s Secret with redis-secrets.yaml key"
+          "description": "K8s Secret with valkey-secrets.yaml key"
         },
         "password": { "type": "string", "default": "" }
       }

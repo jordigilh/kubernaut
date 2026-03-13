@@ -1,109 +1,112 @@
-{{- if .Values.redis.enabled }}
+{{- if .Values.valkey.enabled }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: redis
+  name: valkey
   namespace: {{ .Release.Namespace }}
   labels:
-    app: redis
+    app: valkey
     {{- include "kubernaut.labels" . | nindent 4 }}
 automountServiceAccountToken: false
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: redis
+  name: valkey
   namespace: {{ .Release.Namespace }}
   labels:
-    app: redis
+    app: valkey
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
   type: ClusterIP
   ports:
-    - name: redis
+    - name: valkey
       port: 6379
       targetPort: 6379
       protocol: TCP
   selector:
-    app: redis
+    app: valkey
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: redis
+  name: valkey
   namespace: {{ .Release.Namespace }}
   labels:
-    app: redis
+    app: valkey
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.redis.replicas | default 1 }}
+  replicas: {{ .Values.valkey.replicas | default 1 }}
   selector:
     matchLabels:
-      app: redis
+      app: valkey
   template:
     metadata:
       labels:
-        app: redis
+        app: valkey
     spec:
-      serviceAccountName: redis
+      serviceAccountName: valkey
       {{- $pscDefaults := dict "seccompProfile" (dict "type" "RuntimeDefault") }}
-      {{- $pscOverride := .Values.redis.podSecurityContext | default dict }}
+      {{- if eq (include "kubernaut.postgresql.variant" .) "ocp" }}
+      {{- $_ := set $pscDefaults "runAsNonRoot" true }}
+      {{- end }}
+      {{- $pscOverride := .Values.valkey.podSecurityContext | default dict }}
       securityContext:
         {{- toYaml (merge $pscOverride $pscDefaults) | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.redis | nindent 6 }}
-      {{- include "kubernaut.scheduling" (dict "component" .Values.redis "global" .Values.global) | nindent 6 }}
+      {{- include "kubernaut.affinity" .Values.valkey | nindent 6 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.valkey "global" .Values.global) | nindent 6 }}
       containers:
-        - name: redis
-          image: {{ .Values.redis.image }}
+        - name: valkey
+          image: {{ .Values.valkey.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           {{- $cscDefaults := dict "allowPrivilegeEscalation" false }}
-          {{- $cscOverride := .Values.redis.containerSecurityContext | default dict }}
+          {{- $cscOverride := .Values.valkey.containerSecurityContext | default dict }}
           securityContext:
             {{- toYaml (merge $cscOverride $cscDefaults) | nindent 12 }}
           ports:
-            - name: redis
+            - name: valkey
               containerPort: 6379
           volumeMounts:
-            - name: redis-data
-              mountPath: /data
+            - name: valkey-data
+              mountPath: {{ include "kubernaut.valkey.dataDir" . }}
           resources:
-            {{- toYaml .Values.redis.resources | nindent 12 }}
+            {{- toYaml .Values.valkey.resources | nindent 12 }}
           readinessProbe:
             exec:
-              command: ["redis-cli", "ping"]
+              command: ["valkey-cli", "ping"]
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
           livenessProbe:
             exec:
-              command: ["redis-cli", "ping"]
+              command: ["valkey-cli", "ping"]
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
       volumes:
-        - name: redis-data
+        - name: valkey-data
           persistentVolumeClaim:
-            claimName: redis-data
+            claimName: valkey-data
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: redis-data
+  name: valkey-data
   namespace: {{ .Release.Namespace }}
   labels:
-    app: redis
+    app: valkey
     {{- include "kubernaut.labels" . | nindent 4 }}
   annotations:
     "helm.sh/resource-policy": keep
 spec:
   accessModes:
     - ReadWriteOnce
-  {{- if .Values.redis.storage.storageClassName }}
-  storageClassName: {{ .Values.redis.storage.storageClassName }}
+  {{- if .Values.valkey.storage.storageClassName }}
+  storageClassName: {{ .Values.valkey.storage.storageClassName }}
   {{- end }}
   resources:
     requests:
-      storage: {{ .Values.redis.storage.size }}
+      storage: {{ .Values.valkey.storage.size }}
 {{- end }}

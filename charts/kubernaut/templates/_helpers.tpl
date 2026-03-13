@@ -93,21 +93,21 @@ datastorage-db-secret
 {{- end }}
 
 {{/*
-Return the Secret name for Redis credentials.
-When using external Redis, falls through to the external settings.
+Return the Secret name for Valkey credentials.
+When using external Valkey, falls through to the external settings.
 */}}
-{{- define "kubernaut.redis.secretName" -}}
-{{- if .Values.redis.enabled -}}
-  {{- if .Values.redis.existingSecret -}}
-    {{- .Values.redis.existingSecret -}}
+{{- define "kubernaut.valkey.secretName" -}}
+{{- if .Values.valkey.enabled -}}
+  {{- if .Values.valkey.existingSecret -}}
+    {{- .Values.valkey.existingSecret -}}
   {{- else -}}
-    redis-secret
+    valkey-secret
   {{- end -}}
 {{- else -}}
-  {{- if .Values.externalRedis.existingSecret -}}
-    {{- .Values.externalRedis.existingSecret -}}
+  {{- if .Values.externalValkey.existingSecret -}}
+    {{- .Values.externalValkey.existingSecret -}}
   {{- else -}}
-    redis-secret
+    valkey-secret
   {{- end -}}
 {{- end -}}
 {{- end }}
@@ -207,14 +207,22 @@ Uses hooks.migrations.image if set, otherwise falls back to postgresql.image.
 {{- end }}
 
 {{/*
-Return the Redis address (host:port).
+Return the Valkey data directory mount path.
+upstream: /data   ocp: /var/lib/valkey/data
 */}}
-{{- define "kubernaut.redis.addr" -}}
-{{- if .Values.redis.enabled -}}
-redis.{{ .Release.Namespace }}.svc.cluster.local:6379
+{{- define "kubernaut.valkey.dataDir" -}}
+{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}/var/lib/valkey/data{{- else -}}/data{{- end -}}
+{{- end }}
+
+{{/*
+Return the Valkey address (host:port).
+*/}}
+{{- define "kubernaut.valkey.addr" -}}
+{{- if .Values.valkey.enabled -}}
+valkey.{{ .Release.Namespace }}.svc.cluster.local:6379
 {{- else -}}
-{{- $host := required "externalRedis.host is required when redis.enabled=false" .Values.externalRedis.host -}}
-{{- printf "%s:%d" $host (int (.Values.externalRedis.port | default 6379)) -}}
+{{- $host := required "externalValkey.host is required when valkey.enabled=false" .Values.externalValkey.host -}}
+{{- printf "%s:%d" $host (int (.Values.externalValkey.port | default 6379)) -}}
 {{- end -}}
 {{- end }}
 

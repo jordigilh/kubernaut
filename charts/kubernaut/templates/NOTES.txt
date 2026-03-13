@@ -60,10 +60,10 @@ cert-manager handles renewal automatically.
    helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
 
 IMPORTANT -- Data Retention:
-  - PostgreSQL and Redis PVCs are RETAINED after uninstall (helm.sh/resource-policy: keep).
+  - PostgreSQL and Valkey PVCs are RETAINED after uninstall (helm.sh/resource-policy: keep).
     To remove them manually:
 
-      kubectl delete pvc postgresql-data redis-data -n {{ .Release.Namespace }}
+      kubectl delete pvc postgresql-data valkey-data -n {{ .Release.Namespace }}
 
   - CRDs and their data are NOT removed. To delete CRDs:
 

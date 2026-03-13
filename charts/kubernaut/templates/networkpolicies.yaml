@@ -14,6 +14,7 @@ spec:
       app: gateway
   policyTypes: [Ingress, Egress]
   ingress:
+    {{- if .Values.eventExporter.enabled }}
     - from:
         - podSelector:
             matchLabels:
@@ -21,6 +22,7 @@ spec:
       ports:
         - port: 8080
           protocol: TCP
+    {{- end }}
     - ports:
         - port: 9090
           protocol: TCP
@@ -69,7 +71,7 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app: redis
+              app: valkey
       ports:
         - port: 6379
           protocol: TCP
