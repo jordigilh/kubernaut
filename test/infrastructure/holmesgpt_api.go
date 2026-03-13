@@ -296,6 +296,10 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 		return fmt.Errorf("failed to create DataStorage client: %w", err)
 	}
 
+	if err := SeedE2EActionTypes(kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to seed E2E ActionTypes: %w", err)
+	}
+
 	// Get test workflows (from shared library)
 	testWorkflows := GetHAPIE2ETestWorkflows()
 	_, _ = fmt.Fprintf(writer, "  📋 Preparing %d test workflows...\n", len(testWorkflows))
