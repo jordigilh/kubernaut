@@ -265,7 +265,7 @@ ActionType CRDs applied BEFORE RemediationWorkflow CRDs to ensure action types e
 | `pkg/authwebhook/` | New webhook handler |
 | `cmd/authwebhook/main.go` | Register handler |
 | `charts/kubernaut/` | Webhook config, RBAC, CRD |
-| `deploy/action-types/` | 24 ActionType CRD YAMLs |
+| `kubernaut-demo-scenarios/deploy/action-types/` | 25 ActionType CRD YAMLs (separate repo) |
 | `migrations/` | DB schema migration |
 
 ---
