@@ -370,10 +370,6 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: "pod", Environment: "test", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
 	}
 
-	if err := SeedE2EActionTypes(kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("failed to seed E2E ActionTypes: %w", err)
-	}
-
 	workflowUUIDs, err := SeedWorkflowsInDataStorage(seedClient, testWorkflows, "AIAnalysis E2E (via infrastructure)", writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed test workflows: %w", err)

@@ -187,12 +187,6 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount for DS access")
 		logger.Info("✅ E2E ServiceAccount created", "name", e2eSAName)
 
-		// Seed ActionTypes BEFORE any workflow CRD creation (02 tests create RemediationWorkflows)
-		logger.Info("🏷️  Seeding E2E ActionType CRDs (required before workflow registration)...")
-		Expect(infrastructure.SeedE2EActionTypes(kubeconfigPath, sharedNamespace, GinkgoWriter)).
-			To(Succeed(), "Failed to seed E2E ActionTypes")
-		logger.Info("✅ E2E ActionTypes seeded")
-
 		// Wait for AuthWebhook HTTPS endpoint to be responsive via NodePort
 		logger.Info("⏳ Waiting for AuthWebhook NodePort to be responsive...")
 		Eventually(func() error {

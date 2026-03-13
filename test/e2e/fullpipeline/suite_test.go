@@ -152,10 +152,6 @@ var _ = SynchronizedBeforeSuite(
 		err = os.Setenv("KUBECONFIG", tempKubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Seeding E2E ActionType CRDs (required before workflow registration)")
-		Expect(infrastructure.SeedE2EActionTypes(tempKubeconfigPath, namespace, GinkgoWriter)).
-			To(Succeed(), "Failed to seed E2E ActionTypes")
-
 		By("Seeding all FP test workflows in DataStorage (once)")
 		dsURL := "http://localhost:30081"
 		dsHTTPClient := &http.Client{
