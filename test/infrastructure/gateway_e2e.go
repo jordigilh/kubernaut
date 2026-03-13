@@ -333,6 +333,17 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage Service ready for internal cluster access\n")
 
+	// DD-WORKFLOW-016: Seed action types via DS API (FK constraint for workflow catalog)
+	gatewaySAToken, err := GetServiceAccountToken(ctx, namespace, "gateway", kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to get gateway SA token for action type seeding: %w", err)
+	}
+	if err := SeedActionTypesViaAPIWithURL(
+		fmt.Sprintf("http://localhost:%d", DataStorageE2EHostPort), gatewaySAToken, 30*time.Second, writer,
+	); err != nil {
+		return fmt.Errorf("failed to seed action types: %w", err)
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 5: Deploy Gateway (requires DataStorage)
 	// ═══════════════════════════════════════════════════════════════════════

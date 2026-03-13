@@ -362,6 +362,19 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
+	// DD-WORKFLOW-016: Seed action types via DS API (FK constraint for workflow catalog)
+	seedSA := "ro-e2e-seed-sa"
+	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, seedSA, writer); err != nil {
+		return fmt.Errorf("failed to create seed SA: %w", err)
+	}
+	seedToken, err := GetServiceAccountToken(ctx, namespace, seedSA, kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to get seed SA token: %w", err)
+	}
+	if err := SeedActionTypesViaAPIWithURL("http://localhost:8090", seedToken, 30*time.Second, writer); err != nil {
+		return fmt.Errorf("failed to seed action types: %w", err)
+	}
+
 	// PHASE 4.5: Deploy AuthWebhook manifests (using pre-built + pre-loaded image)
 	// Per DD-WEBHOOK-001: Required for RemediationApprovalRequest approval decisions
 	// Per SOC2 CC8.1: Captures WHO approved/rejected remediation requests

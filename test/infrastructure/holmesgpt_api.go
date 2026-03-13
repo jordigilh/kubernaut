@@ -296,6 +296,11 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 		return fmt.Errorf("failed to create DataStorage client: %w", err)
 	}
 
+	// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
+	if err := SeedActionTypesViaAPI(seedClient, writer); err != nil {
+		return fmt.Errorf("failed to seed action types: %w", err)
+	}
+
 	// Get test workflows (from shared library)
 	testWorkflows := GetHAPIE2ETestWorkflows()
 	_, _ = fmt.Fprintf(writer, "  📋 Preparing %d test workflows...\n", len(testWorkflows))

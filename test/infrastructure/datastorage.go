@@ -1739,10 +1739,6 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 		return fmt.Errorf("goose migrations failed: %w", err)
 	}
 
-	if err := SeedActionTypeTaxonomy(ctx, infra.DB, writer); err != nil {
-		return fmt.Errorf("action type taxonomy seeding failed: %w", err)
-	}
-
 	_, _ = fmt.Fprintln(writer, "  🔐 Granting permissions...")
 	_, err = infra.DB.Exec(`
 		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;

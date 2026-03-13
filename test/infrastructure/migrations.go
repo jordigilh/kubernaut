@@ -188,10 +188,6 @@ func applyGooseMigrationsE2E(ctx context.Context, config MigrationConfig, migrat
 		return err
 	}
 
-	if err := SeedActionTypeTaxonomy(ctx, db, writer); err != nil {
-		return err
-	}
-
 	grantSQL := `
 		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
 		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
@@ -228,30 +224,6 @@ func RunGooseMigrations(ctx context.Context, db *sql.DB, migrationsDir string, w
 		_, _ = fmt.Fprintf(writer, "   ✅ Goose migrations complete (%d applied)\n", len(results))
 	}
 
-	return nil
-}
-
-// SeedActionTypeTaxonomy populates the action_type_taxonomy table with the
-// standard action types required by workflow FK constraints (DD-WORKFLOW-016).
-// Uses ON CONFLICT DO NOTHING for idempotency. Call after RunGooseMigrations.
-func SeedActionTypeTaxonomy(ctx context.Context, db *sql.DB, writer io.Writer) error {
-	const seedSQL = `
-		INSERT INTO action_type_taxonomy (action_type, description) VALUES
-			('DeletePod', '{"what": "Delete one or more specific pods", "whenToUse": "Pods are stuck in a terminal state"}'),
-			('DrainNode', '{"what": "Drain and cordon a Kubernetes node", "whenToUse": "Node-level issue affecting multiple workloads"}'),
-			('FixCertificate', '{"what": "Recreate a missing or corrupted CA Secret", "whenToUse": "cert-manager Certificate stuck in NotReady"}'),
-			('IncreaseCPULimits', '{"what": "Increase CPU resource limits on containers", "whenToUse": "CPU throttling from low limits"}'),
-			('IncreaseMemoryLimits', '{"what": "Increase memory resource limits on containers", "whenToUse": "OOM kills from low limits"}'),
-			('RestartDeployment', '{"what": "Rolling restart of all pods in a workload", "whenToUse": "Workload-wide state issue"}'),
-			('RestartPod', '{"what": "Kill and recreate one or more pods", "whenToUse": "Transient runtime state issue"}'),
-			('RollbackDeployment', '{"what": "Revert a deployment to its previous stable revision", "whenToUse": "Recent deployment regression"}'),
-			('ScaleReplicas', '{"what": "Horizontally scale a workload", "whenToUse": "Insufficient capacity to handle current load"}')
-		ON CONFLICT (action_type) DO NOTHING
-	`
-	if _, err := db.ExecContext(ctx, seedSQL); err != nil {
-		return fmt.Errorf("failed to seed action_type_taxonomy: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "   ✅ Action type taxonomy seeded (9 types)\n")
 	return nil
 }
 

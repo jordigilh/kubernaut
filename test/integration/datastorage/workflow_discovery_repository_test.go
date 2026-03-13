@@ -58,21 +58,6 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		// Clean up workflow catalog for test isolation
 		_, err := db.ExecContext(ctx, "TRUNCATE TABLE remediation_workflow_catalog")
 		Expect(err).ToNot(HaveOccurred(), "Workflow catalog truncation should succeed")
-
-		// Seed action_type_taxonomy (may already exist from migration 025)
-		// Use ON CONFLICT DO NOTHING for idempotency
-		// DD-WORKFLOW-016 V1.0: Use DD types (IncreaseMemoryLimits, RestartDeployment, RollbackDeployment)
-		seedSQL := `
-			INSERT INTO action_type_taxonomy (action_type, description) VALUES
-				('ScaleReplicas', '{"what": "Horizontally scale a workload", "when_to_use": "Insufficient capacity", "preconditions": "Evidence of increased load"}'),
-				('RestartPod', '{"what": "Kill and recreate pods", "when_to_use": "Transient runtime state issue", "preconditions": "Evidence issue is transient"}'),
-				('IncreaseMemoryLimits', '{"what": "Increase memory limits on containers", "when_to_use": "OOM kills from low limits", "preconditions": "Stable memory pattern"}'),
-				('RestartDeployment', '{"what": "Rolling restart of workload", "when_to_use": "Workload-wide state issue", "preconditions": "Multiple pods affected"}'),
-				('RollbackDeployment', '{"what": "Revert to previous revision", "when_to_use": "Recent deployment regression", "preconditions": "Previous healthy revision exists"}')
-			ON CONFLICT (action_type) DO NOTHING
-		`
-		_, err = db.ExecContext(ctx, seedSQL)
-		Expect(err).ToNot(HaveOccurred(), "Taxonomy seeding should succeed")
 	})
 
 	AfterEach(func() {

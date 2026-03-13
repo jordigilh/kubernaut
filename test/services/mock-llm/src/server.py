@@ -1031,7 +1031,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         Map a MockScenario to its action_type for three-step discovery.
 
         DD-WORKFLOW-016: Action types must match values seeded in
-        action_type_taxonomy by migration 025.
+        action_type_taxonomy via the DataStorage API.
         """
         # Map by workflow_name (matches Go/Python fixture action_type assignments)
         action_type_map = {

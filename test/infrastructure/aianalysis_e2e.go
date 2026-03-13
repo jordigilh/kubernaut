@@ -309,6 +309,11 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		return fmt.Errorf("failed to create DataStorage client: %w", err)
 	}
 
+	// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
+	if err := SeedActionTypesViaAPI(seedClient, writer); err != nil {
+		return fmt.Errorf("failed to seed action types: %w", err)
+	}
+
 	// Inline workflow definitions (CANNOT use test/integration/aianalysis wrapper - import cycle)
 	// Pattern: DD-TEST-011 v2.0 - Use shared SeedWorkflowsInDataStorage() function
 	// Note: test/integration/aianalysis imports test/infrastructure, creating circular dependency

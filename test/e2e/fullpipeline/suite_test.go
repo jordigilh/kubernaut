@@ -161,6 +161,9 @@ var _ = SynchronizedBeforeSuite(
 		dsClient, dsErr := ogenclient.NewClient(dsURL, ogenclient.WithClient(dsHTTPClient))
 		Expect(dsErr).ToNot(HaveOccurred(), "Failed to create DataStorage client for workflow seeding")
 
+		// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
+		Expect(infrastructure.SeedActionTypesViaAPI(dsClient, GinkgoWriter)).To(Succeed(), "Failed to seed action types")
+
 		allWorkflows := []infrastructure.TestWorkflow{
 			{
 				WorkflowID:      "crashloop-config-fix-v1",
