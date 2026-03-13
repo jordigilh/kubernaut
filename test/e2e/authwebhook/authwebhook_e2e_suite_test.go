@@ -187,6 +187,14 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount for DS access")
 		logger.Info("✅ E2E ServiceAccount created", "name", e2eSAName)
 
+		// DD-WORKFLOW-016: Seed action types via DS API (FK constraint for workflow catalog)
+		logger.Info("🏷️  Seeding action types via DataStorage API (DD-WORKFLOW-016)...")
+		seedToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, e2eSAName, kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get seed SA token")
+		Expect(infrastructure.SeedActionTypesViaAPIWithURL("http://localhost:28099", seedToken, 30*time.Second, GinkgoWriter)).
+			To(Succeed(), "Failed to seed action types via DS API")
+		logger.Info("✅ Action types seeded")
+
 		// Wait for AuthWebhook HTTPS endpoint to be responsive via NodePort
 		logger.Info("⏳ Waiting for AuthWebhook NodePort to be responsive...")
 		Eventually(func() error {
