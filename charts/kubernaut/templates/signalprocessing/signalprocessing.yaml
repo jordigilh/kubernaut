@@ -15,24 +15,34 @@ data:
       env := input.namespace.labels["kubernaut.ai/environment"]
       env != ""
     }
+    result := {"environment": env, "source": "workload-labels"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      env := input.workload.labels["kubernaut.ai/environment"]
+      env != ""
+    }
     result := {"environment": "production", "source": "namespace-name"} if {
       not input.namespace.labels["kubernaut.ai/environment"]
+      not input.workload.labels["kubernaut.ai/environment"]
       input.namespace.name == "production"
     }
     result := {"environment": "production", "source": "namespace-name"} if {
       not input.namespace.labels["kubernaut.ai/environment"]
+      not input.workload.labels["kubernaut.ai/environment"]
       input.namespace.name == "prod"
     }
     result := {"environment": "staging", "source": "namespace-name"} if {
       not input.namespace.labels["kubernaut.ai/environment"]
+      not input.workload.labels["kubernaut.ai/environment"]
       input.namespace.name == "staging"
     }
     result := {"environment": "development", "source": "namespace-name"} if {
       not input.namespace.labels["kubernaut.ai/environment"]
+      not input.workload.labels["kubernaut.ai/environment"]
       input.namespace.name == "development"
     }
     result := {"environment": "development", "source": "namespace-name"} if {
       not input.namespace.labels["kubernaut.ai/environment"]
+      not input.workload.labels["kubernaut.ai/environment"]
       input.namespace.name == "dev"
     }
 ---
