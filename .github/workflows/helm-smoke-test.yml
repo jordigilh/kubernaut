@@ -1,19 +1,12 @@
 name: Helm Chart Smoke Tests
 
-# Runs Helm chart smoke tests on a Kind cluster to validate the documented
-# user experience (install, verify, upgrade, uninstall) before merge/release.
+# Standalone workflow for release tag validation and manual testing.
+# PR validation is handled by the helm-smoke-test job in ci-pipeline.yml.
 #
 # Authority: docs/testing/342/TEST_PLAN.md
 # Script:    scripts/helm-smoke-test.sh
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'charts/**'
-      - 'docker/**'
-      - 'scripts/helm-smoke-test.sh'
-      - '.github/workflows/helm-smoke-test.yml'
   push:
     tags: ['v*']
   workflow_dispatch:

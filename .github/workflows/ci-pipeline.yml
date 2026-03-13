@@ -83,6 +83,8 @@ jobs:
               - 'holmesgpt-api/**'
               - '.github/workflows/**'
               - 'docker/**'
+              - 'charts/**'
+              - 'scripts/helm-smoke-test.sh'
               - 'config/**'
 
   # ========================================
@@ -917,11 +919,155 @@ jobs:
         run: podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
 
   # ========================================
+  # HELM SMOKE TESTS
+  # Validates the Helm chart install/upgrade/uninstall lifecycle on a Kind cluster.
+  # Runs after images are built (parallel with integration + E2E tests).
+  #
+  # Includes two freshness gates that run BEFORE the Kind cluster is created:
+  #   1. CRD freshness: `make manifests` + diff against charts/kubernaut/crds/
+  #   2. values.schema.json: `helm lint --strict` validates schema consistency
+  #
+  # Image strategy: Pull pre-built images from ghcr.io (no local builds).
+  # Authority: docs/testing/342/TEST_PLAN.md
+  # ========================================
+
+  helm-smoke-test:
+    name: Helm Smoke Tests (Kind)
+    needs: [detect-changes, build-and-push-images]
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KIND_CLUSTER_NAME: helm-smoke
+      IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut
+      IMAGE_TAG: ${{ needs.build-and-push-images.outputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: CRD freshness gate
+        run: |
+          echo "Generating CRDs from Go types (make manifests)..."
+          make manifests
+          echo ""
+          echo "Comparing config/crd/bases/ with charts/kubernaut/crds/..."
+          if ! diff -r config/crd/bases/ charts/kubernaut/crds/; then
+            echo ""
+            echo "FAIL: Chart CRDs are stale. Run 'make manifests' and copy"
+            echo "      config/crd/bases/*.yaml to charts/kubernaut/crds/"
+            exit 1
+          fi
+          echo "PASS: Chart CRDs match generated CRDs"
+
+      - name: Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          helm version
+
+      - name: values.schema.json validation
+        run: |
+          echo "Running helm lint --strict to validate schema consistency..."
+          helm lint charts/kubernaut/ --strict \
+            --set global.image.tag=schema-check \
+            --set postgresql.auth.password=lint-placeholder \
+            --set holmesgptApi.llm.provider=openai \
+            --set holmesgptApi.llm.model=gpt-4o \
+            --set holmesgptApi.llm.credentialsSecretName=lint-placeholder
+          echo "PASS: values.schema.json is consistent with values.yaml"
+
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          podman --version
+
+      - name: Install Kind
+        run: |
+          KIND_VERSION="v0.30.0"
+          curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Create Kind cluster
+        run: |
+          kind create cluster --name "$KIND_CLUSTER_NAME" --wait 120s
+          kubectl cluster-info
+          kubectl get nodes -o wide
+
+      - name: Login to ghcr.io
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Pull and load images into Kind
+        run: |
+          SERVICES="datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor holmesgpt-api"
+          for svc in $SERVICES; do
+            img="${IMAGE_REGISTRY}/${svc}:${IMAGE_TAG}"
+            echo "Pulling ${img}..."
+            podman pull "$img"
+            echo "Loading into Kind..."
+            podman save "$img" | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
+          done
+          echo "All images loaded into Kind"
+
+      - name: Run smoke tests
+        run: |
+          scripts/helm-smoke-test.sh \
+            --platform kind \
+            --image-tag "${IMAGE_TAG}" \
+            --registry "${IMAGE_REGISTRY}" \
+            --chart-path charts/kubernaut/
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== Pod status ==="
+          kubectl get pods -A --no-headers 2>/dev/null || true
+          echo "=== Events ==="
+          kubectl get events -n kubernaut-system --sort-by='.lastTimestamp' 2>/dev/null | tail -30 || true
+          echo "=== Describe failing pods ==="
+          kubectl get pods -n kubernaut-system --no-headers 2>/dev/null \
+            | grep -v Running \
+            | awk '{print $1}' \
+            | xargs -r -I {} kubectl describe pod {} -n kubernaut-system 2>/dev/null || true
+          echo "=== Kind logs ==="
+          kind export logs /tmp/kind-smoke-logs --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: helm-smoke-diagnostics-${{ github.run_id }}
+          path: /tmp/kind-smoke-logs/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Cleanup Kind cluster
+        if: always()
+        run: |
+          kind delete cluster --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
+
+      - name: Cleanup Podman
+        if: always()
+        run: |
+          podman system prune -a -f 2>/dev/null || true
+
+  # ========================================
   # SUMMARY
   # ========================================
   summary:
     name: Test Suite Summary
-    needs: [detect-changes, lint-go, lint-python, integration-tests, e2e-tests]
+    needs: [detect-changes, lint-go, lint-python, integration-tests, e2e-tests, helm-smoke-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -1085,6 +1231,10 @@ jobs:
           echo "  All Services (9 services):  ${{ needs.e2e-tests.result }}"
           echo "  Image Strategy: Pull from ghcr.io (all service images)"
           echo ""
+          echo "Helm Smoke Tests (parallel with Stage 3+4):"
+          echo "  Smoke Tests (Kind):  ${{ needs.helm-smoke-test.result }}"
+          echo "  Gates: CRD freshness + values.schema.json validation"
+          echo ""
           echo "═══════════════════════════════════════════════════════════"
           echo "Test Strategy:"
           echo "  ✅ ALL tests run for every non-draft PR"
@@ -1167,9 +1317,25 @@ jobs:
             exit 1
           fi
 
+          # Check for Helm smoke test (handle skipped if dependencies failed)
+          if [ "${{ needs.helm-smoke-test.result }}" == "failure" ]; then
+            echo ""
+            echo "❌ Helm smoke tests failed - check CRD freshness, schema validation, or install logs"
+            exit 1
+          elif [ "${{ needs.helm-smoke-test.result }}" == "skipped" ]; then
+            echo ""
+            echo "⏭️  Helm smoke tests skipped (dependencies failed)"
+          elif [ "${{ needs.helm-smoke-test.result }}" == "cancelled" ]; then
+            echo ""
+            echo "⚠️  Helm smoke tests cancelled"
+            exit 1
+          fi
+
           # Final result
           echo ""
-          if [ "${{ needs.integration-tests.result }}" == "success" ] && [ "${{ needs.e2e-tests.result }}" == "success" ]; then
+          if [ "${{ needs.integration-tests.result }}" == "success" ] && \
+             [ "${{ needs.e2e-tests.result }}" == "success" ] && \
+             [ "${{ needs.helm-smoke-test.result }}" == "success" ]; then
             echo "✅ All tests passed!"
             exit 0
           else
@@ -1189,7 +1355,7 @@ jobs:
     name: Merge Gate
     if: always()
     needs: [detect-changes, lint-go, lint-python, unit-tests, build-and-push-images,
-            integration-tests, e2e-tests, summary]
+            integration-tests, e2e-tests, helm-smoke-test, summary]
     runs-on: ubuntu-latest
     steps:
       - name: Evaluate CI results
@@ -1208,6 +1374,7 @@ jobs:
           echo "  build-and-push:       ${{ needs.build-and-push-images.result }}"
           echo "  integration-tests:    ${{ needs.integration-tests.result }}"
           echo "  e2e-tests:            ${{ needs.e2e-tests.result }}"
+          echo "  helm-smoke-test:      ${{ needs.helm-smoke-test.result }}"
           echo "  summary:              ${{ needs.summary.result }}"
           echo ""
 

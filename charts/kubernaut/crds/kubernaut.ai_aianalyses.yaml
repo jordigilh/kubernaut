@@ -872,6 +872,11 @@ spec:
                     maximum: 1
                     minimum: 0
                     type: number
+                  engineConfig:
+                    description: |-
+                      EngineConfig holds engine-specific configuration (BR-WE-016).
+                      For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}.
+                    x-kubernetes-preserve-unknown-fields: true
                   executionBundle:
                     description: Execution bundle OCI reference (digest-pinned) -
                       resolved by HolmesGPT-API
@@ -883,8 +888,6 @@ spec:
                     description: |-
                       ExecutionEngine specifies the backend engine for workflow execution.
                       Populated from HolmesGPT-API workflow recommendation.
-                      "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job;
-                      "ansible" dispatches an Ansible playbook via AAP/AWX.
                       When empty, defaults to "tekton" for backwards compatibility.
                     enum:
                     - tekton

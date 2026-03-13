@@ -18,6 +18,7 @@ set -uo pipefail
 # ---------------------------------------------------------------------------
 PLATFORM="kind"
 IMAGE_TAG=""
+IMAGE_REGISTRY=""
 CHART_PATH="charts/kubernaut/"
 NAMESPACE="kubernaut-system"
 TIMEOUT_PODS="300s"
@@ -38,15 +39,17 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --platform)   PLATFORM="$2";   shift 2 ;;
     --image-tag)  IMAGE_TAG="$2";  shift 2 ;;
+    --registry)   IMAGE_REGISTRY="$2"; shift 2 ;;
     --chart-path) CHART_PATH="$2"; shift 2 ;;
     --namespace)  NAMESPACE="$2";  shift 2 ;;
     --timeout)    TIMEOUT_PODS="$2"; shift 2 ;;
     -h|--help)
-      echo "Usage: $0 --platform kind|ocp --image-tag TAG --chart-path PATH"
+      echo "Usage: $0 --platform kind|ocp --image-tag TAG --chart-path PATH [--registry REGISTRY]"
       echo ""
       echo "Options:"
       echo "  --platform    Target platform: kind or ocp (default: kind)"
       echo "  --image-tag   Container image tag (required)"
+      echo "  --registry    Container image registry (overrides global.image.registry)"
       echo "  --chart-path  Path to chart directory (default: charts/kubernaut/)"
       echo "  --namespace   Kubernetes namespace (default: kubernaut-system)"
       echo "  --timeout     Pod readiness timeout (default: 300s)"
@@ -210,6 +213,9 @@ full_cleanup() {
 common_install_flags() {
   local flags=""
   flags+=" --set global.image.tag=${IMAGE_TAG}"
+  if [[ -n "$IMAGE_REGISTRY" ]]; then
+    flags+=" --set global.image.registry=${IMAGE_REGISTRY}"
+  fi
   flags+=" --set effectivenessmonitor.external.prometheusEnabled=false"
   flags+=" --set effectivenessmonitor.external.alertManagerEnabled=false"
   if [[ "$PLATFORM" == "kind" ]]; then
