@@ -502,16 +502,26 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 				pr := r.BuildPipelineRun(wfe)
 				return r.HandleAlreadyExists(ctx, wfe, pr, createErr)
 			}
-			// For Job backend, AlreadyExists means deterministic name collision
-			// Note: Uses "Unknown" reason (CRD enum constraint); specific cause in message
+			// Issue #374 / DD-WE-003: Pre-execution cleanup of completed Jobs.
+			// If the existing Job is in a terminal state (Succeeded/Failed), clean it up
+			// and retry creation. If still running, the lock is valid -- fail the WFE.
+			if wfe.Spec.ExecutionEngine == "job" {
+				if retryName, handled := r.handleJobAlreadyExists(ctx, exec, wfe, resourceName, createOpts); handled {
+					createdName = retryName
+					createErr = nil
+				}
+			}
+			if createErr != nil {
+				markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
+					fmt.Sprintf("Execution resource %s already exists (target resource locked)", resourceName))
+				return ctrl.Result{}, markErr
+			}
+		} else {
+			logger.Error(createErr, "Failed to create execution resource", "engine", wfe.Spec.ExecutionEngine)
 			markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
-				fmt.Sprintf("Execution resource %s already exists (target resource locked)", resourceName))
+				fmt.Sprintf("Failed to create %s execution resource: %v", wfe.Spec.ExecutionEngine, createErr))
 			return ctrl.Result{}, markErr
 		}
-		logger.Error(createErr, "Failed to create execution resource", "engine", wfe.Spec.ExecutionEngine)
-		markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
-			fmt.Sprintf("Failed to create %s execution resource: %v", wfe.Spec.ExecutionEngine, createErr))
-		return ctrl.Result{}, markErr
 	}
 
 	// ========================================
@@ -979,6 +989,59 @@ func sanitizeLabelValue(s string) string {
 	return result
 }
 
+// handleJobAlreadyExists implements Issue #374 pre-execution cleanup for completed Jobs.
+// When a Job creation fails with AlreadyExists, this method checks if the existing Job
+// is in a terminal state. If so, it cleans up the stale Job and retries creation.
+//
+// Returns (createdName, true) if the Job was cleaned up and recreation succeeded.
+// Returns ("", false) if the existing Job is still running (lock is valid) or on error.
+func (r *WorkflowExecutionReconciler) handleJobAlreadyExists(
+	ctx context.Context,
+	exec weexecutor.Executor,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	resourceName string,
+	createOpts weexecutor.CreateOptions,
+) (string, bool) {
+	logger := log.FromContext(ctx)
+
+	jobExec, ok := exec.(*weexecutor.JobExecutor)
+	if !ok {
+		return "", false
+	}
+
+	completed, checkErr := jobExec.IsCompleted(ctx, wfe.Spec.TargetResource, r.ExecutionNamespace)
+	if checkErr != nil {
+		logger.V(1).Info("Could not check existing Job state (may have been deleted)", "error", checkErr)
+		return "", false
+	}
+	if !completed {
+		return "", false
+	}
+
+	logger.Info("Stale completed Job detected, cleaning up before retry (Issue #374)",
+		"resource", resourceName)
+
+	cleanupWFE := &workflowexecutionv1alpha1.WorkflowExecution{
+		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+			TargetResource: wfe.Spec.TargetResource,
+		},
+	}
+	if cleanErr := jobExec.Cleanup(ctx, cleanupWFE, r.ExecutionNamespace); cleanErr != nil {
+		logger.Error(cleanErr, "Failed to clean up completed Job", "resource", resourceName)
+		return "", false
+	}
+
+	retryName, retryErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
+	if retryErr != nil {
+		logger.Error(retryErr, "Failed to create Job after stale cleanup", "resource", resourceName)
+		return "", false
+	}
+
+	logger.Info("Successfully recreated Job after stale cleanup (Issue #374)",
+		"resource", resourceName, "newJob", retryName)
+	return retryName, true
+}
+
 // ========================================
 // HandleAlreadyExists handles the race condition where PipelineRun already exists
 // DD-WE-003: Layer 2 - Execution-time collision handling (not routing)
@@ -1302,7 +1365,15 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 
 	logger.Info("WorkflowExecution completed (atomic status update)")
 
-	return ctrl.Result{}, nil
+	// Issue #375: Schedule requeue so ReconcileTerminal runs after cooldown to
+	// delete the execution resource (Job/PipelineRun) and release the target lock.
+	// Without this, GenerationChangedPredicate blocks the status-only update event,
+	// and ReconcileTerminal is never called.
+	cooldown := r.CooldownPeriod
+	if cooldown == 0 {
+		cooldown = DefaultCooldownPeriod
+	}
+	return ctrl.Result{RequeueAfter: cooldown}, nil
 }
 
 // MarkFailed transitions WFE to Failed phase with FailureDetails
@@ -1443,7 +1514,13 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Running → Failed
 	r.emitPhaseTransition(wfe, "Running", "Failed")
 
-	return ctrl.Result{}, nil
+	// Issue #375: Schedule requeue so ReconcileTerminal runs after cooldown to
+	// delete the execution resource (Job/PipelineRun) and release the target lock.
+	cooldown := r.CooldownPeriod
+	if cooldown == 0 {
+		cooldown = DefaultCooldownPeriod
+	}
+	return ctrl.Result{RequeueAfter: cooldown}, nil
 }
 
 // ========================================

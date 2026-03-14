@@ -130,6 +130,31 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 	}, nil
 }
 
+// IsCompleted checks whether the existing Job for the given target resource is
+// in a terminal state (Succeeded or Failed). Used by the controller to determine
+// if a stale completed Job can be cleaned up before retrying creation (Issue #374).
+//
+// Returns (true, nil) if the Job has a terminal condition (JobComplete or JobFailed).
+// Returns (false, nil) if the Job is still running (no terminal condition).
+// Returns (false, err) if the Job cannot be fetched (e.g., NotFound race).
+func (j *JobExecutor) IsCompleted(ctx context.Context, targetResource string, namespace string) (bool, error) {
+	jobName := ExecutionResourceName(targetResource)
+	var job batchv1.Job
+	if err := j.Client.Get(ctx, client.ObjectKey{Name: jobName, Namespace: namespace}, &job); err != nil {
+		return false, err
+	}
+
+	for _, condition := range job.Status.Conditions {
+		if condition.Status != corev1.ConditionTrue {
+			continue
+		}
+		if condition.Type == batchv1.JobComplete || condition.Type == batchv1.JobFailed {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Cleanup deletes the Job in the execution namespace.
 // Returns nil if the Job doesn't exist (idempotent).
 func (j *JobExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error {

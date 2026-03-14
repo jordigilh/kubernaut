@@ -1031,6 +1031,22 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(hasEventMatch(evts, "Normal", events.EventReasonWorkflowCompleted)).
 				To(BeTrue(), "Expected WorkflowCompleted event, got: %v", evts)
 		})
+
+		It("UT-WE-375-001: should return RequeueAfter equal to cooldown period", func() {
+			reconciler.CooldownPeriod = 1 * time.Minute
+			result, err := reconciler.MarkCompleted(ctx, wfe, pr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(1*time.Minute),
+				"MarkCompleted must schedule RequeueAfter so ReconcileTerminal runs to release the lock (#375)")
+		})
+
+		It("UT-WE-375-003: should use DefaultCooldownPeriod when CooldownPeriod is zero", func() {
+			reconciler.CooldownPeriod = 0
+			result, err := reconciler.MarkCompleted(ctx, wfe, pr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(workflowexecution.DefaultCooldownPeriod),
+				"When CooldownPeriod is zero, MarkCompleted must fall back to DefaultCooldownPeriod (5m)")
+		})
 	})
 
 	// ========================================
@@ -1196,6 +1212,14 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(errorDetails["code"]).To(MatchRegexp("^ERR_"), "Error code should start with ERR_")
 			Expect(errorDetails["message"]).ToNot(BeEmpty(), "Error message should not be empty")
 			Expect(errorDetails["retry_possible"]).To(BeAssignableToTypeOf(false), "retry_possible should be boolean")
+		})
+
+		It("UT-WE-375-002: should return RequeueAfter equal to cooldown period", func() {
+			reconciler.CooldownPeriod = 1 * time.Minute
+			result, err := reconciler.MarkFailed(ctx, wfe, pr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(1*time.Minute),
+				"MarkFailed must schedule RequeueAfter so ReconcileTerminal runs to release the lock (#375)")
 		})
 	})
 

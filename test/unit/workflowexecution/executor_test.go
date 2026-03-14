@@ -1168,6 +1168,107 @@ var _ = Describe("Tekton Executor Dependencies (DD-WE-006)", func() {
 })
 
 // ========================================
+// Issue #374: Pre-execution Cleanup of Completed Jobs (DD-WE-003)
+// Tests: JobExecutor.IsCompleted()
+// ========================================
+
+var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
+	var (
+		jobExec   *executor.JobExecutor
+		k8sClient client.Client
+		scheme    *runtime.Scheme
+		ctx       context.Context
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = runtime.NewScheme()
+		Expect(batchv1.AddToScheme(scheme)).To(Succeed())
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+	})
+
+	It("should return true for a completed (succeeded) Job (UT-WE-374-001)", func() {
+		jobName := executor.ExecutionResourceName("default/deployment/my-app")
+		job := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      jobName,
+				Namespace: "kubernaut-workflows",
+			},
+			Status: batchv1.JobStatus{
+				Succeeded: 1,
+				Conditions: []batchv1.JobCondition{
+					{
+						Type:   batchv1.JobComplete,
+						Status: corev1.ConditionTrue,
+					},
+				},
+			},
+		}
+		k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+		jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+
+		completed, err := jobExec.IsCompleted(ctx, "default/deployment/my-app", "kubernaut-workflows")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(completed).To(BeTrue(), "Completed Job should be reported as completed so it can be cleaned up")
+	})
+
+	It("should return false for a running Job (UT-WE-374-002)", func() {
+		jobName := executor.ExecutionResourceName("default/deployment/running-app")
+		job := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      jobName,
+				Namespace: "kubernaut-workflows",
+			},
+			Status: batchv1.JobStatus{
+				Active: 1,
+			},
+		}
+		k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+		jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+
+		completed, err := jobExec.IsCompleted(ctx, "default/deployment/running-app", "kubernaut-workflows")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(completed).To(BeFalse(), "Running Job should preserve the concurrent lock (BR-WE-009)")
+	})
+
+	It("should return true for a failed Job (UT-WE-374-003)", func() {
+		jobName := executor.ExecutionResourceName("default/deployment/failed-app")
+		job := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      jobName,
+				Namespace: "kubernaut-workflows",
+			},
+			Status: batchv1.JobStatus{
+				Failed: 1,
+				Conditions: []batchv1.JobCondition{
+					{
+						Type:   batchv1.JobFailed,
+						Status: corev1.ConditionTrue,
+						Reason: "BackoffLimitExceeded",
+					},
+				},
+			},
+		}
+		k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+		jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+
+		completed, err := jobExec.IsCompleted(ctx, "default/deployment/failed-app", "kubernaut-workflows")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(completed).To(BeTrue(), "Failed Job should be reported as completed so stale locks are released (BR-WE-011)")
+	})
+
+	It("should return error when Job does not exist (UT-WE-374-004)", func() {
+		k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+		jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+
+		completed, err := jobExec.IsCompleted(ctx, "default/deployment/vanished-app", "kubernaut-workflows")
+		Expect(err).To(HaveOccurred(), "Should return error when Job does not exist (race condition)")
+		Expect(completed).To(BeFalse())
+	})
+})
+
+// ========================================
 // Test Helpers
 // ========================================
 
