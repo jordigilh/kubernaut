@@ -17,6 +17,10 @@ limitations under the License.
 package effectivenessmonitor
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -201,16 +205,29 @@ var _ = Describe("Alert Decay Detection Integration (Issue #369, BR-EM-012)", fu
 			}),
 		})
 
-		By("Configuring mock Prometheus with degraded metrics (post > pre = no improvement)")
+		By("Configuring mock Prometheus with degraded metrics (all metrics show degradation)")
 		now := float64(time.Now().Unix())
 		preRemediationTime := now - 60
-		mockProm.SetQueryRangeResponse(infrastructure.NewPromMatrixResponse(
-			map[string]string{"__name__": "container_cpu_usage_seconds_total", "namespace": ns},
-			[][]interface{}{
-				{preRemediationTime, "0.250000"}, // pre-remediation: 25% CPU
-				{now, "0.500000"},                 // post-remediation: 50% CPU (degraded)
-			},
-		))
+		// Use query-aware handler: throughput (HigherIsBetter) needs inverted
+		// values so MetricsScore=0.0 triggers the metrics gate in isAlertDecay.
+		mockProm.SetQueryRangeHandler(func(w http.ResponseWriter, r *http.Request) {
+			query := r.FormValue("query")
+			pre, post := "0.250000", "0.500000" // LowerIsBetter: higher post = degradation
+			if strings.Contains(query, "http_requests_total") && !strings.Contains(query, "code") {
+				pre, post = "0.500000", "0.250000" // HigherIsBetter (throughput): lower post = degradation
+			}
+			resp := infrastructure.NewPromMatrixResponse(
+				map[string]string{"__name__": "metric", "namespace": ns},
+				[][]interface{}{
+					{preRemediationTime, pre},
+					{now, post},
+				},
+			)
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				http.Error(w, fmt.Sprintf("encode: %v", err), http.StatusInternalServerError)
+			}
+		})
 
 		By("Creating an EA with short stabilization for faster test execution")
 		ea := &eav1.EffectivenessAssessment{
@@ -266,6 +283,7 @@ var _ = Describe("Alert Decay Detection Integration (Issue #369, BR-EM-012)", fu
 
 		By("Restoring mock AlertManager and Prometheus to defaults")
 		mockAM.SetAlertsResponse([]infrastructure.AMAlert{})
+		mockProm.SetQueryRangeHandler(nil)
 		now = float64(time.Now().Unix())
 		preRemediationTime = now - 60
 		mockProm.SetQueryRangeResponse(infrastructure.NewPromMatrixResponse(

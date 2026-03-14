@@ -518,7 +518,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// Skip health audit event when score is nil (N/A for non-pod resources).
 		// The component is marked Assessed=true so allComponentsDone sees it as complete,
 		// but there is no meaningful health data to emit in the audit trail.
-		if healthResult.Component.Score != nil {
+		// DD-CONTROLLER-001 Pattern C: emit health audit only on first assessment.
+		// Alert decay (#369) resets HealthAssessed for re-probe; without this guard
+		// the audit event would be emitted again on subsequent reconciles.
+		if healthResult.Component.Score != nil && ea.Status.Components.AlertDecayRetries == 0 {
 			r.emitHealthEvent(ctx, ea, healthResult)
 		}
 	}
