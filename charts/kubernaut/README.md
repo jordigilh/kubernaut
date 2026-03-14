@@ -219,10 +219,9 @@ Optional component that forwards Kubernetes Warning events to the Gateway. Disab
 | `postgresql.variant` | Image variant: `upstream` (postgres:16-alpine) or `ocp` (Red Hat RHEL10 image) | `upstream` |
 | `postgresql.replicas` | Number of replicas | `1` |
 | `postgresql.image` | PostgreSQL container image | `postgres:16-alpine` |
-| `postgresql.auth.existingSecret` | Pre-created Secret name | `""` |
-| `postgresql.auth.username` | Database username | `slm_user` |
-| `postgresql.auth.password` | Database password (required if no `existingSecret`) | `""` |
-| `postgresql.auth.database` | Database name | `action_history` |
+| `postgresql.auth.existingSecret` | Pre-created Secret with `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` keys (required) | `""` |
+| `postgresql.auth.username` | Database username (used in readiness probes and config) | `slm_user` |
+| `postgresql.auth.database` | Database name (used in readiness probes and config) | `action_history` |
 | `postgresql.storage.size` | PVC size | `10Gi` |
 | `postgresql.storage.storageClassName` | StorageClass (empty = cluster default) | `""` |
 
@@ -236,10 +235,9 @@ Set `postgresql.enabled=false` and configure these values to use a pre-existing 
 |---|---|---|
 | `externalPostgresql.host` | External PostgreSQL hostname (required) | `""` |
 | `externalPostgresql.port` | External PostgreSQL port | `5432` |
-| `externalPostgresql.auth.existingSecret` | Pre-created Secret name | `""` |
-| `externalPostgresql.auth.username` | Database username | `slm_user` |
-| `externalPostgresql.auth.password` | Database password | `""` |
-| `externalPostgresql.auth.database` | Database name | `action_history` |
+| `externalPostgresql.auth.existingSecret` | Pre-created Secret with `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` keys (required) | `""` |
+| `externalPostgresql.auth.username` | Database username (used in config) | `slm_user` |
+| `externalPostgresql.auth.database` | Database name (used in config) | `action_history` |
 
 ### Valkey
 
@@ -250,8 +248,7 @@ Set `postgresql.enabled=false` and configure these values to use a pre-existing 
 | `valkey.enabled` | Deploy in-chart Valkey | `true` |
 | `valkey.replicas` | Number of replicas | `1` |
 | `valkey.image` | Valkey container image | `valkey/valkey:8-alpine` |
-| `valkey.existingSecret` | Pre-created Secret name | `""` |
-| `valkey.password` | Valkey password | `""` |
+| `valkey.existingSecret` | Pre-created Secret with `valkey-secrets.yaml` key (required) | `""` |
 | `valkey.storage.size` | PVC size | `512Mi` |
 | `valkey.storage.storageClassName` | StorageClass (empty = cluster default) | `""` |
 
@@ -263,8 +260,7 @@ Set `valkey.enabled=false` and configure these values to use a pre-existing Valk
 |---|---|---|
 | `externalValkey.host` | External Valkey hostname (required) | `""` |
 | `externalValkey.port` | External Valkey port | `6379` |
-| `externalValkey.existingSecret` | Pre-created Secret name | `""` |
-| `externalValkey.password` | Valkey password | `""` |
+| `externalValkey.existingSecret` | Pre-created Secret with `valkey-secrets.yaml` key (required) | `""` |
 
 ### TLS
 
@@ -330,8 +326,7 @@ helm install kubernaut charts/kubernaut/ \
   -n kubernaut-system \
   -f charts/kubernaut/values-demo.yaml \
   -f charts/kubernaut/values-airgap.yaml \
-  --set global.image.registry=harbor.corp \
-  --set postgresql.auth.password=<password>
+  --set global.image.registry=harbor.corp
 ```
 
 **Flat registries** (quay.io, Docker Hub, OCP internal) — images stored as `<mirror>/kubernaut-ai-gateway:tag`:
@@ -342,8 +337,7 @@ helm install kubernaut charts/kubernaut/ \
   -f charts/kubernaut/values-demo.yaml \
   -f charts/kubernaut/values-airgap.yaml \
   --set global.image.registry=quay.io/myorg \
-  --set global.image.separator=- \
-  --set postgresql.auth.password=<password>
+  --set global.image.separator=-
 ```
 
 See `charts/kubernaut/values-airgap.yaml` for the complete list of image overrides.

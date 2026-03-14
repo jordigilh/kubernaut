@@ -262,14 +262,11 @@ eventExporter:
       cpu: 200m
 
 # -- PostgreSQL (DataStorage backend)
-# Credential flow (#204):
-#   Option A (prod): Pre-create a Secret and set postgresql.auth.existingSecret.
-#     Secret must have keys: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB.
-#     Also set datastorage.dbExistingSecret to a Secret with key db-secrets.yaml
-#     containing "username: <user>\npassword: <pass>".
-#   Option B (dev):  Set postgresql.auth.password via --set or values-demo.yaml.
-#     Chart auto-creates postgresql-secret and datastorage-db-secret.
-#   Option C (BYO #256): Set postgresql.enabled=false and configure externalPostgresql.
+# Credential flow:
+#   Pre-create two Secrets before installing:
+#     1. postgresql.auth.existingSecret — must have keys: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+#     2. datastorage.dbExistingSecret — must have key db-secrets.yaml containing "username: <user>\npassword: <pass>"
+#   BYO (#256): Set postgresql.enabled=false and configure externalPostgresql.
 postgresql:
   replicas: 1
   enabled: true  # set false to skip in-chart PostgreSQL and use externalPostgresql instead
@@ -285,9 +282,8 @@ postgresql:
   podSecurityContext: {}
   containerSecurityContext: {}
   auth:
-    existingSecret: ""  # name of pre-created K8s Secret; when set, chart skips Secret creation
+    existingSecret: ""  # name of pre-created K8s Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys (required)
     username: slm_user
-    password: ""  # required when existingSecret is empty; use --set or values-demo.yaml
     database: action_history
   storage:
     size: 10Gi
@@ -306,19 +302,16 @@ externalPostgresql:
   host: ""          # required when postgresql.enabled=false (e.g., "db.example.com")
   port: 5432
   auth:
-    existingSecret: ""  # K8s Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys
+    existingSecret: ""  # K8s Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys (required)
     username: slm_user
-    password: ""
     database: action_history
 
 # -- Valkey (DataStorage DLQ)
 # Valkey is a BSD-licensed Redis-compatible in-memory data store.
-# Credential flow (#204):
-#   Option A (prod): Pre-create a Secret and set valkey.existingSecret.
+# Credential flow:
+#   Pre-create a Secret and set valkey.existingSecret.
 #     Secret must have key valkey-secrets.yaml containing "password: <pass>".
-#   Option B (dev):  Set valkey.password via --set. Chart auto-creates valkey-secret.
-#     Empty password ("") is allowed for development.
-#   Option C (BYO #256): Set valkey.enabled=false and configure externalValkey.
+#   BYO (#256): Set valkey.enabled=false and configure externalValkey.
 valkey:
   replicas: 1
   enabled: true  # set false to skip in-chart Valkey and use externalValkey instead
@@ -326,8 +319,7 @@ valkey:
   # Pod/container security context overrides (same rationale as postgresql above).
   podSecurityContext: {}
   containerSecurityContext: {}
-  existingSecret: ""  # name of pre-created K8s Secret; when set, chart skips Secret creation
-  password: ""
+  existingSecret: ""  # name of pre-created K8s Secret with valkey-secrets.yaml key (required)
   storage:
     size: 512Mi
     storageClassName: ""  # empty = cluster default
@@ -344,8 +336,7 @@ valkey:
 externalValkey:
   host: ""          # required when valkey.enabled=false (e.g., "valkey.example.com")
   port: 6379
-  existingSecret: ""  # K8s Secret with valkey-secrets.yaml key
-  password: ""
+  existingSecret: ""  # K8s Secret with valkey-secrets.yaml key (required)
 
 # -- NetworkPolicies (optional, restricts inter-service traffic)
 networkPolicies:

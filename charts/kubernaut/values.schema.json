@@ -544,27 +544,14 @@
         "auth": {
           "type": "object",
           "additionalProperties": false,
+          "required": ["existingSecret"],
           "properties": {
             "existingSecret": {
               "type": "string",
-              "default": "",
-              "description": "Name of pre-created K8s Secret; when set, chart skips Secret creation. Secret must have POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB"
+              "description": "Name of pre-created K8s Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys (required)"
             },
             "username": { "type": "string", "default": "slm_user" },
-            "password": {
-              "type": "string",
-              "default": "",
-              "description": "Required when existingSecret is empty; use --set or values-demo.yaml"
-            },
             "database": { "type": "string", "default": "action_history" }
-          },
-          "if": {
-            "properties": {
-              "existingSecret": { "const": "" }
-            }
-          },
-          "then": {
-            "required": ["password"]
           }
         },
         "storage": {
@@ -603,11 +590,9 @@
           "properties": {
             "existingSecret": {
               "type": "string",
-              "default": "",
-              "description": "K8s Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys"
+              "description": "K8s Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys (required)"
             },
             "username": { "type": "string", "default": "slm_user" },
-            "password": { "type": "string", "default": "" },
             "database": { "type": "string", "default": "action_history" }
           }
         }
@@ -630,13 +615,7 @@
         },
         "existingSecret": {
           "type": "string",
-          "default": "",
-          "description": "Name of pre-created K8s Secret; when set, chart skips Secret creation. Secret must have valkey-secrets.yaml key"
-        },
-        "password": {
-          "type": "string",
-          "default": "",
-          "description": "Empty password allowed for development"
+          "description": "Name of pre-created K8s Secret with valkey-secrets.yaml key (required)"
         },
         "storage": {
           "type": "object",
@@ -670,10 +649,8 @@
         "port": { "type": "integer", "default": 6379 },
         "existingSecret": {
           "type": "string",
-          "default": "",
-          "description": "K8s Secret with valkey-secrets.yaml key"
-        },
-        "password": { "type": "string", "default": "" }
+          "description": "K8s Secret with valkey-secrets.yaml key (required)"
+        }
       }
     },
     "networkPolicies": {
