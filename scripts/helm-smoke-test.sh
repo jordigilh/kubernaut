@@ -317,6 +317,49 @@ password: ${test_password}" \
   fi
 }
 
+run_pre_004() {
+  local desc="ST-CHART-PRE-004: Provision TLS certificates"
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  local service="authwebhook"
+
+  openssl genrsa -out "$tmpdir/ca.key" 2048 2>/dev/null
+  openssl req -new -x509 -days 365 -key "$tmpdir/ca.key" \
+    -out "$tmpdir/ca.crt" -subj "/CN=authwebhook-ca" 2>/dev/null
+
+  openssl genrsa -out "$tmpdir/tls.key" 2048 2>/dev/null
+  openssl req -new -key "$tmpdir/tls.key" \
+    -out "$tmpdir/tls.csr" \
+    -subj "/CN=${service}.${NAMESPACE}.svc" \
+    -addext "subjectAltName=DNS:${service},DNS:${service}.${NAMESPACE},DNS:${service}.${NAMESPACE}.svc,DNS:${service}.${NAMESPACE}.svc.cluster.local" \
+    2>/dev/null
+
+  printf "subjectAltName=DNS:%s,DNS:%s.%s,DNS:%s.%s.svc,DNS:%s.%s.svc.cluster.local" \
+    "$service" "$service" "$NAMESPACE" "$service" "$NAMESPACE" "$service" "$NAMESPACE" \
+    > "$tmpdir/san.cnf"
+
+  openssl x509 -req -in "$tmpdir/tls.csr" \
+    -CA "$tmpdir/ca.crt" -CAkey "$tmpdir/ca.key" -CAcreateserial \
+    -out "$tmpdir/tls.crt" -days 365 -extfile "$tmpdir/san.cnf" 2>/dev/null
+
+  local pass=true
+  kubectl create secret tls authwebhook-tls \
+    --cert="$tmpdir/tls.crt" --key="$tmpdir/tls.key" \
+    -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
+
+  kubectl create configmap authwebhook-ca \
+    --from-file=ca.crt="$tmpdir/ca.crt" \
+    -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
+
+  rm -rf "$tmpdir"
+
+  if $pass; then
+    tap_ok "$desc"
+  else
+    tap_not_ok "$desc" "TLS cert generation or resource creation failed"
+  fi
+}
+
 run_inst_001() {
   local desc="ST-CHART-INST-001: Production install"
   local flags
@@ -374,15 +417,8 @@ run_tls_001() {
   assert_resource_exists secret authwebhook-tls "$NAMESPACE" \
     "ST-CHART-TLS-001a: authwebhook-tls Secret exists" || pass=false
 
-  local ca_key
-  ca_key=$(kubectl get secret authwebhook-tls -n "$NAMESPACE" \
-    -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
-  if [[ -n "$ca_key" ]]; then
-    tap_ok "ST-CHART-TLS-001b: ca.crt key embedded in authwebhook-tls Secret"
-  else
-    tap_not_ok "ST-CHART-TLS-001b: ca.crt key embedded in authwebhook-tls Secret" "key missing"
-    pass=false
-  fi
+  assert_resource_exists configmap authwebhook-ca "$NAMESPACE" \
+    "ST-CHART-TLS-001b: authwebhook-ca ConfigMap exists" || pass=false
 
   local cabundle
   cabundle=$(kubectl get mutatingwebhookconfigurations authwebhook-mutating \
@@ -526,6 +562,7 @@ flow_a_production() {
   run_pre_001
   run_pre_002
   run_pre_003
+  run_pre_004
   run_inst_001 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow A tests"; return 1; }
   run_verify_001
   run_verify_002
@@ -550,6 +587,8 @@ flow_a_production() {
 
 flow_b_quickstart() {
   echo "# --- Flow B: Dev Quick Start Lifecycle (kind only) ---"
+  kubectl create namespace "$NAMESPACE" >/dev/null 2>&1 || true
+  run_pre_004
   run_inst_003 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow B tests"; return 1; }
   run_verify_001
   run_edge_001
