@@ -11,7 +11,7 @@ Kubernaut is an autonomous Kubernetes remediation platform that detects incident
 | Kubernetes | 1.31+ | selectableFields (beta in 1.31, GA in 1.32) |
 | Helm | 3.12+ | |
 | StorageClass | dynamic provisioning | For PostgreSQL and Valkey PVCs |
-| cert-manager | 1.12+ (production) | Required when `tls.mode=cert-manager`. Optional for dev (`tls.mode=hook` is default). |
+| cert-manager | 1.12+ (production) | Required when `tls.mode=cert-manager`. Not needed for `tls.mode=hook` (default) or `tls.mode=manual`. |
 
 **Workflow execution engine** (at least one):
 
@@ -266,18 +266,18 @@ Set `valkey.enabled=false` and configure these values to use a pre-existing Valk
 
 | Parameter | Description | Default |
 |---|---|---|
-| `tls.mode` | TLS mode: `hook` (self-signed via Helm hooks) or `cert-manager` (production) | `hook` |
+| `tls.mode` | TLS mode: `hook` (self-signed via Helm hooks), `cert-manager` (production), or `manual` (user-managed) | `hook` |
 | `tls.certManager.issuerRef.name` | Issuer/ClusterIssuer name (required when `tls.mode=cert-manager`) | `""` |
 | `tls.certManager.issuerRef.kind` | Issuer kind | `ClusterIssuer` |
 | `tls.certManager.issuerRef.group` | Issuer API group | `cert-manager.io` |
 
-See [TLS and Certificate Management](https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#tls-and-certificate-management) for hook vs cert-manager mode details.
+See [TLS and Certificate Management](https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#tls-and-certificate-management) for details on `hook`, `cert-manager`, and `manual` modes.
 
 ### Hooks
 
 | Parameter | Description | Default |
 |---|---|---|
-| `hooks.tlsCerts.image` | kubectl image for TLS cert generation (hook mode only; must include shell + openssl) | `docker.io/bitnami/kubectl:latest` (pinned by digest) |
+| `hooks.tlsCerts.image` | kubectl image for TLS cert generation (`hook` mode only; unused in `manual` and `cert-manager` modes; must include shell + openssl) | `docker.io/bitnami/kubectl:latest` (pinned by digest) |
 | `hooks.migrations.image` | UBI9-minimal image with goose + psql for database migrations | `quay.io/kubernaut-ai/db-migrate:v1.1.0-pre1` |
 
 ### Network Policies

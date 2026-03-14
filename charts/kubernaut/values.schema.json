@@ -164,9 +164,9 @@
       "properties": {
         "mode": {
           "type": "string",
-          "enum": ["hook", "cert-manager"],
+          "enum": ["hook", "cert-manager", "manual"],
           "default": "hook",
-          "description": "TLS mode: 'hook' (self-signed via Helm hooks) or 'cert-manager' (production, requires cert-manager)"
+          "description": "TLS mode: 'hook' (self-signed via Helm hooks), 'cert-manager' (production, requires cert-manager), or 'manual' (user-managed certificates)"
         },
         "certManager": {
           "type": "object",

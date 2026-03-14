@@ -50,10 +50,22 @@ Run this BEFORE `helm upgrade` when CRD schemas have changed between versions.
 {{- if eq .Values.tls.mode "hook" }}
 TLS mode: hook (self-signed certificates via Helm hooks).
 Certificates are automatically renewed during upgrade if they expire within 30 days.
-{{- else }}
+{{- else if eq .Values.tls.mode "cert-manager" }}
 TLS mode: cert-manager (certificates managed by cert-manager).
 The authwebhook-cert Certificate resource provisions the authwebhook-tls Secret.
 cert-manager handles renewal automatically.
+{{- else if eq .Values.tls.mode "manual" }}
+TLS mode: manual (user-managed certificates).
+You must create the authwebhook-tls Secret (type kubernetes.io/tls) and patch the
+MutatingWebhookConfiguration and ValidatingWebhookConfiguration with the CA bundle:
+
+   CA_B64=$(kubectl get secret authwebhook-tls -n {{ .Release.Namespace }} \
+     -o jsonpath='{.data.ca\.crt}' 2>/dev/null || \
+     kubectl get configmap authwebhook-ca -n {{ .Release.Namespace }} \
+     -o go-template='{{"{{"}}.data.ca\.crt{{"}}"}}' | base64 | tr -d '\n')
+
+   kubectl patch mutatingwebhookconfigurations authwebhook-mutating --type=json \
+     -p "[{\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_B64}\"}]"
 {{- end }}
 
 === Uninstalling ===

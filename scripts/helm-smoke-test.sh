@@ -248,7 +248,7 @@ tls_flags() {
   if [[ "$PLATFORM" == "ocp" ]]; then
     echo "--set tls.mode=cert-manager --set tls.certManager.issuerRef.name=${CERT_MANAGER_ISSUER}"
   else
-    echo "--set tls.mode=hook"
+    echo "--set tls.mode=manual"
   fi
 }
 
@@ -381,7 +381,7 @@ run_inst_001() {
 run_inst_003() {
   local desc="ST-CHART-INST-003: Dev quick start"
   local flags
-  flags="$(common_install_flags)"
+  flags="$(common_install_flags) $(tls_flags)"
 
   if helm install kubernaut "$CHART_PATH" \
     --namespace "$NAMESPACE" --create-namespace \
@@ -410,6 +410,50 @@ run_verify_003() {
   assert_port_forward_responds \
     "data-storage-service" 8081 "/health" \
     "ST-CHART-VERIFY-003: DataStorage health endpoint"
+}
+
+run_tls_patch() {
+  local desc="ST-CHART-TLS-PATCH: Patch webhooks with CA bundle (manual mode)"
+  local ca_crt
+  ca_crt=$(kubectl get configmap authwebhook-ca -n "$NAMESPACE" \
+    -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
+  if [[ -z "$ca_crt" ]]; then
+    tap_not_ok "$desc" "authwebhook-ca ConfigMap not found or ca.crt is empty"
+    return 1
+  fi
+
+  local ca_b64
+  ca_b64=$(printf '%s' "$ca_crt" | base64 | tr -d '\n')
+
+  local pass=true
+  for wh_kind in mutatingwebhookconfigurations validatingwebhookconfigurations; do
+    local wh_name
+    case "$wh_kind" in
+      mutating*)   wh_name="authwebhook-mutating" ;;
+      validating*) wh_name="authwebhook-validating" ;;
+    esac
+
+    local count
+    count=$(kubectl get "$wh_kind" "$wh_name" -o jsonpath='{.webhooks}' 2>/dev/null \
+      | tr ',' '\n' | grep -c '"name"' || echo "0")
+
+    local patch="["
+    local i=0
+    while [[ "$i" -lt "$count" ]]; do
+      [[ "$i" -gt 0 ]] && patch="${patch},"
+      patch="${patch}{\"op\":\"add\",\"path\":\"/webhooks/${i}/clientConfig/caBundle\",\"value\":\"${ca_b64}\"}"
+      i=$((i + 1))
+    done
+    patch="${patch}]"
+
+    kubectl patch "$wh_kind" "$wh_name" --type='json' -p "$patch" >/dev/null 2>&1 || pass=false
+  done
+
+  if $pass; then
+    tap_ok "$desc"
+  else
+    tap_not_ok "$desc" "Failed to patch one or more webhook configurations"
+  fi
 }
 
 run_tls_001() {
@@ -564,6 +608,11 @@ flow_a_production() {
   run_pre_003
   run_pre_004
   run_inst_001 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow A tests"; return 1; }
+
+  if [[ "$PLATFORM" == "kind" ]]; then
+    run_tls_patch
+  fi
+
   run_verify_001
   run_verify_002
   run_verify_003
@@ -576,7 +625,7 @@ flow_a_production() {
 
   run_upg_001
 
-  if [[ "$PLATFORM" == "kind" ]]; then
+  if [[ "$PLATFORM" == "ocp" ]]; then
     run_tls_003
   fi
 
@@ -590,6 +639,7 @@ flow_b_quickstart() {
   kubectl create namespace "$NAMESPACE" >/dev/null 2>&1 || true
   run_pre_004
   run_inst_003 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow B tests"; return 1; }
+  run_tls_patch
   run_verify_001
   run_edge_001
   run_uninst_001
