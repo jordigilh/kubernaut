@@ -232,11 +232,15 @@ sequenceDiagram
         EM-->>EM: RequeueAfter(scrapeInterval) until validityDeadline
     end
 
-    Note over EM,DS: Step 7c2 — Alert Decay Detection (Issue #369, BR-EM-012)
-    alt health OK + hash stable + alert firing (decay suspected)
-        EM->>EA: Keep AlertAssessed=false, increment AlertDecayRetries
+    Note over EM,DS: Step 7c2 — Alert Decay Detection with Cross-Validation (Issue #369, BR-EM-012)
+    alt alert firing + all other probes positive (decay suspected)
+        Note over EM: Cross-validation: health>0 (live re-probe) + hash stable + metrics>=0 or N/A
+        EM->>EA: Keep AlertAssessed=false, reset HealthAssessed=false, increment AlertDecayRetries
         EM->>DS: audit: effectiveness.alert_decay.detected (first time only)
-        EM-->>EM: RequeueAfter(assessmentInterval) for re-check
+        EM-->>EM: RequeueAfter(assessmentInterval) for re-check with live health
+    else health degraded or metrics negative (alert is genuine)
+        Note over EM: Remediation failed — accept alert at face value
+        EM->>EA: AlertAssessed=true, AlertScore=0.0
     end
 
     Note over EM,DS: Step 7d — Finalize (lifecycle marker)

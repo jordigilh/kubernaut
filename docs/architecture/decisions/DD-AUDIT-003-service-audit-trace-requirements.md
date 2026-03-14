@@ -477,7 +477,7 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 | `effectiveness.metrics.assessed` | Metrics component assessment (before/after comparison) | `metric_deltas` (cpu_before/after, memory_before/after, latency_p95_before/after_ms, error_rate_before/after) | V1.0 (Level 1) | P0 |
 | `effectiveness.hash.computed` | Pre/post remediation spec hash comparison (DD-EM-002) | pre_remediation_spec_hash, post_remediation_spec_hash, hash_match | V1.0 (Level 1) | P0 |
 | `effectiveness.assessment.completed` | Lifecycle marker — assessment finished | reason ("full", "partial", "expired", "alert_decay_timeout") | V1.0 (Level 1) | P0 |
-| `effectiveness.alert_decay.detected` | Alert decay detected — resource healthy but alert still firing (Issue #369, BR-EM-012) | `alert_resolution` (alert_resolved=false, active_count) | V1.0 (Level 1) | P0 |
+| `effectiveness.alert_decay.detected` | Alert decay detected via multi-probe cross-validation — all non-alert probes positive (health live re-probe > 0, metrics >= 0 or N/A, hash stable) but alert still firing. Health re-probed each pass; decay killed if health drops or metrics negative. (Issue #369, BR-EM-012) | `alert_resolution` (alert_resolved=false, active_count) | V1.0 (Level 1) | P0 |
 | `effectiveness.assessment.scheduled` | Effectiveness assessment scheduled | — | V1.0 (Level 1) | P0 |
 | `effectiveness.learning.triggered` | Learning feedback triggered (HolmesGPT PostExec) | — | V1.1 (Level 2) | P0 |
 | `effectiveness.crd.updated` | Effectiveness CRD updated | — | V1.1 (Level 2) | P1 |

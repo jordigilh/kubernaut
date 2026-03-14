@@ -55,7 +55,7 @@ The Effectiveness Monitor uses a **hybrid approach** combining automated checks 
   - Health checks (pod running, OOM errors, latency metrics)
   - Metric comparisons (pre/post execution)
   - Component audit events (health, alert, alert_decay, metrics, spec-hash); DataStorage computes weighted effectiveness score on demand
-  - Alert decay detection: keeps EA open when resource is healthy but alert still firing due to Prometheus lookback window decay (Issue #369, BR-EM-012)
+  - Alert decay detection with multi-probe cross-validation: keeps EA open when all non-alert probes (health, metrics, hash) are positive but the alert is still firing due to Prometheus lookback window decay. Health is re-probed live on each decay pass; metrics score is checked but not re-probed. If any probe turns negative, the decay hypothesis is killed and the alert is accepted at face value. Covers both reactive signals (health as ground truth) and proactive/predictive signals (metrics as ground truth). (Issue #369, BR-EM-012)
   - Anomaly detection (metric changes > thresholds)
 - **Cost**: Negligible (computational only)
 - **Latency**: <100ms

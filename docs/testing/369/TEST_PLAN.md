@@ -1,8 +1,9 @@
 # Test Plan: EM Alert Decay Detection
 
-**Feature**: Keep EA open during Prometheus alert decay window to prevent duplicate RRs
-**Version**: 1.0
+**Feature**: Keep EA open during Prometheus alert decay window to prevent duplicate RRs, with multi-probe cross-validation
+**Version**: 2.2
 **Created**: 2026-03-04
+**Updated**: 2026-03-14
 **Author**: AI Assistant
 **Status**: Draft
 **Branch**: `fix/v1.0.1-chart-platform-agnostic`
@@ -25,7 +26,9 @@
 
 ### In Scope
 
-- **EM Reconciler alert decay detection**: `isAlertDecay` helper and integration into the alert assessment flow in `reconciler.go`
+- **EM Reconciler alert decay detection**: `isAlertDecay` helper with multi-probe cross-validation and integration into the alert assessment flow in `reconciler.go`
+- **Health re-probe during decay**: Reset `HealthAssessed=false` on each decay pass for live K8s API re-probe
+- **Metrics gate**: Check already-assessed `MetricsScore` in `isAlertDecay` for proactive/predictive signal coverage
 - **EA CRD types**: `AlertDecayRetries` field in `EAComponents`, `AssessmentReasonAlertDecayTimeout` constant
 - **Audit event**: `effectiveness.alert_decay.detected` event type (OpenAPI, ogen, Go audit manager)
 - **Assessment reason**: `alert_decay_timeout` in `determineAssessmentReason` when validity expires during decay
@@ -33,18 +36,24 @@
 ### Out of Scope
 
 - Gateway `ShouldDeduplicate` logic (unchanged — already deduplicates Verifying RRs)
+- Gateway owner resolution / ghost detection (handles pod-level alerts where pod is replaced)
 - RO `completeVerificationIfNeeded` (unchanged — no `NextAllowedExecution` needed)
 - AlertManager client or alert scoring logic (existing, not modified)
+- Metrics re-probing (too noisy during stabilization; initial pre/post comparison is the meaningful signal)
 
 ### Design Decisions
 
 | Decision | Rationale |
 |----------|-----------|
 | Keep EA open (don't set `AlertAssessed=true`) during decay | Leverages existing Verifying phase dedup in Gateway, no new fields needed on RR |
-| Health score threshold: `> 0` | Health and alert are independent probes; any positive health with stable hash signals decay |
+| Multi-probe cross-validation: alert must be only negative signal | If health or metrics also show degradation, the alert is genuine — remediation failed |
+| Re-probe health (live) on each decay pass | Health is cheap (K8s API) and is the ground truth for reactive signals; catches resource degradation after initial assessment |
+| Check metrics score but don't re-probe | Metrics are expensive (Prometheus range queries) and noisy during stabilization; initial pre/post comparison captures proactive signal outcomes |
+| Metrics nil/unavailable is neutral, not blocking | First pass may not have metrics yet; nil means no Prometheus data available, not negative |
 | Single audit event on first detection, silence on retries | Follows metrics component precedent (lines 559-565 of reconciler.go), avoids audit noise |
 | `alert_decay_timeout` reason vs `partial` | Lets DataStorage/dashboards distinguish "never checked alert" from "actively monitored decay" |
 | Validity window as natural timeout | If alert persists beyond validity, it's a genuine re-occurrence — new RR is correct |
+| Pod-level alerts handled by Gateway ghost detection, not EM | When a pod is replaced, the Gateway's owner resolution fails the lookup and drops the signal — EM decay detection is not needed |
 
 ---
 
@@ -54,8 +63,8 @@
 
 Authority: `03-testing-strategy.mdc` -- Per-Tier Testable Code Coverage.
 
-- **Unit**: >=80% of unit-testable code (isAlertDecay helper, determineAssessmentReason decay branch, AlertDecayRetries increment, audit event guard)
-- **Integration**: >=80% of integration-testable code (reconciler loop with fake AlertManager, EA lifecycle through decay)
+- **Unit**: >=80% of unit-testable code (isAlertDecay helper with metrics gate, determineAssessmentReason decay branch, AlertDecayRetries increment, audit event guard, health re-probe reset)
+- **Integration**: >=80% of integration-testable code (reconciler loop with fake AlertManager, EA lifecycle through decay including health re-probe and metrics cross-validation)
 
 ### 2-Tier Minimum
 
@@ -73,14 +82,14 @@ Tests validate business outcomes: "does the system suppress duplicate RRs during
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `internal/controller/effectivenessmonitor/reconciler.go` | `isAlertDecay` (new), `determineAssessmentReason` (modified) | ~20 new |
-| `api/effectivenessassessment/v1alpha1/effectivenessassessment_types.go` | `AlertDecayRetries` field, `AssessmentReasonAlertDecayTimeout` constant | ~5 new |
+| `internal/controller/effectivenessmonitor/reconciler.go` | `isAlertDecay` (enhanced: metrics gate + health re-probe reset), `determineAssessmentReason` (modified) | ~25 |
+| `api/effectivenessassessment/v1alpha1/effectivenessassessment_types.go` | `AlertDecayRetries` field, `AssessmentReasonAlertDecayTimeout` constant | ~5 |
 
 ### Integration-Testable Code (I/O, wiring, cross-component)
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `internal/controller/effectivenessmonitor/reconciler.go` | `Reconcile` (alert block with decay detection, audit emission, requeue behavior) | ~30 modified |
+| `internal/controller/effectivenessmonitor/reconciler.go` | `Reconcile` (alert block with decay detection, health re-probe reset, metrics cross-validation, audit emission, requeue behavior) | ~40 modified |
 | `pkg/effectivenessmonitor/audit/manager.go` | `RecordAlertDecayDetected` | ~25 new |
 
 ---
@@ -96,7 +105,12 @@ Tests validate business outcomes: "does the system suppress duplicate RRs during
 | BR-EM-012 | Spec drift aborts decay monitoring immediately | P1 | Unit | UT-EM-DECAY-005 | Pass |
 | BR-EM-012 | Operator observability: accurate decay retry count | P0 | Unit | UT-EM-DECAY-006 | Pass |
 | BR-EM-012 | Audit trail: single entry per decay detection, no noise | P0 | Unit | UT-EM-DECAY-007 | Pass |
+| BR-EM-012 | Metrics negative kills decay hypothesis — EA completes with AlertScore=0.0, no decay retries (proactive signal) | P0 | Unit | UT-EM-DECAY-008 | Pass |
+| BR-EM-012 | Metrics nil/unavailable is neutral — EA stays in Assessing, decay proceeds (graceful degradation) | P1 | Unit | UT-EM-DECAY-009 | Pass |
+| BR-EM-012 | Health re-probed live on each decay pass — HealthAssessed reset, AlertDecayRetries increments (not stale) | P0 | Unit | UT-EM-DECAY-010 | Pass |
+| BR-EM-012 | Health degradation during decay kills hypothesis — EA completes with AlertScore=0.0 (reactive signal) | P0 | Unit | UT-EM-DECAY-011 | Pass |
 | BR-EM-012 | End-to-end: suppress duplicates during decay, complete on resolution | P0 | Integration | IT-EM-DECAY-001 | Pass (compiles, requires infra) |
+| BR-EM-012 | Proactive signal: metrics negative → EA completes with AlertScore=0.0, AlertDecayRetries=1 (metrics gate) | P0 | Integration | IT-EM-DECAY-002 | Pass (compiles, requires infra) |
 
 ### Status Legend
 
@@ -133,6 +147,15 @@ Format: `{TIER}-EM-DECAY-{SEQUENCE}`
 | `UT-EM-DECAY-006` | Operator can observe how many times the system re-checked during decay — AlertDecayRetries accurately counts each re-check | Pass |
 | `UT-EM-DECAY-007` | System emits exactly one audit trail entry when decay monitoring begins, avoiding audit noise on subsequent re-checks | Pass |
 
+### Tier 1 (continued): New Unit Tests for Cross-Validation (Option D)
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `UT-EM-DECAY-008` | System kills decay hypothesis when metrics show no improvement (proactive signal) — EA completes with AlertScore=0.0, AlertDecayRetries=0 | Pass |
+| `UT-EM-DECAY-009` | System does not block decay detection when metrics are unavailable (nil score) — EA stays in Assessing with AlertDecayRetries=1, RequeueAfter > 0 | Pass |
+| `UT-EM-DECAY-010` | System re-probes health live on each decay pass — HealthAssessed reset after each pass, AlertDecayRetries increments across two passes | Pass |
+| `UT-EM-DECAY-011` | System kills decay hypothesis when health degrades on pass 2 — EA completes with AlertScore=0.0, AlertDecayRetries=1 from pass 1 | Pass |
+
 ### Tier 2: Integration Tests
 
 **Testable code scope**: Full reconciler loop with fake AlertManager and envtest. Target: >=80%.
@@ -140,6 +163,7 @@ Format: `{TIER}-EM-DECAY-{SEQUENCE}`
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
 | `IT-EM-DECAY-001` | End-to-end: system suppresses duplicate RRs during alert decay window, then correctly completes remediation when alert resolves — no manual intervention needed | Pass (compiles, requires infra) |
+| `IT-EM-DECAY-002` | Proactive signal: alert firing + health positive + metrics negative → EA completes with AlertScore=0.0, AssessmentReason=full, AlertDecayRetries=1 (metrics gate killed hypothesis) | Pass (compiles, requires infra) |
 
 ### Tier Skip Rationale
 
@@ -295,6 +319,105 @@ Format: `{TIER}-EM-DECAY-{SEQUENCE}`
 
 ---
 
+### UT-EM-DECAY-008: Metrics negative kills decay hypothesis (proactive signal)
+
+**BR**: BR-EM-012
+**Type**: Unit (correctness)
+**File**: `test/unit/effectivenessmonitor/alert_decay_test.go`
+
+**Given**: A proactive alert fired (e.g., "disk usage trending toward 90%"). After remediation, health is positive (resource was never unhealthy — health is always positive for proactive signals). Metrics have been assessed and show no improvement (MetricsAssessed=true, MetricsScore=0.0 — disk usage still trending up). The alert is still firing (AlertScore=0.0).
+**When**: The EM reconciles the EA
+**Then**: The system recognizes this is NOT alert decay — the metrics prove the remediation didn't address the predicted condition. The alert is assessed normally and the EA completes with the alert score reflecting the genuine failure.
+
+**Acceptance Criteria** (correctness — proactive signal coverage):
+- EA Phase is `PhaseCompleted` (not kept open for decay monitoring)
+- AlertAssessed is `true` (assessed normally, not deferred)
+- AlertScore is exactly `0.0` (alert firing, accepted at face value)
+- AlertDecayRetries is `0` (decay was never triggered — metrics gate prevented it)
+- AssessmentReason reflects that all components were assessed (not `alert_decay_timeout`)
+
+---
+
+### UT-EM-DECAY-009: Metrics nil/unavailable is neutral
+
+**BR**: BR-EM-012
+**Type**: Unit (correctness)
+**File**: `test/unit/effectivenessmonitor/alert_decay_test.go`
+
+**Given**: Health is positive (HealthScore=1.0), spec is stable (HashComputed=true), alert is firing (AlertScore=0.0). MetricsAssessed is `true` but MetricsScore is `nil` (Prometheus returned no data for any query — graceful degradation).
+**When**: The EM reconciles the EA
+**Then**: The system treats nil metrics as neutral — decay detection proceeds. Absence of metric data should not be confused with negative metric data. The EA stays open for re-checking.
+
+**Acceptance Criteria** (correctness — graceful degradation):
+- EA Phase remains `PhaseAssessing` (decay monitoring active, EA not completed)
+- AlertAssessed remains `false` (decay monitoring continues)
+- AlertDecayRetries is `1` (decay detection activated despite nil metrics)
+- RequeueAfter > 0 (reconciler schedules next decay check)
+
+---
+
+### UT-EM-DECAY-010: Health re-probed live on each decay pass
+
+**BR**: BR-EM-012
+**Type**: Unit (behavior)
+**File**: `test/unit/effectivenessmonitor/alert_decay_test.go`
+
+**Given**: An EA is in a state where alert decay is detected on the first reconcile pass (health=1.0, alert firing, spec stable).
+**When**: The EM reconciles the EA through two consecutive passes (both with alert still firing and health still positive)
+**Then**: After the first pass, `HealthAssessed` is reset to `false`, forcing a live re-probe on the next pass. On the second pass, health is re-assessed (HealthAssessed transitions from false back to true via the re-probe), and since health remains positive, decay monitoring continues. The operator sees AlertDecayRetries incrementing on each pass, proving the system is actively re-validating rather than relying on stale data.
+
+**Acceptance Criteria** (behavior — live re-probe, observable via multi-pass):
+- After pass 1: `HealthAssessed == false` (reset for re-probe), `AlertDecayRetries == 1`
+- After pass 2: `HealthAssessed == false` (re-probed then reset again), `AlertDecayRetries == 2`
+- EA Phase remains `PhaseAssessing` throughout both passes (decay monitoring continues)
+- AlertAssessed remains `false` throughout (EA stays open)
+
+---
+
+### UT-EM-DECAY-011: Health degradation during decay kills hypothesis
+
+**BR**: BR-EM-012
+**Type**: Unit (correctness)
+**File**: `test/unit/effectivenessmonitor/alert_decay_test.go`
+
+**Given**: Alert decay was detected on pass 1 (health=1.0, alert=0.0, hash stable), causing HealthAssessed to be reset to false. On pass 2, the resource has started crashing (e.g., OOMKilled after memory increase was insufficient) — the health re-probe will return HealthScore=0.0. The alert is still firing.
+**When**: The EM reconciles the EA on pass 2 (with health now degraded)
+**Then**: The system kills the decay hypothesis — health is no longer positive, so the alert is genuine. The EA completes with the alert score reflecting the real failure. The operator sees that one decay pass occurred before the system correctly identified the genuine failure.
+
+**Acceptance Criteria** (correctness — reactive signal coverage):
+- EA Phase is `PhaseCompleted` (decay hypothesis killed, assessment finalized)
+- AlertAssessed is `true` (alert accepted at face value)
+- AlertScore is exactly `0.0` (alert firing, remediation failed)
+- AlertDecayRetries is `1` (reflects the single decay pass from pass 1, not reset)
+- AssessmentReason reflects normal completion (not `alert_decay_timeout`)
+
+---
+
+### IT-EM-DECAY-002: Proactive signal — metrics negative, alert is genuine
+
+**BR**: BR-EM-012
+**Type**: Integration (behavior + correctness)
+**File**: `test/integration/effectivenessmonitor/alert_decay_integration_test.go`
+
+**Given**: A remediation completed for a proactive signal. The fake AlertManager returns AlertScore=0.0 (alert still firing). Health is always positive (resource was never unhealthy). Fake Prometheus returns metrics showing no improvement (MetricsScore <= 0).
+**When**: The EM reconciler runs through reconcile cycles (using Eventually(), NOT time.Sleep())
+**Then**: On the first pass, health is positive and metrics are not yet available — decay is suspected temporarily (AlertDecayRetries increments). On the second pass, metrics are assessed as negative — the metrics gate prevents decay detection and the alert is accepted at face value. The EA completes with AlertScore=0.0, correctly identifying the remediation as ineffective for this proactive signal.
+
+**Acceptance Criteria** (end-to-end behavior):
+- EA phase: Assessing → (brief decay window on pass 1, metrics not yet available) → Completed
+- EA AlertScore = 0.0 (alert firing, remediation failed — accuracy)
+- EA AlertAssessed = true (alert finalized, not kept open)
+- EA AssessmentReason = `"full"` (all components assessed — correctness; this is NOT `alert_decay_timeout` because the metrics gate killed the decay hypothesis before validity expired)
+- EA AlertDecayRetries == 1 (exactly one decay pass before metrics gate killed the hypothesis — accuracy)
+
+**Anti-pattern compliance**:
+- Uses `Eventually()` for all async assertions (TESTING_GUIDELINES §"time.Sleep() FORBIDDEN")
+- No `time.Sleep()`
+- No `Skip()` (TESTING_GUIDELINES §"Skip() FORBIDDEN")
+- Triggers business operation (EA creation via CRD) and verifies outcomes (TESTING_GUIDELINES §"Audit Anti-Pattern")
+
+---
+
 ## Anti-Pattern Compliance (TESTING_GUIDELINES v2.7.0)
 
 All tests in this plan comply with the mandatory anti-pattern rules:
@@ -308,9 +431,10 @@ All tests in this plan comply with the mandatory anti-pattern rules:
 
 **Business Outcome Quality Bar**: Every test answers "what does the operator/system get?" — not "what function is called?"
 
-- **Behavior**: Does the system keep the EA open during decay? (UT-001, IT-001)
-- **Correctness**: Does the system report the right assessment reason? (UT-002, UT-003, UT-005)
+- **Behavior**: Does the system keep the EA open during decay? (UT-001, UT-010, IT-001)
+- **Correctness**: Does the system report the right assessment reason? (UT-002, UT-003, UT-005, UT-008, UT-009, UT-011, IT-002)
 - **Accuracy**: Does AlertDecayRetries accurately count re-checks? Is AlertScore exactly 1.0 on resolution? (UT-002, UT-006)
+- **Cross-validation**: Does the system correctly distinguish decay from genuine failure across reactive and proactive signals? (UT-008, UT-011, IT-002)
 
 ---
 
@@ -355,3 +479,6 @@ make test-integration-effectivenessmonitor
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-04 | Initial test plan for #369 (EM Alert Decay Detection) |
+| 2.0 | 2026-03-14 | Option D: Multi-probe cross-validation. Added UT-EM-DECAY-008..011, IT-EM-DECAY-002. Health re-probe on each decay pass. Metrics gate for proactive signal coverage. Updated design decisions, scope, and BR coverage matrix. |
+| 2.1 | 2026-03-14 | TESTING_GUIDELINES quality pass: Replaced internal function assertions (isAlertDecay return values) with observable EA CRD status fields (Phase, AlertScore, AlertDecayRetries). All tests driven through public Reconcile() API. Made imprecise assertions exact. Added missing Phase/AlertScore/RequeueAfter criteria. |
+| 2.2 | 2026-03-14 | Implementation complete. All new tests pass. Updated status columns Pending → Pass. Added missing AssessmentReason assertions to UT-EM-DECAY-008 and 011 per acceptance criteria. |
