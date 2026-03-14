@@ -132,6 +132,7 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 |---|---|---|
 | `global.image.registry` | Container image registry | `quay.io/kubernaut-ai` |
 | `global.image.tag` | Image tag override (defaults to `appVersion`) | `""` |
+| `global.image.digest` | Image digest (e.g. `sha256:abc...`); when set, overrides tag | `""` |
 | `global.image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `global.nodeSelector` | Global node selector applied to all pods | `{}` |
 | `global.tolerations` | Global tolerations applied to all pods | `[]` |
@@ -290,9 +291,8 @@ See [TLS and Certificate Management](https://jordigilh.github.io/kubernaut-docs/
 
 | Parameter | Description | Default |
 |---|---|---|
-| `hooks.tlsCerts.image` | kubectl image for TLS cert generation (hook mode only) | `bitnami/kubectl:latest` |
-| `hooks.migrations.image` | PostgreSQL client image for migrations (defaults to `postgresql.image`) | `""` |
-| `hooks.migrations.gooseVersion` | goose CLI version | `v3.24.1` |
+| `hooks.tlsCerts.image` | kubectl image for TLS cert generation (hook mode only) | `bitnami/kubectl:1.32` |
+| `hooks.migrations.image` | UBI9-minimal image with goose + psql for database migrations | `quay.io/kubernaut-ai/db-migrate:v3.24.1` |
 
 ### Network Policies
 
@@ -301,6 +301,101 @@ See [TLS and Certificate Management](https://jordigilh.github.io/kubernaut-docs/
 | `networkPolicies.enabled` | Create NetworkPolicy resources | `false` |
 
 When enabled, NetworkPolicies restrict ingress/egress traffic for gateway, datastorage, and authwebhook. DNS egress (port 53) is always allowed.
+
+## Disconnected / Air-Gapped Install
+
+Kubernaut supports installation in disconnected OCP environments where nodes have no internet access. All chart images must be mirrored to an internal registry first.
+
+### 1. Generate the image inventory
+
+```bash
+./hack/airgap/generate-image-list.sh --set global.image.tag=1.0.0
+```
+
+This outputs every container image the chart will pull, one per line.
+
+### 2. Mirror images with `oc mirror`
+
+Use the template `ImageSetConfiguration` at `hack/airgap/imageset-config.yaml.tmpl`:
+
+```bash
+# Edit the template: replace <VERSION> with your release version
+cp hack/airgap/imageset-config.yaml.tmpl imageset-config.yaml
+sed -i 's/<VERSION>/1.0.0/g' imageset-config.yaml
+
+# Mirror to your internal registry
+oc mirror --config=imageset-config.yaml docker://<mirror-registry>
+```
+
+Alternatively, use `skopeo copy` for individual images.
+
+### 3. Configure the chart
+
+Layer the `values-airgap.yaml` overlay (or create your own) to point all images to the mirror:
+
+```bash
+helm install kubernaut charts/kubernaut/ \
+  -n kubernaut-system \
+  -f charts/kubernaut/values-demo.yaml \
+  -f charts/kubernaut/values-airgap.yaml \
+  --set global.image.registry=<mirror-registry>/kubernaut-ai \
+  --set postgresql.auth.password=<password>
+```
+
+See `charts/kubernaut/values-airgap.yaml` for the complete list of image overrides.
+
+### 4. OCP: ImageDigestMirrorSet (IDMS)
+
+On OCP 4.13+, create an `ImageDigestMirrorSet` to redirect image pulls from source registries to the mirror without changing `values.yaml`:
+
+```yaml
+apiVersion: config.openshift.io/v1
+kind: ImageDigestMirrorSet
+metadata:
+  name: kubernaut-mirror
+spec:
+  imageDigestMirrors:
+    - source: quay.io/kubernaut-ai
+      mirrors:
+        - <mirror-registry>/kubernaut-ai
+    - source: docker.io
+      mirrors:
+        - <mirror-registry>
+    - source: ghcr.io
+      mirrors:
+        - <mirror-registry>/ghcr.io
+```
+
+For OCP < 4.13, use the deprecated `ImageContentSourcePolicy` (ICSP) with the same mirror mappings.
+
+### 5. OCP: Disconnected ImageStream import
+
+In disconnected environments, `oc import-image` cannot reach `registry.redhat.io`. Mirror the Red Hat images first, then create ImageStreams pointing at the mirror:
+
+```bash
+# Mirror Red Hat images to internal registry
+skopeo copy docker://registry.redhat.io/rhel9/postgresql-16 \
+  docker://<mirror-registry>/rhel9/postgresql-16
+skopeo copy docker://registry.redhat.io/rhel9/valkey-8 \
+  docker://<mirror-registry>/rhel9/valkey-8
+
+# Create ImageStream tags from the mirror
+oc tag <mirror-registry>/rhel9/postgresql-16:latest \
+  openshift/postgresql:16-el9 -n openshift
+oc tag <mirror-registry>/rhel9/valkey-8:latest \
+  openshift/valkey:8-el9 -n openshift
+```
+
+Then install with the OCP overlay:
+
+```bash
+helm install kubernaut charts/kubernaut/ \
+  -n kubernaut-system \
+  -f charts/kubernaut/values-demo.yaml \
+  -f charts/kubernaut/values-ocp.yaml \
+  -f charts/kubernaut/values-airgap.yaml \
+  --set global.image.registry=<mirror-registry>/kubernaut-ai
+```
 
 ## Upgrading
 
