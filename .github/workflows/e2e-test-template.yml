@@ -40,6 +40,7 @@ jobs:
       github.event_name != 'pull_request'
     env:
       KIND_EXPERIMENTAL_PROVIDER: podman
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     outputs:
       result: ${{ steps.test.outcome }}
 
@@ -75,7 +76,7 @@ jobs:
       # ========================================
       - name: Run ${{ inputs.service }} E2E tests
         id: test
-        uses: nick-fields/retry-action@v2
+        uses: nick-fields/retry@v3
         with:
           timeout_minutes: ${{ inputs.timeout }}
           max_attempts: 2

@@ -64,7 +64,7 @@ jobs:
       code_changed: ${{ steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -119,7 +119,7 @@ jobs:
           make generate
 
       - name: Lint Go code
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.9.0
           args: cmd/... pkg/... internal/... test/...
@@ -132,6 +132,8 @@ jobs:
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -438,7 +440,7 @@ jobs:
           make generate
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -1022,6 +1024,11 @@ jobs:
             echo "Loading into Kind..."
             podman save "$img" | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
           done
+
+          echo "Loading Helm hook image (bitnami/kubectl:1.32)..."
+          podman pull docker.io/bitnami/kubectl:1.32
+          podman save docker.io/bitnami/kubectl:1.32 | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
+
           echo "All images loaded into Kind"
 
       - name: Run smoke tests
@@ -1207,7 +1214,7 @@ jobs:
       
       - name: Post coverage report to PR
         if: github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: coverage-report
           path: coverage-summary.md
