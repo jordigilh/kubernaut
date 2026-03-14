@@ -4,8 +4,8 @@
 **Version**: 1.0
 **Created**: 2026-03-14
 **Author**: Kubernaut AI Team
-**Status**: Draft
-**Branch**: `feature/v1.0-bugfixes-demos`
+**Status**: Implemented
+**Branch**: `fix/v1.0.1-chart-platform-agnostic`
 
 **Authority**:
 - [BR-WE-009]: Resource Locking -- Prevent Parallel Execution
@@ -35,6 +35,7 @@
 - `GenerationChangedPredicate` removal or modification (the event filter is correct for its purpose; the fix is in scheduling explicit requeues)
 - Changes to cooldown period defaults or configuration (BR-WE-010 is already working correctly)
 - Job TTL alignment (cosmetic improvement, not the root cause)
+- **`MarkFailedWithReason` return path** — this method handles pre-execution failures (Pending -> Failed) where NO execution resource (Job/PipelineRun) was created. Since there is no lock to release, `ReconcileTerminal` cleanup is irrelevant. The method returns `error` (not `ctrl.Result`), and its callers return `ctrl.Result{}, nil` which is correct for this case.
 
 ### Coordination with #374
 
@@ -96,11 +97,11 @@ Tests validate the operator-facing outcome: "After a remediation completes, the 
 
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |-------|-------------|----------|------|---------|--------|
-| BR-WE-009 | Lock released after successful completion enables sequential execution | P0 | Unit | UT-WE-375-001 | Pending |
-| BR-WE-009 | Lock released after failure enables sequential execution | P0 | Unit | UT-WE-375-002 | Pending |
-| BR-WE-010 | Cooldown enforced via ReconcileTerminal requeue (default fallback) | P0 | Unit | UT-WE-375-003 | Pending |
-| BR-WE-009 | Multi-cycle remediation: second WFE succeeds after first completes | P0 | Integration | IT-WE-375-001 | Pending |
-| BR-WE-010 | Multi-cycle remediation blocked during cooldown, succeeds after | P0 | Integration | IT-WE-375-002 | Pending |
+| BR-WE-009 | Lock released after successful completion enables sequential execution | P0 | Unit | UT-WE-375-001 | Pass |
+| BR-WE-009 | Lock released after failure enables sequential execution | P0 | Unit | UT-WE-375-002 | Pass |
+| BR-WE-010 | Cooldown enforced via ReconcileTerminal requeue (default fallback) | P0 | Unit | UT-WE-375-003 | Pass |
+| BR-WE-009 | Multi-cycle remediation: second WFE succeeds after first completes | P0 | Integration | IT-WE-375-001 | Deferred |
+| BR-WE-010 | Multi-cycle remediation blocked during cooldown, succeeds after | P0 | Integration | IT-WE-375-002 | Implemented |
 
 **Note**: Pre-execution stale Job cleanup tests (stale completed/failed Job detection, running Job lock preservation, race conditions) are covered by [#374's test plan](../../testing/374/TEST_PLAN.md) — see UT-WE-374-001 through UT-WE-374-004 and IT-WE-374-001/002.
 
@@ -110,7 +111,9 @@ Tests validate the operator-facing outcome: "After a remediation completes, the 
 - RED: Failing test written (TDD RED phase)
 - GREEN: Minimal implementation passes (TDD GREEN phase)
 - REFACTORED: Code cleaned up (TDD REFACTOR phase)
+- Implemented: Test written, pending envtest execution
 - Pass: Implemented and passing
+- Deferred: Covered by another issue's test plan (with rationale)
 
 ---
 
@@ -131,9 +134,9 @@ Format: `{TIER}-WE-375-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-WE-375-001` | After successful remediation, the controller schedules lock release (RequeueAfter set to cooldown period in MarkCompleted) | Pending |
-| `UT-WE-375-002` | After failed remediation, the controller schedules lock release (RequeueAfter set to cooldown period in MarkFailed) | Pending |
-| `UT-WE-375-003` | Default cooldown period (5m) used when CooldownPeriod is zero in MarkCompleted/MarkFailed | Pending |
+| `UT-WE-375-001` | After successful remediation, the controller schedules lock release (RequeueAfter set to cooldown period in MarkCompleted) | Pass |
+| `UT-WE-375-002` | After failed remediation, the controller schedules lock release (RequeueAfter set to cooldown period in MarkFailed) | Pass |
+| `UT-WE-375-003` | Default cooldown period (5m) used when CooldownPeriod is zero in MarkCompleted/MarkFailed | Pass |
 
 ### Tier 2: Integration Tests
 
@@ -141,8 +144,8 @@ Format: `{TIER}-WE-375-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `IT-WE-375-001` | Operator can remediate the same target resource across two consecutive WFE cycles (Cycle 1 completes -> lock released -> Cycle 2 succeeds) | Pending |
-| `IT-WE-375-002` | Cooldown enforcement: a second WFE created within cooldown window is deferred (Pending), then proceeds after cooldown expires | Pending |
+| `IT-WE-375-001` | Operator can remediate the same target resource across two consecutive WFE cycles (Cycle 1 completes -> lock released -> Cycle 2 succeeds) | Deferred to IT-WE-374-001 |
+| `IT-WE-375-002` | Cooldown enforcement: a second WFE created within cooldown window is deferred (Pending), then proceeds after cooldown expires | Implemented |
 
 ### Tier Skip Rationale (if any tier is omitted)
 
@@ -204,6 +207,10 @@ Format: `{TIER}-WE-375-{SEQUENCE}`
 ---
 
 ### IT-WE-375-001: Multi-cycle remediation succeeds after lock release
+
+**Status**: Deferred to IT-WE-374-001
+
+**Rationale**: IT-WE-374-001 already validates the end-to-end sequential remediation lifecycle (Cycle 1 complete -> Cycle 2 succeeds) with the real controller and envtest. With both #374 and #375 fixes applied, IT-WE-374-001 exercises the same business outcome. Combined with UT-WE-375-001/002/003 proving the `RequeueAfter` mechanism, this provides sufficient 2-tier coverage for BR-WE-009.
 
 **BR**: BR-WE-009, DD-WE-003 v1.1
 **Type**: Integration
@@ -282,3 +289,4 @@ go test ./test/integration/workflowexecution/... -v
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-14 | Initial test plan for #375 (WFE lock release) |
+| 1.1 | 2026-03-14 | Updated statuses: UT-WE-375-001/002/003 Pass, IT-WE-375-001 deferred to IT-WE-374-001, IT-WE-375-002 Implemented. Added MarkFailedWithReason to Out of Scope. Updated branch to fix/v1.0.1-chart-platform-agnostic. |
