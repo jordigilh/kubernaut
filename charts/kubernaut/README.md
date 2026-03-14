@@ -25,7 +25,7 @@ If Prometheus and AlertManager are not deployed, set `effectivenessmonitor.exter
 
 ### OpenShift (OCP)
 
-The OCP overlay (`values-ocp.yaml`) switches PostgreSQL and Valkey to Red Hat RHEL10 catalog images (direct pull from `registry.redhat.io`), replaces `bitnami/kubectl` with `ose-cli` for hook jobs, and disables the event exporter (no Red Hat-supported equivalent; users should provide their own Kubernetes event forwarding if needed).
+The OCP overlay (`values-ocp.yaml`) switches PostgreSQL and Valkey to Red Hat RHEL10 catalog images (direct pull from `registry.redhat.io`), replaces `registry.k8s.io/kubectl` with `ose-cli` for hook jobs, and disables the event exporter (no Red Hat-supported equivalent; users should provide their own Kubernetes event forwarding if needed).
 
 No ImageStream prerequisites are required — pods pull directly from `registry.redhat.io` using the cluster's global pull secret.
 
@@ -281,7 +281,7 @@ See [TLS and Certificate Management](https://jordigilh.github.io/kubernaut-docs/
 
 | Parameter | Description | Default |
 |---|---|---|
-| `hooks.tlsCerts.image` | kubectl image for TLS cert generation (hook mode only) | `bitnami/kubectl:1.32` |
+| `hooks.tlsCerts.image` | kubectl image for TLS cert generation (hook mode only) | `registry.k8s.io/kubectl:v1.32.0` |
 | `hooks.migrations.image` | UBI9-minimal image with goose + psql for database migrations | `quay.io/kubernaut-ai/db-migrate:v1.1.0-pre1` |
 
 ### Network Policies

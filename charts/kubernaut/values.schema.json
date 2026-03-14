@@ -710,7 +710,7 @@
           "properties": {
             "image": {
               "type": "string",
-              "default": "bitnami/kubectl:latest"
+              "default": "registry.k8s.io/kubectl:v1.32.0"
             }
           }
         },

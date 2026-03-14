@@ -70,20 +70,20 @@ spec:
       type: string
   steps:
     - name: increase-memory
-      image: bitnami/kubectl:latest
+      image: registry.k8s.io/kubectl:v1.32.0
       script: |
         kubectl set resources deployment/$(params.pod-name) \
           --limits=memory=$(params.memory-limit) \
           -n $(params.namespace)
 
     - name: restart-pod
-      image: bitnami/kubectl:latest
+      image: registry.k8s.io/kubectl:v1.32.0
       script: |
         kubectl rollout restart deployment/$(params.pod-name) \
           -n $(params.namespace)
 
     - name: verify-health
-      image: bitnami/kubectl:latest
+      image: registry.k8s.io/kubectl:v1.32.0
       script: |
         kubectl wait --for=condition=available \
           deployment/$(params.pod-name) \
@@ -222,7 +222,7 @@ spec:
   steps:
     # Step 1: K8s-native action (Tekton)
     - name: scale-k8s-deployment
-      image: bitnami/kubectl:latest
+      image: registry.k8s.io/kubectl:v1.32.0
       script: |
         kubectl scale deployment/app --replicas=5
 

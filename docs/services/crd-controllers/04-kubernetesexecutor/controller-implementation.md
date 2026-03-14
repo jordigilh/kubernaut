@@ -265,7 +265,7 @@ func (r *KubernetesExecutionReconciler) buildExecutionJob(ke *kubernetesexecutio
                     Containers: []corev1.Container{
                         {
                             Name:    "kubectl-executor",
-                            Image:   "bitnami/kubectl:1.28",
+                            Image:   "registry.k8s.io/kubectl:v1.32.0",
                             Command: handler.BuildCommand(ke.Spec.Parameters),
                         },
                     },

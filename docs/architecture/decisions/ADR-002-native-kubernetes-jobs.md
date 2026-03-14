@@ -136,7 +136,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: kubectl
-        image: bitnami/kubectl:1.28
+        image: registry.k8s.io/kubectl:v1.32.0
         command: ["kubectl"]
         args:
           - "patch"
@@ -512,7 +512,7 @@ spec:
   restartPolicy: Never
   containers:
   - name: kubectl
-    image: bitnami/kubectl:1.28
+    image: registry.k8s.io/kubectl:v1.32.0
     command: ["kubectl", "patch", "configmap", ...]
 
 # Job Spec: ~20 lines (+33%)
@@ -529,7 +529,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: kubectl
-        image: bitnami/kubectl:1.28
+        image: registry.k8s.io/kubectl:v1.32.0
         command: ["kubectl", "patch", "configmap", ...]
 ```
 
@@ -602,7 +602,7 @@ spec:
     spec:
       initContainers:
       - name: pull-kubectl
-        image: bitnami/kubectl:1.28
+        image: registry.k8s.io/kubectl:v1.32.0
         command: ["true"]
       - name: pull-git
         image: alpine/git:latest
