@@ -27,7 +27,7 @@ ENV GOOSE_SHA256_x86_64=313ba1c77a367f431faf690fe817aad297722623b62395a8ac64281f
 ENV GOOSE_SHA256_aarch64=207681c8ed67511fa53da6790de986e9a70981af0eec6c4ba1d8ff05e552f043
 
 RUN microdnf update -y && \
-	microdnf install -y postgresql ca-certificates && \
+	microdnf install -y postgresql ca-certificates shadow-utils && \
 	microdnf clean all
 
 RUN set -e; \

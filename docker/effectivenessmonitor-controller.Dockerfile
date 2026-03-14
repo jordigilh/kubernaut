@@ -69,7 +69,7 @@ LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 # ============================================================================
 FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS development
 RUN microdnf update -y && \
-	microdnf install -y ca-certificates tzdata && \
+	microdnf install -y ca-certificates tzdata shadow-utils && \
 	microdnf clean all
 RUN useradd -r -u 65532 -g root nonroot
 COPY --from=builder /opt/app-root/src/effectivenessmonitor-controller /usr/local/bin/effectivenessmonitor-controller

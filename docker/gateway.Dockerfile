@@ -88,7 +88,7 @@ LABEL name="kubernaut-gateway" \
 # ============================================================================
 FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS development
 RUN microdnf update -y && \
-	microdnf install -y ca-certificates tzdata && \
+	microdnf install -y ca-certificates tzdata shadow-utils && \
 	microdnf clean all
 RUN useradd -r -u 1001 -g root gateway-user
 COPY --from=builder /opt/app-root/src/gateway /usr/local/bin/gateway
