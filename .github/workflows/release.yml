@@ -86,6 +86,7 @@ jobs:
           - effectivenessmonitor
           - holmesgpt-api
           - must-gather
+          - db-migrate
         arch: [amd64, arm64]
     steps:
       - name: Checkout code
@@ -179,7 +180,7 @@ jobs:
         run: |
           for svc in datastorage gateway aianalysis authwebhook notification \
                      remediationorchestrator signalprocessing workflowexecution \
-                     effectivenessmonitor holmesgpt-api must-gather; do
+                     effectivenessmonitor holmesgpt-api must-gather db-migrate; do
             echo "  Tagging $svc:latest..."
             podman manifest rm ${IMAGE_REGISTRY}/$svc:latest 2>/dev/null || true
             podman manifest create ${IMAGE_REGISTRY}/$svc:latest \

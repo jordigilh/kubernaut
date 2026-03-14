@@ -978,7 +978,7 @@ BUILD_DATE  ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 LDFLAGS ?= -ldflags "-X github.com/jordigilh/kubernaut/internal/version.Version=$(APP_VERSION) -X github.com/jordigilh/kubernaut/internal/version.GitCommit=$(GIT_COMMIT) -X github.com/jordigilh/kubernaut/internal/version.BuildDate=$(BUILD_DATE)"
 
 # All Go services with their Dockerfile mappings
-IMAGE_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor
+IMAGE_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor db-migrate
 IMAGE_DOCKERFILES_datastorage := docker/data-storage.Dockerfile
 IMAGE_DOCKERFILES_gateway := docker/gateway-ubi9.Dockerfile
 IMAGE_DOCKERFILES_aianalysis := docker/aianalysis.Dockerfile
@@ -988,6 +988,7 @@ IMAGE_DOCKERFILES_remediationorchestrator := docker/remediationorchestrator-cont
 IMAGE_DOCKERFILES_signalprocessing := docker/signalprocessing-controller.Dockerfile
 IMAGE_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.Dockerfile
 IMAGE_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.Dockerfile
+IMAGE_DOCKERFILES_db-migrate := docker/db-migrate.Dockerfile
 
 # IMAGE_TARGET: Dockerfile --target stage to build. Empty = last stage (development).
 # Set IMAGE_TARGET=production for release builds (scratch runtime, zero CVE surface).

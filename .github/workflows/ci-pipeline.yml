@@ -410,6 +410,10 @@ jobs:
           - service: holmesgpt-api
             dockerfile: holmesgpt-api/Dockerfile.e2e
             image_name: holmesgpt-api
+          # Infrastructure (1)
+          - service: db-migrate
+            dockerfile: docker/db-migrate.Dockerfile
+            image_name: db-migrate
           # Test Fixtures (1)
           - service: mock-llm
             dockerfile: test/services/mock-llm/Dockerfile
