@@ -264,31 +264,11 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// ========================================
-	// OBSERVED GENERATION CHECK (DD-CONTROLLER-001)
+	// DD-CONTROLLER-001 v4.0: Pending-phase ObservedGeneration skip REMOVED.
+	// Cooldown (BR-WE-009) uses RequeueAfter during Pending; the skip was
+	// blocking those retries and permanently stalling WFEs (#374, #375).
+	// GenerationChangedPredicate already filters status-only watch duplicates.
 	// ========================================
-	// WFE must reconcile on PipelineRun status changes (external watch).
-	// Only skip reconcile for annotation/label changes when:
-	// 1. Generation unchanged
-	// 2. Phase is Pending (not yet watching PipelineRun)
-	//
-	// IMPORTANT: Terminal phases (Completed/Failed) MUST continue reconciling
-	// until cooldown expires and lock is released (ReconcileTerminal handles this).
-	// Skipping terminal phases prevents cooldown processing and lock release.
-	//
-	// This allows reconciles for:
-	// - PipelineRun status updates (Running phase)
-	// - Cooldown processing (Completed/Failed phases)
-	// - Condition updates
-	// - Metrics recording
-	if wfe.Status.ObservedGeneration == wfe.Generation &&
-		wfe.Status.Phase == workflowexecutionv1alpha1.PhasePending {
-		// Safe to skip: Pending phase not yet watching PipelineRun
-		logger.V(1).Info("✅ DUPLICATE RECONCILE PREVENTED: Generation already processed (Pending phase)",
-			"generation", wfe.Generation,
-			"observedGeneration", wfe.Status.ObservedGeneration,
-			"phase", wfe.Status.Phase)
-		return ctrl.Result{}, nil
-	}
 
 	// ========================================
 	// Add Finalizer (if not present)
