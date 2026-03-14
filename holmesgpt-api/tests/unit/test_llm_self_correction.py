@@ -154,11 +154,14 @@ class TestParseAndValidateInvestigationResult:
     """Test the parse and validate function."""
 
     def test_returns_tuple_with_result_and_validation(self):
-        """DD-HAPI-002: Function returns tuple of (result, validation_result)."""
+        """DD-HAPI-002: Function returns tuple of (result, validation_result).
+
+        #372: Plain text without structured JSON now correctly returns a failed
+        ValidationResult to trigger the self-correction retry loop.
+        """
         from src.extensions.incident import _parse_and_validate_investigation_result
         from unittest.mock import Mock
 
-        # Mock investigation with no workflow (simplest case)
         investigation = Mock()
         investigation.analysis = "No workflow found"
 
@@ -172,8 +175,9 @@ class TestParseAndValidateInvestigationResult:
 
         assert isinstance(result, dict)
         assert "incident_id" in result
-        # No workflow, so no validation needed
-        assert validation_result is None
+        # #372: No structured output → failed ValidationResult (triggers retry)
+        assert validation_result is not None
+        assert validation_result.is_valid is False
 
     def test_parses_json_from_analysis(self):
         """DD-HAPI-002: Correctly parses JSON from LLM analysis."""
