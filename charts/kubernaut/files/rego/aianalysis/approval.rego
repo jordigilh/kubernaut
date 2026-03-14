@@ -57,6 +57,17 @@ is_sensitive_resource if {
     input.affected_resource.kind == "StatefulSet"
 }
 
+# Also match when the alert's target resource is a sensitive kind,
+# even if the LLM identified a different affected resource (e.g., a
+# Deployment causing DiskPressure on a Node).
+is_sensitive_resource if {
+    input.target_resource.kind == "Node"
+}
+
+is_sensitive_resource if {
+    input.target_resource.kind == "StatefulSet"
+}
+
 has_warnings if {
     count(input.warnings) > 0
 }
@@ -115,12 +126,24 @@ require_approval if {
     is_production
 }
 
+# Sensitive resource kinds (Node, StatefulSet) ALWAYS require approval regardless
+# of environment. Cluster-scoped resources like Node have no namespace for
+# BR-SP-051 environment detection, so is_production may not fire.
+# See: https://github.com/jordigilh/kubernaut/issues/370
+require_approval if {
+    is_sensitive_resource
+}
+
 # ========================================
 # SCORED RISK FACTORS FOR REASON GENERATION
 # ========================================
 
 risk_factors contains {"score": 90, "reason": "Missing affected resource - cannot determine remediation target (BR-AI-085-005)"} if {
     not has_affected_resource
+}
+
+risk_factors contains {"score": 85, "reason": "Sensitive resource kind (Node/StatefulSet) - requires manual approval"} if {
+    is_sensitive_resource
 }
 
 risk_factors contains {"score": 80, "reason": "Production environment with sensitive resource kind - requires manual approval"} if {
