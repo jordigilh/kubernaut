@@ -231,6 +231,30 @@ func (r *Repository) GetLatestDisabledByNameAndVersion(ctx context.Context, work
 	return &wf, nil
 }
 
+// GetActiveByWorkflowName retrieves any active workflow entry for a given workflow_name,
+// regardless of version. Issue #371, BR-WORKFLOW-006: Used by handleDuplicateWorkflow
+// for cross-version supersession when a new version of an existing workflow is registered.
+func (r *Repository) GetActiveByWorkflowName(ctx context.Context, workflowName string) (*models.RemediationWorkflow, error) {
+	query := `
+		SELECT * FROM remediation_workflow_catalog
+		WHERE workflow_name = $1 AND status = 'active'
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+
+	var wf models.RemediationWorkflow
+	err := r.db.GetContext(ctx, &wf, query, workflowName)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		r.logger.Error(err, "failed to get active workflow by name",
+			"workflow_name", workflowName)
+		return nil, fmt.Errorf("failed to get active workflow by name: %w", err)
+	}
+	return &wf, nil
+}
+
 // GetLatestVersion retrieves the latest version of a workflow by workflow_name
 // DD-WORKFLOW-002 v3.0: Uses is_latest_version flag for efficient lookup
 func (r *Repository) GetLatestVersion(ctx context.Context, workflowName string) (*models.RemediationWorkflow, error) {
