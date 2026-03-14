@@ -347,9 +347,10 @@ run_pre_004() {
     --cert="$tmpdir/tls.crt" --key="$tmpdir/tls.key" \
     -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
 
-  kubectl create configmap authwebhook-ca \
-    --from-file=ca.crt="$tmpdir/ca.crt" \
-    -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
+  local ca_b64
+  ca_b64=$(base64 < "$tmpdir/ca.crt" | tr -d '\n')
+  kubectl patch secret authwebhook-tls -n "$NAMESPACE" \
+    -p "{\"data\":{\"ca.crt\":\"$ca_b64\"}}" >/dev/null 2>&1 || pass=false
 
   rm -rf "$tmpdir"
 
@@ -414,16 +415,13 @@ run_verify_003() {
 
 run_tls_patch() {
   local desc="ST-CHART-TLS-PATCH: Patch webhooks with CA bundle (manual mode)"
-  local ca_crt
-  ca_crt=$(kubectl get configmap authwebhook-ca -n "$NAMESPACE" \
+  local ca_b64
+  ca_b64=$(kubectl get secret authwebhook-tls -n "$NAMESPACE" \
     -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
-  if [[ -z "$ca_crt" ]]; then
-    tap_not_ok "$desc" "authwebhook-ca ConfigMap not found or ca.crt is empty"
+  if [[ -z "$ca_b64" ]]; then
+    tap_not_ok "$desc" "ca.crt key not found in authwebhook-tls Secret"
     return 1
   fi
-
-  local ca_b64
-  ca_b64=$(printf '%s' "$ca_crt" | base64 | tr -d '\n')
 
   local pass=true
   for wh_kind in mutatingwebhookconfigurations validatingwebhookconfigurations; do
@@ -461,8 +459,15 @@ run_tls_001() {
   assert_resource_exists secret authwebhook-tls "$NAMESPACE" \
     "ST-CHART-TLS-001a: authwebhook-tls Secret exists" || pass=false
 
-  assert_resource_exists configmap authwebhook-ca "$NAMESPACE" \
-    "ST-CHART-TLS-001b: authwebhook-ca ConfigMap exists" || pass=false
+  local ca_key
+  ca_key=$(kubectl get secret authwebhook-tls -n "$NAMESPACE" \
+    -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
+  if [[ -n "$ca_key" ]]; then
+    tap_ok "ST-CHART-TLS-001b: authwebhook-tls Secret contains ca.crt key"
+  else
+    tap_not_ok "ST-CHART-TLS-001b: authwebhook-tls Secret contains ca.crt key" "ca.crt key missing"
+    pass=false
+  fi
 
   local cabundle
   cabundle=$(kubectl get mutatingwebhookconfigurations authwebhook-mutating \
