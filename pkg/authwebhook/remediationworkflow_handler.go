@@ -108,12 +108,15 @@ func NewRemediationWorkflowHandler(
 // Handle processes admission requests for RemediationWorkflow CRD.
 // Implements admission.Handler from controller-runtime.
 //
-// ADR-058: ValidatingWebhookConfiguration intercepts CREATE and DELETE.
-// UPDATE is allowed without DS interaction (CRD spec is idempotent).
+// ADR-058: ValidatingWebhookConfiguration intercepts CREATE, UPDATE, and DELETE.
+// Issue #371: UPDATE now forwards CRD spec changes to DS so that version
+// upgrades supersede the old active catalog entry.
 func (h *RemediationWorkflowHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
 	switch req.Operation {
 	case admissionv1.Create:
 		return h.handleCreate(ctx, req)
+	case admissionv1.Update:
+		return h.handleUpdate(ctx, req)
 	case admissionv1.Delete:
 		return h.handleDelete(ctx, req)
 	default:
@@ -175,6 +178,52 @@ func (h *RemediationWorkflowHandler) handleCreate(ctx context.Context, req admis
 	go h.updateCRDStatus(req.Namespace, req.Name, authCtx.Username, result)
 
 	// Phase 3c: best-effort cross-update of ActionType CRD status.activeWorkflowCount
+	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace)
+
+	return admission.Allowed("workflow registered in catalog")
+}
+
+// handleUpdate processes UPDATE operations: re-registers the CRD with DS.
+// Issue #371: When a CRD's spec changes (e.g., version bump, added dependencies),
+// DS content integrity logic determines the correct action: idempotent return
+// (same hash), supersede old entry (different hash/version), or create new.
+func (h *RemediationWorkflowHandler) handleUpdate(ctx context.Context, req admission.Request) admission.Response {
+	logger := ctrl.Log.WithName("rw-webhook").WithValues("operation", "UPDATE", "name", req.Name, "namespace", req.Namespace)
+
+	rw := &rwv1alpha1.RemediationWorkflow{}
+	if err := json.Unmarshal(req.Object.Raw, rw); err != nil {
+		logger.Error(err, "Failed to unmarshal RemediationWorkflow")
+		return admission.Allowed("update allowed (unmarshal failed, best-effort)")
+	}
+
+	authCtx, err := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
+	if err != nil {
+		logger.Error(err, "Authentication failed")
+		return admission.Allowed("update allowed (auth failed, best-effort)")
+	}
+
+	content, err := marshalCleanCRDContent(rw)
+	if err != nil {
+		logger.Error(err, "Failed to marshal CRD content for DS")
+		return admission.Allowed("update allowed (marshal failed, best-effort)")
+	}
+
+	result, err := h.dsClient.CreateWorkflowInline(ctx, string(content), "crd", authCtx.Username)
+	if err != nil {
+		logger.Error(err, "DS CreateWorkflowInline failed on UPDATE (best-effort — allowing UPDATE)")
+		return admission.Allowed("update allowed (DS registration failed, best-effort)")
+	}
+
+	logger.Info("Workflow re-registered in DS via UPDATE",
+		"workflow_id", result.WorkflowID,
+		"workflow_name", result.WorkflowName,
+		"previously_existed", result.PreviouslyExisted,
+	)
+
+	// Reuse CREATE audit event type since DS operation is identical
+	h.emitAdmitAudit(ctx, req, EventTypeRWAdmittedCreate, result.WorkflowID, rw.Name)
+
+	go h.updateCRDStatus(req.Namespace, req.Name, authCtx.Username, result)
 	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace)
 
 	return admission.Allowed("workflow registered in catalog")

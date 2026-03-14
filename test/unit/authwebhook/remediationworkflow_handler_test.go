@@ -460,28 +460,90 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	})
 
 	// ========================================
-	// UT-AW-299-009: UPDATE operations pass through without DS call
+	// UT-AW-299-009: UPDATE operations now trigger DS registration (Issue #371)
+	// Replaces previous behavior: UPDATE was ignored, now forwards to DS.
 	// ========================================
-	Describe("UT-AW-299-009: UPDATE operations ignored", func() {
-		It("should allow UPDATE without calling DS", func() {
-			// Arrange
+	Describe("UT-AW-299-009: UPDATE triggers DS registration (Issue #371)", func() {
+		It("should allow UPDATE and call DS CreateWorkflowInline", func() {
 			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
 			admReq := buildUpdateAdmissionRequest(rw)
 
 			createCalled := false
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
+			mockDS.createFn = func(_ context.Context, content, source, registeredBy string) (*authwebhook.WorkflowRegistrationResult, error) {
 				createCalled = true
-				return nil, fmt.Errorf("should not be called")
+				Expect(content).ToNot(BeEmpty(), "DS should receive CRD content")
+				Expect(source).To(Equal("crd"))
+				Expect(registeredBy).To(Equal(testUserEmail))
+				return &authwebhook.WorkflowRegistrationResult{
+					WorkflowID:   "550e8400-e29b-41d4-a716-446655440000",
+					WorkflowName: "scale-memory",
+					Version:      "1.0.0",
+					Status:       "active",
+				}, nil
 			}
 
-			// Act
 			resp := handler.Handle(ctx, admReq)
 
-			// Assert
 			Expect(resp.Allowed).To(BeTrue(),
-				"UPDATE should be Allowed without DS interaction (spec is idempotent)")
-			Expect(createCalled).To(BeFalse(),
-				"DS client should NOT be called for UPDATE operations")
+				"UPDATE should be Allowed after DS registration")
+			Expect(createCalled).To(BeTrue(),
+				"DS CreateWorkflowInline MUST be called for UPDATE operations (Issue #371)")
+		})
+	})
+
+	// ========================================
+	// UT-AW-371-001: UPDATE triggers DS registration with correct content
+	// Issue #371, BR-WORKFLOW-006: CRD UPDATE must forward spec to DS so
+	// version changes supersede old catalog entries.
+	// ========================================
+	Describe("UT-AW-371-001: UPDATE forwards CRD spec changes to DS", func() {
+		It("should call DS CreateWorkflowInline and return Allowed", func() {
+			rw := buildRemediationWorkflow("git-revert-v1", "kubernaut-system")
+			admReq := buildUpdateAdmissionRequest(rw)
+
+			var capturedContent string
+			mockDS.createFn = func(_ context.Context, content, source, registeredBy string) (*authwebhook.WorkflowRegistrationResult, error) {
+				capturedContent = content
+				return &authwebhook.WorkflowRegistrationResult{
+					WorkflowID:   "new-uuid-after-update",
+					WorkflowName: "git-revert-v1",
+					Version:      "1.0.1",
+					Status:       "active",
+				}, nil
+			}
+
+			resp := handler.Handle(ctx, admReq)
+
+			Expect(resp.Allowed).To(BeTrue())
+			Expect(capturedContent).ToNot(BeEmpty(),
+				"DS should receive the updated CRD content for registration")
+		})
+	})
+
+	// ========================================
+	// UT-AW-371-002: UPDATE with same content is idempotent
+	// Issue #371, BR-WORKFLOW-006: When CRD spec hasn't changed, DS returns 200
+	// idempotent and no new entry is created.
+	// ========================================
+	Describe("UT-AW-371-002: UPDATE with unchanged content is idempotent", func() {
+		It("should return Allowed with PreviouslyExisted=true from DS", func() {
+			rw := buildRemediationWorkflow("git-revert-v1", "kubernaut-system")
+			admReq := buildUpdateAdmissionRequest(rw)
+
+			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
+				return &authwebhook.WorkflowRegistrationResult{
+					WorkflowID:        "existing-uuid-idempotent",
+					WorkflowName:      "git-revert-v1",
+					Version:           "1.0.0",
+					Status:            "active",
+					PreviouslyExisted: true,
+				}, nil
+			}
+
+			resp := handler.Handle(ctx, admReq)
+
+			Expect(resp.Allowed).To(BeTrue(),
+				"Idempotent UPDATE should be Allowed")
 		})
 	})
 
