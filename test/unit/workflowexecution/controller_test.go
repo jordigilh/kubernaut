@@ -2134,15 +2134,18 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					},
 				}
 
-				// And: PipelineRun exists with deterministic name
-				prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
-				pr := &tektonv1.PipelineRun{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      prName,
-						Namespace: "kubernaut-workflows",
+			// And: PipelineRun exists with deterministic name and matching ownership label
+			prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+			pr := &tektonv1.PipelineRun{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      prName,
+					Namespace: "kubernaut-workflows",
+					Labels: map[string]string{
+						"kubernaut.ai/workflow-execution": wfe.Name,
 					},
-				}
-				Expect(fakeClient.Create(ctx, pr)).To(Succeed())
+				},
+			}
+			Expect(fakeClient.Create(ctx, pr)).To(Succeed())
 
 				// When: reconcileTerminal is called
 				result, err := reconciler.ReconcileTerminal(ctx, wfe)
