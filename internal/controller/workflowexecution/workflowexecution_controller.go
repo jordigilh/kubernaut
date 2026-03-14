@@ -696,14 +696,15 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 	} else {
 		// Fallback: inline Tekton cleanup when ExecutorRegistry is not configured
 		prName := PipelineRunName(wfe.Spec.TargetResource)
-		pr := &tektonv1.PipelineRun{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      prName,
-				Namespace: r.ExecutionNamespace,
-			},
-		}
-		if err := r.Delete(ctx, pr); err != nil {
+		var existing tektonv1.PipelineRun
+		if err := r.Get(ctx, client.ObjectKey{Name: prName, Namespace: r.ExecutionNamespace}, &existing); err != nil {
 			if !apierrors.IsNotFound(err) {
+				logger.Error(err, "Failed to get PipelineRun for ownership check")
+				return ctrl.Result{}, err
+			}
+			// Already gone -- nothing to clean up
+		} else if existing.Labels["kubernaut.ai/workflow-execution"] == wfe.Name {
+			if err := r.Delete(ctx, &existing); err != nil && !apierrors.IsNotFound(err) {
 				logger.Error(err, "Failed to delete PipelineRun after cooldown")
 				return ctrl.Result{}, err
 			}

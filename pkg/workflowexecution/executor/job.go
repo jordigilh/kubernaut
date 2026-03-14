@@ -157,23 +157,32 @@ func (j *JobExecutor) IsCompleted(ctx context.Context, targetResource string, na
 
 // Cleanup deletes the Job in the execution namespace.
 // Returns nil if the Job doesn't exist (idempotent).
+//
+// Issue #383: Before deleting, verify the Job's kubernaut.ai/workflow-execution
+// label matches this WFE's name. Because the Job name is deterministic (derived
+// from TargetResource), a newer WFE for the same target may have already
+// replaced the Job. Deleting without this check would destroy the new WFE's Job.
 func (j *JobExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error {
 	jobName := ExecutionResourceName(wfe.Spec.TargetResource)
 
-	// Use propagation policy to also delete pods
-	propagation := metav1.DeletePropagationBackground
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobName,
-			Namespace: namespace,
-		},
+	var existing batchv1.Job
+	if err := j.Client.Get(ctx, client.ObjectKey{Name: jobName, Namespace: namespace}, &existing); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			return nil // Already gone
+		}
+		return fmt.Errorf("failed to get Job %s/%s for ownership check: %w", namespace, jobName, err)
 	}
 
-	if err := j.Client.Delete(ctx, job, &client.DeleteOptions{
+	if owner := existing.Labels["kubernaut.ai/workflow-execution"]; owner != wfe.Name {
+		return nil // Job belongs to a different WFE; leave it alone
+	}
+
+	propagation := metav1.DeletePropagationBackground
+	if err := j.Client.Delete(ctx, &existing, &client.DeleteOptions{
 		PropagationPolicy: &propagation,
 	}); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			return nil // Already gone
+			return nil
 		}
 		return fmt.Errorf("failed to delete Job %s/%s: %w", namespace, jobName, err)
 	}
