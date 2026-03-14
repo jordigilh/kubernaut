@@ -1025,9 +1025,9 @@ jobs:
             podman save "$img" | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
           done
 
-          echo "Loading Helm hook image (registry.k8s.io/kubectl:v1.32.0)..."
-          podman pull registry.k8s.io/kubectl:v1.32.0
-          podman save registry.k8s.io/kubectl:v1.32.0 | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
+          echo "Loading Helm hook image (bitnami/kubectl, digest-pinned)..."
+          podman pull docker.io/bitnami/kubectl:latest@sha256:6e2cdb22d6ab7264ea198c717f555e30536b54029d26c8781b9f25f78951b564
+          podman save docker.io/bitnami/kubectl | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
 
           echo "All images loaded into Kind"
 

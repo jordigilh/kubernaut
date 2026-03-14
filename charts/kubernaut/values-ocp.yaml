@@ -3,7 +3,7 @@
 #
 # Layer this on top of values-demo.yaml (or your production values) to:
 #   - Switch PostgreSQL and Valkey to Red Hat RHEL10 catalog images (direct pull)
-#   - Replace registry.k8s.io/kubectl with ose-cli for hook jobs
+#   - Replace bitnami/kubectl with ose-cli for hook jobs
 #   - Disable the event exporter (no Red Hat-supported equivalent)
 #   - Override signal sources and Prometheus/AlertManager URLs for OCP monitoring
 #
