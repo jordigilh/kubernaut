@@ -2416,6 +2416,7 @@ const (
 	AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.delete"
 	AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.denied"
 	AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData                 AuditEventEventDataType = "effectiveness.alert.assessed"
+	AuditEventEventDataEffectivenessAlertDecayDetectedAuditEventEventData            AuditEventEventDataType = "effectiveness.alert_decay.detected"
 	AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData           AuditEventEventDataType = "effectiveness.assessment.completed"
 	AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData           AuditEventEventDataType = "effectiveness.assessment.scheduled"
 	AuditEventEventDataEffectivenessHashComputedAuditEventEventData                  AuditEventEventDataType = "effectiveness.hash.computed"
@@ -2622,7 +2623,7 @@ func (s AuditEventEventData) IsRemediationWorkflowWebhookAuditPayload() bool {
 // IsEffectivenessAssessmentAuditPayload reports whether AuditEventEventData is EffectivenessAssessmentAuditPayload.
 func (s AuditEventEventData) IsEffectivenessAssessmentAuditPayload() bool {
 	switch s.Type {
-	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
+	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAlertDecayDetectedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
 		return true
 	default:
 		return false
@@ -3565,6 +3566,13 @@ func NewAuditEventEventDataEffectivenessAlertAssessedAuditEventEventData(v Effec
 	return s
 }
 
+// NewAuditEventEventDataEffectivenessAlertDecayDetectedAuditEventEventData returns new AuditEventEventData from EffectivenessAssessmentAuditPayload.
+func NewAuditEventEventDataEffectivenessAlertDecayDetectedAuditEventEventData(v EffectivenessAssessmentAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetEffectivenessAssessmentAuditPayload(AuditEventEventDataEffectivenessAlertDecayDetectedAuditEventEventData, v)
+	return s
+}
+
 // NewAuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData returns new AuditEventEventData from EffectivenessAssessmentAuditPayload.
 func NewAuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData(v EffectivenessAssessmentAuditPayload) AuditEventEventData {
 	var s AuditEventEventData
@@ -4263,6 +4271,7 @@ const (
 	AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.delete"
 	AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.denied"
 	AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData                 AuditEventRequestEventDataType = "effectiveness.alert.assessed"
+	AuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData            AuditEventRequestEventDataType = "effectiveness.alert_decay.detected"
 	AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData           AuditEventRequestEventDataType = "effectiveness.assessment.completed"
 	AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData           AuditEventRequestEventDataType = "effectiveness.assessment.scheduled"
 	AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData                  AuditEventRequestEventDataType = "effectiveness.hash.computed"
@@ -4469,7 +4478,7 @@ func (s AuditEventRequestEventData) IsRemediationWorkflowWebhookAuditPayload() b
 // IsEffectivenessAssessmentAuditPayload reports whether AuditEventRequestEventData is EffectivenessAssessmentAuditPayload.
 func (s AuditEventRequestEventData) IsEffectivenessAssessmentAuditPayload() bool {
 	switch s.Type {
-	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
+	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
 		return true
 	default:
 		return false
@@ -5409,6 +5418,13 @@ func (s AuditEventRequestEventData) GetEffectivenessAssessmentAuditPayload() (v 
 func NewAuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData(v EffectivenessAssessmentAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetEffectivenessAssessmentAuditPayload(AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData returns new AuditEventRequestEventData from EffectivenessAssessmentAuditPayload.
+func NewAuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData(v EffectivenessAssessmentAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetEffectivenessAssessmentAuditPayload(AuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData, v)
 	return s
 }
 
@@ -7261,12 +7277,13 @@ func (s *EffectivenessAssessmentAuditPayloadAlertResolution) SetResolutionTimeSe
 type EffectivenessAssessmentAuditPayloadComponent string
 
 const (
-	EffectivenessAssessmentAuditPayloadComponentHealth    EffectivenessAssessmentAuditPayloadComponent = "health"
-	EffectivenessAssessmentAuditPayloadComponentAlert     EffectivenessAssessmentAuditPayloadComponent = "alert"
-	EffectivenessAssessmentAuditPayloadComponentMetrics   EffectivenessAssessmentAuditPayloadComponent = "metrics"
-	EffectivenessAssessmentAuditPayloadComponentHash      EffectivenessAssessmentAuditPayloadComponent = "hash"
-	EffectivenessAssessmentAuditPayloadComponentScheduled EffectivenessAssessmentAuditPayloadComponent = "scheduled"
-	EffectivenessAssessmentAuditPayloadComponentCompleted EffectivenessAssessmentAuditPayloadComponent = "completed"
+	EffectivenessAssessmentAuditPayloadComponentHealth     EffectivenessAssessmentAuditPayloadComponent = "health"
+	EffectivenessAssessmentAuditPayloadComponentAlert      EffectivenessAssessmentAuditPayloadComponent = "alert"
+	EffectivenessAssessmentAuditPayloadComponentAlertDecay EffectivenessAssessmentAuditPayloadComponent = "alert_decay"
+	EffectivenessAssessmentAuditPayloadComponentMetrics    EffectivenessAssessmentAuditPayloadComponent = "metrics"
+	EffectivenessAssessmentAuditPayloadComponentHash       EffectivenessAssessmentAuditPayloadComponent = "hash"
+	EffectivenessAssessmentAuditPayloadComponentScheduled  EffectivenessAssessmentAuditPayloadComponent = "scheduled"
+	EffectivenessAssessmentAuditPayloadComponentCompleted  EffectivenessAssessmentAuditPayloadComponent = "completed"
 )
 
 // AllValues returns all EffectivenessAssessmentAuditPayloadComponent values.
@@ -7274,6 +7291,7 @@ func (EffectivenessAssessmentAuditPayloadComponent) AllValues() []EffectivenessA
 	return []EffectivenessAssessmentAuditPayloadComponent{
 		EffectivenessAssessmentAuditPayloadComponentHealth,
 		EffectivenessAssessmentAuditPayloadComponentAlert,
+		EffectivenessAssessmentAuditPayloadComponentAlertDecay,
 		EffectivenessAssessmentAuditPayloadComponentMetrics,
 		EffectivenessAssessmentAuditPayloadComponentHash,
 		EffectivenessAssessmentAuditPayloadComponentScheduled,
@@ -7287,6 +7305,8 @@ func (s EffectivenessAssessmentAuditPayloadComponent) MarshalText() ([]byte, err
 	case EffectivenessAssessmentAuditPayloadComponentHealth:
 		return []byte(s), nil
 	case EffectivenessAssessmentAuditPayloadComponentAlert:
+		return []byte(s), nil
+	case EffectivenessAssessmentAuditPayloadComponentAlertDecay:
 		return []byte(s), nil
 	case EffectivenessAssessmentAuditPayloadComponentMetrics:
 		return []byte(s), nil
@@ -7309,6 +7329,9 @@ func (s *EffectivenessAssessmentAuditPayloadComponent) UnmarshalText(data []byte
 		return nil
 	case EffectivenessAssessmentAuditPayloadComponentAlert:
 		*s = EffectivenessAssessmentAuditPayloadComponentAlert
+		return nil
+	case EffectivenessAssessmentAuditPayloadComponentAlertDecay:
+		*s = EffectivenessAssessmentAuditPayloadComponentAlertDecay
 		return nil
 	case EffectivenessAssessmentAuditPayloadComponentMetrics:
 		*s = EffectivenessAssessmentAuditPayloadComponentMetrics
@@ -7337,6 +7360,7 @@ const (
 	EffectivenessAssessmentAuditPayloadEventTypeEffectivenessMetricsAssessed     EffectivenessAssessmentAuditPayloadEventType = "effectiveness.metrics.assessed"
 	EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentScheduled EffectivenessAssessmentAuditPayloadEventType = "effectiveness.assessment.scheduled"
 	EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted EffectivenessAssessmentAuditPayloadEventType = "effectiveness.assessment.completed"
+	EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertDecayDetected  EffectivenessAssessmentAuditPayloadEventType = "effectiveness.alert_decay.detected"
 )
 
 // AllValues returns all EffectivenessAssessmentAuditPayloadEventType values.
@@ -7348,6 +7372,7 @@ func (EffectivenessAssessmentAuditPayloadEventType) AllValues() []EffectivenessA
 		EffectivenessAssessmentAuditPayloadEventTypeEffectivenessMetricsAssessed,
 		EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentScheduled,
 		EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted,
+		EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertDecayDetected,
 	}
 }
 
@@ -7365,6 +7390,8 @@ func (s EffectivenessAssessmentAuditPayloadEventType) MarshalText() ([]byte, err
 	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentScheduled:
 		return []byte(s), nil
 	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted:
+		return []byte(s), nil
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertDecayDetected:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -7391,6 +7418,9 @@ func (s *EffectivenessAssessmentAuditPayloadEventType) UnmarshalText(data []byte
 		return nil
 	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted:
 		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted
+		return nil
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertDecayDetected:
+		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertDecayDetected
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

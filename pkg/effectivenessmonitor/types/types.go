@@ -33,6 +33,8 @@ const (
 	ComponentMetrics ComponentType = "metrics"
 	// ComponentHash is the spec hash comparison component (BR-EM-004).
 	ComponentHash ComponentType = "hash"
+	// ComponentAlertDecay is the alert decay detection pseudo-component (BR-EM-012).
+	ComponentAlertDecay ComponentType = "alert_decay"
 )
 
 // ComponentResult represents the outcome of a single assessment component.
@@ -66,6 +68,10 @@ const (
 	AuditAssessmentScheduled AuditEventType = "effectiveness.assessment.scheduled"
 	// AuditAssessmentCompleted is emitted when the full assessment finishes.
 	AuditAssessmentCompleted AuditEventType = "effectiveness.assessment.completed"
+	// AuditAlertDecayDetected is emitted once when the EM first detects alert decay
+	// (resource healthy but alert still firing). Subsequent re-checks are silent.
+	// Reference: Issue #369, BR-EM-012
+	AuditAlertDecayDetected AuditEventType = "effectiveness.alert_decay.detected"
 )
 
 // AuditEventTypeForComponent returns the audit event type for a given component name.
@@ -79,6 +85,8 @@ func AuditEventTypeForComponent(component string) AuditEventType {
 		return AuditMetricsAssessed
 	case string(ComponentHash):
 		return AuditHashComputed
+	case string(ComponentAlertDecay):
+		return AuditAlertDecayDetected
 	default:
 		return AuditAssessmentCompleted
 	}

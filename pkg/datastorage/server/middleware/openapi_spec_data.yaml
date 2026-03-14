@@ -2541,6 +2541,7 @@ components:
               'effectiveness.metrics.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.assessment.scheduled': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.assessment.completed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
+              'effectiveness.alert_decay.detected': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'datastorage.actiontype.created': '#/components/schemas/ActionTypeCatalogCreatedPayload'
               'datastorage.actiontype.updated': '#/components/schemas/ActionTypeCatalogUpdatedPayload'
               'datastorage.actiontype.disabled': '#/components/schemas/ActionTypeCatalogDisabledPayload'
@@ -4287,6 +4288,7 @@ components:
             - 'effectiveness.metrics.assessed'
             - 'effectiveness.assessment.scheduled'
             - 'effectiveness.assessment.completed'
+            - 'effectiveness.alert_decay.detected'
           description: Event type for discriminator (matches parent event_type)
         correlation_id:
           type: string
@@ -4302,7 +4304,7 @@ components:
           example: "ea-restart-payment-api-abc123"
         component:
           type: string
-          enum: [health, alert, metrics, hash, scheduled, completed]
+          enum: [health, alert, alert_decay, metrics, hash, scheduled, completed]
           description: Assessment component that produced this event
           example: "health"
         assessed:

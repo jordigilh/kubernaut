@@ -400,6 +400,7 @@ _Appears in:_
 | `alertScore`| _float_| AlertScore is the alert resolution score (0.0 or 1.0), nil if not yet assessed.|
 | `metricsAssessed`| _boolean_| MetricsAssessed indicates whether the metric comparison has been completed.|
 | `metricsScore`| _float_| MetricsScore is the metric comparison score (0.0-1.0), nil if not yet assessed.|
+| `alertDecayRetries`| _integer_| AlertDecayRetries tracks the number of times the EM re-checked a firing alert<br />during decay monitoring. Incremented each reconcile where isAlertDecay returns true.<br />A non-zero value means the EM confirmed the resource was healthy but the alert<br />persisted, indicating Prometheus lookback window decay.|
 
 
 ### EAConfig

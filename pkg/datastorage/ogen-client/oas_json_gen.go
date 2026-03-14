@@ -6462,11 +6462,14 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
+	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAlertDecayDetectedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
 		switch s.Type {
 		case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("effectiveness.alert.assessed")
+		case AuditEventEventDataEffectivenessAlertDecayDetectedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("effectiveness.alert_decay.detected")
 		case AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("effectiveness.assessment.completed")
@@ -7069,6 +7072,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "effectiveness.alert.assessed":
 					s.Type = AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData
 					found = true
+				case "effectiveness.alert_decay.detected":
+					s.Type = AuditEventEventDataEffectivenessAlertDecayDetectedAuditEventEventData
+					found = true
 				case "effectiveness.assessment.completed":
 					s.Type = AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData
 					found = true
@@ -7243,7 +7249,7 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		if err := s.RemediationWorkflowWebhookAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
+	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAlertDecayDetectedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
 		if err := s.EffectivenessAssessmentAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -9320,11 +9326,14 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
+	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
 		switch s.Type {
 		case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("effectiveness.alert.assessed")
+		case AuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("effectiveness.alert_decay.detected")
 		case AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("effectiveness.assessment.completed")
@@ -9927,6 +9936,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "effectiveness.alert.assessed":
 					s.Type = AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData
 					found = true
+				case "effectiveness.alert_decay.detected":
+					s.Type = AuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData
+					found = true
 				case "effectiveness.assessment.completed":
 					s.Type = AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData
 					found = true
@@ -10101,7 +10113,7 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		if err := s.RemediationWorkflowWebhookAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
+	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
 		if err := s.EffectivenessAssessmentAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -13974,6 +13986,8 @@ func (s *EffectivenessAssessmentAuditPayloadComponent) Decode(d *jx.Decoder) err
 		*s = EffectivenessAssessmentAuditPayloadComponentHealth
 	case EffectivenessAssessmentAuditPayloadComponentAlert:
 		*s = EffectivenessAssessmentAuditPayloadComponentAlert
+	case EffectivenessAssessmentAuditPayloadComponentAlertDecay:
+		*s = EffectivenessAssessmentAuditPayloadComponentAlertDecay
 	case EffectivenessAssessmentAuditPayloadComponentMetrics:
 		*s = EffectivenessAssessmentAuditPayloadComponentMetrics
 	case EffectivenessAssessmentAuditPayloadComponentHash:
@@ -14030,6 +14044,8 @@ func (s *EffectivenessAssessmentAuditPayloadEventType) Decode(d *jx.Decoder) err
 		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentScheduled
 	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted:
 		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertDecayDetected:
+		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertDecayDetected
 	default:
 		*s = EffectivenessAssessmentAuditPayloadEventType(v)
 	}

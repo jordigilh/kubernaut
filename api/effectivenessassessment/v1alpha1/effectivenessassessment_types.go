@@ -74,6 +74,12 @@ const (
 	// AssessmentReasonSpecDrift indicates the target resource spec was modified during assessment.
 	// The remediation is considered unsuccessful — DS score = 0.0 (DD-EM-002 v1.1).
 	AssessmentReasonSpecDrift = "spec_drift"
+	// AssessmentReasonAlertDecayTimeout indicates the validity window expired while the EM
+	// was actively monitoring alert decay. Unlike "partial" (alert never checked) or
+	// "expired" (no data), this means the EM confirmed the resource was healthy but the
+	// Prometheus alert persisted beyond validity — likely a genuine re-occurrence.
+	// Reference: Issue #369, BR-EM-012
+	AssessmentReasonAlertDecayTimeout = "alert_decay_timeout"
 )
 
 // EffectivenessAssessmentSpec defines the desired state of an EffectivenessAssessment.
@@ -226,7 +232,7 @@ type EffectivenessAssessmentStatus struct {
 	Components EAComponents `json:"components,omitempty"`
 
 	// AssessmentReason describes why the assessment completed with this outcome.
-	// +kubebuilder:validation:Enum=full;partial;no_execution;metrics_timed_out;expired;spec_drift
+	// +kubebuilder:validation:Enum=full;partial;no_execution;metrics_timed_out;expired;spec_drift;alert_decay_timeout
 	AssessmentReason string `json:"assessmentReason,omitempty"`
 
 	// CompletedAt is the timestamp when the assessment finished.
@@ -268,6 +274,13 @@ type EAComponents struct {
 	MetricsAssessed bool `json:"metricsAssessed,omitempty"`
 	// MetricsScore is the metric comparison score (0.0-1.0), nil if not yet assessed.
 	MetricsScore *float64 `json:"metricsScore,omitempty"`
+
+	// AlertDecayRetries tracks the number of times the EM re-checked a firing alert
+	// during decay monitoring. Incremented each reconcile where isAlertDecay returns true.
+	// A non-zero value means the EM confirmed the resource was healthy but the alert
+	// persisted, indicating Prometheus lookback window decay.
+	// Reference: Issue #369, BR-EM-012
+	AlertDecayRetries int32 `json:"alertDecayRetries,omitempty"`
 }
 
 // +kubebuilder:object:root=true

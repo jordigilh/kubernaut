@@ -389,7 +389,10 @@ class ActionTypeTaxonomyAPIApi:
 
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "ActionTypeDisableResponse",
+            '400': "RFC7807Problem",
+            '404': "RFC7807Problem",
             '409': "ActionTypeDisableDeniedResponse",
+            '500': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -461,7 +464,10 @@ class ActionTypeTaxonomyAPIApi:
 
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "ActionTypeDisableResponse",
+            '400': "RFC7807Problem",
+            '404': "RFC7807Problem",
             '409': "ActionTypeDisableDeniedResponse",
+            '500': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -533,7 +539,10 @@ class ActionTypeTaxonomyAPIApi:
 
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "ActionTypeDisableResponse",
+            '400': "RFC7807Problem",
+            '404': "RFC7807Problem",
             '409': "ActionTypeDisableDeniedResponse",
+            '500': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -578,7 +587,8 @@ class ActionTypeTaxonomyAPIApi:
         # set the HTTP header `Accept`
         _header_params['Accept'] = self.api_client.select_header_accept(
             [
-                'application/json'
+                'application/json', 
+                'application/problem+json'
             ]
         )
 
