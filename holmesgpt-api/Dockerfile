@@ -9,7 +9,7 @@ FROM registry.access.redhat.com/ubi10/python-312-minimal:latest AS builder
 USER root
 
 # Install build dependencies (microdnf on UBI10-minimal; python3.12-devel for C extensions)
-RUN microdnf install -y --setopt=install_weak_deps=False gcc gcc-c++ git ca-certificates tzdata python3.12-devel && \
+RUN microdnf install -y --setopt=install_weak_deps=0 gcc gcc-c++ git ca-certificates tzdata python3.12-devel && \
 	microdnf clean all && \
 	rm -rf /var/cache/dnf /var/cache/yum
 
@@ -48,7 +48,7 @@ FROM registry.access.redhat.com/ubi10/python-312-minimal:latest
 USER root
 ARG TARGETARCH
 ARG KUBECTL_VERSION=v1.31.4
-RUN microdnf install -y --setopt=install_weak_deps=False ca-certificates tzdata && \
+RUN microdnf install -y --setopt=install_weak_deps=0 ca-certificates tzdata && \
 	microdnf clean all && \
 	rm -rf /var/cache/dnf /var/cache/yum && \
 	curl -fsSL -o /usr/local/bin/kubectl \

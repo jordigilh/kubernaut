@@ -6,7 +6,7 @@ FROM registry.access.redhat.com/ubi10/python-312-minimal:latest
 USER root
 
 # Install runtime dependencies (microdnf on UBI10-minimal)
-RUN microdnf install -y --setopt=install_weak_deps=False \
+RUN microdnf install -y --setopt=install_weak_deps=0 \
     ca-certificates \
     tzdata && \
     microdnf clean all && \
