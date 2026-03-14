@@ -11,7 +11,7 @@
 
 **Why Container-Based Testing?**
 1. ✅ **Consistency**: Same results on macOS, Linux, CI, and developer machines
-2. ✅ **Production Parity**: Tests run in UBI9 (same as production container)
+2. ✅ **Production Parity**: Tests run in UBI10 (same as production container)
 3. ✅ **Isolation**: No dependency on host OS tools or versions
 4. ✅ **CI-Ready**: Works identically in GitHub Actions, Jenkins, GitLab CI
 5. ✅ **Reproducibility**: Eliminates "works on my machine" issues
@@ -25,7 +25,7 @@
 **What it does**:
 1. Builds the must-gather container image (`localhost/must-gather:test`)
 2. Mounts test scripts and source code into container
-3. Installs `bats` inside the UBI9 container
+3. Installs `bats` inside the UBI10 container
 4. Runs all unit tests inside the container
 5. Reports results to host
 
@@ -44,14 +44,14 @@ make ci
 ```
 
 **What's tested**:
-- ✅ Scripts execute correctly in UBI9 environment
+- ✅ Scripts execute correctly in UBI10 environment
 - ✅ All tools available (kubectl, jq, tar, gzip, bash)
 - ✅ Linux-specific behavior (GNU date, etc.)
 - ✅ Production-like environment
 
 **Container Environment**:
 ```
-Base:       registry.access.redhat.com/ubi9/ubi:latest
+Base:       registry.access.redhat.com/ubi10/ubi:latest
 OS:         Red Hat Enterprise Linux 9
 Shell:      bash 5.1+
 Tools:      kubectl 1.31, jq 1.7, GNU coreutils, tar, gzip
@@ -89,7 +89,7 @@ make test-unit-local
 
 | Aspect | `make test` (Container) | `make test-unit-local` |
 |--------|-------------------------|------------------------|
-| **Environment** | UBI9 (production) | macOS/Linux (host) |
+| **Environment** | UBI10 (production) | macOS/Linux (host) |
 | **Consistency** | ✅ Identical across machines | ❌ Host-dependent |
 | **CI-Ready** | ✅ Yes | ❌ No |
 | **Speed** | 🐢 ~30s (build + test) | ⚡ ~5s (test only) |
@@ -160,7 +160,7 @@ test-container: build ## Run unit tests inside container
 - ✅ **Fast cycle**: Change script → run test → no rebuild needed
 
 **Why install bats at runtime?**
-- UBI9 doesn't include bats by default
+- UBI10 doesn't include bats by default
 - Small package (~2MB), fast to install
 - Alternative: Create custom test base image (future optimization)
 
@@ -227,7 +227,7 @@ podman build --platform linux/amd64 -t localhost/must-gather:test .
 make test-unit-local    # See local behavior
 make test-container-verbose  # See container behavior
 
-# Fix script to work in Linux/UBI9 environment
+# Fix script to work in Linux/UBI10 environment
 vim collectors/datastorage.sh
 ```
 
@@ -328,7 +328,7 @@ bats /must-gather/test/test_*.bats
 
 1. **Custom Test Base Image**: Pre-install bats in base image
    ```dockerfile
-   FROM registry.access.redhat.com/ubi9/ubi:latest
+   FROM registry.access.redhat.com/ubi10/ubi:latest
    RUN microdnf install -y bats
    # ... rest of must-gather tools
    ```

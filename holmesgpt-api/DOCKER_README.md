@@ -14,7 +14,7 @@ This directory contains the Docker build configuration for the **HolmesGPT API s
 
 ```
 Stage 1 (Builder)          Stage 2 (Runtime)
-├── UBI9 Python 3.11      ├── UBI9 Python 3.11 (minimal)
+├── UBI10 Python 3.12      ├── UBI10 Python 3.12 (minimal)
 ├── Install dependencies  ├── Copy Python packages
 ├── Install HolmesGPT SDK ├── Copy application code
 └── Copy source code      └── Run as non-root user (1001)
@@ -22,7 +22,7 @@ Stage 1 (Builder)          Stage 2 (Runtime)
 
 ### Key Features
 
-- ✅ **Red Hat UBI9** base image (Python 3.11)
+- ✅ **Red Hat UBI10** base image (Python 3.12)
 - ✅ **Multi-stage build** for minimal runtime image
 - ✅ **Non-root user** (UID 1001) for security
 - ✅ **HolmesGPT SDK** from local dependencies
@@ -95,15 +95,15 @@ curl -X POST http://localhost:8080/api/v1/recovery/analyze \
 
 ```dockerfile
 # Builder stage
-FROM registry.access.redhat.com/ubi9/python-311:latest AS builder
+FROM registry.access.redhat.com/ubi10/python-312-minimal:latest AS builder
 
 # Runtime stage
-FROM registry.access.redhat.com/ubi9/python-311:latest
+FROM registry.access.redhat.com/ubi10/python-312-minimal:latest
 ```
 
 ### Dependencies
 
-- **Python 3.11** (Red Hat UBI9)
+- **Python 3.12** (Red Hat UBI10)
 - **FastAPI** + **uvicorn** (web framework)
 - **aiohttp** (K8s API calls)
 - **tenacity** (retry logic)

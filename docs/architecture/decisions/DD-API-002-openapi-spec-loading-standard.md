@@ -279,7 +279,7 @@ for _, candidate := range candidates {
 
 ### Alternative 3: Copy Spec to Docker Image
 
-**Approach** (Current in `docker/datastorage-ubi9.Dockerfile`):
+**Approach** (Current in `docker/data-storage.Dockerfile`):
 ```dockerfile
 COPY api/openapi/data-storage-v1.yaml /usr/local/share/kubernaut/api/openapi/
 ```

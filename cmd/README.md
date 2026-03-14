@@ -154,14 +154,14 @@ Dockerfile mappings (from `docker/`):
 
 | Service | Dockerfile |
 |---------|------------|
-| gateway | `docker/gateway-ubi9.Dockerfile` |
+| gateway | `docker/gateway.Dockerfile` |
 | datastorage | `docker/data-storage.Dockerfile` |
 | remediationorchestrator | `docker/remediationorchestrator-controller.Dockerfile` |
 | signalprocessing | `docker/signalprocessing-controller.Dockerfile` |
 | aianalysis | `docker/aianalysis.Dockerfile` |
 | workflowexecution | `docker/workflowexecution-controller.Dockerfile` |
 | effectivenessmonitor | `docker/effectivenessmonitor-controller.Dockerfile` |
-| notification | `docker/notification-controller-ubi9.Dockerfile` |
+| notification | `docker/notification-controller.Dockerfile` |
 | authwebhook | `docker/authwebhook.Dockerfile` |
 | holmesgpt-api | `holmesgpt-api/Dockerfile` |
 

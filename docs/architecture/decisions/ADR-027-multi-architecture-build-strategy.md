@@ -51,12 +51,12 @@ This pattern affects **all 11+ Kubernaut services** and will impact every develo
 **All Kubernaut container images MUST use Red Hat Universal Base Images (UBI) as base images**, with the following standard:
 
 #### **For Go Services** (Most Common)
-- **Build Stage**: `registry.access.redhat.com/ubi9/go-toolset:1.24`
-- **Runtime Stage**: `registry.access.redhat.com/ubi9/ubi-minimal:latest`
+- **Build Stage**: `registry.access.redhat.com/ubi10/go-toolset:1.24`
+- **Runtime Stage**: `registry.access.redhat.com/ubi10/ubi-minimal:latest`
 
 #### **For Python Services** (e.g., HolmesGPT API)
-- **Build Stage**: `registry.access.redhat.com/ubi9/python-312:latest`
-- **Runtime Stage**: `registry.access.redhat.com/ubi9/python-312:latest`
+- **Build Stage**: `registry.access.redhat.com/ubi10/python-312:latest`
+- **Runtime Stage**: `registry.access.redhat.com/ubi10/python-312:latest`
 
 #### **Rationale for Red Hat UBI**
 
@@ -69,32 +69,32 @@ This pattern affects **all 11+ Kubernaut services** and will impact every develo
 
 #### **Benefits Over Alpine/Distroless**
 
-| Aspect | Red Hat UBI9 | Alpine | Distroless | Winner |
+| Aspect | Red Hat UBI10 | Alpine | Distroless | Winner |
 |---|---|---|---|---|
-| **Enterprise Support** | ✅ Full Red Hat support | ❌ Community only | ❌ Community only | UBI9 |
-| **Security Updates** | ✅ RHSA + CVE tracking | ⚠️ Community-driven | ⚠️ Google-driven | UBI9 |
-| **OpenShift Optimization** | ✅ Native integration | ⚠️ Works but not optimized | ⚠️ Works but not optimized | UBI9 |
-| **Package Management** | ✅ DNF/microdnf | ⚠️ apk | ❌ None | UBI9 |
-| **Tooling** | ✅ Full shell + debugging tools | ⚠️ Limited shell | ❌ No shell | UBI9 |
+| **Enterprise Support** | ✅ Full Red Hat support | ❌ Community only | ❌ Community only | UBI10 |
+| **Security Updates** | ✅ RHSA + CVE tracking | ⚠️ Community-driven | ⚠️ Google-driven | UBI10 |
+| **OpenShift Optimization** | ✅ Native integration | ⚠️ Works but not optimized | ⚠️ Works but not optimized | UBI10 |
+| **Package Management** | ✅ DNF/microdnf | ⚠️ apk | ❌ None | UBI10 |
+| **Tooling** | ✅ Full shell + debugging tools | ⚠️ Limited shell | ❌ No shell | UBI10 |
 | **Image Size** | ⚠️ Larger (~200MB minimal) | ✅ Smallest (~5MB) | ✅ Small (~20MB) | Alpine/Distroless |
 | **Build Performance** | ⚠️ Slower (dnf overhead) | ✅ Fast (apk) | ✅ Fast (no packages) | Alpine/Distroless |
 
-**Decision**: UBI9 benefits (enterprise support, security, OpenShift optimization) outweigh size/performance costs for production use.
+**Decision**: UBI10 benefits (enterprise support, security, OpenShift optimization) outweigh size/performance costs for production use.
 
 ### Implementation Strategy
 
 1. **Build Tool**: Use `podman` with `--platform linux/amd64,linux/arm64` flag
-2. **Base Images**: Use Red Hat UBI9 images for all services
+2. **Base Images**: Use Red Hat UBI10 images for all services
 3. **Manifest Lists**: Create OCI manifest lists for automatic architecture selection
 4. **Makefile Integration**: Update all `docker-build` and `docker-push` targets
 5. **Registry Requirement**: Use registries supporting OCI manifest lists (quay.io, Docker Hub, OCP internal registry)
-6. **Default Behavior**: Multi-arch + UBI9 is the default; exceptions require justification
-7. **Migration Path**: Services using alpine/distroless will be migrated to UBI9
+6. **Default Behavior**: Multi-arch + UBI10 is the default; exceptions require justification
+7. **Migration Path**: Services using alpine/distroless will be migrated to UBI10
 
 ### Build Command Pattern
 
 ```bash
-# Multi-architecture build with Red Hat UBI9 (default)
+# Multi-architecture build with Red Hat UBI10 (default)
 podman build --platform linux/amd64,linux/arm64 \
   -t quay.io/jordigilh/notification:v1.0.1 \
   -f docker/notification-controller.Dockerfile .
@@ -104,15 +104,15 @@ podman manifest push quay.io/jordigilh/notification:v1.0.1 \
   docker://quay.io/jordigilh/notification:v1.0.1
 ```
 
-### Red Hat UBI9 Dockerfile Pattern (Go Services)
+### Red Hat UBI10 Dockerfile Pattern (Go Services)
 
 ```dockerfile
-# Service Name - Multi-Architecture Dockerfile using Red Hat UBI9
+# Service Name - Multi-Architecture Dockerfile using Red Hat UBI10
 # Supports: linux/amd64, linux/arm64
 # Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
 
-# Build stage - Red Hat UBI9 Go 1.24 toolset
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+# Build stage - Red Hat UBI10 Go 1.24 toolset
+FROM registry.access.redhat.com/ubi10/go-toolset:1.24 AS builder
 
 # Switch to root for package installation
 USER root
@@ -147,8 +147,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 	-o service-binary \
 	./cmd/service/main.go
 
-# Runtime stage - Red Hat UBI9 minimal runtime image
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+# Runtime stage - Red Hat UBI10 minimal runtime image
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # Install runtime dependencies
 RUN microdnf update -y && \
@@ -181,7 +181,7 @@ ENTRYPOINT ["/usr/local/bin/service-binary"]
 # Do NOT copy config files into the image - use ConfigMaps for runtime configuration
 CMD []
 
-# Red Hat UBI9 compatible metadata labels (REQUIRED)
+# Red Hat UBI10 compatible metadata labels (REQUIRED)
 LABEL name="kubernaut-service-name" \
 	vendor="Kubernaut" \
 	version="1.0.0" \
@@ -414,7 +414,7 @@ build-image:
 ### Services Affected (All 11+ Services)
 
 **CRD Controllers**:
-1. **notification-controller** - ⚠️ **Requires Migration** (alpine/distroless → UBI9)
+1. **notification-controller** - ⚠️ **Requires Migration** (alpine/distroless → UBI10)
 2. remediationorchestrator-controller - Status TBD
 3. remediationprocessor-controller - Status TBD
 4. aianalysis-controller - Status TBD
@@ -422,12 +422,12 @@ build-image:
 
 **Stateless Services**:
 6. gateway-service - Status TBD
-7. **holmesgpt-api-service** - ✅ **Already UBI9 Compliant** (Python UBI9)
-8. **context-api-service** - ⚠️ **Requires UBI9 Implementation** (new service)
+7. **holmesgpt-api-service** - ✅ **Already UBI10 Compliant** (Python UBI10)
+8. **context-api-service** - ⚠️ **Requires UBI10 Implementation** (new service)
 9. data-storage-service - Status TBD
 10. effectiveness-monitor-service - Status TBD
 11. dynamic-toolset-service - Status TBD
-12. **workflow-service** - ✅ **Already UBI9 Compliant** (Go UBI9)
+12. **workflow-service** - ✅ **Already UBI10 Compliant** (Go UBI10)
 
 ---
 
@@ -466,18 +466,18 @@ build-image:
 - **Target**: -40% compute cost via AWS Graviton adoption
 - **Measure**: Monthly infrastructure spend (when Graviton used)
 
-### Red Hat UBI9 Migration Metrics
-- **Target**: 100% services using Red Hat UBI9 base images
+### Red Hat UBI10 Migration Metrics
+- **Target**: 100% services using Red Hat UBI10 base images
 - **Measure**: Service migration completion rate
-- **Priority Services**: Notification (alpine/distroless → UBI9), Context API (new service with UBI9)
+- **Priority Services**: Notification (alpine/distroless → UBI10), Context API (new service with UBI10)
 
 ---
 
 ## Migration Strategy for Existing Services
 
-### **Services Requiring Migration to Red Hat UBI9**
+### **Services Requiring Migration to Red Hat UBI10**
 
-#### **Priority 1: Notification Controller** (alpine/distroless → UBI9)
+#### **Priority 1: Notification Controller** (alpine/distroless → UBI10)
 
 **Current State**:
 - Build: `golang:1.24-alpine`
@@ -486,21 +486,21 @@ build-image:
 
 **Migration Actions**:
 1. **Update Dockerfile** (`docker/notification-controller.Dockerfile`):
-   - Replace `FROM golang:1.24-alpine` with `FROM registry.access.redhat.com/ubi9/go-toolset:1.24`
-   - Replace `FROM gcr.io/distroless/static:nonroot` with `FROM registry.access.redhat.com/ubi9/ubi-minimal:latest`
-   - Add Red Hat UBI9 compatible labels (13 required labels)
-   - Update user management (distroless UID 65532 → UBI9 UID 1001)
+   - Replace `FROM golang:1.24-alpine` with `FROM registry.access.redhat.com/ubi10/go-toolset:1.24`
+   - Replace `FROM gcr.io/distroless/static:nonroot` with `FROM registry.access.redhat.com/ubi10/ubi-minimal:latest`
+   - Add Red Hat UBI10 compatible labels (13 required labels)
+   - Update user management (distroless UID 65532 → UBI10 UID 1001)
    - Add health check using `/usr/bin/curl`
 
 2. **Test Migration**:
    ```bash
-   # Build with UBI9 base
+   # Build with UBI10 base
    podman build --platform linux/amd64,linux/arm64 \
-     -t quay.io/jordigilh/notification:v1.1.0-ubi9 \
+     -t quay.io/jordigilh/notification:v1.1.0-ubi10 \
      -f docker/notification-controller.Dockerfile .
 
    # Test locally
-   podman run -d --rm -p 8080:8080 quay.io/jordigilh/notification:v1.1.0-ubi9
+   podman run -d --rm -p 8080:8080 quay.io/jordigilh/notification:v1.1.0-ubi10
 
    # Deploy to dev OCP cluster
    oc apply -f deploy/notification/
@@ -513,9 +513,9 @@ build-image:
    - ✅ Multi-arch manifest contains both amd64 and arm64
    - ✅ Image size acceptable (<100MB increase)
 
-4. **Timeline**: Week 2 of rollout (pilot service for UBI9 migration)
+4. **Timeline**: Week 2 of rollout (pilot service for UBI10 migration)
 
-#### **Priority 2: Context API Service** (new service with UBI9)
+#### **Priority 2: Context API Service** (new service with UBI10)
 
 **Current State**:
 - Status: Implementation plan proposes alpine/distroless (non-compliant)
@@ -523,17 +523,17 @@ build-image:
 
 **Migration Actions**:
 1. **Update Implementation Plan**:
-   - Correct `CONTEXT_VS_NOTIFICATION_GAP_ANALYSIS.md` Dockerfile to use UBI9
-   - Update `IMPLEMENTATION_PLAN_V2.0.md` to v2.4.0 with UBI9 standard
-   - Add reference to ADR-027 for multi-arch + UBI9 requirements
+   - Correct `CONTEXT_VS_NOTIFICATION_GAP_ANALYSIS.md` Dockerfile to use UBI10
+   - Update `IMPLEMENTATION_PLAN_V2.0.md` to v2.4.0 with UBI10 standard
+   - Add reference to ADR-027 for multi-arch + UBI10 requirements
 
-2. **Create UBI9 Dockerfile** (`docker/context-api.Dockerfile`):
-   - Use UBI9 Go toolset pattern from ADR-027
+2. **Create UBI10 Dockerfile** (`docker/context-api.Dockerfile`):
+   - Use UBI10 Go toolset pattern from ADR-027
    - Follow established patterns from workflow-service and holmesgpt-api
    - Include multi-arch support from day 1
 
 3. **Validation**:
-   - ✅ Dockerfile follows ADR-027 UBI9 pattern
+   - ✅ Dockerfile follows ADR-027 UBI10 pattern
    - ✅ Build commands use `podman --platform linux/amd64,linux/arm64`
    - ✅ Makefile targets consistent with other services
    - ✅ Red Hat labels present
@@ -562,20 +562,20 @@ build-image:
 
 | Service | Current Base | Target Base | Priority | Effort | Timeline |
 |---|---|---|---|---|---|
-| **notification** | alpine/distroless | UBI9 Go + minimal | **P1 - HIGH** | 2-3 hours | Week 2 |
-| **context-api** | N/A (new) | UBI9 Go + minimal | **P1 - HIGH** | 1 hour (doc only) | Day 9 |
-| **holmesgpt-api** | UBI9 Python ✅ | N/A (compliant) | N/A | 0 hours | ✅ Complete |
-| **workflow-service** | UBI9 Go ✅ | N/A (compliant) | N/A | 0 hours | ✅ Complete |
-| Other services | TBD | UBI9 (appropriate) | P2-P3 | TBD | Weeks 3-4 |
+| **notification** | alpine/distroless | UBI10 Go + minimal | **P1 - HIGH** | 2-3 hours | Week 2 |
+| **context-api** | N/A (new) | UBI10 Go + minimal | **P1 - HIGH** | 1 hour (doc only) | Day 9 |
+| **holmesgpt-api** | UBI10 Python ✅ | N/A (compliant) | N/A | 0 hours | ✅ Complete |
+| **workflow-service** | UBI10 Go ✅ | N/A (compliant) | N/A | 0 hours | ✅ Complete |
+| Other services | TBD | UBI10 (appropriate) | P2-P3 | TBD | Weeks 3-4 |
 
 ### **Migration Best Practices**
 
-1. **Test Locally First**: Build and run with UBI9 before deploying
-2. **Version Bump**: Use new version tag for UBI9 migration (e.g., v1.1.0-ubi9)
+1. **Test Locally First**: Build and run with UBI10 before deploying
+2. **Version Bump**: Use new version tag for UBI10 migration (e.g., v1.1.0-ubi10)
 3. **Gradual Rollout**: Deploy to dev → staging → production
 4. **Rollback Plan**: Keep previous alpine/distroless image available
-5. **Document Changes**: Update service README with UBI9 benefits
-6. **Size Comparison**: Document image size delta (UBI9 typically +50-100MB)
+5. **Document Changes**: Update service README with UBI10 benefits
+6. **Size Comparison**: Document image size delta (UBI10 typically +50-100MB)
 
 ---
 
@@ -583,24 +583,24 @@ build-image:
 
 ### Week 1: Documentation & Tooling
 - ✅ Create ADR-027 (2025-10-20)
-- ✅ Add Red Hat UBI9 base image standard (2025-10-21)
-- ✅ Document UBI9 Dockerfile pattern for Go services
+- ✅ Add Red Hat UBI10 base image standard (2025-10-21)
+- ✅ Document UBI10 Dockerfile pattern for Go services
 - ✅ Add migration strategy for existing services
-- ⏳ Update Makefile with multi-arch + UBI9 targets
+- ⏳ Update Makefile with multi-arch + UBI10 targets
 - ⏳ Update build scripts for all services
-- ⏳ Document multi-arch + UBI9 build process
+- ⏳ Document multi-arch + UBI10 build process
 
-### Week 2: Pilot Services - UBI9 Migration (2-3 services)
-- ⏳ **Notification Controller**: Migrate alpine/distroless → UBI9
-  - Update Dockerfile to UBI9 Go toolset + minimal
+### Week 2: Pilot Services - UBI10 Migration (2-3 services)
+- ⏳ **Notification Controller**: Migrate alpine/distroless → UBI10
+  - Update Dockerfile to UBI10 Go toolset + minimal
   - Add Red Hat labels (13 required)
   - Test multi-arch build (amd64 + arm64)
   - Deploy to dev OCP cluster for validation
-  - Version: v1.1.0-ubi9
-- ⏳ **Context API Service**: Implement with UBI9 from day 1
+  - Version: v1.1.0-ubi10
+- ⏳ **Context API Service**: Implement with UBI10 from day 1
   - Correct gap analysis Dockerfile
   - Update implementation plan to v2.4.0
-  - Create `docker/context-api.Dockerfile` with UBI9
+  - Create `docker/context-api.Dockerfile` with UBI10
   - Add to Context API Day 9 (Production Readiness)
 - ⏳ Validate multi-arch auto-selection on OCP
 - ⏳ Test on arm64 development machines
@@ -608,17 +608,17 @@ build-image:
 ### Week 3: Rollout to Remaining Services
 - ⏳ Audit all remaining service Dockerfiles
 - ⏳ Prioritize services by deployment frequency
-- ⏳ Apply multi-arch + UBI9 to services 3-8
+- ⏳ Apply multi-arch + UBI10 to services 3-8
 - ⏳ Update deployment manifests (remove arch-specific tags)
-- ⏳ Update CI/CD pipelines for UBI9 standard
+- ⏳ Update CI/CD pipelines for UBI10 standard
 
 ### Week 4: Final Services + Validation
 - ⏳ Complete remaining services (9-12)
 - ⏳ Remove OpenShift BuildConfig workarounds
 - ⏳ Archive single-arch and alpine/distroless documentation
 - ⏳ Measure deployment time improvements
-- ⏳ Document image size comparisons (UBI9 vs previous)
-- ⏳ Achieve 100% UBI9 compliance target
+- ⏳ Document image size comparisons (UBI10 vs previous)
+- ⏳ Achieve 100% UBI10 compliance target
 
 ---
 
@@ -626,7 +626,7 @@ build-image:
 
 - **ADR-023**: Tekton from V1 - Build execution platform (complements multi-arch strategy)
 - **Notification v1.0.1 deployment** (2025-10-20) - Demonstrated immediate need for multi-arch
-- **Context API gap analysis** (2025-10-21) - Identified need for UBI9 base image standard
+- **Context API gap analysis** (2025-10-21) - Identified need for UBI10 base image standard
 - **Future**: ADR for AWS Graviton adoption (enabled by this decision)
 
 ---
@@ -641,9 +641,9 @@ build-image:
 
 ### Red Hat UBI Resources
 - [Red Hat Universal Base Images (UBI)](https://developers.redhat.com/products/rhel/ubi)
-- [UBI9 Container Images Catalog](https://catalog.redhat.com/software/containers/search?q=ubi9)
-- [UBI9 Go Toolset Documentation](https://catalog.redhat.com/software/containers/ubi9/go-toolset/615aee9fc739c0a4123a87e1)
-- [UBI9 Python 3.12 Documentation](https://catalog.redhat.com/software/containers/ubi9/python-312/65e0d01bc758e1e23eb4c2f5)
+- [UBI10 Container Images Catalog](https://catalog.redhat.com/software/containers/search?q=ubi10)
+- [UBI10 Go Toolset Documentation](https://catalog.redhat.com/software/containers/ubi10/go-toolset/615aee9fc739c0a4123a87e1)
+- [UBI10 Python 3.12 Documentation](https://catalog.redhat.com/software/containers/ubi10/python-312/65e0d01bc758e1e23eb4c2f5)
 - [Red Hat Container Best Practices](https://docs.openshift.com/container-platform/latest/openshift_images/create-images.html)
 
 ---
@@ -652,9 +652,9 @@ build-image:
 
 1. **Multi-Architecture**: Eliminates architectural friction between arm64 development (Mac) and amd64 production (OCP), improves developer experience, and future-proofs Kubernaut for heterogeneous cluster deployments at minimal cost (+30-50% build time, 10-20% storage).
 
-2. **Red Hat UBI9**: Provides enterprise support, security compliance, and OpenShift optimization that outweigh minor size/performance trade-offs. Standardizes base images across all services for consistency and maintainability.
+2. **Red Hat UBI10**: Provides enterprise support, security compliance, and OpenShift optimization that outweigh minor size/performance trade-offs. Standardizes base images across all services for consistency and maintainability.
 
-The combined benefits of multi-arch + UBI9 far outweigh the trade-offs:
+The combined benefits of multi-arch + UBI10 far outweigh the trade-offs:
 - **Developer Experience**: Seamless local-to-production workflow
 - **Enterprise Support**: Red Hat backing and security certifications
 - **Future-Ready**: AWS Graviton, edge deployment, multi-cloud flexibility
@@ -662,7 +662,7 @@ The combined benefits of multi-arch + UBI9 far outweigh the trade-offs:
 
 **Approved**:
 - Engineering Team, 2025-10-20 (Multi-Architecture)
-- Engineering Team, 2025-10-21 (Red Hat UBI9 Standard)
+- Engineering Team, 2025-10-21 (Red Hat UBI10 Standard)
 
 
 

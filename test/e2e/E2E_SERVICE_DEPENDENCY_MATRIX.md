@@ -82,10 +82,10 @@ holmesgpt-api
 | Service | Dockerfile Path | Image Name | Coverage Support |
 |---------|-----------------|------------|------------------|
 | datastorage | `docker/data-storage.Dockerfile` | `kubernaut/datastorage` | ✅ Yes (E2E_COVERAGE) |
-| gateway | `docker/gateway-ubi9.Dockerfile` | `kubernaut/gateway` | ✅ Yes (E2E_COVERAGE) |
+| gateway | `docker/gateway.Dockerfile` | `kubernaut/gateway` | ✅ Yes (E2E_COVERAGE) |
 | aianalysis | `docker/aianalysis.Dockerfile` | `kubernaut/aianalysis-controller` | ✅ Yes (E2E_COVERAGE) |
 | authwebhook | `docker/authwebhook.Dockerfile` | `authwebhook` | ✅ Yes (E2E_COVERAGE) |
-| notification | `docker/notification-controller-ubi9.Dockerfile` | `kubernaut-notification` | ❌ No |
+| notification | `docker/notification-controller.Dockerfile` | `kubernaut-notification` | ❌ No |
 | remediationorchestrator | `docker/remediationorchestrator-controller.Dockerfile` | `kubernaut/remediationorchestrator-controller` | ✅ Yes (E2E_COVERAGE) |
 | signalprocessing | `docker/signalprocessing-controller.Dockerfile` | `kubernaut/signalprocessing-controller` | ✅ Yes |
 | workflowexecution | `docker/workflowexecution-controller.Dockerfile` | `kubernaut/workflowexecution-controller` | ✅ Yes (disabled on ARM64) |

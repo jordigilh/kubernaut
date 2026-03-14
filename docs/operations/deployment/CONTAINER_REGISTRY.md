@@ -19,8 +19,8 @@ All services use official upstream base images for building:
 
 | Base Image | Purpose | Use Case |
 |------------|---------|----------|
-| `registry.access.redhat.com/ubi9/go-toolset:1.24` | Go build environment | Enterprise services (preferred) |
-| `registry.access.redhat.com/ubi9/ubi-minimal:latest` | Runtime environment | Enterprise services (preferred) |
+| `registry.access.redhat.com/ubi10/go-toolset:1.24` | Go build environment | Enterprise services (preferred) |
+| `registry.access.redhat.com/ubi10/ubi-minimal:latest` | Runtime environment | Enterprise services (preferred) |
 | `golang:1.23-alpine` | Go build environment | Minimal services |
 | `alpine:latest` | Minimal runtime | Lightweight services |
 

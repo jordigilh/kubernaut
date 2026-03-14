@@ -234,7 +234,7 @@ graph TB
 
 #### 4.1.1 Multi-Architecture Support
 - **BR-HAPI-046**: MUST build container images for linux/amd64 and linux/arm64
-- **BR-HAPI-047**: MUST use upstream community UBI Python 3.11+ base image (registry.access.redhat.com/ubi9/python-311) with security updates
+- **BR-HAPI-047**: MUST use upstream community UBI Python 3.12+ base image (registry.access.redhat.com/ubi10/python-312-minimal) with security updates
 - **BR-HAPI-048**: MUST minimize container size while including all dependencies using UBI-micro for minimal footprint
 - **BR-HAPI-049**: MUST implement non-root user execution for security
 - **BR-HAPI-050**: MUST provide proper signal handling for container lifecycle
@@ -294,7 +294,7 @@ graph TB
 ### 5.3 Container Security
 
 #### 5.3.1 Image Security
-- **BR-HAPI-081**: MUST use upstream community Universal Base Images (UBI) from upstream community Catalog (ubi9-minimal, ubi9-micro, or ubi9-python)
+- **BR-HAPI-081**: MUST use upstream community Universal Base Images (UBI) from upstream community Catalog (ubi10-minimal, ubi10-micro, or ubi10-python)
 - **BR-HAPI-082**: MUST scan container images for vulnerabilities before deployment using upstream community security scanning tools
 - **BR-HAPI-083**: MUST run containers as non-root user with minimal privileges
 - **BR-HAPI-084**: MUST implement read-only file systems where possible
@@ -479,16 +479,16 @@ graph TB
 ```dockerfile
 # Multi-stage build using upstream community UBI images
 # Build stage
-FROM registry.access.redhat.com/ubi9/python-311:latest AS builder
+FROM registry.access.redhat.com/ubi10/python-312-minimal:latest AS builder
 
 # Set working directory
 WORKDIR /app
 
 # Install build dependencies
 USER root
-RUN dnf update -y && \
-    dnf install -y gcc git && \
-    dnf clean all
+RUN microdnf update -y && \
+    microdnf install -y gcc git && \
+    microdnf clean all
 
 # Copy requirements and install Python dependencies
 USER 1001
@@ -499,13 +499,13 @@ RUN pip install --no-cache-dir --user -r requirements.txt
 RUN pip install --no-cache-dir --user holmesgpt
 
 # Runtime stage - use UBI-micro for minimal footprint
-FROM registry.access.redhat.com/ubi9-micro:latest
+FROM registry.access.redhat.com/ubi10-micro:latest
 
 # Install Python runtime and required packages
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /etc/group /etc/group
-COPY --from=builder /usr/bin/python3.11 /usr/bin/python3.11
-COPY --from=builder /usr/lib64/python3.11 /usr/lib64/python3.11
+COPY --from=builder /usr/bin/python3.12 /usr/bin/python3.12
+COPY --from=builder /usr/lib64/python3.12 /usr/lib64/python3.12
 COPY --from=builder /home/default/.local /usr/local
 
 # Create app user and directories
@@ -521,7 +521,7 @@ COPY --chown=1001:0 src/ .
 COPY --chown=1001:0 config/ /config/
 
 # Set environment variables
-ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages
+ENV PYTHONPATH=/usr/local/lib/python3.12/site-packages
 ENV PYTHONUNBUFFERED=1
 ENV HOME=/app
 
@@ -530,13 +530,13 @@ USER 1001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python3.11 -c "import requests; requests.get('http://localhost:8090/health', timeout=5)"
+    CMD python3.12 -c "import requests; requests.get('http://localhost:8090/health', timeout=5)"
 
 # Expose ports
 EXPOSE 8090 9091
 
 # Start the application
-CMD ["python3.11", "main.py"]
+CMD ["python3.12", "main.py"]
 ```
 
 ### 9.2 Container Labels and Annotations
