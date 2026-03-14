@@ -939,7 +939,7 @@ jobs:
 
   helm-smoke-test:
     name: Helm Smoke Tests (Kind)
-    needs: [detect-changes, build-and-push-images]
+    needs: [detect-changes, build-and-push-images, unit-tests]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
