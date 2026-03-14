@@ -524,7 +524,7 @@
           "type": "string",
           "default": "upstream",
           "enum": ["upstream", "ocp"],
-          "description": "PostgreSQL image variant: upstream (postgres:16-alpine) or ocp (OpenShift ImageStream)"
+          "description": "PostgreSQL image variant: upstream (postgres:16-alpine) or ocp (Red Hat RHEL10 image)"
         },
         "image": {
           "type": "string",

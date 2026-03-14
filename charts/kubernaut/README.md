@@ -23,23 +23,11 @@ Kubernaut is an autonomous Kubernetes remediation platform that detects incident
 
 If Prometheus and AlertManager are not deployed, set `effectivenessmonitor.external.prometheusEnabled=false` and `effectivenessmonitor.external.alertManagerEnabled=false`.
 
-### OpenShift (OCP) Prerequisites
+### OpenShift (OCP)
 
-Kubernaut requires PostgreSQL 16+ and uses Valkey 8 for its dead-letter queue. OCP clusters may not include these ImageStream tags by default. Import them from the Red Hat container catalog before installing the chart:
+The OCP overlay (`values-ocp.yaml`) switches PostgreSQL and Valkey to Red Hat RHEL10 catalog images (direct pull from `registry.redhat.io`), replaces `bitnami/kubectl` with `ose-cli` for hook jobs, and disables the event exporter (no Red Hat-supported equivalent; users should provide their own Kubernetes event forwarding if needed).
 
-```bash
-oc import-image postgresql:16-el9 \
-  --from=registry.redhat.io/rhel9/postgresql-16 \
-  -n openshift --confirm
-
-oc import-image valkey:8-el9 \
-  --from=registry.redhat.io/rhel9/valkey-8 \
-  -n openshift --confirm
-```
-
-Both commands are idempotent — safe to run even if the tags already exist (e.g., on OCP versions that ship these versions natively).
-
-The OCP overlay (`values-ocp.yaml`) switches PostgreSQL and Valkey to Red Hat catalog images, replaces `bitnami/kubectl` with `ose-cli` for hook jobs, and disables the event exporter (no Red Hat-supported equivalent; users should provide their own Kubernetes event forwarding if needed).
+No ImageStream prerequisites are required — pods pull directly from `registry.redhat.io` using the cluster's global pull secret.
 
 ```bash
 helm install kubernaut charts/kubernaut/ \
@@ -226,7 +214,7 @@ Optional component that forwards Kubernetes Warning events to the Gateway. Disab
 | Parameter | Description | Default |
 |---|---|---|
 | `postgresql.enabled` | Deploy in-chart PostgreSQL | `true` |
-| `postgresql.variant` | Image variant: `upstream` (postgres:16-alpine) or `ocp` (OpenShift ImageStream) | `upstream` |
+| `postgresql.variant` | Image variant: `upstream` (postgres:16-alpine) or `ocp` (Red Hat RHEL10 image) | `upstream` |
 | `postgresql.replicas` | Number of replicas | `1` |
 | `postgresql.image` | PostgreSQL container image | `postgres:16-alpine` |
 | `postgresql.auth.existingSecret` | Pre-created Secret name | `""` |
@@ -236,7 +224,7 @@ Optional component that forwards Kubernetes Warning events to the Gateway. Disab
 | `postgresql.storage.size` | PVC size | `10Gi` |
 | `postgresql.storage.storageClassName` | StorageClass (empty = cluster default) | `""` |
 
-**OCP variant**: Set `postgresql.variant=ocp` and `postgresql.image` to the internal registry ImageStream reference (e.g., `image-registry.openshift-image-registry.svc:5000/openshift/postgresql:16-el9`). The chart maps the uniform Secret keys (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`) to the OCP-expected env var names (`POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`, `POSTGRESQL_DATABASE`) and adjusts the data directory mount path automatically.
+**OCP variant**: Set `postgresql.variant=ocp` and `postgresql.image` to the Red Hat RHEL10 image (e.g., `registry.redhat.io/rhel10/postgresql-16`). The chart maps the uniform Secret keys (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`) to the OCP-expected env var names (`POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`, `POSTGRESQL_DATABASE`) and adjusts the data directory mount path automatically. The `values-ocp.yaml` overlay sets both `variant` and `image` for you.
 
 ### External PostgreSQL (BYO)
 
@@ -368,9 +356,9 @@ spec:
 
 For OCP < 4.13, use the deprecated `ImageContentSourcePolicy` (ICSP) with the same mirror mappings.
 
-### 5. OCP: Disconnected install (no ImageStreams needed)
+### 5. OCP: Disconnected install
 
-The `values-airgap.yaml` overlay overrides the OCP ImageStream references (`image-registry.openshift-image-registry.svc:5000/openshift/...`) with direct pulls from the mirror registry. This eliminates the need for `oc import-image` or `oc tag` — pods pull PostgreSQL and Valkey directly from the mirror.
+The `values-airgap.yaml` overlay overrides the `registry.redhat.io` image references from `values-ocp.yaml` with pulls from your mirror registry.
 
 ```bash
 helm install kubernaut charts/kubernaut/ \
@@ -381,7 +369,7 @@ helm install kubernaut charts/kubernaut/ \
   --set global.image.registry=<mirror-registry>/kubernaut-ai
 ```
 
-> **Note**: `values-airgap.yaml` must be layered **after** `values-ocp.yaml` so it overrides the ImageStream image references. The `postgresql.variant: ocp` setting from `values-ocp.yaml` is preserved, ensuring correct env var names (`POSTGRESQL_*`) and data directory paths.
+> **Note**: `values-airgap.yaml` must be layered **after** `values-ocp.yaml` so it overrides the `registry.redhat.io` image references with your mirror. The `postgresql.variant: ocp` setting from `values-ocp.yaml` is preserved, ensuring correct env var names (`POSTGRESQL_*`) and data directory paths.
 
 ## Upgrading
 

@@ -2,35 +2,23 @@
 # Usage: helm install kubernaut charts/kubernaut -f charts/kubernaut/values-demo.yaml -f charts/kubernaut/values-ocp.yaml
 #
 # Layer this on top of values-demo.yaml (or your production values) to:
-#   - Switch PostgreSQL and Valkey to Red Hat catalog images
+#   - Switch PostgreSQL and Valkey to Red Hat RHEL10 catalog images (direct pull)
 #   - Replace bitnami/kubectl with ose-cli for hook jobs
 #   - Disable the event exporter (no Red Hat-supported equivalent)
 #   - Override signal sources and Prometheus/AlertManager URLs for OCP monitoring
 #
-# PREREQUISITES: PostgreSQL 16 and Valkey 8 ImageStream tags in the openshift
-# namespace. OCP may not ship these by default.
-#
-# Connected environments — import from Red Hat container catalog:
-#   oc import-image postgresql:16-el9 \
-#     --from=registry.redhat.io/rhel9/postgresql-16 \
-#     -n openshift --confirm
-#   oc import-image valkey:8-el9 \
-#     --from=registry.redhat.io/rhel9/valkey-8 \
-#     -n openshift --confirm
+# No ImageStream prerequisites — pods pull directly from registry.redhat.io.
+# The global pull secret must include registry.redhat.io credentials (default on OCP).
 #
 # Disconnected/air-gapped — layer values-airgap.yaml AFTER this file.
-# It overrides the ImageStream references above with direct mirror pulls,
-# so no oc import-image or oc tag is needed.
 # See chart README "Disconnected / Air-Gapped Install" section for full guide.
-#
-# Both connected commands are idempotent — safe to run if the tags exist.
 
 postgresql:
   variant: ocp
-  image: image-registry.openshift-image-registry.svc:5000/openshift/postgresql:16-el9
+  image: registry.redhat.io/rhel10/postgresql-16
 
 valkey:
-  image: image-registry.openshift-image-registry.svc:5000/openshift/valkey:8-el9
+  image: registry.redhat.io/rhel10/valkey-8
 
 eventExporter:
   enabled: false

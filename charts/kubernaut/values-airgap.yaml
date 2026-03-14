@@ -1,7 +1,7 @@
 # Air-gapped / disconnected overlay for Kubernaut Helm chart.
 #
-# IMPORTANT: Layer this AFTER values-ocp.yaml so it overrides the OCP
-# ImageStream references with direct mirror pulls (no oc tag needed).
+# IMPORTANT: Layer this AFTER values-ocp.yaml so it overrides the
+# registry.redhat.io pulls with your mirror registry.
 #
 # Usage:
 #   helm install kubernaut charts/kubernaut \
@@ -28,12 +28,12 @@ global:
 
 # Override each third-party image to point to your mirror.
 # These images are NOT governed by global.image.registry.
-# Red Hat equivalents are used (matching values-ocp.yaml).
+# Red Hat RHEL10 equivalents are used (matching values-ocp.yaml).
 postgresql:
-  image: <mirror-registry>/rhel9/postgresql-16
+  image: <mirror-registry>/rhel10/postgresql-16
 
 valkey:
-  image: <mirror-registry>/rhel9/valkey-8
+  image: <mirror-registry>/rhel10/valkey-8
 
 # Event exporter is disabled on OCP (no Red Hat-supported equivalent).
 # values-ocp.yaml already sets eventExporter.enabled=false.
