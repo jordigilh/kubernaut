@@ -118,7 +118,7 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 				},
 				Status:   "firing",
 				StartsAt: time.Now(),
-				// No EndsAt = still firing
+				EndsAt:   time.Now().Add(10 * time.Minute), // Keep firing beyond resolve_timeout (1m)
 			},
 		}
 		err := infrastructure.InjectAlerts(alertManagerURL, alerts)

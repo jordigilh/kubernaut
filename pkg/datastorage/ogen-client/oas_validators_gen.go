@@ -5369,6 +5369,8 @@ func (s RemediationWorkflowStatus) Validate() error {
 		return nil
 	case "archived":
 		return nil
+	case "superseded":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}

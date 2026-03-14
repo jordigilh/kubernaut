@@ -29581,6 +29581,8 @@ func (s *RemediationWorkflowStatus) Decode(d *jx.Decoder) error {
 		*s = RemediationWorkflowStatusDeprecated
 	case RemediationWorkflowStatusArchived:
 		*s = RemediationWorkflowStatusArchived
+	case RemediationWorkflowStatusSuperseded:
+		*s = RemediationWorkflowStatusSuperseded
 	default:
 		*s = RemediationWorkflowStatus(v)
 	}

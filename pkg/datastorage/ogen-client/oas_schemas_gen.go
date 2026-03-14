@@ -18864,6 +18864,7 @@ const (
 	RemediationWorkflowStatusDisabled   RemediationWorkflowStatus = "disabled"
 	RemediationWorkflowStatusDeprecated RemediationWorkflowStatus = "deprecated"
 	RemediationWorkflowStatusArchived   RemediationWorkflowStatus = "archived"
+	RemediationWorkflowStatusSuperseded RemediationWorkflowStatus = "superseded"
 )
 
 // AllValues returns all RemediationWorkflowStatus values.
@@ -18873,6 +18874,7 @@ func (RemediationWorkflowStatus) AllValues() []RemediationWorkflowStatus {
 		RemediationWorkflowStatusDisabled,
 		RemediationWorkflowStatusDeprecated,
 		RemediationWorkflowStatusArchived,
+		RemediationWorkflowStatusSuperseded,
 	}
 }
 
@@ -18886,6 +18888,8 @@ func (s RemediationWorkflowStatus) MarshalText() ([]byte, error) {
 	case RemediationWorkflowStatusDeprecated:
 		return []byte(s), nil
 	case RemediationWorkflowStatusArchived:
+		return []byte(s), nil
+	case RemediationWorkflowStatusSuperseded:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -18906,6 +18910,9 @@ func (s *RemediationWorkflowStatus) UnmarshalText(data []byte) error {
 		return nil
 	case RemediationWorkflowStatusArchived:
 		*s = RemediationWorkflowStatusArchived
+		return nil
+	case RemediationWorkflowStatusSuperseded:
+		*s = RemediationWorkflowStatusSuperseded
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

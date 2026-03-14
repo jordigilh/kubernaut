@@ -1126,6 +1126,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		// Same expected audit events as the K8s event test — the full pipeline is identical
 		// after the signal enters Gateway, regardless of signal source.
+		// BR-EM-012, #369: effectiveness.alert.assessed is handled separately below
+		// because alert decay may emit effectiveness.alert_decay.detected instead.
 		exactlyOnceEvents := []string{
 			"gateway.signal.received",
 			"gateway.crd.created",
@@ -1135,7 +1137,6 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"effectiveness.assessment.scheduled",
 			"effectiveness.health.assessed",
 			"effectiveness.hash.computed",
-			"effectiveness.alert.assessed",
 			"effectiveness.metrics.assessed",
 			"effectiveness.assessment.completed",
 		}
@@ -1207,6 +1208,14 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			Expect(eventTypeCounts[eventType]).To(BeNumerically(">=", 1),
 				"Event %s must appear at least once, but found %d", eventType, eventTypeCounts[eventType])
 		}
+
+		// BR-EM-012, #369: Alert assessment produces either effectiveness.alert.assessed
+		// (normal path) or effectiveness.alert_decay.detected (decay path, when Prometheus
+		// keeps re-firing the alert after remediation). Accept either.
+		alertAssessed := eventTypeCounts["effectiveness.alert.assessed"]
+		alertDecayDetected := eventTypeCounts["effectiveness.alert_decay.detected"]
+		Expect(alertAssessed + alertDecayDetected).To(BeNumerically(">=", 1),
+			"Either effectiveness.alert.assessed or effectiveness.alert_decay.detected must be present (BR-EM-012)")
 
 		// ================================================================
 		// AM Step 12: Verify EffectivenessAssessment CRD
