@@ -374,8 +374,15 @@ run_tls_001() {
   assert_resource_exists secret authwebhook-tls "$NAMESPACE" \
     "ST-CHART-TLS-001a: authwebhook-tls Secret exists" || pass=false
 
-  assert_resource_exists configmap authwebhook-ca "$NAMESPACE" \
-    "ST-CHART-TLS-001b: authwebhook-ca ConfigMap exists" || pass=false
+  local ca_key
+  ca_key=$(kubectl get secret authwebhook-tls -n "$NAMESPACE" \
+    -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
+  if [[ -n "$ca_key" ]]; then
+    tap_ok "ST-CHART-TLS-001b: ca.crt key embedded in authwebhook-tls Secret"
+  else
+    tap_not_ok "ST-CHART-TLS-001b: ca.crt key embedded in authwebhook-tls Secret" "key missing"
+    pass=false
+  fi
 
   local cabundle
   cabundle=$(kubectl get mutatingwebhookconfigurations authwebhook-mutating \
