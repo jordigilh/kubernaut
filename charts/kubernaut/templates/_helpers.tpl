@@ -55,7 +55,11 @@ Render the container image for a Kubernaut service.
 Usage: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.global "appVersion" .Chart.AppVersion) }}
 */}}
 {{- define "kubernaut.image" -}}
-{{- printf "%s/%s:%s" .global.image.registry .service (.global.image.tag | default .appVersion) }}
+{{- if .global.image.digest -}}
+{{- printf "%s/%s@%s" .global.image.registry .service .global.image.digest -}}
+{{- else -}}
+{{- printf "%s/%s:%s" .global.image.registry .service (.global.image.tag | default .appVersion) -}}
+{{- end -}}
 {{- end }}
 
 {{/*
@@ -195,16 +199,10 @@ upstream: /var/lib/postgresql/data   ocp: /var/lib/pgsql/data
 {{- end }}
 
 {{/*
-Return the PostgreSQL client image (for init containers and migration hooks).
-Uses hooks.migrations.image if set, otherwise falls back to postgresql.image.
+NOTE: kubernaut.postgresql.clientImage was removed in #351 (C1).
+Migration hooks now use hooks.migrations.image directly (db-migrate image
+with goose + psql pre-installed). No runtime binary downloads needed.
 */}}
-{{- define "kubernaut.postgresql.clientImage" -}}
-{{- if .Values.hooks.migrations.image -}}
-{{- .Values.hooks.migrations.image -}}
-{{- else -}}
-{{- .Values.postgresql.image -}}
-{{- end -}}
-{{- end }}
 
 {{/*
 Return the Valkey data directory mount path.

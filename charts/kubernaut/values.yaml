@@ -2,6 +2,7 @@ global:
   image:
     registry: quay.io/kubernaut-ai
     tag: ""  # defaults to Chart.appVersion
+    digest: ""  # when set (e.g. "sha256:abc..."), overrides tag for immutable image references
     pullPolicy: IfNotPresent
   nodeSelector: {}
   tolerations: []
@@ -307,7 +308,6 @@ networkPolicies:
 # -- Hooks (post-install Jobs)
 hooks:
   migrations:
-    image: ""  # defaults to postgresql.image; override only for airgap or custom PG client images
-    gooseVersion: v3.24.1  # DD-012: goose CLI version for migration state tracking
+    image: quay.io/kubernaut-ai/db-migrate:v3.24.1  # UBI9-minimal with goose + psql; works in disconnected environments
   tlsCerts:
-    image: bitnami/kubectl:latest
+    image: bitnami/kubectl:1.32

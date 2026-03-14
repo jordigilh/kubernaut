@@ -114,6 +114,11 @@
               "default": "",
               "description": "Image tag; empty defaults to Chart.appVersion"
             },
+            "digest": {
+              "type": "string",
+              "default": "",
+              "description": "Image digest (e.g. sha256:abc...); when set, overrides tag for immutable references"
+            },
             "pullPolicy": {
               "type": "string",
               "enum": ["Always", "IfNotPresent", "Never"],
@@ -683,13 +688,8 @@
           "properties": {
             "image": {
               "type": "string",
-              "default": "",
-              "description": "PostgreSQL client image for migrations; defaults to postgresql.image when empty"
-            },
-            "gooseVersion": {
-              "type": "string",
-              "default": "v3.24.1",
-              "description": "DD-012: goose CLI version for migration state tracking"
+              "default": "quay.io/kubernaut-ai/db-migrate:v3.24.1",
+              "description": "UBI9-minimal image with goose + psql for database migrations (works in disconnected environments)"
             }
           }
         },
