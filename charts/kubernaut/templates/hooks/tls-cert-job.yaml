@@ -179,21 +179,24 @@ spec:
 
               CA_BUNDLE=$(printf '%s' "$CA_CRT" | base64 | tr -d '\n')
 
-              echo "  Patching MutatingWebhookConfiguration (authwebhook-mutating)..."
-              kubectl patch mutatingwebhookconfiguration authwebhook-mutating --type='json' \
-                -p "[
-                  {\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
-                  {\"op\":\"add\",\"path\":\"/webhooks/1/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
-                  {\"op\":\"add\",\"path\":\"/webhooks/2/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}
-                ]"
+              patch_webhooks() {
+                KIND="$1"   # mutatingwebhookconfigurations or validatingwebhookconfigurations
+                NAME="$2"
+                COUNT=$(kubectl get "$KIND" "$NAME" -o jsonpath='{.webhooks}' | tr ',' '\n' | grep -c '"name"')
+                PATCH="["
+                i=0
+                while [ "$i" -lt "$COUNT" ]; do
+                  [ "$i" -gt 0 ] && PATCH="${PATCH},"
+                  PATCH="${PATCH}{\"op\":\"add\",\"path\":\"/webhooks/${i}/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}"
+                  i=$((i + 1))
+                done
+                PATCH="${PATCH}]"
+                echo "  Patching $NAME ($COUNT webhooks)..."
+                kubectl patch "$KIND" "$NAME" --type='json' -p "$PATCH"
+              }
 
-              echo "  Patching ValidatingWebhookConfiguration (authwebhook-validating)..."
-              kubectl patch validatingwebhookconfiguration authwebhook-validating --type='json' \
-                -p "[
-                  {\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
-                  {\"op\":\"add\",\"path\":\"/webhooks/1/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
-                  {\"op\":\"add\",\"path\":\"/webhooks/2/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}
-                ]"
+              patch_webhooks mutatingwebhookconfigurations authwebhook-mutating
+              patch_webhooks validatingwebhookconfigurations authwebhook-validating
 
               echo "==> Webhook CA bundle patching complete"
 {{- end }}

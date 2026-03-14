@@ -14,16 +14,9 @@ spec:
       app: gateway
   policyTypes: [Ingress, Egress]
   ingress:
-    {{- if .Values.eventExporter.enabled }}
-    - from:
-        - podSelector:
-            matchLabels:
-              app: event-exporter
-      ports:
+    - ports:
         - port: 8080
           protocol: TCP
-    {{- end }}
-    - ports:
         - port: 9090
           protocol: TCP
   egress:
@@ -61,6 +54,7 @@ spec:
         - port: 8080
           protocol: TCP
   egress:
+    {{- if .Values.postgresql.enabled }}
     - to:
         - podSelector:
             matchLabels:
@@ -68,6 +62,13 @@ spec:
       ports:
         - port: 5432
           protocol: TCP
+    {{- else }}
+    - to: []
+      ports:
+        - port: {{ .Values.externalPostgresql.port | default 5432 }}
+          protocol: TCP
+    {{- end }}
+    {{- if .Values.valkey.enabled }}
     - to:
         - podSelector:
             matchLabels:
@@ -75,6 +76,12 @@ spec:
       ports:
         - port: 6379
           protocol: TCP
+    {{- else }}
+    - to: []
+      ports:
+        - port: 6379
+          protocol: TCP
+    {{- end }}
     - to: []
       ports:
         - port: 53

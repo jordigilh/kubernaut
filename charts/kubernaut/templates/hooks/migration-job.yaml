@@ -120,7 +120,6 @@ metadata:
     "helm.sh/hook-weight": "1"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 data:
-  {{- $migrationsDir := printf "%s/migrations" $.Chart.Name }}
   {{- range $path, $_ := .Files.Glob "migrations/*.sql" }}
   {{ base $path }}: |
     {{- $.Files.Get $path | nindent 4 }}

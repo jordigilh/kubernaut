@@ -27,6 +27,10 @@ tls:
 # -- Gateway service (AlertManager webhook target + external signal ingestion)
 gateway:
   replicas: 1
+  pdb:
+    enabled: false
+    # minAvailable: 1
+    # maxUnavailable: ""
   resources:
     requests:
       memory: 256Mi
@@ -50,6 +54,10 @@ gateway:
 # -- DataStorage service (audit trail, workflow catalog)
 datastorage:
   replicas: 1
+  pdb:
+    enabled: false
+    # minAvailable: 1
+    # maxUnavailable: ""
   dbExistingSecret: ""  # name of pre-created Secret with db-secrets.yaml key; when set, overrides chart-managed datastorage-db-secret
   resources:
     requests:
@@ -65,6 +73,10 @@ datastorage:
 # -- AIAnalysis controller
 aianalysis:
   replicas: 1
+  pdb:
+    enabled: false
+    # minAvailable: 1
+    # maxUnavailable: ""
   rego:
     confidenceThreshold: null  # nil = use Rego default (0.8 per BR-AI-076)
   resources:
@@ -78,6 +90,10 @@ aianalysis:
 # -- SignalProcessing controller
 signalprocessing:
   replicas: 1
+  pdb:
+    enabled: false
+    # minAvailable: 1
+    # maxUnavailable: ""
   resources:
     requests:
       cpu: 100m
@@ -89,6 +105,10 @@ signalprocessing:
 # -- RemediationOrchestrator controller
 remediationorchestrator:
   replicas: 1
+  pdb:
+    enabled: false
+    # minAvailable: 1
+    # maxUnavailable: ""
   resources:
     requests:
       cpu: 100m
@@ -112,6 +132,10 @@ remediationorchestrator:
 workflowexecution:
   workflowNamespace: kubernaut-workflows  # namespace for Job/PipelineRun execution
   replicas: 1
+  pdb:
+    enabled: false
+    # minAvailable: 1
+    # maxUnavailable: ""
   resources:
     requests:
       cpu: 100m
@@ -123,6 +147,10 @@ workflowexecution:
 # -- Notification controller
 notification:
   replicas: 1
+  pdb:
+    enabled: false
+    # minAvailable: 1
+    # maxUnavailable: ""
   # -- Enable Slack delivery channel. When false (default), only console/log delivery is active.
   # Requires a K8s Secret with the Slack webhook URL (see credentials below).
   slack:
@@ -147,6 +175,10 @@ notification:
 # -- EffectivenessMonitor controller
 effectivenessmonitor:
   replicas: 1
+  pdb:
+    enabled: false
+    # minAvailable: 1
+    # maxUnavailable: ""
   external:
     prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
     prometheusEnabled: true
@@ -163,6 +195,10 @@ effectivenessmonitor:
 # -- HolmesGPT API (LLM integration service)
 holmesgptApi:
   replicas: 1
+  pdb:
+    enabled: false
+    # minAvailable: 1
+    # maxUnavailable: ""
   resources:
     requests:
       cpu: 200m
@@ -187,6 +223,10 @@ holmesgptApi:
 # -- AuthWebhook admission controller
 authwebhook:
   replicas: 1
+  pdb:
+    enabled: false
+    # minAvailable: 1
+    # maxUnavailable: ""
   resources:
     requests:
       memory: 128Mi
@@ -201,6 +241,10 @@ authwebhook:
 eventExporter:
   enabled: true
   replicas: 1
+  pdb:
+    enabled: false
+    # minAvailable: 1
+    # maxUnavailable: ""
   image: ghcr.io/resmoio/kubernetes-event-exporter:v1.7
   # Pod/container security context overrides (same Tier 2 rationale as postgresql/valkey).
   # No hardcoded runAsUser/fsGroup for OCP/Kind compatibility.
