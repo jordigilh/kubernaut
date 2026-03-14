@@ -111,6 +111,15 @@ are prevented at the controller setup level. The only way a Pending WFE
 is re-reconciled is via `RequeueAfter` (cooldown retry, intentional) or
 a spec change (bumps Generation, intentional).
 
+**Execution Resource Watches**: The controller watches both `PipelineRun`
+(Tekton engine) and `Job` (Job engine) resources via the same label-based
+mapper (`FindWFEForOwnedResource`). Both executors label their resources
+with `kubernaut.ai/workflow-execution` and `kubernaut.ai/source-namespace`,
+enabling immediate reconciliation when an execution resource's status
+changes (e.g., Job completion). The `RequeueAfter: 10s` polling in
+`reconcileRunning` remains as a safety-net fallback. The Ansible engine
+uses AWX REST API polling exclusively (no K8s resources to watch).
+
 **Why Pattern B's Pending skip failed for WE (#374, #375)**:
 1. WFE2 created for same target as recently-completed WFE1
 2. First reconcile: `CheckCooldownActive` blocks → `TransitionTo(Pending)` stamps `ObservedGeneration` → returns `RequeueAfter: remaining`
@@ -688,17 +697,25 @@ and skips the reconcile -- preventing cooldown retry and Job creation.
 - **Added**: Pattern B-WE variant for controllers with Pending-phase requeues
 - **Added**: Caveat to Pattern B documenting the `RequeueAfter` incompatibility
 - **Added**: Footnote ¹ to rationale table for Pending-phase exception
+- **Added**: `Job` watch in `SetupWithManager` for immediate completion detection (BR-WE-014)
+- **Renamed**: `FindWFEForPipelineRun` → `FindWFEForOwnedResource` (serves both PipelineRun and Job)
 - **Updated**: WE validation results (previously TBD)
 - **Removed**: Pending-phase ObservedGeneration skip from WE controller
 
-**Root Cause**: `PhaseManager.TransitionTo` unconditionally stamps `ObservedGeneration`
-on every transition (including no-op `Pending → Pending`). Combined with `RequeueAfter`,
-the DD-CONTROLLER-001 guard kills the follow-up reconcile because nothing changed from
-its perspective. The fix removes the Pending skip for WE; `GenerationChangedPredicate`
-already prevents status-only watch duplicates.
+**Root Cause (Pending skip)**: `PhaseManager.TransitionTo` unconditionally stamps
+`ObservedGeneration` on every transition (including no-op `Pending → Pending`). Combined
+with `RequeueAfter`, the DD-CONTROLLER-001 guard kills the follow-up reconcile because
+nothing changed from its perspective. The fix removes the Pending skip for WE;
+`GenerationChangedPredicate` already prevents status-only watch duplicates.
+
+**Root Cause (Job detection delay)**: The Job executor relied solely on `RequeueAfter: 10s`
+polling to detect Job completion, unlike the Tekton executor which had a dedicated
+`PipelineRun` watch. This caused IT-WE-374-001 to flake when the 15s test timeout
+was insufficient. Adding a `Job` watch using the same label-based mapper enables
+immediate reconciliation on Job status changes.
 
 **Implementation Files**:
-- `internal/controller/workflowexecution/workflowexecution_controller.go` (removed Pending skip)
+- `internal/controller/workflowexecution/workflowexecution_controller.go` (removed Pending skip, added Job watch, renamed mapper)
 
 **Validated By**:
 - IT-WE-374-001: Second WFE proceeds after first completes for same target

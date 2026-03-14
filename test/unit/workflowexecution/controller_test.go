@@ -628,10 +628,10 @@ var _ = Describe("WorkflowExecution Controller", func() {
 	})
 
 	// ========================================
-	// Day 4: FindWFEForPipelineRun() Tests
+	// Day 4: FindWFEForOwnedResource() Tests
 	// ========================================
 
-	Describe("FindWFEForPipelineRun", func() {
+	Describe("FindWFEForOwnedResource", func() {
 		var reconciler *workflowexecution.WorkflowExecutionReconciler
 
 		BeforeEach(func() {
@@ -655,7 +655,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 			}
 
-			requests := reconciler.FindWFEForPipelineRun(ctx, pr)
+			requests := reconciler.FindWFEForOwnedResource(ctx, pr)
 
 			Expect(requests).To(HaveLen(1))
 			Expect(requests[0].Name).To(Equal("my-wfe"))
@@ -673,7 +673,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 			}
 
-			requests := reconciler.FindWFEForPipelineRun(ctx, pr)
+			requests := reconciler.FindWFEForOwnedResource(ctx, pr)
 
 			Expect(requests).To(BeEmpty())
 		})
@@ -689,7 +689,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 			}
 
-			requests := reconciler.FindWFEForPipelineRun(ctx, pr)
+			requests := reconciler.FindWFEForOwnedResource(ctx, pr)
 
 			Expect(requests).To(BeEmpty())
 		})
@@ -702,7 +702,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 			}
 
-			requests := reconciler.FindWFEForPipelineRun(ctx, pr)
+			requests := reconciler.FindWFEForOwnedResource(ctx, pr)
 
 			Expect(requests).To(BeEmpty())
 		})
@@ -4518,11 +4518,11 @@ var _ = Describe("WorkflowExecution Controller", func() {
 	// ========================================
 
 	// ========================================
-	// Gap 8: FindWFEForPipelineRun - Label-Based Lookup (P3 Gap Coverage)
-	// Business Value: BR-WE-003 (Monitor Execution Status) - PipelineRun watch handler
+	// Gap 8: FindWFEForOwnedResource - Label-Based Lookup (P3 Gap Coverage)
+	// Business Value: BR-WE-003 (Monitor Execution Status) - PipelineRun/Job watch handler
 	// Coverage: 2 tests for label-based reconciliation correctness
 	// ========================================
-	Describe("FindWFEForPipelineRun - Label-Based Lookup (P3 Gap Coverage)", func() {
+	Describe("FindWFEForOwnedResource - Label-Based Lookup (P3 Gap Coverage)", func() {
 		var (
 			reconciler *workflowexecution.WorkflowExecutionReconciler
 			ctx        context.Context
@@ -4551,8 +4551,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 			}
 
-			// When: FindWFEForPipelineRun is called (simulating watch event)
-			requests := reconciler.FindWFEForPipelineRun(ctx, pr)
+			// When: FindWFEForOwnedResource is called (simulating watch event)
+			requests := reconciler.FindWFEForOwnedResource(ctx, pr)
 
 			// Then: Should return reconcile request for the correct WFE
 			// BUSINESS VALIDATION: Correct WFE will be reconciled
@@ -4583,8 +4583,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 			}
 
-			// When: FindWFEForPipelineRun is called (simulating watch event)
-			requests := reconciler.FindWFEForPipelineRun(ctx, pr)
+			// When: FindWFEForOwnedResource is called (simulating watch event)
+			requests := reconciler.FindWFEForOwnedResource(ctx, pr)
 
 			// Then: Should return nil (no reconciliation needed)
 			// BUSINESS VALIDATION: Controller ignores unrelated PipelineRuns
@@ -4605,7 +4605,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					Labels:    nil,
 				},
 			}
-			requestsNil := reconciler.FindWFEForPipelineRun(ctx, prNilLabels)
+			requestsNil := reconciler.FindWFEForOwnedResource(ctx, prNilLabels)
 			Expect(requestsNil).To(BeNil(), "Should handle nil labels gracefully")
 
 			// Edge case 2: PipelineRun with only one required label
@@ -4619,7 +4619,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					},
 				},
 			}
-			requestsPartial := reconciler.FindWFEForPipelineRun(ctx, prPartialLabels)
+			requestsPartial := reconciler.FindWFEForOwnedResource(ctx, prPartialLabels)
 			Expect(requestsPartial).To(BeNil(),
 				"Should require BOTH labels for valid reconciliation (data integrity)")
 
@@ -4634,7 +4634,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					},
 				},
 			}
-			requestsEmpty := reconciler.FindWFEForPipelineRun(ctx, prEmptyValues)
+			requestsEmpty := reconciler.FindWFEForOwnedResource(ctx, prEmptyValues)
 			Expect(requestsEmpty).To(BeNil(),
 				"Should reject empty label values to prevent invalid reconciliation")
 

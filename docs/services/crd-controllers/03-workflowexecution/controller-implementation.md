@@ -586,14 +586,13 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
         return err
     }
 
-    return ctrl.NewControllerManagedBy(mgr).
+    ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
         For(&workflowexecutionv1.WorkflowExecution{}).
         // Watch PipelineRuns using predicate filter (v4.1)
-        // Predicate filter is simpler than namespace-scoped cache and achieves same goal:
         // Only watch PipelineRuns that have our tracking label
         Watches(
             &tektonv1.PipelineRun{},
-            handler.EnqueueRequestsFromMapFunc(r.FindWFEForPipelineRun),
+            handler.EnqueueRequestsFromMapFunc(r.FindWFEForOwnedResource),
             builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
                 labels := obj.GetLabels()
                 if labels == nil {
@@ -603,12 +602,28 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
                 return hasLabel
             })),
         ).
-        Complete(r)
+        // BR-WE-014: Watch Jobs for immediate completion detection.
+        // Without this, the Job engine relies on RequeueAfter polling (10s).
+        // Jobs use the same labeling convention as PipelineRuns.
+        Watches(
+            &batchv1.Job{},
+            handler.EnqueueRequestsFromMapFunc(r.FindWFEForOwnedResource),
+            builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+                labels := obj.GetLabels()
+                if labels == nil {
+                    return false
+                }
+                _, hasLabel := labels["kubernaut.ai/workflow-execution"]
+                return hasLabel
+            })),
+        )
+
+    return ctrlBuilder.Complete(r)
 }
 
-// FindWFEForPipelineRun maps PipelineRun events to WorkflowExecution reconcile requests
-// Used for cross-namespace watch via labels (v4.1)
-func (r *WorkflowExecutionReconciler) FindWFEForPipelineRun(
+// FindWFEForOwnedResource maps owned resource events (PipelineRun, Job) to WFE reconcile requests.
+// Both executors label their resources with kubernaut.ai/workflow-execution and kubernaut.ai/source-namespace.
+func (r *WorkflowExecutionReconciler) FindWFEForOwnedResource(
     ctx context.Context,
     obj client.Object,
 ) []reconcile.Request {
