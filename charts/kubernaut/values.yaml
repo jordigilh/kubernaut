@@ -308,6 +308,6 @@ networkPolicies:
 # -- Hooks (post-install Jobs)
 hooks:
   migrations:
-    image: quay.io/kubernaut-ai/db-migrate:v3.24.1  # UBI9-minimal with goose + psql; works in disconnected environments
+    image: quay.io/kubernaut-ai/db-migrate:v1.1.0-pre1  # UBI9-minimal with goose + psql; works in disconnected environments
   tlsCerts:
     image: bitnami/kubectl:1.32
