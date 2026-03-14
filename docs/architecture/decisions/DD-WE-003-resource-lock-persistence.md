@@ -73,6 +73,10 @@ When `AlreadyExists` is returned during Job creation, the controller checks the 
 - **Running Job**: The lock is valid. The WFE is marked as failed with "target resource locked". This preserves BR-WE-009 (prevent parallel execution).
 - **Completed/Failed Job**: The lock is stale. The controller deletes the completed Job and retries creation. This handles cases where ReconcileTerminal hasn't run yet (cooldown), TTL hasn't fired, or the Job was orphaned.
 
+#### Background GC Requeue (Issue #383)
+
+Cleanup uses `DeletePropagationBackground`, so the API server accepts the delete but the Job object may still exist until the garbage collector removes it. If the immediate retry `Create` gets `AlreadyExists` again, the controller requeues (500ms) instead of permanently failing the WFE. The next reconciliation finds the Job gone and creation succeeds. This eliminates an intermittent race where the GC lag caused WFEs to be incorrectly marked as `Failed`.
+
 This ensures sequential remediation cycles are not blocked by stale completed Jobs while concurrent execution prevention remains intact.
 
 ---
@@ -95,6 +99,7 @@ This ensures sequential remediation cycles are not blocked by stale completed Jo
 - **ADR-052**: Distributed Locking (race condition analysis)
 - **ADR-002**: Native Kubernetes Jobs (TTL management)
 - **Issue #374**: Job name collision on repeated remediation
+- **Issue #383**: Background GC race in pre-execution cleanup
 
 ---
 
@@ -117,3 +122,4 @@ This ensures sequential remediation cycles are not blocked by stale completed Jo
 |---------|------|---------|
 | 1.0 | 2025-12-01 | Initial design: deterministic naming as atomic lock |
 | 1.1 | 2026-03-14 | Added pre-execution cleanup of completed Jobs (Issue #374) |
+| 1.2 | 2026-03-04 | Fixed background GC race with requeue-on-pending (Issue #383) |

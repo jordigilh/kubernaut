@@ -486,9 +486,15 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 			// If the existing Job is in a terminal state (Succeeded/Failed), clean it up
 			// and retry creation. If still running, the lock is valid -- fail the WFE.
 			if wfe.Spec.ExecutionEngine == "job" {
-				if retryName, handled := r.handleJobAlreadyExists(ctx, exec, wfe, resourceName, createOpts); handled {
+				retryName, handled, requeueForGC := r.handleJobAlreadyExists(ctx, exec, wfe, resourceName, createOpts)
+				if handled {
 					createdName = retryName
 					createErr = nil
+				} else if requeueForGC {
+					// Issue #383: Background GC hasn't removed the stale Job yet.
+					// Requeue instead of permanently failing the WFE.
+					logger.Info("Requeuing for Job GC completion (Issue #383)", "resource", resourceName)
+					return ctrl.Result{RequeueAfter: 500 * time.Millisecond}, nil
 				}
 			}
 			if createErr != nil {
@@ -1002,29 +1008,32 @@ func sanitizeLabelValue(s string) string {
 // When a Job creation fails with AlreadyExists, this method checks if the existing Job
 // is in a terminal state. If so, it cleans up the stale Job and retries creation.
 //
-// Returns (createdName, true) if the Job was cleaned up and recreation succeeded.
-// Returns ("", false) if the existing Job is still running (lock is valid) or on error.
+// Returns:
+//
+//	(createdName, true, false)  — Job cleaned up and recreation succeeded.
+//	("", false, true)           — Cleanup accepted but GC pending; caller should requeue.
+//	("", false, false)          — Lock is valid (Job still running) or unrecoverable error.
 func (r *WorkflowExecutionReconciler) handleJobAlreadyExists(
 	ctx context.Context,
 	exec weexecutor.Executor,
 	wfe *workflowexecutionv1alpha1.WorkflowExecution,
 	resourceName string,
 	createOpts weexecutor.CreateOptions,
-) (string, bool) {
+) (string, bool, bool) {
 	logger := log.FromContext(ctx)
 
 	jobExec, ok := exec.(*weexecutor.JobExecutor)
 	if !ok {
-		return "", false
+		return "", false, false
 	}
 
 	completed, checkErr := jobExec.IsCompleted(ctx, wfe.Spec.TargetResource, r.ExecutionNamespace)
 	if checkErr != nil {
 		logger.V(1).Info("Could not check existing Job state (may have been deleted)", "error", checkErr)
-		return "", false
+		return "", false, false
 	}
 	if !completed {
-		return "", false
+		return "", false, false
 	}
 
 	logger.Info("Stale completed Job detected, cleaning up before retry (Issue #374)",
@@ -1037,18 +1046,26 @@ func (r *WorkflowExecutionReconciler) handleJobAlreadyExists(
 	}
 	if cleanErr := jobExec.Cleanup(ctx, cleanupWFE, r.ExecutionNamespace); cleanErr != nil {
 		logger.Error(cleanErr, "Failed to clean up completed Job", "resource", resourceName)
-		return "", false
+		return "", false, false
 	}
 
 	retryName, retryErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
 	if retryErr != nil {
+		if apierrors.IsAlreadyExists(retryErr) {
+			// Issue #383: Cleanup uses DeletePropagationBackground, so the API server
+			// accepted the delete but the GC hasn't removed the object yet. Requeue
+			// to let the GC finish rather than permanently failing the WFE.
+			logger.Info("Job cleanup accepted but GC pending, will requeue (Issue #383)",
+				"resource", resourceName)
+			return "", false, true
+		}
 		logger.Error(retryErr, "Failed to create Job after stale cleanup", "resource", resourceName)
-		return "", false
+		return "", false, false
 	}
 
 	logger.Info("Successfully recreated Job after stale cleanup (Issue #374)",
 		"resource", resourceName, "newJob", retryName)
-	return retryName, true
+	return retryName, true, false
 }
 
 // ========================================
