@@ -104,17 +104,21 @@ spec:
                 2>/dev/null
 
               echo "  Storing TLS secret..."
+              kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
               kubectl create secret tls authwebhook-tls \
                 --cert="$TMPDIR/tls.crt" \
                 --key="$TMPDIR/tls.key" \
-                -n "$NAMESPACE" \
-                --dry-run=client -o yaml | kubectl apply -f -
+                -n "$NAMESPACE"
 
               echo "  Storing CA cert in ConfigMap for post-install caBundle patching..."
+              kubectl delete configmap authwebhook-ca -n "$NAMESPACE" --ignore-not-found
               kubectl create configmap authwebhook-ca \
                 --from-file=ca.crt="$TMPDIR/ca.crt" \
-                -n "$NAMESPACE" \
-                --dry-run=client -o yaml | kubectl apply -f -
+                -n "$NAMESPACE"
+
+              echo "  Verifying resources..."
+              kubectl get secret authwebhook-tls -n "$NAMESPACE" >/dev/null
+              kubectl get configmap authwebhook-ca -n "$NAMESPACE" >/dev/null
 
               rm -rf "$TMPDIR"
               echo "==> TLS certificates generated and CA stored"

@@ -327,7 +327,7 @@ run_inst_001() {
     --namespace "$NAMESPACE" \
     $(production_secret_flags) \
     $flags \
-    --timeout 5m >/dev/null 2>&1; then
+    --timeout 5m >/dev/null; then
     tap_ok "$desc"
   else
     tap_not_ok "$desc" "helm install failed"
@@ -345,7 +345,7 @@ run_inst_003() {
     --set postgresql.auth.password=devpass \
     --set valkey.password=redispass \
     $flags \
-    --timeout 5m >/dev/null 2>&1; then
+    --timeout 5m >/dev/null; then
     tap_ok "$desc"
   else
     tap_not_ok "$desc" "helm install failed"
