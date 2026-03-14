@@ -384,10 +384,10 @@ run_inst_003() {
   local flags
   flags="$(common_install_flags) $(tls_flags)"
 
+  # shellcheck disable=SC2046
   if helm install kubernaut "$CHART_PATH" \
     --namespace "$NAMESPACE" --create-namespace \
-    --set postgresql.auth.password=devpass \
-    --set valkey.password=redispass \
+    $(production_secret_flags) \
     $flags \
     --timeout 5m >/dev/null; then
     tap_ok "$desc"
@@ -432,8 +432,9 @@ run_tls_patch() {
     esac
 
     local count
-    count=$(kubectl get "$wh_kind" "$wh_name" -o jsonpath='{.webhooks}' 2>/dev/null \
-      | tr ',' '\n' | grep -c '"name"' || echo "0")
+    count=$(kubectl get "$wh_kind" "$wh_name" \
+      -o jsonpath='{.webhooks[*].name}' 2>/dev/null | wc -w || echo "0")
+    count=$((count + 0))
 
     local patch="["
     local i=0
@@ -642,6 +643,7 @@ flow_a_production() {
 flow_b_quickstart() {
   echo "# --- Flow B: Dev Quick Start Lifecycle (kind only) ---"
   kubectl create namespace "$NAMESPACE" >/dev/null 2>&1 || true
+  run_pre_003
   run_pre_004
   run_inst_003 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow B tests"; return 1; }
   run_tls_patch
