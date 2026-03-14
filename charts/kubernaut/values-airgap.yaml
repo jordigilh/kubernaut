@@ -40,6 +40,6 @@ valkey:
 
 hooks:
   migrations:
-    image: <mirror-registry>/kubernaut-ai/db-migrate:v3.24.1
+    image: <mirror-registry>/kubernaut-ai/db-migrate:v1.1.0-pre1
   tlsCerts:
     image: <mirror-registry>/openshift4/ose-cli-rhel9:v4.17
