@@ -383,7 +383,7 @@ jobs:
             dockerfile: docker/data-storage.Dockerfile
             image_name: datastorage
           - service: gateway
-            dockerfile: docker/gateway-ubi9.Dockerfile
+            dockerfile: docker/gateway.Dockerfile
             image_name: gateway
           - service: aianalysis
             dockerfile: docker/aianalysis.Dockerfile
@@ -392,7 +392,7 @@ jobs:
             dockerfile: docker/authwebhook.Dockerfile
             image_name: authwebhook
           - service: notification
-            dockerfile: docker/notification-controller-ubi9.Dockerfile
+            dockerfile: docker/notification-controller.Dockerfile
             image_name: notification  # Operator SDK convention: image name without -controller suffix
           - service: remediationorchestrator
             dockerfile: docker/remediationorchestrator-controller.Dockerfile

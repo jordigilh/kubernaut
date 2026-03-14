@@ -36,7 +36,7 @@ spec:
       dockerfilePath: holmesgpt-api/Dockerfile
       from:
         kind: DockerImage
-        name: registry.access.redhat.com/ubi9/python-312:latest
+        name: registry.access.redhat.com/ubi10/python-312-minimal:latest
       noCache: false
       forcePull: true
   triggers:

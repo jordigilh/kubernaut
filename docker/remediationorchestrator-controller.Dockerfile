@@ -2,7 +2,7 @@
 #
 # Build targets (Issue #80):
 #   production:  scratch runtime -- zero CVE surface, no shell (release.yml)
-#   development: ubi9-minimal runtime -- debug tools, coverage support (ci-pipeline.yml)
+#   development: ubi10-minimal runtime -- debug tools, coverage support (ci-pipeline.yml)
 #
 # Usage:
 #   Production:  podman build --target production -t remediationorchestrator:v1.0 -f docker/remediationorchestrator-controller.Dockerfile .
@@ -11,7 +11,7 @@
 # ============================================================================
 # Stage 1: Build (native cross-compile, no QEMU needed for Go)
 # ============================================================================
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
 
 ARG APP_VERSION=v1.0.0
 ARG GIT_COMMIT=unknown
@@ -64,10 +64,10 @@ LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.title="kubernaut-remediationorchestrator"
 
 # ============================================================================
-# Stage 2b: Development/E2E runtime (ubi9-minimal -- debug + coverage, DD-TEST-007)
+# Stage 2b: Development/E2E runtime (ubi10-minimal -- debug + coverage, DD-TEST-007)
 # Default stage when no --target is specified (backwards compatible with CI).
 # ============================================================================
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest AS development
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS development
 RUN microdnf update -y && \
 	microdnf install -y ca-certificates tzdata && \
 	microdnf clean all

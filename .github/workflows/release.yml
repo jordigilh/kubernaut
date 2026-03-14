@@ -61,7 +61,7 @@ jobs:
   #
   # Strategy:
   #   - Go services: CGO_ENABLED=0 cross-compile via GOARCH (native speed)
-  #     inside ubi9/go-toolset pulled for target platform (QEMU for arm64)
+  #     inside ubi10/go-toolset pulled for target platform (QEMU for arm64)
   #   - Python/Bash: Full QEMU emulation for arm64 (slower, acceptable for releases)
   #   - Makefile image-build-% targets handle service-to-Dockerfile mapping
   # ========================================

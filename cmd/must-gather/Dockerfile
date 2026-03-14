@@ -1,9 +1,9 @@
 # Kubernaut Must-Gather Diagnostic Collection Tool
 # BR-PLATFORM-001: Enterprise diagnostic collection following OpenShift must-gather pattern
-# Base: UBI9 Standard (includes tar, gzip, findutils, coreutils pre-installed)
+# Base: UBI10 Standard (includes tar, gzip, findutils, coreutils pre-installed)
 # Tools: kubectl, jq for Kubernetes diagnostics
 
-FROM registry.access.redhat.com/ubi9/ubi:latest
+FROM registry.access.redhat.com/ubi10/ubi:latest
 
 ARG APP_VERSION=dev
 ARG GIT_COMMIT=unknown
@@ -34,13 +34,13 @@ RUN curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/${TARGETARCH}/kubectl"
     mv kubectl /usr/local/bin/kubectl
 
 # Install jq for JSON processing (from EPEL or direct download)
-# Try yum first (may be available in UBI repos), fallback to direct download
+# Try dnf first (available in UBI10 repos), fallback to direct download
 ARG TARGETARCH
-RUN yum install -y jq || \
+RUN dnf install -y jq || \
     (if [ "${TARGETARCH}" = "arm64" ]; then JQ_ARCH="arm64"; else JQ_ARCH="amd64"; fi && \
      curl -L "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-${JQ_ARCH}" -o /usr/local/bin/jq && \
      chmod +x /usr/local/bin/jq) && \
-    yum clean all
+    dnf clean all
 
 # Verify tools are available (skip kubectl version check due to runtime issues in build context)
 RUN jq --version && \

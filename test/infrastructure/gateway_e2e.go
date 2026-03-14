@@ -119,7 +119,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		cfg := E2EImageConfig{
 			ServiceName:      "gateway",
 			ImageName:        "gateway", // No repo prefix, just service name
-			DockerfilePath:   "docker/gateway-ubi9.Dockerfile",
+			DockerfilePath:   "docker/gateway.Dockerfile",
 			BuildContextPath: "", // Empty = project root
 			EnableCoverage:   enableCoverage,
 		}
@@ -839,7 +839,7 @@ func BuildGatewayImageWithCoverage(writer io.Writer) error {
 		return fmt.Errorf("project root not found")
 	}
 
-	dockerfilePath := filepath.Join(projectRoot, "docker", "gateway-ubi9.Dockerfile")
+	dockerfilePath := filepath.Join(projectRoot, "docker", "gateway.Dockerfile")
 	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
 		return fmt.Errorf("gateway Dockerfile not found at %s", dockerfilePath)
 	}

@@ -6,8 +6,8 @@
 # Based on upstream Dockerfile with Red Hat UBI base images
 # Uses publicly accessible registry.access.redhat.com (no auth required)
 
-# Build stage - Red Hat UBI 9 with Go 1.24
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+# Build stage - Red Hat UBI 10 with Go 1.25
+FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
 
 WORKDIR /workspace
 
@@ -22,8 +22,8 @@ WORKDIR /workspace
 # Build oauth-proxy (Go toolset handles GOARCH automatically)
 RUN go build -o oauth-proxy .
 
-# Runtime stage - Red Hat UBI 9 Minimal
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+# Runtime stage - Red Hat UBI 10 Minimal
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # Copy binary from builder
 COPY --from=builder /workspace/oauth-proxy /usr/bin/oauth-proxy

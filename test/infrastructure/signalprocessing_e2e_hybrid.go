@@ -423,7 +423,7 @@ func BuildSignalProcessingImageWithCoverage(writer io.Writer) error {
 		return fmt.Errorf("project root not found")
 	}
 
-	dockerfilePath := filepath.Join(projectRoot, "docker", "signalprocessing-ubi9.Dockerfile")
+	dockerfilePath := filepath.Join(projectRoot, "docker", "signalprocessing-controller.Dockerfile")
 	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
 		return fmt.Errorf("SignalProcessing Dockerfile not found at %s", dockerfilePath)
 	}

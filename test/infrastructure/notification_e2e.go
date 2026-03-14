@@ -56,7 +56,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 		cfg := E2EImageConfig{
 			ServiceName:      "notification", // Operator SDK convention: no -controller suffix in image name
 			ImageName:        "kubernaut/notification",
-			DockerfilePath:   "docker/notification-controller-ubi9.Dockerfile", // Dockerfile can have suffix
+			DockerfilePath:   "docker/notification-controller.Dockerfile", // Dockerfile can have suffix
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}

@@ -10,7 +10,7 @@
 # memory limits.
 #
 # Build: podman build -t quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec .
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # Install kubectl for Kubernetes API access
 ARG TARGETARCH

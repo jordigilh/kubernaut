@@ -616,7 +616,7 @@ export-openapi-holmesgpt-api: ## Export holmesgpt-api OpenAPI spec from FastAPI 
 		-e CONFIG_FILE=config.yaml \
 		-e OPENAPI_EXPORT=1 \
 		-e PYTHONUNBUFFERED=1 \
-		registry.access.redhat.com/ubi9/python-312:latest \
+		registry.access.redhat.com/ubi10/python-312-minimal:latest \
 		sh -c "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; pip install -q ./src/clients/datastorage && pip install -q -r requirements-slim.txt && python3 -c 'from src.main import app; import json; print(json.dumps(app.openapi(), indent=2))' > api/openapi.json && echo 'Schema count:' && python3 -c 'import json; spec=json.load(open(\"api/openapi.json\")); print(len(spec.get(\"components\", {}).get(\"schemas\", {})))'"
 	@echo "✅ OpenAPI spec exported: holmesgpt-api/api/openapi.json"
 
@@ -734,7 +734,7 @@ test-unit-holmesgpt-api: ensure-coverage-dirs ## Run holmesgpt-api unit tests (c
 		-w /workspace/holmesgpt-api \
 		-e PYTHONUNBUFFERED=1 \
 		-e COVERAGE_FILE=/tmp/.coverage \
-		registry.access.redhat.com/ubi9/python-312:latest \
+		registry.access.redhat.com/ubi10/python-312-minimal:latest \
 		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --cov=src --cov-report=term-missing -o addopts='' && python -m coverage report --precision=2 --show-missing" 2>&1 | tee $(CURDIR)/coverage_unit_holmesgpt-api.txt
 	@if [ -f $(CURDIR)/coverage_unit_holmesgpt-api.txt ]; then \
 		echo ""; \
@@ -980,10 +980,10 @@ LDFLAGS ?= -ldflags "-X github.com/jordigilh/kubernaut/internal/version.Version=
 # All Go services with their Dockerfile mappings
 IMAGE_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor db-migrate
 IMAGE_DOCKERFILES_datastorage := docker/data-storage.Dockerfile
-IMAGE_DOCKERFILES_gateway := docker/gateway-ubi9.Dockerfile
+IMAGE_DOCKERFILES_gateway := docker/gateway.Dockerfile
 IMAGE_DOCKERFILES_aianalysis := docker/aianalysis.Dockerfile
 IMAGE_DOCKERFILES_authwebhook := docker/authwebhook.Dockerfile
-IMAGE_DOCKERFILES_notification := docker/notification-controller-ubi9.Dockerfile
+IMAGE_DOCKERFILES_notification := docker/notification-controller.Dockerfile
 IMAGE_DOCKERFILES_remediationorchestrator := docker/remediationorchestrator-controller.Dockerfile
 IMAGE_DOCKERFILES_signalprocessing := docker/signalprocessing-controller.Dockerfile
 IMAGE_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.Dockerfile

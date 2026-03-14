@@ -1,15 +1,15 @@
 # Mock LLM Service - Standalone Container
-# Based on UBI9 Python 3.12 for Red Hat ecosystem compatibility
-FROM registry.access.redhat.com/ubi9/python-312:latest
+# Based on UBI10 Python 3.12 Minimal for Red Hat ecosystem compatibility
+FROM registry.access.redhat.com/ubi10/python-312-minimal:latest
 
 # Switch to root for setup
 USER root
 
-# Install runtime dependencies (minimal, UBI already includes most)
-RUN dnf install -y --setopt=install_weak_deps=False \
+# Install runtime dependencies (microdnf on UBI10-minimal)
+RUN microdnf install -y --setopt=install_weak_deps=False \
     ca-certificates \
     tzdata && \
-    dnf clean all && \
+    microdnf clean all && \
     rm -rf /var/cache/dnf /var/cache/yum
 
 # Switch back to non-root user

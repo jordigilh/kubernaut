@@ -15,7 +15,7 @@ ARG APP_VERSION
 ARG GIT_COMMIT
 ARG BUILD_DATE
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest AS production
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS production
 
 ARG APP_VERSION
 ARG GIT_COMMIT
@@ -33,7 +33,7 @@ RUN microdnf update -y && \
 RUN set -e; \
 	case "${TARGETARCH}" in \
 		amd64)  GOOSE_ARCH="x86_64";  EXPECTED="${GOOSE_SHA256_x86_64}" ;; \
-		arm64)  GOOSE_ARCH="aarch64"; EXPECTED="${GOOSE_SHA256_aarch64}" ;; \
+		arm64)  GOOSE_ARCH="arm64";   EXPECTED="${GOOSE_SHA256_aarch64}" ;; \
 		*)      echo "ERROR: Unsupported arch: ${TARGETARCH}"; exit 1 ;; \
 	esac; \
 	curl -fsSL -o /usr/local/bin/goose \

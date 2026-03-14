@@ -2,16 +2,16 @@
 #
 # Build targets (Issue #80):
 #   production:  scratch runtime -- zero CVE surface, no shell (release.yml)
-#   development: ubi9-minimal runtime -- debug tools, coverage support (ci-pipeline.yml)
+#   development: ubi10-minimal runtime -- debug tools, coverage support (ci-pipeline.yml)
 #
 # Usage:
-#   Production:  podman build --target production -t notification:v1.0 -f docker/notification-controller-ubi9.Dockerfile .
-#   Development: podman build --build-arg GOFLAGS=-cover -t notification:dev -f docker/notification-controller-ubi9.Dockerfile .
+#   Production:  podman build --target production -t notification:v1.0 -f docker/notification-controller.Dockerfile .
+#   Development: podman build --build-arg GOFLAGS=-cover -t notification:dev -f docker/notification-controller.Dockerfile .
 
 # ============================================================================
 # Stage 1: Build (native cross-compile, no QEMU needed for Go)
 # ============================================================================
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
 
 ARG GOFLAGS=""
 ARG APP_VERSION=v1.0.0
@@ -78,10 +78,10 @@ LABEL name="kubernaut-notification-controller" \
 	io.openshift.tags="kubernaut,notification,controller,crd,kubernetes,slack,console"
 
 # ============================================================================
-# Stage 2b: Development/E2E runtime (ubi9-minimal -- debug + coverage, DD-TEST-007)
+# Stage 2b: Development/E2E runtime (ubi10-minimal -- debug + coverage, DD-TEST-007)
 # Default stage when no --target is specified (backwards compatible with CI).
 # ============================================================================
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest AS development
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS development
 RUN microdnf update -y && \
 	microdnf install -y ca-certificates tzdata && \
 	microdnf clean all
