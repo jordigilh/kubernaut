@@ -36,6 +36,8 @@ spec:
         - name: tls-cert-gen
           image: {{ .Values.hooks.tlsCerts.image }}
           securityContext:
+            runAsUser: 65534
+            runAsGroup: 65534
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
@@ -150,6 +152,8 @@ spec:
         - name: tls-cabundle-patch
           image: {{ .Values.hooks.tlsCerts.image }}
           securityContext:
+            runAsUser: 65534
+            runAsGroup: 65534
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
@@ -295,6 +299,8 @@ spec:
         - name: tls-cleanup
           image: {{ .Values.hooks.tlsCerts.image }}
           securityContext:
+            runAsUser: 65534
+            runAsGroup: 65534
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
