@@ -459,11 +459,18 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			Expect(k8sClient.Status().Update(ctx, createdRR)).To(Succeed())
 
 			By("Letting RO reconcile again to verify deduplication survives")
-			prevRV := createdRR.ResourceVersion
-			Eventually(func() bool {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)
-				return createdRR.ResourceVersion != prevRV
-			}, timeout, interval).Should(BeTrue(), "RO should reconcile after status update")
+			// The RO reconciles on status updates (GenerationChangedPredicate removed)
+			// but may not write status back if SP is still pending (just requeues).
+			// Wait for at least one requeue cycle (10s) then assert preservation.
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())
+				g.Expect(createdRR.Status.Deduplication).NotTo(BeNil(),
+					"Deduplication should still be present after RO reconcile")
+				g.Expect(createdRR.Status.Deduplication.OccurrenceCount).To(Equal(int32(2)),
+					"OccurrenceCount should be preserved across RO reconciles")
+				g.Expect(createdRR.Status.DuplicateOf).To(Equal("rr-original-parent"),
+					"DuplicateOf should be preserved across RO reconciles")
+			}, timeout, interval).Should(Succeed())
 
 			By("Re-fetching RR and asserting Deduplication preserved")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())
