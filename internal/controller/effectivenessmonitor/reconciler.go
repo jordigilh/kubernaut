@@ -525,6 +525,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	// Alert check (BR-EM-002) - skip if disabled or client unavailable.
 	// #277: Defer alert check when AlertCheckDelay is set (proactive signals).
+	// #369: Detect alert decay — keep EA open when resource is healthy but alert firing.
 	// Health and metrics proceed independently; only alert resolution is gated.
 	if !ea.Status.Components.AlertAssessed {
 		if r.Config.AlertManagerEnabled && r.AlertManagerClient != nil {
@@ -536,10 +537,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				r.Metrics.RecordComponentAssessment("alert", "deferred", nil)
 			} else {
 				alertResult := r.assessAlert(ctx, ea)
+
+				if r.isAlertDecay(ea, alertResult) {
+					if ea.Status.Components.AlertDecayRetries == 0 {
+						r.emitAlertDecayEvent(ctx, ea, alertResult)
+					}
+					ea.Status.Components.AlertDecayRetries++
+					alertResult.Component.Assessed = false
+					logger.Info("Alert decay suspected: deferring alert assessment",
+						"healthScore", ea.Status.Components.HealthScore,
+						"alertScore", alertResult.Component.Score,
+						"retries", ea.Status.Components.AlertDecayRetries)
+				} else {
+					r.emitAlertEvent(ctx, ea, alertResult)
+				}
+
 				ea.Status.Components.AlertAssessed = alertResult.Component.Assessed
 				ea.Status.Components.AlertScore = alertResult.Component.Score
 				r.Metrics.RecordComponentAssessment("alert", resultStatus(alertResult.Component), alertResult.Component.Score)
-				r.emitAlertEvent(ctx, ea, alertResult)
 				componentsChanged = true
 			}
 		} else {
@@ -788,6 +803,25 @@ func (r *Reconciler) assessAlert(ctx context.Context, ea *eav1.EffectivenessAsse
 		ActiveCount:           activeCount,
 		ResolutionTimeSeconds: resolutionTime,
 	}
+}
+
+// isAlertDecay detects Prometheus alert decay: the resource is healthy and spec is stable,
+// but the alert is still firing due to Prometheus lookback window lag.
+// Returns true only when all conditions are met (Issue #369, BR-EM-012):
+//   - Health has been assessed with a positive score (resource is healthy)
+//   - Hash has been computed (spec is stable, no drift since remediation)
+//   - The alert was just assessed as still firing (score == 0.0)
+func (r *Reconciler) isAlertDecay(ea *eav1.EffectivenessAssessment, ar alertAssessResult) bool {
+	if !ea.Status.Components.HealthAssessed || ea.Status.Components.HealthScore == nil || *ea.Status.Components.HealthScore <= 0 {
+		return false
+	}
+	if !ea.Status.Components.HashComputed {
+		return false
+	}
+	if !ar.Component.Assessed || ar.Component.Score == nil || *ar.Component.Score != 0.0 {
+		return false
+	}
+	return true
 }
 
 // metricsAssessResult contains both the component result and the structured metric deltas
@@ -1359,6 +1393,15 @@ func (r *Reconciler) determineAssessmentReason(ea *eav1.EffectivenessAssessment)
 		r.validityChecker.TimeUntilExpired(ea.Status.ValidityDeadline.Time) == 0
 
 	if validityExpired {
+		// Issue #369, BR-EM-012: Distinguish alert_decay_timeout from generic partial.
+		// alert_decay_timeout: The EM was actively monitoring alert decay (retries > 0)
+		// but the alert never resolved before validity expired. This is distinct from
+		// "partial" (alert never checked) — the EM confirmed health+hash and re-checked
+		// the alert multiple times.
+		if components.AlertDecayRetries > 0 && !components.AlertAssessed {
+			return eav1.AssessmentReasonAlertDecayTimeout
+		}
+
 		// ADR-EM-001, Batch 3: Distinguish metrics_timed_out from generic partial.
 		// metrics_timed_out: ALL non-temporal checks completed (health + hash + alerts),
 		// Prometheus is enabled but metrics were NOT assessed before validity expired.
@@ -1450,6 +1493,35 @@ func (r *Reconciler) emitAlertEvent(ctx context.Context, ea *eav1.EffectivenessA
 			AlertResolved:         ar.AlertResolved,
 			ActiveCount:           ar.ActiveCount,
 			ResolutionTimeSeconds: ar.ResolutionTimeSeconds,
+		})
+	})
+}
+
+// emitAlertDecayEvent emits a one-time audit event when alert decay is first detected.
+// Called only when AlertDecayRetries == 0 (before increment). Follows the metrics
+// component precedent: silent retries after the first detection (Issue #369, BR-EM-012).
+func (r *Reconciler) emitAlertDecayEvent(ctx context.Context, ea *eav1.EffectivenessAssessment, ar alertAssessResult) {
+	r.emitK8sComponentEvent(ea, "alert_decay", emtypes.ComponentResult{
+		Component: emtypes.ComponentAlertDecay,
+		Assessed:  false,
+		Score:     ar.Component.Score,
+		Details:   "Alert decay detected: resource healthy but alert still firing",
+	})
+
+	var healthScore float64
+	if ea.Status.Components.HealthScore != nil {
+		healthScore = *ea.Status.Components.HealthScore
+	}
+	var alertScore float64
+	if ar.Component.Score != nil {
+		alertScore = *ar.Component.Score
+	}
+
+	r.emitAuditEvent(ctx, emtypes.AuditAlertDecayDetected, func() error {
+		return r.AuditManager.RecordAlertDecayDetected(ctx, ea, emaudit.AlertDecayDetectedData{
+			HealthScore: healthScore,
+			AlertScore:  alertScore,
+			RetryCount:  ea.Status.Components.AlertDecayRetries + 1,
 		})
 	})
 }
