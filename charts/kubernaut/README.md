@@ -118,7 +118,9 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 
 | Parameter | Description | Default |
 |---|---|---|
-| `global.image.registry` | Container image registry | `quay.io/kubernaut-ai` |
+| `global.image.registry` | Container image registry hostname | `quay.io` |
+| `global.image.namespace` | Image namespace prefix (joined to service name by `separator`) | `kubernaut-ai` |
+| `global.image.separator` | Character joining namespace to service name: `/` for nested registries, `-` for flat (quay.io, Docker Hub) | `/` |
 | `global.image.tag` | Image tag override (defaults to `appVersion`) | `""` |
 | `global.image.digest` | Image digest (e.g. `sha256:abc...`); when set, overrides tag | `""` |
 | `global.image.pullPolicy` | Image pull policy | `IfNotPresent` |
@@ -319,14 +321,28 @@ Alternatively, use `skopeo copy` for individual images.
 
 ### 3. Configure the chart
 
-Layer the `values-airgap.yaml` overlay (or create your own) to point all images to the mirror:
+Layer the `values-airgap.yaml` overlay (or create your own) to point all images to the mirror.
+
+**Nested registries** (Harbor, Artifactory, generic Docker v2) — images stored as `<mirror>/kubernaut-ai/gateway:tag`:
 
 ```bash
 helm install kubernaut charts/kubernaut/ \
   -n kubernaut-system \
   -f charts/kubernaut/values-demo.yaml \
   -f charts/kubernaut/values-airgap.yaml \
-  --set global.image.registry=<mirror-registry>/kubernaut-ai \
+  --set global.image.registry=harbor.corp \
+  --set postgresql.auth.password=<password>
+```
+
+**Flat registries** (quay.io, Docker Hub, OCP internal) — images stored as `<mirror>/kubernaut-ai-gateway:tag`:
+
+```bash
+helm install kubernaut charts/kubernaut/ \
+  -n kubernaut-system \
+  -f charts/kubernaut/values-demo.yaml \
+  -f charts/kubernaut/values-airgap.yaml \
+  --set global.image.registry=quay.io/myorg \
+  --set global.image.separator=- \
   --set postgresql.auth.password=<password>
 ```
 
@@ -345,13 +361,10 @@ spec:
   imageDigestMirrors:
     - source: quay.io/kubernaut-ai
       mirrors:
-        - <mirror-registry>/kubernaut-ai
-    - source: docker.io
+        - <mirror-registry>/kubernaut-ai   # nested; or <mirror-registry> for flat naming
+    - source: registry.redhat.io
       mirrors:
         - <mirror-registry>
-    - source: ghcr.io
-      mirrors:
-        - <mirror-registry>/ghcr.io
 ```
 
 For OCP < 4.13, use the deprecated `ImageContentSourcePolicy` (ICSP) with the same mirror mappings.
@@ -360,13 +373,27 @@ For OCP < 4.13, use the deprecated `ImageContentSourcePolicy` (ICSP) with the sa
 
 The `values-airgap.yaml` overlay overrides the `registry.redhat.io` image references from `values-ocp.yaml` with pulls from your mirror registry.
 
+**Nested registry** (Harbor, Artifactory):
+
 ```bash
 helm install kubernaut charts/kubernaut/ \
   -n kubernaut-system \
   -f charts/kubernaut/values-demo.yaml \
   -f charts/kubernaut/values-ocp.yaml \
   -f charts/kubernaut/values-airgap.yaml \
-  --set global.image.registry=<mirror-registry>/kubernaut-ai
+  --set global.image.registry=harbor.corp
+```
+
+**Flat registry** (quay.io, OCP internal):
+
+```bash
+helm install kubernaut charts/kubernaut/ \
+  -n kubernaut-system \
+  -f charts/kubernaut/values-demo.yaml \
+  -f charts/kubernaut/values-ocp.yaml \
+  -f charts/kubernaut/values-airgap.yaml \
+  --set global.image.registry=quay.io/myorg \
+  --set global.image.separator=-
 ```
 
 > **Note**: `values-airgap.yaml` must be layered **after** `values-ocp.yaml` so it overrides the `registry.redhat.io` image references with your mirror. The `postgresql.variant: ocp` setting from `values-ocp.yaml` is preserved, ensuring correct env var names (`POSTGRESQL_*`) and data directory paths.

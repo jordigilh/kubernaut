@@ -52,13 +52,20 @@ tolerations:
 
 {{/*
 Render the container image for a Kubernaut service.
+Constructs: {registry}/{namespace}{separator}{service}:{tag|@digest}
+  separator="/" → quay.io/kubernaut-ai/gateway:tag        (nested registries)
+  separator="-" → quay.io/myorg/kubernaut-ai-gateway:tag   (flat registries)
+When namespace is empty the separator is omitted: {registry}/{service}:{tag}
 Usage: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.global "appVersion" .Chart.AppVersion) }}
 */}}
 {{- define "kubernaut.image" -}}
+{{- $ns := .global.image.namespace | default "" -}}
+{{- $sep := .global.image.separator | default "/" -}}
+{{- $repo := ternary (printf "%s%s%s" $ns $sep .service) .service (ne $ns "") -}}
 {{- if .global.image.digest -}}
-{{- printf "%s/%s@%s" .global.image.registry .service .global.image.digest -}}
+{{- printf "%s/%s@%s" .global.image.registry $repo .global.image.digest -}}
 {{- else -}}
-{{- printf "%s/%s:%s" .global.image.registry .service (.global.image.tag | default .appVersion) -}}
+{{- printf "%s/%s:%s" .global.image.registry $repo (.global.image.tag | default .appVersion) -}}
 {{- end -}}
 {{- end }}
 

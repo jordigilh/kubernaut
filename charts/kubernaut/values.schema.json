@@ -106,8 +106,19 @@
           "properties": {
             "registry": {
               "type": "string",
-              "default": "quay.io/kubernaut-ai",
-              "description": "Container image registry"
+              "default": "quay.io",
+              "description": "Container image registry hostname (e.g. quay.io, harbor.corp, image-registry.openshift-image-registry.svc:5000/ns)"
+            },
+            "namespace": {
+              "type": "string",
+              "default": "kubernaut-ai",
+              "description": "Image namespace prefix. Joined to service name by separator."
+            },
+            "separator": {
+              "type": "string",
+              "enum": ["/", "-"],
+              "default": "/",
+              "description": "Character joining namespace to service name. Use '/' for nested registries (Harbor, Artifactory), '-' for flat registries (quay.io, Docker Hub, OCP internal)."
             },
             "tag": {
               "type": "string",

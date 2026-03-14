@@ -3,12 +3,20 @@
 # IMPORTANT: Layer this AFTER values-ocp.yaml so it overrides the
 # registry.redhat.io pulls with your mirror registry.
 #
-# Usage:
+# Usage (nested registry — Harbor, Artifactory, generic Docker v2):
 #   helm install kubernaut charts/kubernaut \
 #     -f charts/kubernaut/values-demo.yaml \
 #     -f charts/kubernaut/values-ocp.yaml \
 #     -f charts/kubernaut/values-airgap.yaml \
-#     --set global.image.registry=<mirror-registry>/kubernaut-ai
+#     --set global.image.registry=harbor.corp
+#
+# Usage (flat registry — quay.io, Docker Hub, OCP internal):
+#   helm install kubernaut charts/kubernaut \
+#     -f charts/kubernaut/values-demo.yaml \
+#     -f charts/kubernaut/values-ocp.yaml \
+#     -f charts/kubernaut/values-airgap.yaml \
+#     --set global.image.registry=quay.io/myorg \
+#     --set global.image.separator=-
 #
 # Prerequisites:
 #   1. Mirror all images listed by hack/airgap/generate-image-list.sh
@@ -20,15 +28,28 @@
 
 # Override the registry for all Kubernaut service images.
 # Replace <mirror-registry> with your internal registry hostname.
+#
+# Nested registries (Harbor, Artifactory, generic Docker v2):
+#   Images are stored as <mirror-registry>/kubernaut-ai/gateway:tag
+#   → separator stays "/"
+#
+# Flat registries (quay.io, Docker Hub, OCP internal):
+#   Images are stored as <mirror-registry>/kubernaut-ai-gateway:tag
+#   → set separator to "-"
 global:
   image:
-    registry: <mirror-registry>/kubernaut-ai
+    registry: <mirror-registry>
+    namespace: kubernaut-ai
+    separator: "/"  # change to "-" for flat registries (quay.io, Docker Hub)
     # Optionally pin by digest for immutable references:
     # digest: "sha256:<digest-from-oc-mirror-output>"
 
 # Override each third-party image to point to your mirror.
-# These images are NOT governed by global.image.registry.
+# These images are NOT governed by global.image settings.
 # Red Hat RHEL10 equivalents are used (matching values-ocp.yaml).
+#
+# For flat registries, adjust paths to single-level repos, e.g.:
+#   postgresql.image: <mirror-registry>/rhel10-postgresql-16
 postgresql:
   image: <mirror-registry>/rhel10/postgresql-16
 
