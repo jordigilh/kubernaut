@@ -246,6 +246,22 @@ The EM emits **individual component-level audit events**, not a single monolithi
 }
 ```
 
+- `effectiveness.alert_decay.detected` (Issue #369, BR-EM-012): Emitted once when the EM first detects alert decay — resource is healthy (HealthScore > 0) and spec is stable (HashComputed) but the Prometheus alert is still firing (AlertScore = 0.0). Subsequent re-checks are silent. Uses `alert_resolution` sub-object:
+```json
+{
+    "event_type": "effectiveness.alert_decay.detected",
+    "correlation_id": "rr-xxx",
+    "component": "alert_decay",
+    "assessed": false,
+    "score": 0.0,
+    "details": "Alert decay detected: health=1.00, alert=0.00, retry=1",
+    "alert_resolution": {
+        "alert_resolved": false,
+        "active_count": 1
+    }
+}
+```
+
 - `effectiveness.metrics.assessed`: Metric comparison with typed `metric_deltas` sub-object:
 ```json
 {

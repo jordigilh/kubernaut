@@ -54,7 +54,8 @@ The Effectiveness Monitor uses a **hybrid approach** combining automated checks 
 - **Scope**:
   - Health checks (pod running, OOM errors, latency metrics)
   - Metric comparisons (pre/post execution)
-  - Component audit events (health, alert, metrics, spec-hash); DataStorage computes weighted effectiveness score on demand
+  - Component audit events (health, alert, alert_decay, metrics, spec-hash); DataStorage computes weighted effectiveness score on demand
+  - Alert decay detection: keeps EA open when resource is healthy but alert still firing due to Prometheus lookback window decay (Issue #369, BR-EM-012)
   - Anomaly detection (metric changes > thresholds)
 - **Cost**: Negligible (computational only)
 - **Latency**: <100ms
