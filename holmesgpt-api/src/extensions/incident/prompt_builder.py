@@ -213,6 +213,40 @@ def build_validation_error_feedback(
     attempt_display = attempt + 1  # Convert to 1-indexed for display
     errors_list = "\n".join(f"- {error}" for error in errors)
 
+    # #372: Detect structured output format failure vs workflow validation failure
+    is_format_failure = any("structured JSON output" in e for e in errors)
+
+    if is_format_failure:
+        return f"""
+
+## ⚠️ OUTPUT FORMAT ERROR - CORRECTION REQUIRED (Attempt {attempt_display}/{MAX_VALIDATION_ATTEMPTS})
+
+Your previous response did not include the required structured JSON output:
+
+{errors_list}
+
+**Your response MUST include a ```json``` code block** with this structure:
+
+```json
+{{
+  "root_cause_analysis": {{
+    "summary": "...",
+    "severity": "critical|high|medium|low",
+    "contributing_factors": ["..."],
+    "affectedResource": {{"kind": "...", "name": "...", "namespace": "..."}}
+  }},
+  "confidence": 0.0,
+  "selected_workflow": null,
+  "investigation_outcome": "resolved|inconclusive"
+}}
+```
+
+If you identified a matching workflow, include it in `selected_workflow` instead of null.
+If no workflow matches, set `selected_workflow` to null and include `investigation_outcome`.
+
+**Re-submit your complete analysis with the ```json``` code block.**
+"""
+
     # BR-HAPI-191: Include parameter schema hint when available
     schema_section = ""
     if schema_hint:

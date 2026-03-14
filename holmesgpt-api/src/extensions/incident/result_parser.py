@@ -62,7 +62,7 @@ def parse_and_validate_investigation_result(
         Tuple of (result_dict, validation_result) where validation_result is None
         if no workflow to validate or validation passed.
     """
-    from src.validation.workflow_response_validator import WorkflowResponseValidator
+    from src.validation.workflow_response_validator import WorkflowResponseValidator, ValidationResult
 
     incident_id = request_data.get("incident_id", "unknown")
 
@@ -420,6 +420,23 @@ def parse_and_validate_investigation_result(
             "event": "validation_attempts_added_to_result",
             "incident_id": incident_id,
             "count": len(validation_attempts_from_llm)
+        })
+
+    # #372: When no structured output was parsed at all, signal format failure
+    # so the retry loop can prompt the LLM to resubmit with correct format.
+    # Legitimate no-workflow outcomes (A/B/C) always produce json_data != None.
+    if json_data is None and selected_workflow is None and validation_result is None:
+        validation_result = ValidationResult(
+            is_valid=False,
+            errors=[
+                "LLM did not produce structured JSON output. "
+                "Expected ```json``` code block or # section_header format."
+            ],
+        )
+        logger.warning({
+            "event": "structured_output_missing",
+            "incident_id": incident_id,
+            "message": "#372: LLM response contained no parseable structured output — triggering retry"
         })
 
     return result, validation_result
