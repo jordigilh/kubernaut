@@ -68,9 +68,9 @@ spec:
                     echo "  authwebhook-ca ConfigMap exists. Nothing to do."
                     exit 0
                   fi
-                  echo "WARNING: authwebhook-ca ConfigMap missing (legacy install)."
-                  echo "  Delete the authwebhook-tls secret and re-run helm upgrade to regenerate."
-                  exit 0
+                  echo "WARNING: authwebhook-ca ConfigMap missing. Forcing regeneration..."
+                  RENEW=true
+                  kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
                 else
                   echo "  Certificate expires within 30 days (or is already expired). Regenerating..."
                   RENEW=true

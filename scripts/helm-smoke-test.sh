@@ -330,6 +330,7 @@ run_inst_001() {
     tap_ok "$desc"
   else
     tap_not_ok "$desc" "helm install failed"
+    return 1
   fi
 }
 
@@ -347,6 +348,7 @@ run_inst_003() {
     tap_ok "$desc"
   else
     tap_not_ok "$desc" "helm install failed"
+    return 1
   fi
 }
 
@@ -516,7 +518,7 @@ flow_a_production() {
   run_pre_001
   run_pre_002
   run_pre_003
-  run_inst_001
+  run_inst_001 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow A tests"; return 1; }
   run_verify_001
   run_verify_002
   run_verify_003
@@ -540,7 +542,7 @@ flow_a_production() {
 
 flow_b_quickstart() {
   echo "# --- Flow B: Dev Quick Start Lifecycle (kind only) ---"
-  run_inst_003
+  run_inst_003 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow B tests"; return 1; }
   run_verify_001
   run_edge_001
   run_uninst_001
