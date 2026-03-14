@@ -54,13 +54,18 @@ func (c *decayAMClient) Ready(_ context.Context) error {
 	return nil
 }
 
-// decayAuditSpy captures StoreAudit calls for assertion.
+// decayAuditSpy captures StoreAudit calls for assertion, tracking event types
+// to distinguish decay audit events from health/alert re-probe events.
 type decayAuditSpy struct {
-	calls int
+	calls      int
+	decayCalls int
 }
 
-func (s *decayAuditSpy) StoreAudit(_ context.Context, _ *ogenclient.AuditEventRequest) error {
+func (s *decayAuditSpy) StoreAudit(_ context.Context, req *ogenclient.AuditEventRequest) error {
 	s.calls++
+	if req != nil && req.EventType == "effectiveness.alert_decay.detected" {
+		s.decayCalls++
+	}
 	return nil
 }
 
@@ -169,6 +174,29 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	resolvedAMClient := func() *decayAMClient {
 		return &decayAMClient{
 			alerts: []emclient.Alert{},
+		}
+	}
+
+	// seedHealthyPod creates a Running/Ready pod matching the label selector
+	// used by getTargetHealthStatus (client.MatchingLabels{"app": targetName}).
+	// Health scorer returns 1.0 for TotalReplicas=1, ReadyReplicas=1, RestartCount=0.
+	seedHealthyPod := func(ns, targetName string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      targetName + "-pod-0",
+				Namespace: ns,
+				Labels:    map[string]string{"app": targetName},
+			},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+				ContainerStatuses: []corev1.ContainerStatus{
+					{
+						Name:         "main",
+						Ready:        true,
+						RestartCount: 0,
+					},
+				},
+			},
 		}
 	}
 
@@ -347,7 +375,8 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		name := "ea-decay-006"
 
 		ea := seedDecayEA(ns, name)
-		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea)
+		pod := seedHealthyPod(ns, "test-app")
+		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea, pod)
 
 		for i := int32(1); i <= 3; i++ {
 			_, err := r.Reconcile(context.Background(), ctrl.Request{
@@ -377,22 +406,23 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		auditMgr := emaudit.NewManager(spy, ctrl.Log.WithName("test"))
 
 		ea := seedDecayEA(ns, name)
-		r, fc := makeReconcilerWithAM(s, firingAMClient(), auditMgr, ea)
+		pod := seedHealthyPod(ns, "test-app")
+		r, fc := makeReconcilerWithAM(s, firingAMClient(), auditMgr, ea, pod)
 
 		// First reconcile — should emit decay detected audit event
 		_, err := r.Reconcile(context.Background(), ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
 		})
 		Expect(err).ToNot(HaveOccurred())
-		firstCallCount := spy.calls
-		Expect(firstCallCount).To(BeNumerically(">=", 1),
-			"First reconcile should emit at least one audit event (alert_decay.detected)")
+		Expect(spy.decayCalls).To(Equal(1),
+			"First reconcile should emit exactly one decay audit event")
 
 		fetchedEA := &eav1.EffectivenessAssessment{}
 		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
 		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(1)))
 
-		// Second reconcile — should NOT emit another decay audit event
+		// Second reconcile — health re-probe emits a health audit event,
+		// but NO additional decay audit event should be emitted.
 		_, err = r.Reconcile(context.Background(), ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
 		})
@@ -401,7 +431,175 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
 		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(2)))
 
-		Expect(spy.calls - firstCallCount).To(Equal(0),
-			"No additional audit events should be emitted on subsequent decay re-checks (silence on retries)")
+		Expect(spy.decayCalls).To(Equal(1),
+			"No additional decay audit events on subsequent re-checks (silence on retries)")
+	})
+
+	// ========================================
+	// UT-EM-DECAY-008: Metrics negative kills decay hypothesis (proactive signal)
+	// BR-EM-012: When metrics prove remediation failed (MetricsScore <= 0.0),
+	// the alert is genuine — not decay. The EA completes with the alert score
+	// reflecting the real failure.
+	// ========================================
+	It("UT-EM-DECAY-008: should complete EA normally when metrics are negative (proactive signal kills decay hypothesis)", func() {
+		s := buildScheme()
+		ns := "test-ns"
+		name := "ea-decay-008"
+
+		ea := seedDecayEA(ns, name)
+		metricsScore := 0.0
+		ea.Status.Components.MetricsAssessed = true
+		ea.Status.Components.MetricsScore = &metricsScore
+
+		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea)
+
+		_, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
+
+		Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted),
+			"EA should complete (metrics gate prevents decay detection)")
+		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeTrue(),
+			"AlertAssessed should be true (alert accepted at face value)")
+		Expect(fetchedEA.Status.Components.AlertScore).To(HaveValue(Equal(0.0)),
+			"AlertScore should be 0.0 (alert firing, remediation failed)")
+		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(0)),
+			"AlertDecayRetries should be 0 (decay was never triggered)")
+		Expect(fetchedEA.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonFull),
+			"AssessmentReason should be 'full' (all components assessed, not alert_decay_timeout)")
+	})
+
+	// ========================================
+	// UT-EM-DECAY-009: Metrics nil/unavailable is neutral
+	// BR-EM-012: When MetricsScore is nil (Prometheus returned no data),
+	// decay detection should still proceed — absence of data is not evidence
+	// of failure.
+	// ========================================
+	It("UT-EM-DECAY-009: should continue decay monitoring when metrics are nil (neutral, not negative)", func() {
+		s := buildScheme()
+		ns := "test-ns"
+		name := "ea-decay-009"
+
+		ea := seedDecayEA(ns, name)
+		ea.Status.Components.MetricsAssessed = true
+		ea.Status.Components.MetricsScore = nil
+
+		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea)
+
+		result, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
+
+		Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseAssessing),
+			"EA should remain in Assessing (decay monitoring active)")
+		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeFalse(),
+			"AlertAssessed should be false (decay monitoring continues)")
+		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(1)),
+			"AlertDecayRetries should be 1 (nil metrics treated as neutral)")
+		Expect(result.RequeueAfter).To(BeNumerically(">", 0),
+			"Reconciler should requeue for next decay check")
+	})
+
+	// ========================================
+	// UT-EM-DECAY-010: Health re-probed live on each decay pass
+	// BR-EM-012: After decay detection, HealthAssessed is reset so the next
+	// reconcile re-probes health from K8s API. This prevents stale data from
+	// masking a genuine failure.
+	// ========================================
+	It("UT-EM-DECAY-010: should reset HealthAssessed and re-probe health on each decay pass", func() {
+		s := buildScheme()
+		ns := "test-ns"
+		name := "ea-decay-010"
+
+		ea := seedDecayEA(ns, name)
+		pod := seedHealthyPod(ns, "test-app")
+		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea, pod)
+
+		// Pass 1: decay detected, HealthAssessed should be reset to false
+		_, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
+
+		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeFalse(),
+			"HealthAssessed should be false after pass 1 (reset for re-probe)")
+		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(1)),
+			"AlertDecayRetries should be 1 after pass 1")
+
+		// Pass 2: health re-probed (pod still healthy), decay detected again, HealthAssessed reset again
+		_, err = r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
+
+		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeFalse(),
+			"HealthAssessed should be false after pass 2 (re-probed then reset again)")
+		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(2)),
+			"AlertDecayRetries should be 2 after pass 2")
+		Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseAssessing),
+			"EA should remain in Assessing throughout decay monitoring")
+		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeFalse(),
+			"AlertAssessed should remain false (EA stays open)")
+	})
+
+	// ========================================
+	// UT-EM-DECAY-011: Health degradation during decay kills hypothesis
+	// BR-EM-012: If health degrades between decay passes (e.g., pod crashes
+	// after memory increase was insufficient), the alert is genuine.
+	// ========================================
+	It("UT-EM-DECAY-011: should kill decay hypothesis when health degrades on re-probe", func() {
+		s := buildScheme()
+		ns := "test-ns"
+		name := "ea-decay-011"
+
+		ea := seedDecayEA(ns, name)
+		pod := seedHealthyPod(ns, "test-app")
+		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea, pod)
+
+		// Pass 1: decay detected (health=1.0, alert=0.0, hash stable)
+		_, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
+		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(1)),
+			"Pass 1 should detect decay")
+
+		// Simulate health degradation: delete the pod so re-probe returns HealthScore=0.0
+		Expect(fc.Delete(context.Background(), pod)).To(Succeed())
+
+		// Pass 2: health re-probed as 0.0, isAlertDecay returns false, alert assessed normally
+		_, err = r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
+
+		Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted),
+			"EA should complete (health degraded, alert is genuine)")
+		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeTrue(),
+			"AlertAssessed should be true (alert accepted at face value)")
+		Expect(fetchedEA.Status.Components.AlertScore).To(HaveValue(Equal(0.0)),
+			"AlertScore should be 0.0 (alert firing, remediation failed)")
+		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(1)),
+			"AlertDecayRetries should be 1 (only pass 1 was decay)")
+		Expect(fetchedEA.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonFull),
+			"AssessmentReason should be 'full' (normal completion, not alert_decay_timeout)")
 	})
 })
