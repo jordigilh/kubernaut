@@ -544,7 +544,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 					}
 					ea.Status.Components.AlertDecayRetries++
 					alertResult.Component.Assessed = false
-					logger.Info("Alert decay suspected: deferring alert assessment",
+					// Health re-probe (#369 Option D): reset HealthAssessed so the next
+					// reconcile re-probes live from K8s API. Prevents stale health data
+					// from masking a genuine failure that develops after the initial check.
+					ea.Status.Components.HealthAssessed = false
+					logger.Info("Alert decay suspected: deferring alert assessment, scheduling health re-probe",
 						"healthScore", ea.Status.Components.HealthScore,
 						"alertScore", alertResult.Component.Score,
 						"retries", ea.Status.Components.AlertDecayRetries)
@@ -810,12 +814,20 @@ func (r *Reconciler) assessAlert(ctx context.Context, ea *eav1.EffectivenessAsse
 // Returns true only when all conditions are met (Issue #369, BR-EM-012):
 //   - Health has been assessed with a positive score (resource is healthy)
 //   - Hash has been computed (spec is stable, no drift since remediation)
+//   - Metrics (if assessed) are not negative — proactive signal gate (#369 Option D)
 //   - The alert was just assessed as still firing (score == 0.0)
 func (r *Reconciler) isAlertDecay(ea *eav1.EffectivenessAssessment, ar alertAssessResult) bool {
 	if !ea.Status.Components.HealthAssessed || ea.Status.Components.HealthScore == nil || *ea.Status.Components.HealthScore <= 0 {
 		return false
 	}
 	if !ea.Status.Components.HashComputed {
+		return false
+	}
+	// Metrics gate (#369 Option D): if metrics have been assessed and show no
+	// improvement, the alert is genuine — the proactive/predictive signal proves
+	// the remediation failed. Nil MetricsScore (no data) is neutral and does not
+	// prevent decay detection.
+	if ea.Status.Components.MetricsAssessed && ea.Status.Components.MetricsScore != nil && *ea.Status.Components.MetricsScore <= 0.0 {
 		return false
 	}
 	if !ar.Component.Assessed || ar.Component.Score == nil || *ar.Component.Score != 0.0 {
