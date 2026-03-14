@@ -136,6 +136,7 @@ func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.Not
 	_, err = c.redisClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: streamKey,
 		MaxLen: c.maxLen, // Use configured max length (Gap 3.3)
+		Approx: true,     // ~ trimming: Redis best practice for stream performance
 		ID:     "*",      // Auto-generate timestamp-based ID
 		Values: map[string]interface{}{
 			"message": string(messageJSON),
@@ -184,6 +185,7 @@ func (c *Client) EnqueueAuditEvent(ctx context.Context, audit *audit.AuditEvent,
 	_, err = c.redisClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: streamKey,
 		MaxLen: c.maxLen, // Use configured max length (Gap 3.3)
+		Approx: true,     // ~ trimming: Redis best practice for stream performance
 		ID:     "*",      // Auto-generate timestamp-based ID
 		Values: map[string]interface{}{
 			"message": string(messageJSON),
