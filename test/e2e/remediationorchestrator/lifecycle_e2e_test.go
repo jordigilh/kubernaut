@@ -441,8 +441,14 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
-			By("Pre-populating Status.Deduplication and DuplicateOf via status update")
+			By("Waiting for RO first reconciliation before updating status")
 			createdRR := &remediationv1.RemediationRequest{}
+			Eventually(func() bool {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)
+				return createdRR.Status.OverallPhase != "" || len(createdRR.Status.Conditions) > 0
+			}, timeout, interval).Should(BeTrue(), "RO should reconcile the RR")
+
+			By("Pre-populating Status.Deduplication and DuplicateOf via status update")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())
 			createdRR.Status.Deduplication = &remediationv1.DeduplicationStatus{
 				FirstSeenAt:     &fiveMinutesAgo,
@@ -452,12 +458,12 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			createdRR.Status.DuplicateOf = "rr-original-parent"
 			Expect(k8sClient.Status().Update(ctx, createdRR)).To(Succeed())
 
-			By("Letting RO reconcile (wait for Phase change or conditions)")
+			By("Letting RO reconcile again to verify deduplication survives")
+			prevRV := createdRR.ResourceVersion
 			Eventually(func() bool {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)
-				// RO will transition from Pending; any phase change indicates reconciliation
-				return createdRR.Status.OverallPhase != "" || len(createdRR.Status.Conditions) > 0
-			}, timeout, interval).Should(BeTrue(), "RO should reconcile the RR")
+				return createdRR.ResourceVersion != prevRV
+			}, timeout, interval).Should(BeTrue(), "RO should reconcile after status update")
 
 			By("Re-fetching RR and asserting Deduplication preserved")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())
