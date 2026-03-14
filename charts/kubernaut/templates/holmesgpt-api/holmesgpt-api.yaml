@@ -182,10 +182,6 @@ spec:
             {{- if eq .Values.holmesgptApi.llm.provider "vertex_ai" }}
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: "/etc/holmesgpt/credentials/GOOGLE_APPLICATION_CREDENTIALS"
-            - name: VERTEXAI_PROJECT
-              value: {{ .Values.holmesgptApi.llm.gcpProjectId | quote }}
-            - name: VERTEXAI_LOCATION
-              value: {{ .Values.holmesgptApi.llm.gcpRegion | quote }}
             {{- end }}
           envFrom:
             - secretRef:
