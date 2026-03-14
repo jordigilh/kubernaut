@@ -176,17 +176,6 @@ spec:
           args:
             - "-config"
             - "/etc/holmesgpt/config.yaml"
-          env:
-            - name: DATA_STORAGE_URL
-              value: "{{ include "kubernaut.datastorage.url" . }}"
-            {{- if eq .Values.holmesgptApi.llm.provider "vertex_ai" }}
-            - name: GOOGLE_APPLICATION_CREDENTIALS
-              value: "/etc/holmesgpt/credentials/GOOGLE_APPLICATION_CREDENTIALS"
-            {{- end }}
-          envFrom:
-            - secretRef:
-                name: {{ .Values.holmesgptApi.llm.credentialsSecretName }}
-                optional: true
           volumeMounts:
             - name: config
               mountPath: /etc/holmesgpt

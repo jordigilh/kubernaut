@@ -265,18 +265,6 @@ def get_model_config_for_sdk(app_config: Optional[Dict[str, Any]] = None) -> tup
     # Get custom endpoint if set
     llm_endpoint = os.getenv("LLM_ENDPOINT") or (app_config.get("llm", {}).get("endpoint") if app_config else None)
 
-    # Vertex AI: LiteLLM reads project/location from env vars, inject them
-    # from the config file so the Helm chart doesn't need to expose them
-    # as container-level environment variables.
-    if provider == "vertex_ai" and app_config:
-        llm_cfg = app_config.get("llm", {})
-        project = llm_cfg.get("gcp_project_id") or llm_cfg.get("project", "")
-        location = llm_cfg.get("gcp_region") or llm_cfg.get("location", "")
-        if project:
-            os.environ["VERTEXAI_PROJECT"] = project
-        if location:
-            os.environ["VERTEXAI_LOCATION"] = location
-
     # Format model name for litellm
     formatted_model = format_model_name_for_litellm(model_name, provider, llm_endpoint)
 
