@@ -984,7 +984,9 @@ jobs:
           echo "Running helm lint --strict to validate schema consistency..."
           helm lint charts/kubernaut/ --strict \
             --set global.image.tag=schema-check \
-            --set postgresql.auth.password=lint-placeholder \
+            --set postgresql.auth.existingSecret=lint-placeholder \
+            --set datastorage.dbExistingSecret=lint-placeholder \
+            --set valkey.existingSecret=lint-placeholder \
             --set holmesgptApi.llm.provider=openai \
             --set holmesgptApi.llm.model=gpt-4o \
             --set holmesgptApi.llm.credentialsSecretName=lint-placeholder
