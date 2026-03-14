@@ -368,25 +368,9 @@ spec:
 
 For OCP < 4.13, use the deprecated `ImageContentSourcePolicy` (ICSP) with the same mirror mappings.
 
-### 5. OCP: Disconnected ImageStream import
+### 5. OCP: Disconnected install (no ImageStreams needed)
 
-In disconnected environments, `oc import-image` cannot reach `registry.redhat.io`. Mirror the Red Hat images first, then create ImageStreams pointing at the mirror:
-
-```bash
-# Mirror Red Hat images to internal registry
-skopeo copy docker://registry.redhat.io/rhel9/postgresql-16 \
-  docker://<mirror-registry>/rhel9/postgresql-16
-skopeo copy docker://registry.redhat.io/rhel9/valkey-8 \
-  docker://<mirror-registry>/rhel9/valkey-8
-
-# Create ImageStream tags from the mirror
-oc tag <mirror-registry>/rhel9/postgresql-16:latest \
-  openshift/postgresql:16-el9 -n openshift
-oc tag <mirror-registry>/rhel9/valkey-8:latest \
-  openshift/valkey:8-el9 -n openshift
-```
-
-Then install with the OCP overlay:
+The `values-airgap.yaml` overlay overrides the OCP ImageStream references (`image-registry.openshift-image-registry.svc:5000/openshift/...`) with direct pulls from the mirror registry. This eliminates the need for `oc import-image` or `oc tag` — pods pull PostgreSQL and Valkey directly from the mirror.
 
 ```bash
 helm install kubernaut charts/kubernaut/ \
@@ -396,6 +380,8 @@ helm install kubernaut charts/kubernaut/ \
   -f charts/kubernaut/values-airgap.yaml \
   --set global.image.registry=<mirror-registry>/kubernaut-ai
 ```
+
+> **Note**: `values-airgap.yaml` must be layered **after** `values-ocp.yaml` so it overrides the ImageStream image references. The `postgresql.variant: ocp` setting from `values-ocp.yaml` is preserved, ensuring correct env var names (`POSTGRESQL_*`) and data directory paths.
 
 ## Upgrading
 

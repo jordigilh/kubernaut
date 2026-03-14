@@ -1,8 +1,12 @@
 # Air-gapped / disconnected overlay for Kubernaut Helm chart.
 #
+# IMPORTANT: Layer this AFTER values-ocp.yaml so it overrides the OCP
+# ImageStream references with direct mirror pulls (no oc tag needed).
+#
 # Usage:
 #   helm install kubernaut charts/kubernaut \
 #     -f charts/kubernaut/values-demo.yaml \
+#     -f charts/kubernaut/values-ocp.yaml \
 #     -f charts/kubernaut/values-airgap.yaml \
 #     --set global.image.registry=<mirror-registry>/kubernaut-ai
 #

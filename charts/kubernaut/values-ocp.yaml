@@ -18,18 +18,12 @@
 #     --from=registry.redhat.io/rhel9/valkey-8 \
 #     -n openshift --confirm
 #
-# Disconnected/air-gapped — mirror images first, then tag from mirror:
-#   skopeo copy docker://registry.redhat.io/rhel9/postgresql-16 \
-#     docker://<mirror-registry>/rhel9/postgresql-16
-#   skopeo copy docker://registry.redhat.io/rhel9/valkey-8 \
-#     docker://<mirror-registry>/rhel9/valkey-8
-#   oc tag <mirror-registry>/rhel9/postgresql-16:latest \
-#     openshift/postgresql:16-el9 -n openshift
-#   oc tag <mirror-registry>/rhel9/valkey-8:latest \
-#     openshift/valkey:8-el9 -n openshift
-#
-# Both workflows are idempotent — safe to run even if the tags already exist.
+# Disconnected/air-gapped — layer values-airgap.yaml AFTER this file.
+# It overrides the ImageStream references above with direct mirror pulls,
+# so no oc import-image or oc tag is needed.
 # See chart README "Disconnected / Air-Gapped Install" section for full guide.
+#
+# Both connected commands are idempotent — safe to run if the tags exist.
 
 postgresql:
   variant: ocp
