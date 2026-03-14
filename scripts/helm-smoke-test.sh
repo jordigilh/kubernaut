@@ -234,6 +234,7 @@ common_install_flags() {
   flags+=" --set global.image.tag=${IMAGE_TAG}"
   if [[ -n "$IMAGE_REGISTRY" ]]; then
     flags+=" --set global.image.registry=${IMAGE_REGISTRY}"
+    flags+=" --set global.image.namespace="
   fi
   flags+=" --set effectivenessmonitor.external.prometheusEnabled=false"
   flags+=" --set effectivenessmonitor.external.alertManagerEnabled=false"
