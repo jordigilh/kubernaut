@@ -635,10 +635,9 @@ export-openapi-holmesgpt-api: ## Export holmesgpt-api OpenAPI spec from FastAPI 
 		-v $(CURDIR):/workspace:z \
 		-w /workspace/holmesgpt-api \
 		-e CONFIG_FILE=config.yaml \
-		-e OPENAPI_EXPORT=1 \
 		-e PYTHONUNBUFFERED=1 \
 		registry.access.redhat.com/ubi10/python-312-minimal:latest \
-		sh -c "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; pip install -q ./src/clients/datastorage && pip install -q -r requirements-slim.txt && python3 -c 'from src.main import app; import json; print(json.dumps(app.openapi(), indent=2))' > api/openapi.json && echo 'Schema count:' && python3 -c 'import json; spec=json.load(open(\"api/openapi.json\")); print(len(spec.get(\"components\", {}).get(\"schemas\", {})))'"
+		sh -c "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; pip install -q ./src/clients/datastorage && pip install -q -r requirements-slim.txt && python3 scripts/export_openapi.py > api/openapi.json && echo 'Schema count:' && python3 -c 'import json; spec=json.load(open(\"api/openapi.json\")); print(len(spec.get(\"components\", {}).get(\"schemas\", {})))'"
 	@echo "✅ OpenAPI spec exported: holmesgpt-api/api/openapi.json"
 
 .PHONY: validate-openapi-holmesgpt-api

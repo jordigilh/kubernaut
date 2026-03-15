@@ -74,7 +74,7 @@ echo "Press Ctrl+C to stop"
 echo ""
 
 # Start server with reload for development
-exec python3 -m uvicorn src.main:app \
+exec python3 -m uvicorn src.main:create_app --factory \
     --host 0.0.0.0 \
     --port 8080 \
     --reload \

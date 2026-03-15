@@ -210,7 +210,7 @@ python3 -m pytest tests/e2e/test_workflow_selection_e2e.py -v  # E2E with mock L
 LLM_ENDPOINT=http://localhost:11434 \
 LLM_MODEL=ollama/qwen2.5:14b-instruct-q4_K_M \
 AUTH_ENABLED=false \
-uvicorn src.main:app --reload
+uvicorn src.main:create_app --factory --reload
 ```
 
 ### Production
@@ -221,7 +221,7 @@ AUTH_ENABLED=true \
 LLM_ENDPOINT=https://api.openai.com/v1 \
 LLM_MODEL=gpt-4o \
 OPENAI_API_KEY=$OPENAI_API_KEY \
-uvicorn src.main:app --host 0.0.0.0 --port 8080
+uvicorn src.main:create_app --factory --host 0.0.0.0 --port 8080
 ```
 
 ## Documentation

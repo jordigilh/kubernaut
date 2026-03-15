@@ -34,8 +34,10 @@ _source_dirs = ["src"]
 cov = coverage.Coverage(data_file=_data_file, source=_source_dirs)
 cov.start()
 
-# Import the app AFTER starting coverage so all module-level code is measured
-from src.main import app  # noqa: E402
+# Import the factory AFTER starting coverage so all module-level code is measured
+from src.main import create_app  # noqa: E402
+
+app = create_app()
 
 
 # ── Signal handler ──────────────────────────────────────────────────────────

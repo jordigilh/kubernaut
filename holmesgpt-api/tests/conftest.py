@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Dict, Any
 
 import pytest
-from fastapi.testclient import TestClient
 
 # V3.0 (Mock LLM Migration - January 12, 2026):
 # Removed embedded MockLLMServer - now using standalone Mock LLM service
@@ -90,34 +89,6 @@ def test_config() -> Dict[str, Any]:
             "endpoint": os.environ.get("LLM_ENDPOINT", "http://127.0.0.1:8080"),
         },
     }
-
-
-@pytest.fixture
-def client():
-    """
-    FastAPI test client for unit tests.
-
-    BR-HAPI-212: MOCK_LLM_MODE is set by setup_mock_llm_mode session fixture.
-    """
-    os.environ["AUTH_ENABLED"] = "false"
-    os.environ.pop("DEV_MODE", None)
-
-    from src.main import app
-    return TestClient(app)
-
-
-@pytest.fixture
-def auth_client():
-    """
-    FastAPI test client with authentication enabled.
-
-    BR-HAPI-212: MOCK_LLM_MODE is set by setup_mock_llm_mode session fixture.
-    """
-    os.environ["AUTH_ENABLED"] = "true"
-    os.environ.pop("DEV_MODE", None)
-
-    from src.main import app
-    return TestClient(app)
 
 
 @pytest.fixture
