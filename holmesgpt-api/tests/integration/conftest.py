@@ -529,6 +529,15 @@ def pytest_configure(config):
     )
 
 
+def pytest_unconfigure(config):
+    """Cleanup temporary SDK config file created in pytest_configure."""
+    if hasattr(config, '_temp_sdk_config_file'):
+        try:
+            os.unlink(config._temp_sdk_config_file)
+        except Exception:
+            pass
+
+
 def pytest_collection_modifyitems(config, items):
     """
     Auto-skip tests if required infrastructure is not available.
