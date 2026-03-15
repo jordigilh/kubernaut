@@ -562,28 +562,32 @@ func extractAWXJobID(executionRefName string) int {
 
 // cancelAWXJob sends POST /api/v2/jobs/{id}/cancel/ to the AWX API via its NodePort.
 // The AWX token is read from the K8s Secret created during E2E infrastructure setup.
+// Uses exponential backoff (1s, 2s, 4s, 8s, 16s) with a fresh request per attempt
+// to tolerate transient connection resets from resource-constrained AWX in CI Kind clusters.
 func cancelAWXJob(jobID int) {
 	token := readAWXToken()
-	url := fmt.Sprintf("http://localhost:%d/api/v2/jobs/%d/cancel/", infrastructure.AWXNodePort, jobID)
+	cancelURL := fmt.Sprintf("http://localhost:%d/api/v2/jobs/%d/cancel/", infrastructure.AWXNodePort, jobID)
 
 	httpClient := &http.Client{
 		Timeout: 15 * time.Second,
 	}
 
-	req, err := http.NewRequest("POST", url, strings.NewReader(""))
-	Expect(err).ToNot(HaveOccurred())
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-	req.Header.Set("Content-Type", "application/json")
-
+	const maxRetries = 5
 	var resp *http.Response
 	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		req, err := http.NewRequest("POST", cancelURL, strings.NewReader(""))
+		Expect(err).ToNot(HaveOccurred())
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+		req.Header.Set("Content-Type", "application/json")
+
 		resp, lastErr = httpClient.Do(req)
 		if lastErr == nil {
 			break
 		}
-		GinkgoWriter.Printf("AWX cancel attempt %d failed: %v\n", attempt+1, lastErr)
-		time.Sleep(1 * time.Second)
+		backoff := time.Duration(1<<uint(attempt)) * time.Second
+		GinkgoWriter.Printf("AWX cancel attempt %d/%d failed: %v (backoff %s)\n", attempt+1, maxRetries, lastErr, backoff)
+		time.Sleep(backoff)
 	}
 	Expect(lastErr).ToNot(HaveOccurred(), "AWX cancel API call should succeed after retries")
 	defer func() { _ = resp.Body.Close() }()
