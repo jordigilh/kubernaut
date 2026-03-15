@@ -157,6 +157,15 @@ def parse_and_validate_investigation_result(
             parts['validation_attempts_history'] = vah_match.group(1)
             logger.debug("Pattern 2B: Extracted validation_attempts_history")
 
+        # #388: Extract actionable field (for not_actionable case)
+        actionable_match = re.search(r'# actionable\s*\n\s*(True|False|true|false)\s*(?:\n#|$|\n\n)', analysis, re.IGNORECASE)
+        if actionable_match:
+            # capitalize() normalizes "false"→"False", "true"→"True" so
+            # ast.literal_eval can parse the combined dict (json.loads
+            # fails on None for selected_workflow).
+            parts['actionable'] = actionable_match.group(1).capitalize()
+            logger.debug(f"Pattern 2B: Extracted actionable: {parts['actionable']}")
+
         if parts:
             # Combine into a single dict string
             combined_dict = '{'
@@ -567,7 +576,7 @@ def parse_investigation_result(
         # #388: Extract actionable field (for not_actionable case)
         actionable_match = re.search(r'# actionable\s*\n\s*(True|False|true|false)\s*(?:\n#|$|\n\n)', analysis, re.IGNORECASE)
         if actionable_match:
-            parts['actionable'] = actionable_match.group(1).lower()
+            parts['actionable'] = actionable_match.group(1).capitalize()
             logger.debug(f"Pattern 2B: Extracted actionable: {parts['actionable']}")
 
         # BR-HAPI-200: Extract confidence (for problem_resolved case)

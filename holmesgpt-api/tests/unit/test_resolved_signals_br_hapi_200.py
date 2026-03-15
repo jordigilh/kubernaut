@@ -390,3 +390,84 @@ class TestActionableFieldParser:
         )
         assert has_not_actionable_warning, \
             f"Must emit 'not actionable' audit warning, got: {warnings}"
+
+
+class TestActionableFieldParserPattern2B:
+    """UT-HAPI-388-006: Result parser handles `# actionable` in section-header (Pattern 2B) format.
+
+    The LLM prompt instructs section-header output. Pattern 2B in the active
+    parser must extract `# actionable` — regression test for GAP 1 fix.
+    """
+
+    def _build_section_header_text(self, actionable=None, confidence=0.85):
+        """Build LLM output in section-header format (Pattern 2B)."""
+        lines = [
+            "Investigation of orphaned PVC alert.",
+            "",
+            "# root_cause_analysis",
+            '{"summary": "Orphaned PVCs from completed batch jobs", "severity": "low", "contributing_factors": ["Completed batch job artifacts"]}',
+            "",
+            "# confidence",
+            str(confidence),
+            "",
+            "# selected_workflow",
+            "None",
+        ]
+        if actionable is not None:
+            lines.extend(["", "# actionable", str(actionable)])
+        return "\n".join(lines)
+
+    def _parse(self, analysis_text, incident_id="test-incident-2b"):
+        from unittest.mock import MagicMock
+        from src.extensions.incident.result_parser import parse_and_validate_investigation_result
+
+        investigation = MagicMock()
+        investigation.analysis = analysis_text
+        request_data = {
+            "incident_id": incident_id,
+            "signal_name": "KubePersistentVolumeClaimOrphaned",
+            "severity": "low",
+        }
+        result, _validation = parse_and_validate_investigation_result(
+            investigation, request_data
+        )
+        return result
+
+    def test_pattern_2b_actionable_false_detected(self):
+        """
+        UT-HAPI-388-006: `# actionable\\nfalse` in section-header format must
+        be extracted and produce is_actionable=False, needs_human_review=False.
+        """
+        analysis = self._build_section_header_text(actionable=False)
+        result = self._parse(analysis)
+
+        assert result["needs_human_review"] is False, \
+            "Pattern 2B: actionable=false must set needs_human_review to False"
+        assert result.get("is_actionable") is False, \
+            "Pattern 2B: actionable=false must set is_actionable to False"
+
+    def test_pattern_2b_actionable_false_emits_warning(self):
+        """
+        UT-HAPI-388-006: Section-header `actionable=false` must also emit the
+        audit trail warning.
+        """
+        analysis = self._build_section_header_text(actionable=False)
+        result = self._parse(analysis)
+
+        warnings = result.get("warnings", [])
+        has_not_actionable_warning = any(
+            "not actionable" in w.lower() for w in warnings
+        )
+        assert has_not_actionable_warning, \
+            f"Pattern 2B: Must emit 'not actionable' warning, got: {warnings}"
+
+    def test_pattern_2b_actionable_true_is_default(self):
+        """
+        UT-HAPI-388-006: When `# actionable` is absent from section-header
+        output, the result must NOT contain is_actionable=False.
+        """
+        analysis = self._build_section_header_text(actionable=None)
+        result = self._parse(analysis)
+
+        assert result.get("is_actionable") is not False, \
+            "Pattern 2B: Missing actionable field must not produce is_actionable=False"
