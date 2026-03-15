@@ -9,7 +9,6 @@ import pytest
 import os
 import time
 import tempfile
-from unittest.mock import patch
 
 # BR-AA-HAPI-064: Session manager reset between tests
 from src.session.session_manager import reset_session_manager
