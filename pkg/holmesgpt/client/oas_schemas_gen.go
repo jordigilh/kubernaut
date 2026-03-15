@@ -1242,7 +1242,7 @@ type IncidentResponse struct {
 	HumanReviewReason OptNilHumanReviewReason `json:"human_review_reason"`
 	// LLM's assessment of whether the alert warrants action. False when the alert is benign and no
 	// remediation is needed. None when the LLM did not explicitly assess actionability. Maps to
-	// AIAnalysis.Status.IsActionable.
+	// AIAnalysis.Status.Actionability.
 	IsActionable OptNilBool `json:"is_actionable"`
 	// Non-fatal warnings (e.g., OwnerChain validation issues, low confidence).
 	Warnings []string `json:"warnings"`
