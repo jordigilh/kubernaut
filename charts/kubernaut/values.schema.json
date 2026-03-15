@@ -676,7 +676,7 @@
           "properties": {
             "image": {
               "type": "string",
-              "default": "quay.io/kubernaut-ai/db-migrate:v1.1.0-pre1",
+              "default": "quay.io/kubernaut-ai/db-migrate:v1.1.0-rc0",
               "description": "UBI9-minimal image with goose + psql for database migrations (works in disconnected environments)"
             }
           }

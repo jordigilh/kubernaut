@@ -278,7 +278,7 @@ See [TLS and Certificate Management](https://jordigilh.github.io/kubernaut-docs/
 | Parameter | Description | Default |
 |---|---|---|
 | `hooks.tlsCerts.image` | kubectl image for TLS cert generation (`hook` mode only; unused in `manual` and `cert-manager` modes; must include shell + openssl) | `docker.io/bitnami/kubectl:latest` (pinned by digest) |
-| `hooks.migrations.image` | UBI9-minimal image with goose + psql for database migrations | `quay.io/kubernaut-ai/db-migrate:v1.1.0-pre1` |
+| `hooks.migrations.image` | UBI9-minimal image with goose + psql for database migrations | `quay.io/kubernaut-ai/db-migrate:v1.1.0-rc0` |
 
 ### Network Policies
 
