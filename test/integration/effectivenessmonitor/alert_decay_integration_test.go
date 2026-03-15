@@ -27,10 +27,12 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/conditions"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -123,6 +125,12 @@ var _ = Describe("Alert Decay Detection Integration (Issue #369, BR-EM-012)", fu
 				"AlertDecayRetries should be > 0 (decay detection active)")
 			g.Expect(fetchedEA.Status.Components.AlertAssessed).To(BeFalse(),
 				"AlertAssessed should be false (EA kept open for re-check)")
+			decayCond := meta.FindStatusCondition(fetchedEA.Status.Conditions, conditions.ConditionAlertDecayDetected)
+			g.Expect(decayCond).ToNot(BeNil(), "AlertDecayDetected condition should be present during decay")
+			g.Expect(decayCond.Status).To(Equal(metav1.ConditionTrue),
+				"AlertDecayDetected should be True during active decay monitoring")
+			g.Expect(decayCond.Reason).To(Equal(conditions.ReasonDecayActive),
+				"Reason should be DecayActive")
 		}, timeout, interval).Should(Succeed())
 
 		GinkgoWriter.Printf("Alert decay detected after %d retries\n",
@@ -147,6 +155,13 @@ var _ = Describe("Alert Decay Detection Integration (Issue #369, BR-EM-012)", fu
 			"Reason should be 'full' (all components assessed)")
 		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(BeNumerically(">", 0),
 			"AlertDecayRetries should be preserved for operator observability")
+
+		decayCond := meta.FindStatusCondition(fetchedEA.Status.Conditions, conditions.ConditionAlertDecayDetected)
+		Expect(decayCond).ToNot(BeNil(), "AlertDecayDetected condition should be present after completion")
+		Expect(decayCond.Status).To(Equal(metav1.ConditionFalse),
+			"AlertDecayDetected should be False (decay resolved)")
+		Expect(decayCond.Reason).To(Equal(conditions.ReasonDecayResolved),
+			"Reason should be DecayResolved after alert cleared")
 
 		GinkgoWriter.Printf("EA completed: reason=%s, alertScore=%.1f, decayRetries=%d\n",
 			fetchedEA.Status.AssessmentReason,
@@ -275,6 +290,13 @@ var _ = Describe("Alert Decay Detection Integration (Issue #369, BR-EM-012)", fu
 			"AssessmentReason should be 'full' (all components assessed, not alert_decay_timeout)")
 		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(1)),
 			"AlertDecayRetries should be 1 (one decay pass before metrics gate killed hypothesis)")
+
+		decayCond := meta.FindStatusCondition(fetchedEA.Status.Conditions, conditions.ConditionAlertDecayDetected)
+		Expect(decayCond).ToNot(BeNil(), "AlertDecayDetected condition should be present after completion")
+		Expect(decayCond.Status).To(Equal(metav1.ConditionFalse),
+			"AlertDecayDetected should be False (decay hypothesis killed by metrics gate)")
+		Expect(decayCond.Reason).To(Equal(conditions.ReasonDecayResolved),
+			"Reason should be DecayResolved (metrics gate killed decay hypothesis)")
 
 		GinkgoWriter.Printf("EA completed: reason=%s, alertScore=%.1f, decayRetries=%d\n",
 			fetchedEA.Status.AssessmentReason,

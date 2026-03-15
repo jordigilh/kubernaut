@@ -458,7 +458,7 @@ DS reads these richer fields from the same audit traces. HAPI receives richer co
 - **DD-EFFECTIVENESS-002**: Restart Recovery Idempotency (DB-backed idempotency — **SUPERSEDED by v2.1**: EM uses audit-event dedup via DS instead of direct DB tables)
 - **DD-017 v1.0**: Original full deferral (superseded by this v2.0)
 - **DD-CRD-002**: Kubernetes Conditions Standard (conditions infrastructure)
-- **DD-CRD-002-EA**: [EffectivenessAssessment Conditions](DD-CRD-002-effectivenessassessment-conditions.md) — `AssessmentComplete` and `SpecIntegrity` condition types
+- **DD-CRD-002-EA**: [EffectivenessAssessment Conditions](DD-CRD-002-effectivenessassessment-conditions.md) — `AssessmentComplete`, `SpecIntegrity`, and `AlertDecayDetected` condition types
 - **DD-EM-002 v1.1**: [Canonical Spec Hashing & Spec Drift Guard](DD-EM-002-canonical-spec-hash.md) — Re-hash on each reconcile, `spec_drift` reason, DS score=0.0 short-circuit
 - **DD-EVENT-001**: Controller Event Registry (event reason constants)
 

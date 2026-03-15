@@ -236,15 +236,18 @@ sequenceDiagram
     alt alert firing + all other probes positive (decay suspected)
         Note over EM: Cross-validation: health>0 (live re-probe) + hash stable + metrics>=0 or N/A
         EM->>EA: Keep AlertAssessed=false, reset HealthAssessed=false, increment AlertDecayRetries
+        EM->>EA: Set condition AlertDecayDetected=True/DecayActive (DD-CRD-002)
         EM->>DS: audit: effectiveness.alert_decay.detected (first time only)
         EM-->>EM: RequeueAfter(assessmentInterval) for re-check with live health
     else health degraded or metrics negative (alert is genuine)
         Note over EM: Remediation failed — accept alert at face value
         EM->>EA: AlertAssessed=true, AlertScore=0.0
+        EM->>EA: Set condition AlertDecayDetected=False/DecayResolved (if retries>0)
     end
 
     Note over EM,DS: Step 7d — Finalize (lifecycle marker)
     EM->>EA: Update status: phase=Completed, reason=full|partial|alert_decay_timeout
+    EM->>EA: Resolve AlertDecayDetected=False (DecayResolved or DecayTimeout, if retries>0)
     EM->>DS: audit: effectiveness.assessment.completed (lifecycle marker, no score)
     Note over DS: DS computes weighted score on demand from component events
     EM->>K8s: Event(Normal, EffectivenessAssessed) on EA

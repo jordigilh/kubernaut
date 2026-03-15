@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -37,6 +38,7 @@ import (
 	controller "github.com/jordigilh/kubernaut/internal/controller/effectivenessmonitor"
 	emaudit "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/audit"
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
+	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/conditions"
 	emmetrics "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/metrics"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
@@ -227,6 +229,13 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 			"AlertDecayRetries should be 1 (first decay detection)")
 		Expect(result.RequeueAfter).To(BeNumerically(">", 0),
 			"Reconciler should requeue for next decay check")
+
+		decayCond := meta.FindStatusCondition(fetchedEA.Status.Conditions, conditions.ConditionAlertDecayDetected)
+		Expect(decayCond).ToNot(BeNil(), "AlertDecayDetected condition should be present")
+		Expect(decayCond.Status).To(Equal(metav1.ConditionTrue),
+			"AlertDecayDetected should be True (decay actively monitored)")
+		Expect(decayCond.Reason).To(Equal(conditions.ReasonDecayActive),
+			"Reason should be DecayActive")
 	})
 
 	// ========================================
@@ -259,6 +268,13 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 			"Reason should be 'full' (all components assessed)")
 		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(3)),
 			"AlertDecayRetries should be preserved for operator observability")
+
+		decayCond := meta.FindStatusCondition(fetchedEA.Status.Conditions, conditions.ConditionAlertDecayDetected)
+		Expect(decayCond).ToNot(BeNil(), "AlertDecayDetected condition should be present")
+		Expect(decayCond.Status).To(Equal(metav1.ConditionFalse),
+			"AlertDecayDetected should be False (decay resolved)")
+		Expect(decayCond.Reason).To(Equal(conditions.ReasonDecayResolved),
+			"Reason should be DecayResolved")
 	})
 
 	// ========================================
@@ -306,6 +322,13 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 			"EA should be Completed (validity expired)")
 		Expect(fetchedEA.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonAlertDecayTimeout),
 			"Reason should be 'alert_decay_timeout' (not 'partial'), distinguishing active decay monitoring from never-checked")
+
+		decayCond := meta.FindStatusCondition(fetchedEA.Status.Conditions, conditions.ConditionAlertDecayDetected)
+		Expect(decayCond).ToNot(BeNil(), "AlertDecayDetected condition should be present")
+		Expect(decayCond.Status).To(Equal(metav1.ConditionFalse),
+			"AlertDecayDetected should be False (decay timed out)")
+		Expect(decayCond.Reason).To(Equal(conditions.ReasonDecayTimeout),
+			"Reason should be DecayTimeout")
 	})
 
 	// ========================================
@@ -335,6 +358,10 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 			"AlertScore should be 0.0 (alert firing, recorded as-is)")
 		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(0)),
 			"AlertDecayRetries should be 0 (decay detection was not triggered)")
+
+		decayCond := meta.FindStatusCondition(fetchedEA.Status.Conditions, conditions.ConditionAlertDecayDetected)
+		Expect(decayCond).To(BeNil(),
+			"AlertDecayDetected condition should NOT be present (decay was never triggered)")
 	})
 
 	// ========================================
@@ -364,6 +391,13 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 			"EA should be Completed (spec drift detected)")
 		Expect(fetchedEA.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonSpecDrift),
 			"Reason should be 'spec_drift' (overrides decay monitoring)")
+
+		decayCond := meta.FindStatusCondition(fetchedEA.Status.Conditions, conditions.ConditionAlertDecayDetected)
+		Expect(decayCond).ToNot(BeNil(), "AlertDecayDetected condition should be present (resolved on completion)")
+		Expect(decayCond.Status).To(Equal(metav1.ConditionFalse),
+			"AlertDecayDetected should be False (spec drift terminated decay monitoring)")
+		Expect(decayCond.Reason).To(Equal(conditions.ReasonDecayResolved),
+			"Reason should be DecayResolved (early termination resolves decay)")
 	})
 
 	// ========================================
@@ -391,6 +425,13 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 				"AlertDecayRetries should be %d after reconcile %d", i, i)
 			Expect(fetchedEA.Status.Components.AlertAssessed).To(BeFalse(),
 				"AlertAssessed should remain false throughout decay monitoring")
+
+			decayCond := meta.FindStatusCondition(fetchedEA.Status.Conditions, conditions.ConditionAlertDecayDetected)
+			Expect(decayCond).ToNot(BeNil(), "AlertDecayDetected condition should be present on reconcile %d", i)
+			Expect(decayCond.Status).To(Equal(metav1.ConditionTrue),
+				"AlertDecayDetected should be True (actively monitoring) on reconcile %d", i)
+			Expect(decayCond.Reason).To(Equal(conditions.ReasonDecayActive),
+				"Reason should be DecayActive on reconcile %d", i)
 		}
 	})
 

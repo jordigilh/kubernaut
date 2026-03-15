@@ -551,11 +551,26 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 					// reconcile re-probes live from K8s API. Prevents stale health data
 					// from masking a genuine failure that develops after the initial check.
 					ea.Status.Components.HealthAssessed = false
+
+					// BR-EM-012, DD-CRD-002: Signal active decay monitoring via condition.
+					conditions.SetCondition(ea, conditions.ConditionAlertDecayDetected,
+						metav1.ConditionTrue, conditions.ReasonDecayActive,
+						fmt.Sprintf("Alert decay suspected: health=%.1f, alert still firing, retries=%d",
+							*ea.Status.Components.HealthScore, ea.Status.Components.AlertDecayRetries))
+
 					logger.Info("Alert decay suspected: deferring alert assessment, scheduling health re-probe",
 						"healthScore", ea.Status.Components.HealthScore,
 						"alertScore", alertResult.Component.Score,
 						"retries", ea.Status.Components.AlertDecayRetries)
 				} else {
+					// BR-EM-012: If we were previously tracking decay and the hypothesis
+					// is now killed (alert resolved, health degraded, or metrics gate),
+					// mark the condition as resolved.
+					if ea.Status.Components.AlertDecayRetries > 0 {
+						conditions.SetCondition(ea, conditions.ConditionAlertDecayDetected,
+							metav1.ConditionFalse, conditions.ReasonDecayResolved,
+							"Alert decay monitoring resolved: alert is no longer considered decaying")
+					}
 					r.emitAlertEvent(ctx, ea, alertResult)
 				}
 
@@ -1350,6 +1365,21 @@ func (r *Reconciler) setCompletionFields(ea *eav1.EffectivenessAssessment, reaso
 	conditions.SetCondition(ea, conditions.ConditionAssessmentComplete,
 		metav1.ConditionTrue, condReason,
 		fmt.Sprintf("Assessment completed: %s", reason))
+
+	// BR-EM-012: If the EA was in active decay monitoring (AlertDecayRetries > 0),
+	// resolve the AlertDecayDetected condition on any terminal transition.
+	// This covers early-termination paths (spec_drift, no_execution) that bypass
+	// the alert check where Point B would normally resolve the condition.
+	if ea.Status.Components.AlertDecayRetries > 0 {
+		decayReason := conditions.ReasonDecayResolved
+		decayMsg := "Alert decay monitoring ended: assessment completed"
+		if reason == eav1.AssessmentReasonAlertDecayTimeout {
+			decayReason = conditions.ReasonDecayTimeout
+			decayMsg = "Alert decay monitoring ended: validity window expired before alert resolved"
+		}
+		conditions.SetCondition(ea, conditions.ConditionAlertDecayDetected,
+			metav1.ConditionFalse, decayReason, decayMsg)
+	}
 }
 
 // mapAssessmentReasonToConditionReason maps an AssessmentReason value to the
@@ -1368,6 +1398,8 @@ func mapAssessmentReasonToConditionReason(reason string) string {
 		return conditions.ReasonMetricsTimedOut
 	case eav1.AssessmentReasonNoExecution:
 		return conditions.ReasonNoExecution
+	case eav1.AssessmentReasonAlertDecayTimeout:
+		return conditions.ReasonAlertDecayTimeout
 	default:
 		return reason // Fallback: use the reason string directly
 	}

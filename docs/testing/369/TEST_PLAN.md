@@ -188,6 +188,7 @@ Format: `{TIER}-EM-DECAY-{SEQUENCE}`
 - AlertAssessed remains `false` (re-check will happen on next reconcile)
 - AlertDecayRetries incremented to 1 (operator can observe decay monitoring started)
 - Reconciler requeues (RequeueAfter > 0) instead of completing
+- `AlertDecayDetected` condition is `True` with reason `DecayActive` (DD-CRD-002 observability)
 
 ---
 
@@ -207,6 +208,7 @@ Format: `{TIER}-EM-DECAY-{SEQUENCE}`
 - AssessmentReason is `"full"` (all components assessed — correctness)
 - EA phase is `PhaseCompleted` (lifecycle complete)
 - AlertDecayRetries preserved (operator can see how long decay lasted)
+- `AlertDecayDetected` condition is `False` with reason `DecayResolved` (DD-CRD-002 observability)
 
 ---
 
@@ -224,6 +226,7 @@ Format: `{TIER}-EM-DECAY-{SEQUENCE}`
 - AssessmentReason is `"alert_decay_timeout"` (not `"partial"` or `"expired"`)
 - EA phase is `PhaseCompleted`
 - AlertDecayRetries preserved in status (operator can see N re-checks happened)
+- `AlertDecayDetected` condition is `False` with reason `DecayTimeout` (DD-CRD-002 observability)
 
 ---
 
@@ -257,6 +260,7 @@ Format: `{TIER}-EM-DECAY-{SEQUENCE}`
 **Acceptance Criteria** (behavior — priority ordering):
 - AssessmentReason is `"spec_drift"` (spec drift overrides decay monitoring)
 - EA phase is `PhaseCompleted`
+- `AlertDecayDetected` condition is `False` with reason `DecayResolved` (early termination resolves active decay monitoring)
 
 ---
 
@@ -310,6 +314,8 @@ Format: `{TIER}-EM-DECAY-{SEQUENCE}`
 - EA AlertDecayRetries > 0 (system was actively monitoring decay)
 - EA AlertScore = 1.0 (alert confirmed resolved — accuracy)
 - EA AssessmentReason = "full" (all components assessed — correctness)
+- During decay window: `AlertDecayDetected` condition is `True` with reason `DecayActive` (DD-CRD-002 observability)
+- After completion: `AlertDecayDetected` condition is `False` with reason `DecayResolved` (DD-CRD-002 observability)
 - Audit emission behavior verified at unit level by UT-EM-DECAY-007 (audit as side effect of business operation per TESTING_GUIDELINES); integration test focuses on EA lifecycle and status outcomes
 
 **Anti-pattern compliance**:
@@ -409,6 +415,7 @@ Format: `{TIER}-EM-DECAY-{SEQUENCE}`
 - EA AlertAssessed = true (alert finalized, not kept open)
 - EA AssessmentReason = `"full"` (all components assessed — correctness; this is NOT `alert_decay_timeout` because the metrics gate killed the decay hypothesis before validity expired)
 - EA AlertDecayRetries == 1 (exactly one decay pass before metrics gate killed the hypothesis — accuracy)
+- `AlertDecayDetected` condition is `False` with reason `DecayResolved` (DD-CRD-002 observability — decay was briefly active then metrics killed it)
 
 **Anti-pattern compliance**:
 - Uses `Eventually()` for all async assertions (TESTING_GUIDELINES §"time.Sleep() FORBIDDEN")
@@ -482,3 +489,5 @@ make test-integration-effectivenessmonitor
 | 2.0 | 2026-03-14 | Option D: Multi-probe cross-validation. Added UT-EM-DECAY-008..011, IT-EM-DECAY-002. Health re-probe on each decay pass. Metrics gate for proactive signal coverage. Updated design decisions, scope, and BR coverage matrix. |
 | 2.1 | 2026-03-14 | TESTING_GUIDELINES quality pass: Replaced internal function assertions (isAlertDecay return values) with observable EA CRD status fields (Phase, AlertScore, AlertDecayRetries). All tests driven through public Reconcile() API. Made imprecise assertions exact. Added missing Phase/AlertScore/RequeueAfter criteria. |
 | 2.2 | 2026-03-14 | Implementation complete. All new tests pass. Updated status columns Pending → Pass. Added missing AssessmentReason assertions to UT-EM-DECAY-008 and 011 per acceptance criteria. |
+| 2.3 | 2026-03-15 | Added `AlertDecayDetected` Kubernetes condition (DD-CRD-002). Extended acceptance criteria for UT-EM-DECAY-001/002/003 and IT-EM-DECAY-001/002 with condition assertions (`DecayActive`, `DecayResolved`, `DecayTimeout`). |
+| 2.4 | 2026-03-04 | Triage fix: Added `AlertDecayDetected=False/DecayResolved` to UT-EM-DECAY-005 acceptance criteria (was missing after condition implementation). |

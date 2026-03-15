@@ -50,9 +50,10 @@ var _ = Describe("EA Conditions Infrastructure (DD-CRD-002)", func() {
 	// ========================================
 	// UT-EM-COND-001: Condition type constants exist
 	// ========================================
-	It("UT-EM-COND-001: should define AssessmentComplete and SpecIntegrity condition types", func() {
+	It("UT-EM-COND-001: should define all EA condition type constants", func() {
 		Expect(conditions.ConditionAssessmentComplete).To(Equal("AssessmentComplete"))
 		Expect(conditions.ConditionSpecIntegrity).To(Equal("SpecIntegrity"))
+		Expect(conditions.ConditionAlertDecayDetected).To(Equal("AlertDecayDetected"))
 	})
 
 	// ========================================
@@ -65,6 +66,7 @@ var _ = Describe("EA Conditions Infrastructure (DD-CRD-002)", func() {
 		Expect(conditions.ReasonSpecDrift).To(Equal("SpecDrift"))
 		Expect(conditions.ReasonMetricsTimedOut).To(Equal("MetricsTimedOut"))
 		Expect(conditions.ReasonNoExecution).To(Equal("NoExecution"))
+		Expect(conditions.ReasonAlertDecayTimeout).To(Equal("AlertDecayTimeout"))
 	})
 
 	// ========================================
@@ -73,6 +75,15 @@ var _ = Describe("EA Conditions Infrastructure (DD-CRD-002)", func() {
 	It("UT-EM-COND-003: should define SpecIntegrity reason constants", func() {
 		Expect(conditions.ReasonSpecUnchanged).To(Equal("SpecUnchanged"))
 		Expect(conditions.ReasonSpecDrifted).To(Equal("SpecDrifted"))
+	})
+
+	// ========================================
+	// UT-EM-COND-003a: Reason constants for AlertDecayDetected
+	// ========================================
+	It("UT-EM-COND-003a: should define AlertDecayDetected reason constants (BR-EM-012)", func() {
+		Expect(conditions.ReasonDecayActive).To(Equal("DecayActive"))
+		Expect(conditions.ReasonDecayResolved).To(Equal("DecayResolved"))
+		Expect(conditions.ReasonDecayTimeout).To(Equal("DecayTimeout"))
 	})
 
 	// ========================================

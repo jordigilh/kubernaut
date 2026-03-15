@@ -19,7 +19,7 @@ limitations under the License.
 // and meta.FindStatusCondition functions for all condition operations.
 //
 // Reference: docs/architecture/decisions/DD-CRD-002-effectivenessassessment-conditions.md
-// Business Requirements: BR-EM-001, BR-EM-002, BR-EM-003, BR-EM-004
+// Business Requirements: BR-EM-001, BR-EM-002, BR-EM-003, BR-EM-004, BR-EM-012
 package conditions
 
 import (
@@ -30,7 +30,7 @@ import (
 )
 
 // ========================================
-// CONDITION TYPES (2 per DD-CRD-002-EA)
+// CONDITION TYPES (4 per DD-CRD-002-EA)
 // ========================================
 
 const (
@@ -43,6 +43,13 @@ const (
 	// ConditionSpecIntegrity indicates whether the post-remediation spec hash is still valid.
 	// Set on every reconcile after HashComputed=true (DD-EM-002 v1.1).
 	ConditionSpecIntegrity = "SpecIntegrity"
+
+	// ConditionAlertDecayDetected indicates whether the EM is actively monitoring
+	// Prometheus alert decay (BR-EM-012, Issue #369). True while the alert is
+	// suspected of decaying (health OK, spec stable, alert still firing). Set to
+	// False when the decay situation resolves (alert clears, hypothesis killed,
+	// or validity expires).
+	ConditionAlertDecayDetected = "AlertDecayDetected"
 )
 
 // ========================================
@@ -77,6 +84,28 @@ const (
 
 	// ReasonNoExecution indicates no workflow execution was found for this remediation.
 	ReasonNoExecution = "NoExecution"
+
+	// ReasonAlertDecayTimeout indicates the validity window expired while the EM
+	// was actively monitoring alert decay (BR-EM-012, Issue #369).
+	ReasonAlertDecayTimeout = "AlertDecayTimeout"
+)
+
+// ========================================
+// CONDITION REASONS: AlertDecayDetected
+// ========================================
+
+const (
+	// ReasonDecayActive indicates the EM suspects alert decay: the resource is
+	// healthy and spec is stable, but the Prometheus alert is still firing.
+	ReasonDecayActive = "DecayActive"
+
+	// ReasonDecayResolved indicates the alert decay situation has been resolved.
+	// Either the alert cleared, or health/metrics evidence killed the hypothesis.
+	ReasonDecayResolved = "DecayResolved"
+
+	// ReasonDecayTimeout indicates the validity window expired before the alert
+	// resolved during active decay monitoring.
+	ReasonDecayTimeout = "DecayTimeout"
 )
 
 // ========================================
