@@ -20,7 +20,7 @@ WORKDIR /opt/app-root/src
 COPY --chown=1001:0 go.mod go.sum ./
 COPY --chown=1001:0 . .
 
-ARG APP_VERSION=v1.0.0
+ARG APP_VERSION=v1.1.0-rc0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 ARG GOFLAGS=""

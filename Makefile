@@ -93,8 +93,29 @@ help: ## Display this help
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects
+manifests: controller-gen sync-version ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./api/..." paths="./internal/controller/..." output:crd:artifacts:config=config/crd/bases
+
+.PHONY: sync-version
+sync-version: ## Propagate VERSION file to Chart.yaml, values, Dockerfiles, and docs
+	@test -f VERSION || (echo "ERROR: VERSION file not found at repo root" && exit 1)
+	@VER=$$(cat VERSION) && \
+	echo "📌 Syncing version v$$VER from VERSION file..." && \
+	sed -i.bak "s/^version: .*/version: $$VER/" charts/kubernaut/Chart.yaml && rm -f charts/kubernaut/Chart.yaml.bak && \
+	sed -i.bak "s/^appVersion: .*/appVersion: \"v$$VER\"/" charts/kubernaut/Chart.yaml && rm -f charts/kubernaut/Chart.yaml.bak && \
+	sed -i.bak "s|db-migrate:v[0-9][0-9a-zA-Z._-]*|db-migrate:v$$VER|g" \
+		charts/kubernaut/values.yaml \
+		charts/kubernaut/values.schema.json \
+		charts/kubernaut/values-airgap.yaml \
+		charts/kubernaut/README.md \
+		hack/airgap/imageset-config.yaml.tmpl && \
+	rm -f charts/kubernaut/values.yaml.bak charts/kubernaut/values.schema.json.bak \
+		charts/kubernaut/values-airgap.yaml.bak charts/kubernaut/README.md.bak \
+		hack/airgap/imageset-config.yaml.tmpl.bak && \
+	for df in docker/*.Dockerfile holmesgpt-api/Dockerfile; do \
+		sed -i.bak "s/^ARG APP_VERSION=v[0-9][0-9a-zA-Z._-]*/ARG APP_VERSION=v$$VER/" "$$df" && rm -f "$$df.bak"; \
+	done && \
+	echo "✅ Version v$$VER synced to all targets"
 
 .PHONY: generate
 generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
