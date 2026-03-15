@@ -35,9 +35,6 @@ of the service's AI analysis and validation logic.
 # This constant serves as the fallback default when not configured.
 CONFIDENCE_THRESHOLD_HUMAN_REVIEW = 0.7  # 70%
 
-# Default confidence for mock responses
-# Used in mock_responses.py and test fixtures
-CONFIDENCE_DEFAULT_MOCK = 0.75  # 75%
 
 # Default confidence for postexec validation success
 # Used in postexec.py when validation passes
