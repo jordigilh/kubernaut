@@ -229,6 +229,9 @@ var _ = SynchronizedBeforeSuite(
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
+		// DD-WORKFLOW-016: Seed action types before any workflow operations (FK constraint)
+		Expect(infrastructure.SeedActionTypesViaAPI(DSClient, GinkgoWriter)).To(Succeed(), "Failed to seed action types")
+
 		// Also export authenticated HTTP client for tests needing raw HTTP (non-spec responses)
 		AuthHTTPClient = &http.Client{
 			Timeout:   10 * time.Second,

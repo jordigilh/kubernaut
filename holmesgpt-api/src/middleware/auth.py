@@ -99,8 +99,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
         Args:
             app: FastAPI application instance
-            authenticator: Token validator (K8sAuthenticator or MockAuthenticator)
-            authorizer: Permission checker (K8sAuthorizer or MockAuthorizer)
+            authenticator: Token validator (K8sAuthenticator for production, test doubles for testing)
+            authorizer: Permission checker (K8sAuthorizer for production, test doubles for testing)
             config: Configuration dict with keys:
                 - namespace: K8s namespace for SAR checks
                 - resource: Resource type (e.g., "services")
@@ -122,7 +122,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             )
 
         Example (Integration Tests):
-            from src.auth import MockAuthenticator, MockAuthorizer
+            from tests.helpers.mock_auth import MockAuthenticator, MockAuthorizer
             app.add_middleware(
                 AuthenticationMiddleware,
                 authenticator=MockAuthenticator(

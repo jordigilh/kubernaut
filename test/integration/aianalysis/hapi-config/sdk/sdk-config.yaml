@@ -1,0 +1,5 @@
+llm:
+  provider: "openai"
+  model: "mock-model"
+  endpoint: "http://mock-llm-aianalysis:8080"
+  secrets_file: "/etc/holmesgpt/secrets/llm-credentials.yaml" # pre-commit:allow-sensitive

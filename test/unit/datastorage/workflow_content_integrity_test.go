@@ -42,11 +42,12 @@ import (
 // mockWorkflowIntegrityRepo implements server.WorkflowContentIntegrityRepository for unit tests.
 // Simulates pre-existing workflows in the catalog to test content integrity decisions.
 type mockWorkflowIntegrityRepo struct {
-	activeWorkflow    *models.RemediationWorkflow
-	disabledWorkflow  *models.RemediationWorkflow
-	createdWorkflows  []*models.RemediationWorkflow
-	updateStatusCalls []statusUpdateCall
-	createErr         error
+	activeWorkflow        *models.RemediationWorkflow
+	activeByNameWorkflow  *models.RemediationWorkflow // Issue #371: cross-version lookup
+	disabledWorkflow      *models.RemediationWorkflow
+	createdWorkflows      []*models.RemediationWorkflow
+	updateStatusCalls     []statusUpdateCall
+	createErr             error
 }
 
 type statusUpdateCall struct {
@@ -58,6 +59,10 @@ type statusUpdateCall struct {
 
 func (m *mockWorkflowIntegrityRepo) GetActiveByNameAndVersion(_ context.Context, _, _ string) (*models.RemediationWorkflow, error) {
 	return m.activeWorkflow, nil
+}
+
+func (m *mockWorkflowIntegrityRepo) GetActiveByWorkflowName(_ context.Context, _ string) (*models.RemediationWorkflow, error) {
+	return m.activeByNameWorkflow, nil
 }
 
 func (m *mockWorkflowIntegrityRepo) GetLatestDisabledByNameAndVersion(_ context.Context, _, _ string) (*models.RemediationWorkflow, error) {
@@ -400,6 +405,130 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 				"GetActiveByNameAndVersion should be called twice: initial + retry after 23505")
 		})
 	})
+
+	// ========================================
+	// UT-DS-371-001: Cross-version supersession — old version superseded
+	// Issue #371, BR-WORKFLOW-006: When a new version of an existing workflow
+	// is registered, the old active entry must be marked superseded.
+	// ========================================
+	Describe("UT-DS-371-001: Cross-version supersession marks old entry superseded", func() {
+		It("should supersede old version and create new entry when workflow_name matches but version differs", func() {
+			oldUUID := "old-uuid-v090"
+			mockRepo := &mockWorkflowIntegrityRepo{
+				activeByNameWorkflow: &models.RemediationWorkflow{
+					WorkflowID:   oldUUID,
+					WorkflowName: "integrity-test-wf",
+					Version:      "0.9.0",
+					ActionType:   "ScaleMemory",
+					Status:       "active",
+					Content:      "old-content",
+					ContentHash:  "old-hash",
+				},
+			}
+
+			handler := newIntegrityHandler(mockRepo)
+			req := makeInlineRequest(integrityBaseYAML)
+			rr := httptest.NewRecorder()
+
+			handler.HandleCreateWorkflow(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusCreated),
+				"Cross-version update should create a new entry (201), got %d: %s", rr.Code, rr.Body.String())
+
+			Expect(mockRepo.updateStatusCalls).To(HaveLen(1),
+				"Exactly one UpdateStatus call expected (supersede old)")
+			Expect(mockRepo.updateStatusCalls[0].WorkflowID).To(Equal(oldUUID),
+				"Superseded workflow should be the old version")
+			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("superseded"),
+				"Old entry must be marked superseded")
+
+			Expect(mockRepo.createdWorkflows).To(HaveLen(1),
+				"Exactly one new workflow should be created")
+			Expect(mockRepo.createdWorkflows[0].WorkflowName).To(Equal("integrity-test-wf"))
+		})
+	})
+
+	// ========================================
+	// UT-DS-371-002: Cross-version detection creates new entry after superseding
+	// Issue #371, BR-WORKFLOW-006: Verifies the full flow — GetActiveByNameAndVersion
+	// returns nil (version mismatch), GetActiveByWorkflowName finds the old version.
+	// ========================================
+	Describe("UT-DS-371-002: Cross-version detection flow correctness", func() {
+		It("should fall through name+version check, find old by name-only, supersede, and create", func() {
+			oldUUID := "old-uuid-v100"
+			mockRepo := &mockWorkflowIntegrityRepo{
+				activeByNameWorkflow: &models.RemediationWorkflow{
+					WorkflowID:   oldUUID,
+					WorkflowName: "integrity-test-wf",
+					Version:      "1.0.0",
+					ActionType:   "ScaleMemory",
+					Status:       "active",
+					Content:      integrityModifiedYAML,
+					ContentHash:  computeTestHash(integrityModifiedYAML),
+				},
+			}
+
+			handler := newIntegrityHandler(mockRepo)
+			req := makeInlineRequest(integrityBaseYAML)
+			rr := httptest.NewRecorder()
+
+			handler.HandleCreateWorkflow(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusCreated),
+				"New version should be created (201), got %d: %s", rr.Code, rr.Body.String())
+
+			Expect(mockRepo.updateStatusCalls).To(HaveLen(1))
+			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("superseded"),
+				"Old entry status should be superseded")
+			Expect(mockRepo.updateStatusCalls[0].Reason).To(ContainSubstring("superseded"),
+				"Reason should explain the supersession")
+
+			var resp map[string]interface{}
+			Expect(json.Unmarshal(rr.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp["workflowId"]).ToNot(Equal(oldUUID),
+				"Response should contain the new workflow UUID, not the superseded one")
+		})
+	})
+
+	// ========================================
+	// UT-DS-371-003: Idempotent re-apply — no supersession
+	// Issue #371, BR-WORKFLOW-006: Same name+version+hash returns 200 without
+	// triggering cross-version supersession.
+	// ========================================
+	Describe("UT-DS-371-003: Idempotent re-apply does not trigger supersession", func() {
+		It("should return 200 without superseding when content hash matches", func() {
+			existingUUID := "existing-uuid-idempotent"
+			mockRepo := &mockWorkflowIntegrityRepo{
+				activeWorkflow: &models.RemediationWorkflow{
+					WorkflowID:   existingUUID,
+					WorkflowName: "integrity-test-wf",
+					Version:      "1.0.0",
+					Status:       "active",
+					Content:      integrityBaseYAML,
+					ContentHash:  computeTestHash(integrityBaseYAML),
+				},
+			}
+
+			handler := newIntegrityHandler(mockRepo)
+			req := makeInlineRequest(integrityBaseYAML)
+			rr := httptest.NewRecorder()
+
+			handler.HandleCreateWorkflow(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusOK),
+				"Idempotent re-apply should return 200, got %d: %s", rr.Code, rr.Body.String())
+
+			Expect(mockRepo.updateStatusCalls).To(BeEmpty(),
+				"No UpdateStatus calls expected for idempotent re-apply (no supersession)")
+			Expect(mockRepo.createdWorkflows).To(BeEmpty(),
+				"No Create calls expected for idempotent re-apply")
+
+			var resp map[string]interface{}
+			Expect(json.Unmarshal(rr.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp["workflowId"]).To(Equal(existingUUID),
+				"Response should return the existing UUID")
+		})
+	})
 })
 
 // raceConditionIntegrityRepo simulates the race condition where two concurrent
@@ -416,6 +545,10 @@ func (m *raceConditionIntegrityRepo) GetActiveByNameAndVersion(_ context.Context
 		return nil, nil
 	}
 	return m.activeOnRetry, nil
+}
+
+func (m *raceConditionIntegrityRepo) GetActiveByWorkflowName(_ context.Context, _ string) (*models.RemediationWorkflow, error) {
+	return nil, nil
 }
 
 func (m *raceConditionIntegrityRepo) GetLatestDisabledByNameAndVersion(_ context.Context, _, _ string) (*models.RemediationWorkflow, error) {

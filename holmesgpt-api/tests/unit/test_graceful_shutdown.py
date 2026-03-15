@@ -70,7 +70,7 @@ def test_readiness_probe_returns_503_during_shutdown(setup_test_config):
     This is the critical coordination mechanism for zero-downtime deployments.
     """
     from src.main import create_app
-    from src.auth import MockAuthenticator, MockAuthorizer
+    from tests.helpers.mock_auth import MockAuthenticator, MockAuthorizer
     
     # Use factory pattern with mock auth (no K8s dependency)
     app = create_app(
@@ -150,7 +150,7 @@ def test_inflight_request_completion(setup_test_config):
     This ensures zero request failures during rolling updates.
     """
     from src.main import create_app
-    from src.auth import MockAuthenticator, MockAuthorizer
+    from tests.helpers.mock_auth import MockAuthenticator, MockAuthorizer
     
     # Use factory pattern with mock auth (no K8s dependency)
     app = create_app(

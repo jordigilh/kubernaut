@@ -146,7 +146,7 @@ func main() {
 #### 2. Dockerfile Pattern
 
 ```dockerfile
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.24 AS builder
 
 # Build arguments for multi-architecture support
 ARG TARGETOS=linux
@@ -183,7 +183,7 @@ BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 APP_VERSION="v0.1.0"  # Or from VERSION file
 
 podman build \
-  -f docker/<service>-ubi9.Dockerfile \
+  -f docker/<service>-ubi10.Dockerfile \
   --build-arg APP_VERSION=${APP_VERSION} \
   --build-arg GIT_COMMIT=${GIT_COMMIT} \
   --build-arg BUILD_DATE=${BUILD_DATE} \
@@ -219,7 +219,7 @@ Gateway Service v0.1.0-1c357782 (built: 2025-11-17T18:37:31Z)
 **Service**: Gateway Service
 **Files**:
 - `cmd/gateway/main.go` (lines 36-43, 54-56, 69-75)
-- `docker/gateway-ubi9.Dockerfile` (lines 10-13, 41-45)
+- `docker/gateway.Dockerfile` (lines 10-13, 41-45)
 
 **Commits**:
 - `730674f9` - feat(gateway): Add version, git commit, and build date to binary
@@ -311,7 +311,7 @@ Gateway Service v0.1.0-1c357782 (built: 2025-11-17T18:37:31Z)
 - [ ] Add `--version` flag handler
 - [ ] Log version info on startup with `zap.String()` fields
 
-**Dockerfile Changes** (`docker/<service>-ubi9.Dockerfile`):
+**Dockerfile Changes** (`docker/<service>-ubi10.Dockerfile`):
 - [ ] Add `ARG APP_VERSION=dev` (NOT `VERSION`)
 - [ ] Add `ARG GIT_COMMIT=dev`
 - [ ] Add `ARG BUILD_DATE=dev`

@@ -15,7 +15,7 @@ The HolmesGPT REST API Wrapper is a standalone Python-based microservice that pr
 ### 1.2 Key Architectural Decisions
 - **Language**: Python 3.11+ (HolmesGPT SDK compatibility)
 - **Framework**: FastAPI (async performance, OpenAPI generation)
-- **Container**: upstream community UBI9 images (enterprise compliance)
+- **Container**: upstream community UBI10 images (enterprise compliance)
 - **Deployment**: Kubernetes-native with horizontal scaling
 - **Integration**: HTTP API with Kubernaut Context API
 - **Security**: Enterprise-grade authentication and authorization
@@ -815,7 +815,7 @@ async def chat_websocket(
 ```dockerfile
 # Dockerfile - Production-ready upstream community UBI container
 # Build stage
-FROM registry.access.redhat.com/ubi9/python-311:1-66 AS builder
+FROM registry.access.redhat.com/ubi10/python-312-minimal:latest AS builder
 
 # Metadata
 LABEL name="holmesgpt-api-server-builder" \
@@ -826,14 +826,14 @@ LABEL name="holmesgpt-api-server-builder" \
 
 # Install build dependencies
 USER root
-RUN dnf update -y && \
-    dnf install -y \
+RUN microdnf update -y && \
+    microdnf install -y \
         gcc \
         gcc-c++ \
         git \
         make \
         cmake \
-        && dnf clean all
+        && microdnf clean all
 
 # Set working directory
 WORKDIR /app
@@ -846,7 +846,7 @@ RUN pip install --no-cache-dir --user --upgrade pip setuptools wheel && \
     pip install --no-cache-dir --user holmesgpt
 
 # Runtime stage - UBI-micro for minimal footprint
-FROM registry.access.redhat.com/ubi9-micro:9.3-13
+FROM registry.access.redhat.com/ubi10-micro:latest
 
 # Metadata for upstream community Container Certification
 LABEL name="holmesgpt-api-server" \
@@ -864,8 +864,8 @@ LABEL name="holmesgpt-api-server" \
 # Copy Python runtime from builder
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /etc/group /etc/group
-COPY --from=builder /usr/bin/python3.11 /usr/bin/python3.11
-COPY --from=builder /usr/lib64/python3.11 /usr/lib64/python3.11
+COPY --from=builder /usr/bin/python3.12 /usr/bin/python3.12
+COPY --from=builder /usr/lib64/python3.12 /usr/lib64/python3.12
 COPY --from=builder /home/default/.local /usr/local
 
 # Create application user and directories
@@ -874,7 +874,7 @@ RUN mkdir -p /app /config /data /tmp/app && \
     useradd -u 1001 -r -g 0 -d /app -s /sbin/nologin -c "HolmesGPT API User" holmesapi && \
     chown -R 1001:0 /app /config /data /tmp/app && \
     chmod -R g=u /app /config /data /tmp/app && \
-    chmod +x /usr/bin/python3.11
+    chmod +x /usr/bin/python3.12
 
 # Set working directory
 WORKDIR /app
@@ -885,7 +885,7 @@ COPY --chown=1001:0 config/ /config/
 COPY --chown=1001:0 entrypoint.sh ./
 
 # Set environment variables
-ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages:/app/src
+ENV PYTHONPATH=/usr/local/lib/python3.12/site-packages:/app/src
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV HOME=/app
@@ -896,14 +896,14 @@ USER 1001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python3.11 -c "import requests; requests.get('http://localhost:8090/health', timeout=5).raise_for_status()" || exit 1
+    CMD python3.12 -c "import requests; requests.get('http://localhost:8090/health', timeout=5).raise_for_status()" || exit 1
 
 # Expose ports
 EXPOSE 8090 9091
 
 # Start the application
 ENTRYPOINT ["./entrypoint.sh"]
-CMD ["python3.11", "src/main.py"]
+CMD ["python3.12", "src/main.py"]
 ```
 
 ### 6.2 Container Entrypoint
@@ -956,13 +956,13 @@ else
 fi
 
 # Check Python and dependencies
-log "🐍 Python version: $(python3.11 --version)"
-log "📦 HolmesGPT SDK: $(python3.11 -c 'import holmesgpt; print(holmesgpt.__version__)')"
+log "🐍 Python version: $(python3.12 --version)"
+log "📦 HolmesGPT SDK: $(python3.12 -c 'import holmesgpt; print(holmesgpt.__version__)')"
 
 # Validate LLM connectivity
 if [[ -n "$HOLMESGPT_LLM_BASE_URL" ]]; then
     log "🔗 Testing LLM connectivity to $HOLMESGPT_LLM_BASE_URL"
-    if timeout 10 python3.11 -c "
+    if timeout 10 python3.12 -c "
 import requests
 try:
     response = requests.get('${HOLMESGPT_LLM_BASE_URL}/v1/models', timeout=5)
@@ -979,7 +979,7 @@ fi
 # Test Context API connectivity
 if [[ -n "$KUBERNAUT_CONTEXT_API_URL" ]]; then
     log "🔗 Testing Context API connectivity to $KUBERNAUT_CONTEXT_API_URL"
-    if timeout 5 python3.11 -c "
+    if timeout 5 python3.12 -c "
 import requests
 try:
     response = requests.get('${KUBERNAUT_CONTEXT_API_URL}/api/v1/context/health', timeout=3)

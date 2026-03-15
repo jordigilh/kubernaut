@@ -18,6 +18,7 @@ package workflowexecution
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -69,6 +70,10 @@ type configurableWorkflowQuerier struct {
 
 func (q *configurableWorkflowQuerier) GetWorkflowDependencies(_ context.Context, _ string) (*models.WorkflowDependencies, error) {
 	return q.Deps, nil
+}
+
+func (q *configurableWorkflowQuerier) GetWorkflowEngineConfig(_ context.Context, _ string) (json.RawMessage, error) {
+	return nil, nil
 }
 
 // WorkflowExecution Integration Test Suite

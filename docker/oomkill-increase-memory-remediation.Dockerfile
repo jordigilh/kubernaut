@@ -17,7 +17,7 @@
 # Build:
 #   podman build -f docker/oomkill-increase-memory-remediation.Dockerfile -t oomkill-increase-memory:latest .
 #
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # Install kubectl from the official Kubernetes repository
 # Use ARG for architecture so the image builds for both arm64 and amd64

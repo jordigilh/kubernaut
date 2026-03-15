@@ -16,7 +16,7 @@ limitations under the License.
 Pytest Configuration and Shared Fixtures
 
 Provides reusable test fixtures for HolmesGPT API Service testing.
-Uses mock LLM server for integration tests - no DEV_MODE anti-pattern.
+Uses standalone Mock LLM service for integration tests - no DEV_MODE anti-pattern.
 """
 
 import os
@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Dict, Any
 
 import pytest
-from fastapi.testclient import TestClient
 
 # V3.0 (Mock LLM Migration - January 12, 2026):
 # Removed embedded MockLLMServer - now using standalone Mock LLM service
@@ -47,25 +46,6 @@ def pytest_configure(config):
     datastorage_client_path = project_root / "src" / "clients" / "datastorage"
     if str(datastorage_client_path) not in sys.path:
         sys.path.insert(0, str(datastorage_client_path))
-
-
-# ========================================
-# Session-level Mock Mode Setup (BR-HAPI-212)
-# ========================================
-
-@pytest.fixture(scope="session", autouse=True)
-def setup_mock_llm_mode():
-    """
-    Set MOCK_LLM_MODE=true for all tests before any module imports.
-
-    BR-HAPI-212: Enable deterministic mock responses for fast unit testing.
-    This must be session-scoped and autouse to ensure it's set before
-    any test modules import the FastAPI app.
-    """
-    os.environ["MOCK_LLM_MODE"] = "true"
-    yield
-    # Cleanup
-    os.environ.pop("MOCK_LLM_MODE", None)
 
 
 @pytest.fixture
@@ -90,34 +70,6 @@ def test_config() -> Dict[str, Any]:
             "endpoint": os.environ.get("LLM_ENDPOINT", "http://127.0.0.1:8080"),
         },
     }
-
-
-@pytest.fixture
-def client():
-    """
-    FastAPI test client for unit tests.
-
-    BR-HAPI-212: MOCK_LLM_MODE is set by setup_mock_llm_mode session fixture.
-    """
-    os.environ["AUTH_ENABLED"] = "false"
-    os.environ.pop("DEV_MODE", None)
-
-    from src.main import app
-    return TestClient(app)
-
-
-@pytest.fixture
-def auth_client():
-    """
-    FastAPI test client with authentication enabled.
-
-    BR-HAPI-212: MOCK_LLM_MODE is set by setup_mock_llm_mode session fixture.
-    """
-    os.environ["AUTH_ENABLED"] = "true"
-    os.environ.pop("DEV_MODE", None)
-
-    from src.main import app
-    return TestClient(app)
 
 
 @pytest.fixture

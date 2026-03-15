@@ -1,0 +1,53 @@
+# OCP overlay for OpenShift deployments.
+# Usage: helm install kubernaut charts/kubernaut -f charts/kubernaut/values-demo.yaml -f charts/kubernaut/values-ocp.yaml
+#
+# Layer this on top of values-demo.yaml (or your production values) to:
+#   - Switch PostgreSQL and Valkey to Red Hat RHEL10 catalog images (direct pull)
+#   - Replace bitnami/kubectl with ose-cli for hook jobs
+#   - Disable the event exporter (no Red Hat-supported equivalent)
+#   - Override signal sources and Prometheus/AlertManager URLs for OCP monitoring
+#
+# No ImageStream prerequisites — pods pull directly from registry.redhat.io.
+# The global pull secret must include registry.redhat.io credentials (default on OCP).
+#
+# Disconnected/air-gapped — layer values-airgap.yaml AFTER this file.
+# See chart README "Disconnected / Air-Gapped Install" section for full guide.
+
+postgresql:
+  variant: ocp
+  image: registry.redhat.io/rhel10/postgresql-16
+
+valkey:
+  image: registry.redhat.io/rhel10/valkey-8
+
+eventExporter:
+  enabled: false
+
+hooks:
+  # migrations.image: The default db-migrate image (UBI9-minimal) works on OCP
+  # without modification. Override only if using a custom mirror registry.
+  tlsCerts:
+    image: registry.redhat.io/openshift4/ose-cli-rhel9:v4.17
+
+gateway:
+  auth:
+    signalSources:
+      - name: alertmanager
+        serviceAccount: alertmanager-main
+        namespace: openshift-monitoring
+
+effectivenessmonitor:
+  external:
+    prometheusUrl: "http://prometheus-k8s.openshift-monitoring.svc:9091"
+    alertManagerUrl: "http://alertmanager-main.openshift-monitoring.svc:9094"
+
+# TLS defaults to hook (self-signed). To use cert-manager instead, uncomment
+# and set issuerRef.name to your ClusterIssuer (requires cert-manager installed):
+#
+# tls:
+#   mode: cert-manager
+#   certManager:
+#     issuerRef:
+#       name: "letsencrypt-prod"
+#       kind: ClusterIssuer
+#       group: cert-manager.io

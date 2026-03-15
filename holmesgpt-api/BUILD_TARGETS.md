@@ -81,7 +81,7 @@ make build-holmesgpt-api-image-e2e
   - `localhost/kubernaut-holmesgpt-api:e2e-<git-sha>`
 
 **Use cases**:
-- ✅ E2E testing (with `MOCK_LLM_MODE=true`)
+- ✅ E2E testing (with standalone Mock LLM service via LLM_ENDPOINT) [Updated: Issue #393]
 - ✅ CI/CD pipelines
 - ✅ Fast development builds
 - ✅ Local testing

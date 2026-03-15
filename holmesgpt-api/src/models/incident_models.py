@@ -390,6 +390,17 @@ class IncidentResponse(BaseModel):
                     "no_matching_workflows, low_confidence, llm_parsing_error"
     )
 
+    # #388: LLM's assessment of whether the alert warrants action.
+    # False when the LLM determines the alert is benign (e.g., orphaned PVCs).
+    # Maps to AIAnalysis.Status.Actionability on the CRD (Actionable/NotActionable enum).
+    is_actionable: Optional[bool] = Field(
+        default=None,
+        description="LLM's assessment of whether the alert warrants action. "
+                    "False when the alert is benign and no remediation is needed. "
+                    "None when the LLM did not explicitly assess actionability. "
+                    "Maps to AIAnalysis.Status.Actionability."
+    )
+
     # ADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input
     warnings: List[str] = Field(
         default_factory=list,

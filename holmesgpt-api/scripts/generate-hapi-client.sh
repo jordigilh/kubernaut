@@ -29,7 +29,7 @@ echo "🔧 Generating Python client for HAPI from ${OPENAPI_SPEC_PATH}..."
 # Ensure spec exists
 if [ ! -f "${OPENAPI_SPEC_PATH}" ]; then
     echo "❌ OpenAPI spec not found at ${OPENAPI_SPEC_PATH}"
-    echo "   Run: python3 -c 'import json; from src.main import app; json.dump(app.openapi(), open(\"api/openapi.json\", \"w\"), indent=2)'"
+    echo "   Run: python3 scripts/export_openapi.py > api/openapi.json"
     exit 1
 fi
 

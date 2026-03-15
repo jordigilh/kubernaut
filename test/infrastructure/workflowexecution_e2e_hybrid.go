@@ -938,7 +938,7 @@ spec:
       type: string
   steps:
     - name: echo
-      image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+      image: registry.access.redhat.com/ubi10/ubi-minimal:latest
       script: |
         #!/bin/sh
         echo "$(params.message)"
@@ -978,7 +978,7 @@ spec:
       type: string
   steps:
     - name: fail
-      image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+      image: registry.access.redhat.com/ubi10/ubi-minimal:latest
       script: |
         #!/bin/sh
         echo "Task will fail with reason: $(params.reason)"

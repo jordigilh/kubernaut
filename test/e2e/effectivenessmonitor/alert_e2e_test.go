@@ -118,7 +118,7 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 				},
 				Status:   "firing",
 				StartsAt: time.Now(),
-				// No EndsAt = still firing
+				EndsAt:   time.Now().Add(10 * time.Minute), // Keep firing beyond resolve_timeout (1m)
 			},
 		}
 		err := infrastructure.InjectAlerts(alertManagerURL, alerts)
@@ -137,12 +137,18 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 		By("Waiting for EM to complete the assessment")
 		ea := waitForEAPhase(name, eav1.PhaseCompleted)
 
-		By("Verifying alert was assessed with score 0.0 (still firing)")
-		Expect(ea.Status.Components.AlertAssessed).To(BeTrue(),
-			"Alert component should be assessed")
+		By("Verifying alert score is 0.0 (still firing)")
 		Expect(ea.Status.Components.AlertScore).ToNot(BeNil(),
 			"Alert score should be set")
 		Expect(*ea.Status.Components.AlertScore).To(Equal(0.0),
 			"Alert score should be 0.0 for active/firing alert")
+
+		// BR-EM-012, #369: With alert decay detection, the EA may complete via
+		// alert_decay_timeout (validity expiry) rather than the normal path.
+		// Accept either: AlertAssessed=true (normal) or alert_decay_timeout (decay).
+		if !ea.Status.Components.AlertAssessed {
+			Expect(ea.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonAlertDecayTimeout),
+				"BR-EM-012: when AlertAssessed is false, EA should have completed via alert_decay_timeout")
+		}
 	})
 })

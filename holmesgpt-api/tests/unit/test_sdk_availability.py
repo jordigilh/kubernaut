@@ -79,7 +79,7 @@ class TestSDKErrorHandling:
         # Health endpoint should work
         from fastapi.testclient import TestClient
         from src.main import create_app
-        from src.auth import MockAuthenticator, MockAuthorizer
+        from tests.helpers.mock_auth import MockAuthenticator, MockAuthorizer
         import os
         os.environ["DEV_MODE"] = "true"
         os.environ["AUTH_ENABLED"] = "false"

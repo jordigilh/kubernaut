@@ -68,15 +68,15 @@ class EffectivenessAssessmentAuditPayload(BaseModel):
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('effectiveness.health.assessed', 'effectiveness.hash.computed', 'effectiveness.alert.assessed', 'effectiveness.metrics.assessed', 'effectiveness.assessment.scheduled', 'effectiveness.assessment.completed'):
-            raise ValueError("must be one of enum values ('effectiveness.health.assessed', 'effectiveness.hash.computed', 'effectiveness.alert.assessed', 'effectiveness.metrics.assessed', 'effectiveness.assessment.scheduled', 'effectiveness.assessment.completed')")
+        if value not in ('effectiveness.health.assessed', 'effectiveness.hash.computed', 'effectiveness.alert.assessed', 'effectiveness.metrics.assessed', 'effectiveness.assessment.scheduled', 'effectiveness.assessment.completed', 'effectiveness.alert_decay.detected'):
+            raise ValueError("must be one of enum values ('effectiveness.health.assessed', 'effectiveness.hash.computed', 'effectiveness.alert.assessed', 'effectiveness.metrics.assessed', 'effectiveness.assessment.scheduled', 'effectiveness.assessment.completed', 'effectiveness.alert_decay.detected')")
         return value
 
     @field_validator('component')
     def component_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('health', 'alert', 'metrics', 'hash', 'scheduled', 'completed'):
-            raise ValueError("must be one of enum values ('health', 'alert', 'metrics', 'hash', 'scheduled', 'completed')")
+        if value not in ('health', 'alert', 'alert_decay', 'metrics', 'hash', 'scheduled', 'completed'):
+            raise ValueError("must be one of enum values ('health', 'alert', 'alert_decay', 'metrics', 'hash', 'scheduled', 'completed')")
         return value
 
     model_config = {

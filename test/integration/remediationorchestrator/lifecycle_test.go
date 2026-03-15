@@ -19,6 +19,8 @@ package remediationorchestrator
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/google/uuid"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -411,7 +413,21 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr)).To(Succeed())
 			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
 
+			By("IT-RO-353-001: Verifying NextAllowedExecution suppression window (#353)")
+			Expect(rr.Status.NextAllowedExecution).NotTo(BeNil(),
+				"Behavior: NextAllowedExecution must be populated through the full reconciler->handler chain (#353)")
+			Expect(time.Now().Before(rr.Status.NextAllowedExecution.Time)).To(BeTrue(),
+				"Correctness: NextAllowedExecution must be strictly in the future so Gateway will suppress duplicates")
+			Expect(rr.Status.NextAllowedExecution.Time).To(BeTemporally("~", time.Now().Add(24*time.Hour), 2*time.Minute),
+				"Accuracy: suppression window must be proportional to configured delay (24h), not a magic number")
+			Expect(rr.Status.CompletedAt).NotTo(BeNil(),
+				"Correctness: CompletedAt must be populated, proving normal completion flow (not partial status)")
+			Expect(rr.Status.CompletedAt.Time.Before(time.Now())).To(BeTrue(),
+				"Correctness: CompletedAt must be in the past (completion happened before assertion)")
+
 			GinkgoWriter.Printf("✅ BR-ORCH-037: RR completed with NoActionRequired for WorkflowNotNeeded\n")
+			GinkgoWriter.Printf("✅ IT-RO-353-001: NextAllowedExecution=%s, CompletedAt=%s (#353)\n",
+				rr.Status.NextAllowedExecution.Format(time.RFC3339), rr.Status.CompletedAt.Format(time.RFC3339))
 		})
 	})
 })

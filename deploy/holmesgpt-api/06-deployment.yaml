@@ -137,6 +137,9 @@ spec:
           - name: config
             mountPath: /etc/holmesgpt
             readOnly: true
+          - name: sdk-config
+            mountPath: /etc/holmesgpt/sdk
+            readOnly: true
           - name: llm-credentials
             mountPath: /var/secrets/llm
             readOnly: true
@@ -148,6 +151,9 @@ spec:
       - name: config
         configMap:
           name: holmesgpt-api-config
+      - name: sdk-config
+        configMap:
+          name: holmesgpt-sdk-config
       - name: llm-credentials
         secret:
           secretName: holmesgpt-api-llm-credentials

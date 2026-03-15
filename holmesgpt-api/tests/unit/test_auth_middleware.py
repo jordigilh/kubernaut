@@ -29,7 +29,7 @@ from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers
 from src.middleware.auth import AuthenticationMiddleware
-from src.auth import MockAuthenticator, MockAuthorizer
+from tests.helpers.mock_auth import MockAuthenticator, MockAuthorizer
 
 
 # ========================================

@@ -370,6 +370,42 @@ func (c *AWXHTTPClient) LaunchJobTemplateWithCreds(ctx context.Context, template
 	return result.ID, nil
 }
 
+func (c *AWXHTTPClient) GetJobTemplateCredentials(ctx context.Context, templateID int) ([]int, error) {
+	url := fmt.Sprintf("%s/api/v2/job_templates/%d/credentials/", c.baseURL, templateID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create credentials request: %w", err)
+	}
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("AWX credentials request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("AWX credentials returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Results []struct {
+			ID int `json:"id"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode credentials response: %w", err)
+	}
+
+	ids := make([]int, len(result.Results))
+	for i, r := range result.Results {
+		ids[i] = r.ID
+	}
+	return ids, nil
+}
+
 func (c *AWXHTTPClient) setHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.token)

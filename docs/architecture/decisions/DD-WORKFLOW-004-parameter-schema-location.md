@@ -512,7 +512,7 @@ playbook-oomkill-cost-schema:v1.0.0    # 1KB (just schema)
 
 **Dockerfile**:
 ```dockerfile
-FROM bitnami/kubectl:latest
+FROM registry.k8s.io/kubectl:v1.32.0
 
 # Copy schema for validation
 COPY playbook-schema.json /playbook-schema.json

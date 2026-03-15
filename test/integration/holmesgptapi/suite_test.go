@@ -97,7 +97,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Per DD-TEST-001 v1.8: Ports 15439, 16387, 18098
 	// Per DD-AUTH-014: Uses envtest kubeconfig for DataStorage auth middleware
 	var infraPtr *infrastructure.HAPIIntegrationInfra
-	infraPtr, err = infrastructure.StartHolmesGPTAPIIntegrationInfrastructure(GinkgoWriter, authConfig.KubeconfigPath)
+	infraPtr, err = infrastructure.StartHolmesGPTAPIIntegrationInfrastructure(GinkgoWriter, authConfig.KubeconfigPath, authConfig.Token)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully (DD-INTEGRATION-001 v2.0)")
 	hapiInfrastructure = infraPtr // Store in suite-level variable for cleanup
 	GinkgoWriter.Println("✅ All services started and healthy (standardized StartDSBootstrap pattern)")

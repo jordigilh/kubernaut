@@ -350,6 +350,37 @@ func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.
 		return &duplicateResult{workflow: workflow, statusCode: http.StatusCreated}, nil
 	}
 
+	// Issue #371: Cross-version check — look for any active entry with the same
+	// workflow_name (regardless of version). If found, the incoming request is a
+	// version upgrade and the old entry must be superseded to enforce single-active
+	// per (workflow_name, action_type).
+	activeAnyVersion, err := repo.GetActiveByWorkflowName(ctx, workflow.WorkflowName)
+	if err != nil {
+		return nil, fmt.Errorf("lookup active workflow by name: %w", err)
+	}
+
+	if activeAnyVersion != nil {
+		reason := fmt.Sprintf("superseded: new version %s registered (was %s)", workflow.Version, activeAnyVersion.Version)
+		if err := repo.UpdateStatus(ctx, activeAnyVersion.WorkflowID, activeAnyVersion.Version, "superseded", reason, ""); err != nil {
+			return nil, fmt.Errorf("supersede old version %s: %w", activeAnyVersion.WorkflowID, err)
+		}
+
+		h.logger.Info("Workflow superseded due to cross-version update (Issue #371)",
+			"old_workflow_id", activeAnyVersion.WorkflowID,
+			"old_version", activeAnyVersion.Version,
+			"workflow_name", activeAnyVersion.WorkflowName,
+			"new_version", workflow.Version,
+		)
+
+		if err := repo.Create(ctx, workflow); err != nil {
+			if result, handled := h.retryOnUniqueViolation(ctx, err, workflow, incomingHash); handled {
+				return result, nil
+			}
+			return nil, fmt.Errorf("create new workflow after cross-version supersede: %w", err)
+		}
+		return &duplicateResult{workflow: workflow, statusCode: http.StatusCreated}, nil
+	}
+
 	if err := repo.Create(ctx, workflow); err != nil {
 		if result, handled := h.retryOnUniqueViolation(ctx, err, workflow, incomingHash); handled {
 			return result, nil

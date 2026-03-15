@@ -138,7 +138,7 @@ response = client.incident_analyze(...)  # FastAPI endpoint
    - Install dependencies from `pyproject.toml`
    - Copy source code
    - Expose port 8080
-   - CMD: `uvicorn src.main:app --host 0.0.0.0 --port 8080`
+   - CMD: `uvicorn src.main:create_app --factory --host 0.0.0.0 --port 8080`
 
 2. **Create K8s Manifests**
    - Deployment: HAPI pods with resource limits

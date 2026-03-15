@@ -57,7 +57,7 @@ from src.middleware.metrics import PrometheusMetricsMiddleware, metrics_endpoint
 from src.middleware.rfc7807 import add_rfc7807_exception_handlers
 
 # Import auth components for dependency injection (DD-AUTH-014)
-from src.auth import K8sAuthenticator, K8sAuthorizer, MockAuthenticator, MockAuthorizer
+from src.auth import K8sAuthenticator, K8sAuthorizer
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ def load_config() -> AppConfig:
 
     EXCEPTION RATIONALE:
     Uvicorn does NOT support custom command-line flags. Test proof:
-      $ uvicorn src.main:app --custom-flag value
+      $ uvicorn src.main:create_app --factory --custom-flag value
       Error: No such option: --custom-flag
 
     Solution: entrypoint.sh parses -config flag and exports CONFIG_FILE env var.
@@ -226,6 +226,12 @@ def load_config() -> AppConfig:
             "llm_provider": config.get("llm", {}).get("provider"),
         })
 
+        # Issue #390: Load and merge SDK config from well-known path.
+        # SDK config contains llm, toolsets, and mcp_servers sections.
+        from src.config.sdk_loader import merge_sdk_config, SDK_CONFIG_DEFAULT_PATH
+        sdk_config_file = os.getenv("SDK_CONFIG_FILE", SDK_CONFIG_DEFAULT_PATH)
+        config = merge_sdk_config(config, sdk_config_file)
+
         return config
 
     except Exception as e:
@@ -239,6 +245,52 @@ def load_config() -> AppConfig:
 
 # Load configuration
 config = load_config()
+
+
+def _inject_runtime_env(cfg: dict) -> None:
+    """Bridge config-file and mounted-secret values into os.environ at startup.
+
+    Keeps the Kubernetes pod spec completely free of env vars (no ``env:``
+    block, no ``envFrom:``).  Secrets are read from files mounted by the
+    ``llm-credentials-file`` volume, and config values come from the
+    already-loaded YAML.  ``os.environ.setdefault`` is used so that any
+    value explicitly set in the environment (e.g. during development)
+    still takes precedence.
+    """
+    # --- LLM credential files (/etc/holmesgpt/credentials/*) ---
+    creds_dir = Path("/etc/holmesgpt/credentials")
+    if creds_dir.is_dir():
+        for entry in creds_dir.iterdir():
+            if entry.is_file() and not entry.name.startswith("."):
+                os.environ.setdefault(entry.name, entry.read_text().strip())
+
+    # --- Config-derived values ---
+
+    # DATA_STORAGE_URL -- consumed by audit, toolsets, and client modules
+    ds_url = (cfg.get("data_storage", {}).get("url")
+              or cfg.get("data_storage_url"))
+    if ds_url:
+        os.environ.setdefault("DATA_STORAGE_URL", ds_url)
+
+    llm = cfg.get("llm", {})
+    provider = llm.get("provider", "")
+
+    if provider == "vertex_ai":
+        # GOOGLE_APPLICATION_CREDENTIALS -- Google Auth SDK credential file path
+        gac = str(creds_dir / "GOOGLE_APPLICATION_CREDENTIALS")
+        if Path(gac).exists():
+            os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", gac)
+
+        # VERTEXAI_PROJECT / VERTEXAI_LOCATION -- LiteLLM Vertex AI routing
+        project = llm.get("gcp_project_id") or llm.get("project", "")
+        location = llm.get("gcp_region") or llm.get("location", "")
+        if project:
+            os.environ.setdefault("VERTEXAI_PROJECT", project)
+        if location:
+            os.environ.setdefault("VERTEXAI_LOCATION", location)
+
+
+_inject_runtime_env(config)
 
 # Setup logging based on configuration
 # This must be called after config is loaded but before any logging occurs
@@ -292,22 +344,22 @@ def init_config_manager() -> Optional[ConfigManager]:
 def create_app(authenticator=None, authorizer=None):
     """
     Factory function to create FastAPI application with dependency injection.
-    
-    This design eliminates module-level side effects and enables unit testing
-    without K8s cluster dependency.
-    
+
+    Authority: DD-AUTH-014 (Middleware-Based SAR Authentication)
+
     Args:
-        authenticator: Optional Authenticator instance (K8sAuthenticator or MockAuthenticator)
-                      If None, creates K8sAuthenticator (production mode)
-        authorizer: Optional Authorizer instance (K8sAuthorizer or MockAuthorizer)
-                   If None, creates K8sAuthorizer (production mode)
-    
+        authenticator: Optional Authenticator instance. If None, creates
+                      K8sAuthenticator (production mode).
+        authorizer: Optional Authorizer instance. If None, creates
+                   K8sAuthorizer (production mode).
+
     Returns:
-        FastAPI: Configured application instance
-    
+        FastAPI: Fully configured application instance with middleware,
+                routes, metrics, and lifecycle handlers.
+
     Usage:
-        Production: app = create_app()  # Uses K8s auth
-        Tests:      app = create_app(MockAuthenticator(), MockAuthorizer())
+        Production (uvicorn --factory): create_app()  # Uses K8s auth
+        Tests: create_app(authenticator=..., authorizer=...)  # DI
     """
     # Create FastAPI application
     app = FastAPI(
@@ -333,48 +385,38 @@ def create_app(authenticator=None, authorizer=None):
 
     # Initialize auth components if not provided (production mode)
     # Authority: DD-AUTH-014 (Middleware-based SAR authentication)
+    # Security: No runtime disable flags -- auth is always enforced via DI.
     if authenticator is None or authorizer is None:
-        if os.getenv("DISABLE_K8S_AUTH", "").lower() == "true":
-            # OpenAPI export and schema generation -- no K8s cluster needed
-            from src.auth.mock_auth import MockAuthenticator, MockAuthorizer
-            authenticator = MockAuthenticator()
-            authorizer = MockAuthorizer(default_allow=True)
-            logger.info({"event": "auth_disabled", "mode": "schema-export"})
-        else:
-            try:
-                # DD-AUTH-014: Support file-based kubeconfig for integration tests
-                # If KUBECONFIG env var is set, load from file (integration tests with envtest)
-                # Otherwise, load in-cluster config (production)
-                from kubernetes import client as k8s_client, config as k8s_config
-                
-                if os.getenv("KUBECONFIG"):
-                    logger.info({
-                        "event": "loading_kubeconfig",
-                        "path": os.getenv("KUBECONFIG"),
-                        "mode": "file-based (integration tests with envtest)"
-                    })
-                    k8s_config.load_kube_config()
-                    api_client = k8s_client.ApiClient()
-                    authenticator = K8sAuthenticator(api_client)
-                    authorizer = K8sAuthorizer(api_client)
-                else:
-                    logger.info({"event": "loading_incluster_config", "mode": "production"})
-                    authenticator = K8sAuthenticator()
-                    authorizer = K8sAuthorizer()
-                
+        try:
+            from kubernetes import client as k8s_client, config as k8s_config
+
+            if os.getenv("KUBECONFIG"):
                 logger.info({
-                    "event": "auth_initialized",
-                    "mode": "production" if not os.getenv("KUBECONFIG") else "integration-with-envtest",
-                    "authenticator": "K8sAuthenticator",
-                    "authorizer": "K8sAuthorizer"
+                    "event": "loading_kubeconfig",
+                    "path": os.getenv("KUBECONFIG"),
+                    "mode": "file-based (integration tests with envtest)"
                 })
-            except Exception as e:
-                logger.error({
-                    "event": "auth_init_failed",
-                    "error": str(e)
-                })
-                # In production, fail fast if K8s auth cannot be initialized
-                raise RuntimeError(f"Failed to initialize K8s auth components: {e}")
+                k8s_config.load_kube_config()
+                api_client = k8s_client.ApiClient()
+                authenticator = K8sAuthenticator(api_client)
+                authorizer = K8sAuthorizer(api_client)
+            else:
+                logger.info({"event": "loading_incluster_config", "mode": "production"})
+                authenticator = K8sAuthenticator()
+                authorizer = K8sAuthorizer()
+
+            logger.info({
+                "event": "auth_initialized",
+                "mode": "production" if not os.getenv("KUBECONFIG") else "integration-with-envtest",
+                "authenticator": "K8sAuthenticator",
+                "authorizer": "K8sAuthorizer"
+            })
+        except Exception as e:
+            logger.error({
+                "event": "auth_init_failed",
+                "error": str(e)
+            })
+            raise RuntimeError(f"Failed to initialize K8s auth components: {e}")
 
     # Get pod namespace dynamically (for SAR checks)
     # In production, read from ServiceAccount namespace file
@@ -413,8 +455,7 @@ def create_app(authenticator=None, authorizer=None):
     logger.info("RFC 7807 exception handlers enabled (BR-HAPI-200)")
 
     # Register extension routers
-    # All configuration is now via environment variables (LLM_ENDPOINT, LLM_MODEL, LLM_PROVIDER)
-    # No router.config anti-pattern - tests use mock LLM server instead
+    # LLM configuration via SDK config file (Issue #390); HAPI is LLM-agnostic
     app.include_router(incident.router, prefix="/api/v1", tags=["Incident Analysis"])
     # DD-017: PostExec endpoint deferred to V1.1 — EM Level 1 (V1.0, DD-017 v2.0) does not use PostExec; Level 2 (V1.1) is the PostExec consumer
     # Logic preserved in src/extensions/postexec.py for V1.1
@@ -460,36 +501,18 @@ def create_app(authenticator=None, authorizer=None):
 
     app.openapi = custom_openapi
 
-    return app
-
-
-# Create application instance (production mode - no injected dependencies)
-# Skip module-level app creation during pytest to allow test fixtures to inject mock auth
-# Skip K8s auth during OpenAPI export (OPENAPI_EXPORT=1) to allow spec generation outside cluster
-_is_test_mode = "pytest" in sys.modules
-_is_openapi_export = os.getenv("OPENAPI_EXPORT") == "1"
-
-if not _is_test_mode:
-    if _is_openapi_export:
-        app = create_app(authenticator=MockAuthenticator(), authorizer=MockAuthorizer(default_allow=True))
-    else:
-        app = create_app()
-    
     # ========================================
-    # METRICS ENDPOINT
+    # METRICS ENDPOINT (BR-HAPI-100 to 103)
     # ========================================
-    
+
     @app.get("/metrics", include_in_schema=False)
     async def metrics():
-        """
-        Prometheus metrics endpoint
-
-        Business Requirement: BR-HAPI-100 to 103
-
-        Exposes metrics in Prometheus exposition format for scraping
-        """
+        """Prometheus metrics endpoint. Exposes metrics in Prometheus exposition format."""
         return metrics_endpoint()
 
+    # ========================================
+    # LIFECYCLE HANDLERS
+    # ========================================
 
     @app.on_event("startup")
     async def startup_event():
@@ -500,14 +523,9 @@ if not _is_test_mode:
         logger.info(f"Dev mode: {config.get('dev_mode', False)}")
         logger.info("Auth: K8s TokenReview + SAR (DD-AUTH-014)")
 
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # MANDATORY: Validate audit initialization (ADR-032 §2)
-        # Per ADR-032 §3: HAPI is P0 service - audit is MANDATORY for LLM interactions
-        # Service MUST crash if audit cannot be initialized (ADR-032 §2)
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # ADR-032 §2: Audit is MANDATORY for P0 service -- crash if init fails
         from src.audit.factory import get_audit_store
         try:
-            # Get audit config from loaded YAML config (ADR-030)
             audit_config = config.get("audit", {})
             data_storage_url = config.get("data_storage", {}).get("url", "http://data-storage:8080")
 
@@ -516,7 +534,7 @@ if not _is_test_mode:
                 flush_interval_seconds=audit_config.get("flush_interval_seconds"),
                 buffer_size=audit_config.get("buffer_size"),
                 batch_size=audit_config.get("batch_size")
-            )  # Will crash (sys.exit(1)) if init fails
+            )
             logger.info({
                 "event": "audit_store_initialized",
                 "status": "mandatory_per_adr_032",
@@ -529,14 +547,11 @@ if not _is_test_mode:
                 }
             })
         except Exception as e:
-            # This should never be reached (get_audit_store calls sys.exit(1))
-            # But included for completeness
             logger.error(
                 f"FATAL: Audit initialization failed - service cannot start per ADR-032 §2: {e}",
                 extra={"adr": "ADR-032 §2"}
             )
-            import sys
-            sys.exit(1)  # Crash immediately - Kubernetes will restart pod
+            sys.exit(1)
 
         # Initialize ConfigManager for hot-reload (BR-HAPI-199)
         config_manager = init_config_manager()
@@ -553,14 +568,12 @@ if not _is_test_mode:
 
         logger.info("Service started successfully")
 
-
     @app.on_event("shutdown")
     async def shutdown_event():
         global config_manager
 
         logger.info("Service shutting down")
 
-        # Stop ConfigManager (BR-HAPI-199)
         if config_manager:
             config_manager.stop()
             logger.info({
@@ -569,17 +582,17 @@ if not _is_test_mode:
                 "reload_count": config_manager.reload_count,
                 "error_count": config_manager.error_count,
             })
-else:
-    # In test mode, app is created by conftest client fixture
-    app = None
+
+    return app
 
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "src.main:app",
+        "src.main:create_app",
         host="0.0.0.0",
         port=8080,
+        factory=True,
         reload=config["dev_mode"],
         log_level="info"
     )

@@ -47,7 +47,7 @@ class WorkflowFixture:
     version: str
     display_name: str
     description: str
-    action_type: str  # DD-WORKFLOW-016: FK to action_type_taxonomy
+    action_type: str  # DD-WORKFLOW-016: FK to action_type_taxonomy (seeded via DS API)
     signal_type: str
     severity: List[str]  # DD-WORKFLOW-001 v1.4: always an array
     component: str
@@ -148,7 +148,7 @@ execution:
 
 # Test Workflow Fixtures
 # MUST match Mock LLM server.py and AIAnalysis test_workflows.go
-# DD-WORKFLOW-016: action_type values must exist in action_type_taxonomy (seeded by migration 025)
+# DD-WORKFLOW-016: action_type values must exist in action_type_taxonomy (seeded via DataStorage API)
 TEST_WORKFLOWS = [
     WorkflowFixture(
         workflow_name="oomkill-increase-memory-v1",  # Aligned with Mock LLM and AIAnalysis
@@ -370,7 +370,7 @@ def get_crashloop_workflows() -> List[WorkflowFixture]:
 # ========================================
 # DD-WORKFLOW-016 V1.0: Action Type Taxonomy Constants
 # ========================================
-# These must match the values seeded by migration 025_action_type_taxonomy.sql
+# These must match the values seeded via the DataStorage API (see test/infrastructure/actiontype_e2e.go)
 
 ACTION_TYPE_SCALE_REPLICAS = "ScaleReplicas"
 ACTION_TYPE_RESTART_POD = "RestartPod"
@@ -401,9 +401,9 @@ def bootstrap_action_type_taxonomy(data_storage_url: str) -> Dict[str, Any]:
     """
     Verify action type taxonomy is available in Data Storage.
 
-    DD-WORKFLOW-016: Taxonomy is seeded by SQL migration 025_action_type_taxonomy.sql
-    (executed by Go infrastructure). This function verifies the taxonomy
-    is accessible via the discovery API.
+    DD-WORKFLOW-016: Taxonomy is seeded via the DataStorage API by Go test
+    infrastructure. This function verifies the taxonomy is accessible
+    via the discovery API.
 
     Args:
         data_storage_url: Data Storage service URL
@@ -444,7 +444,7 @@ def bootstrap_action_type_taxonomy(data_storage_url: str) -> Dict[str, Any]:
 
     except Exception as e:
         print(f"⚠️  DD-WORKFLOW-016: Taxonomy check failed — {e}")
-        print(f"   Ensure Go infrastructure is running with migration 025 applied")
+        print(f"   Ensure Go infrastructure is running with action types seeded via DS API")
 
     return result
 

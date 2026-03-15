@@ -89,13 +89,13 @@ All images are published to `quay.io/kubernaut-ai/<service>:<version>` as multi-
 
 | Service | Type | Dockerfile |
 |---------|------|-----------|
-| gateway | Go | `docker/gateway-ubi9.Dockerfile` |
+| gateway | Go | `docker/gateway.Dockerfile` |
 | signalprocessing | Go | `docker/signalprocessing-controller.Dockerfile` |
 | aianalysis | Go | `docker/aianalysis.Dockerfile` |
 | authwebhook | Go | `docker/authwebhook.Dockerfile` |
 | remediationorchestrator | Go | `docker/remediationorchestrator-controller.Dockerfile` |
 | workflowexecution | Go | `docker/workflowexecution-controller.Dockerfile` |
-| notification | Go | `docker/notification-controller-ubi9.Dockerfile` |
+| notification | Go | `docker/notification-controller.Dockerfile` |
 | datastorage | Go | `docker/data-storage.Dockerfile` |
 | effectivenessmonitor | Go | `docker/effectivenessmonitor-controller.Dockerfile` |
 | holmesgpt-api | Python | `holmesgpt-api/Dockerfile` |
@@ -120,9 +120,9 @@ Created with auto-generated release notes (commit history since previous tag).
 
 ## Build Strategy
 
-- **Go services**: `CGO_ENABLED=0` cross-compilation via `GOARCH`. Builder stage uses `ubi9/go-toolset`, runtime uses `ubi9/ubi-minimal`.
-- **Python service** (holmesgpt-api): `ubi9/python-312` for both builder and runtime.
-- **must-gather**: `ubi9/ubi` base with kubectl and jq.
+- **Go services**: `CGO_ENABLED=0` cross-compilation via `GOARCH`. Builder stage uses `ubi10/go-toolset`, runtime uses `ubi10/ubi-minimal`.
+- **Python service** (holmesgpt-api): `ubi10/python-312` for both builder and runtime.
+- **must-gather**: `ubi10/ubi` base with kubectl and jq.
 - **arm64 on amd64 runner**: QEMU user-space emulation (`qemu-user-static`). Go cross-compiles natively; QEMU handles the container base layer and any non-Go build steps.
 
 ## Version Injection

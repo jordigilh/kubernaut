@@ -36,7 +36,13 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.main import app
+from tests.helpers.mock_auth import MockAuthenticator, MockAuthorizer
+from src.main import create_app
+
+app = create_app(
+    authenticator=MockAuthenticator(),
+    authorizer=MockAuthorizer(default_allow=True),
+)
 
 
 def export_openapi():

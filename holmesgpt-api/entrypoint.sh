@@ -125,8 +125,8 @@ if [ "$E2E_COVERAGE" = "true" ]; then
         exit $EXIT_CODE
     else
         echo "⚠️  DD-TEST-007: E2E_COVERAGE=true but 'coverage' module not installed — falling back to plain uvicorn"
-        exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
+        exec python3.12 -m uvicorn src.main:create_app --factory --host 0.0.0.0 --port "$API_PORT" --workers 1
     fi
 else
-    exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
+    exec python3.12 -m uvicorn src.main:create_app --factory --host 0.0.0.0 --port "$API_PORT" --workers 1
 fi

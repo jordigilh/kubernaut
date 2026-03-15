@@ -28,12 +28,12 @@ data:
       usernameKey: "username"
       passwordKey: "password"
     redis:
-      addr: {{ include "kubernaut.redis.addr" . }}
+      addr: {{ include "kubernaut.valkey.addr" . }}
       db: 0
       dlqStreamName: dlq-stream
       dlqMaxLen: 1000
       dlqConsumerGroup: dlq-group
-      secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
+      secretsFile: "/etc/datastorage/secrets/valkey-secrets.yaml"
       passwordKey: "password"
     logging:
       level: debug
@@ -62,6 +62,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: data-storage-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.datastorage | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.datastorage | nindent 6 }}
@@ -71,6 +72,11 @@ spec:
           image: {{ .Values.postgresql.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           securityContext:
+            {{- if eq (include "kubernaut.postgresql.variant" .) "ocp" }}
+            runAsNonRoot: true
+            {{- else }}
+            runAsNonRoot: false
+            {{- end }}
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
@@ -139,10 +145,10 @@ spec:
                     - key: db-secrets.yaml
                       path: db-secrets.yaml
               - secret:
-                  name: {{ include "kubernaut.redis.secretName" . }}
+                  name: {{ include "kubernaut.valkey.secretName" . }}
                   items:
-                    - key: redis-secrets.yaml
-                      path: redis-secrets.yaml
+                    - key: valkey-secrets.yaml
+                      path: valkey-secrets.yaml
 ---
 apiVersion: v1
 kind: Service

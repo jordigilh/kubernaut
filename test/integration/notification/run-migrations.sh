@@ -32,13 +32,9 @@ run_migration_up() {
     }
 }
 
-# Run critical migrations for audit functionality
-echo "📦 Running core migrations..."
-run_migration_up "$MIGRATIONS_DIR/001_initial_schema.sql"
-
-echo "📦 Running audit migrations..."
-run_migration_up "$MIGRATIONS_DIR/013_create_audit_events_table.sql"
-run_migration_up "$MIGRATIONS_DIR/021_create_notification_audit_table.sql"
+# Run the single squashed schema migration (contains all tables, indexes, functions)
+echo "📦 Running schema migration..."
+run_migration_up "$MIGRATIONS_DIR/001_v1_schema.sql"
 
 # Verify tables were created
 echo ""

@@ -27,6 +27,11 @@ This document is retained for historical context to show the original design thi
 **Owner**: HAPI Team  
 **Status**: ~~Approved for next branch~~ **COMPLETE** (Python implementation)  
 
+> **STATUS: RESOLVED** (Issue #393, March 2026)
+> Mock LLM has been extracted to a standalone service. `mock_responses.py` deleted.
+> `MOCK_LLM_MODE` env var removed. HAPI is now fully LLM-agnostic.
+> Authentication is always enforced via dependency injection.
+
 ---
 
 ## 🎯 PROBLEM STATEMENT
@@ -60,16 +65,16 @@ This document is retained for historical context to show the original design thi
    - Single Responsibility Principle violated
    - Harder to maintain and reason about
 
-2. **HAPI is Mock-Aware**
+2. **HAPI was Mock-Aware**
    ```python
-   # src/mock_responses.py
+   # src/mock_responses.py (was deleted)
    if signal_type.upper() == "MOCK_NO_WORKFLOW_FOUND":
        return mock_response(...)  # HAPI knows about mocking
    ```
 
-3. **Environment Flag Coupling**
+3. **Environment Flag Coupling (was removed)**
    ```python
-   # HAPI checks MOCK_LLM_MODE flag
+   # HAPI used to check MOCK_LLM_MODE flag
    if os.getenv("MOCK_LLM_MODE") == "true":
        return generate_mock_response(...)
    ```
@@ -304,10 +309,10 @@ func setupAIAnalysisTestInfrastructure(ctx context.Context) (*AIAnalysisTestInfr
 
 **Files to Modify**:
 
-1. **DELETE**: `holmesgpt-api/src/mock_responses.py`
-   - Remove all mock response generation logic
-   - Remove edge case signal type handling
-   - Remove MOCK_* constants
+1. **DELETED**: `holmesgpt-api/src/mock_responses.py`
+   - Mock response generation logic was removed
+   - Edge case signal type handling was removed
+   - MOCK_* constants were removed
 
 2. **MODIFY**: `holmesgpt-api/src/extensions/incident/endpoint.py`
    ```python
@@ -488,8 +493,8 @@ func checkPortAvailable(port int) error {
 
 - [ ] Mock LLM server implemented in Go (`test/mock-llm-server/`)
 - [ ] Port allocation strategy implemented with collision prevention
-- [ ] HAPI mock logic removed (`mock_responses.py` deleted)
-- [ ] HAPI is mock-agnostic (no `MOCK_LLM_MODE` checks)
+- [x] HAPI mock logic removed (`mock_responses.py` was deleted)
+- [x] HAPI is mock-agnostic (`MOCK_LLM_MODE` checks were removed)
 - [ ] Go test infrastructure manages mock LLM lifecycle
 - [ ] All 603 HAPI tests still passing
 - [ ] AIAnalysis integration tests use same mock server (port 18761)
@@ -559,8 +564,8 @@ func checkPortAvailable(port int) error {
 - Implement MOCK_NOT_REPRODUCIBLE
 
 ### Sprint 3 (Day 4): HAPI Refactoring
-- Remove `mock_responses.py`
-- Remove `MOCK_LLM_MODE` checks
+- `mock_responses.py` was removed
+- `MOCK_LLM_MODE` checks were removed
 - Update test fixtures
 - Verify all tests passing
 

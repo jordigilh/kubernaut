@@ -152,7 +152,7 @@ job := &batchv1.Job{
                 Containers: []corev1.Container{
                     {
                         Name:  "kubectl-executor",
-                        Image: "bitnami/kubectl:1.28",
+                        Image: "registry.k8s.io/kubectl:v1.32.0",
                         Command: buildActionCommand(ke.Spec.Action, ke.Spec.Parameters),
                         Env: []corev1.EnvVar{
                             {Name: "TARGET_NAMESPACE", Value: ke.Spec.TargetNamespace},
@@ -387,7 +387,7 @@ func (r *KubernetesExecutionReconciler) createJobForAction(
                     Containers: []corev1.Container{
                         {
                             Name:  "kubectl",
-                            Image: "bitnami/kubectl:1.28",
+                            Image: "registry.k8s.io/kubectl:v1.32.0",
                             Command: []string{"kubectl"},
                             Args: action.CommandArgs, // e.g., ["scale", "deployment/web-app", "--replicas=5"]
                         },

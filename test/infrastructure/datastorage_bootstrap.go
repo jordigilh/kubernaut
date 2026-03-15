@@ -56,6 +56,12 @@ type DSBootstrapConfig struct {
 	// This allows DataStorage to self-validate its auth middleware in the /health endpoint
 	// Optional: Only needed when using real middleware auth in integration tests
 	DataStorageServiceTokenPath string // Path to data-storage-sa token file (e.g., "/tmp/datastorage-service-token")
+
+	// ClientToken is a bearer token for an authenticated test client (DD-AUTH-014).
+	// If non-empty, StartDSBootstrap seeds action types via the DataStorage API as
+	// its last step, satisfying the FK constraint before any workflow registration.
+	// Set automatically by NewDSBootstrapConfigWithAuth from authConfig.Token.
+	ClientToken string
 }
 
 // NewDSBootstrapConfigWithAuth creates a DSBootstrapConfig with authentication properly configured
@@ -100,6 +106,7 @@ func NewDSBootstrapConfigWithAuth(
 		ConfigDir:                   configDir,
 		EnvtestKubeconfig:           authConfig.KubeconfigPath,
 		DataStorageServiceTokenPath: authConfig.DataStorageServiceTokenPath,
+		ClientToken:                 authConfig.Token,
 	}
 }
 
@@ -381,6 +388,14 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready\n\n")
 
+	// Step 7: Seed action types via DS API (DD-WORKFLOW-016: FK constraint)
+	if cfg.ClientToken != "" {
+		_, _ = fmt.Fprintf(writer, "🏷️  Seeding action types via DataStorage API...\n")
+		if err := SeedActionTypesViaAPIWithURL(infra.ServiceURL, cfg.ClientToken, 30*time.Second, writer); err != nil {
+			return nil, fmt.Errorf("failed to seed action types via API: %w", err)
+		}
+	}
+
 	// Success
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "✅ DataStorage Infrastructure Ready (%s)\n", cfg.ServiceName)
@@ -520,7 +535,8 @@ func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, write
 		return fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}
 
-	return RunGooseMigrations(context.Background(), db, migrationsDir, writer)
+	ctx := context.Background()
+	return RunGooseMigrations(ctx, db, migrationsDir, writer)
 }
 
 // startDSBootstrapRedis starts the Redis container

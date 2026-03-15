@@ -1085,11 +1085,10 @@ hapiConfig := infrastructure.GenericContainerConfig{
     Name:    "aianalysis_hapi_test",
     Network: "aianalysis_test_network", // Same network as DataStorage
     Ports:   map[int]int{8080: 18120},  // container:host
-    Env: map[string]string{
-        "DATA_STORAGE_URL": "http://aianalysis_datastorage_test:8080", // ✅ CORRECT
-        "MOCK_LLM_MODE":    "true",
-        "PORT":             "8080",
-    },
+Env: map[string]string{
+    "DATA_STORAGE_URL": "http://aianalysis_datastorage_test:8080", // ✅ CORRECT
+    "PORT":             "8080",
+},
 }
 ```
 

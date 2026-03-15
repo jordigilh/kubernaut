@@ -58,7 +58,7 @@ import (
 const depTestNamespace = "kubernaut-workflows"
 
 var depTestBaseSchema = func() string {
-	crd := testutil.NewTestWorkflowCRD("dep-test-workflow", "GitRevertCommit", "job")
+	crd := testutil.NewTestWorkflowCRD("dep-test-workflow", "RestartPod", "job")
 	crd.Spec.Description = sharedtypes.StructuredDescription{
 		What:      "Integration test workflow for dependency validation",
 		WhenToUse: "When testing DD-WE-006",
@@ -76,7 +76,7 @@ var depTestBaseSchema = func() string {
 
 func depTestBaseSchemaUnique() string {
 	uniqueID := fmt.Sprintf("dep-test-workflow-%d-%s", GinkgoParallelProcess(), uuid.New().String())
-	crd := testutil.NewTestWorkflowCRD(uniqueID, "GitRevertCommit", "job")
+	crd := testutil.NewTestWorkflowCRD(uniqueID, "RestartPod", "job")
 	crd.Spec.Description = sharedtypes.StructuredDescription{
 		What:      "Integration test workflow for dependency validation",
 		WhenToUse: "When testing DD-WE-006",
@@ -93,7 +93,7 @@ func depTestBaseSchemaUnique() string {
 }
 
 func depTestSchemaWithSecrets(secretNames ...string) string {
-	crd := testutil.NewTestWorkflowCRD("dep-test-workflow", "GitRevertCommit", "job")
+	crd := testutil.NewTestWorkflowCRD("dep-test-workflow", "RestartPod", "job")
 	crd.Spec.Description = sharedtypes.StructuredDescription{
 		What:      "Integration test workflow for dependency validation",
 		WhenToUse: "When testing DD-WE-006",
@@ -117,7 +117,7 @@ func depTestSchemaWithSecrets(secretNames ...string) string {
 }
 
 func depTestSchemaWithConfigMaps(cmNames ...string) string {
-	crd := testutil.NewTestWorkflowCRD("dep-test-workflow", "GitRevertCommit", "job")
+	crd := testutil.NewTestWorkflowCRD("dep-test-workflow", "RestartPod", "job")
 	crd.Spec.Description = sharedtypes.StructuredDescription{
 		What:      "Integration test workflow for dependency validation",
 		WhenToUse: "When testing DD-WE-006",

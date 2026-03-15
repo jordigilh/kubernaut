@@ -97,7 +97,7 @@ holmesgpt-api/
 - **Directory**: `holmesgpt-api/`
 - **Entry Point**: `holmesgpt-api/src/main.py`
 - **Runtime**: Python 3.11+ / FastAPI
-- **Run Command**: `uvicorn src.main:app --host 0.0.0.0 --port 8080`
+- **Run Command**: `uvicorn src.main:create_app --factory --host 0.0.0.0 --port 8080`
 
 ### **HTTP API Handlers**
 - **Package**: `src/extensions/`

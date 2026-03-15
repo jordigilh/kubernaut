@@ -213,6 +213,42 @@ def build_validation_error_feedback(
     attempt_display = attempt + 1  # Convert to 1-indexed for display
     errors_list = "\n".join(f"- {error}" for error in errors)
 
+    # #372: Detect structured output format failure vs workflow validation failure
+    is_format_failure = any("structured JSON output" in e for e in errors)
+
+    if is_format_failure:
+        return f"""
+
+## ⚠️ OUTPUT FORMAT ERROR - CORRECTION REQUIRED (Attempt {attempt_display}/{MAX_VALIDATION_ATTEMPTS})
+
+Your previous response did not include the required structured JSON output:
+
+{errors_list}
+
+**Your response MUST include a ```json``` code block** with this structure:
+
+```json
+{{
+  "root_cause_analysis": {{
+    "summary": "...",
+    "severity": "critical|high|medium|low",
+    "contributing_factors": ["..."],
+    "affectedResource": {{"kind": "...", "name": "...", "namespace": "..."}}
+  }},
+  "confidence": 0.0,
+  "selected_workflow": null,
+  "investigation_outcome": "resolved|inconclusive",
+  "actionable": true
+}}
+```
+
+If you identified a matching workflow, include it in `selected_workflow` instead of null.
+If no workflow matches, set `selected_workflow` to null and include `investigation_outcome`.
+If the alert is benign (no remediation warranted), set `actionable` to `false`.
+
+**Re-submit your complete analysis with the ```json``` code block.**
+"""
+
     # BR-HAPI-191: Include parameter schema hint when available
     schema_section = ""
     if schema_hint:
@@ -680,6 +716,36 @@ Do NOT include `investigation_outcome` in this case. The system will automatical
 - The problem is still active (pod still crashing, resource still unhealthy)
 - The workflow discovery returned no matching workflows
 - Human intervention is needed to resolve the issue
+
+### Outcome D: Alert Not Actionable (No Remediation Warranted)
+
+If your investigation determines the alert describes a **benign condition** that does not warrant remediation or human review:
+
+# root_cause_analysis
+{{"summary": "[Describe the benign condition]", "severity": "low", "contributing_factors": ["[specific factors]"]}}
+
+# confidence
+[your confidence that no action is needed, typically >=0.7]
+
+# selected_workflow
+None
+
+# actionable
+false
+
+**When to use**: High confidence (>=0.7) that the alert is benign:
+- Orphaned PVCs from completed batch jobs — no impact on running workloads
+- Completed Job artifacts still present — normal Kubernetes lifecycle
+- Non-impactful resource drift — configuration difference with no operational effect
+- Informational alerts that describe expected states (e.g., scale-down events)
+
+**Distinction from Outcome A (Resolved)**:
+- **Outcome A**: The problem **existed but is no longer occurring** (transient — it went away)
+- **Outcome D**: The condition **is still present but is harmless** (benign — no action needed)
+
+**DO NOT** use `actionable: false` if:
+- The issue is actively impacting workloads (use Outcome C — human review)
+- You are uncertain whether the condition is benign (use Outcome B — inconclusive)
 
 ## RCA Severity Assessment
 

@@ -95,7 +95,7 @@ type HAPIIntegrationInfra struct {
 // - error: Any errors during infrastructure startup
 //
 // Authority: DD-AUTH-014 (DataStorage requires auth middleware)
-func StartHolmesGPTAPIIntegrationInfrastructure(writer io.Writer, envtestKubeconfig string) (*HAPIIntegrationInfra, error) {
+func StartHolmesGPTAPIIntegrationInfrastructure(writer io.Writer, envtestKubeconfig, clientToken string) (*HAPIIntegrationInfra, error) {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Starting HolmesGPT API Integration Test Infrastructure\n")
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -127,6 +127,7 @@ func StartHolmesGPTAPIIntegrationInfrastructure(writer io.Writer, envtestKubecon
 		MetricsPort:       19098, // Metrics port for DataStorage
 		ConfigDir:         "test/integration/holmesgptapi/config",
 		EnvtestKubeconfig: envtestKubeconfig, // DD-AUTH-014: Required for auth middleware
+		ClientToken:       clientToken,        // DD-WORKFLOW-016: seed action types after DS healthy
 	}
 
 	dsInfra, err := StartDSBootstrap(cfg, writer)

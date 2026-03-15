@@ -232,8 +232,22 @@ sequenceDiagram
         EM-->>EM: RequeueAfter(scrapeInterval) until validityDeadline
     end
 
+    Note over EM,DS: Step 7c2 — Alert Decay Detection with Cross-Validation (Issue #369, BR-EM-012)
+    alt alert firing + all other probes positive (decay suspected)
+        Note over EM: Cross-validation: health>0 (live re-probe) + hash stable + metrics>=0 or N/A
+        EM->>EA: Keep AlertAssessed=false, reset HealthAssessed=false, increment AlertDecayRetries
+        EM->>EA: Set condition AlertDecayDetected=True/DecayActive (DD-CRD-002)
+        EM->>DS: audit: effectiveness.alert_decay.detected (first time only)
+        EM-->>EM: RequeueAfter(assessmentInterval) for re-check with live health
+    else health degraded or metrics negative (alert is genuine)
+        Note over EM: Remediation failed — accept alert at face value
+        EM->>EA: AlertAssessed=true, AlertScore=0.0
+        EM->>EA: Set condition AlertDecayDetected=False/DecayResolved (if retries>0)
+    end
+
     Note over EM,DS: Step 7d — Finalize (lifecycle marker)
-    EM->>EA: Update status: phase=Completed, reason=full|partial
+    EM->>EA: Update status: phase=Completed, reason=full|partial|alert_decay_timeout
+    EM->>EA: Resolve AlertDecayDetected=False (DecayResolved or DecayTimeout, if retries>0)
     EM->>DS: audit: effectiveness.assessment.completed (lifecycle marker, no score)
     Note over DS: DS computes weighted score on demand from component events
     EM->>K8s: Event(Normal, EffectivenessAssessed) on EA
@@ -596,6 +610,8 @@ flowchart LR
         post_remediation_spec_hash, match"]
         A5c["effectiveness.alert.assessed
         signal_resolved"]
+        A5c2["effectiveness.alert_decay.detected
+        health OK + alert firing (Issue #369)"]
         A5d["effectiveness.metrics.assessed
         pre/post deltas, metrics_score"]
         A5e["effectiveness.assessment.completed
@@ -609,10 +625,12 @@ flowchart LR
     A5sched --> A5a
     A5sched --> A5b
     A5sched --> A5c
+    A5c -.->|"decay"| A5c2
     A5sched --> A5d
     A5a --> A5e
     A5b --> A5e
     A5c --> A5e
+    A5c2 --> A5e
     A5d --> A5e
 ```
 
@@ -797,6 +815,22 @@ Emitted immediately after stabilization window (when AlertManager is enabled).
 | `active_alerts_count` | integer | Number of matching active alerts at assessment time |
 | `alert_score` | float | 1.0 if resolved, 0.0 if still active; used by DS for scoring |
 | `resolution_time_seconds` | float (nullable) | Time from remediation to alert resolution; `null` if not resolved (Batch 3: computed from `ea.Spec.RemediationCreatedAt`) |
+
+#### 9.2.3a `effectiveness.alert_decay.detected` (Issue #369, BR-EM-012)
+
+Emitted once when the EM first detects alert decay: resource is healthy (HealthScore > 0), spec is stable (HashComputed), but the Prometheus alert is still firing (AlertScore = 0.0). Subsequent re-checks during the same EA lifecycle are silent to avoid audit noise. The EA remains open (AlertAssessed=false) and the EM requeues for re-check. If the alert resolves, `effectiveness.alert.assessed` is emitted with score=1.0. If validity expires, the EA completes with reason=`alert_decay_timeout`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | string | `"effectiveness.alert_decay.detected"` |
+| `component` | string | `"alert_decay"` |
+| `assessed` | boolean | Always `false` (EA kept open for re-check) |
+| `score` | float | Alert score at detection time (0.0 = still firing) |
+| `details` | string | Human-readable summary: health score, alert score, retry count |
+| `alert_resolution.alert_resolved` | boolean | Always `false` |
+| `alert_resolution.active_count` | integer | Number of active alerts (1) |
+
+**EA CRD Status Field**: `components.alertDecayRetries` (int32) — incremented on each decay re-check, enables operator observability via `kubectl get ea -o yaml`.
 
 #### 9.2.4 `effectiveness.metrics.assessed`
 
@@ -1066,6 +1100,7 @@ Events WRITTEN by EM (consumed by DS for scoring):
 - `effectiveness.health.assessed` — health check results + `health_score`
 - `effectiveness.hash.computed` — pre/post spec hash comparison (not scored)
 - `effectiveness.alert.assessed` — alert resolution + `alert_score`
+- `effectiveness.alert_decay.detected` — one-time event when alert decay detected (Issue #369, BR-EM-012)
 - `effectiveness.metrics.assessed` — metric deltas + `metrics_score`
 - `effectiveness.assessment.completed` — lifecycle marker (no score)
 

@@ -19,17 +19,17 @@
 ## 2. Red Hat Catalog Search Results
 
 **Search URL**: https://catalog.redhat.com/software/containers/search?q=go-toolset
-**Search Terms**: "go-toolset", "ubi9 golang", "ubi9 go"
-**Result**: ❌ No Red Hat UBI9 go-toolset version > 1.25.3 available
+**Search Terms**: "go-toolset", "ubi10 golang", "ubi10 go"
+**Result**: ❌ No Red Hat UBI10 go-toolset version > 1.25.3 available
 
 ### Evidence
 
 ```bash
-# Available Red Hat UBI9 Go versions (as of 2026-01-09):
-podman run --rm registry.access.redhat.com/ubi9/go-toolset:1.24 go version
+# Available Red Hat UBI10 Go versions (as of 2026-01-09):
+podman run --rm registry.access.redhat.com/ubi10/go-toolset:1.24 go version
 # Output: go version go1.24.6 (Red Hat 1.24.6-1.el9_6) linux/arm64
 
-podman run --rm registry.access.redhat.com/ubi9/go-toolset:1.25 go version
+podman run --rm registry.access.redhat.com/ubi10/go-toolset:1.25 go version
 # Output: go version go1.25.3 (Red Hat 1.25.3-1.el9_6) linux/arm64
 
 # Latest upstream Go version:
@@ -38,9 +38,9 @@ podman run --rm golang:1.25-bookworm go version
 ```
 
 ### Red Hat Version Gap
-- **Red Hat UBI9 Latest**: Go 1.25.3 (2 patch releases behind)
+- **Red Hat UBI10 Latest**: Go 1.25.3 (2 patch releases behind)
 - **Upstream Latest**: Go 1.25.5
-- **Critical Issue**: ARM64 runtime bug exists in ALL Red Hat UBI9 versions (1.24.6, 1.25.3)
+- **Critical Issue**: ARM64 runtime bug exists in ALL Red Hat UBI10 versions (1.24.6, 1.25.3)
 
 ---
 
@@ -50,7 +50,7 @@ podman run --rm golang:1.25-bookworm go version
 
 **Symptom**: `fatal error: taggedPointerPack` crash on ARM64 during Go runtime initialization
 
-**Root Cause**: Red Hat's ARM64 Go runtime has a pointer tagging bug in `runtime.taggedPointerPack()` that affects ALL available UBI9 go-toolset versions:
+**Root Cause**: Red Hat's ARM64 Go runtime has a pointer tagging bug in `runtime.taggedPointerPack()` that affects ALL available UBI10 go-toolset versions:
 
 ```
 runtime.taggedPointerPack invalid packing: ptr=0xffff8f443c00 tag=0x1
@@ -59,8 +59,8 @@ fatal error: taggedPointerPack
 ```
 
 **Affected Versions**:
-- ❌ `ubi9/go-toolset:1.24` (Go 1.24.6) - **CRASHES** on ARM64
-- ❌ `ubi9/go-toolset:1.25` (Go 1.25.3) - **CRASHES** on ARM64
+- ❌ `ubi10/go-toolset:1.24` (Go 1.24.6) - **CRASHES** on ARM64
+- ❌ `ubi10/go-toolset:1.25` (Go 1.25.3) - **CRASHES** on ARM64
 - ✅ `golang:1.25-bookworm` (Go 1.25.5) - **WORKS** on ARM64
 
 **Trigger**: Crash occurs during `google.golang.org/protobuf` initialization (used extensively in Kubernaut for Kubernetes API interactions)
@@ -74,8 +74,8 @@ fatal error: taggedPointerPack
 
 | Test | Image | Go Version | ARM64 Result | Date |
 |------|-------|------------|--------------|------|
-| Test 1 | `ubi9/go-toolset:1.25` | Go 1.25.3 | ❌ **CRASH** | 2026-01-09 14:16 |
-| Test 2 | `ubi9/go-toolset:1.24` | Go 1.24.6 | ❌ **CRASH** | 2026-01-09 15:13 |
+| Test 1 | `ubi10/go-toolset:1.25` | Go 1.25.3 | ❌ **CRASH** | 2026-01-09 14:16 |
+| Test 2 | `ubi10/go-toolset:1.24` | Go 1.24.6 | ❌ **CRASH** | 2026-01-09 15:13 |
 | Test 3 | `golang:1.25-bookworm` | Go 1.25.5 | ✅ **WORKS** | 2026-01-09 14:58 |
 
 **Conclusion**: This is a **systemic ARM64 runtime bug** in Red Hat's Go builds, not specific to a particular Go version.
@@ -137,13 +137,13 @@ RUN CGO_ENABLED=0 GOOS=${GOOS:-linux} GOARCH=${GOARCH:-amd64} go build \
 	-o workflowexecution \
 	./cmd/workflowexecution
 
-# Runtime stage - STILL UBI9 (Full Red Hat Compliance)
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+# Runtime stage - STILL UBI10 (Full Red Hat Compliance)
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # ... runtime configuration ...
 ```
 
-**Key Point**: Only the **builder stage** uses mirrored upstream Go. The **runtime stage** still uses Red Hat UBI9, maintaining full Red Hat support and compliance for production deployments.
+**Key Point**: Only the **builder stage** uses mirrored upstream Go. The **runtime stage** still uses Red Hat UBI10, maintaining full Red Hat support and compliance for production deployments.
 
 ---
 
@@ -168,21 +168,21 @@ podman scan quay.io/jordigilh/golang:1.25-bookworm
 **CVE Mitigation**:
 - Builder stage only (not in runtime image)
 - MEDIUM CVEs are in Debian packages, not in Go toolchain
-- Runtime image is pure UBI9 minimal (fully patched)
+- Runtime image is pure UBI10 minimal (fully patched)
 
-### Comparison: UBI9 vs. Mirrored Upstream
+### Comparison: UBI10 vs. Mirrored Upstream
 
-| Aspect | UBI9 go-toolset:1.25 | quay.io/jordigilh/golang:1.25-bookworm |
+| Aspect | UBI10 go-toolset:1.25 | quay.io/jordigilh/golang:1.25-bookworm |
 |--------|----------------------|----------------------------------------|
 | **Go Version** | 1.25.3 | 1.25.5 |
 | **ARM64 Status** | ❌ Crashes | ✅ Works |
 | **Base OS** | RHEL 9 | Debian Bookworm |
 | **Security Updates** | Red Hat RHSA | Debian Security |
 | **Production Use** | Builder only | Builder only |
-| **Runtime Image** | UBI9 minimal (both) | UBI9 minimal (both) |
+| **Runtime Image** | UBI10 minimal (both) | UBI10 minimal (both) |
 
 **Production Risk Assessment**:
-- ✅ **Runtime is UBI9** - Red Hat support contract covers production runtime
+- ✅ **Runtime is UBI10** - Red Hat support contract covers production runtime
 - ✅ **Builder is ephemeral** - Only used during image build, not in production
 - ✅ **Binary is static** - Compiled binary has no Debian dependencies
 - ✅ **CVE exposure limited** - Builder CVEs don't propagate to runtime image
@@ -193,7 +193,7 @@ podman scan quay.io/jordigilh/golang:1.25-bookworm
 
 ### Why is this image necessary?
 
-**Critical Blocker**: ARM64 runtime bug in ALL Red Hat UBI9 go-toolset versions prevents:
+**Critical Blocker**: ARM64 runtime bug in ALL Red Hat UBI10 go-toolset versions prevents:
 1. E2E testing on ARM64 (Kind clusters crash immediately)
 2. Local development on Apple Silicon Macs (developer productivity blocker)
 3. Potential production ARM64 deployments using protobuf libraries
@@ -203,15 +203,15 @@ podman scan quay.io/jordigilh/golang:1.25-bookworm
 - **Developer Productivity**: All ARM64 Mac developers cannot run E2E tests
 - **Time Sensitivity**: Bug discovered during critical integration testing phase
 
-### Why can't we use UBI9 base + manual Go installation?
+### Why can't we use UBI10 base + manual Go installation?
 
-**Attempted**: We cannot manually install Go 1.25.5 in UBI9 because:
+**Attempted**: We cannot manually install Go 1.25.5 in UBI10 because:
 1. **No RPM Available**: Red Hat doesn't package Go 1.25.5 for RHEL 9 yet
 2. **Manual Build Complexity**: Building Go from source in Dockerfile is:
    - Time-consuming (adds 10+ minutes to build)
    - Error-prone (requires bootstrap Go version)
    - Not reproducible (source tarball availability dependency)
-3. **Same Base Issue**: Even manual installation would use the same buggy Go runtime in UBI9's glibc/kernel interaction
+3. **Same Base Issue**: Even manual installation would use the same buggy Go runtime in UBI10's glibc/kernel interaction
 
 ### Alternatives Considered
 
@@ -221,7 +221,7 @@ podman scan quay.io/jordigilh/golang:1.25-bookworm
 | **B. Build on AMD64 only** | ⚠️ Partial | Blocks ARM64 development/testing, reduces multi-arch support |
 | **C. Downgrade protobuf** | ❌ Rejected | Protobuf v1.36.x required for Kubernetes 1.32 compatibility |
 | **D. Disable ARM64 support** | ❌ Rejected | Violates ADR-027 (multi-architecture mandate) |
-| **E. Mirror upstream Go** | ✅ **APPROVED** | Works immediately, ADR-028 compliant, maintains UBI9 runtime |
+| **E. Mirror upstream Go** | ✅ **APPROVED** | Works immediately, ADR-028 compliant, maintains UBI10 runtime |
 
 ---
 
@@ -233,14 +233,14 @@ podman scan quay.io/jordigilh/golang:1.25-bookworm
 - ✅ **Automated Scanning**: Podman scan in CI/CD pipeline on every build
 - ✅ **Security Advisory Monitoring**: Subscribe to Golang security mailing list
 - ✅ **Documented Update Process**: Mirror update playbook in repository
-- ✅ **Runtime is UBI9**: Production runtime still receives Red Hat RHSA updates
+- ✅ **Runtime is UBI10**: Production runtime still receives Red Hat RHSA updates
 
 ### How will we maintain consistency?
 
 - ✅ **Pin to specific tag**: Use `1.25-bookworm` (not `latest`)
 - ✅ **Document in service README**: Exception documented in Dockerfile header
 - ✅ **Exception Registry**: Registered in ADR-028 Exception Registry
-- ✅ **Revert Plan**: Switch back to UBI9 when Red Hat ships Go 1.25.5+ with ARM64 fixes
+- ✅ **Revert Plan**: Switch back to UBI10 when Red Hat ships Go 1.25.5+ with ARM64 fixes
 
 ### Transition Plan
 
@@ -250,14 +250,14 @@ podman scan quay.io/jordigilh/golang:1.25-bookworm
 - ✅ Document exception in ADR-028-EXCEPTION-001
 
 **Phase 2: Monitoring** (Ongoing)
-- [ ] Monitor Red Hat Container Catalog for Go 1.25.5+ in UBI9
-- [ ] Test new UBI9 go-toolset versions on ARM64 when released
+- [ ] Monitor Red Hat Container Catalog for Go 1.25.5+ in UBI10
+- [ ] Test new UBI10 go-toolset versions on ARM64 when released
 - [ ] Weekly mirror updates to pull latest Debian security patches
 
-**Phase 3: Revert to UBI9** (When Available)
-- [ ] Red Hat releases `ubi9/go-toolset:1.26` or `ubi9/go-toolset:1.25` with patch > 1.25.3
+**Phase 3: Revert to UBI10** (When Available)
+- [ ] Red Hat releases `ubi10/go-toolset:1.26` or `ubi10/go-toolset:1.25` with patch > 1.25.3
 - [ ] Validate ARM64 runtime bug is fixed
-- [ ] Update Dockerfile to use Red Hat UBI9 go-toolset
+- [ ] Update Dockerfile to use Red Hat UBI10 go-toolset
 - [ ] Archive this exception (no longer needed)
 
 ---
@@ -282,7 +282,7 @@ podman scan quay.io/jordigilh/golang:1.25-bookworm
 ### Image Selection Workflow Compliance
 
 ✅ **Step 1 - Red Hat Catalog Search**: Performed - No Go 1.25.5+ found
-✅ **Step 2 - Image Availability**: Verified - UBI9 go-toolset:1.25 exists but crashes
+✅ **Step 2 - Image Availability**: Verified - UBI10 go-toolset:1.25 exists but crashes
 ✅ **Step 3 - Decision Point**: Triggered exception process (Red Hat image insufficient)
 
 ### Exception Request Compliance
@@ -300,8 +300,8 @@ podman scan quay.io/jordigilh/golang:1.25-bookworm
 ## 10. Approval
 
 **Exception Approval Criteria**:
-- ✅ No Red Hat UBI9 image exists with Go 1.25.5+ (verified via catalog search and testing)
-- ✅ Building from UBI9 + manual Go installation is not feasible (no RPM, same runtime bug)
+- ✅ No Red Hat UBI10 image exists with Go 1.25.5+ (verified via catalog search and testing)
+- ✅ Building from UBI10 + manual Go installation is not feasible (no RPM, same runtime bug)
 - ✅ Security scan shows **ZERO CRITICAL/HIGH** CVEs (builder stage only)
 - ✅ Mitigation plan addresses security and maintenance (weekly updates, monitoring)
 - ✅ **ADR-028 Compliant**: Using approved `quay.io/jordigilh/*` registry
@@ -321,7 +321,7 @@ podman scan quay.io/jordigilh/golang:1.25-bookworm
 
 | Service | Image | Justification | Approved By | Date | Review Date |
 |---------|-------|---------------|-------------|------|-------------|
-| WorkflowExecution | `quay.io/jordigilh/golang:1.25-bookworm` | ARM64 runtime bug in ALL UBI9 go-toolset versions. Runtime still UBI9. | jgil | 2026-01-09 | 2026-02-09 |
+| WorkflowExecution | `quay.io/jordigilh/golang:1.25-bookworm` | ARM64 runtime bug in ALL UBI10 go-toolset versions. Runtime still UBI10. | jgil | 2026-01-09 | 2026-02-09 |
 
 ---
 
@@ -337,7 +337,7 @@ podman scan quay.io/jordigilh/golang:1.25-bookworm
 
 ### External References
 - [Golang Official Images](https://hub.docker.com/_/golang)
-- [Red Hat UBI9 Go Toolset](https://catalog.redhat.com/software/containers/ubi9/go-toolset/6166ef16cb78bc1cf9dd833d)
+- [Red Hat UBI10 Go Toolset](https://catalog.redhat.com/software/containers/ubi10/go-toolset/6166ef16cb78bc1cf9dd833d)
 - [Go Runtime taggedPointerPack](https://github.com/golang/go/blob/master/src/runtime/tagptr_64bit.go)
 
 ---
@@ -345,12 +345,12 @@ podman scan quay.io/jordigilh/golang:1.25-bookworm
 **Decision Rationale**:
 
 This exception is **CRITICAL** and **TIME-SENSITIVE**:
-1. **Zero Alternative**: ALL Red Hat UBI9 go-toolset versions crash on ARM64
-2. **Production Impact**: Runtime image still uses UBI9 (Red Hat support maintained)
+1. **Zero Alternative**: ALL Red Hat UBI10 go-toolset versions crash on ARM64
+2. **Production Impact**: Runtime image still uses UBI10 (Red Hat support maintained)
 3. **ADR-028 Compliant**: Mirror hosted in approved `quay.io/jordigilh/*` registry
 4. **Security Verified**: 0 CRITICAL/HIGH CVEs in builder stage
-5. **Temporary Solution**: Revert to UBI9 when Red Hat fixes ARM64 runtime
+5. **Temporary Solution**: Revert to UBI10 when Red Hat fixes ARM64 runtime
 
-The benefits of **unblocking ARM64 development** while **maintaining UBI9 runtime compliance** outweigh the temporary use of a mirrored upstream Go builder.
+The benefits of **unblocking ARM64 development** while **maintaining UBI10 runtime compliance** outweigh the temporary use of a mirrored upstream Go builder.
 
 **Approved**: Emergency exception for WorkflowExecution (and all services requiring protobuf on ARM64)

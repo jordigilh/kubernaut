@@ -275,7 +275,7 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 
 	// Mandatory label filters (JSONB queries on labels column)
 	// Severity is always JSONB array (e.g. ["critical","high"]), use ? operator
-	// #215 Gap 1: Added wildcard fallback -- workflows with severity=["*"] match any severity
+	// DD-WORKFLOW-001 v2.8: severity supports "*" wildcard (like environment/priority)
 	if filters.Severity != "" {
 		conditions = append(conditions, fmt.Sprintf("(labels->'severity' ? $%d OR labels->'severity' ? '*')", argIdx))
 		args = append(args, filters.Severity)

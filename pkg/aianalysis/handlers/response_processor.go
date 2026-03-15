@@ -70,6 +70,10 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	// BR-AI-009: Reset failure counter on successful API call
 	analysis.Status.ConsecutiveFailures = 0
 
+	// #388: All processed alerts are actionable by default; only the
+	// NotActionable handler overrides this to "NotActionable".
+	analysis.Status.Actionability = aianalysis.ActionabilityActionable
+
 	// Check if NeedsHumanReview is set
 	needsHumanReview := GetOptBoolValue(resp.NeedsHumanReview)
 	hasSelectedWorkflow := resp.SelectedWorkflow.Set && !resp.SelectedWorkflow.Null
@@ -106,6 +110,16 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	isResolved := hasProblemResolvedSignal(resp.Warnings)
 	if !hasSelectedWorkflow && resp.Confidence >= 0.7 && !hasNoWorkflowWarningSignal(resp.Warnings) && (isResolved || !hasSubstantiveRCA(resp.RootCauseAnalysis)) {
 		return p.handleProblemResolvedFromIncident(ctx, analysis, resp)
+	}
+
+	// #388 Outcome D: Alert not actionable — benign condition, no remediation warranted.
+	// Same confidence threshold (0.7) as resolved. When HAPI signals actionable=false
+	// (via warning + is_actionable field), bypass the substantive-RCA escalation (#208)
+	// because the RCA documents a benign condition for audit, not an active problem.
+	isNotActionable := hasNotActionableSignal(resp.Warnings)
+	isActionablePtr := GetOptNilBoolValue(resp.IsActionable)
+	if !hasSelectedWorkflow && resp.Confidence >= 0.7 && isNotActionable && isActionablePtr != nil && !*isActionablePtr {
+		return p.handleNotActionableFromIncident(ctx, analysis, resp)
 	}
 
 	// BR-AI-050 + Issue #29: No workflow found (terminal failure requiring human review)
@@ -408,6 +422,50 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 	return ctrl.Result{}, nil
 }
 
+// handleNotActionableFromIncident handles alert-not-actionable outcomes from IncidentResponse.
+// #388: Alert is benign — condition may be present but is harmless (e.g., orphaned PVCs).
+// Routes to Completed/WorkflowNotNeeded/NotActionable, analogous to handleProblemResolvedFromIncident
+// but semantically distinct: resolved = problem went away, not-actionable = problem is harmless.
+func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+	p.log.Info("Alert not actionable, no workflow needed",
+		"confidence", resp.Confidence,
+		"warnings", resp.Warnings,
+	)
+
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseCompleted
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
+	analysis.Status.CompletedAt = &now
+	analysis.Status.Reason = "WorkflowNotNeeded"
+	analysis.Status.SubReason = "NotActionable"
+	analysis.Status.InvestigationID = resp.IncidentID
+
+	// #388: Benign alerts never require human review
+	analysis.Status.NeedsHumanReview = false
+	analysis.Status.Actionability = aianalysis.ActionabilityNotActionable
+
+	if resp.Analysis != "" {
+		analysis.Status.Message = resp.Analysis
+	} else if len(resp.Warnings) > 0 {
+		analysis.Status.Message = strings.Join(resp.Warnings, "; ")
+	} else {
+		analysis.Status.Message = "Alert not actionable. No remediation warranted."
+	}
+
+	analysis.Status.Warnings = resp.Warnings
+
+	// Store RCA for audit trail — benign conditions still warrant documentation
+	if len(resp.RootCauseAnalysis) > 0 {
+		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
+			analysis.Status.RootCauseAnalysis = rca
+		}
+	}
+
+	p.auditClient.RecordAnalysisComplete(ctx, analysis)
+
+	return ctrl.Result{}, nil
+}
+
 // handleNoWorkflowTerminalFailure handles terminal failure when no workflow selected with low confidence
 // Issue #29: BR-AI-050 - AIAnalysis must detect terminal failure per BR-HAPI-197 AC-4
 func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
@@ -601,6 +659,21 @@ func hasNoWorkflowWarningSignal(warnings []string) bool {
 func hasProblemResolvedSignal(warnings []string) bool {
 	for _, w := range warnings {
 		if strings.Contains(strings.ToLower(w), "problem self-resolved") {
+			return true
+		}
+	}
+	return false
+}
+
+// hasNotActionableSignal checks if HAPI emitted the "Alert not actionable" warning.
+// This warning is only produced when actionable == false (result_parser.py),
+// making it an authoritative signal that the alert is benign.
+// #388: Used to route to Completed/WorkflowNotNeeded/NotActionable, bypassing
+// the hasSubstantiveRCA check — the RCA documents a benign condition for audit,
+// not an ongoing problem requiring intervention.
+func hasNotActionableSignal(warnings []string) bool {
+	for _, w := range warnings {
+		if strings.Contains(strings.ToLower(w), "alert not actionable") {
 			return true
 		}
 	}

@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
@@ -86,6 +87,11 @@ var RegisteredWorkflowUUIDs = make(map[string]string)
 // Returns the registered workflow bundle references for use in WorkflowExecution specs.
 // Also populates RegisteredWorkflowUUIDs for tests that need DS UUIDs (DD-WE-006).
 func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken string, output io.Writer) (map[string]string, error) {
+	// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
+	if err := SeedActionTypesViaAPIWithURL(dataStorageURL, saToken, 30*time.Second, output); err != nil {
+		return nil, fmt.Errorf("failed to seed action types: %w", err)
+	}
+
 	_, _ = fmt.Fprintf(output, "\n📦 Setting up test workflows from %s...\n", TestWorkflowBundleRegistry)
 
 	bundles := make(map[string]string)

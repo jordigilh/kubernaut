@@ -20,8 +20,8 @@ Mock LLM Mode Integration Tests
 Business Requirement: BR-HAPI-212 - Mock LLM Mode for Integration Testing
 
 These tests verify that AIAnalysis (and other consumers) can successfully
-call HAPI endpoints when MOCK_LLM_MODE=true, receiving deterministic
-responses without requiring an actual LLM provider.
+call HAPI endpoints backed by the standalone Mock LLM service, receiving
+deterministic responses without requiring an actual LLM provider.
 
 Test Scenarios:
 1. Full endpoint integration with mock mode
@@ -32,7 +32,7 @@ Test Scenarios:
 INTEGRATION TEST COMPLIANCE:
 Per TESTING_GUIDELINES.md:614 - Integration tests MUST use real services via podman-compose.
 These tests use HAPI OpenAPI client to validate API contract compliance.
-The HAPI service must be started with MOCK_LLM_MODE=true environment variable.
+HAPI's LLM_ENDPOINT must point to the standalone Mock LLM service.
 
 MIGRATION: Updated to use HAPI OpenAPI client (Phase 2)
 Authority: TRIAGE_HAPI_E2E_AND_CLIENT_GAPS.md

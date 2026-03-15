@@ -23,10 +23,12 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/conditions"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -203,20 +205,36 @@ var _ = Describe("Alert Scoring — Issue #269: filter stale pod alerts after ro
 		}
 		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
 
-		By("Waiting for EA to complete")
+		By("Waiting for alert score and decay detection (BR-EM-012, #369)")
+		// Post-#369: isAlertDecay returns true when health > 0, hash computed,
+		// and alert score == 0.0. The EA stays in Assessing (AlertAssessed=false)
+		// and AlertDecayRetries is incremented — matching UT-EM-DECAY-001 spec.
+		// We assert the intermediate state rather than waiting for PhaseCompleted
+		// (which requires the 30m validity window to expire).
 		fetchedEA := &eav1.EffectivenessAssessment{}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name: ea.Name, Namespace: ea.Namespace,
 			}, fetchedEA)).To(Succeed())
-			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
+			g.Expect(fetchedEA.Status.Components.AlertScore).ToNot(BeNil(),
+				"AlertScore should be set on first assessment cycle")
+			g.Expect(*fetchedEA.Status.Components.AlertScore).To(Equal(0.0),
+				"#269: stale alert for deleted pod filtered, active pod alert counts")
+			g.Expect(fetchedEA.Status.Components.AlertDecayRetries).To(
+				BeNumerically(">", 0),
+				"BR-EM-012: alert decay should be detected (health OK + alert firing)")
+
+			decayCond := meta.FindStatusCondition(fetchedEA.Status.Conditions, conditions.ConditionAlertDecayDetected)
+			g.Expect(decayCond).ToNot(BeNil(),
+				"BR-EM-012: AlertDecayDetected condition should be present during decay monitoring")
+			g.Expect(decayCond.Status).To(Equal(metav1.ConditionTrue),
+				"AlertDecayDetected should be True (decay actively monitored)")
+			g.Expect(decayCond.Reason).To(Equal(conditions.ReasonDecayActive),
+				"Reason should be DecayActive")
 		}, timeout, interval).Should(Succeed())
 
-		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeTrue())
-		Expect(fetchedEA.Status.Components.AlertScore).NotTo(BeNil())
-		Expect(*fetchedEA.Status.Components.AlertScore).To(Equal(0.0),
-			"#269: stale alert for leaky-app-old-rs-xyz is filtered, but active alert "+
-				"for leaky-app-new-rs-abc still counts as active")
+		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeFalse(),
+			"BR-EM-012: AlertAssessed must be false during alert decay monitoring")
 
 		By("Restoring mock AM to default")
 		mockAM.SetAlertsResponse([]infrastructure.AMAlert{})

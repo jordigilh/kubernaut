@@ -43,7 +43,7 @@ This capability follows established Kubernetes ecosystem best practices:
 - **Image Repository**: `quay.io/kubernaut/must-gather:latest`
 - **Versioned Tags**: Semantic versioning aligned with Kubernaut releases
 - **Multi-Architecture**: Support for `amd64` and `arm64` architectures
-- **Minimal Base**: Security-focused base image (UBI9 minimal or distroless)
+- **Minimal Base**: Security-focused base image (UBI10 minimal or distroless)
 - **Tool Dependencies**: Include `kubectl`, `jq`, `tar`, `gzip` utilities
 
 **Rationale**: Container-based must-gather enables consistent execution across diverse Kubernetes distributions (OpenShift, vanilla K8s, managed K8s services).
@@ -507,7 +507,7 @@ email: user@[REDACTED]
 ## 3. Implementation Guidance
 
 ### 3.1 Technology Stack
-- **Base Image**: `registry.access.redhat.com/ubi9/ubi-minimal:latest`
+- **Base Image**: `registry.access.redhat.com/ubi10/ubi-minimal:latest`
 - **Runtime**: Bash scripts with `kubectl` binary
 - **Utilities**: `jq` (JSON processing), `tar`, `gzip`, `sed`, `awk`, `sha256sum` (checksum generation)
 - **Kubernetes Client**: kubectl 1.31+ (latest stable Kubernetes version)

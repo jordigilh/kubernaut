@@ -56,8 +56,15 @@ status:
 **Key Indicators**:
 - `phase: Completed` (NOT Failed)
 - `reason: WorkflowNotNeeded`
+- `subReason: ProblemResolved` or `NotActionable` (#388)
 - `selectedWorkflow: null`
-- High confidence (≥0.7)
+- High confidence (>=0.7)
+
+**SubReason Semantics** (Issue #388):
+- `ProblemResolved`: Problem existed but is no longer occurring (transient)
+- `NotActionable`: Condition is still present but harmless (benign alert, e.g., orphaned PVCs)
+
+Both subReasons result in the same RO behavior: `Outcome=NoActionRequired`, no WorkflowExecution created.
 
 ---
 
@@ -112,10 +119,10 @@ func (h *AIAnalysisHandler) HandleWorkflowNotNeeded(
         }
     }
 
-    // 4. Record metric
+    // 4. Record metric (reason reflects subReason: "problem_resolved" or "not_actionable")
     metrics.RemediationNoActionNeeded.WithLabelValues(
         rr.Namespace,
-        "problem_resolved",
+        ai.Status.SubReason,  // ProblemResolved or NotActionable
     ).Inc()
 
     // 5. No requeue - remediation complete
@@ -257,7 +264,7 @@ Scenario: No notification by default
 ```prometheus
 # Counter for no-action-required remediations
 kubernaut_remediationorchestrator_no_action_needed_total{
-  reason="problem_resolved|investigation_inconclusive",
+  reason="ProblemResolved|NotActionable|investigation_inconclusive",
   namespace="<rr_namespace>"
 }
 
@@ -325,11 +332,12 @@ If multiple signals for the same resource all self-resolve:
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2025-12-07 | Initial BR creation based on BR-HAPI-200 |
+| 1.1 | 2026-03-02 | Issue #388: Added `NotActionable` as recognized subReason alongside `ProblemResolved`. Both result in `Outcome=NoActionRequired`. Updated metrics label and detection logic. |
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: December 7, 2025
+**Document Version**: 1.1
+**Last Updated**: March 2, 2026
 **Maintained By**: Kubernaut Architecture Team
 
 

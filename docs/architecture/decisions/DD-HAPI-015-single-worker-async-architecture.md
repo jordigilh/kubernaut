@@ -89,12 +89,12 @@ HolmesGPT-API (HAPI) was initially deployed with `uvicorn --workers 4` (multi-pr
 
 Change `entrypoint.sh` from:
 ```bash
-exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 4
+exec python3.12 -m uvicorn src.main:create_app --factory --host 0.0.0.0 --port "$API_PORT" --workers 4
 ```
 
 To:
 ```bash
-exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
+exec python3.12 -m uvicorn src.main:create_app --factory --host 0.0.0.0 --port "$API_PORT" --workers 1
 ```
 
 ### Positive Consequences

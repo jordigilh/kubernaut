@@ -420,6 +420,24 @@ func (m *MockHolmesGPTClient) WithProblemResolved(confidence float64, warnings [
 	return m
 }
 
+// WithNotActionable configures the mock to return a "not actionable" response.
+// #388 Outcome D: actionable=false, needs_human_review=false, selected_workflow=null, confidence >= 0.7
+func (m *MockHolmesGPTClient) WithNotActionable(confidence float64, rcaSummary string, rcaSeverity string, contributingFactors []string) *MockHolmesGPTClient {
+	rcaMap := BuildMockRCA(rcaSummary, rcaSeverity, contributingFactors)
+	m.Response = &client.IncidentResponse{
+		IncidentID:        "mock-incident-001",
+		Analysis:          rcaSummary,
+		RootCauseAnalysis: rcaMap,
+		Confidence:        confidence,
+		Timestamp:         "2025-12-07T10:00:00Z",
+		Warnings:          []string{"Alert not actionable \u2014 no remediation warranted"},
+	}
+	m.Response.NeedsHumanReview.SetTo(false)
+	m.Response.IsActionable.SetTo(false)
+	m.Err = nil
+	return m
+}
+
 // WithProblemResolvedAndRCA configures a "problem resolved" response with RCA context.
 func (m *MockHolmesGPTClient) WithProblemResolvedAndRCA(confidence float64, warnings []string, analysis string, rcaSummary string, rcaSeverity string) *MockHolmesGPTClient {
 	// Build RCA as map[string]jx.Raw

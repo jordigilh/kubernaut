@@ -69,6 +69,20 @@ var _ = Describe("RemediationOrchestrator Config - Unit Tests", Label("config", 
 			Expect(cfg.EA.StabilizationWindow).To(Equal(5 * time.Minute))
 			Expect(cfg.DataStorage.URL).To(Equal("http://data-storage-service:8080"))
 		})
+
+		It("UT-RO-353-001: should default NoActionRequiredDelayHours to 24 (#353)", func() {
+			cfg := config.DefaultConfig()
+
+			Expect(cfg.Routing.NoActionRequiredDelayHours).To(Equal(24),
+				"Correctness: DefaultConfig must provide 24h suppression window for NoActionRequired RRs")
+
+			delay := time.Duration(cfg.Routing.NoActionRequiredDelayHours) * time.Hour
+			Expect(delay).To(Equal(24*time.Hour),
+				"Accuracy: reconciler conversion (Duration(n)*Hour) must produce the intended 24h duration")
+
+			Expect(cfg.Validate()).To(Succeed(),
+				"Behavior: DefaultConfig with the new field must still validate without regression")
+		})
 	})
 
 	// ========================================
@@ -83,6 +97,23 @@ var _ = Describe("RemediationOrchestrator Config - Unit Tests", Label("config", 
 			Expect(cfg.Validate()).To(Succeed())
 			Expect(cfg.Controller.MetricsAddr).To(Equal(":9090"))
 			Expect(cfg.Timeouts.Global).To(Equal(1 * time.Hour))
+		})
+
+		It("UT-RO-353-002: should apply YAML override for noActionRequiredDelayHours (#353)", func() {
+			path := filepath.Join("config", "testdata", "override-noaction-delay.yaml")
+			cfg, err := config.LoadFromFile(path)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(cfg.Routing.NoActionRequiredDelayHours).To(Equal(48),
+				"Correctness: YAML tag noActionRequiredDelayHours must map to field value 48")
+
+			Expect(cfg.Validate()).To(Succeed(),
+				"Behavior: overridden config must still pass validation")
+
+			Expect(cfg.Routing.ConsecutiveFailureThreshold).To(Equal(3),
+				"Accuracy: other routing fields must retain their values after override")
+			Expect(cfg.Routing.IneffectiveChainThreshold).To(Equal(3),
+				"Accuracy: other routing fields must retain their values after override")
 		})
 
 		It("should return defaults when path is empty", func() {
@@ -175,6 +206,23 @@ var _ = Describe("RemediationOrchestrator Config - Unit Tests", Label("config", 
 			cfg := config.DefaultConfig()
 			cfg.DataStorage.URL = ""
 			Expect(cfg.Validate()).To(MatchError(ContainSubstring("datastorage.url")))
+		})
+
+		// ========================================
+		// Issue #353: NoActionRequiredDelayHours validation
+		// ========================================
+		It("UT-RO-353-003: should reject negative noActionRequiredDelayHours (#353)", func() {
+			cfg := config.DefaultConfig()
+			cfg.Routing.NoActionRequiredDelayHours = -1
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("noActionRequiredDelayHours")),
+				"Behavior: negative delay must be rejected with operator-friendly error naming the field")
+		})
+
+		It("UT-RO-353-003b: should allow zero noActionRequiredDelayHours as explicit opt-out (#353)", func() {
+			cfg := config.DefaultConfig()
+			cfg.Routing.NoActionRequiredDelayHours = 0
+			Expect(cfg.Validate()).To(Succeed(),
+				"Correctness: zero is an explicit opt-out (handler guard 'if > 0' skips setting NextAllowedExecution)")
 		})
 
 		It("should reject config loaded from invalid YAML testdata", func() {

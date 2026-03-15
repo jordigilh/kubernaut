@@ -822,7 +822,7 @@ ENTRYPOINT ["ansible-playbook", "/playbooks/playbook.yml"]
 
 ```dockerfile
 # Dockerfile
-FROM bitnami/kubectl:latest
+FROM registry.k8s.io/kubectl:v1.32.0
 
 COPY remediate.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/remediate.sh

@@ -352,7 +352,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 **Description**: Additional SDK integration capabilities:
 - BR-HAPI-027: Multi-provider LLM support (OpenAI, Claude, Ollama)
-- BR-HAPI-028: SDK configuration management
+- BR-HAPI-028: SDK configuration management (see detailed section below)
 - BR-HAPI-029: SDK health checks
 - BR-HAPI-030: SDK version compatibility validation
 
@@ -361,6 +361,54 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 **Implementation Status**: ✅ Implemented (100%)
 
 **Related BRs**: BR-HAPI-026 (Core SDK Integration)
+
+---
+
+#### BR-HAPI-028: SDK Configuration Management — Two-ConfigMap Architecture
+
+**Description**: HAPI configuration is split into two Kubernetes ConfigMaps to decouple service internals from HolmesGPT SDK settings (Issue #390, Option B+C).
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Operators and documentation teams need to reason about HAPI service plumbing (logging, data_storage, audit) independently from LLM/toolset configuration. The split also enables the `existingSdkConfigMap` pattern where operators provide their own SDK ConfigMap without modifying the Helm chart.
+
+**Architecture**:
+
+| ConfigMap | Contents | Mount Path | Owner |
+|-----------|----------|------------|-------|
+| `holmesgpt-api-config` | `logging`, `data_storage`, `audit` | `/etc/holmesgpt/config.yaml` | Helm chart (not user-facing) |
+| `holmesgpt-sdk-config` | `llm`, `toolsets`, `mcp_servers` | `/etc/holmesgpt/sdk/sdk-config.yaml` | Helm chart (default) or user (`existingSdkConfigMap`) |
+
+**Loading mechanism**: HAPI uses a well-known fixed file path (`/etc/holmesgpt/sdk/sdk-config.yaml`) instead of a ConfigMap name reference. Python reads local files and the mount path is Helm-controlled. The `SDK_CONFIG_FILE` env var allows overriding the path for testing.
+
+**Validation semantics**:
+- File must exist (fail-fast `FileNotFoundError` prevents silent mount misconfigurations)
+- File must contain at least an `llm` section (fail-fast `ValueError` — HAPI is non-functional without LLM config)
+- `toolsets` and `mcp_servers` are optional (kubernetes/core, kubernetes/logs, kubernetes/live-metrics are always enabled by code defaults)
+
+**Multi-LLM note**: LLM config lives in the SDK ConfigMap (alongside toolsets) to future-proof for multi-LLM scenarios where different toolsets could target different providers.
+
+**Helm values**:
+- `holmesgptApi.toolsets` — HolmesGPT SDK toolset configuration (e.g., `prometheus/metrics`)
+- `holmesgptApi.mcpServers` — MCP server configuration
+- `holmesgptApi.existingSdkConfigMap` — Use a pre-existing ConfigMap instead of chart-generated
+
+**Implementation**:
+- `holmesgpt-api/src/config/sdk_loader.py` — `merge_sdk_config()` deep-merges SDK keys into main config
+- `holmesgpt-api/src/main.py` — `load_config()` calls `merge_sdk_config()` at startup
+- `charts/kubernaut/templates/holmesgpt-api/holmesgpt-api.yaml` — ConfigMap split, volume mounts
+- `deploy/holmesgpt-api/` — Kustomize manifests updated
+
+**Test Coverage**:
+- Unit: `test_sdk_config_loading.py` (13 tests: merge, override, missing, empty, no-llm, llm-only, toolsets)
+- E2E: `test/infrastructure/holmesgpt_api.go` (ConfigMap split in Kind cluster)
+- Full Pipeline: `test/infrastructure/fullpipeline_e2e.go` (Prometheus toolset injection)
+
+**Deferred**: ConfigManager hot-reload for SDK config → Issue #391 (v1.2)
+
+**Implementation Status**: ✅ Implemented (Issue #390)
+
+**Related BRs**: BR-HAPI-026 (SDK Integration), Issue #390, Issue #391
 
 ---
 
@@ -982,13 +1030,12 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 - Deterministic responses enable reliable assertions in tests
 
 **Implementation**:
-- **Environment Variable**: `MOCK_LLM_MODE=true`
-- **Mock Response Generator**: `src/mock_responses.py`
+- **Standalone Mock LLM Service**: HAPI is LLM-agnostic; mock behavior is achieved by pointing `LLM_ENDPOINT` at a standalone Mock LLM service
 - **Signal Type Mapping**: 6 pre-defined scenarios (OOMKilled, CrashLoopBackOff, NodeNotReady, ImagePullBackOff, Evicted, FailedScheduling)
 - **Endpoints Supported**: `/incident/analyze`, `/recovery/analyze`
 
 **Acceptance Criteria**:
-- [x] `MOCK_LLM_MODE=true` environment variable enables mock mode
+- [x] `LLM_ENDPOINT` pointing to standalone Mock LLM service enables deterministic mock responses
 - [x] Mock responses are schema-compliant (pass IncidentResponse/RecoveryResponse validation)
 - [x] Mock responses are deterministic based on input `signal_type`
 - [x] Request validation still runs (catches invalid requests)

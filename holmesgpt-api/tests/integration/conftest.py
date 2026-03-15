@@ -217,20 +217,14 @@ def hapi_client():
     - Data Storage: http://localhost:18098 (Go-started)
     - Mock LLM: enabled
 
-    Note: src/main.py sets app=None when pytest is detected.
-    We must use create_app() factory with mock auth (same pattern as unit tests).
+    Uses create_app() factory with mock auth injected via DI (DD-AUTH-014).
 
     See: docs/shared/HAPI_INTEGRATION_TEST_ARCHITECTURE_FIX_DEC_29_2025.md
     """
     from fastapi.testclient import TestClient
 
-    # Environment variables are set globally in pytest_configure
-    # (CONFIG_FILE, MOCK_LLM_MODE, LLM_MODEL, LLM_ENDPOINT)
-
-    # Use create_app() factory with mock auth (src/main.py sets app=None under pytest)
-    # Pattern matches unit test conftest.py client fixture
     from src.main import create_app
-    from src.auth import MockAuthenticator, MockAuthorizer
+    from tests.helpers.mock_auth import MockAuthenticator, MockAuthorizer
 
     app = create_app(
         authenticator=MockAuthenticator(
@@ -507,9 +501,16 @@ def pytest_configure(config):
     os.environ["LLM_MODEL"] = "gpt-4-turbo"
     # DD-TEST-001 v2.5: Mock LLM on port 18140 (HAPI integration tests)
     os.environ["LLM_ENDPOINT"] = "http://127.0.0.1:18140"
-    os.environ["MOCK_LLM_MODE"] = "true"
     os.environ["CONFIG_FILE"] = "config.yaml"
     os.environ["OPENAI_API_KEY"] = "test-api-key-for-integration-tests"
+
+    # Issue #390: Create temp SDK config for the two-file loading in load_config()
+    import tempfile
+    _sdk_cfg = tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False)
+    _sdk_cfg.write("llm:\n  provider: openai\n  model: gpt-4-turbo\n  endpoint: http://127.0.0.1:18140\ntoolsets: {}\nmcp_servers: {}\n")
+    _sdk_cfg.close()
+    os.environ["SDK_CONFIG_FILE"] = _sdk_cfg.name
+    config._temp_sdk_config_file = _sdk_cfg.name
 
     config.addinivalue_line(
         "markers",
@@ -519,6 +520,15 @@ def pytest_configure(config):
         "markers",
         "requires_hapi: mark test as requiring HAPI service"
     )
+
+
+def pytest_unconfigure(config):
+    """Cleanup temporary SDK config file created in pytest_configure."""
+    if hasattr(config, '_temp_sdk_config_file'):
+        try:
+            os.unlink(config._temp_sdk_config_file)
+        except Exception:
+            pass
 
 
 def pytest_collection_modifyitems(config, items):

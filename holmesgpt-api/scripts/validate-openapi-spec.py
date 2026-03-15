@@ -48,7 +48,13 @@ from pathlib import Path
 script_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(script_dir))
 
-from src.main import app
+from tests.helpers.mock_auth import MockAuthenticator, MockAuthorizer
+from src.main import create_app
+
+app = create_app(
+    authenticator=MockAuthenticator(),
+    authorizer=MockAuthorizer(default_allow=True),
+)
 from src.models.incident_models import IncidentResponse
 
 

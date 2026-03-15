@@ -9,7 +9,6 @@ import pytest
 import os
 import time
 import tempfile
-from unittest.mock import patch
 
 # BR-AA-HAPI-064: Session manager reset between tests
 from src.session.session_manager import reset_session_manager
@@ -42,12 +41,6 @@ def pytest_configure(config):
             sys.modules[mod_name] = MagicMock()
 
     _config_content = """
-llm:
-  provider: "openai"
-  model: "gpt-4-turbo"
-  endpoint: "http://127.0.0.1:8080"
-  max_tokens: 16384
-
 data_storage:
   url: "http://127.0.0.1:18098"
 
@@ -56,12 +49,28 @@ logging:
   format: "json"
 """
 
+    _sdk_config_content = """
+llm:
+  provider: "openai"
+  model: "gpt-4-turbo"
+  endpoint: "http://127.0.0.1:8080"
+  max_tokens: 16384
+
+toolsets: {}
+mcp_servers: {}
+"""
+
     _temp_config = tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False)
     _temp_config.write(_config_content)
     _temp_config.close()
 
-    # Set CONFIG_FILE and OPENAI_API_KEY env vars BEFORE any test modules import src.main
+    _temp_sdk_config = tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False)
+    _temp_sdk_config.write(_sdk_config_content)
+    _temp_sdk_config.close()
+
+    # Set CONFIG_FILE, SDK_CONFIG_FILE, and OPENAI_API_KEY env vars BEFORE any test modules import src.main
     os.environ["CONFIG_FILE"] = _temp_config.name
+    os.environ["SDK_CONFIG_FILE"] = _temp_sdk_config.name
     os.environ["OPENAI_API_KEY"] = "test-api-key-for-unit-tests"
 
     # Set LLM_MODEL explicitly (takes precedence over config file per get_model_config_for_sdk)
@@ -72,21 +81,19 @@ logging:
     # Set LLM_ENDPOINT to match the temp config
     os.environ["LLM_ENDPOINT"] = "http://127.0.0.1:8080"
 
-    # Set MOCK_LLM_MODE to prevent real LLM initialization during unit tests
-    # This must be set early (before src.main import) to prevent HolmesGPT SDK from trying to validate model with litellm
-    os.environ["MOCK_LLM_MODE"] = "true"
-
     # Store for cleanup
     config._temp_config_file = _temp_config.name
+    config._temp_sdk_config_file = _temp_sdk_config.name
 
 
 def pytest_unconfigure(config):
-    """Cleanup temporary config file after all tests."""
-    if hasattr(config, '_temp_config_file'):
-        try:
-            os.unlink(config._temp_config_file)
-        except:
-            pass
+    """Cleanup temporary config files after all tests."""
+    for attr in ('_temp_config_file', '_temp_sdk_config_file'):
+        if hasattr(config, attr):
+            try:
+                os.unlink(getattr(config, attr))
+            except Exception:
+                pass
 
 
 def wait_for_condition(check_fn, timeout=1.0, interval=0.01, error_msg="Condition not met"):
@@ -147,19 +154,13 @@ def _reset_session_manager():
     reset_session_manager()
 
 
-@pytest.fixture
-def mock_llm_mode():
-    """Enable mock LLM mode for unit tests"""
-    with patch.dict(os.environ, {"MOCK_LLM_MODE": "true"}):
-        yield
-
 
 @pytest.fixture
 def client():
     """Create authenticated FastAPI test client for unit tests with mock auth"""
     from fastapi.testclient import TestClient
     from src.main import create_app
-    from src.auth import MockAuthenticator, MockAuthorizer
+    from tests.helpers.mock_auth import MockAuthenticator, MockAuthorizer
 
     # Create app with mock auth components (no K8s cluster dependency)
     # Factory pattern: Pure dependency injection, no test-specific logic in business code

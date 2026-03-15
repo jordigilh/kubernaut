@@ -28,7 +28,7 @@ Test IDs: IT-HAPI-017-001-001 through IT-HAPI-017-001-004
 
 Prerequisites:
     Real Data Storage with PostgreSQL (started by Go infrastructure).
-    Migration 025 applied (action_type_taxonomy seeded).
+    Action types seeded via DataStorage API (by Go test infrastructure).
 
 Run:
     python -m pytest tests/integration/test_three_step_discovery_integration.py -v
@@ -90,7 +90,7 @@ def seeded_workflows(data_storage_url):
     taxonomy = bootstrap_action_type_taxonomy(data_storage_url)
     assert taxonomy["available"], (
         "Action type taxonomy not available in DS. "
-        "Ensure Go infrastructure is running with migration 025 applied."
+        "Ensure Go infrastructure is running with action types seeded via DS API."
     )
 
     # Seed all test workflows (base + pagination = 31 total)

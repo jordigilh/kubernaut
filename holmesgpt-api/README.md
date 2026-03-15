@@ -6,6 +6,12 @@
 
 **Design Decision**: [DD-HOLMESGPT-012 - Minimal Internal Service Architecture](../docs/architecture/decisions/DD-HOLMESGPT-012-Minimal-Internal-Service-Architecture.md)
 
+## Architectural Principles
+
+- **LLM-Agnostic**: HAPI does not know or care whether it talks to a real LLM or the standalone Mock LLM service. The LLM provider is configured externally via `LLM_ENDPOINT` and `LLM_MODEL`.
+- **Authentication Always Enforced**: Authentication and authorization are injected via dependency injection (`create_app(authenticator=..., authorizer=...)`). Business code never conditionally disables security. Test doubles are provided in `tests/helpers/mock_auth.py`.
+- **No Test Code in Business Layer**: All mock/test doubles live in `tests/helpers/`. The `src/` directory contains zero test-specific logic.
+
 ## Architecture
 
 - **Type**: Internal stateless service (network policies handle access)
@@ -113,31 +119,27 @@ make test-e2e-holmesgpt-api       # E2E tests
 
 | Variable | Purpose | Example | Required |
 |----------|---------|---------|----------|
-| `MOCK_LLM_MODE` | Enable mock LLM responses (BR-HAPI-212) | `true`, `false` | ⚠️ Testing only |
 | `CONFIG_PATH` | Path to config file | `/etc/holmesgpt/config.yaml` | ❌ Optional |
 
-### Mock Mode Configuration (BR-HAPI-212)
+### Mock LLM for Testing (BR-HAPI-212)
 
 **For Integration Testing and E2E Tests:**
 
+HAPI is LLM-agnostic. Point `LLM_ENDPOINT` at a standalone Mock LLM service for deterministic responses without real LLM API costs:
+
 ```yaml
 env:
-- name: MOCK_LLM_MODE        # ← Correct variable name
-  value: "true"
+- name: LLM_ENDPOINT
+  value: http://mock-llm:8080   # Standalone Mock LLM service
+- name: LLM_MODEL
+  value: mock-model
 - name: DATASTORAGE_URL
   value: http://datastorage:8080
 - name: LOG_LEVEL
   value: INFO
 ```
 
-**Important Notes:**
-- ✅ Variable name is `MOCK_LLM_MODE` (NOT `MOCK_LLM_ENABLED`)
-- ✅ When enabled, NO LLM configuration is required
-- ✅ Returns deterministic responses based on signal_type
-- ✅ No LLM API calls are made
-- ✅ Checked in `src/mock_responses.py:is_mock_mode_enabled()`
-
-**Mock Mode Behavior:**
+**Mock LLM Behavior:**
 - Initial incident requests → deterministic workflow selection
 - Recovery requests → deterministic recovery analysis
 - No real LLM provider needed
@@ -146,8 +148,9 @@ env:
 
 **Example Test Configuration:**
 ```bash
-# Set environment for tests
-export MOCK_LLM_MODE=true
+# Set environment for tests (standalone Mock LLM service)
+export LLM_ENDPOINT=http://localhost:8080
+export LLM_MODEL=mock-model
 export DATASTORAGE_URL=http://localhost:8080
 
 # Run integration tests
@@ -210,7 +213,7 @@ python3 -m pytest tests/e2e/test_workflow_selection_e2e.py -v  # E2E with mock L
 LLM_ENDPOINT=http://localhost:11434 \
 LLM_MODEL=ollama/qwen2.5:14b-instruct-q4_K_M \
 AUTH_ENABLED=false \
-uvicorn src.main:app --reload
+uvicorn src.main:create_app --factory --reload
 ```
 
 ### Production
@@ -221,7 +224,7 @@ AUTH_ENABLED=true \
 LLM_ENDPOINT=https://api.openai.com/v1 \
 LLM_MODEL=gpt-4o \
 OPENAI_API_KEY=$OPENAI_API_KEY \
-uvicorn src.main:app --host 0.0.0.0 --port 8080
+uvicorn src.main:create_app --factory --host 0.0.0.0 --port 8080
 ```
 
 ## Documentation

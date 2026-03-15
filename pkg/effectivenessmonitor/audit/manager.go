@@ -41,6 +41,7 @@ const (
 	ActionAssessed  = "assessed"
 	ActionComputed  = "computed"
 	ActionScheduled = "scheduled"
+	ActionDetected  = "detected"
 )
 
 // componentEventTypeMapping maps EM component types to their audit event type
@@ -82,6 +83,13 @@ var componentConfigs = map[string]componentEventConfig{
 		component:      ogenclient.EffectivenessAssessmentAuditPayloadComponentMetrics,
 		action:         ActionAssessed,
 		newEventDataFn: ogenclient.NewAuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData,
+	},
+	"alert_decay": {
+		eventType:      string(emtypes.AuditAlertDecayDetected),
+		payloadType:    ogenclient.EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertDecayDetected,
+		component:      ogenclient.EffectivenessAssessmentAuditPayloadComponentAlertDecay,
+		action:         ActionDetected,
+		newEventDataFn: ogenclient.NewAuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData,
 	},
 }
 
@@ -292,6 +300,70 @@ func (m *Manager) RecordAlertAssessed(ctx context.Context, ea *eav1.Effectivenes
 	payload.AlertResolution = ogenclient.NewOptEffectivenessAssessmentAuditPayloadAlertResolution(ar)
 
 	return m.storeEvent(ctx, cfg, ea, payload, result)
+}
+
+// AlertDecayDetectedData contains the structured fields for the
+// effectiveness.alert_decay.detected audit event (Issue #369, BR-EM-012).
+type AlertDecayDetectedData struct {
+	// HealthScore is the current health score confirming the resource is healthy.
+	HealthScore float64
+	// AlertScore is the current alert score (0.0 = still firing).
+	AlertScore float64
+	// RetryCount is the AlertDecayRetries value after this detection (starts at 1).
+	RetryCount int32
+}
+
+// RecordAlertDecayDetected records the effectiveness.alert_decay.detected audit event.
+// Called exactly once on first decay detection (AlertDecayRetries == 0 before increment).
+// Subsequent re-checks are silent to avoid audit noise (same pattern as metrics retries).
+// Reference: Issue #369, BR-EM-012
+func (m *Manager) RecordAlertDecayDetected(ctx context.Context, ea *eav1.EffectivenessAssessment, decayData AlertDecayDetectedData) error {
+	if m.store == nil {
+		m.logger.V(1).Info("AuditStore is nil, skipping alert decay detected audit event")
+		return nil
+	}
+
+	cfg := componentConfigs["alert_decay"]
+
+	score := decayData.AlertScore
+	payload := m.buildBasePayload(cfg, ea, emtypes.ComponentResult{
+		Component: emtypes.ComponentAlertDecay,
+		Assessed:  false,
+		Score:     &score,
+		Details:   fmt.Sprintf("Alert decay detected: health=%.2f, alert=%.2f, retry=%d", decayData.HealthScore, decayData.AlertScore, decayData.RetryCount),
+	})
+
+	payload.AlertResolution = ogenclient.NewOptEffectivenessAssessmentAuditPayloadAlertResolution(
+		ogenclient.EffectivenessAssessmentAuditPayloadAlertResolution{
+			AlertResolved: ogenclient.NewOptBool(false),
+			ActiveCount:   ogenclient.NewOptInt32(1),
+		},
+	)
+
+	event := pkgaudit.NewAuditEventRequest()
+	event.Version = "1.0"
+	pkgaudit.SetEventType(event, cfg.eventType)
+	pkgaudit.SetEventCategory(event, CategoryEffectiveness)
+	pkgaudit.SetEventAction(event, cfg.action)
+	pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
+	pkgaudit.SetActor(event, "service", ServiceName)
+	pkgaudit.SetResource(event, "EffectivenessAssessment", ea.Name)
+	pkgaudit.SetCorrelationID(event, ea.Spec.CorrelationID)
+	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
+	event.EventData = cfg.newEventDataFn(payload)
+
+	if err := m.store.StoreAudit(ctx, event); err != nil {
+		m.logger.Error(err, "Failed to store alert decay detected audit event",
+			"correlationID", ea.Spec.CorrelationID)
+		return err
+	}
+
+	m.logger.V(1).Info("Alert decay detected audit event stored",
+		"correlationID", ea.Spec.CorrelationID,
+		"healthScore", decayData.HealthScore,
+		"alertScore", decayData.AlertScore,
+		"retryCount", decayData.RetryCount)
+	return nil
 }
 
 // RecordMetricsAssessed records the effectiveness.metrics.assessed audit event with

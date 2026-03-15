@@ -529,7 +529,7 @@ func (r *KubernetesExecutionReconciler) createExecutionJob(
                     Containers: []corev1.Container{
                         {
                             Name:    "executor",
-                            Image:   "bitnami/kubectl:latest",
+                            Image:   "registry.k8s.io/kubectl:v1.32.0",
                             Command: []string{"/bin/sh", "-c"},
                             Args:    []string{command},
                             Env: []corev1.EnvVar{

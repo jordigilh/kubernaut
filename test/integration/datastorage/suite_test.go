@@ -20,6 +20,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
@@ -43,7 +45,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
+	dsconfig "github.com/jordigilh/kubernaut/pkg/datastorage/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -786,6 +792,100 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 		return err
 	}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "Schema should propagate")
 	GinkgoWriter.Println("  ✅ Schema propagation complete")
+
+	// 7. Seed action types via temp in-process DataStorage server (DD-WORKFLOW-016)
+	GinkgoWriter.Println("  🏷️  Seeding action types via in-process DataStorage server...")
+	seedActionTypesViaInProcessServer()
+	GinkgoWriter.Println("  ✅ Action types seeded")
+}
+
+// seedActionTypesViaInProcessServer creates a temporary in-process DataStorage httptest
+// server, seeds all standard action types through its API, then tears it down. The rows
+// persist in the shared PostgreSQL instance so every per-test httptest server sees them.
+func seedActionTypesViaInProcessServer() {
+	host := os.Getenv("POSTGRES_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	pgPort := os.Getenv("POSTGRES_PORT")
+	if pgPort == "" {
+		pgPort = "15433"
+	}
+	dbConnStr := fmt.Sprintf(
+		"host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable options='-c search_path=public'",
+		host, pgPort,
+	)
+
+	redisHost := os.Getenv("REDIS_HOST")
+	if redisHost == "" {
+		redisHost = "localhost"
+	}
+	redisPort := os.Getenv("REDIS_PORT")
+	if redisPort == "" {
+		redisPort = "16379"
+	}
+	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
+
+	appCfg := &dsconfig.Config{
+		Database: dsconfig.DatabaseConfig{
+			MaxOpenConns:    5,
+			MaxIdleConns:    2,
+			ConnMaxLifetime: "1m",
+			ConnMaxIdleTime: "1m",
+		},
+	}
+
+	const seedToken = "seed-token"
+	const seedUser = "system:serviceaccount:datastorage-test:action-type-seeder"
+
+	srv, err := server.NewServer(server.ServerDeps{
+		DBConnStr:     dbConnStr,
+		RedisAddr:     redisAddr,
+		RedisPassword: "",
+		Logger:        logr.Discard(),
+		AppConfig:     appCfg,
+		ServerConfig: &server.Config{
+			Port:         18090,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+		},
+		DLQMaxLen: 100,
+		Authenticator: &auth.MockAuthenticator{
+			ValidUsers: map[string]string{
+				seedToken: seedUser,
+			},
+		},
+		Authorizer: &auth.MockAuthorizer{
+			AllowedUsers: map[string]bool{
+				seedUser: true,
+			},
+		},
+		AuthNamespace: "datastorage-test",
+	})
+	Expect(err).ToNot(HaveOccurred(), "temp server creation for action type seeding should succeed")
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	httpClient := &http.Client{
+		Transport: &bearerTransport{token: seedToken},
+	}
+	client, err := ogenclient.NewClient(ts.URL, ogenclient.WithClient(httpClient))
+	Expect(err).ToNot(HaveOccurred(), "ogen client creation should succeed")
+
+	err = infrastructure.SeedActionTypesViaAPI(client, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "action type seeding via DS API should succeed")
+}
+
+// bearerTransport injects an Authorization header into every outgoing request.
+type bearerTransport struct {
+	token string
+}
+
+func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Header.Set("Authorization", "Bearer "+t.token)
+	return http.DefaultTransport.RoundTrip(req)
 }
 
 // verifyAndCreatePublicSchemaConstraints ensures critical constraints exist in public schema

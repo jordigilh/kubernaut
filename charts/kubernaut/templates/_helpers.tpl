@@ -33,6 +33,17 @@ Chart label value.
 {{- end }}
 
 {{/*
+Render imagePullSecrets from global.imagePullSecrets for private registries.
+Usage: {{ include "kubernaut.imagePullSecrets" . | nindent 6 }}
+*/}}
+{{- define "kubernaut.imagePullSecrets" -}}
+{{- with .Values.global.imagePullSecrets }}
+imagePullSecrets:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}
+
+{{/*
 Render nodeSelector and tolerations for a component pod spec.
 Component-level values override global defaults.
 Usage: {{ include "kubernaut.scheduling" (dict "component" .Values.gateway "global" .Values.global) | nindent 6 }}
@@ -52,10 +63,21 @@ tolerations:
 
 {{/*
 Render the container image for a Kubernaut service.
+Constructs: {registry}/{namespace}{separator}{service}:{tag|@digest}
+  separator="/" → quay.io/kubernaut-ai/gateway:tag        (nested registries)
+  separator="-" → quay.io/myorg/kubernaut-ai-gateway:tag   (flat registries)
+When namespace is empty the separator is omitted: {registry}/{service}:{tag}
 Usage: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.global "appVersion" .Chart.AppVersion) }}
 */}}
 {{- define "kubernaut.image" -}}
-{{- printf "%s/%s:%s" .global.image.registry .service (.global.image.tag | default .appVersion) }}
+{{- $ns := .global.image.namespace | default "" -}}
+{{- $sep := .global.image.separator | default "/" -}}
+{{- $repo := ternary (printf "%s%s%s" $ns $sep .service) .service (ne $ns "") -}}
+{{- if .global.image.digest -}}
+{{- printf "%s/%s@%s" .global.image.registry $repo .global.image.digest -}}
+{{- else -}}
+{{- printf "%s/%s:%s" .global.image.registry $repo (.global.image.tag | default .appVersion) -}}
+{{- end -}}
 {{- end }}
 
 {{/*
@@ -93,21 +115,21 @@ datastorage-db-secret
 {{- end }}
 
 {{/*
-Return the Secret name for Redis credentials.
-When using external Redis, falls through to the external settings.
+Return the Secret name for Valkey credentials.
+When using external Valkey, falls through to the external settings.
 */}}
-{{- define "kubernaut.redis.secretName" -}}
-{{- if .Values.redis.enabled -}}
-  {{- if .Values.redis.existingSecret -}}
-    {{- .Values.redis.existingSecret -}}
+{{- define "kubernaut.valkey.secretName" -}}
+{{- if .Values.valkey.enabled -}}
+  {{- if .Values.valkey.existingSecret -}}
+    {{- .Values.valkey.existingSecret -}}
   {{- else -}}
-    redis-secret
+    valkey-secret
   {{- end -}}
 {{- else -}}
-  {{- if .Values.externalRedis.existingSecret -}}
-    {{- .Values.externalRedis.existingSecret -}}
+  {{- if .Values.externalValkey.existingSecret -}}
+    {{- .Values.externalValkey.existingSecret -}}
   {{- else -}}
-    redis-secret
+    valkey-secret
   {{- end -}}
 {{- end -}}
 {{- end }}
@@ -158,14 +180,65 @@ Return the PostgreSQL database name.
 {{- end }}
 
 {{/*
-Return the Redis address (host:port).
+Return the PostgreSQL variant ("upstream" or "ocp").
 */}}
-{{- define "kubernaut.redis.addr" -}}
-{{- if .Values.redis.enabled -}}
-redis.{{ .Release.Namespace }}.svc.cluster.local:6379
+{{- define "kubernaut.postgresql.variant" -}}
+{{- .Values.postgresql.variant | default "upstream" -}}
+{{- end }}
+
+{{/*
+Return the env var name for the PostgreSQL user, by variant.
+Secret keys are always POSTGRES_*; env var names differ per image.
+*/}}
+{{- define "kubernaut.postgresql.envVarUser" -}}
+{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_USER{{- else -}}POSTGRES_USER{{- end -}}
+{{- end }}
+
+{{/*
+Return the env var name for the PostgreSQL password, by variant.
+*/}}
+{{- define "kubernaut.postgresql.envVarPassword" -}}
+{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_PASSWORD{{- else -}}POSTGRES_PASSWORD{{- end -}}
+{{- end }}
+
+{{/*
+Return the env var name for the PostgreSQL database, by variant.
+*/}}
+{{- define "kubernaut.postgresql.envVarDatabase" -}}
+{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_DATABASE{{- else -}}POSTGRES_DB{{- end -}}
+{{- end }}
+
+{{/*
+Return the data directory mount path for the PostgreSQL variant.
+upstream: /var/lib/postgresql/data   ocp: /var/lib/pgsql/data
+*/}}
+{{- define "kubernaut.postgresql.dataDir" -}}
+{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}/var/lib/pgsql/data{{- else -}}/var/lib/postgresql/data{{- end -}}
+{{- end }}
+
+{{/*
+NOTE: kubernaut.postgresql.clientImage was removed in #351 (C1).
+Migration hooks now use hooks.migrations.image directly (db-migrate image
+with goose + psql pre-installed). No runtime binary downloads needed.
+*/}}
+
+{{/*
+Return the Valkey data directory mount path.
+upstream: /data   ocp: /var/lib/valkey/data
+*/}}
+{{- define "kubernaut.valkey.dataDir" -}}
+{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}/var/lib/valkey/data{{- else -}}/data{{- end -}}
+{{- end }}
+
+{{/*
+Return the Valkey address (host:port).
+*/}}
+{{- define "kubernaut.valkey.addr" -}}
+{{- if .Values.valkey.enabled -}}
+valkey.{{ .Release.Namespace }}.svc.cluster.local:6379
 {{- else -}}
-{{- $host := required "externalRedis.host is required when redis.enabled=false" .Values.externalRedis.host -}}
-{{- printf "%s:%d" $host (int (.Values.externalRedis.port | default 6379)) -}}
+{{- $host := required "externalValkey.host is required when valkey.enabled=false" .Values.externalValkey.host -}}
+{{- printf "%s:%d" $host (int (.Values.externalValkey.port | default 6379)) -}}
 {{- end -}}
 {{- end }}
 

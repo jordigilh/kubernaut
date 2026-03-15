@@ -85,8 +85,6 @@ services:
       context: ../../..
       dockerfile: holmesgpt-api/Dockerfile
     environment:
-      # Mock LLM mode for integration tests (no real LLM calls)
-      MOCK_LLM_MODE: "true"
       # DataStorage connection (matches src/audit/factory.py expectation)
       DATA_STORAGE_URL: http://datastorage:8080
       PORT: 8080

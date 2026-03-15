@@ -319,7 +319,6 @@ async def analyze_incident(
         data_storage_client = create_data_storage_client(app_config)
 
         # BR-AUDIT-005: audit_store and remediation_id already initialized at function start
-        # (Moved before mock check to support audit in mock mode - BR-HAPI-212 + BR-AUDIT-005)
 
         # ========================================
         # LLM SELF-CORRECTION LOOP (DD-HAPI-002 v1.2)

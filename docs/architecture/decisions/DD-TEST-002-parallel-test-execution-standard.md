@@ -346,11 +346,11 @@ If your service currently uses sequential Phase 4 deployment:
 
 All service Dockerfiles MUST be optimized for fast E2E builds:
 
-**Standard**: Use latest UBI9 base images, **NO** `dnf update`
+**Standard**: Use latest UBI10 base images, **NO** `dnf update`
 
 ```dockerfile
 # ✅ CORRECT: Fast builds (~2 minutes)
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
 
 # Install build dependencies (NO dnf update)
 RUN dnf install -y git ca-certificates tzdata && \
@@ -359,7 +359,7 @@ RUN dnf install -y git ca-certificates tzdata && \
 
 ```dockerfile
 # ❌ WRONG: Slow builds (~10 minutes)
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.24 AS builder
 
 # Upgrades ~58 packages on every build!
 RUN dnf update -y && \

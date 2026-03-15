@@ -75,7 +75,6 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			By("Verifying a Job was created in the execution namespace")
 			job, err := waitForJobCreation(wfe.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "Job should be created in execution namespace")
-			Expect(job).ToNot(BeNil())
 
 			By("Verifying ExecutionRef is set on WFE status")
 			updated, err := getWFE(wfe.Name, wfe.Namespace)
@@ -122,7 +121,6 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			By("Getting the created Job")
 			job, err := waitForJobCreation(wfe.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(job).ToNot(BeNil())
 
 			By("Simulating Job failure")
 			Expect(simulateJobCompletion(job, false)).To(Succeed())
@@ -161,7 +159,6 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			By("Waiting for Job creation")
 			job, err := waitForJobCreation(wfe.Name, 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(job).ToNot(BeNil())
 
 			By("Verifying Job labels")
 			Expect(job.Labels).To(HaveKeyWithValue("kubernaut.ai/workflow-execution", wfe.Name))
@@ -191,8 +188,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal("kubernaut-workflow-runner"))
 
 			By("Verifying backoff limit is 0 (no retries)")
-			Expect(job.Spec.BackoffLimit).ToNot(BeNil())
-			Expect(*job.Spec.BackoffLimit).To(Equal(int32(0)))
+			Expect(*job.Spec.BackoffLimit).To(Equal(int32(0)), "BackoffLimit should be 0 for fail-fast behavior")
 
 			GinkgoWriter.Printf("✅ IT-WE-014-003: Job spec correctness verified\n")
 		})
@@ -217,9 +213,8 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Verifying Job exists")
-			job, err := waitForJobCreation(wfe.Name, 5*time.Second)
+			_, err := waitForJobCreation(wfe.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(job).ToNot(BeNil())
 
 			By("Verifying finalizer is present")
 			updated, err := getWFE(wfe.Name, wfe.Namespace)
@@ -355,7 +350,6 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			By("Verifying Job exists")
 			job, err := waitForJobCreation(wfe.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(job).ToNot(BeNil())
 
 			By("Simulating external Job deletion (operator action)")
 			propagation := metav1.DeletePropagationBackground
@@ -428,10 +422,10 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			failedWFE, err := getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
-			auditCondition := weconditions.GetCondition(failedWFE, weconditions.ConditionAuditRecorded)
-			Expect(auditCondition).ToNot(BeNil(),
+			Expect(weconditions.IsConditionTrue(failedWFE, weconditions.ConditionAuditRecorded)).To(BeTrue(),
 				"AuditRecorded condition should be set (proves controller attempted audit for external Job deletion)")
 
+			auditCondition := weconditions.GetCondition(failedWFE, weconditions.ConditionAuditRecorded)
 			GinkgoWriter.Printf("✅ IT-WE-014-011: AuditRecorded condition set on external Job deletion\n")
 			GinkgoWriter.Printf("   AuditRecorded Status: %s, Reason: %s\n", auditCondition.Status, auditCondition.Reason)
 		})
@@ -515,7 +509,6 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			By("Verifying Job was actually created")
 			job, err := waitForJobCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(job).ToNot(BeNil())
 
 			By("Verifying condition message includes Job name")
 			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
@@ -581,7 +574,8 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionCreated)).To(BeTrue())
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionRunning)).To(BeTrue())
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionComplete)).To(BeTrue())
-			Expect(weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded)).ToNot(BeNil())
+			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionAuditRecorded)).To(BeTrue(),
+				"AuditRecorded condition should be True after successful Job completion")
 
 			GinkgoWriter.Printf("✅ IT-WE-014-014: Complete Job condition lifecycle (success) verified\n")
 		})
@@ -633,8 +627,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				"FailureDetails should be populated on Job failure")
 
 			By("Verifying AuditRecorded condition exists")
-			auditCond := weconditions.GetCondition(failedWFE, weconditions.ConditionAuditRecorded)
-			Expect(auditCond).ToNot(BeNil(),
+			Expect(weconditions.IsConditionTrue(failedWFE, weconditions.ConditionAuditRecorded)).To(BeTrue(),
 				"AuditRecorded condition should be set (controller attempted audit for Job failure)")
 
 			GinkgoWriter.Printf("✅ IT-WE-014-015: Job failure conditions + FailureDetails verified\n")
@@ -669,9 +662,8 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Verifying Job exists for first WFE")
-			job, err := waitForJobCreation(wfe1.Name, 5*time.Second)
+			_, err := waitForJobCreation(wfe1.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(job).ToNot(BeNil())
 
 			By("Creating second WFE for SAME target resource")
 			wfe2 := createUniqueJobWFE("conflict-job2", targetResource)
@@ -692,7 +684,6 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 
 			failedWFE2, err := getWFE(wfe2.Name, wfe2.Namespace)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(failedWFE2.Status.FailureDetails).ToNot(BeNil())
 			Expect(failedWFE2.Status.FailureDetails.Reason).To(Equal("Unknown"),
 				"Failure reason should be 'Unknown' (CRD enum constraint; details in message)")
 			Expect(failedWFE2.Status.FailureDetails.Message).To(ContainSubstring("already exists"),
@@ -759,6 +750,142 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				"First WFE should complete successfully despite second WFE's failure")
 
 			GinkgoWriter.Printf("✅ IT-WE-014-017: First WFE completed normally, isolated from second WFE's AlreadyExists failure\n")
+		})
+	})
+})
+
+// ========================================
+// Issue #374: Pre-execution Cleanup of Completed Jobs (DD-WE-003)
+// Tests: Sequential remediation and concurrent lock preservation
+// ========================================
+
+var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
+
+	Context("Sequential Remediation", func() {
+
+		It("should allow second WFE after first completes for same target (IT-WE-374-001)", func() {
+			targetResource := fmt.Sprintf("default/deployment/seq-remediation-%d", time.Now().UnixNano())
+
+			By("Phase 1: Creating first WFE targeting the resource")
+			wfe1 := createUniqueJobWFE("seq1", targetResource)
+			defer cleanupJobWFE(wfe1)
+			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+
+			By("Waiting for first WFE to reach Running (Job created)")
+			Eventually(func() string {
+				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
+				"WFE1 should reach Running phase")
+
+			By("Getting the Job and simulating successful completion")
+			job1, err := waitForJobCreation(wfe1.Name, 5*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			expectedJobName := executor.ExecutionResourceName(targetResource)
+			Expect(job1.Name).To(Equal(expectedJobName), "Job name must be deterministic")
+
+			Expect(simulateJobCompletion(job1, true)).To(Succeed())
+
+			By("Waiting for first WFE to reach Completed")
+			Eventually(func() string {
+				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted),
+				"WFE1 should reach Completed phase")
+
+			By("Phase 2: Creating second WFE for the SAME target resource")
+			wfe2 := createUniqueJobWFE("seq2", targetResource)
+			defer cleanupJobWFE(wfe2)
+			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+
+			By("Waiting for second WFE to reach Running (stale Job cleaned up, new Job created)")
+			Eventually(func() string {
+				updated, err := getWFE(wfe2.Name, wfe2.Namespace)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 30*time.Second, 200*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
+				"WFE2 should reach Running phase (Issue #374: completed Job cleaned up)")
+
+			By("Verifying a new Job was created for WFE2")
+			job2, err := waitForJobCreation(wfe2.Name, 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(job2.Name).To(Equal(expectedJobName),
+				"New Job should have the same deterministic name (same target resource)")
+
+			By("Simulating second Job completion")
+			Expect(simulateJobCompletion(job2, true)).To(Succeed())
+
+			By("Waiting for second WFE to reach Completed")
+			Eventually(func() string {
+				updated, err := getWFE(wfe2.Name, wfe2.Namespace)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted),
+				"WFE2 should reach Completed phase")
+
+			GinkgoWriter.Printf("✅ IT-WE-374-001: Sequential remediation succeeded (completed Job cleaned up)\n")
+		})
+	})
+
+	Context("Concurrent Lock Preservation", func() {
+
+		It("should block second WFE when first is still running (IT-WE-374-002)", func() {
+			targetResource := fmt.Sprintf("default/deployment/concurrent-lock-%d", time.Now().UnixNano())
+
+			By("Creating first WFE targeting the resource")
+			wfe1 := createUniqueJobWFE("lock-active1", targetResource)
+			defer cleanupJobWFE(wfe1)
+			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+
+			By("Waiting for first WFE to reach Running (Job actively executing)")
+			Eventually(func() string {
+				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
+				"WFE1 should reach Running phase (Job actively executing)")
+
+			By("Creating second WFE for the SAME target while first is still running")
+			wfe2 := createUniqueJobWFE("lock-active2", targetResource)
+			defer cleanupJobWFE(wfe2)
+			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+
+			By("Verifying second WFE fails with target resource locked")
+			Eventually(func() string {
+				updated, err := getWFE(wfe2.Name, wfe2.Namespace)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseFailed),
+				"WFE2 should fail because running Job is a valid lock (BR-WE-009)")
+
+			By("Verifying failure message indicates resource is locked")
+			failedWFE2, err := getWFE(wfe2.Name, wfe2.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(failedWFE2.Status.FailureDetails.Message).To(
+				ContainSubstring("already exists"),
+				"Failure message should indicate resource collision")
+
+			By("Verifying first WFE remains Running (unaffected)")
+			wfe1Updated, err := getWFE(wfe1.Name, wfe1.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(wfe1Updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseRunning),
+				"WFE1 should continue running unaffected")
+
+			GinkgoWriter.Printf("✅ IT-WE-374-002: Concurrent lock preserved (running Job blocks new WFE)\n")
 		})
 	})
 })

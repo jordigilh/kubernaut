@@ -79,8 +79,8 @@ class RemediationWorkflow(BaseModel):
     @field_validator('status')
     def status_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('active', 'disabled', 'deprecated', 'archived'):
-            raise ValueError("must be one of enum values ('active', 'disabled', 'deprecated', 'archived')")
+        if value not in ('active', 'disabled', 'deprecated', 'archived', 'superseded'):
+            raise ValueError("must be one of enum values ('active', 'disabled', 'deprecated', 'archived', 'superseded')")
         return value
 
     model_config = {

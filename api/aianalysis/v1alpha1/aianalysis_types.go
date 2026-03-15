@@ -285,7 +285,7 @@ type AIAnalysisStatus struct {
 	// SubReason provides specific failure cause within the Reason category
 	// BR-HAPI-197: Maps to needs_human_review triggers from HolmesGPT-API
 	// BR-HAPI-200: Added InvestigationInconclusive, ProblemResolved for new investigation outcomes
-	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;MaxRetriesExceeded;SessionRegenerationExceeded
+	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;NotActionable;MaxRetriesExceeded;SessionRegenerationExceeded
 	// +optional
 	SubReason string `json:"subReason,omitempty"`
 
@@ -341,6 +341,14 @@ type AIAnalysisStatus struct {
 	// +kubebuilder:validation:Enum=workflow_not_found;image_mismatch;parameter_validation_failed;no_matching_workflows;low_confidence;llm_parsing_error;investigation_inconclusive;rca_incomplete
 	// +optional
 	HumanReviewReason string `json:"humanReviewReason,omitempty"`
+
+	// #388: LLM's assessment of whether the alert warrants action.
+	// Empty when not yet assessed (pre-investigation or error paths).
+	// "Actionable" when the LLM determines the alert warrants action (default for all processed alerts).
+	// "NotActionable" when the LLM determines the alert is benign (e.g., orphaned PVCs).
+	// +kubebuilder:validation:Enum=Actionable;NotActionable
+	// +optional
+	Actionability string `json:"actionability,omitempty"`
 
 	// ========================================
 	// INVESTIGATION DETAILS

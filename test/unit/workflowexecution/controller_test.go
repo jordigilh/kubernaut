@@ -628,10 +628,10 @@ var _ = Describe("WorkflowExecution Controller", func() {
 	})
 
 	// ========================================
-	// Day 4: FindWFEForPipelineRun() Tests
+	// Day 4: FindWFEForOwnedResource() Tests
 	// ========================================
 
-	Describe("FindWFEForPipelineRun", func() {
+	Describe("FindWFEForOwnedResource", func() {
 		var reconciler *workflowexecution.WorkflowExecutionReconciler
 
 		BeforeEach(func() {
@@ -655,7 +655,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 			}
 
-			requests := reconciler.FindWFEForPipelineRun(ctx, pr)
+			requests := reconciler.FindWFEForOwnedResource(ctx, pr)
 
 			Expect(requests).To(HaveLen(1))
 			Expect(requests[0].Name).To(Equal("my-wfe"))
@@ -673,7 +673,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 			}
 
-			requests := reconciler.FindWFEForPipelineRun(ctx, pr)
+			requests := reconciler.FindWFEForOwnedResource(ctx, pr)
 
 			Expect(requests).To(BeEmpty())
 		})
@@ -689,7 +689,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 			}
 
-			requests := reconciler.FindWFEForPipelineRun(ctx, pr)
+			requests := reconciler.FindWFEForOwnedResource(ctx, pr)
 
 			Expect(requests).To(BeEmpty())
 		})
@@ -702,7 +702,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 			}
 
-			requests := reconciler.FindWFEForPipelineRun(ctx, pr)
+			requests := reconciler.FindWFEForOwnedResource(ctx, pr)
 
 			Expect(requests).To(BeEmpty())
 		})
@@ -1031,6 +1031,22 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(hasEventMatch(evts, "Normal", events.EventReasonWorkflowCompleted)).
 				To(BeTrue(), "Expected WorkflowCompleted event, got: %v", evts)
 		})
+
+		It("UT-WE-375-001: should return RequeueAfter equal to cooldown period", func() {
+			reconciler.CooldownPeriod = 1 * time.Minute
+			result, err := reconciler.MarkCompleted(ctx, wfe, pr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(1*time.Minute),
+				"MarkCompleted must schedule RequeueAfter so ReconcileTerminal runs to release the lock (#375)")
+		})
+
+		It("UT-WE-375-003: should use DefaultCooldownPeriod when CooldownPeriod is zero", func() {
+			reconciler.CooldownPeriod = 0
+			result, err := reconciler.MarkCompleted(ctx, wfe, pr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(workflowexecution.DefaultCooldownPeriod),
+				"When CooldownPeriod is zero, MarkCompleted must fall back to DefaultCooldownPeriod (5m)")
+		})
 	})
 
 	// ========================================
@@ -1196,6 +1212,14 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(errorDetails["code"]).To(MatchRegexp("^ERR_"), "Error code should start with ERR_")
 			Expect(errorDetails["message"]).ToNot(BeEmpty(), "Error message should not be empty")
 			Expect(errorDetails["retry_possible"]).To(BeAssignableToTypeOf(false), "retry_possible should be boolean")
+		})
+
+		It("UT-WE-375-002: should return RequeueAfter equal to cooldown period", func() {
+			reconciler.CooldownPeriod = 1 * time.Minute
+			result, err := reconciler.MarkFailed(ctx, wfe, pr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(1*time.Minute),
+				"MarkFailed must schedule RequeueAfter so ReconcileTerminal runs to release the lock (#375)")
 		})
 	})
 
@@ -2110,15 +2134,18 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					},
 				}
 
-				// And: PipelineRun exists with deterministic name
-				prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
-				pr := &tektonv1.PipelineRun{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      prName,
-						Namespace: "kubernaut-workflows",
+			// And: PipelineRun exists with deterministic name and matching ownership label
+			prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+			pr := &tektonv1.PipelineRun{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      prName,
+					Namespace: "kubernaut-workflows",
+					Labels: map[string]string{
+						"kubernaut.ai/workflow-execution": wfe.Name,
 					},
-				}
-				Expect(fakeClient.Create(ctx, pr)).To(Succeed())
+				},
+			}
+			Expect(fakeClient.Create(ctx, pr)).To(Succeed())
 
 				// When: reconcileTerminal is called
 				result, err := reconciler.ReconcileTerminal(ctx, wfe)
@@ -4494,11 +4521,11 @@ var _ = Describe("WorkflowExecution Controller", func() {
 	// ========================================
 
 	// ========================================
-	// Gap 8: FindWFEForPipelineRun - Label-Based Lookup (P3 Gap Coverage)
-	// Business Value: BR-WE-003 (Monitor Execution Status) - PipelineRun watch handler
+	// Gap 8: FindWFEForOwnedResource - Label-Based Lookup (P3 Gap Coverage)
+	// Business Value: BR-WE-003 (Monitor Execution Status) - PipelineRun/Job watch handler
 	// Coverage: 2 tests for label-based reconciliation correctness
 	// ========================================
-	Describe("FindWFEForPipelineRun - Label-Based Lookup (P3 Gap Coverage)", func() {
+	Describe("FindWFEForOwnedResource - Label-Based Lookup (P3 Gap Coverage)", func() {
 		var (
 			reconciler *workflowexecution.WorkflowExecutionReconciler
 			ctx        context.Context
@@ -4527,8 +4554,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 			}
 
-			// When: FindWFEForPipelineRun is called (simulating watch event)
-			requests := reconciler.FindWFEForPipelineRun(ctx, pr)
+			// When: FindWFEForOwnedResource is called (simulating watch event)
+			requests := reconciler.FindWFEForOwnedResource(ctx, pr)
 
 			// Then: Should return reconcile request for the correct WFE
 			// BUSINESS VALIDATION: Correct WFE will be reconciled
@@ -4559,8 +4586,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 			}
 
-			// When: FindWFEForPipelineRun is called (simulating watch event)
-			requests := reconciler.FindWFEForPipelineRun(ctx, pr)
+			// When: FindWFEForOwnedResource is called (simulating watch event)
+			requests := reconciler.FindWFEForOwnedResource(ctx, pr)
 
 			// Then: Should return nil (no reconciliation needed)
 			// BUSINESS VALIDATION: Controller ignores unrelated PipelineRuns
@@ -4581,7 +4608,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					Labels:    nil,
 				},
 			}
-			requestsNil := reconciler.FindWFEForPipelineRun(ctx, prNilLabels)
+			requestsNil := reconciler.FindWFEForOwnedResource(ctx, prNilLabels)
 			Expect(requestsNil).To(BeNil(), "Should handle nil labels gracefully")
 
 			// Edge case 2: PipelineRun with only one required label
@@ -4595,7 +4622,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					},
 				},
 			}
-			requestsPartial := reconciler.FindWFEForPipelineRun(ctx, prPartialLabels)
+			requestsPartial := reconciler.FindWFEForOwnedResource(ctx, prPartialLabels)
 			Expect(requestsPartial).To(BeNil(),
 				"Should require BOTH labels for valid reconciliation (data integrity)")
 
@@ -4610,7 +4637,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					},
 				},
 			}
-			requestsEmpty := reconciler.FindWFEForPipelineRun(ctx, prEmptyValues)
+			requestsEmpty := reconciler.FindWFEForOwnedResource(ctx, prEmptyValues)
 			Expect(requestsEmpty).To(BeNil(),
 				"Should reject empty label values to prevent invalid reconciliation")
 

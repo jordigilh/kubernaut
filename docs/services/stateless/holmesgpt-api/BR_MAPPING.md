@@ -245,10 +245,11 @@ This document maps high-level business requirements to their detailed sub-requir
 | `test_sdk_integration.py` | BR-HAPI-001 to 015, BR-HAPI-RECOVERY-001 to 006, BR-HAPI-POSTEXEC-001 to 005 | 1 integration | 90% |
 | `test_context_api_integration.py` | BR-HAPI-046 to 050 (Context API Tool) | 1 integration | 90% |
 | `test_real_llm_integration.py` | BR-HAPI-026 to 030 (Multi-provider LLM) | 1 integration | 90% |
+| `test_sdk_config_loading.py` | BR-HAPI-028 (Issue #390: SDK ConfigMap split) | 13 scenarios | 95% |
 
-**Total Unit Tests**: 377 scenarios (100% passing)
+**Total Unit Tests**: 620 scenarios (100% passing)
 
-> **Note**: Test count updated December 2025 after `failedDetections`, `target_in_owner_chain`, and `warnings[]` features.
+> **Note**: Test count updated March 2026 after Issue #390 (SDK ConfigMap split) + prior feature additions.
 **Total Integration Tests**: 3 scenarios
 **Overall Confidence**: 100% (Production-Ready)
 

@@ -29,7 +29,7 @@ This document provides a **comprehensive inventory** of all Kubernetes Condition
 | SignalProcessing | SignalProcessing | 5 conditions (incl. Ready) | ✅ Complete | `pkg/signalprocessing/conditions.go` |
 | RemediationRequest | RO | 5 conditions (incl. Ready) | ✅ Complete | `pkg/remediationrequest/conditions.go` |
 | RemediationApprovalRequest | RO | 4 conditions (incl. Ready) | ✅ Complete | `pkg/remediationapprovalrequest/conditions.go` |
-| EffectivenessAssessment | EM | 3 conditions (incl. Ready) | ✅ Complete | `pkg/effectivenessmonitor/conditions/conditions.go` |
+| EffectivenessAssessment | EM | 4 conditions (incl. Ready), 14 reasons | ✅ Complete | `pkg/effectivenessmonitor/conditions/conditions.go` |
 | KubernetesExecution | WE | 0 | ⚠️ **Deprecated/Excluded (ADR-025)** | - |
 
 **Total**: All 7 active CRDs have conditions wired and implemented. All condition setters set `ObservedGeneration`.
@@ -175,13 +175,21 @@ Conditions:
 ### **EffectivenessAssessment Service** ✅ **COMPLETE**
 
 **File**: `pkg/effectivenessmonitor/conditions/conditions.go`
-**Pattern**: Assessment lifecycle tracking
+**Pattern**: Assessment lifecycle tracking with alert decay observability
 
 | Condition Type | Success Reasons | Failure Reasons | When Set |
 |---------------|-----------------|-----------------|----------|
 | `Ready` | `Ready` | `NotReady` | Aggregate: True on success terminal, False on failure terminal |
-| `AssessmentComplete` | `AssessmentSucceeded` | `AssessmentFailed`, `AssessmentExpired` | After assessment finishes |
-| `SpecIntegrity` | `SpecIntact` | `SpecDrifted` | After spec hash comparison |
+| `AssessmentComplete` | `AssessmentFull`, `AssessmentPartial` | `AssessmentExpired`, `SpecDrift`, `MetricsTimedOut`, `NoExecution`, `AlertDecayTimeout` | After assessment finishes |
+| `SpecIntegrity` | `SpecUnchanged` | `SpecDrifted` | After spec hash comparison |
+| `AlertDecayDetected` | `DecayActive` | `DecayResolved`, `DecayTimeout` | During alert decay monitoring (BR-EM-012, Issue #369). True while decay is suspected; False when resolved or timed out |
+
+**Business Requirements**:
+- BR-EM-001: Health assessment
+- BR-EM-002: Alert assessment
+- BR-EM-003: Metrics assessment
+- BR-EM-004: Spec integrity
+- BR-EM-012: Alert decay detection
 
 ---
 
@@ -253,6 +261,20 @@ To avoid conflicts, these condition names are **reserved** or **commonly used**:
 | `Completed` | WorkflowExecution | Workflow done |
 | `AuditRecorded` | WorkflowExecution | Audit written |
 | `RoutingResolved` | Notification | Routing complete |
+| `ValidationComplete` | SignalProcessing | Signal validation finished |
+| `EnrichmentComplete` | SignalProcessing | K8s enrichment finished |
+| `ClassificationComplete` | SignalProcessing | Classification finished |
+| `ProcessingComplete` | SignalProcessing | Full processing finished |
+| `SignalProcessingReady` | RemediationRequest | SP CRD created |
+| `AIAnalysisReady` | RemediationRequest | AA CRD created |
+| `WorkflowExecutionReady` | RemediationRequest | WE CRD created |
+| `RecoveryComplete` | RemediationRequest | Recovery lifecycle (deprecated) |
+| `DecisionRecorded` | RemediationApprovalRequest | Approval decision made |
+| `NotificationSent` | RemediationApprovalRequest | Notification sent |
+| `TimeoutExpired` | RemediationApprovalRequest | Approval timeout reached |
+| `AssessmentComplete` | EM | Assessment reached terminal state |
+| `SpecIntegrity` | EM | Post-remediation spec hash valid |
+| `AlertDecayDetected` | EM | Alert decay monitoring active |
 
 ---
 

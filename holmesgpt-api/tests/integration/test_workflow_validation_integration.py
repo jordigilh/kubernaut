@@ -28,7 +28,7 @@ Test IDs: IT-HAPI-017-003-001, IT-HAPI-017-003-002
 
 Prerequisites:
     Real Data Storage with PostgreSQL (started by Go infrastructure).
-    Migration 025 applied (action_type_taxonomy seeded).
+    Action types seeded via DataStorage API (by Go test infrastructure).
 
 Run:
     python -m pytest tests/integration/test_workflow_validation_integration.py -v

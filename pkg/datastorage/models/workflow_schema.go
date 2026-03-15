@@ -141,9 +141,9 @@ type WorkflowMaintainer struct {
 // Issue #274: signalName removed — LLM selects by actionType + structured descriptions.
 type WorkflowSchemaLabels struct {
 	// Severity is the severity level(s) this workflow is designed for (REQUIRED)
-	// Values: "critical", "high", "medium", "low"
-	// DD-WORKFLOW-001 v2.7: Always an array in workflow-schema.yaml.
-	// Examples: severity: [critical] or severity: [low, medium, high]
+	// Values: "critical", "high", "medium", "low", "*" (wildcard for all)
+	// DD-WORKFLOW-001 v2.8: Always an array in workflow-schema.yaml. Supports "*" wildcard.
+	// Examples: severity: [critical] or severity: [low, medium, high] or severity: ["*"]
 	Severity []string `yaml:"severity" json:"severity" validate:"required,min=1"`
 
 	// Environment is the target environment(s) (REQUIRED)
