@@ -442,20 +442,31 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 
 	// ── Wave B: Deploy after specific Wave A dependencies are ready ──
 
-	// B1: HAPI — wait for Mock LLM
+	// B1: HAPI — wait for Mock LLM (or external LLM if SKIP_MOCK_LLM is set)
 	// Issue #390: Inject prometheus/metrics toolset into SDK ConfigMap.
 	// Prometheus is deployed in Wave A and guaranteed ready before this point.
+	// Issue #393: Callers build LLM settings; deployHAPIOnly is LLM-agnostic.
 	go func() {
 		<-mockLLMReady
-		err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, builtImages["holmesgpt-api"], writer,
-			HAPIDeployOpts{
-				SdkToolsets: `    toolsets:
+		prometheusToolsets := `    toolsets:
       prometheus/metrics:
         enabled: true
         config:
           prometheus_url: "http://prometheus-svc:9090"
-`,
-			})
+`
+		var llmSettings hapiLLMDeploymentSettings
+		if skipMockLLM() {
+			var buildErr error
+			llmSettings, buildErr = buildExternalLLMSettings(kubeconfigPath, namespace, prometheusToolsets, writer)
+			if buildErr != nil {
+				allResults <- waveResult{"HAPI", fmt.Errorf("failed to configure external LLM: %w", buildErr)}
+				return
+			}
+		} else {
+			llmSettings = buildMockLLMSettings(namespace, prometheusToolsets)
+		}
+		err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, builtImages["holmesgpt-api"], writer,
+			HAPIDeployOpts{LLMSettings: llmSettings})
 		allResults <- waveResult{"HAPI", err}
 	}()
 

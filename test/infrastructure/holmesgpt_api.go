@@ -332,7 +332,18 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 		return fmt.Errorf("failed to create HAPI ServiceAccount: %w", err)
 	}
 
-	if err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, hapiImage, writer); err != nil {
+	var llmSettings hapiLLMDeploymentSettings
+	if skipMockLLM() {
+		var err error
+		llmSettings, err = buildExternalLLMSettings(kubeconfigPath, namespace, "", writer)
+		if err != nil {
+			return fmt.Errorf("failed to configure external LLM: %w", err)
+		}
+	} else {
+		llmSettings = buildMockLLMSettings(namespace, "")
+	}
+
+	if err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, hapiImage, writer, HAPIDeployOpts{LLMSettings: llmSettings}); err != nil {
 		return fmt.Errorf("failed to deploy HAPI: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ HAPI deployed")
@@ -418,46 +429,11 @@ func deployHAPIOnly(clusterName, kubeconfigPath, namespace, imageTag string, wri
 		_, _ = fmt.Fprintln(writer, "  📊 DD-TEST-007: Python E2E coverage instrumentation ENABLED")
 	}
 
-	// ──────────────────────────────────────────────────────────────────────
-	// LLM configuration strategy (multi-provider):
-	//
-	// Default (CI/CD): Generate holmesgpt-api-config ConfigMap with mock-llm
-	//   settings. HAPI env vars point to http://mock-llm:8080.
-	//
-	// SKIP_MOCK_LLM (local dev with real LLM):
-	//   The infra reads a local config file (outside the repo) to determine the
-	//   LLM provider, then creates the appropriate K8s resources in the cluster.
-	//
-	//   Supported providers (detected from config llm.provider field):
-	//     vertex_ai  — GCP Vertex AI (needs VERTEXAI_PROJECT, VERTEXAI_LOCATION,
-	//                  GOOGLE_APPLICATION_CREDENTIALS via credentials.json Secret)
-	//     anthropic  — Anthropic API direct (needs ANTHROPIC_API_KEY via Secret,
-	//                  sourced from file or ANTHROPIC_API_KEY env var)
-	//
-	//   Environment variables:
-	//     E2E_HAPI_LLM_CONFIG_PATH      — path to HAPI config.yaml
-	//                                      (default: ~/.kubernaut/e2e/hapi-llm-config.yaml)
-	//     E2E_HAPI_LLM_CREDENTIALS_PATH — path to credentials.json (Vertex AI only)
-	//                                      (default: ~/.kubernaut/e2e/credentials.json)
-	//     ANTHROPIC_API_KEY              — Anthropic API key (alternative to file)
-	//
-	// ──────────────────────────────────────────────────────────────────────
-
-	var sdkToolsets string
-	if len(opts) > 0 {
-		sdkToolsets = opts[0].SdkToolsets
-	}
-
+	// LLM settings are built by the caller (mock vs external) and passed
+	// via opts.LLMSettings. This function is LLM-agnostic.
 	var settings hapiLLMDeploymentSettings
-
-	if skipMockLLM() {
-		var err error
-		settings, err = buildExternalLLMSettings(kubeconfigPath, namespace, sdkToolsets, writer)
-		if err != nil {
-			return fmt.Errorf("failed to configure external LLM: %w", err)
-		}
-	} else {
-		settings = buildMockLLMSettings(namespace, sdkToolsets)
+	if len(opts) > 0 {
+		settings = opts[0].LLMSettings
 	}
 
 	// ADR-030 + Issue #390: Compose the full HAPI deployment manifest.
@@ -1161,13 +1137,14 @@ type hapiLLMDeploymentSettings struct {
 	CredentialMount string
 }
 
-// HAPIDeployOpts provides optional configuration for deployHAPIOnly.
-// Issue #390: Allows callers (e.g. Full Pipeline E2E) to inject SDK toolset
-// configuration such as prometheus/metrics into the SDK ConfigMap.
+// HAPIDeployOpts provides configuration for deployHAPIOnly.
+// Callers are responsible for building LLMSettings (mock vs external)
+// before calling deployHAPIOnly -- the function is LLM-agnostic.
 type HAPIDeployOpts struct {
-	// SdkToolsets is a YAML fragment appended to the SDK config data (e.g. toolsets section).
-	// Must be valid YAML indented at the sdk-config.yaml level.
-	SdkToolsets string
+	// LLMSettings contains the fully-formed Kubernetes manifest fragments
+	// for the chosen LLM provider. Build with buildMockLLMSettings() or
+	// buildExternalLLMSettings().
+	LLMSettings hapiLLMDeploymentSettings
 }
 
 // getHAPILLMConfigPath returns the resolved path to the HAPI LLM config file.
