@@ -1030,13 +1030,12 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 - Deterministic responses enable reliable assertions in tests
 
 **Implementation**:
-- **Environment Variable**: `MOCK_LLM_MODE=true`
-- **Mock Response Generator**: `src/mock_responses.py`
+- **Standalone Mock LLM Service**: HAPI is LLM-agnostic; mock behavior is achieved by pointing `LLM_ENDPOINT` at a standalone Mock LLM service
 - **Signal Type Mapping**: 6 pre-defined scenarios (OOMKilled, CrashLoopBackOff, NodeNotReady, ImagePullBackOff, Evicted, FailedScheduling)
 - **Endpoints Supported**: `/incident/analyze`, `/recovery/analyze`
 
 **Acceptance Criteria**:
-- [x] `MOCK_LLM_MODE=true` environment variable enables mock mode
+- [x] `LLM_ENDPOINT` pointing to standalone Mock LLM service enables deterministic mock responses
 - [x] Mock responses are schema-compliant (pass IncidentResponse/RecoveryResponse validation)
 - [x] Mock responses are deterministic based on input `signal_type`
 - [x] Request validation still runs (catches invalid requests)

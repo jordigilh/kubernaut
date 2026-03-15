@@ -22,7 +22,7 @@ However, the HolmesGPT-API (HAPI) service is implemented in Python using FastAPI
 ```bash
 $ python3 -c "
 import sys
-sys.argv = ['uvicorn', 'src.main:app', '--custom-flag', 'value']
+sys.argv = ['uvicorn', 'src.main:create_app', '--factory', '--custom-flag', 'value']
 from uvicorn.main import main
 main()
 "
@@ -76,7 +76,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 export CONFIG_FILE="$CONFIG_PATH"  # ← Environment variable
-exec uvicorn src.main:app --host 0.0.0.0 --port 8080 --workers 4
+exec uvicorn src.main:create_app --factory --host 0.0.0.0 --port 8080 --workers 4
 ```
 
 ```python
@@ -260,7 +260,7 @@ containers:
 cd /Users/jgil/go/src/github.com/jordigilh/kubernaut
 python3 -c "
 import sys
-sys.argv = ['uvicorn', 'src.main:app', '--custom-flag', 'value']
+sys.argv = ['uvicorn', 'src.main:create_app', '--factory', '--custom-flag', 'value']
 from uvicorn.main import main
 main()
 "

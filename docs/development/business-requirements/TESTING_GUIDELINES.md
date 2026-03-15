@@ -1614,13 +1614,13 @@ export REDIS_PORT=6379
 
 #### Mock LLM in All Tiers
 
-**LLM is mocked across ALL test tiers** due to cost constraints. HolmesGPT-API uses its internal mock LLM server for deterministic responses.
+**LLM is mocked across ALL test tiers** due to cost constraints. HolmesGPT-API is LLM-agnostic; point `LLM_ENDPOINT` at a standalone Mock LLM service for deterministic responses.
 
 ```yaml
 # podman-compose.test.yml - holmesgpt-api service
 environment:
-  - LLM_PROVIDER=mock
-  - MOCK_LLM_ENABLED=true
+  - LLM_ENDPOINT=http://mock-llm:8080   # Standalone Mock LLM service
+  - LLM_MODEL=mock-model
 ```
 
 #### Prometheus/AlertManager Mocking in EM Integration Tests

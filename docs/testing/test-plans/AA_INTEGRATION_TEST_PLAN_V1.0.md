@@ -92,7 +92,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 1. **PostgreSQL** (port 15438) - Wait for `pg_isready`
 2. **Redis** (port 16384) - Wait for `redis-cli ping`
 3. **DataStorage** (port 18095) - Wait for `/health` endpoint
-4. **HAPI** (port 18120) - Wait for `/health` endpoint with `MOCK_LLM_MODE=true`
+4. **HAPI** (port 18120) - Wait for `/health` endpoint with `LLM_ENDPOINT` pointing to standalone Mock LLM service
 
 **Reference**: `test/infrastructure/datastorage_bootstrap.go` - `StartAIAnalysisIntegrationInfrastructure()`
 
@@ -113,19 +113,19 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 // test/integration/aianalysis/suite_test.go
 hapiConfig := infrastructure.GenericContainerConfig{
     Env: map[string]string{
-        "MOCK_LLM_MODE": "true", // Enables deterministic mock responses
-        "LOG_LEVEL":     "INFO",
+        "LLM_ENDPOINT": mockLLMServiceURL, // Standalone Mock LLM service
+        "LLM_MODEL":   "mock-model",
+        "LOG_LEVEL":   "INFO",
     },
 }
 ```
 
 **Mock Response Behavior**:
+- HAPI is LLM-agnostic; `LLM_ENDPOINT` points to standalone Mock LLM service
 - HAPI returns deterministic responses based on signal type
 - Example: `SignalType="OOMKilled"` → returns memory-related workflow
 - Allows repeatable, predictable test scenarios
 - No actual LLM API costs
-
-**Reference**: `holmesgpt-api/src/mock_responses.py` - Mock response generator
 
 ---
 
@@ -1121,7 +1121,7 @@ go tool cover -html=coverage-integration-aianalysis.out -o coverage-integration.
 ### Infrastructure References
 - **Sequential Startup**: `test/infrastructure/datastorage_bootstrap.go`
 - **Suite Setup**: `test/integration/aianalysis/suite_test.go`
-- **Mock HAPI**: `holmesgpt-api/src/mock_responses.py`
+- **Mock LLM**: Standalone Mock LLM service configured via `LLM_ENDPOINT`
 
 ---
 
@@ -1232,7 +1232,7 @@ go tool cover -html=coverage-integration-aianalysis.out -o coverage-integration.
 - Gap #5: DD-TEST-002 not referenced → **Infrastructure section added**
 - Gap #6: Metrics testing tier mismatch → **Registry inspection pattern documented**
 - Gap #7: Audit validation pattern missing → **OpenAPI client requirements added**
-- Gap #8: Mock LLM policy missing → **Infrastructure section documents MOCK_LLM_MODE**
+- Gap #8: Mock LLM policy missing → **Infrastructure section documents LLM_ENDPOINT (standalone Mock LLM service)**
 
 **Test Count Update**: 106 → 112 tests (added 6 V1.0 maturity tests)
 

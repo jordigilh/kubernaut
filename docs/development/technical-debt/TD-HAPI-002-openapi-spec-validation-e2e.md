@@ -349,7 +349,8 @@ class TestRecoveryEdgeCases:
 # Regenerate OpenAPI spec and check for changes
 cd holmesgpt-api
 python3 -c "
-from src.main import app
+from src.main import create_app
+app = create_app()
 import json
 
 # Export OpenAPI spec
