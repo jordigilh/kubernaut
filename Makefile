@@ -970,7 +970,8 @@ IMAGE_TAG ?= latest
 IMAGE_ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 
 # Version metadata for container image labels and Go ldflags
-APP_VERSION ?= v1.1.0-rc0
+# Read from VERSION file (single source of truth); override via env or CLI.
+APP_VERSION ?= v$(shell cat VERSION 2>/dev/null || echo 0.0.0-dev)
 GIT_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_DATE  ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 
