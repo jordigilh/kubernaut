@@ -452,7 +452,7 @@ func deployHAPIOnly(clusterName, kubeconfigPath, namespace, imageTag string, wri
 
 	if skipMockLLM() {
 		var err error
-		settings, err = buildExternalLLMSettings(kubeconfigPath, namespace, writer)
+		settings, err = buildExternalLLMSettings(kubeconfigPath, namespace, sdkToolsets, writer)
 		if err != nil {
 			return fmt.Errorf("failed to configure external LLM: %w", err)
 		}
@@ -1199,7 +1199,7 @@ func parseHAPILLMConfig() (*hapiLLMConfig, error) {
 //
 //	vertex_ai  → buildVertexAISettings  + createVertexAISecret
 //	anthropic  → buildAnthropicSettings + createAnthropicSecret
-func buildExternalLLMSettings(kubeconfigPath, namespace string, writer io.Writer) (hapiLLMDeploymentSettings, error) {
+func buildExternalLLMSettings(kubeconfigPath, namespace, sdkToolsetsYAML string, writer io.Writer) (hapiLLMDeploymentSettings, error) {
 	cfg, err := parseHAPILLMConfig()
 	if err != nil {
 		return hapiLLMDeploymentSettings{}, err
@@ -1207,10 +1207,9 @@ func buildExternalLLMSettings(kubeconfigPath, namespace string, writer io.Writer
 
 	_, _ = fmt.Fprintf(writer, "  🔍 Detected LLM provider: %s (model: %s)\n", cfg.LLM.Provider, cfg.LLM.Model)
 
-	// Issue #390: Create the SDK ConfigMap from the user's config file.
-	// The user-provided file contains LLM settings (and optionally toolsets),
-	// which now live in the SDK ConfigMap rather than the service ConfigMap.
-	if err := createSDKConfigMap(kubeconfigPath, namespace, writer); err != nil {
+	// Issue #390 + #393: Create the SDK ConfigMap from the user's config file,
+	// optionally merging programmatic toolsets (e.g. prometheus/metrics from FP E2E).
+	if err := createSDKConfigMap(kubeconfigPath, namespace, sdkToolsetsYAML, writer); err != nil {
 		return hapiLLMDeploymentSettings{}, err
 	}
 
@@ -1428,7 +1427,10 @@ func resolveAnthropicAPIKey(cfg *hapiLLMConfig) (string, string, error) {
 // createSDKConfigMap creates the holmesgpt-sdk-config ConfigMap from the local config file.
 // Issue #390: The user-provided config file contains LLM settings (and optionally toolsets),
 // which are now stored in the SDK ConfigMap mounted at /etc/holmesgpt/sdk/.
-func createSDKConfigMap(kubeconfigPath, namespace string, writer io.Writer) error {
+// Issue #393: If sdkToolsetsYAML is non-empty, its toolsets are merged into the user's
+// config before creating the ConfigMap, ensuring programmatic toolset injection (e.g.
+// prometheus/metrics from Full Pipeline E2E) works with external LLM providers too.
+func createSDKConfigMap(kubeconfigPath, namespace, sdkToolsetsYAML string, writer io.Writer) error {
 	configPath := getHAPILLMConfigPath()
 	_, _ = fmt.Fprintf(writer, "  🔗 Creating SDK ConfigMap holmesgpt-sdk-config from %s\n", configPath)
 
@@ -1438,10 +1440,21 @@ func createSDKConfigMap(kubeconfigPath, namespace string, writer io.Writer) erro
 			"  Or set E2E_HAPI_LLM_CONFIG_PATH to point to your config file", configPath)
 	}
 
+	sourcePath := configPath
+
+	if strings.TrimSpace(sdkToolsetsYAML) != "" {
+		merged, err := mergeToolsetsIntoFile(configPath, sdkToolsetsYAML, writer)
+		if err != nil {
+			return fmt.Errorf("failed to merge programmatic toolsets into SDK config: %w", err)
+		}
+		sourcePath = merged
+		defer os.Remove(merged)
+	}
+
 	if err := kubectlPipedApply(kubeconfigPath,
 		[]string{"create", "configmap", "holmesgpt-sdk-config",
 			"--namespace", namespace,
-			"--from-file=sdk-config.yaml=" + configPath,
+			"--from-file=sdk-config.yaml=" + sourcePath,
 			"--dry-run=client", "-o", "yaml"},
 		writer); err != nil {
 		return fmt.Errorf("failed to create SDK ConfigMap: %w", err)
@@ -1449,6 +1462,61 @@ func createSDKConfigMap(kubeconfigPath, namespace string, writer io.Writer) erro
 
 	_, _ = fmt.Fprintln(writer, "  ✅ ConfigMap holmesgpt-sdk-config created")
 	return nil
+}
+
+// mergeToolsetsIntoFile reads the user's SDK config YAML, merges the extra
+// toolsets from sdkToolsetsYAML, writes the result to a temp file, and
+// returns the temp file path. The caller is responsible for removing the file.
+func mergeToolsetsIntoFile(configPath, sdkToolsetsYAML string, writer io.Writer) (string, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return "", fmt.Errorf("reading SDK config: %w", err)
+	}
+
+	var userCfg map[string]interface{}
+	if err := yaml.Unmarshal(data, &userCfg); err != nil {
+		return "", fmt.Errorf("parsing SDK config YAML: %w", err)
+	}
+	if userCfg == nil {
+		userCfg = make(map[string]interface{})
+	}
+
+	var extra map[string]interface{}
+	if err := yaml.Unmarshal([]byte(sdkToolsetsYAML), &extra); err != nil {
+		return "", fmt.Errorf("parsing programmatic toolsets YAML: %w", err)
+	}
+
+	if extraToolsets, ok := extra["toolsets"]; ok {
+		existing, _ := userCfg["toolsets"].(map[string]interface{})
+		if existing == nil {
+			existing = make(map[string]interface{})
+		}
+		if m, ok := extraToolsets.(map[string]interface{}); ok {
+			for k, v := range m {
+				existing[k] = v
+			}
+		}
+		userCfg["toolsets"] = existing
+		_, _ = fmt.Fprintf(writer, "  🔧 Merged programmatic toolsets into SDK config\n")
+	}
+
+	merged, err := yaml.Marshal(userCfg)
+	if err != nil {
+		return "", fmt.Errorf("marshalling merged SDK config: %w", err)
+	}
+
+	tmp, err := os.CreateTemp("", "sdk-config-merged-*.yaml")
+	if err != nil {
+		return "", fmt.Errorf("creating temp file: %w", err)
+	}
+	if _, err := tmp.Write(merged); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return "", fmt.Errorf("writing merged SDK config: %w", err)
+	}
+	tmp.Close()
+
+	return tmp.Name(), nil
 }
 
 // buildExternalServiceConfigMap generates an inline service-only ConfigMap for external LLM mode.
