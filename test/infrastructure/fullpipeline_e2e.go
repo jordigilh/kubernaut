@@ -443,9 +443,19 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// ── Wave B: Deploy after specific Wave A dependencies are ready ──
 
 	// B1: HAPI — wait for Mock LLM
+	// Issue #390: Inject prometheus/metrics toolset into SDK ConfigMap.
+	// Prometheus is deployed in Wave A and guaranteed ready before this point.
 	go func() {
 		<-mockLLMReady
-		err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, builtImages["holmesgpt-api"], writer)
+		err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, builtImages["holmesgpt-api"], writer,
+			HAPIDeployOpts{
+				SdkToolsets: `    toolsets:
+      prometheus/metrics:
+        enabled: true
+        config:
+          prometheus_url: "http://prometheus-svc:9090"
+`,
+			})
 		allResults <- waveResult{"HAPI", err}
 	}()
 

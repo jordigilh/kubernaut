@@ -226,6 +226,12 @@ def load_config() -> AppConfig:
             "llm_provider": config.get("llm", {}).get("provider"),
         })
 
+        # Issue #390: Load and merge SDK config from well-known path.
+        # SDK config contains llm, toolsets, and mcp_servers sections.
+        from src.config.sdk_loader import merge_sdk_config, SDK_CONFIG_DEFAULT_PATH
+        sdk_config_file = os.getenv("SDK_CONFIG_FILE", SDK_CONFIG_DEFAULT_PATH)
+        config = merge_sdk_config(config, sdk_config_file)
+
         return config
 
     except Exception as e:

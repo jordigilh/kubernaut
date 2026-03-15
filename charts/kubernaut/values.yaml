@@ -224,7 +224,23 @@ holmesgptApi:
     maxRetries: 3
     timeoutSeconds: 120
     temperature: 0.7
+    # K8s Secret reference for LLM API credentials (not part of SDK ConfigMap).
     credentialsSecretName: llm-credentials
+  # -- HolmesGPT SDK toolset configuration.
+  # Rendered into the holmesgpt-sdk-config ConfigMap.
+  # See: https://holmesgpt.dev/data-sources/builtin-toolsets/
+  toolsets: {}
+    # prometheus/metrics:
+    #   enabled: true
+    #   config:
+    #     prometheus_url: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+  # -- MCP server configuration (future).
+  # Rendered into the holmesgpt-sdk-config ConfigMap.
+  mcpServers: {}
+  # -- Use a pre-existing ConfigMap for SDK config instead of chart-generated.
+  # When set, the chart does NOT create holmesgpt-sdk-config and mounts
+  # this ConfigMap at /etc/holmesgpt/sdk/ instead.
+  existingSdkConfigMap: ""
 
 # -- AuthWebhook admission controller
 authwebhook:

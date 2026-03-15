@@ -153,10 +153,57 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 | `holmesgptApi.llm.provider` | LLM provider (e.g., `openai`, `azure`, `vertex_ai`) | `""` |
 | `holmesgptApi.llm.model` | LLM model name | `""` |
 | `holmesgptApi.llm.endpoint` | Custom LLM endpoint URL | `""` |
+| `holmesgptApi.llm.gcpProjectId` | GCP project ID (for `vertex_ai` provider) | `""` |
+| `holmesgptApi.llm.gcpRegion` | GCP region (for `vertex_ai` provider) | `""` |
 | `holmesgptApi.llm.maxRetries` | Maximum LLM call retries | `3` |
 | `holmesgptApi.llm.timeoutSeconds` | LLM call timeout | `120` |
 | `holmesgptApi.llm.temperature` | LLM sampling temperature | `0.7` |
-| `holmesgptApi.llm.credentialsSecretName` | Name of pre-existing Secret with LLM API keys | `llm-credentials` |
+| `holmesgptApi.llm.credentialsSecretName` | Name of pre-existing Secret with LLM API keys (K8s resource ref, not in SDK ConfigMap) | `llm-credentials` |
+| `holmesgptApi.toolsets` | HolmesGPT SDK toolset configuration (see [upstream docs](https://holmesgpt.dev/data-sources/builtin-toolsets/)) | `{}` |
+| `holmesgptApi.mcpServers` | MCP server configuration for the HolmesGPT SDK | `{}` |
+| `holmesgptApi.existingSdkConfigMap` | Use a pre-existing ConfigMap for SDK config instead of chart-generated `holmesgpt-sdk-config` | `""` |
+
+#### Enabling Prometheus for AI Analysis
+
+To give the LLM access to Prometheus metrics during incident analysis:
+
+```yaml
+holmesgptApi:
+  toolsets:
+    prometheus/metrics:
+      enabled: true
+      config:
+        prometheus_url: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+```
+
+This adds the `prometheus/metrics` toolset to the HolmesGPT SDK config, giving the LLM tools
+for PromQL queries, alerting rule inspection, and metric discovery. See the
+[HolmesGPT Prometheus toolset documentation](https://holmesgpt.dev/data-sources/builtin-toolsets/prometheus/)
+for all available configuration options.
+
+Available built-in toolsets (configured via `holmesgptApi.toolsets`):
+
+| Toolset | Description | Default |
+|---|---|---|
+| `kubernetes/core` | Pod inspection, events, resource status | Enabled (code default) |
+| `kubernetes/logs` | Container log retrieval | Enabled (code default) |
+| `kubernetes/live-metrics` | `kubectl top` metrics | Enabled (code default) |
+| `prometheus/metrics` | PromQL queries, alerting rules, metric discovery | Disabled (no URL) |
+
+For additional toolsets and advanced configuration, refer to the
+[HolmesGPT data sources documentation](https://holmesgpt.dev/data-sources/builtin-toolsets/).
+
+#### Using a Custom SDK ConfigMap
+
+For full control over the SDK configuration, create your own ConfigMap and reference it:
+
+```yaml
+holmesgptApi:
+  existingSdkConfigMap: "my-custom-sdk-config"
+```
+
+The ConfigMap must contain a `sdk-config.yaml` key following the
+[HolmesGPT configuration format](https://holmesgpt.dev/).
 
 ### Notification Controller
 

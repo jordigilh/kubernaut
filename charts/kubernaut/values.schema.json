@@ -482,6 +482,21 @@
             "credentialsSecretName": { "type": "string", "default": "llm-credentials", "description": "Name of the pre-existing K8s Secret containing LLM API credentials (e.g. OPENAI_API_KEY)" }
           }
         },
+        "toolsets": {
+          "type": "object",
+          "description": "HolmesGPT SDK toolset configuration. Rendered into holmesgpt-sdk-config ConfigMap. See https://holmesgpt.dev/data-sources/builtin-toolsets/",
+          "default": {}
+        },
+        "mcpServers": {
+          "type": "object",
+          "description": "MCP server configuration. Rendered into holmesgpt-sdk-config ConfigMap.",
+          "default": {}
+        },
+        "existingSdkConfigMap": {
+          "type": "string",
+          "default": "",
+          "description": "Use a pre-existing ConfigMap for SDK config instead of chart-generated. When set, holmesgpt-sdk-config is not created."
+        },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
