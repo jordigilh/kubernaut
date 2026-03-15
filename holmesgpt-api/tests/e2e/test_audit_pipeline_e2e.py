@@ -363,7 +363,7 @@ class TestAuditPipelineE2E:
         - Prompt information captured
 
         NOTE: This test calls the REAL HAPI HTTP API (not direct function imports)
-        HAPI service is configured with MOCK_LLM_MODE=true in E2E environment
+        HAPI connects to standalone Mock LLM service in E2E environment
         DD-AUTH-014: Uses ServiceAccount token for authentication
         """
         hapi_url = os.environ.get("HAPI_BASE_URL", "http://localhost:8088")
@@ -432,7 +432,7 @@ class TestAuditPipelineE2E:
         """
         BR-AUDIT-005: LLM response audit events are persisted in Data Storage.
 
-        NOTE: Calls REAL HAPI HTTP API with MOCK_LLM_MODE=true
+        NOTE: Calls REAL HAPI HTTP API (Mock LLM via LLM_ENDPOINT)
         """
         hapi_url = os.environ.get("HAPI_BASE_URL", "http://localhost:8088")
 
@@ -494,7 +494,7 @@ class TestAuditPipelineE2E:
         """
         DD-HAPI-002 v1.2: Validation attempt audit events are persisted.
 
-        NOTE: Calls REAL HAPI HTTP API with MOCK_LLM_MODE=true
+        NOTE: Calls REAL HAPI HTTP API (Mock LLM via LLM_ENDPOINT)
         """
         hapi_url = os.environ.get("HAPI_BASE_URL", "http://localhost:8088")
 
@@ -581,7 +581,7 @@ class TestAuditPipelineE2E:
         - aiagent.llm.response
         - aiagent.workflow.validation_attempt
 
-        NOTE: Calls REAL HAPI HTTP API with MOCK_LLM_MODE=true
+        NOTE: Calls REAL HAPI HTTP API (Mock LLM via LLM_ENDPOINT)
         """
         hapi_url = os.environ.get("HAPI_BASE_URL", "http://localhost:8088")
 

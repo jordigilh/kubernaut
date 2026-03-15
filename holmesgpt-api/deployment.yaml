@@ -68,13 +68,10 @@ data:
   # Logging Configuration (OPTIONAL)
   LOG_LEVEL: "INFO"
 
-  # Mock Mode for Testing (OPTIONAL - testing/development only)
-  # When MOCK_LLM_MODE=true:
-  # - Returns deterministic responses (no real LLM calls)
-  # - LLM_MODEL/LLM_PROVIDER/LLM_ENDPOINT not required
-  # - Use for integration tests and E2E tests
-  # IMPORTANT: Variable name is "MOCK_LLM_MODE" (NOT "MOCK_LLM_ENABLED")
-  # MOCK_LLM_MODE: "false"
+  # Mock LLM for Testing (OPTIONAL - testing/development only)
+  # Point LLM_ENDPOINT to the standalone Mock LLM service for deterministic
+  # responses without requiring a real LLM provider.
+  # See: test/infrastructure/ for E2E deployment examples.
 ---
 apiVersion: apps/v1
 kind: Deployment

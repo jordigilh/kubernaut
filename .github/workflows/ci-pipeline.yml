@@ -216,8 +216,6 @@ jobs:
           echo "🧪 Running unit tests for ${{ matrix.service }}..."
           export PATH="${{ github.workspace }}/bin:$PATH"
           make test-unit-${{ matrix.service }}
-        env:
-          MOCK_LLM: 'true'
 
       - name: Calculate and save coverage
         if: always()
@@ -344,8 +342,7 @@ jobs:
   #       run: |
   #         echo "🧪 Running HolmesGPT API unit tests..."
   #         make test-unit-holmesgpt-api
-  #       env:
-  #         MOCK_LLM: 'true'
+  #
   #
   #     - name: Upload coverage
   #       if: always()

@@ -54,7 +54,6 @@ COPY holmesgpt-api/config.yaml ./holmesgpt-api/config.yaml
 # Set environment variables for integration tests
 ENV PYTHONPATH=/workspace/holmesgpt-api
 ENV CONFIG_FILE=/workspace/holmesgpt-api/config.yaml
-ENV MOCK_LLM_MODE=true
 
 # Integration test ports (DD-TEST-001)
 ENV HAPI_INTEGRATION_PORT=18120

@@ -83,9 +83,6 @@ jobs:
       - name: Run ${{ inputs.service }} integration tests
         id: test
         run: make test-integration-${{ inputs.service }}
-        env:
-          # Use mock mode for HolmesGPT (no real LLM API calls)
-          MOCK_LLM: ${{ inputs.service == 'holmesgpt' && 'true' || '' }}
 
       # ========================================
       # Cleanup

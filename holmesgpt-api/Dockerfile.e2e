@@ -1,6 +1,6 @@
 # HolmesGPT API - E2E Test Dockerfile (Minimal Dependencies)
 # Purpose: Fast E2E builds without cloud provider SDKs (1.5GB google-cloud-aiplatform removed)
-# Use Case: E2E tests with MOCK_LLM_MODE=true
+# Use Case: E2E tests with standalone Mock LLM service
 # Supports: linux/amd64, linux/arm64
 # Based on: ADR-027 (Multi-Architecture Build Strategy)
 
@@ -86,7 +86,6 @@ USER 1001
 
 # Environment variables
 # CRITICAL: PYTHONPATH ensures Python 3.12 finds packages in /opt/app-root/lib/python3.12/site-packages
-# V2.0 (Mock LLM Migration - January 2026): MOCK_LLM_MODE removed, now uses standalone Mock LLM service
 ENV PYTHONUNBUFFERED=1 \
 	PYTHONDONTWRITEBYTECODE=1 \
 	PATH="/opt/app-root/bin:${PATH}" \

@@ -31,7 +31,7 @@ limitations under the License.
 // - PostgreSQL (port 15438): Persistence
 // - Redis (port 16384): Caching
 // - Data Storage (port 18095): Audit trail
-// - HolmesAPI (port 18120): REAL service with MOCK_LLM_MODE=true
+// - HolmesAPI (port 18120): REAL service with Mock LLM via LLM_ENDPOINT
 // - AIAnalysis Controller: Real controller with real audit client
 //
 // Test Pattern:

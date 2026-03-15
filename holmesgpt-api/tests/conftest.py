@@ -16,7 +16,7 @@ limitations under the License.
 Pytest Configuration and Shared Fixtures
 
 Provides reusable test fixtures for HolmesGPT API Service testing.
-Uses mock LLM server for integration tests - no DEV_MODE anti-pattern.
+Uses standalone Mock LLM service for integration tests - no DEV_MODE anti-pattern.
 """
 
 import os
@@ -46,25 +46,6 @@ def pytest_configure(config):
     datastorage_client_path = project_root / "src" / "clients" / "datastorage"
     if str(datastorage_client_path) not in sys.path:
         sys.path.insert(0, str(datastorage_client_path))
-
-
-# ========================================
-# Session-level Mock Mode Setup (BR-HAPI-212)
-# ========================================
-
-@pytest.fixture(scope="session", autouse=True)
-def setup_mock_llm_mode():
-    """
-    Set MOCK_LLM_MODE=true for all tests before any module imports.
-
-    BR-HAPI-212: Enable deterministic mock responses for fast unit testing.
-    This must be session-scoped and autouse to ensure it's set before
-    any test modules import the FastAPI app.
-    """
-    os.environ["MOCK_LLM_MODE"] = "true"
-    yield
-    # Cleanup
-    os.environ.pop("MOCK_LLM_MODE", None)
 
 
 @pytest.fixture

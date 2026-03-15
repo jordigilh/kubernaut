@@ -679,8 +679,6 @@ spec:
         - "-config"
         - "/etc/holmesgpt/config.yaml"
         env:
-        - name: MOCK_LLM_MODE
-          value: "true"
         - name: LLM_ENDPOINT
           value: "http://mock-llm:8080"
         - name: LLM_MODEL

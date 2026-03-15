@@ -31,7 +31,6 @@ version: '3.8'
 #   # Run tests
 #   HAPI_URL=http://localhost:18120 \
 #   DATA_STORAGE_URL=http://localhost:18121 \
-#   MOCK_LLM_MODE=true \
 #   pytest tests/integration/ tests/e2e/ -v
 #
 #   # Cleanup
@@ -152,9 +151,6 @@ services:
       dockerfile: holmesgpt-api/Dockerfile
     environment:
       - CONFIG_PATH=/etc/holmesgpt/config.yaml
-      # Mock LLM mode for integration tests (BR-HAPI-212)
-      # Returns deterministic responses without calling real LLM
-      - MOCK_LLM_MODE=true
       # Data Storage connection (internal network)
       - DATASTORAGE_URL=http://datastorage:8080
       # Logging

@@ -82,10 +82,6 @@ mcp_servers: {}
     # Set LLM_ENDPOINT to match the temp config
     os.environ["LLM_ENDPOINT"] = "http://127.0.0.1:8080"
 
-    # Set MOCK_LLM_MODE to prevent real LLM initialization during unit tests
-    # This must be set early (before src.main import) to prevent HolmesGPT SDK from trying to validate model with litellm
-    os.environ["MOCK_LLM_MODE"] = "true"
-
     # Store for cleanup
     config._temp_config_file = _temp_config.name
     config._temp_sdk_config_file = _temp_sdk_config.name
@@ -158,12 +154,6 @@ def _reset_session_manager():
     yield
     reset_session_manager()
 
-
-@pytest.fixture
-def mock_llm_mode():
-    """Enable mock LLM mode for unit tests"""
-    with patch.dict(os.environ, {"MOCK_LLM_MODE": "true"}):
-        yield
 
 
 @pytest.fixture
