@@ -159,43 +159,34 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 | `holmesgptApi.llm.timeoutSeconds` | LLM call timeout | `120` |
 | `holmesgptApi.llm.temperature` | LLM sampling temperature | `0.7` |
 | `holmesgptApi.llm.credentialsSecretName` | Name of pre-existing Secret with LLM API keys (K8s resource ref, not in SDK ConfigMap) | `llm-credentials` |
-| `holmesgptApi.toolsets` | HolmesGPT SDK toolset configuration (see [upstream docs](https://holmesgpt.dev/data-sources/builtin-toolsets/)) | `{}` |
+| `holmesgptApi.prometheus.enabled` | Enable `prometheus/metrics` toolset for LLM investigation | `false` |
+| `holmesgptApi.prometheus.url` | Prometheus server URL (cluster-internal) | `http://kube-prometheus-stack-prometheus.monitoring.svc:9090` |
+| `holmesgptApi.toolsets` | Additional HolmesGPT SDK toolset configuration (merged with auto-configured toolsets) | `{}` |
 | `holmesgptApi.mcpServers` | MCP server configuration for the HolmesGPT SDK | `{}` |
-| `holmesgptApi.existingSdkConfigMap` | Use a pre-existing ConfigMap for SDK config instead of chart-generated `holmesgpt-sdk-config` | `""` |
+| `holmesgptApi.sdkConfigContent` | Raw SDK config YAML (e.g. via `--set-file`). Replaces auto-generated SDK config. | `""` |
+| `holmesgptApi.existingSdkConfigMap` | Pre-existing ConfigMap name for SDK config. Takes priority over all other SDK config options. | `""` |
 
-#### Enabling Prometheus for AI Analysis
+#### SDK Configuration: Three Tiers
 
-To give the LLM access to Prometheus metrics during incident analysis:
+The chart supports three ways to provide the HolmesGPT SDK configuration, in order of priority:
 
-```yaml
-holmesgptApi:
-  toolsets:
-    prometheus/metrics:
-      enabled: true
-      config:
-        prometheus_url: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+**Tier 1 -- Structured values (default).** The chart auto-generates the SDK ConfigMap from
+`holmesgptApi.llm.*`, `holmesgptApi.prometheus.*`, and `holmesgptApi.toolsets.*`. Best for
+most deployments.
+
+**Tier 2 -- File override.** Provide a complete SDK config file via `--set-file`. The chart
+creates the ConfigMap from your file verbatim, ignoring the structured values above:
+
+```bash
+helm install kubernaut charts/kubernaut/ \
+  --set-file holmesgptApi.sdkConfigContent=my-sdk-config.yaml
 ```
 
-This adds the `prometheus/metrics` toolset to the HolmesGPT SDK config, giving the LLM tools
-for PromQL queries, alerting rule inspection, and metric discovery. See the
-[HolmesGPT Prometheus toolset documentation](https://holmesgpt.dev/data-sources/builtin-toolsets/prometheus/)
-for all available configuration options.
+Use this when you need full control over the SDK YAML but still want Helm to manage the
+ConfigMap lifecycle.
 
-Available built-in toolsets (configured via `holmesgptApi.toolsets`):
-
-| Toolset | Description | Default |
-|---|---|---|
-| `kubernetes/core` | Pod inspection, events, resource status | Enabled (code default) |
-| `kubernetes/logs` | Container log retrieval | Enabled (code default) |
-| `kubernetes/live-metrics` | `kubectl top` metrics | Enabled (code default) |
-| `prometheus/metrics` | PromQL queries, alerting rules, metric discovery | Disabled (no URL) |
-
-For additional toolsets and advanced configuration, refer to the
-[HolmesGPT data sources documentation](https://holmesgpt.dev/data-sources/builtin-toolsets/).
-
-#### Using a Custom SDK ConfigMap
-
-For full control over the SDK configuration, create your own ConfigMap and reference it:
+**Tier 3 -- External ConfigMap.** Reference a pre-existing ConfigMap by name. The chart does
+not create `holmesgpt-sdk-config` at all and mounts your ConfigMap instead:
 
 ```yaml
 holmesgptApi:
@@ -203,7 +194,41 @@ holmesgptApi:
 ```
 
 The ConfigMap must contain a `sdk-config.yaml` key following the
-[HolmesGPT configuration format](https://holmesgpt.dev/).
+[HolmesGPT configuration format](https://holmesgpt.dev/). Best for GitOps workflows where
+the ConfigMap is managed by ArgoCD, Flux, or an external process.
+
+#### Enabling Prometheus for AI Analysis
+
+To give the LLM access to Prometheus metrics during incident analysis (Tier 1):
+
+```yaml
+holmesgptApi:
+  prometheus:
+    enabled: true
+    # url defaults to kube-prometheus-stack in the monitoring namespace
+```
+
+The chart automatically renders the `prometheus/metrics` toolset into the SDK ConfigMap.
+Override `url` if your Prometheus runs at a different address (e.g. OpenShift):
+
+```yaml
+holmesgptApi:
+  prometheus:
+    enabled: true
+    url: "http://prometheus-k8s.openshift-monitoring.svc:9091"
+```
+
+Available built-in toolsets:
+
+| Toolset | Description | Default |
+|---|---|---|
+| `kubernetes/core` | Pod inspection, events, resource status | Enabled (code default) |
+| `kubernetes/logs` | Container log retrieval | Enabled (code default) |
+| `kubernetes/live-metrics` | `kubectl top` metrics | Enabled (code default) |
+| `prometheus/metrics` | PromQL queries, alerting rules, metric discovery | Disabled (`holmesgptApi.prometheus.enabled: false`) |
+
+For additional toolsets and advanced configuration, use `holmesgptApi.toolsets` or refer to the
+[HolmesGPT data sources documentation](https://holmesgpt.dev/data-sources/builtin-toolsets/).
 
 ### Notification Controller
 

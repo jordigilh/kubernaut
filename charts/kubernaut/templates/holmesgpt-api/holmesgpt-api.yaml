@@ -141,18 +141,33 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   sdk-config.yaml: |
+{{- if .Values.holmesgptApi.sdkConfigContent }}
+{{ .Values.holmesgptApi.sdkConfigContent | indent 4 }}
+{{- else }}
     llm:
       provider: {{ .Values.holmesgptApi.llm.provider | quote }}
       model: {{ .Values.holmesgptApi.llm.model | quote }}
       endpoint: {{ .Values.holmesgptApi.llm.endpoint | quote }}
+      {{- if .Values.holmesgptApi.llm.gcpProjectId }}
       gcp_project_id: {{ .Values.holmesgptApi.llm.gcpProjectId | quote }}
+      {{- end }}
+      {{- if .Values.holmesgptApi.llm.gcpRegion }}
       gcp_region: {{ .Values.holmesgptApi.llm.gcpRegion | quote }}
+      {{- end }}
       max_retries: {{ .Values.holmesgptApi.llm.maxRetries }}
       timeout_seconds: {{ .Values.holmesgptApi.llm.timeoutSeconds }}
       temperature: {{ .Values.holmesgptApi.llm.temperature }}
     toolsets:
-      {{- if .Values.holmesgptApi.toolsets }}
-      {{- toYaml .Values.holmesgptApi.toolsets | nindent 6 }}
+      {{- $toolsets := dict }}
+      {{- if .Values.holmesgptApi.prometheus.enabled }}
+      {{- $promConfig := dict "enabled" true "config" (dict "prometheus_url" .Values.holmesgptApi.prometheus.url) }}
+      {{- $_ := set $toolsets "prometheus/metrics" $promConfig }}
+      {{- end }}
+      {{- range $k, $v := .Values.holmesgptApi.toolsets }}
+      {{- $_ := set $toolsets $k $v }}
+      {{- end }}
+      {{- if $toolsets }}
+      {{- toYaml $toolsets | nindent 6 }}
       {{- else }}
       {}
       {{- end }}
@@ -162,6 +177,7 @@ data:
       {{- else }}
       {}
       {{- end }}
+{{- end }}
 {{- end }}
 ---
 apiVersion: apps/v1

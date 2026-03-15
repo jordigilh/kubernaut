@@ -482,9 +482,18 @@
             "credentialsSecretName": { "type": "string", "default": "llm-credentials", "description": "Name of the pre-existing K8s Secret containing LLM API credentials (e.g. OPENAI_API_KEY)" }
           }
         },
+        "prometheus": {
+          "type": "object",
+          "description": "Prometheus integration for AI investigation. When enabled, renders prometheus/metrics toolset into SDK ConfigMap.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false, "description": "Enable prometheus/metrics toolset for LLM investigation" },
+            "url": { "type": "string", "default": "http://kube-prometheus-stack-prometheus.monitoring.svc:9090", "description": "Prometheus server URL (cluster-internal)" }
+          }
+        },
         "toolsets": {
           "type": "object",
-          "description": "HolmesGPT SDK toolset configuration. Rendered into holmesgpt-sdk-config ConfigMap. See https://holmesgpt.dev/data-sources/builtin-toolsets/",
+          "description": "Additional HolmesGPT SDK toolset configuration. Merged alongside auto-configured toolsets (e.g. prometheus). See https://holmesgpt.dev/data-sources/builtin-toolsets/",
           "default": {}
         },
         "mcpServers": {
@@ -492,10 +501,15 @@
           "description": "MCP server configuration. Rendered into holmesgpt-sdk-config ConfigMap.",
           "default": {}
         },
+        "sdkConfigContent": {
+          "type": "string",
+          "default": "",
+          "description": "Raw SDK config YAML. When set (e.g. via --set-file), replaces auto-generated SDK config in the holmesgpt-sdk-config ConfigMap."
+        },
         "existingSdkConfigMap": {
           "type": "string",
           "default": "",
-          "description": "Use a pre-existing ConfigMap for SDK config instead of chart-generated. When set, holmesgpt-sdk-config is not created."
+          "description": "Use a pre-existing ConfigMap for SDK config instead of chart-generated. When set, holmesgpt-sdk-config is not created. Takes priority over sdkConfigContent."
         },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
