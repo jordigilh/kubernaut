@@ -217,20 +217,14 @@ def hapi_client():
     - Data Storage: http://localhost:18098 (Go-started)
     - Mock LLM: enabled
 
-    Note: src/main.py sets app=None when pytest is detected.
-    We must use create_app() factory with mock auth (same pattern as unit tests).
+    Uses create_app() factory with mock auth injected via DI (DD-AUTH-014).
 
     See: docs/shared/HAPI_INTEGRATION_TEST_ARCHITECTURE_FIX_DEC_29_2025.md
     """
     from fastapi.testclient import TestClient
 
-    # Environment variables are set globally in pytest_configure
-    # (CONFIG_FILE, MOCK_LLM_MODE, LLM_MODEL, LLM_ENDPOINT)
-
-    # Use create_app() factory with mock auth (src/main.py sets app=None under pytest)
-    # Pattern matches unit test conftest.py client fixture
     from src.main import create_app
-    from src.auth import MockAuthenticator, MockAuthorizer
+    from tests.helpers.mock_auth import MockAuthenticator, MockAuthorizer
 
     app = create_app(
         authenticator=MockAuthenticator(

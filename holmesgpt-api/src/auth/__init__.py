@@ -32,13 +32,10 @@ Security: No runtime disable flags - auth is always enforced via interface imple
 
 from .interfaces import Authenticator, Authorizer
 from .k8s_auth import K8sAuthenticator, K8sAuthorizer
-from .mock_auth import MockAuthenticator, MockAuthorizer
 
 __all__ = [
     "Authenticator",
     "Authorizer",
     "K8sAuthenticator",
     "K8sAuthorizer",
-    "MockAuthenticator",
-    "MockAuthorizer",
 ]

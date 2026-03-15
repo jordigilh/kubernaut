@@ -171,7 +171,7 @@ def client():
     """Create authenticated FastAPI test client for unit tests with mock auth"""
     from fastapi.testclient import TestClient
     from src.main import create_app
-    from src.auth import MockAuthenticator, MockAuthorizer
+    from tests.helpers.mock_auth import MockAuthenticator, MockAuthorizer
 
     # Create app with mock auth components (no K8s cluster dependency)
     # Factory pattern: Pure dependency injection, no test-specific logic in business code
