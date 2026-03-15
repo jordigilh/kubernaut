@@ -46,6 +46,7 @@ spec:
         app: postgresql
     spec:
       serviceAccountName: postgresql
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       {{- $pscDefaults := dict "seccompProfile" (dict "type" "RuntimeDefault") }}
       {{- if eq (include "kubernaut.postgresql.variant" .) "ocp" }}
       {{- $_ := set $pscDefaults "runAsNonRoot" true }}

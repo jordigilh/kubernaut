@@ -121,6 +121,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: effectivenessmonitor-controller
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.effectivenessmonitor | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.effectivenessmonitor | nindent 6 }}

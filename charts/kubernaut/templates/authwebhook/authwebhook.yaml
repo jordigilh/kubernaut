@@ -104,6 +104,7 @@ spec:
         app: authwebhook
     spec:
       serviceAccountName: authwebhook
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.authwebhook | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.authwebhook | nindent 6 }}

@@ -138,6 +138,18 @@
             }
           }
         },
+        "imagePullSecrets": {
+          "type": "array",
+          "default": [],
+          "description": "List of image pull secret names for private registries",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" }
+            },
+            "required": ["name"]
+          }
+        },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
         "tolerations": {
           "type": "array",

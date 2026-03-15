@@ -1012,29 +1012,17 @@ jobs:
           kubectl cluster-info
           kubectl get nodes -o wide
 
-      - name: Login to ghcr.io
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Pull and load images into Kind
-        run: |
-          SERVICES="datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor holmesgpt-api"
-          for svc in $SERVICES; do
-            img="${IMAGE_REGISTRY}/${svc}:${IMAGE_TAG}"
-            echo "Pulling ${img}..."
-            podman pull "$img"
-            echo "Loading into Kind..."
-            podman save "$img" | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
-          done
-
-          echo "All images loaded into Kind"
-
       - name: Run smoke tests
+        env:
+          PULL_SECRET_SERVER: ghcr.io
+          PULL_SECRET_USER: ${{ github.actor }}
+          PULL_SECRET_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           scripts/helm-smoke-test.sh \
             --platform kind \
             --image-tag "${IMAGE_TAG}" \
             --registry "${IMAGE_REGISTRY}" \
+            --pull-secret ghcr-creds \
             --chart-path charts/kubernaut/
 
       - name: Collect diagnostics on failure

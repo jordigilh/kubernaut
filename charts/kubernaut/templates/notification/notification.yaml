@@ -154,6 +154,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: notification-controller
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.notification | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.notification | nindent 6 }}

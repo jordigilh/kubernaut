@@ -18,6 +18,7 @@ spec:
         app: db-migration
     spec:
       serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       restartPolicy: Never
       securityContext:
         seccompProfile:

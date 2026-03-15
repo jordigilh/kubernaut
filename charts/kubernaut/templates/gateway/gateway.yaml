@@ -117,6 +117,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: gateway
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.gateway | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.gateway | nindent 6 }}

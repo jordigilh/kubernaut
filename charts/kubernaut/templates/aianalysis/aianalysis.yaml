@@ -153,6 +153,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: aianalysis-controller
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.aianalysis | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.aianalysis | nindent 6 }}

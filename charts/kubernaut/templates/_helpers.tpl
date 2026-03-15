@@ -33,6 +33,17 @@ Chart label value.
 {{- end }}
 
 {{/*
+Render imagePullSecrets from global.imagePullSecrets for private registries.
+Usage: {{ include "kubernaut.imagePullSecrets" . | nindent 6 }}
+*/}}
+{{- define "kubernaut.imagePullSecrets" -}}
+{{- with .Values.global.imagePullSecrets }}
+imagePullSecrets:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}
+
+{{/*
 Render nodeSelector and tolerations for a component pod spec.
 Component-level values override global defaults.
 Usage: {{ include "kubernaut.scheduling" (dict "component" .Values.gateway "global" .Values.global) | nindent 6 }}

@@ -209,6 +209,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: workflowexecution-controller
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.workflowexecution | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.workflowexecution | nindent 6 }}

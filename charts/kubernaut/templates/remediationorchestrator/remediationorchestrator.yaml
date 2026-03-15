@@ -164,6 +164,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: remediationorchestrator-controller
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.remediationorchestrator | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.remediationorchestrator | nindent 6 }}

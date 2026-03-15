@@ -23,6 +23,7 @@ spec:
         app: tls-cert-gen
     spec:
       serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true
@@ -145,6 +146,7 @@ spec:
         app: tls-cabundle-patch
     spec:
       serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true
@@ -293,6 +295,7 @@ spec:
         app: tls-cleanup
     spec:
       serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true

@@ -19,6 +19,7 @@ set -uo pipefail
 PLATFORM="kind"
 IMAGE_TAG=""
 IMAGE_REGISTRY=""
+PULL_SECRET=""
 CHART_PATH="charts/kubernaut/"
 NAMESPACE="kubernaut-system"
 TIMEOUT_PODS="300s"
@@ -40,16 +41,18 @@ while [[ $# -gt 0 ]]; do
     --platform)   PLATFORM="$2";   shift 2 ;;
     --image-tag)  IMAGE_TAG="$2";  shift 2 ;;
     --registry)   IMAGE_REGISTRY="$2"; shift 2 ;;
+    --pull-secret) PULL_SECRET="$2"; shift 2 ;;
     --chart-path) CHART_PATH="$2"; shift 2 ;;
     --namespace)  NAMESPACE="$2";  shift 2 ;;
     --timeout)    TIMEOUT_PODS="$2"; shift 2 ;;
     -h|--help)
-      echo "Usage: $0 --platform kind|ocp --image-tag TAG --chart-path PATH [--registry REGISTRY]"
+      echo "Usage: $0 --platform kind|ocp --image-tag TAG --chart-path PATH [--registry REGISTRY] [--pull-secret NAME]"
       echo ""
       echo "Options:"
       echo "  --platform    Target platform: kind or ocp (default: kind)"
       echo "  --image-tag   Container image tag (required)"
       echo "  --registry    Container image registry (overrides global.image.registry)"
+      echo "  --pull-secret Kubernetes docker-registry secret name for private registries"
       echo "  --chart-path  Path to chart directory (default: charts/kubernaut/)"
       echo "  --namespace   Kubernetes namespace (default: kubernaut-system)"
       echo "  --timeout     Pod readiness timeout (default: 300s)"
@@ -235,6 +238,10 @@ common_install_flags() {
   if [[ -n "$IMAGE_REGISTRY" ]]; then
     flags+=" --set global.image.registry=${IMAGE_REGISTRY}"
     flags+=" --set global.image.namespace="
+    flags+=" --set hooks.migrations.image=${IMAGE_REGISTRY}/db-migrate:${IMAGE_TAG}"
+  fi
+  if [[ -n "$PULL_SECRET" ]]; then
+    flags+=" --set global.imagePullSecrets[0].name=${PULL_SECRET}"
   fi
   flags+=" --set effectivenessmonitor.external.prometheusEnabled=false"
   flags+=" --set effectivenessmonitor.external.alertManagerEnabled=false"
@@ -310,8 +317,18 @@ password: ${test_password}" \
 
   kubectl create secret generic kubernaut-llm-credentials --from-literal=OPENAI_API_KEY=sk-smoke-test-placeholder -n "$NAMESPACE" >/dev/null 2>&1 || pass=false # pre-commit:allow-sensitive
 
+  local secret_count=4
+  if [[ -n "$PULL_SECRET" && -n "${PULL_SECRET_SERVER:-}" ]]; then
+    kubectl create secret docker-registry "$PULL_SECRET" \
+      --docker-server="$PULL_SECRET_SERVER" \
+      --docker-username="${PULL_SECRET_USER:-}" \
+      --docker-password="${PULL_SECRET_TOKEN:-}" \
+      -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
+    secret_count=5
+  fi
+
   if $pass; then
-    tap_ok "$desc (4 secrets created)"
+    tap_ok "$desc (${secret_count} secrets created)"
   else
     tap_not_ok "$desc" "One or more secret creation commands failed"
   fi
@@ -660,6 +677,8 @@ main() {
   echo "# Helm Chart Smoke Tests"
   echo "# Platform: ${PLATFORM}"
   echo "# Image tag: ${IMAGE_TAG}"
+  echo "# Registry: ${IMAGE_REGISTRY:-default}"
+  echo "# Pull secret: ${PULL_SECRET:-none}"
   echo "# Chart: ${CHART_PATH}"
   echo "# Namespace: ${NAMESPACE}"
   echo "#"

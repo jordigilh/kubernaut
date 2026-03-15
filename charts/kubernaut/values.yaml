@@ -6,6 +6,7 @@ global:
     tag: ""  # defaults to Chart.appVersion
     digest: ""  # when set (e.g. "sha256:abc..."), overrides tag for immutable image references
     pullPolicy: IfNotPresent
+  imagePullSecrets: []
   nodeSelector: {}
   tolerations: []
 

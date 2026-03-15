@@ -161,6 +161,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: holmesgpt-api-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.holmesgptApi | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.holmesgptApi | nindent 6 }}

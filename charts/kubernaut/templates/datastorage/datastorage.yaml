@@ -62,6 +62,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: data-storage-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.datastorage | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.datastorage | nindent 6 }}
