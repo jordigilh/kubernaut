@@ -524,7 +524,7 @@ func installAIAnalysisCRD(kubeconfigPath string, writer io.Writer) error {
 
 func deployHolmesGPTAPIManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  Applying HolmesGPT-API manifest (image already in Kind)...")
-	// ADR-030: Deploy manifest with ConfigMap
+	// ADR-030: Deploy manifest with two ConfigMaps (#390 split)
 	manifest := fmt.Sprintf(`
 apiVersion: v1
 kind: ConfigMap
@@ -533,12 +533,8 @@ metadata:
   namespace: kubernaut-system
 data:
   config.yaml: |
-    llm:
-      provider: "openai"
-      model: "mock-model"
-      endpoint: "http://mock-llm:8080"
     data_storage:
-      url: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
+      url: "http://data-storage-service:8080"
     logging:
       level: "INFO"
     audit:
@@ -546,7 +542,19 @@ data:
       buffer_size: 10000
       batch_size: 50
     auth:
-      resource_name: "holmesgpt-api"  # Match actual Service name (DD-AUTH-014)
+      resource_name: "holmesgpt-api"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: holmesgpt-sdk-config
+  namespace: kubernaut-system
+data:
+  sdk-config.yaml: |
+    llm:
+      provider: "openai"
+      model: "mock-model"
+      endpoint: "http://mock-llm:8080"
 ---
 # ServiceAccount: HolmesGPT-API (DD-AUTH-014 middleware needs TokenReview permissions)
 apiVersion: v1
@@ -687,10 +695,16 @@ spec:
         - name: config
           mountPath: /etc/holmesgpt
           readOnly: true
+        - name: sdk-config
+          mountPath: /etc/holmesgpt/sdk
+          readOnly: true
       volumes:
       - name: config
         configMap:
           name: holmesgpt-api-config
+      - name: sdk-config
+        configMap:
+          name: holmesgpt-sdk-config
 ---
 apiVersion: v1
 kind: Service
