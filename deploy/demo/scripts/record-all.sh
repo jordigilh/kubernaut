@@ -25,8 +25,8 @@ SCENARIO_FILTER="${2:-}"
 record_scenario() {
   local name="$1"
   local dir="${BASE}/${name}"
-  if [ ! -f "${dir}/record.sh" ]; then
-    echo "SKIP: ${name} (no record.sh)"
+  if [ ! -f "${dir}/recording/record.sh" ]; then
+    echo "SKIP: ${name} (no recording/record.sh)"
     return
   fi
   if [ -n "${SCENARIO_FILTER}" ] && [ "${SCENARIO_FILTER}" != "${name}" ]; then
@@ -37,7 +37,7 @@ record_scenario() {
   echo "  RECORDING: ${name}"
   echo "╚══════════════════════════════════════════════════╝"
   echo ""
-  bash "${dir}/record.sh"
+  bash "${dir}/recording/record.sh"
   echo ""
   echo "  ✓ ${name} recording complete"
   echo ""

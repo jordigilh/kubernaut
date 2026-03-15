@@ -35,8 +35,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
-SCENARIO="${1:?Usage: splice-demo.sh <scenario-name>}"
-SCENARIO_DIR="${REPO_ROOT}/deploy/demo/scenarios/${SCENARIO}"
+SCENARIO="${1:?Usage: splice-demo.sh <scenario-name> [subdir]}"
+SUBDIR="${2:-recording}"
+SCENARIO_DIR="${REPO_ROOT}/deploy/demo/scenarios/${SCENARIO}/${SUBDIR}"
 SPLICE_CONF="${SCENARIO_DIR}/splice.conf"
 FINAL_MP4="${SCENARIO_DIR}/${SCENARIO}.mp4"
 

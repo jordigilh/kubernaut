@@ -33,7 +33,7 @@ cleanup_platform() {
 record_tape() {
   local name="$1"
   local dir="deploy/demo/scenarios/${name}"
-  local tape="${dir}/${name}.tape"
+  local tape="${dir}/recording/${name}.tape"
 
   if [ ! -f "${tape}" ]; then
     log "SKIP ${name} -- no tape file"
@@ -59,8 +59,8 @@ record_tape() {
 
     # Fix MP4 timing: VHS encodes long GIF pauses as single frames that the
     # MP4 encoder drops. Re-encode from the GIF to get correct playback speed.
-    local gif="${dir}/${name}.gif"
-    local mp4="${dir}/${name}.mp4"
+    local gif="${dir}/recording/${name}.gif"
+    local mp4="${dir}/recording/${name}.mp4"
     if [ -f "${gif}" ]; then
       log "  Fixing MP4 timing from GIF..."
       bash "${SCRIPT_DIR}/fix-mp4-timing.sh" "${gif}" "${mp4}" 2>&1 || log "  WARN: MP4 fix failed"

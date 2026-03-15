@@ -39,7 +39,7 @@ set -euo pipefail
 : "${RESOURCE_TAPE:?RESOURCE_TAPE is required}"
 : "${SCREENS_TAPE:?SCREENS_TAPE is required}"
 
-REPO_ROOT="$(cd "${SCENARIO_DIR}/../../../.." && pwd)"
+REPO_ROOT="$(cd "${SCENARIO_DIR}/../../../../.." && pwd)"
 PLATFORM_NS="${PLATFORM_NS:-kubernaut-system}"
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/kubernaut-demo-config}"
 export PLATFORM_NS
