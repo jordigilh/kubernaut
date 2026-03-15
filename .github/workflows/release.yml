@@ -1,8 +1,9 @@
 name: Release
 
-# Triggered by version tag push (e.g., v1.0.0)
-# Builds multi-arch images (amd64 + arm64) for all 11 services in parallel,
+# Triggered by version tag push (e.g., v1.0.0, v1.1.0-rc0)
+# Builds multi-arch images (amd64 + arm64) for all 12 services in parallel,
 # publishes Helm chart to OCI registry, and creates a GitHub Release.
+# Pre-release tags (-rc*, -alpha*, -beta*) create a pre-release and skip :latest tagging.
 #
 # Prerequisites:
 #   - Quay.io robot account with Creator role in kubernaut-ai org
@@ -36,6 +37,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       build_date: ${{ steps.version.outputs.build_date }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
     steps:
       - name: Extract version from tag
         id: version
@@ -45,7 +47,14 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "build_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
-          echo "Release: $TAG (version: $VERSION)"
+
+          if [[ "$VERSION" =~ -(rc|alpha|beta) ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "Pre-release: $TAG (version: $VERSION)"
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "Release: $TAG (version: $VERSION)"
+          fi
 
   # ========================================
   # STAGE 1: BUILD & PUSH IMAGES (PARALLEL)
@@ -175,6 +184,7 @@ jobs:
           make image-manifest
 
       - name: Tag images as latest
+        if: needs.prepare.outputs.is_prerelease == 'false'
         env:
           IMAGE_TAG: ${{ needs.prepare.outputs.version }}
         run: |
@@ -253,14 +263,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.prepare.outputs.tag }}
           VERSION: ${{ needs.prepare.outputs.version }}
+          IS_PRERELEASE: ${{ needs.prepare.outputs.is_prerelease }}
         run: |
+          PRERELEASE_FLAG=""
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
           gh release create "${TAG}" \
             --title "Kubernaut ${TAG}" \
             --generate-notes \
+            ${PRERELEASE_FLAG} \
             --notes-start-tag "$(git tag --sort=-creatordate | grep '^v' | sed -n '2p')" || \
           gh release create "${TAG}" \
             --title "Kubernaut ${TAG}" \
-            --generate-notes
+            --generate-notes \
+            ${PRERELEASE_FLAG}
 
           echo ""
           echo "Release created: https://github.com/${{ github.repository }}/releases/tag/${TAG}"
