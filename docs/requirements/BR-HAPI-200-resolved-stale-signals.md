@@ -207,7 +207,7 @@ Evaluating in the wrong order causes high-confidence inconclusive investigations
    && no inconclusive/no-match warning signals
    && (isResolved || !hasSubstantiveRCA)                → ProblemResolved (Outcome A)
 3. !hasSelectedWorkflow && confidence >= 0.7
-   && is_actionable=false && "alert not actionable"     → NotActionable (Outcome C, #388)
+   && is_actionable=false && "alert not actionable"     → NotActionable (Outcome D, #388)
 4. !hasSelectedWorkflow                                 → NoWorkflowTerminalFailure
 5. hasSelectedWorkflow && confidence < 0.7              → LowConfidenceFailure
 6. default (workflow selected, confidence >= 0.7)       → Proceed to Analyzing phase
@@ -255,9 +255,13 @@ status:
   message: "Investigation inconclusive - human review recommended."
 ```
 
-#### Outcome C: Alert Not Actionable (`is_actionable=false`, `needs_human_review=false`)
+#### Outcome D: Alert Not Actionable (`is_actionable=false`, `needs_human_review=false`)
 
-Added by Issue #388 Fix A. When HAPI returns `actionable: false` with confidence >= 0.7:
+Added by Issue #388 Fix A. Labeled "Outcome D" to align with the LLM prompt contract
+(Outcome C in the prompt is "Problem Identified, No Automated Remediation Available",
+handled by the `NoWorkflowTerminalFailure` code path).
+
+When HAPI returns `actionable: false` with confidence >= 0.7:
 
 1. **NOT** create a WorkflowExecution CRD
 2. Transition to `Completed` phase
@@ -277,7 +281,7 @@ status:
 
 **Distinction from Outcome A (ProblemResolved)**:
 - **Outcome A**: The problem **existed but is no longer occurring** (transient condition that resolved)
-- **Outcome C**: The condition **is still present but is harmless** (benign alert, no action needed)
+- **Outcome D**: The condition **is still present but is harmless** (benign alert, no action needed)
 
 **Examples**: Orphaned PVCs from completed batch jobs, completed Job artifacts, informational alerts describing expected states.
 
@@ -319,7 +323,7 @@ The LLM SHALL return `investigation_outcome: "resolved"` when **confident** (≥
 | **Explicit Recovery** | Events show recovery after the issue |
 | **Metrics Normal** | CPU/memory/disk returned to normal range |
 
-#### Outcome C: Report "Not Actionable" (High Confidence, Benign) — Issue #388
+#### Outcome D: Report "Not Actionable" (High Confidence, Benign) — Issue #388
 
 The LLM SHALL return `actionable: false` when **confident** (>=0.7) that the alert is benign:
 
@@ -470,7 +474,7 @@ And AIAnalysis status.needsHumanReview SHALL be false
 | AIAnalysis Handler (BR-HAPI-200.6 decision tree + defense-in-depth) | ✅ Complete | AIAnalysis Team |
 | #388 `actionable` field in prompt, parser, Pydantic model | ✅ Complete | HAPI Team |
 | #388 `is_actionable` in OpenAPI spec + Go client regeneration | ✅ Complete | HAPI Team |
-| #388 `IsActionable` CRD field + NotActionable routing | ✅ Complete | AIAnalysis Team |
+| #388 `Actionability` CRD field + NotActionable routing | ✅ Complete | AIAnalysis Team |
 | #388 Unit Tests (Python: 7, Go: 3) | ✅ Complete | Both |
 | RO Handler | ⏳ Day 7 | RO Team |
 | Notification Rules | ⏳ Day 15 | Notification Team |
@@ -494,7 +498,7 @@ And AIAnalysis status.needsHumanReview SHALL be false
 | 1.0 | 2025-12-07 | Initial business requirement |
 | 1.1 | 2025-12-07 | Aligned with authoritative implementation: replaced `problem_not_reproducible` with `investigation_inconclusive`, clarified two distinct outcomes (Resolved vs Inconclusive) |
 | 1.2 | 2026-02-09 | BR-HAPI-200.6: Documented corrected decision tree evaluation order (needs_human_review BEFORE ProblemResolved), added defense-in-depth via warnings-based check. Fixed misclassification bug where high-confidence inconclusive investigations were routed to ProblemResolved. AIAnalysis Handler marked complete. |
-| 1.3 | 2026-03-02 | Issue #388 Fix A: Added Outcome C (Alert Not Actionable) with new `actionable` boolean field, `is_actionable` in IncidentResponse, `IsActionable` CRD field, `NotActionable` SubReason. Updated decision tree (step 3). Added AC-7, AC-8. |
+| 1.3 | 2026-03-02 | Issue #388 Fix A: Added Outcome D (Alert Not Actionable) with new `actionable` boolean field, `is_actionable` in IncidentResponse, `Actionability` CRD enum field, `NotActionable` SubReason. Updated decision tree (step 3). Added AC-7, AC-8. Relabeled from "Outcome C" to "Outcome D" to align with prompt contract (Outcome C = No Automated Remediation). |
 
 ---
 

@@ -1,7 +1,7 @@
 # Test Plan: HAPI `actionable` Field for Benign Alert Classification
 
-**Feature**: Add `actionable` boolean field to LLM output, mapped to `AIAnalysis.Status.IsActionable`
-**Version**: 1.1
+**Feature**: Add `actionable` boolean field to LLM output, mapped to `AIAnalysis.Status.Actionability`
+**Version**: 1.3
 **Created**: 2026-03-14
 **Author**: AI Assistant
 **Status**: Complete (Unit Tests)
@@ -24,7 +24,7 @@
 
 - **HAPI prompt (`prompt_builder.py`)**: Add `# actionable` field to the LLM output format. Add Outcome D section instructing the LLM to set `actionable: false` for benign alerts that don't warrant remediation or human review.
 - **HAPI result parser (`result_parser.py`)**: Extract `actionable` boolean from LLM response. When `actionable == false`: set `needs_human_review: False`, set `is_actionable: False`, skip the `no_matching_workflows` escalation.
-- **AIAnalysis response processor (`response_processor.go`)**: Use `IsActionable == false` (from HAPI response) to route through the existing `WorkflowNotNeeded` path with a new `subReason: NotActionable`.
+- **AIAnalysis response processor (`response_processor.go`)**: When HAPI returns `is_actionable: false`, route through the existing `WorkflowNotNeeded` path with `subReason: NotActionable` and set `Actionability: NotActionable` on the CRD status.
 
 ### Out of Scope
 
@@ -74,7 +74,7 @@ Tests validate: "When the LLM determines an alert is benign, the system correctl
 |------|-------------------|-----------------|
 | `holmesgpt-api/src/extensions/incident/result_parser.py` | `parse_incident_response` (new `actionable` field extraction + routing) | ~20 |
 | `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Prompt template (Outcome D section + `# actionable` field definition) | ~25 |
-| `pkg/aianalysis/handlers/response_processor.go` | `ProcessIncidentResponse` (new `IsActionable == false` routing), `hasNotActionableSignal` | ~15 |
+| `pkg/aianalysis/handlers/response_processor.go` | `ProcessIncidentResponse` (new `Actionability == NotActionable` routing), `hasNotActionableSignal` | ~15 |
 
 ### Integration-Testable Code (I/O, wiring, cross-component)
 
@@ -89,13 +89,14 @@ Tests validate: "When the LLM determines an alert is benign, the system correctl
 
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |-------|-------------|----------|------|---------|--------|
-| BR-HAPI-200 (ext) | LLM prompt includes `# actionable` field and Outcome D instructions | P1 | Unit | UT-HAPI-388-001 | Pending |
-| BR-HAPI-200 (ext) | Result parser: `actionable: false` → `needs_human_review: False`, `is_actionable: False` | P0 | Unit | UT-HAPI-388-002 | Pending |
-| BR-HAPI-200 (ext) | Result parser: `actionable: false` overrides contradictory `needs_human_review: True` | P0 | Unit | UT-HAPI-388-003 | Pending |
-| BR-HAPI-200 (ext) | Result parser: `actionable: false` skips `no_matching_workflows` escalation | P1 | Unit | UT-HAPI-388-004 | Pending |
-| BR-HAPI-200 (ext) | Result parser: `actionable: false` emits audit-trail warning | P1 | Unit | UT-HAPI-388-005 | Pending |
-| BR-HAPI-200 (ext) | AIAnalysis: `IsActionable == false` routes to `WorkflowNotNeeded/NotActionable` | P0 | Unit | UT-AA-388-001 | Pending |
-| BR-HAPI-200 (ext) | AIAnalysis: `IsActionable == false` does NOT create WorkflowExecution | P0 | Unit | UT-AA-388-002 | Pending |
+| BR-HAPI-200 (ext) | LLM prompt includes `# actionable` field and Outcome D instructions | P1 | Unit | UT-HAPI-388-001 | Pass |
+| BR-HAPI-200 (ext) | Result parser: `actionable: false` → `needs_human_review: False`, `is_actionable: False` | P0 | Unit | UT-HAPI-388-002 | Pass |
+| BR-HAPI-200 (ext) | Result parser: `actionable: false` overrides contradictory `needs_human_review: True` | P0 | Unit | UT-HAPI-388-003 | Pass |
+| BR-HAPI-200 (ext) | Result parser: `actionable: false` skips `no_matching_workflows` escalation | P1 | Unit | UT-HAPI-388-004 | Pass |
+| BR-HAPI-200 (ext) | Result parser: `actionable: false` emits audit-trail warning | P1 | Unit | UT-HAPI-388-005 | Pass |
+| BR-HAPI-200 (ext) | Result parser: Pattern 2B (section headers) extracts `# actionable` field | P0 | Unit | UT-HAPI-388-006 | Pass |
+| BR-HAPI-200 (ext) | AIAnalysis: `Actionability == NotActionable` routes to `WorkflowNotNeeded/NotActionable` | P0 | Unit | UT-AA-388-001 | Pass |
+| BR-HAPI-200 (ext) | AIAnalysis: `Actionability == NotActionable` does NOT create WorkflowExecution | P0 | Unit | UT-AA-388-002 | Pass |
 | BR-HAPI-200 (ext) | HAPI endpoint: mock LLM returns `actionable: false` → response has `needs_human_review: False`, `is_actionable: False` | P1 | Integration | IT-HAPI-388-001 | Pending |
 | BR-ORCH-037 (ext) | RO: `WorkflowNotNeeded/NotActionable` → RR `Completed/NoActionRequired` | P0 | Integration | IT-RO-388-001 | Pending |
 
@@ -126,13 +127,14 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-HAPI-388-001` | Prompt includes `# actionable` field definition and Outcome D instructions so the LLM knows when to signal `actionable: false` for benign alerts | Pending |
-| `UT-HAPI-388-002` | When LLM returns `actionable: false`, the system concludes `needs_human_review: False` and `is_actionable: False` — benign alerts are not escalated | Pending |
-| `UT-HAPI-388-003` | Even if LLM contradicts itself (`needs_human_review: true` + `actionable: false`), `actionable: false` takes precedence — benign alerts are never escalated | Pending |
-| `UT-HAPI-388-004` | `actionable: false` does not trigger the `no_matching_workflows` escalation — the system recognizes this is an intentional "no action" decision | Pending |
-| `UT-HAPI-388-005` | `actionable: false` emits a distinct warning (`"Alert not actionable — no remediation warranted"`) for audit trail | Pending |
-| `UT-AA-388-001` | AIAnalysis routes `IsActionable == false` to `Completed/WorkflowNotNeeded/NotActionable` — operators see a clean completion, not a failure | Pending |
-| `UT-AA-388-002` | No WorkflowExecution CRD is created when `IsActionable == false` — the system does not attempt remediation on benign alerts | Pending |
+| `UT-HAPI-388-001` | Prompt includes `# actionable` field definition and Outcome D instructions so the LLM knows when to signal `actionable: false` for benign alerts | Pass |
+| `UT-HAPI-388-002` | When LLM returns `actionable: false`, the system concludes `needs_human_review: False` and `is_actionable: False` — benign alerts are not escalated | Pass |
+| `UT-HAPI-388-003` | Even if LLM contradicts itself (`needs_human_review: true` + `actionable: false`), `actionable: false` takes precedence — benign alerts are never escalated | Pass |
+| `UT-HAPI-388-004` | `actionable: false` does not trigger the `no_matching_workflows` escalation — the system recognizes this is an intentional "no action" decision | Pass |
+| `UT-HAPI-388-005` | `actionable: false` emits a distinct warning (`"Alert not actionable — no remediation warranted"`) for audit trail | Pass |
+| `UT-HAPI-388-006` | Result parser extracts `# actionable` from section-header (Pattern 2B) format — the LLM's instructed output format | Pass |
+| `UT-AA-388-001` | AIAnalysis routes `Actionability == NotActionable` to `Completed/WorkflowNotNeeded/NotActionable` — operators see a clean completion, not a failure | Pass |
+| `UT-AA-388-002` | No WorkflowExecution CRD is created when `Actionability == NotActionable` — the system does not attempt remediation on benign alerts | Pass |
 
 ### Tier 2: Integration Tests
 
@@ -241,7 +243,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 ---
 
-### UT-AA-388-001: AIAnalysis routes `IsActionable == false` to `WorkflowNotNeeded/NotActionable`
+### UT-AA-388-001: AIAnalysis routes `Actionability == NotActionable` to `WorkflowNotNeeded/NotActionable`
 
 **BR**: BR-HAPI-200 (extension), BR-ORCH-037
 **Type**: Unit
@@ -249,18 +251,18 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **Given**: HAPI response with `is_actionable: false`, `needs_human_review: false`, `selected_workflow: null`, `confidence >= 0.7`, and warning containing "not actionable"
 **When**: `ProcessIncidentResponse` processes the response
-**Then**: AIAnalysis status transitions to `Completed` with `Reason: WorkflowNotNeeded`, `SubReason: NotActionable`, and `IsActionable: false`
+**Then**: AIAnalysis status transitions to `Completed` with `Reason: WorkflowNotNeeded`, `SubReason: NotActionable`, and `Actionability: NotActionable`
 
 **Acceptance Criteria**:
 - `Phase == Completed` (NOT `Failed`)
 - `Reason == "WorkflowNotNeeded"`
 - `SubReason == "NotActionable"` (distinguishable from `ProblemResolved`)
-- `IsActionable == false`
+- `Actionability == "NotActionable"`
 - No WorkflowExecution CRD created
 
 ---
 
-### UT-AA-388-002: No WorkflowExecution for `IsActionable == false`
+### UT-AA-388-002: No WorkflowExecution for `Actionability == NotActionable`
 
 **BR**: BR-ORCH-037
 **Type**: Unit
@@ -302,7 +304,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 **Type**: Integration
 **File**: `test/integration/remediationorchestrator/lifecycle_test.go`
 
-**Given**: An AIAnalysis resource with `Phase: Completed`, `Reason: WorkflowNotNeeded`, `SubReason: NotActionable`, `IsActionable: false`
+**Given**: An AIAnalysis resource with `Phase: Completed`, `Reason: WorkflowNotNeeded`, `SubReason: NotActionable`, `Actionability: NotActionable`
 **When**: RemediationOrchestrator reconciles the owning RemediationRequest
 **Then**: RR transitions to `Completed` with `Outcome: NoActionRequired`
 
@@ -366,5 +368,6 @@ go test ./test/integration/remediationorchestrator/... -ginkgo.focus="IT-RO-388"
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-14 | Initial test plan for #388 Fix A using `investigation_outcome: not_actionable` |
-| 1.1 | 2026-03-14 | Redesigned: replaced `investigation_outcome: not_actionable` with `actionable` boolean field. `actionable` maps directly to `AIAnalysis.Status.IsActionable`. Keeps `investigation_outcome` clean (investigation state) and `actionable` as a separate dimension (action decision). |
+| 1.1 | 2026-03-14 | Redesigned: replaced `investigation_outcome: not_actionable` with `actionable` boolean field. `actionable` maps directly to `AIAnalysis.Status.Actionability` enum. Keeps `investigation_outcome` clean (investigation state) and `actionable` as a separate dimension (action decision). |
 | 1.2 | 2026-03-02 | Implementation complete. All Python unit tests (7/7) and Go unit tests (3/3) pass. Integration tests deferred to E2E validation with orphaned-pvc-no-action scenario. |
+| 1.3 | 2026-03-02 | Triage fixes: (1) Fixed P0 bug — active parser Pattern 2B missing `# actionable` extraction, added UT-HAPI-388-006. (2) Replaced stale `IsActionable` references with `Actionability` enum. (3) Updated BR matrix statuses to Pass. (4) Used Go constants (`ActionabilityNotActionable`) instead of string literals. |
