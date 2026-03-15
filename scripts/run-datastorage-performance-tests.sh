@@ -20,7 +20,7 @@ if ! podman ps | grep -q datastorage-postgres; then
     echo "   Start with: podman run -d --name datastorage-postgres -p 5432:5432 \\"
     echo "              -e POSTGRESQL_USER=db_user -e POSTGRESQL_PASSWORD=test \\"
     echo "              -e POSTGRESQL_DATABASE=action_history \\"
-    echo "              registry.redhat.io/rhel9/postgresql-16:latest"
+    echo "              registry.redhat.io/rhel10/postgresql-16:latest"
     exit 1
 fi
 echo "✅ PostgreSQL is running"

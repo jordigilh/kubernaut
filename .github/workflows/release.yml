@@ -61,7 +61,7 @@ jobs:
   #
   # Strategy:
   #   - Go services: CGO_ENABLED=0 cross-compile via GOARCH (native speed)
-  #     inside ubi9/go-toolset pulled for target platform (QEMU for arm64)
+  #     inside ubi10/go-toolset pulled for target platform (QEMU for arm64)
   #   - Python/Bash: Full QEMU emulation for arm64 (slower, acceptable for releases)
   #   - Makefile image-build-% targets handle service-to-Dockerfile mapping
   # ========================================
@@ -86,15 +86,16 @@ jobs:
           - effectivenessmonitor
           - holmesgpt-api
           - must-gather
+          - db-migrate
         arch: [amd64, arm64]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: true
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.25'
           cache: true
@@ -157,7 +158,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Login to Quay.io
         run: |
@@ -179,7 +180,7 @@ jobs:
         run: |
           for svc in datastorage gateway aianalysis authwebhook notification \
                      remediationorchestrator signalprocessing workflowexecution \
-                     effectivenessmonitor holmesgpt-api must-gather; do
+                     effectivenessmonitor holmesgpt-api must-gather db-migrate; do
             echo "  Tagging $svc:latest..."
             podman manifest rm ${IMAGE_REGISTRY}/$svc:latest 2>/dev/null || true
             podman manifest create ${IMAGE_REGISTRY}/$svc:latest \
@@ -206,7 +207,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Update Chart.yaml with release version
         env:
@@ -243,7 +244,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 

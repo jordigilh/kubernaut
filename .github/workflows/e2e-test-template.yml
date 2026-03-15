@@ -40,12 +40,13 @@ jobs:
       github.event_name != 'pull_request'
     env:
       KIND_EXPERIMENTAL_PROVIDER: podman
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     outputs:
       result: ${{ steps.test.outcome }}
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -75,7 +76,7 @@ jobs:
       # ========================================
       - name: Run ${{ inputs.service }} E2E tests
         id: test
-        uses: nick-fields/retry-action@v2
+        uses: nick-fields/retry@v3
         with:
           timeout_minutes: ${{ inputs.timeout }}
           max_attempts: 2
@@ -103,7 +104,7 @@ jobs:
       # ========================================
       - name: Upload E2E test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.service }}-e2e-results
           path: |
@@ -113,7 +114,7 @@ jobs:
 
       - name: Upload failure diagnostics (must-gather + Kind logs)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.service }}-e2e-diagnostics-${{ github.run_id }}
           path: |

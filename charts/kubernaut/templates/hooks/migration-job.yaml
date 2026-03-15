@@ -18,6 +18,7 @@ spec:
         app: db-migration
     spec:
       serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       restartPolicy: Never
       securityContext:
         seccompProfile:
@@ -26,7 +27,9 @@ spec:
       initContainers:
         - name: wait-for-postgresql
           image: {{ .Values.hooks.migrations.image }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           securityContext:
+            runAsNonRoot: true
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
@@ -51,9 +54,11 @@ spec:
       containers:
         - name: migrate
           image: {{ .Values.hooks.migrations.image }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           securityContext:
+            runAsNonRoot: true
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           resources:
@@ -83,38 +88,10 @@ spec:
             - |
               set -e
 
-              GOOSE_VERSION="{{ .Values.hooks.migrations.gooseVersion }}"
-              GOOSE_BIN="/tmp/goose"
-              ARCH=$(uname -m)
-              case "$ARCH" in
-                x86_64)  GOOSE_ARCH="x86_64" ;;
-                aarch64) GOOSE_ARCH="arm64" ;;
-                *)       echo "ERROR: Unsupported architecture: $ARCH"; exit 1 ;;
-              esac
-
-              echo "==> Installing goose ${GOOSE_VERSION} (${GOOSE_ARCH})..."
-              wget -qO "$GOOSE_BIN" \
-                "https://github.com/pressly/goose/releases/download/${GOOSE_VERSION}/goose_linux_${GOOSE_ARCH}"
-
-              echo "==> Verifying SHA256 checksum..."
-              EXPECTED_x86_64="313ba1c77a367f431faf690fe817aad297722623b62395a8ac64281f54f6c415"
-              EXPECTED_arm64="207681c8ed67511fa53da6790de986e9a70981af0eec6c4ba1d8ff05e552f043"
-              eval "EXPECTED=\$EXPECTED_${GOOSE_ARCH}"
-              ACTUAL=$(sha256sum "$GOOSE_BIN" | awk '{print $1}')
-              if [ "$ACTUAL" != "$EXPECTED" ]; then
-                echo "ERROR: SHA256 checksum mismatch for goose_linux_${GOOSE_ARCH}"
-                echo "  expected: $EXPECTED"
-                echo "  actual:   $ACTUAL"
-                exit 1
-              fi
-              echo "  Checksum verified."
-
-              chmod +x "$GOOSE_BIN"
-
               GOOSE_DBSTRING="host=$PGHOST user=$PGUSER password=$PGPASSWORD dbname=$PGDATABASE sslmode=disable"
 
               echo "==> Applying SQL migrations with goose (DD-012)"
-              "$GOOSE_BIN" -dir /migrations postgres "$GOOSE_DBSTRING" up
+              goose -dir /migrations postgres "$GOOSE_DBSTRING" up
 
               echo "==> Granting privileges..."
               psql -q <<'EOSQL'
@@ -144,7 +121,6 @@ metadata:
     "helm.sh/hook-weight": "1"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 data:
-  {{- $migrationsDir := printf "%s/migrations" $.Chart.Name }}
   {{- range $path, $_ := .Files.Glob "migrations/*.sql" }}
   {{ base $path }}: |
     {{- $.Files.Get $path | nindent 4 }}

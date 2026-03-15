@@ -1,0 +1,113 @@
+{{- if .Values.valkey.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: valkey
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: valkey
+    {{- include "kubernaut.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: valkey
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: valkey
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: valkey
+      port: 6379
+      targetPort: 6379
+      protocol: TCP
+  selector:
+    app: valkey
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valkey
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: valkey
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.valkey.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: valkey
+  template:
+    metadata:
+      labels:
+        app: valkey
+    spec:
+      serviceAccountName: valkey
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
+      {{- $pscDefaults := dict "seccompProfile" (dict "type" "RuntimeDefault") }}
+      {{- if eq (include "kubernaut.postgresql.variant" .) "ocp" }}
+      {{- $_ := set $pscDefaults "runAsNonRoot" true }}
+      {{- end }}
+      {{- $pscOverride := .Values.valkey.podSecurityContext | default dict }}
+      securityContext:
+        {{- toYaml (merge $pscOverride $pscDefaults) | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.valkey | nindent 6 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.valkey "global" .Values.global) | nindent 6 }}
+      containers:
+        - name: valkey
+          image: {{ .Values.valkey.image }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          {{- $cscDefaults := dict "allowPrivilegeEscalation" false }}
+          {{- $cscOverride := .Values.valkey.containerSecurityContext | default dict }}
+          securityContext:
+            {{- toYaml (merge $cscOverride $cscDefaults) | nindent 12 }}
+          ports:
+            - name: valkey
+              containerPort: 6379
+          volumeMounts:
+            - name: valkey-data
+              mountPath: {{ include "kubernaut.valkey.dataDir" . }}
+          resources:
+            {{- toYaml .Values.valkey.resources | nindent 12 }}
+          readinessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: valkey-data
+          persistentVolumeClaim:
+            claimName: valkey-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: valkey-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: valkey
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/resource-policy": keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.valkey.storage.storageClassName }}
+  storageClassName: {{ .Values.valkey.storage.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.valkey.storage.size }}
+{{- end }}

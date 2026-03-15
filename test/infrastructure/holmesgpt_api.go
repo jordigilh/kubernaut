@@ -296,6 +296,11 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 		return fmt.Errorf("failed to create DataStorage client: %w", err)
 	}
 
+	// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
+	if err := SeedActionTypesViaAPI(seedClient, writer); err != nil {
+		return fmt.Errorf("failed to seed action types: %w", err)
+	}
+
 	// Get test workflows (from shared library)
 	testWorkflows := GetHAPIE2ETestWorkflows()
 	_, _ = fmt.Fprintf(writer, "  📋 Preparing %d test workflows...\n", len(testWorkflows))
@@ -390,7 +395,7 @@ func createHAPIKindCluster(clusterName, kubeconfigPath string, writer io.Writer)
 // deployDataStorageForHAPI deploys Data Storage service to Kind cluster
 // deployHAPIOnly deploys HAPI service to Kind cluster
 // Per DD-TEST-001 v2.9: NodePort 30088
-func deployHAPIOnly(clusterName, kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
+func deployHAPIOnly(clusterName, kubeconfigPath, namespace, imageTag string, writer io.Writer, opts ...HAPIDeployOpts) error {
 	// DD-TEST-007: Conditionally add Python coverage instrumentation
 	coverageEnv := ""
 	coverageVolumeMount := ""
@@ -438,6 +443,11 @@ func deployHAPIOnly(clusterName, kubeconfigPath, namespace, imageTag string, wri
 	//
 	// ──────────────────────────────────────────────────────────────────────
 
+	var sdkToolsets string
+	if len(opts) > 0 {
+		sdkToolsets = opts[0].SdkToolsets
+	}
+
 	var settings hapiLLMDeploymentSettings
 
 	if skipMockLLM() {
@@ -447,10 +457,19 @@ func deployHAPIOnly(clusterName, kubeconfigPath, namespace, imageTag string, wri
 			return fmt.Errorf("failed to configure external LLM: %w", err)
 		}
 	} else {
-		settings = buildMockLLMSettings(namespace)
+		settings = buildMockLLMSettings(namespace, sdkToolsets)
 	}
 
-	// ADR-030: Compose the full HAPI deployment manifest
+	// ADR-030 + Issue #390: Compose the full HAPI deployment manifest.
+	// The template prepends both service and SDK ConfigMap manifests,
+	// and the Deployment mounts both at /etc/holmesgpt and /etc/holmesgpt/sdk.
+	//
+	// Placeholder map (13 total):
+	//  1: ConfigMapYAML + SdkConfigMapYAML  2: namespace  3: imageTag
+	//  4: imagePullPolicy  5: EnvVars  6: coverageEnv
+	//  7: CredentialMount  8: coverageVolumeMount
+	//  9: ConfigMapName  10: SdkConfigMapName  11: CredentialVolume
+	//  12: coverageVolume  13: namespace (Service)
 	deployment := fmt.Sprintf(`%sapiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -479,14 +498,22 @@ spec:
         env:
         %s
         %s
+        - name: SDK_CONFIG_FILE
+          value: "/etc/holmesgpt/sdk/sdk-config.yaml"
         volumeMounts:
         - name: config
           mountPath: /etc/holmesgpt
+          readOnly: true
+        - name: sdk-config
+          mountPath: /etc/holmesgpt/sdk
           readOnly: true
         %s
         %s
       volumes:
       - name: config
+        configMap:
+          name: %s
+      - name: sdk-config
         configMap:
           name: %s
       %s
@@ -505,11 +532,11 @@ spec:
     nodePort: 30088
   selector:
     app: holmesgpt-api
-`, settings.ConfigMapYAML,
+`, settings.ConfigMapYAML+settings.SdkConfigMapYAML,
 		namespace, imageTag, GetImagePullPolicy(),
 		settings.EnvVars, coverageEnv,
 		settings.CredentialMount, coverageVolumeMount,
-		settings.ConfigMapName, settings.CredentialVolume, coverageVolume,
+		settings.ConfigMapName, settings.SdkConfigMapName, settings.CredentialVolume, coverageVolume,
 		namespace)
 
 	// Apply manifest
@@ -1122,12 +1149,25 @@ type hapiLLMDeploymentSettings struct {
 	ConfigMapYAML string
 	// ConfigMapName is the name of the ConfigMap to mount as /etc/holmesgpt
 	ConfigMapName string
+	// SdkConfigMapYAML is the SDK ConfigMap manifest to prepend (Issue #390: LLM + toolsets)
+	SdkConfigMapYAML string
+	// SdkConfigMapName is the name of the SDK ConfigMap to mount as /etc/holmesgpt/sdk
+	SdkConfigMapName string
 	// EnvVars is a YAML fragment of env entries for the HAPI container
 	EnvVars string
 	// CredentialVolume is a YAML fragment for the volumes section (empty if no credentials)
 	CredentialVolume string
 	// CredentialMount is a YAML fragment for the volumeMounts section (empty if no credentials)
 	CredentialMount string
+}
+
+// HAPIDeployOpts provides optional configuration for deployHAPIOnly.
+// Issue #390: Allows callers (e.g. Full Pipeline E2E) to inject SDK toolset
+// configuration such as prometheus/metrics into the SDK ConfigMap.
+type HAPIDeployOpts struct {
+	// SdkToolsets is a YAML fragment appended to the SDK config data (e.g. toolsets section).
+	// Must be valid YAML indented at the sdk-config.yaml level.
+	SdkToolsets string
 }
 
 // getHAPILLMConfigPath returns the resolved path to the HAPI LLM config file.
@@ -1167,8 +1207,10 @@ func buildExternalLLMSettings(kubeconfigPath, namespace string, writer io.Writer
 
 	_, _ = fmt.Fprintf(writer, "  🔍 Detected LLM provider: %s (model: %s)\n", cfg.LLM.Provider, cfg.LLM.Model)
 
-	// Create ConfigMap from the local config file (common to all providers)
-	if err := createLLMConfigMap(kubeconfigPath, namespace, writer); err != nil {
+	// Issue #390: Create the SDK ConfigMap from the user's config file.
+	// The user-provided file contains LLM settings (and optionally toolsets),
+	// which now live in the SDK ConfigMap rather than the service ConfigMap.
+	if err := createSDKConfigMap(kubeconfigPath, namespace, writer); err != nil {
 		return hapiLLMDeploymentSettings{}, err
 	}
 
@@ -1186,7 +1228,11 @@ func buildExternalLLMSettings(kubeconfigPath, namespace string, writer io.Writer
 }
 
 // buildMockLLMSettings returns deployment settings for the Mock LLM (CI/CD mode).
-func buildMockLLMSettings(namespace string) hapiLLMDeploymentSettings {
+// Issue #390: ConfigMap is split into service config (logging, data_storage, audit)
+// and SDK config (LLM provider settings + optional toolsets).
+// sdkToolsetsYAML allows callers to inject extra YAML into the SDK config
+// (e.g. prometheus/metrics for Full Pipeline E2E).
+func buildMockLLMSettings(namespace, sdkToolsetsYAML string) hapiLLMDeploymentSettings {
 	return hapiLLMDeploymentSettings{
 		ConfigMapName: "holmesgpt-api-config",
 		ConfigMapYAML: fmt.Sprintf(`apiVersion: v1
@@ -1198,10 +1244,6 @@ data:
   config.yaml: |
     logging:
       level: "INFO"
-    llm:
-      provider: "openai"
-      model: "mock-model"
-      endpoint: "http://mock-llm:8080"
     data_storage:
       url: "http://data-storage-service:8080"
     audit:
@@ -1210,6 +1252,20 @@ data:
       batch_size: 50
 ---
 `, namespace),
+		SdkConfigMapName: "holmesgpt-sdk-config",
+		SdkConfigMapYAML: fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: holmesgpt-sdk-config
+  namespace: %s
+data:
+  sdk-config.yaml: |
+    llm:
+      provider: "openai"
+      model: "mock-model"
+      endpoint: "http://mock-llm:8080"
+%s---
+`, namespace, sdkToolsetsYAML),
 		EnvVars: `- name: LLM_ENDPOINT
           value: "http://mock-llm:8080"
         - name: LLM_MODEL
@@ -1236,7 +1292,9 @@ data:
 // Credential source: ~/.kubernaut/e2e/credentials.json (or E2E_HAPI_LLM_CREDENTIALS_PATH)
 func buildVertexAISettings(cfg *hapiLLMConfig, kubeconfigPath, namespace string, writer io.Writer) (hapiLLMDeploymentSettings, error) {
 	settings := hapiLLMDeploymentSettings{
-		ConfigMapName: "hapi-llm-config",
+		ConfigMapName:    "holmesgpt-api-config",
+		ConfigMapYAML:    buildExternalServiceConfigMap(namespace),
+		SdkConfigMapName: "holmesgpt-sdk-config",
 	}
 
 	// Base env vars
@@ -1300,7 +1358,9 @@ func buildVertexAISettings(cfg *hapiLLMConfig, kubeconfigPath, namespace string,
 //  3. llm.api_key field in the config YAML (least preferred — visible in ConfigMap)
 func buildAnthropicSettings(cfg *hapiLLMConfig, kubeconfigPath, namespace string, writer io.Writer) (hapiLLMDeploymentSettings, error) {
 	settings := hapiLLMDeploymentSettings{
-		ConfigMapName: "hapi-llm-config",
+		ConfigMapName:    "holmesgpt-api-config",
+		ConfigMapYAML:    buildExternalServiceConfigMap(namespace),
+		SdkConfigMapName: "holmesgpt-sdk-config",
 	}
 
 	// Resolve the API key from the three sources
@@ -1365,11 +1425,12 @@ func resolveAnthropicAPIKey(cfg *hapiLLMConfig) (string, string, error) {
 // Shared K8s resource helpers
 // ──────────────────────────────────────────────────────────────────────
 
-// createLLMConfigMap creates the hapi-llm-config ConfigMap from the local config file.
-// Used by all external LLM providers (Vertex AI, Anthropic).
-func createLLMConfigMap(kubeconfigPath, namespace string, writer io.Writer) error {
+// createSDKConfigMap creates the holmesgpt-sdk-config ConfigMap from the local config file.
+// Issue #390: The user-provided config file contains LLM settings (and optionally toolsets),
+// which are now stored in the SDK ConfigMap mounted at /etc/holmesgpt/sdk/.
+func createSDKConfigMap(kubeconfigPath, namespace string, writer io.Writer) error {
 	configPath := getHAPILLMConfigPath()
-	_, _ = fmt.Fprintf(writer, "  🔗 Creating ConfigMap hapi-llm-config from %s\n", configPath)
+	_, _ = fmt.Fprintf(writer, "  🔗 Creating SDK ConfigMap holmesgpt-sdk-config from %s\n", configPath)
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return fmt.Errorf("HAPI LLM config file not found: %s\n"+
@@ -1378,16 +1439,39 @@ func createLLMConfigMap(kubeconfigPath, namespace string, writer io.Writer) erro
 	}
 
 	if err := kubectlPipedApply(kubeconfigPath,
-		[]string{"create", "configmap", "hapi-llm-config",
+		[]string{"create", "configmap", "holmesgpt-sdk-config",
 			"--namespace", namespace,
-			"--from-file=config.yaml=" + configPath,
+			"--from-file=sdk-config.yaml=" + configPath,
 			"--dry-run=client", "-o", "yaml"},
 		writer); err != nil {
-		return fmt.Errorf("failed to create LLM ConfigMap: %w", err)
+		return fmt.Errorf("failed to create SDK ConfigMap: %w", err)
 	}
 
-	_, _ = fmt.Fprintln(writer, "  ✅ ConfigMap hapi-llm-config created")
+	_, _ = fmt.Fprintln(writer, "  ✅ ConfigMap holmesgpt-sdk-config created")
 	return nil
+}
+
+// buildExternalServiceConfigMap generates an inline service-only ConfigMap for external LLM mode.
+// Issue #390: With the ConfigMap split, external LLM providers need a service ConfigMap
+// with the same defaults as mock mode (logging, data_storage, audit).
+func buildExternalServiceConfigMap(namespace string) string {
+	return fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: holmesgpt-api-config
+  namespace: %s
+data:
+  config.yaml: |
+    logging:
+      level: "INFO"
+    data_storage:
+      url: "http://data-storage-service:8080"
+    audit:
+      flush_interval_seconds: 0.1
+      buffer_size: 10000
+      batch_size: 50
+---
+`, namespace)
 }
 
 // createFileSecret creates a K8s Secret from a local file.

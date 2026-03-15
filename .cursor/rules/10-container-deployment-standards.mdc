@@ -20,8 +20,8 @@ quay.io/jordigilh/
 **Examples**:
 ```dockerfile
 # ✅ CORRECT: Use official base images for building
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # OR for Alpine-based services
 FROM golang:1.23-alpine AS builder
@@ -40,8 +40,8 @@ FROM alpine:latest
 
 ```dockerfile
 # ✅ PREFERRED: Red Hat UBI for enterprise services
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # ✅ ACCEPTABLE: Alpine for minimal services
 FROM golang:1.23-alpine AS builder
@@ -58,7 +58,7 @@ FROM some-random-registry/custom-image:latest
 
 ```dockerfile
 # Build stage - Use official base images
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
 
 USER root
 RUN dnf update -y && dnf install -y git ca-certificates && dnf clean all
@@ -71,7 +71,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o service-name ./cmd/service-name
 
 # Runtime stage - Use official base images
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 RUN microdnf update -y && microdnf install -y ca-certificates && microdnf clean all
 RUN useradd -r -u 1001 -g root service-user

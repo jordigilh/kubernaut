@@ -6,7 +6,7 @@
 # See: test/fixtures/workflows/Dockerfile (shared schema image builder)
 #
 # Build: podman build -t quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec .
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # Job executor injects parameters as environment variables:
 #   NAMESPACE           - target namespace

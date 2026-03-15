@@ -13,5 +13,5 @@ postgresql:
 datastorage:
   dbExistingSecret: kubernaut-ds-db-credentials
 
-redis:
-  existingSecret: kubernaut-redis-credentials
+valkey:
+  existingSecret: kubernaut-valkey-credentials

@@ -1,7 +1,8 @@
 {{- if eq .Values.tls.mode "hook" }}
 # Job 1: Generate TLS certificates (pre-install/pre-upgrade).
 # Runs BEFORE chart resources so the authwebhook pod can mount the TLS secret.
-# Stores the CA cert in a ConfigMap for the post-install caBundle patch job.
+# Embeds the CA cert as a ca.crt key in the Secret for the init-container
+# and post-install caBundle patch job (#377).
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -22,6 +23,7 @@ spec:
         app: tls-cert-gen
     spec:
       serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true
@@ -36,6 +38,8 @@ spec:
         - name: tls-cert-gen
           image: {{ .Values.hooks.tlsCerts.image }}
           securityContext:
+            runAsUser: 65534
+            runAsGroup: 65534
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
@@ -64,18 +68,18 @@ spec:
                 CERT_PEM=$(kubectl get secret authwebhook-tls -n "$NAMESPACE" -o jsonpath='{.data.tls\.crt}' | base64 -d)
                 if printf '%s' "$CERT_PEM" | openssl x509 -checkend $((30*86400)) -noout 2>/dev/null; then
                   echo "  Certificate is valid for at least 30 more days."
-                  if kubectl get configmap authwebhook-ca -n "$NAMESPACE" >/dev/null 2>&1; then
-                    echo "  authwebhook-ca ConfigMap exists. Nothing to do."
+                  CA_KEY=$(kubectl get secret authwebhook-tls -n "$NAMESPACE" -o jsonpath='{.data.ca\.crt}')
+                  if [ -n "$CA_KEY" ]; then
+                    echo "  ca.crt key present in Secret. Nothing to do."
                     exit 0
                   fi
-                  echo "WARNING: authwebhook-ca ConfigMap missing (legacy install)."
-                  echo "  Delete the authwebhook-tls secret and re-run helm upgrade to regenerate."
-                  exit 0
+                  echo "WARNING: ca.crt key missing from Secret. Forcing regeneration..."
+                  RENEW=true
+                  kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
                 else
                   echo "  Certificate expires within 30 days (or is already expired). Regenerating..."
                   RENEW=true
                   kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
-                  kubectl delete configmap authwebhook-ca -n "$NAMESPACE" --ignore-not-found
                 fi
               fi
 
@@ -101,25 +105,27 @@ spec:
                 -extfile "$TMPDIR/san.cnf" \
                 2>/dev/null
 
-              echo "  Storing TLS secret..."
+              echo "  Storing TLS secret (with embedded CA)..."
+              kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
               kubectl create secret tls authwebhook-tls \
                 --cert="$TMPDIR/tls.crt" \
                 --key="$TMPDIR/tls.key" \
-                -n "$NAMESPACE" \
-                --dry-run=client -o yaml | kubectl apply -f -
+                -n "$NAMESPACE"
 
-              echo "  Storing CA cert in ConfigMap for post-install caBundle patching..."
-              kubectl create configmap authwebhook-ca \
-                --from-file=ca.crt="$TMPDIR/ca.crt" \
-                -n "$NAMESPACE" \
-                --dry-run=client -o yaml | kubectl apply -f -
+              CA_B64=$(base64 < "$TMPDIR/ca.crt" | tr -d '\n')
+              kubectl patch secret authwebhook-tls -n "$NAMESPACE" \
+                -p "{\"data\":{\"ca.crt\":\"$CA_B64\"}}"
+
+              echo "  Verifying ca.crt key in Secret..."
+              kubectl get secret authwebhook-tls -n "$NAMESPACE" \
+                -o jsonpath='{.data.ca\.crt}' | base64 -d | head -1
 
               rm -rf "$TMPDIR"
-              echo "==> TLS certificates generated and CA stored"
+              echo "==> TLS certificates generated and CA embedded in Secret"
 ---
 # Job 2: Patch webhook configurations with caBundle (post-install/post-upgrade).
 # Runs AFTER chart resources so the webhook configurations exist when we patch them.
-# Reads the CA cert from the ConfigMap created by the pre-install cert gen job.
+# Reads the CA cert from the ca.crt key embedded in the authwebhook-tls Secret.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -140,6 +146,7 @@ spec:
         app: tls-cabundle-patch
     spec:
       serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true
@@ -150,6 +157,8 @@ spec:
         - name: tls-cabundle-patch
           image: {{ .Values.hooks.tlsCerts.image }}
           securityContext:
+            runAsUser: 65534
+            runAsGroup: 65534
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
@@ -170,30 +179,33 @@ spec:
 
               echo "==> Patching webhook configurations with CA bundle..."
 
-              CA_CRT=$(kubectl get configmap authwebhook-ca -n "$NAMESPACE" -o jsonpath='{.data.ca\.crt}')
-              if [ -z "$CA_CRT" ]; then
-                echo "ERROR: authwebhook-ca ConfigMap not found or empty."
-                echo "  Delete authwebhook-tls secret and re-run helm upgrade to regenerate."
+              CA_B64=$(kubectl get secret authwebhook-tls -n "$NAMESPACE" -o jsonpath='{.data.ca\.crt}')
+              if [ -z "$CA_B64" ]; then
+                echo "ERROR: ca.crt key not found in authwebhook-tls Secret."
+                echo "  Delete the secret and re-run helm upgrade to regenerate."
                 exit 1
               fi
 
-              CA_BUNDLE=$(printf '%s' "$CA_CRT" | base64 | tr -d '\n')
+              CA_BUNDLE=$(printf '%s' "$CA_B64")
 
-              echo "  Patching MutatingWebhookConfiguration (authwebhook-mutating)..."
-              kubectl patch mutatingwebhookconfiguration authwebhook-mutating --type='json' \
-                -p "[
-                  {\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
-                  {\"op\":\"add\",\"path\":\"/webhooks/1/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
-                  {\"op\":\"add\",\"path\":\"/webhooks/2/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}
-                ]"
+              patch_webhooks() {
+                KIND="$1"   # mutatingwebhookconfigurations or validatingwebhookconfigurations
+                NAME="$2"
+                COUNT=$(kubectl get "$KIND" "$NAME" -o jsonpath='{.webhooks}' | tr ',' '\n' | grep -c '"name"')
+                PATCH="["
+                i=0
+                while [ "$i" -lt "$COUNT" ]; do
+                  [ "$i" -gt 0 ] && PATCH="${PATCH},"
+                  PATCH="${PATCH}{\"op\":\"add\",\"path\":\"/webhooks/${i}/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}"
+                  i=$((i + 1))
+                done
+                PATCH="${PATCH}]"
+                echo "  Patching $NAME ($COUNT webhooks)..."
+                kubectl patch "$KIND" "$NAME" --type='json' -p "$PATCH"
+              }
 
-              echo "  Patching ValidatingWebhookConfiguration (authwebhook-validating)..."
-              kubectl patch validatingwebhookconfiguration authwebhook-validating --type='json' \
-                -p "[
-                  {\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
-                  {\"op\":\"add\",\"path\":\"/webhooks/1/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
-                  {\"op\":\"add\",\"path\":\"/webhooks/2/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}
-                ]"
+              patch_webhooks mutatingwebhookconfigurations authwebhook-mutating
+              patch_webhooks validatingwebhookconfigurations authwebhook-validating
 
               echo "==> Webhook CA bundle patching complete"
 {{- end }}
@@ -261,8 +273,8 @@ subjects:
 {{- if eq .Values.tls.mode "hook" }}
 ---
 # Job 3: Clean up hook-created resources on uninstall (post-delete).
-# Removes authwebhook-tls Secret and authwebhook-ca ConfigMap that are
-# created by kubectl (not tracked by Helm) and would otherwise be orphaned.
+# Removes authwebhook-tls Secret that is created by kubectl (not tracked
+# by Helm) and would otherwise be orphaned.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -283,6 +295,7 @@ spec:
         app: tls-cleanup
     spec:
       serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true
@@ -292,6 +305,8 @@ spec:
         - name: tls-cleanup
           image: {{ .Values.hooks.tlsCerts.image }}
           securityContext:
+            runAsUser: 65534
+            runAsGroup: 65534
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
@@ -311,6 +326,5 @@ spec:
               NAMESPACE="{{ .Release.Namespace }}"
               echo "==> Cleaning up hook-created TLS resources..."
               kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
-              kubectl delete configmap authwebhook-ca -n "$NAMESPACE" --ignore-not-found
               echo "==> Cleanup complete"
 {{- end }}

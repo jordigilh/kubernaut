@@ -187,7 +187,7 @@ These fields are used by the three-step discovery protocol (DD-HAPI-017) to filt
 
 | Field | Type | Required | Valid Values | Description |
 |-------|------|----------|--------------|-------------|
-| `severity` | string[] | Yes | `[critical, high, medium, low]` | Severity level(s) this workflow is designed for. Always an array. To match any severity, list all levels. |
+| `severity` | string[] | Yes | `[critical, high, medium, low]`, `["*"]` for all | Severity level(s) this workflow is designed for. Always an array. Use `"*"` to match any severity. |
 | `component` | string | Yes | Any (e.g., `pod`, `deployment`, `node`, `service`) | Kubernetes resource type this workflow remediates |
 | `environment` | string[] | Yes | Any (e.g., `[production, staging]`, `[*]` for all) | Target environment(s). Always an array. Use `*` to match any environment. |
 | `priority` | string | Yes | `p0`, `p1`, `p2`, `p3`, `p4`, `*` for all | Business priority level |

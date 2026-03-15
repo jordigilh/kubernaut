@@ -8,10 +8,10 @@ Kubernaut is an autonomous Kubernetes remediation platform that detects incident
 
 | Requirement | Version | Notes |
 |---|---|---|
-| Kubernetes | 1.32+ | selectableFields GA required |
+| Kubernetes | 1.31+ | selectableFields (beta in 1.31, GA in 1.32) |
 | Helm | 3.12+ | |
-| StorageClass | dynamic provisioning | For PostgreSQL and Redis PVCs |
-| cert-manager | 1.12+ (production) | Required when `tls.mode=cert-manager`. Optional for dev (`tls.mode=hook` is default). |
+| StorageClass | dynamic provisioning | For PostgreSQL and Valkey PVCs |
+| cert-manager | 1.12+ (production) | Required when `tls.mode=cert-manager`. Not needed for `tls.mode=hook` (default) or `tls.mode=manual`. |
 
 **Workflow execution engine** (at least one):
 
@@ -23,43 +23,51 @@ Kubernaut is an autonomous Kubernetes remediation platform that detects incident
 
 If Prometheus and AlertManager are not deployed, set `effectivenessmonitor.external.prometheusEnabled=false` and `effectivenessmonitor.external.alertManagerEnabled=false`.
 
+### OpenShift (OCP)
+
+The OCP overlay (`values-ocp.yaml`) switches PostgreSQL and Valkey to Red Hat RHEL10 catalog images (direct pull from `registry.redhat.io`), replaces `bitnami/kubectl` with `ose-cli` for hook jobs, and disables the event exporter (no Red Hat-supported equivalent; users should provide their own Kubernetes event forwarding if needed).
+
+No ImageStream prerequisites are required — pods pull directly from `registry.redhat.io` using the cluster's global pull secret.
+
+```bash
+helm install kubernaut charts/kubernaut/ \
+  -n kubernaut-system \
+  -f charts/kubernaut/values-demo.yaml \
+  -f charts/kubernaut/values-ocp.yaml \
+  --set holmesgptApi.llm.provider=openai \
+  --set holmesgptApi.llm.model=gpt-4o
+```
+
+See `values-ocp.yaml` for the full set of OCP-specific overrides.
+
 ## Quick Start
 
 ```bash
-# 1. Install CRDs
-kubectl apply --server-side --force-conflicts -f charts/kubernaut/crds/
-
-# 2. Create namespace and secrets
+# 1. Create namespace and secrets
 kubectl create namespace kubernaut-system
 kubectl create secret generic kubernaut-pg-credentials \
   --from-literal=POSTGRES_USER=slm_user \
   --from-literal=POSTGRES_PASSWORD=<password> \
   --from-literal=POSTGRES_DB=action_history \
   -n kubernaut-system
-kubectl create secret generic kubernaut-ds-credentials \
+kubectl create secret generic kubernaut-ds-db-credentials \
   --from-literal=db-secrets.yaml=$'username: slm_user\npassword: <password>' \
   -n kubernaut-system
-kubectl create secret generic kubernaut-redis-credentials \
-  --from-literal=redis-secrets.yaml=$'password: <password>' \
+kubectl create secret generic kubernaut-valkey-credentials \
+  --from-literal=valkey-secrets.yaml=$'password: <password>' \
   -n kubernaut-system
-kubectl create secret generic kubernaut-llm-credentials \
+kubectl create secret generic llm-credentials \
   --from-literal=OPENAI_API_KEY=sk-... \
   -n kubernaut-system
 
-# 3. Install
+# 2. Install (Helm installs CRDs automatically on first install)
 helm install kubernaut charts/kubernaut/ \
   --namespace kubernaut-system \
-  --set postgresql.auth.existingSecret=kubernaut-pg-credentials \
-  --set datastorage.dbExistingSecret=kubernaut-ds-credentials \
-  --set redis.existingSecret=kubernaut-redis-credentials \
+  -f charts/kubernaut/values-demo.yaml \
   --set holmesgptApi.llm.provider=openai \
-  --set holmesgptApi.llm.model=gpt-4o \
-  --set holmesgptApi.llm.credentialsSecretName=kubernaut-llm-credentials \
-  --set gateway.auth.signalSources[0].name=alertmanager \
-  --set gateway.auth.signalSources[0].serviceAccount=alertmanager-kube-prometheus-stack-alertmanager \
-  --set gateway.auth.signalSources[0].namespace=monitoring
+  --set holmesgptApi.llm.model=gpt-4o
 
-# 4. Verify
+# 3. Verify
 kubectl get pods -n kubernaut-system
 ```
 
@@ -110,8 +118,11 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 
 | Parameter | Description | Default |
 |---|---|---|
-| `global.image.registry` | Container image registry | `quay.io/kubernaut-ai` |
+| `global.image.registry` | Container image registry hostname | `quay.io` |
+| `global.image.namespace` | Image namespace prefix (joined to service name by `separator`) | `kubernaut-ai` |
+| `global.image.separator` | Character joining namespace to service name: `/` for nested registries, `-` for flat (quay.io, Docker Hub) | `/` |
 | `global.image.tag` | Image tag override (defaults to `appVersion`) | `""` |
+| `global.image.digest` | Image digest (e.g. `sha256:abc...`); when set, overrides tag | `""` |
 | `global.image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `global.nodeSelector` | Global node selector applied to all pods | `{}` |
 | `global.tolerations` | Global tolerations applied to all pods | `[]` |
@@ -123,7 +134,7 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 | `gateway.replicas` | Number of gateway replicas | `1` |
 | `gateway.resources` | CPU/memory requests and limits | See `values.yaml` |
 | `gateway.service.type` | Kubernetes Service type | `ClusterIP` |
-| `gateway.auth.signalSources` | External signal sources requiring RBAC | `[]` |
+| `gateway.auth.signalSources` | External signal sources requiring RBAC | AlertManager for kube-prometheus-stack (see `values.yaml`) |
 
 ### DataStorage
 
@@ -139,13 +150,60 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 | Parameter | Description | Default |
 |---|---|---|
 | `holmesgptApi.replicas` | Number of replicas | `1` |
-| `holmesgptApi.llm.provider` | LLM provider (e.g., `openai`, `azure`, `vertexai`) | `""` |
+| `holmesgptApi.llm.provider` | LLM provider (e.g., `openai`, `azure`, `vertex_ai`) | `""` |
 | `holmesgptApi.llm.model` | LLM model name | `""` |
 | `holmesgptApi.llm.endpoint` | Custom LLM endpoint URL | `""` |
+| `holmesgptApi.llm.gcpProjectId` | GCP project ID (for `vertex_ai` provider) | `""` |
+| `holmesgptApi.llm.gcpRegion` | GCP region (for `vertex_ai` provider) | `""` |
 | `holmesgptApi.llm.maxRetries` | Maximum LLM call retries | `3` |
 | `holmesgptApi.llm.timeoutSeconds` | LLM call timeout | `120` |
 | `holmesgptApi.llm.temperature` | LLM sampling temperature | `0.7` |
-| `holmesgptApi.llm.credentialsSecretName` | Name of pre-existing Secret with LLM API keys | `llm-credentials` |
+| `holmesgptApi.llm.credentialsSecretName` | Name of pre-existing Secret with LLM API keys (K8s resource ref, not in SDK ConfigMap) | `llm-credentials` |
+| `holmesgptApi.toolsets` | HolmesGPT SDK toolset configuration (see [upstream docs](https://holmesgpt.dev/data-sources/builtin-toolsets/)) | `{}` |
+| `holmesgptApi.mcpServers` | MCP server configuration for the HolmesGPT SDK | `{}` |
+| `holmesgptApi.existingSdkConfigMap` | Use a pre-existing ConfigMap for SDK config instead of chart-generated `holmesgpt-sdk-config` | `""` |
+
+#### Enabling Prometheus for AI Analysis
+
+To give the LLM access to Prometheus metrics during incident analysis:
+
+```yaml
+holmesgptApi:
+  toolsets:
+    prometheus/metrics:
+      enabled: true
+      config:
+        prometheus_url: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+```
+
+This adds the `prometheus/metrics` toolset to the HolmesGPT SDK config, giving the LLM tools
+for PromQL queries, alerting rule inspection, and metric discovery. See the
+[HolmesGPT Prometheus toolset documentation](https://holmesgpt.dev/data-sources/builtin-toolsets/prometheus/)
+for all available configuration options.
+
+Available built-in toolsets (configured via `holmesgptApi.toolsets`):
+
+| Toolset | Description | Default |
+|---|---|---|
+| `kubernetes/core` | Pod inspection, events, resource status | Enabled (code default) |
+| `kubernetes/logs` | Container log retrieval | Enabled (code default) |
+| `kubernetes/live-metrics` | `kubectl top` metrics | Enabled (code default) |
+| `prometheus/metrics` | PromQL queries, alerting rules, metric discovery | Disabled (no URL) |
+
+For additional toolsets and advanced configuration, refer to the
+[HolmesGPT data sources documentation](https://holmesgpt.dev/data-sources/builtin-toolsets/).
+
+#### Using a Custom SDK ConfigMap
+
+For full control over the SDK configuration, create your own ConfigMap and reference it:
+
+```yaml
+holmesgptApi:
+  existingSdkConfigMap: "my-custom-sdk-config"
+```
+
+The ConfigMap must contain a `sdk-config.yaml` key following the
+[HolmesGPT configuration format](https://holmesgpt.dev/).
 
 ### Notification Controller
 
@@ -164,7 +222,7 @@ All controllers (`aianalysis`, `signalprocessing`, `remediationorchestrator`, `w
 |---|---|---|
 | `<controller>.replicas` | Number of replicas | `1` |
 | `<controller>.resources` | CPU/memory requests and limits | See `values.yaml` |
-| `<controller>.podSecurityContext` | Pod-level security context override | `runAsNonRoot: true` + `seccompProfile: RuntimeDefault` (Tier 1); `seccompProfile: RuntimeDefault` only (Tier 2: postgresql, redis) |
+| `<controller>.podSecurityContext` | Pod-level security context override | `runAsNonRoot: true` + `seccompProfile: RuntimeDefault` (Tier 1); `seccompProfile: RuntimeDefault` only (Tier 2: postgresql, valkey) |
 | `<controller>.containerSecurityContext` | Container-level security context override | `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]` |
 | `<controller>.nodeSelector` | Per-component node selector (overrides global) | `{}` |
 | `<controller>.tolerations` | Per-component tolerations (overrides global) | `[]` |
@@ -191,8 +249,11 @@ All controllers (`aianalysis`, `signalprocessing`, `remediationorchestrator`, `w
 
 ### Event Exporter
 
+Optional component that forwards Kubernetes Warning events to the Gateway. Disable when K8s event ingestion is not needed or when no supported image is available (e.g., on OCP where there is no Red Hat equivalent).
+
 | Parameter | Description | Default |
 |---|---|---|
+| `eventExporter.enabled` | Deploy the in-chart event exporter | `true` |
 | `eventExporter.replicas` | Number of replicas | `1` |
 | `eventExporter.image` | Container image | `ghcr.io/resmoio/kubernetes-event-exporter:v1.7` |
 | `eventExporter.resources` | CPU/memory requests and limits | See `values.yaml` |
@@ -202,14 +263,16 @@ All controllers (`aianalysis`, `signalprocessing`, `remediationorchestrator`, `w
 | Parameter | Description | Default |
 |---|---|---|
 | `postgresql.enabled` | Deploy in-chart PostgreSQL | `true` |
+| `postgresql.variant` | Image variant: `upstream` (postgres:16-alpine) or `ocp` (Red Hat RHEL10 image) | `upstream` |
 | `postgresql.replicas` | Number of replicas | `1` |
 | `postgresql.image` | PostgreSQL container image | `postgres:16-alpine` |
-| `postgresql.auth.existingSecret` | Pre-created Secret name | `""` |
-| `postgresql.auth.username` | Database username | `slm_user` |
-| `postgresql.auth.password` | Database password (required if no `existingSecret`) | `""` |
-| `postgresql.auth.database` | Database name | `action_history` |
+| `postgresql.auth.existingSecret` | Pre-created Secret with `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` keys (required) | `""` |
+| `postgresql.auth.username` | Database username (used in readiness probes and config) | `slm_user` |
+| `postgresql.auth.database` | Database name (used in readiness probes and config) | `action_history` |
 | `postgresql.storage.size` | PVC size | `10Gi` |
 | `postgresql.storage.storageClassName` | StorageClass (empty = cluster default) | `""` |
+
+**OCP variant**: Set `postgresql.variant=ocp` and `postgresql.image` to the Red Hat RHEL10 image (e.g., `registry.redhat.io/rhel10/postgresql-16`). The chart maps the uniform Secret keys (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`) to the OCP-expected env var names (`POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`, `POSTGRESQL_DATABASE`) and adjusts the data directory mount path automatically. The `values-ocp.yaml` overlay sets both `variant` and `image` for you.
 
 ### External PostgreSQL (BYO)
 
@@ -219,52 +282,50 @@ Set `postgresql.enabled=false` and configure these values to use a pre-existing 
 |---|---|---|
 | `externalPostgresql.host` | External PostgreSQL hostname (required) | `""` |
 | `externalPostgresql.port` | External PostgreSQL port | `5432` |
-| `externalPostgresql.auth.existingSecret` | Pre-created Secret name | `""` |
-| `externalPostgresql.auth.username` | Database username | `slm_user` |
-| `externalPostgresql.auth.password` | Database password | `""` |
-| `externalPostgresql.auth.database` | Database name | `action_history` |
+| `externalPostgresql.auth.existingSecret` | Pre-created Secret with `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` keys (required) | `""` |
+| `externalPostgresql.auth.username` | Database username (used in config) | `slm_user` |
+| `externalPostgresql.auth.database` | Database name (used in config) | `action_history` |
 
-### Redis
+### Valkey
 
-| Parameter | Description | Default |
-|---|---|---|
-| `redis.enabled` | Deploy in-chart Redis | `true` |
-| `redis.replicas` | Number of replicas | `1` |
-| `redis.image` | Redis container image | `quay.io/jordigilh/redis:7-alpine` |
-| `redis.existingSecret` | Pre-created Secret name | `""` |
-| `redis.password` | Redis password | `""` |
-| `redis.storage.size` | PVC size | `512Mi` |
-| `redis.storage.storageClassName` | StorageClass (empty = cluster default) | `""` |
-
-### External Redis (BYO)
-
-Set `redis.enabled=false` and configure these values to use a pre-existing Redis instance:
+[Valkey](https://valkey.io/) is a BSD-licensed, Redis-compatible in-memory data store used for the DataStorage dead-letter queue.
 
 | Parameter | Description | Default |
 |---|---|---|
-| `externalRedis.host` | External Redis hostname (required) | `""` |
-| `externalRedis.port` | External Redis port | `6379` |
-| `externalRedis.existingSecret` | Pre-created Secret name | `""` |
-| `externalRedis.password` | Redis password | `""` |
+| `valkey.enabled` | Deploy in-chart Valkey | `true` |
+| `valkey.replicas` | Number of replicas | `1` |
+| `valkey.image` | Valkey container image | `valkey/valkey:8-alpine` |
+| `valkey.existingSecret` | Pre-created Secret with `valkey-secrets.yaml` key (required) | `""` |
+| `valkey.storage.size` | PVC size | `512Mi` |
+| `valkey.storage.storageClassName` | StorageClass (empty = cluster default) | `""` |
+
+### External Valkey/Redis (BYO)
+
+Set `valkey.enabled=false` and configure these values to use a pre-existing Valkey or Redis instance:
+
+| Parameter | Description | Default |
+|---|---|---|
+| `externalValkey.host` | External Valkey hostname (required) | `""` |
+| `externalValkey.port` | External Valkey port | `6379` |
+| `externalValkey.existingSecret` | Pre-created Secret with `valkey-secrets.yaml` key (required) | `""` |
 
 ### TLS
 
 | Parameter | Description | Default |
 |---|---|---|
-| `tls.mode` | TLS mode: `hook` (self-signed via Helm hooks) or `cert-manager` (production) | `hook` |
+| `tls.mode` | TLS mode: `hook` (self-signed via Helm hooks), `cert-manager` (production), or `manual` (user-managed) | `hook` |
 | `tls.certManager.issuerRef.name` | Issuer/ClusterIssuer name (required when `tls.mode=cert-manager`) | `""` |
 | `tls.certManager.issuerRef.kind` | Issuer kind | `ClusterIssuer` |
 | `tls.certManager.issuerRef.group` | Issuer API group | `cert-manager.io` |
 
-See [TLS and Certificate Management](https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#tls-and-certificate-management) for hook vs cert-manager mode details.
+See [TLS and Certificate Management](https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#tls-and-certificate-management) for details on `hook`, `cert-manager`, and `manual` modes.
 
 ### Hooks
 
 | Parameter | Description | Default |
 |---|---|---|
-| `hooks.tlsCerts.image` | kubectl image for TLS cert generation (hook mode only) | `bitnami/kubectl:latest` |
-| `hooks.migrations.image` | PostgreSQL image for migrations | `postgres:16-alpine` |
-| `hooks.migrations.gooseVersion` | goose CLI version | `v3.24.1` |
+| `hooks.tlsCerts.image` | kubectl image for TLS cert generation (`hook` mode only; unused in `manual` and `cert-manager` modes; must include shell + openssl) | `docker.io/bitnami/kubectl:latest` (pinned by digest) |
+| `hooks.migrations.image` | UBI9-minimal image with goose + psql for database migrations | `quay.io/kubernaut-ai/db-migrate:v1.1.0-rc0` |
 
 ### Network Policies
 
@@ -274,14 +335,123 @@ See [TLS and Certificate Management](https://jordigilh.github.io/kubernaut-docs/
 
 When enabled, NetworkPolicies restrict ingress/egress traffic for gateway, datastorage, and authwebhook. DNS egress (port 53) is always allowed.
 
-## Upgrading
+## Disconnected / Air-Gapped Install
+
+Kubernaut supports installation in disconnected OCP environments where nodes have no internet access. All chart images must be mirrored to an internal registry first.
+
+### 1. Generate the image inventory
 
 ```bash
-# 1. Update CRDs if schema changed
-kubectl apply --server-side --force-conflicts -f charts/kubernaut/crds/
+./hack/airgap/generate-image-list.sh --set global.image.tag=1.0.0
+```
+
+This outputs every container image the chart will pull, one per line.
+
+### 2. Mirror images with `oc mirror`
+
+Use the template `ImageSetConfiguration` at `hack/airgap/imageset-config.yaml.tmpl`:
+
+```bash
+# Edit the template: replace <VERSION> with your release version
+cp hack/airgap/imageset-config.yaml.tmpl imageset-config.yaml
+sed -i 's/<VERSION>/1.0.0/g' imageset-config.yaml
+
+# Mirror to your internal registry
+oc mirror --config=imageset-config.yaml docker://<mirror-registry>
+```
+
+Alternatively, use `skopeo copy` for individual images.
+
+### 3. Configure the chart
+
+Layer the `values-airgap.yaml` overlay (or create your own) to point all images to the mirror.
+
+**Nested registries** (Harbor, Artifactory, generic Docker v2) — images stored as `<mirror>/kubernaut-ai/gateway:tag`:
+
+```bash
+helm install kubernaut charts/kubernaut/ \
+  -n kubernaut-system \
+  -f charts/kubernaut/values-demo.yaml \
+  -f charts/kubernaut/values-airgap.yaml \
+  --set global.image.registry=harbor.corp
+```
+
+**Flat registries** (quay.io, Docker Hub, OCP internal) — images stored as `<mirror>/kubernaut-ai-gateway:tag`:
+
+```bash
+helm install kubernaut charts/kubernaut/ \
+  -n kubernaut-system \
+  -f charts/kubernaut/values-demo.yaml \
+  -f charts/kubernaut/values-airgap.yaml \
+  --set global.image.registry=quay.io/myorg \
+  --set global.image.separator=-
+```
+
+See `charts/kubernaut/values-airgap.yaml` for the complete list of image overrides.
+
+### 4. OCP: ImageDigestMirrorSet (IDMS)
+
+On OCP 4.13+, create an `ImageDigestMirrorSet` to redirect image pulls from source registries to the mirror without changing `values.yaml`:
+
+```yaml
+apiVersion: config.openshift.io/v1
+kind: ImageDigestMirrorSet
+metadata:
+  name: kubernaut-mirror
+spec:
+  imageDigestMirrors:
+    - source: quay.io/kubernaut-ai
+      mirrors:
+        - <mirror-registry>/kubernaut-ai   # nested; or <mirror-registry> for flat naming
+    - source: registry.redhat.io
+      mirrors:
+        - <mirror-registry>
+```
+
+For OCP < 4.13, use the deprecated `ImageContentSourcePolicy` (ICSP) with the same mirror mappings.
+
+### 5. OCP: Disconnected install
+
+The `values-airgap.yaml` overlay overrides the `registry.redhat.io` image references from `values-ocp.yaml` with pulls from your mirror registry.
+
+**Nested registry** (Harbor, Artifactory):
+
+```bash
+helm install kubernaut charts/kubernaut/ \
+  -n kubernaut-system \
+  -f charts/kubernaut/values-demo.yaml \
+  -f charts/kubernaut/values-ocp.yaml \
+  -f charts/kubernaut/values-airgap.yaml \
+  --set global.image.registry=harbor.corp
+```
+
+**Flat registry** (quay.io, OCP internal):
+
+```bash
+helm install kubernaut charts/kubernaut/ \
+  -n kubernaut-system \
+  -f charts/kubernaut/values-demo.yaml \
+  -f charts/kubernaut/values-ocp.yaml \
+  -f charts/kubernaut/values-airgap.yaml \
+  --set global.image.registry=quay.io/myorg \
+  --set global.image.separator=-
+```
+
+> **Note**: `values-airgap.yaml` must be layered **after** `values-ocp.yaml` so it overrides the `registry.redhat.io` image references with your mirror. The `postgresql.variant: ocp` setting from `values-ocp.yaml` is preserved, ensuring correct env var names (`POSTGRESQL_*`) and data directory paths.
+
+## Upgrading
+
+Helm does **not** upgrade CRDs on `helm upgrade`. When upgrading to a chart version with CRD schema changes, extract and apply the new CRDs first:
+
+```bash
+# 1. Pull the new chart version and extract CRDs
+helm pull oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --version <new-version> --untar
+kubectl apply --server-side --force-conflicts -f kubernaut/crds/
 
 # 2. Upgrade the release
-helm upgrade kubernaut kubernaut/kubernaut \
+helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --version <new-version> \
   -n kubernaut-system -f my-values.yaml
 ```
 
@@ -295,8 +465,21 @@ helm uninstall kubernaut -n kubernaut-system
 
 ```bash
 helm uninstall kubernaut -n kubernaut-system
-kubectl delete pvc postgresql-data redis-data -n kubernaut-system
-kubectl delete -f charts/kubernaut/crds/
+
+# Remove PVCs retained by resource policy
+kubectl delete pvc postgresql-data valkey-data -n kubernaut-system
+
+# Remove hook-created cluster resources (not tracked by Helm)
+kubectl delete clusterrole kubernaut-hook-role --ignore-not-found
+kubectl delete clusterrolebinding kubernaut-hook-rolebinding --ignore-not-found
+
+# Remove CRDs and all CR instances
+kubectl delete crd actiontypes.kubernaut.ai aianalyses.kubernaut.ai \
+  effectivenessassessments.kubernaut.ai notificationrequests.kubernaut.ai \
+  remediationapprovalrequests.kubernaut.ai remediationrequests.kubernaut.ai \
+  remediationworkflows.kubernaut.ai signalprocessings.kubernaut.ai \
+  workflowexecutions.kubernaut.ai
+
 kubectl delete namespace kubernaut-system
 ```
 

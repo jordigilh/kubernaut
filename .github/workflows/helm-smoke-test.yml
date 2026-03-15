@@ -1,0 +1,134 @@
+name: Helm Chart Smoke Tests
+
+# Standalone workflow for release tag validation and manual testing.
+# PR validation is handled by the helm-smoke-test job in ci-pipeline.yml.
+#
+# Authority: docs/testing/342/TEST_PLAN.md
+# Script:    scripts/helm-smoke-test.sh
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to test (default: builds from source)'
+        required: false
+        type: string
+
+env:
+  KIND_EXPERIMENTAL_PROVIDER: podman
+  KIND_CLUSTER_NAME: helm-smoke
+  IMAGE_TAG: smoke-test
+
+jobs:
+  smoke-test:
+    name: Helm Smoke Tests (Kind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          podman --version
+
+      - name: Install Kind
+        run: |
+          KIND_VERSION="v0.30.0"
+          curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          helm version
+
+      - name: Create Kind cluster
+        run: |
+          kind create cluster --name "$KIND_CLUSTER_NAME" --wait 120s
+          kubectl cluster-info
+          kubectl get nodes -o wide
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [[ -n "${{ inputs.image_tag }}" ]]; then
+            echo "tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build images from source
+        if: steps.tag.outputs.build == 'true'
+        run: |
+          make generate
+          make image-build \
+            IMAGE_TAG="${{ steps.tag.outputs.tag }}" \
+            IMAGE_TARGET=production \
+            IMAGE_ARCH=amd64 \
+            CONTAINER_TOOL=podman \
+            APP_VERSION="${{ steps.tag.outputs.tag }}"
+
+      - name: Load images into Kind
+        run: |
+          for img in $(podman images --filter "reference=quay.io/kubernaut-ai/*:${{ steps.tag.outputs.tag }}*" --format "{{.Repository}}:{{.Tag}}"); do
+            echo "Loading ${img}..."
+            podman save "$img" | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
+          done
+
+      - name: Run smoke tests
+        run: |
+          scripts/helm-smoke-test.sh \
+            --platform kind \
+            --image-tag "${{ steps.tag.outputs.tag }}-amd64" \
+            --chart-path charts/kubernaut/
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== Pod status ==="
+          kubectl get pods -A --no-headers 2>/dev/null || true
+          echo "=== Events ==="
+          kubectl get events -n kubernaut-system --sort-by='.lastTimestamp' 2>/dev/null | tail -30 || true
+          echo "=== Describe failing pods ==="
+          kubectl get pods -n kubernaut-system --no-headers 2>/dev/null \
+            | grep -v Running \
+            | awk '{print $1}' \
+            | xargs -r -I {} kubectl describe pod {} -n kubernaut-system 2>/dev/null || true
+          echo "=== Kind logs ==="
+          kind export logs /tmp/kind-smoke-logs --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: helm-smoke-diagnostics-${{ github.run_id }}
+          path: /tmp/kind-smoke-logs/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Cleanup Kind cluster
+        if: always()
+        run: |
+          kind delete cluster --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
+
+      - name: Cleanup Podman
+        if: always()
+        run: |
+          podman system prune -a -f 2>/dev/null || true

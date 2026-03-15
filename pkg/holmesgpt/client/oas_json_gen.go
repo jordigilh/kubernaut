@@ -2634,6 +2634,12 @@ func (s *IncidentResponse) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.IsActionable.Set {
+			e.FieldStart("is_actionable")
+			s.IsActionable.Encode(e)
+		}
+	}
+	{
 		if s.Warnings != nil {
 			e.FieldStart("warnings")
 			e.ArrStart()
@@ -2671,7 +2677,7 @@ func (s *IncidentResponse) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfIncidentResponse = [12]string{
+var jsonFieldsNameOfIncidentResponse = [13]string{
 	0:  "incident_id",
 	1:  "analysis",
 	2:  "root_cause_analysis",
@@ -2680,10 +2686,11 @@ var jsonFieldsNameOfIncidentResponse = [12]string{
 	5:  "timestamp",
 	6:  "needs_human_review",
 	7:  "human_review_reason",
-	8:  "warnings",
-	9:  "alternative_workflows",
-	10: "validation_attempts_history",
-	11: "detected_labels",
+	8:  "is_actionable",
+	9:  "warnings",
+	10: "alternative_workflows",
+	11: "validation_attempts_history",
+	12: "detected_labels",
 }
 
 // Decode decodes IncidentResponse from json.
@@ -2783,6 +2790,16 @@ func (s *IncidentResponse) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"human_review_reason\"")
+			}
+		case "is_actionable":
+			if err := func() error {
+				s.IsActionable.Reset()
+				if err := s.IsActionable.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"is_actionable\"")
 			}
 		case "warnings":
 			if err := func() error {

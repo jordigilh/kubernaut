@@ -297,6 +297,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: signalprocessing-controller
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.signalprocessing | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.signalprocessing | nindent 6 }}

@@ -1,8 +1,8 @@
 # ADR-056: Post-RCA Label Computation Relocation
 
-**Status**: PROPOSED
+**Status**: ACCEPTED
 **Decision Date**: 2026-02-12
-**Version**: 1.4
+**Version**: 1.5
 **Confidence**: 96%
 **Applies To**: SignalProcessing, HolmesGPT API (HAPI), AIAnalysis Controller, Data Storage
 
@@ -17,6 +17,7 @@
 | 1.2 | 2026-02-12 | Architecture Team | Align with DD-HAPI-017 v1.2 flow enforcement. Clarify session state wiring. |
 | 1.3 | 2026-02-20 | Architecture Team | Surface detected labels to LLM as read-only `cluster_context` in `list_available_actions` response. Labels remain HAPI-computed and are NOT LLM-managed parameters. The change gives the LLM explicit infrastructure context for informed action type selection (e.g., GitOps-managed, HPA-enabled). See DD-HAPI-017 v1.3, BR-HAPI-017-007. |
 | 1.4 | 2026-02-20 | Architecture Team | Phase 1 implementation: move label detection from `workflow_discovery.py` (signal source) into `get_resource_context` (RCA target). Add conditional `detected_infrastructure` response for one-shot LLM reassessment when active labels exist. Second `get_resource_context` call resolves new target context but skips label re-detection. See DD-HAPI-017 v1.4, BR-HAPI-017-008. |
+| 1.5 | 2026-03-12 | Architecture Team | Status changed from PROPOSED to ACCEPTED. Implementation verified complete: label detection in `get_resource_context`, session-state propagation, `failedDetections` stripping all operational. Dead code (`should_include_detected_labels()`) tracked as tech debt (#345). |
 
 ---
 

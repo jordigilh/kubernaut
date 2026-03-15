@@ -322,6 +322,26 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				}
 				return ai.Status.Reason
 			}, timeout, interval).Should(Equal("WorkflowNotNeeded"))
+
+			By("E2E-RO-353-001: Verifying NextAllowedExecution suppression window (#353)")
+			Eventually(func() bool {
+				updatedRR := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR); err != nil {
+					return false
+				}
+				return updatedRR.Status.OverallPhase == remediationv1.PhaseCompleted &&
+					updatedRR.Status.NextAllowedExecution != nil
+			}, timeout, interval).Should(BeTrue(),
+				"Behavior: RR must reach Completed with NextAllowedExecution set through Helm->config->reconciler->handler->K8s chain (#353)")
+
+			updatedRR := &remediationv1.RemediationRequest{}
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR)).To(Succeed())
+			Expect(updatedRR.Status.NextAllowedExecution.Time.After(time.Now())).To(BeTrue(),
+				"Correctness: NextAllowedExecution must be strictly in the future so Gateway suppresses duplicates")
+			Expect(updatedRR.Status.NextAllowedExecution.Time).To(BeTemporally("~", time.Now().Add(24*time.Hour), 5*time.Minute),
+				"Accuracy: suppression window must match Helm default (24h)")
+			Expect(updatedRR.Status.Outcome).To(Equal("NoActionRequired"),
+				"Correctness: Outcome must be NoActionRequired")
 		})
 	})
 
@@ -421,8 +441,14 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
-			By("Pre-populating Status.Deduplication and DuplicateOf via status update")
+			By("Waiting for RO first reconciliation before updating status")
 			createdRR := &remediationv1.RemediationRequest{}
+			Eventually(func() bool {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)
+				return createdRR.Status.OverallPhase != "" || len(createdRR.Status.Conditions) > 0
+			}, timeout, interval).Should(BeTrue(), "RO should reconcile the RR")
+
+			By("Pre-populating Status.Deduplication and DuplicateOf via status update")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())
 			createdRR.Status.Deduplication = &remediationv1.DeduplicationStatus{
 				FirstSeenAt:     &fiveMinutesAgo,
@@ -432,12 +458,19 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			createdRR.Status.DuplicateOf = "rr-original-parent"
 			Expect(k8sClient.Status().Update(ctx, createdRR)).To(Succeed())
 
-			By("Letting RO reconcile (wait for Phase change or conditions)")
-			Eventually(func() bool {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)
-				// RO will transition from Pending; any phase change indicates reconciliation
-				return createdRR.Status.OverallPhase != "" || len(createdRR.Status.Conditions) > 0
-			}, timeout, interval).Should(BeTrue(), "RO should reconcile the RR")
+			By("Letting RO reconcile again to verify deduplication survives")
+			// The RO reconciles on status updates (GenerationChangedPredicate removed)
+			// but may not write status back if SP is still pending (just requeues).
+			// Wait for at least one requeue cycle (10s) then assert preservation.
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())
+				g.Expect(createdRR.Status.Deduplication).NotTo(BeNil(),
+					"Deduplication should still be present after RO reconcile")
+				g.Expect(createdRR.Status.Deduplication.OccurrenceCount).To(Equal(int32(2)),
+					"OccurrenceCount should be preserved across RO reconciles")
+				g.Expect(createdRR.Status.DuplicateOf).To(Equal("rr-original-parent"),
+					"DuplicateOf should be preserved across RO reconciles")
+			}, timeout, interval).Should(Succeed())
 
 			By("Re-fetching RR and asserting Deduplication preserved")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())

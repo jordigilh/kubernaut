@@ -172,14 +172,14 @@ kubectl get configmap kubernaut-toolset-config -n kubernaut-system -o yaml
 **V1.0 Deployment Mode**: **In-Cluster Only** ✅
 
 - **Status**: Production Ready (245/245 tests passing, manifests complete)
-- **Container Image**: Built from `docker/dynamic-toolset-ubi9.Dockerfile`
+- **Container Image**: Built from `docker/dynamic-toolset-ubi10.Dockerfile`
 - **Access**: Uses ServiceAccount with RBAC
 - **Deployment**: `deploy/dynamic-toolset-deployment.yaml`
 - **Includes**: Namespace, ServiceAccount, ClusterRole, ClusterRoleBinding, ConfigMap, Deployment, Service, ServiceMonitor, NetworkPolicy
 
 ```bash
 # Build container image
-docker build -t kubernaut/dynamic-toolset:v1.0 -f docker/dynamic-toolset-ubi9.Dockerfile .
+docker build -t kubernaut/dynamic-toolset:v1.0 -f docker/dynamic-toolset-ubi10.Dockerfile .
 
 # Push to registry (if needed)
 docker push kubernaut/dynamic-toolset:v1.0

@@ -47,6 +47,7 @@ type AWXClient interface {
 	CreateCredential(ctx context.Context, name string, credTypeID, orgID int, inputs map[string]string) (int, error)
 	DeleteCredential(ctx context.Context, credentialID int) error
 	LaunchJobTemplateWithCreds(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error)
+	GetJobTemplateCredentials(ctx context.Context, templateID int) ([]int, error)
 }
 
 // AWXJobStatus represents the status response from AWX GET /api/v2/jobs/{id}/
@@ -132,11 +133,21 @@ func (a *AnsibleExecutor) Create(
 		return "", fmt.Errorf("inject dependency secrets: %w", err)
 	}
 
+	if len(credentialIDs) > 0 {
+		templateCreds, tcErr := a.AWXClient.GetJobTemplateCredentials(ctx, templateID)
+		if tcErr != nil {
+			a.Logger.Error(tcErr, "Failed to fetch template credentials, launching with ephemeral only",
+				"templateID", templateID)
+		} else {
+			credentialIDs = mergeCredentialIDs(templateCreds, credentialIDs)
+		}
+	}
+
 	a.Logger.Info("Launching AWX job",
 		"templateID", templateID,
 		"playbookPath", cfg.PlaybookPath,
 		"wfe", wfe.Name,
-		"ephemeralCredentials", len(credentialIDs),
+		"totalCredentials", len(credentialIDs),
 	)
 
 	var jobID int
@@ -504,4 +515,22 @@ func parseAWXJobID(executionRefName string) (int, error) {
 		return 0, fmt.Errorf("execution ref %q does not have awx-job- prefix", executionRefName)
 	}
 	return strconv.Atoi(executionRefName[len(prefix):])
+}
+
+func mergeCredentialIDs(templateIDs, ephemeralIDs []int) []int {
+	seen := make(map[int]struct{}, len(templateIDs)+len(ephemeralIDs))
+	merged := make([]int, 0, len(templateIDs)+len(ephemeralIDs))
+	for _, id := range templateIDs {
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			merged = append(merged, id)
+		}
+	}
+	for _, id := range ephemeralIDs {
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			merged = append(merged, id)
+		}
+	}
+	return merged
 }

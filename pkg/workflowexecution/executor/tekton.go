@@ -132,18 +132,28 @@ func (t *TektonExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1
 
 // Cleanup deletes the PipelineRun in the execution namespace.
 // Returns nil if the PipelineRun doesn't exist (idempotent).
+//
+// Issue #383: Before deleting, verify the PipelineRun's
+// kubernaut.ai/workflow-execution label matches this WFE's name to avoid
+// destroying a newer WFE's execution resource that shares the deterministic name.
 func (t *TektonExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error {
 	prName := ExecutionResourceName(wfe.Spec.TargetResource)
-	pr := &tektonv1.PipelineRun{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      prName,
-			Namespace: namespace,
-		},
-	}
 
-	if err := t.Client.Delete(ctx, pr); err != nil {
+	var existing tektonv1.PipelineRun
+	if err := t.Client.Get(ctx, client.ObjectKey{Name: prName, Namespace: namespace}, &existing); err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			return nil // Already gone
+		}
+		return fmt.Errorf("failed to get PipelineRun %s/%s for ownership check: %w", namespace, prName, err)
+	}
+
+	if owner := existing.Labels["kubernaut.ai/workflow-execution"]; owner != wfe.Name {
+		return nil // PipelineRun belongs to a different WFE; leave it alone
+	}
+
+	if err := t.Client.Delete(ctx, &existing); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			return nil
 		}
 		return fmt.Errorf("failed to delete PipelineRun %s/%s: %w", namespace, prName, err)
 	}

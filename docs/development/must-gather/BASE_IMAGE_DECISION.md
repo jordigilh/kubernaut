@@ -1,15 +1,15 @@
-# Base Image Decision: Red Hat UBI9 Standard
+# Base Image Decision: Red Hat UBI10 Standard
 
 **Date**: 2026-01-04
-**Decision**: Use `registry.access.redhat.com/ubi9/ubi:latest` (UBI Standard)
-**Previous**: `registry.access.redhat.com/ubi9/ubi-minimal:latest`
+**Decision**: Use `registry.access.redhat.com/ubi10/ubi:latest` (UBI Standard)
+**Previous**: `registry.access.redhat.com/ubi10/ubi-minimal:latest`
 **Status**: ✅ **Adopted**
 
 ---
 
 ## 🎯 **Decision Summary**
 
-**Chosen**: Red Hat UBI9 Standard (`ubi9/ubi`)
+**Chosen**: Red Hat UBI10 Standard (`ubi10/ubi`)
 
 **Rationale**: Aligns with OpenShift must-gather pattern and includes essential diagnostic tools pre-installed, reducing build complexity.
 
@@ -17,10 +17,10 @@
 
 ## 📊 **Comparison: UBI Variants**
 
-### UBI Standard (ubi9/ubi) - ✅ **SELECTED**
+### UBI Standard (ubi10/ubi) - ✅ **SELECTED**
 
 **Base**: Red Hat Enterprise Linux 9
-**Package Manager**: `yum` (full DNF stack)
+**Package Manager**: `dnf` (full DNF stack)
 **Size**: ~200MB
 
 **Pre-Installed Tools** (Relevant for Must-Gather):
@@ -41,7 +41,7 @@
 - ✅ **Comprehensive toolset**: Most diagnostic tools already included
 - ✅ **Debugging friendly**: Includes `vi`, `less` for interactive troubleshooting
 - ✅ **OpenShift pattern**: Matches OpenShift must-gather implementation
-- ✅ **Full package manager**: `yum` for additional dependencies if needed
+- ✅ **Full package manager**: `dnf` for additional dependencies if needed
 - ✅ **Simpler Dockerfile**: Fewer packages to install manually
 
 **Disadvantages**:
@@ -49,7 +49,7 @@
 
 ---
 
-### UBI Minimal (ubi9/ubi-minimal) - ❌ **REJECTED**
+### UBI Minimal (ubi10/ubi-minimal) - ❌ **REJECTED**
 
 **Base**: Red Hat Enterprise Linux 9
 **Package Manager**: `microdnf` (minimal)
@@ -73,11 +73,11 @@
 - ❌ **More complex Dockerfile**: Must install many tools manually
 - ❌ **Missing debugging tools**: No `vi`, `less` for interactive troubleshooting
 - ❌ **Package conflicts**: `coreutils-single` vs `coreutils` issues
-- ❌ **Limited package manager**: `microdnf` has fewer features than `yum`
+- ❌ **Limited package manager**: `microdnf` has fewer features than `dnf`
 
 ---
 
-### UBI Micro (ubi9/ubi-micro) - ❌ **NOT SUITABLE**
+### UBI Micro (ubi10/ubi-micro) - ❌ **NOT SUITABLE**
 
 **Size**: ~30MB
 **Package Manager**: None
@@ -89,7 +89,7 @@
 
 ---
 
-### UBI Init (ubi9/ubi-init) - ❌ **NOT SUITABLE**
+### UBI Init (ubi10/ubi-init) - ❌ **NOT SUITABLE**
 
 **Base**: UBI Standard + systemd
 **Size**: ~220MB
@@ -105,7 +105,7 @@
 
 ### Before (ubi-minimal)
 ```dockerfile
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # Install required tools (many needed)
 RUN microdnf install -y \
@@ -129,7 +129,7 @@ RUN curl -L "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-${
 
 ### After (ubi standard)
 ```dockerfile
-FROM registry.access.redhat.com/ubi9/ubi:latest
+FROM registry.access.redhat.com/ubi10/ubi:latest
 
 # UBI Standard already includes: tar, gzip, findutils, util-linux, coreutils, curl
 # Only install additional tools we need
@@ -137,10 +137,10 @@ FROM registry.access.redhat.com/ubi9/ubi:latest
 # Install kubectl
 RUN curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/${TARGETARCH}/kubectl" ...
 
-# Install jq (try yum first, fallback to direct download)
-RUN yum install -y jq || \
+# Install jq (try dnf first, fallback to direct download)
+RUN dnf install -y jq || \
     (curl -L "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-${JQ_ARCH}" ...) && \
-    yum clean all
+    dnf clean all
 
 # Verify all tools available
 RUN kubectl version --client && jq --version && tar --version
@@ -214,7 +214,7 @@ Kubernaut Pattern:     UBI Standard + kubectl + jq + debugging tools
 podman scan quay.io/kubernaut/must-gather:latest
 
 # Update base image regularly
-FROM registry.access.redhat.com/ubi9/ubi:latest  # Always pulls latest security patches
+FROM registry.access.redhat.com/ubi10/ubi:latest  # Always pulls latest security patches
 ```
 
 **Decision**: UBI Standard's security posture is acceptable for enterprise must-gather tool.
@@ -228,7 +228,7 @@ FROM registry.access.redhat.com/ubi9/ubi:latest  # Always pulls latest security 
 | Base Image | Build Time | Reason |
 |------------|------------|--------|
 | **ubi-minimal** | ~3-4 min | More packages to install via microdnf |
-| **ubi (standard)** | ~2-3 min | Fewer packages to install, faster yum |
+| **ubi (standard)** | ~2-3 min | Fewer packages to install, faster dnf |
 
 **Result**: UBI Standard builds **faster** despite being larger base.
 
@@ -238,7 +238,7 @@ FROM registry.access.redhat.com/ubi9/ubi:latest  # Always pulls latest security 
 
 ### Red Hat Documentation
 - [Red Hat Universal Base Images](https://developers.redhat.com/products/rhel/ubi)
-- [UBI9 Standard Image](https://catalog.redhat.com/software/containers/ubi9/ubi/615bcf606feffc5384e8452e)
+- [UBI10 Standard Image](https://catalog.redhat.com/software/containers/ubi10/ubi/615bcf606feffc5384e8452e)
 - [Building Must-Gather Images](https://docs.openshift.com/container-platform/4.14/support/gathering-cluster-data.html#gathering-data-specific-features_gathering-cluster-data)
 
 ### OpenShift Must-Gather Examples
@@ -255,7 +255,7 @@ FROM registry.access.redhat.com/ubi9/ubi:latest  # Always pulls latest security 
 
 ### Requirements Met
 
-- [x] **Red Hat certified**: UBI9 from official Red Hat registry
+- [x] **Red Hat certified**: UBI10 from official Red Hat registry
 - [x] **OpenShift compatible**: Follows OpenShift must-gather pattern
 - [x] **Security maintained**: Regular updates from Red Hat
 - [x] **Tool completeness**: All required diagnostic tools included
@@ -278,10 +278,10 @@ FROM registry.access.redhat.com/ubi9/ubi:latest  # Always pulls latest security 
 **Step 1**: Update Dockerfile base image
 ```dockerfile
 # Before
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # After
-FROM registry.access.redhat.com/ubi9/ubi:latest
+FROM registry.access.redhat.com/ubi10/ubi:latest
 ```
 
 **Step 2**: Remove redundant package installations
@@ -291,7 +291,7 @@ RUN microdnf install -y tar gzip findutils util-linux
 
 # Keep (still need these)
 RUN curl -LO kubectl...
-RUN yum install -y jq || curl -L jq...
+RUN dnf install -y jq || curl -L jq...
 ```
 
 **Step 3**: Rebuild and test
@@ -335,7 +335,7 @@ make test-e2e
 
 ### Future Considerations
 
-1. **Consider EPEL repository**: May enable `yum install jq` directly
+1. **Consider EPEL repository**: May enable `dnf install jq` directly
 2. **Monitor image size**: Alert if final image exceeds 400MB
 3. **Track CVEs**: Automated security scanning in CI
 4. **Document debugging**: Leverage `vi`, `less` for interactive debugging

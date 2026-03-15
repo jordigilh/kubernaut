@@ -194,27 +194,9 @@ class DataStorageDeployment:
         workspace_root = find_workspace_root()
         migrations_dir = Path(workspace_root) / "migrations"
 
-        migrations = [
-            "001_initial_schema.sql",
-            "002_fix_partitioning.sql",
-            "003_stored_procedures.sql",
-            "004_add_effectiveness_assessment_due.sql",
-            "005_vector_schema.sql",
-            "006_effectiveness_assessment.sql",
-            "009_update_vector_dimensions.sql",
-            "007_add_context_column.sql",
-            "008_context_api_compatibility.sql",
-            "010_audit_write_api_phase1.sql",
-            "011_rename_alert_to_signal.sql",
-            "012_adr033_multidimensional_tracking.sql",
-            "013_create_audit_events_table.sql",
-            "015_create_workflow_catalog_table.sql",
-            "017_add_workflow_schema_fields.sql",
-            "018_rename_execution_bundle_to_container_image.sql",
-            "019_uuid_primary_key.sql",
-            "020_add_workflow_label_columns.sql",
-            "1000_create_audit_events_partitions.sql",
-        ]
+        migrations = sorted(
+            f.name for f in migrations_dir.glob("*.sql")
+        )
 
         for migration in migrations:
             migration_path = migrations_dir / migration

@@ -106,13 +106,29 @@
           "properties": {
             "registry": {
               "type": "string",
-              "default": "quay.io/kubernaut-ai",
-              "description": "Container image registry"
+              "default": "quay.io",
+              "description": "Container image registry hostname (e.g. quay.io, harbor.corp, image-registry.openshift-image-registry.svc:5000/ns)"
+            },
+            "namespace": {
+              "type": "string",
+              "default": "kubernaut-ai",
+              "description": "Image namespace prefix. Joined to service name by separator."
+            },
+            "separator": {
+              "type": "string",
+              "enum": ["/", "-"],
+              "default": "/",
+              "description": "Character joining namespace to service name. Use '/' for nested registries (Harbor, Artifactory), '-' for flat registries (quay.io, Docker Hub, OCP internal)."
             },
             "tag": {
               "type": "string",
               "default": "",
               "description": "Image tag; empty defaults to Chart.appVersion"
+            },
+            "digest": {
+              "type": "string",
+              "default": "",
+              "description": "Image digest (e.g. sha256:abc...); when set, overrides tag for immutable references"
             },
             "pullPolicy": {
               "type": "string",
@@ -120,6 +136,18 @@
               "default": "IfNotPresent",
               "description": "Image pull policy"
             }
+          }
+        },
+        "imagePullSecrets": {
+          "type": "array",
+          "default": [],
+          "description": "List of image pull secret names for private registries",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" }
+            },
+            "required": ["name"]
           }
         },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -148,9 +176,9 @@
       "properties": {
         "mode": {
           "type": "string",
-          "enum": ["hook", "cert-manager"],
+          "enum": ["hook", "cert-manager", "manual"],
           "default": "hook",
-          "description": "TLS mode: 'hook' (self-signed via Helm hooks) or 'cert-manager' (production, requires cert-manager)"
+          "description": "TLS mode: 'hook' (self-signed via Helm hooks), 'cert-manager' (production, requires cert-manager), or 'manual' (user-managed certificates)"
         },
         "certManager": {
           "type": "object",
@@ -454,6 +482,21 @@
             "credentialsSecretName": { "type": "string", "default": "llm-credentials", "description": "Name of the pre-existing K8s Secret containing LLM API credentials (e.g. OPENAI_API_KEY)" }
           }
         },
+        "toolsets": {
+          "type": "object",
+          "description": "HolmesGPT SDK toolset configuration. Rendered into holmesgpt-sdk-config ConfigMap. See https://holmesgpt.dev/data-sources/builtin-toolsets/",
+          "default": {}
+        },
+        "mcpServers": {
+          "type": "object",
+          "description": "MCP server configuration. Rendered into holmesgpt-sdk-config ConfigMap.",
+          "default": {}
+        },
+        "existingSdkConfigMap": {
+          "type": "string",
+          "default": "",
+          "description": "Use a pre-existing ConfigMap for SDK config instead of chart-generated. When set, holmesgpt-sdk-config is not created."
+        },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
@@ -481,9 +524,14 @@
     },
     "eventExporter": {
       "type": "object",
-      "description": "Event Exporter (forwards K8s Warning events to Gateway)",
+      "description": "Event Exporter (forwards K8s Warning events to Gateway). Optional — disable when K8s event ingestion is not needed.",
       "additionalProperties": false,
       "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Deploy the in-chart event exporter. Set false when not needed or no supported image is available."
+        },
         "replicas": { "type": "integer", "default": 1 },
         "image": {
           "type": "string",
@@ -510,6 +558,12 @@
           "default": true,
           "description": "Set false to skip in-chart PostgreSQL and use externalPostgresql instead"
         },
+        "variant": {
+          "type": "string",
+          "default": "upstream",
+          "enum": ["upstream", "ocp"],
+          "description": "PostgreSQL image variant: upstream (postgres:16-alpine) or ocp (Red Hat RHEL10 image)"
+        },
         "image": {
           "type": "string",
           "default": "postgres:16-alpine"
@@ -517,27 +571,14 @@
         "auth": {
           "type": "object",
           "additionalProperties": false,
+          "required": ["existingSecret"],
           "properties": {
             "existingSecret": {
               "type": "string",
-              "default": "",
-              "description": "Name of pre-created K8s Secret; when set, chart skips Secret creation. Secret must have POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB"
+              "description": "Name of pre-created K8s Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys (required)"
             },
             "username": { "type": "string", "default": "slm_user" },
-            "password": {
-              "type": "string",
-              "default": "",
-              "description": "Required when existingSecret is empty; use --set or values-demo.yaml"
-            },
             "database": { "type": "string", "default": "action_history" }
-          },
-          "if": {
-            "properties": {
-              "existingSecret": { "const": "" }
-            }
-          },
-          "then": {
-            "required": ["password"]
           }
         },
         "storage": {
@@ -576,40 +617,32 @@
           "properties": {
             "existingSecret": {
               "type": "string",
-              "default": "",
-              "description": "K8s Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys"
+              "description": "K8s Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys (required)"
             },
             "username": { "type": "string", "default": "slm_user" },
-            "password": { "type": "string", "default": "" },
             "database": { "type": "string", "default": "action_history" }
           }
         }
       }
     },
-    "redis": {
+    "valkey": {
       "type": "object",
-      "description": "Redis (DataStorage DLQ). Set enabled=false to use externalRedis (BYO #256)",
+      "description": "Valkey (DataStorage DLQ). Redis-compatible in-memory store. Set enabled=false to use externalValkey (BYO #256)",
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
         "enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Set false to skip in-chart Redis and use externalRedis instead"
+          "description": "Set false to skip in-chart Valkey and use externalValkey instead"
         },
         "image": {
           "type": "string",
-          "default": "quay.io/jordigilh/redis:7-alpine"
+          "default": "valkey/valkey:8-alpine"
         },
         "existingSecret": {
           "type": "string",
-          "default": "",
-          "description": "Name of pre-created K8s Secret; when set, chart skips Secret creation. Secret must have redis-secrets.yaml key"
-        },
-        "password": {
-          "type": "string",
-          "default": "",
-          "description": "Empty password allowed for development"
+          "description": "Name of pre-created K8s Secret with valkey-secrets.yaml key (required)"
         },
         "storage": {
           "type": "object",
@@ -630,23 +663,21 @@
         "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
-    "externalRedis": {
+    "externalValkey": {
       "type": "object",
-      "description": "External Redis (BYO #256). Used when redis.enabled=false",
+      "description": "External Valkey/Redis (BYO #256). Used when valkey.enabled=false",
       "additionalProperties": false,
       "properties": {
         "host": {
           "type": "string",
           "default": "",
-          "description": "Required when redis.enabled=false (e.g., redis.example.com)"
+          "description": "Required when valkey.enabled=false (e.g., valkey.example.com)"
         },
         "port": { "type": "integer", "default": 6379 },
         "existingSecret": {
           "type": "string",
-          "default": "",
-          "description": "K8s Secret with redis-secrets.yaml key"
-        },
-        "password": { "type": "string", "default": "" }
+          "description": "K8s Secret with valkey-secrets.yaml key (required)"
+        }
       }
     },
     "networkPolicies": {
@@ -672,12 +703,8 @@
           "properties": {
             "image": {
               "type": "string",
-              "default": "postgres:16-alpine"
-            },
-            "gooseVersion": {
-              "type": "string",
-              "default": "v3.24.1",
-              "description": "DD-012: goose CLI version for migration state tracking"
+              "default": "quay.io/kubernaut-ai/db-migrate:v1.1.0-rc0",
+              "description": "UBI9-minimal image with goose + psql for database migrations (works in disconnected environments)"
             }
           }
         },
@@ -687,7 +714,7 @@
           "properties": {
             "image": {
               "type": "string",
-              "default": "bitnami/kubectl:latest"
+              "default": "docker.io/bitnami/kubectl:latest@sha256:6e2cdb22d6ab7264ea198c717f555e30536b54029d26c8781b9f25f78951b564"
             }
           }
         },

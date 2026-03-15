@@ -43,6 +43,7 @@ data:
       exponentialBackoffMaxExponent: 4
       scopeBackoffBase: "5s"
       scopeBackoffMax: "5m"
+      noActionRequiredDelayHours: 24
       ineffectiveChainThreshold: 3
       recurrenceCountThreshold: 5
       ineffectiveTimeWindow: "4h"
@@ -69,6 +70,9 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests/status", "remediationapprovalrequests/status"]
     verbs: ["get", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests/finalizers"]
+    verbs: ["update"]
   - apiGroups: ["kubernaut.ai"]
     resources: ["signalprocessings"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
@@ -111,6 +115,13 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
     verbs: ["get", "list", "watch"]
+  # ── Istio (#373) ────────────────────────────────────────────────────────
+  - apiGroups: ["security.istio.io"]
+    resources: ["authorizationpolicies", "peerauthentications", "requestauthentications"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.istio.io"]
+    resources: ["virtualservices", "destinationrules", "gateways", "serviceentries"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -153,6 +164,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: remediationorchestrator-controller
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.remediationorchestrator | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.remediationorchestrator | nindent 6 }}

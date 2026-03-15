@@ -47,7 +47,7 @@ spec:
             type: string
         steps:
           - name: echo-info
-            image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+            image: registry.access.redhat.com/ubi10/ubi-minimal:latest
             script: |
               #!/bin/sh
               set -e

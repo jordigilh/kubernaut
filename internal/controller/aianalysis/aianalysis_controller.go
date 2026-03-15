@@ -57,6 +57,9 @@ const (
 	PhaseAnalyzing     = aianalysispkg.PhaseAnalyzing
 	PhaseCompleted     = aianalysispkg.PhaseCompleted
 	PhaseFailed        = aianalysispkg.PhaseFailed
+
+	ActionabilityActionable    = aianalysispkg.ActionabilityActionable
+	ActionabilityNotActionable = aianalysispkg.ActionabilityNotActionable
 )
 
 // AIAnalysisReconciler reconciles an AIAnalysis object

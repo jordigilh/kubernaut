@@ -15,6 +15,7 @@ rules:
     resources: ["services"]
     resourceNames: ["gateway-service"]
     verbs: ["create"]
+{{- if .Values.eventExporter.enabled }}
 ---
 # Event Exporter → Gateway (deployed by this chart)
 apiVersion: rbac.authorization.k8s.io/v1
@@ -33,6 +34,7 @@ subjects:
   - kind: ServiceAccount
     name: event-exporter
     namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- range .Values.gateway.auth.signalSources }}
 ---
 # {{ .name }} → Gateway (external signal source)

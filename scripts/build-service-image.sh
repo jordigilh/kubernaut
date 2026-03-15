@@ -107,7 +107,7 @@ shift  # Remove service name from arguments
 get_dockerfile_path() {
     case "$1" in
         gateway)
-            echo "docker/gateway-ubi9.Dockerfile"
+            echo "docker/gateway.Dockerfile"
             ;;
         notification)
             echo "docker/notification-controller.Dockerfile"

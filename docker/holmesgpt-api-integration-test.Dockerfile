@@ -3,17 +3,16 @@
 # Pattern: DD-INTEGRATION-001 v2.0 (Go infrastructure + Python tests)
 # Matches Dockerfile.e2e Python version for consistency
 
-FROM registry.access.redhat.com/ubi9/python-312:latest
+FROM registry.access.redhat.com/ubi10/python-312-minimal:latest
 
 USER root
 
-# Install system dependencies
-# Note: --allowerasing handles curl-minimal vs curl conflict in UBI9
-RUN dnf install -y --allowerasing \
+# Install system dependencies (microdnf on UBI10-minimal)
+RUN microdnf install -y \
 	git \
 	curl \
 	which \
-	&& dnf clean all
+	&& microdnf clean all
 
 # Set working directory
 WORKDIR /workspace

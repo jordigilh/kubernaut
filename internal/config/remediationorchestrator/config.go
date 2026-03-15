@@ -154,6 +154,15 @@ type RoutingConfig struct {
 	// IneffectiveTimeWindow is the lookback window for both hash chain and safety net.
 	// Issue #214, BR-ORCH-042.5. Default: 4h.
 	IneffectiveTimeWindow time.Duration `yaml:"ineffectiveTimeWindow"`
+
+	// NoActionRequiredDelayHours is the number of hours to suppress new RR
+	// creation after an RR completes with Outcome=NoActionRequired.
+	// The Gateway's ShouldDeduplicate respects NextAllowedExecution on terminal
+	// RRs, so setting this field prevents duplicate RR churn for signals whose
+	// underlying condition is unchanged by design.
+	// Default: 24 (hours). Issue #314, Issue #353.
+	// 0 = opt-out (handler guard skips setting NextAllowedExecution).
+	NoActionRequiredDelayHours int `yaml:"noActionRequiredDelayHours"`
 }
 
 // AsyncPropagationConfig configures delays for async-managed remediation targets.
@@ -231,9 +240,10 @@ func DefaultConfig() *Config {
 			ExponentialBackoffMaxExponent: 4,
 			ScopeBackoffBase:            5 * time.Second,
 			ScopeBackoffMax:             5 * time.Minute,
-			IneffectiveChainThreshold:   3,
-			RecurrenceCountThreshold:    5,
-			IneffectiveTimeWindow:       4 * time.Hour,
+			IneffectiveChainThreshold:    3,
+			RecurrenceCountThreshold:     5,
+			IneffectiveTimeWindow:        4 * time.Hour,
+			NoActionRequiredDelayHours:   24, // Issue #314, #353: 24h suppression window
 		},
 	}
 }
@@ -358,6 +368,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Routing.IneffectiveTimeWindow <= 0 {
 		return fmt.Errorf("routing.ineffectiveTimeWindow must be positive, got %v", c.Routing.IneffectiveTimeWindow)
+	}
+	if c.Routing.NoActionRequiredDelayHours < 0 {
+		return fmt.Errorf("routing.noActionRequiredDelayHours must be >= 0 (0 = opt-out), got %d", c.Routing.NoActionRequiredDelayHours)
 	}
 
 	return nil

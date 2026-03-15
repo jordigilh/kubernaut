@@ -83,6 +83,12 @@ const (
 
 	// PhaseFailed indicates a permanent failure.
 	PhaseFailed = "Failed"
+
+	// #388: Actionability enum values — LLM's assessment of whether the alert warrants action.
+	// ActionabilityActionable means the LLM determined the alert warrants action (default for processed alerts).
+	ActionabilityActionable = "Actionable"
+	// ActionabilityNotActionable means the LLM determined the alert is benign (e.g., orphaned PVCs).
+	ActionabilityNotActionable = "NotActionable"
 )
 
 // ========================================

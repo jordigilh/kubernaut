@@ -62,7 +62,7 @@ def parse_and_validate_investigation_result(
         Tuple of (result_dict, validation_result) where validation_result is None
         if no workflow to validate or validation passed.
     """
-    from src.validation.workflow_response_validator import WorkflowResponseValidator
+    from src.validation.workflow_response_validator import WorkflowResponseValidator, ValidationResult
 
     incident_id = request_data.get("incident_id", "unknown")
 
@@ -156,6 +156,15 @@ def parse_and_validate_investigation_result(
         if vah_match:
             parts['validation_attempts_history'] = vah_match.group(1)
             logger.debug("Pattern 2B: Extracted validation_attempts_history")
+
+        # #388: Extract actionable field (for not_actionable case)
+        actionable_match = re.search(r'# actionable\s*\n\s*(True|False|true|false)\s*(?:\n#|$|\n\n)', analysis, re.IGNORECASE)
+        if actionable_match:
+            # capitalize() normalizes "false"→"False", "true"→"True" so
+            # ast.literal_eval can parse the combined dict (json.loads
+            # fails on None for selected_workflow).
+            parts['actionable'] = actionable_match.group(1).capitalize()
+            logger.debug(f"Pattern 2B: Extracted actionable: {parts['actionable']}")
 
         if parts:
             # Combine into a single dict string
@@ -303,9 +312,32 @@ def parse_and_validate_investigation_result(
 
     # BR-HAPI-200: Handle special investigation outcomes
     investigation_outcome = json_data.get("investigation_outcome") if json_data else None
+    # #388: Extract actionable field (orthogonal to investigation_outcome)
+    actionable_from_llm = json_data.get("actionable") if json_data else None
+    is_actionable = True  # Default: alerts are actionable unless LLM says otherwise
 
+    # #388 Outcome D: Alert not actionable — check BEFORE other outcome routing.
+    # actionable=false is authoritative (same pattern as resolved in #301).
+    if actionable_from_llm is False:
+        warnings.append("Alert not actionable \u2014 no remediation warranted")
+        is_actionable = False
+        if needs_human_review_from_llm is not None and needs_human_review_from_llm:
+            logger.warning({
+                "event": "not_actionable_contradiction_override",
+                "incident_id": incident_id,
+                "needs_human_review_from_llm": needs_human_review_from_llm,
+                "message": "#388: Overriding contradictory needs_human_review=true because actionable=false"
+            })
+        needs_human_review = False
+        human_review_reason = None
+        logger.info({
+            "event": "alert_not_actionable",
+            "incident_id": incident_id,
+            "confidence": confidence,
+            "message": "#388: LLM determined alert is benign — no remediation warranted"
+        })
     # BR-HAPI-200: Outcome A - Problem self-resolved (high confidence, no workflow needed)
-    if investigation_outcome == "resolved":
+    elif investigation_outcome == "resolved":
         warnings.append("Problem self-resolved - no remediation required")
         # #301: resolved outcome is authoritative — override any contradictory LLM values.
         # needs_human_review=true + investigation_outcome=resolved is a contradiction;
@@ -410,6 +442,9 @@ def parse_and_validate_investigation_result(
         result["selected_workflow"] = selected_workflow
     if human_review_reason is not None:
         result["human_review_reason"] = human_review_reason
+    # #388: Include is_actionable when LLM explicitly set actionable=false
+    if not is_actionable:
+        result["is_actionable"] = False
     # BR-AUDIT-005 Gap #4: Always include alternative_workflows for audit trail (even if empty)
     # ADR-045 v1.2: Required for SOC2 compliance and RR reconstruction
     result["alternative_workflows"] = alternative_workflows
@@ -420,6 +455,23 @@ def parse_and_validate_investigation_result(
             "event": "validation_attempts_added_to_result",
             "incident_id": incident_id,
             "count": len(validation_attempts_from_llm)
+        })
+
+    # #372: When no structured output was parsed at all, signal format failure
+    # so the retry loop can prompt the LLM to resubmit with correct format.
+    # Legitimate no-workflow outcomes (A/B/C) always produce json_data != None.
+    if json_data is None and selected_workflow is None and validation_result is None:
+        validation_result = ValidationResult(
+            is_valid=False,
+            errors=[
+                "LLM did not produce structured JSON output. "
+                "Expected ```json``` code block or # section_header format."
+            ],
+        )
+        logger.warning({
+            "event": "structured_output_missing",
+            "incident_id": incident_id,
+            "message": "#372: LLM response contained no parseable structured output — triggering retry"
         })
 
     return result, validation_result
@@ -520,6 +572,12 @@ def parse_investigation_result(
         if outcome_match:
             parts['investigation_outcome'] = f'"{outcome_match.group(1).strip()}"'
             logger.debug(f"Pattern 2B: Extracted investigation_outcome: {parts['investigation_outcome']}")
+
+        # #388: Extract actionable field (for not_actionable case)
+        actionable_match = re.search(r'# actionable\s*\n\s*(True|False|true|false)\s*(?:\n#|$|\n\n)', analysis, re.IGNORECASE)
+        if actionable_match:
+            parts['actionable'] = actionable_match.group(1).capitalize()
+            logger.debug(f"Pattern 2B: Extracted actionable: {parts['actionable']}")
 
         # BR-HAPI-200: Extract confidence (for problem_resolved case)
         conf_match = re.search(r'# confidence\s*\n\s*([\d.]+)\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
@@ -649,12 +707,14 @@ def parse_investigation_result(
     needs_human_review_from_llm = None
     human_review_reason_from_llm = None
     investigation_outcome = None
+    actionable_from_llm = None
     if json_match:
         try:
             json_data_outcome = json.loads(json_match.group(1))
             investigation_outcome = json_data_outcome.get("investigation_outcome")
             needs_human_review_from_llm = json_data_outcome.get("needs_human_review")
             human_review_reason_from_llm = json_data_outcome.get("human_review_reason")
+            actionable_from_llm = json_data_outcome.get("actionable")
         except json.JSONDecodeError:
             pass
     
@@ -666,10 +726,24 @@ def parse_investigation_result(
         needs_human_review = False
         human_review_reason = None
 
+    is_actionable = True  # Default: alerts are actionable unless LLM says otherwise
+
     # BR-HAPI-200: Handle special investigation outcomes
 
+    # #388 Outcome D: Alert not actionable — check BEFORE other outcome routing.
+    if actionable_from_llm is False:
+        warnings.append("Alert not actionable \u2014 no remediation warranted")
+        is_actionable = False
+        needs_human_review = False
+        human_review_reason = None
+        logger.info({
+            "event": "alert_not_actionable",
+            "incident_id": incident_id,
+            "confidence": confidence,
+            "message": "#388: LLM determined alert is benign — no remediation warranted"
+        })
     # BR-HAPI-200: Outcome A - Problem self-resolved (high confidence, no workflow needed)
-    if investigation_outcome == "resolved":
+    elif investigation_outcome == "resolved":
         warnings.append("Problem self-resolved - no remediation required")
         # Don't override if LLM already set these
         if needs_human_review_from_llm is None:
@@ -738,6 +812,9 @@ def parse_investigation_result(
         result["selected_workflow"] = selected_workflow
     if human_review_reason is not None:
         result["human_review_reason"] = human_review_reason
+    # #388: Include is_actionable when LLM explicitly set actionable=false
+    if not is_actionable:
+        result["is_actionable"] = False
     # BR-AUDIT-005 Gap #4: Always include alternative_workflows for audit trail (even if empty)
     # ADR-045 v1.2: Required for SOC2 compliance and RR reconstruction
     result["alternative_workflows"] = alternative_workflows

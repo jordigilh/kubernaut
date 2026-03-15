@@ -18,7 +18,7 @@
 | **[V1 Feasibility Analysis](../../crd-controllers/AI_INSIGHTS_V1_FEASIBILITY_REVISED.md)** | Why moved from V2 to V1 | ✅ Complete |
 | **[V2.1 Architecture Update](../../../architecture/V2.1_EFFECTIVENESS_MONITOR_V1_INCLUSION.md)** | Official architecture decision | ✅ Complete |
 | **[Business Logic Implementation](../../../../pkg/ai/insights/)** | Core effectiveness assessment code (6,295 lines) | ✅ 98% Complete |
-| **[Database Schema](../../../../migrations/006_effectiveness_assessment.sql)** | PostgreSQL schema for effectiveness data | ✅ Complete |
+| **[Database Schema](../../../../migrations/001_v1_schema.sql)** | PostgreSQL schema for effectiveness data (squashed into v1 schema) | ✅ Complete |
 | **[DD-EFFECTIVENESS-003](../../../architecture/decisions/DD-EFFECTIVENESS-003-RemediationRequest-Watch-Strategy.md)** | Watch RemediationRequest (not WorkflowExecution) for future-proofing | ✅ Approved (92% confidence) |
 
 ---
@@ -54,7 +54,8 @@ The Effectiveness Monitor uses a **hybrid approach** combining automated checks 
 - **Scope**:
   - Health checks (pod running, OOM errors, latency metrics)
   - Metric comparisons (pre/post execution)
-  - Component audit events (health, alert, metrics, spec-hash); DataStorage computes weighted effectiveness score on demand
+  - Component audit events (health, alert, alert_decay, metrics, spec-hash); DataStorage computes weighted effectiveness score on demand
+  - Alert decay detection with multi-probe cross-validation: keeps EA open when all non-alert probes (health, metrics, hash) are positive but the alert is still firing due to Prometheus lookback window decay. Health is re-probed live on each decay pass; metrics score is checked but not re-probed. If any probe turns negative, the decay hypothesis is killed and the alert is accepted at face value. Covers both reactive signals (health as ground truth) and proactive/predictive signals (metrics as ground truth). (Issue #369, BR-EM-012)
   - Anomaly detection (metric changes > thresholds)
 - **Cost**: Negligible (computational only)
 - **Latency**: <100ms
@@ -387,7 +388,7 @@ logger.Info("Effectiveness assessment completed",
 | **Business Logic** | `pkg/ai/insights/service.go` | 6,295 | ✅ 98% |
 | **Assessment Algorithm** | `pkg/ai/insights/assessment.go` | 800+ | ✅ Complete |
 | **Model Training** | `pkg/ai/insights/model_training_methods.go` | 1,200+ | ✅ Complete |
-| **Database Schema** | `migrations/006_effectiveness_assessment.sql` | 150 | ✅ Complete |
+| **Database Schema** | `migrations/001_v1_schema.sql` (effectiveness tables section) | 150 | ✅ Complete |
 | **Integration Tests** | `test/integration/ai/` | 500+ | ✅ Complete |
 
 ### **What's Missing** (2% remaining)
@@ -443,7 +444,7 @@ logger.Info("Effectiveness assessment completed",
 ### **Implementation**
 - `pkg/ai/insights/service.go` - Core business logic
 - `pkg/ai/insights/assessment.go` - Assessment algorithms
-- `migrations/006_effectiveness_assessment.sql` - Database schema
+- `migrations/001_v1_schema.sql` - Database schema (effectiveness tables)
 
 ---
 

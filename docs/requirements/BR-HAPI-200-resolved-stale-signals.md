@@ -90,6 +90,26 @@ symptoms described in the signal cannot be reproduced), you MUST:
 This is a VALID outcome - not all signals require remediation.
 ```
 
+**MUST** (Issue #388): The prompt SHALL also include Outcome D guidance for benign alerts:
+
+```
+IMPORTANT: If your investigation determines the alert describes a BENIGN CONDITION
+that does not warrant remediation or human review (e.g., orphaned PVCs from
+completed batch jobs, completed Job artifacts, non-impactful resource drift), you MUST:
+
+1. Set "actionable": false
+2. Set "selected_workflow": null (no workflow needed)
+3. Set confidence >= 0.7 (you are confident the alert is benign)
+4. Provide root cause analysis describing the benign condition
+
+The "actionable" field is SEPARATE from "investigation_outcome":
+- "investigation_outcome": describes what happened (resolved, inconclusive)
+- "actionable": describes whether the alert warrants action (true/false)
+
+Outcome D (actionable: false) means: the condition IS STILL PRESENT but is HARMLESS.
+This is distinct from Outcome A (resolved) where the problem WENT AWAY.
+```
+
 ---
 
 ### BR-HAPI-200.3: Response Structure - Two Distinct Outcomes
@@ -184,10 +204,13 @@ Evaluating in the wrong order causes high-confidence inconclusive investigations
 ```
 1. needs_human_review=true                              → WorkflowResolutionFailed (Layer 1)
 2. !hasSelectedWorkflow && confidence >= 0.7
-   && no inconclusive/no-match warning signals          → ProblemResolved (Outcome A)
-3. !hasSelectedWorkflow                                 → NoWorkflowTerminalFailure
-4. hasSelectedWorkflow && confidence < 0.7              → LowConfidenceFailure
-5. default (workflow selected, confidence >= 0.7)       → Proceed to Analyzing phase
+   && no inconclusive/no-match warning signals
+   && (isResolved || !hasSubstantiveRCA)                → ProblemResolved (Outcome A)
+3. !hasSelectedWorkflow && confidence >= 0.7
+   && is_actionable=false && "alert not actionable"     → NotActionable (Outcome D, #388)
+4. !hasSelectedWorkflow                                 → NoWorkflowTerminalFailure
+5. hasSelectedWorkflow && confidence < 0.7              → LowConfidenceFailure
+6. default (workflow selected, confidence >= 0.7)       → Proceed to Analyzing phase
 ```
 
 **Defense-in-Depth (Layer 2)**: Even when `needs_human_review=false`, the "ProblemResolved" path
@@ -232,6 +255,36 @@ status:
   message: "Investigation inconclusive - human review recommended."
 ```
 
+#### Outcome D: Alert Not Actionable (`is_actionable=false`, `needs_human_review=false`)
+
+Added by Issue #388 Fix A. Labeled "Outcome D" to align with the LLM prompt contract
+(Outcome C in the prompt is "Problem Identified, No Automated Remediation Available",
+handled by the `NoWorkflowTerminalFailure` code path).
+
+When HAPI returns `actionable: false` with confidence >= 0.7:
+
+1. **NOT** create a WorkflowExecution CRD
+2. Transition to `Completed` phase
+3. Set `reason: WorkflowNotNeeded`
+4. Set `subReason: NotActionable` (distinct from `ProblemResolved`)
+5. Set `actionability: NotActionable` on the CRD status
+
+```yaml
+status:
+  phase: Completed
+  reason: WorkflowNotNeeded
+  subReason: NotActionable
+  actionability: NotActionable
+  needsHumanReview: false
+  message: "Alert not actionable. No remediation warranted."
+```
+
+**Distinction from Outcome A (ProblemResolved)**:
+- **Outcome A**: The problem **existed but is no longer occurring** (transient condition that resolved)
+- **Outcome D**: The condition **is still present but is harmless** (benign alert, no action needed)
+
+**Examples**: Orphaned PVCs from completed batch jobs, completed Job artifacts, informational alerts describing expected states.
+
 ---
 
 ### BR-HAPI-200.7: Remediation Orchestrator Handling
@@ -269,6 +322,19 @@ The LLM SHALL return `investigation_outcome: "resolved"` when **confident** (≥
 | **Resource Healthy** | Pod status is `Running`, no error conditions |
 | **Explicit Recovery** | Events show recovery after the issue |
 | **Metrics Normal** | CPU/memory/disk returned to normal range |
+
+#### Outcome D: Report "Not Actionable" (High Confidence, Benign) — Issue #388
+
+The LLM SHALL return `actionable: false` when **confident** (>=0.7) that the alert is benign:
+
+| Condition | Example |
+|-----------|---------|
+| **Orphaned Resources** | PVCs from completed batch jobs, not bound to any running pod |
+| **Completed Job Artifacts** | Job resources still present after successful completion |
+| **Non-Impactful Drift** | Configuration difference with no operational effect |
+| **Informational Alerts** | Events describing expected states (e.g., scale-down events) |
+
+**Key distinction**: The condition IS STILL PRESENT but is HARMLESS. This is different from Outcome A where the problem WENT AWAY.
 
 #### Outcome B: Report "Inconclusive" (Low Confidence)
 
@@ -360,6 +426,31 @@ Then an audit event SHALL be written with the investigation outcome
 And the event SHALL include the LLM's investigation_summary
 ```
 
+### AC-7: Alert Not Actionable - HAPI Response (#388)
+
+```gherkin
+Given the LLM determines an alert is benign (e.g., orphaned PVC from completed batch job)
+And the LLM sets actionable=false with confidence >= 0.7
+When HolmesGPT-API returns the result
+Then "is_actionable" SHALL be false
+And "needs_human_review" SHALL be false
+And "selected_workflow" SHALL be null
+And warnings SHALL include "Alert not actionable"
+```
+
+### AC-8: Alert Not Actionable - AIAnalysis Handling (#388)
+
+```gherkin
+Given HolmesGPT-API returns is_actionable=false AND confidence >= 0.7 AND "alert not actionable" warning
+When AIAnalysis processes the response
+Then NO WorkflowExecution CRD SHALL be created
+And AIAnalysis status.phase SHALL be "Completed"
+And AIAnalysis status.reason SHALL be "WorkflowNotNeeded"
+And AIAnalysis status.subReason SHALL be "NotActionable"
+And AIAnalysis status.actionability SHALL be "NotActionable"
+And AIAnalysis status.needsHumanReview SHALL be false
+```
+
 ---
 
 ## Test Coverage
@@ -381,6 +472,10 @@ And the event SHALL include the LLM's investigation_summary
 | Response Parsing (handle "resolved" and "inconclusive") | ✅ Complete | HAPI Team |
 | Unit Tests | ✅ Complete | HAPI Team |
 | AIAnalysis Handler (BR-HAPI-200.6 decision tree + defense-in-depth) | ✅ Complete | AIAnalysis Team |
+| #388 `actionable` field in prompt, parser, Pydantic model | ✅ Complete | HAPI Team |
+| #388 `is_actionable` in OpenAPI spec + Go client regeneration | ✅ Complete | HAPI Team |
+| #388 `Actionability` CRD field + NotActionable routing | ✅ Complete | AIAnalysis Team |
+| #388 Unit Tests (Python: 7, Go: 3) | ✅ Complete | Both |
 | RO Handler | ⏳ Day 7 | RO Team |
 | Notification Rules | ⏳ Day 15 | Notification Team |
 
@@ -403,6 +498,7 @@ And the event SHALL include the LLM's investigation_summary
 | 1.0 | 2025-12-07 | Initial business requirement |
 | 1.1 | 2025-12-07 | Aligned with authoritative implementation: replaced `problem_not_reproducible` with `investigation_inconclusive`, clarified two distinct outcomes (Resolved vs Inconclusive) |
 | 1.2 | 2026-02-09 | BR-HAPI-200.6: Documented corrected decision tree evaluation order (needs_human_review BEFORE ProblemResolved), added defense-in-depth via warnings-based check. Fixed misclassification bug where high-confidence inconclusive investigations were routed to ProblemResolved. AIAnalysis Handler marked complete. |
+| 1.3 | 2026-03-02 | Issue #388 Fix A: Added Outcome D (Alert Not Actionable) with new `actionable` boolean field, `is_actionable` in IncidentResponse, `Actionability` CRD enum field, `NotActionable` SubReason. Updated decision tree (step 3). Added AC-7, AC-8. Relabeled from "Outcome C" to "Outcome D" to align with prompt contract (Outcome C = No Automated Remediation). |
 
 ---
 

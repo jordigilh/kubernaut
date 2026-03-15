@@ -1,0 +1,27 @@
+name: Dispatch CRD Docs Update
+
+# Triggers a rebuild of the kubernaut-docs site when CRD type definitions
+# change on the main branch, keeping the API reference in sync.
+#
+# Requires: DOCS_DISPATCH_TOKEN secret (PAT with repo scope on kubernaut-docs)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**/*_types.go'
+      - 'pkg/shared/types/**'
+
+jobs:
+  dispatch:
+    name: Notify kubernaut-docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger docs rebuild
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+        run: |
+          gh api repos/jordigilh/kubernaut-docs/dispatches \
+            -f event_type=crd-docs-updated \
+            -f "client_payload[sha]=${{ github.sha }}" \
+            -f "client_payload[ref]=${{ github.ref_name }}"

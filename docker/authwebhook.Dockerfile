@@ -4,7 +4,7 @@
 #
 # Build targets (Issue #80):
 #   production:  scratch runtime -- zero CVE surface, no shell (release.yml)
-#   development: ubi9-minimal runtime -- debug tools, coverage support (ci-pipeline.yml)
+#   development: ubi10-minimal runtime -- debug tools, coverage support (ci-pipeline.yml)
 #
 # Usage:
 #   Production:  podman build --target production -t authwebhook:v1.0 -f docker/authwebhook.Dockerfile .
@@ -13,13 +13,13 @@
 # ============================================================================
 # Stage 1: Build (native cross-compile, no QEMU needed for Go)
 # ============================================================================
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
 
 # Build arguments for multi-architecture support
 ARG GOFLAGS=""
 ARG GOOS=linux
 ARG GOARCH=amd64
-ARG APP_VERSION=v1.0.0
+ARG APP_VERSION=v1.1.0-rc0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
@@ -76,7 +76,7 @@ COPY --from=builder /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/ssl/c
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /opt/app-root/src/authwebhook /authwebhook
-USER nobody
+USER 65534
 EXPOSE 9443
 ENTRYPOINT ["/authwebhook"]
 CMD []
@@ -98,17 +98,17 @@ LABEL name="kubernaut-authwebhook" \
 	io.openshift.tags="kubernaut,authwebhook,admission,authentication,soc2,audit,attribution,microservice"
 
 # ============================================================================
-# Stage 2b: Development/E2E runtime (ubi9-minimal -- debug + coverage, DD-TEST-007)
+# Stage 2b: Development/E2E runtime (ubi10-minimal -- debug + coverage, DD-TEST-007)
 # Default stage when no --target is specified (backwards compatible with CI).
 # ============================================================================
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest AS development
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS development
 RUN microdnf update -y && \
-	microdnf install -y ca-certificates tzdata && \
+	microdnf install -y ca-certificates tzdata shadow-utils && \
 	microdnf clean all
 RUN useradd -r -u 1001 -g root webhooks-user
 COPY --from=builder /opt/app-root/src/authwebhook /usr/local/bin/authwebhook
 RUN chmod +x /usr/local/bin/authwebhook
-USER webhooks-user
+USER 1001
 EXPOSE 9443
 ENTRYPOINT ["/usr/local/bin/authwebhook"]
 CMD []

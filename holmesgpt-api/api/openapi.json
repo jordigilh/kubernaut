@@ -1096,6 +1096,18 @@
             ],
             "description": "Structured reason when needs_human_review=true. Use this for reliable subReason mapping instead of parsing warnings. Values: workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error"
           },
+          "is_actionable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Actionable",
+            "description": "LLM's assessment of whether the alert warrants action. False when the alert is benign and no remediation is needed. None when the LLM did not explicitly assess actionability. Maps to AIAnalysis.Status.Actionability."
+          },
           "warnings": {
             "items": {
               "type": "string"

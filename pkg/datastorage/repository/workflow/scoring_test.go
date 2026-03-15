@@ -117,7 +117,7 @@ func TestBuildCustomLabelsBoostSQL_SingleKey(t *testing.T) {
 	}
 }
 
-// --- Phase 2: Severity wildcard (#215 Gap 1) ---
+// --- Phase 2: Severity wildcard (DD-WORKFLOW-001 v2.8) ---
 
 func TestBuildContextFilterSQL_SeverityWildcard(t *testing.T) {
 	filters := &models.WorkflowDiscoveryFilters{

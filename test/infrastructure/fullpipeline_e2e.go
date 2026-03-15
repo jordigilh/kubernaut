@@ -95,12 +95,12 @@ func getEnvOrDefault(key, fallback string) string {
 // fullPipelineImageConfig defines all images required for the full pipeline E2E.
 // Each entry maps to a BuildImageForKind call.
 var fullPipelineImageConfigs = []E2EImageConfig{
-	{ServiceName: "gateway", ImageName: "gateway", DockerfilePath: "docker/gateway-ubi9.Dockerfile"},
+	{ServiceName: "gateway", ImageName: "gateway", DockerfilePath: "docker/gateway.Dockerfile"},
 	{ServiceName: "signalprocessing", ImageName: "kubernaut/signalprocessing", DockerfilePath: "docker/signalprocessing-controller.Dockerfile"},
 	{ServiceName: "remediationorchestrator", ImageName: "kubernaut/remediationorchestrator", DockerfilePath: "docker/remediationorchestrator-controller.Dockerfile"},
 	{ServiceName: "aianalysis", ImageName: "kubernaut/aianalysis", DockerfilePath: "docker/aianalysis.Dockerfile"},
 	{ServiceName: "workflowexecution", ImageName: "kubernaut/workflowexecution", DockerfilePath: "docker/workflowexecution-controller.Dockerfile"},
-	{ServiceName: "notification", ImageName: "kubernaut/notification", DockerfilePath: "docker/notification-controller-ubi9.Dockerfile"},
+	{ServiceName: "notification", ImageName: "kubernaut/notification", DockerfilePath: "docker/notification-controller.Dockerfile"},
 	{ServiceName: "datastorage", ImageName: "kubernaut/datastorage", DockerfilePath: "docker/data-storage.Dockerfile"},
 	{ServiceName: "authwebhook", ImageName: "authwebhook", DockerfilePath: "docker/authwebhook.Dockerfile"},
 	{ServiceName: "holmesgpt-api", ImageName: "kubernaut/holmesgpt-api", DockerfilePath: "holmesgpt-api/Dockerfile"},
@@ -443,9 +443,19 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// ── Wave B: Deploy after specific Wave A dependencies are ready ──
 
 	// B1: HAPI — wait for Mock LLM
+	// Issue #390: Inject prometheus/metrics toolset into SDK ConfigMap.
+	// Prometheus is deployed in Wave A and guaranteed ready before this point.
 	go func() {
 		<-mockLLMReady
-		err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, builtImages["holmesgpt-api"], writer)
+		err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, builtImages["holmesgpt-api"], writer,
+			HAPIDeployOpts{
+				SdkToolsets: `    toolsets:
+      prometheus/metrics:
+        enabled: true
+        config:
+          prometheus_url: "http://prometheus-svc:9090"
+`,
+			})
 		allResults <- waveResult{"HAPI", err}
 	}()
 

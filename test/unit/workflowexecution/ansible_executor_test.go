@@ -54,6 +54,7 @@ type mockAWXClient struct {
 	createCredentialFn        func(ctx context.Context, name string, credTypeID, orgID int, inputs map[string]string) (int, error)
 	deleteCredentialFn        func(ctx context.Context, credentialID int) error
 	launchWithCredsFn         func(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error)
+	getTemplateCredsFn        func(ctx context.Context, templateID int) ([]int, error)
 }
 
 func (m *mockAWXClient) LaunchJobTemplate(ctx context.Context, templateID int, extraVars map[string]interface{}) (int, error) {
@@ -117,6 +118,13 @@ func (m *mockAWXClient) LaunchJobTemplateWithCreds(ctx context.Context, template
 		return m.launchWithCredsFn(ctx, templateID, extraVars, credentialIDs)
 	}
 	return 42, nil
+}
+
+func (m *mockAWXClient) GetJobTemplateCredentials(ctx context.Context, templateID int) ([]int, error) {
+	if m.getTemplateCredsFn != nil {
+		return m.getTemplateCredsFn(ctx, templateID)
+	}
+	return nil, nil
 }
 
 func newAnsibleWFE(name, namespace string, engineConfigJSON []byte, params map[string]string) *workflowexecutionv1alpha1.WorkflowExecution {
@@ -889,6 +897,273 @@ var _ = Describe("AnsibleExecutor dependencies.configMaps injection (BR-WE-015)"
 			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("nonexistent-configmap"))
+		})
+	})
+})
+
+// =====================================================================
+// #365: AWX Credential Merging — Template creds merged with ephemeral
+// =====================================================================
+// Authority: BR-WE-015 (Ansible Execution Engine)
+// Test Plan: docs/testing/365/TEST_PLAN.md
+// Bug: Template credentials are dropped when ephemeral credentials are
+//      injected because AWX treats the credentials list as a full
+//      replacement, not an append.
+// =====================================================================
+
+var _ = Describe("AnsibleExecutor credential merging (#365, BR-WE-015)", func() {
+	var (
+		ctx         context.Context
+		awxClient   *mockAWXClient
+		fakeClient  client.Client
+		ansibleExec *executor.AnsibleExecutor
+	)
+
+	newFakeClient := func(objs ...client.Object) client.Client {
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+	}
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		awxClient = &mockAWXClient{}
+	})
+
+	Context("Create merges template and ephemeral credentials", func() {
+		It("UT-WE-365-001: should include template's pre-configured credentials alongside ephemeral credentials in AWX launch", func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "gitea-repo-creds",
+					Namespace: "kubernaut-workflows",
+				},
+				Data: map[string][]byte{
+					"username": []byte("admin"),
+					"password": []byte("secret123"),
+				},
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/remediate.yml",
+				"jobTemplateName": "kubernaut-remediate",
+			})
+			wfe := newAnsibleWFE("we-merge-creds", "kubernaut-system", engineConfig, nil)
+
+			fakeClient = newFakeClient(secret, wfe)
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+				return 15, nil
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, _ int, _ int, _ map[string]string) (int, error) {
+				return 42, nil
+			}
+			awxClient.getTemplateCredsFn = func(_ context.Context, templateID int) ([]int, error) {
+				Expect(templateID).To(Equal(10))
+				return []int{100, 200}, nil
+			}
+
+			var launchedCredIDs []int
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, credIDs []int) (int, error) {
+				launchedCredIDs = credIDs
+				return 77, nil
+			}
+
+			opts := executor.CreateOptions{
+				Dependencies: &models.WorkflowDependencies{
+					Secrets: []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+				},
+			}
+
+			ref, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ref).To(Equal("awx-job-77"))
+
+			By("Verifying template credentials 100, 200 are present in the launch")
+			Expect(launchedCredIDs).To(ContainElement(100),
+				"template credential 100 must be preserved in launch")
+			Expect(launchedCredIDs).To(ContainElement(200),
+				"template credential 200 must be preserved in launch")
+
+			By("Verifying ephemeral credential 42 is also present")
+			Expect(launchedCredIDs).To(ContainElement(42),
+				"ephemeral credential 42 must be included in launch")
+
+			By("Verifying total count is exactly 3 (no duplicates)")
+			Expect(launchedCredIDs).To(HaveLen(3),
+				"merged list should contain exactly template (2) + ephemeral (1) = 3 credentials")
+		})
+
+		It("UT-WE-365-002: should deduplicate when template and ephemeral credentials overlap", func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "gitea-repo-creds",
+					Namespace: "kubernaut-workflows",
+				},
+				Data: map[string][]byte{"token": []byte("abc")},
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/remediate.yml",
+				"jobTemplateName": "kubernaut-remediate",
+			})
+			wfe := newAnsibleWFE("we-dedup-creds", "kubernaut-system", engineConfig, nil)
+
+			fakeClient = newFakeClient(secret, wfe)
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+				return 15, nil
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, _ int, _ int, _ map[string]string) (int, error) {
+				return 200, nil // Ephemeral gets ID 200, which overlaps with template
+			}
+			awxClient.getTemplateCredsFn = func(_ context.Context, _ int) ([]int, error) {
+				return []int{100, 200}, nil
+			}
+
+			var launchedCredIDs []int
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, credIDs []int) (int, error) {
+				launchedCredIDs = credIDs
+				return 77, nil
+			}
+
+			opts := executor.CreateOptions{
+				Dependencies: &models.WorkflowDependencies{
+					Secrets: []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+				},
+			}
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying 200 appears only once (deduplicated)")
+			count200 := 0
+			for _, id := range launchedCredIDs {
+				if id == 200 {
+					count200++
+				}
+			}
+			Expect(count200).To(Equal(1), "credential 200 must appear exactly once (deduplicated)")
+			Expect(launchedCredIDs).To(ContainElement(100))
+			Expect(launchedCredIDs).To(HaveLen(2), "merged list should be [100, 200] with no duplicates")
+		})
+
+		It("UT-WE-365-003: should preserve ephemeral-only behavior when template has no pre-configured credentials", func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "gitea-repo-creds",
+					Namespace: "kubernaut-workflows",
+				},
+				Data: map[string][]byte{"token": []byte("abc")},
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/remediate.yml",
+				"jobTemplateName": "kubernaut-remediate",
+			})
+			wfe := newAnsibleWFE("we-no-template-creds", "kubernaut-system", engineConfig, nil)
+
+			fakeClient = newFakeClient(secret, wfe)
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+				return 15, nil
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, _ int, _ int, _ map[string]string) (int, error) {
+				return 42, nil
+			}
+			awxClient.getTemplateCredsFn = func(_ context.Context, _ int) ([]int, error) {
+				return nil, nil // No template creds
+			}
+
+			var launchedCredIDs []int
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, credIDs []int) (int, error) {
+				launchedCredIDs = credIDs
+				return 77, nil
+			}
+
+			opts := executor.CreateOptions{
+				Dependencies: &models.WorkflowDependencies{
+					Secrets: []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+				},
+			}
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying only ephemeral credential 42 is sent")
+			Expect(launchedCredIDs).To(Equal([]int{42}),
+				"when template has no creds, only ephemeral cred should be sent")
+		})
+
+		It("UT-WE-365-005: should proceed with ephemeral-only when GetJobTemplateCredentials fails (non-fatal)", func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "gitea-repo-creds",
+					Namespace: "kubernaut-workflows",
+				},
+				Data: map[string][]byte{"token": []byte("abc")},
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/remediate.yml",
+				"jobTemplateName": "kubernaut-remediate",
+			})
+			wfe := newAnsibleWFE("we-cred-fetch-fail", "kubernaut-system", engineConfig, nil)
+
+			fakeClient = newFakeClient(secret, wfe)
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+				return 15, nil
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, _ int, _ int, _ map[string]string) (int, error) {
+				return 42, nil
+			}
+			awxClient.getTemplateCredsFn = func(_ context.Context, _ int) ([]int, error) {
+				return nil, fmt.Errorf("AWX credentials returned 500: internal server error")
+			}
+
+			var launchedCredIDs []int
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, credIDs []int) (int, error) {
+				launchedCredIDs = credIDs
+				return 77, nil
+			}
+
+			opts := executor.CreateOptions{
+				Dependencies: &models.WorkflowDependencies{
+					Secrets: []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+				},
+			}
+
+			ref, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+
+			By("Verifying launch succeeded despite credential fetch failure")
+			Expect(err).ToNot(HaveOccurred(),
+				"Create must not fail when GetJobTemplateCredentials errors — degraded launch is acceptable")
+			Expect(ref).To(Equal("awx-job-77"))
+
+			By("Verifying only ephemeral credential was sent (template creds could not be fetched)")
+			Expect(launchedCredIDs).To(Equal([]int{42}),
+				"when template cred fetch fails, launch with ephemeral only")
 		})
 	})
 })

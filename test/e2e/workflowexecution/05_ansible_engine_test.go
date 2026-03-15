@@ -422,6 +422,96 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 			GinkgoWriter.Printf("E2E-WE-015-006 passed: Ansible ConfigMap dependency injection via extra_vars verified\n")
 		})
 	})
+
+	Context("Credential Merging (#365)", func() {
+		It("E2E-WE-365-001: should merge template's pre-configured credentials with ephemeral secret credentials", func() {
+			credMergeUUID := infrastructure.RegisteredWorkflowUUIDs["test-dep-secret-ansible"]
+			Expect(credMergeUUID).ToNot(BeEmpty(),
+				"test-dep-secret-ansible UUID should have been captured during workflow registration")
+
+			testName := fmt.Sprintf("e2e-cred-merge-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/cred-merge-%s", uuid.New().String()[:8])
+
+			engineCfgJSON, err := json.Marshal(map[string]string{
+				"playbookPath":    "playbooks/test-dep-secret.yml",
+				"jobTemplateName": "kubernaut-test-dep-secret-with-creds",
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testName,
+					Namespace: controllerNamespace,
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					ExecutionEngine: "ansible",
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-" + testName,
+						Namespace:  controllerNamespace,
+					},
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:      credMergeUUID,
+						Version:         "v1.0.0",
+						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+					},
+					TargetResource: targetResource,
+					Parameters: map[string]string{
+						"target_kind":      "Deployment",
+						"target_name":      "cred-merge-test",
+						"target_namespace": "default",
+					},
+				},
+			}
+
+			defer func() { _ = deleteWFE(wfe) }()
+
+			By("E2E-WE-365-001: Creating WFE with ansible engine, secret dependency, and template with pre-configured credential")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("E2E-WE-365-001: Verifying WFE transitions to Running (AWX accepted the merged credential list)")
+			Eventually(func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 60*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
+				"WFE should reach Running — AWX must not reject the launch with 400 about missing credentials")
+
+			By("E2E-WE-365-001: Verifying ephemeral credential annotation was set")
+			runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			credAnnotation, hasAnnotation := runningWFE.Annotations["kubernaut.ai/awx-ephemeral-credentials"]
+			Expect(hasAnnotation).To(BeTrue(),
+				"WFE should have ephemeral credential annotation")
+			Expect(credAnnotation).ToNot(BeEmpty(),
+				"Ephemeral credential annotation should contain credential IDs")
+			GinkgoWriter.Printf("Ephemeral credential IDs: %s\n", credAnnotation)
+
+			By("E2E-WE-365-001: Verifying WFE completes (playbook validates env var from merged credentials)")
+			Eventually(func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 180*time.Second, 5*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted),
+				"WFE should complete — template creds were preserved alongside ephemeral creds")
+
+			By("E2E-WE-365-001: Verifying no credential-related failure occurred")
+			completedWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			if completedWFE.Status.FailureDetails != nil {
+				Expect(completedWFE.Status.FailureDetails.Message).ToNot(ContainSubstring("Removing"),
+					"Should NOT have credential removal error from AWX")
+			}
+
+			GinkgoWriter.Printf("E2E-WE-365-001 passed: credential merge verified — template + ephemeral creds both sent to AWX\n")
+		})
+	})
 })
 
 // createAnsibleWFE builds a WorkflowExecution CRD targeting the ansible engine.
@@ -485,8 +575,17 @@ func cancelAWXJob(jobID int) {
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := httpClient.Do(req)
-	Expect(err).ToNot(HaveOccurred(), "AWX cancel API call should succeed")
+	var resp *http.Response
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		resp, lastErr = httpClient.Do(req)
+		if lastErr == nil {
+			break
+		}
+		GinkgoWriter.Printf("AWX cancel attempt %d failed: %v\n", attempt+1, lastErr)
+		time.Sleep(1 * time.Second)
+	}
+	Expect(lastErr).ToNot(HaveOccurred(), "AWX cancel API call should succeed after retries")
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 

@@ -31,7 +31,7 @@ class MandatoryLabels(BaseModel):
     """
     4 mandatory workflow labels (Issue #274: signalName removed per DD-WORKFLOW-016)
     """ # noqa: E501
-    severity: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Severity level(s) this workflow is designed for. Always an array. To match any severity, list all levels.")
+    severity: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Severity level(s) this workflow is designed for. Always an array. Use '*' to match any severity.")
     component: StrictStr = Field(description="Kubernetes resource type this workflow targets (e.g., pod, deployment, node)")
     environment: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Target environments (workflow can declare multiple, '*' matches all)")
     priority: StrictStr = Field(description="Business priority level (P0, P1, P2, P3, * for any)")
@@ -41,8 +41,8 @@ class MandatoryLabels(BaseModel):
     def severity_validate_enum(cls, value):
         """Validates the enum"""
         for i in value:
-            if i not in ('critical', 'high', 'medium', 'low'):
-                raise ValueError("each list item must be one of ('critical', 'high', 'medium', 'low')")
+            if i not in ('critical', 'high', 'medium', 'low', '*'):
+                raise ValueError("each list item must be one of ('critical', 'high', 'medium', 'low', '*')")
         return value
 
     @field_validator('environment')

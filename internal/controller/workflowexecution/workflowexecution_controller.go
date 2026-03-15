@@ -52,6 +52,7 @@ import (
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -263,31 +264,11 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// ========================================
-	// OBSERVED GENERATION CHECK (DD-CONTROLLER-001)
+	// DD-CONTROLLER-001 v4.0: Pending-phase ObservedGeneration skip REMOVED.
+	// Cooldown (BR-WE-009) uses RequeueAfter during Pending; the skip was
+	// blocking those retries and permanently stalling WFEs (#374, #375).
+	// GenerationChangedPredicate already filters status-only watch duplicates.
 	// ========================================
-	// WFE must reconcile on PipelineRun status changes (external watch).
-	// Only skip reconcile for annotation/label changes when:
-	// 1. Generation unchanged
-	// 2. Phase is Pending (not yet watching PipelineRun)
-	//
-	// IMPORTANT: Terminal phases (Completed/Failed) MUST continue reconciling
-	// until cooldown expires and lock is released (ReconcileTerminal handles this).
-	// Skipping terminal phases prevents cooldown processing and lock release.
-	//
-	// This allows reconciles for:
-	// - PipelineRun status updates (Running phase)
-	// - Cooldown processing (Completed/Failed phases)
-	// - Condition updates
-	// - Metrics recording
-	if wfe.Status.ObservedGeneration == wfe.Generation &&
-		wfe.Status.Phase == workflowexecutionv1alpha1.PhasePending {
-		// Safe to skip: Pending phase not yet watching PipelineRun
-		logger.V(1).Info("✅ DUPLICATE RECONCILE PREVENTED: Generation already processed (Pending phase)",
-			"generation", wfe.Generation,
-			"observedGeneration", wfe.Status.ObservedGeneration,
-			"phase", wfe.Status.Phase)
-		return ctrl.Result{}, nil
-	}
 
 	// ========================================
 	// Add Finalizer (if not present)
@@ -478,6 +459,21 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		return ctrl.Result{}, markErr
 	}
 
+	// DD-WORKFLOW-017: Resolve engineConfig from DS catalog when not present on the WFE spec.
+	// Execution details like engineConfig come from the workflow catalog entry, not the HAPI pipeline.
+	if wfe.Spec.WorkflowRef.EngineConfig == nil && wfe.Spec.WorkflowRef.WorkflowID != "" && r.WorkflowQuerier != nil {
+		ecRaw, ecErr := r.WorkflowQuerier.GetWorkflowEngineConfig(ctx, wfe.Spec.WorkflowRef.WorkflowID)
+		if ecErr != nil {
+			logger.Error(ecErr, "Failed to resolve engineConfig from DS (non-fatal)",
+				"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+		} else if ecRaw != nil {
+			logger.Info("Resolved engineConfig from DS catalog",
+				"workflowID", wfe.Spec.WorkflowRef.WorkflowID,
+				"engine", wfe.Spec.ExecutionEngine)
+			wfe.Spec.WorkflowRef.EngineConfig = &apiextensionsv1.JSON{Raw: ecRaw}
+		}
+	}
+
 	createdName, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
 	if createErr != nil {
 		if apierrors.IsAlreadyExists(createErr) {
@@ -486,16 +482,32 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 				pr := r.BuildPipelineRun(wfe)
 				return r.HandleAlreadyExists(ctx, wfe, pr, createErr)
 			}
-			// For Job backend, AlreadyExists means deterministic name collision
-			// Note: Uses "Unknown" reason (CRD enum constraint); specific cause in message
+			// Issue #374 / DD-WE-003: Pre-execution cleanup of completed Jobs.
+			// If the existing Job is in a terminal state (Succeeded/Failed), clean it up
+			// and retry creation. If still running, the lock is valid -- fail the WFE.
+			if wfe.Spec.ExecutionEngine == "job" {
+				retryName, handled, requeueForGC := r.handleJobAlreadyExists(ctx, exec, wfe, resourceName, createOpts)
+				if handled {
+					createdName = retryName
+					createErr = nil
+				} else if requeueForGC {
+					// Issue #383: Background GC hasn't removed the stale Job yet.
+					// Requeue instead of permanently failing the WFE.
+					logger.Info("Requeuing for Job GC completion (Issue #383)", "resource", resourceName)
+					return ctrl.Result{RequeueAfter: 500 * time.Millisecond}, nil
+				}
+			}
+			if createErr != nil {
+				markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
+					fmt.Sprintf("Execution resource %s already exists (target resource locked)", resourceName))
+				return ctrl.Result{}, markErr
+			}
+		} else {
+			logger.Error(createErr, "Failed to create execution resource", "engine", wfe.Spec.ExecutionEngine)
 			markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
-				fmt.Sprintf("Execution resource %s already exists (target resource locked)", resourceName))
+				fmt.Sprintf("Failed to create %s execution resource: %v", wfe.Spec.ExecutionEngine, createErr))
 			return ctrl.Result{}, markErr
 		}
-		logger.Error(createErr, "Failed to create execution resource", "engine", wfe.Spec.ExecutionEngine)
-		markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
-			fmt.Sprintf("Failed to create %s execution resource: %v", wfe.Spec.ExecutionEngine, createErr))
-		return ctrl.Result{}, markErr
 	}
 
 	// ========================================
@@ -684,14 +696,15 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 	} else {
 		// Fallback: inline Tekton cleanup when ExecutorRegistry is not configured
 		prName := PipelineRunName(wfe.Spec.TargetResource)
-		pr := &tektonv1.PipelineRun{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      prName,
-				Namespace: r.ExecutionNamespace,
-			},
-		}
-		if err := r.Delete(ctx, pr); err != nil {
+		var existing tektonv1.PipelineRun
+		if err := r.Get(ctx, client.ObjectKey{Name: prName, Namespace: r.ExecutionNamespace}, &existing); err != nil {
 			if !apierrors.IsNotFound(err) {
+				logger.Error(err, "Failed to get PipelineRun for ownership check")
+				return ctrl.Result{}, err
+			}
+			// Already gone -- nothing to clean up
+		} else if existing.Labels["kubernaut.ai/workflow-execution"] == wfe.Name {
+			if err := r.Delete(ctx, &existing); err != nil && !apierrors.IsNotFound(err) {
 				logger.Error(err, "Failed to delete PipelineRun after cooldown")
 				return ctrl.Result{}, err
 			}
@@ -898,7 +911,7 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			// Watch for status updates (not just metadata changes)
 			Watches(
 				&tektonv1.PipelineRun{},
-				handler.EnqueueRequestsFromMapFunc(r.FindWFEForPipelineRun),
+				handler.EnqueueRequestsFromMapFunc(r.FindWFEForOwnedResource),
 				builder.WithPredicates(predicate.Funcs{
 					CreateFunc: func(e event.CreateEvent) bool {
 						labels := e.Object.GetLabels()
@@ -937,6 +950,35 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			)
 	}
 
+	// BR-WE-014: Watch Jobs for immediate completion detection.
+	// Without this, the Job engine relies on RequeueAfter polling (10s),
+	// causing slow completion detection and flaky integration tests.
+	// Jobs use the same labeling convention as PipelineRuns, so the
+	// same mapper function (FindWFEForOwnedResource) works for both.
+	ctrlBuilder = ctrlBuilder.
+		Watches(
+			&batchv1.Job{},
+			handler.EnqueueRequestsFromMapFunc(r.FindWFEForOwnedResource),
+			builder.WithPredicates(predicate.Funcs{
+				CreateFunc: func(e event.CreateEvent) bool {
+					_, hasLabel := e.Object.GetLabels()["kubernaut.ai/workflow-execution"]
+					return hasLabel
+				},
+				UpdateFunc: func(e event.UpdateEvent) bool {
+					_, hasLabel := e.ObjectNew.GetLabels()["kubernaut.ai/workflow-execution"]
+					return hasLabel
+				},
+				DeleteFunc: func(e event.DeleteEvent) bool {
+					_, hasLabel := e.Object.GetLabels()["kubernaut.ai/workflow-execution"]
+					return hasLabel
+				},
+				GenericFunc: func(e event.GenericEvent) bool {
+					_, hasLabel := e.Object.GetLabels()["kubernaut.ai/workflow-execution"]
+					return hasLabel
+				},
+			}),
+		)
+
 	return ctrlBuilder.Complete(r)
 }
 
@@ -961,6 +1003,70 @@ func sanitizeLabelValue(s string) string {
 		result = result[:63]
 	}
 	return result
+}
+
+// handleJobAlreadyExists implements Issue #374 pre-execution cleanup for completed Jobs.
+// When a Job creation fails with AlreadyExists, this method checks if the existing Job
+// is in a terminal state. If so, it cleans up the stale Job and retries creation.
+//
+// Returns:
+//
+//	(createdName, true, false)  — Job cleaned up and recreation succeeded.
+//	("", false, true)           — Cleanup accepted but GC pending; caller should requeue.
+//	("", false, false)          — Lock is valid (Job still running) or unrecoverable error.
+func (r *WorkflowExecutionReconciler) handleJobAlreadyExists(
+	ctx context.Context,
+	exec weexecutor.Executor,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	resourceName string,
+	createOpts weexecutor.CreateOptions,
+) (string, bool, bool) {
+	logger := log.FromContext(ctx)
+
+	jobExec, ok := exec.(*weexecutor.JobExecutor)
+	if !ok {
+		return "", false, false
+	}
+
+	completed, checkErr := jobExec.IsCompleted(ctx, wfe.Spec.TargetResource, r.ExecutionNamespace)
+	if checkErr != nil {
+		logger.V(1).Info("Could not check existing Job state (may have been deleted)", "error", checkErr)
+		return "", false, false
+	}
+	if !completed {
+		return "", false, false
+	}
+
+	logger.Info("Stale completed Job detected, cleaning up before retry (Issue #374)",
+		"resource", resourceName)
+
+	cleanupWFE := &workflowexecutionv1alpha1.WorkflowExecution{
+		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+			TargetResource: wfe.Spec.TargetResource,
+		},
+	}
+	if cleanErr := jobExec.Cleanup(ctx, cleanupWFE, r.ExecutionNamespace); cleanErr != nil {
+		logger.Error(cleanErr, "Failed to clean up completed Job", "resource", resourceName)
+		return "", false, false
+	}
+
+	retryName, retryErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
+	if retryErr != nil {
+		if apierrors.IsAlreadyExists(retryErr) {
+			// Issue #383: Cleanup uses DeletePropagationBackground, so the API server
+			// accepted the delete but the GC hasn't removed the object yet. Requeue
+			// to let the GC finish rather than permanently failing the WFE.
+			logger.Info("Job cleanup accepted but GC pending, will requeue (Issue #383)",
+				"resource", resourceName)
+			return "", false, true
+		}
+		logger.Error(retryErr, "Failed to create Job after stale cleanup", "resource", resourceName)
+		return "", false, false
+	}
+
+	logger.Info("Successfully recreated Job after stale cleanup (Issue #374)",
+		"resource", resourceName, "newJob", retryName)
+	return retryName, true, false
 }
 
 // ========================================
@@ -1119,10 +1225,10 @@ func (r *WorkflowExecutionReconciler) ConvertParameters(params map[string]string
 }
 
 // ========================================
-// FindWFEForPipelineRun maps PipelineRun events to WorkflowExecution reconcile requests
-// Used for cross-namespace watch
+// FindWFEForOwnedResource maps owned resource events (PipelineRun, Job) to WorkflowExecution reconcile requests.
+// Both executors label their resources with kubernaut.ai/workflow-execution and kubernaut.ai/source-namespace.
 // ========================================
-func (r *WorkflowExecutionReconciler) FindWFEForPipelineRun(ctx context.Context, obj client.Object) []reconcile.Request {
+func (r *WorkflowExecutionReconciler) FindWFEForOwnedResource(ctx context.Context, obj client.Object) []reconcile.Request {
 	labels := obj.GetLabels()
 	if labels == nil {
 		return nil
@@ -1286,7 +1392,15 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 
 	logger.Info("WorkflowExecution completed (atomic status update)")
 
-	return ctrl.Result{}, nil
+	// Issue #375: Schedule requeue so ReconcileTerminal runs after cooldown to
+	// delete the execution resource (Job/PipelineRun) and release the target lock.
+	// Without this, GenerationChangedPredicate blocks the status-only update event,
+	// and ReconcileTerminal is never called.
+	cooldown := r.CooldownPeriod
+	if cooldown == 0 {
+		cooldown = DefaultCooldownPeriod
+	}
+	return ctrl.Result{RequeueAfter: cooldown}, nil
 }
 
 // MarkFailed transitions WFE to Failed phase with FailureDetails
@@ -1427,7 +1541,13 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Running → Failed
 	r.emitPhaseTransition(wfe, "Running", "Failed")
 
-	return ctrl.Result{}, nil
+	// Issue #375: Schedule requeue so ReconcileTerminal runs after cooldown to
+	// delete the execution resource (Job/PipelineRun) and release the target lock.
+	cooldown := r.CooldownPeriod
+	if cooldown == 0 {
+		cooldown = DefaultCooldownPeriod
+	}
+	return ctrl.Result{RequeueAfter: cooldown}, nil
 }
 
 // ========================================

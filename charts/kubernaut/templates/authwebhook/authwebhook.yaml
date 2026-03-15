@@ -21,6 +21,11 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status", "remediationworkflows/status", "actiontypes/status"]
     verbs: ["update", "patch"]
+  {{- if eq .Values.tls.mode "hook" }}
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+    verbs: ["get", "patch"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -99,10 +104,68 @@ spec:
         app: authwebhook
     spec:
       serviceAccountName: authwebhook
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.authwebhook | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.authwebhook | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.authwebhook "global" .Values.global) | nindent 6 }}
+      {{- if eq .Values.tls.mode "hook" }}
+      initContainers:
+        - name: patch-cabundle
+          image: {{ .Values.hooks.tlsCerts.image }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            runAsUser: 65534
+            runAsGroup: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /certs
+              readOnly: true
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              CA_FILE="/certs/ca.crt"
+              if [ ! -f "$CA_FILE" ]; then
+                echo "WARNING: $CA_FILE not found — skipping caBundle patch"
+                exit 0
+              fi
+
+              CA_BUNDLE=$(base64 < "$CA_FILE" | tr -d '\n')
+
+              patch_webhooks() {
+                KIND="$1"
+                NAME="$2"
+                COUNT=$(kubectl get "$KIND" "$NAME" -o jsonpath='{.webhooks}' | tr ',' '\n' | grep -c '"name"')
+                PATCH="["
+                i=0
+                while [ "$i" -lt "$COUNT" ]; do
+                  [ "$i" -gt 0 ] && PATCH="${PATCH},"
+                  PATCH="${PATCH}{\"op\":\"add\",\"path\":\"/webhooks/${i}/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}"
+                  i=$((i + 1))
+                done
+                PATCH="${PATCH}]"
+                echo "  Patching $NAME ($COUNT webhooks)..."
+                kubectl patch "$KIND" "$NAME" --type='json' -p "$PATCH"
+              }
+
+              echo "==> Init-container: patching webhook caBundle (#377 self-healing)..."
+              patch_webhooks mutatingwebhookconfigurations authwebhook-mutating
+              patch_webhooks validatingwebhookconfigurations authwebhook-validating
+              echo "==> Webhook caBundle patching complete"
+      {{- end }}
       containers:
         - name: authwebhook
           image: {{ include "kubernaut.image" (dict "service" "authwebhook" "global" .Values.global "appVersion" .Chart.AppVersion) }}

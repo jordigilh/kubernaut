@@ -66,7 +66,7 @@ kubectl get at --field-selector spec.name=RestartPod
 
 ## Database Schema Changes
 
-### Migration: `migrations/004_action_type_lifecycle.sql`
+### Migration: `migrations/001_v1_schema.sql` (action_type_taxonomy lifecycle columns)
 
 Add lifecycle columns to the existing `action_type_taxonomy` table:
 
@@ -265,7 +265,7 @@ ActionType CRDs applied BEFORE RemediationWorkflow CRDs to ensure action types e
 | `pkg/authwebhook/` | New webhook handler |
 | `cmd/authwebhook/main.go` | Register handler |
 | `charts/kubernaut/` | Webhook config, RBAC, CRD |
-| `deploy/action-types/` | 24 ActionType CRD YAMLs |
+| `kubernaut-demo-scenarios/deploy/action-types/` | 25 ActionType CRD YAMLs (separate repo) |
 | `migrations/` | DB schema migration |
 
 ---

@@ -645,7 +645,7 @@ func (r *KubernetesExecutionReconciler) createExecutionJob(
                     Containers: []corev1.Container{
                         {
                             Name:            "executor",
-                            Image:           "bitnami/kubectl:latest",  // Official kubectl image
+                            Image:           "registry.k8s.io/kubectl:v1.32.0",  // Official kubectl image
                             Command:         []string{"/bin/sh", "-c"},
                             Args:            []string{command},  // UNSANITIZED for actual execution
                             SecurityContext: r.getJobContainerSecurityContext(),
@@ -864,7 +864,7 @@ securityContext:
 
 containers:
 - name: executor
-  image: bitnami/kubectl:latest
+  image: registry.k8s.io/kubectl:v1.32.0
   securityContext:
     # Container-level security context
     allowPrivilegeEscalation: false

@@ -93,8 +93,29 @@ help: ## Display this help
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects
+manifests: controller-gen sync-version ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./api/..." paths="./internal/controller/..." output:crd:artifacts:config=config/crd/bases
+
+.PHONY: sync-version
+sync-version: ## Propagate VERSION file to Chart.yaml, values, Dockerfiles, and docs
+	@test -f VERSION || (echo "ERROR: VERSION file not found at repo root" && exit 1)
+	@VER=$$(cat VERSION) && \
+	echo "📌 Syncing version v$$VER from VERSION file..." && \
+	sed -i.bak "s/^version: .*/version: $$VER/" charts/kubernaut/Chart.yaml && rm -f charts/kubernaut/Chart.yaml.bak && \
+	sed -i.bak "s/^appVersion: .*/appVersion: \"v$$VER\"/" charts/kubernaut/Chart.yaml && rm -f charts/kubernaut/Chart.yaml.bak && \
+	sed -i.bak "s|db-migrate:v[0-9][0-9a-zA-Z._-]*|db-migrate:v$$VER|g" \
+		charts/kubernaut/values.yaml \
+		charts/kubernaut/values.schema.json \
+		charts/kubernaut/values-airgap.yaml \
+		charts/kubernaut/README.md \
+		hack/airgap/imageset-config.yaml.tmpl && \
+	rm -f charts/kubernaut/values.yaml.bak charts/kubernaut/values.schema.json.bak \
+		charts/kubernaut/values-airgap.yaml.bak charts/kubernaut/README.md.bak \
+		hack/airgap/imageset-config.yaml.tmpl.bak && \
+	for df in docker/*.Dockerfile holmesgpt-api/Dockerfile; do \
+		sed -i.bak "s/^ARG APP_VERSION=v[0-9][0-9a-zA-Z._-]*/ARG APP_VERSION=v$$VER/" "$$df" && rm -f "$$df.bak"; \
+	done && \
+	echo "✅ Version v$$VER synced to all targets"
 
 .PHONY: generate
 generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
@@ -135,6 +156,21 @@ generate-holmesgpt-client: ogen ## Generate HolmesGPT-API client from OpenAPI sp
 	@echo "📋 Generating HolmesGPT-API client from holmesgpt-api/api/openapi.json..."
 	@PATH="$(LOCALBIN):$$PATH" go generate ./pkg/holmesgpt/client/...
 	@echo "✅ HolmesGPT-API client generated successfully"
+
+.PHONY: generate-crd-docs
+generate-crd-docs: crd-ref-docs ## Generate CRD API reference docs from Go types
+	@echo "📋 Generating CRD API reference from api/ types..."
+	@mkdir -p docs/generated
+	@$(CRD_REF_DOCS) \
+		--source-path=api/ \
+		--config=hack/crd-ref-docs/config.yaml \
+		--templates-dir=hack/crd-ref-docs/templates/markdown \
+		--renderer=markdown \
+		--output-path=docs/generated/crds.md \
+		--output-mode=single \
+		--max-depth=10
+	@hack/crd-ref-docs/clean-output.sh docs/generated/crds.md
+	@echo "✅ CRD docs generated: docs/generated/crds.md"
 
 .PHONY: fmt
 fmt: ## Format code
@@ -601,7 +637,7 @@ export-openapi-holmesgpt-api: ## Export holmesgpt-api OpenAPI spec from FastAPI 
 		-e CONFIG_FILE=config.yaml \
 		-e OPENAPI_EXPORT=1 \
 		-e PYTHONUNBUFFERED=1 \
-		registry.access.redhat.com/ubi9/python-312:latest \
+		registry.access.redhat.com/ubi10/python-312-minimal:latest \
 		sh -c "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; pip install -q ./src/clients/datastorage && pip install -q -r requirements-slim.txt && python3 -c 'from src.main import app; import json; print(json.dumps(app.openapi(), indent=2))' > api/openapi.json && echo 'Schema count:' && python3 -c 'import json; spec=json.load(open(\"api/openapi.json\")); print(len(spec.get(\"components\", {}).get(\"schemas\", {})))'"
 	@echo "✅ OpenAPI spec exported: holmesgpt-api/api/openapi.json"
 
@@ -719,7 +755,7 @@ test-unit-holmesgpt-api: ensure-coverage-dirs ## Run holmesgpt-api unit tests (c
 		-w /workspace/holmesgpt-api \
 		-e PYTHONUNBUFFERED=1 \
 		-e COVERAGE_FILE=/tmp/.coverage \
-		registry.access.redhat.com/ubi9/python-312:latest \
+		registry.access.redhat.com/ubi10/python-312-minimal:latest \
 		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --cov=src --cov-report=term-missing -o addopts='' && python -m coverage report --precision=2 --show-missing" 2>&1 | tee $(CURDIR)/coverage_unit_holmesgpt-api.txt
 	@if [ -f $(CURDIR)/coverage_unit_holmesgpt-api.txt ]; then \
 		echo ""; \
@@ -857,6 +893,7 @@ OGEN ?= $(LOCALBIN)/ogen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 GINKGO ?= $(LOCALBIN)/ginkgo
+CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
@@ -866,6 +903,7 @@ ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.1.0
 GINKGO_VERSION ?= v2.27.2
+CRD_REF_DOCS_VERSION ?= v0.3.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary
@@ -902,6 +940,11 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 ginkgo: $(GINKGO) ## Download ginkgo locally if necessary
 $(GINKGO): $(LOCALBIN)
 	$(call go-install-tool,$(GINKGO),github.com/onsi/ginkgo/v2/ginkgo,$(GINKGO_VERSION))
+
+.PHONY: crd-ref-docs
+crd-ref-docs: $(CRD_REF_DOCS) ## Download crd-ref-docs locally if necessary
+$(CRD_REF_DOCS): $(LOCALBIN)
+	$(call go-install-tool,$(CRD_REF_DOCS),github.com/elastic/crd-ref-docs,$(CRD_REF_DOCS_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
@@ -948,7 +991,8 @@ IMAGE_TAG ?= latest
 IMAGE_ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 
 # Version metadata for container image labels and Go ldflags
-APP_VERSION ?= v1.0.0
+# Read from VERSION file (single source of truth); override via env or CLI.
+APP_VERSION ?= v$(shell cat VERSION 2>/dev/null || echo 0.0.0-dev)
 GIT_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_DATE  ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 
@@ -956,16 +1000,17 @@ BUILD_DATE  ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 LDFLAGS ?= -ldflags "-X github.com/jordigilh/kubernaut/internal/version.Version=$(APP_VERSION) -X github.com/jordigilh/kubernaut/internal/version.GitCommit=$(GIT_COMMIT) -X github.com/jordigilh/kubernaut/internal/version.BuildDate=$(BUILD_DATE)"
 
 # All Go services with their Dockerfile mappings
-IMAGE_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor
+IMAGE_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor db-migrate
 IMAGE_DOCKERFILES_datastorage := docker/data-storage.Dockerfile
-IMAGE_DOCKERFILES_gateway := docker/gateway-ubi9.Dockerfile
+IMAGE_DOCKERFILES_gateway := docker/gateway.Dockerfile
 IMAGE_DOCKERFILES_aianalysis := docker/aianalysis.Dockerfile
 IMAGE_DOCKERFILES_authwebhook := docker/authwebhook.Dockerfile
-IMAGE_DOCKERFILES_notification := docker/notification-controller-ubi9.Dockerfile
+IMAGE_DOCKERFILES_notification := docker/notification-controller.Dockerfile
 IMAGE_DOCKERFILES_remediationorchestrator := docker/remediationorchestrator-controller.Dockerfile
 IMAGE_DOCKERFILES_signalprocessing := docker/signalprocessing-controller.Dockerfile
 IMAGE_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.Dockerfile
 IMAGE_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.Dockerfile
+IMAGE_DOCKERFILES_db-migrate := docker/db-migrate.Dockerfile
 
 # IMAGE_TARGET: Dockerfile --target stage to build. Empty = last stage (development).
 # Set IMAGE_TARGET=production for release builds (scratch runtime, zero CVE surface).

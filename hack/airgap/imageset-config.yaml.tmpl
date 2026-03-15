@@ -1,0 +1,34 @@
+# ImageSetConfiguration template for oc mirror.
+#
+# Usage:
+#   1. Replace <VERSION> with the Kubernaut release version (e.g. 1.0.0).
+#   2. Run: oc mirror --config=imageset-config.yaml docker://<mirror-registry>
+#
+# Generate the image list dynamically:
+#   ./hack/airgap/generate-image-list.sh --set global.image.tag=<VERSION>
+#
+# Reference: https://docs.openshift.com/container-platform/latest/installing/disconnected_install/installing-mirroring-disconnected.html
+
+kind: ImageSetConfiguration
+apiVersion: mirror.openshift.io/v1alpha2
+storageConfig:
+  local:
+    path: ./kubernaut-mirror
+mirror:
+  additionalImages:
+    # Kubernaut service images (governed by global.image.registry)
+    - name: quay.io/kubernaut-ai/gateway:<VERSION>
+    - name: quay.io/kubernaut-ai/datastorage:<VERSION>
+    - name: quay.io/kubernaut-ai/aianalysis:<VERSION>
+    - name: quay.io/kubernaut-ai/signalprocessing:<VERSION>
+    - name: quay.io/kubernaut-ai/remediationorchestrator:<VERSION>
+    - name: quay.io/kubernaut-ai/workflowexecution:<VERSION>
+    - name: quay.io/kubernaut-ai/notification:<VERSION>
+    - name: quay.io/kubernaut-ai/effectivenessmonitor:<VERSION>
+    - name: quay.io/kubernaut-ai/holmesgpt-api:<VERSION>
+    - name: quay.io/kubernaut-ai/authwebhook:<VERSION>
+    # Infrastructure images
+    - name: quay.io/kubernaut-ai/db-migrate:v1.1.0-rc0
+    - name: registry.redhat.io/rhel10/postgresql-16
+    - name: registry.redhat.io/rhel10/valkey-8
+    - name: registry.redhat.io/openshift4/ose-cli-rhel9:v4.17

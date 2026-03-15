@@ -226,6 +226,12 @@ def load_config() -> AppConfig:
             "llm_provider": config.get("llm", {}).get("provider"),
         })
 
+        # Issue #390: Load and merge SDK config from well-known path.
+        # SDK config contains llm, toolsets, and mcp_servers sections.
+        from src.config.sdk_loader import merge_sdk_config, SDK_CONFIG_DEFAULT_PATH
+        sdk_config_file = os.getenv("SDK_CONFIG_FILE", SDK_CONFIG_DEFAULT_PATH)
+        config = merge_sdk_config(config, sdk_config_file)
+
         return config
 
     except Exception as e:
@@ -239,6 +245,52 @@ def load_config() -> AppConfig:
 
 # Load configuration
 config = load_config()
+
+
+def _inject_runtime_env(cfg: dict) -> None:
+    """Bridge config-file and mounted-secret values into os.environ at startup.
+
+    Keeps the Kubernetes pod spec completely free of env vars (no ``env:``
+    block, no ``envFrom:``).  Secrets are read from files mounted by the
+    ``llm-credentials-file`` volume, and config values come from the
+    already-loaded YAML.  ``os.environ.setdefault`` is used so that any
+    value explicitly set in the environment (e.g. during development)
+    still takes precedence.
+    """
+    # --- LLM credential files (/etc/holmesgpt/credentials/*) ---
+    creds_dir = Path("/etc/holmesgpt/credentials")
+    if creds_dir.is_dir():
+        for entry in creds_dir.iterdir():
+            if entry.is_file() and not entry.name.startswith("."):
+                os.environ.setdefault(entry.name, entry.read_text().strip())
+
+    # --- Config-derived values ---
+
+    # DATA_STORAGE_URL -- consumed by audit, toolsets, and client modules
+    ds_url = (cfg.get("data_storage", {}).get("url")
+              or cfg.get("data_storage_url"))
+    if ds_url:
+        os.environ.setdefault("DATA_STORAGE_URL", ds_url)
+
+    llm = cfg.get("llm", {})
+    provider = llm.get("provider", "")
+
+    if provider == "vertex_ai":
+        # GOOGLE_APPLICATION_CREDENTIALS -- Google Auth SDK credential file path
+        gac = str(creds_dir / "GOOGLE_APPLICATION_CREDENTIALS")
+        if Path(gac).exists():
+            os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", gac)
+
+        # VERTEXAI_PROJECT / VERTEXAI_LOCATION -- LiteLLM Vertex AI routing
+        project = llm.get("gcp_project_id") or llm.get("project", "")
+        location = llm.get("gcp_region") or llm.get("location", "")
+        if project:
+            os.environ.setdefault("VERTEXAI_PROJECT", project)
+        if location:
+            os.environ.setdefault("VERTEXAI_LOCATION", location)
+
+
+_inject_runtime_env(config)
 
 # Setup logging based on configuration
 # This must be called after config is loaded but before any logging occurs

@@ -45,6 +45,7 @@ func (m *MockRoutingEngine) Config() routing.Config {
 		ConsecutiveFailureThreshold: 3,
 		ConsecutiveFailureCooldown:  3600,
 		RecentlyRemediatedCooldown:  300,
+		NoActionRequiredDelayHours:  24, // Issue #353
 	}
 }
 

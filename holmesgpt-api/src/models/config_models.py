@@ -101,6 +101,7 @@ class AppConfig(TypedDict, total=False):
     metrics: MetricsConfig
     audit: AuditConfig
     prompt: PromptConfig
+    sdk_config_loaded: bool
 
 
 

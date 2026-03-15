@@ -46,7 +46,11 @@ spec:
         app: postgresql
     spec:
       serviceAccountName: postgresql
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       {{- $pscDefaults := dict "seccompProfile" (dict "type" "RuntimeDefault") }}
+      {{- if eq (include "kubernaut.postgresql.variant" .) "ocp" }}
+      {{- $_ := set $pscDefaults "runAsNonRoot" true }}
+      {{- end }}
       {{- $pscOverride := .Values.postgresql.podSecurityContext | default dict }}
       securityContext:
         {{- toYaml (merge $pscOverride $pscDefaults) | nindent 8 }}
@@ -56,7 +60,7 @@ spec:
         - name: postgresql
           image: {{ .Values.postgresql.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
-          {{- $cscDefaults := dict "allowPrivilegeEscalation" false "capabilities" (dict "drop" (list "ALL")) }}
+          {{- $cscDefaults := dict "allowPrivilegeEscalation" false }}
           {{- $cscOverride := .Values.postgresql.containerSecurityContext | default dict }}
           securityContext:
             {{- toYaml (merge $cscOverride $cscDefaults) | nindent 12 }}
@@ -64,26 +68,28 @@ spec:
             - name: postgresql
               containerPort: 5432
           env:
-            - name: POSTGRES_USER
+            - name: {{ include "kubernaut.postgresql.envVarUser" . }}
               valueFrom:
                 secretKeyRef:
                   name: {{ include "kubernaut.postgresql.secretName" . }}
                   key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
+            - name: {{ include "kubernaut.postgresql.envVarPassword" . }}
               valueFrom:
                 secretKeyRef:
                   name: {{ include "kubernaut.postgresql.secretName" . }}
                   key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
+            - name: {{ include "kubernaut.postgresql.envVarDatabase" . }}
               valueFrom:
                 secretKeyRef:
                   name: {{ include "kubernaut.postgresql.secretName" . }}
                   key: POSTGRES_DB
+            {{- if ne (include "kubernaut.postgresql.variant" .) "ocp" }}
             - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
+              value: {{ include "kubernaut.postgresql.dataDir" . }}/pgdata
+            {{- end }}
           volumeMounts:
             - name: postgresql-data
-              mountPath: /var/lib/postgresql/data
+              mountPath: {{ include "kubernaut.postgresql.dataDir" . }}
           resources:
             {{- toYaml .Values.postgresql.resources | nindent 12 }}
           readinessProbe:

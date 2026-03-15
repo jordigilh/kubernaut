@@ -10,36 +10,13 @@ metadata:
     app.kubernetes.io/part-of: kubernaut
 data:
   config.yaml: |
-    # HolmesGPT API Configuration
-    # Application Settings
+    # HolmesGPT API Service Configuration (Issue #390: ConfigMap split)
+    # LLM, toolsets, and mcp_servers are in the SDK ConfigMap.
     log_level: INFO
     dev_mode: false
     auth_enabled: true
     api_host: "0.0.0.0"
     api_port: 8080
-
-    # LLM Provider Configuration
-    llm:
-      provider: vertex-ai
-      model: claude-3-5-sonnet@20241022
-      endpoint: https://us-central1-aiplatform.googleapis.com
-
-      # Credentials: Mounted from secret at /var/secrets/llm/credentials.json
-      # - Accessed via LLM_CREDENTIALS_PATH environment variable (generic)
-      # - Also available via GOOGLE_APPLICATION_CREDENTIALS for GCP compatibility
-      # - Works with any LLM provider (Vertex AI, OpenAI, Anthropic, etc.)
-
-      # Provider-specific Configuration
-      gcp_project_id: REPLACE_WITH_YOUR_PROJECT_ID
-      gcp_region: us-central1
-
-      # Rate limiting and timeouts
-      max_retries: 3
-      timeout_seconds: 60
-
-      # Cost controls
-      max_tokens_per_request: 4096
-      temperature: 0.7
 
     # Context API Configuration
     context_api:
@@ -49,7 +26,6 @@ data:
 
     # Kubernetes API Configuration
     kubernetes:
-      # Uses in-cluster config by default
       service_host: kubernetes.default.svc
       service_port: 443
       token_reviewer_enabled: true
@@ -65,6 +41,38 @@ data:
       enabled: true
       endpoint: /metrics
       scrape_interval: 30s
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: holmesgpt-sdk-config
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: holmesgpt-api
+    app.kubernetes.io/component: sdk-config
+    app.kubernetes.io/part-of: kubernaut
+data:
+  sdk-config.yaml: |
+    # HolmesGPT SDK Configuration (Issue #390)
+    # Contains LLM provider settings, toolsets, and MCP servers.
+    # See: https://holmesgpt.dev/data-sources/builtin-toolsets/
+    llm:
+      provider: REPLACE_WITH_YOUR_PROVIDER        # e.g. openai, vertex-ai, anthropic
+      model: REPLACE_WITH_YOUR_MODEL              # e.g. gpt-4-turbo, claude-sonnet-4-20250514
+      endpoint: REPLACE_WITH_YOUR_ENDPOINT        # e.g. https://api.openai.com/v1
+      max_retries: 3
+      timeout_seconds: 60
+      max_tokens_per_request: 4096
+      temperature: 0.7
 
+    # Toolsets available to the LLM during investigation.
+    # kubernetes/core, kubernetes/logs, kubernetes/live-metrics are enabled by default in code.
+    # Add prometheus/metrics to enable PromQL queries:
+    #   prometheus/metrics:
+    #     enabled: true
+    #     config:
+    #       prometheus_url: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+    toolsets: {}
 
+    mcp_servers: {}
 

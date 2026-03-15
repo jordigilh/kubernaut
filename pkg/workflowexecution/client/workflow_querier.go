@@ -19,6 +19,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -31,10 +32,14 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
-// WorkflowQuerier retrieves workflow dependencies from the Data Storage catalog.
+// WorkflowQuerier retrieves workflow metadata from the Data Storage catalog.
 // DD-WE-006: WFE queries DS on demand using the workflow ID.
 type WorkflowQuerier interface {
 	GetWorkflowDependencies(ctx context.Context, workflowID string) (*models.WorkflowDependencies, error)
+	// GetWorkflowEngineConfig retrieves the engine_config for a workflow from the catalog.
+	// DD-WORKFLOW-017: Execution details (engine, engineConfig) come from the workflow catalog entry.
+	// Returns nil when the workflow has no engineConfig.
+	GetWorkflowEngineConfig(ctx context.Context, workflowID string) (json.RawMessage, error)
 }
 
 // WorkflowCatalogClient is a narrow interface satisfied by the ogen-generated
@@ -114,4 +119,42 @@ func (q *OgenWorkflowQuerier) GetWorkflowDependencies(ctx context.Context, workf
 	}
 
 	return parser.ExtractDependencies(parsed), nil
+}
+
+// GetWorkflowEngineConfig retrieves the engine_config from the DS catalog.
+// DD-WORKFLOW-017: The WE controller resolves execution details from the catalog.
+// Returns nil when the workflow has no engineConfig section.
+func (q *OgenWorkflowQuerier) GetWorkflowEngineConfig(ctx context.Context, workflowID string) (json.RawMessage, error) {
+	uid, err := uuid.Parse(workflowID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid workflow ID %q: %w", workflowID, err)
+	}
+
+	res, err := q.client.GetWorkflowByID(ctx, ogenclient.GetWorkflowByIDParams{
+		WorkflowID: uid,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("DS query failed for workflow %s: %w", workflowID, err)
+	}
+
+	wf, ok := res.(*ogenclient.RemediationWorkflow)
+	if !ok {
+		return nil, fmt.Errorf("workflow %s not found in catalog", workflowID)
+	}
+
+	if wf.Content == "" {
+		return nil, nil
+	}
+
+	parser := schema.NewParser()
+	parsed, err := parser.Parse(wf.Content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse workflow schema for %s: %w", workflowID, err)
+	}
+
+	rawMsg := parser.ExtractEngineConfig(parsed)
+	if rawMsg == nil {
+		return nil, nil
+	}
+	return *rawMsg, nil
 }

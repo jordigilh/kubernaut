@@ -13,7 +13,7 @@
 # Push:
 #   podman push quay.io/kubernaut-cicd/test-workflows/job-failing:v1.0.0
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # ADR-043: Include workflow schema at root for catalog discovery
 COPY workflow-schema.yaml /workflow-schema.yaml

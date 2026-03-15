@@ -74,7 +74,7 @@ This decision applies to ALL Kubernaut Dockerfiles:
 
 ```dockerfile
 # Stage 1: Build
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
 
 USER 1001
 WORKDIR /opt/app-root/src
@@ -102,7 +102,7 @@ RUN if [ "${GOFLAGS}" = "-cover" ]; then \
     fi
 
 # Stage 2: Runtime
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 # ... runtime configuration ...
 ```
 
@@ -223,14 +223,14 @@ fi
 | Dockerfile | Status | Commit |
 |---|---|---|
 | `data-storage.Dockerfile` | ✅ Updated | Dec 25, 2025 |
-| `gateway-ubi9.Dockerfile` | ✅ Updated | Dec 25, 2025 |
+| `gateway.Dockerfile` | ✅ Updated | Dec 25, 2025 |
 | `aianalysis.Dockerfile` | ✅ Updated | Dec 25, 2025 |
 | `remediationorchestrator-controller.Dockerfile` | ✅ Updated | Dec 25, 2025 |
 | `workflow-service.Dockerfile` | ✅ Updated | Dec 25, 2025 |
 | `signalprocessing-controller.Dockerfile` | ✅ Updated | Dec 25, 2025 |
 | `alert-service.Dockerfile` | ✅ Updated | Dec 25, 2025 |
 | `storage-service.Dockerfile` | ✅ Updated | Dec 25, 2025 |
-| `notification-controller-ubi9.Dockerfile` | ✅ Updated | Dec 25, 2025 |
+| `notification-controller.Dockerfile` | ✅ Updated | Dec 25, 2025 |
 | `notification-service.Dockerfile` | ✅ Updated | Dec 25, 2025 |
 | `executor-service.Dockerfile` | ✅ Updated | Dec 25, 2025 |
 

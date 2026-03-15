@@ -68,6 +68,13 @@ rules:
   - apiGroups: ["policy.linkerd.io"]
     resources: ["servers", "authorizationpolicies", "meshtlsauthentications"]
     verbs: ["get", "list", "watch"]
+  # ── Istio ───────────────────────────────────────────────────────────────
+  - apiGroups: ["security.istio.io"]
+    resources: ["authorizationpolicies", "peerauthentications", "requestauthentications"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.istio.io"]
+    resources: ["virtualservices", "destinationrules", "gateways", "serviceentries"]
+    verbs: ["get", "list", "watch"]
   # ── Prometheus Operator ──────────────────────────────────────────────────
   - apiGroups: ["monitoring.coreos.com"]
     resources: ["prometheusrules", "servicemonitors", "podmonitors", "probes"]
@@ -115,6 +122,25 @@ data:
   config.yaml: |
     logging:
       level: "INFO"
+    data_storage:
+      url: "{{ include "kubernaut.datastorage.url" . }}"
+    audit:
+      flush_interval_seconds: 0.1
+      buffer_size: 10000
+      batch_size: 50
+{{- if not .Values.holmesgptApi.existingSdkConfigMap }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: holmesgpt-sdk-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: holmesgpt-api
+    component: sdk-config
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  sdk-config.yaml: |
     llm:
       provider: {{ .Values.holmesgptApi.llm.provider | quote }}
       model: {{ .Values.holmesgptApi.llm.model | quote }}
@@ -124,12 +150,19 @@ data:
       max_retries: {{ .Values.holmesgptApi.llm.maxRetries }}
       timeout_seconds: {{ .Values.holmesgptApi.llm.timeoutSeconds }}
       temperature: {{ .Values.holmesgptApi.llm.temperature }}
-    data_storage:
-      url: "{{ include "kubernaut.datastorage.url" . }}"
-    audit:
-      flush_interval_seconds: 0.1
-      buffer_size: 10000
-      batch_size: 50
+    toolsets:
+      {{- if .Values.holmesgptApi.toolsets }}
+      {{- toYaml .Values.holmesgptApi.toolsets | nindent 6 }}
+      {{- else }}
+      {}
+      {{- end }}
+    mcp_servers:
+      {{- if .Values.holmesgptApi.mcpServers }}
+      {{- toYaml .Values.holmesgptApi.mcpServers | nindent 6 }}
+      {{- else }}
+      {}
+      {{- end }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -154,6 +187,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: holmesgpt-api-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.holmesgptApi | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.holmesgptApi | nindent 6 }}
@@ -169,18 +203,12 @@ spec:
           args:
             - "-config"
             - "/etc/holmesgpt/config.yaml"
-          env:
-            - name: DATA_STORAGE_URL
-              value: "{{ include "kubernaut.datastorage.url" . }}"
-            - name: LITELLM_LOG
-              value: "DEBUG"
-          envFrom:
-            - secretRef:
-                name: {{ .Values.holmesgptApi.llm.credentialsSecretName }}
-                optional: true
           volumeMounts:
             - name: config
               mountPath: /etc/holmesgpt
+              readOnly: true
+            - name: sdk-config
+              mountPath: /etc/holmesgpt/sdk
               readOnly: true
             - name: llm-credentials-file
               mountPath: /etc/holmesgpt/credentials
@@ -207,6 +235,9 @@ spec:
         - name: config
           configMap:
             name: holmesgpt-api-config
+        - name: sdk-config
+          configMap:
+            name: {{ .Values.holmesgptApi.existingSdkConfigMap | default "holmesgpt-sdk-config" }}
         - name: llm-credentials-file
           secret:
             secretName: {{ .Values.holmesgptApi.llm.credentialsSecretName }}

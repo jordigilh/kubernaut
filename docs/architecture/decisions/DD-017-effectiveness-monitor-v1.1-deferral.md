@@ -246,6 +246,22 @@ The EM emits **individual component-level audit events**, not a single monolithi
 }
 ```
 
+- `effectiveness.alert_decay.detected` (Issue #369, BR-EM-012): Emitted once when the EM first detects alert decay via multi-probe cross-validation — all non-alert probes are positive (health > 0 via live re-probe, metrics >= 0 or N/A, hash stable) but the Prometheus alert is still firing (AlertScore = 0.0). Health is re-probed live on each subsequent decay pass; if health degrades or metrics are negative (proactive signal failure), the decay hypothesis is killed and the alert is accepted at face value. Subsequent silent re-checks continue until the alert resolves, health drops, or validity expires. Uses `alert_resolution` sub-object:
+```json
+{
+    "event_type": "effectiveness.alert_decay.detected",
+    "correlation_id": "rr-xxx",
+    "component": "alert_decay",
+    "assessed": false,
+    "score": 0.0,
+    "details": "Alert decay detected: health=1.00, alert=0.00, retry=1",
+    "alert_resolution": {
+        "alert_resolved": false,
+        "active_count": 1
+    }
+}
+```
+
 - `effectiveness.metrics.assessed`: Metric comparison with typed `metric_deltas` sub-object:
 ```json
 {
@@ -296,7 +312,7 @@ The EM emits **individual component-level audit events**, not a single monolithi
 
 **No new database tables**. DataStorage correlates RO and EM audit events by **`RR.Name`** (the RemediationRequest name, which is the correlation ID across all audit traces) to build the complete picture. DS may add internal indexes on hash columns for query performance — this is a DS implementation detail.
 
-The existing `migrations/v1.1/006_effectiveness_assessment.sql` (`action_assessments`, `effectiveness_results` tables) can be repurposed as DS-internal materialized views for performance optimization, not as a separate write target.
+The effectiveness assessment tables (`action_assessments`, `effectiveness_results`, now in `migrations/001_v1_schema.sql`) can be repurposed as DS-internal materialized views for performance optimization, not as a separate write target.
 
 > **v2.1 Clarification**: DD-EFFECTIVENESS-002's DB-backed idempotency design (direct PostgreSQL tables for `effectiveness_results` and `action_assessments`) is superseded. The EM does not have its own database connection. Idempotency is achieved through audit event deduplication in DataStorage (DS checks for existing `effectiveness.assessment.completed` event for the given RR.Name before accepting a new one).
 
@@ -442,7 +458,7 @@ DS reads these richer fields from the same audit traces. HAPI receives richer co
 - **DD-EFFECTIVENESS-002**: Restart Recovery Idempotency (DB-backed idempotency — **SUPERSEDED by v2.1**: EM uses audit-event dedup via DS instead of direct DB tables)
 - **DD-017 v1.0**: Original full deferral (superseded by this v2.0)
 - **DD-CRD-002**: Kubernetes Conditions Standard (conditions infrastructure)
-- **DD-CRD-002-EA**: [EffectivenessAssessment Conditions](DD-CRD-002-effectivenessassessment-conditions.md) — `AssessmentComplete` and `SpecIntegrity` condition types
+- **DD-CRD-002-EA**: [EffectivenessAssessment Conditions](DD-CRD-002-effectivenessassessment-conditions.md) — `AssessmentComplete`, `SpecIntegrity`, and `AlertDecayDetected` condition types
 - **DD-EM-002 v1.1**: [Canonical Spec Hashing & Spec Drift Guard](DD-EM-002-canonical-spec-hash.md) — Re-hash on each reconcile, `spec_drift` reason, DS score=0.0 short-circuit
 - **DD-EVENT-001**: Controller Event Registry (event reason constants)
 

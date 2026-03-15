@@ -511,6 +511,14 @@ def pytest_configure(config):
     os.environ["CONFIG_FILE"] = "config.yaml"
     os.environ["OPENAI_API_KEY"] = "test-api-key-for-integration-tests"
 
+    # Issue #390: Create temp SDK config for the two-file loading in load_config()
+    import tempfile
+    _sdk_cfg = tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False)
+    _sdk_cfg.write("llm:\n  provider: openai\n  model: gpt-4-turbo\n  endpoint: http://127.0.0.1:18140\ntoolsets: {}\nmcp_servers: {}\n")
+    _sdk_cfg.close()
+    os.environ["SDK_CONFIG_FILE"] = _sdk_cfg.name
+    config._temp_sdk_config_file = _sdk_cfg.name
+
     config.addinivalue_line(
         "markers",
         "requires_data_storage: mark test as requiring Data Storage service"

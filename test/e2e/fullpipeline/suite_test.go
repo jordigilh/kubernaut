@@ -152,8 +152,6 @@ var _ = SynchronizedBeforeSuite(
 		err = os.Setenv("KUBECONFIG", tempKubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Seed ALL workflows needed by ALL FP tests once, then update Mock LLM ConfigMap.
-		// Individual tests must NOT seed workflows or modify the ConfigMap.
 		By("Seeding all FP test workflows in DataStorage (once)")
 		dsURL := "http://localhost:30081"
 		dsHTTPClient := &http.Client{
@@ -162,6 +160,9 @@ var _ = SynchronizedBeforeSuite(
 		}
 		dsClient, dsErr := ogenclient.NewClient(dsURL, ogenclient.WithClient(dsHTTPClient))
 		Expect(dsErr).ToNot(HaveOccurred(), "Failed to create DataStorage client for workflow seeding")
+
+		// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
+		Expect(infrastructure.SeedActionTypesViaAPI(dsClient, GinkgoWriter)).To(Succeed(), "Failed to seed action types")
 
 		allWorkflows := []infrastructure.TestWorkflow{
 			{

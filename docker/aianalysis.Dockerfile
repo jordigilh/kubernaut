@@ -3,7 +3,7 @@
 #
 # Build targets (Issue #80):
 #   production:  scratch runtime -- zero CVE surface, no shell (release.yml)
-#   development: ubi9-minimal runtime -- debug tools, coverage support (ci-pipeline.yml)
+#   development: ubi10-minimal runtime -- debug tools, coverage support (ci-pipeline.yml)
 #
 # Usage:
 #   Production:  podman build --target production -t aianalysis:v1.0 -f docker/aianalysis.Dockerfile .
@@ -12,11 +12,11 @@
 # ============================================================================
 # Stage 1: Build (native cross-compile, no QEMU needed for Go)
 # ============================================================================
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
 
 ARG TARGETOS=linux
 ARG TARGETARCH
-ARG APP_VERSION=v1.0.0
+ARG APP_VERSION=v1.1.0-rc0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 # Use TARGETARCH if set (multi-arch build), otherwise auto-detect from runtime
@@ -61,7 +61,7 @@ COPY --from=builder /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/ssl/c
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /opt/app-root/src/aianalysis-controller /aianalysis-controller
-USER nobody
+USER 65534
 EXPOSE 9090 8081
 ENTRYPOINT ["/aianalysis-controller"]
 
@@ -82,17 +82,17 @@ LABEL name="kubernaut-aianalysis" \
 	io.openshift.tags="kubernaut,aianalysis,ai,llm,kubernetes,controller"
 
 # ============================================================================
-# Stage 2b: Development/E2E runtime (ubi9-minimal -- debug + coverage, DD-TEST-007)
+# Stage 2b: Development/E2E runtime (ubi10-minimal -- debug + coverage, DD-TEST-007)
 # Default stage when no --target is specified (backwards compatible with CI).
 # ============================================================================
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest AS development
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS development
 RUN microdnf update -y && \
-	microdnf install -y ca-certificates tzdata && \
+	microdnf install -y ca-certificates tzdata shadow-utils && \
 	microdnf clean all
 RUN useradd -r -u 1001 -g root aianalysis-user
 COPY --from=builder /opt/app-root/src/aianalysis-controller /usr/local/bin/aianalysis-controller
 RUN chmod +x /usr/local/bin/aianalysis-controller
-USER aianalysis-user
+USER 1001
 EXPOSE 9090 8081
 ENTRYPOINT ["/usr/local/bin/aianalysis-controller"]
 

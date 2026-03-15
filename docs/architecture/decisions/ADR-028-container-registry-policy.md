@@ -12,11 +12,11 @@
 
 ### Current State
 
-ADR-027 established Red Hat UBI9 as the standard base image for Kubernaut services. However, it does not comprehensively address:
+ADR-027 established Red Hat UBI10 as the standard base image for Kubernaut services. However, it does not comprehensively address:
 
 1. **Approved Container Registries**: Which registries are trusted for pulling base images?
 2. **Image Versioning Strategy**: Should we use `latest`, specific versions, or version ranges?
-3. **UBI Version Policy**: When should we migrate from UBI9 to UBI10?
+3. **UBI Version Policy**: When should we migrate from UBI10 to UBI11?
 4. **Security Scanning**: How do we ensure base images are vulnerability-free?
 5. **Offline/Air-Gapped Deployments**: How do we support disconnected environments?
 
@@ -25,16 +25,16 @@ ADR-027 established Red Hat UBI9 as the standard base image for Kubernaut servic
 1. **Security Risk**: Unrestricted registry access allows untrusted image sources
 2. **Compliance Gap**: No formal policy for enterprise image sourcing
 3. **Version Drift**: Inconsistent use of `latest` vs. pinned versions across Dockerfiles
-4. **Future-Proofing**: No clear migration path from UBI9 → UBI10
+4. **Future-Proofing**: No clear migration path from UBI10 to UBI11
 5. **Supply Chain Security**: No verification of base image authenticity
 
 ### Real-World Impact
 
 **Current Dockerfile Analysis** (2025-10-28):
-- ✅ Most services use `registry.access.redhat.com/ubi9/*`
+- ✅ Most services use `registry.access.redhat.com/ubi10/*`
 - ⚠️ Some services use `golang:1.24-alpine` (non-Red Hat)
 - ⚠️ Some services use `gcr.io/distroless/*` (Google, not Red Hat)
-- ⚠️ Inconsistent version pinning (`latest` vs. `1.24` vs. `ubi9`)
+- ⚠️ Inconsistent version pinning (`latest` vs. `1.24` vs. `ubi10`)
 
 ---
 
@@ -93,7 +93,7 @@ Search the official Red Hat Container Catalog for approved images:
 
 **Search Process**:
 1. **Search by Technology**: Enter language/runtime (e.g., "go", "python", "nodejs")
-2. **Filter by UBI9**: Select "Red Hat Universal Base Image 9"
+2. **Filter by UBI10**: Select "Red Hat Universal Base Image 10"
 3. **Check Public Access**: Verify image is available at `registry.access.redhat.com`
 4. **Verify Support**: Confirm Red Hat support and security updates
 
@@ -115,10 +115,10 @@ Test image pull from `registry.access.redhat.com`:
 
 ```bash
 # Verify image exists and is publicly accessible
-podman pull registry.access.redhat.com/ubi9/go-toolset:1.24
+podman pull registry.access.redhat.com/ubi10/go-toolset:1.24
 
 # Check image metadata
-skopeo inspect docker://registry.access.redhat.com/ubi9/go-toolset:1.24
+skopeo inspect docker://registry.access.redhat.com/ubi10/go-toolset:1.24
 ```
 
 **Success Criteria**:
@@ -155,7 +155,7 @@ skopeo inspect docker://registry.access.redhat.com/ubi9/go-toolset:1.24
 ### 2. Red Hat Catalog Search Results
 **Search URL**: [Link to catalog search]
 **Search Terms**: [Terms used]
-**Result**: ❌ No Red Hat UBI9 image found
+**Result**: ❌ No Red Hat UBI10 image found
 
 **Evidence**:
 ```bash
@@ -163,7 +163,7 @@ skopeo inspect docker://registry.access.redhat.com/ubi9/go-toolset:1.24
 https://catalog.redhat.com/software/containers/search?q=rust
 
 # Pull attempt failed
-podman pull registry.access.redhat.com/ubi9/rust:latest
+podman pull registry.access.redhat.com/ubi10/rust:latest
 Error: image not found
 ```
 
@@ -191,8 +191,8 @@ podman scan docker.io/rust:1.75-alpine
 **Why is this image necessary?**
 [Explain technical necessity]
 
-**Why can't we use UBI9 base + manual installation?**
-[Explain why building from UBI9 + installing runtime is not feasible]
+**Why can't we use UBI10 base + manual installation?**
+[Explain why building from UBI10 + installing runtime is not feasible]
 
 **Alternatives Considered**:
 1. [Alternative 1] - Rejected because [reason]
@@ -220,15 +220,15 @@ podman scan docker.io/rust:1.75-alpine
 #### **Exception Approval Criteria**
 
 **Approved IF**:
-- ✅ No Red Hat UBI9 image exists (verified via catalog search)
-- ✅ Building from UBI9 + manual installation is not feasible
+- ✅ No Red Hat UBI10 image exists (verified via catalog search)
+- ✅ Building from UBI10 + manual installation is not feasible
 - ✅ Security scan shows ZERO CRITICAL/HIGH CVEs
 - ✅ Mitigation plan addresses security and maintenance
 - ✅ Engineering team approval documented
 
 **Rejected IF**:
-- ❌ Red Hat UBI9 image exists (use it instead)
-- ❌ Can build from UBI9 + install runtime manually
+- ❌ Red Hat UBI10 image exists (use it instead)
+- ❌ Can build from UBI10 + install runtime manually
 - ❌ Security scan shows CRITICAL/HIGH CVEs
 - ❌ No mitigation plan for security/maintenance
 
@@ -242,7 +242,7 @@ podman scan docker.io/rust:1.75-alpine
 |---------|-------|---------------|-------------|------|-------------|
 | *None* | - | - | - | - | - |
 
-**Note**: All Kubernaut services currently use Red Hat UBI9 images. No exceptions have been approved.
+**Note**: All Kubernaut services currently use Red Hat UBI10 images. No exceptions have been approved.
 
 ---
 
@@ -254,13 +254,13 @@ podman scan docker.io/rust:1.75-alpine
 
 | Image | Registry Path | Version Strategy | Use Case |
 |-------|---------------|------------------|----------|
-| **UBI9 Go Toolset** | `registry.access.redhat.com/ubi9/go-toolset` | Pin minor (e.g., `:1.24`) | Go build stage |
-| **UBI9 Minimal** | `registry.access.redhat.com/ubi9/ubi-minimal` | Use `:latest` | Go/Python runtime |
-| **UBI9 Base** | `registry.access.redhat.com/ubi9/ubi` | Use `:latest` | Full package mgmt |
-| **UBI9 Python 3.12** | `registry.access.redhat.com/ubi9/python-312` | Use `:latest` | Python services |
-| **UBI9 Python 3.11** | `registry.access.redhat.com/ubi9/python-311` | Use `:latest` | Python 3.11 compat |
-| **UBI9 Node.js 20** | `registry.access.redhat.com/ubi9/nodejs-20` | Use `:latest` | Node.js services |
-| **UBI9 Node.js 18** | `registry.access.redhat.com/ubi9/nodejs-18` | Use `:latest` | Node.js 18 LTS |
+| **UBI10 Go Toolset** | `registry.access.redhat.com/ubi10/go-toolset` | Pin minor (e.g., `:1.24`) | Go build stage |
+| **UBI10 Minimal** | `registry.access.redhat.com/ubi10/ubi-minimal` | Use `:latest` | Go/Python runtime |
+| **UBI10 Base** | `registry.access.redhat.com/ubi10/ubi` | Use `:latest` | Full package mgmt |
+| **UBI10 Python 3.12** | `registry.access.redhat.com/ubi10/python-312` | Use `:latest` | Python services |
+| **UBI10 Python 3.11** | `registry.access.redhat.com/ubi10/python-311` | Use `:latest` | Python 3.11 compat |
+| **UBI10 Node.js 20** | `registry.access.redhat.com/ubi10/nodejs-20` | Use `:latest` | Node.js services |
+| **UBI10 Node.js 18** | `registry.access.redhat.com/ubi10/nodejs-18` | Use `:latest` | Node.js 18 LTS |
 
 ---
 
@@ -270,10 +270,10 @@ podman scan docker.io/rust:1.75-alpine
 
 ```dockerfile
 # Build stage - Pin to Go toolset minor version
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.24 AS builder
 
 # Runtime stage - Use latest for security updates
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 ```
 
 **Versioning Rules**:
@@ -288,14 +288,14 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 - **Controlled Upgrades**: Explicit Go version bump in Dockerfile
 
 **Available Go Toolset Versions**:
-- `registry.access.redhat.com/ubi9/go-toolset:1.24` (Current)
-- `registry.access.redhat.com/ubi9/go-toolset:1.23` (Previous)
-- `registry.access.redhat.com/ubi9/go-toolset:1.22` (Legacy)
+- `registry.access.redhat.com/ubi10/go-toolset:1.24` (Current)
+- `registry.access.redhat.com/ubi10/go-toolset:1.23` (Previous)
+- `registry.access.redhat.com/ubi10/go-toolset:1.22` (Legacy)
 
-**When to Use Full UBI9 Base**:
+**When to Use Full UBI10 Base**:
 ```dockerfile
-# Runtime stage - Full UBI9 (not minimal)
-FROM registry.access.redhat.com/ubi9/ubi:latest
+# Runtime stage - Full UBI10 (not minimal)
+FROM registry.access.redhat.com/ubi10/ubi:latest
 ```
 - **Use Case**: Services requiring `dnf` package management
 - **Trade-off**: Larger image (~200MB vs. ~100MB minimal)
@@ -309,7 +309,7 @@ FROM registry.access.redhat.com/ubi9/ubi:latest
 
 ```dockerfile
 # Python services typically use single-stage builds
-FROM registry.access.redhat.com/ubi9/python-312:latest
+FROM registry.access.redhat.com/ubi10/python-312:latest
 ```
 
 **Versioning Rules**:
@@ -323,18 +323,18 @@ FROM registry.access.redhat.com/ubi9/python-312:latest
 - **Consistency**: Python version controlled by image tag (`312` vs. `311`)
 
 **Available Python Versions**:
-- `registry.access.redhat.com/ubi9/python-312:latest` (Python 3.12 - Recommended)
-- `registry.access.redhat.com/ubi9/python-311:latest` (Python 3.11 - Stable)
-- `registry.access.redhat.com/ubi9/python-39:latest` (Python 3.9 - Legacy)
+- `registry.access.redhat.com/ubi10/python-312:latest` (Python 3.12 - Recommended)
+- `registry.access.redhat.com/ubi10/python-311:latest` (Python 3.11 - Stable)
+- `registry.access.redhat.com/ubi10/python-39:latest` (Python 3.9 - Legacy)
 
 **When to Use Multi-Stage** (Optional):
 ```dockerfile
 # Build stage - Install dependencies
-FROM registry.access.redhat.com/ubi9/python-312:latest AS builder
+FROM registry.access.redhat.com/ubi10/python-312:latest AS builder
 RUN pip install --user -r requirements.txt
 
 # Runtime stage - Copy installed packages
-FROM registry.access.redhat.com/ubi9/python-312:latest
+FROM registry.access.redhat.com/ubi10/python-312:latest
 COPY --from=builder /root/.local /root/.local
 ```
 - **Use Case**: Reduce final image size (exclude build tools)
@@ -349,7 +349,7 @@ COPY --from=builder /root/.local /root/.local
 
 ```dockerfile
 # Node.js services typically use single-stage builds
-FROM registry.access.redhat.com/ubi9/nodejs-20:latest
+FROM registry.access.redhat.com/ubi10/nodejs-20:latest
 ```
 
 **Versioning Rules**:
@@ -358,26 +358,26 @@ FROM registry.access.redhat.com/ubi9/nodejs-20:latest
 - ❌ **Never**: Use generic `nodejs` tag (ambiguous version)
 
 **Available Node.js Versions**:
-- `registry.access.redhat.com/ubi9/nodejs-20:latest` (Node.js 20 LTS - Recommended)
-- `registry.access.redhat.com/ubi9/nodejs-18:latest` (Node.js 18 LTS - Stable)
-- `registry.access.redhat.com/ubi9/nodejs-16:latest` (Node.js 16 - Legacy)
+- `registry.access.redhat.com/ubi10/nodejs-20:latest` (Node.js 20 LTS - Recommended)
+- `registry.access.redhat.com/ubi10/nodejs-18:latest` (Node.js 18 LTS - Stable)
+- `registry.access.redhat.com/ubi10/nodejs-16:latest` (Node.js 16 - Legacy)
 
 ---
 
 #### **Runtime-Only Images**
 
-**UBI9 Minimal** (Recommended for Go):
+**UBI10 Minimal** (Recommended for Go):
 ```dockerfile
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 ```
 - **Size**: ~100MB
 - **Packages**: `microdnf` (minimal package manager)
 - **Use Case**: Go static binaries, minimal runtime dependencies
-- **Benefits**: Smallest UBI9 variant, reduced attack surface
+- **Benefits**: Smallest UBI10 variant, reduced attack surface
 
-**UBI9 Base** (Full Package Management):
+**UBI10 Base** (Full Package Management):
 ```dockerfile
-FROM registry.access.redhat.com/ubi9/ubi:latest
+FROM registry.access.redhat.com/ubi10/ubi:latest
 ```
 - **Size**: ~200MB
 - **Packages**: `dnf` (full package manager), `systemd`
@@ -388,25 +388,25 @@ FROM registry.access.redhat.com/ubi9/ubi:latest
 
 ### **3. UBI Version Policy**
 
-#### **Current Standard: UBI9**
+#### **Current Standard: UBI10**
 - **Status**: ✅ **Production Standard** (2025-10-28)
 - **RHEL Base**: Red Hat Enterprise Linux 9
 - **Support**: Full support until 2032 (RHEL 9 lifecycle)
 - **Migration**: No immediate migration needed
 
-#### **Future Standard: UBI10**
+#### **Future Standard: UBI11**
 - **Status**: ⏸️ **Evaluation** (when available)
-- **RHEL Base**: Red Hat Enterprise Linux 10
-- **Migration Trigger**: UBI10 GA release + 6-month stability period
+- **RHEL Base**: Red Hat Enterprise Linux 11
+- **Migration Trigger**: UBI11 GA release + 6-month stability period
 - **Migration Plan**:
-  1. **Month 1-2**: Evaluate UBI10 compatibility with Kubernaut services
+  1. **Month 1-2**: Evaluate UBI11 compatibility with Kubernaut services
   2. **Month 3-4**: Pilot migration (1-2 non-critical services)
   3. **Month 5-6**: Gradual rollout (all services)
-  4. **Month 7+**: UBI10 becomes new standard
+  4. **Month 7+**: UBI11 becomes new standard
 
 #### **UBI8 (Legacy)**
 - **Status**: ❌ **Not Approved** for new services
-- **Rationale**: RHEL 8 maintenance support ends 2029 (shorter than UBI9)
+- **Rationale**: RHEL 8 maintenance support ends 2029 (shorter than UBI10)
 - **Exception**: Existing services may continue using UBI8 until migration
 
 ---
@@ -418,13 +418,13 @@ FROM registry.access.redhat.com/ubi9/ubi:latest
 
 ```dockerfile
 # ✅ CORRECT: Pin to Go 1.24
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.24 AS builder
 
 # ❌ WRONG: Use latest (unpredictable builds)
-FROM registry.access.redhat.com/ubi9/go-toolset:latest AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:latest AS builder
 
 # ❌ WRONG: Pin to patch version (too restrictive)
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24.1 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.24.1 AS builder
 ```
 
 **Rationale**:
@@ -437,10 +437,10 @@ FROM registry.access.redhat.com/ubi9/go-toolset:1.24.1 AS builder
 
 ```dockerfile
 # ✅ CORRECT: Use latest for security updates
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # ❌ WRONG: Pin to specific version (miss security updates)
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.3-1552
+FROM registry.access.redhat.com/ubi10/ubi-minimal:9.3-1552
 ```
 
 **Rationale**:
@@ -495,22 +495,22 @@ podman scan quay.io/jordigilh/gateway:v1.0.0
 
 **Example Mirroring**:
 ```bash
-# Mirror UBI9 images to internal registry
+# Mirror UBI10 images to internal registry
 skopeo copy \
-  docker://registry.access.redhat.com/ubi9/go-toolset:1.24 \
-  docker://internal-registry.example.com/ubi9/go-toolset:1.24
+  docker://registry.access.redhat.com/ubi10/go-toolset:1.24 \
+  docker://internal-registry.example.com/ubi10/go-toolset:1.24
 
 skopeo copy \
-  docker://registry.access.redhat.com/ubi9/ubi-minimal:latest \
-  docker://internal-registry.example.com/ubi9/ubi-minimal:latest
+  docker://registry.access.redhat.com/ubi10/ubi-minimal:latest \
+  docker://internal-registry.example.com/ubi10/ubi-minimal:latest
 ```
 
 **Dockerfile for Air-Gapped**:
 ```dockerfile
 # Use internal mirror
-FROM internal-registry.example.com/ubi9/go-toolset:1.24 AS builder
+FROM internal-registry.example.com/ubi10/go-toolset:1.24 AS builder
 # ...
-FROM internal-registry.example.com/ubi9/ubi-minimal:latest
+FROM internal-registry.example.com/ubi10/ubi-minimal:latest
 ```
 
 ---
@@ -520,13 +520,13 @@ FROM internal-registry.example.com/ubi9/ubi-minimal:latest
 ### **Dockerfile Template (Go Service)**
 
 ```dockerfile
-# Service Name - Multi-Architecture Dockerfile using Red Hat UBI9
+# Service Name - Multi-Architecture Dockerfile using Red Hat UBI10
 # Supports: linux/amd64, linux/arm64
 # Based on: ADR-027 (Multi-Architecture), ADR-028 (Registry Policy)
 
-# Build stage - Red Hat UBI9 Go 1.24 toolset
+# Build stage - Red Hat UBI10 Go 1.24 toolset
 # ADR-028: Pin to minor version (1.24) for reproducible builds
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.24 AS builder
 
 # Build arguments for multi-architecture support
 ARG GOOS=linux
@@ -562,9 +562,9 @@ RUN CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
 	-o service-binary \
 	./cmd/service
 
-# Runtime stage - Red Hat UBI9 minimal runtime image
+# Runtime stage - Red Hat UBI10 minimal runtime image
 # ADR-028: Use latest for automatic security updates
-FROM --platform=linux/${TARGETARCH} registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM --platform=linux/${TARGETARCH} registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # Install runtime dependencies
 RUN microdnf update -y && \
@@ -593,7 +593,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # Set entrypoint
 ENTRYPOINT ["/usr/local/bin/service"]
 
-# Red Hat UBI9 compatible metadata labels
+# Red Hat UBI10 compatible metadata labels
 LABEL name="kubernaut-service" \
 	vendor="Kubernaut" \
 	version="1.0.0" \
@@ -617,7 +617,7 @@ LABEL name="kubernaut-service" \
 3. ✅ **Consistency**: Standardized registry and versioning across all services
 4. ✅ **Supply Chain Security**: Reduced risk of supply chain attacks
 5. ✅ **Air-Gapped Support**: Clear mirroring strategy for disconnected environments
-6. ✅ **Future-Proofing**: Clear migration path to UBI10
+6. ✅ **Future-Proofing**: Clear migration path to UBI11
 
 ### **Negative**
 
@@ -642,12 +642,12 @@ LABEL name="kubernaut-service" \
 Before merging any Dockerfile:
 
 - [ ] **Registry**: Uses `registry.access.redhat.com` for base images
-- [ ] **Base Image**: Uses approved UBI9 image (go-toolset, ubi-minimal, python-312)
+- [ ] **Base Image**: Uses approved UBI10 image (go-toolset, ubi-minimal, python-312)
 - [ ] **Build Stage**: Pins to minor version (e.g., `go-toolset:1.24`)
 - [ ] **Runtime Stage**: Uses `latest` for security updates
 - [ ] **Security Scan**: Passes vulnerability scan (no CRITICAL/HIGH CVEs)
 - [ ] **Multi-Arch**: Supports `linux/amd64` and `linux/arm64`
-- [ ] **Labels**: Includes Red Hat UBI9 compatible metadata labels
+- [ ] **Labels**: Includes Red Hat UBI10 compatible metadata labels
 - [ ] **Comments**: References ADR-027 and ADR-028 in Dockerfile header
 
 ---
@@ -660,7 +660,7 @@ Before merging any Dockerfile:
 - [ ] Create migration priority list
 
 ### **Phase 2: Pilot** (Week 2-3)
-- [ ] Migrate 2-3 low-risk services to UBI9
+- [ ] Migrate 2-3 low-risk services to UBI10
 - [ ] Validate build times, image sizes, runtime performance
 - [ ] Document lessons learned
 
@@ -683,7 +683,7 @@ Before merging any Dockerfile:
 
 ### **Red Hat Resources**
 - [Red Hat Universal Base Images (UBI)](https://developers.redhat.com/products/rhel/ubi)
-- [UBI9 Container Images Catalog](https://catalog.redhat.com/software/containers/search?q=ubi9)
+- [UBI10 Container Images Catalog](https://catalog.redhat.com/software/containers/search?q=ubi10)
 - [Red Hat Container Security Guide](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/9/html/building_running_and_managing_containers/index)
 - [Red Hat Security Advisories (RHSA)](https://access.redhat.com/security/security-updates/)
 
@@ -696,7 +696,7 @@ Before merging any Dockerfile:
 
 **Decision Rationale**:
 
-Mandating `registry.access.redhat.com` and UBI9 base images provides:
+Mandating `registry.access.redhat.com` and UBI10 base images provides:
 1. **Enterprise Support**: Full Red Hat backing for production workloads
 2. **Security Compliance**: Regular RHSA updates and CVE tracking
 3. **OpenShift Optimization**: Native integration with Red Hat OpenShift

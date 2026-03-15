@@ -335,7 +335,7 @@ var _ = Describe("BR-EXEC-060: Kubernetes Executor Controller", func() {
 
             // Verify kubectl command in Job container
             container := job.Spec.Template.Spec.Containers[0]
-            Expect(container.Image).To(Equal("bitnami/kubectl:latest"))
+            Expect(container.Image).To(Equal("registry.k8s.io/kubectl:v1.32.0"))
             Expect(container.Command).To(ContainElements("kubectl", "delete", "pod", "webapp-789", "-n", "production"))
         })
 

@@ -119,7 +119,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		cfg := E2EImageConfig{
 			ServiceName:      "gateway",
 			ImageName:        "gateway", // No repo prefix, just service name
-			DockerfilePath:   "docker/gateway-ubi9.Dockerfile",
+			DockerfilePath:   "docker/gateway.Dockerfile",
 			BuildContextPath: "", // Empty = project root
 			EnableCoverage:   enableCoverage,
 		}
@@ -332,6 +332,22 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		return fmt.Errorf("DataStorage readiness check failed: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage Service ready for internal cluster access\n")
+
+	// DD-WORKFLOW-016: Seed action types via DS API (FK constraint for workflow catalog)
+	// Use a temporary seed SA because the gateway SA is created later in Phase 5.
+	seedSA := "gw-e2e-seed-sa"
+	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, seedSA, writer); err != nil {
+		return fmt.Errorf("failed to create seed SA for action type seeding: %w", err)
+	}
+	seedToken, err := GetServiceAccountToken(ctx, namespace, seedSA, kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to get seed SA token for action type seeding: %w", err)
+	}
+	if err := SeedActionTypesViaAPIWithURL(
+		fmt.Sprintf("http://localhost:%d", DataStorageE2EHostPort), seedToken, 30*time.Second, writer,
+	); err != nil {
+		return fmt.Errorf("failed to seed action types: %w", err)
+	}
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 5: Deploy Gateway (requires DataStorage)
@@ -823,7 +839,7 @@ func BuildGatewayImageWithCoverage(writer io.Writer) error {
 		return fmt.Errorf("project root not found")
 	}
 
-	dockerfilePath := filepath.Join(projectRoot, "docker", "gateway-ubi9.Dockerfile")
+	dockerfilePath := filepath.Join(projectRoot, "docker", "gateway.Dockerfile")
 	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
 		return fmt.Errorf("gateway Dockerfile not found at %s", dockerfilePath)
 	}
