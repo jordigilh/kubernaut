@@ -1,0 +1,198 @@
+[
+  {
+    "scene": 0,
+    "start": 0.0,
+    "end": 14.82,
+    "duration": 14.82,
+    "type": "content"
+  },
+  {
+    "scene": 1,
+    "start": 14.82,
+    "end": 15.54,
+    "duration": 0.72,
+    "type": "content"
+  },
+  {
+    "scene": 2,
+    "start": 15.54,
+    "end": 16.7,
+    "duration": 1.16,
+    "type": "content"
+  },
+  {
+    "scene": 3,
+    "start": 16.7,
+    "end": 17.88,
+    "duration": 1.18,
+    "type": "content"
+  },
+  {
+    "scene": 4,
+    "start": 17.88,
+    "end": 18.96,
+    "duration": 1.08,
+    "type": "content"
+  },
+  {
+    "scene": 5,
+    "start": 18.96,
+    "end": 27.5,
+    "duration": 8.54,
+    "type": "content"
+  },
+  {
+    "scene": 6,
+    "start": 27.5,
+    "end": 35.2,
+    "duration": 7.7,
+    "type": "content"
+  },
+  {
+    "scene": 7,
+    "start": 35.2,
+    "end": 43.86,
+    "duration": 8.66,
+    "type": "content"
+  },
+  {
+    "scene": 8,
+    "start": 43.86,
+    "end": 47.84,
+    "duration": 3.98,
+    "type": "content"
+  },
+  {
+    "scene": 9,
+    "start": 47.84,
+    "end": 117.52,
+    "duration": 69.68,
+    "type": "wait"
+  },
+  {
+    "scene": 10,
+    "start": 117.52,
+    "end": 127.94,
+    "duration": 10.42,
+    "type": "content"
+  },
+  {
+    "scene": 11,
+    "start": 127.94,
+    "end": 130.94,
+    "duration": 3.0,
+    "type": "content"
+  },
+  {
+    "scene": 12,
+    "start": 130.94,
+    "end": 140.34,
+    "duration": 9.4,
+    "type": "content"
+  },
+  {
+    "scene": 13,
+    "start": 140.34,
+    "end": 145.32,
+    "duration": 4.98,
+    "type": "content"
+  },
+  {
+    "scene": 14,
+    "start": 145.32,
+    "end": 184.08,
+    "duration": 38.76,
+    "type": "wait"
+  },
+  {
+    "scene": 15,
+    "start": 184.08,
+    "end": 193.14,
+    "duration": 9.06,
+    "type": "content"
+  },
+  {
+    "scene": 16,
+    "start": 193.14,
+    "end": 216.66,
+    "duration": 23.52,
+    "type": "content"
+  },
+  {
+    "scene": 17,
+    "start": 216.66,
+    "end": 232.34,
+    "duration": 15.68,
+    "type": "content"
+  },
+  {
+    "scene": 18,
+    "start": 232.34,
+    "end": 253.74,
+    "duration": 21.4,
+    "type": "content"
+  },
+  {
+    "scene": 19,
+    "start": 253.74,
+    "end": 310.02,
+    "duration": 56.28,
+    "type": "content"
+  },
+  {
+    "scene": 20,
+    "start": 310.02,
+    "end": 310.74,
+    "duration": 0.72,
+    "type": "content"
+  },
+  {
+    "scene": 21,
+    "start": 310.74,
+    "end": 311.92,
+    "duration": 1.18,
+    "type": "content"
+  },
+  {
+    "scene": 22,
+    "start": 311.92,
+    "end": 313.08,
+    "duration": 1.16,
+    "type": "content"
+  },
+  {
+    "scene": 23,
+    "start": 313.08,
+    "end": 323.46,
+    "duration": 10.38,
+    "type": "content"
+  },
+  {
+    "scene": 24,
+    "start": 323.46,
+    "end": 338.88,
+    "duration": 15.42,
+    "type": "content"
+  },
+  {
+    "scene": 25,
+    "start": 338.88,
+    "end": 574.56,
+    "duration": 235.68,
+    "type": "wait"
+  },
+  {
+    "scene": 26,
+    "start": 574.56,
+    "end": 588.18,
+    "duration": 13.62,
+    "type": "content"
+  },
+  {
+    "scene": 27,
+    "start": 588.18,
+    "end": 602.92,
+    "duration": 14.74,
+    "type": "content"
+  }
+]

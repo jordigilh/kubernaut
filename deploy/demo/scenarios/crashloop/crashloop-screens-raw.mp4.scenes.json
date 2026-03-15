@@ -1,0 +1,163 @@
+[
+  {
+    "scene": 0,
+    "start": 0.0,
+    "end": 14.5,
+    "duration": 14.5,
+    "type": "content"
+  },
+  {
+    "scene": 1,
+    "start": 14.5,
+    "end": 15.22,
+    "duration": 0.72,
+    "type": "content"
+  },
+  {
+    "scene": 2,
+    "start": 15.22,
+    "end": 16.32,
+    "duration": 1.1,
+    "type": "content"
+  },
+  {
+    "scene": 3,
+    "start": 16.32,
+    "end": 17.46,
+    "duration": 1.14,
+    "type": "content"
+  },
+  {
+    "scene": 4,
+    "start": 17.46,
+    "end": 18.5,
+    "duration": 1.04,
+    "type": "content"
+  },
+  {
+    "scene": 5,
+    "start": 18.5,
+    "end": 28.62,
+    "duration": 10.12,
+    "type": "content"
+  },
+  {
+    "scene": 6,
+    "start": 28.62,
+    "end": 32.7,
+    "duration": 4.08,
+    "type": "content"
+  },
+  {
+    "scene": 7,
+    "start": 32.7,
+    "end": 46.06,
+    "duration": 13.36,
+    "type": "content"
+  },
+  {
+    "scene": 8,
+    "start": 46.06,
+    "end": 49.22,
+    "duration": 3.16,
+    "type": "content"
+  },
+  {
+    "scene": 9,
+    "start": 49.22,
+    "end": 53.28,
+    "duration": 4.06,
+    "type": "content"
+  },
+  {
+    "scene": 10,
+    "start": 53.28,
+    "end": 58.3,
+    "duration": 5.02,
+    "type": "content"
+  },
+  {
+    "scene": 11,
+    "start": 58.3,
+    "end": 63.38,
+    "duration": 5.08,
+    "type": "content"
+  },
+  {
+    "scene": 12,
+    "start": 63.38,
+    "end": 86.5,
+    "duration": 23.12,
+    "type": "content"
+  },
+  {
+    "scene": 13,
+    "start": 86.5,
+    "end": 102.06,
+    "duration": 15.56,
+    "type": "content"
+  },
+  {
+    "scene": 14,
+    "start": 102.06,
+    "end": 113.38,
+    "duration": 11.32,
+    "type": "content"
+  },
+  {
+    "scene": 15,
+    "start": 113.38,
+    "end": 117.46,
+    "duration": 4.08,
+    "type": "content"
+  },
+  {
+    "scene": 16,
+    "start": 117.46,
+    "end": 118.16,
+    "duration": 0.7,
+    "type": "content"
+  },
+  {
+    "scene": 17,
+    "start": 118.16,
+    "end": 119.3,
+    "duration": 1.14,
+    "type": "content"
+  },
+  {
+    "scene": 18,
+    "start": 119.3,
+    "end": 120.44,
+    "duration": 1.14,
+    "type": "content"
+  },
+  {
+    "scene": 19,
+    "start": 120.44,
+    "end": 130.66,
+    "duration": 10.22,
+    "type": "content"
+  },
+  {
+    "scene": 20,
+    "start": 130.66,
+    "end": 146.1,
+    "duration": 15.44,
+    "type": "content"
+  },
+  {
+    "scene": 21,
+    "start": 146.1,
+    "end": 159.5,
+    "duration": 13.4,
+    "type": "content"
+  },
+  {
+    "scene": 22,
+    "start": 159.5,
+    "end": 173.88,
+    "duration": 14.38,
+    "type": "content"
+  }
+]

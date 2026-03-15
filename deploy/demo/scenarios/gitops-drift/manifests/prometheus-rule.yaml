@@ -1,0 +1,31 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-gitops-drift-rules
+  namespace: demo-gitops
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+  - name: gitops-drift-alerts
+    rules:
+    - alert: KubePodCrashLooping
+      expr: |
+        increase(
+          kube_pod_container_status_restarts_total{
+            namespace="demo-gitops",
+            container="nginx"
+          }[5m]
+        ) > 2
+      for: 30s
+      labels:
+        severity: critical
+        scenario: gitops-drift
+      annotations:
+        summary: >
+          Pod {{ $labels.pod }} is crash looping in demo-gitops.
+        description: >
+          Pod {{ $labels.pod }} in namespace demo-gitops has been restarting.
+          GitOps-managed environment (ArgoCD). Root cause likely a bad ConfigMap
+          commit that should be reverted.
+        runbook_url: "https://kubernaut.ai/runbooks/crashloop-gitops"

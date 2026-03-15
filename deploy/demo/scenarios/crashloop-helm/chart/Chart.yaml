@@ -1,0 +1,6 @@
+apiVersion: v2
+name: demo-crashloop-helm
+description: Demo workload for Kubernaut helm-managed CrashLoopBackOff scenario
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
