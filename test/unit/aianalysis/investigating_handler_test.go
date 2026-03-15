@@ -1087,4 +1087,100 @@ var _ = Describe("InvestigatingHandler", func() {
 			})
 		})
 	})
+
+	// ========================================
+	// ISSUE #388: ALERT NOT ACTIONABLE (OUTCOME D)
+	// When HAPI signals actionable=false, AIAnalysis should route to
+	// Completed/WorkflowNotNeeded/NotActionable (not Failed/NeedsHumanReview).
+	// ========================================
+	Describe("InvestigatingHandler.HandleNotActionable (#388)", func() {
+		// UT-AA-388-001: Not-actionable response routes to Completed/WorkflowNotNeeded/NotActionable
+		Context("UT-AA-388-001: when HAPI signals alert is not actionable", func() {
+			BeforeEach(func() {
+				rcaMap := mocks.BuildMockRCA(
+					"Orphaned PVCs from completed batch jobs — not impacting any workload",
+					"low",
+					[]string{"Completed batch job artifacts"},
+				)
+				mockClient.Response = &hgptclient.IncidentResponse{
+					IncidentID:        "mock-incident-388-001",
+					Analysis:          "These PVCs are leftover from completed batch jobs. They consume storage but do not affect any running workload. No remediation is needed.",
+					RootCauseAnalysis: rcaMap,
+					Confidence:        0.85,
+					Timestamp:         "2026-03-02T10:00:00Z",
+					Warnings:          []string{"Alert not actionable — no remediation warranted"},
+				}
+				mockClient.Response.NeedsHumanReview.SetTo(false)
+				mockClient.Response.IsActionable.SetTo(false)
+				mockClient.Err = nil
+			})
+
+			It("should complete as WorkflowNotNeeded/NotActionable", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
+					"#388: Not-actionable alert should complete (not fail)")
+				Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"),
+					"#388: Should use WorkflowNotNeeded reason")
+				Expect(analysis.Status.SubReason).To(Equal("NotActionable"),
+					"#388: SubReason must be NotActionable (distinct from ProblemResolved)")
+				Expect(analysis.Status.Actionability).To(Equal(aianalysis.ActionabilityNotActionable),
+					"#388: Actionability must be NotActionable for benign alerts")
+				Expect(analysis.Status.NeedsHumanReview).To(BeFalse(),
+					"#388: Benign alerts should not need human review")
+			})
+
+			It("should not create WorkflowExecution", func() {
+				analysis := createTestAnalysis()
+
+				result, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted))
+				Expect(result.RequeueAfter).To(BeZero(),
+					"#388: Terminal success — no requeue")
+			})
+		})
+
+		// UT-AA-388-002: Not-actionable with RCA still completes (doesn't escalate per #208)
+		Context("UT-AA-388-002: not-actionable overrides #208 substantive-RCA escalation", func() {
+			BeforeEach(func() {
+				rcaMap := mocks.BuildMockRCA(
+					"Multiple orphaned PVCs detected consuming 15GB of storage",
+					"low",
+					[]string{"Completed batch job artifacts", "No PVC cleanup policy configured"},
+				)
+				mockClient.Response = &hgptclient.IncidentResponse{
+					IncidentID:        "mock-incident-388-002",
+					Analysis:          "Found 12 orphaned PVCs. While they use storage, they don't impact running workloads.",
+					RootCauseAnalysis: rcaMap,
+					Confidence:        0.82,
+					Timestamp:         "2026-03-02T10:00:00Z",
+					Warnings:          []string{"Alert not actionable — no remediation warranted"},
+				}
+				mockClient.Response.NeedsHumanReview.SetTo(false)
+				mockClient.Response.IsActionable.SetTo(false)
+				mockClient.Err = nil
+			})
+
+			It("should complete despite substantive RCA", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
+					"#388: Not-actionable signal should override #208 substantive-RCA check")
+				Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"))
+				Expect(analysis.Status.SubReason).To(Equal("NotActionable"))
+				Expect(analysis.Status.Actionability).To(Equal(aianalysis.ActionabilityNotActionable),
+					"#388: Actionability must be NotActionable even with substantive RCA")
+				Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil(),
+					"RCA should be preserved for audit trail")
+			})
+		})
+	})
 })

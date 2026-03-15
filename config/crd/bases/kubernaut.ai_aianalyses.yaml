@@ -371,6 +371,16 @@ spec:
           status:
             description: AIAnalysisStatus defines the observed state of AIAnalysis.
             properties:
+              actionability:
+                description: |-
+                  #388: LLM's assessment of whether the alert warrants action.
+                  Empty when not yet assessed (pre-investigation or error paths).
+                  "Actionable" when the LLM determines the alert warrants action (default for all processed alerts).
+                  "NotActionable" when the LLM determines the alert is benign (e.g., orphaned PVCs).
+                enum:
+                - Actionable
+                - NotActionable
+                type: string
               alternativeWorkflows:
                 description: |-
                   ========================================
@@ -936,6 +946,7 @@ spec:
                 - PermanentError
                 - InvestigationInconclusive
                 - ProblemResolved
+                - NotActionable
                 - MaxRetriesExceeded
                 - SessionRegenerationExceeded
                 type: string

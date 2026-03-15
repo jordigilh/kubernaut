@@ -34,6 +34,16 @@ func GetOptBoolValue(opt client.OptBool) bool {
 	return false
 }
 
+// GetOptNilBoolValue returns a *bool from OptNilBool:
+// nil if not set or null, pointer to value otherwise.
+func GetOptNilBoolValue(opt client.OptNilBool) *bool {
+	if opt.Set && !opt.Null {
+		v := opt.Value
+		return &v
+	}
+	return nil
+}
+
 // GetOptNilStringValue returns the string value from OptNilString, or empty string if not set
 func GetOptNilStringValue(opt client.OptNilString) string {
 	if opt.Set && !opt.Null {

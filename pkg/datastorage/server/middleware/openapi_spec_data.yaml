@@ -3147,7 +3147,7 @@ components:
           $ref: '#/components/schemas/DetectedLabels'
         status:
           type: string
-          enum: [active, disabled, deprecated, archived]
+          enum: [active, disabled, deprecated, archived, superseded]
           description: "Workflow lifecycle status"
         disabledAt:
           type: string

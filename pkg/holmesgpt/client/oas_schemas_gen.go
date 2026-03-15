@@ -1240,6 +1240,10 @@ type IncidentResponse struct {
 	// parsing warnings. Values: workflow_not_found, image_mismatch, parameter_validation_failed,
 	// no_matching_workflows, low_confidence, llm_parsing_error.
 	HumanReviewReason OptNilHumanReviewReason `json:"human_review_reason"`
+	// LLM's assessment of whether the alert warrants action. False when the alert is benign and no
+	// remediation is needed. None when the LLM did not explicitly assess actionability. Maps to
+	// AIAnalysis.Status.IsActionable.
+	IsActionable OptNilBool `json:"is_actionable"`
 	// Non-fatal warnings (e.g., OwnerChain validation issues, low confidence).
 	Warnings []string `json:"warnings"`
 	// Other workflows considered but not selected. For operator context and audit trail only - NOT for
@@ -1292,6 +1296,11 @@ func (s *IncidentResponse) GetNeedsHumanReview() OptBool {
 // GetHumanReviewReason returns the value of HumanReviewReason.
 func (s *IncidentResponse) GetHumanReviewReason() OptNilHumanReviewReason {
 	return s.HumanReviewReason
+}
+
+// GetIsActionable returns the value of IsActionable.
+func (s *IncidentResponse) GetIsActionable() OptNilBool {
+	return s.IsActionable
 }
 
 // GetWarnings returns the value of Warnings.
@@ -1352,6 +1361,11 @@ func (s *IncidentResponse) SetNeedsHumanReview(val OptBool) {
 // SetHumanReviewReason sets the value of HumanReviewReason.
 func (s *IncidentResponse) SetHumanReviewReason(val OptNilHumanReviewReason) {
 	s.HumanReviewReason = val
+}
+
+// SetIsActionable sets the value of IsActionable.
+func (s *IncidentResponse) SetIsActionable(val OptNilBool) {
+	s.IsActionable = val
 }
 
 // SetWarnings sets the value of Warnings.
