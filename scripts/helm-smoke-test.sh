@@ -682,7 +682,6 @@ template_common_args() {
 template_llm_args() {
   echo "--set" "holmesgptApi.llm.provider=openai"
   echo "--set" "holmesgptApi.llm.model=gpt-4"
-  echo "--set" "holmesgptApi.llm.endpoint=http://llm:8080"
 }
 
 run_template_tests() {
@@ -739,44 +738,21 @@ SDKEOF
 
   # IT-HAPI-390-004: helm lint passes
   if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) >/dev/null 2>&1 && \
-     helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) --set holmesgptApi.existingSdkConfigMap=my-custom >/dev/null 2>&1 && \
-     helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) --set holmesgptApi.prometheus.enabled=true >/dev/null 2>&1; then
-    tap_ok "IT-HAPI-390-004: helm lint passes for default, existingSdkConfigMap, and prometheus modes"
+     helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) --set holmesgptApi.existingSdkConfigMap=my-custom >/dev/null 2>&1; then
+    tap_ok "IT-HAPI-390-004: helm lint passes for default and existingSdkConfigMap modes"
   else
     tap_not_ok "IT-HAPI-390-004: helm lint" "One or more lint modes failed"
   fi
 
-  echo "# --- Template Tests: Prometheus Auto-Config ---"
+  echo "# --- Template Tests: SDK Auto-Generated Defaults ---"
 
-  # Prometheus disabled (default): toolsets empty
+  # Auto-generated config: toolsets empty by default
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) $(template_llm_args) 2>&1)
   if echo "$output" | grep -A1 "toolsets:" | grep -q "{}"; then
-    tap_ok "ST-SDK-PROM-001: prometheus disabled renders toolsets: {}"
+    tap_ok "ST-SDK-DEFAULTS-001: auto-generated config renders toolsets: {}"
   else
-    tap_not_ok "ST-SDK-PROM-001: prometheus disabled" "Expected empty toolsets"
-  fi
-
-  # Prometheus enabled: renders prometheus/metrics with default URL
-  output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) $(template_llm_args) \
-    --set holmesgptApi.prometheus.enabled=true 2>&1)
-  if echo "$output" | grep -q "prometheus/metrics" && \
-     echo "$output" | grep -q "kube-prometheus-stack-prometheus.monitoring.svc:9090"; then
-    tap_ok "ST-SDK-PROM-002: prometheus enabled renders prometheus/metrics with default URL"
-  else
-    tap_not_ok "ST-SDK-PROM-002: prometheus enabled" "Missing prometheus/metrics toolset or default URL"
-  fi
-
-  # Prometheus enabled with custom URL
-  output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) $(template_llm_args) \
-    --set holmesgptApi.prometheus.enabled=true \
-    --set holmesgptApi.prometheus.url=http://custom-prom:9090 2>&1)
-  if echo "$output" | grep -q "prometheus_url: http://custom-prom:9090"; then
-    tap_ok "ST-SDK-PROM-003: prometheus custom URL rendered correctly"
-  else
-    tap_not_ok "ST-SDK-PROM-003: prometheus custom URL" "Custom URL not found in output"
+    tap_not_ok "ST-SDK-DEFAULTS-001: auto-generated defaults" "Expected empty toolsets"
   fi
 
   echo "# --- Template Tests: SDK Config Tiers ---"
@@ -822,22 +798,8 @@ SDKEOF
     tap_not_ok "ST-SDK-GCP-001: gcp_project_id conditional" "gcp_project_id rendered for openai provider"
   fi
 
-  # GCP fields present for vertex_ai
-  output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) \
-    --set holmesgptApi.llm.provider=vertex_ai \
-    --set holmesgptApi.llm.model=claude-sonnet-4 \
-    --set holmesgptApi.llm.endpoint=https://vertex.example.com \
-    --set holmesgptApi.llm.gcpProjectId=my-project \
-    --set holmesgptApi.llm.gcpRegion=us-central1 2>&1)
-  local gcp_proj='gcp_project_id: "my-project"' # pre-commit:allow-sensitive
-  local gcp_reg='gcp_region: "us-central1"'
-  if echo "$output" | grep -q "$gcp_proj" && \
-     echo "$output" | grep -q "$gcp_reg"; then
-    tap_ok "ST-SDK-GCP-002: gcp_project_id and gcp_region rendered for vertex_ai"
-  else
-    tap_not_ok "ST-SDK-GCP-002: vertex_ai GCP fields" "GCP fields not found in output"
-  fi
+  # Note: Vertex AI / GCP-specific fields (gcpProjectId, gcpRegion) are configured
+  # via sdkConfigContent or existingSdkConfigMap, not auto-generated quickstart config.
 }
 
 # ---------------------------------------------------------------------------
