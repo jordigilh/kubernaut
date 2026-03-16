@@ -567,7 +567,7 @@ run_uninst_001() {
   # before Helm deletes the release resources, preventing failurePolicy=Fail
   # rejections when the authwebhook pod terminates before demo-content CRs.
   local uninstall_output
-  uninstall_output=$(helm uninstall kubernaut -n "$NAMESPACE" 2>&1)
+  uninstall_output=$(helm uninstall kubernaut -n "$NAMESPACE" --timeout 3m 2>&1)
   if [[ $? -eq 0 ]]; then
     tap_ok "ST-CHART-UNINST-001a: helm uninstall succeeds"
   else
@@ -607,6 +607,25 @@ run_uninst_002() {
     tap_ok "ST-CHART-UNINST-002: Full cleanup complete"
   else
     tap_not_ok "ST-CHART-UNINST-002: Full cleanup complete" "CRDs remaining: ${crd_count}, pass: ${pass}"
+  fi
+}
+
+preload_hook_image() {
+  local desc="ST-CHART-PRELOAD: Pre-load Helm hook image into Kind cluster"
+  local hook_image
+  hook_image=$(grep -A1 'tlsCerts:' "$CHART_PATH/values.yaml" | grep 'image:' | awk '{print $2}' | head -1)
+
+  if [[ -z "$hook_image" ]]; then
+    tap_not_ok "$desc" "Could not determine hook image from chart values"
+    return 0
+  fi
+
+  echo "# Pre-loading hook image: ${hook_image}"
+  if docker pull "$hook_image" >/dev/null 2>&1 && \
+     kind load docker-image "$hook_image" --name "$KIND_CLUSTER_NAME" >/dev/null 2>&1; then
+    tap_ok "$desc"
+  else
+    tap_not_ok "$desc" "Failed to pre-load ${hook_image} (Docker Hub rate limit?)"
   fi
 }
 
@@ -827,6 +846,10 @@ main() {
 
   # Always start clean
   full_cleanup
+
+  # Pre-load the Helm hook image (bitnami/kubectl) into Kind so that
+  # pre-delete hooks don't hang on Docker Hub rate limits during uninstall.
+  preload_hook_image
 
   flow_a_production
 
