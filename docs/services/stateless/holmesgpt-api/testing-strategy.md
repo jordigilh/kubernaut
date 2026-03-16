@@ -50,8 +50,7 @@ def client(mock_llm_server):
     os.environ["LLM_ENDPOINT"] = mock_llm_server.url
     os.environ["LLM_MODEL"] = "mock-model"
     os.environ["OPENAI_API_KEY"] = "sk-mock-test-key-not-used"
-    from src.main import create_app
-    app = create_app()
+    from src.main import app
     return TestClient(app)
 ```
 
@@ -62,40 +61,50 @@ def client(mock_llm_server):
 
 ---
 
-## 🔧 **Mock LLM for Testing (BR-HAPI-212)**
+## 🔧 **Mock Mode Configuration (BR-HAPI-212)**
 
-### **Architecture: HAPI is LLM-Agnostic**
+### **Environment Variable - CRITICAL**
 
-HAPI does not distinguish between real and mock LLMs. Mock behavior is achieved by pointing `LLM_ENDPOINT` at a **standalone Mock LLM service** that returns deterministic responses.
+**Correct Variable Name:** `MOCK_LLM_MODE` (NOT `MOCK_LLM_ENABLED`)
 
-### **Configuration**
+**Code Reference:** `src/mock_responses.py:42-51`
+```python
+def is_mock_mode_enabled() -> bool:
+    return os.getenv("MOCK_LLM_MODE", "").lower() == "true"
+```
+
+### **Common Configuration Mistake**
 
 ```yaml
-# ✅ CORRECT - Point HAPI at standalone Mock LLM service
+# ❌ WRONG - This will NOT activate mock mode
 env:
-- name: LLM_ENDPOINT
-  value: "http://mock-llm:8080"   # Standalone Mock LLM service
-- name: LLM_MODEL
-  value: "mock-model"
-- name: DATASTORAGE_URL
-  value: http://datastorage:8080
-# Result: HAPI calls Mock LLM → deterministic responses → 200 OK
+- name: MOCK_LLM_ENABLED      # Wrong variable name
+  value: "true"
+# Result: Mock mode NOT activated → attempts real LLM → 500 error
+
+# ✅ CORRECT - This activates mock mode
+env:
+- name: MOCK_LLM_MODE         # Checked in src/mock_responses.py
+  value: "true"
+# Result: Mock mode activated → deterministic responses → 200 OK
 ```
 
-### **Troubleshooting Mock LLM**
+### **Troubleshooting Mock Mode**
 
-**Symptom:** Getting "LLM_MODEL environment variable required" or 500 errors in tests
+**Symptom:** Getting "LLM_MODEL environment variable required" error in tests
 
-**Check 1:** Verify LLM_ENDPOINT points to Mock LLM service
+**Check 1:** Verify environment variable name
 ```bash
 # In your test infrastructure
-echo $LLM_ENDPOINT  # Should show Mock LLM service URL
+echo $MOCK_LLM_MODE  # Should show: true
+echo $MOCK_LLM_ENABLED  # Wrong variable - delete this
 ```
 
-**Check 2:** Verify Mock LLM service is reachable
+**Check 2:** Verify mock mode is detected
 ```bash
-# Check Mock LLM health (if it exposes /health)
-curl http://mock-llm:8080/health
+# Check HAPI logs
+kubectl logs deployment/holmesgpt-api | grep "mock_mode"
+# Should show: "event": "mock_mode_active"
 ```
 
 **Check 3:** Test both endpoints
@@ -113,17 +122,23 @@ curl -X POST http://holmesgpt-api:8080/api/v1/recovery/analyze \
 # Both should return 200 OK with mock responses
 ```
 
-### **When Using Standalone Mock LLM**
+### **When Mock Mode is Active**
 
 **Behavior:**
-- ✅ HAPI calls Mock LLM service via LLM_ENDPOINT
+- ✅ Early return in both `incident.py` and `recovery.py`
+- ✅ No LLM configuration validation performed
+- ✅ No HolmesGPT SDK initialization needed
 - ✅ Deterministic responses based on signal_type
 - ✅ Fast response times (< 100ms)
-- ✅ No real LLM API keys needed
 
-**What's Required:**
-- ✅ LLM_ENDPOINT (Mock LLM service URL)
-- ✅ LLM_MODEL (e.g., "mock-model")
+**What's NOT Required:**
+- ❌ LLM_MODEL
+- ❌ LLM_PROVIDER
+- ❌ LLM_ENDPOINT
+- ❌ LLM_API_KEY
+- ❌ Real LLM service
+
+**What's STILL Required:**
 - ✅ DATASTORAGE_URL (for workflow catalog search)
 
 ---
@@ -790,7 +805,7 @@ class TestKubernetesAPIIntegration:
 import pytest
 import httpx
 from fastapi.testclient import TestClient
-from src.main import create_app
+from src.main import app
 
 class TestCrossServiceIntegration:
     """Integration tests for cross-service calls."""
@@ -798,7 +813,6 @@ class TestCrossServiceIntegration:
     @pytest.fixture
     def client(self):
         """Create test client."""
-        app = create_app()
         return TestClient(app)
 
     def test_ai_analysis_controller_calls_holmesgpt(self, client):
@@ -901,7 +915,7 @@ class TestCrossServiceIntegration:
 ```python
 import pytest
 from kubernetes import client, config
-from src.main import create_app
+from src.main import app
 from fastapi.testclient import TestClient
 
 class TestCompleteInvestigationFlow:
@@ -917,7 +931,6 @@ class TestCompleteInvestigationFlow:
 
     def test_end_to_end_investigation(self, setup_test_environment):
         """Test complete investigation flow end-to-end."""
-        app = create_app()
         client_app = TestClient(app)
 
         # Step 1: Receive investigation request

@@ -373,12 +373,12 @@ LOG_LEVEL=info
 #### **Testing Environment Variables (BR-HAPI-212)**
 
 ```bash
-# Mock LLM for Integration Testing
-# HAPI is LLM-agnostic: point LLM_ENDPOINT at standalone Mock LLM service
-LLM_ENDPOINT=http://mock-llm:8080   # Standalone Mock LLM service
-LLM_MODEL=mock-model
+# Mock Mode for Integration Testing
+# IMPORTANT: Variable name is MOCK_LLM_MODE (NOT MOCK_LLM_ENABLED)
+MOCK_LLM_MODE=true               # Enable deterministic mock responses
 
-# When using standalone Mock LLM:
+# When MOCK_LLM_MODE=true:
+# - NO LLM configuration required (LLM_PROVIDER, LLM_MODEL, etc.)
 # - Returns deterministic responses based on signal_type
 # - No real LLM API calls made
 # - No API keys needed
@@ -388,13 +388,16 @@ LLM_MODEL=mock-model
 DATASTORAGE_URL=http://datastorage:8080
 ```
 
-#### **Mock LLM Behavior**
+#### **Mock Mode Behavior**
 
-**When `LLM_ENDPOINT` points to standalone Mock LLM service:**
+**Code Reference:** `src/mock_responses.py:is_mock_mode_enabled()`
+
+**When `MOCK_LLM_MODE=true`:**
 - ✅ `/api/v1/incident/analyze` → deterministic workflow selection
 - ✅ `/api/v1/recovery/analyze` → deterministic recovery analysis
 - ✅ `/api/v1/postexec/analyze` → deterministic effectiveness assessment
 - ✅ Responses vary by signal_type (OOMKilled, CrashLoopBackOff, etc.)
+- ✅ No LLM provider configuration needed
 - ✅ Suitable for CI/CD pipelines
 
 **Use Cases:**
@@ -406,10 +409,8 @@ DATASTORAGE_URL=http://datastorage:8080
 **Example Test Configuration:**
 ```yaml
 env:
-- name: LLM_ENDPOINT
-  value: http://mock-llm:8080
-- name: LLM_MODEL
-  value: mock-model
+- name: MOCK_LLM_MODE         # ← Correct variable name
+  value: "true"
 - name: DATASTORAGE_URL
   value: http://datastorage:8080
 - name: LOG_LEVEL

@@ -43,8 +43,7 @@ We will establish a formal API contract between AIAnalysis and HolmesGPT-API wit
 # Start the server and export the spec
 cd holmesgpt-api
 python3 -c "
-from src.main import create_app
-app = create_app()
+from src.main import app
 import json
 with open('api/openapi.json', 'w') as f:
     json.dump(app.openapi(), f, indent=2)

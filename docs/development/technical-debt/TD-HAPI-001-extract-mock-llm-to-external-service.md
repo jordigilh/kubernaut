@@ -21,16 +21,11 @@ This document is retained for historical context to show the original design thi
 
 # TD-HAPI-001: Extract Mock LLM Logic to External Service
 
-**Created**: December 30, 2025  
+**Created**: December 30, 2025
 **Priority**: ~~High~~ ✅ COMPLETE (implemented differently)
 **Effort**: ~~2-3 days~~ Completed via DD-TEST-011 v2.0
-**Owner**: HAPI Team  
-**Status**: ~~Approved for next branch~~ **COMPLETE** (Python implementation)  
-
-> **STATUS: RESOLVED** (Issue #393, March 2026)
-> Mock LLM has been extracted to a standalone service. `mock_responses.py` deleted.
-> `MOCK_LLM_MODE` env var removed. HAPI is now fully LLM-agnostic.
-> Authentication is always enforced via dependency injection.
+**Owner**: HAPI Team
+**Status**: ~~Approved for next branch~~ **COMPLETE** (Python implementation)
 
 ---
 
@@ -65,16 +60,16 @@ This document is retained for historical context to show the original design thi
    - Single Responsibility Principle violated
    - Harder to maintain and reason about
 
-2. **HAPI was Mock-Aware**
+2. **HAPI is Mock-Aware**
    ```python
-   # src/mock_responses.py (was deleted)
+   # src/mock_responses.py
    if signal_type.upper() == "MOCK_NO_WORKFLOW_FOUND":
        return mock_response(...)  # HAPI knows about mocking
    ```
 
-3. **Environment Flag Coupling (was removed)**
+3. **Environment Flag Coupling**
    ```python
-   # HAPI used to check MOCK_LLM_MODE flag
+   # HAPI checks MOCK_LLM_MODE flag
    if os.getenv("MOCK_LLM_MODE") == "true":
        return generate_mock_response(...)
    ```
@@ -185,7 +180,7 @@ const (
     // Base port for mock LLM server
     // Each service gets its own mock LLM instance to avoid collisions
     MockLLMBasePort = 18760
-    
+
     // Port offsets for different services
     MockLLMPortHAPI          = MockLLMBasePort + 0  // 18760
     MockLLMPortAIAnalysis    = MockLLMBasePort + 1  // 18761
@@ -206,23 +201,23 @@ func StartMockLLMServer(ctx context.Context, cfg MockLLMServerConfig) (*MockLLMS
         port:        cfg.Port,
         scenarioDir: cfg.ScenarioDir,
     }
-    
+
     // Verify port is available
     if err := server.checkPortAvailable(); err != nil {
         return nil, fmt.Errorf("port %d not available: %w", cfg.Port, err)
     }
-    
+
     // Start HTTP server
     if err := server.start(ctx); err != nil {
         return nil, fmt.Errorf("failed to start mock LLM server: %w", err)
     }
-    
+
     // Wait for server to be ready
     if err := server.waitForReady(30 * time.Second); err != nil {
         server.Stop()
         return nil, fmt.Errorf("mock LLM server not ready: %w", err)
     }
-    
+
     return server, nil
 }
 
@@ -271,17 +266,17 @@ func setupHAPITestInfrastructure(ctx context.Context) (*HAPITestInfra, error) {
     if err != nil {
         return nil, fmt.Errorf("failed to start HAPI mock LLM: %w", err)
     }
-    
+
     // Configure HAPI to use mock LLM
     hapiConfig := map[string]string{
         "LLM_ENDPOINT": mockLLM.URL(),
         "LLM_MODEL":    "mock-gpt-4",
         "OPENAI_API_KEY": "mock-key-for-testing",
     }
-    
+
     // Deploy HAPI to Kind cluster
     // ...
-    
+
     return &HAPITestInfra{
         MockLLM: mockLLM,
         // ...
@@ -299,7 +294,7 @@ func setupAIAnalysisTestInfrastructure(ctx context.Context) (*AIAnalysisTestInfr
     if err != nil {
         return nil, fmt.Errorf("failed to start AIAnalysis mock LLM: %w", err)
     }
-    
+
     // Configure AIAnalysis to use its own mock LLM instance
     // ...
 }
@@ -309,10 +304,10 @@ func setupAIAnalysisTestInfrastructure(ctx context.Context) (*AIAnalysisTestInfr
 
 **Files to Modify**:
 
-1. **DELETED**: `holmesgpt-api/src/mock_responses.py`
-   - Mock response generation logic was removed
-   - Edge case signal type handling was removed
-   - MOCK_* constants were removed
+1. **DELETE**: `holmesgpt-api/src/mock_responses.py`
+   - Remove all mock response generation logic
+   - Remove edge case signal type handling
+   - Remove MOCK_* constants
 
 2. **MODIFY**: `holmesgpt-api/src/extensions/incident/endpoint.py`
    ```python
@@ -321,7 +316,7 @@ func setupAIAnalysisTestInfrastructure(ctx context.Context) (*AIAnalysisTestInfr
        response = generate_mock_incident_response(request)
    else:
        response = self.llm_client.analyze(prompt)
-   
+
    # AFTER (mock-agnostic):
    response = self.llm_client.analyze(prompt)  # Always use SDK
    ```
@@ -341,7 +336,7 @@ func setupAIAnalysisTestInfrastructure(ctx context.Context) (*AIAnalysisTestInfr
        with MockLLMServer() as server:
            os.environ["LLM_ENDPOINT"] = server.url
            yield server
-   
+
    # AFTER: Use Go-managed mock server
    @pytest.fixture(scope="session")
    def mock_llm_server_e2e():
@@ -362,29 +357,29 @@ func setupAIAnalysisTestInfrastructure(ctx context.Context) (*AIAnalysisTestInfr
 
 var _ = BeforeSuite(func() {
     ctx := context.Background()
-    
+
     // 1. Start mock LLM server (NEW!)
-    mockLLMServer, err = infrastructure.StartMockLLMServer(ctx, 
+    mockLLMServer, err = infrastructure.StartMockLLMServer(ctx,
         infrastructure.MockLLMServerConfig{
             ServiceName: "hapi",
             Port:        infrastructure.MockLLMPortHAPI,
             ScenarioDir: "test/mock-llm-server/scenarios",
         })
     Expect(err).ToNot(HaveOccurred())
-    
+
     // 2. Create Kind cluster with HAPI
-    hapiInfra, err = infrastructure.SetupHAPIInfrastructure(ctx, 
+    hapiInfra, err = infrastructure.SetupHAPIInfrastructure(ctx,
         infrastructure.HAPIConfig{
             LLMEndpoint: mockLLMServer.URL(),  // Point to mock
             // ...
         })
     Expect(err).ToNot(HaveOccurred())
-    
+
     // 3. Set environment for Python tests
     os.Setenv("HAPI_BASE_URL", hapiInfra.ServiceURL)
     os.Setenv("LLM_ENDPOINT", mockLLMServer.URL())
     os.Setenv("DATA_STORAGE_URL", hapiInfra.DataStorageURL)
-    
+
     // 4. Run Python pytest suite
     // ...
 })
@@ -440,7 +435,7 @@ func (s *NoWorkflowScenario) GenerateResponse(messages []Message) (*ChatCompleti
             }`),
         },
     }
-    
+
     return &ChatCompletionResponse{
         ID: "mock-" + generateID(),
         Choices: []Choice{
@@ -493,8 +488,8 @@ func checkPortAvailable(port int) error {
 
 - [ ] Mock LLM server implemented in Go (`test/mock-llm-server/`)
 - [ ] Port allocation strategy implemented with collision prevention
-- [x] HAPI mock logic removed (`mock_responses.py` was deleted)
-- [x] HAPI is mock-agnostic (`MOCK_LLM_MODE` checks were removed)
+- [ ] HAPI mock logic removed (`mock_responses.py` deleted)
+- [ ] HAPI is mock-agnostic (no `MOCK_LLM_MODE` checks)
 - [ ] Go test infrastructure manages mock LLM lifecycle
 - [ ] All 603 HAPI tests still passing
 - [ ] AIAnalysis integration tests use same mock server (port 18761)
@@ -564,8 +559,8 @@ func checkPortAvailable(port int) error {
 - Implement MOCK_NOT_REPRODUCIBLE
 
 ### Sprint 3 (Day 4): HAPI Refactoring
-- `mock_responses.py` was removed
-- `MOCK_LLM_MODE` checks were removed
+- Remove `mock_responses.py`
+- Remove `MOCK_LLM_MODE` checks
 - Update test fixtures
 - Verify all tests passing
 
@@ -579,7 +574,7 @@ func checkPortAvailable(port int) error {
 ## 🔒 RISKS & MITIGATION
 
 ### Risk 1: Port Collisions
-**Mitigation**: 
+**Mitigation**:
 - Reserved port range (18760-18799)
 - Pre-flight port availability checks
 - Clear port allocation table
@@ -608,10 +603,10 @@ func checkPortAvailable(port int) error {
 
 ## ✅ SIGN-OFF
 
-**Technical Debt Owner**: HAPI Team  
-**Approved By**: Technical Lead  
-**Implementation Branch**: `feature/mock-llm-extraction` (next after current branch merge)  
-**Target Release**: V1.0  
+**Technical Debt Owner**: HAPI Team
+**Approved By**: Technical Lead
+**Implementation Branch**: `feature/mock-llm-extraction` (next after current branch merge)
+**Target Release**: V1.0
 
 ---
 
