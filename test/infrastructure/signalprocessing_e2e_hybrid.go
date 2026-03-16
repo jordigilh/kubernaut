@@ -649,14 +649,17 @@ data:
     # ========== Custom Labels (BR-SP-102) ==========
     default labels := {}
 
-    labels := result if {
+    labels := {"team": [team], "tier": [tier]} if {
         team := input.namespace.labels["kubernaut.ai/team"]
         team != ""
-        tier := object.get(input.namespace.labels, "kubernaut.ai/tier", "")
-        result := object.union(
-            {"team": [team]},
-            {"tier": [tier]} if { tier != "" } else {}
-        )
+        tier := input.namespace.labels["kubernaut.ai/tier"]
+        tier != ""
+    }
+
+    labels := {"team": [team]} if {
+        team := input.namespace.labels["kubernaut.ai/team"]
+        team != ""
+        not input.namespace.labels["kubernaut.ai/tier"]
     }
 ---
 apiVersion: v1
