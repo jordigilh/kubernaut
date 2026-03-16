@@ -256,8 +256,37 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 	})
 
 	// ========================================
+	// E2E-AW-418-001: Finalizer present after RW CREATE
+	// BR-WORKFLOW-006, Issue #418
+	// The finalizer controller adds the catalog-cleanup finalizer so that
+	// DS disable + AT count refresh are guaranteed before the RW is deleted.
+	// ========================================
+	It("E2E-AW-418-001: RW has catalog-cleanup finalizer after creation", func() {
+		By("Verifying the finalizer is present on the RW created by E2E-AT-300-006")
+		Eventually(func() []string {
+			rw := &rwv1alpha1.RemediationWorkflow{}
+			if err := k8sClient.Get(testCtx, client.ObjectKey{
+				Namespace: testNamespace, Name: "e2e-rw-for-at",
+			}, rw); err != nil {
+				return nil
+			}
+			return rw.Finalizers
+		}, 30*time.Second, 1*time.Second).Should(
+			ContainElement("remediationworkflow.kubernaut.ai/catalog-cleanup"),
+			"Finalizer controller should add the catalog-cleanup finalizer to the RW")
+
+		GinkgoWriter.Println("✅ catalog-cleanup finalizer present on RW")
+	})
+
+	// ========================================
 	// E2E-AT-300-003: DELETE denied with dependent workflows, allowed after removal
 	// BR-WORKFLOW-007.3
+	//
+	// Also covers E2E-AW-418-002 and E2E-AW-418-003 (Issue #418):
+	//   - E2E-AW-418-002: AT DELETE succeeds after RW removal (DS consistent)
+	//   - E2E-AW-418-003: activeWorkflowCount=0 after RW deleted via finalizer
+	// With the finalizer controller, "wait for RW deletion" implicitly guarantees
+	// that DS disable + AT count refresh completed before the RW is removed.
 	// ========================================
 	It("E2E-AT-300-003: DELETE denied with dependent workflows, allowed after removal", func() {
 		By("Attempting to delete ActionType (should be denied)")

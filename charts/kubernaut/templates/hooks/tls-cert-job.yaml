@@ -270,7 +270,6 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "kubernaut.fullname" . }}-hook-sa
     namespace: {{ .Release.Namespace }}
-{{- if eq .Values.tls.mode "hook" }}
 ---
 # Job 3: Remove admission webhooks before uninstall (pre-delete).
 # During helm uninstall, Helm may terminate the authwebhook pod before
@@ -278,6 +277,7 @@ subjects:
 # demoContent). The validating webhooks use failurePolicy=Fail, so
 # DELETE requests are rejected once the webhook endpoint is gone.
 # Removing the webhook configs first ensures clean teardown.
+# NOTE: Unconditional — webhooks exist regardless of tls.mode.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -330,6 +330,7 @@ spec:
               kubectl delete validatingwebhookconfiguration authwebhook-validating --ignore-not-found
               kubectl delete mutatingwebhookconfiguration authwebhook-mutating --ignore-not-found
               echo "==> Webhook cleanup complete"
+{{- if eq .Values.tls.mode "hook" }}
 ---
 # Job 4: Clean up hook-created resources on uninstall (post-delete).
 # Removes authwebhook-tls Secret that is created by kubectl (not tracked

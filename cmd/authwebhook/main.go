@@ -219,6 +219,20 @@ func main() {
 	webhookServer.Register("/validate-remediationworkflow", &webhook.Admission{Handler: rwHandler})
 	setupLog.Info("Registered RemediationWorkflow webhook handler with DS client and audit store")
 
+	// Issue #418: Finalizer-based reconciler guarantees DS catalog consistency
+	// on RW deletion (replaces fire-and-forget goroutines for the DELETE path).
+	rwReconciler := &authwebhook.RemediationWorkflowReconciler{
+		Client:    mgr.GetClient(),
+		Log:       ctrl.Log.WithName("rw-reconciler"),
+		DSClient:  rwDSClient,
+		ATCounter: rwDSClient,
+	}
+	if err := rwReconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create RemediationWorkflow reconciler")
+		os.Exit(1)
+	}
+	setupLog.Info("Registered RemediationWorkflow finalizer reconciler")
+
 	// Register ActionType handler (ADR-059: CRD-based action type lifecycle)
 	// Reuses the same DS client adapter since it connects to the same Data Storage service
 	atHandler := authwebhook.NewActionTypeHandler(rwDSClient, auditStore, mgr.GetClient())
