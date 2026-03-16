@@ -1,16 +1,16 @@
-# HolmesGPT API - Multi-Architecture Dockerfile using Red Hat UBI10
+# HolmesGPT API - Multi-Architecture Dockerfile using Red Hat UBI9
 # Supports: linux/amd64, linux/arm64
 # Based on: ADR-027 (Multi-Architecture Build Strategy)
 
-# Build stage - Red Hat UBI10 Python 3.12 Minimal
-FROM registry.access.redhat.com/ubi10/python-312-minimal:latest AS builder
+# Build stage - Red Hat UBI9 Python 3.12
+FROM registry.access.redhat.com/ubi9/python-312:latest AS builder
 
 # Switch to root for package installation
 USER root
 
-# Install build dependencies (microdnf on UBI10-minimal; python3.12-devel for C extensions)
-RUN microdnf install -y --setopt=install_weak_deps=0 gcc gcc-c++ git ca-certificates tzdata python3.12-devel && \
-	microdnf clean all && \
+# Install only essential build dependencies (skip dnf update to speed up build)
+RUN dnf install -y --setopt=install_weak_deps=False gcc gcc-c++ git ca-certificates tzdata && \
+	dnf clean all && \
 	rm -rf /var/cache/dnf /var/cache/yum
 
 # Switch back to default user for security
@@ -40,22 +40,22 @@ RUN pip install --no-cache-dir --upgrade pip && \
 	find /opt/app-root/lib/python3.12/site-packages -name "*.pyc" -delete && \
 	find /opt/app-root/lib/python3.12/site-packages -name "*.pyo" -delete
 
-# Runtime stage - Red Hat UBI10 Python 3.12 Minimal
-FROM registry.access.redhat.com/ubi10/python-312-minimal:latest
+# Runtime stage - Red Hat UBI9 Python 3.12
+FROM registry.access.redhat.com/ubi9/python-312:latest
 
-# Install runtime dependencies (microdnf on UBI10-minimal)
+# Install only essential runtime dependencies (skip dnf update to reduce size)
 # kubectl is required for HolmesGPT kubernetes/core toolset (pod investigation)
 USER root
 ARG TARGETARCH
 ARG KUBECTL_VERSION=v1.31.4
-RUN microdnf install -y --setopt=install_weak_deps=0 ca-certificates tzdata && \
-	microdnf clean all && \
+RUN dnf install -y --setopt=install_weak_deps=False ca-certificates tzdata && \
+	dnf clean all && \
 	rm -rf /var/cache/dnf /var/cache/yum && \
 	curl -fsSL -o /usr/local/bin/kubectl \
 		"https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" && \
 	chmod +x /usr/local/bin/kubectl
 
-# Set working directory (UBI10 Python already has UID 1001 user)
+# Set working directory (UBI9 Python already has UID 1001 user)
 WORKDIR /opt/app-root/src
 
 # Copy Python dependencies from builder (includes HolmesGPT SDK in site-packages)
@@ -93,7 +93,7 @@ ENV PYTHONUNBUFFERED=1 \
 # Expose port
 EXPOSE 8080
 
-# Health check
+# Health check (use python3.12 explicitly - UBI9 python-312 image defaults to python3.9)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 	CMD python3.12 -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
 
@@ -111,7 +111,7 @@ LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
 	org.opencontainers.image.title="kubernaut-holmesgpt-api"
 
-# Red Hat UBI10 compatible metadata labels
+# Red Hat UBI9 compatible metadata labels
 LABEL name="kubernaut-holmesgpt-api" \
 	vendor="Kubernaut" \
 	version="1.0.0" \
