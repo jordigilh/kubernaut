@@ -53,13 +53,87 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
-// updateLabelsPolicyFile updates the CustomLabels policy file to trigger hot-reload.
-// BR-SP-072: File-based hot-reload testing helper.
-func updateLabelsPolicyFile(policyContent string) {
+// unifiedPolicyBase contains the environment, severity, and priority sections of
+// the unified policy. Hot-reload tests append custom labels rules to this base
+// so the evaluator always has the full rule set (ADR-060).
+const unifiedPolicyBase = `package signalprocessing
+
+import rego.v1
+
+# ========== Environment (BR-SP-051-053) ==========
+default environment := {"environment": "unknown", "source": "default"}
+
+environment := {"environment": lower(env), "source": "namespace-labels"} if {
+    env := input.namespace.labels["kubernaut.ai/environment"]
+    env != ""
+}
+environment := {"environment": "production", "source": "configmap"} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+    startswith(input.namespace.name, "prod")
+}
+environment := {"environment": "staging", "source": "configmap"} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+    startswith(input.namespace.name, "staging")
+}
+environment := {"environment": "development", "source": "configmap"} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+    startswith(input.namespace.name, "dev")
+}
+
+# ========== Severity (BR-SP-105, DD-SEVERITY-001) ==========
+default severity := "critical"
+
+severity := "critical" if { input.signal.severity == "sev1" }
+severity := "critical" if { input.signal.severity == "p0" }
+severity := "critical" if { input.signal.severity == "p1" }
+severity := "high" if { input.signal.severity == "sev2" }
+severity := "high" if { input.signal.severity == "p2" }
+severity := "medium" if { input.signal.severity == "sev3" }
+severity := "medium" if { input.signal.severity == "p3" }
+severity := "low" if { input.signal.severity == "sev4" }
+severity := "low" if { input.signal.severity == "p4" }
+severity := "invalid-severity-enum" if {
+    input.signal.severity == "trigger-error"
+}
+
+# ========== Priority (BR-SP-070) ==========
+default priority := {"priority": "P3", "policy_name": "default-catch-all"}
+
+severity_score := 3 if { lower(input.signal.severity) == "critical" }
+severity_score := 2 if { lower(input.signal.severity) == "warning" }
+severity_score := 2 if { lower(input.signal.severity) == "high" }
+severity_score := 1 if { lower(input.signal.severity) == "info" }
+default severity_score := 0
+
+env_scores contains 3 if { environment.environment == "production" }
+env_scores contains 2 if { environment.environment == "staging" }
+env_scores contains 1 if { environment.environment == "development" }
+env_scores contains 1 if { environment.environment == "test" }
+env_scores contains 3 if { input.namespace.labels["tier"] == "critical" }
+env_scores contains 2 if { input.namespace.labels["tier"] == "high" }
+
+env_score := max(env_scores) if { count(env_scores) > 0 }
+default env_score := 0
+
+composite_score := severity_score + env_score
+
+priority := {"priority": "P0", "policy_name": "score-based"} if { composite_score >= 6 }
+priority := {"priority": "P1", "policy_name": "score-based"} if { composite_score == 5 }
+priority := {"priority": "P2", "policy_name": "score-based"} if { composite_score == 4 }
+priority := {"priority": "P3", "policy_name": "score-based"} if { composite_score < 4; composite_score > 0 }
+
+# ========== Custom Labels (BR-SP-102) ==========
+`
+
+// updateLabelsPolicyFile writes a complete unified policy with the given custom
+// labels rules appended to unifiedPolicyBase, then waits for fsnotify to detect
+// the change. BR-SP-072: File-based hot-reload testing helper.
+func updateLabelsPolicyFile(labelsRules string) {
 	policyFileWriteMu.Lock()
 	defer policyFileWriteMu.Unlock()
 
-	err := os.WriteFile(labelsPolicyFilePath, []byte(policyContent), 0644)
+	fullPolicy := unifiedPolicyBase + labelsRules
+	err := os.WriteFile(labelsPolicyFilePath, []byte(fullPolicy), 0644)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Give FileWatcher time to detect the change
@@ -74,22 +148,8 @@ func updateLabelsPolicyFile(policyContent string) {
 // This is a LEGITIMATE shared resource constraint (not a metrics/controller issue)
 // DD-TEST-010: This is one of the few valid reasons to keep Serial
 var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
-	// Original policy content to restore after each test
-	const originalLabelPolicy = `package signalprocessing.customlabels
-
-import rego.v1
-
-# BR-SP-102: CustomLabels extraction
-# Extract kubernaut.ai/* labels from namespace context
-labels := result if {
-	input.kubernetes.namespace.labels
-	result := {key: [val] |
-		some full_key, val in input.kubernetes.namespace.labels
-		startswith(full_key, "kubernaut.ai/")
-		key := substring(full_key, count("kubernaut.ai/"), -1)
-	}
-	count(result) > 0
-} else := {}
+	// Original labels rules to restore after each test (appended to unifiedPolicyBase)
+	const originalLabelPolicy = `default labels := {}
 `
 
 	// AfterEach: Restore original policy to prevent test pollution
@@ -112,11 +172,7 @@ labels := result if {
 			defer deleteTestNamespace(ns)
 
 			By("Updating policy file to v1")
-			updateLabelsPolicyFile(`package signalprocessing.customlabels
-
-import rego.v1
-
-labels := result if {
+			updateLabelsPolicyFile(`labels := result if {
 	true
 	result := {"version": ["v1"]}
 } else := {}
@@ -145,15 +201,10 @@ labels := result if {
 			By("Verifying v1 label applied")
 			var result1 signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp1.Name, Namespace: ns}, &result1)).To(Succeed())
-			Expect(result1.Status.KubernetesContext).ToNot(BeNil())
 			Expect(result1.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("version", ContainElement("v1")))
 
 			By("Updating policy file to v2 (triggers hot-reload)")
-			updateLabelsPolicyFile(`package signalprocessing.customlabels
-
-import rego.v1
-
-labels := result if {
+			updateLabelsPolicyFile(`labels := result if {
 	true
 	result := {"version": ["v2"]}
 } else := {}
@@ -182,7 +233,6 @@ labels := result if {
 			By("Verifying v2 label applied (hot-reload detected)")
 			var result2 signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp2.Name, Namespace: ns}, &result2)).To(Succeed())
-			Expect(result2.Status.KubernetesContext).ToNot(BeNil())
 			Expect(result2.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("version", ContainElement("v2")))
 		})
 	})
@@ -199,11 +249,7 @@ labels := result if {
 			defer deleteTestNamespace(ns)
 
 			By("Updating policy file to initial policy (status=alpha)")
-			updateLabelsPolicyFile(`package signalprocessing.customlabels
-
-import rego.v1
-
-labels := result if {
+			updateLabelsPolicyFile(`labels := result if {
 	true
 	result := {"status": ["alpha"]}
 } else := {}
@@ -232,15 +278,10 @@ labels := result if {
 			By("Verifying initial status=alpha label")
 			var result1 signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp1.Name, Namespace: ns}, &result1)).To(Succeed())
-			Expect(result1.Status.KubernetesContext).ToNot(BeNil())
 			Expect(result1.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("status", ContainElement("alpha")))
 
 			By("Updating policy file to new policy (status=beta) - triggers hot-reload")
-			updateLabelsPolicyFile(`package signalprocessing.customlabels
-
-import rego.v1
-
-labels := result if {
+			updateLabelsPolicyFile(`labels := result if {
 	true
 	result := {"status": ["beta"]}
 } else := {}
@@ -269,7 +310,6 @@ labels := result if {
 			By("Verifying updated status=beta label (hot-reload applied)")
 			var result2 signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp2.Name, Namespace: ns}, &result2)).To(Succeed())
-			Expect(result2.Status.KubernetesContext).ToNot(BeNil())
 			Expect(result2.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("status", ContainElement("beta")))
 		})
 	})
@@ -286,11 +326,7 @@ labels := result if {
 			defer deleteTestNamespace(ns)
 
 			By("Updating policy file to valid policy (stage=prod)")
-			updateLabelsPolicyFile(`package signalprocessing.customlabels
-
-import rego.v1
-
-labels := result if {
+			updateLabelsPolicyFile(`labels := result if {
 	true
 	result := {"stage": ["prod"]}
 } else := {}
@@ -319,15 +355,12 @@ labels := result if {
 			By("Verifying stage=prod label applied")
 			var result1 signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp1.Name, Namespace: ns}, &result1)).To(Succeed())
-			Expect(result1.Status.KubernetesContext).ToNot(BeNil())
 			Expect(result1.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("stage", ContainElement("prod")))
 
 			By("Attempting to update policy file to INVALID Rego syntax")
-			// Write invalid policy directly (without helper to bypass sleep)
+			// Write base policy + invalid labels section (without helper to bypass sleep)
 			policyFileWriteMu.Lock()
-			_ = os.WriteFile(labelsPolicyFilePath, []byte(`package signalprocessing.customlabels
-// INVALID REGO - Missing import, broken syntax
-labels["broken" := ["syntax"  // Missing bracket
+			_ = os.WriteFile(labelsPolicyFilePath, []byte(unifiedPolicyBase+`labels["broken" := ["syntax"
 `), 0644)
 			policyFileWriteMu.Unlock()
 
@@ -358,7 +391,6 @@ labels["broken" := ["syntax"  // Missing bracket
 			var result2 signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp2.Name, Namespace: ns}, &result2)).To(Succeed())
 			Expect(result2.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
-			Expect(result2.Status.KubernetesContext).ToNot(BeNil())
 			// Old policy should be retained after failed hot-reload
 			Expect(result2.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("stage", ContainElement("prod")))
 		})
