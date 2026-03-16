@@ -357,8 +357,7 @@ var _ = Describe("SignalProcessing Controller K8s Events [DD-EVENT-001]", func()
 				Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 				AuditClient:     auditClient,
 				AuditManager:    spaudit.NewManager(auditClient),
-				EnvClassifier:   newDefaultMockEnvironmentClassifier(),
-				PriorityAssigner: newDefaultMockPriorityAssigner(),
+				PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 			}
 
 			req := reconcile.Request{

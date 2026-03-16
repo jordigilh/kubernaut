@@ -619,8 +619,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					Metrics:          spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 					AuditClient:      auditClient,
 					AuditManager:     spaudit.NewManager(auditClient),
-					EnvClassifier:    newDefaultMockEnvironmentClassifier(),
-					PriorityAssigner: newDefaultMockPriorityAssigner(),
+					PolicyEvaluator:  newDefaultMockPolicyEvaluator(),
 				}
 
 				result, err := reconciler.Reconcile(context.Background(), reconcile.Request{

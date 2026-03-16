@@ -58,9 +58,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/config"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enricher"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/rego"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
 )
 
@@ -199,129 +199,33 @@ func main() {
 	setupLog.Info("audit client configured successfully")
 
 	// ========================================
-	// REGO-BASED CLASSIFIERS SETUP (OPTIONAL)
+	// ADR-060: UNIFIED REGO EVALUATOR SETUP
 	// ========================================
-	// BR-SP-051-053: Environment classification
-	// BR-SP-070-072: Priority assignment
-	// BR-SP-002: Business unit classification
+	// Replaces 5 separate classifiers (environment, priority, severity, business, customlabels)
+	// with a single evaluator backed by one policy.rego file.
 	//
-	// Option B: Fail-fast on Rego syntax errors at startup
-	// - Policy file NOT FOUND -> INFO log, use fallback (policies are optional)
-	// - Policy file EXISTS but INVALID -> FATAL error, exit(1) (deployment bug)
-	// - Runtime evaluation errors -> fallback per BR-SP-071 (handled in controller)
-	//
-	// Production deployments should mount Rego policies at /etc/signalprocessing/policies/
+	// Fail-fast on missing or invalid policy at startup.
 
 	ctx := ctrl.SetupSignalHandler()
 
-	// ----------------------------------------
-	// ENVIRONMENT CLASSIFIER (MANDATORY)
-	// ----------------------------------------
-	envClassifier, err := classifier.NewEnvironmentClassifier(
-		ctx,
-		"/etc/signalprocessing/policies/environment.rego",
-		ctrl.Log.WithName("classifier.environment"),
+	policyEvaluator := evaluator.New(
+		"/etc/signalprocessing/policy.rego",
+		ctrl.Log.WithName("evaluator"),
 	)
-	if err != nil {
-		setupLog.Error(err, "FATAL: environment policy is mandatory but failed to load",
-			"policyPath", "/etc/signalprocessing/policies/environment.rego",
+	if err := policyEvaluator.StartHotReload(ctx); err != nil {
+		setupLog.Error(err, "FATAL: unified policy is mandatory but failed to load",
+			"policyPath", "/etc/signalprocessing/policy.rego",
 			"hint", "Ensure the policy file is mounted via ConfigMap/Secret")
 		os.Exit(1)
 	}
-	setupLog.Info("environment classifier configured successfully")
-	if err := envClassifier.StartHotReload(ctx); err != nil {
-		setupLog.Error(err, "FATAL: environment policy hot-reload failed")
-		os.Exit(1)
-	}
-	setupLog.Info("environment policy hot-reload started", "policyHash", envClassifier.GetPolicyHash())
-
-	// ========================================
-	// PRIORITY ENGINE (MANDATORY)
-	// ========================================
-	// BR-SP-070: Priority assignment via Rego
-	// BR-SP-071: DEPRECATED - fallback removed per user decision 2025-12-20
-	// Rationale: Hardcoded fallback creates silent behavior mismatch when
-	// operator-defined policies fail to load. Priority policy is now MANDATORY
-	// like CustomLabels (BR-SP-102).
-	priorityEngine, err := classifier.NewPriorityEngine(
-		ctx,
-		"/etc/signalprocessing/policies/priority.rego",
-		ctrl.Log.WithName("classifier.priority"),
-	)
-	if err != nil {
-		// Priority policy is MANDATORY - both missing file and syntax error are fatal
-		setupLog.Error(err, "FATAL: priority policy is mandatory but failed to load",
-			"policyPath", "/etc/signalprocessing/policies/priority.rego",
-			"hint", "Ensure the policy file is mounted via ConfigMap/Secret",
-			"deprecation", "BR-SP-071 fallback removed - operators must define priority policies")
-		os.Exit(1)
-	}
-	setupLog.Info("priority engine configured successfully")
-	// BR-SP-072: Start hot-reload for priority policy
-	if err := priorityEngine.StartHotReload(ctx); err != nil {
-		setupLog.Error(err, "FATAL: priority policy hot-reload failed",
-			"policyPath", "/etc/signalprocessing/policies/priority.rego")
-		os.Exit(1)
-	}
-	setupLog.Info("priority policy hot-reload started", "policyHash", priorityEngine.GetPolicyHash())
-
-	// ----------------------------------------
-	// BUSINESS CLASSIFIER (MANDATORY)
-	// ----------------------------------------
-	businessClassifier, err := classifier.NewBusinessClassifier(
-		ctx,
-		"/etc/signalprocessing/policies/business.rego",
-		ctrl.Log.WithName("classifier.business"),
-	)
-	if err != nil {
-		setupLog.Error(err, "FATAL: business policy is mandatory but failed to load",
-			"policyPath", "/etc/signalprocessing/policies/business.rego",
-			"hint", "Ensure the policy file is mounted via ConfigMap/Secret")
-		os.Exit(1)
-	}
-	setupLog.Info("business classifier configured successfully")
-
-	// ========================================
-	// SEVERITY CLASSIFIER (MANDATORY)
-	// ========================================
-	// BR-SP-105: Severity determination via Rego policy
-	// DD-SEVERITY-001: Strategy B - Policy-defined fallback (operator control)
-	severityClassifier := classifier.NewSeverityClassifier(
-		mgr.GetClient(),
-		ctrl.Log.WithName("classifier.severity"),
-	)
-	severityClassifier.SetPolicyPath("/etc/signalprocessing/policies/severity.rego")
-
-	// Load policy from file
-	severityPolicyContent, err := os.ReadFile("/etc/signalprocessing/policies/severity.rego")
-	if err != nil {
-		setupLog.Error(err, "FATAL: severity policy is mandatory but failed to load",
-			"policyPath", "/etc/signalprocessing/policies/severity.rego",
-			"hint", "Ensure the policy file is mounted via ConfigMap/Secret")
-		os.Exit(1)
-	}
-	if err := severityClassifier.LoadRegoPolicy(string(severityPolicyContent)); err != nil {
-		setupLog.Error(err, "FATAL: severity policy validation failed",
-			"policyPath", "/etc/signalprocessing/policies/severity.rego",
-			"hint", "Check Rego policy syntax and ensure it returns critical/warning/info")
-		os.Exit(1)
-	}
-	setupLog.Info("severity classifier configured successfully")
-
-	// BR-SP-072: Start hot-reload for severity policy
-	if err := severityClassifier.StartHotReload(ctx); err != nil {
-		setupLog.Error(err, "FATAL: severity policy hot-reload failed",
-			"policyPath", "/etc/signalprocessing/policies/severity.rego")
-		os.Exit(1)
-	}
-	setupLog.Info("severity policy hot-reload started", "policyHash", severityClassifier.GetPolicyHash())
+	setupLog.Info("Unified policy evaluator started",
+		"policyHash", policyEvaluator.GetPolicyHash())
 
 	// ========================================
 	// SIGNAL MODE CLASSIFIER (OPTIONAL)
 	// ========================================
 	// BR-SP-106: Proactive Signal Mode Classification
 	// ADR-054: Uses YAML config (not Rego) -- simple key-value lookup
-	// If config file is missing, all signals default to reactive mode (backwards compatible)
 	signalModeClassifier := classifier.NewSignalModeClassifier(
 		ctrl.Log.WithName("classifier.signalmode"),
 	)
@@ -331,7 +235,6 @@ func main() {
 		signalModeConfigPath = envPath
 	}
 	if err := signalModeClassifier.LoadConfig(signalModeConfigPath); err != nil {
-		// Missing config is non-fatal: all signals default to reactive
 		setupLog.Info("signal mode config not found, all signals will default to reactive mode",
 			"configPath", signalModeConfigPath,
 			"error", err.Error())
@@ -345,22 +248,6 @@ func main() {
 	// ========================================
 	// BR-SP-001: Kubernetes context enrichment
 	// BR-SP-100: Owner chain traversal
-	// BR-SP-102: CustomLabels Rego extraction
-
-	regoEngine := rego.NewEngine(
-		ctrl.Log.WithName("rego.engine"),
-		"/etc/signalprocessing/policies/customlabels.rego",
-	)
-
-	// BR-SP-072: Start hot-reload for CustomLabels policy
-	// BR-SP-102: Rego CustomLabels extraction is MANDATORY - fail startup if not available
-	if err := regoEngine.StartHotReload(ctx); err != nil {
-		setupLog.Error(err, "FATAL: CustomLabels policy file required but failed to load",
-			"policyPath", "/etc/signalprocessing/policies/customlabels.rego",
-			"hint", "Ensure the policy file is mounted via ConfigMap/Secret")
-		os.Exit(1)
-	}
-	setupLog.Info("CustomLabels policy hot-reload started", "policyHash", regoEngine.GetPolicyHash())
 
 	ownerChainBuilder := ownerchain.NewBuilder(
 		mgr.GetClient(),
@@ -407,17 +294,13 @@ func main() {
 	if err = (&signalprocessing.SignalProcessingReconciler{
 		Client:               mgr.GetClient(),
 		Scheme:               mgr.GetScheme(),
-		AuditClient:          auditClient,          // Legacy - kept for backwards compatibility during migration
-		AuditManager:         auditManager,          // Phase 3 refactoring (2026-01-22)
-		Metrics:              spMetrics,              // DD-005: Observability
+		AuditClient:          auditClient,
+		AuditManager:         auditManager,
+		Metrics:              spMetrics,
 		Recorder:             mgr.GetEventRecorderFor("signalprocessing-controller"),
-		StatusManager:        statusManager,          // DD-PERF-001: Atomic status updates
-		EnvClassifier:        envClassifier,
-		PriorityAssigner:     priorityEngine,         // PriorityEngine implements PriorityAssigner interface
-		BusinessClassifier:   businessClassifier,
-		SeverityClassifier:   severityClassifier,     // BR-SP-105: Severity determination (DD-SEVERITY-001)
+		StatusManager:        statusManager,
+		PolicyEvaluator:      policyEvaluator,        // ADR-060: Unified evaluator
 		SignalModeClassifier: signalModeClassifier,   // BR-SP-106: Proactive signal mode (ADR-054)
-		RegoEngine:           regoEngine,
 		OwnerChainBuilder:    ownerChainBuilder,
 		K8sEnricher:          k8sEnricher,
 	}).SetupWithManager(mgr); err != nil {

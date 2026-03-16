@@ -69,8 +69,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enricher"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
+	spevaluator "github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/rego"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
@@ -356,184 +356,89 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// ADR-032: AuditManager is MANDATORY for all audit operations
 	auditManager := spaudit.NewManager(auditClient)
 
-	By("Creating temporary Rego policy files for classifiers")
-	// Day 10 Integration: Create Rego policy files (IMPLEMENTATION_PLAN_V1.31.md)
-	// These files match the classifier's expected input schema
-	envPolicyFile, err := os.CreateTemp("", "environment-*.rego")
+	By("Creating unified Rego policy file (ADR-060)")
+	unifiedPolicyFile, err := os.CreateTemp("", "policy-*.rego")
 	Expect(err).NotTo(HaveOccurred())
-	_, err = envPolicyFile.WriteString(`package signalprocessing.environment
+	_, err = unifiedPolicyFile.WriteString(`package signalprocessing
 
 import rego.v1
 
-# BR-SP-051: Namespace label priority (confidence 0.95)
-# Timestamps set by Go code (metav1.Time), not Rego
-result := {"environment": lower(env), "confidence": 0.95, "source": "namespace-labels"} if {
+# ========== Environment (BR-SP-051-053) ==========
+default environment := {"environment": "unknown", "source": "default"}
+
+environment := {"environment": lower(env), "source": "namespace-labels"} if {
     env := input.namespace.labels["kubernaut.ai/environment"]
     env != ""
 }
-
-# BR-SP-052: ConfigMap fallback (confidence 0.80)
-# Use else to prevent conflicts (only ONE result rule can match)
-else := {"environment": "production", "confidence": 0.80, "source": "configmap"} if {
+environment := {"environment": "production", "source": "configmap"} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
     startswith(input.namespace.name, "prod")
 }
-
-else := {"environment": "staging", "confidence": 0.80, "source": "configmap"} if {
+environment := {"environment": "staging", "source": "configmap"} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
     startswith(input.namespace.name, "staging")
 }
-
-else := {"environment": "development", "confidence": 0.80, "source": "configmap"} if {
+environment := {"environment": "development", "source": "configmap"} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
     startswith(input.namespace.name, "dev")
 }
 
-# BR-SP-053: Default fallback (confidence 0.0)
-else := {"environment": "unknown", "confidence": 0.0, "source": "default"}
-`)
-	Expect(err).NotTo(HaveOccurred())
-	_ = envPolicyFile.Close()
+# ========== Severity (BR-SP-105, DD-SEVERITY-001) ==========
+default severity := "critical"
 
-	priorityPolicyFile, err := os.CreateTemp("", "priority-*.rego")
-	Expect(err).NotTo(HaveOccurred())
-	_, err = priorityPolicyFile.WriteString(`package signalprocessing.priority
+severity := "critical" if { input.signal.severity == "sev1" }
+severity := "critical" if { input.signal.severity == "p0" }
+severity := "critical" if { input.signal.severity == "p1" }
+severity := "high" if { input.signal.severity == "sev2" }
+severity := "high" if { input.signal.severity == "p2" }
+severity := "medium" if { input.signal.severity == "sev3" }
+severity := "medium" if { input.signal.severity == "p3" }
+severity := "low" if { input.signal.severity == "sev4" }
+severity := "low" if { input.signal.severity == "p4" }
+severity := "invalid-severity-enum" if {
+    input.signal.severity == "trigger-error"
+}
 
-import rego.v1
+# ========== Priority (BR-SP-070) ==========
+default priority := {"priority": "P3", "policy_name": "default-catch-all"}
 
-# BR-SP-070: Score-based priority aggregation (issue #98)
-# Each dimension scored independently, then summed.
 severity_score := 3 if { lower(input.signal.severity) == "critical" }
 severity_score := 2 if { lower(input.signal.severity) == "warning" }
 severity_score := 2 if { lower(input.signal.severity) == "high" }
 severity_score := 1 if { lower(input.signal.severity) == "info" }
 default severity_score := 0
 
-env_scores contains 3 if { lower(input.environment) == "production" }
-env_scores contains 2 if { lower(input.environment) == "staging" }
-env_scores contains 1 if { lower(input.environment) == "development" }
-env_scores contains 1 if { lower(input.environment) == "test" }
-env_scores contains 3 if { input.namespace_labels["tier"] == "critical" }
-env_scores contains 2 if { input.namespace_labels["tier"] == "high" }
+env_scores contains 3 if { environment.environment == "production" }
+env_scores contains 2 if { environment.environment == "staging" }
+env_scores contains 1 if { environment.environment == "development" }
+env_scores contains 1 if { environment.environment == "test" }
+env_scores contains 3 if { input.namespace.labels["tier"] == "critical" }
+env_scores contains 2 if { input.namespace.labels["tier"] == "high" }
 
 env_score := max(env_scores) if { count(env_scores) > 0 }
 default env_score := 0
 
 composite_score := severity_score + env_score
 
-result := {"priority": "P0", "policy_name": "score-based"} if { composite_score >= 6 }
-result := {"priority": "P1", "policy_name": "score-based"} if { composite_score == 5 }
-result := {"priority": "P2", "policy_name": "score-based"} if { composite_score == 4 }
-result := {"priority": "P3", "policy_name": "score-based"} if { composite_score < 4; composite_score > 0 }
+priority := {"priority": "P0", "policy_name": "score-based"} if { composite_score >= 6 }
+priority := {"priority": "P1", "policy_name": "score-based"} if { composite_score == 5 }
+priority := {"priority": "P2", "policy_name": "score-based"} if { composite_score == 4 }
+priority := {"priority": "P3", "policy_name": "score-based"} if { composite_score < 4; composite_score > 0 }
 
-default result := {"priority": "P3", "policy_name": "default-catch-all"}
+# ========== Custom Labels (BR-SP-102) ==========
+default labels := {}
 `)
 	Expect(err).NotTo(HaveOccurred())
-	_ = priorityPolicyFile.Close()
+	_ = unifiedPolicyFile.Close()
+	labelsPolicyFilePath = unifiedPolicyFile.Name()
 
-	// Schedule cleanup of temp files and hot-reload watchers
 	DeferCleanup(func() {
-		_ = os.Remove(envPolicyFile.Name())
-		_ = os.Remove(priorityPolicyFile.Name())
+		_ = os.Remove(unifiedPolicyFile.Name())
 	})
 
-	// Initialize Environment Classifier (BR-SP-051, BR-SP-052, BR-SP-053)
-	envClassifier, err := classifier.NewEnvironmentClassifier(
-		ctx,
-		envPolicyFile.Name(),
-		logger,
-	)
-	Expect(err).NotTo(HaveOccurred())
-
-	// BR-SP-072: Start hot-reload for Environment Classifier
-	err = envClassifier.StartHotReload(ctx)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Initialize Priority Engine (BR-SP-070, BR-SP-071, BR-SP-072)
-	priorityEngine, err := classifier.NewPriorityEngine(
-		ctx,
-		priorityPolicyFile.Name(),
-		logger,
-	)
-	Expect(err).NotTo(HaveOccurred())
-
-	// BR-SP-072: Start hot-reload for Priority Engine
-	err = priorityEngine.StartHotReload(ctx)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Create business policy file for BR-SP-002, BR-SP-080, BR-SP-081
-	businessPolicyFile, err := os.CreateTemp("", "business-*.rego")
-	Expect(err).NotTo(HaveOccurred())
-	_, err = businessPolicyFile.WriteString(`package signalprocessing.business
-import rego.v1
-# BR-SP-002: Business unit classification
-result := {"business_unit": "platform", "criticality": "high", "confidence": 0.9, "source": "namespace-labels"} if {
-    input.namespace.labels["kubernaut.ai/business-unit"] == "platform"
-}
-else := {"business_unit": "unknown", "criticality": "medium", "confidence": 0.5, "source": "default"}
-`)
-	Expect(err).NotTo(HaveOccurred())
-	_ = businessPolicyFile.Close()
-
-	// Initialize Business Classifier (BR-SP-002, BR-SP-080, BR-SP-081)
-	businessClassifier, err := classifier.NewBusinessClassifier(
-		ctx,
-		businessPolicyFile.Name(),
-		logger,
-	)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Create severity policy file for BR-SP-105, DD-SEVERITY-001
-	severityPolicyFile, err := os.CreateTemp("", "severity-*.rego")
-	Expect(err).NotTo(HaveOccurred())
-	_, err = severityPolicyFile.WriteString(`package signalprocessing.severity
-import rego.v1
-# BR-SP-105: Severity Determination via Rego Policy
-# DD-SEVERITY-001 v1.1: Aligned with HAPI/workflow catalog (critical/high/medium/low/unknown)
-determine_severity := "critical" if {
-	input.signal.severity == "sev1"
-} else := "critical" if {
-	input.signal.severity == "p0"
-} else := "critical" if {
-	input.signal.severity == "p1"
-} else := "high" if {
-	input.signal.severity == "sev2"
-} else := "high" if {
-	input.signal.severity == "p2"
-} else := "medium" if {
-	input.signal.severity == "sev3"
-} else := "medium" if {
-	input.signal.severity == "p3"
-} else := "low" if {
-	input.signal.severity == "sev4"
-} else := "low" if {
-	input.signal.severity == "p4"
-} else := "invalid-severity-enum" if {
-	# Test case: Return invalid severity value to trigger validation error
-	# This simulates operator error in policy configuration
-	input.signal.severity == "trigger-error"
-} else := "critical" if {
-	# Fallback: unmapped → critical (conservative, operator-defined)
-	true
-}
-`)
-	Expect(err).NotTo(HaveOccurred())
-	_ = severityPolicyFile.Close()
-
-	// Initialize Severity Classifier (BR-SP-105, DD-SEVERITY-001)
-	severityClassifier := classifier.NewSeverityClassifier(
-		k8sManager.GetClient(),
-		logger,
-	)
-
-	// Load severity policy
-	severityPolicyContent, err := os.ReadFile(severityPolicyFile.Name())
-	Expect(err).NotTo(HaveOccurred())
-	err = severityClassifier.LoadRegoPolicy(string(severityPolicyContent))
-	Expect(err).NotTo(HaveOccurred())
-
-	// Set policy path for hot-reload (must be done before StartHotReload)
-	severityClassifier.SetPolicyPath(severityPolicyFile.Name())
-
-	// BR-SP-072: Start hot-reload for Severity Classifier (DD-SEVERITY-001)
-	err = severityClassifier.StartHotReload(ctx)
+	// ADR-060: Unified evaluator replaces 5 separate classifiers
+	policyEvaluator := spevaluator.New(unifiedPolicyFile.Name(), logger)
+	err = policyEvaluator.StartHotReload(ctx)
 	Expect(err).NotTo(HaveOccurred())
 
 	// Create proactive signal mappings file for BR-SP-106, ADR-054
@@ -554,38 +459,12 @@ proactive_signal_mappings:
 	err = signalModeClassifier.LoadConfig(signalModeConfigFile.Name())
 	Expect(err).NotTo(HaveOccurred())
 
-	// Schedule cleanup of business, severity, and signal mode config files
 	DeferCleanup(func() {
-		_ = os.Remove(businessPolicyFile.Name())
-		_ = os.Remove(severityPolicyFile.Name())
 		_ = os.Remove(signalModeConfigFile.Name())
 	})
 
 	// Initialize owner chain builder (Day 7 integration)
 	ownerChainBuilder := ownerchain.NewBuilder(k8sManager.GetClient(), logger)
-
-	// Initialize CustomLabels Rego engine (BR-SP-102, BR-SP-104, BR-SP-072)
-	labelsPolicyFile, err := os.CreateTemp("", "labels-*.rego")
-	Expect(err).NotTo(HaveOccurred())
-	_, err = labelsPolicyFile.WriteString(`package signalprocessing.customlabels
-import rego.v1
-default labels := {}
-`)
-	Expect(err).NotTo(HaveOccurred())
-	_ = labelsPolicyFile.Close()
-	labelsPolicyFilePath = labelsPolicyFile.Name() // Store for hot-reload tests
-
-	regoEngine := rego.NewEngine(logger, labelsPolicyFilePath)
-
-	// Load initial policy
-	policyContent, err := os.ReadFile(labelsPolicyFile.Name())
-	Expect(err).NotTo(HaveOccurred())
-	err = regoEngine.LoadPolicy(string(policyContent))
-	Expect(err).NotTo(HaveOccurred())
-
-	// BR-SP-072: Start hot-reload for CustomLabels Engine
-	err = regoEngine.StartHotReload(ctx)
-	Expect(err).NotTo(HaveOccurred())
 
 	// Initialize Metrics (DD-005: Observability)
 	// Per AIAnalysis pattern: Use global prometheus.DefaultRegisterer
@@ -608,23 +487,19 @@ default labels := {}
 	// Initialize EventRecorder (K8s best practice)
 	recorder := k8sManager.GetEventRecorderFor("signalprocessing-controller")
 
-	// Initialize SignalProcessing controller with ALL dependencies
+	// ADR-060: Initialize SignalProcessing controller with unified evaluator
 	err = (&signalprocessing.SignalProcessingReconciler{
-		Client:             k8sManager.GetClient(),
-		Scheme:             k8sManager.GetScheme(),
-		AuditClient:        auditClient,   // Legacy audit client
-		AuditManager:       auditManager,  // Phase 3 refactoring - MANDATORY per ADR-032
-		Metrics:            sharedMetrics, // DD-005: Observability
-		Recorder:           recorder,
-		StatusManager:      statusManager, // DD-PERF-001 + SP-CACHE-001
-		EnvClassifier:      envClassifier,
-		PriorityAssigner:   priorityEngine, // PriorityEngine implements PriorityAssigner interface
-		BusinessClassifier: businessClassifier,
-		SeverityClassifier: severityClassifier, // BR-SP-105, DD-SEVERITY-001: Severity determination
-		RegoEngine:         regoEngine,         // BR-SP-102, BR-SP-104: CustomLabels extraction
-		K8sEnricher:        k8sEnricher,        // BR-SP-001: K8s context enrichment (interface)
-		OwnerChainBuilder:    ownerChainBuilder,    // BR-SP-100: Owner chain analysis
-		SignalModeClassifier: signalModeClassifier, // BR-SP-106: Proactive signal mode classification (ADR-054)
+		Client:               k8sManager.GetClient(),
+		Scheme:               k8sManager.GetScheme(),
+		AuditClient:          auditClient,
+		AuditManager:         auditManager,
+		Metrics:              sharedMetrics,
+		Recorder:             recorder,
+		StatusManager:        statusManager,
+		PolicyEvaluator:      policyEvaluator,
+		K8sEnricher:          k8sEnricher,
+		OwnerChainBuilder:    ownerChainBuilder,
+		SignalModeClassifier: signalModeClassifier,
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 

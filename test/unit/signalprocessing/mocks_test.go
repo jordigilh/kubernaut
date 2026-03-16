@@ -4,24 +4,26 @@ import (
 	"context"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// mockEnvironmentClassifier implements controller.EnvironmentClassifier for unit tests.
-// It returns configurable results without requiring Rego policies.
-type mockEnvironmentClassifier struct {
-	// ClassifyFunc allows tests to customize behavior
-	ClassifyFunc func(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, signal *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.EnvironmentClassification, error)
+// mockPolicyEvaluator implements controller.PolicyEvaluator for unit tests.
+// ADR-060: Replaces mockEnvironmentClassifier, mockPriorityAssigner, and severity/labels mocks.
+type mockPolicyEvaluator struct {
+	EvaluateEnvironmentFunc  func(ctx context.Context, input evaluator.PolicyInput) (*signalprocessingv1alpha1.EnvironmentClassification, error)
+	EvaluatePriorityFunc     func(ctx context.Context, input evaluator.PolicyInput) (*signalprocessingv1alpha1.PriorityAssignment, error)
+	EvaluateSeverityFunc     func(ctx context.Context, input evaluator.PolicyInput) (*evaluator.SeverityResult, error)
+	EvaluateCustomLabelsFunc func(ctx context.Context, input evaluator.PolicyInput) (map[string][]string, error)
+	PolicyHash               string
 }
 
-// Classify implements EnvironmentClassifier interface.
-func (m *mockEnvironmentClassifier) Classify(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, signal *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
-	if m.ClassifyFunc != nil {
-		return m.ClassifyFunc(ctx, k8sCtx, signal)
+func (m *mockPolicyEvaluator) EvaluateEnvironment(ctx context.Context, input evaluator.PolicyInput) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
+	if m.EvaluateEnvironmentFunc != nil {
+		return m.EvaluateEnvironmentFunc(ctx, input)
 	}
-	// Default behavior: return production environment
 	return &signalprocessingv1alpha1.EnvironmentClassification{
 		Environment:  "production",
 		Source:       "mock",
@@ -29,19 +31,10 @@ func (m *mockEnvironmentClassifier) Classify(ctx context.Context, k8sCtx *signal
 	}, nil
 }
 
-// mockPriorityAssigner implements controller.PriorityAssigner for unit tests.
-// It returns configurable results without requiring Rego policies.
-type mockPriorityAssigner struct {
-	// AssignFunc allows tests to customize behavior
-	AssignFunc func(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, envClass *signalprocessingv1alpha1.EnvironmentClassification, signal *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.PriorityAssignment, error)
-}
-
-// Assign implements PriorityAssigner interface.
-func (m *mockPriorityAssigner) Assign(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, envClass *signalprocessingv1alpha1.EnvironmentClassification, signal *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.PriorityAssignment, error) {
-	if m.AssignFunc != nil {
-		return m.AssignFunc(ctx, k8sCtx, envClass, signal)
+func (m *mockPolicyEvaluator) EvaluatePriority(ctx context.Context, input evaluator.PolicyInput) (*signalprocessingv1alpha1.PriorityAssignment, error) {
+	if m.EvaluatePriorityFunc != nil {
+		return m.EvaluatePriorityFunc(ctx, input)
 	}
-	// Default behavior: return P1 priority
 	return &signalprocessingv1alpha1.PriorityAssignment{
 		Priority:   "P1",
 		Source:     "mock",
@@ -49,14 +42,33 @@ func (m *mockPriorityAssigner) Assign(ctx context.Context, k8sCtx *signalprocess
 	}, nil
 }
 
-// newDefaultMockEnvironmentClassifier creates a mock that returns production environment.
-func newDefaultMockEnvironmentClassifier() *mockEnvironmentClassifier {
-	return &mockEnvironmentClassifier{}
+func (m *mockPolicyEvaluator) EvaluateSeverity(ctx context.Context, input evaluator.PolicyInput) (*evaluator.SeverityResult, error) {
+	if m.EvaluateSeverityFunc != nil {
+		return m.EvaluateSeverityFunc(ctx, input)
+	}
+	return &evaluator.SeverityResult{
+		Severity:   "high",
+		Source:     "mock",
+		PolicyHash: m.PolicyHash,
+	}, nil
 }
 
-// newDefaultMockPriorityAssigner creates a mock that returns P1 priority.
-func newDefaultMockPriorityAssigner() *mockPriorityAssigner {
-	return &mockPriorityAssigner{}
+func (m *mockPolicyEvaluator) EvaluateCustomLabels(ctx context.Context, input evaluator.PolicyInput) (map[string][]string, error) {
+	if m.EvaluateCustomLabelsFunc != nil {
+		return m.EvaluateCustomLabelsFunc(ctx, input)
+	}
+	return make(map[string][]string), nil
+}
+
+func (m *mockPolicyEvaluator) GetPolicyHash() string {
+	if m.PolicyHash != "" {
+		return m.PolicyHash
+	}
+	return "mock-policy-hash"
+}
+
+func newDefaultMockPolicyEvaluator() *mockPolicyEvaluator {
+	return &mockPolicyEvaluator{}
 }
 
 // mockK8sEnricher implements controller.K8sEnricher for unit tests.

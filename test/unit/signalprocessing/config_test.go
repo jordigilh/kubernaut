@@ -41,7 +41,7 @@ var _ = Describe("Config.Validate", func() {
 				Timeout:  2 * time.Second,
 			},
 			Classifier: config.ClassifierConfig{
-				RegoConfigMapName: "signalprocessing-rego-policies",
+				RegoConfigMapName: "signalprocessing-policy",
 				RegoConfigMapKey:  "policy.rego",
 				HotReloadInterval: 30 * time.Second,
 			},
@@ -60,7 +60,7 @@ var _ = Describe("Config.Validate", func() {
 					Timeout:  2 * time.Second,
 				},
 				Classifier: config.ClassifierConfig{
-					RegoConfigMapName: "signalprocessing-rego-policies",
+					RegoConfigMapName: "signalprocessing-policy",
 					RegoConfigMapKey:  "policy.rego",
 					HotReloadInterval: 30 * time.Second,
 				},
@@ -81,7 +81,7 @@ var _ = Describe("Config.Validate", func() {
 					Timeout:  0, // Invalid
 				},
 				Classifier: config.ClassifierConfig{
-					RegoConfigMapName: "signalprocessing-rego-policies",
+					RegoConfigMapName: "signalprocessing-policy",
 					RegoConfigMapKey:  "policy.rego",
 					HotReloadInterval: 30 * time.Second,
 				},
@@ -123,7 +123,7 @@ var _ = Describe("Config.Validate", func() {
 					Timeout:  2 * time.Second,
 				},
 				Classifier: config.ClassifierConfig{
-					RegoConfigMapName: "signalprocessing-rego-policies",
+					RegoConfigMapName: "signalprocessing-policy",
 					RegoConfigMapKey:  "policy.rego",
 					HotReloadInterval: 0, // Invalid
 				},
@@ -144,7 +144,7 @@ var _ = Describe("Config.Validate", func() {
 					Timeout:  2 * time.Second,
 				},
 				Classifier: config.ClassifierConfig{
-					RegoConfigMapName: "signalprocessing-rego-policies",
+					RegoConfigMapName: "signalprocessing-policy",
 					RegoConfigMapKey:  "policy.rego",
 					HotReloadInterval: 30 * time.Second,
 				},
@@ -169,7 +169,7 @@ var _ = Describe("Config.Validate", func() {
 					Timeout:  2 * time.Second,
 				},
 				Classifier: config.ClassifierConfig{
-					RegoConfigMapName: "signalprocessing-rego-policies",
+					RegoConfigMapName: "signalprocessing-policy",
 					RegoConfigMapKey:  "policy.rego",
 					HotReloadInterval: 30 * time.Second,
 				},
@@ -226,7 +226,7 @@ enrichment:
   cacheTtl: 5m
   timeout: 2s
 classifier:
-  regoConfigMapName: signalprocessing-rego-policies
+  regoConfigMapName: signalprocessing-policy
   regoConfigMapKey: policy.rego
   hotReloadInterval: 30s
 datastorage:
@@ -246,7 +246,7 @@ datastorage:
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg).To(And(
 			Not(BeNil()),
-			HaveField("Classifier.RegoConfigMapName", Equal("signalprocessing-rego-policies")),
+			HaveField("Classifier.RegoConfigMapName", Equal("signalprocessing-policy")),
 			HaveField("DataStorage.Buffer.BufferSize", Equal(1000)),
 		))
 	})

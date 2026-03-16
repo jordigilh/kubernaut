@@ -1,5 +1,7 @@
 # TRIAGE: Severity Level Extensibility [RESOLVED]
 
+> **Partially superseded by [ADR-060](ADR-060-unified-signalprocessing-rego-policy.md)**: Severity determination is now part of the unified `policy.rego`. The triage findings and resolution approach remain historically accurate.
+
 **Status**: ✅ **RESOLVED** (2026-01-09)
 **Date**: 2026-01-09
 **Triaged By**: Architecture Review

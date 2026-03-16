@@ -1,5 +1,7 @@
 # DD-SEVERITY-001: Severity Determination Refactoring
 
+> **Partially superseded by [ADR-060](ADR-060-unified-signalprocessing-rego-policy.md)**: Severity is now a rule within the unified `policy.rego` instead of a standalone `severity.rego` with a separate classifier. The severity determination principles (operator-controlled fallback, enum values) remain unchanged.
+
 ## Status
 **✅ APPROVED** (2026-01-09)
 **Last Reviewed**: 2026-01-16 (v1.2 - Documentation restructuring)

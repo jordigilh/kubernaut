@@ -22,7 +22,7 @@ enrichment:
 # CLASSIFIER SETTINGS (BR-SP-070)
 # ========================================
 classifier:
-  regoConfigMapName: signalprocessing-rego-policy
+  regoConfigMapName: signalprocessing-policy
   regoConfigMapKey: policy.rego
   hotReloadInterval: "30s"
 

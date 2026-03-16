@@ -901,7 +901,7 @@ data:
       cacheTtl: "5m"
       timeout: "10s"
     classifier:
-      regoConfigMapName: "signalprocessing-rego-policy"
+      regoConfigMapName: "signalprocessing-policy"
       regoConfigMapKey: "policy.rego"
       hotReloadInterval: "30s"
     datastorage:
