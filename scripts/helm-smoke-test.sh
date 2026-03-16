@@ -238,7 +238,6 @@ common_install_flags() {
   if [[ -n "$IMAGE_REGISTRY" ]]; then
     flags+=" --set global.image.registry=${IMAGE_REGISTRY}"
     flags+=" --set global.image.namespace="
-    flags+=" --set hooks.migrations.image=${IMAGE_REGISTRY}/db-migrate:${IMAGE_TAG}"
   fi
   if [[ -n "$PULL_SECRET" ]]; then
     flags+=" --set global.imagePullSecrets[0].name=${PULL_SECRET}"
