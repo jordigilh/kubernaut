@@ -240,21 +240,23 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 			initialSeverity = updated.Status.Severity
 		}, "60s", "2s").Should(Succeed())
 
-	// AND: Operator updates Rego policy ConfigMap (hot-reload)
+	// AND: Operator updates unified Rego policy ConfigMap (hot-reload)
+	// ADR-060: Single signalprocessing-policy ConfigMap with policy.rego key
 	policyConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "signalprocessing-severity-policy",
+			Name:      "signalprocessing-policy",
 			Namespace: "kubernaut-system",
 		},
 	}
 	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(policyConfigMap), policyConfigMap)).To(Succeed())
-	policyConfigMap.Data["severity.rego"] = `package signalprocessing.severity
+	policyConfigMap.Data["policy.rego"] = `package signalprocessing
 import rego.v1
-determine_severity := "high" if {
-	lower(input.signal.severity) == "custom_value"
-} else := "critical" if {
-	true
-}
+default environment := {"environment": "unknown", "source": "default"}
+default severity := "unknown"
+severity := "high" if { lower(input.signal.severity) == "custom_value" }
+severity := "critical" if { not lower(input.signal.severity) == "custom_value" }
+default priority := {"priority": "P3", "policy_name": "default"}
+default labels := {}
 `
 	Expect(k8sClient.Update(ctx, policyConfigMap)).To(Succeed())
 

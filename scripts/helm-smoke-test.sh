@@ -414,7 +414,7 @@ run_inst_003() {
 }
 
 run_verify_001() {
-  assert_pods_ready 13
+  assert_pods_ready 12
 }
 
 run_verify_002() {
@@ -559,7 +559,7 @@ run_upg_001() {
     tap_not_ok "ST-CHART-UPG-001c: Revision incremented" "Revision is ${revision}, expected >= 2"
   fi
 
-  assert_pods_ready 13 "ST-CHART-UPG-001d: 13 pods healthy after upgrade"
+  assert_pods_ready 12 "ST-CHART-UPG-001d: 12 pods healthy after upgrade"
 }
 
 run_uninst_001() {

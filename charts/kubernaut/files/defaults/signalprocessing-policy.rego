@@ -57,18 +57,18 @@ environment := {"environment": "development", "source": "namespace-labels"} if {
 
 default severity := "unknown"
 
-severity := "critical" if { input.signal.severity == "critical" }
-severity := "critical" if { input.signal.severity == "sev1" }
-severity := "critical" if { input.signal.severity == "p0" }
-severity := "high" if { input.signal.severity == "high" }
-severity := "high" if { input.signal.severity == "sev2" }
-severity := "high" if { input.signal.severity == "p2" }
-severity := "medium" if { input.signal.severity == "medium" }
-severity := "medium" if { input.signal.severity == "warning" }
-severity := "medium" if { input.signal.severity == "sev3" }
-severity := "low" if { input.signal.severity == "low" }
-severity := "low" if { input.signal.severity == "info" }
-severity := "low" if { input.signal.severity == "sev4" }
+severity := "critical" if { lower(input.signal.severity) == "critical" }
+severity := "critical" if { lower(input.signal.severity) == "sev1" }
+severity := "critical" if { lower(input.signal.severity) == "p0" }
+severity := "high" if { lower(input.signal.severity) == "high" }
+severity := "high" if { lower(input.signal.severity) == "sev2" }
+severity := "high" if { lower(input.signal.severity) == "p2" }
+severity := "medium" if { lower(input.signal.severity) == "medium" }
+severity := "medium" if { lower(input.signal.severity) == "warning" }
+severity := "medium" if { lower(input.signal.severity) == "sev3" }
+severity := "low" if { lower(input.signal.severity) == "low" }
+severity := "low" if { lower(input.signal.severity) == "info" }
+severity := "low" if { lower(input.signal.severity) == "sev4" }
 
 # ========== Priority Assignment (BR-SP-070) ==========
 # Returns: {"priority": string, "policy_name": string}
