@@ -11,9 +11,9 @@ data:
   config.yaml: |
     server:
       listenAddr: ":8080"
-      maxConcurrentRequests: 100
-      readTimeout: 30s
-      writeTimeout: 30s
+      maxConcurrentRequests: {{ .Values.gateway.config.server.maxConcurrentRequests | default 100 }}
+      readTimeout: {{ .Values.gateway.config.server.readTimeout | default "30s" }}
+      writeTimeout: {{ .Values.gateway.config.server.writeTimeout | default "30s" }}
       idleTimeout: 120s
     datastorage:
       url: "{{ include "kubernaut.datastorage.url" . }}"
@@ -25,7 +25,7 @@ data:
         maxRetries: 3
     processing:
       deduplication:
-        cooldownPeriod: 5m
+        cooldownPeriod: {{ .Values.gateway.config.deduplication.cooldownPeriod | default "5m" }}
       retry:
         maxAttempts: 3
         initialBackoff: 100ms
@@ -190,9 +190,6 @@ spec:
       protocol: TCP
       port: 8080
       targetPort: 8080
-      {{- if .Values.gateway.service.nodePort }}
-      nodePort: {{ .Values.gateway.service.nodePort }}
-      {{- end }}
     - name: metrics
       protocol: TCP
       port: 9090

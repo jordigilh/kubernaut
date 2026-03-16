@@ -15,26 +15,6 @@ rules:
     resources: ["services"]
     resourceNames: ["gateway-service"]
     verbs: ["create"]
-{{- if .Values.eventExporter.enabled }}
----
-# Event Exporter → Gateway (deployed by this chart)
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: event-exporter-gateway-signal-source
-  labels:
-    app: gateway
-    component: auth
-    {{- include "kubernaut.labels" . | nindent 4 }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: gateway-signal-source
-subjects:
-  - kind: ServiceAccount
-    name: event-exporter
-    namespace: {{ .Release.Namespace }}
-{{- end }}
 {{- range .Values.gateway.auth.signalSources }}
 ---
 # {{ .name }} → Gateway (external signal source)

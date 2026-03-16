@@ -1,10 +1,9 @@
 # OCP overlay for OpenShift deployments.
-# Usage: helm install kubernaut charts/kubernaut -f charts/kubernaut/values-demo.yaml -f charts/kubernaut/values-ocp.yaml
+# Usage: helm install kubernaut charts/kubernaut -f charts/kubernaut/values-ocp.yaml
 #
-# Layer this on top of values-demo.yaml (or your production values) to:
+# Layer this on top of your values to:
 #   - Switch PostgreSQL and Valkey to Red Hat RHEL10 catalog images (direct pull)
 #   - Replace bitnami/kubectl with ose-cli for hook jobs
-#   - Disable the event exporter (no Red Hat-supported equivalent)
 #   - Override signal sources and Prometheus/AlertManager URLs for OCP monitoring
 #
 # No ImageStream prerequisites — pods pull directly from registry.redhat.io.
@@ -20,12 +19,7 @@ postgresql:
 valkey:
   image: registry.redhat.io/rhel10/valkey-8
 
-eventExporter:
-  enabled: false
-
 hooks:
-  # migrations.image: The default db-migrate image (UBI9-minimal) works on OCP
-  # without modification. Override only if using a custom mirror registry.
   tlsCerts:
     image: registry.redhat.io/openshift4/ose-cli-rhel9:v4.17
 

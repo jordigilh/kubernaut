@@ -26,7 +26,7 @@
 #          --from-file=.dockerconfigjson=<auth-file>
 #   3. For OCP 4.13+, create an ImageDigestMirrorSet (see chart README).
 
-# Override the registry for all Kubernaut service images.
+# Override the registry for all Kubernaut service images (including db-migrate).
 # Replace <mirror-registry> with your internal registry hostname.
 #
 # Nested registries (Harbor, Artifactory, generic Docker v2):
@@ -56,11 +56,6 @@ postgresql:
 valkey:
   image: <mirror-registry>/rhel10/valkey-8
 
-# Event exporter is disabled on OCP (no Red Hat-supported equivalent).
-# values-ocp.yaml already sets eventExporter.enabled=false.
-
 hooks:
-  migrations:
-    image: <mirror-registry>/kubernaut-ai/db-migrate:v1.1.0-rc0
   tlsCerts:
     image: <mirror-registry>/openshift4/ose-cli-rhel9:v4.17

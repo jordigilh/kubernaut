@@ -19,10 +19,10 @@ data:
       port: {{ include "kubernaut.postgresql.port" . }}
       name: {{ include "kubernaut.postgresql.database" . }}
       user: {{ include "kubernaut.postgresql.username" . }}
-      sslMode: disable
-      maxOpenConns: 100
-      maxIdleConns: 20
-      connMaxLifetime: 1h
+      sslMode: {{ .Values.datastorage.config.database.sslMode | default "disable" }}
+      maxOpenConns: {{ .Values.datastorage.config.database.maxOpenConns | default 100 }}
+      maxIdleConns: {{ .Values.datastorage.config.database.maxIdleConns | default 20 }}
+      connMaxLifetime: {{ .Values.datastorage.config.database.connMaxLifetime | default "1h" }}
       connMaxIdleTime: 10m
       secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
       usernameKey: "username"
@@ -165,9 +165,6 @@ spec:
       port: 8080
       targetPort: 8080
       protocol: TCP
-      {{- if .Values.datastorage.service.nodePort }}
-      nodePort: {{ .Values.datastorage.service.nodePort }}
-      {{- end }}
     - name: metrics
       port: 9181
       targetPort: 9181

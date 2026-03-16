@@ -87,6 +87,7 @@ data:
         flushInterval: 1s
         maxRetries: 3
 ---
+{{- if not .Values.notification.routing.existingConfigMap }}
 # Routing ConfigMap: Alertmanager-compatible routing rules (BR-NOT-066, #207)
 apiVersion: v1
 kind: ConfigMap
@@ -98,35 +99,17 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   routing.yaml: |
+{{- if .Values.notification.routing.content }}
+{{ .Values.notification.routing.content | indent 4 }}
+{{- else }}
     route:
       receiver: default-console
-      {{- if .Values.notification.slack.enabled }}
-      routes:
-        - match:
-            type: escalation
-          receiver: slack-alerts
-        - match:
-            type: approval_required
-          receiver: slack-alerts
-        - match:
-            type: failed
-          receiver: slack-alerts
-      {{- end }}
     receivers:
       - name: default-console
         consoleConfigs:
           - enabled: true
-        {{- if .Values.notification.slack.enabled }}
-        slackConfigs:
-          - channel: {{ .Values.notification.slack.channel | quote }}
-            credentialRef: slack-webhook
-        {{- end }}
-      {{- if .Values.notification.slack.enabled }}
-      - name: slack-alerts
-        slackConfigs:
-          - channel: {{ .Values.notification.slack.channel | quote }}
-            credentialRef: slack-webhook
-      {{- end }}
+{{- end }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment

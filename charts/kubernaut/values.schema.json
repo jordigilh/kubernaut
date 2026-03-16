@@ -46,10 +46,6 @@
           "enum": ["ClusterIP", "NodePort", "LoadBalancer"],
           "default": "ClusterIP",
           "description": "Kubernetes Service type"
-        },
-        "nodePort": {
-          "oneOf": [{ "type": "integer" }, { "type": "null" }],
-          "description": "Static node port when type is NodePort"
         }
       }
     },
@@ -216,6 +212,28 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "server": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "maxConcurrentRequests": { "type": "integer", "default": 100 },
+                "readTimeout": { "type": "string", "default": "30s" },
+                "writeTimeout": { "type": "string", "default": "30s" }
+              }
+            },
+            "deduplication": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cooldownPeriod": { "type": "string", "default": "5m" }
+              }
+            }
+          }
+        },
         "resources": { "$ref": "#/definitions/resources" },
         "service": { "$ref": "#/definitions/serviceConfig" },
         "auth": {
@@ -253,6 +271,22 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "database": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "sslMode": { "type": "string", "default": "disable", "description": "PostgreSQL SSL mode" },
+                "maxOpenConns": { "type": "integer", "default": 100, "description": "Maximum open database connections" },
+                "maxIdleConns": { "type": "integer", "default": 20, "description": "Maximum idle database connections" },
+                "connMaxLifetime": { "type": "string", "default": "1h", "description": "Maximum connection lifetime" }
+              }
+            }
+          }
+        },
         "dbExistingSecret": {
           "type": "string",
           "default": "",
@@ -285,6 +319,15 @@
             }
           }
         },
+        "policies": {
+          "type": "object",
+          "description": "Approval policy externalization. Provide content via --set-file or reference an existing ConfigMap.",
+          "additionalProperties": false,
+          "properties": {
+            "content": { "type": "string", "default": "" },
+            "existingConfigMap": { "type": "string", "default": "" }
+          }
+        },
         "resources": { "$ref": "#/definitions/resources" },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
@@ -301,6 +344,15 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
+        "policies": {
+          "type": "object",
+          "description": "Rego policy externalization. Provide content via --set-file or reference an existing ConfigMap.",
+          "additionalProperties": false,
+          "properties": {
+            "content": { "type": "string", "default": "" },
+            "existingConfigMap": { "type": "string", "default": "" }
+          }
+        },
         "resources": { "$ref": "#/definitions/resources" },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
@@ -322,6 +374,29 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "timeouts": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "global": { "type": "string", "default": "1h", "description": "Global remediation timeout" },
+                "processing": { "type": "string", "default": "5m", "description": "Signal processing phase timeout" },
+                "analyzing": { "type": "string", "default": "10m", "description": "AI analysis phase timeout" },
+                "executing": { "type": "string", "default": "30m", "description": "Workflow execution phase timeout" },
+                "verifying": { "type": "string", "default": "30m", "description": "Effectiveness verification phase timeout" }
+              }
+            },
+            "routing": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "consecutiveFailureThreshold": { "type": "integer", "default": 3, "description": "Failures before cooldown" },
+                "consecutiveFailureCooldown": { "type": "string", "default": "1h", "description": "Cooldown after consecutive failures" },
+                "recentlyRemediatedCooldown": { "type": "string", "default": "5m", "description": "Cooldown for recently remediated signals" },
+                "ineffectiveChainThreshold": { "type": "integer", "default": 3, "description": "Ineffective workflow chain length before escalation" },
+                "recurrenceCountThreshold": { "type": "integer", "default": 5, "description": "Signal recurrence count before escalation" },
+                "ineffectiveTimeWindow": { "type": "string", "default": "4h", "description": "Time window for ineffectiveness evaluation" }
+              }
+            },
             "effectivenessAssessment": {
               "type": "object",
               "additionalProperties": false,
@@ -371,6 +446,19 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "execution": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cooldownPeriod": { "type": "string", "default": "1m", "description": "Cooldown between workflow executions" }
+              }
+            }
+          }
+        },
         "workflowNamespace": {
           "type": "string",
           "description": "Namespace for Job/PipelineRun execution",
@@ -392,20 +480,13 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
-        "slack": {
+        "routing": {
           "type": "object",
+          "description": "Notification routing externalization. Provide content via --set-file or reference an existing ConfigMap.",
           "additionalProperties": false,
           "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": false,
-              "description": "Enable Slack delivery channel; when false, only console/log delivery is active"
-            },
-            "channel": {
-              "type": "string",
-              "default": "#kubernaut-alerts",
-              "description": "Slack channel for alerts"
-            }
+            "content": { "type": "string", "default": "" },
+            "existingConfigMap": { "type": "string", "default": "" }
           }
         },
         "credentials": {
@@ -438,6 +519,20 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "assessment": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "stabilizationWindow": { "type": "string", "default": "30s", "description": "Time to wait after remediation before assessing effectiveness" },
+                "validityWindow": { "type": "string", "default": "120s", "description": "Time window for assessment validity" }
+              }
+            }
+          }
+        },
         "external": {
           "type": "object",
           "description": "External monitoring service URLs",
@@ -471,35 +566,8 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "provider": { "type": "string", "default": "" },
-            "model": { "type": "string", "default": "" },
-            "endpoint": { "type": "string", "default": "" },
-            "gcpProjectId": { "type": "string", "default": "" },
-            "gcpRegion": { "type": "string", "default": "" },
-            "maxRetries": { "type": "integer", "default": 3 },
-            "timeoutSeconds": { "type": "integer", "default": 120 },
-            "temperature": { "type": "number", "default": 0.7 },
             "credentialsSecretName": { "type": "string", "default": "llm-credentials", "description": "Name of the pre-existing K8s Secret containing LLM API credentials (e.g. OPENAI_API_KEY)" }
           }
-        },
-        "prometheus": {
-          "type": "object",
-          "description": "Prometheus integration for AI investigation. When enabled, renders prometheus/metrics toolset into SDK ConfigMap.",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": false, "description": "Enable prometheus/metrics toolset for LLM investigation" },
-            "url": { "type": "string", "default": "http://kube-prometheus-stack-prometheus.monitoring.svc:9090", "description": "Prometheus server URL (cluster-internal)" }
-          }
-        },
-        "toolsets": {
-          "type": "object",
-          "description": "Additional HolmesGPT SDK toolset configuration. Merged alongside auto-configured toolsets (e.g. prometheus). See https://holmesgpt.dev/data-sources/builtin-toolsets/",
-          "default": {}
-        },
-        "mcpServers": {
-          "type": "object",
-          "description": "MCP server configuration. Rendered into holmesgpt-sdk-config ConfigMap.",
-          "default": {}
         },
         "sdkConfigContent": {
           "type": "string",
@@ -536,42 +604,23 @@
         "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
-    "eventExporter": {
-      "type": "object",
-      "description": "Event Exporter (forwards K8s Warning events to Gateway). Optional — disable when K8s event ingestion is not needed.",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Deploy the in-chart event exporter. Set false when not needed or no supported image is available."
-        },
-        "replicas": { "type": "integer", "default": 1 },
-        "image": {
-          "type": "string",
-          "default": "ghcr.io/resmoio/kubernetes-event-exporter:v1.7"
-        },
-        "resources": { "$ref": "#/definitions/resources" },
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "pdb": { "$ref": "#/definitions/pdb" },
-        "affinity": { "$ref": "#/definitions/affinity" },
-        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
-      }
-    },
     "postgresql": {
       "type": "object",
-      "description": "PostgreSQL (DataStorage backend). Set enabled=false to use externalPostgresql (BYO #256)",
+      "description": "PostgreSQL (DataStorage backend). Set enabled=false to use external host/port (BYO #256)",
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
         "enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Set false to skip in-chart PostgreSQL and use externalPostgresql instead"
+          "description": "Set false to skip in-chart PostgreSQL and use external host/port instead"
         },
+        "host": {
+          "type": "string",
+          "default": "",
+          "description": "External PostgreSQL host. Required when enabled=false."
+        },
+        "port": { "type": "integer", "default": 5432 },
         "variant": {
           "type": "string",
           "default": "upstream",
@@ -608,48 +657,27 @@
           }
         },
         "resources": { "$ref": "#/definitions/resources" },
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
         "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
-    "externalPostgresql": {
-      "type": "object",
-      "description": "External PostgreSQL (BYO #256). Used when postgresql.enabled=false",
-      "additionalProperties": false,
-      "properties": {
-        "host": {
-          "type": "string",
-          "default": "",
-          "description": "Required when postgresql.enabled=false (e.g., db.example.com)"
-        },
-        "port": { "type": "integer", "default": 5432 },
-        "auth": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "existingSecret": {
-              "type": "string",
-              "description": "K8s Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys (required)"
-            },
-            "username": { "type": "string", "default": "slm_user" },
-            "database": { "type": "string", "default": "action_history" }
-          }
-        }
-      }
-    },
     "valkey": {
       "type": "object",
-      "description": "Valkey (DataStorage DLQ). Redis-compatible in-memory store. Set enabled=false to use externalValkey (BYO #256)",
+      "description": "Valkey (DataStorage DLQ). Redis-compatible in-memory store. Set enabled=false to use external host/port (BYO #256)",
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
         "enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Set false to skip in-chart Valkey and use externalValkey instead"
+          "description": "Set false to skip in-chart Valkey and use external host/port instead"
         },
+        "host": {
+          "type": "string",
+          "default": "",
+          "description": "External Valkey host. Required when enabled=false."
+        },
+        "port": { "type": "integer", "default": 6379 },
         "image": {
           "type": "string",
           "default": "valkey/valkey:8-alpine"
@@ -671,39 +699,8 @@
           }
         },
         "resources": { "$ref": "#/definitions/resources" },
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
         "tolerations": { "$ref": "#/definitions/tolerations" }
-      }
-    },
-    "externalValkey": {
-      "type": "object",
-      "description": "External Valkey/Redis (BYO #256). Used when valkey.enabled=false",
-      "additionalProperties": false,
-      "properties": {
-        "host": {
-          "type": "string",
-          "default": "",
-          "description": "Required when valkey.enabled=false (e.g., valkey.example.com)"
-        },
-        "port": { "type": "integer", "default": 6379 },
-        "existingSecret": {
-          "type": "string",
-          "description": "K8s Secret with valkey-secrets.yaml key (required)"
-        }
-      }
-    },
-    "networkPolicies": {
-      "type": "object",
-      "description": "NetworkPolicies to restrict inter-service traffic",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Create NetworkPolicy resources when true"
-        }
       }
     },
     "hooks": {
@@ -711,17 +708,6 @@
       "description": "Post-install Jobs",
       "additionalProperties": false,
       "properties": {
-        "migrations": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "image": {
-              "type": "string",
-              "default": "quay.io/kubernaut-ai/db-migrate:v1.1.0-rc0",
-              "description": "UBI9-minimal image with goose + psql for database migrations (works in disconnected environments)"
-            }
-          }
-        },
         "tlsCerts": {
           "type": "object",
           "additionalProperties": false,

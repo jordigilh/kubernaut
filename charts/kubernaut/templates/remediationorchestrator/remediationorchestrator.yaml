@@ -15,11 +15,11 @@ data:
       leaderElection: false
       leaderElectionId: "remediationorchestrator.kubernaut.ai"
     timeouts:
-      global: "1h"
-      processing: "5m"
-      analyzing: "10m"
-      executing: "30m"
-      verifying: "30m"
+      global: {{ .Values.remediationorchestrator.config.timeouts.global | default "1h" | quote }}
+      processing: {{ .Values.remediationorchestrator.config.timeouts.processing | default "5m" | quote }}
+      analyzing: {{ .Values.remediationorchestrator.config.timeouts.analyzing | default "10m" | quote }}
+      executing: {{ .Values.remediationorchestrator.config.timeouts.executing | default "30m" | quote }}
+      verifying: {{ .Values.remediationorchestrator.config.timeouts.verifying | default "30m" | quote }}
     datastorage:
       url: "{{ include "kubernaut.datastorage.url" . }}"
       timeout: "10s"
@@ -35,18 +35,18 @@ data:
       operatorReconcileDelay: {{ .Values.remediationorchestrator.config.asyncPropagation.operatorReconcileDelay | default "1m" | quote }}
       proactiveAlertDelay: {{ .Values.remediationorchestrator.config.asyncPropagation.proactiveAlertDelay | default "5m" | quote }}
     routing:
-      consecutiveFailureThreshold: 3
-      consecutiveFailureCooldown: "1h"
-      recentlyRemediatedCooldown: "5m"
+      consecutiveFailureThreshold: {{ .Values.remediationorchestrator.config.routing.consecutiveFailureThreshold | default 3 }}
+      consecutiveFailureCooldown: {{ .Values.remediationorchestrator.config.routing.consecutiveFailureCooldown | default "1h" | quote }}
+      recentlyRemediatedCooldown: {{ .Values.remediationorchestrator.config.routing.recentlyRemediatedCooldown | default "5m" | quote }}
       exponentialBackoffBase: "1m"
       exponentialBackoffMax: "10m"
       exponentialBackoffMaxExponent: 4
       scopeBackoffBase: "5s"
       scopeBackoffMax: "5m"
       noActionRequiredDelayHours: 24
-      ineffectiveChainThreshold: 3
-      recurrenceCountThreshold: 5
-      ineffectiveTimeWindow: "4h"
+      ineffectiveChainThreshold: {{ .Values.remediationorchestrator.config.routing.ineffectiveChainThreshold | default 3 }}
+      recurrenceCountThreshold: {{ .Values.remediationorchestrator.config.routing.recurrenceCountThreshold | default 5 }}
+      ineffectiveTimeWindow: {{ .Values.remediationorchestrator.config.routing.ineffectiveTimeWindow | default "4h" | quote }}
 ---
 apiVersion: v1
 kind: ServiceAccount

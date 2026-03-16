@@ -1,0 +1,40 @@
+# Notification Routing Configuration
+#
+# Provide this to the chart via:
+#   helm install kubernaut charts/kubernaut/ \
+#     --set-file notification.routing.content=charts/kubernaut/examples/notification-routing.yaml
+#
+# Or pre-create a ConfigMap and reference it:
+#   kubectl create configmap notification-routing-config --from-file=routing.yaml=notification-routing.yaml
+#   helm install kubernaut charts/kubernaut/ --set notification.routing.existingConfigMap=notification-routing-config
+#
+# When neither routing.content nor routing.existingConfigMap is set, the chart
+# generates a console-only default routing config (no Slack, no email).
+#
+# To enable Slack, also configure notification.credentials[] in values.yaml
+# to mount your Slack webhook Secret into the notification pod.
+
+route:
+  receiver: default-console
+  routes:
+    - match:
+        type: escalation
+      receiver: slack-alerts
+    - match:
+        type: approval_required
+      receiver: slack-alerts
+    - match:
+        type: failed
+      receiver: slack-alerts
+
+receivers:
+  - name: default-console
+    consoleConfigs:
+      - enabled: true
+    slackConfigs:
+      - channel: "#kubernaut-alerts"
+        credentialRef: slack-webhook
+  - name: slack-alerts
+    slackConfigs:
+      - channel: "#kubernaut-alerts"
+        credentialRef: slack-webhook

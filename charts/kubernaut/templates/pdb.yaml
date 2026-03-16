@@ -9,7 +9,6 @@
   "workflowexecution-controller" $.Values.workflowexecution
   "effectivenessmonitor-controller" $.Values.effectivenessmonitor
   "aianalysis-controller" $.Values.aianalysis
-  "event-exporter" $.Values.eventExporter
 }}
 {{- if and $component.pdb $component.pdb.enabled }}
 ---
