@@ -563,10 +563,15 @@ run_upg_001() {
 }
 
 run_uninst_001() {
-  if helm uninstall kubernaut -n "$NAMESPACE" >/dev/null 2>&1; then
+  # The chart's pre-delete hook (webhook-cleanup Job) removes admission webhooks
+  # before Helm deletes the release resources, preventing failurePolicy=Fail
+  # rejections when the authwebhook pod terminates before demo-content CRs.
+  local uninstall_output
+  uninstall_output=$(helm uninstall kubernaut -n "$NAMESPACE" 2>&1)
+  if [[ $? -eq 0 ]]; then
     tap_ok "ST-CHART-UNINST-001a: helm uninstall succeeds"
   else
-    tap_not_ok "ST-CHART-UNINST-001a: helm uninstall succeeds" "helm uninstall failed"
+    tap_not_ok "ST-CHART-UNINST-001a: helm uninstall succeeds" "helm uninstall failed: ${uninstall_output}"
     return 1
   fi
 

@@ -186,8 +186,7 @@ spec:
               mountPath: /etc/signalprocessing/config.yaml
               subPath: config.yaml
             - name: policy
-              mountPath: /etc/signalprocessing/policy.rego
-              subPath: policy.rego
+              mountPath: /etc/signalprocessing/policies
               readOnly: true
             - name: proactive-signal-mappings
               mountPath: /etc/signalprocessing/proactive-signal-mappings.yaml

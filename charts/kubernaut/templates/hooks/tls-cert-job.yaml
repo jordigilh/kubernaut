@@ -241,7 +241,7 @@ rules:
     verbs: ["get", "create", "update", "patch", "delete"]
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
-    verbs: ["get", "patch"]
+    verbs: ["get", "patch", "delete"]
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list"]
@@ -272,7 +272,66 @@ subjects:
     namespace: {{ .Release.Namespace }}
 {{- if eq .Values.tls.mode "hook" }}
 ---
-# Job 3: Clean up hook-created resources on uninstall (post-delete).
+# Job 3: Remove admission webhooks before uninstall (pre-delete).
+# During helm uninstall, Helm may terminate the authwebhook pod before
+# deleting chart-managed CRs (ActionTypes, RemediationWorkflows from
+# demoContent). The validating webhooks use failurePolicy=Fail, so
+# DELETE requests are rejected once the webhook endpoint is gone.
+# Removing the webhook configs first ensures clean teardown.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-webhook-cleanup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 60
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: webhook-cleanup
+    spec:
+      serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: webhook-cleanup
+          image: {{ .Values.hooks.tlsCerts.image }}
+          securityContext:
+            runAsUser: 65534
+            runAsGroup: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "==> Removing admission webhooks before uninstall..."
+              kubectl delete validatingwebhookconfiguration authwebhook-validating --ignore-not-found
+              kubectl delete mutatingwebhookconfiguration authwebhook-mutating --ignore-not-found
+              echo "==> Webhook cleanup complete"
+---
+# Job 4: Clean up hook-created resources on uninstall (post-delete).
 # Removes authwebhook-tls Secret that is created by kubectl (not tracked
 # by Helm) and would otherwise be orphaned.
 apiVersion: batch/v1

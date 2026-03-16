@@ -948,10 +948,9 @@ spec:
           mountPath: /etc/signalprocessing/config.yaml
           subPath: config.yaml
           readOnly: true
-        # ADR-060: Mount unified policy file
+        # ADR-060: Mount unified policy as directory (no subPath — enables ConfigMap hot-reload)
         - name: policy
-          mountPath: /etc/signalprocessing/policy.rego
-          subPath: policy.rego
+          mountPath: /etc/signalprocessing/policies
           readOnly: true
         # BR-SP-106: Mount proactive signal mappings (separate from Rego policies)
         - name: proactive-signal-mappings

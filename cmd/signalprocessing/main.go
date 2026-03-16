@@ -209,12 +209,12 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 
 	policyEvaluator := evaluator.New(
-		"/etc/signalprocessing/policy.rego",
+		"/etc/signalprocessing/policies/policy.rego",
 		ctrl.Log.WithName("evaluator"),
 	)
 	if err := policyEvaluator.StartHotReload(ctx); err != nil {
 		setupLog.Error(err, "FATAL: unified policy is mandatory but failed to load",
-			"policyPath", "/etc/signalprocessing/policy.rego",
+			"policyPath", "/etc/signalprocessing/policies/policy.rego",
 			"hint", "Ensure the policy file is mounted via ConfigMap/Secret")
 		os.Exit(1)
 	}
