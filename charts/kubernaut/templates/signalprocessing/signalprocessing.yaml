@@ -1,24 +1,20 @@
-{{- if not .Values.signalprocessing.policies.existingConfigMap }}
-{{- if not .Values.signalprocessing.policies.content }}
-{{- fail "Either signalprocessing.policies.content (via --set-file) or signalprocessing.policies.existingConfigMap must be provided. See charts/kubernaut/examples/signalprocessing-policies.yaml for the required bundle format." }}
-{{- end }}
-{{- $bundle := .Values.signalprocessing.policies.content | fromYaml }}
+{{- if not .Values.signalprocessing.existingPolicyConfigMap }}
+{{- $policyContent := .Values.signalprocessing.policy | default (.Files.Get "files/defaults/signalprocessing-policy.rego") }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: signalprocessing-policies
+  name: signalprocessing-policy
   namespace: {{ .Release.Namespace }}
   labels:
     app: signalprocessing
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
-  {{- range $key, $value := $bundle }}
-  {{- if ne $key "proactive-signal-mappings.yaml" }}
-  {{ $key }}: |
-{{ $value | indent 4 }}
-  {{- end }}
-  {{- end }}
+  policy.rego: |
+{{ $policyContent | indent 4 }}
+{{- end }}
+{{- if not .Values.signalprocessing.proactiveSignalMappings.existingConfigMap }}
+{{- $mappingsContent := .Values.signalprocessing.proactiveSignalMappings.content | default (.Files.Get "files/defaults/proactive-signal-mappings.yaml") }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -30,11 +26,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   proactive-signal-mappings.yaml: |
-  {{- if index $bundle "proactive-signal-mappings.yaml" }}
-{{ index $bundle "proactive-signal-mappings.yaml" | indent 4 }}
-  {{- else }}
-    proactive_signal_mappings: {}
-  {{- end }}
+{{ $mappingsContent | indent 4 }}
 {{- end }}
 ---
 apiVersion: v1
@@ -56,7 +48,7 @@ data:
       cacheTtl: "5m"
       timeout: "10s"
     classifier:
-      regoConfigMapName: "signalprocessing-rego-policy"
+      regoConfigMapName: "signalprocessing-policy"
       regoConfigMapKey: "policy.rego"
       hotReloadInterval: "30s"
     datastorage:
@@ -193,8 +185,9 @@ spec:
             - name: config
               mountPath: /etc/signalprocessing/config.yaml
               subPath: config.yaml
-            - name: policies
-              mountPath: /etc/signalprocessing/policies
+            - name: policy
+              mountPath: /etc/signalprocessing/policy.rego
+              subPath: policy.rego
               readOnly: true
             - name: proactive-signal-mappings
               mountPath: /etc/signalprocessing/proactive-signal-mappings.yaml
@@ -205,12 +198,12 @@ spec:
         - name: config
           configMap:
             name: signalprocessing-config
-        - name: policies
+        - name: policy
           configMap:
-            name: {{ .Values.signalprocessing.policies.existingConfigMap | default "signalprocessing-policies" }}
+            name: {{ .Values.signalprocessing.existingPolicyConfigMap | default "signalprocessing-policy" }}
         - name: proactive-signal-mappings
           configMap:
-            name: {{ .Values.signalprocessing.policies.existingConfigMap | default "signalprocessing-proactive-signal-mappings" }}
+            name: {{ .Values.signalprocessing.proactiveSignalMappings.existingConfigMap | default "signalprocessing-proactive-signal-mappings" }}
 ---
 apiVersion: v1
 kind: Service

@@ -101,6 +101,29 @@ data:
   routing.yaml: |
 {{- if .Values.notification.routing.content }}
 {{ .Values.notification.routing.content | indent 4 }}
+{{- else if .Values.notification.slack.secretName }}
+    route:
+      receiver: default-console
+      routes:
+        - match:
+            type: escalation
+          receiver: slack-alerts
+        - match:
+            type: approval_required
+          receiver: slack-alerts
+        - match:
+            type: failed
+          receiver: slack-alerts
+    receivers:
+      - name: default-console
+        consoleConfigs:
+          - enabled: true
+      - name: slack-alerts
+        consoleConfigs:
+          - enabled: true
+        slackConfigs:
+          - channel: {{ .Values.notification.slack.channel | default "#kubernaut-alerts" | quote }}
+            credentialRef: slack-webhook
 {{- else }}
     route:
       receiver: default-console
@@ -207,6 +230,14 @@ spec:
                     - key: {{ .secretKey | default "webhook-url" }}
                       path: {{ .name }}
             {{- end }}
+          {{- else if .Values.notification.slack.secretName }}
+          projected:
+            sources:
+              - secret:
+                  name: {{ .Values.notification.slack.secretName }}
+                  items:
+                    - key: {{ .Values.notification.slack.secretKey | default "webhook-url" }}
+                      path: slack-webhook
           {{- else }}
           emptyDir: {}
           {{- end }}

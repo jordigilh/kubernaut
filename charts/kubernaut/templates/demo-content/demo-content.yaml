@@ -1,0 +1,12 @@
+{{- if .Values.demoContent.enabled }}
+# Bundled demo ActionTypes and RemediationWorkflows.
+# Disable with --set demoContent.enabled=false for production deployments.
+{{- range $path, $_ := .Files.Glob "files/demo-content/action-types/*.yaml" }}
+---
+{{ $.Files.Get $path }}
+{{- end }}
+{{- range $path, $_ := .Files.Glob "files/demo-content/workflows/*.yaml" }}
+---
+{{ $.Files.Get $path }}
+{{- end }}
+{{- end }}

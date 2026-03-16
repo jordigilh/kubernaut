@@ -1,0 +1,11 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: fix-stateful-set-pvc
+spec:
+  name: FixStatefulSetPVC
+  description:
+    what: "Recreate a missing PVC for a StatefulSet and restart the stuck pod."
+    whenToUse: "A StatefulSet pod is stuck in Pending because its PVC has been accidentally deleted or the backing PV is no longer available."
+    whenNotToUse: "When the PVC exists but the storage backend itself is down (fix the storage backend instead), or when data recovery is needed before recreating."
+    preconditions: "The StatefulSet exists with a volumeClaimTemplate, the missing PVC name follows the StatefulSet naming convention, and a StorageClass is available to provision a new PV."

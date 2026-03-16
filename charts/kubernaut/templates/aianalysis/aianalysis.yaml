@@ -1,7 +1,5 @@
 {{- if not .Values.aianalysis.policies.existingConfigMap }}
-{{- if not .Values.aianalysis.policies.content }}
-{{- fail "Either aianalysis.policies.content (via --set-file) or aianalysis.policies.existingConfigMap must be provided. See charts/kubernaut/examples/approval.rego for a reference policy." }}
-{{- end }}
+{{- $approvalContent := .Values.aianalysis.policies.content | default (.Files.Get "files/defaults/approval.rego") }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -13,7 +11,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   approval.rego: |
-{{ .Values.aianalysis.policies.content | indent 4 }}
+{{ $approvalContent | indent 4 }}
 {{- end }}
 ---
 apiVersion: v1

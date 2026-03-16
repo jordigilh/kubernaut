@@ -129,9 +129,6 @@ data:
       buffer_size: 10000
       batch_size: 50
 {{- if not .Values.holmesgptApi.existingSdkConfigMap }}
-{{- if not .Values.holmesgptApi.sdkConfigContent }}
-{{- fail "Either holmesgptApi.sdkConfigContent (via --set-file) or holmesgptApi.existingSdkConfigMap must be provided. See #403." }}
-{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -144,7 +141,20 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   sdk-config.yaml: |
+{{- if .Values.holmesgptApi.sdkConfigContent }}
 {{ .Values.holmesgptApi.sdkConfigContent | indent 4 }}
+{{- else if and .Values.holmesgptApi.llm.provider .Values.holmesgptApi.llm.model }}
+    llm:
+      provider: {{ .Values.holmesgptApi.llm.provider | quote }}
+      model: {{ .Values.holmesgptApi.llm.model | quote }}
+      max_retries: 3
+      timeout_seconds: 120
+      temperature: 0.7
+    toolsets: {}
+    mcp_servers: {}
+{{- else }}
+{{- fail "LLM configuration required. Choose one:\n  1) --set holmesgptApi.llm.provider=openai --set holmesgptApi.llm.model=gpt-4o  (quickstart)\n  2) --set-file holmesgptApi.sdkConfigContent=sdk-config.yaml  (full config)\n  3) --set holmesgptApi.existingSdkConfigMap=my-configmap  (pre-existing)" }}
+{{- end }}
 {{- end }}
 ---
 apiVersion: apps/v1

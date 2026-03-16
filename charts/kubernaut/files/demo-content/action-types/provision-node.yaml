@@ -1,0 +1,11 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: provision-node
+spec:
+  name: ProvisionNode
+  description:
+    what: "Request provisioning of a new Kubernetes node to increase cluster capacity."
+    whenToUse: "Pods are Pending due to insufficient cluster-wide resources (CPU, memory) and no existing node has capacity."
+    whenNotToUse: "When scheduling failures are caused by taints, affinity rules, or PDB constraints rather than resource exhaustion."
+    preconditions: "Confirmed that all schedulable nodes are at or near capacity and pending pods have resource requests that cannot be satisfied."

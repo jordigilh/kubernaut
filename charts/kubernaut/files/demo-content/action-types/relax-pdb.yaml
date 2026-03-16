@@ -1,0 +1,11 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: relax-pdb
+spec:
+  name: RelaxPDB
+  description:
+    what: "Temporarily relax a PodDisruptionBudget to unblock a pending node drain, then restore it."
+    whenToUse: "A node drain is blocked because a PDB prevents evicting the required number of pods."
+    whenNotToUse: "When the PDB is correctly preventing unsafe evictions and the drain should be postponed."
+    preconditions: "Confirmed that the drain is intentional and the PDB is the sole blocker. The workload can tolerate temporary reduced availability."

@@ -1,0 +1,10 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: restart-deployment
+spec:
+  name: RestartDeployment
+  description:
+    what: "Perform a rolling restart of all pods in a workload (Deployment or StatefulSet)."
+    whenToUse: "Root cause is a workload-wide state issue affecting all or most pods, such as stale configuration, expired certificates, or corrupted shared state that requires all pods to be refreshed."
+    preconditions: "Evidence that the issue affects multiple pods in the same workload (not just a single pod), and a fresh set of pods would resolve the issue."

@@ -165,6 +165,14 @@
       "default": "",
       "description": "Override the full resource names"
     },
+    "demoContent": {
+      "type": "object",
+      "description": "Demo content: bundled ActionTypes and RemediationWorkflows for quickstart evaluation.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true, "description": "Deploy bundled demo ActionTypes and RemediationWorkflows." }
+      }
+    },
     "tls": {
       "type": "object",
       "description": "TLS certificate management for AuthWebhook. mode=hook uses self-signed certs via Helm hooks; mode=cert-manager delegates to cert-manager.",
@@ -344,9 +352,19 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
-        "policies": {
+        "policy": {
+          "type": "string",
+          "default": "",
+          "description": "Raw Rego policy content (ADR-060). Inject via --set-file signalprocessing.policy=policy.rego"
+        },
+        "existingPolicyConfigMap": {
+          "type": "string",
+          "default": "",
+          "description": "Pre-existing ConfigMap with key 'policy.rego'. Mutually exclusive with 'policy'."
+        },
+        "proactiveSignalMappings": {
           "type": "object",
-          "description": "Rego policy externalization. Provide content via --set-file or reference an existing ConfigMap.",
+          "description": "Proactive signal mappings (YAML, ADR-054). Optional.",
           "additionalProperties": false,
           "properties": {
             "content": { "type": "string", "default": "" },
@@ -480,6 +498,16 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
+        "slack": {
+          "type": "object",
+          "description": "Slack quickstart shortcut. Auto-generates routing and credential projection when secretName is set.",
+          "additionalProperties": false,
+          "properties": {
+            "secretName": { "type": "string", "default": "", "description": "K8s Secret containing Slack webhook URL. Empty = no Slack." },
+            "secretKey": { "type": "string", "default": "webhook-url", "description": "Key within the Secret that holds the webhook URL." },
+            "channel": { "type": "string", "default": "#kubernaut-alerts", "description": "Slack channel for notifications." }
+          }
+        },
         "routing": {
           "type": "object",
           "description": "Notification routing externalization. Provide content via --set-file or reference an existing ConfigMap.",
@@ -566,7 +594,9 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "credentialsSecretName": { "type": "string", "default": "llm-credentials", "description": "Name of the pre-existing K8s Secret containing LLM API credentials (e.g. OPENAI_API_KEY)" }
+            "credentialsSecretName": { "type": "string", "default": "llm-credentials", "description": "Name of the pre-existing K8s Secret containing LLM API credentials (e.g. OPENAI_API_KEY)" },
+            "provider": { "type": "string", "default": "", "description": "Quickstart: LLM provider name (openai, anthropic). Auto-generates SDK config when set with model." },
+            "model": { "type": "string", "default": "", "description": "Quickstart: LLM model name (gpt-4o, claude-sonnet-4-20250514). Auto-generates SDK config when set with provider." }
           }
         },
         "sdkConfigContent": {
@@ -634,11 +664,11 @@
         "auth": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["existingSecret"],
           "properties": {
             "existingSecret": {
               "type": "string",
-              "description": "Name of pre-created K8s Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys (required)"
+              "default": "",
+              "description": "Pre-created Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys. Empty = auto-generate."
             },
             "username": { "type": "string", "default": "slm_user" },
             "database": { "type": "string", "default": "action_history" }
@@ -684,7 +714,8 @@
         },
         "existingSecret": {
           "type": "string",
-          "description": "Name of pre-created K8s Secret with valkey-secrets.yaml key (required)"
+          "default": "",
+          "description": "Pre-created Secret with valkey-secrets.yaml key. Empty = auto-generate."
         },
         "storage": {
           "type": "object",
