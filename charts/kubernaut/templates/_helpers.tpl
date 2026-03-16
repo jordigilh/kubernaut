@@ -85,18 +85,10 @@ Return the Secret name for PostgreSQL credentials.
 When using external PostgreSQL, falls through to the external auth settings.
 */}}
 {{- define "kubernaut.postgresql.secretName" -}}
-{{- if .Values.postgresql.enabled -}}
-  {{- if .Values.postgresql.auth.existingSecret -}}
-    {{- .Values.postgresql.auth.existingSecret -}}
-  {{- else -}}
-    postgresql-secret
-  {{- end -}}
+{{- if .Values.postgresql.auth.existingSecret -}}
+  {{- .Values.postgresql.auth.existingSecret -}}
 {{- else -}}
-  {{- if .Values.externalPostgresql.auth.existingSecret -}}
-    {{- .Values.externalPostgresql.auth.existingSecret -}}
-  {{- else -}}
-    postgresql-secret
-  {{- end -}}
+  postgresql-secret
 {{- end -}}
 {{- end }}
 
@@ -119,18 +111,10 @@ Return the Secret name for Valkey credentials.
 When using external Valkey, falls through to the external settings.
 */}}
 {{- define "kubernaut.valkey.secretName" -}}
-{{- if .Values.valkey.enabled -}}
-  {{- if .Values.valkey.existingSecret -}}
-    {{- .Values.valkey.existingSecret -}}
-  {{- else -}}
-    valkey-secret
-  {{- end -}}
+{{- if .Values.valkey.existingSecret -}}
+  {{- .Values.valkey.existingSecret -}}
 {{- else -}}
-  {{- if .Values.externalValkey.existingSecret -}}
-    {{- .Values.externalValkey.existingSecret -}}
-  {{- else -}}
-    valkey-secret
-  {{- end -}}
+  valkey-secret
 {{- end -}}
 {{- end }}
 
@@ -142,7 +126,7 @@ Uses in-chart service DNS when postgresql.enabled, otherwise externalPostgresql.
 {{- if .Values.postgresql.enabled -}}
 postgresql.{{ .Release.Namespace }}.svc.cluster.local
 {{- else -}}
-{{- required "externalPostgresql.host is required when postgresql.enabled=false" .Values.externalPostgresql.host -}}
+{{- required "postgresql.host is required when postgresql.enabled=false" .Values.postgresql.host -}}
 {{- end -}}
 {{- end }}
 
@@ -153,7 +137,7 @@ Return the PostgreSQL port.
 {{- if .Values.postgresql.enabled -}}
 5432
 {{- else -}}
-{{- .Values.externalPostgresql.port | default 5432 -}}
+{{- .Values.postgresql.port | default 5432 -}}
 {{- end -}}
 {{- end }}
 
@@ -161,22 +145,14 @@ Return the PostgreSQL port.
 Return the PostgreSQL username (for config files / readiness probes).
 */}}
 {{- define "kubernaut.postgresql.username" -}}
-{{- if .Values.postgresql.enabled -}}
-{{- .Values.postgresql.auth.username -}}
-{{- else -}}
-{{- .Values.externalPostgresql.auth.username | default "slm_user" -}}
-{{- end -}}
+{{- .Values.postgresql.auth.username | default "slm_user" -}}
 {{- end }}
 
 {{/*
 Return the PostgreSQL database name.
 */}}
 {{- define "kubernaut.postgresql.database" -}}
-{{- if .Values.postgresql.enabled -}}
-{{- .Values.postgresql.auth.database -}}
-{{- else -}}
-{{- .Values.externalPostgresql.auth.database | default "action_history" -}}
-{{- end -}}
+{{- .Values.postgresql.auth.database | default "action_history" -}}
 {{- end }}
 
 {{/*
@@ -217,12 +193,6 @@ upstream: /var/lib/postgresql/data   ocp: /var/lib/pgsql/data
 {{- end }}
 
 {{/*
-NOTE: kubernaut.postgresql.clientImage was removed in #351 (C1).
-Migration hooks now use hooks.migrations.image directly (db-migrate image
-with goose + psql pre-installed). No runtime binary downloads needed.
-*/}}
-
-{{/*
 Return the Valkey data directory mount path.
 upstream: /data   ocp: /var/lib/valkey/data
 */}}
@@ -237,8 +207,8 @@ Return the Valkey address (host:port).
 {{- if .Values.valkey.enabled -}}
 valkey.{{ .Release.Namespace }}.svc.cluster.local:6379
 {{- else -}}
-{{- $host := required "externalValkey.host is required when valkey.enabled=false" .Values.externalValkey.host -}}
-{{- printf "%s:%d" $host (int (.Values.externalValkey.port | default 6379)) -}}
+{{- $host := required "valkey.host is required when valkey.enabled=false" .Values.valkey.host -}}
+{{- printf "%s:%d" $host (int (.Values.valkey.port | default 6379)) -}}
 {{- end -}}
 {{- end }}
 

@@ -210,9 +210,10 @@ def pytest_collection_modifyitems(items):
 @pytest.fixture(scope="function")
 def hapi_client(unique_test_id):
     """Create isolated HAPI instance per test"""
-    from src.main import app
+    from src.main import create_app
     from fastapi.testclient import TestClient
 
+    app = create_app()
     # Each test gets its own app instance
     return TestClient(app)
 ```

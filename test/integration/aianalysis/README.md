@@ -25,7 +25,7 @@ AIAnalysis Integration Test Stack:
 │        ↓                                                    │
 │  DataStorage API (:18095) ← Goose migrations               │
 │        ↓                                                    │
-│  HolmesGPT API (:18120) [MOCK_LLM_MODE=true]               │
+│  HolmesGPT API (:18120) [LLM_ENDPOINT → Mock LLM]          │
 │        ↓                                                    │
 │  AIAnalysis Controller (envtest + integration tests)       │
 │                                                             │
@@ -48,7 +48,7 @@ go test -v ./test/integration/aianalysis/...
 1. ✅ PostgreSQL + pgvector starts (port 15438)
 2. ✅ Redis starts (port 16384)
 3. ✅ Data Storage API starts (port 18095)
-4. ✅ HolmesGPT API starts (port 18120, MOCK_LLM_MODE=true)
+4. ✅ HolmesGPT API starts (port 18120, LLM_ENDPOINT → Mock LLM service)
 5. ✅ Tests run
 6. ✅ All services stop automatically after tests complete
 
@@ -106,7 +106,7 @@ The compose file sets these automatically:
 | `POSTGRES_PASSWORD` | kubernaut-test-password | Test password |
 | `POSTGRES_DB` | kubernaut | Database name |
 | `REDIS_ADDR` | redis:6379 | Internal Redis address |
-| `MOCK_LLM_ENABLED` | true | HAPI mock mode (no real LLM calls) |
+| `LLM_ENDPOINT` | http://mock-llm:8080 | HAPI → Mock LLM service (no real LLM calls) |
 | `DATASTORAGE_URL` | http://datastorage:8080 | HAPI → DS connection |
 
 ## Troubleshooting
