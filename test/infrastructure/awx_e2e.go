@@ -957,3 +957,42 @@ func SetupAWXPostDeployment(ctx context.Context, namespace, kubeconfigPath strin
 
 	return awxCfg, nil
 }
+
+// WaitForAWXAPIReady polls the AWX REST API until it responds to authenticated
+// requests. Container readiness probes pass before AWX's internal job dispatcher
+// (Celery workers, Django WSGI) is fully initialized — especially after a pod
+// recreation triggered by rsyslog CrashLoopBackOff healing. Without this probe,
+// the first AWX job launch can fail with a 500 or connection error.
+func WaitForAWXAPIReady(ctx context.Context, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "🔄 Waiting for AWX API to be fully responsive...")
+
+	awxURL := fmt.Sprintf("http://localhost:%d/api/v2/ping/", AWXNodePort)
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+
+	deadline := time.Now().Add(2 * time.Minute)
+	attempt := 0
+	for time.Now().Before(deadline) {
+		attempt++
+		req, err := http.NewRequestWithContext(ctx, "GET", awxURL, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create AWX ping request: %w", err)
+		}
+		req.SetBasicAuth(AWXAdminUser, AWXAdminPass)
+
+		resp, err := httpClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				_, _ = fmt.Fprintf(writer, "✅ AWX API ready (attempt %d)\n", attempt)
+				return nil
+			}
+			_, _ = fmt.Fprintf(writer, "   AWX ping returned HTTP %d (attempt %d), retrying...\n", resp.StatusCode, attempt)
+		} else {
+			_, _ = fmt.Fprintf(writer, "   AWX ping failed (attempt %d): %v\n", attempt, err)
+		}
+
+		time.Sleep(5 * time.Second)
+	}
+
+	return fmt.Errorf("AWX API did not become responsive within 2 minutes")
+}

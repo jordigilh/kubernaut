@@ -606,6 +606,12 @@ subjects:
 		if err := EnsureAWXPodsHealthy(ctx, WorkflowExecutionNamespace, kubeconfigPath, writer); err != nil {
 			return fmt.Errorf("AWX pod health check failed: %w", err)
 		}
+		// Container readiness != API readiness. After pod heal (rsyslog CrashLoop
+		// recovery), AWX's internal job dispatcher needs time to reinitialize.
+		// Without this, the first ansible job launch can fail with a 500.
+		if err := WaitForAWXAPIReady(ctx, writer); err != nil {
+			return fmt.Errorf("AWX API warmup failed: %w", err)
+		}
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n✅ All services ready and configured!")
