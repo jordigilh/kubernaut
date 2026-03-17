@@ -41,6 +41,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -48,6 +49,7 @@ import (
 	controller "github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
@@ -822,6 +824,149 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 				Expect(updatedSP.Status.ObservedGeneration).To(Equal(int64(2)),
 					"ObservedGeneration must be persisted through AtomicStatusUpdate to match Generation")
 			})
+		})
+	})
+
+	// ========================================
+	// SP-CACHE-002: Informer cache staleness regression test
+	// Reproduces the E2E bug where reconcileClassifying reads stale sp from the
+	// informer cache (missing KubernetesContext), causing environment=unknown.
+	// ========================================
+	Describe("SP-CACHE-002: Classifying with stale informer cache", func() {
+		var (
+			mockStore   *mockAuditStore
+			auditClient *spaudit.AuditClient
+		)
+
+		BeforeEach(func() {
+			mockStore = &mockAuditStore{}
+			auditClient = spaudit.NewAuditClient(mockStore, logr.Discard())
+		})
+
+		It("should classify environment correctly even when informer cache lacks KubernetesContext", func() {
+			// This test reproduces the exact bug observed in E2E:
+			// 1. Enriching phase writes KubernetesContext + Phase=Classifying to API server
+			// 2. Informer cache syncs Phase=Classifying but NOT KubernetesContext (stale)
+			// 3. reconcileClassifying reads k8sCtx from stale sp → nil → environment=unknown
+			//
+			// We simulate this by using two fake clients:
+			// - cacheClient: the reconciler's Client (r.Get) — has Phase=Classifying but NO KubernetesContext
+			// - apiClient:   the StatusManager's apiReader — has the FULL status with KubernetesContext
+
+			enrichedK8sCtx := &signalprocessingv1alpha1.KubernetesContext{
+				Namespace: &signalprocessingv1alpha1.NamespaceContext{
+					Name: "production-ns",
+					Labels: map[string]string{
+						"kubernaut.ai/environment": "production",
+						"kubernaut.ai/managed":     "true",
+					},
+				},
+				DegradedMode: true, // Pod not found → degraded mode (fast path)
+			}
+
+			// The "stale cache" SP: has Phase=Classifying but KubernetesContext is nil.
+			// This is what the informer cache returns before it syncs the enrichment data.
+			staleSP := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "sp-cache-stale",
+					Namespace:  "default",
+					Generation: 1,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "cache-stale-fp-001",
+						Name:        "HighCPU",
+						Severity:    "critical",
+						Type:        "alert",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "api-server-xyz",
+							Namespace: "production-ns",
+						},
+					},
+				},
+				Status: signalprocessingv1alpha1.SignalProcessingStatus{
+					Phase:     signalprocessingv1alpha1.PhaseClassifying,
+					StartTime: &metav1.Time{Time: metav1.Now().Time},
+					// KubernetesContext is deliberately nil — this is the stale cache state
+				},
+			}
+
+			// The "fresh API" SP: has Phase=Classifying AND KubernetesContext populated.
+			// This is the ground truth on the API server after the enriching phase wrote it.
+			freshSP := staleSP.DeepCopy()
+			freshSP.Status.KubernetesContext = enrichedK8sCtx
+
+			// Build two fake clients to simulate informer cache vs API server divergence
+			cacheClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(staleSP).
+				WithStatusSubresource(staleSP).
+				Build()
+
+			apiClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(freshSP).
+				WithStatusSubresource(freshSP).
+				Build()
+
+			// Track what the PolicyEvaluator receives to verify it got the labels
+			var capturedEnvironmentInput *evaluator.PolicyInput
+			policyEval := &mockPolicyEvaluator{
+				EvaluateEnvironmentFunc: func(_ context.Context, input evaluator.PolicyInput) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
+					capturedEnvironmentInput = &input
+					// Return classification based on actual namespace labels (like the real Rego policy)
+					if env, ok := input.Namespace.Labels["kubernaut.ai/environment"]; ok && env != "" {
+						return &signalprocessingv1alpha1.EnvironmentClassification{
+							Environment:  env,
+							Source:       "namespace-labels",
+							ClassifiedAt: metav1.Now(),
+						}, nil
+					}
+					return &signalprocessingv1alpha1.EnvironmentClassification{
+						Environment:  "unknown",
+						Source:       "default",
+						ClassifiedAt: metav1.Now(),
+					}, nil
+				},
+			}
+
+			reconciler := &controller.SignalProcessingReconciler{
+				Client:          cacheClient, // Simulates informer cache (stale)
+				Scheme:          scheme,
+				StatusManager:   spstatus.NewManager(apiClient, apiClient), // apiReader is fresh
+				Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				AuditManager:    spaudit.NewManager(auditClient),
+				PolicyEvaluator: policyEval,
+				Recorder:        record.NewFakeRecorder(20),
+			}
+
+			_, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      staleSP.Name,
+					Namespace: staleSP.Namespace,
+				},
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			// The PolicyEvaluator MUST have received the production label from the
+			// fresh API data, not from the stale cache data.
+			Expect(capturedEnvironmentInput).ToNot(BeNil(),
+				"PolicyEvaluator.EvaluateEnvironment should have been called")
+			Expect(capturedEnvironmentInput.Namespace.Labels).To(HaveKeyWithValue(
+				"kubernaut.ai/environment", "production"),
+				"SP-CACHE-002: Classifier must use fresh namespace labels from API, not stale cache")
+
+			// Verify the classification result written to the API server is correct
+			resultSP := &signalprocessingv1alpha1.SignalProcessing{}
+			err = apiClient.Get(context.Background(), types.NamespacedName{
+				Name:      staleSP.Name,
+				Namespace: staleSP.Namespace,
+			}, resultSP)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resultSP.Status.EnvironmentClassification.Environment).To(Equal("production"),
+				"SP-CACHE-002: Environment must be 'production', not 'unknown' from stale cache")
 		})
 	})
 
