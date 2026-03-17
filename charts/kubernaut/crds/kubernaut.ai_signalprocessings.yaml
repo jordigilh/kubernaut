@@ -176,7 +176,10 @@ spec:
                     - name
                     type: object
                   targetType:
-                    description: Target system type
+                    description: |-
+                      Target system type.
+                      V2.0 PLACEHOLDER (Issue #419): Currently only "kubernetes" is supported by the enricher.
+                      Non-kubernetes values are accepted by validation but enrichment will run in degraded mode.
                     enum:
                     - kubernetes
                     - aws
