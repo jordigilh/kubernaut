@@ -249,6 +249,21 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 		},
 	}
 	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(policyConfigMap), policyConfigMap)).To(Succeed())
+
+	// Save original policy so we can restore it after the test.
+	// Without this, the stripped-down hot-reload policy contaminates subsequent tests
+	// (environment always "unknown", priority always "P3").
+	originalPolicyRego := policyConfigMap.Data["policy.rego"]
+	DeferCleanup(func() {
+		restoreCM := &corev1.ConfigMap{}
+		restoreCM.Name = "signalprocessing-policy"
+		restoreCM.Namespace = "kubernaut-system"
+		ExpectWithOffset(1, k8sClient.Get(ctx, client.ObjectKeyFromObject(restoreCM), restoreCM)).To(Succeed())
+		restoreCM.Data["policy.rego"] = originalPolicyRego
+		ExpectWithOffset(1, k8sClient.Update(ctx, restoreCM)).To(Succeed())
+		GinkgoWriter.Println("Restored original Rego policy ConfigMap after hot-reload test")
+	})
+
 	policyConfigMap.Data["policy.rego"] = `package signalprocessing
 import rego.v1
 default environment := {"environment": "unknown", "source": "default"}
