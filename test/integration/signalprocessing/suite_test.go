@@ -70,7 +70,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enricher"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	spevaluator "github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
@@ -463,9 +462,6 @@ proactive_signal_mappings:
 		_ = os.Remove(signalModeConfigFile.Name())
 	})
 
-	// Initialize owner chain builder (Day 7 integration)
-	ownerChainBuilder := ownerchain.NewBuilder(k8sManager.GetClient(), logger)
-
 	// Initialize Metrics (DD-005: Observability)
 	// Per AIAnalysis pattern: Use global prometheus.DefaultRegisterer
 	sharedMetrics := spmetrics.NewMetrics() // No args = uses global prometheus.DefaultRegisterer
@@ -492,14 +488,12 @@ proactive_signal_mappings:
 	err = (&signalprocessing.SignalProcessingReconciler{
 		Client:               k8sManager.GetClient(),
 		Scheme:               k8sManager.GetScheme(),
-		AuditClient:          auditClient,
 		AuditManager:         auditManager,
 		Metrics:              sharedMetrics,
 		Recorder:             recorder,
 		StatusManager:        statusManager,
 		PolicyEvaluator:      policyEvaluator,
 		K8sEnricher:          k8sEnricher,
-		OwnerChainBuilder:    ownerChainBuilder,
 		SignalModeClassifier: signalModeClassifier,
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
