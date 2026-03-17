@@ -511,6 +511,15 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
+	// SP-CACHE-002: Refetch sp via APIReader to get fresh status data.
+	// The informer cache (r.Get in Reconcile) may be stale when the enriching phase
+	// completes quickly (e.g., degraded mode with non-existent target). Without this,
+	// KubernetesContext (set by enriching) can be nil, causing environment=unknown.
+	if err := r.StatusManager.FreshGet(ctx, client.ObjectKeyFromObject(sp), sp); err != nil {
+		logger.Error(err, "Failed to refetch SP for fresh KubernetesContext")
+		return ctrl.Result{}, err
+	}
+
 	// DD-005: Track phase processing attempt and duration
 	r.Metrics.IncrementProcessingTotal("classifying", "attempt")
 	classifyingStart := time.Now()
@@ -709,6 +718,12 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 		logger.V(1).Info("Skipping Categorizing phase - already transitioned (non-cached check)",
 			"current_phase", currentPhase)
 		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+	}
+
+	// SP-CACHE-002: Refetch sp via APIReader for fresh status data (same rationale as classifying).
+	if err := r.StatusManager.FreshGet(ctx, client.ObjectKeyFromObject(sp), sp); err != nil {
+		logger.Error(err, "Failed to refetch SP for fresh classification data")
+		return ctrl.Result{}, err
 	}
 
 	// DD-005: Track phase processing attempt and duration
