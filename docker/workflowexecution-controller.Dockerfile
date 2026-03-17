@@ -1,4 +1,4 @@
-# WorkflowExecution Controller - Multi-Architecture Dockerfile using Red Hat UBI9 (ADR-027)
+# WorkflowExecution Controller - Multi-Architecture Dockerfile (ADR-027)
 #
 # Build targets (Issue #80):
 #   production:  scratch runtime -- zero CVE surface, no shell (release.yml)
@@ -33,18 +33,17 @@ COPY --chown=1001:0 . .
 
 # DD-TEST-007: Coverage builds use simple flags (no -a, -installsuffix, -extldflags)
 RUN if [ "${GOFLAGS}" = "-cover" ]; then \
-	echo "Building with E2E coverage instrumentation (DD-TEST-007)..."; \
+	echo "Building with coverage instrumentation (no symbol stripping)..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
 	-mod=mod \
 	-ldflags="-X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-o workflowexecution \
 	./cmd/workflowexecution; \
 	else \
-	echo "Production build with optimizations..."; \
+	echo "Building production binary (with symbol stripping)..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
 	-mod=mod \
-	-ldflags="-w -s -extldflags '-static' -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
-	-a -installsuffix cgo \
+	-ldflags="-s -w -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-o workflowexecution \
 	./cmd/workflowexecution; \
 	fi

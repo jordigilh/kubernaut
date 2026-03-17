@@ -1,6 +1,4 @@
-# Data Storage Service - Multi-Architecture Dockerfile using Red Hat UBI9
-# Supports: linux/amd64, linux/arm64
-# Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
+# Data Storage Service - Multi-Architecture Dockerfile (ADR-027)
 #
 # Build targets (Issue #80):
 #   production:  scratch runtime -- zero CVE surface, no shell (release.yml)
@@ -58,7 +56,7 @@ COPY --chown=1001:0 . .
 # - Coverage: No -ldflags, -a, or -installsuffix (breaks coverage instrumentation)
 # - Production: Keep all optimizations for size/performance
 # NOTE: vendor/ excluded in .dockerignore, so we use -mod=mod
-# Toolchain pinned to go1.25.3 in go.mod to match UBI9 go-toolset:1.25
+# Toolchain pinned to go1.25.3 in go.mod to match UBI10 go-toolset:1.25
 RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	echo "Building with coverage instrumentation (simple build per DD-TEST-007)..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
@@ -70,8 +68,7 @@ RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	echo "Building production binary (with symbol stripping)..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
 	-mod=mod \
-	-ldflags="-w -s -extldflags '-static' -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
-	-a -installsuffix cgo \
+	-ldflags="-s -w -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-o data-storage \
 	./cmd/datastorage/main.go; \
 	fi

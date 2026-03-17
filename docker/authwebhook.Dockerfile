@@ -1,4 +1,4 @@
-# AuthWebhook Service - Multi-Architecture Dockerfile using Red Hat UBI9
+# AuthWebhook Service - Multi-Architecture Dockerfile (ADR-027)
 # Supports: linux/amd64, linux/arm64
 # Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
 #
@@ -45,24 +45,19 @@ COPY --chown=1001:0 go.mod go.sum ./
 COPY --chown=1001:0 . .
 
 # Build the Webhooks service binary
-# -mod=mod: Automatically download dependencies during build (DD-BUILD-001)
-# DD-TEST-007: Coverage build uses SIMPLE flags
-# - Coverage: No -ldflags, -a, or -installsuffix (breaks coverage instrumentation)
-# - Production: Keep all optimizations for size/performance
+# DD-TEST-007: Coverage builds use simple flags (no -a, -installsuffix, -extldflags)
 RUN if [ "${GOFLAGS}" = "-cover" ]; then \
-	echo "🔬 Building with E2E coverage instrumentation (DD-TEST-007)..."; \
-	echo "   Simple build (no -a, -installsuffix, -extldflags)"; \
+	echo "Building with coverage instrumentation (no symbol stripping)..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
 	-mod=mod \
 	-ldflags="-X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-o authwebhook \
 	./cmd/authwebhook/main.go; \
 	else \
-	echo "🚀 Production build with optimizations..."; \
+	echo "Building production binary (with symbol stripping)..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
 	-mod=mod \
-	-ldflags="-w -s -extldflags '-static' -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
-	-a -installsuffix cgo \
+	-ldflags="-s -w -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-o authwebhook \
 	./cmd/authwebhook/main.go; \
 	fi
