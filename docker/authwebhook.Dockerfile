@@ -18,7 +18,8 @@ FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
 # Build arguments for multi-architecture support
 ARG GOFLAGS=""
 ARG GOOS=linux
-ARG GOARCH=amd64
+ARG TARGETARCH
+ARG GOARCH=${TARGETARCH:-amd64}
 ARG APP_VERSION=v1.1.0-rc0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
