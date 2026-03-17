@@ -14,7 +14,7 @@ FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # Install kubectl for Kubernetes API access
 ARG TARGETARCH
-ARG KUBECTL_VERSION=v1.31.4
+ARG KUBECTL_VERSION=v1.31.14
 RUN curl -fsSL -o /usr/local/bin/kubectl \
     "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" && \
     chmod +x /usr/local/bin/kubectl
