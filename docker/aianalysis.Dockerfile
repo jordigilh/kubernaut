@@ -1,5 +1,4 @@
-# AIAnalysis Controller - Multi-Architecture Dockerfile using Red Hat UBI9
-# Supports: linux/amd64, linux/arm64
+# AIAnalysis Controller - Multi-Architecture Dockerfile (ADR-027)
 #
 # Build targets (Issue #80):
 #   production:  scratch runtime -- zero CVE surface, no shell (release.yml)
@@ -14,15 +13,13 @@
 # ============================================================================
 FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
 
-ARG TARGETOS=linux
 ARG TARGETARCH
+ARG GOOS=linux
+ARG GOARCH=${TARGETARCH:-amd64}
+ARG GOFLAGS=""
 ARG APP_VERSION=v1.1.0-rc0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
-# Use TARGETARCH if set (multi-arch build), otherwise auto-detect from runtime
-ARG GOARCH=${TARGETARCH:-amd64}
-# GOFLAGS: Optional build flags (e.g., -cover for E2E coverage profiling per DD-TEST-007)
-ARG GOFLAGS=""
 
 USER root
 RUN dnf update -y && \
@@ -34,20 +31,18 @@ WORKDIR /opt/app-root/src
 COPY --chown=1001:0 go.mod go.sum ./
 COPY --chown=1001:0 . .
 
-# ⚠️ CRITICAL (DD-TEST-007): Coverage builds must use simple go build (no -a, -installsuffix, -extldflags)
-# Symbol stripping flags (-s -w) are incompatible with Go's binary coverage instrumentation
+# DD-TEST-007: Coverage builds use simple flags (no -a, -installsuffix, -extldflags)
 RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	echo "Building with coverage instrumentation (no symbol stripping)..."; \
-	CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${GOARCH} GOFLAGS="${GOFLAGS}" go build \
+	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
 	-mod=mod \
 	-ldflags="-X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-o aianalysis-controller ./cmd/aianalysis; \
 	else \
 	echo "Building production binary (with symbol stripping)..."; \
-	CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${GOARCH} go build \
+	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
 	-mod=mod \
 	-ldflags="-s -w -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
-	-a -installsuffix cgo \
 	-o aianalysis-controller ./cmd/aianalysis; \
 	fi
 

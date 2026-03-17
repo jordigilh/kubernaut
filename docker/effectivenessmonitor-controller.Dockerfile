@@ -1,4 +1,4 @@
-# EffectivenessMonitor Controller - Multi-Architecture Dockerfile using Red Hat UBI9 (ADR-027)
+# EffectivenessMonitor Controller - Multi-Architecture Dockerfile (ADR-027)
 #
 # Build targets (Issue #80):
 #   production:  scratch runtime -- zero CVE surface, no shell (release.yml)
@@ -13,31 +13,34 @@
 # ============================================================================
 FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
 
+ARG TARGETARCH
+ARG GOOS=linux
+ARG GOARCH=${TARGETARCH:-amd64}
+ARG GOFLAGS=""
 ARG APP_VERSION=v1.1.0-rc0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
-# GOFLAGS: Optional build flags (e.g., -cover for E2E coverage profiling per DD-TEST-007)
-ARG GOFLAGS=""
 
 USER root
+RUN dnf update -y && \
+	dnf install -y git ca-certificates tzdata && \
+	dnf clean all
 USER 1001
 
 WORKDIR /opt/app-root/src
 COPY --chown=1001:0 go.mod go.sum ./
 COPY --chown=1001:0 . .
 
-# -mod=mod: Automatically download dependencies during build (per DD-BUILD-001)
-# GOTOOLCHAIN=auto: Allow Go to download the required toolchain version (fixes go.mod version mismatch)
-# When building with coverage (-cover), don't strip symbols (-s -w) as coverage needs them
+# DD-TEST-007: Coverage builds use simple flags (no -a, -installsuffix, -extldflags)
 RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	echo "Building with coverage instrumentation (no symbol stripping)..."; \
-	CGO_ENABLED=0 GOOS=linux GOTOOLCHAIN=auto GOFLAGS="${GOFLAGS}" go build \
+	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
 	-mod=mod \
 	-ldflags="-X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-o effectivenessmonitor-controller ./cmd/effectivenessmonitor; \
 	else \
 	echo "Building production binary (with symbol stripping)..."; \
-	CGO_ENABLED=0 GOOS=linux GOTOOLCHAIN=auto go build \
+	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
 	-mod=mod \
 	-ldflags="-s -w -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-o effectivenessmonitor-controller ./cmd/effectivenessmonitor; \
@@ -71,10 +74,10 @@ FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS development
 RUN microdnf update -y && \
 	microdnf install -y ca-certificates tzdata shadow-utils && \
 	microdnf clean all
-RUN useradd -r -u 65532 -g root nonroot
+RUN useradd -r -u 1001 -g root effectivenessmonitor-user
 COPY --from=builder /opt/app-root/src/effectivenessmonitor-controller /usr/local/bin/effectivenessmonitor-controller
 RUN chmod +x /usr/local/bin/effectivenessmonitor-controller
-USER 65532
+USER 1001
 EXPOSE 9090 8081
 ENTRYPOINT ["/usr/local/bin/effectivenessmonitor-controller"]
 
