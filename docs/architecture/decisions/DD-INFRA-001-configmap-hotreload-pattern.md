@@ -1,5 +1,7 @@
 # DD-INFRA-001: ConfigMap Hot-Reload Pattern
 
+> **Partially superseded by [ADR-060](ADR-060-unified-signalprocessing-rego-policy.md)**: SignalProcessing now uses a single hot-reload watcher for one unified `policy.rego` instead of per-file watchers. The shared `hotreload.FileWatcher` component described here remains in use.
+
 ## Status
 **✅ Approved** (2025-12-06)
 **Last Reviewed**: 2025-12-06

@@ -54,8 +54,7 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/rego"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
 
 	// BR-SP-110: Kubernetes Conditions
@@ -68,7 +67,6 @@ import (
 type SignalProcessingReconciler struct {
 	client.Client
 	Scheme       *runtime.Scheme
-	AuditClient  *audit.AuditClient  // BR-SP-090: Categorization Audit Trail (legacy - use AuditManager)
 	AuditManager *audit.Manager      // BR-SP-090: Audit Manager (Phase 3 refactoring - 2026-01-22)
 
 	// V1.0 Maturity Requirements (per SERVICE_MATURITY_REQUIREMENTS.md)
@@ -93,21 +91,11 @@ type SignalProcessingReconciler struct {
 	// USAGE: r.StatusManager.AtomicStatusUpdate(ctx, sp, func() { ... })
 	StatusManager *status.Manager
 
-	// Day 4-6 Classifiers (Rego-based, per IMPLEMENTATION_PLAN_V1.31.md)
-	// These are MANDATORY - fail loudly if nil or on error
-	EnvClassifier          EnvironmentClassifier          // BR-SP-051: Environment classification (interface for testability)
-	PriorityAssigner       PriorityAssigner               // BR-SP-070: Priority assignment (interface for testability)
-	BusinessClassifier     *classifier.BusinessClassifier // BR-SP-002, BR-SP-080, BR-SP-081
-	SeverityClassifier     *classifier.SeverityClassifier // BR-SP-105: Severity determination (DD-SEVERITY-001)
-	SignalModeClassifier   *classifier.SignalModeClassifier // BR-SP-106: Proactive signal mode classification (ADR-054)
+	// ADR-060: Unified Rego evaluator replaces individual classifiers
+	// Covers: environment (BR-SP-051), priority (BR-SP-070), severity (BR-SP-105), custom labels (BR-SP-102)
+	PolicyEvaluator PolicyEvaluator // MANDATORY - fail loudly if nil
 
-	// Day 7 Owner Chain Builder (per IMPLEMENTATION_PLAN_V1.31.md)
-	// This is OPTIONAL - controller falls back to inline implementation if nil
-	OwnerChainBuilder *ownerchain.Builder // BR-SP-100: Owner chain traversal
-
-	// Day 8-9 Enrichment Components (per IMPLEMENTATION_PLAN_V1.31.md)
-	// These are OPTIONAL - controller falls back to inline implementation if nil
-	RegoEngine *rego.Engine // BR-SP-102: CustomLabels Rego extraction
+	SignalModeClassifier *classifier.SignalModeClassifier // BR-SP-106: Proactive signal mode classification (ADR-054)
 
 	// K8sEnricher provides sophisticated Kubernetes context enrichment
 	// This is MANDATORY - fail loudly if nil or on error
@@ -341,10 +329,14 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 
 	signal := &sp.Spec.Signal
 
-	// V2.0 EXTENSIBILITY: Currently only "kubernetes" is implemented.
-	// When adding new providers, replace this block with a switch on signal.TargetType.
-	// For now, we proceed with Kubernetes enrichment regardless of targetType value.
-	// Gateway currently hardcodes targetType="kubernetes" (pkg/gateway/processing/crd_creator.go:376)
+	// Issue #419 / V2.0: Only "kubernetes" enrichment is implemented. Non-kubernetes target
+	// types are accepted by CRD validation but enrichment runs in degraded mode (no context).
+	if signal.TargetType != "" && signal.TargetType != "kubernetes" {
+		logger.Info("Non-kubernetes targetType received; enrichment will run in degraded mode",
+			"targetType", signal.TargetType)
+		r.Recorder.Eventf(sp, "Warning", "UnsupportedTargetType",
+			"targetType %q is not yet supported for enrichment (V2.0); proceeding in degraded mode", signal.TargetType)
+	}
 
 	targetNs := signal.TargetResource.Namespace
 	targetKind := signal.TargetResource.Kind
@@ -377,23 +369,13 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		return ctrl.Result{}, fmt.Errorf("enrichment failed: %w", err)
 	}
 
-	// 4. Custom labels (BR-SP-102) - Rego-based extraction
-	// Per IMPLEMENTATION_PLAN_V1.31.md Day 8: Use RegoEngine for CustomLabels
+	// 4. Custom labels (BR-SP-102) - ADR-060: Unified evaluator
 	customLabels := make(map[string][]string)
-	if r.RegoEngine != nil {
-		// Build Rego input - simplified approach using map[string]interface{}
-		regoInput := &rego.RegoInput{
-			Kubernetes: k8sCtx,
-			Signal: rego.SignalContext{
-				Type:     signal.Type,
-				Severity: signal.Severity,
-				Source:   signal.Source,
-			},
-		}
-
-		labels, err := r.RegoEngine.EvaluatePolicy(ctx, regoInput)
+	if r.PolicyEvaluator != nil {
+		policyInput := evaluator.BuildInput(k8sCtx, signal)
+		labels, err := r.PolicyEvaluator.EvaluateCustomLabels(ctx, policyInput)
 		if err != nil {
-			logger.V(1).Info("Rego engine evaluation failed, using fallback", "error", err)
+			logger.V(1).Info("Custom labels evaluation failed, using fallback", "error", err)
 		} else {
 			customLabels = labels
 		}
@@ -529,6 +511,15 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
+	// SP-CACHE-002: Refetch sp via APIReader to get fresh status data.
+	// The informer cache (r.Get in Reconcile) may be stale when the enriching phase
+	// completes quickly (e.g., degraded mode with non-existent target). Without this,
+	// KubernetesContext (set by enriching) can be nil, causing environment=unknown.
+	if err := r.StatusManager.FreshGet(ctx, client.ObjectKeyFromObject(sp), sp); err != nil {
+		logger.Error(err, "Failed to refetch SP for fresh KubernetesContext")
+		return ctrl.Result{}, err
+	}
+
 	// DD-005: Track phase processing attempt and duration
 	r.Metrics.IncrementProcessingTotal("classifying", "attempt")
 	classifyingStart := time.Now()
@@ -536,8 +527,11 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	signal := &sp.Spec.Signal
 	k8sCtx := sp.Status.KubernetesContext
 
+	// ADR-060: Build unified policy input once, reuse across all evaluations
+	policyInput := evaluator.BuildInput(k8sCtx, signal)
+
 	// 1. Environment Classification (BR-SP-051-053) - MANDATORY
-	envClass, err := r.classifyEnvironment(ctx, k8sCtx, signal, logger)
+	envClass, err := r.classifyEnvironment(ctx, policyInput, logger)
 	if err != nil {
 		r.Metrics.IncrementProcessingTotal("classifying", "failure")
 		r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
@@ -554,7 +548,7 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	}
 
 	// 2. Priority Assignment (BR-SP-070-072) - MANDATORY
-	priorityAssignment, err := r.assignPriority(ctx, k8sCtx, envClass, signal, logger)
+	priorityAssignment, err := r.assignPriority(ctx, policyInput, logger)
 	if err != nil {
 		r.Metrics.IncrementProcessingTotal("classifying", "failure")
 		r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
@@ -571,40 +565,34 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	}
 
 	// 3. Severity Determination (BR-SP-105, DD-SEVERITY-001) - MANDATORY
-	var severityResult *classifier.SeverityResult
-	if r.SeverityClassifier != nil {
-		severityResult, err = r.SeverityClassifier.ClassifySeverity(ctx, sp)
+	var severityResult *evaluator.SeverityResult
+	if r.PolicyEvaluator != nil {
+		severityResult, err = r.PolicyEvaluator.EvaluateSeverity(ctx, policyInput)
 		if err != nil {
-			// DD-005: Track phase processing failure
 			r.Metrics.IncrementProcessingTotal("classifying", "failure")
 			r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
 			logger.Error(err, "Severity determination failed - transitioning to Failed phase",
 				"externalSeverity", signal.Severity,
 				"hint", "Check Rego policy has else clause for unmapped values")
 
-		// Transition to Failed phase (Category C: Permanent error)
-		// Policy errors require manual intervention (operator must fix policy)
-		updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
-			sp.Status.ObservedGeneration = sp.Generation // DD-CONTROLLER-001: inside callback so it survives refetch
-			sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
-			sp.Status.Error = fmt.Sprintf("policy evaluation failed: %v", err)
-			spconditions.SetClassificationComplete(sp, false, spconditions.ReasonRegoEvaluationError, err.Error())
-			spconditions.SetReady(sp, false, spconditions.ReasonNotReady, "Signal processing failed")
-			return nil
-		})
+			updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+				sp.Status.ObservedGeneration = sp.Generation
+				sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
+				sp.Status.Error = fmt.Sprintf("policy evaluation failed: %v", err)
+				spconditions.SetClassificationComplete(sp, false, spconditions.ReasonRegoEvaluationError, err.Error())
+				spconditions.SetReady(sp, false, spconditions.ReasonNotReady, "Signal processing failed")
+				return nil
+			})
 			if updateErr != nil {
 				logger.Error(updateErr, "Failed to update status to Failed phase")
 				return ctrl.Result{}, updateErr
 			}
 
-		// Emit Kubernetes Event for operator visibility
-		// Include external severity value for debugging policy configuration issues
-		if r.Recorder != nil {
-			r.Recorder.Event(sp, corev1.EventTypeWarning, events.EventReasonPolicyEvaluationFailed,
-				fmt.Sprintf("Rego policy evaluation failed for external severity %q: %v", signal.Severity, err))
-		}
+			if r.Recorder != nil {
+				r.Recorder.Event(sp, corev1.EventTypeWarning, events.EventReasonPolicyEvaluationFailed,
+					fmt.Sprintf("Rego policy evaluation failed for external severity %q: %v", signal.Severity, err))
+			}
 
-			// Do not requeue - requires manual policy fix by operator
 			return ctrl.Result{}, nil
 		}
 	}
@@ -661,9 +649,9 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		if severityResult != nil {
 			sp.Status.Severity = severityResult.Severity
 		}
-		// BR-SP-072: Set PolicyHash for audit trail (if classifier available)
-		if r.SeverityClassifier != nil {
-			sp.Status.PolicyHash = r.SeverityClassifier.GetPolicyHash()
+		// ADR-060: Unified policy hash covers all rules
+		if r.PolicyEvaluator != nil {
+			sp.Status.PolicyHash = r.PolicyEvaluator.GetPolicyHash()
 		}
 		// BR-SP-106: Set signal mode and normalized signal name (ADR-054)
 		// SignalType is set for ALL signals (not just proactive) — it is the
@@ -730,6 +718,12 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 		logger.V(1).Info("Skipping Categorizing phase - already transitioned (non-cached check)",
 			"current_phase", currentPhase)
 		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+	}
+
+	// SP-CACHE-002: Refetch sp via APIReader for fresh status data (same rationale as classifying).
+	if err := r.StatusManager.FreshGet(ctx, client.ObjectKeyFromObject(sp), sp); err != nil {
+		logger.Error(err, "Failed to refetch SP for fresh classification data")
+		return ctrl.Result{}, err
 	}
 
 	// DD-005: Track phase processing attempt and duration
@@ -823,34 +817,33 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 	return ctrl.Result{}, nil
 }
 
-// classifyEnvironment determines the environment classification.
-// BR-SP-051: Primary from namespace labels (via Rego policy)
-// EnvClassifier is MANDATORY - fail loudly if not wired or fails.
-func (r *SignalProcessingReconciler) classifyEnvironment(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, signal *signalprocessingv1alpha1.SignalData, logger logr.Logger) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
-	if r.EnvClassifier == nil {
-		return nil, fmt.Errorf("EnvClassifier is nil - this is a startup configuration error")
+// classifyEnvironment determines the environment classification via unified evaluator.
+// ADR-060: Uses PolicyEvaluator.EvaluateEnvironment instead of separate EnvironmentClassifier.
+func (r *SignalProcessingReconciler) classifyEnvironment(ctx context.Context, input evaluator.PolicyInput, logger logr.Logger) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
+	if r.PolicyEvaluator == nil {
+		return nil, fmt.Errorf("PolicyEvaluator is nil - this is a startup configuration error")
 	}
 
-	result, err := r.EnvClassifier.Classify(ctx, k8sCtx, signal)
+	result, err := r.PolicyEvaluator.EvaluateEnvironment(ctx, input)
 	if err != nil {
-		logger.Error(err, "EnvClassifier failed")
+		logger.Error(err, "Environment classification failed")
 		return nil, fmt.Errorf("environment classification failed: %w", err)
 	}
 
 	return result, nil
 }
 
-// assignPriority determines the priority based on environment and severity.
-// BR-SP-070: Rego-based assignment
-// PriorityAssigner is MANDATORY - fail loudly if not wired or fails.
-func (r *SignalProcessingReconciler) assignPriority(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, envClass *signalprocessingv1alpha1.EnvironmentClassification, signal *signalprocessingv1alpha1.SignalData, logger logr.Logger) (*signalprocessingv1alpha1.PriorityAssignment, error) {
-	if r.PriorityAssigner == nil {
-		return nil, fmt.Errorf("PriorityAssigner is nil - this is a startup configuration error")
+// assignPriority determines the priority via unified evaluator.
+// ADR-060: Uses PolicyEvaluator.EvaluatePriority. Priority references environment
+// internally within Rego -- no envClass parameter needed from Go.
+func (r *SignalProcessingReconciler) assignPriority(ctx context.Context, input evaluator.PolicyInput, logger logr.Logger) (*signalprocessingv1alpha1.PriorityAssignment, error) {
+	if r.PolicyEvaluator == nil {
+		return nil, fmt.Errorf("PolicyEvaluator is nil - this is a startup configuration error")
 	}
 
-	result, err := r.PriorityAssigner.Assign(ctx, k8sCtx, envClass, signal)
+	result, err := r.PolicyEvaluator.EvaluatePriority(ctx, input)
 	if err != nil {
-		logger.Error(err, "PriorityAssigner failed")
+		logger.Error(err, "Priority assignment failed")
 		return nil, fmt.Errorf("priority assignment failed: %w", err)
 	}
 

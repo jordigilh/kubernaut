@@ -175,7 +175,7 @@ data:
       leaderElectionId: workflowexecution.kubernaut.ai
     execution:
       namespace: {{ include "kubernaut.workflowNamespace" . }}
-      cooldownPeriod: 1m
+      cooldownPeriod: {{ .Values.workflowexecution.config.execution.cooldownPeriod | default "1m" }}
       serviceAccount: kubernaut-workflow-runner
     datastorage:
       url: "{{ include "kubernaut.datastorage.url" . }}"

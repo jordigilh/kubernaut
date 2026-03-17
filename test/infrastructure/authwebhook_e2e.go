@@ -320,8 +320,15 @@ metadata:
     app.kubernetes.io/component: admission-webhook
 rules:
 - apiGroups: ["kubernaut.ai"]
-  resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests", "remediationrequests", "remediationworkflows", "actiontypes"]
+  resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests", "remediationrequests", "actiontypes"]
   verbs: ["get", "list", "watch"]
+# Issue #418: RW reconciler needs update/patch to add/remove the catalog-cleanup finalizer
+- apiGroups: ["kubernaut.ai"]
+  resources: ["remediationworkflows"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["remediationworkflows/finalizers"]
+  verbs: ["update"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status", "remediationworkflows/status", "actiontypes/status"]
   verbs: ["update", "patch"]

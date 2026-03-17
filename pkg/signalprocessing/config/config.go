@@ -91,7 +91,7 @@ func DefaultConfig() *Config {
 			Timeout:  10 * time.Second,
 		},
 		Classifier: ClassifierConfig{
-			RegoConfigMapName: "signalprocessing-rego-policy",
+			RegoConfigMapName: "signalprocessing-policy",
 			RegoConfigMapKey:  "policy.rego",
 			HotReloadInterval: 30 * time.Second,
 		},

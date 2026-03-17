@@ -1,0 +1,11 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: cleanup-node
+spec:
+  name: CleanupNode
+  description:
+    what: "Reclaim disk space on a node by purging temporary files, old logs, and unused container images."
+    whenToUse: "Node disk pressure is caused by accumulated ephemeral data (temp files, old container logs, unused images), not by legitimate workload storage growth."
+    whenNotToUse: "If disk usage is from legitimate workload data (persistent volumes, application databases). Cleanup would not help and could cause data loss. Use DrainNode instead if the node needs to be decommissioned."
+    preconditions: "Evidence that disk usage is dominated by ephemeral/reclaimable data (container image cache, log files, tmp directories), not persistent workload data."

@@ -1,0 +1,11 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: cleanup-pvc
+spec:
+  name: CleanupPVC
+  description:
+    what: "Remove old or unnecessary files from a PersistentVolumeClaim to reclaim disk space."
+    whenToUse: "PVC usage has exceeded a critical threshold due to accumulated logs, temp files, or cache data."
+    whenNotToUse: "When disk usage is from essential application data. Deleting it would cause data loss."
+    preconditions: "PVC is mounted and accessible, and the files to be cleaned are identified as non-essential (logs, temp, cache)."

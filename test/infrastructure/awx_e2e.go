@@ -380,14 +380,14 @@ func WaitForAWXReady(ctx context.Context, namespace, kubeconfigPath string, writ
 	return fmt.Errorf("AWX pod did not become ready within 12 minutes")
 }
 
-// EnsureAWXWebPodHealthy verifies that the awx-e2e-web pod has ALL containers
-// Ready (not just the minimum for the PodReady condition). If the rsyslog
-// sidecar is in CrashLoopBackOff (a known AWX Operator race on constrained
-// runners), the pod is deleted so the operator recreates it cleanly.
+// EnsureAWXPodsHealthy verifies that both awx-e2e-web and awx-e2e-task pods
+// have ALL containers Ready (not just the minimum for the PodReady condition).
+// If the rsyslog sidecar is in CrashLoopBackOff (a known AWX Operator race on
+// constrained runners), the pod is deleted so the operator recreates it cleanly.
 // This must be called late in the setup—after AWX configuration—because the
 // rsyslog crash can surface minutes after initial readiness.
-func EnsureAWXWebPodHealthy(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "\n🔍 Verifying AWX web pod container health...")
+func EnsureAWXPodsHealthy(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "\n🔍 Verifying AWX pod container health (web + task)...")
 
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
@@ -398,47 +398,56 @@ func EnsureAWXWebPodHealthy(ctx context.Context, namespace, kubeconfigPath strin
 		return fmt.Errorf("failed to create clientset: %w", err)
 	}
 
+	for _, podType := range []string{"web", "task"} {
+		if err := ensureAWXPodTypeHealthy(ctx, clientset, namespace, podType, writer); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureAWXPodTypeHealthy(ctx context.Context, clientset kubernetes.Interface, namespace, podType string, writer io.Writer) error {
 	const (
-		maxRetries    = 3
-		healTimeout   = 4 * time.Minute
-		pollInterval  = 10 * time.Second
-		webDeployment = AWXInstanceName + "-web"
+		maxRetries   = 3
+		healTimeout  = 4 * time.Minute
+		pollInterval = 10 * time.Second
 	)
+	deploymentPrefix := AWXInstanceName + "-" + podType
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		pod, healthy, healErr := checkWebPodHealth(ctx, clientset, namespace, webDeployment, writer)
+		pod, healthy, healErr := checkAWXPodHealth(ctx, clientset, namespace, deploymentPrefix, writer)
 		if healErr != nil {
 			return healErr
 		}
 		if healthy {
-			_, _ = fmt.Fprintln(writer, "  ✅ AWX web pod — all containers Ready")
+			_, _ = fmt.Fprintf(writer, "  ✅ AWX %s pod — all containers Ready\n", podType)
 			return nil
 		}
 
-		_, _ = fmt.Fprintf(writer, "  ⚠️  AWX web pod unhealthy (attempt %d/%d) — deleting for operator recreation\n", attempt, maxRetries)
+		_, _ = fmt.Fprintf(writer, "  ⚠️  AWX %s pod unhealthy (attempt %d/%d) — deleting for operator recreation\n", podType, attempt, maxRetries)
 		if delErr := clientset.CoreV1().Pods(namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{}); delErr != nil {
-			return fmt.Errorf("failed to delete unhealthy AWX web pod %s: %w", pod.Name, delErr)
+			return fmt.Errorf("failed to delete unhealthy AWX %s pod %s: %w", podType, pod.Name, delErr)
 		}
 
-		if waitErr := waitForAllContainersReady(ctx, clientset, namespace, webDeployment, healTimeout, pollInterval, writer); waitErr != nil {
+		if waitErr := waitForAllContainersReady(ctx, clientset, namespace, deploymentPrefix, healTimeout, pollInterval, writer); waitErr != nil {
 			if attempt == maxRetries {
-				return fmt.Errorf("AWX web pod did not recover after %d restarts: %w", maxRetries, waitErr)
+				return fmt.Errorf("AWX %s pod did not recover after %d restarts: %w", podType, maxRetries, waitErr)
 			}
-			_, _ = fmt.Fprintf(writer, "  ⚠️  Pod still unhealthy after recreation, retrying...\n")
+			_, _ = fmt.Fprintf(writer, "  ⚠️  %s pod still unhealthy after recreation, retrying...\n", podType)
 			continue
 		}
-		_, _ = fmt.Fprintln(writer, "  ✅ AWX web pod recovered — all containers Ready")
+		_, _ = fmt.Fprintf(writer, "  ✅ AWX %s pod recovered — all containers Ready\n", podType)
 		return nil
 	}
 
-	return fmt.Errorf("AWX web pod did not become fully healthy after %d attempts", maxRetries)
+	return fmt.Errorf("AWX %s pod did not become fully healthy after %d attempts", podType, maxRetries)
 }
 
-// checkWebPodHealth returns the web pod, whether all its containers are ready,
-// and an error if the pod cannot be found.
-func checkWebPodHealth(ctx context.Context, clientset kubernetes.Interface, namespace, deploymentPrefix string, writer io.Writer) (*corev1.Pod, bool, error) {
+// checkAWXPodHealth returns the pod matching deploymentPrefix, whether all its
+// containers are ready, and an error if the pod cannot be found.
+func checkAWXPodHealth(ctx context.Context, clientset kubernetes.Interface, namespace, deploymentPrefix string, writer io.Writer) (*corev1.Pod, bool, error) {
 	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/managed-by=awx-operator,app.kubernetes.io/name=" + AWXInstanceName + "-web",
+		LabelSelector: "app.kubernetes.io/managed-by=awx-operator,app.kubernetes.io/name=" + deploymentPrefix,
 	})
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to list AWX web pods: %w", err)
@@ -491,7 +500,7 @@ func waitForAllContainersReady(ctx context.Context, clientset kubernetes.Interfa
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		time.Sleep(interval)
-		_, healthy, err := checkWebPodHealth(ctx, clientset, namespace, deploymentPrefix, writer)
+		_, healthy, err := checkAWXPodHealth(ctx, clientset, namespace, deploymentPrefix, writer)
 		if err != nil {
 			_, _ = fmt.Fprintf(writer, "  Waiting for new web pod: %v\n", err)
 			continue
@@ -947,4 +956,43 @@ func SetupAWXPostDeployment(ctx context.Context, namespace, kubeconfigPath strin
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return awxCfg, nil
+}
+
+// WaitForAWXAPIReady polls the AWX REST API until it responds to authenticated
+// requests. Container readiness probes pass before AWX's internal job dispatcher
+// (Celery workers, Django WSGI) is fully initialized — especially after a pod
+// recreation triggered by rsyslog CrashLoopBackOff healing. Without this probe,
+// the first AWX job launch can fail with a 500 or connection error.
+func WaitForAWXAPIReady(ctx context.Context, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "🔄 Waiting for AWX API to be fully responsive...")
+
+	awxURL := fmt.Sprintf("http://localhost:%d/api/v2/ping/", AWXNodePort)
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+
+	deadline := time.Now().Add(2 * time.Minute)
+	attempt := 0
+	for time.Now().Before(deadline) {
+		attempt++
+		req, err := http.NewRequestWithContext(ctx, "GET", awxURL, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create AWX ping request: %w", err)
+		}
+		req.SetBasicAuth(AWXAdminUser, AWXAdminPass)
+
+		resp, err := httpClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				_, _ = fmt.Fprintf(writer, "✅ AWX API ready (attempt %d)\n", attempt)
+				return nil
+			}
+			_, _ = fmt.Fprintf(writer, "   AWX ping returned HTTP %d (attempt %d), retrying...\n", resp.StatusCode, attempt)
+		} else {
+			_, _ = fmt.Fprintf(writer, "   AWX ping failed (attempt %d): %v\n", attempt, err)
+		}
+
+		time.Sleep(5 * time.Second)
+	}
+
+	return fmt.Errorf("AWX API did not become responsive within 2 minutes")
 }

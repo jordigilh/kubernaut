@@ -110,7 +110,9 @@ type SignalData struct {
 	// +kubebuilder:validation:MaxLength=63
 	Source string `json:"source,omitempty"`
 
-	// Target system type
+	// Target system type.
+	// V2.0 PLACEHOLDER (Issue #419): Currently only "kubernetes" is supported by the enricher.
+	// Non-kubernetes values are accepted by validation but enrichment will run in degraded mode.
 	// +kubebuilder:validation:Enum=kubernetes;aws;azure;gcp;datadog
 	TargetType string `json:"targetType"`
 
@@ -144,7 +146,10 @@ type ResourceIdentifier struct {
 	Namespace string `json:"namespace,omitempty"`
 }
 
-// EnrichmentConfig specifies enrichment settings.
+// EnrichmentConfig specifies per-signal enrichment settings.
+// V2.0 PLACEHOLDER (Issue #419): These fields are currently NOT read by the controller.
+// All signals use the global enrichment config from the controller's YAML configuration
+// (enrichment.cacheTtl, enrichment.timeout). Per-signal overrides will be implemented in V2.0.
 type EnrichmentConfig struct {
 	// Enable cluster state enrichment
 	EnableClusterState bool `json:"enableClusterState,omitempty"`

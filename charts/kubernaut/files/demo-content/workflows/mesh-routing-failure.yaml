@@ -1,0 +1,37 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: fix-authz-policy-v1
+spec:
+  # Fix AuthorizationPolicy Workflow Schema - Job Backend (BR-WORKFLOW-004)
+  # Scenario: #136 -- Istio AuthorizationPolicy blocks traffic -> remove/fix policy
+  version: "1.0.0"
+  description:
+    what: "Removes or fixes an Istio AuthorizationPolicy that is blocking legitimate traffic"
+    whenToUse: "When a meshed workload has high error rates (403s) due to a restrictive AuthorizationPolicy"
+    whenNotToUse: "When the 403 errors are intentional (security policy) or caused by something other than an AuthorizationPolicy"
+    preconditions: "Istio is installed, the workload is meshed, and an AuthorizationPolicy is identified as the traffic blocker"
+  
+  actionType: FixAuthorizationPolicy
+  
+  labels:
+    severity: [critical, high]
+    environment: ["*"]
+    component: "*"
+    priority: "*"
+  
+  detectedLabels:
+    serviceMesh: "*"
+  
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/fix-authz-policy-job@sha256:b2dcb72d0fcd1b55383cbf531b7956e8def56b85a91137b15c886c53ad7548f7
+  parameters:
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the affected workload"
+    - name: TARGET_POLICY
+      type: string
+      required: true
+      description: "Name of the AuthorizationPolicy to remove"

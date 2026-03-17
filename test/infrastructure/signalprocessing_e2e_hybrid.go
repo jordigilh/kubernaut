@@ -576,173 +576,92 @@ metadata:
 }
 
 func deploySignalProcessingPolicies(kubeconfigPath string, writer io.Writer) error {
-	// OPTIMIZATION #1: Batch all 5 Rego ConfigMaps into single kubectl apply
-	// Eliminates 4 kubectl invocations + API server round trips (20-40s savings)
-	// Per SP_E2E_OPTIMIZATION_TRIAGE_DEC_25_2025.md
-
-	// Combine all 5 policy ConfigMaps into a single YAML manifest
-	// NOTE: Using OPA v1.0 syntax with 'if' keyword before rule bodies
-	// Includes severity policy (BR-SP-105) for SignalProcessing controller startup
-	combinedPolicies := `---
-# 1. Environment Classification Policy (BR-SP-051)
-# Input: {"namespace": {"name": string, "labels": map}, "signal": {"labels": map}}
-# Output: {"environment": string, "source": string}
+	// ADR-060: Deploy unified Rego policy as a single ConfigMap (replaces 5 separate ConfigMaps).
+	// The SP controller expects a single policy.rego file under package signalprocessing.
+	unifiedPolicy := `---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: signalprocessing-environment-policy
+  name: signalprocessing-policy
   namespace: kubernaut-system
 data:
-  environment.rego: |
-    package signalprocessing.environment
-
-    # Default result: unknown environment
-    # OPA v1.0 syntax: requires 'if' keyword before rule body
-    default result := {"environment": "unknown", "source": "default"}
-
-    # Primary: Check namespace label kubernaut.ai/environment (BR-SP-051)
-    result := {"environment": env, "source": "namespace-labels"} if {
-      env := input.namespace.labels["kubernaut.ai/environment"]
-      env != ""
-    }
-
-    # Fallback: Check namespace name patterns
-    result := {"environment": "production", "source": "namespace-name"} if {
-      not input.namespace.labels["kubernaut.ai/environment"]
-      input.namespace.name == "production"
-    }
-    result := {"environment": "production", "source": "namespace-name"} if {
-      not input.namespace.labels["kubernaut.ai/environment"]
-      input.namespace.name == "prod"
-    }
-    result := {"environment": "staging", "source": "namespace-name"} if {
-      not input.namespace.labels["kubernaut.ai/environment"]
-      input.namespace.name == "staging"
-    }
-    result := {"environment": "development", "source": "namespace-name"} if {
-      not input.namespace.labels["kubernaut.ai/environment"]
-      input.namespace.name == "development"
-    }
-    result := {"environment": "development", "source": "namespace-name"} if {
-      not input.namespace.labels["kubernaut.ai/environment"]
-      input.namespace.name == "dev"
-    }
----
-# 2. Priority Assignment Policy (BR-SP-070)
-# Input: {"environment": string, "signal": {"severity": string}}
-# Output: {"priority": "P0-P3", "confidence": 0.9}
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: signalprocessing-priority-policy
-  namespace: kubernaut-system
-data:
-  priority.rego: |
-    package signalprocessing.priority
-
-    # Score-based priority aggregation (issue #98)
-    import rego.v1
-    severity_score := 3 if { lower(input.signal.severity) == "critical" }
-    severity_score := 2 if { lower(input.signal.severity) == "warning" }
-    severity_score := 2 if { lower(input.signal.severity) == "high" }
-    severity_score := 1 if { lower(input.signal.severity) == "info" }
-    default severity_score := 0
-    env_scores contains 3 if { lower(input.environment) == "production" }
-    env_scores contains 2 if { lower(input.environment) == "staging" }
-    env_scores contains 1 if { lower(input.environment) == "development" }
-    env_scores contains 1 if { lower(input.environment) == "test" }
-    env_scores contains 3 if { input.namespace_labels["tier"] == "critical" }
-    env_scores contains 2 if { input.namespace_labels["tier"] == "high" }
-    env_score := max(env_scores) if { count(env_scores) > 0 }
-    default env_score := 0
-    composite_score := severity_score + env_score
-    result := {"priority": "P0", "policy_name": "score-based"} if { composite_score >= 6 }
-    result := {"priority": "P1", "policy_name": "score-based"} if { composite_score == 5 }
-    result := {"priority": "P2", "policy_name": "score-based"} if { composite_score == 4 }
-    result := {"priority": "P3", "policy_name": "score-based"} if { composite_score < 4; composite_score > 0 }
-    default result := {"priority": "P3", "policy_name": "default-catch-all"}
----
-# 3. Business Classification Policy (BR-SP-071)
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: signalprocessing-business-policy
-  namespace: kubernaut-system
-data:
-  business.rego: |
-    package signalprocessing.business
+  policy.rego: |
+    package signalprocessing
 
     import rego.v1
 
-    # Default: Return "unknown" with low confidence when no specific rule matches
-    # Operators MUST define their own default rules.
-    default result := {"business_unit": "unknown", "confidence": 0.0, "policy_name": "operator-default"}
+    # ========== Environment Classification (BR-SP-051-053) ==========
+    default environment := {"environment": "unknown", "source": "default"}
 
-    # Example business unit mappings based on namespace labels
-    result := {"business_unit": input.namespace.labels["kubernaut.io/business-unit"], "confidence": 0.95, "policy_name": "namespace-label"} if {
-      input.namespace.labels["kubernaut.io/business-unit"]
+    environment := {"environment": lower(env), "source": "namespace-labels"} if {
+        env := input.namespace.labels["kubernaut.ai/environment"]
+        env != ""
+    }
+    environment := {"environment": "production", "source": "namespace-labels"} if {
+        not input.namespace.labels["kubernaut.ai/environment"]
+        input.namespace.labels["env"] == "production"
+    }
+    environment := {"environment": "staging", "source": "namespace-labels"} if {
+        not input.namespace.labels["kubernaut.ai/environment"]
+        input.namespace.labels["env"] == "staging"
+    }
+    environment := {"environment": "development", "source": "namespace-labels"} if {
+        not input.namespace.labels["kubernaut.ai/environment"]
+        input.namespace.labels["env"] == "development"
+    }
+
+    # ========== Severity Determination (BR-SP-105) ==========
+    default severity := "unknown"
+
+    severity := "critical" if { lower(input.signal.severity) == "critical" }
+    severity := "critical" if { lower(input.signal.severity) == "sev1" }
+    severity := "critical" if { lower(input.signal.severity) == "p0" }
+    severity := "high" if { lower(input.signal.severity) == "high" }
+    severity := "high" if { lower(input.signal.severity) == "sev2" }
+    severity := "high" if { lower(input.signal.severity) == "p2" }
+    severity := "medium" if { lower(input.signal.severity) == "medium" }
+    severity := "medium" if { lower(input.signal.severity) == "warning" }
+    severity := "medium" if { lower(input.signal.severity) == "sev3" }
+    severity := "low" if { lower(input.signal.severity) == "low" }
+    severity := "low" if { lower(input.signal.severity) == "info" }
+    severity := "low" if { lower(input.signal.severity) == "sev4" }
+
+    # ========== Priority Assignment (BR-SP-070) ==========
+    default priority := {"priority": "P3", "policy_name": "default"}
+
+    priority := {"priority": "P0", "policy_name": "production-critical"} if {
+        environment.environment == "production"
+        severity == "critical"
+    }
+    priority := {"priority": "P1", "policy_name": "production-high"} if {
+        environment.environment == "production"
+        severity == "high"
+    }
+    priority := {"priority": "P1", "policy_name": "staging-critical"} if {
+        environment.environment == "staging"
+        severity == "critical"
+    }
+    priority := {"priority": "P2", "policy_name": "staging-any"} if {
+        environment.environment == "staging"
+        severity != "critical"
+    }
+
+    # ========== Custom Labels (BR-SP-102) ==========
+    default labels := {}
+
+    labels := {"team": [team], "tier": [tier]} if {
+        team := input.namespace.labels["kubernaut.ai/team"]
+        team != ""
+        tier := input.namespace.labels["kubernaut.ai/tier"]
+        tier != ""
+    }
+
+    labels := {"team": [team]} if {
+        team := input.namespace.labels["kubernaut.ai/team"]
+        team != ""
+        not input.namespace.labels["kubernaut.ai/tier"]
     }
 ---
-# 4. Severity Determination Policy (BR-SP-105, DD-SEVERITY-001)
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: signalprocessing-severity-policy
-  namespace: kubernaut-system
-data:
-  severity.rego: |
-    package signalprocessing.severity
-    import rego.v1
-
-    # BR-SP-105: Severity Determination via Rego Policy
-    # DD-SEVERITY-001 v1.1: Strategy B - Policy-Defined Fallback (original casing preserved)
-    # Maps external severity values to normalized values: critical/high/medium/low/unknown
-    # Uses lower() for case-insensitive matching since Go code preserves original casing
-    determine_severity := "critical" if {
-      lower(input.signal.severity) == "sev1"
-    } else := "critical" if {
-      lower(input.signal.severity) == "p0"
-    } else := "critical" if {
-      lower(input.signal.severity) == "p1"
-    } else := "critical" if {
-      lower(input.signal.severity) == "error"
-    } else := "high" if {
-      lower(input.signal.severity) == "sev2"
-    } else := "high" if {
-      lower(input.signal.severity) == "p2"
-    } else := "high" if {
-      lower(input.signal.severity) == "warning"
-    } else := "medium" if {
-      lower(input.signal.severity) == "sev3"
-    } else := "low" if {
-      lower(input.signal.severity) == "p3"
-    } else := "unknown" if {
-      # Default fallback for unknown severity values
-      # Per DD-SEVERITY-001 v1.1: Unknown external values map to "unknown"
-      true
-    }
----
-# 5. Custom Labels Extraction Policy (BR-SP-071)
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: signalprocessing-customlabels-policy
-  namespace: kubernaut-system
-data:
-  customlabels.rego: |
-    package signalprocessing.customlabels
-
-    import rego.v1
-
-    labels[key] := value if {
-      some k, v in input.kubernetes.namespace.labels
-      startswith(k, "kubernaut.ai/label-")
-      key := trim_prefix(k, "kubernaut.ai/label-")
-      value := v
-    }
----
-# 6. Proactive Signal Mode Mappings (BR-SP-106, ADR-054)
-# YAML config (not Rego) — simple key-value lookup for signal mode classification
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -758,16 +677,15 @@ data:
       PredictedNodeNotReady: NodeNotReady
 `
 
-	// Single kubectl apply for all 6 ConfigMaps (includes severity policy for BR-SP-105, proactive mappings for BR-SP-106)
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(combinedPolicies)
+	cmd.Stdin = strings.NewReader(unifiedPolicy)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to deploy Rego policies (batched): %w", err)
+		return fmt.Errorf("failed to deploy unified Rego policy: %w", err)
 	}
 
-	_, _ = fmt.Fprintln(writer, "  ✓ Policies deployed (batched: environment, priority, business, customlabels, severity, proactive-signal-mappings)")
+	_, _ = fmt.Fprintln(writer, "  ✓ Policies deployed (unified policy.rego + proactive-signal-mappings)")
 	return nil
 }
 
@@ -901,7 +819,7 @@ data:
       cacheTtl: "5m"
       timeout: "10s"
     classifier:
-      regoConfigMapName: "signalprocessing-rego-policy"
+      regoConfigMapName: "signalprocessing-policy"
       regoConfigMapKey: "policy.rego"
       hotReloadInterval: "30s"
     datastorage:
@@ -1030,8 +948,8 @@ spec:
           mountPath: /etc/signalprocessing/config.yaml
           subPath: config.yaml
           readOnly: true
-        # Mount policies at /etc/signalprocessing/policies (same as standard manifest)
-        - name: policies
+        # ADR-060: Mount unified policy as directory (no subPath — enables ConfigMap hot-reload)
+        - name: policy
           mountPath: /etc/signalprocessing/policies
           readOnly: true
         # BR-SP-106: Mount proactive signal mappings (separate from Rego policies)
@@ -1047,20 +965,10 @@ spec:
       - name: config
         configMap:
           name: signalprocessing-config
-      # Projected volume for all policies (includes severity policy for BR-SP-105)
-      - name: policies
-        projected:
-          sources:
-          - configMap:
-              name: signalprocessing-environment-policy
-          - configMap:
-              name: signalprocessing-priority-policy
-          - configMap:
-              name: signalprocessing-business-policy
-          - configMap:
-              name: signalprocessing-severity-policy
-          - configMap:
-              name: signalprocessing-customlabels-policy
+      # ADR-060: Single unified policy ConfigMap
+      - name: policy
+        configMap:
+          name: signalprocessing-policy
       # BR-SP-106: Proactive signal mode mappings (YAML, not Rego)
       - name: proactive-signal-mappings
         configMap:

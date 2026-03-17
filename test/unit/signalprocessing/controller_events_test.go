@@ -141,7 +141,6 @@ var _ = Describe("SignalProcessing Controller K8s Events [DD-EVENT-001]", func()
 				Recorder:     recorder,
 				StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 				Metrics:      spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				AuditClient:  auditClient,
 				AuditManager: spaudit.NewManager(auditClient),
 				K8sEnricher:  newDefaultMockK8sEnricher(),
 			}
@@ -207,7 +206,6 @@ var _ = Describe("SignalProcessing Controller K8s Events [DD-EVENT-001]", func()
 				Recorder:     recorder,
 				StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 				Metrics:      spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				AuditClient:  auditClient,
 				AuditManager: spaudit.NewManager(auditClient),
 				K8sEnricher:  newMockK8sEnricherWithClient(fakeClient),
 			}
@@ -281,7 +279,6 @@ var _ = Describe("SignalProcessing Controller K8s Events [DD-EVENT-001]", func()
 				Recorder:     recorder,
 				StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 				Metrics:      spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				AuditClient:  auditClient,
 				AuditManager: spaudit.NewManager(auditClient),
 				K8sEnricher:  degradedEnricher,
 			}
@@ -355,10 +352,8 @@ var _ = Describe("SignalProcessing Controller K8s Events [DD-EVENT-001]", func()
 				Recorder:        recorder,
 				StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
 				Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				AuditClient:     auditClient,
 				AuditManager:    spaudit.NewManager(auditClient),
-				EnvClassifier:   newDefaultMockEnvironmentClassifier(),
-				PriorityAssigner: newDefaultMockPriorityAssigner(),
+				PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 			}
 
 			req := reconcile.Request{

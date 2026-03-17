@@ -1,0 +1,53 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: migrate-emptydir-to-pvc-gitops-v1
+spec:
+  version: "1.8.0"
+  description:
+    what: "Migrates a database from ephemeral emptyDir storage to a persistent volume claim via GitOps. Backs up the database via live pg_dump, commits the emptyDir-to-PVC migration to the source Git repository, waits for ArgoCD to sync the change, and restores the database to the new PVC-backed instance."
+    whenToUse: "When PredictedDiskPressure or DiskPressure is caused by emptyDir growth from a stateful workload (database) running on ephemeral storage, and the namespace is managed by a GitOps tool (ArgoCD). Best used with proactive signals (BR-SP-106) where the pod is still running and backup is feasible."
+    whenNotToUse: "When disk pressure is caused by ephemeral container logs, image layers, or other non-emptyDir sources. When the workload already uses PVC storage. When a simple volume expansion suffices."
+    preconditions: "ArgoCD is managing the target namespace. The source Git repository is accessible. The affected pod uses an emptyDir volume for its data directory. PostgreSQL client tools (pg_dump/pg_restore) are available in the container image."
+
+  actionType: MigrateEmptyDirToPVC
+
+  labels:
+    severity: [critical, high]
+    environment: ["*"]
+    component: "*"
+    priority: "*"
+
+  detectedLabels:
+    gitOpsTool: "*"
+
+  execution:
+    engine: ansible
+    bundle: https://github.com/jordigilh/kubernaut-test-playbooks.git
+    bundleDigest: "5d25d5c3694183d654f55e927338c7210d4a1712"
+    engineConfig:
+      playbookPath: "playbooks/gitops-migrate-emptydir-to-pvc.yml"
+      jobTemplateName: "kubernaut-migrate-emptydir-to-pvc"
+
+  dependencies:
+    secrets:
+      - name: gitea-repo-creds
+
+  parameters:
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the affected deployment"
+    - name: TARGET_DEPLOYMENT
+      type: string
+      required: true
+      description: "Name of the deployment running on emptyDir"
+    - name: NODE_NAME
+      type: string
+      required: true
+      description: "Name of the node reporting DiskPressure"
+    - name: PVC_SIZE
+      type: string
+      required: false
+      description: "Size for the new persistent volume claim"
+      default: "10Gi"

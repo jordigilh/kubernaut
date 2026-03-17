@@ -1,0 +1,5 @@
+proactive_signal_mappings:
+  PredictedOOMKill: OOMKilled
+  PredictedCPUThrottling: CPUThrottling
+  PredictedDiskPressure: DiskPressure
+  PredictedNodeNotReady: NodeNotReady

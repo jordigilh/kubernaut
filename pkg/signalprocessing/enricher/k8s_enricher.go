@@ -60,6 +60,7 @@ import (
 // K8sEnricher fetches Kubernetes context for signal enrichment.
 type K8sEnricher struct {
 	client            client.Client
+	apiReader         client.Reader
 	logger            logr.Logger
 	cache             *cache.TTLCache
 	metrics           *metrics.Metrics
@@ -72,12 +73,15 @@ type K8sEnricher struct {
 //
 // Panics if metrics is nil (metrics are mandatory for observability).
 // cacheTTL controls how long namespace lookups are cached (ADR-030: from YAML config).
-func NewK8sEnricher(c client.Client, logger logr.Logger, m *metrics.Metrics, timeout, cacheTTL time.Duration) *K8sEnricher {
+// apiReader bypasses the informer cache for namespace lookups, preventing stale label reads
+// when namespaces are newly created or relabeled (Issue #SP-CACHE-001).
+func NewK8sEnricher(c client.Client, apiReader client.Reader, logger logr.Logger, m *metrics.Metrics, timeout, cacheTTL time.Duration) *K8sEnricher {
 	if m == nil {
 		panic("metrics cannot be nil: metrics are mandatory for observability")
 	}
 	return &K8sEnricher{
 		client:            c,
+		apiReader:         apiReader,
 		logger:            logger.WithName("k8s-enricher"),
 		cache:             cache.NewTTLCache(cacheTTL),
 		metrics:           m,
@@ -382,21 +386,48 @@ func ensureMap(m map[string]string) map[string]string {
 }
 
 // getNamespace fetches a namespace by name with caching.
+// SP-CACHE-001: Uses APIReader (direct API call) to bypass the informer cache,
+// preventing stale label reads when namespaces are newly created or relabeled.
+// The enricher's own TTL cache still reduces API server load for subsequent lookups.
 func (e *K8sEnricher) getNamespace(ctx context.Context, name string) (*corev1.Namespace, error) {
-	// Check cache first
 	cacheKey := "ns:" + name
 	if cached, ok := e.cache.Get(cacheKey); ok {
-		return cached.(*corev1.Namespace), nil
+		ns := cached.(*corev1.Namespace)
+		if hasKubernautLabels(ns.Labels) {
+			return ns, nil
+		}
+		// SP-CACHE-001: Cached namespace has no kubernaut.ai/* labels — likely stale.
+		// Evict and re-fetch from API server to pick up labels that may have propagated.
+		e.cache.Delete(cacheKey)
+		e.logger.V(1).Info("Evicted stale namespace cache entry (no kubernaut.ai labels)", "namespace", name)
 	}
 
+	reader := e.nsReader()
 	ns := &corev1.Namespace{}
-	if err := e.client.Get(ctx, types.NamespacedName{Name: name}, ns); err != nil {
+	if err := reader.Get(ctx, types.NamespacedName{Name: name}, ns); err != nil {
 		return nil, err
 	}
 
-	// Cache the result
 	e.cache.Set(cacheKey, ns)
 	return ns, nil
+}
+
+// nsReader returns the APIReader if available, falling back to the cached client.
+func (e *K8sEnricher) nsReader() client.Reader {
+	if e.apiReader != nil {
+		return e.apiReader
+	}
+	return e.client
+}
+
+// hasKubernautLabels returns true if the labels map contains at least one kubernaut.ai/ key.
+func hasKubernautLabels(labels map[string]string) bool {
+	for k := range labels {
+		if len(k) > 13 && k[:13] == "kubernaut.ai/" {
+			return true
+		}
+	}
+	return false
 }
 
 // getPod fetches a pod by namespace and name.

@@ -134,7 +134,7 @@ var _ = Describe("BR-SP-090/ADR-032: Audit Client Mandatory Enforcement", func()
 				WithStatusSubresource(sp).
 				Build()
 
-			By("Creating reconciler WITHOUT AuditClient (nil)")
+			By("Creating reconciler WITHOUT AuditManager (nil)")
 			// Provide minimal mocks for components checked before audit
 			mockEnricher := &mockK8sEnricher{
 				EnrichFunc: func(ctx context.Context, signal *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.KubernetesContext, error) {
@@ -152,7 +152,7 @@ var _ = Describe("BR-SP-090/ADR-032: Audit Client Mandatory Enforcement", func()
 				StatusManager: status.NewManager(fakeClient, fakeClient),
 				Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 				K8sEnricher:   mockEnricher, // Need this to reach audit check
-				AuditClient:   nil,          // DELIBERATELY nil to test mandatory enforcement
+				AuditManager:  nil,          // DELIBERATELY nil to test mandatory enforcement
 			}
 
 			By("Attempting reconciliation")

@@ -257,11 +257,13 @@ func (h *RemediationWorkflowHandler) handleDelete(ctx context.Context, req admis
 	}
 
 	// Call DS to disable the workflow (best-effort — always allow DELETE)
+	disableOK := false
 	if err := h.dsClient.DisableWorkflow(ctx, workflowID, "CRD deleted", username); err != nil {
 		logger.Error(err, "DS DisableWorkflow failed (best-effort — allowing DELETE)",
 			"workflow_id", workflowID,
 		)
 	} else {
+		disableOK = true
 		logger.Info("Workflow disabled in DS",
 			"workflow_id", workflowID,
 		)
@@ -270,8 +272,12 @@ func (h *RemediationWorkflowHandler) handleDelete(ctx context.Context, req admis
 	// Emit DELETE audit event
 	h.emitAdmitAudit(ctx, req, EventTypeRWAdmittedDelete, workflowID, rw.Name)
 
-	// Phase 3c: best-effort cross-update of ActionType CRD status.activeWorkflowCount
-	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace)
+	// Issue #418 Fix A: Only refresh the count when the DS disable succeeded.
+	// Writing the count after a failed disable would actively reinforce stale data.
+	// The finalizer reconciler (RWFinalizerName) handles the guaranteed path.
+	if disableOK {
+		go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace)
+	}
 
 	return admission.Allowed("workflow disabled in catalog")
 }

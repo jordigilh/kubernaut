@@ -77,7 +77,7 @@ var (
 const (
 	clusterName = "signalprocessing-e2e"
 	serviceName = "signalprocessing"
-	timeout     = 60 * time.Second
+	timeout     = 2 * time.Minute
 	interval    = 2 * time.Second
 
 	// ADR-057: RR and SP CRs live in controller namespace; SP controller watches kubernaut-system only

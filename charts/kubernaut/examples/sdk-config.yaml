@@ -1,0 +1,33 @@
+# HolmesGPT SDK Configuration
+#
+# Provide this to the chart via:
+#   helm install kubernaut charts/kubernaut/ \
+#     --set-file holmesgptApi.sdkConfigContent=charts/kubernaut/examples/sdk-config.yaml
+#
+# Or pre-create a ConfigMap and reference it:
+#   kubectl create configmap holmesgpt-sdk-config --from-file=sdk-config.yaml=sdk-config.yaml
+#   helm install kubernaut charts/kubernaut/ --set holmesgptApi.existingSdkConfigMap=holmesgpt-sdk-config
+
+# -- LLM provider configuration (required)
+# Credentials are sourced from the K8s Secret referenced by holmesgptApi.llm.credentialsSecretName
+llm:
+  provider: ""       # "openai", "azure", "vertexai", "bedrock", etc.
+  model: ""          # e.g., "gpt-4o", "gemini-2.0-flash"
+  endpoint: ""       # API endpoint (required for Azure, optional for others)
+  # GCP Vertex AI specific:
+  # gcp_project_id: ""
+  # gcp_region: ""
+  max_retries: 3
+  timeout_seconds: 120
+  temperature: 0.7
+
+# -- Toolsets (optional)
+# See: https://holmesgpt.dev/data-sources/builtin-toolsets/
+toolsets: {}
+  # prometheus/metrics:
+  #   enabled: true
+  #   config:
+  #     prometheus_url: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+
+# -- MCP servers (optional)
+mcp_servers: {}

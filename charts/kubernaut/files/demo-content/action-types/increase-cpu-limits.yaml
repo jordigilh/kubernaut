@@ -1,0 +1,10 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: increase-cpu-limits
+spec:
+  name: IncreaseCPULimits
+  description:
+    what: "Increase CPU resource limits on containers."
+    whenToUse: "CPU throttling is caused by resource limits being too low relative to the workload actual requirements, not by a code-level issue."
+    preconditions: "Container is actively CPU-throttled (not just using high CPU), and CPU usage pattern is consistent with legitimate workload."

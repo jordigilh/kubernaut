@@ -600,11 +600,17 @@ subjects:
 		if err := PatchWEControllerWithAnsibleConfig(ctx, WorkflowExecutionNamespace, kubeconfigPath, awxCfg, writer); err != nil {
 			return fmt.Errorf("failed to enable ansible executor on WE controller: %w", err)
 		}
-		// Verify AWX web pod has ALL containers healthy before tests start.
-		// The rsyslog sidecar can crash after initial readiness on constrained
-		// runners, making the ClusterIP service unreachable.
-		if err := EnsureAWXWebPodHealthy(ctx, WorkflowExecutionNamespace, kubeconfigPath, writer); err != nil {
-			return fmt.Errorf("AWX web pod health check failed: %w", err)
+		// Verify AWX web + task pods have ALL containers healthy before tests
+		// start. The rsyslog sidecar can crash after initial readiness on
+		// constrained runners, making the ClusterIP service unreachable.
+		if err := EnsureAWXPodsHealthy(ctx, WorkflowExecutionNamespace, kubeconfigPath, writer); err != nil {
+			return fmt.Errorf("AWX pod health check failed: %w", err)
+		}
+		// Container readiness != API readiness. After pod heal (rsyslog CrashLoop
+		// recovery), AWX's internal job dispatcher needs time to reinitialize.
+		// Without this, the first ansible job launch can fail with a 500.
+		if err := WaitForAWXAPIReady(ctx, writer); err != nil {
+			return fmt.Errorf("AWX API warmup failed: %w", err)
 		}
 	}
 

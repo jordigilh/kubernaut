@@ -1,0 +1,11 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: graceful-restart
+spec:
+  name: GracefulRestart
+  description:
+    what: "Perform a graceful rolling restart of a workload to reset its runtime state."
+    whenToUse: "Predictive analysis indicates an impending failure (memory leak, resource exhaustion) that can be prevented by proactively restarting before the crash occurs."
+    whenNotToUse: "When the issue is caused by a code bug or misconfiguration that will recur after restart."
+    preconditions: "Evidence of gradual resource degradation (trending metrics) and the workload supports rolling restarts without data loss."
