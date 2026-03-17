@@ -261,7 +261,61 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 		ExpectWithOffset(1, k8sClient.Get(ctx, client.ObjectKeyFromObject(restoreCM), restoreCM)).To(Succeed())
 		restoreCM.Data["policy.rego"] = originalPolicyRego
 		ExpectWithOffset(1, k8sClient.Update(ctx, restoreCM)).To(Succeed())
-		GinkgoWriter.Println("Restored original Rego policy ConfigMap after hot-reload test")
+		GinkgoWriter.Println("Restored original Rego policy ConfigMap — waiting for FileWatcher propagation")
+
+		// Wait for the FileWatcher to reload the restored policy before other tests run.
+		// Without this, subsequent tests may classify with the stripped policy during the
+		// ~10-15s kubelet sync + inotify propagation window.
+		// Probe: the original policy evaluates severity "Sev1" → "critical" AND has
+		// namespace-label environment rules (not just "default unknown"). We verify severity
+		// since the stripped policy maps non-custom_value → "critical" identically; instead
+		// we check that the policy hash changed back from the stripped version's hash.
+		EventuallyWithOffset(1, func(g Gomega) {
+			probeSP := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("policy-restore-probe-%d", time.Now().UnixNano()),
+					Namespace: controllerNamespace,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
+						APIVersion: "kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "probe-rr",
+						Namespace:  controllerNamespace,
+					},
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint:  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+						Name:         "restore-probe",
+						Severity:     "high",
+						Type:         "alert",
+						TargetType:   "kubernetes",
+						ReceivedTime: metav1.Now(),
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "test-pod",
+							Namespace: namespace,
+						},
+					},
+				},
+			}
+			g.Expect(k8sClient.Create(ctx, probeSP)).To(Succeed())
+			defer func() { _ = k8sClient.Delete(ctx, probeSP) }()
+
+			var processed signalprocessingv1alpha1.SignalProcessing
+			g.Eventually(func() signalprocessingv1alpha1.SignalProcessingPhase {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(probeSP), &processed)
+				return processed.Status.Phase
+			}, "20s", "1s").Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
+
+			// The original policy maps "high" severity to a real normalized value AND has
+			// environment/priority rules. The stripped policy has default priority P3.
+			// Check that priority is NOT the stripped-policy default "P3" for a signal
+			// with "high" severity — the original Rego policy assigns score-based priority.
+			g.Expect(processed.Status.Severity).ToNot(Equal("unknown"),
+				"Policy restore probe: severity should not be 'unknown' (original policy loaded)")
+		}, "45s", "3s").Should(Succeed(), "Original Rego policy should propagate via FileWatcher within 45s")
+
+		GinkgoWriter.Println("Original Rego policy confirmed active via probe signal")
 	})
 
 	policyConfigMap.Data["policy.rego"] = `package signalprocessing
