@@ -35,6 +35,7 @@ package main
 import (
 	"flag"
 	"os"
+	"path/filepath"
 
 	// Standard Kubernetes imports
 	"k8s.io/apimachinery/pkg/runtime"
@@ -60,7 +61,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enricher"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
 )
 
@@ -204,21 +204,28 @@ func main() {
 	// Replaces 5 separate classifiers (environment, priority, severity, business, customlabels)
 	// with a single evaluator backed by one policy.rego file.
 	//
-	// Fail-fast on missing or invalid policy at startup.
+	// Issue #419: Policy path is now constructed from cfg.Classifier instead of hardcoded.
+	// The Helm chart mounts the ConfigMap at /etc/signalprocessing/policies/, and the
+	// regoConfigMapKey determines the filename within that mount.
 
 	ctx := ctrl.SetupSignalHandler()
 
+	policyPath := filepath.Join("/etc/signalprocessing/policies", cfg.Classifier.RegoConfigMapKey)
 	policyEvaluator := evaluator.New(
-		"/etc/signalprocessing/policies/policy.rego",
+		policyPath,
 		ctrl.Log.WithName("evaluator"),
 	)
 	if err := policyEvaluator.StartHotReload(ctx); err != nil {
 		setupLog.Error(err, "FATAL: unified policy is mandatory but failed to load",
-			"policyPath", "/etc/signalprocessing/policies/policy.rego",
-			"hint", "Ensure the policy file is mounted via ConfigMap/Secret")
+			"policyPath", policyPath,
+			"configMapName", cfg.Classifier.RegoConfigMapName,
+			"configMapKey", cfg.Classifier.RegoConfigMapKey,
+			"hint", "Ensure the policy ConfigMap is mounted at /etc/signalprocessing/policies/")
 		os.Exit(1)
 	}
+	defer policyEvaluator.Stop()
 	setupLog.Info("Unified policy evaluator started",
+		"policyPath", policyPath,
 		"policyHash", policyEvaluator.GetPolicyHash())
 
 	// ========================================
@@ -247,14 +254,6 @@ func main() {
 	// ENRICHMENT COMPONENTS SETUP
 	// ========================================
 	// BR-SP-001: Kubernetes context enrichment
-	// BR-SP-100: Owner chain traversal
-
-	ownerChainBuilder := ownerchain.NewBuilder(
-		mgr.GetClient(),
-		ctrl.Log.WithName("ownerchain"),
-	)
-	setupLog.Info("owner chain builder configured")
-
 	// BR-SP-001: Metrics for observability (DD-005)
 	// Per AIAnalysis pattern: Use global ctrlmetrics.Registry for production
 	spMetrics := spmetrics.NewMetrics() // Uses ctrlmetrics.Registry (global)
@@ -264,6 +263,7 @@ func main() {
 	// ADR-030: Enrichment timeout and cache TTL from YAML config (not hardcoded)
 	k8sEnricher := enricher.NewK8sEnricher(
 		mgr.GetClient(),
+		mgr.GetAPIReader(),
 		ctrl.Log.WithName("enricher"),
 		spMetrics,
 		cfg.Enrichment.Timeout,
@@ -294,14 +294,12 @@ func main() {
 	if err = (&signalprocessing.SignalProcessingReconciler{
 		Client:               mgr.GetClient(),
 		Scheme:               mgr.GetScheme(),
-		AuditClient:          auditClient,
 		AuditManager:         auditManager,
 		Metrics:              spMetrics,
 		Recorder:             mgr.GetEventRecorderFor("signalprocessing-controller"),
 		StatusManager:        statusManager,
 		PolicyEvaluator:      policyEvaluator,        // ADR-060: Unified evaluator
 		SignalModeClassifier: signalModeClassifier,   // BR-SP-106: Proactive signal mode (ADR-054)
-		OwnerChainBuilder:    ownerChainBuilder,
 		K8sEnricher:          k8sEnricher,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SignalProcessing")

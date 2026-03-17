@@ -238,7 +238,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 		var testNs string
 
 		BeforeEach(func() {
-			testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-prod", helpers.WithLabels(map[string]string{
+			testNs = helpers.CreateTestNamespaceAndWait(k8sClient, "e2e-prod", helpers.WithLabels(map[string]string{
 				"kubernaut.ai/environment": "production",
 			}))
 		})
@@ -349,8 +349,8 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 		var stagingNs, devNs string
 
 		BeforeEach(func() {
-			stagingNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-staging", helpers.WithLabels(map[string]string{"kubernaut.ai/environment": "staging"}))
-			devNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-dev", helpers.WithLabels(map[string]string{"kubernaut.ai/environment": "development"}))
+			stagingNs = helpers.CreateTestNamespaceAndWait(k8sClient, "e2e-staging", helpers.WithLabels(map[string]string{"kubernaut.ai/environment": "staging"}))
+			devNs = helpers.CreateTestNamespaceAndWait(k8sClient, "e2e-dev", helpers.WithLabels(map[string]string{"kubernaut.ai/environment": "development"}))
 		})
 
 		AfterEach(func() {
@@ -462,7 +462,7 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 	// TDD RED: This test will FAIL until controller classifies environment
 	It("BR-SP-051: should classify production from namespace label with high confidence", func() {
 		By("Creating namespace with production label")
-		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-env", helpers.WithLabels(map[string]string{
+		testNs = helpers.CreateTestNamespaceAndWait(k8sClient, "e2e-env", helpers.WithLabels(map[string]string{
 			"kubernaut.ai/environment": "production",
 		}))
 

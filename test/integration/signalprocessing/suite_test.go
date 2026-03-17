@@ -474,6 +474,7 @@ proactive_signal_mappings:
 	// Metrics are MANDATORY for observability (per k8s_enricher.go panic guard)
 	k8sEnricher := enricher.NewK8sEnricher(
 		k8sManager.GetClient(),
+		k8sManager.GetAPIReader(),
 		logger,
 		sharedMetrics,     // Pass shared metrics to enricher
 		5*time.Second,     // Timeout for K8s API calls

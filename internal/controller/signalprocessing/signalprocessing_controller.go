@@ -55,7 +55,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
 
 	// BR-SP-110: Kubernetes Conditions
@@ -68,7 +67,6 @@ import (
 type SignalProcessingReconciler struct {
 	client.Client
 	Scheme       *runtime.Scheme
-	AuditClient  *audit.AuditClient  // BR-SP-090: Categorization Audit Trail (legacy - use AuditManager)
 	AuditManager *audit.Manager      // BR-SP-090: Audit Manager (Phase 3 refactoring - 2026-01-22)
 
 	// V1.0 Maturity Requirements (per SERVICE_MATURITY_REQUIREMENTS.md)
@@ -98,8 +96,6 @@ type SignalProcessingReconciler struct {
 	PolicyEvaluator PolicyEvaluator // MANDATORY - fail loudly if nil
 
 	SignalModeClassifier *classifier.SignalModeClassifier // BR-SP-106: Proactive signal mode classification (ADR-054)
-
-	OwnerChainBuilder *ownerchain.Builder // BR-SP-100: Owner chain traversal
 
 	// K8sEnricher provides sophisticated Kubernetes context enrichment
 	// This is MANDATORY - fail loudly if nil or on error
@@ -333,10 +329,14 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 
 	signal := &sp.Spec.Signal
 
-	// V2.0 EXTENSIBILITY: Currently only "kubernetes" is implemented.
-	// When adding new providers, replace this block with a switch on signal.TargetType.
-	// For now, we proceed with Kubernetes enrichment regardless of targetType value.
-	// Gateway currently hardcodes targetType="kubernetes" (pkg/gateway/processing/crd_creator.go:376)
+	// Issue #419 / V2.0: Only "kubernetes" enrichment is implemented. Non-kubernetes target
+	// types are accepted by CRD validation but enrichment runs in degraded mode (no context).
+	if signal.TargetType != "" && signal.TargetType != "kubernetes" {
+		logger.Info("Non-kubernetes targetType received; enrichment will run in degraded mode",
+			"targetType", signal.TargetType)
+		r.Recorder.Eventf(sp, "Warning", "UnsupportedTargetType",
+			"targetType %q is not yet supported for enrichment (V2.0); proceeding in degraded mode", signal.TargetType)
+	}
 
 	targetNs := signal.TargetResource.Namespace
 	targetKind := signal.TargetResource.Kind
