@@ -347,14 +347,19 @@ cleanup_port_forward() {
 full_cleanup() {
   local ns="${1:-$NAMESPACE}"
   echo "# Cleaning up namespace ${ns}..."
-  helm uninstall kubernaut -n "$ns" --no-hooks 2>/dev/null || true
+
+  # Delete CRDs BEFORE helm uninstall so controllers are still alive to process
+  # finalizers on CRs (aianalyses, workflowexecutions). Reversing this order causes
+  # CRD deletion to hang indefinitely when finalizer-bearing CRs can't be reconciled.
+  kubectl delete -f "${CHART_PATH}/crds/" --timeout=60s 2>/dev/null || true
+
+  helm uninstall kubernaut -n "$ns" --no-hooks --timeout 2m 2>/dev/null || true
   kubectl delete jobs --all -n "$ns" 2>/dev/null || true
   kubectl delete pods --all -n "$ns" --force --grace-period=0 2>/dev/null || true
   kubectl delete pvc --all -n "$ns" 2>/dev/null || true
   kubectl delete secret --all -n "$ns" 2>/dev/null || true
-  kubectl delete -f "${CHART_PATH}/crds/" 2>/dev/null || true
-  kubectl delete ns "$ns" --ignore-not-found 2>/dev/null || true
-  kubectl delete ns kubernaut-workflows --ignore-not-found 2>/dev/null || true
+  kubectl delete ns "$ns" --ignore-not-found --timeout=60s 2>/dev/null || true
+  kubectl delete ns kubernaut-workflows --ignore-not-found --timeout=60s 2>/dev/null || true
   sleep 5
 }
 
@@ -741,9 +746,36 @@ run_uninst_001() {
 run_uninst_002() {
   local pass=true
 
-  kubectl delete pvc postgresql-data valkey-data -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
-  kubectl delete -f "${CHART_PATH}/crds/" >/dev/null 2>&1 || pass=false
-  kubectl delete namespace "$NAMESPACE" >/dev/null 2>&1 || pass=false
+  # Controllers are already gone (run_uninst_001 did helm uninstall).
+  # Strip finalizers from any remaining CRs so CRD deletion doesn't hang.
+  for crd in $(kubectl get crds -o name 2>/dev/null | grep kubernaut.ai); do
+    local kind
+    kind=$(kubectl get "$crd" -o jsonpath='{.spec.names.plural}' 2>/dev/null)
+    if [[ -n "$kind" ]]; then
+      kubectl get "$kind" --all-namespaces -o json 2>/dev/null \
+        | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for item in data.get('items', []):
+    if item.get('metadata', {}).get('finalizers'):
+        ns = item['metadata'].get('namespace', '')
+        name = item['metadata']['name']
+        print(f'{ns}/{name}' if ns else name)
+" 2>/dev/null | while read -r ref; do
+          local cr_ns="${ref%%/*}"
+          local cr_name="${ref##*/}"
+          if [[ "$ref" == */* ]]; then
+            kubectl patch "$kind" "$cr_name" -n "$cr_ns" --type=merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+          else
+            kubectl patch "$kind" "$cr_name" --type=merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+          fi
+        done
+    fi
+  done
+
+  kubectl delete pvc postgresql-data valkey-data -n "$NAMESPACE" --timeout=30s >/dev/null 2>&1 || pass=false
+  kubectl delete -f "${CHART_PATH}/crds/" --timeout=60s >/dev/null 2>&1 || pass=false
+  kubectl delete namespace "$NAMESPACE" --timeout=60s >/dev/null 2>&1 || pass=false
 
   sleep 10
 
