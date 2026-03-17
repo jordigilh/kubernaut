@@ -1022,27 +1022,19 @@ jobs:
             --pull-secret ghcr-creds \
             --chart-path charts/kubernaut/
 
-      - name: Collect diagnostics on failure
+      - name: Collect Kind node logs on failure
         if: failure()
         run: |
-          echo "=== Pod status ==="
-          kubectl get pods -A --no-headers 2>/dev/null || true
-          echo "=== Events ==="
-          kubectl get events -n kubernaut-system --sort-by='.lastTimestamp' 2>/dev/null | tail -30 || true
-          echo "=== Describe failing pods ==="
-          kubectl get pods -n kubernaut-system --no-headers 2>/dev/null \
-            | grep -v Running \
-            | awk '{print $1}' \
-            | xargs -r -I {} kubectl describe pod {} -n kubernaut-system 2>/dev/null || true
-          echo "=== Kind logs ==="
           kind export logs /tmp/kind-smoke-logs --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
 
-      - name: Upload diagnostics
+      - name: Upload must-gather and Kind logs
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: helm-smoke-diagnostics-${{ github.run_id }}
-          path: /tmp/kind-smoke-logs/
+          name: helm-smoke-must-gather-${{ github.run_id }}
+          path: |
+            /tmp/must-gather-helm-smoke-*.tar.gz
+            /tmp/kind-smoke-logs/
           retention-days: 7
           if-no-files-found: warn
 

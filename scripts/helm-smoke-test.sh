@@ -134,6 +134,135 @@ dump_pod_diagnostics() {
   done
 }
 
+# ---------------------------------------------------------------------------
+# Must-gather: comprehensive diagnostics archive for CI triage
+# ---------------------------------------------------------------------------
+MUST_GATHER_DIR=""
+
+must_gather() {
+  local ns="${1:-$NAMESPACE}"
+  local trigger="${2:-manual}"
+  local ts
+  ts=$(date -u +%Y%m%d-%H%M%S)
+  MUST_GATHER_DIR="/tmp/must-gather-helm-smoke-${ts}"
+  mkdir -p "$MUST_GATHER_DIR"
+
+  echo "# ══════════════════════════════════════════════════════════"
+  echo "# MUST-GATHER: Collecting diagnostics (trigger: ${trigger})"
+  echo "# Output: ${MUST_GATHER_DIR}"
+  echo "# ══════════════════════════════════════════════════════════"
+
+  # --- Cluster-level ---
+  echo "# [1/9] Cluster info"
+  kubectl cluster-info                         > "$MUST_GATHER_DIR/cluster-info.txt" 2>&1 || true
+  kubectl get nodes -o wide                    > "$MUST_GATHER_DIR/nodes.txt" 2>&1 || true
+  kubectl top nodes                            >> "$MUST_GATHER_DIR/nodes.txt" 2>&1 || true
+
+  # --- Helm state ---
+  echo "# [2/9] Helm release state"
+  helm list -n "$ns" -a                        > "$MUST_GATHER_DIR/helm-list.txt" 2>&1 || true
+  helm status kubernaut -n "$ns"               > "$MUST_GATHER_DIR/helm-status.txt" 2>&1 || true
+  helm history kubernaut -n "$ns"              > "$MUST_GATHER_DIR/helm-history.txt" 2>&1 || true
+
+  # --- Namespace resources ---
+  echo "# [3/9] Namespace resources"
+  kubectl get all -n "$ns" -o wide             > "$MUST_GATHER_DIR/all-resources.txt" 2>&1 || true
+  kubectl get pods -n "$ns" -o yaml            > "$MUST_GATHER_DIR/pods.yaml" 2>&1 || true
+  kubectl get jobs -n "$ns" -o wide            > "$MUST_GATHER_DIR/jobs.txt" 2>&1 || true
+  kubectl get pvc -n "$ns" -o wide             > "$MUST_GATHER_DIR/pvcs.txt" 2>&1 || true
+  kubectl get endpoints -n "$ns"               > "$MUST_GATHER_DIR/endpoints.txt" 2>&1 || true
+
+  # --- Secrets inventory (names + keys only, no values) ---
+  echo "# [4/9] Secrets inventory"
+  kubectl get secrets -n "$ns" -o custom-columns='NAME:.metadata.name,TYPE:.type,KEYS:.data' \
+    --no-headers 2>/dev/null | while IFS= read -r line; do
+    local sname stype skeys
+    sname=$(echo "$line" | awk '{print $1}')
+    stype=$(echo "$line" | awk '{print $2}')
+    skeys=$(kubectl get secret "$sname" -n "$ns" -o jsonpath='{.data}' 2>/dev/null | \
+            python3 -c "import sys,json; print(','.join(json.load(sys.stdin).keys()))" 2>/dev/null || echo "?")
+    echo "$sname  type=$stype  keys=[$skeys]"
+  done > "$MUST_GATHER_DIR/secrets-inventory.txt" 2>&1 || true
+
+  # --- Events (full, not truncated) ---
+  echo "# [5/9] Events"
+  kubectl get events -n "$ns" --sort-by='.lastTimestamp' \
+    -o custom-columns='LAST:.lastTimestamp,TYPE:.type,REASON:.reason,OBJECT:.involvedObject.name,MESSAGE:.message' \
+    > "$MUST_GATHER_DIR/events.txt" 2>&1 || true
+
+  # --- Pod logs (all containers, including init + previous) ---
+  echo "# [6/9] Pod logs"
+  mkdir -p "$MUST_GATHER_DIR/logs"
+  local pod
+  for pod in $(kubectl get pods -n "$ns" --no-headers 2>/dev/null | awk '{print $1}'); do
+    kubectl logs "$pod" -n "$ns" --all-containers --prefix \
+      > "$MUST_GATHER_DIR/logs/${pod}.log" 2>&1 || true
+    kubectl logs "$pod" -n "$ns" --all-containers --prefix --previous \
+      > "$MUST_GATHER_DIR/logs/${pod}.previous.log" 2>/dev/null || true
+    # Remove empty previous log files
+    [[ -s "$MUST_GATHER_DIR/logs/${pod}.previous.log" ]] || rm -f "$MUST_GATHER_DIR/logs/${pod}.previous.log"
+  done
+
+  # --- Describe non-healthy pods ---
+  echo "# [7/9] Pod descriptions (non-Running)"
+  mkdir -p "$MUST_GATHER_DIR/describe"
+  for pod in $(kubectl get pods -n "$ns" --no-headers 2>/dev/null | grep -vE '1/1.*Running|2/2.*Running|Completed' | awk '{print $1}'); do
+    kubectl describe pod "$pod" -n "$ns" \
+      > "$MUST_GATHER_DIR/describe/${pod}.txt" 2>&1 || true
+  done
+
+  # --- Webhook configurations ---
+  echo "# [8/9] Webhook configurations"
+  kubectl get mutatingwebhookconfigurations authwebhook-mutating -o yaml \
+    > "$MUST_GATHER_DIR/mutating-webhook.yaml" 2>&1 || true
+  kubectl get validatingwebhookconfigurations authwebhook-validating -o yaml \
+    > "$MUST_GATHER_DIR/validating-webhook.yaml" 2>&1 || true
+
+  # --- Hook job diagnostics ---
+  echo "# [9/9] Hook jobs"
+  for job in $(kubectl get jobs -n "$ns" --no-headers 2>/dev/null | awk '{print $1}'); do
+    kubectl describe job "$job" -n "$ns" \
+      > "$MUST_GATHER_DIR/describe/job-${job}.txt" 2>&1 || true
+    for jpod in $(kubectl get pods -n "$ns" -l "job-name=$job" --no-headers 2>/dev/null | awk '{print $1}'); do
+      kubectl logs "$jpod" -n "$ns" --all-containers \
+        > "$MUST_GATHER_DIR/logs/job-${jpod}.log" 2>&1 || true
+    done
+  done
+
+  # --- Archive ---
+  local archive="/tmp/must-gather-helm-smoke-${ts}.tar.gz"
+  tar -czf "$archive" -C /tmp "must-gather-helm-smoke-${ts}" 2>/dev/null || true
+
+  echo "# ──────────────────────────────────────────────────────────"
+  echo "# MUST-GATHER COMPLETE: ${archive}"
+  echo "# Files collected: $(find "$MUST_GATHER_DIR" -type f | wc -l)"
+  echo "# Archive size: $(du -sh "$archive" 2>/dev/null | awk '{print $1}')"
+  echo "# ──────────────────────────────────────────────────────────"
+
+  # Print summary to TAP output for quick triage in CI logs
+  echo "#"
+  echo "# === Quick Triage Summary ==="
+  echo "# Pod Status:"
+  kubectl get pods -n "$ns" --no-headers 2>/dev/null | awk '{printf "#   %-55s %s %s\n", $1, $2, $3}' || true
+  echo "#"
+  echo "# Non-Running Pod Events:"
+  for pod in $(kubectl get pods -n "$ns" --no-headers 2>/dev/null | grep -vE '1/1.*Running|2/2.*Running|Completed' | awk '{print $1}'); do
+    echo "#   ${pod}:"
+    kubectl get events -n "$ns" --field-selector "involvedObject.name=$pod" \
+      --sort-by='.lastTimestamp' --no-headers 2>/dev/null | tail -3 | \
+      awk '{printf "#     %s %s %s\n", $1, $4, substr($0, index($0,$6))}' || true
+  done
+  echo "#"
+  echo "# Recent Warning Events:"
+  kubectl get events -n "$ns" --field-selector type=Warning \
+    --sort-by='.lastTimestamp' --no-headers 2>/dev/null | tail -10 | \
+    awk '{printf "#   %-20s %-15s %s\n", $4, $5, substr($0, index($0,$6))}' || true
+  echo "#"
+  echo "# Helm Release:"
+  helm status kubernaut -n "$ns" --short 2>/dev/null | head -3 | sed 's/^/#   /' || echo "#   (no release found)"
+  echo "#"
+}
+
 assert_pods_ready() {
   local expected_count="$1"
   local desc="${2:-ST-CHART-VERIFY-001: ${expected_count} pods reach 1/1 Running}"
@@ -143,7 +272,7 @@ assert_pods_ready() {
     local status
     status=$(kubectl get pods -n "$ns" --no-headers 2>&1)
     tap_not_ok "$desc" "Timeout waiting for pods. Current state: ${status}"
-    dump_pod_diagnostics "$ns"
+    must_gather "$ns" "pods-not-ready"
     return 1
   fi
 
@@ -156,7 +285,7 @@ assert_pods_ready() {
     local status
     status=$(kubectl get pods -n "$ns" --no-headers 2>&1)
     tap_not_ok "$desc" "Expected ${expected_count} Running pods, got ${actual}. State: ${status}"
-    dump_pod_diagnostics "$ns"
+    must_gather "$ns" "pod-count-mismatch"
     return 1
   fi
 }
@@ -566,12 +695,29 @@ run_uninst_001() {
   # The chart's pre-delete hook (webhook-cleanup Job) removes admission webhooks
   # before Helm deletes the release resources, preventing failurePolicy=Fail
   # rejections when the authwebhook pod terminates before demo-content CRs.
+  #
+  # Capture pre-uninstall state: if the pre-delete hook hangs (e.g. ImagePullBackOff
+  # on bitnami/kubectl), the must-gather taken AFTER timeout won't show the hook pod.
+  echo "# Pre-uninstall snapshot: jobs and hook pods"
+  kubectl get jobs,pods -n "$NAMESPACE" --show-labels 2>/dev/null | sed 's/^/#   /' || true
+
+  local uninstall_start uninstall_end uninstall_elapsed
+  uninstall_start=$(date +%s)
   local uninstall_output
   uninstall_output=$(helm uninstall kubernaut -n "$NAMESPACE" --timeout 3m 2>&1)
-  if [[ $? -eq 0 ]]; then
-    tap_ok "ST-CHART-UNINST-001a: helm uninstall succeeds"
+  local uninstall_rc=$?
+  uninstall_end=$(date +%s)
+  uninstall_elapsed=$((uninstall_end - uninstall_start))
+
+  if [[ $uninstall_rc -eq 0 ]]; then
+    tap_ok "ST-CHART-UNINST-001a: helm uninstall succeeds (${uninstall_elapsed}s)"
+    if [[ $uninstall_elapsed -gt 120 ]]; then
+      echo "# WARNING: uninstall took ${uninstall_elapsed}s (>120s) — pre-delete hook may have been slow"
+      must_gather "$NAMESPACE" "slow-uninstall"
+    fi
   else
-    tap_not_ok "ST-CHART-UNINST-001a: helm uninstall succeeds" "helm uninstall failed: ${uninstall_output}"
+    tap_not_ok "ST-CHART-UNINST-001a: helm uninstall succeeds" "failed after ${uninstall_elapsed}s: ${uninstall_output}"
+    must_gather "$NAMESPACE" "uninstall-failure"
     return 1
   fi
 
@@ -649,19 +795,21 @@ run_edge_001() {
 
 flow_a_production() {
   echo "# --- Flow A: Production Install Lifecycle (${PLATFORM}) ---"
+  local flow_failed=false
+
   run_pre_001
   run_pre_002
   run_pre_003
   run_pre_004
-  run_inst_001 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow A tests"; return 1; }
+  run_inst_001 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow A tests"; must_gather "$NAMESPACE" "install-failure"; return 1; }
 
   if [[ "$PLATFORM" == "kind" ]]; then
     run_tls_patch
   fi
 
-  run_verify_001
-  run_verify_002
-  run_verify_003
+  run_verify_001 || flow_failed=true
+  run_verify_002 || flow_failed=true
+  run_verify_003 || flow_failed=true
 
   if [[ "$PLATFORM" == "kind" ]]; then
     run_tls_001
@@ -669,26 +817,38 @@ flow_a_production() {
     run_tls_002
   fi
 
-  run_upg_001
+  run_upg_001 || flow_failed=true
 
   if [[ "$PLATFORM" == "ocp" ]]; then
     run_tls_003
   fi
 
   run_edge_001
+
+  if $flow_failed; then
+    must_gather "$NAMESPACE" "flow-a-verification-failure"
+  fi
+
   run_uninst_001
   run_uninst_002
 }
 
 flow_b_quickstart() {
   echo "# --- Flow B: Dev Quick Start Lifecycle (kind only) ---"
+  local flow_failed=false
+
   kubectl create namespace "$NAMESPACE" >/dev/null 2>&1 || true
   run_pre_003
   run_pre_004
-  run_inst_003 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow B tests"; return 1; }
+  run_inst_003 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow B tests"; must_gather "$NAMESPACE" "install-failure"; return 1; }
   run_tls_patch
-  run_verify_001
+  run_verify_001 || flow_failed=true
   run_edge_001
+
+  if $flow_failed; then
+    must_gather "$NAMESPACE" "flow-b-verification-failure"
+  fi
+
   run_uninst_001
   run_uninst_002
 }
@@ -864,6 +1024,10 @@ main() {
 
   if [[ "$TAP_FAIL" -gt 0 ]]; then
     echo "# RESULT: FAIL (${TAP_FAIL} failures)"
+    if [[ -n "$MUST_GATHER_DIR" && -d "$MUST_GATHER_DIR" ]]; then
+      echo "# Must-gather archive: ${MUST_GATHER_DIR}.tar.gz"
+      echo "# Upload this artifact for offline triage."
+    fi
     exit 1
   else
     echo "# RESULT: PASS (${TAP_PASS} passed)"
