@@ -102,7 +102,7 @@ sync-version: ## Propagate VERSION file to Chart.yaml, values, Dockerfiles, and 
 	@VER=$$(cat VERSION) && \
 	echo "📌 Syncing version v$$VER from VERSION file..." && \
 	sed -i.bak "s/^version: .*/version: $$VER/" charts/kubernaut/Chart.yaml && rm -f charts/kubernaut/Chart.yaml.bak && \
-	sed -i.bak "s/^appVersion: .*/appVersion: \"v$$VER\"/" charts/kubernaut/Chart.yaml && rm -f charts/kubernaut/Chart.yaml.bak && \
+	sed -i.bak "s/^appVersion: .*/appVersion: \"$$VER\"/" charts/kubernaut/Chart.yaml && rm -f charts/kubernaut/Chart.yaml.bak && \
 	sed -i.bak "s|db-migrate:v[0-9][0-9a-zA-Z._-]*|db-migrate:v$$VER|g" \
 		charts/kubernaut/values.yaml \
 		charts/kubernaut/values.schema.json \

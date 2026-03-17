@@ -2,6 +2,7 @@ apiVersion: kubernaut.ai/v1alpha1
 kind: ActionType
 metadata:
   name: cordon-drain-node
+  namespace: kubernaut-system
 spec:
   name: CordonDrainNode
   description:

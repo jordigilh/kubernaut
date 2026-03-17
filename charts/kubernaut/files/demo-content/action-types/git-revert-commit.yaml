@@ -2,6 +2,7 @@ apiVersion: kubernaut.ai/v1alpha1
 kind: ActionType
 metadata:
   name: git-revert-commit
+  namespace: kubernaut-system
 spec:
   name: GitRevertCommit
   description:

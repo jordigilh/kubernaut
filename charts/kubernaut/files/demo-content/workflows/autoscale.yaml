@@ -22,7 +22,7 @@ spec:
   
   execution:
     engine: job
-    bundle: quay.io/kubernaut-cicd/test-workflows/provision-node-job@sha256:334067b5f03f6b1921f35203616f1fdf0a759cd3f105a6649918fe6856dc1430
+    bundle: quay.io/kubernaut-cicd/test-workflows/provision-node-job@sha256:a212dc66294848b52e7370345724884ed98b344917ef276f8e2fbcc46d05f0fd
   parameters:
     - name: TARGET_NAMESPACE
       type: string

@@ -2,6 +2,7 @@ apiVersion: kubernaut.ai/v1alpha1
 kind: ActionType
 metadata:
   name: fix-stateful-set-pvc
+  namespace: kubernaut-system
 spec:
   name: FixStatefulSetPVC
   description:

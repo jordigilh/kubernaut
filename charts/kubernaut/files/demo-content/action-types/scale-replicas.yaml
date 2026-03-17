@@ -2,6 +2,7 @@ apiVersion: kubernaut.ai/v1alpha1
 kind: ActionType
 metadata:
   name: scale-replicas
+  namespace: kubernaut-system
 spec:
   name: ScaleReplicas
   description:

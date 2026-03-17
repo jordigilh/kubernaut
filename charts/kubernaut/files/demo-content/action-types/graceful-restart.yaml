@@ -2,6 +2,7 @@ apiVersion: kubernaut.ai/v1alpha1
 kind: ActionType
 metadata:
   name: graceful-restart
+  namespace: kubernaut-system
 spec:
   name: GracefulRestart
   description:

@@ -26,9 +26,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       restartPolicy: Never
       securityContext:
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
+        {{- include "kubernaut.podSecurityContext" .Values.hooks | nindent 8 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
       volumes:
         - name: tmp
@@ -38,12 +36,7 @@ spec:
         - name: tls-cert-gen
           image: {{ .Values.hooks.tlsCerts.image }}
           securityContext:
-            runAsUser: 65534
-            runAsGroup: 65534
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
+            {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -149,20 +142,13 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       restartPolicy: Never
       securityContext:
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
+        {{- include "kubernaut.podSecurityContext" .Values.hooks | nindent 8 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
       containers:
         - name: tls-cabundle-patch
           image: {{ .Values.hooks.tlsCerts.image }}
           securityContext:
-            runAsUser: 65534
-            runAsGroup: 65534
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
+            {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
           resources:
             requests:
               cpu: 10m
@@ -191,7 +177,7 @@ spec:
               patch_webhooks() {
                 KIND="$1"   # mutatingwebhookconfigurations or validatingwebhookconfigurations
                 NAME="$2"
-                COUNT=$(kubectl get "$KIND" "$NAME" -o jsonpath='{.webhooks}' | tr ',' '\n' | grep -c '"name"')
+                COUNT=$(kubectl get "$KIND" "$NAME" -o jsonpath='{.webhooks[*].name}' | wc -w | tr -d ' ')
                 PATCH="["
                 i=0
                 while [ "$i" -lt "$COUNT" ]; do
@@ -247,10 +233,13 @@ rules:
     verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["get", "list"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["actiontypes", "remediationworkflows"]
+    verbs: ["get", "create", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -301,19 +290,12 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       restartPolicy: Never
       securityContext:
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
+        {{- include "kubernaut.podSecurityContext" .Values.hooks | nindent 8 }}
       containers:
         - name: webhook-cleanup
           image: {{ .Values.hooks.tlsCerts.image }}
           securityContext:
-            runAsUser: 65534
-            runAsGroup: 65534
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
+            {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
           resources:
             requests:
               cpu: 10m
@@ -358,19 +340,12 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       restartPolicy: Never
       securityContext:
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
+        {{- include "kubernaut.podSecurityContext" .Values.hooks | nindent 8 }}
       containers:
         - name: tls-cleanup
           image: {{ .Values.hooks.tlsCerts.image }}
           securityContext:
-            runAsUser: 65534
-            runAsGroup: 65534
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
+            {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
           resources:
             requests:
               cpu: 10m

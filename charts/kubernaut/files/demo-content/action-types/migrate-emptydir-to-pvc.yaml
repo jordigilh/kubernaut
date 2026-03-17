@@ -2,6 +2,7 @@ apiVersion: kubernaut.ai/v1alpha1
 kind: ActionType
 metadata:
   name: migrate-emptydir-to-pvc
+  namespace: kubernaut-system
 spec:
   name: MigrateEmptyDirToPVC
   description:
