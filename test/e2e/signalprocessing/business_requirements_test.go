@@ -241,6 +241,16 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 			testNs = helpers.CreateTestNamespaceAndWait(k8sClient, "e2e-prod", helpers.WithLabels(map[string]string{
 				"kubernaut.ai/environment": "production",
 			}))
+
+			// Gate: verify label is propagated before SP CR creation to prevent
+			// the race where the controller reconciles before labels are committed.
+			Eventually(func() string {
+				var ns corev1.Namespace
+				if err := k8sClient.Get(ctx, client.ObjectKey{Name: testNs}, &ns); err != nil {
+					return ""
+				}
+				return ns.Labels["kubernaut.ai/environment"]
+			}, "10s", "500ms").Should(Equal("production"))
 		})
 
 		AfterEach(func() {
@@ -465,6 +475,15 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 		testNs = helpers.CreateTestNamespaceAndWait(k8sClient, "e2e-env", helpers.WithLabels(map[string]string{
 			"kubernaut.ai/environment": "production",
 		}))
+
+		By("Verifying namespace label propagation")
+		Eventually(func() string {
+			var ns corev1.Namespace
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: testNs}, &ns); err != nil {
+				return ""
+			}
+			return ns.Labels["kubernaut.ai/environment"]
+		}, "10s", "500ms").Should(Equal("production"))
 
 		By("Creating SignalProcessing CR")
 		sp := &signalprocessingv1alpha1.SignalProcessing{

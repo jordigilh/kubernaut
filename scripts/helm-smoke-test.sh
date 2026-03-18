@@ -388,7 +388,7 @@ tls_flags() {
   if [[ "$PLATFORM" == "ocp" ]]; then
     echo "--set tls.mode=cert-manager --set tls.certManager.issuerRef.name=${CERT_MANAGER_ISSUER}"
   else
-    echo "--set tls.mode=manual"
+    echo "--set tls.mode=hook"
   fi
 }
 
@@ -923,6 +923,19 @@ template_llm_args() {
 }
 
 run_template_tests() {
+  echo "# --- Pre-flight: Demo Content Files ---"
+  local at_count wf_count
+  at_count=$(find "$CHART_PATH/files/demo-content/action-types" -name '*.yaml' 2>/dev/null | wc -l | tr -d ' ')
+  wf_count=$(find "$CHART_PATH/files/demo-content/workflows" -name '*.yaml' 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$at_count" -gt 0 ]] && [[ "$wf_count" -gt 0 ]]; then
+    tap_ok "ST-PREFLIGHT-001: demo content present (${at_count} ActionTypes, ${wf_count} workflows)"
+  else
+    tap_not_ok "ST-PREFLIGHT-001: demo content files missing" \
+      "Found ${at_count} ActionTypes and ${wf_count} workflows in ${CHART_PATH}/files/demo-content/. Run 'make sync-demo-content' first."
+    echo "Bail out! Demo content required for chart packaging. Run: make sync-demo-content"
+    exit 1
+  fi
+
   echo "# --- Template Tests: Issue #390 ConfigMap Split ---"
   local tpl_flag="-s"
   local tpl_path="templates/holmesgpt-api/holmesgpt-api.yaml"
