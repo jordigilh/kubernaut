@@ -178,7 +178,19 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 		// ✅ Critical alerts receive <5 minute investigation time
 	})
 
-	It("should handle ConfigMap policy updates affecting in-flight workflows", func() {
+	// Serial: This test MUST NOT run in parallel with other E2E tests.
+	//
+	// It overwrites the shared signalprocessing-policy ConfigMap with a stripped-down
+	// Rego policy that only defines default rules (environment="unknown", priority="P3").
+	// The SP controller is a single pod shared across all parallel Ginkgo processes,
+	// so any SP CR created by another process during the ~15-30s hot-reload window
+	// (kubelet ConfigMap sync + FileWatcher reload + DeferCleanup restore) will be
+	// classified with the stripped policy instead of the production policy.
+	//
+	// Root cause of Issue #437: BR-SP-070 priority tests were intermittently classified
+	// as "P3 unknown" because they ran concurrently with this test while the stripped
+	// policy was active. Moving to Serial eliminates the shared-state contamination.
+	It("should handle ConfigMap policy updates affecting in-flight workflows", Serial, func() {
 		// BUSINESS CONTEXT:
 		// Operator updates Rego policy → FileWatcher hot-reloads → new classifications use new policy
 		// DD-SEVERITY-001 + BR-SP-072: Hot-reload support for severity policies
