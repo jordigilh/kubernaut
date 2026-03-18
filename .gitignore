@@ -231,6 +231,10 @@ OVERNIGHT_*.md
 !docs/triage/
 !docs/triage/**
 
+# Demo content YAML files (synced from kubernaut-demo-scenarios via 'make sync-demo-content')
+charts/kubernaut/files/demo-content/action-types/*.yaml
+charts/kubernaut/files/demo-content/workflows/*.yaml
+
 # Auto-generated OpenAPI spec copies (via go:generate)
 # DD-API-002: These are auto-generated from api/openapi/*.yaml
 # Tracked in git so remote builds (e.g. helios08 AMD64) work without running go:generate

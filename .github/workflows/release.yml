@@ -229,6 +229,9 @@ jobs:
           echo "Updated Chart.yaml:"
           head -6 charts/kubernaut/Chart.yaml
 
+      - name: Sync demo content from kubernaut-demo-scenarios
+        run: make sync-demo-content
+
       - name: Login to Quay.io OCI registry
         run: |
           echo "${{ secrets.QUAY_ROBOT_TOKEN }}" | helm registry login quay.io \
