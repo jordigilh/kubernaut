@@ -898,10 +898,6 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 		// E2E-SP-163-001 + E2E-SP-163-005: Exact field validation for completed SP
 		expectCompletedSPStatusAssertions(ctx, k8sClient, sp)
 
-		By("Waiting for BufferedStore to flush audit events (2-3 seconds)")
-		// BufferedStore has a 1-second flush interval + round-trip time to DataStorage
-		time.Sleep(3 * time.Second)
-
 		By("Querying DataStorage audit API for signal.processed events")
 		// DataStorage is exposed on NodePort 30081 → localhost:30081 via Kind port mapping
 
