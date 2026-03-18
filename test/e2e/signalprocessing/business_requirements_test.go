@@ -238,9 +238,19 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 		var testNs string
 
 		BeforeEach(func() {
-			testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-prod", helpers.WithLabels(map[string]string{
+			testNs = helpers.CreateTestNamespaceAndWait(k8sClient, "e2e-prod", helpers.WithLabels(map[string]string{
 				"kubernaut.ai/environment": "production",
 			}))
+
+			// Issue #437: Gate — verify label is propagated before SP CR creation
+			// to prevent the race where the controller reconciles before labels are committed.
+			Eventually(func() string {
+				var ns corev1.Namespace
+				if err := k8sClient.Get(ctx, client.ObjectKey{Name: testNs}, &ns); err != nil {
+					return ""
+				}
+				return ns.Labels["kubernaut.ai/environment"]
+			}, "10s", "500ms").Should(Equal("production"))
 		})
 
 		AfterEach(func() {
@@ -278,6 +288,19 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 				},
 			}
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+			By("E2E-SP-437-001: Verifying KubernetesContext has production label before priority check")
+			Eventually(func() string {
+				var updated signalprocessingv1alpha1.SignalProcessing
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+					return ""
+				}
+				if updated.Status.KubernetesContext == nil || updated.Status.KubernetesContext.Namespace == nil {
+					return ""
+				}
+				return updated.Status.KubernetesContext.Namespace.Labels["kubernaut.ai/environment"]
+			}, timeout, interval).Should(Equal("production"),
+				"KubernetesContext.Namespace.Labels must contain kubernaut.ai/environment=production")
 
 			By("Waiting for priority assignment")
 			Eventually(func() string {
@@ -349,8 +372,24 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 		var stagingNs, devNs string
 
 		BeforeEach(func() {
-			stagingNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-staging", helpers.WithLabels(map[string]string{"kubernaut.ai/environment": "staging"}))
-			devNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-dev", helpers.WithLabels(map[string]string{"kubernaut.ai/environment": "development"}))
+			stagingNs = helpers.CreateTestNamespaceAndWait(k8sClient, "e2e-staging", helpers.WithLabels(map[string]string{"kubernaut.ai/environment": "staging"}))
+			devNs = helpers.CreateTestNamespaceAndWait(k8sClient, "e2e-dev", helpers.WithLabels(map[string]string{"kubernaut.ai/environment": "development"}))
+
+			// Issue #437: Gate — verify labels are committed before any SP CR creation
+			Eventually(func() string {
+				var ns corev1.Namespace
+				if err := k8sClient.Get(ctx, client.ObjectKey{Name: stagingNs}, &ns); err != nil {
+					return ""
+				}
+				return ns.Labels["kubernaut.ai/environment"]
+			}, "10s", "500ms").Should(Equal("staging"))
+			Eventually(func() string {
+				var ns corev1.Namespace
+				if err := k8sClient.Get(ctx, client.ObjectKey{Name: devNs}, &ns); err != nil {
+					return ""
+				}
+				return ns.Labels["kubernaut.ai/environment"]
+			}, "10s", "500ms").Should(Equal("development"))
 		})
 
 		AfterEach(func() {
@@ -388,6 +427,19 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 				},
 			}
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+			By("E2E-SP-437-002: Verifying KubernetesContext has staging label before priority check")
+			Eventually(func() string {
+				var updated signalprocessingv1alpha1.SignalProcessing
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+					return ""
+				}
+				if updated.Status.KubernetesContext == nil || updated.Status.KubernetesContext.Namespace == nil {
+					return ""
+				}
+				return updated.Status.KubernetesContext.Namespace.Labels["kubernaut.ai/environment"]
+			}, timeout, interval).Should(Equal("staging"),
+				"KubernetesContext.Namespace.Labels must contain kubernaut.ai/environment=staging")
 
 			Eventually(func() string {
 				var updated signalprocessingv1alpha1.SignalProcessing
