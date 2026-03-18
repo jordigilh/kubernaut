@@ -973,11 +973,11 @@ async def lifespan(app: FastAPI):
         toolset_config_service=toolset_service
     )
 
-    logger.info("holmesgpt_api_started_with_wrapper", toolsets=holmesgpt_service.toolsets)
+    logger.info("aiagent_api_started_with_wrapper", toolsets=holmesgpt_service.toolsets)
 
     yield
 
-    logger.info("holmesgpt_api_shutting_down")
+    logger.info("aiagent_api_shutting_down")
 
 app = FastAPI(title="HolmesGPT-API", lifespan=lifespan)
 

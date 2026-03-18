@@ -41,7 +41,7 @@ Reference Implementation: pkg/gateway/metrics/metrics.go (Go service)
 # INVESTIGATION METRICS (BR-HAPI-011)
 # ========================================
 
-METRIC_NAME_INVESTIGATIONS_TOTAL = 'holmesgpt_api_investigations_total'
+METRIC_NAME_INVESTIGATIONS_TOTAL = 'aiagent_api_investigations_total'
 """
 Total number of investigation requests by outcome.
 
@@ -51,7 +51,7 @@ Labels: status (success | error | needs_review)
 SLO: Success rate > 95%
 """
 
-METRIC_NAME_INVESTIGATIONS_DURATION = 'holmesgpt_api_investigations_duration_seconds'
+METRIC_NAME_INVESTIGATIONS_DURATION = 'aiagent_api_investigations_duration_seconds'
 """
 Time spent processing investigation requests (incident).
 
@@ -66,7 +66,7 @@ SLO: P95 latency < 10 seconds
 # LLM METRICS (BR-HAPI-301)
 # ========================================
 
-METRIC_NAME_LLM_CALLS_TOTAL = 'holmesgpt_api_llm_calls_total'
+METRIC_NAME_LLM_CALLS_TOTAL = 'aiagent_api_llm_calls_total'
 """
 Total number of LLM API calls by provider, model, and outcome.
 
@@ -76,7 +76,7 @@ Labels: provider (openai | anthropic | ollama), model (gpt-4 | claude-3 | ...), 
 SLO: Error rate < 1%
 """
 
-METRIC_NAME_LLM_CALL_DURATION = 'holmesgpt_api_llm_call_duration_seconds'
+METRIC_NAME_LLM_CALL_DURATION = 'aiagent_api_llm_call_duration_seconds'
 """
 LLM API call latency distribution (streaming excluded).
 
@@ -87,7 +87,7 @@ Buckets: (0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0)
 SLO: OpenAI P95 < 5s, Claude P95 < 10s, Ollama P95 < 2s
 """
 
-METRIC_NAME_LLM_TOKEN_USAGE = 'holmesgpt_api_llm_token_usage_total'
+METRIC_NAME_LLM_TOKEN_USAGE = 'aiagent_api_llm_token_usage_total'
 """
 Total tokens consumed by LLM calls (for cost tracking).
 

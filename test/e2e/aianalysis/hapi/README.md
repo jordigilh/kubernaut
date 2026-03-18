@@ -121,7 +121,7 @@ result = tool._search_workflows(...)  # Business logic
 ### E2E Tests (This Directory)
 ```python
 # E2E: HTTP call to containerized HAPI
-from holmesgpt_api_client import HolmesgptApiClient
+from aiagent_api_client import HolmesgptApiClient
 
 client = HolmesgptApiClient(base_url="http://hapi-service:8080")
 response = client.incident_analyze(...)  # FastAPI endpoint

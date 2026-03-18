@@ -95,7 +95,7 @@ class TestLLMMetricsIntegration:
 
         cb.log_success_event(kwargs, response, start, end)
 
-        val = _get_counter_value(registry, "holmesgpt_api_llm_calls", {
+        val = _get_counter_value(registry, "aiagent_api_llm_calls", {
             "provider": "vertex_ai",
             "model": "claude-sonnet-4-20250514",
             "status": "success",
@@ -123,12 +123,12 @@ class TestLLMMetricsIntegration:
             datetime(2026, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
         )
 
-        prompt_val = _get_counter_value(registry, "holmesgpt_api_llm_token_usage", {
+        prompt_val = _get_counter_value(registry, "aiagent_api_llm_token_usage", {
             "provider": "vertex_ai",
             "model": "claude-sonnet-4-20250514",
             "type": "prompt",
         })
-        completion_val = _get_counter_value(registry, "holmesgpt_api_llm_token_usage", {
+        completion_val = _get_counter_value(registry, "aiagent_api_llm_token_usage", {
             "provider": "vertex_ai",
             "model": "claude-sonnet-4-20250514",
             "type": "completion",
@@ -158,7 +158,7 @@ class TestLLMMetricsIntegration:
         )
 
         count = _get_histogram_count(
-            registry, "holmesgpt_api_llm_call_duration_seconds",
+            registry, "aiagent_api_llm_call_duration_seconds",
             {"provider": "openai", "model": "gpt-4"},
         )
         assert count >= 1.0
@@ -199,10 +199,10 @@ class TestLLMMetricsIntegration:
             from src.extensions.incident.llm_integration import analyze_incident
             await analyze_incident(request_data, metrics=metrics)
 
-        inv_count = _get_counter_value(registry, "holmesgpt_api_investigations", {"status": "success"})
+        inv_count = _get_counter_value(registry, "aiagent_api_investigations", {"status": "success"})
         assert inv_count >= 1.0
 
-        dur_count = _get_histogram_count(registry, "holmesgpt_api_investigations_duration_seconds", {})
+        dur_count = _get_histogram_count(registry, "aiagent_api_investigations_duration_seconds", {})
         assert dur_count >= 1.0
 
     @pytest.mark.asyncio
@@ -234,5 +234,5 @@ class TestLLMMetricsIntegration:
             with pytest.raises(RuntimeError, match="LLM unavailable"):
                 await analyze_incident(request_data, metrics=metrics)
 
-        err_count = _get_counter_value(registry, "holmesgpt_api_investigations", {"status": "error"})
+        err_count = _get_counter_value(registry, "aiagent_api_investigations", {"status": "error"})
         assert err_count >= 1.0

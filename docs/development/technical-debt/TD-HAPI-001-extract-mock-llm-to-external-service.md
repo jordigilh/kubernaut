@@ -358,7 +358,7 @@ func setupAIAnalysisTestInfrastructure(ctx context.Context) (*AIAnalysisTestInfr
 **E2E Test Suite Setup**:
 
 ```go
-// test/e2e/holmesgpt-api/holmesgpt_api_e2e_suite_test.go
+// test/e2e/holmesgpt-api/aiagent_api_e2e_suite_test.go
 
 var _ = BeforeSuite(func() {
     ctx := context.Background()

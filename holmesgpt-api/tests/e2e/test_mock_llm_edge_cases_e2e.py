@@ -40,9 +40,9 @@ import os
 import pytest
 
 # HAPI OpenAPI Client imports (DD-API-001)
-from holmesgpt_api_client import ApiClient as HAPIApiClient, Configuration as HAPIConfiguration
-from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
-from holmesgpt_api_client.models.incident_request import IncidentRequest
+from aiagent_api_client import ApiClient as HAPIApiClient, Configuration as HAPIConfiguration
+from aiagent_api_client.api.incident_analysis_api import IncidentAnalysisApi
+from aiagent_api_client.models.incident_request import IncidentRequest
 
 # Skip entire module if not in mock mode
 pytestmark = [

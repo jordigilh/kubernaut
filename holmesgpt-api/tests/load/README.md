@@ -121,13 +121,13 @@ jobs:
 During load testing, monitor these Prometheus metrics:
 
 ### Investigation Performance
-- `holmesgpt_api_investigations_total`: Total investigations by outcome
-- `holmesgpt_api_investigations_duration_seconds`: Duration histogram
+- `aiagent_api_investigations_total`: Total investigations by outcome
+- `aiagent_api_investigations_duration_seconds`: Duration histogram
 
 ### LLM Integration
-- `holmesgpt_api_llm_calls_total`: LLM API calls by provider/model/status
-- `holmesgpt_api_llm_call_duration_seconds`: LLM call latency
-- `holmesgpt_api_llm_token_usage_total`: Token consumption (for cost tracking)
+- `aiagent_api_llm_calls_total`: LLM API calls by provider/model/status
+- `aiagent_api_llm_call_duration_seconds`: LLM call latency
+- `aiagent_api_llm_token_usage_total`: Token consumption (for cost tracking)
 
 ### Resource Usage
 - CPU and memory usage (from Kubernetes metrics)
@@ -199,7 +199,7 @@ locust -f locustfile.py --host=http://localhost:8080 \
 ```bash
 # Check investigation outcomes
 oc exec -n kubernaut-system deployment/holmesgpt-api -- \
-  curl -s http://localhost:8080/metrics | grep holmesgpt_api_investigations_total
+  curl -s http://localhost:8080/metrics | grep aiagent_api_investigations_total
 ```
 
 **Check logs**:

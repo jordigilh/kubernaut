@@ -99,7 +99,7 @@ class TestLiteLLMMetricsCallback:
 
         cb.log_success_event(kwargs, response, start, end)
 
-        val = _get_counter_value(registry, "holmesgpt_api_llm_calls", {
+        val = _get_counter_value(registry, "aiagent_api_llm_calls", {
             "provider": "vertex_ai",
             "model": "claude-sonnet-4-20250514",
             "status": "success",
@@ -120,8 +120,8 @@ class TestLiteLLMMetricsCallback:
         cb.log_success_event(kwargs, response, start, end)
 
         labels = {"provider": "vertex_ai", "model": "claude-sonnet-4-20250514"}
-        count = _get_histogram_count(registry, "holmesgpt_api_llm_call_duration_seconds", labels)
-        total = _get_histogram_sum(registry, "holmesgpt_api_llm_call_duration_seconds", labels)
+        count = _get_histogram_count(registry, "aiagent_api_llm_call_duration_seconds", labels)
+        total = _get_histogram_sum(registry, "aiagent_api_llm_call_duration_seconds", labels)
         assert count == 1.0
         assert abs(total - 3.5) < 0.01
 
@@ -138,12 +138,12 @@ class TestLiteLLMMetricsCallback:
 
         cb.log_success_event(kwargs, response, start, end)
 
-        prompt_val = _get_counter_value(registry, "holmesgpt_api_llm_token_usage", {
+        prompt_val = _get_counter_value(registry, "aiagent_api_llm_token_usage", {
             "provider": "vertex_ai",
             "model": "claude-sonnet-4-20250514",
             "type": "prompt",
         })
-        completion_val = _get_counter_value(registry, "holmesgpt_api_llm_token_usage", {
+        completion_val = _get_counter_value(registry, "aiagent_api_llm_token_usage", {
             "provider": "vertex_ai",
             "model": "claude-sonnet-4-20250514",
             "type": "completion",
@@ -172,7 +172,7 @@ class TestLiteLLMMetricsCallback:
 
         cb.log_success_event(kwargs, response, start, end)
 
-        val = _get_counter_value(registry, "holmesgpt_api_llm_calls", {
+        val = _get_counter_value(registry, "aiagent_api_llm_calls", {
             "provider": expected_provider,
             "model": expected_model,
             "status": "success",
@@ -192,7 +192,7 @@ class TestLiteLLMMetricsCallback:
 
         cb.log_success_event(kwargs, response, start, end)
 
-        call_val = _get_counter_value(registry, "holmesgpt_api_llm_calls", {
+        call_val = _get_counter_value(registry, "aiagent_api_llm_calls", {
             "provider": "openai",
             "model": "gpt-4",
             "status": "success",
@@ -200,13 +200,13 @@ class TestLiteLLMMetricsCallback:
         assert call_val == 1.0
 
         duration_count = _get_histogram_count(
-            registry, "holmesgpt_api_llm_call_duration_seconds",
+            registry, "aiagent_api_llm_call_duration_seconds",
             {"provider": "openai", "model": "gpt-4"},
         )
         assert duration_count == 1.0
 
         prompt_val = registry.get_sample_value(
-            "holmesgpt_api_llm_token_usage_total",
+            "aiagent_api_llm_token_usage_total",
             {"provider": "openai", "model": "gpt-4", "type": "prompt"},
         )
         assert prompt_val is None
@@ -238,7 +238,7 @@ class TestLiteLLMMetricsCallback:
 
         cb.log_failure_event(kwargs, exception, start, end)
 
-        val = _get_counter_value(registry, "holmesgpt_api_llm_calls", {
+        val = _get_counter_value(registry, "aiagent_api_llm_calls", {
             "provider": "vertex_ai",
             "model": "claude-sonnet-4-20250514",
             "status": "error",
@@ -246,7 +246,7 @@ class TestLiteLLMMetricsCallback:
         assert val == 1.0
 
         duration_count = _get_histogram_count(
-            registry, "holmesgpt_api_llm_call_duration_seconds",
+            registry, "aiagent_api_llm_call_duration_seconds",
             {"provider": "vertex_ai", "model": "claude-sonnet-4-20250514"},
         )
         assert duration_count == 1.0
