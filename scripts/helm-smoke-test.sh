@@ -1084,9 +1084,9 @@ SDKEOF
   demo_tpl=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) \
     -s templates/demo-content/demo-content.yaml 2>&1)
-  if echo "$demo_tpl" | grep -q "name: test-kubernaut-demo-action-types" && \
-     echo "$demo_tpl" | grep -q "name: test-kubernaut-demo-workflows" && \
-     echo "$demo_tpl" | grep -q "name: test-kubernaut-demo-content-seed"; then
+  if grep -q "name: test-kubernaut-demo-action-types" <<< "$demo_tpl" && \
+     grep -q "name: test-kubernaut-demo-workflows" <<< "$demo_tpl" && \
+     grep -q "name: test-kubernaut-demo-content-seed" <<< "$demo_tpl"; then
     tap_ok "ST-HOOK-TPL-004: demo content renders 2 ConfigMaps + 1 seed Job"
   else
     tap_not_ok "ST-HOOK-TPL-004: demo content template structure" \
