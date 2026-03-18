@@ -25,6 +25,7 @@ Usage:
 """
 
 from .instrumentation import HAMetrics, get_global_metrics
+from .litellm_callback import KubernautLiteLLMCallback
 from .constants import (
     # Investigation Metrics (BR-HAPI-011)
     METRIC_NAME_INVESTIGATIONS_TOTAL,
@@ -51,6 +52,7 @@ __all__ = [
     # Metrics instrumentation classes
     'HAMetrics',
     'get_global_metrics',
+    'KubernautLiteLLMCallback',
     
     # Metric name constants (Investigation)
     'METRIC_NAME_INVESTIGATIONS_TOTAL',

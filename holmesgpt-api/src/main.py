@@ -568,6 +568,15 @@ def create_app(authenticator=None, authorizer=None):
             app.state.config_manager = None
             logger.info("Hot-reload not available, using static configuration")
 
+        # BR-HAPI-301: Register LiteLLM metrics callback (idempotent)
+        import litellm
+        from src.metrics.litellm_callback import KubernautLiteLLMCallback
+        from src.metrics import get_global_metrics
+
+        if not any(isinstance(cb, KubernautLiteLLMCallback) for cb in litellm.callbacks):
+            litellm.callbacks.append(KubernautLiteLLMCallback(get_global_metrics()))
+            logger.info({"event": "litellm_metrics_callback_registered", "br": "BR-HAPI-301"})
+
         logger.info("Service started successfully")
 
     @app.on_event("shutdown")
