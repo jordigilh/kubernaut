@@ -276,10 +276,12 @@ def _inject_runtime_env(cfg: dict) -> None:
     provider = llm.get("provider", "")
 
     if provider == "vertex_ai":
-        # GOOGLE_APPLICATION_CREDENTIALS -- Google Auth SDK credential file path
-        gac = str(creds_dir / "GOOGLE_APPLICATION_CREDENTIALS")
-        if Path(gac).exists():
-            os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", gac)
+        # GOOGLE_APPLICATION_CREDENTIALS -- auto-detect GCP ADC file in the
+        # mounted secret so users only need to include the credentials file
+        # itself, not the container-internal mount path.
+        adc = creds_dir / "application_default_credentials.json"
+        if adc.exists():
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(adc)
 
         # VERTEXAI_PROJECT / VERTEXAI_LOCATION -- LiteLLM Vertex AI routing
         project = llm.get("gcp_project_id") or llm.get("project", "")
