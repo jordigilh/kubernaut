@@ -61,16 +61,6 @@ PyYAML>=6.0
 # File system watching for ConfigMap hot-reload (DD-HAPI-004, BR-HAPI-199)
 watchdog>=3.0.0,<4.0.0
 
-# Security: Explicit minimum versions for transitive dependencies with known CVEs
-# NOTE: Pillow>=12.1.1 would fix GHSA-cfh3-3jmp-rvhc (High, OOB write in PSD handling)
-# but prometrix 0.2.5 (from HolmesGPT SDK) pins pillow<11.0.0 — blocked until prometrix
-# is updated. Not exploitable in holmesgpt-api (no PSD image processing).
-# NOTE: starlette>=0.49.1 would fix GHSA-7f5h-v6xp-fcq8 (High, O(n²) DoS via Range header)
-# but fastapi ^0.116 (from HolmesGPT SDK) pins starlette<0.49.0 — blocked until SDK
-# upgrades to fastapi 0.117+. Lower risk: holmesgpt-api is cluster-internal only.
-# NOTE: mcp>=1.23.0 would fix GHSA-9h52-p55h-vw2f (High) but HolmesGPT SDK
-# pins mcp="v1.12.2" — blocked until SDK is updated
-
 # Coverage collection for E2E tests (DD-TEST-007)
 # When E2E_COVERAGE=true, entrypoint.sh wraps uvicorn with `coverage run`
 coverage>=7.0
