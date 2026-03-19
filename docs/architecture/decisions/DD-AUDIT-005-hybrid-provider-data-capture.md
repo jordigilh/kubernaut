@@ -30,7 +30,8 @@ For SOC2 Type II compliance and RemediationRequest (RR) reconstruction, we need 
 
 | Service | Event Type | Purpose | Content |
 |---------|-----------|---------|---------|
-| **HolmesAPI** | `aiagent.response.complete` | Provider perspective | Full `IncidentResponse` structure |
+| **HolmesAPI** | `aiagent.response.complete` | Provider perspective (success) | Full `IncidentResponse` structure |
+| **HolmesAPI** | `aiagent.response.failed` | Provider perspective (failure) | Error message, failure phase, duration (#442, SOC2 CC8.1) |
 | **AI Analysis** | `aianalysis.analysis.completed` | Consumer perspective | `provider_response_summary` + business context |
 
 ---
@@ -62,6 +63,12 @@ For SOC2 Type II compliance and RemediationRequest (RR) reconstruction, we need 
 SELECT event_data->'response_data'
 FROM audit_events
 WHERE event_type = 'aiagent.response.complete'
+  AND correlation_id = 'req-2025-01-05-abc123';
+
+-- Provider failure details (#442: SOC2 CC8.1 - failed investigations must have audit trail)
+SELECT event_data->>'error_message', event_data->>'phase', event_data->>'duration_seconds'
+FROM audit_events
+WHERE event_type = 'aiagent.response.failed'
   AND correlation_id = 'req-2025-01-05-abc123';
 
 -- Business context (complementary)
@@ -156,6 +163,39 @@ def create_hapi_response_complete_event(
     )
 ```
 
+**File**: `holmesgpt-api/src/audit/events.py` (failure path, added in #442)
+
+```python
+def create_aiagent_response_failed_event(
+    incident_id: str,
+    remediation_id: Optional[str],
+    error_message: str,
+    phase: str,
+    duration_seconds: Optional[float] = None,
+) -> AuditEventRequest:
+    """
+    Create audit event for a failed HAPI investigation.
+
+    SOC2 CC8.1: Failed investigations MUST have an audit trail.
+    DD-AUDIT-005: Provider perspective failure audit.
+    """
+    event_data_model = HAPIResponseFailedEventData(
+        event_type="aiagent.response.failed",
+        event_id=str(uuid.uuid4()),
+        incident_id=incident_id,
+        error_message=error_message,
+        phase=phase,
+        duration_seconds=duration_seconds,
+    )
+    return _create_adr034_event(
+        event_type="aiagent.response.failed",
+        operation="response_failed",
+        outcome="failure",
+        correlation_id=remediation_id or "unknown",
+        event_data=event_data_model,
+    )
+```
+
 **File**: `holmesgpt-api/src/extensions/incident/endpoint.py`
 
 ```python
@@ -173,6 +213,8 @@ async def incident_analyze_endpoint(request: IncidentRequest) -> IncidentRespons
 
     return result
 ```
+
+The endpoint also wraps `analyze_incident` in a `try/except` to emit `aiagent.response.failed` on exception, capturing `error_message`, `phase`, and `duration_seconds` before re-raising (#442).
 
 **Effort**: ~15 minutes
 
@@ -376,6 +418,15 @@ If storage cost becomes a concern in the future, we can:
 3. **Sample audit events** for non-production environments
 
 **Note**: These are FUTURE optimizations. Current cost is negligible.
+
+---
+
+## Changelog
+
+| Date | Change | Reference |
+|------|--------|-----------|
+| 2026-01-05 | Initial document (hybrid approach for provider/consumer audit) | BR-AUDIT-005 v2.0 |
+| 2026-03-04 | Added `aiagent.response.failed` event for failure audit trail (SOC2 CC8.1) | #442, PR #443 |
 
 ---
 
