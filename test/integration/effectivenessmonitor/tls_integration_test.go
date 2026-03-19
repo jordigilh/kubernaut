@@ -30,7 +30,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
-	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 // writeTLSServerCACert extracts the TLS server's CA certificate and writes it
@@ -131,23 +130,15 @@ var _ = Describe("TLS Integration (Issue #452, BR-EM-002, BR-EM-003)", Label("tl
 		httpClient, err := emclient.NewHTTPClientWithCA(caFile, 10*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 
-		// Write a temp SA token file and create an AuthTransport that reads it
-		tmpDir := GinkgoT().TempDir()
-		tokenFile := filepath.Join(tmpDir, "token")
-		Expect(os.WriteFile(tokenFile, []byte("test-bearer-token-452"), 0644)).To(Succeed())
-
-		// Wrap the TLS transport with SA token injection
-		saTransport := auth.NewServiceAccountTransportWithBase(httpClient.Transport)
-		// Override the token path to our temp file (AuthTransport reads from filesystem)
-		// Since AuthTransport.tokenPath is unexported, we construct a new one and set the base
-		// For this test, we verify the transport layering works by checking the header
-		// is set when a token file exists at the default path.
-		// Instead, directly set the header via a custom transport wrapper for test isolation.
+		// Wrap the TLS transport with a bearer token injector to verify that
+		// layered transports (TLS base + auth wrapper) deliver the token header
+		// over HTTPS. In production, auth.NewServiceAccountTransportWithBase
+		// provides this; here we use a test double because AuthTransport.tokenPath
+		// is unexported and reads from the SA filesystem.
 		httpClient.Transport = &tokenInjectTransport{
 			base:  httpClient.Transport,
 			token: "test-bearer-token-452",
 		}
-		_ = saTransport // demonstrates the real transport would be used in production
 
 		promClient := emclient.NewPrometheusHTTPClient(server.URL, httpClient)
 		_, err = promClient.Query(context.Background(), "up", time.Now())
