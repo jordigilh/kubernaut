@@ -76,6 +76,12 @@ type ExternalConfig struct {
 
 	// ConnectionTimeout for external service HTTP clients.
 	ConnectionTimeout time.Duration `yaml:"connectionTimeout"`
+
+	// TLSCaFile is the path to a PEM-encoded CA bundle for HTTPS connections
+	// to Prometheus and AlertManager. Empty = system trust store (default).
+	// On OCP, populated via the service-serving CA ConfigMap injection.
+	// Issue #452: OCP service-serving CA support.
+	TLSCaFile string `yaml:"tlsCaFile"`
 }
 
 // DefaultConfig returns safe defaults for the Effectiveness Monitor.
@@ -159,6 +165,13 @@ func (c *Config) Validate() error {
 	}
 	if c.Controller.HealthProbeAddr == "" {
 		return fmt.Errorf("controller.healthProbeAddr is required")
+	}
+
+	// Validate TLS CA file (Issue #452)
+	if c.External.TLSCaFile != "" {
+		if _, err := os.Stat(c.External.TLSCaFile); err != nil {
+			return fmt.Errorf("external.tlsCaFile %q: %w", c.External.TLSCaFile, err)
+		}
 	}
 
 	// Validate external service config

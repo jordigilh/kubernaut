@@ -38,12 +38,12 @@ type prometheusHTTPClient struct {
 }
 
 // NewPrometheusHTTPClient creates a PrometheusQuerier that connects to a Prometheus HTTP API.
-func NewPrometheusHTTPClient(baseURL string, timeout time.Duration) PrometheusQuerier {
+// The caller provides a pre-configured *http.Client, allowing TLS, bearer token,
+// and timeout settings to be composed externally (Issue #452).
+func NewPrometheusHTTPClient(baseURL string, httpClient *http.Client) PrometheusQuerier {
 	return &prometheusHTTPClient{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
+		baseURL:    baseURL,
+		httpClient: httpClient,
 	}
 }
 

@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"flag"
+	"net/http"
 	"os"
 	"time"
 
@@ -36,6 +37,7 @@ import (
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/version"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	config "github.com/jordigilh/kubernaut/internal/config/effectivenessmonitor"
@@ -198,15 +200,34 @@ func main() {
 	)
 
 	// ========================================
-	// EXTERNAL CLIENT INITIALIZATION (BR-EM-002, BR-EM-003)
+	// EXTERNAL CLIENT INITIALIZATION (BR-EM-002, BR-EM-003, Issue #452)
 	// ========================================
 	var promClient emclient.PrometheusQuerier
 	var amClient emclient.AlertManagerClient
 
+	// Build the HTTP client: TLS with custom CA if configured, plain otherwise.
+	var externalHTTPClient *http.Client
+	if cfg.External.TLSCaFile != "" {
+		var err error
+		externalHTTPClient, err = emclient.NewHTTPClientWithCA(cfg.External.TLSCaFile, cfg.External.ConnectionTimeout)
+		if err != nil {
+			setupLog.Error(err, "Failed to create TLS HTTP client", "caFile", cfg.External.TLSCaFile)
+			os.Exit(1)
+		}
+		// Wrap with SA bearer token for OCP monitoring endpoints (Issue #452)
+		externalHTTPClient.Transport = auth.NewServiceAccountTransportWithBase(externalHTTPClient.Transport)
+		setupLog.Info("TLS HTTP client initialized with custom CA and bearer token",
+			"caFile", cfg.External.TLSCaFile,
+			"timeout", cfg.External.ConnectionTimeout,
+		)
+	} else {
+		externalHTTPClient = &http.Client{Timeout: cfg.External.ConnectionTimeout}
+	}
+
 	if cfg.External.PrometheusEnabled {
 		promClient = emclient.NewPrometheusHTTPClient(
 			cfg.External.PrometheusURL,
-			cfg.External.ConnectionTimeout,
+			externalHTTPClient,
 		)
 		setupLog.Info("Prometheus HTTP client initialized",
 			"url", cfg.External.PrometheusURL,
@@ -219,7 +240,7 @@ func main() {
 	if cfg.External.AlertManagerEnabled {
 		amClient = emclient.NewAlertManagerHTTPClient(
 			cfg.External.AlertManagerURL,
-			cfg.External.ConnectionTimeout,
+			externalHTTPClient,
 		)
 		setupLog.Info("AlertManager HTTP client initialized",
 			"url", cfg.External.AlertManagerURL,
