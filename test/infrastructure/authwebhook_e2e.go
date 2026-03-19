@@ -995,6 +995,7 @@ data:
     server:
       port: 8080
       host: "0.0.0.0"
+      metricsPort: 9090
       readTimeout: 30s
       writeTimeout: 30s
     database:
@@ -1123,7 +1124,7 @@ spec:
         - name: http
           containerPort: 8080
         - name: metrics
-          containerPort: 9181
+          containerPort: 9090
         env:
         - name: CONFIG_PATH
           value: /etc/datastorage/config.yaml

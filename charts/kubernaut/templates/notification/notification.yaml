@@ -60,7 +60,7 @@ metadata:
 data:
   config.yaml: |
     controller:
-      metricsAddr: ":9186"
+      metricsAddr: ":9090"
       healthProbeAddr: ":8081"
       leaderElection: false
       leaderElectionId: "notification.kubernaut.ai"
@@ -156,7 +156,7 @@ spec:
         control-plane: controller-manager
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "9186"
+        prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: notification-controller
@@ -182,7 +182,7 @@ spec:
             - "-config"
             - "$(CONFIG_PATH)"
           ports:
-            - containerPort: 9186
+            - containerPort: 9090
               name: metrics
               protocol: TCP
             - containerPort: 8081
@@ -261,5 +261,5 @@ spec:
   ports:
     - name: metrics
       protocol: TCP
-      port: 9186
-      targetPort: 9186
+      port: 9090
+      targetPort: 9090

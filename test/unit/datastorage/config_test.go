@@ -460,5 +460,127 @@ logging:
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("redis address required"))
 		})
+
+		// ========================================
+		// Issue #283: Metrics Port Standardization
+		// BR-STORAGE-019: Prometheus metrics on dedicated :9090 port
+		// ========================================
+
+		It("UT-DS-283-001: should parse metricsPort from YAML", func() {
+			configPath := filepath.Join(tempDir, "config.yaml")
+			yamlWithMetrics := `
+server:
+  port: 8080
+  host: "0.0.0.0"
+  metricsPort: 9090
+  readTimeout: 30s
+  writeTimeout: 30s
+database:
+  host: localhost
+  port: 5432
+  name: testdb
+  user: testuser
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
+redis:
+  addr: localhost:6379
+  db: 0
+logging:
+  level: info
+  format: json
+`
+			err := os.WriteFile(configPath, []byte(yamlWithMetrics), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			cfg, err := config.LoadFromFile(configPath)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(cfg.Server.MetricsPort).To(Equal(9090),
+				"Operator should get metrics on the configured port")
+
+			err = cfg.Validate()
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("UT-DS-283-002: should default metricsPort to 9090 when omitted", func() {
+			configPath := filepath.Join(tempDir, "config.yaml")
+			yamlNoMetrics := `
+server:
+  port: 8080
+  host: "0.0.0.0"
+  readTimeout: 30s
+  writeTimeout: 30s
+database:
+  host: localhost
+  port: 5432
+  name: testdb
+  user: testuser
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
+redis:
+  addr: localhost:6379
+  db: 0
+logging:
+  level: info
+  format: json
+`
+			err := os.WriteFile(configPath, []byte(yamlNoMetrics), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			cfg, err := config.LoadFromFile(configPath)
+			Expect(err).ToNot(HaveOccurred())
+
+			err = cfg.Validate()
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(cfg.Server.MetricsPort).To(Equal(9090),
+				"Zero-config deployment should get standard metrics port 9090")
+		})
+
+		It("UT-DS-283-003: should reject invalid metricsPort with actionable error", func() {
+			configPath := filepath.Join(tempDir, "config.yaml")
+			yamlBadPort := `
+server:
+  port: 8080
+  host: "0.0.0.0"
+  metricsPort: 70000
+  readTimeout: 30s
+  writeTimeout: 30s
+database:
+  host: localhost
+  port: 5432
+  name: testdb
+  user: testuser
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
+redis:
+  addr: localhost:6379
+  db: 0
+logging:
+  level: info
+  format: json
+`
+			err := os.WriteFile(configPath, []byte(yamlBadPort), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			cfg, err := config.LoadFromFile(configPath)
+			Expect(err).ToNot(HaveOccurred())
+
+			err = cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("metricsPort"),
+				"Error should name the field for operator troubleshooting")
+			Expect(err.Error()).To(ContainSubstring("70000"),
+				"Error should include the invalid value for diagnosis")
+		})
 	})
 })

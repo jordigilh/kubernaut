@@ -20,11 +20,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"net/http"
 	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -318,11 +321,28 @@ func main() {
 
 	logger.Info("Starting Data Storage service (ADR-030 + DD-007)",
 		"port", cfg.Server.Port,
+		"metricsPort", cfg.Server.MetricsPort,
 		"host", cfg.Server.Host,
 		"shutdown_timeout", shutdownTimeout,
 	)
 
-	// Start server in goroutine
+	// Issue #283: Dedicated Prometheus metrics server on standardised port
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", promhttp.Handler())
+	metricsServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.Server.MetricsPort),
+		Handler: metricsMux,
+	}
+
+	metricsErrors := make(chan error, 1)
+	go func() {
+		logger.Info("Metrics server listening", "addr", metricsServer.Addr)
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			metricsErrors <- err
+		}
+	}()
+
+	// Start API server in goroutine
 	serverErrors := make(chan error, 1)
 	go func() {
 		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -339,6 +359,8 @@ func main() {
 	select {
 	case err := <-serverErrors:
 		logger.Error(err, "Server error")
+	case err := <-metricsErrors:
+		logger.Error(err, "Metrics server error")
 	case sig := <-sigChan:
 		logger.Info("Shutdown signal received (DD-007)",
 			"signal", sig.String(),
@@ -349,6 +371,9 @@ func main() {
 		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, shutdownTimeout)
 		defer shutdownCancel()
 
+		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+			logger.Error(err, "Metrics server shutdown failed")
+		}
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			logger.Error(err, "Graceful shutdown failed (DD-007)")
 		}
