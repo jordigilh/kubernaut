@@ -120,9 +120,10 @@ sync-version: ## Propagate VERSION file to Chart.yaml, values, Dockerfiles, and 
 DEMO_SCENARIOS_REPO ?= https://github.com/jordigilh/kubernaut-demo-scenarios.git
 DEMO_SCENARIOS_LOCAL ?= ../kubernaut-demo-scenarios
 DEMO_CONTENT_DIR := charts/kubernaut/files/demo-content
+CHART_DEFAULTS_DIR := charts/kubernaut/files/defaults
 
 .PHONY: sync-demo-content
-sync-demo-content: ## Copy ActionTypes and RemediationWorkflows from kubernaut-demo-scenarios into the Helm chart
+sync-demo-content: ## Copy demo content and default configs from kubernaut-demo-scenarios into the Helm chart
 	@echo "📦 Syncing demo content into $(DEMO_CONTENT_DIR)..."
 	@if [ -d "$(DEMO_SCENARIOS_LOCAL)/deploy" ]; then \
 		echo "  Using local sibling: $(DEMO_SCENARIOS_LOCAL)"; \
@@ -142,9 +143,14 @@ sync-demo-content: ## Copy ActionTypes and RemediationWorkflows from kubernaut-d
 			[ -f "$$f" ] && cp "$$f" $(DEMO_CONTENT_DIR)/workflows/; \
 		done; \
 	done && \
+	echo "  Copying default configs (Rego policies, proactive mappings)..." && \
+	mkdir -p $(CHART_DEFAULTS_DIR) && \
+	cp "$$SRC"/deploy/defaults/*.rego $(CHART_DEFAULTS_DIR)/ && \
+	cp "$$SRC"/deploy/defaults/*.yaml $(CHART_DEFAULTS_DIR)/ && \
 	AT_COUNT=$$(ls $(DEMO_CONTENT_DIR)/action-types/*.yaml 2>/dev/null | wc -l | tr -d ' ') && \
 	WF_COUNT=$$(ls $(DEMO_CONTENT_DIR)/workflows/*.yaml 2>/dev/null | wc -l | tr -d ' ') && \
-	echo "✅ Synced $$AT_COUNT ActionTypes and $$WF_COUNT RemediationWorkflows"
+	DEF_COUNT=$$(ls $(CHART_DEFAULTS_DIR)/*.rego $(CHART_DEFAULTS_DIR)/*.yaml 2>/dev/null | wc -l | tr -d ' ') && \
+	echo "✅ Synced $$AT_COUNT ActionTypes, $$WF_COUNT RemediationWorkflows, $$DEF_COUNT default configs"
 
 .PHONY: generate
 generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
