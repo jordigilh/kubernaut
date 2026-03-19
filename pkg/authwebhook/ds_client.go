@@ -96,6 +96,16 @@ func (a *DSClientAdapter) CreateWorkflowInline(ctx context.Context, content, sou
 	case *ogenclient.CreateWorkflowOK:
 		rw := (*ogenclient.RemediationWorkflow)(v)
 		return mapOgenWorkflowToResult(rw, true), nil
+	case *ogenclient.CreateWorkflowBadRequest:
+		return nil, rfc7807Error("workflow registration rejected", (*ogenclient.RFC7807Problem)(v))
+	case *ogenclient.CreateWorkflowConflict:
+		return nil, rfc7807Error("workflow already exists", (*ogenclient.RFC7807Problem)(v))
+	case *ogenclient.CreateWorkflowForbidden:
+		return nil, rfc7807Error("workflow registration forbidden", (*ogenclient.RFC7807Problem)(v))
+	case *ogenclient.CreateWorkflowUnauthorized:
+		return nil, rfc7807Error("workflow registration unauthorized", (*ogenclient.RFC7807Problem)(v))
+	case *ogenclient.CreateWorkflowInternalServerError:
+		return nil, rfc7807Error("workflow registration server error", (*ogenclient.RFC7807Problem)(v))
 	default:
 		return nil, fmt.Errorf("unexpected response type from CreateWorkflow: %T", res)
 	}
@@ -112,13 +122,29 @@ func (a *DSClientAdapter) DisableWorkflow(ctx context.Context, workflowID, reaso
 	}
 	req.UpdatedBy.SetTo(updatedBy)
 
-	_, disableErr := a.client.DisableWorkflow(ctx, req, ogenclient.DisableWorkflowParams{
+	res, disableErr := a.client.DisableWorkflow(ctx, req, ogenclient.DisableWorkflowParams{
 		WorkflowID: uid,
 	})
 	if disableErr != nil {
 		return fmt.Errorf("data storage DisableWorkflow failed: %w", disableErr)
 	}
-	return nil
+
+	switch v := res.(type) {
+	case *ogenclient.RemediationWorkflow:
+		return nil
+	case *ogenclient.DisableWorkflowBadRequest:
+		return rfc7807Error(fmt.Sprintf("disable workflow %q: bad request", workflowID), (*ogenclient.RFC7807Problem)(v))
+	case *ogenclient.DisableWorkflowNotFound:
+		return rfc7807Error(fmt.Sprintf("disable workflow %q: not found", workflowID), (*ogenclient.RFC7807Problem)(v))
+	default:
+		return fmt.Errorf("unexpected response type from DisableWorkflow: %T", res)
+	}
+}
+
+// rfc7807Error formats an RFC 7807 Problem Details response into an actionable error message.
+// DD-004: All DS error responses use this format; this helper ensures consistent extraction.
+func rfc7807Error(prefix string, p *ogenclient.RFC7807Problem) error {
+	return fmt.Errorf("%s: %s — %s", prefix, p.Title, p.Detail.Value)
 }
 
 func mapOgenWorkflowToResult(rw *ogenclient.RemediationWorkflow, previouslyExisted bool) *WorkflowRegistrationResult {
@@ -227,14 +253,11 @@ func (a *DSClientAdapter) DisableActionType(ctx context.Context, name string, di
 			DependentWorkflows:     v.DependentWorkflows,
 		}, nil
 	case *ogenclient.DisableActionTypeBadRequest:
-		p := (*ogenclient.RFC7807Problem)(v)
-		return nil, fmt.Errorf("disable action type %q: bad request: %s — %s", name, p.Title, p.Detail.Value)
+		return nil, rfc7807Error(fmt.Sprintf("disable action type %q: bad request", name), (*ogenclient.RFC7807Problem)(v))
 	case *ogenclient.DisableActionTypeNotFound:
-		p := (*ogenclient.RFC7807Problem)(v)
-		return nil, fmt.Errorf("disable action type %q: not found: %s — %s", name, p.Title, p.Detail.Value)
+		return nil, rfc7807Error(fmt.Sprintf("disable action type %q: not found", name), (*ogenclient.RFC7807Problem)(v))
 	case *ogenclient.DisableActionTypeInternalServerError:
-		p := (*ogenclient.RFC7807Problem)(v)
-		return nil, fmt.Errorf("disable action type %q: server error: %s — %s", name, p.Title, p.Detail.Value)
+		return nil, rfc7807Error(fmt.Sprintf("disable action type %q: server error", name), (*ogenclient.RFC7807Problem)(v))
 	default:
 		return nil, fmt.Errorf("unexpected response type from DisableActionType: %T", res)
 	}
