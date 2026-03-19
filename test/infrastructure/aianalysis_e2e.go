@@ -934,8 +934,8 @@ spec:
 		return err
 	}
 
-	// Deploy Rego policy ConfigMap
-	return deployRegoPolicyConfigMap(kubeconfigPath, writer)
+	// Deploy Rego policy ConfigMap (inline fixture, self-contained)
+	return createInlineRegoPolicyConfigMap(kubeconfigPath, writer)
 }
 
 func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
@@ -1111,70 +1111,8 @@ func findCRDFile(name string) string {
 	return ""
 }
 
-func deployRegoPolicyConfigMap(kubeconfigPath string, writer io.Writer) error {
-	policyPath := findRegoPolicy()
-	if policyPath == "" {
-		// Use inline policy
-		return createInlineRegoPolicyConfigMap(kubeconfigPath, writer)
-	}
-
-	// Create ConfigMap from file
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-		"create", "configmap", "aianalysis-policies",
-		"--from-file=approval.rego="+policyPath,
-		"-n", "kubernaut-system",
-		"--dry-run=client", "-o", "yaml")
-
-	applyCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-
-	// Use io.Pipe to connect stdout of cmd to stdin of applyCmd
-	pipeReader2, pipeWriter2 := io.Pipe()
-	cmd.Stdout = pipeWriter2
-	applyCmd.Stdin = pipeReader2
-	applyCmd.Stdout = writer
-	applyCmd.Stderr = writer
-
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	if err := applyCmd.Start(); err != nil {
-		return err
-	}
-	if err := cmd.Wait(); err != nil {
-		return err
-	}
-	_ = pipeWriter2.Close()
-	return applyCmd.Wait()
-}
 func containsReady(s string) bool {
 	return len(s) > 0 && s != "" && (s == "True" || s == "True True")
-}
-
-func findRegoPolicy() string {
-	// Try to find via runtime caller location first
-	_, currentFile, _, ok := runtime.Caller(0)
-	if ok {
-		// Go up to project root (from test/infrastructure/)
-		projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(currentFile)))
-		policyPath := filepath.Join(projectRoot, "config/rego/aianalysis/approval.rego")
-		if _, err := os.Stat(policyPath); err == nil {
-			return policyPath
-		}
-	}
-
-	candidates := []string{
-		"config/rego/aianalysis/approval.rego",
-		"../config/rego/aianalysis/approval.rego",
-		"../../config/rego/aianalysis/approval.rego",
-		"../../../config/rego/aianalysis/approval.rego",
-	}
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			absPath, _ := filepath.Abs(path)
-			return absPath
-		}
-	}
-	return ""
 }
 
 func createInlineRegoPolicyConfigMap(kubeconfigPath string, writer io.Writer) error {

@@ -122,12 +122,7 @@ spec:
           image: {{ .Values.hooks.tlsCerts.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           securityContext:
-            runAsUser: 65534
-            runAsGroup: 65534
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
+            {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
           resources:
             requests:
               cpu: 10m
@@ -155,7 +150,7 @@ spec:
               patch_webhooks() {
                 KIND="$1"
                 NAME="$2"
-                COUNT=$(kubectl get "$KIND" "$NAME" -o jsonpath='{.webhooks}' | tr ',' '\n' | grep -c '"name"')
+                COUNT=$(kubectl get "$KIND" "$NAME" -o jsonpath='{.webhooks[*].name}' | wc -w | tr -d ' ')
                 PATCH="["
                 i=0
                 while [ "$i" -lt "$COUNT" ]; do

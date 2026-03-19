@@ -45,9 +45,9 @@ import sys
 from pathlib import Path
 # Add tests/clients to path (absolute path resolution for CI)
 sys.path.insert(0, str(Path(__file__).parent.parent / 'clients'))
-from holmesgpt_api_client import ApiClient as HAPIApiClient, Configuration as HAPIConfiguration
-from holmesgpt_api_client.api import IncidentAnalysisApi
-from holmesgpt_api_client.models import IncidentRequest
+from aiagent_api_client import ApiClient as HAPIApiClient, Configuration as HAPIConfiguration
+from aiagent_api_client.api import IncidentAnalysisApi
+from aiagent_api_client.models import IncidentRequest
 
 
 # ============================================================================

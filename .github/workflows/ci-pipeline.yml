@@ -799,6 +799,17 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-test.txt
+      - name: Disable AppArmor rsyslog profile (for AWX)
+        if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline'
+        run: |
+          # Issue #440: AWX rsyslog sidecar crash-loops on Ubuntu runners because
+          # AppArmor denies rsyslogd read access to /var/lib/awx/rsyslog/rsyslog.conf.
+          # Upstream fix: ansible/awx#15717 (merged to devel, not yet released).
+          if sudo apparmor_parser -R /etc/apparmor.d/usr.sbin.rsyslogd 2>/dev/null; then
+            echo "✅ AppArmor rsyslog profile removed"
+          else
+            echo "⚠️  AppArmor rsyslog profile not found or already removed (non-fatal)"
+          fi
       - name: Run ${{ matrix.service }} E2E tests
         run: make test-e2e-${{ matrix.service }}
       
@@ -1008,6 +1019,9 @@ jobs:
           kind create cluster --name "$KIND_CLUSTER_NAME" --wait 120s
           kubectl cluster-info
           kubectl get nodes -o wide
+
+      - name: Sync demo content from kubernaut-demo-scenarios
+        run: make sync-demo-content
 
       - name: Run smoke tests
         env:

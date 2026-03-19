@@ -153,7 +153,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 1. **Investigation Request Counter**
    ```
-   Metric: holmesgpt_api_investigations_total
+   Metric: aiagent_api_investigations_total
    Type: Counter
    Labels: status (success | error | needs_review)
    Description: Total number of investigation requests by outcome
@@ -161,7 +161,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 2. **Investigation Duration Histogram**
    ```
-   Metric: holmesgpt_api_investigations_duration_seconds
+   Metric: aiagent_api_investigations_duration_seconds
    Type: Histogram
    Labels: none
    Buckets: (0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0)
@@ -689,7 +689,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 1. **LLM Call Counter**
    ```
-   Metric: holmesgpt_api_llm_calls_total
+   Metric: aiagent_api_llm_calls_total
    Type: Counter
    Labels: provider (openai | anthropic | ollama), model (gpt-4 | claude-3 | ...), status (success | error | timeout)
    Description: Total number of LLM API calls by provider, model, and outcome
@@ -697,7 +697,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 2. **LLM Call Duration Histogram**
    ```
-   Metric: holmesgpt_api_llm_call_duration_seconds
+   Metric: aiagent_api_llm_call_duration_seconds
    Type: Histogram
    Labels: provider, model
    Buckets: (0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0)
@@ -706,7 +706,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 3. **LLM Token Usage Counter**
    ```
-   Metric: holmesgpt_api_llm_token_usage_total
+   Metric: aiagent_api_llm_token_usage_total
    Type: Counter
    Labels: provider, model, type (prompt | completion)
    Description: Total tokens consumed by LLM calls (for cost tracking)
@@ -755,7 +755,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 1. **HTTP Request Counter**
    ```
-   Metric: holmesgpt_api_http_requests_total
+   Metric: aiagent_api_http_requests_total
    Type: Counter
    Labels: method (GET | POST), endpoint (/api/v1/incident/analyze | ...), status (200 | 400 | 500)
    Description: Total HTTP requests by method, endpoint, and status code
@@ -763,7 +763,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 2. **HTTP Request Duration Histogram**
    ```
-   Metric: holmesgpt_api_http_request_duration_seconds
+   Metric: aiagent_api_http_request_duration_seconds
    Type: Histogram
    Labels: method, endpoint
    Buckets: (0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0) - Per DD-005 standard
@@ -805,7 +805,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 1. **Config Reload Success Counter**
    ```
-   Metric: holmesgpt_api_config_reload_total
+   Metric: aiagent_api_config_reload_total
    Type: Counter
    Labels: none
    Description: Total successful configuration reloads
@@ -813,7 +813,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 2. **Config Reload Error Counter**
    ```
-   Metric: holmesgpt_api_config_reload_errors_total
+   Metric: aiagent_api_config_reload_errors_total
    Type: Counter
    Labels: none
    Description: Total failed configuration reload attempts
@@ -821,7 +821,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 3. **Last Reload Timestamp**
    ```
-   Metric: holmesgpt_api_config_last_reload_timestamp
+   Metric: aiagent_api_config_last_reload_timestamp
    Type: Gauge
    Labels: none
    Description: Unix timestamp of last successful config reload

@@ -92,6 +92,9 @@ jobs:
             podman save "$img" | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
           done
 
+      - name: Sync demo content from kubernaut-demo-scenarios
+        run: make sync-demo-content
+
       - name: Run smoke tests
         run: |
           scripts/helm-smoke-test.sh \

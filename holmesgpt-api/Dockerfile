@@ -47,7 +47,7 @@ FROM registry.access.redhat.com/ubi9/python-312:latest
 # kubectl is required for HolmesGPT kubernetes/core toolset (pod investigation)
 USER root
 ARG TARGETARCH
-ARG KUBECTL_VERSION=v1.31.4
+ARG KUBECTL_VERSION=v1.31.14
 RUN dnf install -y --setopt=install_weak_deps=False ca-certificates tzdata && \
 	dnf clean all && \
 	rm -rf /var/cache/dnf /var/cache/yum && \
@@ -102,7 +102,7 @@ ENTRYPOINT ["./entrypoint.sh"]
 CMD []
 
 # OCI standard labels
-ARG APP_VERSION=v1.1.0-rc0
+ARG APP_VERSION=v1.1.0-rc1
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \

@@ -33,6 +33,7 @@ package signalprocessing
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -631,6 +632,289 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 			})
+		})
+	})
+
+	// ========================================
+	// Issue #437: Informer cache staleness defensive guard
+	// reconcileClassifying must use FreshGet and requeue if
+	// KubernetesContext is not yet visible (enrichment race).
+	// ========================================
+	Describe("Issue #437: Classifying with stale informer cache", func() {
+		var (
+			mockStore   *mockAuditStore
+			auditClient *spaudit.AuditClient
+		)
+
+		BeforeEach(func() {
+			mockStore = &mockAuditStore{}
+			auditClient = spaudit.NewAuditClient(mockStore, logr.Discard())
+		})
+
+		It("UT-SP-437-001: should requeue when KubernetesContext is nil (enrichment not propagated)", func() {
+			staleSP := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "sp-437-nil-ctx",
+					Namespace:  "default",
+					Generation: 1,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "fp-437-nil-ctx",
+						Name:        "HighCPU",
+						Severity:    "critical",
+						Type:        "alert",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "api-server-xyz",
+							Namespace: "production-ns",
+						},
+					},
+				},
+				Status: signalprocessingv1alpha1.SignalProcessingStatus{
+					Phase:             signalprocessingv1alpha1.PhaseClassifying,
+					StartTime:         &metav1.Time{Time: time.Now()},
+					KubernetesContext: nil,
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(staleSP).
+				WithStatusSubresource(staleSP).
+				Build()
+
+			envCalled := false
+			mockEval := &mockPolicyEvaluator{
+				EvaluateEnvironmentFunc: func(_ context.Context, _ evaluator.PolicyInput) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
+					envCalled = true
+					return &signalprocessingv1alpha1.EnvironmentClassification{Environment: "unknown", Source: "default", ClassifiedAt: metav1.Now()}, nil
+				},
+			}
+
+			reconciler := &controller.SignalProcessingReconciler{
+				Client:          fakeClient,
+				Scheme:          scheme,
+				StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+				Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				AuditManager:    spaudit.NewManager(auditClient),
+				PolicyEvaluator: mockEval,
+				Recorder:        record.NewFakeRecorder(20),
+			}
+
+			result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: staleSP.Name, Namespace: staleSP.Namespace},
+			})
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeNumerically(">=", 500*time.Millisecond),
+				"UT-SP-437-001: Should requeue with >= 500ms delay when KubernetesContext is nil")
+			Expect(envCalled).To(BeFalse(),
+				"UT-SP-437-001: PolicyEvaluator must NOT be called when KubernetesContext is nil")
+		})
+
+		It("UT-SP-437-002: should requeue when Namespace is nil inside KubernetesContext", func() {
+			staleSP := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "sp-437-nil-ns",
+					Namespace:  "default",
+					Generation: 1,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "fp-437-nil-ns",
+						Name:        "HighCPU",
+						Severity:    "critical",
+						Type:        "alert",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "api-server-xyz",
+							Namespace: "production-ns",
+						},
+					},
+				},
+				Status: signalprocessingv1alpha1.SignalProcessingStatus{
+					Phase:     signalprocessingv1alpha1.PhaseClassifying,
+					StartTime: &metav1.Time{Time: time.Now()},
+					KubernetesContext: &signalprocessingv1alpha1.KubernetesContext{
+						Namespace: nil,
+					},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(staleSP).
+				WithStatusSubresource(staleSP).
+				Build()
+
+			envCalled := false
+			mockEval := &mockPolicyEvaluator{
+				EvaluateEnvironmentFunc: func(_ context.Context, _ evaluator.PolicyInput) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
+					envCalled = true
+					return &signalprocessingv1alpha1.EnvironmentClassification{Environment: "unknown", Source: "default", ClassifiedAt: metav1.Now()}, nil
+				},
+			}
+
+			reconciler := &controller.SignalProcessingReconciler{
+				Client:          fakeClient,
+				Scheme:          scheme,
+				StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+				Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				AuditManager:    spaudit.NewManager(auditClient),
+				PolicyEvaluator: mockEval,
+				Recorder:        record.NewFakeRecorder(20),
+			}
+
+			result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: staleSP.Name, Namespace: staleSP.Namespace},
+			})
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeNumerically(">=", 500*time.Millisecond),
+				"UT-SP-437-002: Should requeue when Namespace is nil in KubernetesContext")
+			Expect(envCalled).To(BeFalse(),
+				"UT-SP-437-002: PolicyEvaluator must NOT be called when Namespace is nil")
+		})
+
+		It("UT-SP-437-003: should proceed after safety valve timeout (30s)", func() {
+			staleSP := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "sp-437-timeout",
+					Namespace:  "default",
+					Generation: 1,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "fp-437-timeout",
+						Name:        "HighCPU",
+						Severity:    "critical",
+						Type:        "alert",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "api-server-xyz",
+							Namespace: "production-ns",
+						},
+					},
+				},
+				Status: signalprocessingv1alpha1.SignalProcessingStatus{
+					Phase:             signalprocessingv1alpha1.PhaseClassifying,
+					StartTime:         &metav1.Time{Time: time.Now().Add(-60 * time.Second)},
+					KubernetesContext: nil,
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(staleSP).
+				WithStatusSubresource(staleSP).
+				Build()
+
+			envCalled := false
+			mockEval := &mockPolicyEvaluator{
+				EvaluateEnvironmentFunc: func(_ context.Context, _ evaluator.PolicyInput) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
+					envCalled = true
+					return &signalprocessingv1alpha1.EnvironmentClassification{Environment: "unknown", Source: "default", ClassifiedAt: metav1.Now()}, nil
+				},
+			}
+
+			reconciler := &controller.SignalProcessingReconciler{
+				Client:          fakeClient,
+				Scheme:          scheme,
+				StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+				Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				AuditManager:    spaudit.NewManager(auditClient),
+				PolicyEvaluator: mockEval,
+				Recorder:        record.NewFakeRecorder(20),
+			}
+
+			_, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: staleSP.Name, Namespace: staleSP.Namespace},
+			})
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(envCalled).To(BeTrue(),
+				"UT-SP-437-003: PolicyEvaluator MUST be called after safety valve timeout")
+		})
+
+		It("UT-SP-437-004: should proceed normally with complete KubernetesContext (no regression)", func() {
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "sp-437-normal",
+					Namespace:  "default",
+					Generation: 1,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "fp-437-normal",
+						Name:        "HighCPU",
+						Severity:    "critical",
+						Type:        "alert",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "api-server-xyz",
+							Namespace: "production-ns",
+						},
+					},
+				},
+				Status: signalprocessingv1alpha1.SignalProcessingStatus{
+					Phase:     signalprocessingv1alpha1.PhaseClassifying,
+					StartTime: &metav1.Time{Time: time.Now()},
+					KubernetesContext: &signalprocessingv1alpha1.KubernetesContext{
+						Namespace: &signalprocessingv1alpha1.NamespaceContext{
+							Name: "production-ns",
+							Labels: map[string]string{
+								"kubernaut.ai/environment": "production",
+								"kubernaut.ai/managed":     "true",
+							},
+						},
+						DegradedMode: true,
+					},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(sp).
+				WithStatusSubresource(sp).
+				Build()
+
+			envCalled := false
+			mockEval := &mockPolicyEvaluator{
+				EvaluateEnvironmentFunc: func(_ context.Context, input evaluator.PolicyInput) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
+					envCalled = true
+					Expect(input.Namespace.Labels).To(HaveKeyWithValue("kubernaut.ai/environment", "production"))
+					return &signalprocessingv1alpha1.EnvironmentClassification{
+						Environment:  "production",
+						Source:       "namespace-labels",
+						ClassifiedAt: metav1.Now(),
+					}, nil
+				},
+			}
+
+			reconciler := &controller.SignalProcessingReconciler{
+				Client:          fakeClient,
+				Scheme:          scheme,
+				StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+				Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				AuditManager:    spaudit.NewManager(auditClient),
+				PolicyEvaluator: mockEval,
+				Recorder:        record.NewFakeRecorder(20),
+			}
+
+			result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace},
+			})
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0),
+				"UT-SP-437-004: Should requeue for next phase transition")
+			Expect(envCalled).To(BeTrue(),
+				"UT-SP-437-004: PolicyEvaluator MUST be called with complete KubernetesContext")
 		})
 	})
 

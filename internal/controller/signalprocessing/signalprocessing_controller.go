@@ -511,7 +511,7 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
-	// SP-CACHE-002: Refetch sp via APIReader to get fresh status data.
+	// Issue #437 / SP-CACHE-002: Refetch sp via APIReader to get fresh status data.
 	// The informer cache (r.Get in Reconcile) may be stale when the enriching phase
 	// completes quickly (e.g., degraded mode with non-existent target). Without this,
 	// KubernetesContext (set by enriching) can be nil, causing environment=unknown.
@@ -520,12 +520,47 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		return ctrl.Result{}, err
 	}
 
+	// Issue #437: Defensive guard — requeue if enrichment data not yet visible.
+	// KubernetesContext and EnrichmentComplete are set in the same AtomicStatusUpdate
+	// by the enriching phase. If KubernetesContext is nil or Namespace is nil after
+	// FreshGet, enrichment data hasn't propagated to the API server yet.
+	k8sCtx := sp.Status.KubernetesContext
+	if k8sCtx == nil || k8sCtx.Namespace == nil {
+		enrichmentDone := spconditions.IsConditionTrue(sp, spconditions.ConditionEnrichmentComplete)
+		if !enrichmentDone {
+			safetyValveExceeded := sp.Status.StartTime != nil && time.Since(sp.Status.StartTime.Time) > 30*time.Second
+			if safetyValveExceeded {
+				logger.Error(nil, "Issue #437: KubernetesContext incomplete after 30s safety valve, proceeding with defaults",
+					"k8sCtx_nil", k8sCtx == nil,
+					"sp", sp.Name)
+			} else {
+				logger.Info("Issue #437: KubernetesContext not yet available after FreshGet, requeuing",
+					"k8sCtx_nil", k8sCtx == nil,
+					"namespace_nil", k8sCtx == nil || k8sCtx.Namespace == nil,
+					"sp", sp.Name)
+				return ctrl.Result{RequeueAfter: 500 * time.Millisecond}, nil
+			}
+		} else {
+			logger.Error(nil, "Issue #437: EnrichmentComplete=True but KubernetesContext incomplete, proceeding with defaults",
+				"k8sCtx_nil", k8sCtx == nil,
+				"sp", sp.Name)
+		}
+	}
+
 	// DD-005: Track phase processing attempt and duration
 	r.Metrics.IncrementProcessingTotal("classifying", "attempt")
 	classifyingStart := time.Now()
 
 	signal := &sp.Spec.Signal
-	k8sCtx := sp.Status.KubernetesContext
+
+	// Issue #437: Diagnostic logging — capture namespace labels for classification debugging.
+	if k8sCtx != nil && k8sCtx.Namespace != nil {
+		logger.V(1).Info("Classification input",
+			"namespace", k8sCtx.Namespace.Name,
+			"labels", k8sCtx.Namespace.Labels,
+			"degradedMode", k8sCtx.DegradedMode,
+			"sp", sp.Name)
+	}
 
 	// ADR-060: Build unified policy input once, reuse across all evaluations
 	policyInput := evaluator.BuildInput(k8sCtx, signal)

@@ -388,7 +388,7 @@ tls_flags() {
   if [[ "$PLATFORM" == "ocp" ]]; then
     echo "--set tls.mode=cert-manager --set tls.certManager.issuerRef.name=${CERT_MANAGER_ISSUER}"
   else
-    echo "--set tls.mode=manual"
+    echo "--set tls.mode=hook"
   fi
 }
 
@@ -807,6 +807,28 @@ preload_hook_image() {
   fi
 }
 
+run_verify_demo() {
+  local at_count
+  at_count=$(kubectl get actiontypes -n "$NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$at_count" -eq 25 ]]; then
+    tap_ok "ST-CHART-VERIFY-DEMO-001: 25 ActionTypes seeded by post-install hook"
+  else
+    tap_not_ok "ST-CHART-VERIFY-DEMO-001: 25 ActionTypes seeded" \
+      "Found ${at_count} ActionTypes, expected 25"
+  fi
+
+  local rw_count
+  rw_count=$(kubectl get remediationworkflows -n "$NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+  # 22 total workflows, 4 need gitea-repo-creds (skipped without secrets),
+  # and 1 may fail CRD validation intermittently -- threshold is 17.
+  if [[ "$rw_count" -ge 17 ]]; then
+    tap_ok "ST-CHART-VERIFY-DEMO-002: RemediationWorkflows seeded (${rw_count}/22, >=17 without secret deps)"
+  else
+    tap_not_ok "ST-CHART-VERIFY-DEMO-002: RemediationWorkflows seeded" \
+      "Found ${rw_count} workflows, expected >= 17 (up to 5 may be skipped due to missing secrets or validation)"
+  fi
+}
+
 run_edge_001() {
   local desc="ST-CHART-EDGE-001: Stuck workflow namespace recovery"
   kubectl get all -n kubernaut-workflows >/dev/null 2>&1 || true
@@ -842,6 +864,7 @@ flow_a_production() {
   run_verify_001 || flow_failed=true
   run_verify_002 || flow_failed=true
   run_verify_003 || flow_failed=true
+  run_verify_demo || flow_failed=true
 
   if [[ "$PLATFORM" == "kind" ]]; then
     run_tls_001
@@ -875,6 +898,7 @@ flow_b_quickstart() {
   run_inst_003 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow B tests"; must_gather "$NAMESPACE" "install-failure"; return 1; }
   run_tls_patch
   run_verify_001 || flow_failed=true
+  run_verify_demo || flow_failed=true
   run_edge_001
 
   if $flow_failed; then
@@ -901,6 +925,19 @@ template_llm_args() {
 }
 
 run_template_tests() {
+  echo "# --- Pre-flight: Demo Content Files ---"
+  local at_count wf_count
+  at_count=$(find "$CHART_PATH/files/demo-content/action-types" -name '*.yaml' 2>/dev/null | wc -l | tr -d ' ')
+  wf_count=$(find "$CHART_PATH/files/demo-content/workflows" -name '*.yaml' 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$at_count" -gt 0 ]] && [[ "$wf_count" -gt 0 ]]; then
+    tap_ok "ST-PREFLIGHT-001: demo content present (${at_count} ActionTypes, ${wf_count} workflows)"
+  else
+    tap_not_ok "ST-PREFLIGHT-001: demo content files missing" \
+      "Found ${at_count} ActionTypes and ${wf_count} workflows in ${CHART_PATH}/files/demo-content/. Run 'make sync-demo-content' first."
+    echo "Bail out! Demo content required for chart packaging. Run: make sync-demo-content"
+    exit 1
+  fi
+
   echo "# --- Template Tests: Issue #390 ConfigMap Split ---"
   local tpl_flag="-s"
   local tpl_path="templates/holmesgpt-api/holmesgpt-api.yaml"
@@ -1001,6 +1038,72 @@ SDKEOF
     tap_ok "ST-SDK-TIER3-001: existingSdkConfigMap takes priority over sdkConfigContent"
   else
     tap_not_ok "ST-SDK-TIER3-001: existingSdkConfigMap priority" "ConfigMap still rendered or external-cm not referenced"
+  fi
+
+  echo "# --- Template Tests: Helm Hook Hardening ---"
+
+  # ST-HOOK-TPL-001: webhook count parsing uses jsonpath (not fragile grep)
+  local hook_tpl
+  hook_tpl=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    -s templates/hooks/tls-cert-job.yaml 2>&1)
+  local webhook_tpl
+  webhook_tpl=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    -s templates/authwebhook/authwebhook.yaml 2>&1)
+
+  if echo "$hook_tpl" | grep -q "jsonpath='{.webhooks\[\\*\].name}'" && \
+     echo "$webhook_tpl" | grep -q "jsonpath='{.webhooks\[\\*\].name}'"; then
+    tap_ok "ST-HOOK-TPL-001: webhook count parsing uses jsonpath (not grep)"
+  else
+    tap_not_ok "ST-HOOK-TPL-001: webhook count parsing uses jsonpath" \
+      "One or more templates still use grep-based webhook counting"
+  fi
+
+  # ST-HOOK-TPL-002: no hardcoded runAsUser/runAsGroup in hook jobs
+  if ! echo "$hook_tpl" | grep -qE "runAsUser: 65534|runAsGroup: 65534" && \
+     ! echo "$webhook_tpl" | grep -qE "runAsUser: 65534|runAsGroup: 65534"; then
+    tap_ok "ST-HOOK-TPL-002: no hardcoded UID 65534 in hooks or authwebhook"
+  else
+    tap_not_ok "ST-HOOK-TPL-002: no hardcoded UID 65534" \
+      "Found runAsUser/runAsGroup: 65534 in rendered templates"
+  fi
+
+  # ST-HOOK-TPL-003: hook SA ClusterRole includes kubernaut.ai CRD permissions
+  if echo "$hook_tpl" | grep -q 'kubernaut.ai' && \
+     echo "$hook_tpl" | grep -q 'actiontypes' && \
+     echo "$hook_tpl" | grep -q 'remediationworkflows'; then
+    tap_ok "ST-HOOK-TPL-003: hook SA ClusterRole has kubernaut.ai AT/RW permissions"
+  else
+    tap_not_ok "ST-HOOK-TPL-003: hook SA kubernaut.ai permissions" \
+      "ClusterRole missing kubernaut.ai apiGroup or AT/RW resources"
+  fi
+
+  # ST-HOOK-TPL-004: demo content renders two ConfigMaps and a Job
+  local demo_tpl
+  demo_tpl=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    -s templates/demo-content/demo-content.yaml 2>&1)
+  if grep -q "name: test-kubernaut-demo-action-types" <<< "$demo_tpl" && \
+     grep -q "name: test-kubernaut-demo-workflows" <<< "$demo_tpl" && \
+     grep -q "name: test-kubernaut-demo-content-seed" <<< "$demo_tpl"; then
+    tap_ok "ST-HOOK-TPL-004: demo content renders 2 ConfigMaps + 1 seed Job"
+  else
+    tap_not_ok "ST-HOOK-TPL-004: demo content template structure" \
+      "Expected demo-action-types CM, demo-workflows CM, and demo-content-seed Job"
+  fi
+
+  # ST-HOOK-TPL-005: demo content disabled renders nothing
+  local demo_off
+  demo_off=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    --set demoContent.enabled=false \
+    -s templates/demo-content/demo-content.yaml 2>&1)
+  if [[ -z "$demo_off" ]] || echo "$demo_off" | grep -q "could not find template"; then
+    tap_ok "ST-HOOK-TPL-005: demoContent.enabled=false renders no demo resources"
+  else
+    tap_not_ok "ST-HOOK-TPL-005: demoContent disabled" \
+      "Demo content still rendered when demoContent.enabled=false"
   fi
 
   echo "# --- Template Tests: GCP Conditional Fields ---"

@@ -58,9 +58,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 # Add tests/clients to path (absolute path resolution for CI) - for OpenAPI client
 sys.path.insert(0, str(Path(__file__).parent.parent / 'clients'))
 
-# Import OpenAPI client (from tests/clients/holmesgpt_api_client)
-from holmesgpt_api_client import ApiClient, Configuration
-from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
+# Import OpenAPI client (from tests/clients/aiagent_api_client)
+from aiagent_api_client import ApiClient, Configuration
+from aiagent_api_client.api.incident_analysis_api import IncidentAnalysisApi
 
 
 # ========================================
@@ -150,7 +150,7 @@ class TestIncidentAnalysisE2E:
 
         V3.0: Uses OpenAPI client for true E2E testing.
         """
-        from holmesgpt_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
+        from aiagent_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
 
         request = IncidentAnalysisRequest(**sample_incident_request)
         response = incidents_api.incident_analyze_endpoint_api_v1_incident_analyze_post(
@@ -179,7 +179,7 @@ class TestIncidentAnalysisE2E:
 
         V3.0: Validates business outcome (workflow selected with labels) without inspecting LLM internals.
         """
-        from holmesgpt_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
+        from aiagent_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
 
         request = IncidentAnalysisRequest(**sample_incident_request)
         response = incidents_api.incident_analyze_endpoint_api_v1_incident_analyze_post(
@@ -208,7 +208,7 @@ class TestErrorHandlingE2E:
 
         V3.0: Uses OpenAPI client for error validation.
         """
-        from holmesgpt_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
+        from aiagent_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
 
         # Invalid request (missing required fields)
         invalid_request_data = {
@@ -230,7 +230,7 @@ class TestErrorHandlingE2E:
 
         V3.0: Uses OpenAPI client for error validation.
         """
-        from holmesgpt_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
+        from aiagent_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
 
         # Request missing remediation_id
         invalid_request_data = {

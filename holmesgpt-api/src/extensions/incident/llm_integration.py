@@ -502,17 +502,8 @@ async def analyze_incident(
         
         # Record metrics (BR-HAPI-011: Investigation metrics)
         if metrics:
-            # Determine status for metrics
-            if result.get("needs_human_review", False):
-                status = "needs_review"
-            else:
-                status = "success"
-            
-            logger.info(f"🔍 METRICS DEBUG (analyze_incident): About to record metrics - status={status}, metrics={metrics}")
-            metrics.record_investigation_complete(start_time, status)
-            logger.info("🔍 METRICS DEBUG (analyze_incident): Metrics recorded successfully")
-        else:
-            logger.warning("🔍 METRICS DEBUG (analyze_incident): metrics is None - NOT recording")
+            inv_status = "needs_review" if result.get("needs_human_review", False) else "success"
+            metrics.record_investigation_complete(start_time, inv_status)
 
         return result
 

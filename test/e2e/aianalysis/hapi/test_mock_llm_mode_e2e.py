@@ -43,10 +43,10 @@ import pytest
 import sys
 sys.path.insert(0, 'tests/clients')
 
-from holmesgpt_api_client import ApiClient, Configuration
-from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
-from holmesgpt_api_client.models.incident_request import IncidentRequest
-from holmesgpt_api_client.exceptions import ApiException
+from aiagent_api_client import ApiClient, Configuration
+from aiagent_api_client.api.incident_analysis_api import IncidentAnalysisApi
+from aiagent_api_client.models.incident_request import IncidentRequest
+from aiagent_api_client.exceptions import ApiException
 
 
 @pytest.fixture

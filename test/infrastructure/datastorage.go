@@ -208,8 +208,29 @@ func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName strin
 		_ = os.WriteFile(statusFile, statusOutput, 0644)
 	}
 
+	// Issue #437: Dump SignalProcessing CRs as YAML for classification debugging
+	spFile := filepath.Join(mustGatherDir, "signalprocessing_crs.yaml")
+	spArgs := append(kubeconfigArgs, "get", "signalprocessings.signalprocessing.kubernaut.ai",
+		"-n", namespace, "-o", "yaml", "--ignore-not-found")
+	spCmd := exec.Command("kubectl", spArgs...)
+	spOutput, spErr := spCmd.CombinedOutput()
+	if spErr == nil && len(spOutput) > 0 {
+		_ = os.WriteFile(spFile, spOutput, 0644)
+		_, _ = fmt.Fprintf(writer, "📄 SignalProcessing CRs dumped to %s\n", spFile)
+	}
+
+	// Also try all-namespaces variant in case SPs are in the controller namespace
+	spAllFile := filepath.Join(mustGatherDir, "signalprocessing_crs_all_ns.yaml")
+	spAllArgs := append(kubeconfigArgs, "get", "signalprocessings.signalprocessing.kubernaut.ai",
+		"--all-namespaces", "-o", "yaml", "--ignore-not-found")
+	spAllCmd := exec.Command("kubectl", spAllArgs...)
+	spAllOutput, spAllErr := spAllCmd.CombinedOutput()
+	if spAllErr == nil && len(spAllOutput) > 0 {
+		_ = os.WriteFile(spAllFile, spAllOutput, 0644)
+	}
+
 	_, _ = fmt.Fprintf(writer, "✅ Must-gather collected %d log files to %s\n", collectedCount, mustGatherDir)
-	_, _ = fmt.Fprintf(writer, "   (Events, pod status, deployments, replicasets also captured)\n\n")
+	_, _ = fmt.Fprintf(writer, "   (Events, pod status, deployments, replicasets, SP CRs also captured)\n\n")
 }
 
 // DeleteCluster deletes a Kind cluster and optionally exports logs on test failure

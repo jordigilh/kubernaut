@@ -103,7 +103,7 @@ Kubernaut consists of multiple microservices that need unified observability:
 **Format**: `{service}_{component}_{metric_name}_{unit}`
 
 **Rules**:
-- **Service prefix**: `gateway_`, `context_api_`, `holmesgpt_api_`, etc.
+- **Service prefix**: `gateway_`, `context_api_`, `aiagent_api_`, etc.
 - **Component**: Logical component (e.g., `signals_`, `http_`, `redis_`, `database_`)
 - **Metric name**: Descriptive name in snake_case
 - **Unit suffix**: `_total`, `_seconds`, `_bytes`, `_ratio` (optional)
@@ -113,7 +113,7 @@ Kubernaut consists of multiple microservices that need unified observability:
 gateway_signals_received_total
 gateway_http_request_duration_seconds
 context_api_database_query_duration_seconds
-holmesgpt_api_llm_tokens_total
+aiagent_api_llm_tokens_total
 ```
 
 ---

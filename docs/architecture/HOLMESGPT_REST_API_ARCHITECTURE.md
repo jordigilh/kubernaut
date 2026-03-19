@@ -1614,7 +1614,7 @@ import time
 from functools import wraps
 
 # Application metrics
-app_info = Info('holmesgpt_api_info', 'HolmesGPT API Server Information')
+app_info = Info('aiagent_api_info', 'HolmesGPT API Server Information')
 app_info.info({
     'version': '1.0.0',
     'python_version': '3.11',
@@ -1623,13 +1623,13 @@ app_info.info({
 
 # Request metrics
 http_requests_total = Counter(
-    'holmesgpt_api_http_requests_total',
+    'aiagent_api_http_requests_total',
     'Total HTTP requests',
     ['method', 'endpoint', 'status_code']
 )
 
 http_request_duration_seconds = Histogram(
-    'holmesgpt_api_http_request_duration_seconds',
+    'aiagent_api_http_request_duration_seconds',
     'HTTP request duration in seconds',
     ['method', 'endpoint'],
     buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0]
@@ -1637,13 +1637,13 @@ http_request_duration_seconds = Histogram(
 
 # Investigation metrics
 investigations_total = Counter(
-    'holmesgpt_api_investigations_total',
+    'aiagent_api_investigations_total',
     'Total investigations performed',
     ['alert_type', 'status', 'toolsets']
 )
 
 investigation_duration_seconds = Histogram(
-    'holmesgpt_api_investigation_duration_seconds',
+    'aiagent_api_investigation_duration_seconds',
     'Investigation duration in seconds',
     ['alert_type', 'toolsets'],
     buckets=[1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0]
@@ -1651,44 +1651,44 @@ investigation_duration_seconds = Histogram(
 
 # Chat metrics
 chat_messages_total = Counter(
-    'holmesgpt_api_chat_messages_total',
+    'aiagent_api_chat_messages_total',
     'Total chat messages processed',
     ['session_type']
 )
 
 chat_response_time_seconds = Histogram(
-    'holmesgpt_api_chat_response_time_seconds',
+    'aiagent_api_chat_response_time_seconds',
     'Chat response time in seconds',
     buckets=[0.5, 1.0, 2.0, 5.0, 10.0, 30.0]
 )
 
 # LLM metrics
 llm_requests_total = Counter(
-    'holmesgpt_api_llm_requests_total',
+    'aiagent_api_llm_requests_total',
     'Total LLM requests',
     ['provider', 'model', 'status']
 )
 
 llm_tokens_used_total = Counter(
-    'holmesgpt_api_llm_tokens_used_total',
+    'aiagent_api_llm_tokens_used_total',
     'Total LLM tokens used',
     ['provider', 'model', 'type']  # type: prompt, completion
 )
 
 # System metrics
 active_investigations = Gauge(
-    'holmesgpt_api_active_investigations',
+    'aiagent_api_active_investigations',
     'Number of active investigations'
 )
 
 cache_hits_total = Counter(
-    'holmesgpt_api_cache_hits_total',
+    'aiagent_api_cache_hits_total',
     'Total cache hits',
     ['cache_type']
 )
 
 cache_misses_total = Counter(
-    'holmesgpt_api_cache_misses_total',
+    'aiagent_api_cache_misses_total',
     'Total cache misses',
     ['cache_type']
 )
