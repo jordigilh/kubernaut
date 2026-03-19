@@ -2,7 +2,7 @@
 
 **Date**: 2025-11-08
 **Status**: ✅ Approved
-**Version**: 1.9
+**Version**: 2.0
 **Last Updated**: 2026-03-04
 **Deciders**: Architecture Team
 **Consulted**: Gateway, Data Storage, Context API, AI Analysis, Notification, Signal Processing, Remediation Orchestrator, Authentication Webhook, HolmesGPT API teams
@@ -22,6 +22,7 @@
 | **v1.6** | 2026-01-31 | **BREAKING**: Fixed event_category collision between AIAnalysis and HolmesGPT API. Added new `aiagent` category for HolmesGPT API Service (AI Agent Provider with autonomous tool-calling). Clarified `analysis` category is exclusively for AIAnalysis controller (remediation workflow orchestration). **Rationale**: Two distinct services were incorrectly sharing `"analysis"` category, violating ADR-034 v1.2 service-level naming rule. HolmesGPT is architecturally an autonomous AI agent (per HolmesGPT documentation), not an analysis controller. New name is implementation-agnostic (supports future agent replacements). **Impact**: (1) Historical queries filtering by `event_category='analysis'` will now miss HAPI events (must use `'aiagent'`). (2) **KNOWN ISSUE**: AIAnalysis INT tests will temporarily fail - they query with `event_category='analysis'` expecting to find HAPI events (`holmesgpt.response.complete`). **Migration Path**: Fix HAPI INT tests first (Priority 1), then update AIAnalysis INT tests to query `event_category='aiagent'` for HAPI events (Priority 2). Estimated 20-30 test updates across `test/integration/aianalysis/`. | Architecture Team |
 | **v1.9** | 2026-03-04 | Added RemediationWorkflow webhook event types under `webhook` category: `remediationworkflow.admitted.create`, `remediationworkflow.admitted.delete`, `remediationworkflow.admitted.denied`. CRD-based workflow registration via AuthWebhook (ADR-058, BR-WORKFLOW-006). Cross-references DD-WEBHOOK-003. Expected volume: +10-50 events/day. | Architecture Team |
 | **v1.8** | 2026-02-05 | **BREAKING**: Renamed all AI Agent (HAPI) audit event types to follow `{service}.{domain}.{action}` convention: `llm_request` → `aiagent.llm.request`, `llm_response` → `aiagent.llm.response`, `llm_tool_call` → `aiagent.llm.tool_call`, `workflow_validation_attempt` → `aiagent.workflow.validation_attempt`, `holmesgpt.response.complete` → `aiagent.response.complete`. Also renamed `HolmesGPTResponsePayload` schema to `AIAgentResponsePayload`. **Rationale**: HAPI event types were the only ones not following the dotted naming convention, causing inconsistency and confusion. **Impact**: All consumers querying by old event_type strings must update. OpenAPI spec, Go (ogen) client, Python client, and all tests updated. | Architecture Team |
+| **v2.0** | 2026-03-04 | Added `aiagent.response.failed` event type to `aiagent` category for failure audit trail. New `AIAgentResponseFailedPayload` schema captures `error_message`, `phase`, and `duration_seconds`. SOC2 CC8.1 compliance: failed investigations now have a complete audit trail. Cross-references: #442, PR #443, DD-AUDIT-005 (hybrid provider audit). | Architecture Team |
 | **v1.7** | 2026-02-03 | Added RemediationOrchestrator approval decision audit events (`orchestration` category) to complete two-event audit trail pattern for RemediationApprovalRequest decisions. New event types: `orchestrator.approval.approved`, `orchestrator.approval.rejected`, `orchestrator.approval.expired`. **Rationale**: SOC 2 CC8.1 compliance requires complete audit trail showing both authenticated user (from AuthWebhook `webhook` category) AND business context (from RO controller `orchestration` category). Two-event pattern ensures tamper-proof WHO attribution (webhook intercepts CRD update) and complete forensic context (RO controller provides correlation_id, workflow details, confidence scores). **Integration**: Events share `correlation_id` (parent RR name) for cross-service querying. RO controller uses `Status.DecidedBy` field populated by AuthWebhook to attribute approval to authenticated operator. **Implementation**: Uses AuditRecorded condition for secure, controller-managed idempotency (not annotations). Cross-references: BR-AUDIT-006 (RAR Audit Trail), DD-WEBHOOK-003 (Webhook Audit Pattern), DD-AUDIT-006 (RAR Implementation), ADR-040 (RAR Architecture). | Architecture Team |
 
 ---
@@ -142,7 +143,7 @@ CREATE TABLE audit_events (
 | `gateway` | Gateway Service | Signal ingestion and CRD creation | `gateway.signal.received`, `gateway.crd.created`, `gateway.signal.deduplicated` |
 | `notification` | Notification Service | Alert notification delivery | `notification.message.sent`, `notification.delivery.failed`, `notification.message.acknowledged` |
 | `analysis` | AI Analysis Controller | Remediation workflow orchestration (NOT HolmesGPT API - see `aiagent`) | `aianalysis.investigation.started`, `aianalysis.recommendation.generated`, `aianalysis.analysis.completed`, `aianalysis.phase.transition` |
-| `aiagent` | AI Agent Provider (HolmesGPT API) | Autonomous AI agent with tool-calling for investigations, recovery, and effectiveness analysis | `aiagent.llm.request`, `aiagent.llm.response`, `aiagent.llm.tool_call`, `aiagent.workflow.validation_attempt`, `aiagent.response.complete` |
+| `aiagent` | AI Agent Provider (HolmesGPT API) | Autonomous AI agent with tool-calling for investigations, recovery, and effectiveness analysis | `aiagent.llm.request`, `aiagent.llm.response`, `aiagent.llm.tool_call`, `aiagent.workflow.validation_attempt`, `aiagent.response.complete`, `aiagent.response.failed` |
 | `signalprocessing` | Signal Processing Service | Signal enrichment and classification | `signalprocessing.enrichment.completed`, `signalprocessing.classification.decision`, `signalprocessing.phase.transition` |
 | `workflow` | Workflow Catalog Service | Workflow search and selection | `workflow.catalog.search_completed` (DD-WORKFLOW-014) |
 | `workflowexecution` | WorkflowExecution Controller | Tekton workflow orchestration and execution | `workflowexecution.workflow.started`, `workflowexecution.selection.completed`, `workflowexecution.execution.started`, `workflowexecution.workflow.completed`, `workflowexecution.workflow.failed` (BR-AUDIT-005 Gap #5, #6) |
@@ -754,4 +755,13 @@ This ADR establishes the following subdocument as authoritative for specific imp
 **Approved By**: Architecture Team
 **Date**: 2025-11-08
 **Implementation Target**: Post-current-branch (Day 21 for Data Storage, Day 22 for Gateway)
+
+---
+
+## Changelog
+
+| Date | Change | Reference |
+|------|--------|-----------|
+| 2025-11-08 | Initial ADR approved | Architecture Team |
+| 2026-03-04 | Added `aiagent.response.failed` to `aiagent` event category | #442, PR #443 |
 
