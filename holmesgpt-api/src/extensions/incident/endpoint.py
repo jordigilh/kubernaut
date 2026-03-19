@@ -29,7 +29,7 @@ import logging
 
 from src.models.incident_models import IncidentRequest, IncidentResponse
 from .llm_integration import analyze_incident
-from src.audit import get_audit_store, create_aiagent_response_complete_event  # DD-AUDIT-005
+from src.audit import get_audit_store, create_aiagent_response_complete_event, create_aiagent_response_failed_event  # DD-AUDIT-005, #442
 from src.middleware.user_context import get_authenticated_user  # DD-AUTH-006
 from src.metrics import get_global_metrics  # BR-HAPI-011, BR-HAPI-301
 from src.errors import PROBLEM_JSON_ERROR_RESPONSES  # BR-HAPI-200: Shared RFC 7807 error responses
@@ -40,37 +40,60 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _emit_audit_event(audit_event, label: str = "audit") -> None:
+    """Emit an audit event, swallowing errors so they never affect the investigation."""
+    try:
+        audit_store = get_audit_store()
+        if audit_store:
+            audit_store.store_audit(audit_event)
+    except Exception as e:
+        logger.error(f"Failed to emit {label} event: {e}", exc_info=True)
+
+
 async def _run_incident_investigation(session_manager: SessionManager, session_id: str, request_data: dict) -> None:
     """
     Background task that runs the incident investigation and updates the session.
 
     BR-AA-HAPI-064.1: Executes the LLM investigation asynchronously.
-    DD-AUDIT-005: Emits audit event after completion.
+    DD-AUDIT-005: Emits audit event after completion or failure (#442).
     """
     async def _investigate(data: dict) -> dict:
+        import time
         from src.main import config as app_config
         metrics = get_global_metrics()
-        result = await analyze_incident(data, mcp_config=None, app_config=app_config, metrics=metrics)
+        start_time = time.time()
 
-        # DD-AUDIT-005: Emit audit event for the completed investigation
         try:
-            audit_store = get_audit_store()
-            if audit_store:
-                if isinstance(result, dict):
-                    response_dict = result
-                elif hasattr(result, 'model_dump'):
-                    response_dict = result.model_dump()
-                else:
-                    response_dict = result.dict()
-
-                audit_event = create_aiagent_response_complete_event(
+            result = await analyze_incident(data, mcp_config=None, app_config=app_config, metrics=metrics)
+        except Exception as exc:
+            duration = time.time() - start_time
+            _emit_audit_event(
+                create_aiagent_response_failed_event(
                     incident_id=data.get("incident_id", ""),
                     remediation_id=data.get("remediation_id", ""),
-                    response_data=response_dict
-                )
-                audit_store.store_audit(audit_event)
-        except Exception as e:
-            logger.error(f"Failed to emit audit event: {e}", exc_info=True)
+                    error_message=str(exc),
+                    phase="llm_analysis",
+                    duration_seconds=round(duration, 2),
+                ),
+                label="failure audit",
+            )
+            raise
+
+        if isinstance(result, dict):
+            response_dict = result
+        elif hasattr(result, 'model_dump'):
+            response_dict = result.model_dump()
+        else:
+            response_dict = result.dict()
+
+        _emit_audit_event(
+            create_aiagent_response_complete_event(
+                incident_id=data.get("incident_id", ""),
+                remediation_id=data.get("remediation_id", ""),
+                response_data=response_dict,
+            ),
+            label="success audit",
+        )
 
         return result
 

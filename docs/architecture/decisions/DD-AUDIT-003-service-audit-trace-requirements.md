@@ -706,10 +706,10 @@ context_api:
 | **Signal Processing Controller** | ✅ **SHOULD** | P1 | Operational visibility (enrichment) |
 | **Remediation Orchestrator Controller** | ✅ **SHOULD** | P1 | Operational visibility (coordination) |
 | **Context API Service** | ❌ **NO** | N/A | Read-only, no state changes |
-| **HolmesGPT API Service** | ❌ **NO** | N/A | Proxy, audit delegated to caller |
+| **HolmesGPT API Service** | ✅ **MUST** | P0 | LLM interactions and investigation outcomes (DD-AUDIT-005, BR-AUDIT-005). Emits `aiagent.*` events: `aiagent.llm.request`, `aiagent.llm.response`, `aiagent.llm.tool_call`, `aiagent.workflow.validation_attempt`, `aiagent.response.complete`, `aiagent.response.failed` |
 | **Dynamic Toolset Service** | ❌ **NO** | N/A | Configuration, read-only |
 
-**Total**: **9 out of 12 services** generate audit traces (75%)
+**Total**: **10 out of 12 services** generate audit traces (83%)
 
 ---
 
@@ -818,7 +818,7 @@ context_api:
 | Kubernaut Service | Industry Equivalent | Audited? | Rationale |
 |-------------------|---------------------|----------|-----------|
 | Context API Service | AWS S3 GET | ❌ No | Read-only operations not audited |
-| HolmesGPT API Service | AWS API Gateway | ❌ No | Proxy services don't audit (caller audits) |
+| HolmesGPT API Service | AWS API Gateway | ✅ Yes | Per DD-AUDIT-005: emits `aiagent.*` events for LLM interactions, tool calls, and investigation outcomes (provider perspective). Updated from v1.0 which incorrectly classified HAPI as proxy-only. |
 | Dynamic Toolset Service | Kubernetes ConfigMap | ❌ No | Configuration reads not audited |
 
 **Key Insight**: Industry standard is to audit **state-changing operations** and **external interactions**, NOT read-only or configuration operations.

@@ -11,6 +11,7 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
+| v1.2 | 2026-03-04 | Renamed all `holmesgpt_*` metrics to `aiagent_api_*` (#293), fixed SLO status regex, removed dead panels | #442 |
 | v1.1 | 2025-12-03 | Aligned metric names with actual implementation in `src/middleware/metrics.py` | Code audit |
 | v1.0 | 2025-12-03 | Initial metrics-slos.md following SERVICE_DOCUMENTATION_GUIDE.md standard | Migrated from `observability/PROMETHEUS_QUERIES.md` |
 
@@ -20,18 +21,18 @@
 
 | Metric | Status | Notes |
 |--------|--------|-------|
-| `holmesgpt_investigations_total` | ✅ Implemented | Labels: method, endpoint, status |
-| `holmesgpt_investigations_duration_seconds` | ✅ Implemented | Histogram with standard buckets |
-| `holmesgpt_llm_calls_total` | ✅ Implemented | Labels: provider, model, status |
-| `holmesgpt_llm_call_duration_seconds` | ✅ Implemented | Histogram |
-| `holmesgpt_llm_token_usage_total` | ✅ Implemented | Labels: provider, model, type (prompt/completion) |
-| `holmesgpt_auth_failures_total` | ❌ Removed | No BR backing (GitHub #294) |
-| `holmesgpt_auth_success_total` | ❌ Removed | No BR backing (GitHub #294) |
-| `holmesgpt_context_api_calls_total` | ❌ Removed | Context API deprecated (DD-CONTEXT-006) |
-| `holmesgpt_active_requests` | ❌ Removed | Internal-only (GitHub #294) |
-| `holmesgpt_http_requests_total` | ❌ Removed | Internal-only (GitHub #294) |
-| `holmesgpt_rfc7807_errors_total` | ❌ Removed | Internal-only (GitHub #294) |
-| `holmesgpt_investigation_cost_dollars_total` | ❌ Not implemented | Deferred to v2.0 |
+| `aiagent_api_investigations_total` | ✅ Implemented | Labels: method, endpoint, status |
+| `aiagent_api_investigations_duration_seconds` | ✅ Implemented | Histogram with standard buckets |
+| `aiagent_api_llm_calls_total` | ✅ Implemented | Labels: provider, model, status |
+| `aiagent_api_llm_call_duration_seconds` | ✅ Implemented | Histogram |
+| `aiagent_api_llm_token_usage_total` | ✅ Implemented | Labels: provider, model, type (prompt/completion) |
+| `aiagent_api_auth_failures_total` | ❌ Removed | No BR backing (GitHub #294) |
+| `aiagent_api_auth_success_total` | ❌ Removed | No BR backing (GitHub #294) |
+| `aiagent_api_context_api_calls_total` | ❌ Removed | Context API deprecated (DD-CONTEXT-006) |
+| `aiagent_api_active_requests` | ❌ Removed | Internal-only (GitHub #294) |
+| `aiagent_api_http_requests_total` | ❌ Removed | Internal-only (GitHub #294) |
+| `aiagent_api_rfc7807_errors_total` | ❌ Removed | Internal-only (GitHub #294) |
+| `aiagent_api_investigation_cost_dollars_total` | ❌ Not implemented | Deferred to v2.0 |
 
 ---
 
@@ -43,9 +44,9 @@
 
 ```promql
 # Availability SLI (success rate)
-sum(rate(holmesgpt_investigations_total{status="success"}[5m]))
+sum(rate(aiagent_api_investigations_total{status="success"}[5m]))
 /
-sum(rate(holmesgpt_investigations_total[5m]))
+sum(rate(aiagent_api_investigations_total[5m]))
 * 100
 ```
 
@@ -55,13 +56,13 @@ sum(rate(holmesgpt_investigations_total[5m]))
 
 ```promql
 # p50 latency
-histogram_quantile(0.50, rate(holmesgpt_investigations_duration_seconds_bucket[5m]))
+histogram_quantile(0.50, rate(aiagent_api_investigations_duration_seconds_bucket[5m]))
 
 # p95 latency
-histogram_quantile(0.95, rate(holmesgpt_investigations_duration_seconds_bucket[5m]))
+histogram_quantile(0.95, rate(aiagent_api_investigations_duration_seconds_bucket[5m]))
 
 # p99 latency
-histogram_quantile(0.99, rate(holmesgpt_investigations_duration_seconds_bucket[5m]))
+histogram_quantile(0.99, rate(aiagent_api_investigations_duration_seconds_bucket[5m]))
 ```
 
 ### Error Rate SLI
@@ -70,9 +71,9 @@ histogram_quantile(0.99, rate(holmesgpt_investigations_duration_seconds_bucket[5
 
 ```promql
 # Error rate percentage
-sum(rate(holmesgpt_investigations_total{status="error"}[5m]))
+sum(rate(aiagent_api_investigations_total{status="error"}[5m]))
 /
-sum(rate(holmesgpt_investigations_total[5m]))
+sum(rate(aiagent_api_investigations_total[5m]))
 * 100
 ```
 
@@ -82,9 +83,9 @@ sum(rate(holmesgpt_investigations_total[5m]))
 
 ```promql
 # LLM call success rate
-sum(rate(holmesgpt_llm_calls_total{status="success"}[5m]))
+sum(rate(aiagent_api_llm_calls_total{status="success"}[5m]))
 /
-sum(rate(holmesgpt_llm_calls_total[5m]))
+sum(rate(aiagent_api_llm_calls_total[5m]))
 * 100
 ```
 
@@ -105,19 +106,19 @@ sum(rate(holmesgpt_llm_calls_total[5m]))
 ```yaml
 slos:
   - name: "HolmesGPT API Availability"
-    sli: "sum(rate(holmesgpt_investigations_total{status=~'2..'}[5m])) / sum(rate(holmesgpt_investigations_total[5m]))"
+    sli: "sum(rate(aiagent_api_investigations_total{status='success'}[5m])) / sum(rate(aiagent_api_investigations_total[5m]))"
     target: 0.99  # 99%
     window: "30d"
     burn_rate_fast: 14.4  # 1h window
     burn_rate_slow: 6     # 6h window
 
   - name: "HolmesGPT API P95 Latency"
-    sli: "histogram_quantile(0.95, rate(holmesgpt_investigations_duration_seconds_bucket[5m]))"
+    sli: "histogram_quantile(0.95, rate(aiagent_api_investigations_duration_seconds_bucket[5m]))"
     target: 5  # 5 seconds
     window: "30d"
 
   - name: "HolmesGPT API LLM Success Rate"
-    sli: "sum(rate(holmesgpt_llm_calls_total{status='success'}[5m])) / sum(rate(holmesgpt_llm_calls_total[5m]))"
+    sli: "sum(rate(aiagent_api_llm_calls_total{status='success'}[5m])) / sum(rate(aiagent_api_llm_calls_total[5m]))"
     target: 0.995  # 99.5%
     window: "30d"
 ```
@@ -130,37 +131,37 @@ slos:
 
 ```promql
 # Total requests per second
-rate(holmesgpt_investigations_total[5m])
+rate(aiagent_api_investigations_total[5m])
 
 # Requests per second by status
-sum by (status) (rate(holmesgpt_investigations_total[5m]))
+sum by (status) (rate(aiagent_api_investigations_total[5m]))
 
 # Total investigations in last hour
-increase(holmesgpt_investigations_total[1h])
+increase(aiagent_api_investigations_total[1h])
 
 # Investigations by priority
-sum by (priority) (increase(holmesgpt_investigations_total[1h]))
+sum by (priority) (increase(aiagent_api_investigations_total[1h]))
 
 # Investigations by environment
-sum by (environment) (increase(holmesgpt_investigations_total[1h]))
+sum by (environment) (increase(aiagent_api_investigations_total[1h]))
 ```
 
 ### Latency Metrics
 
 ```promql
 # Latency percentiles
-histogram_quantile(0.50, rate(holmesgpt_investigations_duration_seconds_bucket[5m]))  # p50
-histogram_quantile(0.95, rate(holmesgpt_investigations_duration_seconds_bucket[5m]))  # p95
-histogram_quantile(0.99, rate(holmesgpt_investigations_duration_seconds_bucket[5m]))  # p99
+histogram_quantile(0.50, rate(aiagent_api_investigations_duration_seconds_bucket[5m]))  # p50
+histogram_quantile(0.95, rate(aiagent_api_investigations_duration_seconds_bucket[5m]))  # p95
+histogram_quantile(0.99, rate(aiagent_api_investigations_duration_seconds_bucket[5m]))  # p99
 
 # Average latency (last 5 minutes)
-rate(holmesgpt_investigations_duration_seconds_sum[5m])
+rate(aiagent_api_investigations_duration_seconds_sum[5m])
 /
-rate(holmesgpt_investigations_duration_seconds_count[5m])
+rate(aiagent_api_investigations_duration_seconds_count[5m])
 
 # P95 latency by endpoint
 histogram_quantile(0.95,
-  sum by (endpoint, le) (rate(holmesgpt_investigations_duration_seconds_bucket[5m]))
+  sum by (endpoint, le) (rate(aiagent_api_investigations_duration_seconds_bucket[5m]))
 )
 ```
 
@@ -168,32 +169,28 @@ histogram_quantile(0.95,
 
 ```promql
 # Error rate per second
-rate(holmesgpt_investigations_total{status="error"}[5m])
+rate(aiagent_api_investigations_total{status="error"}[5m])
 
 # Error rate by priority
-sum by (priority) (rate(holmesgpt_investigations_total{status="error"}[5m]))
+sum by (priority) (rate(aiagent_api_investigations_total{status="error"}[5m]))
 /
-sum by (priority) (rate(holmesgpt_investigations_total[5m]))
+sum by (priority) (rate(aiagent_api_investigations_total[5m]))
 * 100
 
-# Auth failures per second
-rate(holmesgpt_auth_failures_total[5m])
-
-# Auth failures by reason
-sum by (reason) (rate(holmesgpt_auth_failures_total[5m]))
+# Note: auth metrics (aiagent_api_auth_failures_total) were removed per #294
 ```
 
 ### Token Usage Metrics
 
 ```promql
 # Total tokens per minute
-rate(holmesgpt_llm_token_usage_total[1m]) * 60
+rate(aiagent_api_llm_token_usage_total[1m]) * 60
 
 # Input vs output tokens (type: prompt, completion)
-sum by (type) (rate(holmesgpt_llm_token_usage_total[5m]))
+sum by (type) (rate(aiagent_api_llm_token_usage_total[5m]))
 
 # Tokens by provider and model
-sum by (provider, model) (rate(holmesgpt_llm_token_usage_total[5m]))
+sum by (provider, model) (rate(aiagent_api_llm_token_usage_total[5m]))
 ```
 
 ### Cost Metrics
@@ -207,32 +204,32 @@ sum by (provider, model) (rate(holmesgpt_llm_token_usage_total[5m]))
 # Formula: (prompt_tokens * 0.00003) + (completion_tokens * 0.00006)
 
 # Token-based cost estimation per hour
-(sum(rate(holmesgpt_llm_token_usage_total{type="prompt"}[1h])) * 0.00003
+(sum(rate(aiagent_api_llm_token_usage_total{type="prompt"}[1h])) * 0.00003
 +
-sum(rate(holmesgpt_llm_token_usage_total{type="completion"}[1h])) * 0.00006) * 3600
+sum(rate(aiagent_api_llm_token_usage_total{type="completion"}[1h])) * 0.00006) * 3600
 ```
 
-**Future Implementation** (`holmesgpt_investigation_cost_dollars_total`):
+**Future Implementation** (`aiagent_api_investigation_cost_dollars_total`):
 ```promql
 # These queries will work once cost metric is implemented
 # Daily cost
-# sum(increase(holmesgpt_investigation_cost_dollars_total[24h]))
+# sum(increase(aiagent_api_investigation_cost_dollars_total[24h]))
 ```
 
 ### LLM Provider Metrics
 
 ```promql
 # LLM calls per second
-rate(holmesgpt_llm_calls_total[5m])
+rate(aiagent_api_llm_calls_total[5m])
 
 # LLM calls by provider and model
-sum by (provider, model) (rate(holmesgpt_llm_calls_total[5m]))
+sum by (provider, model) (rate(aiagent_api_llm_calls_total[5m]))
 
 # LLM call p95 latency
-histogram_quantile(0.95, rate(holmesgpt_llm_call_duration_seconds_bucket[5m]))
+histogram_quantile(0.95, rate(aiagent_api_llm_call_duration_seconds_bucket[5m]))
 
 # LLM call failures by provider
-sum by (provider) (rate(holmesgpt_llm_calls_total{status="error"}[5m]))
+sum by (provider) (rate(aiagent_api_llm_calls_total{status="error"}[5m]))
 ```
 
 ---
@@ -245,14 +242,13 @@ sum by (provider) (rate(holmesgpt_llm_calls_total{status="error"}[5m]))
 
 | Panel | Type | Purpose | Query |
 |-------|------|---------|-------|
-| **Success Rate** | Gauge | Current availability | `holmesgpt_investigations_success_total / holmesgpt_investigations_total` |
-| **RPS** | Single Stat | Current requests/sec | `sum(rate(holmesgpt_investigations_total[1m]))` |
-| **P95 Latency** | Single Stat | Current latency | `histogram_quantile(0.95, ...)` |
-| **Daily Cost** | Single Stat | Cost today | `sum(increase(holmesgpt_investigation_cost_dollars_total[24h]))` |
-| **Request Rate** | Time Series | RPS over time by status | `sum by (status) (rate(holmesgpt_investigations_total[5m]))` |
+| **Success Rate** | Stat | Current availability | `aiagent_api_investigations_total{status="success"} / aiagent_api_investigations_total` |
+| **RPS** | Stat | Current requests/sec | `sum(rate(aiagent_api_investigations_total[1m]))` |
+| **P95 Latency** | Stat | Current latency | `histogram_quantile(0.95, ...)` |
+| **Request Rate** | Time Series | RPS over time by status | `sum by (status) (rate(aiagent_api_investigations_total[5m]))` |
 | **Latency Percentiles** | Time Series | p50/p95/p99 over time | `histogram_quantile(...)` |
-| **Cost Rate** | Time Series | $/hour over time | `rate(holmesgpt_investigation_cost_dollars_total[5m]) * 3600` |
-| **LLM Provider Health** | Table | Success rate by provider | `sum by (provider) (...)` |
+| **LLM Calls by Provider** | Time Series | LLM call rate by provider | `sum by (provider, model) (rate(aiagent_api_llm_calls_total[5m]))` |
+| **LLM Success Rate** | Time Series | LLM success % by provider | `sum by (provider) (...)` |
 
 ---
 
@@ -266,9 +262,9 @@ groups:
     rules:
       - alert: HolmesGPTHighErrorRate
         expr: |
-          sum(rate(holmesgpt_investigations_total{status="error"}[5m]))
+          sum(rate(aiagent_api_investigations_total{status="error"}[5m]))
           /
-          sum(rate(holmesgpt_investigations_total[5m]))
+          sum(rate(aiagent_api_investigations_total[5m]))
           > 0.05
         for: 5m
         labels:
@@ -280,7 +276,7 @@ groups:
 
       - alert: HolmesGPTHighLatency
         expr: |
-          histogram_quantile(0.95, rate(holmesgpt_investigations_duration_seconds_bucket[5m]))
+          histogram_quantile(0.95, rate(aiagent_api_investigations_duration_seconds_bucket[5m]))
           > 5.0
         for: 10m
         labels:
@@ -299,9 +295,9 @@ groups:
     rules:
       - alert: HolmesGPTTokenUsageSpike
         expr: |
-          rate(holmesgpt_llm_token_usage_total[1h])
+          rate(aiagent_api_llm_token_usage_total[1h])
           >
-          1.5 * rate(holmesgpt_llm_token_usage_total[24h] offset 1d)
+          1.5 * rate(aiagent_api_llm_token_usage_total[24h] offset 1d)
         for: 30m
         labels:
           severity: warning
@@ -312,9 +308,9 @@ groups:
 
       - alert: HolmesGPTLLMProviderErrors
         expr: |
-          sum by (provider) (rate(holmesgpt_llm_calls_total{status="error"}[5m]))
+          sum by (provider) (rate(aiagent_api_llm_calls_total{status="error"}[5m]))
           /
-          sum by (provider) (rate(holmesgpt_llm_calls_total[5m]))
+          sum by (provider) (rate(aiagent_api_llm_calls_total[5m]))
           > 0.01
         for: 10m
         labels:
@@ -333,7 +329,7 @@ groups:
 
 ```promql
 # Investigations taking > 5 seconds (95th percentile check)
-histogram_quantile(0.95, rate(holmesgpt_investigations_duration_seconds_bucket[5m]))
+histogram_quantile(0.95, rate(aiagent_api_investigations_duration_seconds_bucket[5m]))
 > 5.0
 ```
 
@@ -341,18 +337,18 @@ histogram_quantile(0.95, rate(holmesgpt_investigations_duration_seconds_bucket[5
 
 ```promql
 # Unusually high token usage (prompt + completion)
-rate(holmesgpt_llm_token_usage_total[5m])
+rate(aiagent_api_llm_token_usage_total[5m])
 >
-avg_over_time(rate(holmesgpt_llm_token_usage_total[5m])[1h:5m]) * 2
+avg_over_time(rate(aiagent_api_llm_token_usage_total[5m])[1h:5m]) * 2
 ```
 
 ### LLM Provider Health
 
 ```promql
 # LLM error rate by provider
-sum by (provider) (rate(holmesgpt_llm_calls_total{status="error"}[5m]))
+sum by (provider) (rate(aiagent_api_llm_calls_total{status="error"}[5m]))
 /
-sum by (provider) (rate(holmesgpt_llm_calls_total[5m]))
+sum by (provider) (rate(aiagent_api_llm_calls_total[5m]))
 > 0.01
 ```
 

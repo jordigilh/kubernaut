@@ -35,6 +35,7 @@ from datastorage.models.llm_response_payload import LLMResponsePayload as LLMRes
 from datastorage.models.llm_tool_call_payload import LLMToolCallPayload as LLMToolCallEventData
 from datastorage.models.workflow_validation_payload import WorkflowValidationPayload as WorkflowValidationEventData
 from datastorage.models.ai_agent_response_payload import AIAgentResponsePayload as HAPIResponseEventData
+from datastorage.models.ai_agent_response_failed_payload import AIAgentResponseFailedPayload as HAPIResponseFailedEventData
 
 # Re-export for backward compatibility
 __all__ = [
@@ -43,6 +44,7 @@ __all__ = [
     "LLMToolCallEventData",
     "WorkflowValidationEventData",
     "HAPIResponseEventData",
+    "HAPIResponseFailedEventData",
 ]
 
 

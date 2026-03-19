@@ -53,7 +53,7 @@ Name | Type | Description | Notes
 **operator_reconcile_delay** | **str** | DEPRECATED (Issue #277): Use orchestrator.ea.created event instead. Was: Operator reconcile delay propagated via EA spec. Now emitted by the RO in the orchestrator.ea.created audit event.  | [optional] 
 **is_gitops_managed** | **bool** | Whether the remediation target was detected as GitOps-managed. Only present for orchestrator.ea.created events.  | [optional] 
 **is_crd** | **bool** | Whether the remediation target is a CRD (non-built-in group). Only present for orchestrator.ea.created events.  | [optional] 
-**phase** | **str** | Phase in which error occurred | 
+**phase** | **str** | Phase in which the failure occurred | 
 **signal** | **str** | Name of the signal being processed | 
 **external_severity** | **str** | Original severity from external monitoring system (e.g., Sev1, P0, critical) | [optional] 
 **normalized_severity** | **str** | Normalized severity determined by Rego policy (DD-SEVERITY-001 v1.1) | [optional] 
@@ -133,7 +133,7 @@ Name | Type | Description | Notes
 **http_status_code** | **int** | HTTP status code | 
 **auto_approved** | **bool** | Whether auto-approved | 
 **degraded** | **bool** | Whether evaluation ran in degraded mode | 
-**error_message** | **str** | Error message | 
+**error_message** | **str** | Error message from the failed investigation | 
 **channel** | **str** |  | 
 **subject** | **str** |  | 
 **body** | **str** |  | 
@@ -142,6 +142,7 @@ Name | Type | Description | Notes
 **event_id** | **str** | Unique event identifier | 
 **incident_id** | **str** | Incident correlation ID (remediation_id) | 
 **response_data** | [**IncidentResponseData**](IncidentResponseData.md) |  | 
+**duration_seconds** | **float** | Duration of the investigation before failure (seconds) | [optional] 
 **model** | **str** | LLM model identifier | 
 **prompt_length** | **int** | Length of prompt sent to LLM | 
 **prompt_preview** | **str** | First 500 characters of prompt for audit | 

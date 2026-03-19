@@ -13,6 +13,119 @@ import (
 	"github.com/google/uuid"
 )
 
+// AI Agent response failure event payload (aiagent.response.failed) - Emitted when an investigation
+// fails (DD-AUDIT-005, SOC2 CC8.1).
+// Ref: #/components/schemas/AIAgentResponseFailedPayload
+type AIAgentResponseFailedPayload struct {
+	// Event type for discriminator.
+	EventType AIAgentResponseFailedPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Incident correlation ID from request.
+	IncidentID string `json:"incident_id"`
+	// Error message from the failed investigation.
+	ErrorMessage string `json:"error_message"`
+	// Phase in which the failure occurred.
+	Phase string `json:"phase"`
+	// Duration of the investigation before failure (seconds).
+	DurationSeconds OptFloat32 `json:"duration_seconds"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentResponseFailedPayload) GetEventType() AIAgentResponseFailedPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentResponseFailedPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetIncidentID returns the value of IncidentID.
+func (s *AIAgentResponseFailedPayload) GetIncidentID() string {
+	return s.IncidentID
+}
+
+// GetErrorMessage returns the value of ErrorMessage.
+func (s *AIAgentResponseFailedPayload) GetErrorMessage() string {
+	return s.ErrorMessage
+}
+
+// GetPhase returns the value of Phase.
+func (s *AIAgentResponseFailedPayload) GetPhase() string {
+	return s.Phase
+}
+
+// GetDurationSeconds returns the value of DurationSeconds.
+func (s *AIAgentResponseFailedPayload) GetDurationSeconds() OptFloat32 {
+	return s.DurationSeconds
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentResponseFailedPayload) SetEventType(val AIAgentResponseFailedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentResponseFailedPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetIncidentID sets the value of IncidentID.
+func (s *AIAgentResponseFailedPayload) SetIncidentID(val string) {
+	s.IncidentID = val
+}
+
+// SetErrorMessage sets the value of ErrorMessage.
+func (s *AIAgentResponseFailedPayload) SetErrorMessage(val string) {
+	s.ErrorMessage = val
+}
+
+// SetPhase sets the value of Phase.
+func (s *AIAgentResponseFailedPayload) SetPhase(val string) {
+	s.Phase = val
+}
+
+// SetDurationSeconds sets the value of DurationSeconds.
+func (s *AIAgentResponseFailedPayload) SetDurationSeconds(val OptFloat32) {
+	s.DurationSeconds = val
+}
+
+// Event type for discriminator.
+type AIAgentResponseFailedPayloadEventType string
+
+const (
+	AIAgentResponseFailedPayloadEventTypeAiagentResponseFailed AIAgentResponseFailedPayloadEventType = "aiagent.response.failed"
+)
+
+// AllValues returns all AIAgentResponseFailedPayloadEventType values.
+func (AIAgentResponseFailedPayloadEventType) AllValues() []AIAgentResponseFailedPayloadEventType {
+	return []AIAgentResponseFailedPayloadEventType{
+		AIAgentResponseFailedPayloadEventTypeAiagentResponseFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentResponseFailedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentResponseFailedPayloadEventTypeAiagentResponseFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentResponseFailedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentResponseFailedPayloadEventType(data) {
+	case AIAgentResponseFailedPayloadEventTypeAiagentResponseFailed:
+		*s = AIAgentResponseFailedPayloadEventTypeAiagentResponseFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // AI Agent response completion event payload (aiagent.response.complete) - Provider perspective
 // (DD-AUDIT-005).
 // Ref: #/components/schemas/AIAgentResponsePayload
@@ -2331,6 +2444,7 @@ type AuditEventEventData struct {
 	NotificationMessageAcknowledgedPayload NotificationMessageAcknowledgedPayload
 	NotificationMessageEscalatedPayload    NotificationMessageEscalatedPayload
 	AIAgentResponsePayload                 AIAgentResponsePayload
+	AIAgentResponseFailedPayload           AIAgentResponseFailedPayload
 	LLMRequestPayload                      LLMRequestPayload
 	LLMResponsePayload                     LLMResponsePayload
 	LLMToolCallPayload                     LLMToolCallPayload
@@ -2407,6 +2521,7 @@ const (
 	NotificationMessageAcknowledgedPayloadAuditEventEventData                        AuditEventEventDataType = "notification.message.acknowledged"
 	NotificationMessageEscalatedPayloadAuditEventEventData                           AuditEventEventDataType = "notification.message.escalated"
 	AIAgentResponsePayloadAuditEventEventData                                        AuditEventEventDataType = "aiagent.response.complete"
+	AIAgentResponseFailedPayloadAuditEventEventData                                  AuditEventEventDataType = "aiagent.response.failed"
 	LLMRequestPayloadAuditEventEventData                                             AuditEventEventDataType = "aiagent.llm.request"
 	LLMResponsePayloadAuditEventEventData                                            AuditEventEventDataType = "aiagent.llm.response"
 	LLMToolCallPayloadAuditEventEventData                                            AuditEventEventDataType = "aiagent.llm.tool_call"
@@ -2583,6 +2698,11 @@ func (s AuditEventEventData) IsNotificationMessageEscalatedPayload() bool {
 // IsAIAgentResponsePayload reports whether AuditEventEventData is AIAgentResponsePayload.
 func (s AuditEventEventData) IsAIAgentResponsePayload() bool {
 	return s.Type == AIAgentResponsePayloadAuditEventEventData
+}
+
+// IsAIAgentResponseFailedPayload reports whether AuditEventEventData is AIAgentResponseFailedPayload.
+func (s AuditEventEventData) IsAIAgentResponseFailedPayload() bool {
+	return s.Type == AIAgentResponseFailedPayloadAuditEventEventData
 }
 
 // IsLLMRequestPayload reports whether AuditEventEventData is LLMRequestPayload.
@@ -3397,6 +3517,27 @@ func NewAIAgentResponsePayloadAuditEventEventData(v AIAgentResponsePayload) Audi
 	return s
 }
 
+// SetAIAgentResponseFailedPayload sets AuditEventEventData to AIAgentResponseFailedPayload.
+func (s *AuditEventEventData) SetAIAgentResponseFailedPayload(v AIAgentResponseFailedPayload) {
+	s.Type = AIAgentResponseFailedPayloadAuditEventEventData
+	s.AIAgentResponseFailedPayload = v
+}
+
+// GetAIAgentResponseFailedPayload returns AIAgentResponseFailedPayload and true boolean if AuditEventEventData is AIAgentResponseFailedPayload.
+func (s AuditEventEventData) GetAIAgentResponseFailedPayload() (v AIAgentResponseFailedPayload, ok bool) {
+	if !s.IsAIAgentResponseFailedPayload() {
+		return v, false
+	}
+	return s.AIAgentResponseFailedPayload, true
+}
+
+// NewAIAgentResponseFailedPayloadAuditEventEventData returns new AuditEventEventData from AIAgentResponseFailedPayload.
+func NewAIAgentResponseFailedPayloadAuditEventEventData(v AIAgentResponseFailedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentResponseFailedPayload(v)
+	return s
+}
+
 // SetLLMRequestPayload sets AuditEventEventData to LLMRequestPayload.
 func (s *AuditEventEventData) SetLLMRequestPayload(v LLMRequestPayload) {
 	s.Type = LLMRequestPayloadAuditEventEventData
@@ -4186,6 +4327,7 @@ type AuditEventRequestEventData struct {
 	NotificationMessageAcknowledgedPayload NotificationMessageAcknowledgedPayload
 	NotificationMessageEscalatedPayload    NotificationMessageEscalatedPayload
 	AIAgentResponsePayload                 AIAgentResponsePayload
+	AIAgentResponseFailedPayload           AIAgentResponseFailedPayload
 	LLMRequestPayload                      LLMRequestPayload
 	LLMResponsePayload                     LLMResponsePayload
 	LLMToolCallPayload                     LLMToolCallPayload
@@ -4262,6 +4404,7 @@ const (
 	NotificationMessageAcknowledgedPayloadAuditEventRequestEventData                               AuditEventRequestEventDataType = "notification.message.acknowledged"
 	NotificationMessageEscalatedPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "notification.message.escalated"
 	AIAgentResponsePayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "aiagent.response.complete"
+	AIAgentResponseFailedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "aiagent.response.failed"
 	LLMRequestPayloadAuditEventRequestEventData                                                    AuditEventRequestEventDataType = "aiagent.llm.request"
 	LLMResponsePayloadAuditEventRequestEventData                                                   AuditEventRequestEventDataType = "aiagent.llm.response"
 	LLMToolCallPayloadAuditEventRequestEventData                                                   AuditEventRequestEventDataType = "aiagent.llm.tool_call"
@@ -4438,6 +4581,11 @@ func (s AuditEventRequestEventData) IsNotificationMessageEscalatedPayload() bool
 // IsAIAgentResponsePayload reports whether AuditEventRequestEventData is AIAgentResponsePayload.
 func (s AuditEventRequestEventData) IsAIAgentResponsePayload() bool {
 	return s.Type == AIAgentResponsePayloadAuditEventRequestEventData
+}
+
+// IsAIAgentResponseFailedPayload reports whether AuditEventRequestEventData is AIAgentResponseFailedPayload.
+func (s AuditEventRequestEventData) IsAIAgentResponseFailedPayload() bool {
+	return s.Type == AIAgentResponseFailedPayloadAuditEventRequestEventData
 }
 
 // IsLLMRequestPayload reports whether AuditEventRequestEventData is LLMRequestPayload.
@@ -5249,6 +5397,27 @@ func (s AuditEventRequestEventData) GetAIAgentResponsePayload() (v AIAgentRespon
 func NewAIAgentResponsePayloadAuditEventRequestEventData(v AIAgentResponsePayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetAIAgentResponsePayload(v)
+	return s
+}
+
+// SetAIAgentResponseFailedPayload sets AuditEventRequestEventData to AIAgentResponseFailedPayload.
+func (s *AuditEventRequestEventData) SetAIAgentResponseFailedPayload(v AIAgentResponseFailedPayload) {
+	s.Type = AIAgentResponseFailedPayloadAuditEventRequestEventData
+	s.AIAgentResponseFailedPayload = v
+}
+
+// GetAIAgentResponseFailedPayload returns AIAgentResponseFailedPayload and true boolean if AuditEventRequestEventData is AIAgentResponseFailedPayload.
+func (s AuditEventRequestEventData) GetAIAgentResponseFailedPayload() (v AIAgentResponseFailedPayload, ok bool) {
+	if !s.IsAIAgentResponseFailedPayload() {
+		return v, false
+	}
+	return s.AIAgentResponseFailedPayload, true
+}
+
+// NewAIAgentResponseFailedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentResponseFailedPayload.
+func NewAIAgentResponseFailedPayloadAuditEventRequestEventData(v AIAgentResponseFailedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentResponseFailedPayload(v)
 	return s
 }
 

@@ -53,7 +53,7 @@ from src.extensions import incident, health
 # DD-017: PostExec endpoint deferred to V1.1 — EM Level 1 (V1.0, DD-017 v2.0) does not use PostExec; Level 2 (V1.1) is the PostExec consumer
 # from src.extensions import postexec
 from src.middleware.auth import AuthenticationMiddleware
-from src.middleware.metrics import PrometheusMetricsMiddleware, metrics_endpoint
+from src.middleware.metrics import metrics_endpoint
 from src.middleware.rfc7807 import add_rfc7807_exception_handlers
 
 # Import auth components for dependency injection (DD-AUTH-014)
@@ -381,10 +381,6 @@ def create_app(authenticator=None, authorizer=None):
         allow_headers=["*"],
     )
 
-    # Add Prometheus metrics middleware
-    app.add_middleware(PrometheusMetricsMiddleware)
-    logger.info("Prometheus metrics middleware enabled")
-
     # Initialize auth components if not provided (production mode)
     # Authority: DD-AUTH-014 (Middleware-based SAR authentication)
     # Security: No runtime disable flags -- auth is always enforced via DI.
@@ -463,6 +459,7 @@ def create_app(authenticator=None, authorizer=None):
     # Logic preserved in src/extensions/postexec.py for V1.1
     # app.include_router(postexec.router, prefix="/api/v1", tags=["Post-Execution Analysis"])
     app.include_router(health.router, tags=["Health"])
+    health.router.config = config  # #442 Gap 4: Wire config so /config endpoint returns real data
 
     # DD-AUTH-006: Add oauthProxyAuth security scheme to OpenAPI spec
     # This documents the oauth-proxy authentication flow used in production.

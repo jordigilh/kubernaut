@@ -78,7 +78,8 @@ from src.models.audit_models import (  # noqa: E402
     LLMResponseEventData,
     LLMToolCallEventData,
     WorkflowValidationEventData,
-    HAPIResponseEventData  # DD-AUDIT-005: HAPI response complete event
+    HAPIResponseEventData,  # DD-AUDIT-005: HAPI response complete event
+    HAPIResponseFailedEventData,  # #442: HAPI response failure event
 )
 
 
@@ -414,6 +415,48 @@ def create_aiagent_response_complete_event(
         outcome="success",
         correlation_id=remediation_id,
         event_data=event_data_model  # ← Pass model, not model_dump()
+    )
+
+
+def create_aiagent_response_failed_event(
+    incident_id: str,
+    remediation_id: Optional[str],
+    error_message: str,
+    phase: str,
+    duration_seconds: Optional[float] = None,
+) -> AuditEventRequest:
+    """
+    Create AI Agent response failure audit event (ADR-034 compliant)
+
+    Business Requirement: BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
+    Design Decision: DD-AUDIT-005 (Hybrid Provider Data Capture)
+    Issue: #442 - SOC2 compliance: failed investigations must have audit trail
+
+    Args:
+        incident_id: Incident identifier for correlation
+        remediation_id: Remediation request ID for audit correlation
+        error_message: Error message from the failed investigation
+        phase: Phase in which the failure occurred (e.g., "llm_analysis", "sdk_init")
+        duration_seconds: Duration of the investigation before failure
+
+    Returns:
+        ADR-034 compliant audit event
+    """
+    event_data_model = HAPIResponseFailedEventData(
+        event_type="aiagent.response.failed",
+        event_id=str(uuid.uuid4()),
+        incident_id=incident_id,
+        error_message=error_message,
+        phase=phase,
+        duration_seconds=duration_seconds,
+    )
+
+    return _create_adr034_event(
+        event_type="aiagent.response.failed",
+        operation="response_failed",
+        outcome="failure",
+        correlation_id=remediation_id or "unknown",
+        event_data=event_data_model,
     )
 
 

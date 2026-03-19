@@ -15,43 +15,17 @@
 #
 
 """
-HTTP Middleware Metrics (FastAPI Pattern)
+Prometheus Metrics Endpoint
 
-Architecture Note:
-- HTTP metrics stay in middleware (FastAPI best practice)
-- Business metrics moved to HAMetrics class (Go pattern)
-- See: src/metrics/instrumentation.py for business logic metrics
-
-Migration (Jan 31, 2026):
-- REMOVED: investigations_total, investigations_duration_seconds (moved to HAMetrics)
-- REMOVED: llm_calls_total, llm_call_duration_seconds, llm_token_usage (moved to HAMetrics)
-- REMOVED: active_requests, auth_*, context_api_* (no BR backing)
-- REMOVED: http_requests_total, http_request_duration_seconds (GitHub #294 - internal-only)
-- REMOVED: config_reload_* (GitHub #294 - internal-only)
-- REMOVED: rfc7807_errors_total (GitHub #294 - internal-only)
+Provides the /metrics endpoint for Prometheus scraping.
+Business metrics are defined in src/metrics/instrumentation.py (HAMetrics class).
+HTTP middleware metrics were removed per GitHub #294 (internal-only, no BR backing).
 """
 
-from typing import Callable
-from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
+from __future__ import annotations
+
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-
-
-# ========================================
-# METRICS MIDDLEWARE
-# ========================================
-
-class PrometheusMetricsMiddleware(BaseHTTPMiddleware):
-    """
-    HTTP middleware placeholder for Prometheus metrics instrumentation.
-
-    Internal-only HTTP/config/RFC7807 metrics removed per GitHub #294.
-    Business metrics: See src/metrics/instrumentation.py (HAMetrics class)
-    """
-
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Pass through request without metric recording."""
-        return await call_next(request)
+from starlette.responses import Response
 
 
 # ========================================
@@ -64,8 +38,6 @@ def metrics_endpoint() -> Response:
 
     Returns metrics in Prometheus exposition format
     """
-    from starlette.responses import Response
-
     metrics_data = generate_latest()
 
     return Response(
