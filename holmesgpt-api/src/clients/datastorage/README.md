@@ -175,6 +175,7 @@ Class | Method | HTTP request | Description
 
 ## Documentation For Models
 
+ - [AIAgentResponseFailedPayload](docs/AIAgentResponseFailedPayload.md)
  - [AIAgentResponsePayload](docs/AIAgentResponsePayload.md)
  - [AIAnalysisAIAgentCallPayload](docs/AIAnalysisAIAgentCallPayload.md)
  - [AIAnalysisApprovalDecisionPayload](docs/AIAnalysisApprovalDecisionPayload.md)

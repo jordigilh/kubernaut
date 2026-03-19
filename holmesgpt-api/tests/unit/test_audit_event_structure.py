@@ -274,3 +274,70 @@ class TestAuditEventStructure:
         )
 
         assert event.correlation_id == "unknown"
+
+    # ========================================
+    # Gap 1: aiagent.response.failed (#442)
+    # ========================================
+
+    def test_response_failed_event_structure(self):
+        """ADR-034: Response failed event has required envelope and data fields."""
+        from src.audit.events import create_aiagent_response_failed_event
+
+        event = create_aiagent_response_failed_event(
+            incident_id="inc-123",
+            remediation_id="rem-456",
+            error_message="LLM request timed out after 120 seconds",
+            phase="llm_analysis",
+            duration_seconds=120.5,
+        )
+
+        envelope_fields = [
+            "version", "event_category", "event_type", "event_timestamp",
+            "correlation_id", "event_action", "event_outcome", "event_data"
+        ]
+
+        for field in envelope_fields:
+            assert hasattr(event, field), f"Missing ADR-034 envelope field: {field}"
+
+        assert event.version == "1.0"
+        assert event.event_category == "aiagent"
+        assert event.event_type == "aiagent.response.failed"
+        assert event.correlation_id == "rem-456"
+        assert event.event_action == "response_failed"
+        assert event.event_outcome == "failure"
+
+        event_data = event.event_data.actual_instance
+        data_fields = ["event_type", "event_id", "incident_id", "error_message", "phase"]
+        for field in data_fields:
+            assert hasattr(event_data, field), f"Missing event_data field: {field}"
+
+        assert event_data.incident_id == "inc-123"
+        assert event_data.error_message == "LLM request timed out after 120 seconds"
+        assert event_data.phase == "llm_analysis"
+        assert event_data.duration_seconds == 120.5
+
+    def test_response_failed_event_uses_remediation_id_as_correlation(self):
+        """ADR-034: Failed event correlation_id maps to remediation_id."""
+        from src.audit.events import create_aiagent_response_failed_event
+
+        event = create_aiagent_response_failed_event(
+            incident_id="inc-123",
+            remediation_id="rem-789",
+            error_message="Connection refused",
+            phase="sdk_init",
+        )
+
+        assert event.correlation_id == "rem-789"
+
+    def test_response_failed_event_empty_remediation_id(self):
+        """ADR-034: Failed event with None remediation_id uses 'unknown'."""
+        from src.audit.events import create_aiagent_response_failed_event
+
+        event = create_aiagent_response_failed_event(
+            incident_id="inc-123",
+            remediation_id=None,
+            error_message="Unknown error",
+            phase="llm_analysis",
+        )
+
+        assert event.correlation_id == "unknown"

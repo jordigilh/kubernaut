@@ -14,6 +14,7 @@
 
 
 # import models into model package
+from datastorage.models.ai_agent_response_failed_payload import AIAgentResponseFailedPayload
 from datastorage.models.ai_agent_response_payload import AIAgentResponsePayload
 from datastorage.models.ai_analysis_ai_agent_call_payload import AIAnalysisAIAgentCallPayload
 from datastorage.models.ai_analysis_approval_decision_payload import AIAnalysisApprovalDecisionPayload

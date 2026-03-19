@@ -132,15 +132,6 @@ class HAMetrics:
         # Note: HTTP and config hot-reload metrics were removed in GitHub #294
         # (internal-only metrics cleanup). Only investigation and LLM metrics remain.
     
-    def record_investigation_start(self) -> float:
-        """
-        Record investigation start (for timing).
-        
-        Returns:
-            Start timestamp (use with record_investigation_complete)
-        """
-        return time.time()
-    
     def record_investigation_complete(self, start_time: float, status: str):
         """
         Record investigation completion with metrics.
@@ -148,7 +139,7 @@ class HAMetrics:
         Business Requirement: BR-HAPI-011
         
         Args:
-            start_time: Start timestamp from record_investigation_start()
+            start_time: Start timestamp from time.time()
             status: Investigation outcome (success | error | needs_review)
         """
         duration = time.time() - start_time
