@@ -32,8 +32,12 @@ gateway:
 
 effectivenessmonitor:
   external:
-    prometheusUrl: "http://prometheus-k8s.openshift-monitoring.svc:9091"
-    alertManagerUrl: "http://alertmanager-main.openshift-monitoring.svc:9094"
+    prometheusUrl: "https://prometheus-k8s.openshift-monitoring.svc:9091"
+    prometheusEnabled: true
+    alertManagerUrl: "https://alertmanager-main.openshift-monitoring.svc:9094"
+    alertManagerEnabled: true
+    tlsCaFile: "/etc/ssl/em/service-ca.crt"
+    ocpMonitoringRbac: true
 
 # TLS defaults to hook (self-signed). To use cert-manager instead, uncomment
 # and set issuerRef.name to your ClusterIssuer (requires cert-manager installed):
