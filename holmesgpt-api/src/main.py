@@ -250,12 +250,15 @@ config = load_config()
 def _inject_runtime_env(cfg: dict) -> None:
     """Bridge config-file and mounted-secret values into os.environ at startup.
 
-    Keeps the Kubernetes pod spec completely free of env vars (no ``env:``
-    block, no ``envFrom:``).  Secrets are read from files mounted by the
-    ``llm-credentials-file`` volume, and config values come from the
-    already-loaded YAML.  ``os.environ.setdefault`` is used so that any
-    value explicitly set in the environment (e.g. during development)
-    still takes precedence.
+    Keeps the Kubernetes pod spec nearly free of env vars.  Secrets are
+    read from files mounted by the ``llm-credentials-file`` volume, and
+    config values come from the already-loaded YAML.
+    ``os.environ.setdefault`` is used so that any value explicitly set
+    in the environment (e.g. during development) still takes precedence.
+
+    Exception: ``IS_OPENSHIFT`` remains in the pod spec ``env:`` block
+    because it is consumed as a module-level constant at import time,
+    before this function runs.
     """
     # --- LLM credential files (/etc/holmesgpt/credentials/*) ---
     creds_dir = Path("/etc/holmesgpt/credentials")
@@ -290,6 +293,38 @@ def _inject_runtime_env(cfg: dict) -> None:
             os.environ.setdefault("VERTEXAI_PROJECT", project)
         if location:
             os.environ.setdefault("VERTEXAI_LOCATION", location)
+
+    # --- TLS CA bundle for OCP service-serving certificates (Issue #452) ---
+    # When running on OpenShift with in-cluster Prometheus, the service-serving
+    # CA is not in the system trust store. We combine the UBI9 system CA bundle
+    # with the OCP-injected service-CA so that `requests` trusts both public
+    # CAs and the cluster-internal service certificates.
+    tls_ca_path_str = cfg.get("tls", {}).get("ca_file")
+    if tls_ca_path_str:
+        tls_ca_path = Path(tls_ca_path_str)
+        if tls_ca_path.is_file():
+            system_ca_bundle = Path("/etc/pki/tls/certs/ca-bundle.crt")
+            combined_ca_path = Path("/tmp/combined-ca.crt")
+
+            parts: list[str] = []
+            if system_ca_bundle.is_file():
+                parts.append(system_ca_bundle.read_text())
+            parts.append(tls_ca_path.read_text())
+
+            combined_ca_path.write_text("\n".join(parts))
+            os.environ["REQUESTS_CA_BUNDLE"] = str(combined_ca_path)
+            logger.info({
+                "event": "tls_ca_bundle_configured",
+                "issue": "#452",
+                "combined_ca": str(combined_ca_path),
+                "service_ca": tls_ca_path_str,
+            })
+        else:
+            logger.warning({
+                "event": "tls_ca_file_not_found",
+                "issue": "#452",
+                "path": tls_ca_path_str,
+            })
 
 
 _inject_runtime_env(config)

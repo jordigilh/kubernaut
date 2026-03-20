@@ -124,10 +124,28 @@ data:
       level: "INFO"
     data_storage:
       url: "{{ include "kubernaut.datastorage.url" . }}"
+{{- if and .Values.holmesgptApi.prometheus.enabled .Values.holmesgptApi.prometheus.tlsCaFile }}
+    tls:
+      ca_file: "{{ .Values.holmesgptApi.prometheus.tlsCaFile }}"
+{{- end }}
     audit:
       flush_interval_seconds: 0.1
       buffer_size: 10000
       batch_size: 50
+{{- if and .Values.holmesgptApi.prometheus.enabled .Values.holmesgptApi.prometheus.tlsCaFile }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: holmesgpt-api-service-ca
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: holmesgpt-api
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+data: {}
+{{- end }}
 {{- if not .Values.holmesgptApi.existingSdkConfigMap }}
 ---
 apiVersion: v1
@@ -150,7 +168,15 @@ data:
       max_retries: 3
       timeout_seconds: 120
       temperature: 0.7
+{{- if and .Values.holmesgptApi.prometheus.enabled .Values.holmesgptApi.prometheus.url }}
+    toolsets:
+      prometheus/metrics:
+        enabled: true
+        config:
+          prometheus_url: {{ .Values.holmesgptApi.prometheus.url | quote }}
+{{- else }}
     toolsets: {}
+{{- end }}
     mcp_servers: {}
 {{- else }}
 {{- fail "LLM configuration required. Choose one:\n  1) --set holmesgptApi.llm.provider=openai --set holmesgptApi.llm.model=gpt-4o  (quickstart)\n  2) --set-file holmesgptApi.sdkConfigContent=sdk-config.yaml  (full config)\n  3) --set holmesgptApi.existingSdkConfigMap=my-configmap  (pre-existing)" }}
@@ -193,6 +219,11 @@ spec:
             {{- include "kubernaut.containerSecurityContext" .Values.holmesgptApi | nindent 12 }}
           ports:
             - containerPort: 8080
+          {{- if and .Values.holmesgptApi.prometheus.enabled .Values.holmesgptApi.prometheus.ocpMonitoringRbac }}
+          env:
+            - name: IS_OPENSHIFT
+              value: "True"
+          {{- end }}
           args:
             - "-config"
             - "/etc/holmesgpt/config.yaml"
@@ -206,6 +237,13 @@ spec:
             - name: llm-credentials-file
               mountPath: /etc/holmesgpt/credentials
               readOnly: true
+            {{- if and .Values.holmesgptApi.prometheus.enabled .Values.holmesgptApi.prometheus.tlsCaFile }}
+            - name: service-ca
+              mountPath: /etc/ssl/hapi
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /health
@@ -235,6 +273,14 @@ spec:
           secret:
             secretName: {{ .Values.holmesgptApi.llm.credentialsSecretName }}
             optional: true
+        {{- if and .Values.holmesgptApi.prometheus.enabled .Values.holmesgptApi.prometheus.tlsCaFile }}
+        - name: service-ca
+          configMap:
+            name: holmesgpt-api-service-ca
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Mi
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -251,3 +297,20 @@ spec:
       targetPort: 8080
   selector:
     app: holmesgpt-api
+{{- if and .Values.holmesgptApi.prometheus.enabled .Values.holmesgptApi.prometheus.ocpMonitoringRbac }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: holmesgpt-api-monitoring-view
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-monitoring-view
+subjects:
+  - kind: ServiceAccount
+    name: holmesgpt-api-sa
+    namespace: {{ .Release.Namespace }}
+{{- end }}

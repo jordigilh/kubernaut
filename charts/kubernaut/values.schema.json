@@ -569,7 +569,9 @@
             "prometheusUrl": { "type": "string" },
             "prometheusEnabled": { "type": "boolean" },
             "alertManagerUrl": { "type": "string" },
-            "alertManagerEnabled": { "type": "boolean" }
+            "alertManagerEnabled": { "type": "boolean" },
+            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS connections to Prometheus/AlertManager" },
+            "ocpMonitoringRbac": { "type": "boolean", "default": false, "description": "Create ClusterRoleBindings for OCP monitoring access" }
           }
         },
         "resources": { "$ref": "#/definitions/resources" },
@@ -608,6 +610,17 @@
           "type": "string",
           "default": "",
           "description": "Use a pre-existing ConfigMap for SDK config instead of chart-generated. When set, holmesgpt-sdk-config is not created. Takes priority over sdkConfigContent."
+        },
+        "prometheus": {
+          "type": "object",
+          "description": "Prometheus integration for LLM investigation context",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false, "description": "Enable the prometheus/metrics toolset in the SDK config" },
+            "url": { "type": "string", "default": "", "description": "Prometheus API base URL for PromQL queries during investigations" },
+            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS connections to Prometheus" },
+            "ocpMonitoringRbac": { "type": "boolean", "default": false, "description": "Create ClusterRoleBinding for OCP monitoring access and set IS_OPENSHIFT env" }
+          }
         },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },

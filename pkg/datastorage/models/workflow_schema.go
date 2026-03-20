@@ -506,11 +506,12 @@ func (l *WorkflowSchemaLabels) ValidateMandatoryLabels() error {
 		return NewSchemaValidationError("labels.severity", "severity is required (at least one value)")
 	}
 	// Validate each severity value is in the allowed set
-	allowedSeverities := map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
+	// DD-WORKFLOW-001 v2.8: "*" wildcard restored for severity (matches any level)
+	allowedSeverities := map[string]bool{"critical": true, "high": true, "medium": true, "low": true, "*": true}
 	for _, sev := range l.Severity {
 		if !allowedSeverities[sev] {
 			return NewSchemaValidationError("labels.severity",
-				fmt.Sprintf("invalid severity %q: must be one of critical, high, medium, low", sev))
+				fmt.Sprintf("invalid severity %q: must be one of critical, high, medium, low, * (wildcard)", sev))
 		}
 	}
 	if len(l.Environment) == 0 {

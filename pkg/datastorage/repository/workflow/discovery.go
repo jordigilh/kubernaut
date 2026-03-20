@@ -301,9 +301,10 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 
 	if filters.Priority != "" {
 		// DD-WORKFLOW-016 v2.1: Handle both scalar and array JSONB values
+		// Issue #464: array branch must also check wildcard '*' element
 		conditions = append(conditions, fmt.Sprintf(`(
 			CASE WHEN jsonb_typeof(labels->'priority') = 'array'
-				THEN labels->'priority' ? $%d
+				THEN labels->'priority' ? $%d OR labels->'priority' ? '*'
 				ELSE labels->>'priority' = $%d OR labels->>'priority' = '*'
 			END
 		)`, argIdx, argIdx))

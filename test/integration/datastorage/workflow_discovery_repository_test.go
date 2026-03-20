@@ -323,4 +323,202 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 			})
 		})
 	})
+
+	// ========================================
+	// ISSUE #464: WILDCARD MANDATORY LABEL MATCHING
+	// ========================================
+	//
+	// Authority: DD-WORKFLOW-001 v2.8, DD-WORKFLOW-016 v2.1
+	// Business Requirement: BR-HAPI-017-001
+	// Test Plan: docs/tests/464/TEST_PLAN.md
+	// Test IDs: IT-DS-464-001 through IT-DS-464-006
+	//
+	// These tests validate that workflows using wildcard ("*") values in
+	// mandatory labels are correctly matched by the three-step discovery
+	// protocol against real PostgreSQL JSONB operators.
+	// ========================================
+
+	createTestWorkflowWithArrayLabels := func(name, version, actionType string, severity []string, component string, environment []string, priority, status string) *models.RemediationWorkflow {
+		content := fmt.Sprintf("apiVersion: v1\nkind: Workflow\nname: %s", name)
+		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
+
+		labels := models.MandatoryLabels{
+			Severity:    severity,
+			Component:   component,
+			Environment: environment,
+			Priority:    priority,
+		}
+
+		wf := &models.RemediationWorkflow{
+			WorkflowName:  fmt.Sprintf("wf-disc-%s-%s", testID, name),
+			Version:       version,
+			SchemaVersion: "1.0",
+			Name:          name,
+			Description: models.StructuredDescription{
+				What:      fmt.Sprintf("Test workflow %s for wildcard discovery", name),
+				WhenToUse: "Testing wildcard label matching",
+			},
+			Content:         content,
+			ContentHash:     hash,
+			Labels:          labels,
+			ExecutionEngine: models.ExecutionEngineTekton,
+			Status:          status,
+			IsLatestVersion: true,
+			ActionType:      actionType,
+		}
+
+		err := workflowRepo.Create(ctx, wf)
+		Expect(err).ToNot(HaveOccurred(), "Workflow creation should succeed for %s", name)
+		Expect(wf.WorkflowID).ToNot(BeEmpty(), "Workflow ID should be generated")
+
+		return wf
+	}
+
+	Describe("ListActions - Wildcard Labels (#464)", func() {
+		// ========================================
+		// IT-DS-464-001: ListActions matches wildcard component + priority
+		// ========================================
+		Context("IT-DS-464-001: wildcard component + priority", func() {
+			It("should match a workflow with component='*' and priority='*' when queried with specific values", func() {
+				createTestWorkflowWithArrayLabels("wc-comp-pri", "v1.0.0", "ScaleReplicas",
+					[]string{"critical"}, "*", []string{"production"}, "*", "active")
+
+				filters := &models.WorkflowDiscoveryFilters{
+					Severity:    "critical",
+					Component:   "Pod",
+					Environment: "production",
+					Priority:    "P1",
+				}
+				result, totalCount, err := workflowRepo.ListActions(ctx, filters, 0, 10)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(totalCount).To(Equal(1), "IT-DS-464-001: wildcard component/priority workflow must be discovered")
+				Expect(result).To(HaveLen(1))
+				Expect(result[0].ActionType).To(Equal("ScaleReplicas"))
+				Expect(result[0].WorkflowCount).To(BeNumerically(">=", 1))
+			})
+		})
+
+		// ========================================
+		// IT-DS-464-002: ListActions matches all-wildcard workflow
+		// ========================================
+		Context("IT-DS-464-002: all-wildcard mandatory labels", func() {
+			It("should match a fully wildcarded workflow for any combination of filter values", func() {
+				createTestWorkflowWithArrayLabels("wc-all", "v1.0.0", "ScaleReplicas",
+					[]string{"*"}, "*", []string{"*"}, "*", "active")
+
+				filters := &models.WorkflowDiscoveryFilters{
+					Severity:    "high",
+					Component:   "Deployment",
+					Environment: "staging",
+					Priority:    "P3",
+				}
+				result, totalCount, err := workflowRepo.ListActions(ctx, filters, 0, 10)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(totalCount).To(Equal(1), "IT-DS-464-002: all-wildcard workflow must be discoverable with any filter values")
+				Expect(result).To(HaveLen(1))
+				Expect(result[0].ActionType).To(Equal("ScaleReplicas"))
+			})
+		})
+	})
+
+	// ========================================
+	// IT-DS-464-003: ListWorkflowsByActionType returns wildcard-labeled workflow
+	// ========================================
+	Describe("ListWorkflowsByActionType - Wildcard Labels (#464)", func() {
+		Context("IT-DS-464-003: wildcard labels in Step 2 discovery", func() {
+			It("should return a wildcard-labeled workflow when queried with specific filter values", func() {
+				createTestWorkflowWithArrayLabels("wc-step2", "v1.0.0", "ScaleReplicas",
+					[]string{"critical"}, "*", []string{"production"}, "*", "active")
+
+				filters := &models.WorkflowDiscoveryFilters{
+					Severity:    "critical",
+					Component:   "Pod",
+					Environment: "production",
+					Priority:    "P1",
+				}
+				results, totalCount, err := workflowRepo.ListWorkflowsByActionType(ctx, "ScaleReplicas", filters, 0, 10)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(totalCount).To(Equal(1), "IT-DS-464-003: wildcard workflow must appear in Step 2 results")
+				Expect(results).To(HaveLen(1))
+				Expect(results[0].ActionType).To(Equal("ScaleReplicas"))
+			})
+		})
+	})
+
+	// ========================================
+	// IT-DS-464-004: GetWorkflowWithContextFilters passes security gate for wildcard workflow
+	// ========================================
+	Describe("GetWorkflowWithContextFilters - Wildcard Labels (#464)", func() {
+		Context("IT-DS-464-004: security gate passes for wildcard workflow", func() {
+			It("should return the workflow (not nil) when wildcard labels match the query context", func() {
+				wf := createTestWorkflowWithArrayLabels("wc-gate", "v1.0.0", "ScaleReplicas",
+					[]string{"critical"}, "*", []string{"production"}, "*", "active")
+
+				filters := &models.WorkflowDiscoveryFilters{
+					Severity:    "critical",
+					Component:   "Pod",
+					Environment: "production",
+					Priority:    "P1",
+				}
+				result, err := workflowRepo.GetWorkflowWithContextFilters(ctx, wf.WorkflowID, filters)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).ToNot(BeNil(), "IT-DS-464-004: security gate must not reject wildcard-labeled workflow")
+				Expect(result.WorkflowID).To(Equal(wf.WorkflowID))
+			})
+		})
+	})
+
+	// ========================================
+	// IT-DS-464-005: Demo scenario — mixed wildcards + exact labels
+	// ========================================
+	Describe("Demo Scenario - Mixed Wildcards (#464)", func() {
+		Context("IT-DS-464-005: exact demo scenario from issue #464", func() {
+			It("should match a workflow with mixed wildcard and exact labels", func() {
+				createTestWorkflowWithArrayLabels("wc-demo", "v1.0.0", "IncreaseMemoryLimits",
+					[]string{"critical", "high"}, "*", []string{"production", "staging", "*"}, "*", "active")
+
+				filters := &models.WorkflowDiscoveryFilters{
+					Severity:    "critical",
+					Component:   "Pod",
+					Environment: "staging",
+					Priority:    "P1",
+				}
+				result, totalCount, err := workflowRepo.ListActions(ctx, filters, 0, 10)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(totalCount).To(Equal(1), "IT-DS-464-005: the demo scenario workflow must be discovered (was 0 in the bug)")
+				Expect(result).To(HaveLen(1))
+				Expect(result[0].ActionType).To(Equal("IncreaseMemoryLimits"))
+			})
+		})
+	})
+
+	// ========================================
+	// IT-DS-464-006: Severity wildcard in JSONB array matches via ? operator
+	// ========================================
+	Describe("Severity Wildcard JSONB Matching (#464)", func() {
+		Context("IT-DS-464-006: severity ['*'] matches via PostgreSQL JSONB ? operator", func() {
+			It("should match severity=['*'] when queried with severity=critical", func() {
+				createTestWorkflowWithArrayLabels("wc-sev", "v1.0.0", "RestartPod",
+					[]string{"*"}, "pod", []string{"production"}, "P0", "active")
+
+				filters := &models.WorkflowDiscoveryFilters{
+					Severity:    "critical",
+					Component:   "pod",
+					Environment: "production",
+					Priority:    "P0",
+				}
+				result, totalCount, err := workflowRepo.ListActions(ctx, filters, 0, 10)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(totalCount).To(Equal(1), "IT-DS-464-006: severity ['*'] must match query severity=critical via JSONB ? operator")
+				Expect(result).To(HaveLen(1))
+				Expect(result[0].ActionType).To(Equal("RestartPod"))
+			})
+		})
+	})
 })

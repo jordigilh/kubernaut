@@ -294,6 +294,14 @@ holmesgptApi:
   # this ConfigMap at /etc/holmesgpt/sdk/ instead.
   # Takes priority over sdkConfigContent and llm.provider/model.
   existingSdkConfigMap: ""
+  # -- Prometheus integration for LLM investigation context.
+  # When enabled, auto-configures the prometheus/metrics toolset in the SDK config.
+  # On OCP, also injects the service-serving CA and monitoring RBAC.
+  prometheus:
+    enabled: false
+    url: ""
+    tlsCaFile: ""
+    ocpMonitoringRbac: false
 
 # -- AuthWebhook admission controller
 authwebhook:
@@ -323,6 +331,7 @@ postgresql:
   #   upstream — postgres:16-alpine with POSTGRES_* env vars
   #   ocp      — Red Hat RHEL10 PostgreSQL with POSTGRESQL_* env vars,
   #              runs non-root (UID 26), compatible with restricted-v2 SCC
+  # Data directory: /var/lib/kubernaut-pg/data (image-agnostic, see #464)
   variant: upstream
   image: postgres:16-alpine  # OCP: registry.redhat.io/rhel10/postgresql-16
   auth:

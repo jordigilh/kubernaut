@@ -185,12 +185,12 @@ Return the env var name for the PostgreSQL database, by variant.
 {{- end }}
 
 {{/*
-Return the data directory mount path for the PostgreSQL variant.
-upstream: /var/lib/postgresql/data   ocp: /var/lib/pgsql/data
+Return the data directory mount path for the PostgreSQL volume.
+Issue #464: Use a single image-agnostic path so switching between upstream
+(postgres:16-alpine) and OCP (rhel10/postgresql-16) images does not change
+the data directory and silently lose data.
 */}}
-{{- define "kubernaut.postgresql.dataDir" -}}
-{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}/var/lib/pgsql/data{{- else -}}/var/lib/postgresql/data{{- end -}}
-{{- end }}
+{{- define "kubernaut.postgresql.dataDir" -}}/var/lib/kubernaut-pg/data{{- end -}}
 
 {{/*
 Return the Valkey data directory mount path.

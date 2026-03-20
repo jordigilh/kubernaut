@@ -67,6 +67,11 @@ class PromptConfig(TypedDict, total=False):
     confidence_threshold_human_review: float  # BR-HAPI-198: configurable via config.yaml
 
 
+class TLSConfig(TypedDict, total=False):
+    """TLS CA configuration for OCP service-serving certificates (Issue #452)."""
+    ca_file: str
+
+
 class AppConfig(TypedDict, total=False):
     """
     Main application configuration structure.
@@ -99,6 +104,7 @@ class AppConfig(TypedDict, total=False):
     context_api: ContextAPIConfig
     kubernetes: KubernetesConfig
     metrics: MetricsConfig
+    tls: TLSConfig
     audit: AuditConfig
     prompt: PromptConfig
 
