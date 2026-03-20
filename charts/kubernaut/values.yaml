@@ -295,7 +295,10 @@ holmesgptApi:
   # Takes priority over sdkConfigContent and llm.provider/model.
   existingSdkConfigMap: ""
   # -- Prometheus integration for LLM investigation context.
-  # When enabled, auto-configures the prometheus/metrics toolset in the SDK config.
+  # When enabled with llm.provider/model (quickstart), auto-configures the
+  # prometheus/metrics toolset in the SDK config.
+  # When using sdkConfigContent or existingSdkConfigMap, you must manually add
+  # the prometheus/metrics toolset to your SDK config (see NOTES.txt after install).
   # On OCP, also injects the service-serving CA and monitoring RBAC.
   prometheus:
     enabled: false
