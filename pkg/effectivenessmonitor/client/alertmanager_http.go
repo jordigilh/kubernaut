@@ -38,12 +38,12 @@ type alertManagerHTTPClient struct {
 }
 
 // NewAlertManagerHTTPClient creates an AlertManagerClient that connects to an AlertManager HTTP API.
-func NewAlertManagerHTTPClient(baseURL string, timeout time.Duration) AlertManagerClient {
+// The caller provides a pre-configured *http.Client, allowing TLS, bearer token,
+// and timeout settings to be composed externally (Issue #452).
+func NewAlertManagerHTTPClient(baseURL string, httpClient *http.Client) AlertManagerClient {
 	return &alertManagerHTTPClient{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
+		baseURL:    baseURL,
+		httpClient: httpClient,
 	}
 }
 

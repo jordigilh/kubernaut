@@ -78,6 +78,7 @@ var (
 	// Shared service URLs (NodePort - no port-forwarding needed)
 	// These are set in SynchronizedBeforeSuite and available to all tests
 	dataStorageURL string // http://localhost:28090 (NodePort 30081 mapped via Kind extraPortMappings per DD-TEST-001)
+	metricsURL     string // http://localhost:28091 (NodePort 30181 mapped via Kind extraPortMappings per DD-TEST-001 v3.1)
 	postgresURL    string // localhost:25433 (NodePort 30432 mapped via Kind extraPortMappings per DD-TEST-001)
 
 	// DSClient is the shared authenticated OpenAPI client for E2E tests (DD-AUTH-014)
@@ -149,7 +150,7 @@ var _ = SynchronizedBeforeSuite(
 
 		logger.Info("Creating Kind cluster with NodePort exposure...")
 		logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
-		logger.Info("  • NodePort exposure: Data Storage (30081→8081), PostgreSQL (30432→5432)")
+		logger.Info("  • NodePort exposure: Data Storage (30081→8080), Metrics (30181→9090), PostgreSQL (30432→5432)")
 		logger.Info("  • PostgreSQL 16 (V1.0 label-only, workflow catalog, SOC2 audit storage)")
 		logger.Info("  • Redis (DLQ fallback)")
 		logger.Info("  • Data Storage Docker image (build + load)")
@@ -191,7 +192,22 @@ var _ = SynchronizedBeforeSuite(
 			}
 			return nil
 		}, 120*time.Second, 2*time.Second).Should(Succeed(), "Data Storage NodePort did not become responsive")
-		logger.Info("✅ Data Storage is ready via NodePort (localhost:28090)")
+		logger.Info("✅ Data Storage API is ready via NodePort (localhost:28090)")
+
+		// Wait for dedicated metrics server to be responsive (Issue #283: separate port 9090)
+		logger.Info("⏳ Waiting for Data Storage metrics endpoint to be responsive...")
+		Eventually(func() error {
+			resp, err := tempClient.Get("http://localhost:28091/metrics") // Per DD-TEST-001 v3.1 (NodePort 30181 → host 28091)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("metrics endpoint returned status %d", resp.StatusCode)
+			}
+			return nil
+		}, 30*time.Second, 2*time.Second).Should(Succeed(), "Data Storage metrics endpoint did not become responsive")
+		logger.Info("✅ Data Storage metrics is ready via NodePort (localhost:28091)")
 
 		// DD-API-001 + DD-AUTH-014: Initialize OpenAPI client with ServiceAccount authentication
 		logger.Info("📋 DD-API-001 + DD-AUTH-014: Creating ServiceAccount for E2E tests...")
@@ -253,7 +269,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("Cluster Setup Complete - Broadcasting to all processes")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster configuration", "cluster", clusterName, "kubeconfig", kubeconfigPath)
-		logger.Info("Service URLs (per DD-TEST-001)", "dataStorage", "http://localhost:28090", "postgresql", "localhost:25433")
+		logger.Info("Service URLs (per DD-TEST-001)", "dataStorage", "http://localhost:28090", "metrics", "http://localhost:28091", "postgresql", "localhost:25433")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Return kubeconfig path and ServiceAccount token to all processes
@@ -292,6 +308,7 @@ var _ = SynchronizedBeforeSuite(
 
 		// Try NodePort first (works with Docker) - Per DD-TEST-001 lines 106-127
 		dataStorageURL = "http://localhost:28090"
+		metricsURL = "http://localhost:28091"
 		postgresURL = "postgresql://slm_user:test_password@localhost:25433/action_history?sslmode=disable"
 
 		// Test if NodePort is accessible (check PostgreSQL connection)
@@ -316,9 +333,10 @@ var _ = SynchronizedBeforeSuite(
 
 			// Start port-forward for PostgreSQL (background process)
 			// Use process-specific ports to avoid conflicts in parallel execution
-			// Per DD-TEST-001: Base ports 25433 (PostgreSQL), 28090 (DataStorage)
+			// Per DD-TEST-001: Base ports 25433 (PostgreSQL), 28090 (DataStorage), 28091 (Metrics)
 			pgLocalPort := 25433 + (processID * 100)
 			dsLocalPort := 28090 + (processID * 100)
+			metricsLocalPort := 28091 + (processID * 100)
 
 			// PostgreSQL port-forward
 			go func() {
@@ -332,21 +350,32 @@ var _ = SynchronizedBeforeSuite(
 				}
 			}()
 
-			// DataStorage port-forward
+			// DataStorage API port-forward
 			go func() {
 				cmd := exec.Command("kubectl", "port-forward",
 					"--kubeconfig", kubeconfigPath,
 					"-n", "datastorage-e2e",
-					"svc/datastorage",
+					"svc/data-storage-service",
 					fmt.Sprintf("%d:8080", dsLocalPort))
 				if err := cmd.Run(); err != nil {
 					logger.Error(err, "DataStorage port-forward failed", "process", processID)
 				}
 			}()
 
+			// DataStorage Metrics port-forward (Issue #283: dedicated metrics server on port 9090)
+			go func() {
+				cmd := exec.Command("kubectl", "port-forward",
+					"--kubeconfig", kubeconfigPath,
+					"-n", "datastorage-e2e",
+					"svc/data-storage-service",
+					fmt.Sprintf("%d:9090", metricsLocalPort))
+				if err := cmd.Run(); err != nil {
+					logger.Error(err, "DataStorage metrics port-forward failed", "process", processID)
+				}
+			}()
+
 			// Per TESTING_GUIDELINES.md: Use Eventually() to verify port-forward is ready
 			Eventually(func() bool {
-				// Test port is accessible
 				conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", dsLocalPort), 500*time.Millisecond)
 				if err != nil {
 					return false
@@ -357,6 +386,7 @@ var _ = SynchronizedBeforeSuite(
 
 			// Update URLs to use process-specific ports
 			dataStorageURL = fmt.Sprintf("http://localhost:%d", dsLocalPort)
+			metricsURL = fmt.Sprintf("http://localhost:%d", metricsLocalPort)
 			postgresURL = fmt.Sprintf("postgresql://slm_user:test_password@localhost:%d/action_history?sslmode=disable", pgLocalPort)
 
 			// Connect to PostgreSQL via port-forward
@@ -371,6 +401,7 @@ var _ = SynchronizedBeforeSuite(
 
 			logger.Info("✅ Port-forward established", "process", processID,
 				"dataStorageURL", dataStorageURL,
+				"metricsURL", metricsURL,
 				"postgresURL", postgresURL,
 				"testDB", testDB != nil)
 		}
@@ -378,6 +409,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("🔌 URLs configured",
 			"process", processID,
 			"dataStorageURL", dataStorageURL,
+			"metricsURL", metricsURL,
 			"postgresURL", postgresURL,
 			"method", map[bool]string{true: "NodePort", false: "port-forward"}[nodePortWorks])
 

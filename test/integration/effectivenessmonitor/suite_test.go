@@ -37,6 +37,7 @@ package effectivenessmonitor
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -346,8 +347,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("✅ EM metrics initialized and registered")
 
 	By("Wiring real HTTP clients to httptest mocks (Prometheus + AlertManager)")
-	promClient := emclient.NewPrometheusHTTPClient(mockProm.URL(), 5*time.Second)
-	amClient := emclient.NewAlertManagerHTTPClient(mockAM.URL(), 5*time.Second)
+	promClient := emclient.NewPrometheusHTTPClient(mockProm.URL(), &http.Client{Timeout: 5 * time.Second})
+	amClient := emclient.NewAlertManagerHTTPClient(mockAM.URL(), &http.Client{Timeout: 5 * time.Second})
 	GinkgoWriter.Printf("✅ Prometheus HTTP client → %s\n", mockProm.URL())
 	GinkgoWriter.Printf("✅ AlertManager HTTP client → %s\n", mockAM.URL())
 

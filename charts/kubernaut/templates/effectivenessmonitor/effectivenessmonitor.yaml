@@ -31,6 +31,26 @@ data:
       alertManagerUrl: {{ .Values.effectivenessmonitor.external.alertManagerUrl | default "http://kube-prometheus-stack-alertmanager.monitoring.svc:9093" }}
       alertManagerEnabled: {{ if hasKey .Values.effectivenessmonitor.external "alertManagerEnabled" }}{{ .Values.effectivenessmonitor.external.alertManagerEnabled }}{{ else }}true{{ end }}
       connectionTimeout: 10s
+      {{- if .Values.effectivenessmonitor.external.tlsCaFile }}
+      tlsCaFile: {{ .Values.effectivenessmonitor.external.tlsCaFile }}
+      {{- end }}
+{{- if .Values.effectivenessmonitor.external.tlsCaFile }}
+---
+# Issue #452: OCP service-serving CA injection.
+# On OCP, the service CA operator populates this ConfigMap with the
+# service-serving signer CA under the key "service-ca.crt".
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: effectivenessmonitor-service-ca
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: effectivenessmonitor
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+data: {}
+{{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -158,12 +178,57 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/effectivenessmonitor
+            {{- if .Values.effectivenessmonitor.external.tlsCaFile }}
+            - name: service-ca
+              mountPath: /etc/ssl/em
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.effectivenessmonitor.resources | nindent 12 }}
       volumes:
         - name: config
           configMap:
             name: effectivenessmonitor-config
+        {{- if .Values.effectivenessmonitor.external.tlsCaFile }}
+        - name: service-ca
+          configMap:
+            name: effectivenessmonitor-service-ca
+        {{- end }}
+{{- if .Values.effectivenessmonitor.external.ocpMonitoringRbac }}
+---
+# Issue #452: OCP monitoring RBAC.
+# Grants the EM service account read access to cluster monitoring
+# (Prometheus metrics and AlertManager alerts) on OCP.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: effectivenessmonitor-monitoring-view
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-monitoring-view
+subjects:
+  - kind: ServiceAccount
+    name: effectivenessmonitor-controller
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: effectivenessmonitor-alertmanager-view
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: monitoring-alertmanager-view
+subjects:
+  - kind: ServiceAccount
+    name: effectivenessmonitor-controller
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Service

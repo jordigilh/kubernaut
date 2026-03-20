@@ -191,6 +191,34 @@ var _ = Describe("EffectivenessMonitor Service Config - Unit Tests", Label("conf
 			Expect(cfg.Validate()).To(MatchError(ContainSubstring("datastorage.url")))
 		})
 
+		// ========================================
+		// TLS CA File Validation (Issue #452)
+		// ========================================
+		It("UT-EM-452-005: should reject config with non-existent tlsCaFile path", func() {
+			cfg := config.DefaultConfig()
+			cfg.External.TLSCaFile = "/does/not/exist/ca.crt"
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("tlsCaFile"))
+			Expect(err.Error()).To(ContainSubstring("/does/not/exist/ca.crt"))
+		})
+
+		It("UT-EM-452-006: should accept config with empty tlsCaFile (Kind default)", func() {
+			cfg := config.DefaultConfig()
+			cfg.External.TLSCaFile = ""
+			Expect(cfg.Validate()).To(Succeed())
+		})
+
+		It("UT-EM-452-007: should accept config with valid tlsCaFile path", func() {
+			tmpDir := GinkgoT().TempDir()
+			caFile := filepath.Join(tmpDir, "ca.crt")
+			Expect(os.WriteFile(caFile, []byte("placeholder"), 0644)).To(Succeed())
+
+			cfg := config.DefaultConfig()
+			cfg.External.TLSCaFile = caFile
+			Expect(cfg.Validate()).To(Succeed())
+		})
+
 		It("should reject config loaded from invalid YAML testdata", func() {
 			path := filepath.Join("config", "testdata", "invalid-config.yaml")
 			cfg, err := config.LoadFromFile(path)

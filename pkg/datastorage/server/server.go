@@ -31,7 +31,6 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/go-logr/logr"
 	"github.com/jmoiron/sqlx"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -411,11 +410,9 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/health/ready", s.handleReadiness)
 	r.Get("/health/live", s.handleLiveness)
 
-	// BR-STORAGE-019: Prometheus metrics endpoint (GAP-10)
-	// Exposes external-facing metrics (GitHub issue #294):
-	// - datastorage_audit_lag_seconds{service}
-	// - datastorage_write_duration_seconds{table}
-	r.Handle("/metrics", promhttp.Handler())
+	// BR-STORAGE-019: Prometheus metrics endpoint moved to dedicated server (Issue #283)
+	// Metrics are now served on a separate port (default :9090) for standardization.
+	// See cmd/datastorage/main.go for the dedicated metrics server.
 
 	// API v1 routes
 	s.logger.V(1).Info("Setting up API v1 routes",

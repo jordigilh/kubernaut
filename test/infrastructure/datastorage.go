@@ -1131,6 +1131,7 @@ data:
     server:
       port: 8080
       host: "0.0.0.0"
+      metricsPort: 9090
       readTimeout: 30s
       writeTimeout: 30s
     database:
@@ -1232,8 +1233,9 @@ spec:
     nodePort: %[2]d
     protocol: TCP
   - name: metrics
-    port: 9181
-    targetPort: 9181
+    port: 9090
+    targetPort: 9090
+    nodePort: 30181
     protocol: TCP
   selector:
     app: datastorage
@@ -1269,7 +1271,7 @@ spec:
         - name: http
           containerPort: 8080
         - name: metrics
-          containerPort: 9181
+          containerPort: 9090
         env:
         - name: CONFIG_PATH
           value: /etc/datastorage/config.yaml
@@ -1806,6 +1808,7 @@ func createConfigFiles(infra *DataStorageInfrastructure, cfg *DataStorageConfig,
 server:
   port: 8080
   host: "0.0.0.0"
+  metricsPort: 9090
   readTimeout: 30s
   writeTimeout: 30s
 database:

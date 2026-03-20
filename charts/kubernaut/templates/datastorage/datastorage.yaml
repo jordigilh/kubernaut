@@ -12,6 +12,7 @@ data:
     server:
       port: 8080
       host: "0.0.0.0"
+      metricsPort: 9090
       readTimeout: 30s
       writeTimeout: 30s
     database:
@@ -58,7 +59,7 @@ spec:
         app: datastorage
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "9181"
+        prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: data-storage-sa
@@ -72,13 +73,14 @@ spec:
           image: {{ .Values.postgresql.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           securityContext:
-            {{- if eq (include "kubernaut.postgresql.variant" .) "ocp" }}
             runAsNonRoot: true
-            {{- else }}
-            runAsNonRoot: false
+            {{- if ne (include "kubernaut.postgresql.variant" .) "ocp" }}
+            runAsUser: 70
             {{- end }}
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
             capabilities:
               drop: ["ALL"]
           resources:
@@ -99,7 +101,7 @@ spec:
             - name: http
               containerPort: 8080
             - name: metrics
-              containerPort: 9181
+              containerPort: 9090
           env:
             - name: CONFIG_PATH
               value: /etc/datastorage/config.yaml
@@ -166,8 +168,8 @@ spec:
       targetPort: 8080
       protocol: TCP
     - name: metrics
-      port: 9181
-      targetPort: 9181
+      port: 9090
+      targetPort: 9090
       protocol: TCP
   selector:
     app: datastorage

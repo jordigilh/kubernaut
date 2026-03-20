@@ -14,6 +14,9 @@ nodes:
   - containerPort: 30081  # Data Storage NodePort in cluster
     hostPort: 28090       # Port on host machine (localhost:28090) - Per DD-TEST-001
     protocol: TCP
+  - containerPort: 30181  # DataStorage Metrics NodePort in cluster (Issue #283, DD-TEST-001 v3.1)
+    hostPort: 28091       # Port on host machine (localhost:28091) - Per DD-TEST-001 v3.1
+    protocol: TCP
   - containerPort: 30432  # PostgreSQL NodePort in cluster
     hostPort: 25433       # Port on host machine (localhost:25433) - Per DD-TEST-001
     protocol: TCP

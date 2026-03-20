@@ -55,6 +55,7 @@ type Config struct {
 type ServerConfig struct {
 	Port         int    `yaml:"port"`
 	Host         string `yaml:"host"`
+	MetricsPort  int    `yaml:"metricsPort"`  // Dedicated Prometheus metrics port (default: 9090, Issue #283)
 	ReadTimeout  string `yaml:"readTimeout"`  // e.g., "30s"
 	WriteTimeout string `yaml:"writeTimeout"` // e.g., "30s"
 }
@@ -240,6 +241,14 @@ func (c *Config) Validate() error {
 	}
 	if c.Server.Port < 1024 || c.Server.Port > 65535 {
 		return fmt.Errorf("server port must be between 1024 and 65535, got: %d", c.Server.Port)
+	}
+
+	// Issue #283: Default metricsPort to 9090 (Kubernaut standard) when omitted
+	if c.Server.MetricsPort == 0 {
+		c.Server.MetricsPort = 9090
+	}
+	if c.Server.MetricsPort < 1024 || c.Server.MetricsPort > 65535 {
+		return fmt.Errorf("server metricsPort must be between 1024 and 65535, got: %d", c.Server.MetricsPort)
 	}
 
 	// Validate Redis configuration

@@ -624,7 +624,7 @@ metadata:
 data:
   config.yaml: |
     controller:
-      metricsAddr: ":9186"
+      metricsAddr: ":9090"
       healthProbeAddr: ":8081"
       leaderElection: false
       leaderElectionId: "notification.kubernaut.ai"
@@ -748,7 +748,7 @@ spec:
   - name: metrics
     protocol: TCP
     port: 9090
-    targetPort: 9186
+    targetPort: 9090
     nodePort: 30186
 ---
 apiVersion: apps/v1
@@ -796,7 +796,7 @@ spec:
         - "-config"
         - "$(CONFIG_PATH)"
         ports:
-        - containerPort: 9186
+        - containerPort: 9090
           name: metrics
           protocol: TCP
         - containerPort: 8081
