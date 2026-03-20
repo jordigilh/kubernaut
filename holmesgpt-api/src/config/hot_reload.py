@@ -20,6 +20,8 @@ from typing import Any, Callable, Dict, Optional
 
 import yaml
 
+from src.config.sdk_loader import merge_sdk_config
+
 # Try to import watchdog, fall back to polling if unavailable
 try:
     from watchdog.events import FileSystemEventHandler
@@ -286,7 +288,7 @@ class ConfigManager:
     automatically updated when the underlying ConfigMap changes.
 
     Usage:
-        config = ConfigManager("/etc/holmesgpt/config.yaml", logger)
+        config = ConfigManager("/etc/holmesgpt/config.yaml", logger, sdk_config_path="/etc/holmesgpt/sdk/sdk-config.yaml")
         config.start()
 
         # Access config (thread-safe)
@@ -318,18 +320,24 @@ class ConfigManager:
         self,
         path: str,
         logger: logging.Logger,
-        enable_hot_reload: bool = True
+        sdk_config_path: str = "",
+        enable_hot_reload: bool = True,
     ) -> None:
         """
         Initialize ConfigManager.
 
         Args:
-            path: Path to the config file
+            path: Path to the main config file
             logger: Logger for status and error messages
+            sdk_config_path: Path to the SDK config file (empty string = none).
+                When provided, SDK toolsets/llm/mcp_servers are merged into the
+                effective config so DD-HAPI-004 logs reflect the full runtime
+                configuration.
             enable_hot_reload: Whether to enable hot-reload (default: True)
         """
         self._path = path
         self._logger = logger
+        self._sdk_config_path = sdk_config_path
         self._enable_hot_reload = enable_hot_reload
 
         # Current config (protected by lock)
@@ -361,13 +369,22 @@ class ConfigManager:
             self._watcher = None
 
     def _on_config_change(self, content: str) -> None:
-        """Handle configuration change."""
+        """Handle configuration change.
+
+        Merges main config with defaults, then overlays SDK config (if
+        configured) so that the DD-HAPI-004 log accurately reports all
+        active toolsets.
+        """
         try:
             new_config = yaml.safe_load(content) or {}
 
+            merged = self._merge_config(self.DEFAULTS, new_config)
+
+            if self._sdk_config_path:
+                merged = self._merge_sdk(merged)
+
             with self._lock:
-                # Merge with defaults (new config takes precedence)
-                self._config = self._merge_config(self.DEFAULTS, new_config)
+                self._config = merged
 
             self._logger.info(
                 f"📝 DD-HAPI-004: Config applied - "
@@ -380,6 +397,17 @@ class ConfigManager:
                 f"❌ DD-HAPI-004: Invalid YAML, keeping previous config - error={e}"
             )
             raise  # Re-raise to increment error count in FileWatcher
+
+    def _merge_sdk(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Attempt to merge SDK config; return *config* unchanged on failure."""
+        try:
+            return merge_sdk_config(config, self._sdk_config_path)
+        except Exception as exc:
+            self._logger.warning(
+                f"⚠️ DD-HAPI-004: SDK config merge skipped - "
+                f"path={self._sdk_config_path}, error={exc}"
+            )
+            return config
 
     def _merge_config(
         self,
