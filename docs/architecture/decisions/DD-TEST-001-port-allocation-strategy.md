@@ -2,8 +2,8 @@
 
 **Status**: ✅ Approved
 **Date**: 2025-11-26
-**Last Updated**: 2026-03-02
-**Version**: 3.0
+**Last Updated**: 2026-03-19
+**Version**: 3.1
 **Author**: AI Assistant
 **Reviewers**: TBD
 **Related**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)
@@ -61,7 +61,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 |---------|-----------|----------|--------------|------------------|-------------|-----------------|---------------------|
 | **Gateway** | 8080 | 30080 | 9090 | 30090 | — | — | `test/infrastructure/kind-gateway-config.yaml` |
 | **Gateway → Data Storage** | 18091 | 30081 | — | — | — | — | `test/infrastructure/kind-gateway-config.yaml` (dependency) |
-| **Data Storage** | 8081 | 30081 | 9181 | 30181 | — | — | `test/infrastructure/kind-datastorage-config.yaml` |
+| **Data Storage** | 28090 | 30081 | 28091 | 30181 | — | — | `test/infrastructure/kind-datastorage-config.yaml` |
 | **Signal Processing** | 8082 | 30082 | 9182 | 30182 | — | — | `test/infrastructure/kind-signalprocessing-config.yaml` |
 | **Remediation Orchestrator** | 8083 | 30083 | 9183 | 30183 | — | — | `test/infrastructure/kind-remediationorchestrator-config.yaml` |
 | **RO → Data Storage** | 8090 | 30081 | — | — | — | — | `test/infrastructure/kind-remediationorchestrator-config.yaml` (dependency) |
@@ -347,8 +347,16 @@ Redis:
 
 Data Storage API:
   Host Port: 28090
+  NodePort: 30081
   Container Port: 8080
   Connection: http://127.0.0.1:28090
+
+Data Storage Metrics (Issue #283):
+  Host Port: 28091
+  NodePort: 30181
+  Container Port: 9090
+  Connection: http://127.0.0.1:28091/metrics
+  Purpose: Dedicated Prometheus metrics server (moved from API server in Issue #283)
 
 Embedding Service:
   Host Port: 28000
@@ -682,7 +690,7 @@ extraPortMappings:
 | Controller | Host Port | NodePort | Metrics Host | Metrics NodePort |
 |------------|-----------|----------|--------------|------------------|
 | **Gateway** | 8080 | 30080 | 9090 | 30090 |
-| **Data Storage** | 8081 | 30081 | 9181 | 30181 |
+| **Data Storage** | 28090 | 30081 | 28091 | 30181 |
 | **Signal Processing** | 8082 | 30082 | 9182 | 30182 |
 | **Remediation Orchestrator** | 8083 | 30083 | 9183 | 30183 |
 | **AIAnalysis** | 8084 | 30084 | 9184 | 30184 |
@@ -857,7 +865,7 @@ var _ = SynchronizedBeforeSuite(
 
 | Service | PostgreSQL | Redis | API | Dependencies |
 |---------|-----------|-------|-----|--------------|
-| **Data Storage** | 25433 | 26379 | 28090 | Embedding: 28000 |
+| **Data Storage** | 25433 | 26379 | 28090 | Metrics: 28091, Embedding: 28000 |
 | **Gateway** | N/A | 26380 | 28080 | Data Storage: 28091 |
 | **Effectiveness Monitor (CRD)** | 25434 | N/A | N/A | Data Storage: 28092 |
 | **Workflow Engine** | N/A | N/A | 28110 | Data Storage: 28093 |
@@ -916,6 +924,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 3.1 | 2026-03-19 | AI Assistant | **DATA STORAGE METRICS (Issue #283)**: Added dedicated metrics NodePort 30181 (host port 28091) for DataStorage E2E tests; Issue #283 moved `/metrics` from the API server (port 8080) to a dedicated Prometheus metrics server (port 9090); E2E test `17_metrics_api_test.go` updated to use `metricsURL` instead of `dataStorageURL + "/metrics"`; Kind config updated with new `extraPortMapping`; Service definition updated with `nodePort: 30181`; Corrected Data Storage host ports in NodePort Allocation Summary (28090/28091); Updated Port Collision Matrix |
 | 3.0 | 2026-03-02 | AI Assistant | **AWX (BR-WE-015)**: Added AWX NodePort 30095 for ansible engine E2E tests; AWX deployed in WE Kind cluster sharing existing PostgreSQL and Redis; Added AWX to WE dependencies, NodePort Summary, and Port Collision Matrix; AWX API accessed from host via `localhost:30095` for post-deployment configuration; OCI schema images `ansible-success` and `ansible-failure` added to `test/fixtures/workflows/`; FP E2E excluded (WE E2E covers ansible regression) |
 | 2.9 | 2026-02-26 | AI Assistant | **AUTHWEBHOOK E2E**: AuthWebhook NodePort changed from undocumented 30443 to 30099 per DD-TEST-001; Added AuthWebhook to Full Pipeline E2E table; AuthWebhook E2E Data Storage dependency uses standard NodePort 30081 (was 30099) to free 30099 for webhook |
 | 2.8 | 2026-02-09 | AI Assistant | **EFFECTIVENESS MONITOR**: Added EM to CRD Controllers NodePort table (30089/30189/8089); Added Redis 16383 for EM integration DS bootstrap (was N/A); Added Prometheus NodePort 30190 and AlertManager NodePort 30193 for Full Pipeline E2E; Updated EM detailed section to reflect CRD controller pattern (envtest + DS bootstrap + httptest mocks for Prom/AM); Updated Port Collision Matrix and NodePort Summary; Updated implementation checklist Phase 3 |

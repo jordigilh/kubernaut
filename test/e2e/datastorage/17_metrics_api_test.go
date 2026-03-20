@@ -44,7 +44,7 @@ import (
 var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func() {
 	// Local HTTP client for /metrics endpoint (Prometheus text format, not JSON/OpenAPI)
 	var HTTPClient = &http.Client{Timeout: 10 * time.Second}
-	// Use shared dataStorageURL and testDB from suite_test.go
+	// Use shared metricsURL (dedicated metrics server, Issue #283) and testDB from suite_test.go
 
 	BeforeEach(func() {
 		// Note: Metrics tests use unique timestamp-based correlation_ids
@@ -54,7 +54,8 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 	Context("Metrics Endpoint", func() {
 		It("should expose Prometheus metrics at /metrics", func() {
 			// Business Outcome: Prometheus can scrape metrics from /metrics endpoint
-			resp, err := HTTPClient.Get(dataStorageURL + "/metrics")
+			// Issue #283: Metrics served on dedicated server (port 9090), not the API server
+			resp, err := HTTPClient.Get(metricsURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -124,8 +125,8 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			_, err = postAuditEvent(ctx, client, eventRequest)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Get metrics
-			metricsResp, err := HTTPClient.Get(dataStorageURL + "/metrics")
+			// Get metrics from dedicated metrics server (Issue #283)
+			metricsResp, err := HTTPClient.Get(metricsURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = metricsResp.Body.Close() }()
 
@@ -180,8 +181,8 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			_, err = postAuditEvent(ctx, client, eventRequest)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Get metrics
-			metricsResp, err := HTTPClient.Get(dataStorageURL + "/metrics")
+			// Get metrics from dedicated metrics server (Issue #283)
+			metricsResp, err := HTTPClient.Get(metricsURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = metricsResp.Body.Close() }()
 

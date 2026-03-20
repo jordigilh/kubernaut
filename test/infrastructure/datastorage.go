@@ -1235,6 +1235,7 @@ spec:
   - name: metrics
     port: 9090
     targetPort: 9090
+    nodePort: 30181
     protocol: TCP
   selector:
     app: datastorage
