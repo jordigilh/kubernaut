@@ -137,7 +137,7 @@ func (a *PrometheusAdapter) GetSourceType() string {
 //
 // Processing steps:
 // 1. Unmarshal JSON payload
-// 2. Extract first alert (AlertManager groups multiple alerts, Gateway processes one at a time)
+// 2. Iterate alerts, skip stale ones where owner resolution fails (Issue #451)
 // 3. Determine resource (Pod, Deployment, Node) from labels
 // 4. Generate fingerprint: SHA256(namespace:ownerKind:ownerName) — alertname excluded (Issue #63)
 // 5. Merge alert labels with common labels
@@ -145,10 +145,8 @@ func (a *PrometheusAdapter) GetSourceType() string {
 //
 // Returns:
 // - *NormalizedSignal: Unified format for Gateway processing
-// - error: Parse errors (invalid JSON, missing required fields)
+// - error: Parse errors (invalid JSON, missing required fields, all alerts stale)
 func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.NormalizedSignal, error) {
-	// Validate payload size (prevent DoS attacks)
-	// Reasonable alert payloads are <100KB; anything >100KB is suspicious
 	const maxPayloadSize = 100 * 1024 // 100KB
 	if len(rawData) > maxPayloadSize {
 		return nil, fmt.Errorf("payload too large: %d bytes (max %d bytes)", len(rawData), maxPayloadSize)
@@ -156,7 +154,6 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 
 	var webhook AlertManagerWebhook
 	if err := json.Unmarshal(rawData, &webhook); err != nil {
-		// Return user-friendly error for malformed JSON
 		return nil, fmt.Errorf("malformed JSON payload: %w", err)
 	}
 
@@ -164,54 +161,51 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 		return nil, errors.New("no alerts in webhook payload")
 	}
 
-	// Process first alert (AlertManager may send multiple alerts in one webhook)
-	// Gateway processes one signal at a time for simpler deduplication and CRD creation
-	alert := webhook.Alerts[0]
+	// Issue #451: Iterate alerts and use the first one that resolves successfully.
+	// AlertManager groups multiple alerts by namespace; stale alerts (deleted pods
+	// from previous scenario runs) must be skipped rather than dropping the entire batch.
+	var lastErr error
+	for i, alert := range webhook.Alerts {
+		kind, name := extractTargetResource(alert.Labels, a.labelFilter)
+		resource := types.ResourceIdentifier{
+			Kind:      kind,
+			Name:      name,
+			Namespace: extractNamespace(alert.Labels),
+		}
 
-	// Extract resource from labels (Issue #191: filter monitoring metadata)
-	kind, name := extractTargetResource(alert.Labels, a.labelFilter)
-	resource := types.ResourceIdentifier{
-		Kind:      kind,
-		Name:      name,
-		Namespace: extractNamespace(alert.Labels),
+		fingerprint, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+		if err != nil {
+			lastErr = err
+			a.logger.Info("Skipping stale alert in batch",
+				"alert", i, "resource", resource.String(), "error", err)
+			continue
+		}
+
+		labels := MergeLabels(alert.Labels, webhook.CommonLabels)
+		annotations := MergeAnnotations(alert.Annotations, webhook.CommonAnnotations)
+
+		severity := alert.Labels["severity"]
+		if severity == "" {
+			severity = "unknown"
+		}
+
+		return &types.NormalizedSignal{
+			Fingerprint:  fingerprint,
+			SignalName:    alert.Labels["alertname"],
+			Severity:     severity,
+			Namespace:    resource.Namespace,
+			Resource:     resource,
+			Labels:       labels,
+			Annotations:  annotations,
+			FiringTime:   alert.StartsAt,
+			ReceivedTime: time.Now(),
+			SourceType:   SourceTypePrometheusAlert,
+			Source:       a.GetSourceService(),
+			RawPayload:   rawData,
+		}, nil
 	}
 
-	// Generate fingerprint for deduplication (Issue #63, #228)
-	// Delegates to shared types.ResolveFingerprint for cross-adapter consistency.
-	// Returns error when owner resolution fails (e.g., stale alert for deleted pod).
-	fingerprint, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
-	if err != nil {
-		return nil, fmt.Errorf("dropping signal: %w", err)
-	}
-
-	// Merge alert-specific labels with common labels
-	// Common labels are shared across all alerts in the webhook group
-	labels := MergeLabels(alert.Labels, webhook.CommonLabels)
-	annotations := MergeAnnotations(alert.Annotations, webhook.CommonAnnotations)
-
-	// BR-GATEWAY-111: Pass through severity without transformation
-	// Gateway acts as "dumb pipe" - extract and preserve, never transform
-	// Examples: "Sev1" → "Sev1", "P0" → "P0", "critical" → "critical"
-	// SignalProcessing Rego will normalize via BR-SP-105
-	severity := alert.Labels["severity"]
-	if severity == "" {
-		severity = "unknown" // Only default if missing entirely (not policy determination)
-	}
-
-	return &types.NormalizedSignal{
-		Fingerprint:  fingerprint,
-		SignalName:    alert.Labels["alertname"],
-		Severity:     severity, // BR-GATEWAY-111: Preserve external severity value
-		Namespace:    resource.Namespace,
-		Resource:     resource,
-		Labels:       labels,
-		Annotations:  annotations,
-		FiringTime:   alert.StartsAt,
-		ReceivedTime: time.Now(),
-		SourceType:   SourceTypePrometheusAlert, // ✅ Adapter constant (BR-GATEWAY-027)
-		Source:       a.GetSourceService(),      // BR-GATEWAY-027: Use monitoring system name, not adapter name
-		RawPayload:   rawData,
-	}, nil
+	return nil, fmt.Errorf("dropping signal: all %d alert(s) in batch failed owner resolution; last error: %w", len(webhook.Alerts), lastErr)
 }
 
 // Validate checks if the parsed signal meets minimum requirements
