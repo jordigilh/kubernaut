@@ -404,7 +404,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		// ========================================
 		Context("IT-DS-464-002: all-wildcard mandatory labels", func() {
 			It("should match a fully wildcarded workflow for any combination of filter values", func() {
-				createTestWorkflowWithArrayLabels("wc-all", "v1.0.0", "UniversalFix",
+				createTestWorkflowWithArrayLabels("wc-all", "v1.0.0", "ScaleReplicas",
 					[]string{"*"}, "*", []string{"*"}, "*", "active")
 
 				filters := &models.WorkflowDiscoveryFilters{
@@ -418,7 +418,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 				Expect(err).ToNot(HaveOccurred())
 				Expect(totalCount).To(Equal(1), "IT-DS-464-002: all-wildcard workflow must be discoverable with any filter values")
 				Expect(result).To(HaveLen(1))
-				Expect(result[0].ActionType).To(Equal("UniversalFix"))
+				Expect(result[0].ActionType).To(Equal("ScaleReplicas"))
 			})
 		})
 	})
