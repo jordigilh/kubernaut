@@ -83,10 +83,8 @@ spec:
                 secretKeyRef:
                   name: {{ include "kubernaut.postgresql.secretName" . }}
                   key: POSTGRES_DB
-            {{- if ne (include "kubernaut.postgresql.variant" .) "ocp" }}
             - name: PGDATA
               value: {{ include "kubernaut.postgresql.dataDir" . }}/pgdata
-            {{- end }}
           volumeMounts:
             - name: postgresql-data
               mountPath: {{ include "kubernaut.postgresql.dataDir" . }}
