@@ -363,7 +363,8 @@ def init_config_manager() -> Optional[ConfigManager]:
         logger.warning(f"Config file not found: {config_file}, hot-reload disabled")
         return None
 
-    sdk_config_file = os.getenv("SDK_CONFIG_FILE", "")
+    from src.config.sdk_loader import SDK_CONFIG_DEFAULT_PATH
+    sdk_config_file = os.getenv("SDK_CONFIG_FILE", SDK_CONFIG_DEFAULT_PATH)
     try:
         manager = ConfigManager(
             config_file, logger,
