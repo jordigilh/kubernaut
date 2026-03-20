@@ -618,8 +618,17 @@
           "properties": {
             "enabled": { "type": "boolean", "default": false, "description": "Enable the prometheus/metrics toolset in the SDK config" },
             "url": { "type": "string", "default": "", "description": "Prometheus API base URL for PromQL queries during investigations" },
-            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS connections to Prometheus" },
-            "ocpMonitoringRbac": { "type": "boolean", "default": false, "description": "Create ClusterRoleBinding for OCP monitoring access and set IS_OPENSHIFT env" }
+            "ocpMonitoringRbac": { "type": "boolean", "default": false, "description": "Create ClusterRoleBinding for OCP monitoring access and set IS_OPENSHIFT env. Implies TLS CA trust via auto-created service-CA ConfigMap." },
+            "tls": {
+              "type": "object",
+              "description": "TLS CA trust for HTTPS connections to Prometheus. On OCP with ocpMonitoringRbac, TLS is implied and auto-configured.",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "default": false, "description": "Enable TLS CA trust (set true for vanilla K8s with HTTPS Prometheus)" },
+                "caConfigMapName": { "type": "string", "default": "", "description": "ConfigMap containing the CA PEM certificate. Leave empty on OCP (auto-created)." },
+                "caConfigMapKey": { "type": "string", "default": "service-ca.crt", "description": "Key inside the ConfigMap holding the CA PEM." }
+              }
+            }
           }
         },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },

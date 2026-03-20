@@ -43,7 +43,6 @@ holmesgptApi:
   prometheus:
     enabled: true
     url: "https://prometheus-k8s.openshift-monitoring.svc:9091"
-    tlsCaFile: "/etc/ssl/hapi/service-ca.crt"
     ocpMonitoringRbac: true
 
 # TLS defaults to hook (self-signed). To use cert-manager instead, uncomment

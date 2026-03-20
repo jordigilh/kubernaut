@@ -300,8 +300,16 @@ holmesgptApi:
   prometheus:
     enabled: false
     url: ""
-    tlsCaFile: ""
     ocpMonitoringRbac: false
+    # -- TLS CA trust for HTTPS connections to Prometheus/Thanos.
+    # On OCP with ocpMonitoringRbac=true, TLS is implied and the chart
+    # auto-creates a ConfigMap with the service-serving CA (no config needed).
+    # On vanilla K8s, set tls.enabled=true and tls.caConfigMapName to a
+    # ConfigMap you manage that contains the CA PEM certificate.
+    tls:
+      enabled: false
+      caConfigMapName: ""          # your ConfigMap name (leave empty on OCP)
+      caConfigMapKey: "service-ca.crt"  # key inside the ConfigMap holding the PEM
 
 # -- AuthWebhook admission controller
 authwebhook:
