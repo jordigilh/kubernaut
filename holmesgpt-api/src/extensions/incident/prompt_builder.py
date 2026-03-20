@@ -524,6 +524,14 @@ Use available tools to investigate the {'anticipated incident' if signal_mode ==
 
 **Input Signal Provided**: {signal_name} (starting point for investigation)
 
+## Investigation Guardrails
+
+Before reaching ANY conclusion, you MUST comply with these guardrails:
+
+1. **Exhaustive Verification**: You MUST inspect ALL resources, components, and data sources mentioned in the signal description, annotations, and error messages. Partial evidence (e.g., one pod healthy out of many) does NOT rule out the problem. Do not stop investigating after the first piece of evidence that supports your hypothesis.
+
+2. **Contradicting Evidence Search**: After forming a hypothesis, you MUST explicitly search for evidence that CONTRADICTS it before finalizing your conclusion. If you believe the problem is resolved, look for signs it is still occurring. If you believe the alert is benign, look for signs of actual impact.
+
 ### Phase 2: {'Assess Prediction and Determine Prevention Strategy' if signal_mode == 'proactive' else 'Determine Root Cause (RCA)'}
 {'Based on your investigation findings, determine if the anticipated incident is likely to occur and identify preventive actions. "No action needed" is a valid outcome if the prediction is unlikely to materialize.' if signal_mode == 'proactive' else 'Based on your investigation findings, identify the root cause.\nIs the input signal the root cause, or just a symptom?'}
 
@@ -671,6 +679,8 @@ resolved
 - You identified the root cause but the problem persists
 - The issue requires manual intervention or a configuration change to fix
 
+**GUARDRAIL CHECK**: Before classifying as resolved, confirm you have satisfied BOTH Investigation Guardrails above: (1) inspected ALL mentioned resources, (2) searched for evidence the problem is still occurring.
+
 ### Outcome B: Investigation Inconclusive (Human Review Required)
 
 If your investigation **cannot determine** the root cause or current state:
@@ -746,6 +756,8 @@ false
 **DO NOT** use `actionable: false` if:
 - The issue is actively impacting workloads (use Outcome C — human review)
 - You are uncertain whether the condition is benign (use Outcome B — inconclusive)
+
+**GUARDRAIL CHECK**: Before classifying as not actionable, confirm you have satisfied BOTH Investigation Guardrails above: (1) inspected ALL mentioned resources, (2) searched for evidence of actual impact.
 
 ## RCA Severity Assessment
 
