@@ -195,6 +195,14 @@ workflowexecution:
   config:
     execution:
       cooldownPeriod: "1m"
+    # ansible:                            # Issue #478: AWX/AAP connectivity (optional)
+    #   apiURL: "https://awx.example.com" # required when ansible block is present
+    #   insecure: false
+    #   organizationID: 1
+    #   tokenSecretRef:
+    #     name: awx-token                 # Secret name containing AWX API token
+    #     key: token                      # Key within the Secret
+    #     namespace: ""                   # empty = release namespace
   resources:
     requests:
       cpu: 100m
@@ -295,13 +303,24 @@ holmesgptApi:
   # Takes priority over sdkConfigContent and llm.provider/model.
   existingSdkConfigMap: ""
   # -- Prometheus integration for LLM investigation context.
-  # When enabled, auto-configures the prometheus/metrics toolset in the SDK config.
+  # When enabled with llm.provider/model (quickstart), auto-configures the
+  # prometheus/metrics toolset in the SDK config.
+  # When using sdkConfigContent or existingSdkConfigMap, you must manually add
+  # the prometheus/metrics toolset to your SDK config (see NOTES.txt after install).
   # On OCP, also injects the service-serving CA and monitoring RBAC.
   prometheus:
     enabled: false
     url: ""
-    tlsCaFile: ""
     ocpMonitoringRbac: false
+    # -- TLS CA trust for HTTPS connections to Prometheus/Thanos.
+    # On OCP with ocpMonitoringRbac=true, TLS is implied and the chart
+    # auto-creates a ConfigMap with the service-serving CA (no config needed).
+    # On vanilla K8s, set tls.enabled=true and tls.caConfigMapName to a
+    # ConfigMap you manage that contains the CA PEM certificate.
+    tls:
+      enabled: false
+      caConfigMapName: ""          # your ConfigMap name (leave empty on OCP)
+      caConfigMapKey: "service-ca.crt"  # key inside the ConfigMap holding the PEM
 
 # -- AuthWebhook admission controller
 authwebhook:

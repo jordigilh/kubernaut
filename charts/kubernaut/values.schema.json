@@ -474,6 +474,28 @@
               "properties": {
                 "cooldownPeriod": { "type": "string", "default": "1m", "description": "Cooldown between workflow executions" }
               }
+            },
+            "ansible": {
+              "type": "object",
+              "description": "AWX/AAP connectivity for the ansible executor (issue #478). Omit to disable.",
+              "additionalProperties": false,
+              "required": ["apiURL"],
+              "properties": {
+                "apiURL": { "type": "string", "minLength": 1, "description": "AWX/AAP API base URL (required when ansible is enabled)" },
+                "insecure": { "type": "boolean", "default": false, "description": "Skip TLS verification for AWX API" },
+                "organizationID": { "type": "integer", "default": 1, "description": "AWX organization ID" },
+                "tokenSecretRef": {
+                  "type": "object",
+                  "description": "Reference to a K8s Secret containing the AWX API token",
+                  "additionalProperties": false,
+                  "required": ["name", "key"],
+                  "properties": {
+                    "name": { "type": "string", "minLength": 1, "description": "Secret name" },
+                    "key": { "type": "string", "default": "token", "description": "Key within the Secret" },
+                    "namespace": { "type": "string", "default": "", "description": "Namespace of the Secret (empty = release namespace)" }
+                  }
+                }
+              }
             }
           }
         },
@@ -618,8 +640,17 @@
           "properties": {
             "enabled": { "type": "boolean", "default": false, "description": "Enable the prometheus/metrics toolset in the SDK config" },
             "url": { "type": "string", "default": "", "description": "Prometheus API base URL for PromQL queries during investigations" },
-            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS connections to Prometheus" },
-            "ocpMonitoringRbac": { "type": "boolean", "default": false, "description": "Create ClusterRoleBinding for OCP monitoring access and set IS_OPENSHIFT env" }
+            "ocpMonitoringRbac": { "type": "boolean", "default": false, "description": "Create ClusterRoleBinding for OCP monitoring access and set IS_OPENSHIFT env. Implies TLS CA trust via auto-created service-CA ConfigMap." },
+            "tls": {
+              "type": "object",
+              "description": "TLS CA trust for HTTPS connections to Prometheus. On OCP with ocpMonitoringRbac, TLS is implied and auto-configured.",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "default": false, "description": "Enable TLS CA trust (set true for vanilla K8s with HTTPS Prometheus)" },
+                "caConfigMapName": { "type": "string", "default": "", "description": "ConfigMap containing the CA PEM certificate. Leave empty on OCP (auto-created)." },
+                "caConfigMapKey": { "type": "string", "default": "service-ca.crt", "description": "Key inside the ConfigMap holding the CA PEM." }
+              }
+            }
           }
         },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },

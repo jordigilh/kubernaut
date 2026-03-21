@@ -214,8 +214,8 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 	// UT-AW-418-003: DS failure causes requeue
 	// BR-WORKFLOW-006
 	// ========================================
-	Describe("UT-AW-418-003: DS failure causes requeue", func() {
-		It("should requeue after 5s and keep finalizer when DS disable fails", func() {
+	Describe("UT-AW-418-003: DS server error causes requeue", func() {
+		It("should requeue after 5s and keep finalizer when DS returns a server error", func() {
 			now := metav1.Now()
 			rw := buildRWForReconciler("rw-003", "default", "uuid-003", "RestartPod")
 			rw.DeletionTimestamp = &now
@@ -230,7 +230,7 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 
 			mockDS := &mockWorkflowCatalogClient{
 				disableFn: func(_ context.Context, _, _, _ string) error {
-					return fmt.Errorf("connection refused: DS unavailable")
+					return fmt.Errorf("data storage DisableWorkflow failed: server error: database timeout")
 				},
 			}
 
@@ -252,7 +252,56 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 			updated := &rwv1alpha1.RemediationWorkflow{}
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "rw-003", Namespace: "default"}, updated)).To(Succeed())
 			Expect(controllerutil.ContainsFinalizer(updated, authwebhook.RWFinalizerName)).To(BeTrue(),
-				"Finalizer should remain when DS disable fails")
+				"Finalizer should remain when DS disable fails with a server error")
+		})
+	})
+
+	// ========================================
+	// UT-AW-469-004: Connection error during deletion removes finalizer
+	// Issue #469 — DS may be unreachable during helm uninstall; don't block CRD deletion
+	// ========================================
+	Describe("UT-AW-469-004: Connection error during deletion proceeds with finalizer removal", func() {
+		It("should remove finalizer when DS returns connection refused", func() {
+			now := metav1.Now()
+			rw := buildRWForReconciler("rw-469-conn", "default", "uuid-469", "RestartPod")
+			rw.DeletionTimestamp = &now
+			rw.Finalizers = []string{authwebhook.RWFinalizerName}
+			scheme := newTestScheme()
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(rw).
+				WithStatusSubresource(&rwv1alpha1.RemediationWorkflow{}).
+				Build()
+
+			disableCalled := false
+			mockDS := &mockWorkflowCatalogClient{
+				disableFn: func(_ context.Context, _, _, _ string) error {
+					disableCalled = true
+					return fmt.Errorf("data storage DisableWorkflow failed: dial tcp 10.96.0.42:8080: connection refused")
+				},
+			}
+
+			reconciler := &authwebhook.RemediationWorkflowReconciler{
+				Client:   fakeClient,
+				Log:      ctrl.Log.WithName("test"),
+				DSClient: mockDS,
+			}
+
+			result, err := reconciler.Reconcile(ctx, ctrl.Request{
+				NamespacedName: types.NamespacedName{Name: "rw-469-conn", Namespace: "default"},
+			})
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero(),
+				"Connection errors during deletion should NOT cause requeue")
+			Expect(disableCalled).To(BeTrue(),
+				"DS DisableWorkflow should still be attempted")
+
+			updated := &rwv1alpha1.RemediationWorkflow{}
+			getErr := fakeClient.Get(ctx, types.NamespacedName{Name: "rw-469-conn", Namespace: "default"}, updated)
+			Expect(getErr).To(HaveOccurred(),
+				"RW should be deleted after finalizer removal (fake client GC)")
 		})
 	})
 

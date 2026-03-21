@@ -185,6 +185,20 @@ data:
         batchSize: 50
         flushInterval: 100ms
         maxRetries: 3
+    {{- if .Values.workflowexecution.config.ansible }}
+    ansible:
+      apiURL: {{ .Values.workflowexecution.config.ansible.apiURL | quote }}
+      insecure: {{ .Values.workflowexecution.config.ansible.insecure | default false }}
+      organizationID: {{ .Values.workflowexecution.config.ansible.organizationID | default 1 }}
+      {{- if .Values.workflowexecution.config.ansible.tokenSecretRef }}
+      tokenSecretRef:
+        name: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.name | quote }}
+        key: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.key | default "token" | quote }}
+        {{- if .Values.workflowexecution.config.ansible.tokenSecretRef.namespace }}
+        namespace: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.namespace | quote }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -273,3 +287,37 @@ spec:
       protocol: TCP
   selector:
     app: workflowexecution-controller
+{{- if .Values.workflowexecution.config.ansible }}
+---
+# Issue #478: Namespace-scoped secret access for the AWX token.
+# Least-privilege: only allows get on secrets in the release namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workflowexecution-awx-token-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: workflowexecution-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflowexecution-awx-token-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: workflowexecution-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: workflowexecution-awx-token-reader
+subjects:
+  - kind: ServiceAccount
+    name: workflowexecution-controller
+    namespace: {{ .Release.Namespace }}
+{{- end }}

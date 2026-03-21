@@ -433,3 +433,237 @@ class TestConfigManagerDisableHotReload:
         finally:
             os.unlink(config_path)
 
+
+class TestConfigManagerSDKMerge:
+    """Test ConfigManager SDK config merge for accurate toolset reporting.
+
+    Issue #470: HAPI startup reports toolsets=[] despite SDK config containing
+    prometheus/metrics toolset. ConfigManager must merge SDK config so
+    DD-HAPI-004 log accurately reports toolsets.
+
+    BR-HAPI-199: ConfigMap Hot-Reload
+    DD-HAPI-004: ConfigMap Hot-Reload Design
+    """
+
+    def test_log_reports_sdk_toolsets(self, caplog):
+        """
+        UT-HAPI-470-001: DD-HAPI-004 log reports SDK toolsets after startup.
+
+        Given: Main config has no toolsets, SDK config has prometheus/metrics
+        When: ConfigManager starts with both paths
+        Then: DD-HAPI-004 log contains 'prometheus/metrics'
+        """
+        from src.config.hot_reload import ConfigManager
+
+        main_content = "llm:\n  model: gpt-4\n"
+        sdk_content = (
+            "llm:\n  model: gpt-4\n"
+            "toolsets:\n  prometheus/metrics:\n    enabled: true\n"
+        )
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as mf:
+            mf.write(main_content)
+            main_path = mf.name
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as sf:
+            sf.write(sdk_content)
+            sdk_path = sf.name
+
+        try:
+            logger = logging.getLogger("test-470-001")
+            with caplog.at_level(logging.INFO, logger="test-470-001"):
+                manager = ConfigManager(
+                    main_path, logger,
+                    sdk_config_path=sdk_path,
+                    enable_hot_reload=False,
+                )
+                manager.start()
+
+            assert "prometheus/metrics" in caplog.text, (
+                f"UT-HAPI-470-001: DD-HAPI-004 log must report SDK toolsets, got: {caplog.text}"
+            )
+            manager.stop()
+        finally:
+            os.unlink(main_path)
+            os.unlink(sdk_path)
+
+    def test_get_toolsets_returns_merged(self):
+        """
+        UT-HAPI-470-002: get_toolsets() returns merged main + SDK toolsets.
+
+        Given: Main config has kubernetes/core, SDK config has prometheus/metrics
+        When: ConfigManager starts with both paths
+        Then: get_toolsets() returns both
+        """
+        from src.config.hot_reload import ConfigManager
+
+        main_content = (
+            "llm:\n  model: gpt-4\n"
+            "toolsets:\n  kubernetes/core: {}\n"
+        )
+        sdk_content = (
+            "llm:\n  model: gpt-4\n"
+            "toolsets:\n  prometheus/metrics:\n    enabled: true\n"
+        )
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as mf:
+            mf.write(main_content)
+            main_path = mf.name
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as sf:
+            sf.write(sdk_content)
+            sdk_path = sf.name
+
+        try:
+            logger = logging.getLogger("test-470-002")
+            manager = ConfigManager(
+                main_path, logger,
+                sdk_config_path=sdk_path,
+                enable_hot_reload=False,
+            )
+            manager.start()
+
+            toolsets = manager.get_toolsets()
+            assert "kubernetes/core" in toolsets, (
+                "UT-HAPI-470-002: main config toolset must be present"
+            )
+            assert "prometheus/metrics" in toolsets, (
+                "UT-HAPI-470-002: SDK config toolset must be present"
+            )
+            manager.stop()
+        finally:
+            os.unlink(main_path)
+            os.unlink(sdk_path)
+
+    def test_hot_reload_preserves_sdk_toolsets(self, wait_for):
+        """
+        UT-HAPI-470-003: Hot-reload of main config preserves SDK toolsets.
+
+        Given: ConfigManager running with merged SDK toolsets
+        When: Main config file is updated (llm.model changes)
+        Then: get_toolsets() still contains SDK toolsets after reload
+        """
+        from src.config.hot_reload import ConfigManager
+
+        main_content = "llm:\n  model: gpt-4\n"
+        sdk_content = (
+            "llm:\n  provider: openai\n"
+            "toolsets:\n  prometheus/metrics:\n    enabled: true\n"
+        )
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as mf:
+            mf.write(main_content)
+            main_path = mf.name
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as sf:
+            sf.write(sdk_content)
+            sdk_path = sf.name
+
+        try:
+            logger = logging.getLogger("test-470-003")
+            manager = ConfigManager(
+                main_path, logger,
+                sdk_config_path=sdk_path,
+            )
+            manager.start()
+
+            assert "prometheus/metrics" in manager.get_toolsets()
+
+            with open(main_path, 'w') as f:
+                f.write("llm:\n  model: claude-3-5-sonnet\n")
+
+            wait_for(
+                lambda: manager.get_llm_model() == "claude-3-5-sonnet",
+                timeout=5.0,
+                error_msg="Main config should reload",
+            )
+
+            toolsets = manager.get_toolsets()
+            assert "prometheus/metrics" in toolsets, (
+                "UT-HAPI-470-003: SDK toolsets must survive main config reload"
+            )
+            manager.stop()
+        finally:
+            os.unlink(main_path)
+            os.unlink(sdk_path)
+
+    def test_missing_sdk_path_graceful_degradation(self, caplog):
+        """
+        UT-HAPI-470-004: Missing/empty SDK path -- graceful degradation.
+
+        Given: Main config exists, SDK path is empty or non-existent file
+        When: ConfigManager starts
+        Then: No exception, main config toolsets only, warning logged
+        """
+        from src.config.hot_reload import ConfigManager
+
+        main_content = (
+            "llm:\n  model: gpt-4\n"
+            "toolsets:\n  kubernetes/core: {}\n"
+        )
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as mf:
+            mf.write(main_content)
+            main_path = mf.name
+
+        try:
+            logger = logging.getLogger("test-470-004")
+            with caplog.at_level(logging.WARNING, logger="test-470-004"):
+                manager = ConfigManager(
+                    main_path, logger,
+                    sdk_config_path="/nonexistent/sdk-config.yaml",
+                    enable_hot_reload=False,
+                )
+                manager.start()
+
+            assert "kubernetes/core" in manager.get_toolsets(), (
+                "UT-HAPI-470-004: main config toolsets must still be available"
+            )
+            assert "SDK config merge skipped" in caplog.text or "nonexistent" in caplog.text, (
+                f"UT-HAPI-470-004: warning must be logged for missing SDK, got: {caplog.text}"
+            )
+            manager.stop()
+        finally:
+            os.unlink(main_path)
+
+    def test_invalid_sdk_file_graceful_degradation(self, caplog):
+        """
+        UT-HAPI-470-005: Invalid SDK file -- graceful degradation.
+
+        Given: Main config exists, SDK file contains invalid YAML
+        When: ConfigManager starts
+        Then: No exception, main config toolsets only, warning logged
+        """
+        from src.config.hot_reload import ConfigManager
+
+        main_content = (
+            "llm:\n  model: gpt-4\n"
+            "toolsets:\n  kubernetes/core: {}\n"
+        )
+        sdk_content = "not: valid: yaml: {{"
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as mf:
+            mf.write(main_content)
+            main_path = mf.name
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as sf:
+            sf.write(sdk_content)
+            sdk_path = sf.name
+
+        try:
+            logger = logging.getLogger("test-470-005")
+            with caplog.at_level(logging.WARNING, logger="test-470-005"):
+                manager = ConfigManager(
+                    main_path, logger,
+                    sdk_config_path=sdk_path,
+                    enable_hot_reload=False,
+                )
+                manager.start()
+
+            assert "kubernetes/core" in manager.get_toolsets(), (
+                "UT-HAPI-470-005: main config toolsets must still be available"
+            )
+            assert "SDK config merge skipped" in caplog.text, (
+                f"UT-HAPI-470-005: warning must be logged for invalid SDK, got: {caplog.text}"
+            )
+            manager.stop()
+        finally:
+            os.unlink(main_path)
+            os.unlink(sdk_path)
+

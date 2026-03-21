@@ -436,7 +436,7 @@ var _ = Describe("MapAWXStatusToResult (BR-WE-015)", func() {
 // BR-WE-015: AnsibleExecutor dependencies.secrets injection
 // ========================================
 // Tests the canonical dependencies.secrets abstraction for the ansible engine:
-// K8s Secret -> dynamic AWX credential type -> ephemeral credential -> launch with creds -> annotation
+// K8s Secret -> dynamic AWX credential type -> ephemeral credential -> launch with creds -> status
 // ========================================
 
 var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", func() {
@@ -451,7 +451,11 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 		scheme := runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
-		return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+		return fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(objs...).
+			WithStatusSubresource(&workflowexecutionv1alpha1.WorkflowExecution{}).
+			Build()
 	}
 
 	BeforeEach(func() {
@@ -527,11 +531,10 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 			Expect(createdCredName).To(ContainSubstring("gitea-repo-creds"))
 			Expect(launchedWithCreds).To(ContainElement(42))
 
-			// Verify annotation was written to WFE
+			// Verify credential IDs were written to WFE status
 			var updatedWFE workflowexecutionv1alpha1.WorkflowExecution
 			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(wfe), &updatedWFE)).To(Succeed())
-			Expect(updatedWFE.Annotations).To(HaveKey("kubernaut.ai/awx-ephemeral-credentials"))
-			Expect(updatedWFE.Annotations["kubernaut.ai/awx-ephemeral-credentials"]).To(Equal("42"))
+			Expect(updatedWFE.Status.EphemeralCredentialIDs).To(Equal([]int{42}))
 		})
 
 		It("UT-WE-015-031: should reuse existing credential type when already registered", func() {
@@ -635,7 +638,7 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 	})
 
 	Context("Cleanup with ephemeral credentials", func() {
-		It("UT-WE-015-034: should delete ephemeral credentials from annotation before cancelling job", func() {
+		It("UT-WE-015-034: should delete ephemeral credentials from status before cancelling job", func() {
 			fakeClient = newFakeClient()
 			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
 
@@ -655,12 +658,10 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cleanup-with-creds",
 					Namespace: "default",
-					Annotations: map[string]string{
-						executor.AnnotationEphemeralCredentials: "42,55",
-					},
 				},
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionRef: &corev1.LocalObjectReference{Name: "awx-job-99"},
+					EphemeralCredentialIDs: []int{42, 55},
+					ExecutionRef:           &corev1.LocalObjectReference{Name: "awx-job-99"},
 				},
 			}
 
@@ -686,12 +687,10 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cleanup-partial-fail",
 					Namespace: "default",
-					Annotations: map[string]string{
-						executor.AnnotationEphemeralCredentials: "42,55",
-					},
 				},
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionRef: &corev1.LocalObjectReference{Name: "awx-job-100"},
+					EphemeralCredentialIDs: []int{42, 55},
+					ExecutionRef:           &corev1.LocalObjectReference{Name: "awx-job-100"},
 				},
 			}
 
@@ -699,7 +698,7 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 			Expect(err).ToNot(HaveOccurred(), "cleanup should succeed even if some credential deletions fail")
 		})
 
-		It("UT-WE-015-036: should skip credential cleanup when no annotation present", func() {
+		It("UT-WE-015-036: should skip credential cleanup when no credential IDs in status", func() {
 			fakeClient = newFakeClient()
 			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
 
@@ -747,7 +746,11 @@ var _ = Describe("AnsibleExecutor dependencies.configMaps injection (BR-WE-015)"
 		scheme := runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
-		return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+		return fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(objs...).
+			WithStatusSubresource(&workflowexecutionv1alpha1.WorkflowExecution{}).
+			Build()
 	}
 
 	BeforeEach(func() {
@@ -923,7 +926,11 @@ var _ = Describe("AnsibleExecutor credential merging (#365, BR-WE-015)", func() 
 		scheme := runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
-		return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+		return fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(objs...).
+			WithStatusSubresource(&workflowexecutionv1alpha1.WorkflowExecution{}).
+			Build()
 	}
 
 	BeforeEach(func() {

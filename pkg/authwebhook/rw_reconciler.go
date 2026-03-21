@@ -18,6 +18,9 @@ package authwebhook
 
 import (
 	"context"
+	"errors"
+	"net"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -96,10 +99,19 @@ func (r *RemediationWorkflowReconciler) reconcileDelete(ctx context.Context, log
 	workflowID := rw.Status.WorkflowID
 	if workflowID != "" {
 		if err := r.DSClient.DisableWorkflow(ctx, workflowID, "CRD deleted (finalizer)", ""); err != nil {
-			logger.Error(err, "DS DisableWorkflow failed, will retry", "workflowID", workflowID)
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			if isConnectionError(err) {
+				// Issue #469: During helm uninstall + reinstall, DS may be
+				// unreachable. Proceed with finalizer removal so CRDs don't
+				// get stuck in Terminating. The stale catalog entry (if any)
+				// will be overwritten by the seed job on next install.
+				logger.Error(err, "DS unreachable during deletion, proceeding with finalizer removal", "workflowID", workflowID)
+			} else {
+				logger.Error(err, "DS DisableWorkflow failed, will retry", "workflowID", workflowID)
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+		} else {
+			logger.Info("Workflow disabled in DS", "workflowID", workflowID)
 		}
-		logger.Info("Workflow disabled in DS", "workflowID", workflowID)
 	} else {
 		logger.Info("No WorkflowID in status — skipping DS disable")
 	}
@@ -159,4 +171,28 @@ func (r *RemediationWorkflowReconciler) SetupWithManager(mgr ctrl.Manager) error
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&rwv1alpha1.RemediationWorkflow{}).
 		Complete(r)
+}
+
+// isConnectionError returns true when err indicates that DataStorage is
+// unreachable (connection refused, DNS failure, timeout). These are expected
+// during helm uninstall when DS pods are being deleted concurrently.
+func isConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	var netErr *net.OpError
+	if errors.As(err, &netErr) {
+		return true
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "no such host") ||
+		strings.Contains(msg, "i/o timeout")
 }

@@ -214,6 +214,19 @@ subjects:
     name: effectivenessmonitor-controller
     namespace: {{ .Release.Namespace }}
 ---
+# Issue #471: Chart-managed ClusterRole for AlertManager API access on OCP.
+# EM calls GET /api/v2/alerts on the in-cluster AlertManager to assess
+# whether the remediation resolved the triggering alert.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernaut-alertmanager-view
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - nonResourceURLs: ["/api/v2/alerts", "/api/v2/alerts/*", "/-/ready"]
+    verbs: ["get"]
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -223,7 +236,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: monitoring-alertmanager-view
+  name: kubernaut-alertmanager-view
 subjects:
   - kind: ServiceAccount
     name: effectivenessmonitor-controller

@@ -56,6 +56,28 @@ Check seed job results:
   kubectl logs -l app=demo-content-seed -n {{ .Release.Namespace }}
 {{- end }}
 
+{{- if and .Values.holmesgptApi.prometheus.enabled (or .Values.holmesgptApi.existingSdkConfigMap .Values.holmesgptApi.sdkConfigContent) }}
+=== IMPORTANT: Prometheus Toolset Configuration ===
+
+You have enabled holmesgptApi.prometheus but are using a custom SDK config
+({{ if .Values.holmesgptApi.existingSdkConfigMap }}existingSdkConfigMap: {{ .Values.holmesgptApi.existingSdkConfigMap }}{{ else }}sdkConfigContent{{ end }}).
+
+The chart has created the RBAC bindings and CA volume mounts, but the
+prometheus/metrics toolset is NOT auto-injected into custom SDK configs.
+You must manually add it to your SDK configuration:
+
+  toolsets:
+    prometheus/metrics:
+      enabled: true
+      config:
+        prometheus_url: "{{ .Values.holmesgptApi.prometheus.url }}"
+{{- if include "kubernaut.hapi.tlsEnabled" . }}
+        prometheus_ssl_ca_file: "{{ include "kubernaut.hapi.tlsCaDir" . }}/{{ include "kubernaut.hapi.tlsCaKey" . }}"
+{{- end }}
+
+Without this, HAPI's LLM cannot query cluster metrics during investigations.
+
+{{- end }}
 === Monitoring ===
 
 Kubernaut is designed to work with kube-prometheus-stack.

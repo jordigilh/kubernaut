@@ -124,15 +124,15 @@ data:
       level: "INFO"
     data_storage:
       url: "{{ include "kubernaut.datastorage.url" . }}"
-{{- if and .Values.holmesgptApi.prometheus.enabled .Values.holmesgptApi.prometheus.tlsCaFile }}
+{{- if include "kubernaut.hapi.tlsEnabled" . }}
     tls:
-      ca_file: "{{ .Values.holmesgptApi.prometheus.tlsCaFile }}"
+      ca_file: "{{ include "kubernaut.hapi.tlsCaDir" . }}/{{ include "kubernaut.hapi.tlsCaKey" . }}"
 {{- end }}
     audit:
       flush_interval_seconds: 0.1
       buffer_size: 10000
       batch_size: 50
-{{- if and .Values.holmesgptApi.prometheus.enabled .Values.holmesgptApi.prometheus.tlsCaFile }}
+{{- if and .Values.holmesgptApi.prometheus.ocpMonitoringRbac (not (and .Values.holmesgptApi.prometheus.tls .Values.holmesgptApi.prometheus.tls.caConfigMapName)) }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -237,9 +237,9 @@ spec:
             - name: llm-credentials-file
               mountPath: /etc/holmesgpt/credentials
               readOnly: true
-            {{- if and .Values.holmesgptApi.prometheus.enabled .Values.holmesgptApi.prometheus.tlsCaFile }}
+            {{- if include "kubernaut.hapi.tlsEnabled" . }}
             - name: service-ca
-              mountPath: /etc/ssl/hapi
+              mountPath: {{ include "kubernaut.hapi.tlsCaDir" . }}
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -273,10 +273,10 @@ spec:
           secret:
             secretName: {{ .Values.holmesgptApi.llm.credentialsSecretName }}
             optional: true
-        {{- if and .Values.holmesgptApi.prometheus.enabled .Values.holmesgptApi.prometheus.tlsCaFile }}
+        {{- if include "kubernaut.hapi.tlsEnabled" . }}
         - name: service-ca
           configMap:
-            name: holmesgpt-api-service-ca
+            name: {{ include "kubernaut.hapi.tlsCaConfigMapName" . }}
         - name: tmp
           emptyDir:
             sizeLimit: 1Mi
