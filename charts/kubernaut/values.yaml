@@ -195,6 +195,14 @@ workflowexecution:
   config:
     execution:
       cooldownPeriod: "1m"
+    # ansible:                            # Issue #478: AWX/AAP connectivity (optional)
+    #   apiURL: "https://awx.example.com" # required when ansible block is present
+    #   insecure: false
+    #   organizationID: 1
+    #   tokenSecretRef:
+    #     name: awx-token                 # Secret name containing AWX API token
+    #     key: token                      # Key within the Secret
+    #     namespace: ""                   # empty = release namespace
   resources:
     requests:
       cpu: 100m

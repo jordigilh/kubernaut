@@ -55,6 +55,12 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- if .Values.workflowexecution.config.ansible }}
+  # Issue #478: Read AWX token secret for ansible executor registration
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  {{- end }}
   # ── Istio (#373) ────────────────────────────────────────────────────────
   - apiGroups: ["security.istio.io"]
     resources: ["authorizationpolicies", "peerauthentications", "requestauthentications"]
@@ -185,6 +191,20 @@ data:
         batchSize: 50
         flushInterval: 100ms
         maxRetries: 3
+    {{- if .Values.workflowexecution.config.ansible }}
+    ansible:
+      apiURL: {{ .Values.workflowexecution.config.ansible.apiURL | quote }}
+      insecure: {{ .Values.workflowexecution.config.ansible.insecure | default false }}
+      organizationID: {{ .Values.workflowexecution.config.ansible.organizationID | default 1 }}
+      {{- if .Values.workflowexecution.config.ansible.tokenSecretRef }}
+      tokenSecretRef:
+        name: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.name | quote }}
+        key: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.key | default "token" | quote }}
+        {{- if .Values.workflowexecution.config.ansible.tokenSecretRef.namespace }}
+        namespace: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.namespace | quote }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
