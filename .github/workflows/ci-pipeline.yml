@@ -15,7 +15,8 @@ name: CI Pipeline
 #   - Saves ~60% disk space and ~30% build time in CI
 #
 # Trigger Strategy (merge-gate pattern):
-#   - CI runs on ALL PRs (no paths-ignore filter)
+#   - CI skips draft PRs (types filter excludes draft events)
+#   - CI runs on ALL non-draft PRs (no paths-ignore filter)
 #   - detect-changes job uses dorny/paths-filter to detect code changes
 #   - Code PRs: all CI jobs run; merge-gate checks results
 #   - Docs-only PRs: all CI jobs skipped; merge-gate auto-passes
@@ -36,6 +37,7 @@ name: CI Pipeline
 on:
   pull_request:
     branches: [ main ]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [ main ]
   workflow_dispatch:
