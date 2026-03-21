@@ -253,6 +253,65 @@ var _ = Describe("UT-AT-300-012: DSClientAdapter ActionType operations", Label("
 	})
 
 	// ========================================
+	// UT-AW-469-001: DS 404 Not Found treated as success
+	// Issue #469 — empty DS after helm reinstall should not block AT deletion
+	// ========================================
+	Describe("UT-AW-469-001: DisableActionType maps 404 to Disabled=true", Label("unit", "actiontype", "ds-client"), func() {
+		It("should return Disabled=true when DS returns 404 Not Found", func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("PATCH /api/v1/action-types/{name}/disable", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusNotFound)
+				resp := map[string]interface{}{
+					"type":   "https://kubernaut.ai/errors/not-found",
+					"title":  "Action type not found",
+					"status": 404,
+					"detail": "The action type 'RestartPod' does not exist in the catalog",
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			})
+
+			adapter := buildAdapter(mux)
+
+			result, err := adapter.DisableActionType(ctx, "RestartPod", "admin@example.com")
+
+			Expect(err).ToNot(HaveOccurred(),
+				"404 should be treated as successful cleanup, not an error")
+			Expect(result.Disabled).To(BeTrue(),
+				"Not-found means the AT was already removed or never existed — treat as disabled")
+		})
+	})
+
+	// ========================================
+	// UT-AW-469-002: DS 500 still returns error (fail-closed)
+	// Issue #469 — server errors must remain errors to preserve catalog consistency
+	// ========================================
+	Describe("UT-AW-469-002: DisableActionType propagates 500 as error", Label("unit", "actiontype", "ds-client"), func() {
+		It("should return error when DS returns 500 Internal Server Error", func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("PATCH /api/v1/action-types/{name}/disable", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusInternalServerError)
+				resp := map[string]interface{}{
+					"type":   "https://kubernaut.ai/errors/internal",
+					"title":  "Internal server error",
+					"status": 500,
+					"detail": "Database connection pool exhausted",
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			})
+
+			adapter := buildAdapter(mux)
+
+			_, err := adapter.DisableActionType(ctx, "RestartPod", "admin@example.com")
+
+			Expect(err).To(HaveOccurred(),
+				"500 errors must propagate to preserve fail-closed behavior")
+			Expect(err.Error()).To(ContainSubstring("server error"))
+		})
+	})
+
+	// ========================================
 	// GetActiveWorkflowCount
 	// ========================================
 	Describe("GetActiveWorkflowCount", func() {

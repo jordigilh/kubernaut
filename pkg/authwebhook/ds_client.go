@@ -255,7 +255,10 @@ func (a *DSClientAdapter) DisableActionType(ctx context.Context, name string, di
 	case *ogenclient.DisableActionTypeBadRequest:
 		return nil, rfc7807Error(fmt.Sprintf("disable action type %q: bad request", name), (*ogenclient.RFC7807Problem)(v))
 	case *ogenclient.DisableActionTypeNotFound:
-		return nil, rfc7807Error(fmt.Sprintf("disable action type %q: not found", name), (*ogenclient.RFC7807Problem)(v))
+		// Issue #469: Treat "not found" as successful cleanup — the action type
+		// either never existed in DS or was already removed (e.g., empty DB after
+		// helm reinstall). This unblocks CRD deletion via the validating webhook.
+		return &ActionTypeDisableResult{Disabled: true}, nil
 	case *ogenclient.DisableActionTypeInternalServerError:
 		return nil, rfc7807Error(fmt.Sprintf("disable action type %q: server error", name), (*ogenclient.RFC7807Problem)(v))
 	default:
