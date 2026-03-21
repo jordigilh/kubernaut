@@ -59,10 +59,6 @@ type AWXJobStatus struct {
 }
 
 const (
-	// AnnotationEphemeralCredentials stores comma-separated AWX credential IDs
-	// created by injectDependencySecrets for cleanup after execution.
-	AnnotationEphemeralCredentials = "kubernaut.ai/awx-ephemeral-credentials"
-
 	credentialTypePrefix = "kubernaut-secret-"
 	credentialPrefix     = "kubernaut-ephemeral-"
 )
@@ -77,7 +73,7 @@ type AnsibleExecutor struct {
 }
 
 // NewAnsibleExecutor creates a new AnsibleExecutor with the given AWX client.
-// k8sClient is used to read K8s Secrets (dependencies.secrets) and write WFE annotations.
+// k8sClient is used to read K8s Secrets (dependencies.secrets) and update WFE status.
 // orgID is the AWX organization ID for ephemeral credential creation.
 func NewAnsibleExecutor(awxClient AWXClient, k8sClient client.Client, orgID int, logger logr.Logger) *AnsibleExecutor {
 	if orgID <= 0 {
@@ -161,8 +157,8 @@ func (a *AnsibleExecutor) Create(
 	}
 
 	if len(credentialIDs) > 0 {
-		if annotErr := a.storeCredentialAnnotation(ctx, wfe, credentialIDs); annotErr != nil {
-			a.Logger.Error(annotErr, "Failed to store ephemeral credential IDs in WFE annotation",
+		if storeErr := a.storeCredentialIDs(ctx, wfe, credentialIDs); storeErr != nil {
+			a.Logger.Error(storeErr, "Failed to store ephemeral credential IDs in WFE status",
 				"wfe", wfe.Name, "credentialIDs", credentialIDs)
 		}
 	}
@@ -294,24 +290,16 @@ func (a *AnsibleExecutor) ensureCredentialType(
 	return id, nil
 }
 
-// storeCredentialAnnotation writes the ephemeral credential IDs to the WFE's
-// annotations so Cleanup() can delete them later.
-func (a *AnsibleExecutor) storeCredentialAnnotation(
+// storeCredentialIDs persists ephemeral AWX credential IDs in the WFE status
+// subresource so Cleanup() can delete them after execution. Uses the status
+// subresource to avoid triggering spec immutability validation (ADR-001).
+func (a *AnsibleExecutor) storeCredentialIDs(
 	ctx context.Context,
 	wfe *workflowexecutionv1alpha1.WorkflowExecution,
 	credentialIDs []int,
 ) error {
-	parts := make([]string, len(credentialIDs))
-	for i, id := range credentialIDs {
-		parts[i] = strconv.Itoa(id)
-	}
-
-	if wfe.Annotations == nil {
-		wfe.Annotations = make(map[string]string)
-	}
-	wfe.Annotations[AnnotationEphemeralCredentials] = strings.Join(parts, ",")
-
-	return a.K8sClient.Update(ctx, wfe)
+	wfe.Status.EphemeralCredentialIDs = credentialIDs
+	return a.K8sClient.Status().Update(ctx, wfe)
 }
 
 // GetStatus polls AWX for the job status and maps it to an ExecutionResult.
@@ -367,36 +355,22 @@ func (a *AnsibleExecutor) Cleanup(
 	return nil
 }
 
-// cleanupEphemeralCredentials reads the annotation storing ephemeral AWX
-// credential IDs and deletes each one. Errors are logged but do not fail
-// the cleanup -- the AWX job cancellation must still proceed.
+// cleanupEphemeralCredentials reads ephemeral AWX credential IDs from the WFE
+// status and deletes each one. Errors are logged but do not fail the cleanup --
+// the AWX job cancellation must still proceed.
 func (a *AnsibleExecutor) cleanupEphemeralCredentials(
 	ctx context.Context,
 	wfe *workflowexecutionv1alpha1.WorkflowExecution,
 ) {
-	if wfe.Annotations == nil {
+	if len(wfe.Status.EphemeralCredentialIDs) == 0 {
 		return
 	}
 
-	annotation, ok := wfe.Annotations[AnnotationEphemeralCredentials]
-	if !ok || annotation == "" {
-		return
-	}
-
-	parts := strings.Split(annotation, ",")
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		credID, err := strconv.Atoi(part)
-		if err != nil {
-			a.Logger.Error(err, "Invalid credential ID in annotation", "value", part)
-			continue
-		}
-
+	for _, credID := range wfe.Status.EphemeralCredentialIDs {
 		if err := a.AWXClient.DeleteCredential(ctx, credID); err != nil {
 			a.Logger.Error(err, "Failed to delete ephemeral AWX credential", "credentialID", credID)
 			continue
 		}
-
 		a.Logger.Info("Deleted ephemeral AWX credential", "credentialID", credID)
 	}
 }

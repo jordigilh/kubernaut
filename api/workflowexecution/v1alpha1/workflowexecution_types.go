@@ -300,6 +300,12 @@ type WorkflowExecutionStatus struct {
 	// +optional
 	BlockClearance *BlockClearanceDetails `json:"blockClearance,omitempty"`
 
+	// EphemeralCredentialIDs stores AWX credential IDs created by the ansible
+	// executor for cleanup after execution (BR-WE-015). Written via the status
+	// subresource to avoid violating spec immutability (ADR-001).
+	// +optional
+	EphemeralCredentialIDs []int `json:"ephemeralCredentialIDs,omitempty"`
+
 	// Conditions provide detailed status information
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

@@ -310,6 +310,14 @@ spec:
               duration:
                 description: Duration of the execution
                 type: string
+              ephemeralCredentialIDs:
+                description: |-
+                  EphemeralCredentialIDs stores AWX credential IDs created by the ansible
+                  executor for cleanup after execution (BR-WE-015). Written via the status
+                  subresource to avoid violating spec immutability (ADR-001).
+                items:
+                  type: integer
+                type: array
               executionRef:
                 description: ExecutionRef references the created execution resource
                   (PipelineRun or Job)

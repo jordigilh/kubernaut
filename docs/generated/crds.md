@@ -1568,6 +1568,7 @@ _Appears in:_
 | `failureReason`| _string_| FailureReason explains why execution failed (if applicable)<br />DEPRECATED: Use FailureDetails for structured failure information|
 | `failureDetails`| _[FailureDetails](#failuredetails)_| FailureDetails contains structured failure information<br />Populated when Phase=Failed|
 | `blockClearance`| _[BlockClearanceDetails](#blockclearancedetails)_| BlockClearance tracks the clearing of PreviousExecutionFailed blocks<br />When set, allows new executions despite previous execution failure<br />Preserves audit trail of WHO cleared the block and WHY|
+| `ephemeralCredentialIDs`| _integer array_| EphemeralCredentialIDs stores AWX credential IDs created by the ansible<br />executor for cleanup after execution . Written via the status<br />subresource to avoid violating spec immutability .|
 | `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions provide detailed status information|
 
 
