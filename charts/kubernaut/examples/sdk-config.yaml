@@ -10,9 +10,11 @@
 
 # -- LLM provider configuration (required)
 # Credentials are sourced from the K8s Secret referenced by holmesgptApi.llm.credentialsSecretName
+# Provider names must use the litellm canonical form (e.g., "vertex_ai" not "vertexai").
+# See: https://docs.litellm.ai/docs/providers
 llm:
-  provider: ""       # "openai", "azure", "vertexai", "bedrock", etc.
-  model: ""          # e.g., "gpt-4o", "gemini-2.0-flash"
+  provider: ""       # "openai", "azure", "vertex_ai", "bedrock", etc.
+  model: ""          # e.g., "gpt-4o", "vertex_ai/claude-sonnet-4"
   endpoint: ""       # API endpoint (required for Azure, optional for others)
   # GCP Vertex AI specific:
   # gcp_project_id: ""
