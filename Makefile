@@ -95,6 +95,9 @@ help: ## Display this help
 .PHONY: manifests
 manifests: controller-gen sync-version ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./api/..." paths="./internal/controller/..." output:crd:artifacts:config=config/crd/bases
+	@echo "📋 Syncing CRDs to Helm chart..."
+	@cp -f config/crd/bases/*.yaml charts/kubernaut/crds/
+	@echo "✅ charts/kubernaut/crds/ updated"
 
 .PHONY: sync-version
 sync-version: ## Propagate VERSION file to Chart.yaml, values, Dockerfiles, and docs
