@@ -55,12 +55,6 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  {{- if .Values.workflowexecution.config.ansible }}
-  # Issue #478: Read AWX token secret for ansible executor registration
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["get"]
-  {{- end }}
   # ── Istio (#373) ────────────────────────────────────────────────────────
   - apiGroups: ["security.istio.io"]
     resources: ["authorizationpolicies", "peerauthentications", "requestauthentications"]
@@ -293,3 +287,37 @@ spec:
       protocol: TCP
   selector:
     app: workflowexecution-controller
+{{- if .Values.workflowexecution.config.ansible }}
+---
+# Issue #478: Namespace-scoped secret access for the AWX token.
+# Least-privilege: only allows get on secrets in the release namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workflowexecution-awx-token-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: workflowexecution-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflowexecution-awx-token-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: workflowexecution-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: workflowexecution-awx-token-reader
+subjects:
+  - kind: ServiceAccount
+    name: workflowexecution-controller
+    namespace: {{ .Release.Namespace }}
+{{- end }}

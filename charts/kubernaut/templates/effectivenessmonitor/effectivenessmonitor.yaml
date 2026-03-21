@@ -224,10 +224,7 @@ metadata:
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
 rules:
-  - apiGroups: ["monitoring.coreos.com"]
-    resources: ["alertmanagers", "alertmanagers/api"]
-    verbs: ["get", "list", "watch"]
-  - nonResourceURLs: ["/api/v2/alerts", "/api/v2/alerts/*"]
+  - nonResourceURLs: ["/api/v2/alerts", "/api/v2/alerts/*", "/-/ready"]
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

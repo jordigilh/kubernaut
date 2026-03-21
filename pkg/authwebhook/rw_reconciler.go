@@ -180,6 +180,9 @@ func isConnectionError(err error) bool {
 	if err == nil {
 		return false
 	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
 	var netErr *net.OpError
 	if errors.As(err, &netErr) {
 		return true

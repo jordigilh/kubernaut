@@ -4,7 +4,7 @@
 **Version**: 1.0
 **Created**: 2026-03-21
 **Author**: AI Assistant
-**Status**: Ready for Execution
+**Status**: Complete
 **Branch**: `development/v1.2`
 
 **Authority**:
@@ -71,12 +71,12 @@ Tests validate that operators can successfully perform `helm uninstall` + `helm 
 
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |-------|-------------|----------|------|---------|--------|
-| BR-WORKFLOW-007 | AT DELETE allows when DS returns not-found | P0 | Unit | UT-AW-469-001 | Pending |
-| BR-WORKFLOW-007 | AT DELETE still denied on DS server errors | P1 | Unit | UT-AW-469-002 | Pending |
-| BR-WORKFLOW-007 | AT DELETE audit emitted for not-found allow | P2 | Unit | UT-AW-469-003 | Pending |
-| #418 | RW finalizer removes on DS connection error | P0 | Unit | UT-AW-469-004 | Pending |
-| #418 | RW finalizer removes on DS not-found (404) | P0 | Unit | UT-AW-469-005 | Pending |
-| #418 | RW finalizer still retries on DS server error (500) | P1 | Unit | UT-AW-469-006 | Pending |
+| BR-WORKFLOW-007 | AT DELETE allows when DS returns not-found | P0 | Unit | UT-AW-469-001 | Pass |
+| BR-WORKFLOW-007 | AT DELETE still denied on DS server errors | P1 | Unit | UT-AW-469-002 | Pass |
+| BR-WORKFLOW-007 | AT DELETE audit emitted for not-found allow | P2 | Unit | UT-AW-469-003 | Pass (covered by UT-AT-300-006) |
+| #418 | RW finalizer removes on DS connection error | P0 | Unit | UT-AW-469-004 | Pass |
+| #418 | RW finalizer removes on DS not-found (404) | P0 | Unit | UT-AW-469-005 | Pass (covered by UT-AW-418-002) |
+| #418 | RW finalizer still retries on DS server error (500) | P1 | Unit | UT-AW-469-006 | Pass (covered by UT-AW-418-003) |
 
 ---
 
@@ -88,12 +88,12 @@ Tests validate that operators can successfully perform `helm uninstall` + `helm 
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-AW-469-001` | ActionType DELETE succeeds when DS has no record of the action type | Pending |
-| `UT-AW-469-002` | ActionType DELETE remains fail-closed when DS returns a server error | Pending |
-| `UT-AW-469-003` | ActionType DELETE emits an allowed audit event when DS returns not-found | Pending |
-| `UT-AW-469-004` | RW finalizer completes deletion when DS is unreachable (connection refused) | Pending |
-| `UT-AW-469-005` | RW finalizer completes deletion when DS returns 404 for the workflow | Pending |
-| `UT-AW-469-006` | RW finalizer retries when DS returns 500 (preserves catalog consistency) | Pending |
+| `UT-AW-469-001` | ActionType DELETE succeeds when DS has no record of the action type | Pass |
+| `UT-AW-469-002` | ActionType DELETE remains fail-closed when DS returns a server error | Pass |
+| `UT-AW-469-003` | ActionType DELETE emits an allowed audit event when DS returns not-found | Pass (covered by UT-AT-300-006) |
+| `UT-AW-469-004` | RW finalizer completes deletion when DS is unreachable (connection refused) | Pass |
+| `UT-AW-469-005` | RW finalizer completes deletion when DS returns 404 for the workflow | Pass (covered by UT-AW-418-002) |
+| `UT-AW-469-006` | RW finalizer retries when DS returns 500 (preserves catalog consistency) | Pass (covered by UT-AW-418-003) |
 
 ### Tier Skip Rationale
 
@@ -220,3 +220,4 @@ go test ./test/unit/authwebhook/... -v -count=1
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-21 | Initial test plan |
+| 1.1 | 2026-03-21 | Updated statuses: 001/002/004 Pass; 003/005/006 covered by existing tests |

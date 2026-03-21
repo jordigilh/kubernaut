@@ -479,16 +479,18 @@
               "type": "object",
               "description": "AWX/AAP connectivity for the ansible executor (issue #478). Omit to disable.",
               "additionalProperties": false,
+              "required": ["apiURL"],
               "properties": {
-                "apiURL": { "type": "string", "description": "AWX/AAP API base URL (required when ansible is enabled)" },
+                "apiURL": { "type": "string", "minLength": 1, "description": "AWX/AAP API base URL (required when ansible is enabled)" },
                 "insecure": { "type": "boolean", "default": false, "description": "Skip TLS verification for AWX API" },
                 "organizationID": { "type": "integer", "default": 1, "description": "AWX organization ID" },
                 "tokenSecretRef": {
                   "type": "object",
                   "description": "Reference to a K8s Secret containing the AWX API token",
                   "additionalProperties": false,
+                  "required": ["name", "key"],
                   "properties": {
-                    "name": { "type": "string", "description": "Secret name" },
+                    "name": { "type": "string", "minLength": 1, "description": "Secret name" },
                     "key": { "type": "string", "default": "token", "description": "Key within the Secret" },
                     "namespace": { "type": "string", "default": "", "description": "Namespace of the Secret (empty = release namespace)" }
                   }
