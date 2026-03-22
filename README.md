@@ -46,19 +46,7 @@ Kubernaut bridges that gap. It uses an LLM to investigate the actual root cause 
 
 ## Installation
 
-```bash
-helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
-  --namespace kubernaut-system --create-namespace
-```
-
-> **Development**: to install from a local checkout instead, run:
-> ```bash
-> helm install kubernaut ./charts/kubernaut \
->   --namespace kubernaut-system --create-namespace \
->   -f charts/kubernaut/values.yaml
-> ```
-
-See the [Installation Guide](https://jordigilh.github.io/kubernaut-docs/latest/getting-started/installation/) for prerequisites, configuration options, and production deployment.
+See the [Installation Guide](https://jordigilh.github.io/kubernaut-docs/latest/getting-started/installation/) for prerequisites, configuration, and deployment instructions.
 
 ---
 
