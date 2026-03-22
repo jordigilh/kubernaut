@@ -1,524 +1,359 @@
 # Kubernaut Developer Guide
 
-**Version**: 1.0
-**Date**: 2025-11-19
+**Version**: 2.0
+**Date**: 2026-03-21
 **Status**: Active
 
 ---
 
-## 🎯 **Purpose**
+## Purpose
 
-This guide provides a complete developer onboarding path for contributing to Kubernaut, whether you're:
-- **Adding a new service** to the platform
-- **Extending an existing service** with new features
-- **Contributing bug fixes** or improvements
+This guide is the single entry point for anyone contributing to Kubernaut — whether you are adding a service, extending an existing one, fixing a bug, or reviewing a pull request. It covers environment setup, repository layout, build and test commands, deployment options, and the development methodology the project follows.
 
----
-
-## 📚 **Quick Navigation**
-
-| I want to... | Go to... |
-|--------------|----------|
-| **Add a new service** | [New Service Implementation](#-implementing-a-new-service) |
-| **Extend existing service** | [Feature Extension](#-extending-existing-services) |
-| **Understand architecture** | [Architecture Overview](#-architecture-overview) |
-| **Set up development environment** | [Development Setup](#-development-environment-setup) |
-| **Run tests** | [Testing Guide](#-testing) |
-| **Deploy services** | [Deployment](#-deployment) |
+**Audience**: Internal team members and external open-source contributors.
 
 ---
 
-## 🏗️ **Architecture Overview**
-
-### **System Architecture**
-
-Kubernaut is a microservices platform with 8 V1.0 services:
-- **4 CRD Controllers**: Signal Processing, AI Analysis, Remediation Execution, Remediation Orchestrator
-- **4 Stateless Services**: Gateway, Data Storage, HolmesGPT API, Notification
-
-**Deferred Services**:
-- **Dynamic Toolset** → V2.0 (DD-016: Static config in V1.x)
-- **Effectiveness Monitor** → V1.1 (DD-017: Requires 8+ weeks of remediation data)
-
-**Communication**: All services communicate via **Kubernetes Custom Resources (CRDs)** for event-driven, resilient workflows.
-
-### **Essential Architecture Documents**
-
-Read these in order:
-
-1. **[Kubernaut CRD Architecture](architecture/KUBERNAUT_CRD_ARCHITECTURE.md)** ⭐ **START HERE**
-   - Complete system overview
-   - Service specifications
-   - Code examples
-
-2. **[V1 Source of Truth Hierarchy](V1_SOURCE_OF_TRUTH_HIERARCHY.md)**
-   - Authoritative documentation structure
-   - 3-tier hierarchy: Architecture → Services → Design
-
-3. **[Multi-CRD Reconciliation Architecture](architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)**
-   - CRD communication patterns
-   - Watch-based coordination
-   - Owner references & cascade deletion
-
-4. **[CRD Schemas](architecture/CRD_SCHEMAS.md)**
-   - Authoritative CRD field definitions
-   - Schema validation rules
-
----
-
-## 🛠️ **Development Environment Setup**
-
-### **Prerequisites**
+## Prerequisites
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| **Go** | 1.23.9+ | Service development |
-| **Kubernetes** | 1.28+ | Runtime platform (Kind recommended) |
-| **kubectl** | 1.28+ | Cluster management |
-| **Redis** | 7.0+ | Gateway service (deduplication, storm detection) |
-| **PostgreSQL** | 15+ | Data persistence |
-| **Podman/Docker** | Latest | Container builds |
-| **Ginkgo** | v2+ | BDD testing framework |
+| **Go** | 1.25.6+ | Service development (toolchain 1.25.7) |
+| **Python** | 3.12+ | HolmesGPT API service |
+| **Kubernetes** | 1.32+ | Runtime platform |
+| **kubectl** | 1.32+ | Cluster management |
+| **Kind** | 0.30+ | Local development clusters |
+| **Podman** or **Docker** | Latest | Container image builds |
+| **Helm** | 3.14+ | Chart packaging and deployment |
+| **Ginkgo** | v2+ | BDD testing framework (Go services) |
+| **golangci-lint** | Latest | Go linter |
 
-### **Initial Setup**
+---
+
+## Repository Layout
+
+```
+kubernaut/
+├── api/                        # CRD type definitions (9 groups)
+│   ├── actiontype/
+│   ├── aianalysis/
+│   ├── effectivenessassessment/
+│   ├── notification/
+│   ├── openapi/
+│   ├── remediation/
+│   ├── remediationworkflow/
+│   ├── signalprocessing/
+│   └── workflowexecution/
+├── cmd/                        # Service entry points (10 services)
+│   ├── aianalysis/
+│   ├── authwebhook/
+│   ├── datastorage/
+│   ├── effectivenessmonitor/
+│   ├── gateway/
+│   ├── must-gather/
+│   ├── notification/
+│   ├── remediationorchestrator/
+│   ├── signalprocessing/
+│   └── workflowexecution/
+├── pkg/                        # Service business logic
+├── internal/                   # Shared internal packages (errors, controller helpers)
+├── test/                       # All test suites
+│   ├── unit/                   #   Per-service unit tests
+│   ├── integration/            #   Per-service integration tests
+│   ├── e2e/                    #   Per-service E2E tests
+│   ├── testutil/               #   Shared test helpers
+│   ├── fixtures/               #   Test data (workflow schemas, CRD samples)
+│   └── ...                     #   Infrastructure, load, chaos, etc.
+├── charts/kubernaut/           # Helm chart (production deployment)
+├── deploy/                     # Kustomize overlays (individual service development)
+├── holmesgpt-api/              # Python service (HolmesGPT API)
+│   ├── src/
+│   └── tests/
+├── docs/                       # Project documentation
+│   ├── architecture/           #   CRD architecture, schemas, design decisions
+│   ├── development/            #   Methodology (APDC), guidelines
+│   ├── services/               #   Per-service docs and templates
+│   └── tests/                  #   Test plans (per issue)
+├── dependencies/               # Git submodules (holmesgpt SDK)
+├── config/                     # Controller-gen and CRD output
+├── .github/                    # CI workflows and CODEOWNERS
+└── .cursor/rules/              # AI-enforced development standards
+```
+
+---
+
+## Setup
 
 ```bash
-# Clone repository
-git clone https://github.com/jordigilh/kubernaut.git
+git clone --recurse-submodules https://github.com/jordigilh/kubernaut.git
 cd kubernaut
 
-# Install CRDs
-make install
-
-# Build all services
-make build
-
-# Setup test infrastructure (Kind cluster + Redis)
-make test-gateway-setup
-
-# Run tests to verify setup
-make test
+make install        # Install CRDs into current cluster context
+make build-all      # Build all Go services
+make test-tier-unit # Run unit tests to verify setup
 ```
 
-### **IDE Setup**
-
-**Recommended**: VSCode or GoLand with:
-- Go extension
-- Kubernetes extension
-- YAML extension
-- Ginkgo test runner
-
-**Workspace Rules**: The `.cursor/rules/` directory contains development standards:
-- `00-core-development-methodology.mdc` - TDD methodology
-- `03-testing-strategy.mdc` - Testing framework
-- `02-go-coding-standards.mdc` - Go patterns
-
----
-
-## 🚀 **Implementing a New Service**
-
-### **Step 1: Use the Implementation Plan Template**
-
-📘 **[SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](services/SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)**
-
-**What it provides**:
-- ✅ **12-day implementation timeline** with daily breakdown
-- ✅ **APDC-TDD methodology** (Analysis → Plan → Do → Check)
-- ✅ **Integration-first testing strategy** (5 critical tests on Day 8)
-- ✅ **60+ complete code examples** (zero TODO placeholders)
-- ✅ **Production readiness checklist** (109-point assessment)
-
-**Timeline Overview**:
-| Phase | Days | Focus | Deliverables |
-|-------|------|-------|--------------|
-| **Foundation** | 1 | Types, interfaces, K8s client | Package structure, interfaces |
-| **Core Logic** | 2-6 | Business logic components | All components implemented |
-| **Integration** | 7 | Server, API, metrics | Complete service |
-| **Testing** | 8-10 | Integration + Unit tests | 70%+ coverage |
-| **Finalization** | 11-12 | E2E, docs, production readiness | Ready for deployment |
-
-### **Step 2: Follow APDC-TDD Methodology**
-
-**APDC Phases** (per feature/component):
-1. **Analysis** (5-15 min): Comprehensive context understanding
-2. **Plan** (10-20 min): Detailed implementation strategy
-3. **Do** (Variable): RED → GREEN → REFACTOR with integration
-4. **Check** (5-10 min): Comprehensive validation
-
-**Key Principle**: Write tests FIRST, then implementation.
-
-### **Step 3: Create Service Documentation**
-
-After implementation (Day 11-12), use:
-
-📘 **[SERVICE_DOCUMENTATION_GUIDE.md](services/SERVICE_DOCUMENTATION_GUIDE.md)**
-
-**Required Documents** (7 minimum):
-1. `overview.md` - Service purpose, CRD schema, architecture
-2. `security-configuration.md` - RBAC, NetworkPolicy, Secrets
-3. `observability-logging.md` - Structured logging, tracing
-4. `metrics-slos.md` - Prometheus metrics, SLI/SLO
-5. `testing-strategy.md` - Unit/Integration/E2E tests
-6. `finalizers-lifecycle.md` - Cleanup coordination (CRD controllers)
-7. `controller-implementation.md` - Reconciliation loop (CRD controllers)
-
-**Reference Services** (copy and adapt):
-- **Service 1 (Signal Processing)**: Data processing patterns
-- **Service 2 (AI Analysis)**: AI/ML integration patterns
-- **Service 3 (Workflow Execution)**: Multi-step orchestration
-- **Service 4 (Kubernetes Executor)**: Action execution patterns
-- **Service 5 (Remediation Orchestrator)**: Central orchestration
-
----
-
-## 🔧 **Extending Existing Services**
-
-### **When to Extend vs. Create New**
-
-**Extend existing service** when:
-- ✅ Feature fits within service's bounded context
-- ✅ No new CRD required
-- ✅ Shares same data model and dependencies
-
-**Create new service** when:
-- ❌ Feature requires new CRD
-- ❌ Different scaling/deployment requirements
-- ❌ Distinct bounded context
-
-### **Feature Extension Process**
-
-📘 **[FEATURE_EXTENSION_PLAN_TEMPLATE.md](services/FEATURE_EXTENSION_PLAN_TEMPLATE.md)** ⭐ **USE THIS TEMPLATE**
-
-**What it provides**:
-- ✅ **Flexible timeline** (3-12 days based on complexity)
-- ✅ **APDC-TDD methodology** (Analysis → Plan → Do → Check)
-- ✅ **Day-by-day breakdown** with customizable phases
-- ✅ **Complete test examples** (Unit, Integration, E2E)
-- ✅ **Documentation timeline** (what gets created when)
-- ✅ **TDD Do's and Don'ts** (strict discipline)
-- ✅ **BR Coverage Matrix**
-- ✅ **Rollback Plan**
-
-**Timeline Guide**:
-| Feature Complexity | Duration | When to Use |
-|--------------------|----------|-------------|
-| **Simple** | 3-5 days | 1-2 files, minimal integration |
-| **Medium** | 5-8 days | 3-5 files, moderate integration |
-| **Complex** | 8-12 days | 5+ files, significant integration |
-
-**Reference Examples**:
-- **[DD-GATEWAY-008](services/stateless/gateway-service/DD_GATEWAY_008_IMPLEMENTATION_PLAN.md)** - Storm buffering (12-day complex feature)
-- **[DD-GATEWAY-009](services/stateless/gateway-service/DD_GATEWAY_009_IMPLEMENTATION_PLAN.md)** - State-based deduplication (5-day medium feature)
-
-**Key Differences from New Service**:
-- ✅ Shorter timeline (no foundation setup)
-- ✅ Focus on enhancing existing code (not creating new)
-- ✅ Regression testing emphasis
-- ✅ Integration impact assessment
-
-### **Documentation During Feature Extension**
-
-**📊 What Gets Created When**:
-
-```
-Day 1-[N] (Implementation):
-    ├── Code Documentation (inline GoDoc, BR references)
-    ├── Daily EOD Reports (progress checkpoints)
-    └── Configuration Comments (YAML inline docs)
-
-Days [N+1]-[N+M] (Testing):
-    ├── Test Documentation (test descriptions, BR mapping)
-    ├── Test Helper Documentation
-    └── Edge Case Documentation
-
-Day [N+M+1] (Documentation Day):
-    ├── Finalize Service Docs (update existing files)
-    │   ├── overview.md (add feature, update version)
-    │   ├── BUSINESS_REQUIREMENTS.md (add BRs, links)
-    │   ├── testing-strategy.md (add test examples)
-    │   └── metrics-slos.md (add new metrics)
-    │
-    └── Create Operational Docs (new files if needed)
-        ├── Runbook (if feature affects operations)
-        └── Migration Guide (if breaking changes)
-
-Day [N+M+P] (Production Readiness):
-    └── Handoff Summary (executive summary, lessons learned)
-```
-
-**Key Point**: Most documentation is created **DURING** implementation (inline), not at the end. The documentation day is for **finalizing** and **consolidating**.
-
----
-
-## 🧪 **Testing**
-
-### **Testing Strategy**
-
-Kubernaut follows **defense-in-depth testing pyramid**:
-
-- **Unit Tests**: **70%+ coverage** - Business logic with external mocks only
-- **Integration Tests**: **>50% coverage** - Component interactions, real K8s API
-- **E2E Tests**: **<10% coverage** - Critical user journeys
-
-**Reference**: [03-testing-strategy.mdc](../.cursor/rules/03-testing-strategy.mdc)
-
-### **Testing Commands**
+If you already cloned without `--recurse-submodules`, initialize the submodule separately:
 
 ```bash
-# Unit tests (fast, no infrastructure)
-make test
-
-# Integration tests (requires Kind + Redis)
-make test-integration
-
-# E2E tests (full system)
-make test-e2e
-
-# Service-specific tests
-go test ./pkg/gateway/... -v
-go test ./test/integration/gateway/... -v
-go test ./test/e2e/gateway/... -v
+git submodule update --init --recursive
 ```
 
-### **Testing Principles**
-
-**✅ DO**:
-- Test WHAT the system does (behavior), not HOW (implementation)
-- Use real business scenarios in test names
-- Map tests to business requirements (BR-XXX-YYY)
-- Use specific assertions (not `ToNot(BeNil())`)
-
-**❌ DON'T**:
-- Test internal state (Redis keys, buffer internals)
-- Use weak assertions (`> 0`, `ToNot(BeEmpty())`)
-- Test library/framework behavior
-- Create tests without business context
-
-**Reference**: [SERVICE_DOCUMENTATION_GUIDE.md - Testing Protocol](services/SERVICE_DOCUMENTATION_GUIDE.md#-critical-behavior--correctness-testing-protocol-)
-
----
-
-## 🚢 **Deployment**
-
-### **Deployment Structure**
-
-Each service uses **Kustomize overlays** for cross-platform deployment:
-
-```
-deploy/[service]/
-├── base/                    # Platform-agnostic manifests
-├── overlays/
-│   ├── openshift/           # OpenShift-specific (SCC fixes)
-│   └── kubernetes/          # Vanilla K8s
-└── README.md                # Service deployment guide
-```
-
-### **Deploy a Service**
+For the Python service (HolmesGPT API):
 
 ```bash
-# OpenShift
-oc apply -k deploy/gateway/overlays/openshift/
-
-# Vanilla Kubernetes
-kubectl apply -k deploy/gateway/overlays/kubernetes/
-```
-
-### **Available Deployments**
-
-| Service | Status | Path |
-|---------|--------|------|
-| **Gateway + Redis** | ✅ Production-Ready | `deploy/gateway/` |
-| **HolmesGPT API** | ⏸️ Coming Soon | `deploy/holmesgpt-api/` |
-| **PostgreSQL** | ⏸️ Coming Soon | `deploy/postgres/` |
-
----
-
-## 📋 **Development Workflow**
-
-### **Standard Development Flow**
-
-```mermaid
-graph TB
-    A[Create Feature Branch] --> B[APDC Analysis Phase]
-    B --> C[APDC Plan Phase]
-    C --> D[APDC Do Phase: RED]
-    D --> E[APDC Do Phase: GREEN]
-    E --> F[APDC Do Phase: REFACTOR]
-    F --> G[APDC Check Phase]
-    G --> H{More Features?}
-    H -->|Yes| B
-    H -->|No| I[Integration Tests]
-    I --> J[E2E Tests]
-    J --> K[Documentation]
-    K --> L[Production Readiness Check]
-    L --> M[Pull Request]
-```
-
-### **Pull Request Checklist**
-
-Before submitting a PR:
-
-- [ ] All tests passing (unit + integration + E2E)
-- [ ] No lint errors (`golangci-lint run`)
-- [ ] Business requirements documented (BR-XXX-YYY)
-- [ ] Code follows Go standards (`.cursor/rules/02-go-coding-standards.mdc`)
-- [ ] Tests follow behavior/correctness protocol
-- [ ] Documentation updated (if applicable)
-- [ ] Deployment manifests updated (if applicable)
-- [ ] Confidence assessment provided (60-100%)
-
----
-
-## 🎯 **Business Requirements (BR)**
-
-### **BR Format**
-
-All code must map to business requirements: `BR-[CATEGORY]-[NUMBER]`
-
-**Categories**:
-- `BR-WORKFLOW-XXX` - Workflow orchestration
-- `BR-AI-XXX` - AI/ML functionality
-- `BR-INTEGRATION-XXX` - Cross-component integration
-- `BR-SECURITY-XXX` - Security features
-- `BR-PLATFORM-XXX` - Kubernetes/infrastructure
-- `BR-API-XXX` - API endpoints
-- `BR-STORAGE-XXX` - Data persistence
-- `BR-MONITORING-XXX` - Observability
-- `BR-SAFETY-XXX` - Safety frameworks
-- `BR-PERFORMANCE-XXX` - Performance optimization
-
-**Example**:
-```go
-// BufferFirstAlert buffers alert and returns whether aggregation should start
-// Business Requirement: BR-GATEWAY-016 - Buffer first N alerts before creating aggregation window
-func (a *StormAggregator) BufferFirstAlert(ctx context.Context, signal *types.NormalizedSignal) (int, bool, error) {
-    // ...
-}
+cd holmesgpt-api
+pip install -r requirements.txt
+pytest tests/unit/ -v
 ```
 
 ---
 
-## 🔍 **Code Review Standards**
+## Services
 
-### **What Reviewers Look For**
+Kubernaut is composed of 10 Go services (under `cmd/`) and 1 Python service. All services communicate through Kubernetes Custom Resources (CRDs).
 
-1. **TDD Compliance**: Tests written first, implementation follows
-2. **Business Alignment**: All code maps to BR-XXX-YYY
-3. **Testing Quality**: Behavior-focused, not implementation-focused
-4. **Error Handling**: All errors handled and logged
-5. **Type Safety**: No `any` or `interface{}` unless necessary
-6. **Integration**: New business code integrated in main applications
-7. **Documentation**: Clear comments explaining business purpose
-
-### **Common Review Feedback**
-
-| Issue | Solution |
-|-------|----------|
-| "Tests are too implementation-focused" | Refactor to test behavior through public API |
-| "Missing BR reference" | Add `// Business Requirement: BR-XXX-YYY` |
-| "Weak assertions (ToNot(BeNil()))" | Use specific business assertions |
-| "Code not integrated in main app" | Wire up in `cmd/*/main.go` |
-| "Missing error handling" | Add error checks and logging |
+| Service | Type | Location | Description |
+|---------|------|----------|-------------|
+| **signalprocessing** | CRD Controller | `cmd/signalprocessing` | Ingests alerts and events, classifies signals, resolves owner chains |
+| **aianalysis** | CRD Controller | `cmd/aianalysis` | Orchestrates LLM-based root cause analysis via HolmesGPT |
+| **remediationorchestrator** | CRD Controller | `cmd/remediationorchestrator` | Selects remediation workflows, manages approval gates, coordinates execution |
+| **workflowexecution** | CRD Controller | `cmd/workflowexecution` | Executes remediations via Kubernetes Jobs, Tekton Pipelines, or Ansible (AWX/AAP) |
+| **effectivenessmonitor** | CRD Controller | `cmd/effectivenessmonitor` | Evaluates whether remediations worked (health checks, alert resolution, spec drift) |
+| **gateway** | Stateless | `cmd/gateway` | HTTP ingress for AlertManager webhooks, deduplication, fingerprinting |
+| **datastorage** | Stateless | `cmd/datastorage` | Persistence layer (PostgreSQL), workflow catalog, audit trail |
+| **notification** | Stateless | `cmd/notification` | Delivers Slack and console notifications with remediation context |
+| **authwebhook** | Supporting | `cmd/authwebhook` | Admission and authentication webhooks for CRD validation |
+| **must-gather** | CLI Tool | `cmd/must-gather` | Diagnostics collection script (not included in `SERVICES` build var) |
+| **holmesgpt-api** | Python | `holmesgpt-api/` | REST wrapper around the HolmesGPT SDK for LLM investigations |
 
 ---
 
-## 📊 **Metrics & Observability**
+## Building
 
-### **Standard Metrics**
+### Go services
 
-Every service must expose:
-- **Counter**: Total entities processed (`_total` suffix)
-- **Histogram**: Processing duration (`_seconds` suffix)
-- **Gauge**: Current active processing
-- **Counter**: Errors by type and phase
-
-**Example**:
-```go
-import "github.com/prometheus/client_golang/prometheus/promauto"
-
-var (
-    EntitiesProcessedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-        Name: "kubernaut_service_entities_processed_total",
-        Help: "Total number of entities processed by service",
-    }, []string{"status", "namespace"})
-)
+```bash
+make build-all              # Build every Go service
+make build-gateway          # Build a single service
+make build-aianalysis
 ```
 
-### **Health Checks**
+The `SERVICES` variable is auto-discovered from `cmd/` (excluding `must-gather` and `README.md`). You can override it:
 
-All services must expose:
-- `GET /health` - Liveness probe
-- `GET /ready` - Readiness probe
-- `GET /metrics` - Prometheus metrics (port 9090)
+```bash
+make build-all SERVICES="gateway datastorage"
+```
+
+### Container images
+
+```bash
+make docker-build IMG=quay.io/kubernaut-ai/gateway:dev
+make docker-push  IMG=quay.io/kubernaut-ai/gateway:dev
+```
+
+The `CONTAINER_TOOL` variable auto-detects Podman or Docker.
+
+### HolmesGPT API (Python)
+
+```bash
+cd holmesgpt-api
+podman build -t quay.io/kubernaut-ai/holmesgpt-api:dev .
+```
 
 ---
 
-## 🆘 **Getting Help**
+## Testing
 
-### **Documentation Hierarchy**
+Kubernaut uses **Ginkgo/Gomega BDD** for all Go tests. Standard `testing.T` tests are not permitted. Python tests use **pytest**.
 
-1. **Architecture** → [Kubernaut CRD Architecture](architecture/KUBERNAUT_CRD_ARCHITECTURE.md)
-2. **Service Implementation** → [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](services/SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
-3. **Service Documentation** → [SERVICE_DOCUMENTATION_GUIDE.md](services/SERVICE_DOCUMENTATION_GUIDE.md)
-4. **Testing** → [03-testing-strategy.mdc](../.cursor/rules/03-testing-strategy.mdc)
-5. **Go Standards** → [02-go-coding-standards.mdc](../.cursor/rules/02-go-coding-standards.mdc)
+### Coverage targets
 
-### **Common Questions**
+Every tier must reach **>=80% coverage** of the code subset it is responsible for:
 
-**Q: How do I add a new CRD?**
-A: Update `api/v1alpha1/`, run `make manifests`, update [CRD_SCHEMAS.md](architecture/CRD_SCHEMAS.md)
+| Tier | Scope | Target |
+|------|-------|--------|
+| **Unit** | Pure logic: config, validators, scoring, builders, formatters | >=80% of unit-testable code |
+| **Integration** | I/O-dependent: reconcilers, K8s clients, HTTP handlers, DB adapters | >=80% of integration-testable code |
+| **E2E** | Full-stack execution in Kind | >=80% of full service code |
 
-**Q: How do I test CRD controllers?**
-A: Use `envtest` for integration tests (fake K8s API), see [testing-strategy.mdc](../.cursor/rules/03-testing-strategy.mdc)
+### Commands
 
-**Q: How do I add a new metric?**
-A: Use `promauto` for automatic registration, see [SERVICE_DOCUMENTATION_GUIDE.md - Metrics](services/SERVICE_DOCUMENTATION_GUIDE.md#-metrics-implementation-guidance)
+**Per-tier (all services)**:
 
-**Q: How do I handle errors?**
-A: Always handle errors, add log entry, use structured error types from `internal/errors/`
+```bash
+make test-tier-unit
+make test-tier-integration
+make test-tier-e2e
+```
 
-**Q: How do I know if my tests are good?**
-A: Run the self-review checklist in [SERVICE_DOCUMENTATION_GUIDE.md - Testing Protocol](services/SERVICE_DOCUMENTATION_GUIDE.md#self-review-checklist-mandatory-after-writing-tests)
+**Per-service (all tiers)**:
 
-### **Support Channels**
+```bash
+make test-all-gateway
+make test-all-aianalysis
+```
+
+**Per-service, per-tier**:
+
+```bash
+make test-unit-gateway
+make test-integration-gateway
+make test-e2e-gateway
+```
+
+**HolmesGPT API (Python)**:
+
+```bash
+make test-unit-holmesgpt-api
+make test-integration-holmesgpt-api
+make test-e2e-holmesgpt-api
+```
+
+### Linting
+
+```bash
+golangci-lint run --timeout=5m   # Go lint
+make lint-rules                  # Workspace rule compliance
+make lint-test-patterns          # Test anti-pattern detection
+make lint-business-integration   # Business code integration check
+make lint-tdd-compliance         # TDD methodology compliance
+```
+
+### Testing principles
+
+- **Behavior over implementation**: Test what the system does through its public API, not how it does it internally.
+- **Business requirement mapping**: Every test must reference a business requirement (`BR-[CATEGORY]-[NUMBER]`) or a test scenario ID (`UT-WF-197-001`).
+- **Mock only external dependencies**: LLM APIs, databases, Kubernetes API (via `fake.NewClientBuilder()`), and network services. All `pkg/` business logic must use real implementations.
+- **No pending tests**: Never use `XIt` or `Skip()`. Either implement the test or remove it.
+
+---
+
+## Deployment
+
+### Production — Helm chart
+
+```bash
+helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --namespace kubernaut-system --create-namespace
+```
+
+The chart lives in `charts/kubernaut/` and supports value files for different environments:
+
+| Values file | Purpose |
+|-------------|---------|
+| `values.yaml` | Default (Kind / vanilla Kubernetes) |
+| `values-ocp.yaml` | OpenShift-specific overrides |
+| `values-airgap.yaml` | Air-gapped / disconnected environments |
+
+### Development — Local checkout
+
+```bash
+helm install kubernaut ./charts/kubernaut \
+  --namespace kubernaut-system --create-namespace \
+  -f charts/kubernaut/values.yaml
+```
+
+### Individual services — Kustomize
+
+For developing or debugging a single service, Kustomize overlays are available under `deploy/`:
+
+```bash
+kubectl apply -k deploy/gateway/overlays/kubernetes/   # Vanilla K8s
+oc apply -k deploy/gateway/overlays/openshift/          # OpenShift
+```
+
+### CRD management
+
+```bash
+make manifests   # Regenerate CRD YAML from Go types
+make install     # Apply CRDs to the current cluster context
+```
+
+---
+
+## Development Workflow
+
+### APDC methodology
+
+Complex tasks follow four phases:
+
+1. **Analysis** (5-15 min) — Understand context, map business requirements, assess risks.
+2. **Plan** (10-20 min) — Design strategy, define TDD test scenarios, get user approval.
+3. **Do** (Variable) — RED (failing test) -> GREEN (minimal passing implementation) -> REFACTOR (improve quality).
+4. **Check** (5-10 min) — Validate coverage, run lints, provide a confidence assessment (60-100%).
+
+Full guide: [APDC Framework](development/methodology/APDC_FRAMEWORK.md)
+
+### TDD RED-GREEN-REFACTOR
+
+All development follows strict TDD:
+
+1. **RED** — Write a failing test that defines the expected behavior.
+2. **GREEN** — Write the minimal code to make the test pass. Integrate with `cmd/` in this phase.
+3. **REFACTOR** — Improve code quality without changing behavior. No new types in this phase.
+
+### Business requirements
+
+Every code change must map to at least one business requirement:
+
+**Format**: `BR-[CATEGORY]-[NUMBER]` (e.g., `BR-GATEWAY-016`, `BR-AI-056`)
+
+**Categories**: `WORKFLOW`, `AI`, `INTEGRATION`, `SECURITY`, `PLATFORM`, `API`, `STORAGE`, `MONITORING`, `SAFETY`, `PERFORMANCE`
+
+### Pull request checklist
+
+- [ ] All tests pass (`make test-tier-unit`, integration, E2E as applicable)
+- [ ] No new lint errors (`golangci-lint run --timeout=5m`)
+- [ ] Business requirement mapped (BR-[CATEGORY]-[NUMBER])
+- [ ] New business code wired into `cmd/` entry point
+- [ ] Documentation updated (if public-facing behavior changed)
+- [ ] Confidence assessment provided (60-100% with justification)
+
+---
+
+## Extending the Platform
+
+### Adding a new service
+
+Use the implementation plan template, which provides a 12-day timeline with APDC-TDD phases:
+
+[SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](services/SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
+
+After implementation, create service documentation following:
+
+[SERVICE_DOCUMENTATION_GUIDE.md](services/SERVICE_DOCUMENTATION_GUIDE.md)
+
+### Extending an existing service
+
+For features that fit within a service's bounded context and do not require a new CRD:
+
+[FEATURE_EXTENSION_PLAN_TEMPLATE.md](services/FEATURE_EXTENSION_PLAN_TEMPLATE.md)
+
+### Adding a new CRD
+
+1. Create the Go types under `api/<group>/v1alpha1/`.
+2. Run `make manifests` to generate the CRD YAML.
+3. Run `make install` to apply to your dev cluster.
+4. Update [CRD_SCHEMAS.md](architecture/CRD_SCHEMAS.md) with the new field definitions.
+
+---
+
+## Architecture References
+
+| Document | Description |
+|----------|-------------|
+| [Kubernaut CRD Architecture](architecture/KUBERNAUT_CRD_ARCHITECTURE.md) | System overview, service specs, CRD communication patterns |
+| [Multi-CRD Reconciliation Architecture](architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md) | Watch-based coordination, owner references, cascade deletion |
+| [CRD Schemas](architecture/CRD_SCHEMAS.md) | Authoritative field definitions and validation rules |
+| [V1 Source of Truth Hierarchy](V1_SOURCE_OF_TRUTH_HIERARCHY.md) | Documentation authority: Architecture > Services > Design |
+| [Architecture Decision Records](architecture/decisions/) | ADR directory with rationale for key decisions |
+
+---
+
+## Getting Help
 
 - **Issues**: [GitHub Issues](https://github.com/jordigilh/kubernaut/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/jordigilh/kubernaut/discussions)
-- **Documentation**: This guide and linked references
-
----
-
-## 📚 **Additional Resources**
-
-### **Templates**
-
-- [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](services/SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md) - New service implementation
-- [SERVICE_DOCUMENTATION_GUIDE.md](services/SERVICE_DOCUMENTATION_GUIDE.md) - Service documentation
-- [CRD Service Specification Template](development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md) - CRD controller scaffolding
-
-### **Reference Implementations**
-
-- **Gateway Service**: [docs/services/stateless/gateway-service/](services/stateless/gateway-service/)
-- **Data Storage Service**: [docs/services/stateless/data-storage/](services/stateless/data-storage/)
-- **Dynamic Toolset Service**: [docs/services/stateless/dynamic-toolset/](services/stateless/dynamic-toolset/)
-
-### **Architecture Decisions**
-
-- [DESIGN_DECISIONS.md](architecture/DESIGN_DECISIONS.md) - All architectural decisions
-- [ADR Directory](architecture/decisions/) - Architecture Decision Records
-
----
-
-**Document Status**: ✅ **ACTIVE**
-**Last Updated**: 2025-11-19
-**Version**: 1.0
-**Maintained By**: Development Team
-
----
-
-**Welcome to Kubernaut development!** 🚀
-
-Start with [Architecture Overview](#-architecture-overview), then choose your path:
-- **New service** → [Implementing a New Service](#-implementing-a-new-service)
-- **Feature extension** → [Extending Existing Services](#-extending-existing-services)
-
+- **Documentation site**: [jordigilh.github.io/kubernaut-docs](https://jordigilh.github.io/kubernaut-docs/)
+- **Demo scenarios**: [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios)
