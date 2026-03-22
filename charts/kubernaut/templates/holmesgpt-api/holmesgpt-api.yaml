@@ -272,7 +272,6 @@ spec:
         - name: llm-credentials-file
           secret:
             secretName: {{ .Values.holmesgptApi.llm.credentialsSecretName }}
-            optional: true
         {{- if include "kubernaut.hapi.tlsEnabled" . }}
         - name: service-ca
           configMap:
