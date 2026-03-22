@@ -329,6 +329,43 @@ def _inject_runtime_env(cfg: dict) -> None:
 
 _inject_runtime_env(config)
 
+# Provider → required env var(s).  Providers absent from this map
+# (ollama, mock, empty) are assumed credential-free.
+_PROVIDER_CREDENTIAL_ENV: dict[str, list[str]] = {
+    "openai":    ["OPENAI_API_KEY"],
+    "anthropic": ["ANTHROPIC_API_KEY"],
+    "claude":    ["ANTHROPIC_API_KEY"],
+    "vertex_ai": ["GOOGLE_APPLICATION_CREDENTIALS"],
+    "google":    ["GOOGLE_APPLICATION_CREDENTIALS"],
+    "azure":     ["AZURE_API_KEY"],
+}
+
+
+def _validate_llm_credentials(cfg: dict) -> None:
+    """ADR-032 §2: Crash on missing LLM credentials for cloud providers.
+
+    Called *after* ``_inject_runtime_env`` so that mounted secrets and
+    explicit env vars are already in ``os.environ``.
+    """
+    provider = cfg.get("llm", {}).get("provider", "")
+    required = _PROVIDER_CREDENTIAL_ENV.get(provider)
+    if required is None:
+        return
+
+    if any(os.environ.get(var) for var in required):
+        return
+
+    print(
+        f"FATAL: No LLM credentials found for provider '{provider}'. "
+        f"Expected one of: {', '.join(required)}. "
+        f"Create the llm-credentials secret before deploying.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+_validate_llm_credentials(config)
+
 # Setup logging based on configuration
 # This must be called after config is loaded but before any logging occurs
 setup_logging(config)
