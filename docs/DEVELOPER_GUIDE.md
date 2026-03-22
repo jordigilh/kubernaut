@@ -115,15 +115,15 @@ Kubernaut is composed of 10 Go services (under `cmd/`) and 1 Python service. All
 
 | Service | Type | Location | Description |
 |---------|------|----------|-------------|
-| **signalprocessing** | CRD Controller | `cmd/signalprocessing` | Ingests alerts and events, classifies signals, resolves owner chains |
-| **aianalysis** | CRD Controller | `cmd/aianalysis` | Orchestrates LLM-based root cause analysis via HolmesGPT |
-| **remediationorchestrator** | CRD Controller | `cmd/remediationorchestrator` | Selects remediation workflows, manages approval gates, coordinates execution |
+| **gateway** | HTTP Server | `cmd/gateway` | Ingests AlertManager webhooks and Kubernetes Events, deduplicates by fingerprint, resolves owner chains, creates RemediationRequest CRDs |
+| **remediationorchestrator** | CRD Controller | `cmd/remediationorchestrator` | Orchestrates the full remediation pipeline: creates child CRDs (SignalProcessing, AIAnalysis, WorkflowExecution, EffectivenessAssessment, Notification), manages approval gates and timeouts |
+| **signalprocessing** | CRD Controller | `cmd/signalprocessing` | Enriches K8s context, classifies environment/severity/priority, traverses owner chains, detects custom labels |
+| **aianalysis** | CRD Controller | `cmd/aianalysis` | Triggers LLM-based root cause analysis via HolmesGPT API and manages workflow selection lifecycle |
 | **workflowexecution** | CRD Controller | `cmd/workflowexecution` | Executes remediations via Kubernetes Jobs, Tekton Pipelines, or Ansible (AWX/AAP) |
 | **effectivenessmonitor** | CRD Controller | `cmd/effectivenessmonitor` | Evaluates whether remediations worked (health checks, alert resolution, spec drift) |
-| **gateway** | Stateless | `cmd/gateway` | HTTP ingress for AlertManager webhooks, deduplication, fingerprinting |
-| **datastorage** | Stateless | `cmd/datastorage` | Persistence layer (PostgreSQL), workflow catalog, audit trail |
-| **notification** | Stateless | `cmd/notification` | Delivers Slack and console notifications with remediation context |
-| **authwebhook** | Supporting | `cmd/authwebhook` | Admission and authentication webhooks for CRD validation |
+| **datastorage** | HTTP Server | `cmd/datastorage` | Persistence layer (PostgreSQL), workflow catalog, audit trail, OpenAPI |
+| **notification** | CRD Controller | `cmd/notification` | Delivers Slack and console notifications with remediation context |
+| **authwebhook** | Webhook Server | `cmd/authwebhook` | Admission webhooks for CRD validation, registers workflows with DataStorage |
 | **must-gather** | CLI Tool | `cmd/must-gather` | Diagnostics collection script (not included in `SERVICES` build var) |
 | **holmesgpt-api** | Python | `holmesgpt-api/` | REST wrapper around the HolmesGPT SDK for LLM investigations |
 
@@ -224,8 +224,18 @@ make lint-tdd-compliance         # TDD methodology compliance
 
 - **Behavior over implementation**: Test what the system does through its public API, not how it does it internally.
 - **Business requirement mapping**: Every test must reference a business requirement (`BR-[CATEGORY]-[NUMBER]`) or a test scenario ID (`UT-WF-197-001`).
-- **Mock only external dependencies**: LLM APIs, databases, Kubernetes API (via `fake.NewClientBuilder()`), and network services. All `pkg/` business logic must use real implementations.
+- **Test plans**: Create a formal test plan before implementation using the [Test Plan Template](testing/TEST_PLAN_TEMPLATE.md). See the [test plan policy](architecture/decisions/DD-TEST-006-test-plan-policy.md) for when a plan is required.
 - **No pending tests**: Never use `XIt` or `Skip()`. Either implement the test or remove it.
+
+### Mock strategy per tier
+
+| Tier | Kubernetes API | PostgreSQL / Redis | LLM (HolmesGPT) | `pkg/` business logic |
+|------|---------------|-------------------|-----------------|----------------------|
+| **Unit** | `fake.NewClientBuilder()` | Mocked | Mocked | Real |
+| **Integration** | `envtest` (in-memory API server) | Real containers | Mocked | Real |
+| **E2E** | Real Kind cluster | Real containers | Mock LLM | Real |
+
+All `pkg/` business logic must always use real implementations — never mock internal code.
 
 ---
 
@@ -287,7 +297,7 @@ Full guide: [APDC Framework](development/methodology/APDC_FRAMEWORK.md)
 
 ### TDD RED-GREEN-REFACTOR
 
-All development follows strict TDD:
+All development follows strict TDD. Before writing code, create a test plan using the [Test Plan Template](testing/TEST_PLAN_TEMPLATE.md) to define the test scenarios up front.
 
 1. **RED** — Write a failing test that defines the expected behavior.
 2. **GREEN** — Write the minimal code to make the test pass. Integrate with `cmd/` in this phase.
