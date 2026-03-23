@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -61,7 +62,51 @@ type AWXJobStatus struct {
 const (
 	credentialTypePrefix = "kubernaut-secret-"
 	credentialPrefix     = "kubernaut-ephemeral-"
+
+	// K8s credential injection (#497, #500).
+	// The built-in AWX type was extended for Job Template use in ansible/awx#7629.
+	k8sBuiltinCredTypeName  = "OpenShift or Kubernetes API Bearer Token"
+	k8sFallbackCredTypeName = "kubernaut-k8s-bearer-token"
+	k8sCredentialPrefix     = "kubernaut-k8s-"
+
+	inClusterTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	inClusterCAPath    = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 )
+
+// InClusterCredentials holds Kubernetes API credentials read from the
+// controller's in-cluster service account mount.
+type InClusterCredentials struct {
+	Host   string
+	Token  string
+	CACert string
+}
+
+// ReadInClusterCredentials reads the controller's own K8s API credentials
+// from the standard in-cluster mount paths. The token is read fresh on each
+// call because projected tokens are rotated by the kubelet.
+func ReadInClusterCredentials() (*InClusterCredentials, error) {
+	host := os.Getenv("KUBERNETES_SERVICE_HOST")
+	port := os.Getenv("KUBERNETES_SERVICE_PORT")
+	if host == "" || port == "" {
+		return nil, fmt.Errorf("in-cluster environment not detected: KUBERNETES_SERVICE_HOST or KUBERNETES_SERVICE_PORT not set")
+	}
+
+	token, err := os.ReadFile(inClusterTokenPath)
+	if err != nil {
+		return nil, fmt.Errorf("read in-cluster token from %s: %w", inClusterTokenPath, err)
+	}
+
+	caCert, err := os.ReadFile(inClusterCAPath)
+	if err != nil {
+		return nil, fmt.Errorf("read in-cluster CA cert from %s: %w", inClusterCAPath, err)
+	}
+
+	return &InClusterCredentials{
+		Host:   fmt.Sprintf("https://%s:%s", host, port),
+		Token:  string(token),
+		CACert: string(caCert),
+	}, nil
+}
 
 // AnsibleExecutor implements the Executor interface for AWX/AAP workflow execution.
 // BR-WE-015: Launches AWX Job Templates and tracks execution status via the AWX REST API.
@@ -70,6 +115,10 @@ type AnsibleExecutor struct {
 	K8sClient      client.Client
 	OrganizationID int
 	Logger         logr.Logger
+
+	// InClusterCredentialsFn reads K8s API credentials from the controller's
+	// service account mount. Replaceable for unit testing.
+	InClusterCredentialsFn func() (*InClusterCredentials, error)
 }
 
 // NewAnsibleExecutor creates a new AnsibleExecutor with the given AWX client.
@@ -80,10 +129,11 @@ func NewAnsibleExecutor(awxClient AWXClient, k8sClient client.Client, orgID int,
 		orgID = 1
 	}
 	return &AnsibleExecutor{
-		AWXClient:      awxClient,
-		K8sClient:      k8sClient,
-		OrganizationID: orgID,
-		Logger:         logger.WithName("ansible-executor"),
+		AWXClient:              awxClient,
+		K8sClient:              k8sClient,
+		OrganizationID:         orgID,
+		Logger:                 logger.WithName("ansible-executor"),
+		InClusterCredentialsFn: ReadInClusterCredentials,
 	}
 }
 
@@ -127,6 +177,14 @@ func (a *AnsibleExecutor) Create(
 	credentialIDs, err := a.injectDependencySecrets(ctx, opts.Dependencies, namespace, wfe.Name)
 	if err != nil {
 		return "", fmt.Errorf("inject dependency secrets: %w", err)
+	}
+
+	k8sCredID, k8sErr := a.injectK8sCredential(ctx, wfe.Name)
+	if k8sErr != nil {
+		a.Logger.Error(k8sErr, "Failed to inject K8s credential — playbooks using kubernetes.core will not authenticate",
+			"wfe", wfe.Name)
+	} else {
+		credentialIDs = append(credentialIDs, k8sCredID)
 	}
 
 	if len(credentialIDs) > 0 {
@@ -288,6 +346,89 @@ func (a *AnsibleExecutor) ensureCredentialType(
 
 	a.Logger.Info("Created AWX credential type", "name", typeName, "id", id)
 	return id, nil
+}
+
+// resolveK8sCredentialTypeID finds the AWX credential type suitable for injecting
+// K8S_AUTH_* environment variables into the playbook execution environment.
+//
+// Strategy:
+//  1. Look for the built-in "OpenShift or Kubernetes API Bearer Token" type,
+//     which was extended for Job Template env injection in ansible/awx#7629
+//     (see also ansible/awx#5735).
+//  2. Fall back to a custom "kubernaut-k8s-bearer-token" type with explicit
+//     K8S_AUTH_* injectors if the built-in type is absent (older AWX versions).
+func (a *AnsibleExecutor) resolveK8sCredentialTypeID(ctx context.Context) (int, error) {
+	id, err := a.AWXClient.FindCredentialTypeByName(ctx, k8sBuiltinCredTypeName)
+	if err == nil {
+		return id, nil
+	}
+
+	id, err = a.AWXClient.FindCredentialTypeByName(ctx, k8sFallbackCredTypeName)
+	if err == nil {
+		return id, nil
+	}
+
+	a.Logger.Info("Built-in K8s credential type not found, creating custom fallback",
+		"builtInName", k8sBuiltinCredTypeName, "fallbackName", k8sFallbackCredTypeName)
+
+	inputs := map[string]interface{}{
+		"fields": []map[string]interface{}{
+			{"id": "host", "label": "Kubernetes API Host", "type": "string"},
+			{"id": "bearer_token", "label": "API Bearer Token", "type": "string", "secret": true},
+			{"id": "ssl_ca_cert", "label": "CA Certificate", "type": "string", "secret": true, "multiline": true},
+		},
+	}
+
+	injectors := map[string]interface{}{
+		"file": map[string]interface{}{
+			"template.kubernaut_k8s_ca": "{{ssl_ca_cert}}",
+		},
+		"env": map[string]interface{}{
+			"K8S_AUTH_HOST":        "{{host}}",
+			"K8S_AUTH_API_KEY":     "{{bearer_token}}",
+			"K8S_AUTH_SSL_CA_CERT": "{{tower.filename.kubernaut_k8s_ca}}",
+			"K8S_AUTH_VERIFY_SSL":  "True",
+		},
+	}
+
+	id, err = a.AWXClient.CreateCredentialType(ctx, k8sFallbackCredTypeName, inputs, injectors)
+	if err != nil {
+		return 0, fmt.Errorf("create K8s credential type %q: %w", k8sFallbackCredTypeName, err)
+	}
+
+	a.Logger.Info("Created custom K8s credential type", "name", k8sFallbackCredTypeName, "id", id)
+	return id, nil
+}
+
+// injectK8sCredential creates an ephemeral AWX credential containing the WE
+// controller's in-cluster K8s API credentials so that playbooks using
+// kubernetes.core modules can authenticate to the cluster API.
+func (a *AnsibleExecutor) injectK8sCredential(ctx context.Context, wfeName string) (int, error) {
+	creds, err := a.InClusterCredentialsFn()
+	if err != nil {
+		return 0, fmt.Errorf("read in-cluster K8s credentials: %w", err)
+	}
+
+	typeID, err := a.resolveK8sCredentialTypeID(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("resolve K8s credential type: %w", err)
+	}
+
+	inputs := map[string]string{
+		"host":         creds.Host,
+		"bearer_token": creds.Token,
+		"ssl_ca_cert":  creds.CACert,
+	}
+
+	credName := k8sCredentialPrefix + wfeName
+	credID, err := a.AWXClient.CreateCredential(ctx, credName, typeID, a.OrganizationID, inputs)
+	if err != nil {
+		return 0, fmt.Errorf("create K8s credential %q: %w", credName, err)
+	}
+
+	a.Logger.Info("Created ephemeral K8s credential",
+		"credentialID", credID, "credentialType", typeID, "wfe", wfeName)
+	return credID, nil
 }
 
 // storeCredentialIDs persists ephemeral AWX credential IDs in the WFE status
