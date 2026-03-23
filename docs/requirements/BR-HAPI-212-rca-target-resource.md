@@ -6,10 +6,10 @@
 **Target Version**: V1.1
 **Status**: ✅ Approved
 **Date**: 2026-01-20
-**Last Updated**: 2026-01-20
+**Last Updated**: 2026-03-04
 
 **Related Design Decisions**:
-- [DD-HAPI-006: Affected Resource in Root Cause Analysis](../architecture/decisions/DD-HAPI-006-affectedResource-in-rca.md)
+- [DD-HAPI-006 v1.3: Affected Resource in Root Cause Analysis](../architecture/decisions/DD-HAPI-006-affectedResource-in-rca.md)
 - [DD-CONTRACT-002: Service Integration Contracts](../architecture/decisions/DD-CONTRACT-002-service-integration-contracts.md)
 - [DD-WORKFLOW-001 v1.7: OwnerChain Validation](../architecture/decisions/DD-WORKFLOW-001-v1.7-ownerchain-validation.md)
 
@@ -36,8 +36,9 @@
 3. LLM parsing error
 4. (Note: Low confidence threshold is AIAnalysis's responsibility, not HAPI's)
 
-**NEW BR-HAPI-212 Scenario** (7th scenario):
-- **Missing `affectedResource`** when workflow is selected (prevents remediating wrong resource)
+**NEW BR-HAPI-212 Scenarios** (7th + 8th scenarios):
+- **Scenario 7**: Missing `affectedResource` when workflow is selected (prevents remediating wrong resource)
+- **Scenario 8 (BR-496)**: `affectedResource` present but mismatches K8s-verified `root_owner` (prevents remediating incorrect resource)
 
 ---
 
@@ -238,11 +239,16 @@ root_cause_analysis:
 - **`needs_approval`** (AIAnalysis Rego decision) = "AI **has** answer, but policy requires approval" (high-risk)
 
 **Escalation Logic** (No Fallback):
-1. **Workflow selected AND `affectedResource` provided** → HAPI returns RCA response
+1. **Workflow selected AND `affectedResource` provided AND matches `root_owner`** → HAPI returns RCA response
 2. **Workflow selected AND `affectedResource` missing** → HAPI validation error (3-attempt self-correction per DD-HAPI-002 v1.2)
    - After 3 failed attempts → Set `needs_human_review=true`, `human_review_reason=rca_incomplete`
    - RO creates **NotificationRequest** (NOT RemediationApprovalRequest - no remediation plan)
-3. **No workflow selected** → `affectedResource` not required (no remediation planned)
+3. **Workflow selected AND `affectedResource` present BUT mismatches `root_owner`** (BR-496) → Post-loop mismatch detection
+   - `get_resource_context` stores K8s-verified `root_owner` in `session_state`
+   - After self-correction loop, HAPI compares `affectedResource` vs `root_owner`
+   - If mismatch → Set `needs_human_review=true`, `human_review_reason=affectedResource_mismatch`
+   - If `root_owner` absent (tool never called) → Set `needs_human_review=true`, `human_review_reason=unverified_target_resource`
+4. **No workflow selected** → `affectedResource` not required (no remediation planned)
 
 **Why NO Fallback to Signal Source**:
 - ❌ Signal source = **Symptom** (e.g., OOMKilled Pod)
@@ -250,17 +256,19 @@ root_cause_analysis:
 - **Remediating the symptom without identifying root cause is dangerous**
 - Missing `affectedResource` means RCA is incomplete → escalate to human
 
-**All BR-HAPI-197 Escalation Scenarios** (7 total scenarios that set `needs_human_review=true`):
+**All BR-HAPI-197 Escalation Scenarios** (9 total scenarios that set `needs_human_review=true`):
 
-| # | Scenario | BR Reference |
-|---|----------|--------------|
-| 1 | Workflow Not Found | BR-HAPI-197 |
-| 2 | Container Image Mismatch | BR-HAPI-197 |
-| 3 | Parameter Validation Failed | BR-HAPI-197 |
-| 4 | No Workflows Matched | BR-HAPI-197 |
-| 5 | LLM Parsing Error | BR-HAPI-197 |
-| 6 | (Reserved for future HAPI scenarios) | BR-HAPI-197 |
-| 7 | **Missing `affectedResource` when workflow selected** | **BR-HAPI-212 (NEW)** |
+| # | Scenario | `human_review_reason` | BR Reference |
+|---|----------|----------------------|--------------|
+| 1 | Workflow Not Found | `workflow_not_found` | BR-HAPI-197 |
+| 2 | Container Image Mismatch | `image_mismatch` | BR-HAPI-197 |
+| 3 | Parameter Validation Failed | `parameter_validation_failed` | BR-HAPI-197 |
+| 4 | No Workflows Matched | `no_matching_workflows` | BR-HAPI-197 |
+| 5 | LLM Parsing Error | `llm_parsing_error` | BR-HAPI-197 |
+| 6 | Investigation Inconclusive | `investigation_inconclusive` | BR-HAPI-200 |
+| 7 | **Missing `affectedResource` when workflow selected** | `rca_incomplete` | **BR-HAPI-212** |
+| 8 | **`affectedResource` mismatches K8s `root_owner`** | `affectedResource_mismatch` | **BR-496** |
+| 9 | **`root_owner` unverified (tool never called)** | `unverified_target_resource` | **BR-496** |
 
 **NOT HAPI's Responsibility** (AIAnalysis makes these decisions):
 - ❌ Low confidence threshold (AIAnalysis applies threshold, not HAPI - per BR-HAPI-197.2 note)
@@ -339,7 +347,7 @@ root_cause_analysis:
 - RemediationOrchestrator validates RCA target is managed by Kubernaut
 - RemediationOrchestrator blocks remediation if RCA target is unmanaged
 
-**Defense-in-Depth (BR-ORCH-036 v4.0)**: The RO has its own guard that validates AffectedResource presence before routing. If HAPI and AA both miss the issue, the RO catches it and produces the same Failed + ManualReviewRequired response. See DD-HAPI-006 v1.2 for the complete three-layer model.
+**Defense-in-Depth (BR-ORCH-036 v4.0)**: The RO has its own guard that validates AffectedResource presence before routing. If HAPI and AA both miss the issue, the RO catches it and produces the same Failed + ManualReviewRequired response. See DD-HAPI-006 v1.3 for the complete four-layer model (including BR-496 mismatch detection).
 
 ---
 
@@ -474,9 +482,13 @@ root_cause_analysis:
   - **Mitigation**: Set `needs_human_review=true` for incomplete RCA (escalation, not fallback)
   - **Mitigation**: Add LLM prompt engineering to encourage `affectedResource` output
   - **Mitigation**: Monitor human review escalation rate via metrics
+- ⚠️ **BR-496**: LLM may provide `affectedResource` that diverges from K8s-verified `root_owner`
+  - **Prevention**: Prompt reinforcement (Phase 3b) explains `affectedResource` MUST match `root_owner` because `remediation_history` is scoped to it
+  - **Detection**: Post-loop comparison in `llm_integration.py`
+  - **Escalation**: `needs_human_review=true` with `human_review_reason=affectedResource_mismatch`
 
 ---
 
 **Document Control**:
 - **Created**: 2026-01-20
-- **Last Updated**: 2026-01-20
+- **Last Updated**: 2026-03-04 (BR-496: Added scenarios 8-9 for mismatch detection)

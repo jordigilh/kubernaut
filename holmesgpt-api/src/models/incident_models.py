@@ -53,6 +53,10 @@ class HumanReviewReason(str, Enum):
     # BR-HAPI-212: RCA is incomplete - workflow selected but affectedResource missing
     # Use when selected_workflow is not None but affectedResource is missing from root_cause_analysis
     RCA_INCOMPLETE = "rca_incomplete"
+    # BR-496: LLM's affectedResource diverges from K8s-verified root_owner
+    AFFECTED_RESOURCE_MISMATCH = "affectedResource_mismatch"
+    # BR-496: get_resource_context was never called — root_owner unverified
+    UNVERIFIED_TARGET_RESOURCE = "unverified_target_resource"
 
 
 # ========================================

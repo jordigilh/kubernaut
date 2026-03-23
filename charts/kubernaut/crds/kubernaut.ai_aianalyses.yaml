@@ -610,6 +610,8 @@ spec:
                 - llm_parsing_error
                 - investigation_inconclusive
                 - rca_incomplete
+                - affectedResource_mismatch
+                - unverified_target_resource
                 type: string
               investigationId:
                 description: |-

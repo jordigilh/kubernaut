@@ -1174,3 +1174,296 @@ var _ = Describe("AnsibleExecutor credential merging (#365, BR-WE-015)", func() 
 		})
 	})
 })
+
+// =====================================================================
+// #500: K8s credential injection for kubernetes.core playbooks
+// =====================================================================
+// Authority: BR-WE-015, #497, #500
+// The WE Ansible executor injects the controller's in-cluster SA token
+// as an AWX credential so kubernetes.core modules can authenticate.
+// Ref: ansible/awx#5735, ansible/awx#7629
+// =====================================================================
+
+var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", func() {
+	var (
+		ctx         context.Context
+		awxClient   *mockAWXClient
+		fakeClient  client.Client
+		ansibleExec *executor.AnsibleExecutor
+	)
+
+	newFakeClient := func(objs ...client.Object) client.Client {
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		return fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(objs...).
+			WithStatusSubresource(&workflowexecutionv1alpha1.WorkflowExecution{}).
+			Build()
+	}
+
+	mockInClusterCreds := func() (*executor.InClusterCredentials, error) {
+		return &executor.InClusterCredentials{
+			Host:   "https://10.0.0.1:6443",
+			Token:  "fake-sa-token-for-testing",
+			CACert: "-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----",
+		}, nil
+	}
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		awxClient = &mockAWXClient{}
+	})
+
+	Context("Create injects K8s credential alongside dependency secrets", func() {
+		It("UT-WE-500-001: should inject K8s credential when no dependency secrets exist", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
+				if name == "OpenShift or Kubernetes API Bearer Token" {
+					return 5, nil
+				}
+				return 0, fmt.Errorf("not found")
+			}
+
+			var capturedCredName string
+			var capturedInputs map[string]string
+			awxClient.createCredentialFn = func(_ context.Context, name string, credTypeID, orgID int, inputs map[string]string) (int, error) {
+				capturedCredName = name
+				capturedInputs = inputs
+				Expect(credTypeID).To(Equal(5))
+				return 88, nil
+			}
+
+			var launchedCredIDs []int
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, credIDs []int) (int, error) {
+				launchedCredIDs = credIDs
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/scale-deployment.yml",
+				"jobTemplateName": "kubernaut-scale-deployment",
+			})
+			wfe := newAnsibleWFE("we-k8s-cred-test", "kubernaut-system", engineConfig, nil)
+
+			ref, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ref).To(ContainSubstring("awx-job-"))
+
+			By("Verifying K8s credential was created with controller SA token")
+			Expect(capturedCredName).To(Equal("kubernaut-k8s-we-k8s-cred-test"))
+			Expect(capturedInputs).To(HaveKeyWithValue("host", "https://10.0.0.1:6443"))
+			Expect(capturedInputs).To(HaveKeyWithValue("bearer_token", "fake-sa-token-for-testing"))
+			Expect(capturedInputs).To(HaveKey("ssl_ca_cert"))
+
+			By("Verifying K8s credential ID is included in launch")
+			Expect(launchedCredIDs).To(ContainElement(88))
+		})
+
+		It("UT-WE-500-002: should inject K8s credential alongside dependency secret credentials", func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "gitea-repo-creds",
+					Namespace: "kubernaut-workflows",
+				},
+				Data: map[string][]byte{
+					"username": []byte("admin"),
+					"password": []byte("secret123"),
+				},
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/gitops-update.yml",
+				"jobTemplateName": "kubernaut-gitops-update",
+			})
+			wfe := newAnsibleWFE("we-k8s-plus-secrets", "kubernaut-system", engineConfig, nil)
+
+			fakeClient = newFakeClient(secret, wfe)
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+
+			callCount := 0
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
+				if name == "OpenShift or Kubernetes API Bearer Token" {
+					return 5, nil
+				}
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+				return 15, nil
+			}
+			awxClient.createCredentialFn = func(_ context.Context, name string, credTypeID, _ int, _ map[string]string) (int, error) {
+				callCount++
+				if credTypeID == 5 {
+					return 88, nil // K8s credential
+				}
+				return 42, nil // dependency secret credential
+			}
+
+			var launchedCredIDs []int
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, credIDs []int) (int, error) {
+				launchedCredIDs = credIDs
+				return 77, nil
+			}
+
+			opts := executor.CreateOptions{
+				Dependencies: &models.WorkflowDependencies{
+					Secrets: []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+				},
+			}
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying both dependency secret cred and K8s cred are in launch")
+			Expect(launchedCredIDs).To(ContainElement(42), "dependency secret credential")
+			Expect(launchedCredIDs).To(ContainElement(88), "K8s credential")
+			Expect(callCount).To(Equal(2), "should create 2 credentials: 1 dependency + 1 K8s")
+		})
+
+		It("UT-WE-500-003: should proceed without K8s credential when in-cluster creds unavailable", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = func() (*executor.InClusterCredentials, error) {
+				return nil, fmt.Errorf("in-cluster environment not detected: KUBERNETES_SERVICE_HOST or KUBERNETES_SERVICE_PORT not set")
+			}
+
+			launchCalled := false
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.launchFunc = func(_ context.Context, _ int, _ map[string]interface{}) (int, error) {
+				launchCalled = true
+				return 42, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-no-incluster", "kubernaut-system", engineConfig, nil)
+
+			ref, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+
+			By("Verifying job still launches (degraded, without K8s cred)")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ref).To(ContainSubstring("awx-job-"))
+			Expect(launchCalled).To(BeTrue(), "should fall back to standard launch without credentials")
+		})
+
+		It("UT-WE-500-004: should use custom fallback type when built-in type not found", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+
+			var createdTypeName string
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
+				return 0, fmt.Errorf("not found: %s", name)
+			}
+			awxClient.createCredentialTypeFn = func(_ context.Context, name string, inputs, injectors map[string]interface{}) (int, error) {
+				createdTypeName = name
+
+				By("Verifying custom type has correct injector structure")
+				Expect(injectors).To(HaveKey("env"))
+				envMap, ok := injectors["env"].(map[string]interface{})
+				Expect(ok).To(BeTrue())
+				Expect(envMap).To(HaveKeyWithValue("K8S_AUTH_HOST", "{{host}}"))
+				Expect(envMap).To(HaveKeyWithValue("K8S_AUTH_API_KEY", "{{bearer_token}}"))
+				Expect(envMap).To(HaveKey("K8S_AUTH_SSL_CA_CERT"))
+				Expect(envMap).To(HaveKeyWithValue("K8S_AUTH_VERIFY_SSL", "True"))
+
+				return 99, nil
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, credTypeID, _ int, _ map[string]string) (int, error) {
+				Expect(credTypeID).To(Equal(99))
+				return 88, nil
+			}
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-fallback-type", "kubernaut-system", engineConfig, nil)
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createdTypeName).To(Equal("kubernaut-k8s-bearer-token"),
+				"should create custom fallback type when built-in is absent")
+		})
+
+		It("UT-WE-500-005: should reuse existing custom fallback type", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
+				if name == "OpenShift or Kubernetes API Bearer Token" {
+					return 0, fmt.Errorf("not found")
+				}
+				if name == "kubernaut-k8s-bearer-token" {
+					return 99, nil // Already exists
+				}
+				return 0, fmt.Errorf("not found")
+			}
+
+			createTypeCalled := false
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+				createTypeCalled = true
+				return 0, fmt.Errorf("should not be called")
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, credTypeID, _ int, _ map[string]string) (int, error) {
+				Expect(credTypeID).To(Equal(99))
+				return 88, nil
+			}
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-reuse-fallback", "kubernaut-system", engineConfig, nil)
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createTypeCalled).To(BeFalse(), "should not create type when fallback already exists")
+		})
+
+		It("UT-WE-500-006: K8s credential should be cleaned up with other ephemeral credentials", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+
+			var deletedCredIDs []int
+			awxClient.deleteCredentialFn = func(_ context.Context, credID int) error {
+				deletedCredIDs = append(deletedCredIDs, credID)
+				return nil
+			}
+			awxClient.cancelFunc = func(_ context.Context, _ int) error { return nil }
+
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "cleanup-k8s-cred", Namespace: "default"},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					EphemeralCredentialIDs: []int{42, 88}, // 42=dependency, 88=K8s
+					ExecutionRef:           &corev1.LocalObjectReference{Name: "awx-job-99"},
+				},
+			}
+
+			err := ansibleExec.Cleanup(ctx, wfe, "default")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(deletedCredIDs).To(ConsistOf(42, 88),
+				"both dependency and K8s ephemeral credentials should be deleted")
+		})
+	})
+})

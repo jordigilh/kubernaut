@@ -133,6 +133,13 @@ class GetResourceContextTool(Tool):
 
             root_owner = owner_chain[-1] if owner_chain else {"kind": kind, "name": name, "namespace": namespace}
 
+            # BR-496: Store K8s-verified root_owner in session_state so HAPI
+            # can compare it against the LLM's affectedResource after the
+            # self-correction loop.  Last-write-wins if the LLM calls this
+            # tool more than once.
+            if self._session_state is not None:
+                self._session_state["root_owner"] = root_owner
+
             spec_hash = await self._k8s_client.compute_spec_hash(
                 root_owner["kind"], root_owner["name"], root_owner.get("namespace", "")
             )

@@ -52,8 +52,8 @@ class IncidentResponseData(BaseModel):
         if value is None:
             return value
 
-        if value not in ('workflow_not_found', 'image_mismatch', 'parameter_validation_failed', 'no_matching_workflows', 'low_confidence', 'llm_parsing_error', 'investigation_inconclusive', 'rca_incomplete'):
-            raise ValueError("must be one of enum values ('workflow_not_found', 'image_mismatch', 'parameter_validation_failed', 'no_matching_workflows', 'low_confidence', 'llm_parsing_error', 'investigation_inconclusive', 'rca_incomplete')")
+        if value not in ('workflow_not_found', 'image_mismatch', 'parameter_validation_failed', 'no_matching_workflows', 'low_confidence', 'llm_parsing_error', 'investigation_inconclusive', 'rca_incomplete', 'affectedResource_mismatch', 'unverified_target_resource'):
+            raise ValueError("must be one of enum values ('workflow_not_found', 'image_mismatch', 'parameter_validation_failed', 'no_matching_workflows', 'low_confidence', 'llm_parsing_error', 'investigation_inconclusive', 'rca_incomplete', 'affectedResource_mismatch', 'unverified_target_resource')")
         return value
 
     model_config = {

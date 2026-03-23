@@ -153,14 +153,17 @@ Ingress/api-gateway  ← Signal target (latency alert)
 | **Node-to-workload** | Node | Deployment | Per-Pod resource correlation |
 | **Ingress-to-backend** | Ingress | Deployment | Request path tracing |
 
-### Escalation: when the RCA target cannot be determined
+### Escalation: when the RCA target cannot be determined or is incorrect
 
-If the AI identifies a remediation workflow but cannot determine the `affectedResource`, Kubernaut does **not** fall back to the signal target. Instead, it sets `needs_human_review=true` with `human_review_reason=rca_incomplete` and creates a NotificationRequest for human investigation (per [DD-HAPI-006](../decisions/DD-HAPI-006-affectedResource-in-rca.md)).
+If the AI identifies a remediation workflow but cannot determine the `affectedResource`, Kubernaut does **not** fall back to the signal target. Instead, it sets `needs_human_review=true` with `human_review_reason=rca_incomplete` and creates a NotificationRequest for human investigation (per [DD-HAPI-006 v1.3](../decisions/DD-HAPI-006-affectedResource-in-rca.md)).
 
-**Rationale**: Remediating the symptom resource without confirming the root cause risks:
+Similarly, if the AI provides an `affectedResource` that **does not match** the K8s-verified `root_owner` from `get_resource_context`, HAPI flags the result with `needs_human_review=true` and `human_review_reason=affectedResource_mismatch` (BR-496, DD-HAPI-006 v1.3 Layer 1b). This prevents remediation against the wrong resource when the LLM's RCA target diverges from the actual Kubernetes ownership hierarchy.
+
+**Rationale**: Remediating the symptom resource or a misidentified target without confirming the root cause risks:
 - Masking the real problem (allowing it to recur or worsen)
 - Disrupting the wrong workload (if the signal target is a shared resource like a Node)
 - Creating a false sense of resolution in the audit trail
+- Applying incorrect `remediation_history` context (scoped to `root_owner`, not the LLM's target)
 
 ### Scope validation
 
@@ -173,3 +176,4 @@ The RemediationOrchestrator validates the RCA target against the `kubernaut.ai/m
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-02-07 | Initial version with 5 production scenarios |
+| 1.1 | 2026-03-04 | BR-496: Added mismatch escalation (affectedResource ≠ root_owner). Updated cross-ref to DD-HAPI-006 v1.3. |

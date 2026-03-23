@@ -338,7 +338,7 @@ type AIAnalysisStatus struct {
 	// Reason why human review needed (when NeedsHumanReview=true)
 	// BR-HAPI-197: Maps to HAPI's human_review_reason enum values
 	// BR-HAPI-212: Includes "rca_incomplete" for missing affectedResource
-	// +kubebuilder:validation:Enum=workflow_not_found;image_mismatch;parameter_validation_failed;no_matching_workflows;low_confidence;llm_parsing_error;investigation_inconclusive;rca_incomplete
+	// +kubebuilder:validation:Enum=workflow_not_found;image_mismatch;parameter_validation_failed;no_matching_workflows;low_confidence;llm_parsing_error;investigation_inconclusive;rca_incomplete;affectedResource_mismatch;unverified_target_resource
 	// +optional
 	HumanReviewReason string `json:"humanReviewReason,omitempty"`
 

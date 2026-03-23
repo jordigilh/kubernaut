@@ -1,9 +1,9 @@
 # DD-HAPI-006: Affected Resource in Root Cause Analysis
 
 **Status**: ✅ Approved
-**Version**: 1.2
+**Version**: 1.3
 **Date**: 2026-02-24
-**Last Updated**: 2026-02-24 (Added defense-in-depth documentation)
+**Last Updated**: 2026-03-04 (BR-496: Added mismatch detection layer)
 **Confidence**: 95%
 **Authority**: Authoritative (Approved)
 
@@ -384,6 +384,9 @@ metadata:
 4. **AIAnalysis Rego Evaluator** (`pkg/aianalysis/rego/evaluator.go`): Add `affected_resource` to `PolicyInput`
 5. **Gateway Adapters** (`pkg/gateway/adapters/*.go`): Extract `apiVersion` from signal sources
 6. **RemediationOrchestrator Scope Validator** (`pkg/remediationorchestrator/routing/scope_validator.go`): Use `apiVersion` for GVK resolution
+7. **HAPI LLM Integration** (`holmesgpt-api/src/extensions/incident/llm_integration.py`): v1.3 — `_affected_resource_matches()` + `_check_affected_resource_mismatch()` for post-loop mismatch detection
+8. **HAPI Resource Context Tool** (`holmesgpt-api/src/toolsets/resource_context.py`): v1.3 — Store K8s-verified `root_owner` in `session_state`
+9. **HAPI Prompt Builder** (`holmesgpt-api/src/extensions/incident/prompt_builder.py`): v1.3 — Phase 3b strengthened: `affectedResource` MUST match `root_owner`
 
 ### Documentation (Created/Updated)
 1. **LLM Response Format Guide** (`holmesgpt-api/docs/LLM_RESPONSE_FORMAT.md`): Document `affectedResource` structure with `apiVersion` examples
@@ -414,14 +417,24 @@ metadata:
 
 ---
 
-## Defense-in-Depth: Three-Layer AffectedResource Validation (v1.2)
+## Defense-in-Depth: Four-Layer AffectedResource Validation (v1.3)
 
-Three independent layers validate `affectedResource` presence, ensuring a consistent operator experience regardless of which layer catches the issue:
+Four independent layers validate `affectedResource`, ensuring a consistent operator experience regardless of which layer catches the issue:
 
-### Layer 1: HAPI (LLM Level)
+### Layer 1a: HAPI Presence Check (LLM Level)
 - **File**: `holmesgpt-api/src/extensions/incident/result_parser.py`
 - **Check**: If `selected_workflow` present AND `affectedResource` missing → `needs_human_review=true`, `human_review_reason=rca_incomplete`
 - **Reference**: BR-HAPI-212 scenario #7
+
+### Layer 1b: HAPI Mismatch Detection (Post-Validation)
+- **File**: `holmesgpt-api/src/extensions/incident/llm_integration.py`
+- **Trigger**: After the self-correction loop completes, before returning the result.
+- **Mechanism**: During investigation, `get_resource_context` stores the K8s-verified `root_owner` in `session_state` (file: `holmesgpt-api/src/toolsets/resource_context.py`). After the self-correction loop, HAPI compares the LLM's `affectedResource` against `session_state["root_owner"]`.
+- **Check 1**: If `affectedResource` present but doesn't match `root_owner` → `needs_human_review=true`, `human_review_reason=affectedResource_mismatch`. The `remediation_history` returned by `get_resource_context` is scoped to `root_owner`; a mismatched `affectedResource` means the LLM's workflow selection may be based on incorrect historical context.
+- **Check 2**: If `root_owner` missing from `session_state` (tool never called or failed) AND `selected_workflow` present → `needs_human_review=true`, `human_review_reason=unverified_target_resource`.
+- **Guard**: Does not overwrite a `human_review_reason` already set by Layer 1a or the LLM. Only sets the reason if none is present.
+- **Prompt reinforcement**: Phase 3b of the investigation prompt explicitly instructs the LLM that `affectedResource` MUST match `root_owner` and explains the consequence of diverging.
+- **Reference**: BR-496, ADR-056 v1.4 (session_state)
 
 ### Layer 2: AIAnalysis (Extraction Level)
 - **File**: `pkg/aianalysis/handlers/response_processor.go` (lines 618-634)
@@ -434,11 +447,21 @@ Three independent layers validate `affectedResource` presence, ensuring a consis
 - **Preconditions**: `WorkflowNotNeeded` and `ApprovalRequired` are already checked before this guard runs. Reaching the guard means a genuine data integrity issue.
 - **Reference**: BR-ORCH-036 v4.0
 
-**Operator Experience**: All three layers produce the same response:
+**Operator Experience**: All four layers produce the same response:
 - RR transitions to `Failed`
 - `RequiresManualReview = true`
 - `NotificationRequest` created with `type=manual-review`
 - K8s Warning event emitted
+
+**`human_review_reason` values produced by these layers**:
+
+| Reason | Layer | When |
+|--------|-------|------|
+| `rca_incomplete` | 1a | `affectedResource` absent, `selected_workflow` present |
+| `affectedResource_mismatch` | 1b | `affectedResource` present but differs from K8s `root_owner` |
+| `unverified_target_resource` | 1b | `root_owner` absent (tool not called/failed), `selected_workflow` present |
+
+> **Note (v1.1.0)**: The Go-side `mapEnumToSubReason` function (`pkg/aianalysis/handlers/response_processor.go`) does not yet map `affectedResource_mismatch` and `unverified_target_resource` — they fall back to `WorkflowNotFound` with a warning log. This is cosmetic; `needs_human_review=true` still blocks remediation. Tracked for v1.2.
 
 ---
 
@@ -494,6 +517,10 @@ type RootCauseAnalysis struct {
   - **Mitigation**: HAPI 3-attempt self-correction loop (DD-HAPI-002 v1.2)
   - **Mitigation**: Escalates to `needs_human_review=true` after 3 attempts (no fallback)
   - **Mitigation**: Gateway provides `apiVersion` from signal source when available
+- ⚠️ **BR-496**: LLM may provide an `affectedResource` that doesn't match the K8s-verified `root_owner`
+  - **Prevention**: Prompt reinforcement in Phase 3b explains consequence of diverging from `root_owner`
+  - **Detection**: Post-loop comparison of `affectedResource` vs `session_state["root_owner"]`
+  - **Escalation**: `needs_human_review=true` with `human_review_reason=affectedResource_mismatch`
 
 **Validation**:
 - Unit tests for RCA target extraction with `apiVersion`
@@ -509,12 +536,13 @@ type RootCauseAnalysis struct {
 |---------|------|---------|
 | 1.1 | 2026-01-20 | Added apiVersion requirement |
 | 1.2 | 2026-02-24 | Added defense-in-depth documentation. Section 5 describes the three-layer model (HAPI → AA → RO) for handling missing AffectedResource. RO guard produces same seamless response as HAPI/AA layers: Failed + ManualReviewRequired + NotificationRequest (BR-ORCH-036 v4.0). |
+| 1.3 | 2026-03-04 | BR-496: Added Layer 1b — affectedResource mismatch detection. `get_resource_context` stores K8s-verified `root_owner` in `session_state`; post-loop check compares LLM's `affectedResource` against `root_owner`. Two new `human_review_reason` values: `affectedResource_mismatch`, `unverified_target_resource`. Prompt strengthened (Phase 3b) to prevent mismatches. Guard respects pre-existing reasons (no overwrite). |
 
 ---
 
 **Document Control**:
 - **Created**: 2026-01-20
-- **Last Updated**: 2026-02-24 (v1.2 - Added defense-in-depth documentation)
-- **Version**: 1.2
+- **Last Updated**: 2026-03-04 (v1.3 - BR-496 mismatch detection layer)
+- **Version**: 1.3
 - **Status**: ✅ Approved
-- **Next Review**: After implementation (estimated 2026-01-22)
+- **Next Review**: After v1.1.0 release validation
