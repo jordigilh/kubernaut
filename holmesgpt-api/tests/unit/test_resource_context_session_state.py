@@ -337,6 +337,78 @@ class TestResourceContextLabelDetection:
         assert "root_owner" in result.data
 
 
+class TestResourceContextRootOwnerCapture:
+    """UT-BR-496-001 through 003: root_owner stored in session_state for mismatch detection."""
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_br_496_001_root_owner_stored_in_session_state(self, mock_detector_cls):
+        """UT-BR-496-001: root_owner written to session_state after resolve_owner_chain."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = (LABELS_ALL_DEFAULTS, None)
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s(owner_chain=OWNER_CHAIN_POD_TO_DEPLOY)
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
+
+        await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+
+        assert "root_owner" in session_state
+        assert session_state["root_owner"]["kind"] == "Deployment"
+        assert session_state["root_owner"]["name"] == "api"
+        assert session_state["root_owner"]["namespace"] == "production"
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_br_496_002_root_owner_last_write_wins(self, mock_detector_cls):
+        """UT-BR-496-002: Second call overwrites root_owner (last-write-wins)."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = (LABELS_ALL_DEFAULTS, None)
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s(owner_chain=OWNER_CHAIN_POD_TO_DEPLOY)
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
+
+        await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+        assert session_state["root_owner"]["kind"] == "Deployment"
+
+        mock_k8s.resolve_owner_chain.return_value = OWNER_CHAIN_STATEFULSET
+        await tool._invoke_async(kind="Pod", name="db-0", namespace="production")
+        assert session_state["root_owner"]["kind"] == "StatefulSet"
+        assert session_state["root_owner"]["name"] == "db"
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_br_496_003_no_session_state_no_root_owner_crash(self, mock_detector_cls):
+        """UT-BR-496-003: No session_state provided, root_owner not stored, no crash."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = (LABELS_ALL_DEFAULTS, None)
+        mock_detector_cls.return_value = mock_detector
+
+        mock_k8s = _make_mock_k8s()
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=None,
+        )
+
+        result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+        assert result.status.value == "success"
+
+
 class TestResourceContextReassessment:
     """UT-HAPI-056-090 through 092: One-shot reassessment via detected_infrastructure."""
 
