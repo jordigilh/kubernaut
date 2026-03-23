@@ -208,6 +208,15 @@ func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName strin
 		_ = os.WriteFile(statusFile, statusOutput, 0644)
 	}
 
+	// Collect pod JSON for termination reason diagnostics (lastState.terminated.reason)
+	podJSONFile := filepath.Join(mustGatherDir, "pod_status.json")
+	podJSONArgs := append(kubeconfigArgs, "get", "pods", "-n", namespace, "-o", "json")
+	podJSONCmd := exec.Command("kubectl", podJSONArgs...)
+	podJSONOutput, podJSONErr := podJSONCmd.CombinedOutput()
+	if podJSONErr == nil && len(podJSONOutput) > 0 {
+		_ = os.WriteFile(podJSONFile, podJSONOutput, 0644)
+	}
+
 	// Issue #437: Dump SignalProcessing CRs as YAML for classification debugging
 	spFile := filepath.Join(mustGatherDir, "signalprocessing_crs.yaml")
 	spArgs := append(kubeconfigArgs, "get", "signalprocessings.signalprocessing.kubernaut.ai",
@@ -1303,10 +1312,10 @@ spec:
           httpGet:
             path: /health
             port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
+          initialDelaySeconds: 45
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 5
       volumes:
       - name: config
         configMap:
