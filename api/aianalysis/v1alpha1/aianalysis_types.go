@@ -285,7 +285,7 @@ type AIAnalysisStatus struct {
 	// SubReason provides specific failure cause within the Reason category
 	// BR-HAPI-197: Maps to needs_human_review triggers from HolmesGPT-API
 	// BR-HAPI-200: Added InvestigationInconclusive, ProblemResolved for new investigation outcomes
-	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;NotActionable;MaxRetriesExceeded;SessionRegenerationExceeded
+	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;NotActionable;MaxRetriesExceeded;SessionRegenerationExceeded;RcaIncomplete
 	// +optional
 	SubReason string `json:"subReason,omitempty"`
 
@@ -333,12 +333,11 @@ type AIAnalysisStatus struct {
 	// ========================================
 	// True if human review required (HAPI decision: RCA incomplete/unreliable)
 	// BR-HAPI-197: Triggers NotificationRequest creation in RO
-	// BR-HAPI-212: Set when workflow selected but affectedResource missing
+	// BR-496 v2: Set when root_owner missing (rca_incomplete) or validation/confidence issues.
 	NeedsHumanReview bool `json:"needsHumanReview"`
 	// Reason why human review needed (when NeedsHumanReview=true)
 	// BR-HAPI-197: Maps to HAPI's human_review_reason enum values
-	// BR-HAPI-212: Includes "rca_incomplete" for missing affectedResource
-	// +kubebuilder:validation:Enum=workflow_not_found;image_mismatch;parameter_validation_failed;no_matching_workflows;low_confidence;llm_parsing_error;investigation_inconclusive;rca_incomplete;affectedResource_mismatch;unverified_target_resource
+	// +kubebuilder:validation:Enum=workflow_not_found;image_mismatch;parameter_validation_failed;no_matching_workflows;low_confidence;llm_parsing_error;investigation_inconclusive;rca_incomplete
 	// +optional
 	HumanReviewReason string `json:"humanReviewReason,omitempty"`
 

@@ -619,6 +619,7 @@ func (p *ResponseProcessor) mapEnumToSubReason(reason string) string {
 		"low_confidence":              "LowConfidence",
 		"llm_parsing_error":           "LLMParsingError",
 		"investigation_inconclusive":  "InvestigationInconclusive", // BR-HAPI-200
+		"rca_incomplete":              "RcaIncomplete",             // BR-496 v2: root_owner missing from session_state
 	}
 	if subReason, ok := mapping[reason]; ok {
 		return subReason
@@ -720,8 +721,8 @@ func mapWarningsToSubReason(warnings []string) string {
 }
 
 // ExtractRootCauseAnalysis extracts RCA from an IncidentResponse, including affectedResource.
-// Issue #97: Centralizes RCA extraction (was duplicated in 5 handler functions) and adds
-// affectedResource extraction so RO's resolveDualTargets (DD-EM-003) can target the correct resource.
+// Issue #97: Centralizes RCA extraction (was duplicated in 5 handler functions).
+// BR-496 v2: affectedResource is HAPI-injected from K8s-verified root_owner, not LLM-provided.
 func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalysis {
 	rcaMap := GetMapFromOptNil(rcaData)
 	if rcaMap == nil {
@@ -734,7 +735,7 @@ func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalys
 		ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
 	}
 
-	// Issue #97: Extract affectedResource from RCA (populated by HAPI from owner chain)
+	// BR-496 v2: affectedResource is HAPI-injected from K8s-verified root_owner
 	if arRaw, ok := rcaMap["affectedResource"]; ok {
 		if arMap, ok := arRaw.(map[string]interface{}); ok {
 			kind, _ := arMap["kind"].(string)

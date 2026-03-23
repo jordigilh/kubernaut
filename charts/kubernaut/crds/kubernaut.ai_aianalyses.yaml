@@ -600,7 +600,6 @@ spec:
                 description: |-
                   Reason why human review needed (when NeedsHumanReview=true)
                   BR-HAPI-197: Maps to HAPI's human_review_reason enum values
-                  BR-HAPI-212: Includes "rca_incomplete" for missing affectedResource
                 enum:
                 - workflow_not_found
                 - image_mismatch
@@ -610,8 +609,6 @@ spec:
                 - llm_parsing_error
                 - investigation_inconclusive
                 - rca_incomplete
-                - affectedResource_mismatch
-                - unverified_target_resource
                 type: string
               investigationId:
                 description: |-
@@ -679,7 +676,7 @@ spec:
                   ========================================
                   True if human review required (HAPI decision: RCA incomplete/unreliable)
                   BR-HAPI-197: Triggers NotificationRequest creation in RO
-                  BR-HAPI-212: Set when workflow selected but affectedResource missing
+                  BR-496 v2: Set when root_owner missing (rca_incomplete) or validation/confidence issues.
                 type: boolean
               observedGeneration:
                 description: |-
@@ -951,6 +948,7 @@ spec:
                 - NotActionable
                 - MaxRetriesExceeded
                 - SessionRegenerationExceeded
+                - RcaIncomplete
                 type: string
               totalAnalysisTime:
                 description: TotalAnalysisTime is the total duration of the analysis
