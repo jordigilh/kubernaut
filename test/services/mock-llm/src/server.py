@@ -963,10 +963,19 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         effective_step = step - 1 if has_resource_context else step
 
         if has_resource_context and step == 0:
-            # ADR-056 v1.4: Call get_resource_context first
-            kind, name, namespace = self._extract_resource_from_messages(
-                messages, scenario
-            )
+            # ADR-056 v1.4: Call get_resource_context first.
+            # BR-496: When rca_override_prompt_resource is set, the LLM's RCA
+            # targets a different resource than the one in the prompt (e.g., a
+            # Certificate CRD instead of the Pod that fired the alert). Use the
+            # scenario's target so root_owner matches the final affectedResource.
+            if scenario.rca_override_prompt_resource:
+                kind = scenario.rca_resource_kind
+                name = scenario.rca_resource_name
+                namespace = scenario.rca_resource_namespace
+            else:
+                kind, name, namespace = self._extract_resource_from_messages(
+                    messages, scenario
+                )
             tool_name = "get_resource_context"
             tool_args = {"kind": kind, "name": name, "namespace": namespace}
             logger.info(
