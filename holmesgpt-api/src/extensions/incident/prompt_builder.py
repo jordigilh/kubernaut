@@ -232,8 +232,7 @@ Your previous response did not include the required structured JSON output:
   "root_cause_analysis": {{
     "summary": "...",
     "severity": "critical|high|medium|low",
-    "contributing_factors": ["..."],
-    "affectedResource": {{"kind": "...", "name": "...", "namespace": "..."}}
+    "contributing_factors": ["..."]
   }},
   "confidence": 0.0,
   "selected_workflow": null,
@@ -546,16 +545,13 @@ Based on your RCA, determine the signal_name that best describes the effect:
 
 **Important**: The signal_name for workflow search comes from YOUR investigation findings, not the input signal.
 
-### Phase 3b: Identify the Affected Resource (MANDATORY for remediation)
+### Phase 3b: Identify the Root Owner (MANDATORY for remediation)
 
-Determine the resource that the remediation should target:
-- Call `get_resource_context` with the resource you identified during RCA (kind, name, namespace).
+Call `get_resource_context` with the resource you identified during RCA (kind, name, namespace):
 - The tool resolves the **root managing resource** (e.g., for a Pod it finds the managing Deployment) and returns:
-  - `root_owner`: The root managing resource (`kind`, `name`, `namespace`). Use this as your `affectedResource`.
+  - `root_owner`: The root managing resource (`kind`, `name`, `namespace`). The system uses this to target the correct resource for remediation.
   - `remediation_history`: Past remediations for that resource. Use this to avoid repeating recently failed workflows.
-- Set `affectedResource` in `root_cause_analysis` to the `root_owner` from the tool response.
-- **IMPORTANT**: Your `affectedResource` MUST match the `root_owner` returned by `get_resource_context`. The `remediation_history` provided by the tool is scoped to the root_owner — if your `affectedResource` differs from root_owner, the history does not apply to your target and your workflow selection may be based on incorrect context.
-- **Example**: You call the tool for Pod "api-xyz-abc". The tool returns `root_owner: {{kind: Deployment, name: api, namespace: prod}}`. Your `affectedResource` is the Deployment, not the Pod.
+- **Example**: You call the tool for Pod "api-xyz-abc". The tool returns `root_owner: {{kind: Deployment, name: api, namespace: prod}}`.
 
 ### Phase 4: Discover and Select Workflow (MANDATORY - Three-Step Protocol)
 **YOU MUST** follow this three-step workflow discovery protocol:
@@ -589,12 +585,7 @@ and choose a different workflow.
   "root_cause_analysis": {{
     "summary": "Brief summary of root cause from investigation",
     "severity": "critical|high|medium|low|unknown",
-    "contributing_factors": ["factor1", "factor2"],
-    "affectedResource": {{
-      "kind": "Deployment",
-      "name": "resource-name",
-      "namespace": "resource-namespace"
-    }}
+    "contributing_factors": ["factor1", "factor2"]
   }},
   "selected_workflow": {{
     "workflow_id": "workflow-id-from-mcp-search",
@@ -618,29 +609,13 @@ and choose a different workflow.
 }}
 ```
 
-**CRITICAL**: The `affectedResource` field in `root_cause_analysis` is **REQUIRED**.
-It identifies the Kubernetes resource that the remediation workflow will act upon.
-- **kind**: The root owner resource type (e.g., "Deployment", "StatefulSet"). **NEVER use "Pod"** — always trace up the OwnerReferences chain to the root owner.
-- **name**: The root owner resource name (e.g., if the Pod is `memory-eater-abc-123`, the Deployment is `memory-eater`)
-- **namespace**: The namespace where the resource lives
-
-**Example**: For an OOMKilled Pod named `memory-eater-7f86bb8877-4hv68` in namespace `production`:
-```json
-"affectedResource": {{"kind": "Deployment", "name": "memory-eater", "namespace": "production"}}
-```
-
 **If workflow discovery fails or returns no workflows**:
 ```json
 {{
   "root_cause_analysis": {{
     "summary": "Root cause from investigation",
     "severity": "critical|high|medium|low|unknown",
-    "contributing_factors": ["factor1", "factor2"],
-    "affectedResource": {{
-      "kind": "Deployment",
-      "name": "resource-name",
-      "namespace": "resource-namespace"
-    }}
+    "contributing_factors": ["factor1", "factor2"]
   }},
   "selected_workflow": null,
   "rationale": "Workflow discovery failed: [error details]. RCA completed but workflow selection unavailable."
@@ -712,7 +687,7 @@ inconclusive
 If your investigation **successfully identifies** the root cause, the problem is **still occurring**, but no workflow matched in the catalog search:
 
 # root_cause_analysis
-{{"summary": "[Describe the identified root cause]", "severity": "[appropriate severity]", "contributing_factors": ["[specific factors]"], "affectedResource": {{"kind": "[root owner kind, e.g. Deployment]", "name": "[root owner name]", "namespace": "[namespace]"}}}}
+{{"summary": "[Describe the identified root cause]", "severity": "[appropriate severity]", "contributing_factors": ["[specific factors]"]}}
 
 # confidence
 [your confidence in the RCA, typically >=0.7]
@@ -847,7 +822,7 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 **REQUIRED FORMAT** - Each field must be on its own line with section header:
 
 # root_cause_analysis
-{{"summary": "Brief summary of root cause", "severity": "critical|high|medium|low|unknown", "contributing_factors": ["factor1", "factor2"], "affectedResource": {{"kind": "Deployment", "name": "the-deployment-name", "namespace": "the-namespace"}}}}
+{{"summary": "Brief summary of root cause", "severity": "critical|high|medium|low|unknown", "contributing_factors": ["factor1", "factor2"]}}
 
 # confidence
 0.95

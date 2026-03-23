@@ -70,6 +70,16 @@ class ValidationResult:
     schema_hint: Optional[str] = None
 
 
+# BR-496 v2: HAPI-managed canonical parameters.
+# These are injected by HAPI from root_owner, not provided by the LLM.
+# Workflows MUST declare them in their schema, but the LLM never fills them.
+HAPI_MANAGED_PARAMS = frozenset({
+    "TARGET_RESOURCE_NAME",
+    "TARGET_RESOURCE_KIND",
+    "TARGET_RESOURCE_NAMESPACE",
+})
+
+
 class WorkflowResponseValidator:
     """
     Validates workflow response from LLM automatically.
@@ -165,6 +175,11 @@ class WorkflowResponseValidator:
                 f"Please select a different workflow from the search results."
             )
             return ValidationResult(is_valid=False, errors=errors)
+
+        # STEP 0: Canonical Parameter Declaration Check (BR-496 v2)
+        canonical_errors = self._validate_canonical_params(workflow, workflow_id)
+        if canonical_errors:
+            return ValidationResult(is_valid=False, errors=canonical_errors)
 
         # STEP 1b: Action-Type Cross-Check (DD-WORKFLOW-016, Gap 3)
         action_type_errors = self._validate_action_type_crosscheck(workflow)
@@ -302,6 +317,34 @@ class WorkflowResponseValidator:
             )
             return []
 
+    def _validate_canonical_params(self, workflow, workflow_id: str) -> List[str]:
+        """
+        STEP 0: Verify workflow schema declares HAPI-managed canonical parameters.
+
+        BR-496 v2: Every workflow MUST declare TARGET_RESOURCE_NAME,
+        TARGET_RESOURCE_KIND, and TARGET_RESOURCE_NAMESPACE in its schema.
+        HAPI injects these from root_owner after the LLM responds.
+        If any are missing, the workflow is rejected and the LLM should
+        select a different one via the self-correction loop.
+        """
+        param_schema = self._get_parameter_schema(workflow)
+        if not param_schema:
+            missing = sorted(HAPI_MANAGED_PARAMS)
+            return [
+                f"Workflow '{workflow_id}' is missing mandatory "
+                f"{', '.join(missing)} parameters — select a different workflow."
+            ]
+
+        declared_names = {p.get("name") for p in param_schema if p.get("name")}
+        missing = sorted(HAPI_MANAGED_PARAMS - declared_names)
+        if missing:
+            return [
+                f"Workflow '{workflow_id}' is missing mandatory "
+                f"{', '.join(missing)} parameters — select a different workflow."
+            ]
+
+        return []
+
     def _validate_execution_bundle(
         self, llm_bundle: Optional[str], catalog_bundle: str, workflow_id: str
     ) -> List[str]:
@@ -385,6 +428,10 @@ class WorkflowResponseValidator:
         for param_def in param_schema:
             name = param_def.get("name")
             if not name:
+                continue
+
+            # BR-496 v2: Skip HAPI-managed params — HAPI injects them, not the LLM.
+            if name in HAPI_MANAGED_PARAMS:
                 continue
 
             value = params.get(name)
@@ -526,6 +573,8 @@ class WorkflowResponseValidator:
         hints = ["Parameter schema:"]
         for param in param_schema:
             name = param.get("name", "unknown")
+            if name in HAPI_MANAGED_PARAMS:
+                continue
             param_type = param.get("type", "string")
             required = param.get("required", False)
 
