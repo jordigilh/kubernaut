@@ -375,9 +375,9 @@ Issue #97 introduced these capabilities:
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
 | Additional latency from tool call round-trip | Medium | Low | Session-based async flow handles multi-turn interactions. Tool performs 3 sequential K8s/DS calls (~1-5s total). Spec hash + history fetch can be parallelized once root owner is known. |
-| LLM may not call `get_resource_context` | Low | Medium | System prompt explicitly instructs the 3-phase flow. Validation can check if tool was called. |
+| LLM may not call `get_resource_context` | Low | Medium | System prompt explicitly instructs the 3-phase flow. Validation can check if tool was called. **v1.3 (BR-496)**: If `selected_workflow` present but `root_owner` missing from `session_state`, HAPI flags `needs_human_review=true` with `human_review_reason=unverified_target_resource`. |
 | LLM omits `affectedResource` from RCA | Low | Low | `affectedResource` enforced as required field by response validator (3-attempt self-correction loop). Same pattern as `severity`, `summary`. |
-| LLM identifies wrong target, fetches wrong context | Low | Low | Same risk exists today (pre-computed context may also be for wrong resource). The new flow is strictly better because the LLM can correct itself. |
+| LLM identifies wrong target, fetches wrong context | Low | Low | Same risk exists today (pre-computed context may also be for wrong resource). The new flow is strictly better because the LLM can correct itself. **v1.3 (BR-496)**: Post-loop mismatch detection compares `affectedResource` vs `session_state["root_owner"]`; mismatch → `needs_human_review=true`. |
 | Rego policy breakage during migration | Medium | High | Rego input schema update (`target_in_owner_chain` → `affected_resource`) must be atomic. Test with existing E2E approval tests. See BR-AI-085-005 for default-deny safety pattern. |
 
 ---

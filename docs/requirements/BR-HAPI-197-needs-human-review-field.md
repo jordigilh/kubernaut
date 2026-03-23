@@ -164,9 +164,11 @@ When `needs_human_review` is `true`, operators SHALL have the following options:
 
 ### What This BR Does NOT Cover
 
-1. **LLM Self-Correction Loop**: In-session retry mechanism (future enhancement)
+1. ~~**LLM Self-Correction Loop**: In-session retry mechanism~~ → Now implemented: DD-HAPI-002 v1.2
 2. **Automatic Retry**: System automatically retrying analysis (requires separate BR)
 3. **Approval Workflow UI**: User interface for manual review (separate product feature)
+
+> **Note (2026-03-04)**: BR-HAPI-212 extends this BR with scenarios 7-9 (missing `affectedResource`, `affectedResource` mismatch, unverified target resource). See BR-HAPI-212 for the complete 9-scenario table.
 
 ---
 
