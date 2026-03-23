@@ -21,7 +21,7 @@ ARG GOOS=linux
 ARG GOARCH=${TARGETARCH:-amd64}
 # Support coverage profiling for E2E tests (E2E_COVERAGE_COLLECTION.md)
 ARG GOFLAGS=""
-ARG APP_VERSION=v1.2.0-dev
+ARG APP_VERSION=v1.1.0-rc6
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
