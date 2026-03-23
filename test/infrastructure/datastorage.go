@@ -1286,10 +1286,10 @@ spec:
           readOnly: true%[7]s
         resources:
           requests:
-            memory: 256Mi
+            memory: 512Mi
             cpu: 250m
           limits:
-            memory: 512Mi
+            memory: 1Gi
             cpu: 500m
         readinessProbe:
           httpGet:
