@@ -78,7 +78,7 @@ var _ = Describe("HAPI-Owned Target Resource [BR-496]", func() {
 		// Step 1: Create a managed namespace and deploy memory-eater
 		// ================================================================
 		By("Step 1: Creating managed test namespace")
-		testNamespace = fmt.Sprintf("fp-496-%d", time.Now().Unix())
+		testNamespace = fmt.Sprintf("fp-e2e-496-%d", time.Now().Unix())
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNamespace,
