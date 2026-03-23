@@ -35,6 +35,7 @@ in API responses. HAPI must consume the renamed field end-to-end.
 import json
 import pytest
 from unittest.mock import Mock, patch
+from tests.unit.conftest import CANONICAL_TARGET_PARAMS
 
 
 # =============================================================================
@@ -74,7 +75,7 @@ def mock_workflow_with_execution_bundle():
     workflow.action_type = "RestartPod"
     workflow.parameters = {
         "schema": {
-            "parameters": [
+            "parameters": CANONICAL_TARGET_PARAMS + [
                 {
                     "name": "NAMESPACE",
                     "type": "string",

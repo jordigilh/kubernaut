@@ -30,6 +30,7 @@ Design Decision: DD-HAPI-002 v1.2 - Workflow Response Validation Architecture
 import pytest
 from unittest.mock import Mock
 from typing import Dict, Any, List
+from tests.unit.conftest import CANONICAL_TARGET_PARAMS
 
 # Import patch for use in decorators
 
@@ -140,7 +141,7 @@ class TestWorkflowExistenceValidation:
         workflow.execution_bundle = "ghcr.io/kubernaut/restart-pod:v1.0.0"
         workflow.parameters = {
             "schema": {
-                "parameters": []  # Empty for existence tests
+                "parameters": list(CANONICAL_TARGET_PARAMS)
             }
         }
         return workflow
@@ -224,7 +225,7 @@ class TestContainerImageConsistencyValidation:
         workflow = Mock()
         workflow.workflow_id = "restart-pod-v1"
         workflow.execution_bundle = "ghcr.io/kubernaut/restart-pod:v1.0.0"
-        workflow.parameters = {"schema": {"parameters": []}}
+        workflow.parameters = {"schema": {"parameters": list(CANONICAL_TARGET_PARAMS)}}
         return workflow
 
     def test_validate_accepts_matching_execution_bundle(
@@ -341,7 +342,7 @@ class TestParameterSchemaValidation:
         workflow.workflow_id = "test-workflow"
         workflow.execution_bundle = "ghcr.io/kubernaut/test:v1.0.0"
         workflow.execution_bundle_digest = "sha256:abc123"
-        workflow.parameters = {"schema": {"parameters": param_defs}}
+        workflow.parameters = {"schema": {"parameters": CANONICAL_TARGET_PARAMS + param_defs}}
         return workflow
 
     # --- Required Parameter Tests ---
@@ -820,16 +821,16 @@ class TestParameterSchemaValidation:
 
     def test_no_schema_strips_all_params(self, mock_ds_client):
         """
-        UT-HAPI-241-004: No schema: ALL params stripped.
+        UT-HAPI-241-004: Only canonical params declared: all LLM params stripped.
 
-        Given: Workflow has parameters=None (no schema)
+        Given: Workflow schema declares only HAPI-managed canonical params
         When: LLM provides arbitrary params
-        Then: params dict is empty after validation
+        Then: params dict is empty after validation (canonical params skipped, rest stripped)
         """
         workflow = Mock()
         workflow.workflow_id = "test-workflow"
         workflow.execution_bundle = "ghcr.io/kubernaut/test:v1.0.0"
-        workflow.parameters = None
+        workflow.parameters = {"schema": {"parameters": list(CANONICAL_TARGET_PARAMS)}}
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
@@ -942,7 +943,7 @@ class TestCompleteValidationFlow:
         workflow.execution_bundle_digest = "sha256:abc123"
         workflow.parameters = {
             "schema": {
-                "parameters": [
+                "parameters": CANONICAL_TARGET_PARAMS + [
                     {"name": "namespace", "type": "string", "required": True}
                 ]
             }
@@ -982,7 +983,7 @@ class TestCompleteValidationFlow:
         workflow.execution_bundle_digest = "sha256:abc123"
         workflow.parameters = {
             "schema": {
-                "parameters": [
+                "parameters": CANONICAL_TARGET_PARAMS + [
                     {"name": "namespace", "type": "string", "required": True},
                     {
                         "name": "delay",
@@ -1046,7 +1047,7 @@ class TestActionTypeCrossCheckValidation:
         workflow.workflow_id = "wf-001"
         workflow.action_type = "CordonNode"
         workflow.execution_bundle = "ghcr.io/kubernaut/cordon:v1.0.0"
-        workflow.parameters = None
+        workflow.parameters = {"schema": {"parameters": list(CANONICAL_TARGET_PARAMS)}}
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         # DS returns available action types (without CordonNode)
@@ -1091,7 +1092,7 @@ class TestActionTypeCrossCheckValidation:
         workflow.workflow_id = "wf-001"
         workflow.action_type = "RestartPod"
         workflow.execution_bundle = "ghcr.io/kubernaut/restart:v1.0.0"
-        workflow.parameters = None
+        workflow.parameters = {"schema": {"parameters": list(CANONICAL_TARGET_PARAMS)}}
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         mock_ds_client.list_available_actions.return_value = {
@@ -1131,7 +1132,7 @@ class TestActionTypeCrossCheckValidation:
         workflow.workflow_id = "wf-001"
         workflow.action_type = "AnyAction"
         workflow.execution_bundle = "ghcr.io/kubernaut/any:v1.0.0"
-        workflow.parameters = None
+        workflow.parameters = {"schema": {"parameters": list(CANONICAL_TARGET_PARAMS)}}
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
@@ -1161,7 +1162,7 @@ class TestActionTypeCrossCheckValidation:
         workflow.workflow_id = "wf-001"
         workflow.action_type = "RestartPod"
         workflow.execution_bundle = "ghcr.io/kubernaut/restart:v1.0.0"
-        workflow.parameters = None
+        workflow.parameters = {"schema": {"parameters": list(CANONICAL_TARGET_PARAMS)}}
         mock_ds_client.get_workflow_by_id.return_value = workflow
         mock_ds_client.list_available_actions.side_effect = Exception(
             "Connection refused"

@@ -238,8 +238,13 @@ Based on my analysis:
         assert result["needs_human_review"] is True
         assert result["human_review_reason"] == "no_matching_workflows"
 
-    def test_sets_needs_human_review_for_low_confidence(self):
-        """BR-HAPI-197: Low confidence triggers needs_human_review."""
+    def test_low_confidence_not_escalated_by_parser(self):
+        """BR-HAPI-197: Low confidence is AIAnalysis's responsibility, not the parser's.
+
+        BR-496 v2: Parser no longer checks affectedResource — HAPI injects it
+        post-loop via _inject_target_resource. With no investigation outcome and
+        a workflow present, the parser does not set needs_human_review.
+        """
         from src.extensions.incident import _parse_and_validate_investigation_result
         from unittest.mock import Mock
 
@@ -263,13 +268,11 @@ Based on my analysis:
             data_storage_client=None  # No validation
         )
 
-        # BR-HAPI-212: Workflow selected but affectedResource missing → rca_incomplete
-        # Parser sets human_review_reason = "rca_incomplete" (not "low_confidence")
-        # BR-HAPI-197: Low confidence detection is AIAnalysis's responsibility
-        assert result["needs_human_review"] is True
-        assert result["human_review_reason"] == "rca_incomplete"  # Changed from "low_confidence"
-        # Check for the actual warning message from the parser
-        assert "RCA is missing affectedResource field" in result["warnings"][0]
+        # BR-496 v2: Parser does not check affectedResource — _inject_target_resource
+        # handles that post-loop. With no special investigation outcome and a
+        # selected_workflow present, the parser leaves needs_human_review=False.
+        assert result["needs_human_review"] is False
+        assert "human_review_reason" not in result
 
     def test_extracts_alternative_workflows(self):
         """ADR-045 v1.2: Alternative workflows extracted for audit."""

@@ -32,6 +32,7 @@ Test IDs: UT-HAPI-017-003-001 through UT-HAPI-017-003-004
 """
 
 from unittest.mock import Mock
+from tests.unit.conftest import CANONICAL_TARGET_PARAMS
 
 
 # Simulate DS client's NotFoundException (status=404) without importing generated client
@@ -65,7 +66,7 @@ class TestValidatorPassesContextFilters:
         mock_ds_client = Mock()
         mock_workflow = Mock()
         mock_workflow.execution_bundle = "quay.io/kubernaut-ai/test:v1"
-        mock_workflow.parameters = {"schema": {"parameters": []}}
+        mock_workflow.parameters = {"schema": {"parameters": list(CANONICAL_TARGET_PARAMS)}}
         mock_ds_client.get_workflow_by_id.return_value = mock_workflow
 
         validator = WorkflowResponseValidator(
@@ -98,7 +99,7 @@ class TestValidatorPassesContextFilters:
         mock_ds_client = Mock()
         mock_workflow = Mock()
         mock_workflow.execution_bundle = "quay.io/kubernaut-ai/test:v1"
-        mock_workflow.parameters = {"schema": {"parameters": []}}
+        mock_workflow.parameters = {"schema": {"parameters": list(CANONICAL_TARGET_PARAMS)}}
         mock_ds_client.get_workflow_by_id.return_value = mock_workflow
 
         validator = WorkflowResponseValidator(mock_ds_client)
@@ -290,7 +291,7 @@ class TestValidatorHappyPathWithContext:
         mock_workflow.action_type = "ScaleReplicas"
         mock_workflow.parameters = {
             "schema": {
-                "parameters": [
+                "parameters": CANONICAL_TARGET_PARAMS + [
                     {"name": "replicas", "type": "int", "required": True, "minimum": 1, "maximum": 10}
                 ]
             }
@@ -330,7 +331,7 @@ class TestValidatorHappyPathWithContext:
         mock_workflow.action_type = "ScaleReplicas"
         mock_workflow.parameters = {
             "schema": {
-                "parameters": [
+                "parameters": CANONICAL_TARGET_PARAMS + [
                     {"name": "replicas", "type": "int", "required": True, "minimum": 1, "maximum": 10}
                 ]
             }

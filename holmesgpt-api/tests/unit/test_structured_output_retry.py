@@ -29,6 +29,7 @@ loop treated as "valid" (same as a deliberate no-workflow decision).
 """
 
 from unittest.mock import Mock
+from tests.unit.conftest import CANONICAL_TARGET_PARAMS
 
 
 class TestFormatFailureDetection:
@@ -240,7 +241,7 @@ class TestLegitimateNoWorkflowOutcomes:
         mock_workflow = Mock()
         mock_workflow.workflow_id = "emptydir-to-pvc-migration"
         mock_workflow.execution_bundle = "quay.io/kubernaut-ai/emptydir-migration:v1.0"
-        mock_workflow.parameters = []
+        mock_workflow.parameters = {"schema": {"parameters": list(CANONICAL_TARGET_PARAMS)}}
         mock_ds.get_workflow_by_id.return_value = mock_workflow
 
         investigation = Mock()
