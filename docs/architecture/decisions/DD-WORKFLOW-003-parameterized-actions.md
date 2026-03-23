@@ -1,15 +1,22 @@
 # DD-WORKFLOW-003: Parameterized Remediation Actions
 
 **Status**: Approved  
-**Version**: 2.2  
+**Version**: 2.3  
 **Created**: 2025-11-15  
-**Updated**: 2025-11-15  
+**Updated**: 2026-03-04  
 **Target Release**: v1.1  
-**Related**: BR-WORKFLOW-001, DD-WORKFLOW-001
+**Related**: BR-WORKFLOW-001, DD-WORKFLOW-001, BR-496
 
 ---
 
 ## Changelog
+
+### Version 2.3 (2026-03-04)
+**Changes**:
+- ✅ Added HAPI-Managed Canonical Parameters section (BR-496 v2): `TARGET_RESOURCE_NAME`, `TARGET_RESOURCE_KIND`, `TARGET_RESOURCE_NAMESPACE` are injected by HAPI from K8s-verified `root_owner`, not provided by LLM.
+- ✅ Documented workflow schema contract (Step 0 validation) and schema stripping behavior.
+
+**Rationale**: BR-496 v2 shifts target resource identity ownership to HAPI. Workflow schemas must declare canonical params, but the LLM does not populate them.
 
 ### Version 2.2 (2025-11-15)
 **Changes**:
@@ -202,6 +209,34 @@ The LLM selects a specific remediation workflow and populates its required param
   "tekton_mapping": "env.TARGET_RESOURCE_KIND"
 }
 ```
+
+### HAPI-Managed Canonical Parameters (BR-496 v2)
+
+Three parameters are **HAPI-managed** — their values are injected by HAPI from the K8s-verified `root_owner`, not provided by the LLM:
+
+- **`TARGET_RESOURCE_NAME`**: Name of the root managing resource (e.g., "payment-api")
+- **`TARGET_RESOURCE_KIND`**: Kind of the root managing resource (e.g., "Deployment")
+- **`TARGET_RESOURCE_NAMESPACE`**: Namespace of the root managing resource (omitted for cluster-scoped resources)
+
+**Workflow Schema Contract**: All workflow schemas **MUST** declare these three parameters. The `WorkflowResponseValidator` Step 0 rejects schemas that omit them.
+
+**Schema Stripping**: When `get_workflow` returns the workflow schema to the LLM, these three parameters are stripped from the response. This prevents the LLM from seeing or populating values that HAPI will overwrite.
+
+**Operational Parameters**: All other parameters (e.g., `MEMORY_LIMIT_NEW`, `SCALE_TARGET_REPLICAS`) remain LLM-provided. HAPI does not manage or validate these — the LLM populates them based on its investigation.
+
+**Example — Combined HAPI-managed + LLM-provided parameters**:
+```json
+{
+  "parameters": {
+    "TARGET_RESOURCE_NAME": "payment-api",
+    "TARGET_RESOURCE_KIND": "Deployment",
+    "TARGET_RESOURCE_NAMESPACE": "production",
+    "MEMORY_LIMIT_NEW": "256Mi"
+  }
+}
+```
+
+In this example, the first three are injected by HAPI; `MEMORY_LIMIT_NEW` is provided by the LLM.
 
 ---
 

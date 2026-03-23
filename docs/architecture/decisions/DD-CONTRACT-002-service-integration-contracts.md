@@ -178,7 +178,7 @@ status:
 |-------|------|----------|------------|
 | `status.phase` | string | ✅ | One of: Pending, Investigating, Analyzing, Completed, Failed |
 | `status.needsHumanReview` | bool | ✅ | HAPI decision: AI can't answer (BR-HAPI-197, BR-HAPI-212) |
-| `status.humanReviewReason` | string | ✅ (when needsHumanReview=true) | Why review needed (e.g., "rca_incomplete", "workflow_not_found", "affectedResource_mismatch", "unverified_target_resource") |
+| `status.humanReviewReason` | string | ✅ (when needsHumanReview=true) | Why review needed (e.g., "rca_incomplete", "workflow_not_found") |
 | `status.selectedWorkflow.workflowId` | string | ✅ (when Completed) | Valid workflow identifier |
 | `status.selectedWorkflow.version` | string | ✅ (when Completed) | Semantic version |
 | `status.selectedWorkflow.containerImage` | string | ✅ (when Completed) | OCI bundle reference (from HolmesGPT-API) |

@@ -13,7 +13,7 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-12 | Architecture Team | Initial proposal: move context enrichment (owner chain, spec hash, remediation history) from pre-LLM computation to post-RCA tool-driven flow. |
-| 1.1 | 2026-02-12 | Architecture Team | Address 8 triage gaps: replace `target_in_owner_chain` with `affected_resource` Rego input (§2), preserve `ExtractRootCauseAnalysis` (§3), enforce `affectedResource` as required LLM response field (§4), clarify CRD deprecation (§5), clarify `current_spec_hash` scope (§6), document new `resolve_owner_chain` function + RBAC expansion (§7), update latency estimate (§8). [Deprecated - Issue #180: Recovery flow reference removed] |
+| 1.1 | 2026-02-12 | Architecture Team | Address 8 triage gaps: replace `target_in_owner_chain` with `affected_resource` Rego input (§2), preserve `ExtractRootCauseAnalysis` (§3), enforce `affectedResource` as required LLM response field (§4), clarify CRD deprecation (§5), clarify `current_spec_hash` scope (§6), document new `resolve_owner_chain` function + RBAC expansion (§7), update latency estimate (§8). [Deprecated - Issue #180: Recovery flow reference removed] *(§4 "required LLM response field" for target identity superseded by BR-496 v2 / DD-HAPI-006 v1.4: HAPI owns `affectedResource` via `root_owner` injection.)* |
 | 1.3 | 2026-02-24 | Architecture Team | **Issue #188 (DD-EM-003)**: Renamed `resolveEffectivenessTarget` to `resolveDualTargets` throughout. The function now returns `*creator.DualTarget{Signal, Remediation}` with explicit dual-target semantics. Updated compatibility table and data quality section. |
 | 1.2 | 2026-02-12 | Architecture Team | Refine tool return contract: `get_resource_context` returns only `root_owner` and `remediation_history` to the LLM. Owner chain traversal and spec hash computation are internal implementation details not exposed in the tool response. Update prompt Phase 3b accordingly. See also ADR-056 for DetectedLabels relocation. |
 
@@ -288,6 +288,8 @@ The `get_resource_context` tool must be registered in the incident tool registry
 
 #### Updated Prompt Flow
 
+> **Note (BR-496 v2, DD-HAPI-006 v1.4):** Stored remediation target identity is derived by HAPI from `root_owner` (`_inject_target_resource`), not taken as an unconstrained required LLM field. The numbered steps below reflect the original ADR-055 prompt contract.
+
 The HAPI system prompt instructs the LLM:
 
 1. **First**: Analyze the signal context and perform root cause analysis. Identify the root cause and the affected resource. The `affectedResource` field is **required** in your response.
@@ -295,6 +297,8 @@ The HAPI system prompt instructs the LLM:
 3. **Finally**: Use the three-step workflow discovery (DD-HAPI-017) to select the appropriate remediation workflow, informed by the remediation history.
 
 #### Response Validation
+
+> **Note (BR-496 v2, DD-HAPI-006 v1.4):** Target resource identity for downstream consumers is injected from `root_owner`; the following describes the original validator expectation for LLM output shape.
 
 The `WorkflowResponseValidator` (3-attempt self-correction loop) is updated to validate that `affectedResource` is present in the RCA output. If the LLM omits it, the validator returns:
 
@@ -366,7 +370,7 @@ Issue #97 introduced these capabilities:
 5. **Agentic pattern**: Aligns with modern LLM tool-use patterns where the agent drives information gathering based on its analysis.
 6. **Graceful degradation**: If the `get_resource_context` tool fails (K8s API unavailable, RBAC issues), the LLM can still complete RCA and workflow selection without historical context, and it can reason about the failure explicitly.
 7. **Better Rego policies**: `affected_resource` (kind, name, namespace) as Rego input enables granular, per-kind approval rules -- strictly more powerful than the previous boolean `target_in_owner_chain`.
-8. **Enforced data quality**: `affectedResource` as a required response field with validation ensures downstream consumers (`resolveDualTargets` (DD-EM-003), WFE creator, audit trail) always have the target resource.
+8. **Enforced data quality** *(superseded for identity — BR-496 v2 / DD-HAPI-006 v1.4: HAPI injects `affectedResource` from `root_owner`)*: `affectedResource` as a required response field with validation was intended to ensure downstream consumers (`resolveDualTargets` (DD-EM-003), WFE creator, audit trail) always have the target resource.
 
 ---
 
@@ -375,9 +379,9 @@ Issue #97 introduced these capabilities:
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
 | Additional latency from tool call round-trip | Medium | Low | Session-based async flow handles multi-turn interactions. Tool performs 3 sequential K8s/DS calls (~1-5s total). Spec hash + history fetch can be parallelized once root owner is known. |
-| LLM may not call `get_resource_context` | Low | Medium | System prompt explicitly instructs the 3-phase flow. Validation can check if tool was called. **v1.3 (BR-496)**: If `selected_workflow` present but `root_owner` missing from `session_state`, HAPI flags `needs_human_review=true` with `human_review_reason=unverified_target_resource`. |
+| LLM may not call `get_resource_context` | Low | Medium | System prompt explicitly instructs the 3-phase flow. Validation can check if tool was called. **BR-496 v2 (DD-HAPI-006 v1.4)**: If `selected_workflow` present but `root_owner` missing from `session_state`, HAPI flags `needs_human_review=true` with `human_review_reason=rca_incomplete`. |
 | LLM omits `affectedResource` from RCA | Low | Low | `affectedResource` enforced as required field by response validator (3-attempt self-correction loop). Same pattern as `severity`, `summary`. |
-| LLM identifies wrong target, fetches wrong context | Low | Low | Same risk exists today (pre-computed context may also be for wrong resource). The new flow is strictly better because the LLM can correct itself. **v1.3 (BR-496)**: Post-loop mismatch detection compares `affectedResource` vs `session_state["root_owner"]`; mismatch → `needs_human_review=true`. |
+| LLM identifies wrong target, fetches wrong context | Low | Low | Same risk exists today (pre-computed context may also be for wrong resource). The new flow is strictly better because the LLM can correct itself. **BR-496 v2 (DD-HAPI-006 v1.4)**: Stored target identity follows K8s-verified `root_owner` via HAPI injection, not a mismatch-driven human review path. |
 | Rego policy breakage during migration | Medium | High | Rego input schema update (`target_in_owner_chain` → `affected_resource`) must be atomic. Test with existing E2E approval tests. See BR-AI-085-005 for default-deny safety pattern. |
 
 ---
