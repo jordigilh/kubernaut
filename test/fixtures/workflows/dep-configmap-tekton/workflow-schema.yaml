@@ -30,6 +30,18 @@ spec:
       - name: e2e-dep-configmap-tekton
   
   parameters:
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Name of the root managing resource (HAPI-injected)"
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+      description: "Kind of the root managing resource (HAPI-injected)"
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the root managing resource (HAPI-injected)"
     - name: TARGET_RESOURCE
       type: string
       required: true
