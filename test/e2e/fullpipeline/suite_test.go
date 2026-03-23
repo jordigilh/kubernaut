@@ -176,6 +176,9 @@ var _ = SynchronizedBeforeSuite(
 				SchemaImage:     "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0",
 				ExecutionEngine: "job",
 				SchemaParameters: []models.WorkflowParameter{
+					{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the root managing resource (HAPI-injected)"},
+					{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kind of the root managing resource (HAPI-injected)"},
+					{Name: "TARGET_RESOURCE_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the root managing resource (HAPI-injected)"},
 					{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 					{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Name of the deployment to restart"},
 					{Name: "GRACE_PERIOD_SECONDS", Type: "integer", Required: false, Description: "Graceful shutdown period in seconds"},
@@ -192,9 +195,9 @@ var _ = SynchronizedBeforeSuite(
 				SchemaImage:     "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0",
 				ExecutionEngine: "job",
 				SchemaParameters: []models.WorkflowParameter{
-					{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet)"},
-					{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the resource to patch"},
-					{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the resource"},
+					{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the root managing resource (HAPI-injected)"},
+					{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kind of the root managing resource (HAPI-injected)"},
+					{Name: "TARGET_RESOURCE_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the root managing resource (HAPI-injected)"},
 					{Name: "MEMORY_LIMIT_NEW", Type: "string", Required: true, Description: "New memory limit to apply (e.g., 128Mi, 256Mi, 1Gi)"},
 				},
 			},
@@ -209,6 +212,9 @@ var _ = SynchronizedBeforeSuite(
 				SchemaImage: "quay.io/kubernaut-cicd/test-workflows/fix-certificate-job-schema:v1.0.0",
 				ExecutionEngine: "job",
 				SchemaParameters: []models.WorkflowParameter{
+					{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the root managing resource (HAPI-injected)"},
+					{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kind of the root managing resource (HAPI-injected)"},
+					{Name: "TARGET_RESOURCE_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the root managing resource (HAPI-injected)"},
 					{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected Certificate"},
 					{Name: "TARGET_CERTIFICATE", Type: "string", Required: true, Description: "Name of the Certificate to fix"},
 					{Name: "ISSUER_NAME", Type: "string", Required: true, Description: "Name of the ClusterIssuer backing the certificate"},

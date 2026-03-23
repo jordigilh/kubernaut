@@ -99,6 +99,7 @@ class TestProblemResolvedIntegrationPattern:
             "no_workflow_found",
             "low_confidence",
             "problem_resolved",  # BR-HAPI-200
+            "problem_resolved_contradiction",  # #301
             "rca_incomplete",  # BR-HAPI-212
             "max_retries_exhausted",
             "oomkilled_predictive",

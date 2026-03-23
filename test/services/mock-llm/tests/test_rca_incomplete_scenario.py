@@ -107,6 +107,7 @@ class TestRCAIncompleteIntegrationPattern:
             "no_workflow_found",
             "low_confidence",
             "problem_resolved",
+            "problem_resolved_contradiction",
             "rca_incomplete",  # BR-HAPI-212
             "max_retries_exhausted",
             "oomkilled_predictive",
@@ -127,27 +128,14 @@ class TestRCAIncompleteIntegrationPattern:
             "MOCK_RCA_INCOMPLETE should appear exactly once in scenarios"
 
     def test_include_affected_resource_flag_usage(self):
-        """Verify include_affected_resource flag is used correctly across scenarios."""
-        # Most scenarios should include affectedResource (default behavior)
+        """BR-496 v2: All scenarios have include_affected_resource=False (HAPI injects post-loop)."""
         scenarios_with_affected_resource = [
             scenario for scenario in MOCK_SCENARIOS.values()
             if scenario.include_affected_resource
         ]
 
-        # Only rca_incomplete should have include_affected_resource=False
-        scenarios_without_affected_resource = [
-            scenario for scenario in MOCK_SCENARIOS.values()
-            if not scenario.include_affected_resource
-        ]
-
-        assert len(scenarios_without_affected_resource) == 1, \
-            "Only one scenario (rca_incomplete) should have include_affected_resource=False"
-        assert scenarios_without_affected_resource[0].name == "rca_incomplete", \
-            "rca_incomplete should be the only scenario without affectedResource"
-
-        # Verify most scenarios do include affectedResource
-        assert len(scenarios_with_affected_resource) >= 7, \
-            "Most scenarios should include affectedResource by default"
+        assert len(scenarios_with_affected_resource) == 0, \
+            "BR-496 v2: No scenario should include affectedResource — HAPI injects from root_owner"
 
     def test_rca_incomplete_workflow_validation_trigger(self):
         """Verify rca_incomplete scenario will trigger HAPI validation (BR-HAPI-212)."""
