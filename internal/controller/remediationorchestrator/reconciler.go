@@ -3096,7 +3096,18 @@ func (r *Reconciler) ensureNotificationsCreated(ctx context.Context, rr *remedia
 		if err := r.client.Get(ctx, client.ObjectKey{Name: aiName, Namespace: rr.Namespace}, ai); err != nil {
 			logger.Error(err, "Failed to fetch AIAnalysis for completion notification, will retry", "aiAnalysis", aiName)
 		} else {
-			notifName, notifErr := r.notificationCreator.CreateCompletionNotification(ctx, rr, ai)
+			// Issue #518: Read executionEngine from WFE status (resolved at runtime by WE controller).
+			executionEngine := ""
+			if rr.Status.WorkflowExecutionRef != nil {
+				we := &workflowexecutionv1.WorkflowExecution{}
+				weKey := client.ObjectKey{Name: rr.Status.WorkflowExecutionRef.Name, Namespace: rr.Status.WorkflowExecutionRef.Namespace}
+				if weErr := r.client.Get(ctx, weKey, we); weErr != nil {
+					logger.V(1).Info("Could not fetch WFE for executionEngine (best-effort)", "error", weErr)
+				} else {
+					executionEngine = we.Status.ExecutionEngine
+				}
+			}
+			notifName, notifErr := r.notificationCreator.CreateCompletionNotification(ctx, rr, ai, executionEngine)
 			if notifErr != nil {
 				logger.Error(notifErr, "Failed to create completion notification, will retry")
 			} else {
