@@ -269,7 +269,7 @@ Your previous workflow response had validation errors:
 {errors_list}
 {schema_section}
 **Please correct your response:**
-1. Re-check the workflow ID exists (use get_workflow with the workflow_id)
+1. Re-check the workflow ID exists in the catalog (use get_workflow with the workflow_id)
 2. Verify all required parameters are provided with correct types and values
 
 **Re-submit your JSON response with the corrected workflow selection.**
