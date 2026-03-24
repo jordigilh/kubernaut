@@ -1544,7 +1544,6 @@ _Appears in:_
 | `parameters`| _object (keys:string, values:string)_| Parameters from LLM selection <br />Keys are UPPER_SNAKE_CASE for Tekton PipelineRun params|
 | `confidence`| _float_| Confidence score from LLM (for audit trail)|
 | `rationale`| _string_| Rationale from LLM (for audit trail)|
-| `executionEngine`| _string_| ExecutionEngine specifies the backend engine for workflow execution.<br />"tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job; "ansible" runs an AWX job.|
 | `executionConfig`| _[ExecutionConfig](#executionconfig)_| ExecutionConfig contains minimal execution settings|
 
 
@@ -1569,6 +1568,7 @@ _Appears in:_
 | `failureDetails`| _[FailureDetails](#failuredetails)_| FailureDetails contains structured failure information<br />Populated when Phase=Failed|
 | `blockClearance`| _[BlockClearanceDetails](#blockclearancedetails)_| BlockClearance tracks the clearing of PreviousExecutionFailed blocks<br />When set, allows new executions despite previous execution failure<br />Preserves audit trail of WHO cleared the block and WHY|
 | `ephemeralCredentialIDs`| _integer array_| EphemeralCredentialIDs stores AWX credential IDs created by the ansible<br />executor for cleanup after execution . Written via the status<br />subresource to avoid violating spec immutability .|
+| `executionEngine`| _string_| ExecutionEngine is the backend engine resolved from the DS workflow catalog<br />at runtime by the WE controller. Set once during Pending phase via<br />WorkflowQuerier.GetWorkflowExecutionEngine; immutable thereafter.<br />Values: "tekton", "job", "ansible".|
 | `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions provide detailed status information|
 
 
