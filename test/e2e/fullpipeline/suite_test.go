@@ -155,10 +155,10 @@ var _ = SynchronizedBeforeSuite(
 		By("Seeding action types via kubectl apply (DD-WORKFLOW-016)")
 		Expect(infrastructure.SeedE2EActionTypes(tempKubeconfigPath, namespace, GinkgoWriter)).To(Succeed(), "Failed to seed action types")
 
-		By("Seeding FP test workflows via kubectl apply (declarative)")
+		By("Seeding FP test workflows via kubectl apply (declarative, job engine — no Tekton in FP cluster)")
 		fpWorkflows := []infrastructure.WorkflowSeedSpec{
-			{FixtureDir: "crashloop-config-fix", Environment: "production"},
-			{FixtureDir: "oomkill-increase-memory", Environment: "production"},
+			{FixtureDir: "crashloop-config-fix-job", Environment: "production"},
+			{FixtureDir: "oomkill-increase-memory-job", Environment: "production"},
 			{FixtureDir: "fix-certificate", Environment: "production"},
 		}
 		seededUUIDs, seedErr := infrastructure.SeedWorkflowsViaKubectlApply(
