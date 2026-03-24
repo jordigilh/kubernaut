@@ -306,7 +306,7 @@ func (a *DSClientAdapter) ForceDisableActionType(ctx context.Context, name strin
 	if err != nil {
 		return nil, fmt.Errorf("force-disable action type %q: %w", name, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	switch resp.StatusCode {
 	case http.StatusOK:
