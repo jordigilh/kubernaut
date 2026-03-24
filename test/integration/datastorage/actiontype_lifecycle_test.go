@@ -47,6 +47,27 @@ import (
 //
 // ========================================
 
+func buildMinimalWorkflow(workflowName, actionType string, seq int) *models.RemediationWorkflow {
+	content := fmt.Sprintf(`{"steps":[{"action":"test-%d"}]}`, seq)
+	contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
+	createdBy := "integration-test"
+	return &models.RemediationWorkflow{
+		WorkflowName:    workflowName,
+		Version:         "1.0.0",
+		SchemaVersion:   "1.0",
+		Name:            workflowName,
+		Description:     models.StructuredDescription{What: "test workflow", WhenToUse: "during integration tests"},
+		Content:         content,
+		ContentHash:     contentHash,
+		ActionType:      actionType,
+		ExecutionEngine: models.ExecutionEngineJob,
+		Labels:          models.MandatoryLabels{Severity: []string{"critical"}, Component: "pod"},
+		Status:          "active",
+		IsLatestVersion: true,
+		CreatedBy:       &createdBy,
+	}
+}
+
 var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integration", "actiontype"), func() {
 	var (
 		atRepo       *actiontyperepo.Repository
@@ -176,26 +197,9 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 			_, err := atRepo.Create(ctx, name, desc, "admin@example.com")
 			Expect(err).ToNot(HaveOccurred())
 
-			// Insert a fake active workflow referencing this action type
-			wfName := fmt.Sprintf("AT-IT-%s-wf-dep", testID)
-			content := `{"steps":[{"action":"test"}]}`
-			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-			labelsJSON, _ := json.Marshal(map[string]interface{}{
-				"severity": []string{"critical"}, "component": "pod",
-				"priority": "P0", "environment": []string{"production"},
-			})
-			descJSON, _ := json.Marshal(map[string]string{
-				"what": "test workflow", "whenToUse": "during tests",
-			})
-
-			_, err = db.ExecContext(ctx,
-				`INSERT INTO remediation_workflow_catalog
-				 (workflow_name, version, name, is_latest_version, status, content, content_hash,
-				  action_type, labels, description)
-				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-				wfName, "1.0.0", wfName, true, "active", content, contentHash,
-				name, labelsJSON, descJSON)
-			Expect(err).ToNot(HaveOccurred(), "Inserting fake workflow should succeed")
+			// Register workflow via repo (Issue #514: replaced raw SQL)
+			wf := buildMinimalWorkflow(fmt.Sprintf("AT-IT-%s-wf-dep", testID), name, 1)
+			Expect(workflowRepo.Create(ctx, wf)).To(Succeed(), "Registering workflow should succeed")
 
 			// Disable should be denied
 			disResult, err := atRepo.Disable(ctx, name, "admin@example.com")
@@ -203,17 +207,17 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 			Expect(disResult.Disabled).To(BeFalse(),
 				"Disable should be denied when active workflows exist")
 			Expect(disResult.DependentWorkflowCount).To(Equal(1))
-			Expect(disResult.DependentWorkflows).To(ContainElement(wfName))
+			Expect(disResult.DependentWorkflows).To(ContainElement(wf.WorkflowName))
 
 			// Verify action type still active
 			fetched, err := atRepo.GetByName(ctx, name)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(fetched.Status).To(Equal("active"))
 
-			// Remove workflow, then disable should succeed
-			_, err = db.ExecContext(ctx,
-				"DELETE FROM remediation_workflow_catalog WHERE workflow_name = $1", wfName)
+			// Disable workflow via repo, then AT disable should succeed (Issue #514)
+			created, err := workflowRepo.GetActiveByWorkflowName(ctx, wf.WorkflowName)
 			Expect(err).ToNot(HaveOccurred())
+			Expect(workflowRepo.UpdateStatus(ctx, created.WorkflowID, created.Version, "disabled", "CRD deleted", "admin@example.com")).To(Succeed())
 
 			disResult2, err := atRepo.Disable(ctx, name, "admin@example.com")
 			Expect(err).ToNot(HaveOccurred())
@@ -394,34 +398,111 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 			_, err := atRepo.Create(ctx, name, desc, "admin@example.com")
 			Expect(err).ToNot(HaveOccurred())
 
-			// Insert 2 active workflows
 			for i := 1; i <= 2; i++ {
-				wfName := fmt.Sprintf("AT-IT-%s-wf-count-%d", testID, i)
-				content := fmt.Sprintf(`{"steps":[{"action":"test-%d"}]}`, i)
-				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-				labelsJSON, _ := json.Marshal(map[string]interface{}{
-					"severity": []string{"critical"}, "component": "pod",
-				})
-				descJSON, _ := json.Marshal(map[string]string{
-					"what": "test", "whenToUse": "test",
-				})
-
-				_, insertErr := db.ExecContext(ctx,
-					`INSERT INTO remediation_workflow_catalog
-					 (workflow_name, version, name, is_latest_version, status, content, content_hash,
-					  action_type, labels, description)
-					 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-					wfName, "1.0.0", wfName, true, "active", content, contentHash,
-					name, labelsJSON, descJSON)
-				Expect(insertErr).ToNot(HaveOccurred())
+				wf := buildMinimalWorkflow(fmt.Sprintf("AT-IT-%s-wf-count-%d", testID, i), name, i)
+				Expect(workflowRepo.Create(ctx, wf)).To(Succeed())
 			}
 
 			count, names, err := atRepo.CountActiveWorkflows(ctx, name)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(count).To(Equal(2))
 			Expect(names).To(HaveLen(2))
+		})
+	})
 
-			_ = workflowRepo
+	// ========================================
+	// IT-AT-512-001: ForceDisable with orphaned workflows
+	// Issue #512
+	// ========================================
+	Describe("IT-AT-512-001: ForceDisable cleans orphaned workflows and disables action type", func() {
+		It("should disable named orphaned workflows and then disable the action type", func() {
+			name := atName("force-disable")
+			desc := baseDesc()
+
+			_, err := atRepo.Create(ctx, name, desc, "admin@example.com")
+			Expect(err).ToNot(HaveOccurred())
+
+			orphanWf := buildMinimalWorkflow(fmt.Sprintf("AT-IT-%s-orphan", testID), name, 1)
+			Expect(workflowRepo.Create(ctx, orphanWf)).To(Succeed())
+
+			// Normal disable should be denied
+			disResult, err := atRepo.Disable(ctx, name, "admin@example.com")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(disResult.Disabled).To(BeFalse())
+			Expect(disResult.DependentWorkflowCount).To(Equal(1))
+
+			// ForceDisable with the orphan's name should succeed
+			forceResult, err := atRepo.ForceDisable(ctx, name, "admin@example.com", []string{orphanWf.WorkflowName})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(forceResult.Disabled).To(BeTrue(),
+				"ForceDisable should succeed when all dependents are named as orphans")
+
+			// Verify the action type is disabled
+			fetched, err := atRepo.GetByName(ctx, name)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(fetched.Status).To(Equal("disabled"))
+		})
+
+		It("should deny when non-orphaned workflows remain", func() {
+			name := atName("force-partial")
+			desc := baseDesc()
+
+			_, err := atRepo.Create(ctx, name, desc, "admin@example.com")
+			Expect(err).ToNot(HaveOccurred())
+
+			orphanWf := buildMinimalWorkflow(fmt.Sprintf("AT-IT-%s-fp-orphan", testID), name, 1)
+			Expect(workflowRepo.Create(ctx, orphanWf)).To(Succeed())
+
+			liveWf := buildMinimalWorkflow(fmt.Sprintf("AT-IT-%s-fp-live", testID), name, 2)
+			Expect(workflowRepo.Create(ctx, liveWf)).To(Succeed())
+
+			// ForceDisable naming only the orphan should still deny (live remains)
+			forceResult, err := atRepo.ForceDisable(ctx, name, "admin@example.com", []string{orphanWf.WorkflowName})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(forceResult.Disabled).To(BeFalse(),
+				"ForceDisable should deny when non-orphaned workflows remain")
+			Expect(forceResult.DependentWorkflowCount).To(Equal(1))
+			Expect(forceResult.DependentWorkflows).To(ConsistOf(liveWf.WorkflowName))
+
+			// Verify the action type is still active
+			fetched, err := atRepo.GetByName(ctx, name)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(fetched.Status).To(Equal("active"))
+		})
+	})
+
+	// ========================================
+	// IT-AT-512-002: Full lifecycle via repo methods
+	// Issue #512, #514: Replaces raw SQL with proper repo calls
+	// ========================================
+	Describe("IT-AT-512-002: Full AT+workflow lifecycle via repo methods", func() {
+		It("should create AT, register workflow, disable workflow, then disable AT", func() {
+			name := atName("lifecycle")
+			desc := baseDesc()
+
+			By("Creating action type")
+			_, err := atRepo.Create(ctx, name, desc, "admin@example.com")
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Registering workflow via workflowRepo.Create")
+			wf := buildMinimalWorkflow(fmt.Sprintf("AT-IT-%s-lifecycle-wf", testID), name, 1)
+			Expect(workflowRepo.Create(ctx, wf)).To(Succeed())
+
+			By("Verifying AT disable is denied with active workflow")
+			disResult, err := atRepo.Disable(ctx, name, "admin@example.com")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(disResult.Disabled).To(BeFalse())
+
+			By("Disabling workflow via workflowRepo.UpdateStatus")
+			created, err := workflowRepo.GetActiveByWorkflowName(ctx, wf.WorkflowName)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(workflowRepo.UpdateStatus(ctx, created.WorkflowID, created.Version, "disabled", "CRD deleted", "admin@example.com")).To(Succeed())
+
+			By("Verifying AT disable now succeeds")
+			disResult, err = atRepo.Disable(ctx, name, "admin@example.com")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(disResult.Disabled).To(BeTrue(),
+				"AT disable should succeed after all workflows are disabled")
 		})
 	})
 })
