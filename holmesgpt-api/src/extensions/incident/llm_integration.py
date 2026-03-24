@@ -66,83 +66,88 @@ from src.extensions.investigation_helpers import (
     audit_llm_response_and_tools,
     handle_validation_exhaustion,
 )
-
 # ADR-056: DetectedLabels import removed -- no longer extracted from request
 
 logger = logging.getLogger(__name__)
 
 
 # ========================================
-# BR-496: affectedResource mismatch detection
+# BR-496 v2: HAPI-Owned Target Resource Identity
 # ========================================
 
-def _affected_resource_matches(
-    llm_ar: Optional[Dict[str, Any]],
-    root_owner: Dict[str, str],
-) -> bool:
-    """Check if the LLM's affectedResource matches the K8s-verified root_owner.
-
-    Comparison is case-insensitive because K8s resource kinds are
-    case-insensitive (e.g. "deployment" vs "Deployment") and names are
-    lowercase by convention but the LLM may capitalize them.
-    """
-    if not llm_ar:
-        return False
-    return (
-        llm_ar.get("kind", "").lower() == root_owner.get("kind", "").lower()
-        and llm_ar.get("name", "").lower() == root_owner.get("name", "").lower()
-        and llm_ar.get("namespace", "").lower() == root_owner.get("namespace", "").lower()
-    )
-
-
-def _check_affected_resource_mismatch(
+def _inject_target_resource(
     result: Dict[str, Any],
     session_state: Dict[str, Any],
     remediation_id: str,
 ) -> None:
-    """Flag needs_human_review when affectedResource diverges from root_owner.
+    """Inject TARGET_RESOURCE_* and affectedResource from K8s-verified root_owner.
 
-    Two cases:
-    1. root_owner exists and LLM provided an affectedResource that doesn't
-       match → affectedResource_mismatch
-    2. root_owner missing (get_resource_context never called or failed) →
-       unverified_target_resource
+    HAPI owns the target resource identity. The LLM never provides
+    affectedResource or TARGET_RESOURCE_* — HAPI derives them from
+    root_owner captured by get_resource_context during the investigation.
 
-    When affectedResource is absent entirely, the result_parser's BR-HAPI-212
-    check (rca_incomplete) already handles it — we don't overwrite that.
-    Similarly, if needs_human_review was already set by the parser or LLM
-    (E2E-HAPI-003), we preserve the existing reason and only add ours when
-    no reason is set yet.
+    Steps:
+    1. Read root_owner from session_state
+    2. If missing or malformed → rca_incomplete
+    3. Construct affectedResource from root_owner (Go backward compat)
+    4. Ensure root_cause_analysis exists before injecting affectedResource
+    5. If selected_workflow → inject TARGET_RESOURCE_NAME/KIND/NAMESPACE
     """
-    selected_wf = result.get("selected_workflow")
-    if selected_wf is None:
-        return
-
     root_owner = session_state.get("root_owner")
-    if root_owner is not None:
-        rca = result.get("root_cause_analysis", {})
-        llm_ar = rca.get("affectedResource") or rca.get("affected_resource")
-        # Only flag mismatch when affectedResource is present but wrong.
-        # Missing affectedResource is already caught by result_parser
-        # (BR-HAPI-212 → "rca_incomplete").
-        if llm_ar is not None and not _affected_resource_matches(llm_ar, root_owner):
-            logger.warning({
-                "event": "affected_resource_mismatch",
-                "llm_affected_resource": llm_ar,
-                "k8s_root_owner": root_owner,
-                "remediation_id": remediation_id,
-            })
-            result["needs_human_review"] = True
-            if "human_review_reason" not in result:
-                result["human_review_reason"] = "affectedResource_mismatch"
-    else:
+
+    if root_owner is None:
         logger.warning({
-            "event": "unverified_target_resource",
+            "event": "target_resource_injection_failed",
+            "reason": "root_owner_missing",
             "remediation_id": remediation_id,
         })
         result["needs_human_review"] = True
-        if "human_review_reason" not in result:
-            result["human_review_reason"] = "unverified_target_resource"
+        result["human_review_reason"] = "rca_incomplete"
+        return
+
+    kind = root_owner.get("kind", "")
+    name = root_owner.get("name", "")
+    if not kind or not name:
+        logger.warning({
+            "event": "target_resource_injection_failed",
+            "reason": "root_owner_malformed",
+            "root_owner": root_owner,
+            "remediation_id": remediation_id,
+        })
+        result["needs_human_review"] = True
+        result["human_review_reason"] = "rca_incomplete"
+        return
+
+    ns = root_owner.get("namespace", "")
+
+    affected_resource: Dict[str, str] = {"kind": kind, "name": name}
+    if ns:
+        affected_resource["namespace"] = ns
+
+    rca = result.get("root_cause_analysis")
+    if rca is None:
+        rca = {}
+        result["root_cause_analysis"] = rca
+    rca["affectedResource"] = affected_resource
+
+    logger.info({
+        "event": "target_resource_injected",
+        "root_owner": root_owner,
+        "remediation_id": remediation_id,
+        "has_workflow": result.get("selected_workflow") is not None,
+    })
+
+    selected_wf = result.get("selected_workflow")
+    if selected_wf is not None:
+        params = selected_wf.get("parameters")
+        if params is None:
+            params = {}
+            selected_wf["parameters"] = params
+
+        params["TARGET_RESOURCE_NAME"] = name
+        params["TARGET_RESOURCE_KIND"] = kind
+        if ns:
+            params["TARGET_RESOURCE_NAMESPACE"] = ns
 
 
 # ========================================
@@ -555,11 +560,10 @@ async def analyze_incident(
                 "count": len(result["validation_attempts_history"])
             })
 
-        # BR-496: Detect affectedResource vs root_owner mismatch.
-        # The prompt instructs the LLM to set affectedResource = root_owner,
-        # but if it diverges, flag for human review rather than letting a
-        # wrong resource get remediated.
-        _check_affected_resource_mismatch(result, session_state, remediation_id)
+        # BR-496 v2: HAPI owns the target resource identity.
+        # Inject TARGET_RESOURCE_* from root_owner, construct affectedResource
+        # for Go backward compat, set rca_incomplete if root_owner missing.
+        _inject_target_resource(result, session_state, remediation_id)
 
         # ADR-056: Inject runtime-computed detected_labels into response
         from src.extensions.llm_config import inject_detected_labels

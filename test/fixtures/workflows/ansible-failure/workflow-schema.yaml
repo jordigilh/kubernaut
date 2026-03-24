@@ -29,6 +29,18 @@ spec:
       jobTemplateName: "kubernaut-test-failure"
   
   parameters:
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Name of the root managing resource (HAPI-injected)"
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+      description: "Kind of the root managing resource (HAPI-injected)"
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the root managing resource (HAPI-injected)"
     - name: target_kind
       type: string
       required: true

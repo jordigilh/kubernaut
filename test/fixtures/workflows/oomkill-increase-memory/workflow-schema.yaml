@@ -25,18 +25,18 @@ spec:
     bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
   
   parameters:
-    - name: TARGET_RESOURCE_KIND
-      type: string
-      required: false
-      description: "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet). Falls back to TARGET_RESOURCE if not provided."
     - name: TARGET_RESOURCE_NAME
       type: string
-      required: false
-      description: "Name of the resource to patch. Falls back to TARGET_RESOURCE if not provided."
-    - name: TARGET_NAMESPACE
+      required: true
+      description: "Name of the root managing resource (HAPI-injected from root_owner)"
+    - name: TARGET_RESOURCE_KIND
       type: string
-      required: false
-      description: "Namespace of the resource. Falls back to TARGET_RESOURCE if not provided."
+      required: true
+      description: "Kind of the root managing resource (HAPI-injected from root_owner)"
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the root managing resource (HAPI-injected from root_owner)"
     - name: MEMORY_LIMIT_NEW
       type: string
       required: true

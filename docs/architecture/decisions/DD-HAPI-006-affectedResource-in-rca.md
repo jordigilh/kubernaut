@@ -1,10 +1,10 @@
 # DD-HAPI-006: Affected Resource in Root Cause Analysis
 
 **Status**: ✅ Approved
-**Version**: 1.3
+**Version**: 1.4
 **Date**: 2026-02-24
-**Last Updated**: 2026-03-04 (BR-496: Added mismatch detection layer)
-**Confidence**: 95%
+**Last Updated**: 2026-03-04 (BR-496 v2: HAPI-owned target resource identity)
+**Confidence**: 97%
 **Authority**: Authoritative (Approved)
 
 ---
@@ -26,22 +26,22 @@ HolmesGPT-API returns `root_cause_analysis` in its `/incident/analyze` response.
 3. ❌ **Incorrect remediation** - workflows could target the wrong resource
 4. ❌ **Resource ambiguity** - multiple resources with same Kind/Name but different APIVersions
 
-### Current State
+### Current State (v1.4 — BR-496 v2)
 
-**HAPI Code** (`holmesgpt-api/src/extensions/incident/result_parser.py` line 218):
+**HAPI Code** (`holmesgpt-api/src/extensions/incident/llm_integration.py`):
 ```python
-# Check if RCA-identified target is in OwnerChain
-rca_target = rca.get("affectedResource") or rca.get("affected_resource")
-if rca_target and owner_chain:
-    target_in_owner_chain = is_target_in_owner_chain(rca_target, owner_chain, request_data)
+# BR-496 v2: HAPI owns the target resource identity.
+# _inject_target_resource derives affectedResource from K8s-verified root_owner
+# stored in session_state by get_resource_context.
+_inject_target_resource(result, session_state, remediation_id)
 ```
 
-**Observation**: HAPI **already extracts** `affectedResource` from the LLM response and validates it, but:
-- ❌ It's **not documented** in the HAPI OpenAPI spec
-- ❌ It's **not extracted** by AIAnalysis response processor
-- ❌ It's **not stored** in AIAnalysis CRD status
-- ❌ It's **not used** by RemediationOrchestrator for scope validation
-- ❌ **apiVersion** not required → ambiguous resource identification
+**Architecture (v1.4)**: HAPI **owns** target resource identity — the LLM never provides `affectedResource`. Instead:
+- ✅ `get_resource_context` resolves the K8s owner chain and stores `root_owner` in `session_state`
+- ✅ `_inject_target_resource` derives `affectedResource` from `root_owner` (K8s-verified)
+- ✅ `_inject_target_resource` injects `TARGET_RESOURCE_NAME/KIND/NAMESPACE` into workflow params
+- ✅ Prompts do **not** instruct the LLM to provide `affectedResource`
+- ✅ If `root_owner` is missing → `needs_human_review=true`, `human_review_reason=rca_incomplete`
 
 ---
 
@@ -62,9 +62,9 @@ if rca_target and owner_chain:
 
 ---
 
-### 1. HAPI Contract Enhancement (BR-HAPI-212)
+### 1. HAPI Contract Enhancement (BR-HAPI-212, BR-496 v2)
 
-HolmesGPT-API's `/incident/analyze` endpoint **MUST** return an `affectedResource` object within `root_cause_analysis`:
+HolmesGPT-API's `/incident/analyze` endpoint **MUST** return an `affectedResource` object within `root_cause_analysis`, **derived by HAPI from `root_owner`** (not from the LLM):
 
 ```json
 {
@@ -74,36 +74,39 @@ HolmesGPT-API's `/incident/analyze` endpoint **MUST** return an `affectedResourc
     "contributing_factors": ["OOMKilled events recurring", "No HPA configured"],
     "affectedResource": {
       "kind": "Deployment",
-      "apiVersion": "apps/v1",
       "name": "payment-api",
       "namespace": "production"
+    }
+  },
+  "selected_workflow": {
+    "workflow_id": "oomkill-increase-memory-v1",
+    "parameters": {
+      "TARGET_RESOURCE_NAME": "payment-api",
+      "TARGET_RESOURCE_KIND": "Deployment",
+      "TARGET_RESOURCE_NAMESPACE": "production",
+      "MEMORY_LIMIT_NEW": "256Mi"
     }
   }
 }
 ```
 
-**Contract Guarantees**:
-- `affectedResource` is **CONDITIONALLY REQUIRED**:
-  - **REQUIRED** when `selected_workflow` is present (workflow matched → remediation planned)
-  - **OPTIONAL** when `selected_workflow` is null (no workflow match → no remediation possible)
-  - **OPTIONAL** when `investigation_outcome=problem_resolved` (BR-HAPI-200 → no remediation needed)
-  - **OPTIONAL** when `needs_human_review=true` (investigation inconclusive/failed)
-- **Required fields within `affectedResource`** when present:
-  - **`kind`**: REQUIRED string - Kubernetes resource kind (e.g., "Deployment", "Pod")
-  - **`apiVersion`**: OPTIONAL string - Kubernetes API version (e.g., "apps/v1", "v1")
-    - When provided: Used for deterministic GVK resolution (prevents ambiguity with custom resources)
-    - When missing: RO uses static mapping for core Kubernetes resources (Pod, Deployment, Service, etc.)
-    - Recommended for signal sources that provide it (Kubernetes Events, Prometheus)
-  - **`name`**: REQUIRED string - Resource name
-  - **`namespace`**: CONDITIONALLY REQUIRED - Required for namespace-scoped resources, omit for cluster-scoped resources (e.g., Node, PersistentVolume). The CRD schema marks this field as `+optional` (Issue #192) so cluster-scoped targets pass K8s validation.
-- **LLM response format** MUST include `affectedResource` when selecting a workflow for remediation
-- **HAPI validation logic** (DD-HAPI-002 v1.2 - 3-attempt self-correction loop):
-  - If `selected_workflow` present AND `affectedResource` missing → Set `needs_human_review=true`, `human_review_reason=rca_incomplete`
-  - If `selected_workflow` is null → `affectedResource` not validated (no remediation planned)
-  - If `investigation_outcome=problem_resolved` → `affectedResource` not validated (problem already resolved)
-  - If `needs_human_review=true` (other reason) → `affectedResource` not validated (already requires review)
-  - `apiVersion` is optional - no validation error if missing (RO uses static mapping for core resources)
-- **HAPI validates `affectedResource` is in OwnerChain** when present (already implemented in `result_parser.py` line 218)
+**Contract Guarantees (v1.4 — HAPI-Owned Identity)**:
+- `affectedResource` is **HAPI-injected** (not LLM-provided):
+  - `get_resource_context` resolves the K8s owner chain (Pod → ReplicaSet → Deployment) and stores `root_owner` in `session_state`
+  - `_inject_target_resource` copies `root_owner` into `root_cause_analysis.affectedResource` for Go backward compat
+  - `_inject_target_resource` injects `TARGET_RESOURCE_NAME`, `TARGET_RESOURCE_KIND`, `TARGET_RESOURCE_NAMESPACE` into `selected_workflow.parameters`
+  - If `root_owner` is missing from `session_state` → Set `needs_human_review=true`, `human_review_reason=rca_incomplete`
+- **Fields within `affectedResource`** (derived from `root_owner`):
+  - **`kind`**: REQUIRED string — Kubernetes resource kind (e.g., "Deployment", "StatefulSet")
+  - **`name`**: REQUIRED string — Resource name
+  - **`namespace`**: CONDITIONALLY REQUIRED — Present for namespace-scoped resources, omitted for cluster-scoped resources (e.g., Node, PersistentVolume). The CRD schema marks this field as `+optional` (Issue #192).
+- **Canonical workflow parameters** (HAPI-managed, not LLM-provided):
+  - `TARGET_RESOURCE_NAME`: Root owner name (mandatory)
+  - `TARGET_RESOURCE_KIND`: Root owner kind (mandatory)
+  - `TARGET_RESOURCE_NAMESPACE`: Root owner namespace (present for namespaced resources)
+- **Workflow schema contract**: All workflow schemas **MUST** declare the three canonical parameters (`TARGET_RESOURCE_NAME`, `TARGET_RESOURCE_KIND`, `TARGET_RESOURCE_NAMESPACE`). The `WorkflowResponseValidator` Step 0 rejects schemas that don't declare them.
+- **Schema stripping**: `get_workflow` strips canonical parameters from the schema before returning it to the LLM, preventing the LLM from providing values that HAPI will overwrite.
+- **LLM prompt**: Does **NOT** instruct the LLM to provide `affectedResource`. The LLM focuses on calling `get_resource_context` to identify the root owner.
 
 ### 2. AIAnalysis CRD Enhancement (BR-AI-084)
 
@@ -378,15 +381,15 @@ metadata:
 5. **SignalProcessing CRD** (`api/signalprocessing/v1alpha1/types.go`): Add `APIVersion` to `TargetResource`
 
 ### Implementation Files (Updated)
-1. **HAPI Result Parser** (`holmesgpt-api/src/extensions/incident/result_parser.py`): Update validation to require `apiVersion`
-2. **HAPI Validation** (`holmesgpt-api/src/validation/workflow_response_validator.py`): Add `apiVersion` validation
-3. **AIAnalysis Response Processor** (`pkg/aianalysis/handlers/response_processor.go`): Add extraction logic for `apiVersion`
-4. **AIAnalysis Rego Evaluator** (`pkg/aianalysis/rego/evaluator.go`): Add `affected_resource` to `PolicyInput`
-5. **Gateway Adapters** (`pkg/gateway/adapters/*.go`): Extract `apiVersion` from signal sources
-6. **RemediationOrchestrator Scope Validator** (`pkg/remediationorchestrator/routing/scope_validator.go`): Use `apiVersion` for GVK resolution
-7. **HAPI LLM Integration** (`holmesgpt-api/src/extensions/incident/llm_integration.py`): v1.3 — `_affected_resource_matches()` + `_check_affected_resource_mismatch()` for post-loop mismatch detection
-8. **HAPI Resource Context Tool** (`holmesgpt-api/src/toolsets/resource_context.py`): v1.3 — Store K8s-verified `root_owner` in `session_state`
-9. **HAPI Prompt Builder** (`holmesgpt-api/src/extensions/incident/prompt_builder.py`): v1.3 — Phase 3b strengthened: `affectedResource` MUST match `root_owner`
+1. **HAPI LLM Integration** (`holmesgpt-api/src/extensions/incident/llm_integration.py`): v1.4 — `_inject_target_resource()` replaces `_check_affected_resource_mismatch()`. Derives `affectedResource` and `TARGET_RESOURCE_*` from `session_state["root_owner"]`.
+2. **HAPI Resource Context Tool** (`holmesgpt-api/src/toolsets/resource_context.py`): v1.3 — Store K8s-verified `root_owner` in `session_state`
+3. **HAPI Prompt Builder** (`holmesgpt-api/src/extensions/incident/prompt_builder.py`): v1.4 — Removed all `affectedResource` instructions. LLM focuses on `get_resource_context`.
+4. **HAPI Result Parser** (`holmesgpt-api/src/extensions/incident/result_parser.py`): v1.4 — Removed BR-HAPI-212 `rca_incomplete` check for missing `affectedResource` (superseded by `_inject_target_resource`).
+5. **HAPI Validation** (`holmesgpt-api/src/validation/workflow_response_validator.py`): v1.4 — Added `HAPI_MANAGED_PARAMS` constant, `_validate_canonical_params` (Step 0), and skip required-check for HAPI-managed params.
+6. **HAPI Workflow Discovery** (`holmesgpt-api/src/toolsets/workflow_discovery.py`): v1.4 — `strip_hapi_managed_params()` removes `TARGET_RESOURCE_*` from schema before returning to LLM.
+7. **AIAnalysis Response Processor** (`pkg/aianalysis/handlers/response_processor.go`): `ExtractRootCauseAnalysis` maps `affectedResource` from HAPI response into CRD.
+8. **AIAnalysis Rego Evaluator** (`pkg/aianalysis/rego/evaluator.go`): `affected_resource` in `PolicyInput`.
+9. **RemediationOrchestrator Scope Validator** (`pkg/remediationorchestrator/routing/scope_validator.go`): Uses `AffectedResource` for scope validation.
 
 ### Documentation (Created/Updated)
 1. **LLM Response Format Guide** (`holmesgpt-api/docs/LLM_RESPONSE_FORMAT.md`): Document `affectedResource` structure with `apiVersion` examples
@@ -417,27 +420,20 @@ metadata:
 
 ---
 
-## Defense-in-Depth: Four-Layer AffectedResource Validation (v1.3)
+## Defense-in-Depth: Three-Layer AffectedResource Validation (v1.4)
 
-Four independent layers validate `affectedResource`, ensuring a consistent operator experience regardless of which layer catches the issue:
+Three independent layers ensure `affectedResource` is always populated correctly, producing a consistent operator experience regardless of which layer catches an issue:
 
-### Layer 1a: HAPI Presence Check (LLM Level)
-- **File**: `holmesgpt-api/src/extensions/incident/result_parser.py`
-- **Check**: If `selected_workflow` present AND `affectedResource` missing → `needs_human_review=true`, `human_review_reason=rca_incomplete`
-- **Reference**: BR-HAPI-212 scenario #7
-
-### Layer 1b: HAPI Mismatch Detection (Post-Validation)
-- **File**: `holmesgpt-api/src/extensions/incident/llm_integration.py`
-- **Trigger**: After the self-correction loop completes, before returning the result.
-- **Mechanism**: During investigation, `get_resource_context` stores the K8s-verified `root_owner` in `session_state` (file: `holmesgpt-api/src/toolsets/resource_context.py`). After the self-correction loop, HAPI compares the LLM's `affectedResource` against `session_state["root_owner"]`.
-- **Check 1**: If `affectedResource` present but doesn't match `root_owner` → `needs_human_review=true`, `human_review_reason=affectedResource_mismatch`. The `remediation_history` returned by `get_resource_context` is scoped to `root_owner`; a mismatched `affectedResource` means the LLM's workflow selection may be based on incorrect historical context.
-- **Check 2**: If `root_owner` missing from `session_state` (tool never called or failed) AND `selected_workflow` present → `needs_human_review=true`, `human_review_reason=unverified_target_resource`.
-- **Guard**: Does not overwrite a `human_review_reason` already set by Layer 1a or the LLM. Only sets the reason if none is present.
-- **Prompt reinforcement**: Phase 3b of the investigation prompt explicitly instructs the LLM that `affectedResource` MUST match `root_owner` and explains the consequence of diverging.
-- **Reference**: BR-496, ADR-056 v1.4 (session_state)
+### Layer 1: HAPI Injection (Authoritative Source — BR-496 v2)
+- **File**: `holmesgpt-api/src/extensions/incident/llm_integration.py` (`_inject_target_resource`)
+- **Mechanism**: `get_resource_context` resolves the K8s owner chain and stores `root_owner` in `session_state`. After the self-correction loop, `_inject_target_resource` unconditionally sets `affectedResource` from `root_owner` and injects `TARGET_RESOURCE_*` into workflow parameters.
+- **Missing root_owner**: If `root_owner` is absent from `session_state` (tool never called or failed) → `needs_human_review=true`, `human_review_reason=rca_incomplete`.
+- **LLM overwrite**: Any `affectedResource` the LLM might include is unconditionally overwritten by the K8s-verified `root_owner`.
+- **Schema stripping**: `get_workflow` strips `TARGET_RESOURCE_*` from the schema before returning it to the LLM, so the LLM never sees or populates these params.
+- **Reference**: BR-496 v2, ADR-056 v1.4 (session_state)
 
 ### Layer 2: AIAnalysis (Extraction Level)
-- **File**: `pkg/aianalysis/handlers/response_processor.go` (lines 618-634)
+- **File**: `pkg/aianalysis/handlers/response_processor.go` (`ExtractRootCauseAnalysis`)
 - **Check**: Only stores `AffectedResource` when `kind != ""` AND `name != ""`. Otherwise stays nil.
 - **Reference**: DD-HAPI-006 Section 2
 
@@ -447,21 +443,19 @@ Four independent layers validate `affectedResource`, ensuring a consistent opera
 - **Preconditions**: `WorkflowNotNeeded` and `ApprovalRequired` are already checked before this guard runs. Reaching the guard means a genuine data integrity issue.
 - **Reference**: BR-ORCH-036 v4.0
 
-**Operator Experience**: All four layers produce the same response:
+**Operator Experience**: All three layers produce the same response when target resource cannot be determined:
 - RR transitions to `Failed`
 - `RequiresManualReview = true`
 - `NotificationRequest` created with `type=manual-review`
 - K8s Warning event emitted
 
-**`human_review_reason` values produced by these layers**:
+**`human_review_reason` value**:
 
 | Reason | Layer | When |
 |--------|-------|------|
-| `rca_incomplete` | 1a | `affectedResource` absent, `selected_workflow` present |
-| `affectedResource_mismatch` | 1b | `affectedResource` present but differs from K8s `root_owner` |
-| `unverified_target_resource` | 1b | `root_owner` absent (tool not called/failed), `selected_workflow` present |
+| `rca_incomplete` | 1 | `root_owner` absent from `session_state` (get_resource_context not called or failed) |
 
-> **Note (v1.1.0)**: The Go-side `mapEnumToSubReason` function (`pkg/aianalysis/handlers/response_processor.go`) does not yet map `affectedResource_mismatch` and `unverified_target_resource` — they fall back to `WorkflowNotFound` with a warning log. This is cosmetic; `needs_human_review=true` still blocks remediation. Tracked for v1.2.
+> **Note (v1.4)**: The `affectedResource_mismatch` and `unverified_target_resource` enum values were removed in BR-496 v2. HAPI now unconditionally derives `affectedResource` from `root_owner`, eliminating the possibility of LLM/K8s mismatch. The only failure mode is `root_owner` being absent, which produces `rca_incomplete`.
 
 ---
 
@@ -503,30 +497,27 @@ type RootCauseAnalysis struct {
 
 ## Confidence Assessment
 
-**Confidence Level**: 95%
+**Confidence Level**: 97%
 
 **Strengths**:
-- ✅ HAPI already extracts `affectedResource` from LLM responses (line 218 of `result_parser.py`)
+- ✅ HAPI derives `affectedResource` from K8s-verified `root_owner` — eliminates LLM reliability dependency
 - ✅ Clear use cases and examples (OOMKilled Pod → Deployment)
 - ✅ Aligns with existing BR-SCOPE-001 and BR-SCOPE-010
-- ✅ apiVersion eliminates resource ambiguity with custom resources
-- ✅ Escalation to human review when RCA target unavailable (safe default)
+- ✅ Canonical `TARGET_RESOURCE_*` params ensure workflow jobs get correct resource identity
+- ✅ Schema stripping prevents LLM from providing incorrect values
+- ✅ Escalation to human review when `root_owner` unavailable (safe default)
+- ✅ 21 unit tests + 3 E2E tests covering all injection, validation, stripping, prompt, and parser scenarios
 
 **Risks**:
-- ⚠️ **5% Gap**: LLM may not always provide `apiVersion` consistently
-  - **Mitigation**: HAPI 3-attempt self-correction loop (DD-HAPI-002 v1.2)
-  - **Mitigation**: Escalates to `needs_human_review=true` after 3 attempts (no fallback)
-  - **Mitigation**: Gateway provides `apiVersion` from signal source when available
-- ⚠️ **BR-496**: LLM may provide an `affectedResource` that doesn't match the K8s-verified `root_owner`
-  - **Prevention**: Prompt reinforcement in Phase 3b explains consequence of diverging from `root_owner`
-  - **Detection**: Post-loop comparison of `affectedResource` vs `session_state["root_owner"]`
-  - **Escalation**: `needs_human_review=true` with `human_review_reason=affectedResource_mismatch`
+- ⚠️ **3% Gap**: `get_resource_context` may fail or not be called by the LLM
+  - **Mitigation**: `_inject_target_resource` detects missing `root_owner` and sets `rca_incomplete`
+  - **Mitigation**: Prompt Phase 3b instructs LLM to call `get_resource_context` first
+  - **Mitigation**: Layer 3 (RO) catches any remaining gaps
 
 **Validation**:
-- Unit tests for RCA target extraction with `apiVersion`
-- Unit tests for scope validation with GVK resolution
-- Unit tests for Rego policy input with `affected_resource`
-- HAPI contract documentation in OpenAPI spec
+- 21 Python unit tests covering injection, schema validation, schema stripping, prompt/parser, and enum cleanup
+- 3 E2E tests (E2E-FP-496-001/002/003) validating full pipeline affectedResource and TARGET_RESOURCE_* injection
+- Go build validation confirms CRD enum cleanup compiles cleanly
 
 ---
 
@@ -536,13 +527,14 @@ type RootCauseAnalysis struct {
 |---------|------|---------|
 | 1.1 | 2026-01-20 | Added apiVersion requirement |
 | 1.2 | 2026-02-24 | Added defense-in-depth documentation. Section 5 describes the three-layer model (HAPI → AA → RO) for handling missing AffectedResource. RO guard produces same seamless response as HAPI/AA layers: Failed + ManualReviewRequired + NotificationRequest (BR-ORCH-036 v4.0). |
-| 1.3 | 2026-03-04 | BR-496: Added Layer 1b — affectedResource mismatch detection. `get_resource_context` stores K8s-verified `root_owner` in `session_state`; post-loop check compares LLM's `affectedResource` against `root_owner`. Two new `human_review_reason` values: `affectedResource_mismatch`, `unverified_target_resource`. Prompt strengthened (Phase 3b) to prevent mismatches. Guard respects pre-existing reasons (no overwrite). |
+| 1.3 | 2026-03-04 | BR-496 v1: Added Layer 1b — affectedResource mismatch detection. `get_resource_context` stores K8s-verified `root_owner` in `session_state`; post-loop check compares LLM's `affectedResource` against `root_owner`. Two new `human_review_reason` values: `affectedResource_mismatch`, `unverified_target_resource`. |
+| 1.4 | 2026-03-04 | BR-496 v2: HAPI-owned target resource identity. Replaced Layer 1b mismatch detection with `_inject_target_resource` — HAPI unconditionally derives `affectedResource` from `root_owner`. Removed `affectedResource_mismatch` and `unverified_target_resource` enum values. Added canonical `TARGET_RESOURCE_*` param injection and schema stripping. Simplified defense-in-depth from 4 layers to 3. Prompt no longer instructs LLM to provide `affectedResource`. Validator Step 0 enforces canonical params in workflow schemas. |
 
 ---
 
 **Document Control**:
 - **Created**: 2026-01-20
-- **Last Updated**: 2026-03-04 (v1.3 - BR-496 mismatch detection layer)
-- **Version**: 1.3
+- **Last Updated**: 2026-03-04 (v1.4 - BR-496 v2 HAPI-owned target resource identity)
+- **Version**: 1.4
 - **Status**: ✅ Approved
-- **Next Review**: After v1.1.0 release validation
+- **Next Review**: After v1.1.1 release validation

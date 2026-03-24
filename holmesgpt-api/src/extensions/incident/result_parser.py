@@ -263,9 +263,6 @@ def parse_and_validate_investigation_result(
     # by affected_resource in Rego policy input (BR-AI-085, FR-AI-085-005).
     warnings: List[str] = []
 
-    # Extract RCA target for affectedResource validation
-    rca_target = rca.get("affectedResource") or rca.get("affected_resource")
-
     # E2E-HAPI-003: Check if LLM explicitly set human review fields
     needs_human_review_from_llm = json_data.get("needs_human_review") if json_data else None
     human_review_reason_from_llm = json_data.get("human_review_reason") if json_data else None
@@ -401,20 +398,8 @@ def parse_and_validate_investigation_result(
     # BR-HAPI-197: Confidence threshold enforcement is AIAnalysis's responsibility, not HAPI's
     # HAPI only sets needs_human_review for validation failures, not confidence thresholds
     # AIAnalysis will apply the 70% threshold (V1.0) or configurable rules (V1.1, BR-HAPI-198)
-    # BR-HAPI-212: Validate affectedResource is present when workflow selected
-    # This check must happen AFTER problem_resolved check (workflow not needed if resolved)
-    elif selected_workflow is not None and not rca_target:
-        warnings.append("RCA is missing affectedResource field - cannot determine target for remediation")
-        # E2E-HAPI-003: Only override if LLM didn't provide values
-        if not llm_provided_human_review:
-            needs_human_review = True
-            human_review_reason = "rca_incomplete"
-        logger.warning({
-            "event": "rca_incomplete_missing_affected_resource",
-            "incident_id": incident_id,
-            "selected_workflow_id": selected_workflow.get("workflow_id") if selected_workflow else None,
-            "message": "BR-HAPI-212: Workflow selected but affectedResource missing from RCA"
-        })
+    # BR-496 v2: affectedResource validation removed from parser — HAPI injects it
+    # from K8s-verified root_owner post-loop via _inject_target_resource.
 
     # E2E-HAPI-003: Extract validation_attempts_history from LLM if provided
     validation_attempts_from_llm = json_data.get("validation_attempts_history") if json_data else None

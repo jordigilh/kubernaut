@@ -80,7 +80,7 @@ class MockScenario:
     rca_resource_namespace: str = "default"
     rca_resource_name: str = "test-pod"
     rca_resource_api_version: str = "v1"  # BR-HAPI-212: API version for GVK resolution
-    include_affected_resource: bool = True  # BR-HAPI-212: Whether to include affectedResource in RCA
+    include_affected_resource: bool = False  # BR-496 v2: HAPI injects affectedResource from root_owner post-loop
     rca_override_prompt_resource: bool = False  # DD-EM-004: Use scenario kind/name instead of prompt-extracted
     parameters: Dict[str, str] = field(default_factory=dict)
     execution_engine: str = "tekton"  # BR-WE-014: Execution backend ("tekton" or "job")
@@ -251,7 +251,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_namespace="production",
         rca_resource_name="ambiguous-pod",
         rca_resource_api_version="v1",
-        include_affected_resource=False,  # BR-HAPI-212: Trigger missing affectedResource scenario
+        include_affected_resource=False,  # BR-496 v2: now the default — HAPI injects from root_owner
         # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
         # Schema: NAMESPACE (required), POD_NAME (required)
         parameters={"NAMESPACE": "production", "POD_NAME": "ambiguous-pod"}

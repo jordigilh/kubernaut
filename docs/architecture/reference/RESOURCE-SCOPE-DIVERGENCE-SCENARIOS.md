@@ -21,7 +21,7 @@ Remediating the signal target (the symptom) instead of the RCA target (the cause
 - **Ineffective**: Restarting a Pod that will crash again because its Deployment specifies insufficient memory
 - **Dangerous**: Draining a Node when only one workload is misbehaving, causing unnecessary disruption to all co-located workloads
 
-Kubernaut's architecture addresses this through the `affectedResource` field in the HAPI RCA response, extracted into `AIAnalysis.Status.RootCauseAnalysis.TargetResource` and used by the RemediationOrchestrator for scope validation and workflow execution (see [DD-HAPI-006](../decisions/DD-HAPI-006-affectedResource-in-rca.md)).
+Kubernaut's architecture addresses this by having HAPI derive remediation target identity from the Kubernetes-verified `root_owner` (via `_inject_target_resource`), surfaced as `affectedResource` in the RCA response and in `AIAnalysis.Status.RootCauseAnalysis.TargetResource` for the RemediationOrchestrator's scope validation and workflow execution (see [DD-HAPI-006](../decisions/DD-HAPI-006-affectedResource-in-rca.md)).
 
 ---
 
@@ -153,17 +153,15 @@ Ingress/api-gateway  ← Signal target (latency alert)
 | **Node-to-workload** | Node | Deployment | Per-Pod resource correlation |
 | **Ingress-to-backend** | Ingress | Deployment | Request path tracing |
 
-### Escalation: when the RCA target cannot be determined or is incorrect
+### Escalation: when the RCA target cannot be determined
 
-If the AI identifies a remediation workflow but cannot determine the `affectedResource`, Kubernaut does **not** fall back to the signal target. Instead, it sets `needs_human_review=true` with `human_review_reason=rca_incomplete` and creates a NotificationRequest for human investigation (per [DD-HAPI-006 v1.3](../decisions/DD-HAPI-006-affectedResource-in-rca.md)).
+BR-496 v2 ([DD-HAPI-006 v1.4](../decisions/DD-HAPI-006-affectedResource-in-rca.md)): HAPI derives `affectedResource` from the K8s-verified `root_owner` returned by `get_resource_context` using `_inject_target_resource`. Kubernaut does **not** use the signal target as the stored remediation identity. If `root_owner` is missing when a workflow is selected and verified context is required, HAPI sets `needs_human_review=true` with `human_review_reason=rca_incomplete` and creates a NotificationRequest for human investigation.
 
-Similarly, if the AI provides an `affectedResource` that **does not match** the K8s-verified `root_owner` from `get_resource_context`, HAPI flags the result with `needs_human_review=true` and `human_review_reason=affectedResource_mismatch` (BR-496, DD-HAPI-006 v1.3 Layer 1b). This prevents remediation against the wrong resource when the LLM's RCA target diverges from the actual Kubernetes ownership hierarchy.
-
-**Rationale**: Remediating the symptom resource or a misidentified target without confirming the root cause risks:
+**Rationale**: Remediating the symptom resource or proceeding without a confirmed `root_owner` risks:
 - Masking the real problem (allowing it to recur or worsen)
 - Disrupting the wrong workload (if the signal target is a shared resource like a Node)
 - Creating a false sense of resolution in the audit trail
-- Applying incorrect `remediation_history` context (scoped to `root_owner`, not the LLM's target)
+- Applying incorrect `remediation_history` context (scoped to `root_owner`, not the HAPI-derived target from root_owner)
 
 ### Scope validation
 

@@ -10,6 +10,14 @@ import os
 import time
 import tempfile
 
+# BR-496 v2: Canonical HAPI-managed params that every workflow schema must declare.
+# Shared across test files so mock workflows satisfy _validate_canonical_params.
+CANONICAL_TARGET_PARAMS = [
+    {"name": "TARGET_RESOURCE_NAME", "type": "string", "required": True},
+    {"name": "TARGET_RESOURCE_KIND", "type": "string", "required": True},
+    {"name": "TARGET_RESOURCE_NAMESPACE", "type": "string", "required": True},
+]
+
 # BR-AA-HAPI-064: Session manager reset between tests
 from src.session.session_manager import reset_session_manager
 

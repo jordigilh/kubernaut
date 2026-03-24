@@ -61,6 +61,7 @@ import requests
 from typing import Dict, Any, List, Optional
 
 from src.models.incident_models import DetectedLabels
+from src.validation.workflow_response_validator import HAPI_MANAGED_PARAMS
 
 from holmes.core.tools import (
     Tool,
@@ -163,6 +164,46 @@ def _build_cluster_context_labels(raw_labels) -> Dict[str, Any]:
     for field in failed:
         clean.pop(field, None)
     return clean
+
+
+def strip_hapi_managed_params(data: Dict[str, Any]) -> None:
+    """Strip HAPI-managed TARGET_RESOURCE_* params from a workflow response in-place.
+
+    BR-496 v2: The LLM must never see HAPI-managed parameters in the workflow
+    schema. HAPI injects them after the investigation loop completes. This
+    function removes them before the tool response reaches the LLM.
+    """
+    params = data.get("parameters")
+    if not isinstance(params, dict):
+        if params is not None:
+            logger.warning({
+                "event": "strip_hapi_params_skipped",
+                "reason": "parameters_not_dict",
+                "type": type(params).__name__,
+            })
+        return
+
+    schema = params.get("schema")
+    if not isinstance(schema, dict):
+        return
+
+    param_list = schema.get("parameters")
+    if not isinstance(param_list, list):
+        return
+
+    original_count = len(param_list)
+    schema["parameters"] = [
+        p for p in param_list
+        if p.get("name") not in HAPI_MANAGED_PARAMS
+    ]
+
+    stripped = original_count - len(schema["parameters"])
+    if stripped:
+        logger.info({
+            "event": "hapi_managed_params_stripped",
+            "count": stripped,
+            "workflow_id": data.get("workflow_id"),
+        })
 
 
 def _resources_match(r1: Dict[str, str], r2: Dict[str, Any]) -> bool:
@@ -819,6 +860,8 @@ class GetWorkflowTool(_DiscoveryToolBase):
             )
 
             data = self._do_get(url)
+
+            strip_hapi_managed_params(data)
 
             logger.info(
                 f"✅ Step 3 complete: Retrieved workflow {data.get('workflow_name', workflow_id)}"

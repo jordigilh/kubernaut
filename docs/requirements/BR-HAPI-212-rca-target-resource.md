@@ -6,7 +6,7 @@
 **Target Version**: V1.1
 **Status**: ✅ Approved
 **Date**: 2026-01-20
-**Last Updated**: 2026-03-04
+**Last Updated**: 2026-03-04 (BR-496 v2: HAPI-owned target resource identity)
 
 **Related Design Decisions**:
 - [DD-HAPI-006 v1.3: Affected Resource in Root Cause Analysis](../architecture/decisions/DD-HAPI-006-affectedResource-in-rca.md)
@@ -36,9 +36,8 @@
 3. LLM parsing error
 4. (Note: Low confidence threshold is AIAnalysis's responsibility, not HAPI's)
 
-**NEW BR-HAPI-212 Scenarios** (7th + 8th scenarios):
-- **Scenario 7**: Missing `affectedResource` when workflow is selected (prevents remediating wrong resource)
-- **Scenario 8 (BR-496)**: `affectedResource` present but mismatches K8s-verified `root_owner` (prevents remediating incorrect resource)
+**NEW BR-HAPI-212 Scenario** (7th scenario):
+- **Scenario 7**: `root_owner` missing from `session_state` when workflow is selected → `rca_incomplete` (BR-496 v2: HAPI owns target resource identity; `_inject_target_resource` cannot populate `affectedResource` or `TARGET_RESOURCE_*` without `root_owner`)
 
 ---
 
@@ -147,38 +146,23 @@ HolmesGPT-API performs Root Cause Analysis (RCA) on Kubernetes signals and ident
 
 ---
 
-### **FR-HAPI-212-002: LLM Prompt Engineering**
+### **FR-HAPI-212-002: LLM Prompt Engineering (Updated for BR-496 v2)**
 
-**Requirement**: HolmesGPT-API MUST include guidance in LLM prompts to encourage the LLM to provide `affectedResource` in its RCA output.
+**Requirement (v1.4)**: HolmesGPT-API MUST **NOT** instruct the LLM to provide `affectedResource`. Instead, prompts instruct the LLM to call `get_resource_context` to identify the root owner resource.
 
-**Prompt Guidelines**:
+**Prompt Guidelines (v1.4)**:
 ```markdown
-When performing root cause analysis, identify the specific Kubernetes resource that should be remediated to fix the root cause. This may differ from the signal source:
-
-- For Pod crashes due to resource limits, identify the parent Deployment/StatefulSet
-- For ConfigMap issues, identify the affected Deployments
-- For Node issues, identify affected workloads
-
-Include this information in your response:
-
-{
-  "root_cause_analysis": {
-    "summary": "...",
-    "severity": "...",
-    "contributing_factors": ["..."],
-    "affectedResource": {
-      "kind": "Deployment",
-      "name": "payment-api",
-      "namespace": "production"
-    }
-  }
-}
+Phase 3b: Call get_resource_context with the resource identified in your RCA
+to obtain the root managing resource (e.g., Pod → ReplicaSet → Deployment).
+The root_owner returned by this tool identifies the actual remediation target.
 ```
 
+**Rationale**: BR-496 v2 shifts target resource identity to HAPI. The LLM's role is to call `get_resource_context` (which populates `root_owner` in `session_state`). HAPI then uses `root_owner` to inject `affectedResource` and `TARGET_RESOURCE_*` params.
+
 **Acceptance Criteria**:
-1. ✅ LLM prompts include guidance on providing `affectedResource`
-2. ✅ LLM prompts include examples of `affectedResource` structure
-3. ✅ LLM prompts explain when `affectedResource` differs from signal source
+1. ✅ LLM prompts do **NOT** include guidance on providing `affectedResource`
+2. ✅ LLM prompts instruct the LLM to call `get_resource_context`
+3. ✅ JSON examples in prompts do **NOT** contain `affectedResource`
 
 ---
 
@@ -238,17 +222,13 @@ root_cause_analysis:
 - **`needs_human_review`** (HAPI decision - BR-HAPI-197) = "AI **can't** answer" (RCA incomplete/unreliable)
 - **`needs_approval`** (AIAnalysis Rego decision) = "AI **has** answer, but policy requires approval" (high-risk)
 
-**Escalation Logic** (No Fallback):
-1. **Workflow selected AND `affectedResource` provided AND matches `root_owner`** → HAPI returns RCA response
-2. **Workflow selected AND `affectedResource` missing** → HAPI validation error (3-attempt self-correction per DD-HAPI-002 v1.2)
-   - After 3 failed attempts → Set `needs_human_review=true`, `human_review_reason=rca_incomplete`
-   - RO creates **NotificationRequest** (NOT RemediationApprovalRequest - no remediation plan)
-3. **Workflow selected AND `affectedResource` present BUT mismatches `root_owner`** (BR-496) → Post-loop mismatch detection
-   - `get_resource_context` stores K8s-verified `root_owner` in `session_state`
-   - After self-correction loop, HAPI compares `affectedResource` vs `root_owner`
-   - If mismatch → Set `needs_human_review=true`, `human_review_reason=affectedResource_mismatch`
-   - If `root_owner` absent (tool never called) → Set `needs_human_review=true`, `human_review_reason=unverified_target_resource`
-4. **No workflow selected** → `affectedResource` not required (no remediation planned)
+**Escalation Logic (v1.4 — BR-496 v2: HAPI-Owned Identity)**:
+
+HAPI no longer relies on the LLM to provide `affectedResource`. Instead, `_inject_target_resource` derives it from `root_owner`:
+
+1. **`root_owner` present in `session_state`** → HAPI injects `affectedResource` (from `root_owner`) into `root_cause_analysis`, and injects `TARGET_RESOURCE_NAME/KIND/NAMESPACE` into `selected_workflow.parameters`. Any LLM-provided `affectedResource` is unconditionally overwritten.
+2. **`root_owner` missing from `session_state`** (tool not called or failed) → Set `needs_human_review=true`, `human_review_reason=rca_incomplete`. RO creates **NotificationRequest** (no remediation plan).
+3. **No workflow selected** → `affectedResource` still injected if `root_owner` present (for audit completeness), but `TARGET_RESOURCE_*` params not injected (no workflow to inject into).
 
 **Why NO Fallback to Signal Source**:
 - ❌ Signal source = **Symptom** (e.g., OOMKilled Pod)
@@ -256,7 +236,7 @@ root_cause_analysis:
 - **Remediating the symptom without identifying root cause is dangerous**
 - Missing `affectedResource` means RCA is incomplete → escalate to human
 
-**All BR-HAPI-197 Escalation Scenarios** (9 total scenarios that set `needs_human_review=true`):
+**All BR-HAPI-197 Escalation Scenarios** (7 total scenarios that set `needs_human_review=true`):
 
 | # | Scenario | `human_review_reason` | BR Reference |
 |---|----------|----------------------|--------------|
@@ -266,9 +246,9 @@ root_cause_analysis:
 | 4 | No Workflows Matched | `no_matching_workflows` | BR-HAPI-197 |
 | 5 | LLM Parsing Error | `llm_parsing_error` | BR-HAPI-197 |
 | 6 | Investigation Inconclusive | `investigation_inconclusive` | BR-HAPI-200 |
-| 7 | **Missing `affectedResource` when workflow selected** | `rca_incomplete` | **BR-HAPI-212** |
-| 8 | **`affectedResource` mismatches K8s `root_owner`** | `affectedResource_mismatch` | **BR-496** |
-| 9 | **`root_owner` unverified (tool never called)** | `unverified_target_resource` | **BR-496** |
+| 7 | **`root_owner` missing from session_state** | `rca_incomplete` | **BR-HAPI-212 / BR-496 v2** |
+
+> **Note (v1.4)**: Scenarios 8 (`affectedResource_mismatch`) and 9 (`unverified_target_resource`) were removed in BR-496 v2. HAPI now unconditionally derives `affectedResource` from `root_owner`, eliminating the mismatch and unverified scenarios. The only failure mode is `root_owner` being absent (scenario 7).
 
 **NOT HAPI's Responsibility** (AIAnalysis makes these decisions):
 - ❌ Low confidence threshold (AIAnalysis applies threshold, not HAPI - per BR-HAPI-197.2 note)
@@ -478,17 +458,15 @@ root_cause_analysis:
 - ✅ Backward compatible (optional field)
 
 **Risks**:
-- ⚠️ **5% Gap**: LLM may not consistently provide `affectedResource` in all scenarios
-  - **Mitigation**: Set `needs_human_review=true` for incomplete RCA (escalation, not fallback)
-  - **Mitigation**: Add LLM prompt engineering to encourage `affectedResource` output
-  - **Mitigation**: Monitor human review escalation rate via metrics
-- ⚠️ **BR-496**: LLM may provide `affectedResource` that diverges from K8s-verified `root_owner`
-  - **Prevention**: Prompt reinforcement (Phase 3b) explains `affectedResource` MUST match `root_owner` because `remediation_history` is scoped to it
-  - **Detection**: Post-loop comparison in `llm_integration.py`
-  - **Escalation**: `needs_human_review=true` with `human_review_reason=affectedResource_mismatch`
+- ⚠️ **3% Gap**: `get_resource_context` may not be called by the LLM, leaving `root_owner` absent
+  - **Mitigation**: `_inject_target_resource` detects missing `root_owner` and sets `rca_incomplete`
+  - **Mitigation**: Prompt Phase 3b explicitly instructs LLM to call `get_resource_context`
+  - **Mitigation**: Layer 3 (RO) catches any remaining gaps at routing level
+
+> **Note (v1.4)**: The LLM reliability risk for `affectedResource` (previously 5%) is eliminated by BR-496 v2. HAPI derives the field from K8s-verified `root_owner`, not from LLM output. The remaining risk is limited to `get_resource_context` not being called.
 
 ---
 
 **Document Control**:
 - **Created**: 2026-01-20
-- **Last Updated**: 2026-03-04 (BR-496: Added scenarios 8-9 for mismatch detection)
+- **Last Updated**: 2026-03-04 (BR-496 v2: HAPI-owned target resource identity — removed scenarios 8-9, updated FR-002 and FR-004)

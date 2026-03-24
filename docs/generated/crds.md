@@ -69,8 +69,8 @@ _Appears in:_
 | `approvalRequired`| _boolean_| True if approval is required (confidence < 80% or policy requires)|
 | `approvalReason`| _string_| Reason why approval is required (when ApprovalRequired=true)|
 | `approvalContext`| _[ApprovalContext](#approvalcontext)_| Rich context for approval notification|
-| `needsHumanReview`| _boolean_| Set by HAPI when AI cannot produce reliable result<br />True if human review required (HAPI decision: RCA incomplete/unreliable)<br /> Triggers NotificationRequest creation in RO<br /> Set when workflow selected but affectedResource missing|
-| `humanReviewReason`| _string_| Reason why human review needed (when NeedsHumanReview=true)<br /> Maps to HAPI's human_review_reason enum values<br /> Includes "rca_incomplete" for missing affectedResource|
+| `needsHumanReview`| _boolean_| Set by HAPI when AI cannot produce reliable result<br />True if human review required (HAPI decision: RCA incomplete/unreliable)<br /> Triggers NotificationRequest creation in RO<br />BR-496 v2: Set when root_owner missing (rca_incomplete) or validation/confidence issues.|
+| `humanReviewReason`| _string_| Reason why human review needed (when NeedsHumanReview=true)<br /> Maps to HAPI's human_review_reason enum values|
 | `actionability`| _string_| #388: LLM's assessment of whether the alert warrants action.<br />Empty when not yet assessed (pre-investigation or error paths).<br />"Actionable" when the LLM determines the alert warrants action (default for all processed alerts).<br />"NotActionable" when the LLM determines the alert is benign (e.g., orphaned PVCs).|
 | `investigationId`| _string_| HolmesGPT investigation ID for correlation|
 | `investigationTime`| _integer_| Investigation duration in seconds|
