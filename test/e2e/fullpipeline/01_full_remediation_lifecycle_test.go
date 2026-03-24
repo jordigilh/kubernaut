@@ -227,8 +227,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 				if we.Spec.RemediationRequestRef.Name == remediationRequest.Name {
 					weName = we.Name
 					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n",
-						we.Name, we.Status.Phase, we.Spec.ExecutionEngine)
-					return we.Spec.ExecutionEngine
+						we.Name, we.Status.Phase, we.Status.ExecutionEngine)
+					return we.Status.ExecutionEngine
 				}
 			}
 			return ""
@@ -1029,8 +1029,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 				if we.Spec.RemediationRequestRef.Name == remediationRequest.Name {
 					weName = we.Name
 					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n",
-						we.Name, we.Status.Phase, we.Spec.ExecutionEngine)
-					return we.Spec.ExecutionEngine
+						we.Name, we.Status.Phase, we.Status.ExecutionEngine)
+					return we.Status.ExecutionEngine
 				}
 			}
 			return ""

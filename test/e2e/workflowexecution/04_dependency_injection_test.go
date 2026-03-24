@@ -71,7 +71,6 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "job",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -170,7 +169,6 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "job",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -229,7 +227,6 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "job",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -306,7 +303,6 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "tekton",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -386,7 +382,6 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "job",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -469,7 +464,6 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "tekton",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",

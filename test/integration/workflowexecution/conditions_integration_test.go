@@ -62,10 +62,12 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/condition-test-app",
-					ExecutionEngine: "tekton",
 					Parameters: map[string]string{
 						"MESSAGE": "Testing ExecutionCreated condition",
 					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -128,6 +130,8 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/running-test-app",
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 					ExecutionEngine: "tekton",
 				},
 			}
@@ -192,6 +196,8 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/complete-success-app",
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 					ExecutionEngine: "tekton",
 				},
 			}
@@ -276,6 +282,8 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/audit-test-app",
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 					ExecutionEngine: "tekton",
 				},
 			}
@@ -331,6 +339,8 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/full-lifecycle-app",
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 					ExecutionEngine: "tekton",
 				},
 			}
@@ -400,8 +410,9 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionCreated)).To(BeTrue())
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionRunning)).To(BeTrue())
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionComplete)).To(BeTrue())
-			// AuditRecorded may be True or False depending on mock - just verify it exists
-			Expect(weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded)).ToNot(BeNil())
+			// AuditRecorded may be True or False depending on mock - verify it was set
+			auditCond := weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded)
+			Expect(auditCond).To(HaveValue(HaveField("Type", Equal(weconditions.ConditionAuditRecorded))))
 		})
 	})
 })

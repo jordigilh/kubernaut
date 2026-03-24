@@ -228,7 +228,7 @@ var _ = Describe("HAPI-Owned Target Resource [BR-496]", func() {
 			for _, we := range weList.Items {
 				if we.Spec.RemediationRequestRef.Name == remediationRequest.Name {
 					weName = we.Name
-					return we.Spec.ExecutionEngine
+					return we.Status.ExecutionEngine
 				}
 			}
 			return ""

@@ -79,7 +79,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 		ctx = context.Background()
 
 		// Verify Data Storage is available
-		// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN - tests MUST fail
+		// Per TESTING_GUIDELINES.md: test skipping is ABSOLUTELY FORBIDDEN - tests MUST fail
 		// Per DD-AUDIT-003: WorkflowExecution REQUIRES audit capability
 		httpClient := &http.Client{Timeout: 5 * time.Second}
 		resp, err := httpClient.Get(dataStorageBaseURL + "/health")
@@ -88,7 +88,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 				"REQUIRED: Data Storage not available at %s\n"+
 					"  Per DD-AUDIT-003: WorkflowExecution MUST have audit capability\n"+
 					"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n"+
-					"  Per TESTING_GUIDELINES.md: Skip() is FORBIDDEN - tests must FAIL\n\n"+
+					"  Per TESTING_GUIDELINES.md: test skipping is FORBIDDEN - tests must FAIL\n\n"+
 					"  Health check error: %v\n"+
 					"  Start infrastructure: make test-integration-workflowexecution\n",
 				dataStorageBaseURL, err))
@@ -154,11 +154,13 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/test-app", namespace),
-					ExecutionEngine: "tekton",
 					Parameters: map[string]string{
 						"pod_name":  "test-pod-123",
 						"namespace": namespace,
 					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -224,7 +226,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			// Access flat fields directly
 			Expect(eventData.WorkflowID).To(Equal("k8s-restart-pod-v1"))
 			Expect(eventData.WorkflowVersion).To(Equal("v1.0.0"))
-			Expect(eventData.ContainerImage).ToNot(BeEmpty())
+			Expect(eventData.ContainerImage).To(Equal("ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123"))
 			Expect(eventData.Phase).To(Equal(ogenclient.WorkflowExecutionAuditPayloadPhasePending))
 
 			By("5. Validate workflowexecution.execution.started event structure (ADR-034 v1.5)")
@@ -244,7 +246,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			// Access flat fields directly (note: PipelinerunName, not PipelineRunName)
 			Expect(execEventData.WorkflowID).To(Equal("k8s-restart-pod-v1"))
 			Expect(execEventData.PipelinerunName.IsSet()).To(BeTrue(), "PipelineRun name should be set")
-			Expect(execEventData.PipelinerunName.Value).ToNot(BeEmpty())
+			Expect(execEventData.PipelinerunName.Value).To(HavePrefix("wfe-"), "PipelineRun name should start with 'wfe-' prefix")
 		})
 	})
 
@@ -282,6 +284,8 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/scale@sha256:def456",
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/api-server", namespace),
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 					ExecutionEngine: "tekton",
 				},
 			}
@@ -383,9 +387,9 @@ func filterEventsByType(events []ogenclient.AuditEvent, eventType string) []ogen
 // validateEventMetadata validates common event metadata fields
 // DD-TESTING-001: Standard metadata validation
 func validateEventMetadata(event ogenclient.AuditEvent, category, correlationID string) {
-	Expect(event.EventType).ToNot(BeEmpty())
+	Expect(event.EventType).To(HavePrefix("workflowexecution."), "EventType should use 'workflowexecution.' prefix per ADR-034 v1.5")
 	Expect(string(event.EventCategory)).To(Equal(category))
 	Expect(event.CorrelationID).To(Equal(correlationID))
-	Expect(string(event.EventOutcome)).ToNot(BeEmpty())
+	Expect(string(event.EventOutcome)).To(BeElementOf("success", "failure"), "EventOutcome should be 'success' or 'failure'")
 	Expect(event.ActorID.IsSet()).To(BeTrue())
 }

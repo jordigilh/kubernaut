@@ -59,8 +59,7 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Clearance Attribution", fun
 					Namespace: namespace,
 				},
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
-					TargetResource:  "default/pod/test-pod",
-					ExecutionEngine: "tekton",
+					TargetResource: "default/pod/test-pod",
 				},
 			}
 
@@ -125,8 +124,7 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Clearance Attribution", fun
 					Namespace: namespace,
 				},
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
-					TargetResource:  "default/pod/test-pod",
-					ExecutionEngine: "tekton",
+					TargetResource: "default/pod/test-pod",
 				},
 			}
 
@@ -163,8 +161,7 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Clearance Attribution", fun
 					Namespace: namespace,
 				},
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
-					TargetResource:  "default/pod/test-pod",
-					ExecutionEngine: "tekton",
+					TargetResource: "default/pod/test-pod",
 				},
 			}
 

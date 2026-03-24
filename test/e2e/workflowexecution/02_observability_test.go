@@ -542,7 +542,6 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 					Namespace: controllerNamespace,
 				},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				ExecutionEngine: "tekton", // BR-WE-014: Required field
 				RemediationRequestRef: corev1.ObjectReference{
 					APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
