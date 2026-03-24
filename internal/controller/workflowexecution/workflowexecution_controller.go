@@ -284,11 +284,6 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// BR-WE-014: Default to "tekton" if executionEngine is unset (backward compatibility)
-	if wfe.Spec.ExecutionEngine == "" {
-		wfe.Spec.ExecutionEngine = "tekton"
-	}
-
 	// ========================================
 	// Phase-Based Reconciliation
 	// Per Controller Refactoring Pattern Library:
@@ -374,6 +369,21 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		fmt.Sprintf("Workflow spec validated: %s (target: %s)", wfe.Spec.WorkflowRef.WorkflowID, wfe.Spec.TargetResource))
 
 	// ========================================
+	// Step 1.2: Resolve execution engine from DS catalog (Issue #518)
+	// ========================================
+	engine, engineErr := r.resolveExecutionEngine(ctx, wfe)
+	if engineErr != nil {
+		logger.Error(engineErr, "Execution engine resolution failed")
+		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
+			fmt.Sprintf("Execution engine resolution failed: %v", engineErr))
+		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", engineErr.Error()); markErr != nil {
+			return ctrl.Result{}, markErr
+		}
+		return ctrl.Result{}, nil
+	}
+	logger.Info("Resolved execution engine from catalog", "engine", engine, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+
+	// ========================================
 	// Step 1.5: Check if cooldown is active for target resource (BR-WE-009)
 	// BUGFIX: Was only tracked in terminal phase, not enforced during pending
 	// ========================================
@@ -410,7 +420,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	resourceName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 	resourceExists := false
 	var resourceGetErr error
-	switch wfe.Spec.ExecutionEngine {
+	switch wfe.Status.ExecutionEngine {
 	case "job":
 		existingJob := &batchv1.Job{}
 		resourceGetErr = r.APIReader.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingJob)
@@ -423,7 +433,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	} else if apierrors.IsNotFound(resourceGetErr) && wfe.Status.ExecutionRef != nil {
 		// INT-EXTERN-02: Execution resource was deleted externally after we created it
 		logger.Error(resourceGetErr, "Execution resource not found - deleted externally during Pending phase",
-			"engine", wfe.Spec.ExecutionEngine)
+			"engine", wfe.Status.ExecutionEngine)
 		return r.MarkFailed(ctx, wfe, nil)
 	}
 
@@ -433,21 +443,21 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		}
 	} else {
 		logger.V(2).Info("Skipping workflow.selection.completed audit event - execution resource already exists",
-			"resource", resourceName, "engine", wfe.Spec.ExecutionEngine)
+			"resource", resourceName, "engine", wfe.Status.ExecutionEngine)
 	}
 
 	// ========================================
 	// Step 2: Create execution resource via executor dispatch (BR-WE-014)
 	// ========================================
-	exec, err := r.ExecutorRegistry.Get(wfe.Spec.ExecutionEngine)
+	exec, err := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
 	if err != nil {
-		logger.Error(err, "Unsupported execution engine", "engine", wfe.Spec.ExecutionEngine)
+		logger.Error(err, "Unsupported execution engine", "engine", wfe.Status.ExecutionEngine)
 		markErr := r.MarkFailedWithReason(ctx, wfe, "UnsupportedEngine", err.Error())
 		return ctrl.Result{}, markErr
 	}
 
 	logger.Info("Creating execution resource",
-		"engine", wfe.Spec.ExecutionEngine,
+		"engine", wfe.Status.ExecutionEngine,
 		"resource", resourceName,
 		"namespace", r.ExecutionNamespace,
 	)
@@ -469,7 +479,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		} else if ecRaw != nil {
 			logger.Info("Resolved engineConfig from DS catalog",
 				"workflowID", wfe.Spec.WorkflowRef.WorkflowID,
-				"engine", wfe.Spec.ExecutionEngine)
+				"engine", wfe.Status.ExecutionEngine)
 			wfe.Spec.WorkflowRef.EngineConfig = &apiextensionsv1.JSON{Raw: ecRaw}
 		}
 	}
@@ -478,14 +488,14 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	if createErr != nil {
 		if apierrors.IsAlreadyExists(createErr) {
 			// DD-WE-003 Layer 2: Execution-time collision handling
-			if wfe.Spec.ExecutionEngine == "tekton" {
+			if wfe.Status.ExecutionEngine == "tekton" {
 				pr := r.BuildPipelineRun(wfe)
 				return r.HandleAlreadyExists(ctx, wfe, pr, createErr)
 			}
 			// Issue #374 / DD-WE-003: Pre-execution cleanup of completed Jobs.
 			// If the existing Job is in a terminal state (Succeeded/Failed), clean it up
 			// and retry creation. If still running, the lock is valid -- fail the WFE.
-			if wfe.Spec.ExecutionEngine == "job" {
+			if wfe.Status.ExecutionEngine == "job" {
 				retryName, handled, requeueForGC := r.handleJobAlreadyExists(ctx, exec, wfe, resourceName, createOpts)
 				if handled {
 					createdName = retryName
@@ -503,9 +513,9 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 				return ctrl.Result{}, markErr
 			}
 		} else {
-			logger.Error(createErr, "Failed to create execution resource", "engine", wfe.Spec.ExecutionEngine)
+			logger.Error(createErr, "Failed to create execution resource", "engine", wfe.Status.ExecutionEngine)
 			markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
-				fmt.Sprintf("Failed to create %s execution resource: %v", wfe.Spec.ExecutionEngine, createErr))
+				fmt.Sprintf("Failed to create %s execution resource: %v", wfe.Status.ExecutionEngine, createErr))
 			return ctrl.Result{}, markErr
 		}
 	}
@@ -530,7 +540,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	weconditions.SetExecutionCreated(wfe, true,
 		weconditions.ReasonExecutionCreated,
 		fmt.Sprintf("%s execution resource %s created in %s namespace",
-			wfe.Spec.ExecutionEngine, createdName, r.ExecutionNamespace))
+			wfe.Status.ExecutionEngine, createdName, r.ExecutionNamespace))
 
 	// ========================================
 	// Step 3: Prepare status update to Running (P0: Phase State Machine)
@@ -550,7 +560,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	}
 
 	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonExecutionCreated,
-		fmt.Sprintf("Created %s execution resource %s/%s", wfe.Spec.ExecutionEngine, r.ExecutionNamespace, createdName))
+		fmt.Sprintf("Created %s execution resource %s/%s", wfe.Status.ExecutionEngine, r.ExecutionNamespace, createdName))
 
 	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Pending → Running
 	r.emitPhaseTransition(wfe, "Pending", "Running")
@@ -565,12 +575,18 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 // ========================================
 func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	logger.Info("Reconciling Running phase", "engine", wfe.Spec.ExecutionEngine)
+
+	// Issue #518: Lazy resolution for pre-migration WFEs that lack status.executionEngine.
+	if _, engineErr := r.resolveExecutionEngine(ctx, wfe); engineErr != nil {
+		logger.Error(engineErr, "Failed to resolve execution engine during Running phase")
+		return r.MarkFailed(ctx, wfe, nil)
+	}
+	logger.Info("Reconciling Running phase", "engine", wfe.Status.ExecutionEngine)
 
 	// ========================================
 	// Step 1: Get execution status via executor dispatch (BR-WE-014)
 	// ========================================
-	exec, err := r.ExecutorRegistry.Get(wfe.Spec.ExecutionEngine)
+	exec, err := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
 	if err != nil {
 		logger.Error(err, "Unsupported execution engine during Running phase")
 		return r.MarkFailed(ctx, wfe, nil)
@@ -580,7 +596,7 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 	if getErr != nil {
 		if apierrors.IsNotFound(getErr) {
 			logger.Error(getErr, "Execution resource not found - deleted externally",
-				"engine", wfe.Spec.ExecutionEngine)
+				"engine", wfe.Status.ExecutionEngine)
 			return r.MarkFailed(ctx, wfe, nil)
 		}
 		return ctrl.Result{}, getErr
@@ -592,8 +608,8 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 	// ========================================
 	switch result.Phase {
 	case workflowexecutionv1alpha1.PhaseCompleted:
-		logger.Info("Execution succeeded", "engine", wfe.Spec.ExecutionEngine)
-		if wfe.Spec.ExecutionEngine == "tekton" {
+		logger.Info("Execution succeeded", "engine", wfe.Status.ExecutionEngine)
+		if wfe.Status.ExecutionEngine == "tekton" {
 			var pr tektonv1.PipelineRun
 			if err := r.Get(ctx, client.ObjectKey{
 				Name:      wfe.Status.ExecutionRef.Name,
@@ -606,8 +622,8 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 		return r.MarkCompleted(ctx, wfe, nil, result.Summary)
 
 	case workflowexecutionv1alpha1.PhaseFailed:
-		logger.Info("Execution failed", "engine", wfe.Spec.ExecutionEngine, "reason", result.Reason)
-		if wfe.Spec.ExecutionEngine == "tekton" {
+		logger.Info("Execution failed", "engine", wfe.Status.ExecutionEngine, "reason", result.Reason)
+		if wfe.Status.ExecutionEngine == "tekton" {
 			var pr tektonv1.PipelineRun
 			if err := r.Get(ctx, client.ObjectKey{
 				Name:      wfe.Status.ExecutionRef.Name,
@@ -621,10 +637,10 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 
 	default:
 		// Still running - update conditions and requeue
-		logger.V(1).Info("Execution still running", "reason", result.Reason, "engine", wfe.Spec.ExecutionEngine)
+		logger.V(1).Info("Execution still running", "reason", result.Reason, "engine", wfe.Status.ExecutionEngine)
 		weconditions.SetExecutionRunning(wfe, true,
 			weconditions.ReasonExecutionStarted,
-			fmt.Sprintf("Execution running (%s: %s)", wfe.Spec.ExecutionEngine, result.Reason))
+			fmt.Sprintf("Execution running (%s: %s)", wfe.Status.ExecutionEngine, result.Reason))
 	}
 
 	// ========================================
@@ -644,6 +660,11 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 // ========================================
 func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+
+	// Issue #518: Lazy resolution for pre-migration WFEs (non-fatal for terminal phase).
+	if _, engineErr := r.resolveExecutionEngine(ctx, wfe); engineErr != nil {
+		logger.V(1).Info("Could not resolve execution engine in terminal phase (non-fatal)", "error", engineErr)
+	}
 	logger.Info("Reconciling Terminal phase", "phase", wfe.Status.Phase)
 
 	// Guard clause: no completion time means we can't calculate cooldown
@@ -674,7 +695,7 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 	// Cooldown expired - delete execution resource to release lock
 	// DD-WE-003: Use deterministic name for atomic locking
 	if r.ExecutorRegistry != nil {
-		exec, execErr := r.ExecutorRegistry.Get(wfe.Spec.ExecutionEngine)
+		exec, execErr := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
 		if execErr != nil {
 			exec, _ = r.ExecutorRegistry.Get("tekton") // Fallback
 		}
@@ -794,6 +815,11 @@ func (r *WorkflowExecutionReconciler) CheckCooldownActive(ctx context.Context, t
 // ========================================
 func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+
+	// Issue #518: Lazy resolution for pre-migration WFEs (non-fatal for delete).
+	if _, engineErr := r.resolveExecutionEngine(ctx, wfe); engineErr != nil {
+		logger.V(1).Info("Could not resolve execution engine during delete (non-fatal, will try fallback)", "error", engineErr)
+	}
 	logger.Info("Reconciling Delete")
 
 	// Check if finalizer is present
@@ -806,7 +832,7 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 	// This ensures cleanup even if ExecutionRef was never set
 	// ========================================
 	if r.ExecutorRegistry != nil {
-		exec, execErr := r.ExecutorRegistry.Get(wfe.Spec.ExecutionEngine)
+		exec, execErr := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
 		if execErr != nil {
 			logger.Error(execErr, "Unknown engine during cleanup, falling back to Tekton cleanup")
 			exec, _ = r.ExecutorRegistry.Get("tekton")
@@ -1671,6 +1697,45 @@ func (r *WorkflowExecutionReconciler) updateStatus(
 		return err
 	}
 	return nil
+}
+
+// ========================================
+// Issue #518: Runtime Execution Engine Resolution
+// ========================================
+
+// resolveExecutionEngine ensures wfe.Status.ExecutionEngine is populated.
+// On the first call (Pending phase), it queries the DS catalog via WorkflowQuerier.
+// On subsequent calls (Running/Terminal/Delete), it returns the already-persisted value.
+// Returns the engine string or an error if resolution fails.
+func (r *WorkflowExecutionReconciler) resolveExecutionEngine(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, error) {
+	if wfe.Status.ExecutionEngine != "" {
+		return wfe.Status.ExecutionEngine, nil
+	}
+
+	if r.WorkflowQuerier == nil {
+		return "", fmt.Errorf("DataStorage workflow querier not available — cannot resolve execution engine for workflow %s", wfe.Spec.WorkflowRef.WorkflowID)
+	}
+
+	workflowID := wfe.Spec.WorkflowRef.WorkflowID
+	if workflowID == "" {
+		return "", fmt.Errorf("workflowRef.workflowId is empty — cannot resolve execution engine")
+	}
+
+	engine, workflowName, err := r.WorkflowQuerier.GetWorkflowExecutionEngine(ctx, workflowID)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve execution engine from DS for workflow %s: %w", workflowID, err)
+	}
+
+	if engine == "" {
+		label := workflowID
+		if workflowName != "" {
+			label = fmt.Sprintf("%s - %s", workflowName, workflowID)
+		}
+		return "", fmt.Errorf("no engine defined in remediation workflow %s", label)
+	}
+
+	wfe.Status.ExecutionEngine = engine
+	return engine, nil
 }
 
 // ========================================
