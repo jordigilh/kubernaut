@@ -547,11 +547,20 @@ Based on your RCA, determine the signal_name that best describes the effect:
 
 ### Phase 3b: Identify the Root Owner (MANDATORY for remediation)
 
-Call `get_resource_context` with the resource you identified during RCA (kind, name, namespace):
-- The tool resolves the **root managing resource** (e.g., for a Pod it finds the managing Deployment) and returns:
+Call `get_resource_context` with the **resource that needs remediation** (kind, name, namespace).
+
+**CRITICAL**: This must be the resource whose configuration will be changed to fix the problem, NOT the resource that reported the signal. The signal source and the remediation target are often different:
+- **DiskPressure on a Node** caused by a Deployment using emptyDir → pass the **Deployment** (it needs a PVC migration), not the Node
+- **OOMKilled Pod** owned by a Deployment → pass the **Pod** or **Deployment** (it needs memory limits increased), not the Node
+- **NodeNotReady** caused by a tainted node blocking scheduling → pass the **Node** (its taint needs removal)
+
+**Rule of thumb**: Ask yourself "which resource's spec/config must change to fix this?" — that is the resource to pass.
+
+The tool resolves the **root managing resource** (e.g., for a Pod it finds the managing Deployment) and returns:
   - `root_owner`: The root managing resource (`kind`, `name`, `namespace`). The system uses this to target the correct resource for remediation.
   - `remediation_history`: Past remediations for that resource. Use this to avoid repeating recently failed workflows.
-- **Example**: You call the tool for Pod "api-xyz-abc". The tool returns `root_owner: {{kind: Deployment, name: api, namespace: prod}}`.
+- **Example 1**: Pod "api-xyz-abc" is OOMKilled. You pass the Pod. The tool returns `root_owner: {{kind: Deployment, name: api, namespace: prod}}`.
+- **Example 2**: Node "worker-3" has DiskPressure because Deployment "postgres-emptydir" uses emptyDir. You pass the **Deployment** (not the Node). The tool returns `root_owner: {{kind: Deployment, name: postgres-emptydir, namespace: prod}}`.
 
 ### Phase 4: Discover and Select Workflow (MANDATORY - Three-Step Protocol)
 **YOU MUST** follow this three-step workflow discovery protocol:
