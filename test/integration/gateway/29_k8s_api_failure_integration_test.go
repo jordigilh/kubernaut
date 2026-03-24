@@ -82,7 +82,7 @@ func (f *ErrorInjectableK8sClient) Create(ctx context.Context, obj client.Object
 }
 
 func (f *ErrorInjectableK8sClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-	return errors.New("simulated Kubernetes API unavailable")
+	return f.Client.Get(ctx, key, obj, opts...)
 }
 
 var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration Tests", func() {
