@@ -29,4 +29,7 @@ type ActionTypeCatalogClient interface {
 	CreateActionType(ctx context.Context, name string, description ogenclient.ActionTypeDescription, registeredBy string) (*ActionTypeRegistrationResult, error)
 	UpdateActionType(ctx context.Context, name string, description ogenclient.ActionTypeDescription, updatedBy string) (*ActionTypeUpdateResult, error)
 	DisableActionType(ctx context.Context, name string, disabledBy string) (*ActionTypeDisableResult, error)
+	// ForceDisableActionType disables the named orphaned workflows and then
+	// attempts to disable the action type. Issue #512: orphan recovery.
+	ForceDisableActionType(ctx context.Context, name string, disabledBy string, orphanedWorkflows []string) (*ActionTypeDisableResult, error)
 }
