@@ -270,8 +270,7 @@ Your previous workflow response had validation errors:
 {schema_section}
 **Please correct your response:**
 1. Re-check the workflow ID exists (use get_workflow with the workflow_id)
-2. Ensure execution_bundle matches the catalog exactly (or omit to use catalog default)
-3. Verify all required parameters are provided with correct types and values
+2. Verify all required parameters are provided with correct types and values
 
 **Re-submit your JSON response with the corrected workflow selection.**
 """
@@ -598,11 +597,8 @@ and choose a different workflow.
   }},
   "selected_workflow": {{
     "workflow_id": "workflow-id-from-mcp-search",
-    "action_type": "ScaleReplicas",
-    "version": "1.0.0",
     "confidence": 0.95,
     "rationale": "Why your RCA findings led to this workflow selection",
-    "execution_engine": "tekton|job",
     "parameters": {{
       "PARAM_NAME": "value-from-investigation"
     }}
@@ -610,7 +606,6 @@ and choose a different workflow.
   "alternative_workflows": [
     {{
       "workflow_id": "other-workflow-id",
-      "execution_bundle": "image@sha256:digest",
       "confidence": 0.75,
       "rationale": "Why this was considered but not selected"
     }}
@@ -837,10 +832,10 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 0.95
 
 # selected_workflow
-{{"workflow_id": "workflow-id-from-mcp-search-results", "action_type": "ScaleReplicas", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "execution_engine": "tekton", "parameters": {{"PARAM_NAME": "value"}}}}
+{{"workflow_id": "workflow-id-from-mcp-search-results", "confidence": 0.95, "rationale": "Why this workflow was selected", "parameters": {{"PARAM_NAME": "value"}}}}
 
 # alternative_workflows
-[{{"workflow_id": "alt-workflow-id", "execution_bundle": "image@sha256:digest", "confidence": 0.75, "rationale": "Why this was considered but not selected"}}]
+[{{"workflow_id": "alt-workflow-id", "confidence": 0.75, "rationale": "Why this was considered but not selected"}}]
 
 **IMPORTANT**:
 - **DO NOT** use a single ```json block - use section headers as shown above
