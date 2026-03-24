@@ -1105,15 +1105,22 @@ func (s *Server) Stop(ctx context.Context) error {
 }
 
 // validateScope checks whether the signal's target resource is within Kubernaut's
-// management scope. Returns (nil, nil) if managed or scope checking is disabled,
-// (*ProcessingResponse, nil) for a clean rejection, or (nil, error) on scope
-// infrastructure failure.
+// management scope. Returns (nil, nil) if managed, (*ProcessingResponse, nil) for
+// a clean rejection, or (nil, error) on scope infrastructure failure.
 //
 // BR-SCOPE-002: Label-based resource opt-in with 2-level hierarchy.
-// Scope filtering is optional — nil scopeChecker disables it for backward compatibility.
+// BR-SCOPE-013: Deny-by-default when scope checker is not initialized.
 func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSignal) (*ProcessingResponse, error) {
+	logger := middleware.GetLogger(ctx)
+
 	if s.scopeChecker == nil {
-		return nil, nil
+		logger.Error(nil, "Scope checker not initialized — rejecting signal (deny-by-default)",
+			"namespace", signal.Namespace,
+			"kind", signal.Resource.Kind,
+			"name", signal.Resource.Name,
+			"fingerprint", signal.Fingerprint)
+		s.metricsInstance.SignalsRejectedTotal.WithLabelValues(RejectionReasonScopeCheckerNotInitialized).Inc()
+		return NewRejectedResponse(signal.Namespace, signal.Resource.Kind, signal.Resource.Name), nil
 	}
 
 	managed, err := s.scopeChecker.IsManaged(ctx, signal.Namespace, signal.Resource.Kind, signal.Resource.Name)
@@ -1122,10 +1129,13 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 	}
 
 	if managed {
+		logger.V(1).Info("Scope check passed: resource is managed",
+			"namespace", signal.Namespace,
+			"kind", signal.Resource.Kind,
+			"name", signal.Resource.Name)
 		return nil, nil
 	}
 
-	logger := middleware.GetLogger(ctx)
 	s.metricsInstance.SignalsRejectedTotal.WithLabelValues(RejectionReasonUnmanagedResource).Inc()
 	logger.Info("Signal rejected: resource not managed by Kubernaut",
 		"namespace", signal.Namespace,

@@ -36,7 +36,8 @@ const StatusRejected = "rejected"
 
 // RejectionReason constants for structured rejection responses.
 const (
-	RejectionReasonUnmanagedResource = "unmanaged_resource"
+	RejectionReasonUnmanagedResource        = "unmanaged_resource"
+	RejectionReasonScopeCheckerNotInitialized = "scope_checker_not_initialized"
 )
 
 // RejectionResponse contains the details of a scope rejection.
