@@ -164,14 +164,19 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 		})
 
 		// UT-RO-010-005: Scope infra error passes through
-		It("UT-RO-010-005: should pass through when scope checker returns error", func() {
+		It("UT-RO-010-005: should block when scope checker returns error (fail-closed)", func() {
 			fakeClient := makeFakeClient().Build()
 			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config,
 				&mocks.ErrorScopeChecker{Err: fmt.Errorf("cache not ready")})
 			rr := makeRR("test-ns", "test-rr", "Deployment", "payment-api")
 
 			blocked := engine.CheckUnmanagedResource(ctx, rr)
-			Expect(blocked).To(BeNil(), "Scope infra error should not block — graceful degradation")
+			Expect(blocked).ToNot(BeNil(), "BR-SCOPE-013: Scope infra error must block — fail-closed")
+			Expect(blocked.Blocked).To(BeTrue())
+			Expect(blocked.Message).To(ContainSubstring("Scope validation error"))
+			Expect(blocked.Message).To(ContainSubstring("cache not ready"))
+			Expect(blocked.RequeueAfter).To(BeNumerically(">", 0),
+				"Should requeue with backoff to retry when scope infra recovers")
 		})
 
 		// UT-RO-010-006: NewRoutingEngine panics on nil ScopeChecker

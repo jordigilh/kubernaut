@@ -650,11 +650,24 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 		rr.Spec.TargetResource.Kind,
 		rr.Spec.TargetResource.Name)
 	if err != nil {
-		logger.Error(err, "Scope validation failed — allowing RR to proceed",
+		logger.Error(err, "Scope validation failed — blocking RR (fail-closed)",
 			"namespace", rr.Spec.TargetResource.Namespace,
 			"kind", rr.Spec.TargetResource.Kind,
 			"name", rr.Spec.TargetResource.Name)
-		return nil
+
+		retryCount := rr.Status.ConsecutiveFailureCount
+		backoffDuration := r.calculateScopeBackoff(retryCount)
+		blockedUntil := time.Now().Add(backoffDuration)
+		return &BlockingCondition{
+			Blocked: true,
+			Reason:  string(remediationv1.BlockReasonUnmanagedResource),
+			Message: fmt.Sprintf("Scope validation error for %s/%s/%s: %v. "+
+				"Blocking until scope infrastructure recovers.",
+				rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind,
+				rr.Spec.TargetResource.Name, err),
+			RequeueAfter: backoffDuration,
+			BlockedUntil: &blockedUntil,
+		}
 	}
 
 	if managed {

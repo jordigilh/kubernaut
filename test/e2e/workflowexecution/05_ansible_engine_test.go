@@ -59,7 +59,10 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 		It("E2E-WE-015-001: should execute ansible workflow to completion via AWX", func() {
 			testName := fmt.Sprintf("e2e-ansible-%s", uuid.New().String()[:8])
 			targetResource := "default/deployment/ansible-target"
-			wfe := createAnsibleWFE(testName, targetResource, "test-ansible-success",
+			ansibleSuccessUUID := infrastructure.RegisteredWorkflowUUIDs["test-ansible-success"]
+			Expect(ansibleSuccessUUID).ToNot(BeEmpty(),
+				"test-ansible-success UUID should have been captured during workflow registration")
+			wfe := createAnsibleWFE(testName, targetResource, ansibleSuccessUUID,
 				"playbooks/test-success.yml", "kubernaut-test-success")
 
 			defer func() {
@@ -114,7 +117,10 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 		It("E2E-WE-015-002: should populate failure details when AWX playbook fails", func() {
 			testName := fmt.Sprintf("e2e-ansible-fail-%s", uuid.New().String()[:8])
 			targetResource := fmt.Sprintf("default/deployment/ansible-fail-%s", uuid.New().String()[:8])
-			wfe := createAnsibleWFE(testName, targetResource, "test-ansible-failure",
+			ansibleFailureUUID := infrastructure.RegisteredWorkflowUUIDs["test-ansible-failure"]
+			Expect(ansibleFailureUUID).ToNot(BeEmpty(),
+				"test-ansible-failure UUID should have been captured during workflow registration")
+			wfe := createAnsibleWFE(testName, targetResource, ansibleFailureUUID,
 				"playbooks/test-failure.yml", "kubernaut-test-failure")
 
 			defer func() {
@@ -156,7 +162,10 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 		It("E2E-WE-015-003: should sync WFE status with AWX job status accurately", func() {
 			testName := fmt.Sprintf("e2e-ansible-sync-%s", uuid.New().String()[:8])
 			targetResource := fmt.Sprintf("default/deployment/ansible-sync-%s", uuid.New().String()[:8])
-			wfe := createAnsibleWFE(testName, targetResource, "test-ansible-success",
+			ansibleSuccessUUID := infrastructure.RegisteredWorkflowUUIDs["test-ansible-success"]
+			Expect(ansibleSuccessUUID).ToNot(BeEmpty(),
+				"test-ansible-success UUID should have been captured during workflow registration")
+			wfe := createAnsibleWFE(testName, targetResource, ansibleSuccessUUID,
 				"playbooks/test-success.yml", "kubernaut-test-success")
 
 			defer func() {
@@ -213,7 +222,10 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 		It("E2E-WE-015-004: should mark WFE as Failed when AWX job is canceled externally", func() {
 			testName := fmt.Sprintf("e2e-ansible-cancel-%s", uuid.New().String()[:8])
 			targetResource := fmt.Sprintf("default/deployment/ansible-cancel-%s", uuid.New().String()[:8])
-			wfe := createAnsibleWFE(testName, targetResource, "test-ansible-success",
+			ansibleSuccessUUID := infrastructure.RegisteredWorkflowUUIDs["test-ansible-success"]
+			Expect(ansibleSuccessUUID).ToNot(BeEmpty(),
+				"test-ansible-success UUID should have been captured during workflow registration")
+			wfe := createAnsibleWFE(testName, targetResource, ansibleSuccessUUID,
 				"playbooks/test-success.yml", "kubernaut-test-success")
 
 			defer func() {
@@ -287,7 +299,6 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "ansible",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -363,7 +374,6 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "ansible",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -441,7 +451,6 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "ansible",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -508,7 +517,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 	})
 })
 
-// createAnsibleWFE builds a WorkflowExecution CRD targeting the ansible engine.
+// createAnsibleWFE builds a WorkflowExecution CRD for ansible workflows (engine resolved from DS at runtime).
 func createAnsibleWFE(name, targetResource, workflowID, playbookPath, templateName string) *workflowexecutionv1alpha1.WorkflowExecution {
 	engineCfgJSON, err := json.Marshal(map[string]string{
 		"playbookPath":    playbookPath,
@@ -522,7 +531,6 @@ func createAnsibleWFE(name, targetResource, workflowID, playbookPath, templateNa
 			Namespace: controllerNamespace,
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-			ExecutionEngine: "ansible",
 			RemediationRequestRef: corev1.ObjectReference{
 				APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 				Kind:       "RemediationRequest",

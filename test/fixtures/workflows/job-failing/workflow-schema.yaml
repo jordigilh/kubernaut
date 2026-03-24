@@ -1,0 +1,49 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: test-job-intentional-failure
+spec:
+  # Intentional Failure Job Backend Test Workflow (BR-WE-014)
+  # Used by: WorkflowExecution E2E (Job backend failure tests)
+  version: "1.0.0"
+  description:
+    what: "Job workflow that intentionally fails for testing error handling"
+    whenToUse: "For E2E validation of Job failure detection and error propagation"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "Kubernetes cluster available"
+  
+  actionType: RestartPod
+  
+  labels:
+    severity: [low]
+    environment: [test]
+    component: deployment
+    priority: P3
+  
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  
+  parameters:
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Name of the root managing resource (HAPI-injected)"
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+      description: "Kind of the root managing resource (HAPI-injected)"
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the root managing resource (HAPI-injected)"
+    - name: TARGET_RESOURCE
+      type: string
+      required: true
+      description: "Target resource identifier"
+      default: "test/deployment/failing"
+    - name: FAILURE_MESSAGE
+      type: string
+      required: false
+      description: "Error message to produce"
+      default: "Intentional failure for Job backend testing"

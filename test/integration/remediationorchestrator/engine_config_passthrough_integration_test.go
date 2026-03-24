@@ -125,8 +125,10 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ROControllerNamespace}, we)
 		}, timeout, interval).Should(Succeed())
 
-		Expect(we.Spec.ExecutionEngine).To(Equal("ansible"),
-			"WFE should have ansible execution engine")
+		// Issue #518: ExecutionEngine is no longer set by the RO creator — the WE controller
+		// resolves it at runtime from the DS catalog via WorkflowQuerier. In this integration
+		// test only the RO controller runs, so Status.ExecutionEngine stays empty. Verify that
+		// the EngineConfig pass-through (the test's actual concern) works correctly.
 		Expect(we.Spec.WorkflowRef.EngineConfig).ToNot(BeNil(),
 			"WFE.Spec.WorkflowRef.EngineConfig must be populated from AIAnalysis")
 

@@ -55,14 +55,16 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 			})
 			Expect(err).ToNot(HaveOccurred())
 
+			DeferCleanup(func() { testWorkflowQuerier.Engine = "tekton" })
+			testWorkflowQuerier.Engine = "ansible"
+
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("ansible-it-%d", time.Now().UnixNano()),
 					Namespace: DefaultNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "ansible",
-					TargetResource:  targetResource,
+					TargetResource: targetResource,
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:      "ansible-restart",
 						Version:         "1.0.0",

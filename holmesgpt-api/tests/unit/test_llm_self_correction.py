@@ -358,6 +358,133 @@ class TestCreateDataStorageClient:
             assert client is None
 
 
+class TestResourceContextMismatchCheck:
+    """UT-HAPI-516-010 through 014: Resource context mismatch validation (#516)."""
+
+    def test_ut_hapi_516_010_mismatch_detected_different_target(self):
+        """UT-HAPI-516-010: Mismatch when session_state target differs from affectedResource."""
+        from src.extensions.incident.llm_integration import _check_resource_context_mismatch
+
+        result = {
+            "selected_workflow": {"workflow_id": "wf-1"},
+            "root_cause_analysis": {
+                "summary": "Disk pressure from emptyDir",
+                "affectedResource": {"kind": "Deployment", "name": "postgres-emptydir", "namespace": "prod"},
+            },
+        }
+        session_state = {
+            "last_resource_context_target": {"kind": "Deployment", "name": "log-collector", "namespace": "prod"},
+        }
+
+        feedback = _check_resource_context_mismatch(result, session_state, "inc-1")
+        assert feedback is not None
+        assert "MISMATCH" in feedback
+        assert "postgres-emptydir" in feedback
+        assert "log-collector" in feedback
+
+    def test_ut_hapi_516_011_mismatch_when_tool_never_called(self):
+        """UT-HAPI-516-011: Mismatch when get_resource_context was never called."""
+        from src.extensions.incident.llm_integration import _check_resource_context_mismatch
+
+        result = {
+            "selected_workflow": {"workflow_id": "wf-1"},
+            "root_cause_analysis": {
+                "summary": "OOMKilled",
+                "affectedResource": {"kind": "Deployment", "name": "api", "namespace": "prod"},
+            },
+        }
+        session_state = {}
+
+        feedback = _check_resource_context_mismatch(result, session_state, "inc-2")
+        assert feedback is not None
+        assert "MISSING" in feedback
+        assert "did not call" in feedback
+
+    def test_ut_hapi_516_012_no_mismatch_when_targets_match(self):
+        """UT-HAPI-516-012: No mismatch when targets match."""
+        from src.extensions.incident.llm_integration import _check_resource_context_mismatch
+
+        result = {
+            "selected_workflow": {"workflow_id": "wf-1"},
+            "root_cause_analysis": {
+                "summary": "OOMKilled",
+                "affectedResource": {"kind": "Deployment", "name": "api", "namespace": "prod"},
+            },
+        }
+        session_state = {
+            "last_resource_context_target": {"kind": "Deployment", "name": "api", "namespace": "prod"},
+        }
+
+        feedback = _check_resource_context_mismatch(result, session_state, "inc-3")
+        assert feedback is None
+
+    def test_ut_hapi_516_013_skip_when_no_workflow_selected(self):
+        """UT-HAPI-516-013: Skip mismatch check when no workflow selected."""
+        from src.extensions.incident.llm_integration import _check_resource_context_mismatch
+
+        result = {
+            "selected_workflow": None,
+            "root_cause_analysis": {
+                "summary": "Self-resolved",
+                "affectedResource": {"kind": "Deployment", "name": "api", "namespace": "prod"},
+            },
+        }
+        session_state = {
+            "last_resource_context_target": {"kind": "Node", "name": "worker-1", "namespace": ""},
+        }
+
+        feedback = _check_resource_context_mismatch(result, session_state, "inc-4")
+        assert feedback is None
+
+    def test_ut_hapi_516_014_skip_when_no_affected_resource(self):
+        """UT-HAPI-516-014: Skip when LLM didn't provide affectedResource."""
+        from src.extensions.incident.llm_integration import _check_resource_context_mismatch
+
+        result = {
+            "selected_workflow": {"workflow_id": "wf-1"},
+            "root_cause_analysis": {
+                "summary": "OOMKilled",
+            },
+        }
+        session_state = {
+            "last_resource_context_target": {"kind": "Deployment", "name": "api", "namespace": "prod"},
+        }
+
+        feedback = _check_resource_context_mismatch(result, session_state, "inc-5")
+        assert feedback is None
+
+
+class TestResourceContextMismatchFeedback:
+    """UT-HAPI-516-020 through 021: Mismatch feedback prompt generation (#516)."""
+
+    def test_ut_hapi_516_020_mismatch_feedback_includes_both_targets(self):
+        """UT-HAPI-516-020: Feedback includes both affected and last-queried targets."""
+        from src.extensions.incident.prompt_builder import build_resource_context_mismatch_feedback
+
+        feedback = build_resource_context_mismatch_feedback(
+            affected_resource={"kind": "Deployment", "name": "postgres-emptydir", "namespace": "prod"},
+            last_target={"kind": "Deployment", "name": "log-collector", "namespace": "prod"},
+        )
+
+        assert "postgres-emptydir" in feedback
+        assert "log-collector" in feedback
+        assert "get_resource_context" in feedback
+        assert "detected infrastructure" in feedback.lower()
+
+    def test_ut_hapi_516_021_missing_feedback_when_no_target(self):
+        """UT-HAPI-516-021: Feedback for tool-never-called case."""
+        from src.extensions.incident.prompt_builder import build_resource_context_mismatch_feedback
+
+        feedback = build_resource_context_mismatch_feedback(
+            affected_resource={"kind": "Deployment", "name": "api", "namespace": "prod"},
+            last_target=None,
+        )
+
+        assert "did not call" in feedback
+        assert "REQUIRED" in feedback
+        assert "get_resource_context" in feedback
+
+
 class TestSelfCorrectionLoopIntegration:
     """Integration-style tests for the self-correction loop.
 

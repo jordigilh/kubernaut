@@ -42,7 +42,9 @@ import (
 var _ = Describe("Conditions Integration", Label("integration", "conditions"), func() {
 	Context("ExecutionCreated condition", func() {
 		It("should be set after PipelineRun creation during reconciliation", func() {
-			// Create WorkflowExecution
+			// Issue #518: Engine is resolved at runtime via the configurable mock querier.
+			// Reset to "tekton" so earlier tests that set it to "job" don't leak.
+			testWorkflowQuerier.Engine = "tekton"
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-pipeline-created",
@@ -62,7 +64,6 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/condition-test-app",
-					ExecutionEngine: "tekton",
 					Parameters: map[string]string{
 						"MESSAGE": "Testing ExecutionCreated condition",
 					},
@@ -109,6 +110,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 	Context("ExecutionRunning condition", func() {
 		It("should be set when PipelineRun starts executing", func() {
+			testWorkflowQuerier.Engine = "tekton"
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-running",
@@ -128,7 +130,6 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/running-test-app",
-					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -173,6 +174,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 	Context("ExecutionComplete condition", func() {
 		It("should be set to True when PipelineRun succeeds", func() {
+			testWorkflowQuerier.Engine = "tekton"
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-complete-success",
@@ -192,7 +194,6 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/complete-success-app",
-					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -257,6 +258,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 	Context("AuditRecorded condition", func() {
 		It("should be set after audit event emission", func() {
+			testWorkflowQuerier.Engine = "tekton"
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-audit",
@@ -276,7 +278,6 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/audit-test-app",
-					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -312,6 +313,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 	Context("Complete lifecycle with all conditions", func() {
 		It("should set all applicable conditions during successful execution", func() {
+			testWorkflowQuerier.Engine = "tekton"
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-full-lifecycle",
@@ -331,7 +333,6 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/full-lifecycle-app",
-					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -400,8 +401,9 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionCreated)).To(BeTrue())
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionRunning)).To(BeTrue())
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionComplete)).To(BeTrue())
-			// AuditRecorded may be True or False depending on mock - just verify it exists
-			Expect(weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded)).ToNot(BeNil())
+			// AuditRecorded may be True or False depending on mock - verify it was set
+			auditCond := weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded)
+			Expect(auditCond).To(HaveValue(HaveField("Type", Equal(weconditions.ConditionAuditRecorded))))
 		})
 	})
 })

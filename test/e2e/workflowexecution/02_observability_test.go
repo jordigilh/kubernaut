@@ -536,13 +536,17 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			testName := fmt.Sprintf("e2e-audit-failure-%s", uuid.New().String()[:8])
 			targetResource := fmt.Sprintf("default/deployment/audit-fail-test-%s", uuid.New().String()[:8])
 
+			// Issue #518: WorkflowID must be a valid UUID (resolved at runtime via DS)
+			failureUUID := infrastructure.RegisteredWorkflowUUIDs["test-intentional-failure"]
+			Expect(failureUUID).ToNot(BeEmpty(),
+				"test-intentional-failure UUID should have been captured during workflow registration")
+
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testName,
 					Namespace: controllerNamespace,
 				},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				ExecutionEngine: "tekton", // BR-WE-014: Required field
 				RemediationRequestRef: corev1.ObjectReference{
 					APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
@@ -550,7 +554,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 					Namespace:  controllerNamespace,
 				},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID: "test-intentional-failure",
+				WorkflowID: failureUUID,
 				Version:    "v1.0.0",
 				// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (built with tkn bundle push)
 				ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",

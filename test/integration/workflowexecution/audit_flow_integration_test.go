@@ -65,7 +65,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 
 	BeforeEach(func() {
 		// Verify Data Storage is available
-		// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN - tests MUST fail
+		// Per TESTING_GUIDELINES.md: test skipping is ABSOLUTELY FORBIDDEN - tests MUST fail
 		// Per DD-AUDIT-003: WorkflowExecution REQUIRES audit capability
 		httpClient := &http.Client{Timeout: 5 * time.Second}
 		resp, err := httpClient.Get(dataStorageURL + "/health")
@@ -74,7 +74,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 				"REQUIRED: Data Storage not available at %s\n"+
 					"  Per DD-AUDIT-003: WorkflowExecution MUST have audit capability\n"+
 					"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n"+
-					"  Per TESTING_GUIDELINES.md: Skip() is FORBIDDEN - tests must FAIL\n\n"+
+					"  Per TESTING_GUIDELINES.md: test skipping is FORBIDDEN - tests must FAIL\n\n"+
 					"  Health check error: %v\n"+
 					"  Start infrastructure: make test-integration-workflowexecution\n",
 				dataStorageURL, err))
@@ -86,6 +86,9 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 	// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
 	// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
 	dsClient = dsClients.OpenAPIClient
+
+	// #518: Ensure engine mock is reset before each test to prevent leak from Job tests
+	testWorkflowQuerier.Engine = "tekton"
 	})
 
 	Context("when workflow execution starts (BR-WE-005)", func() {
@@ -131,7 +134,6 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 					},
 					TargetResource: targetResource,
-					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -247,7 +249,6 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 					},
 					TargetResource: targetResource,
-					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())

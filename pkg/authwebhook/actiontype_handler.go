@@ -23,7 +23,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
+	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -179,6 +181,12 @@ func (h *ActionTypeHandler) handleDelete(ctx context.Context, req admission.Requ
 		msg := fmt.Sprintf("Cannot delete ActionType %q: %d active workflow(s) depend on it (%s)",
 			at.Spec.Name, result.DependentWorkflowCount,
 			strings.Join(result.DependentWorkflows, ", "))
+
+		// Issue #512: Cross-check with K8s to detect orphaned DS entries.
+		if recovered := h.attemptOrphanRecovery(ctx, logger, req, at, username, result); recovered {
+			return admission.Allowed("action type disabled in catalog (orphan recovery)")
+		}
+
 		logger.Info("ActionType disable denied", "reason", msg)
 		h.emitATDeniedAudit(ctx, req, msg, "DELETE")
 		return admission.Denied(msg)
@@ -187,6 +195,69 @@ func (h *ActionTypeHandler) handleDelete(ctx context.Context, req admission.Requ
 	logger.Info("ActionType disabled in DS", "action_type", at.Spec.Name)
 	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedDelete, at.Spec.Name, false, "disabled")
 	return admission.Allowed("action type disabled in catalog")
+}
+
+// attemptOrphanRecovery cross-checks DS-reported dependent workflows against
+// live K8s RemediationWorkflow CRDs. If some dependents no longer exist in K8s,
+// they are orphaned DS entries. The method calls ForceDisableActionType to clean
+// them up. Returns true if the action type was successfully disabled.
+// Issue #512: Prevents permanently undeletable ActionTypes.
+func (h *ActionTypeHandler) attemptOrphanRecovery(
+	ctx context.Context,
+	logger logr.Logger,
+	req admission.Request,
+	at *atv1alpha1.ActionType,
+	username string,
+	result *ActionTypeDisableResult,
+) bool {
+	if h.k8sClient == nil {
+		return false
+	}
+
+	rwList := &rwv1alpha1.RemediationWorkflowList{}
+	if err := h.k8sClient.List(ctx, rwList, client.InNamespace(req.Namespace)); err != nil {
+		logger.Error(err, "Failed to list RemediationWorkflows for orphan check")
+		return false
+	}
+
+	liveNames := make(map[string]struct{})
+	for i := range rwList.Items {
+		if rwList.Items[i].Spec.ActionType == at.Spec.Name {
+			liveNames[rwList.Items[i].Name] = struct{}{}
+		}
+	}
+
+	var orphaned []string
+	for _, depName := range result.DependentWorkflows {
+		if _, live := liveNames[depName]; !live {
+			orphaned = append(orphaned, depName)
+		}
+	}
+
+	if len(orphaned) == 0 {
+		return false
+	}
+
+	logger.Info("Orphaned DS workflows detected, attempting force-disable",
+		"orphaned", orphaned,
+		"live_count", len(liveNames),
+		"action_type", at.Spec.Name,
+	)
+
+	forceResult, err := h.dsClient.ForceDisableActionType(ctx, at.Spec.Name, username, orphaned)
+	if err != nil {
+		logger.Error(err, "Force-disable failed during orphan recovery")
+		return false
+	}
+	if !forceResult.Disabled {
+		logger.Info("Force-disable denied — non-orphaned workflows remain",
+			"remaining", forceResult.DependentWorkflows)
+		return false
+	}
+
+	logger.Info("ActionType disabled via orphan recovery", "action_type", at.Spec.Name)
+	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedDelete, at.Spec.Name, false, "disabled")
+	return true
 }
 
 // updateCRDStatusCreate writes the DS registration result into the CRD's .status subresource.

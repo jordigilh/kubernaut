@@ -409,6 +409,104 @@ class TestResourceContextRootOwnerCapture:
         assert result.status.value == "success"
 
 
+class TestResourceContextTargetTracking:
+    """UT-HAPI-516-001 through 004: last_resource_context_target tracking and stale label clearing."""
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_516_001_stores_last_resource_context_target(self, mock_detector_cls):
+        """UT-HAPI-516-001: last_resource_context_target written to session_state."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = LABELS_ALL_DEFAULTS
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s(owner_chain=OWNER_CHAIN_POD_TO_DEPLOY)
+        tool = GetResourceContextTool(k8s_client=mock_k8s, session_state=session_state)
+
+        await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+
+        assert "last_resource_context_target" in session_state
+        target = session_state["last_resource_context_target"]
+        assert target["kind"] == "Deployment"
+        assert target["name"] == "api"
+        assert target["namespace"] == "production"
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_516_002_clears_detected_labels_on_target_change(self, mock_detector_cls):
+        """UT-HAPI-516-002: detected_labels cleared when target resource changes."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        call_count = 0
+
+        async def detect_labels_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return LABELS_GITOPS_ARGOCD
+            return LABELS_STATEFUL
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.side_effect = detect_labels_side_effect
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s(owner_chain=OWNER_CHAIN_POD_TO_DEPLOY)
+        tool = GetResourceContextTool(k8s_client=mock_k8s, session_state=session_state)
+
+        await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+        assert session_state["detected_labels"]["gitOpsManaged"] is True
+
+        mock_k8s.resolve_owner_chain.return_value = OWNER_CHAIN_STATEFULSET
+        await tool._invoke_async(kind="Pod", name="db-0", namespace="production")
+
+        assert session_state["detected_labels"]["stateful"] is True
+        assert session_state["last_resource_context_target"]["kind"] == "StatefulSet"
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_516_003_no_clear_when_same_target(self, mock_detector_cls):
+        """UT-HAPI-516-003: detected_labels NOT cleared when same target called again."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s(owner_chain=OWNER_CHAIN_POD_TO_DEPLOY)
+        tool = GetResourceContextTool(k8s_client=mock_k8s, session_state=session_state)
+
+        await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+        original_labels = session_state["detected_labels"]
+
+        await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+        assert session_state["detected_labels"] is original_labels
+        mock_detector.detect_labels.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_516_004_no_clear_on_first_call(self, mock_detector_cls):
+        """UT-HAPI-516-004: No clear attempt on first call (no previous target)."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = LABELS_ALL_DEFAULTS
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s(owner_chain=OWNER_CHAIN_POD_TO_DEPLOY)
+        tool = GetResourceContextTool(k8s_client=mock_k8s, session_state=session_state)
+
+        await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+
+        assert "detected_labels" in session_state
+        assert "last_resource_context_target" in session_state
+
+
 class TestResourceContextReassessment:
     """UT-HAPI-056-090 through 092: One-shot reassessment via detected_infrastructure."""
 

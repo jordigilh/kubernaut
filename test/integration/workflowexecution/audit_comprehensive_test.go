@@ -52,6 +52,10 @@ import (
 
 var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "comprehensive"), func() {
 
+	BeforeEach(func() {
+		testWorkflowQuerier.Engine = "tekton"
+	})
+
 	// ========================================
 	// Test 1: execution.workflow.started Audit Event
 	// ========================================
@@ -77,7 +81,6 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						ExecutionBundle: "quay.io/kubernaut/test:v1",
 					},
 					TargetResource: "default/deployment/test-app",
-					ExecutionEngine: "tekton",
 					Parameters: map[string]string{
 						"test": "value",
 					},
@@ -131,7 +134,6 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						ExecutionBundle: "quay.io/kubernaut/test:v1",
 					},
 					TargetResource: "default/deployment/test-app",
-					ExecutionEngine: "tekton",
 				},
 			}
 
@@ -181,7 +183,6 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						ExecutionBundle: "quay.io/kubernaut/test:v1",
 					},
 					TargetResource: "default/deployment/test-app",
-					ExecutionEngine: "tekton",
 				},
 			}
 
@@ -231,8 +232,8 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 		}, 30*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
 
 			By("Verifying workflow.completed audit event emitted with duration")
-			Expect(updated.Status.CompletionTime).ToNot(BeNil())
-			Expect(updated.Status.StartTime).ToNot(BeNil())
+			Expect(updated.Status.CompletionTime).To(HaveValue(Not(BeZero())), "CompletionTime should be set after completion")
+			Expect(updated.Status.StartTime).To(HaveValue(Not(BeZero())), "StartTime should be set after execution")
 
 			// RACE FIX: Ensure audit buffer has flushed to Data Storage
 			// Per ADR-032, audit events are buffered for up to 1 second before flushing.
@@ -276,7 +277,6 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						ExecutionBundle: "", // Empty image triggers pre-execution failure
 					},
 					TargetResource: "default/deployment/test-app",
-					ExecutionEngine: "tekton",
 				},
 			}
 
@@ -295,8 +295,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			By("Verifying pre-execution failure is captured")
 			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)).To(Succeed())
-			Expect(updated.Status.FailureDetails).ToNot(BeNil())
-			Expect(updated.Status.FailureDetails.WasExecutionFailure).To(BeFalse())
+			Expect(updated.Status.FailureDetails).To(HaveValue(HaveField("WasExecutionFailure", BeFalse())))
 			GinkgoWriter.Printf("✅ workflow.failed audit event emitted for pre-execution failure\n")
 		})
 	})
@@ -329,7 +328,6 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						ExecutionBundle: "quay.io/kubernaut/test:v1",
 					},
 					TargetResource: "default/deployment/ordering-test",
-					ExecutionEngine: "tekton",
 				},
 			}
 
@@ -357,7 +355,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 
 			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)).To(Succeed())
-			Expect(updated.Status.StartTime).ToNot(BeNil())
+			Expect(updated.Status.StartTime).To(HaveValue(Not(BeZero())), "StartTime should be set after execution starts")
 			GinkgoWriter.Println("✅ Step 2: execution.workflow.started audit event emitted")
 
 			By("Step 3: Complete PipelineRun and verify workflow.completed")
@@ -379,7 +377,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 				return updated.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
 
-			Expect(updated.Status.CompletionTime).ToNot(BeNil())
+			Expect(updated.Status.CompletionTime).To(HaveValue(Not(BeZero())), "CompletionTime should be set after completion")
 			GinkgoWriter.Println("✅ Step 3: workflow.completed audit event emitted")
 			GinkgoWriter.Println("✅ Audit events emitted in correct lifecycle order: started → completed")
 		})

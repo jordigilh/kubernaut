@@ -8,13 +8,17 @@
 **Affects**: Data Storage Service, AuthWebhook Service, HolmesGPT API, Remediation Orchestrator, Signal Processing, Workflow Execution
 **Related**: DD-WORKFLOW-016 (Action-Type Indexing), DD-WORKFLOW-012 (Immutability Constraints), DD-STORAGE-008 (Catalog Schema), DD-WORKFLOW-001 v2.6 (Label Schema), DD-AUDIT-003 (Audit Trace), ADR-058 (Webhook-Driven Registration), BR-WORKFLOW-006 (RemediationWorkflow CRD), DD-WEBHOOK-001 (Webhook Matrix), DD-004 (RFC 7807 Error Responses)
 **Supersedes**: DD-WORKFLOW-005 (Schema Extraction), DD-WORKFLOW-007 (Manual Registration)
-**Version**: 1.1
+**Version**: 1.2
 
 ---
 
 ## Changelog
 
-### Version 1.1 (2026-03-04) -- CURRENT
+### Version 1.2 (2026-03-04) -- CURRENT
+
+- **Phase 3 (Execution)**: Updated for Issue #518 -- `executionEngine` removed from WFE spec. WE controller resolves engine at runtime from DS catalog via `WorkflowQuerier.GetWorkflowExecutionEngine` and persists in `wfe.Status.ExecutionEngine` (immutable once set). RO no longer sets engine on WFE; notification path reads engine from WFE status. No silent "tekton" default -- WFE fails explicitly if DS has no engine.
+
+### Version 1.1 (2026-03-04)
 
 - **BREAKING**: Replaced OCI pullspec registration with CRD-based registration via RemediationWorkflow CRD
 - Phase 1 rewritten: operators create `RemediationWorkflow` CRD; AuthWebhook intercepts and bridges to DS
@@ -88,7 +92,7 @@ Each phase specifies the components involved, the API calls between them, the va
 | **HolmesGPT API** | HAPI | LLM tool orchestration, three-step discovery, post-selection validation |
 | **Signal Processing** | SP | Signal enrichment, context labels |
 | **Remediation Orchestrator** | RO | End-to-end remediation lifecycle management. Creates and watches CRDs sequentially (SP -> AIAnalysis -> WorkflowExecution -> Notification). Makes all routing decisions. |
-| **Workflow Execution** | WE | Pure executor (no routing logic). Reconciles WorkflowExecution CRDs, selects execution engine (Tekton PipelineRun or Kubernetes Job per BR-WE-014), creates and monitors execution primitives. |
+| **Workflow Execution** | WE | Pure executor (no routing logic). Reconciles WorkflowExecution CRDs, resolves execution engine from DS catalog at runtime (Issue #518), creates and monitors execution primitives (Tekton PipelineRun, Kubernetes Job, or Ansible AWX job). |
 | **Operator** | -- | Human actor: creates RemediationWorkflow CRDs, manages lifecycle |
 | **LLM** | -- | AI model: performs RCA, selects action type and workflow |
 
@@ -351,7 +355,7 @@ Discovery generates audit traces at the DS data layer for each step:
 
 ### Overview
 
-After HAPI validates the LLM's selection, the AIAnalysis CR status is updated with the selected workflow and parameters. The Remediation Orchestrator (RO) -- which owns the end-to-end remediation lifecycle -- detects this status change and creates a WorkflowExecution CRD. The Workflow Execution (WE) controller -- a pure executor with no routing logic -- reconciles the CRD, selects the appropriate execution engine (Tekton PipelineRun or Kubernetes Job per BR-WE-014), and creates the execution primitive.
+After HAPI validates the LLM's selection, the AIAnalysis CR status is updated with the selected workflow and parameters. The Remediation Orchestrator (RO) -- which owns the end-to-end remediation lifecycle -- detects this status change and creates a WorkflowExecution CRD. The Workflow Execution (WE) controller -- a pure executor with no routing logic -- reconciles the CRD, resolves the execution engine from the DS workflow catalog at runtime (Issue #518), persists it in `wfe.Status.ExecutionEngine`, and creates the appropriate execution primitive (Tekton PipelineRun, Kubernetes Job, or Ansible AWX job).
 
 ### Component Flow
 
@@ -368,15 +372,20 @@ sequenceDiagram
     RO->>RO: Check cooldown period (no duplicate execution)
     RO->>RO: Routing decisions (blocking, resource busy, etc.)
     RO->>K8s: Create WorkflowExecution CRD
-    Note right of RO: Includes workflow_id, parameters,<br/>targetResource, executionEngine
+    Note right of RO: Includes workflow_id, parameters,<br/>targetResource (no executionEngine — Issue #518)
 
     WE->>K8s: Reconcile WorkflowExecution CRD
+    WE->>DS: Resolve executionEngine from catalog (WorkflowQuerier)
+    DS-->>WE: engine ("tekton", "job", or "ansible")
+    WE->>WE: Persist engine in wfe.Status.ExecutionEngine (immutable)
     WE->>WE: Select executor via ExecutorRegistry (Strategy pattern)
 
-    alt executionEngine = "tekton"
+    alt status.executionEngine = "tekton"
         WE->>K8s: Create Tekton PipelineRun from OCI bundle
-    else executionEngine = "job"
+    else status.executionEngine = "job"
         WE->>K8s: Create Kubernetes Job
+    else status.executionEngine = "ansible"
+        WE->>K8s: Launch AWX Job Template via REST API
     end
 
     K8s-->>WE: Execution status updates
@@ -388,17 +397,22 @@ sequenceDiagram
 
 ### Execution Context
 
-The WorkflowExecution CRD includes:
+The WorkflowExecution CRD spec includes:
 
 | Field | Source | Description |
 |-------|--------|-------------|
 | `workflowId` | LLM selection (validated by HAPI) | UUID of the workflow to execute |
-| `executionEngine` | From workflow catalog entry (`execution.engine`) | `"tekton"` or `"job"` (per BR-WE-014) |
 | `parameters` | LLM-populated (validated by HAPI) | Workflow parameters as key-value pairs |
 | `targetResource` | Signal context | Kubernetes resource to remediate |
 | `signalFingerprint` | SP | Unique identifier for the triggering signal |
 
-**Note**: The `executionEngine` field is mandatory on the WorkflowExecution CRD. WE uses the `ExecutorRegistry` (Strategy pattern) to select the correct executor (`TektonExecutor` or `JobExecutor`) based on this field.
+The WE controller resolves execution context at runtime and persists it in status:
+
+| Status Field | Source | Description |
+|-------|--------|-------------|
+| `executionEngine` | Resolved from DS workflow catalog by WE controller | `"tekton"`, `"job"`, or `"ansible"` (Issue #518) |
+
+**Note**: `executionEngine` is **not** on the WFE spec. The WE controller resolves it from the DS workflow catalog at runtime using `WorkflowQuerier.GetWorkflowExecutionEngine(workflowId)` and persists it in `wfe.Status.ExecutionEngine` (immutable once set). If the catalog entry has no engine defined, the WFE fails explicitly with `ConfigurationError` -- there is no silent default. WE uses the `ExecutorRegistry` (Strategy pattern) to select the correct executor based on the resolved engine.
 
 ### Audit Traces
 
@@ -763,7 +777,7 @@ flowchart TD
 
 ---
 
-**Document Version**: 1.1
+**Document Version**: 1.2
 **Last Updated**: March 4, 2026
 **Status**: Approved
 **Authority**: AUTHORITATIVE - Governs workflow lifecycle component interactions (V1.0)

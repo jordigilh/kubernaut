@@ -200,6 +200,9 @@ var _ = Describe("BR-WE-004: Tekton Failure Reason Classification", Ordered, fun
 
 // createMinimalWorkflowExecution creates a minimal WorkflowExecution for testing
 func createMinimalWorkflowExecution(name, namespace string) *workflowexecutionv1alpha1.WorkflowExecution {
+	// Issue #518: Engine is resolved at runtime via the configurable mock querier.
+	// Reset to "tekton" so earlier tests that set it to "job" don't leak.
+	testWorkflowQuerier.Engine = "tekton"
 	return &workflowexecutionv1alpha1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       name,
@@ -219,7 +222,6 @@ func createMinimalWorkflowExecution(name, namespace string) *workflowexecutionv1
 				ExecutionBundle: "quay.io/jordigilh/test-workflows/test:v1.0.0",
 			},
 			TargetResource: "default/deployment/test-app-" + name, // Unique per test for deterministic PR names
-			ExecutionEngine: "tekton",
 		},
 	}
 }

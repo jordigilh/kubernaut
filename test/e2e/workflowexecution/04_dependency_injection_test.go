@@ -71,7 +71,6 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "job",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -170,7 +169,6 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "job",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -216,9 +214,9 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 
 	Context("E2E-WE-006-003: No dependency volumes for workflows without dependencies", func() {
 		It("should create Job without dependency volumes when workflow schema has no dependencies", func() {
-			helloWorldUUID := infrastructure.RegisteredWorkflowUUIDs["test-hello-world"]
+			helloWorldUUID := infrastructure.RegisteredWorkflowUUIDs["test-job-hello-world"]
 			Expect(helloWorldUUID).ToNot(BeEmpty(),
-				"test-hello-world UUID should have been captured during workflow registration")
+				"test-job-hello-world UUID should have been captured during workflow registration")
 
 			testName := fmt.Sprintf("e2e-dep-inj-003-%s", uuid.New().String()[:8])
 			targetResource := fmt.Sprintf("default/deployment/dep-inj-nodeps-%s", uuid.New().String()[:8])
@@ -229,7 +227,6 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "job",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -306,7 +303,6 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "tekton",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -386,7 +382,6 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "job",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -469,7 +464,6 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "tekton",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",

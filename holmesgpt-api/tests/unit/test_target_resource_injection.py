@@ -431,13 +431,19 @@ STANDARD_REQUEST_DATA = {
 class TestPromptAndParser(unittest.TestCase):
     """TDD Group 4: Prompt omits affectedResource; parser does not flag missing affectedResource."""
 
-    def test_ut_hapi_496_015_prompt_omits_affected_resource_instructions(self):
-        """UT-HAPI-496-015: Prompt string must NOT contain affectedResource as LLM instruction."""
+    def test_ut_hapi_496_015_prompt_includes_affected_resource_in_json_example(self):
+        """UT-HAPI-496-015: Prompt includes affectedResource in JSON example for mismatch validation.
+
+        #516: While HAPI still owns the canonical affectedResource (injected from
+        root_owner post-loop), the prompt now asks the LLM to state its intended
+        RCA target so HAPI can cross-check it against the last get_resource_context
+        call and trigger self-correction if they differ.
+        """
         prompt = create_incident_investigation_prompt(STANDARD_REQUEST_DATA)
-        self.assertNotIn(
+        self.assertIn(
             "affectedResource",
             prompt,
-            "Prompt still contains 'affectedResource' — HAPI owns this field, LLM must not see it",
+            "#516: Prompt must include affectedResource in JSON example for mismatch validation",
         )
 
     def test_ut_hapi_496_016_prompt_instructs_get_resource_context(self):

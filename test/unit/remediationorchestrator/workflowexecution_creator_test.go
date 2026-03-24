@@ -58,8 +58,8 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			// Act
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
 
-			// Assert
-			Expect(weCreator).ToNot(BeNil())
+			// Assert — creator is a concrete struct, verify interface compliance
+			Expect(weCreator).To(BeAssignableToTypeOf(&creator.WorkflowExecutionCreator{}))
 		})
 	})
 
@@ -158,68 +158,25 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 		})
 	})
 
-	Describe("ExecutionEngine pass-through", func() {
-		// BR-WE-014: ExecutionEngine must be derived from AIAnalysis.Status.SelectedWorkflow,
-		// NOT hardcoded. This ensures the workflow catalog controls the execution backend.
-		It("should use executionEngine from AIAnalysis SelectedWorkflow when set to 'job'", func() {
-			// Arrange
+	Describe("ExecutionEngine (RO creator does not set on WFE)", func() {
+		// Issue #518: ExecutionEngine is on WorkflowExecution status and resolved at runtime
+		// by the WE controller (workflow catalog). The RO WorkflowExecution creator does not
+		// copy SelectedWorkflow.ExecutionEngine onto the WFE.
+		It("should leave ExecutionEngine unset on created WorkflowExecution regardless of AI SelectedWorkflow", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-			rr := helpers.NewRemediationRequest("test-engine-job", "default")
-			ai := helpers.NewCompletedAIAnalysis("ai-test-engine-job", "default")
+			rr := helpers.NewRemediationRequest("test-engine-unset", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-engine-unset", "default")
 			ai.Status.SelectedWorkflow.ExecutionEngine = "job"
 			ctx := context.Background()
 
-			// Act
 			name, err := weCreator.Create(ctx, rr, ai)
-
-			// Assert
 			Expect(err).ToNot(HaveOccurred())
 			created := &workflowexecutionv1.WorkflowExecution{}
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.ExecutionEngine).To(Equal("job"))
-		})
-
-		It("should use executionEngine from AIAnalysis SelectedWorkflow when set to 'tekton'", func() {
-			// Arrange
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-			rr := helpers.NewRemediationRequest("test-engine-tekton", "default")
-			ai := helpers.NewCompletedAIAnalysis("ai-test-engine-tekton", "default")
-			ai.Status.SelectedWorkflow.ExecutionEngine = "tekton"
-			ctx := context.Background()
-
-			// Act
-			name, err := weCreator.Create(ctx, rr, ai)
-
-			// Assert
-			Expect(err).ToNot(HaveOccurred())
-			created := &workflowexecutionv1.WorkflowExecution{}
-			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.ExecutionEngine).To(Equal("tekton"))
-		})
-
-		It("should default to 'tekton' when executionEngine is empty (backwards compatibility)", func() {
-			// Arrange
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-			rr := helpers.NewRemediationRequest("test-engine-default", "default")
-			ai := helpers.NewCompletedAIAnalysis("ai-test-engine-default", "default")
-			// Explicitly clear - NewCompletedAIAnalysis doesn't set ExecutionEngine
-			ai.Status.SelectedWorkflow.ExecutionEngine = ""
-			ctx := context.Background()
-
-			// Act
-			name, err := weCreator.Create(ctx, rr, ai)
-
-			// Assert
-			Expect(err).ToNot(HaveOccurred())
-			created := &workflowexecutionv1.WorkflowExecution{}
-			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.ExecutionEngine).To(Equal("tekton"))
+			Expect(created.Status.ExecutionEngine).To(BeEmpty(),
+				"RO must not populate ExecutionEngine; WE resolves it from the catalog at runtime")
 		})
 	})
 
@@ -474,9 +431,8 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			created := &workflowexecutionv1.WorkflowExecution{}
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.ExecutionConfig).ToNot(BeNil())
-			Expect(created.Spec.ExecutionConfig.Timeout).ToNot(BeNil())
-			Expect(created.Spec.ExecutionConfig.Timeout.Duration).To(Equal(30 * 60 * 1000000000 * time.Nanosecond))
+			Expect(created.Spec.ExecutionConfig).To(HaveValue(HaveField("Timeout", Not(BeNil()))))
+			Expect(created.Spec.ExecutionConfig.Timeout.Duration).To(Equal(30 * time.Minute))
 		})
 
 		It("should return nil ExecutionConfig when no timeout configured per BR-ORCH-028", func() {

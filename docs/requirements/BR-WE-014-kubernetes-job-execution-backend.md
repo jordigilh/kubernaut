@@ -39,16 +39,16 @@ A complete end-to-end platform test (K8s Event -> Gateway -> SignalProcessing ->
 
 ## Business Objective
 
-**WorkflowExecution Controller SHALL support Kubernetes Jobs as a second execution backend alongside Tekton, using a Strategy pattern to dispatch execution based on `spec.executionEngine`.**
+**WorkflowExecution Controller SHALL support Kubernetes Jobs as a second execution backend alongside Tekton, using a Strategy pattern to dispatch execution based on `status.executionEngine` (resolved at runtime from the DS workflow catalog per Issue #518).**
 
 ### Success Criteria
 
-1. WorkflowExecution CRD requires `spec.executionEngine` field (mandatory) with values `"tekton"` or `"job"`
-2. CRD validation rejects WorkflowExecution resources that omit `executionEngine`
-3. When `executionEngine: "job"`, controller creates a `batchv1.Job` instead of a Tekton PipelineRun
+1. WE controller resolves `executionEngine` from the DS workflow catalog at runtime and persists it in `status.executionEngine` (immutable once set, Issue #518). Supported values: `"tekton"`, `"job"`, `"ansible"`
+2. If the DS catalog entry has no engine, the WFE fails explicitly with `ConfigurationError` -- no silent default
+3. When `status.executionEngine: "job"`, controller creates a `batchv1.Job` instead of a Tekton PipelineRun
 4. Job executor maps Job conditions (`Complete`/`Failed`) to WFE phases identically to Tekton mapping
 5. Resource locking (BR-WE-009), cooldown (BR-WE-010), and audit trail (BR-WE-005) apply regardless of backend
-6. RemediationOrchestrator propagates `execution_engine` from workflow catalog to WorkflowExecution CRD
+6. RO creates WorkflowExecution CRD without `executionEngine` -- the WE controller resolves it (Issue #518)
 7. Full platform E2E test (OOMKill scenario) passes in CI within 6GB memory using Job backend
 8. Tekton E2E tests remain unchanged and pass
 
@@ -67,7 +67,7 @@ A complete end-to-end platform test (K8s Event -> Gateway -> SignalProcessing ->
 4. AIAnalysis produces RCA, RemediationOrchestrator selects workflow
 5. RO creates WorkflowExecution CRD:
    spec:
-     executionEngine: "job"  # Propagated from catalog
+     # executionEngine not in spec -- resolved by WE from DS catalog (Issue #518)
      workflowRef:
        name: restart-with-increased-memory
        containerImage: registry.example.com/remediation/restart:v1.2@sha256:abc...
@@ -93,7 +93,7 @@ A complete end-to-end platform test (K8s Event -> Gateway -> SignalProcessing ->
 ```
 1. WorkflowExecution CRD created:
    spec:
-     executionEngine: "tekton"  # Explicit, required field
+     # executionEngine resolved at runtime by WE from DS catalog (Issue #518)
      workflowRef:
        name: canary-deployment
        bundleRef: oci://registry.example.com/pipelines/canary:v2.0
@@ -121,26 +121,25 @@ A complete end-to-end platform test (K8s Event -> Gateway -> SignalProcessing ->
 
 ## Technical Requirements
 
-### TR-1: CRD Schema Extension
+### TR-1: Execution Engine Runtime Resolution (Issue #518)
 
-Add `executionEngine` field to `WorkflowExecutionSpec`:
+`executionEngine` is resolved at runtime by the WE controller from the DS workflow catalog and persisted in `WorkflowExecutionStatus`:
 
 ```go
-// WorkflowExecutionSpec defines the desired state of WorkflowExecution
-type WorkflowExecutionSpec struct {
+// WorkflowExecutionStatus defines the observed state of WorkflowExecution
+type WorkflowExecutionStatus struct {
     // ... existing fields ...
 
-    // ExecutionEngine specifies which backend to use for this execution.
-    // Supported values: "tekton" (Tekton PipelineRun), "job" (Kubernetes Job).
-    // This field is REQUIRED -- the CRD creator (RemediationOrchestrator) MUST
-    // explicitly set the engine based on the workflow catalog entry.
-    // +kubebuilder:validation:Required
-    // +kubebuilder:validation:Enum=tekton;job
-    ExecutionEngine string `json:"executionEngine"`
+    // ExecutionEngine is the backend engine resolved from the DS workflow catalog
+    // at runtime by the WE controller. Set once during Pending phase via
+    // WorkflowQuerier.GetWorkflowExecutionEngine; immutable thereafter.
+    // Values: "tekton", "job", "ansible".
+    // +optional
+    ExecutionEngine string `json:"executionEngine,omitempty"`
 }
 ```
 
-**No backward compatibility**: This is a new mandatory field. Since WorkflowExecution CRDs are created programmatically by the RemediationOrchestrator (not by humans), there is no migration concern. The RO MUST populate this field from the workflow catalog's `execution_engine` column.
+**Design**: The WFE spec describes *what* to execute (workflowRef), not *how* (engine). The WE controller resolves the engine from the DS catalog using `workflowRef.workflowId` during the Pending phase. If the catalog entry has no engine, the WFE fails with `ConfigurationError`. RO does not set the engine -- it is a pure dispatcher (Issue #518).
 
 ### TR-2: Executor Interface (Strategy Pattern)
 
@@ -189,37 +188,33 @@ type JobExecutor struct {
 
 ```go
 func (r *WorkflowExecutionReconciler) getExecutor(wfe *v1alpha1.WorkflowExecution) (executor.Executor, error) {
-    switch wfe.Spec.ExecutionEngine {
+    // Issue #518: engine resolved from DS catalog, stored in status
+    switch wfe.Status.ExecutionEngine {
     case "tekton":
         return r.tektonExecutor, nil
     case "job":
         return r.jobExecutor, nil
+    case "ansible":
+        return r.ansibleExecutor, nil
     default:
-        return nil, fmt.Errorf("unsupported execution engine: %q (must be \"tekton\" or \"job\")", wfe.Spec.ExecutionEngine)
+        return nil, fmt.Errorf("unsupported execution engine: %q", wfe.Status.ExecutionEngine)
     }
 }
 ```
 
-### TR-6: RO Integration -- Catalog Propagation
+### TR-6: RO Integration -- Pure Dispatcher (Issue #518)
 
-RemediationOrchestrator MUST propagate `execution_engine` from the workflow catalog to the WorkflowExecution CRD `spec.executionEngine` field when creating WFE resources.
+RemediationOrchestrator does **not** set `executionEngine` on the WorkflowExecution CRD. The WE controller resolves the engine at runtime from the DS catalog.
 
-**Location**: `pkg/remediationorchestrator/creator/`
-
-**Propagation Chain Gap**: The current data flow is:
+**Data flow**:
 
 ```
-Catalog (has execution_engine) → HolmesGPT-API → AIAnalysis.Status.SelectedWorkflow → RO Creator → WFE CRD
+Catalog (has execution_engine) → WE controller queries DS at runtime → wfe.Status.ExecutionEngine
 ```
 
-The `SelectedWorkflow` struct (`api/aianalysis/v1alpha1/aianalysis_types.go`) currently does **not** include `ExecutionEngine`. The following changes are required to complete the propagation chain:
+**RO notification path**: For completion notifications, RO reads `wfe.Status.ExecutionEngine` (resolved by WE) and passes it as a parameter to `CreateCompletionNotification`. The engine is stored in `NR.Spec.Metadata["executionEngine"]` (informational, not a first-class NR field).
 
-1. **AIAnalysis CRD**: Add `ExecutionEngine string` field to `SelectedWorkflow` struct
-2. **HolmesGPT-API**: Ensure workflow selection response includes `execution_engine` from catalog
-3. **AIAnalysis response processor**: Extract and store `execution_engine` in `Status.SelectedWorkflow.ExecutionEngine`
-4. **RO Creator**: Read `ai.Status.SelectedWorkflow.ExecutionEngine` and set `wfe.Spec.ExecutionEngine`
-
-**Cross-service dependencies**: AIAnalysis (CRD + processor), HolmesGPT-API (response schema), RO (creator)
+**No propagation chain through AIAnalysis**: The `AIAnalysis.Status.SelectedWorkflow.ExecutionEngine` field exists for informational purposes (HAPI populates it from the catalog), but RO does not use it to set the WFE engine. The WE controller is the sole authority for resolving the engine from the canonical DS catalog entry (Issue #518).
 
 ### TR-7: OCI Compliance
 
@@ -341,17 +336,12 @@ Feature: Kubernetes Job Execution Backend
     When the controller reconciles the WorkflowExecution
     Then a Tekton PipelineRun is created (existing behavior)
 
-  Scenario: Missing executionEngine is rejected by CRD validation
-    Given a WorkflowExecution CRD without executionEngine field
-    When the CRD is submitted to the API server
-    Then the API server rejects the resource with a validation error
-    And no WorkflowExecution is created
-
-  Scenario: Invalid executionEngine is rejected by CRD validation
-    Given a WorkflowExecution CRD with executionEngine: "ansible"
-    When the CRD is submitted to the API server
-    Then the API server rejects the resource with an enum validation error
-    And no WorkflowExecution is created
+  Scenario: Missing executionEngine in DS catalog causes WFE failure (Issue #518)
+    Given a WorkflowExecution CRD referencing a workflow with no engine in the DS catalog
+    When the WE controller reconciles the WorkflowExecution
+    Then the WFE is marked Failed with Reason=ConfigurationError
+    And the error message includes the workflow name and ID
+    And no execution primitive is created
 
   Scenario: Resource locking applies to Job backend
     Given a WorkflowExecution CRD with executionEngine: "job"
@@ -360,10 +350,11 @@ Feature: Kubernetes Job Execution Backend
     Then execution is blocked by resource lock (BR-WE-009)
     And no Job is created
 
-  Scenario: RO propagates execution_engine from catalog
+  Scenario: WE controller resolves engine from DS catalog (Issue #518)
     Given a workflow in the catalog with execution_engine: "job"
-    When RemediationOrchestrator creates a WorkflowExecution CRD
-    Then spec.executionEngine is set to "job"
+    When the WE controller reconciles the WorkflowExecution
+    Then status.executionEngine is set to "job" (resolved from DS, immutable once set)
+    And the JobExecutor is selected via ExecutorRegistry
 
   Scenario: Job backend mounts declared dependencies as volumes
     Given a WorkflowExecution CRD with executionEngine: "job"
@@ -500,12 +491,12 @@ Update ADR-043 to include `"job"` as a V1 execution engine value (currently only
 
 | Area | Change | Scope | Risk |
 |------|--------|-------|------|
-| **CRD** | Add required `executionEngine` field to `WorkflowExecutionSpec` | Small, additive | Low -- mandatory field, kubebuilder validation |
+| **CRD** | `executionEngine` resolved at runtime by WE, persisted in `WorkflowExecutionStatus` (Issue #518) | Small, additive | Low -- status field, immutable once set |
 | **Interface** | Create `Executor` interface in `pkg/workflowexecution/executor/` | New file | Low -- clean abstraction |
 | **Tekton backend** | Extract existing Tekton logic into `TektonExecutor` | Refactor | Medium -- must preserve all existing behavior |
 | **Job backend** | New `JobExecutor` implementing `Executor` | New file | Low -- well-defined K8s API |
-| **Controller** | Dispatch to executor based on `spec.executionEngine` | ~10 lines | Low |
-| **RO integration** | Pass `execution_engine` from catalog to WFE CRD | Small | Low |
+| **Controller** | Resolve engine from DS, dispatch via `status.executionEngine` (Issue #518) | ~50 lines | Low |
+| **RO integration** | RO no longer sets engine; reads from WFE status for notifications (Issue #518) | Small | Low |
 | **Tests** | Unit + Integration + E2E for both backends | Significant | Medium -- Tekton refactor needs regression coverage |
 
 ---
@@ -604,6 +595,7 @@ Minimal implementation to pass each test tier, then refactor.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.0 | 2026-03-04 | **Issue #518**: `executionEngine` moved from WFE spec to status. WE controller resolves engine at runtime from DS catalog via `WorkflowQuerier.GetWorkflowExecutionEngine`; persists in `status.executionEngine` (immutable once set). RO no longer sets engine on WFE -- pure dispatcher. No silent "tekton" default; WFE fails with ConfigurationError if DS has no engine. Updated TR-1, TR-5, TR-6, success criteria, acceptance scenarios. |
 | 2.0 | 2026-02-05 | **Major update**: Added prerequisite refactoring section (PR-1..6): normalize condition types, CRD status fields, metrics to engine-agnostic names; documented execution_engine propagation chain gap (G1: AIAnalysis → RO → WFE); updated resource locking to check both PipelineRun and Job (G4); added OpenAPI schema update (PR-4); added ExecutionEngineJob constant (PR-5); ADR-043 update for "job" engine (PR-6); expanded dependencies table with cross-service requirements |
 | 1.3 | 2026-02-05 | Audit trail: `execution_engine` required in ALL lifecycle events (selection, started, completed, failed), not just completion |
 | 1.2 | 2026-02-05 | Deliverables reordered to TDD methodology: Documentation (specs) -> Testing (RED) -> Implementation (GREEN + REFACTOR), phased by unit/integration/E2E tiers |
@@ -613,5 +605,5 @@ Minimal implementation to pass each test tier, then refactor.
 ---
 
 **Document Status**: Proposed -- Pending WE Team Review
-**Version**: 2.0
+**Version**: 3.0
 **File**: `docs/requirements/BR-WE-014-kubernetes-job-execution-backend.md`

@@ -40,6 +40,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -1338,8 +1339,9 @@ func createGatewayServer(cfg *config.ServerConfig, testLogger logr.Logger, k8sCl
 
 	// DD-AUTH-014 + DD-AUDIT-003: Use SHARED audit store from suite_test.go
 	// The sharedAuditStore has continuous background flusher across all tests
-	// BR-SCOPE-002: nil scope checker = no scope filtering in integration tests
-	return gateway.NewServerForTesting(cfg, testLogger, metricsInstance, k8sClient, sharedAuditStore, nil, suiteAuthenticator, suiteAuthorizer)
+	// BR-SCOPE-013: Real scope manager — deny-by-default when nil (integration tests
+	// must label namespaces/resources as managed for signals to be accepted)
+	return gateway.NewServerForTesting(cfg, testLogger, metricsInstance, k8sClient, sharedAuditStore, scope.NewManager(k8sClient), suiteAuthenticator, suiteAuthorizer)
 }
 
 // SignalBuilder provides optional fields for creating test signals
@@ -1530,8 +1532,8 @@ func labelsMatch(metric *dto.Metric, labels map[string]string) bool {
 func createGatewayServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, k8sClient client.Client, metricsInstance *metrics.Metrics, sharedAuditStore audit.AuditStore) (*gateway.Server, error) {
 	// DD-AUTH-014 + DD-AUDIT-003: Use SHARED audit store from suite_test.go
 	// The sharedAuditStore has continuous background flusher across all tests
-	// BR-SCOPE-002: nil scope checker = no scope filtering in integration tests
-	return gateway.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, sharedAuditStore, nil, suiteAuthenticator, suiteAuthorizer)
+	// BR-SCOPE-013: Real scope manager — deny-by-default when nil
+	return gateway.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, sharedAuditStore, scope.NewManager(k8sClient), suiteAuthenticator, suiteAuthorizer)
 }
 
 // createPrometheusAlert creates a Prometheus AlertManager webhook payload

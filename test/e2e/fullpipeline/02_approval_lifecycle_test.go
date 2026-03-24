@@ -129,7 +129,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		// ================================================================
 		// Step 3: Wait for RemediationRequest creation
 		// ================================================================
-		By("Step 3: Waiting for RemediationRequest to be created by Gateway")
+		By("Step 3: Waiting for OOMKill/BackOff RemediationRequest (filtering out FailedMount race)")
 		var remediationRequest *remediationv1.RemediationRequest
 		Eventually(func() bool {
 			rrList := &remediationv1.RemediationRequestList{}
@@ -141,12 +141,16 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 				if rr.Spec.TargetResource.Namespace != testNamespace {
 					continue
 				}
-				remediationRequest = rr
-				GinkgoWriter.Printf("  ✅ RemediationRequest found: %s\n", remediationRequest.Name)
-				return true
+				sig := strings.ToLower(rr.Spec.SignalName)
+				if sig == "backoff" || sig == "oomkilled" || sig == "oomkill" || strings.Contains(sig, "oom") {
+					remediationRequest = rr
+					GinkgoWriter.Printf("  ✅ RemediationRequest found: %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
+					return true
+				}
+				GinkgoWriter.Printf("  ⏳ Skipping RR %s with signal %q (waiting for OOMKill/BackOff)\n", rr.Name, rr.Spec.SignalName)
 			}
 			return false
-		}, timeout, interval).Should(BeTrue(), "RemediationRequest should be created")
+		}, timeout, interval).Should(BeTrue(), "RemediationRequest with OOMKill/BackOff signal should be created")
 
 		// ================================================================
 		// Step 4: Wait for SignalProcessing to complete
@@ -295,8 +299,8 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 				if we.Spec.RemediationRequestRef.Name == remediationRequest.Name {
 					weName = we.Name
 					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n",
-						we.Name, we.Status.Phase, we.Spec.ExecutionEngine)
-					return we.Spec.ExecutionEngine
+						we.Name, we.Status.Phase, we.Status.ExecutionEngine)
+					return we.Status.ExecutionEngine
 				}
 			}
 			return ""

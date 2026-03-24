@@ -269,11 +269,68 @@ Your previous workflow response had validation errors:
 {errors_list}
 {schema_section}
 **Please correct your response:**
-1. Re-check the workflow ID exists (use get_workflow with the workflow_id)
-2. Ensure execution_bundle matches the catalog exactly (or omit to use catalog default)
-3. Verify all required parameters are provided with correct types and values
+1. Re-check the workflow ID exists in the catalog (use get_workflow with the workflow_id)
+2. Verify all required parameters are provided with correct types and values
 
 **Re-submit your JSON response with the corrected workflow selection.**
+"""
+
+
+def build_resource_context_mismatch_feedback(
+    affected_resource: Dict[str, str],
+    last_target: Optional[Dict[str, str]],
+) -> str:
+    """Build correction feedback when the LLM's affectedResource doesn't match the last
+    get_resource_context call.
+
+    Issue #516: The LLM may call get_resource_context for one resource during investigation
+    but identify a different resource as the RCA target.  Because detected_labels are
+    computed by get_resource_context, stale labels can cause incorrect workflow selection.
+    """
+    ar_desc = f"{affected_resource.get('kind', '?')}/{affected_resource.get('name', '?')}"
+    ar_ns = affected_resource.get("namespace", "")
+    if ar_ns:
+        ar_desc += f" in namespace '{ar_ns}'"
+
+    if last_target is None:
+        return f"""
+
+## ⚠️ RESOURCE CONTEXT MISSING — CORRECTION REQUIRED
+
+You did not call `get_resource_context` during your investigation. This tool is **REQUIRED**
+to resolve the root owner and retrieve remediation history for your RCA target.
+
+Your affectedResource is **{ar_desc}**.
+
+**You MUST**:
+1. Call `get_resource_context` for your RCA target ({ar_desc})
+2. Review the `root_owner` and `remediation_history` returned
+3. Re-run the three-step workflow discovery protocol (the detected infrastructure labels
+   from this call determine which workflows are available in `list_workflows`)
+4. Re-submit your JSON response with the corrected workflow selection
+"""
+
+    lt_desc = f"{last_target.get('kind', '?')}/{last_target.get('name', '?')}"
+    lt_ns = last_target.get("namespace", "")
+    if lt_ns:
+        lt_desc += f" in namespace '{lt_ns}'"
+
+    return f"""
+
+## ⚠️ RESOURCE CONTEXT MISMATCH — CORRECTION REQUIRED
+
+Your `affectedResource` is **{ar_desc}** but `get_resource_context` was last called for
+**{lt_desc}**.
+
+Calling `get_resource_context` for a different resource changes the **detected infrastructure
+labels** (gitOpsManaged, stateful, pdbProtected, hpaEnabled, etc.) which affect which workflows
+are returned by `list_workflows`.
+
+**You MUST**:
+1. Call `get_resource_context` for your actual RCA target ({ar_desc})
+2. Review the updated `root_owner`, `remediation_history`, and detected labels
+3. Re-run the three-step workflow discovery protocol with the updated context
+4. Re-submit your JSON response with the corrected workflow selection
 """
 
 
@@ -547,11 +604,23 @@ Based on your RCA, determine the signal_name that best describes the effect:
 
 ### Phase 3b: Identify the Root Owner (MANDATORY for remediation)
 
-Call `get_resource_context` with the resource you identified during RCA (kind, name, namespace):
-- The tool resolves the **root managing resource** (e.g., for a Pod it finds the managing Deployment) and returns:
+Call `get_resource_context` with the **resource that needs remediation** (kind, name, namespace).
+
+**CRITICAL**: This must be the resource whose configuration will be changed to fix the problem, NOT the resource that reported the signal. The signal source and the remediation target are often different:
+- **DiskPressure on a Node** caused by a Deployment using emptyDir → pass the **Deployment** (it needs a PVC migration), not the Node
+- **OOMKilled Pod** owned by a Deployment → pass the **Pod** or **Deployment** (it needs memory limits increased), not the Node
+- **NodeNotReady** caused by a tainted node blocking scheduling → pass the **Node** (its taint needs removal)
+
+**Rule of thumb**: Ask yourself "which resource's spec/config must change to fix this?" — that is the resource to pass.
+
+The tool resolves the **root managing resource** (e.g., for a Pod it finds the managing Deployment) and returns:
   - `root_owner`: The root managing resource (`kind`, `name`, `namespace`). The system uses this to target the correct resource for remediation.
   - `remediation_history`: Past remediations for that resource. Use this to avoid repeating recently failed workflows.
-- **Example**: You call the tool for Pod "api-xyz-abc". The tool returns `root_owner: {{kind: Deployment, name: api, namespace: prod}}`.
+  - `detected infrastructure labels`: The tool detects runtime characteristics of the target resource (e.g., gitOpsManaged, stateful, pdbProtected, hpaEnabled) that are used to filter workflows in Phase 4. Calling this tool before workflow discovery ensures you see the most relevant workflows for the target resource.
+
+**Important**: You may call `get_resource_context` multiple times during investigation, but you **must** call it for your **final** RCA target before starting Phase 4 (workflow discovery). The detected infrastructure labels from this call determine which workflows are available in `list_workflows`.
+- **Example 1**: Pod "api-xyz-abc" is OOMKilled. You pass the Pod. The tool returns `root_owner: {{kind: Deployment, name: api, namespace: prod}}`.
+- **Example 2**: Node "worker-3" has DiskPressure because Deployment "postgres-emptydir" uses emptyDir. You pass the **Deployment** (not the Node). The tool returns `root_owner: {{kind: Deployment, name: postgres-emptydir, namespace: prod}}`.
 
 ### Phase 4: Discover and Select Workflow (MANDATORY - Three-Step Protocol)
 **YOU MUST** follow this three-step workflow discovery protocol:
@@ -585,15 +654,13 @@ and choose a different workflow.
   "root_cause_analysis": {{
     "summary": "Brief summary of root cause from investigation",
     "severity": "critical|high|medium|low|unknown",
-    "contributing_factors": ["factor1", "factor2"]
+    "contributing_factors": ["factor1", "factor2"],
+    "affectedResource": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}
   }},
   "selected_workflow": {{
     "workflow_id": "workflow-id-from-mcp-search",
-    "action_type": "ScaleReplicas",
-    "version": "1.0.0",
     "confidence": 0.95,
     "rationale": "Why your RCA findings led to this workflow selection",
-    "execution_engine": "tekton|job",
     "parameters": {{
       "PARAM_NAME": "value-from-investigation"
     }}
@@ -601,7 +668,6 @@ and choose a different workflow.
   "alternative_workflows": [
     {{
       "workflow_id": "other-workflow-id",
-      "execution_bundle": "image@sha256:digest",
       "confidence": 0.75,
       "rationale": "Why this was considered but not selected"
     }}
@@ -615,7 +681,8 @@ and choose a different workflow.
   "root_cause_analysis": {{
     "summary": "Root cause from investigation",
     "severity": "critical|high|medium|low|unknown",
-    "contributing_factors": ["factor1", "factor2"]
+    "contributing_factors": ["factor1", "factor2"],
+    "affectedResource": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}
   }},
   "selected_workflow": null,
   "rationale": "Workflow discovery failed: [error details]. RCA completed but workflow selection unavailable."
@@ -822,16 +889,16 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 **REQUIRED FORMAT** - Each field must be on its own line with section header:
 
 # root_cause_analysis
-{{"summary": "Brief summary of root cause", "severity": "critical|high|medium|low|unknown", "contributing_factors": ["factor1", "factor2"]}}
+{{"summary": "Brief summary of root cause", "severity": "critical|high|medium|low|unknown", "contributing_factors": ["factor1", "factor2"], "affectedResource": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}}}
 
 # confidence
 0.95
 
 # selected_workflow
-{{"workflow_id": "workflow-id-from-mcp-search-results", "action_type": "ScaleReplicas", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "execution_engine": "tekton", "parameters": {{"PARAM_NAME": "value"}}}}
+{{"workflow_id": "workflow-id-from-mcp-search-results", "confidence": 0.95, "rationale": "Why this workflow was selected", "parameters": {{"PARAM_NAME": "value"}}}}
 
 # alternative_workflows
-[{{"workflow_id": "alt-workflow-id", "execution_bundle": "image@sha256:digest", "confidence": 0.75, "rationale": "Why this was considered but not selected"}}]
+[{{"workflow_id": "alt-workflow-id", "confidence": 0.75, "rationale": "Why this was considered but not selected"}}]
 
 **IMPORTANT**:
 - **DO NOT** use a single ```json block - use section headers as shown above

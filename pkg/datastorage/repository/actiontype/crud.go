@@ -276,6 +276,119 @@ func (r *Repository) disableOnce(ctx context.Context, actionType string, disable
 	return &DisableResult{Disabled: true}, nil
 }
 
+// ForceDisable disables the specified orphaned workflows and then attempts to
+// disable the action type, all within a single SERIALIZABLE transaction.
+// Issue #512: Recovers from stale DS entries when K8s RW CRDs are deleted but
+// the catalog-cleanup finalizer failed to disable the workflow in DS.
+//
+// Only the named workflows are disabled (scoped cleanup). If additional active
+// workflows exist that are NOT in orphanedWorkflows, the action type remains
+// active and DisableResult.Disabled is false.
+func (r *Repository) ForceDisable(ctx context.Context, actionType string, disabledBy string, orphanedWorkflows []string) (*DisableResult, error) {
+	const maxRetries = 3
+	var result *DisableResult
+	err := txretry.WithSerializableRetry(ctx, maxRetries, func() error {
+		var txErr error
+		result, txErr = r.forceDisableOnce(ctx, actionType, disabledBy, orphanedWorkflows)
+		return txErr
+	})
+	return result, err
+}
+
+func (r *Repository) forceDisableOnce(ctx context.Context, actionType string, disabledBy string, orphanedWorkflows []string) (*DisableResult, error) {
+	tx, err := r.db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var existing models.ActionTypeTaxonomy
+	err = tx.QueryRowxContext(ctx,
+		`SELECT action_type, description, status, disabled_at, disabled_by, created_at, updated_at
+		 FROM action_type_taxonomy WHERE action_type = $1`,
+		actionType,
+	).StructScan(&existing)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("%w: %s", ErrActionTypeNotFound, actionType)
+		}
+		return nil, fmt.Errorf("check action type for force-disable: %w", err)
+	}
+
+	if existing.Status != "active" {
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit (already disabled): %w", err)
+		}
+		return &DisableResult{Disabled: true}, nil
+	}
+
+	// Disable only the named orphaned workflows (scoped cleanup).
+	if len(orphanedWorkflows) > 0 {
+		now := time.Now().UTC()
+		_, err = tx.ExecContext(ctx,
+			`UPDATE remediation_workflow_catalog
+			 SET status = 'disabled', disabled_at = $2, disabled_by = $3,
+			     disabled_reason = 'orphan cleanup (#512)', status_reason = 'orphan cleanup (#512)'
+			 WHERE action_type = $1 AND status = 'active'
+			   AND workflow_name = ANY($4)`,
+			actionType, now, disabledBy, orphanedWorkflows,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("disable orphaned workflows for %q: %w", actionType, err)
+		}
+	}
+
+	// Check for remaining active workflows after orphan cleanup.
+	rows, err := tx.QueryxContext(ctx,
+		`SELECT workflow_name FROM remediation_workflow_catalog
+		 WHERE action_type = $1 AND status = 'active'`,
+		actionType,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("count remaining active workflows for %q: %w", actionType, err)
+	}
+	var remaining []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("scan workflow name: %w", err)
+		}
+		remaining = append(remaining, name)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate remaining workflow rows: %w", err)
+	}
+
+	if len(remaining) > 0 {
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit (denied, non-orphaned workflows remain): %w", err)
+		}
+		return &DisableResult{
+			Disabled:               false,
+			DependentWorkflowCount: len(remaining),
+			DependentWorkflows:     remaining,
+		}, nil
+	}
+
+	now := time.Now().UTC()
+	_, err = tx.ExecContext(ctx,
+		`UPDATE action_type_taxonomy
+		 SET status = 'disabled', disabled_at = $2, disabled_by = $3
+		 WHERE action_type = $1 AND status = 'active'`,
+		actionType, now, disabledBy,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("disable action type %q: %w", actionType, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit force-disable: %w", err)
+	}
+	return &DisableResult{Disabled: true}, nil
+}
+
 // CountActiveWorkflows returns the count and names of active workflows referencing this action type.
 func (r *Repository) CountActiveWorkflows(ctx context.Context, actionType string) (int, []string, error) {
 	rows, err := r.db.QueryxContext(ctx,
