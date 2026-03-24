@@ -64,7 +64,6 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
@@ -152,81 +151,21 @@ var _ = SynchronizedBeforeSuite(
 		err = os.Setenv("KUBECONFIG", tempKubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Seeding all FP test workflows in DataStorage (once)")
-		dsURL := "http://localhost:30081"
-		dsHTTPClient := &http.Client{
-			Timeout:   20 * time.Second,
-			Transport: testauth.NewServiceAccountTransport(token),
-		}
-		dsClient, dsErr := ogenclient.NewClient(dsURL, ogenclient.WithClient(dsHTTPClient))
-		Expect(dsErr).ToNot(HaveOccurred(), "Failed to create DataStorage client for workflow seeding")
-
 		// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
-		Expect(infrastructure.SeedActionTypesViaAPI(dsClient, GinkgoWriter)).To(Succeed(), "Failed to seed action types")
+		// Uses declarative kubectl apply -f approach (same as production deployments)
+		By("Seeding ActionType CRDs via kubectl apply (DD-WORKFLOW-016)")
+		Expect(infrastructure.SeedE2EActionTypes(tempKubeconfigPath, namespace, GinkgoWriter)).To(Succeed(), "Failed to seed action types")
 
-		allWorkflows := []infrastructure.TestWorkflow{
-			{
-				WorkflowID:      "crashloop-config-fix-v1",
-				Name:            "CrashLoopBackOff - Configuration Fix",
-				Description:     "CrashLoop remediation workflow for full pipeline E2E",
-				Severity:        "high",
-				Component:       "deployment",
-				Environment:     "production",
-				Priority:        "*",
-				SchemaImage:     "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0",
-				ExecutionEngine: "job",
-				SchemaParameters: []models.WorkflowParameter{
-					{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the root managing resource (HAPI-injected)"},
-					{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kind of the root managing resource (HAPI-injected)"},
-					{Name: "TARGET_RESOURCE_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the root managing resource (HAPI-injected)"},
-					{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
-					{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Name of the deployment to restart"},
-					{Name: "GRACE_PERIOD_SECONDS", Type: "integer", Required: false, Description: "Graceful shutdown period in seconds"},
-				},
-			},
-			{
-				WorkflowID:      "oomkill-increase-memory-v1",
-				Name:            "OOMKill Recovery - Increase Memory Limits",
-				Description:     "OOMKill remediation workflow for full pipeline E2E",
-				Severity:        "critical",
-				Component:       "deployment",
-				Environment:     "production",
-				Priority:        "*",
-				SchemaImage:     "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0",
-				ExecutionEngine: "job",
-				SchemaParameters: []models.WorkflowParameter{
-					{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the root managing resource (HAPI-injected)"},
-					{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kind of the root managing resource (HAPI-injected)"},
-					{Name: "TARGET_RESOURCE_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the root managing resource (HAPI-injected)"},
-					{Name: "MEMORY_LIMIT_NEW", Type: "string", Required: true, Description: "New memory limit to apply (e.g., 128Mi, 256Mi, 1Gi)"},
-				},
-			},
-			{
-				WorkflowID:  "fix-certificate-v1",
-				Name:        "Fix Certificate - Recreate CA Secret",
-				Description: "Recreates CA Secret to restore cert-manager Certificate issuance",
-				Severity:    "critical",
-				Component:   "*",
-				Environment: "production",
-				Priority:    "*",
-				SchemaImage: "quay.io/kubernaut-cicd/test-workflows/fix-certificate-job-schema:v1.0.0",
-				ExecutionEngine: "job",
-				SchemaParameters: []models.WorkflowParameter{
-					{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the root managing resource (HAPI-injected)"},
-					{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kind of the root managing resource (HAPI-injected)"},
-					{Name: "TARGET_RESOURCE_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the root managing resource (HAPI-injected)"},
-					{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected Certificate"},
-					{Name: "TARGET_CERTIFICATE", Type: "string", Required: true, Description: "Name of the Certificate to fix"},
-					{Name: "ISSUER_NAME", Type: "string", Required: true, Description: "Name of the ClusterIssuer backing the certificate"},
-					{Name: "CA_SECRET_NAME", Type: "string", Required: true, Description: "Name of the CA Secret to recreate"},
-					{Name: "CA_SECRET_NAMESPACE", Type: "string", Required: false, Description: "Namespace of the CA Secret"},
-				},
-			},
+		By("Seeding FP test workflows via kubectl apply (declarative)")
+		fpWorkflows := []infrastructure.WorkflowSeedSpec{
+			{FixtureDir: "crashloop-config-fix", Environment: "production"},
+			{FixtureDir: "oomkill-increase-memory", Environment: "production"},
+			{FixtureDir: "fix-certificate", Environment: "production"},
 		}
-		seededUUIDs, seedErr := infrastructure.SeedWorkflowsInDataStorage(
-			dsClient, allWorkflows, "fullpipeline-e2e", GinkgoWriter,
+		seededUUIDs, seedErr := infrastructure.SeedWorkflowsViaKubectlApply(
+			tempKubeconfigPath, namespace, fpWorkflows, GinkgoWriter,
 		)
-		Expect(seedErr).ToNot(HaveOccurred(), "Failed to seed workflows in DataStorage")
+		Expect(seedErr).ToNot(HaveOccurred(), "Failed to seed workflows via kubectl apply")
 		Expect(seededUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
 		Expect(seededUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"))
 		Expect(seededUUIDs).To(HaveKey("fix-certificate-v1:production"))

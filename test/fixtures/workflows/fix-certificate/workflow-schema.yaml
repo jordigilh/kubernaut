@@ -1,7 +1,7 @@
 apiVersion: kubernaut.ai/v1alpha1
 kind: RemediationWorkflow
 metadata:
-  name: fix-certificate
+  name: fix-certificate-v1
 spec:
   # Fix Certificate Workflow Schema (BR-WORKFLOW-004)
   # Used by: Full Pipeline E2E — 02_async_hash_deferral_test.go (cert-manager scenario)
