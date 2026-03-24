@@ -218,6 +218,11 @@ func (in *WorkflowExecutionStatus) DeepCopyInto(out *WorkflowExecutionStatus) {
 		*out = new(BlockClearanceDetails)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.EphemeralCredentialIDs != nil {
+		in, out := &in.EphemeralCredentialIDs, &out.EphemeralCredentialIDs
+		*out = make([]int, len(*in))
+		copy(*out, *in)
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]metav1.Condition, len(*in))
