@@ -151,18 +151,9 @@ var _ = SynchronizedBeforeSuite(
 		err = os.Setenv("KUBECONFIG", tempKubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
-		// DD-WORKFLOW-016: Seed action types via DS REST API before workflow registration (FK constraint).
-		// ActionTypes use the API path (not kubectl apply) because the authwebhook cert may not
-		// be provisioned by cert-manager yet at this point in the setup sequence.
-		By("Seeding action types via DataStorage API (DD-WORKFLOW-016)")
-		dsURL := "http://localhost:30081"
-		dsHTTPClient := &http.Client{
-			Timeout:   20 * time.Second,
-			Transport: testauth.NewServiceAccountTransport(token),
-		}
-		dsClient, dsErr := ogenclient.NewClient(dsURL, ogenclient.WithClient(dsHTTPClient))
-		Expect(dsErr).ToNot(HaveOccurred(), "Failed to create DataStorage client for action type seeding")
-		Expect(infrastructure.SeedActionTypesViaAPI(dsClient, GinkgoWriter)).To(Succeed(), "Failed to seed action types")
+		// DD-WORKFLOW-016: Seed action types via kubectl apply before workflow registration (FK constraint).
+		By("Seeding action types via kubectl apply (DD-WORKFLOW-016)")
+		Expect(infrastructure.SeedE2EActionTypes(tempKubeconfigPath, namespace, GinkgoWriter)).To(Succeed(), "Failed to seed action types")
 
 		By("Seeding FP test workflows via kubectl apply (declarative)")
 		fpWorkflows := []infrastructure.WorkflowSeedSpec{
