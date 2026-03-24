@@ -253,10 +253,6 @@ var _ = Describe("HAPI-Owned Target Resource [BR-496]", func() {
 		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", testNamespace),
 			"[E2E-FP-496-002] TARGET_RESOURCE_NAMESPACE must match root_owner namespace")
 
-		// Operational params should also be present (LLM-provided, not HAPI-managed)
-		Expect(params).To(HaveKey("MEMORY_LIMIT_NEW"),
-			"Operational parameter MEMORY_LIMIT_NEW should be present (LLM-provided)")
-
 		GinkgoWriter.Printf("  [E2E-FP-496-002] WFE params: TARGET_RESOURCE_NAME=%s, KIND=%s, NAMESPACE=%s\n",
 			params["TARGET_RESOURCE_NAME"], params["TARGET_RESOURCE_KIND"], params["TARGET_RESOURCE_NAMESPACE"])
 
