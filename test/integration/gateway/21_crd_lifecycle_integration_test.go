@@ -33,6 +33,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -188,7 +190,21 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Lab
 		testLogger.Info("Test 21e: CRD Spec Field Population")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		testLogger.Info("Step 1: Create signal with rich metadata")
+		testLogger.Info("Step 1: Create managed Node resource for scope validation")
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "worker-node-01",
+				Labels: map[string]string{
+					"kubernaut.ai/managed": "true",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, node)
+		})
+
+		testLogger.Info("Step 1b: Create signal with rich metadata")
 		signal := createNormalizedSignal(SignalBuilder{
 			AlertName: "DiskPressure",
 			Namespace:  testNamespace,
