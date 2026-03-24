@@ -257,6 +257,7 @@ func (c *NotificationCreator) CreateCompletionNotification(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
 	ai *aianalysisv1.AIAnalysis,
+	executionEngine string,
 ) (string, error) {
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
@@ -285,15 +286,14 @@ func (c *NotificationCreator) CreateCompletionNotification(
 	}
 
 	workflowID := ""
-	executionEngine := ""
 	actionType := ""
 	rationale := ""
 	if ai.Status.SelectedWorkflow != nil {
 		workflowID = ai.Status.SelectedWorkflow.WorkflowID
-		executionEngine = ai.Status.SelectedWorkflow.ExecutionEngine
 		actionType = ai.Status.SelectedWorkflow.ActionType
 		rationale = ai.Status.SelectedWorkflow.Rationale
 	}
+	// Issue #518: executionEngine is now passed as parameter (sourced from WFE status).
 
 	// Build NotificationRequest for completion
 	// #260: Channels resolved by NT routing rules (BR-NOT-065), not set by RO
