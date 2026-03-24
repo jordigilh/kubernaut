@@ -134,8 +134,7 @@ func newAnsibleWFE(name, namespace string, engineConfigJSON []byte, params map[s
 			Namespace: namespace,
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-			ExecutionEngine: "ansible",
-			TargetResource:  namespace + "/deployment/test-app",
+			TargetResource: namespace + "/deployment/test-app",
 			RemediationRequestRef: corev1.ObjectReference{
 				APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 				Kind:       "RemediationRequest",
@@ -253,13 +252,15 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{Name: "wfe-no-rr", Namespace: "default"},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "ansible",
-					TargetResource:  "default/deployment/app",
+					TargetResource: "default/deployment/app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:      "ansible-test",
 						ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
 						EngineConfig:    &apiextensionsv1.JSON{Raw: engineConfig},
 					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					ExecutionEngine: "ansible",
 				},
 			}
 
@@ -275,12 +276,14 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{Name: "no-config", Namespace: "default"},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "ansible",
-					TargetResource:  "default/deployment/app",
+					TargetResource: "default/deployment/app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:      "ansible-test",
 						ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
 					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					ExecutionEngine: "ansible",
 				},
 			}
 

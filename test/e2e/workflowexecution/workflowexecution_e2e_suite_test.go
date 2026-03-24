@@ -378,7 +378,6 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 			Namespace: controllerNamespace,
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-			ExecutionEngine: "tekton", // BR-WE-014: Required field (enum: tekton, job)
 			// Required reference to parent RemediationRequest
 			RemediationRequestRef: corev1.ObjectReference{
 				APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",

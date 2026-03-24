@@ -64,8 +64,10 @@ import (
 // configurableWorkflowQuerier is a test WorkflowQuerier whose return value
 // can be set per-test by assigning Deps (DD-WE-006 integration tests).
 // When Deps is nil, GetWorkflowDependencies returns nil (no dependencies).
+// Engine defaults to "tekton" via testWorkflowQuerier initialization; createUniqueJobWFE sets "job".
 type configurableWorkflowQuerier struct {
-	Deps *models.WorkflowDependencies
+	Deps   *models.WorkflowDependencies
+	Engine string
 }
 
 func (q *configurableWorkflowQuerier) GetWorkflowDependencies(_ context.Context, _ string) (*models.WorkflowDependencies, error) {
@@ -74,6 +76,10 @@ func (q *configurableWorkflowQuerier) GetWorkflowDependencies(_ context.Context,
 
 func (q *configurableWorkflowQuerier) GetWorkflowEngineConfig(_ context.Context, _ string) (json.RawMessage, error) {
 	return nil, nil
+}
+
+func (q *configurableWorkflowQuerier) GetWorkflowExecutionEngine(_ context.Context, _ string) (string, string, error) {
+	return q.Engine, "", nil
 }
 
 // WorkflowExecution Integration Test Suite
@@ -113,8 +119,10 @@ var (
 
 	// DD-WE-006: Configurable querier for dependency resolution integration tests.
 	// Set Deps per-test to control what dependencies the reconciler sees.
-	testWorkflowQuerier configurableWorkflowQuerier
 )
+
+// testWorkflowQuerier provides catalog responses for integration EnvTest (Issue #518: engine from querier until status persists).
+var testWorkflowQuerier = configurableWorkflowQuerier{Engine: "tekton"}
 
 // Test namespaces (unique per test run for parallel safety)
 const (
@@ -458,6 +466,7 @@ var _ = SynchronizedAfterSuite(func() {
 // createUniqueWFE creates a WorkflowExecution with unique name for parallel test isolation
 // Defaults to ExecutionEngine: "tekton" for backward compat with existing Tekton tests
 func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
+	testWorkflowQuerier.Engine = "tekton"
 	name := IntegrationTestNamePrefix + testID + "-" + time.Now().Format("150405000")
 	return &workflowexecutionv1alpha1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
@@ -477,7 +486,9 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 				Version:        "v1.0.0",
 				ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 			},
-			TargetResource:  targetResource,
+			TargetResource: targetResource,
+		},
+		Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 			ExecutionEngine: "tekton",
 		},
 	}
@@ -486,7 +497,8 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 // createUniqueJobWFE creates a WorkflowExecution with ExecutionEngine "job" for Job backend tests
 func createUniqueJobWFE(testID, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
 	wfe := createUniqueWFE(testID, targetResource)
-	wfe.Spec.ExecutionEngine = "job"
+	wfe.Status.ExecutionEngine = "job"
+	testWorkflowQuerier.Engine = "job"
 	return wfe
 }
 

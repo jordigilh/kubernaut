@@ -79,8 +79,7 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, func() {
 				Namespace: testNamespace,
 			},
 			Spec: workflowexecutionv1.WorkflowExecutionSpec{
-				TargetResource:  "default/pod/test-pod",
-				ExecutionEngine: "tekton",
+				TargetResource: "default/pod/test-pod",
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowID:     "test-workflow",
 					Version:        "v1",
@@ -240,8 +239,7 @@ var _ = Describe("E2E-MULTI-02: Concurrent Webhook Requests", func() {
 					Namespace: testNamespace,
 				},
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
-					TargetResource:  fmt.Sprintf("default/pod/test-pod-%d", idx),
-					ExecutionEngine: "tekton",
+					TargetResource: fmt.Sprintf("default/pod/test-pod-%d", idx),
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
 						WorkflowID:     fmt.Sprintf("test-workflow-%d", idx),
 						Version:        "v1",

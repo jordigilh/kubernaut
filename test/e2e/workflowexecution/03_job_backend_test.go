@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -145,7 +144,6 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "job",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -331,48 +329,12 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 	// P1: Edge Cases and Cross-Cutting Concerns
 	// ========================================
 
-	Context("E2E-WE-014-005: Invalid ExecutionEngine CRD Validation", func() {
-		It("should reject WFE with invalid executionEngine value (BR-WE-014)", func() {
-			// Business Outcome: Invalid executionEngine values are rejected at API level
-			testName := fmt.Sprintf("e2e-job-invalid-%s", uuid.New().String()[:8])
-
-			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testName,
-					Namespace: controllerNamespace,
-				},
-				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "invalid-engine", // Invalid: not in enum [tekton, job, ansible]
-					RemediationRequestRef: corev1.ObjectReference{
-						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
-						Kind:       "RemediationRequest",
-						Name:       "test-rr-" + testName,
-						Namespace:  controllerNamespace,
-					},
-					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "test-invalid-engine",
-						Version:        "v1.0.0",
-						ExecutionBundle: "busybox:latest",
-					},
-					TargetResource: "default/deployment/invalid-test",
-				},
-			}
-
-			By("Attempting to create WFE with invalid executionEngine")
-			err := k8sClient.Create(ctx, wfe)
-
-			By("Verifying API server rejects the resource with validation error")
-			Expect(err).To(HaveOccurred(), "API server should reject invalid executionEngine")
-			Expect(apierrors.IsInvalid(err) || apierrors.IsForbidden(err)).To(BeTrue(),
-				fmt.Sprintf("Expected validation error, got: %v", err))
-
-			By("Verifying no WFE was persisted")
-			_, getErr := getWFE(testName, controllerNamespace)
-			Expect(apierrors.IsNotFound(getErr)).To(BeTrue(),
-				"WFE should not exist after validation rejection")
-
-			GinkgoWriter.Printf("E2E-WE-014-005: Invalid executionEngine correctly rejected\n")
-			GinkgoWriter.Printf("   Error: %v\n", err)
+	Context("E2E-WE-014-005: Execution engine resolution (runtime)", func() {
+		It("documents that unsupported engines are validated at runtime, not on the WFE Spec (BR-WE-014)", func() {
+			// ExecutionEngine was removed from WorkflowExecutionSpec; the WE controller resolves the engine
+			// from DataStorage and ExecutorRegistry at runtime. An unsupported engine fails reconciliation
+			// rather than API admission. Exercising that failure path in E2E would require mocking DS.
+			Skip("Unsupported execution engine is validated at runtime via ExecutorRegistry; not exercised in E2E without DataStorage mocks")
 		})
 	})
 
@@ -512,7 +474,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 // Test Helpers
 // ========================================
 
-// createTestJobWFE creates a WorkflowExecution with executionEngine="job" for E2E testing.
+// createTestJobWFE creates a WorkflowExecution for job-backend E2E (engine resolved from DS at runtime).
 // Uses the pre-built job-hello-world image from quay.io/kubernaut-cicd.
 func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
 	return &workflowexecutionv1alpha1.WorkflowExecution{
@@ -521,7 +483,6 @@ func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.Wo
 			Namespace: controllerNamespace,
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-			ExecutionEngine: "job",
 			// Required reference to parent RemediationRequest
 			RemediationRequestRef: corev1.ObjectReference{
 				APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",

@@ -266,7 +266,7 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 			for _, we := range weList.Items {
 				if we.Spec.RemediationRequestRef.Name == remediationRequest.Name {
 					weName = we.Name
-					return we.Spec.ExecutionEngine
+					return we.Status.ExecutionEngine
 				}
 			}
 			return ""

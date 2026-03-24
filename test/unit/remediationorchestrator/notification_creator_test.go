@@ -1007,7 +1007,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				_, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				_, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to check existing NotificationRequest"))
 			})
@@ -1024,7 +1024,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				_, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				_, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to create NotificationRequest"))
 			})
@@ -1038,7 +1038,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(name).To(Equal("nr-completion-test-rr"))
 
@@ -1058,7 +1058,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("my-remediation", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(name).To(Equal("nr-completion-my-remediation"))
 			})
@@ -1073,11 +1073,11 @@ var _ = Describe("NotificationCreator", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
 				// First call creates the notification
-				name1, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				name1, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).ToNot(HaveOccurred())
 
 				// Second call should return same name without error
-				name2, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				name2, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(name2).To(Equal(name1))
 
@@ -1097,7 +1097,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1117,7 +1117,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr.UID = "" // Clear UID
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				_, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				_, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("UID is required"))
 			})
@@ -1131,7 +1131,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1154,7 +1154,7 @@ var _ = Describe("NotificationCreator", func() {
 					Summary: "Deployment rollout failed",
 				}
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1179,7 +1179,7 @@ var _ = Describe("NotificationCreator", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.RootCause = "Memory exhaustion in container"
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1201,7 +1201,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1221,7 +1221,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1243,7 +1243,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1269,7 +1269,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1306,7 +1306,7 @@ var _ = Describe("NotificationCreator", func() {
 			rr.Status.Outcome = "Remediated"
 			ai := helpers.NewCompletedAIAnalysis("test-ai-304", "default")
 
-			name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+			name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 			Expect(err).ToNot(HaveOccurred())
 
 			nr := &notificationv1.NotificationRequest{}
@@ -1326,7 +1326,7 @@ var _ = Describe("NotificationCreator", func() {
 			rr := helpers.NewRemediationRequest("test-rr-304b", "default")
 			ai := helpers.NewCompletedAIAnalysis("test-ai-304b", "default")
 
-			name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+			name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 			Expect(err).ToNot(HaveOccurred())
 
 			nr := &notificationv1.NotificationRequest{}
@@ -1376,7 +1376,7 @@ var _ = Describe("NotificationCreator", func() {
 				},
 			}
 
-			name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+			name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 			Expect(err).ToNot(HaveOccurred())
 
 			nr := &notificationv1.NotificationRequest{}
@@ -1406,7 +1406,7 @@ var _ = Describe("NotificationCreator", func() {
 				},
 			}
 
-			name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+			name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
 			Expect(err).ToNot(HaveOccurred())
 
 			nr := &notificationv1.NotificationRequest{}

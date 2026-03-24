@@ -65,7 +65,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 
 	BeforeEach(func() {
 		// Verify Data Storage is available
-		// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN - tests MUST fail
+		// Per TESTING_GUIDELINES.md: test skipping is ABSOLUTELY FORBIDDEN - tests MUST fail
 		// Per DD-AUDIT-003: WorkflowExecution REQUIRES audit capability
 		httpClient := &http.Client{Timeout: 5 * time.Second}
 		resp, err := httpClient.Get(dataStorageURL + "/health")
@@ -74,7 +74,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 				"REQUIRED: Data Storage not available at %s\n"+
 					"  Per DD-AUDIT-003: WorkflowExecution MUST have audit capability\n"+
 					"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n"+
-					"  Per TESTING_GUIDELINES.md: Skip() is FORBIDDEN - tests must FAIL\n\n"+
+					"  Per TESTING_GUIDELINES.md: test skipping is FORBIDDEN - tests must FAIL\n\n"+
 					"  Health check error: %v\n"+
 					"  Start infrastructure: make test-integration-workflowexecution\n",
 				dataStorageURL, err))
@@ -131,6 +131,8 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 					},
 					TargetResource: targetResource,
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 					ExecutionEngine: "tekton",
 				},
 			}
@@ -247,6 +249,8 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 					},
 					TargetResource: targetResource,
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 					ExecutionEngine: "tekton",
 				},
 			}
