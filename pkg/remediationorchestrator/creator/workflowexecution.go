@@ -129,9 +129,8 @@ func (c *WorkflowExecutionCreator) Create(
 			// Audit fields from AIAnalysis
 			Confidence: ai.Status.SelectedWorkflow.Confidence,
 			Rationale:  ai.Status.SelectedWorkflow.Rationale,
-			// BR-WE-014: Execution backend engine from AIAnalysis workflow recommendation.
-			// Defaults to "tekton" for backwards compatibility when not specified by HAPI.
-			ExecutionEngine: executionEngineWithDefault(ai.Status.SelectedWorkflow.ExecutionEngine),
+			// Issue #518: ExecutionEngine removed from spec — resolved at runtime by
+			// the WE controller from the DS catalog via WorkflowQuerier.
 			// ExecutionConfig: Optional timeout from RemediationRequest
 			ExecutionConfig: c.buildExecutionConfig(rr),
 		},
@@ -203,15 +202,6 @@ func resolveTargetResource(rr *remediationv1.RemediationRequest, ai *aianalysisv
 	}
 	// Fall back to RR's target resource
 	return BuildTargetResourceString(rr)
-}
-
-// executionEngineWithDefault returns the execution engine, defaulting to "tekton"
-// when the value is empty (backwards compatibility for HAPI responses without the field).
-func executionEngineWithDefault(engine string) string {
-	if engine == "" {
-		return "tekton"
-	}
-	return engine
 }
 
 // buildExecutionConfig builds ExecutionConfig from RemediationRequest timeouts.
