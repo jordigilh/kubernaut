@@ -77,9 +77,6 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 						"NAMESPACE": "default",
 					},
 				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "ansible",
-				},
 			}
 
 			defer func() {

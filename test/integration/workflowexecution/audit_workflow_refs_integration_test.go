@@ -107,6 +107,9 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
 		// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
 		dsClient = dsClients.OpenAPIClient
+
+		// #518: Ensure engine mock is reset before each test to prevent leak from Job tests
+		testWorkflowQuerier.Engine = "tekton"
 	})
 
 	AfterEach(func() {
@@ -158,9 +161,6 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						"pod_name":  "test-pod-123",
 						"namespace": namespace,
 					},
-				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -284,9 +284,6 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/scale@sha256:def456",
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/api-server", namespace),
-				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())

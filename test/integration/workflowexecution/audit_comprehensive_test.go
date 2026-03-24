@@ -52,6 +52,10 @@ import (
 
 var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "comprehensive"), func() {
 
+	BeforeEach(func() {
+		testWorkflowQuerier.Engine = "tekton"
+	})
+
 	// ========================================
 	// Test 1: execution.workflow.started Audit Event
 	// ========================================
@@ -80,9 +84,6 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					Parameters: map[string]string{
 						"test": "value",
 					},
-				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "tekton",
 				},
 			}
 
@@ -134,9 +135,6 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					},
 					TargetResource: "default/deployment/test-app",
 				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "tekton",
-				},
 			}
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -185,9 +183,6 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						ExecutionBundle: "quay.io/kubernaut/test:v1",
 					},
 					TargetResource: "default/deployment/test-app",
-				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "tekton",
 				},
 			}
 
@@ -283,9 +278,6 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					},
 					TargetResource: "default/deployment/test-app",
 				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "tekton",
-				},
 			}
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -317,9 +309,6 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 
 		It("should emit audit events in correct lifecycle order", func() {
 			By("Creating a WorkflowExecution that will complete")
-			// Issue #518: Engine is resolved at runtime via the configurable mock querier.
-			// Reset to "tekton" so earlier tests that set it to "job" don't leak.
-			testWorkflowQuerier.Engine = "tekton"
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       fmt.Sprintf("audit-ordering-%d", time.Now().UnixNano()),
