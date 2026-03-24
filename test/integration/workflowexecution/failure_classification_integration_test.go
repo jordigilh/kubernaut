@@ -219,6 +219,8 @@ func createMinimalWorkflowExecution(name, namespace string) *workflowexecutionv1
 				ExecutionBundle: "quay.io/jordigilh/test-workflows/test:v1.0.0",
 			},
 			TargetResource: "default/deployment/test-app-" + name, // Unique per test for deterministic PR names
+		},
+		Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 			ExecutionEngine: "tekton",
 		},
 	}

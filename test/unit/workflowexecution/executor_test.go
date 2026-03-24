@@ -139,8 +139,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 					Namespace: "default",
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "job",
-					TargetResource:  "default/deployment/my-app",
+					TargetResource: "default/deployment/my-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "restart-deployment",
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
@@ -148,6 +147,9 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 					Parameters: map[string]string{
 						"NAMESPACE": "default",
 					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					ExecutionEngine: "job",
 				},
 			}
 
@@ -200,12 +202,14 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 					Namespace: "default",
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "job",
-					TargetResource:  "default/deployment/another-app",
+					TargetResource: "default/deployment/another-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "restart-deployment",
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					ExecutionEngine: "job",
 				},
 			}
 
@@ -344,8 +348,10 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: targetResource,
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 					ExecutionEngine: "job",
-					TargetResource:  targetResource,
 				},
 			}
 
@@ -367,8 +373,10 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: "default/deployment/nonexistent",
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 					ExecutionEngine: "job",
-					TargetResource:  "default/deployment/nonexistent",
 				},
 			}
 
@@ -753,8 +761,10 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: targetResource,
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 					ExecutionEngine: "tekton",
-					TargetResource:  targetResource,
 				},
 			}
 
@@ -776,8 +786,10 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: "default/deployment/nonexistent",
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 					ExecutionEngine: "tekton",
-					TargetResource:  "default/deployment/nonexistent",
 				},
 			}
 
@@ -1280,13 +1292,15 @@ func newTestWFE(name, namespace, targetResource, workflowID, containerImage stri
 			Namespace: namespace,
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-			ExecutionEngine: "tekton",
-			TargetResource:  targetResource,
+			TargetResource: targetResource,
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowID:     workflowID,
 				ExecutionBundle: containerImage,
 			},
 			Parameters: params,
+		},
+		Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+			ExecutionEngine: "tekton",
 		},
 	}
 }

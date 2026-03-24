@@ -378,14 +378,14 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 					Version:         "v1.0.0",
 					ExecutionBundle: "test-image:latest",
 				},
-				TargetResource:  targetResource,
-				ExecutionEngine: "job",
+				TargetResource: targetResource,
 			},
 		}
 		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 		recentCompletion := metav1.NewTime(time.Now().Add(-1 * time.Minute))
 		wfe.Status.Phase = workflowexecutionv1.PhaseCompleted
 		wfe.Status.CompletionTime = &recentCompletion
+		wfe.Status.ExecutionEngine = "job"
 		Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
 
 		By("Completing AIAnalysis with AffectedResource.Kind = 'Deployment' (uppercase)")

@@ -125,8 +125,8 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ROControllerNamespace}, we)
 		}, timeout, interval).Should(Succeed())
 
-		Expect(we.Spec.ExecutionEngine).To(Equal("ansible"),
-			"WFE should have ansible execution engine")
+		Expect(we.Status.ExecutionEngine).To(Equal("ansible"),
+			"WFE should have ansible execution engine on status")
 		Expect(we.Spec.WorkflowRef.EngineConfig).ToNot(BeNil(),
 			"WFE.Spec.WorkflowRef.EngineConfig must be populated from AIAnalysis")
 

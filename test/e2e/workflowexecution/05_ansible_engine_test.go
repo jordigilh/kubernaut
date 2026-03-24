@@ -287,7 +287,6 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "ansible",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -363,7 +362,6 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "ansible",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -441,7 +439,6 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "ansible",
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -508,7 +505,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 	})
 })
 
-// createAnsibleWFE builds a WorkflowExecution CRD targeting the ansible engine.
+// createAnsibleWFE builds a WorkflowExecution CRD for ansible workflows (engine resolved from DS at runtime).
 func createAnsibleWFE(name, targetResource, workflowID, playbookPath, templateName string) *workflowexecutionv1alpha1.WorkflowExecution {
 	engineCfgJSON, err := json.Marshal(map[string]string{
 		"playbookPath":    playbookPath,
@@ -522,7 +519,6 @@ func createAnsibleWFE(name, targetResource, workflowID, playbookPath, templateNa
 			Namespace: controllerNamespace,
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-			ExecutionEngine: "ansible",
 			RemediationRequestRef: corev1.ObjectReference{
 				APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 				Kind:       "RemediationRequest",
