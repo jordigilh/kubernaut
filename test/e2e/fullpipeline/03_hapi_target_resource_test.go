@@ -19,6 +19,7 @@ package fullpipeline
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -133,15 +134,19 @@ var _ = Describe("HAPI-Owned Target Resource [BR-496]", func() {
 			if err := apiReader.List(testCtx, rrList, client.InNamespace(namespace)); err != nil {
 				return false
 			}
-			for i := range rrList.Items {
-				rr := &rrList.Items[i]
-				if rr.Spec.TargetResource.Namespace != testNamespace {
-					continue
-				}
+		for i := range rrList.Items {
+			rr := &rrList.Items[i]
+			if rr.Spec.TargetResource.Namespace != testNamespace {
+				continue
+			}
+			sig := strings.ToLower(rr.Spec.SignalName)
+			if sig == "backoff" || sig == "oomkilled" || sig == "oomkill" || strings.Contains(sig, "oom") {
 				remediationRequest = rr
-				GinkgoWriter.Printf("  RemediationRequest found: %s\n", rr.Name)
+				GinkgoWriter.Printf("  ✅ RemediationRequest found: %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
 				return true
 			}
+			GinkgoWriter.Printf("  ⏳ Skipping RR %s with signal %q (waiting for OOMKill/BackOff)\n", rr.Name, rr.Spec.SignalName)
+		}
 			return false
 		}, timeout, interval).Should(BeTrue(), "RemediationRequest should be created by Gateway")
 
