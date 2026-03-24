@@ -168,12 +168,6 @@ type WorkflowExecutionSpec struct {
 	// +optional
 	Rationale string `json:"rationale,omitempty"`
 
-	// ExecutionEngine specifies the backend engine for workflow execution.
-	// "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job; "ansible" runs an AWX job.
-	// +kubebuilder:validation:Enum=tekton;job;ansible
-	// +kubebuilder:default=tekton
-	ExecutionEngine string `json:"executionEngine"`
-
 	// ExecutionConfig contains minimal execution settings
 	// +optional
 	ExecutionConfig *ExecutionConfig `json:"executionConfig,omitempty"`
@@ -305,6 +299,13 @@ type WorkflowExecutionStatus struct {
 	// subresource to avoid violating spec immutability (ADR-001).
 	// +optional
 	EphemeralCredentialIDs []int `json:"ephemeralCredentialIDs,omitempty"`
+
+	// ExecutionEngine is the backend engine resolved from the DS workflow catalog
+	// at runtime by the WE controller. Set once during Pending phase via
+	// WorkflowQuerier.GetWorkflowExecutionEngine; immutable thereafter.
+	// Values: "tekton", "job", "ansible".
+	// +optional
+	ExecutionEngine string `json:"executionEngine,omitempty"`
 
 	// Conditions provide detailed status information
 	// +optional

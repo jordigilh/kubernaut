@@ -89,16 +89,6 @@ spec:
                       Default: use global timeout from RemediationRequest or 30m
                     type: string
                 type: object
-              executionEngine:
-                default: tekton
-                description: |-
-                  ExecutionEngine specifies the backend engine for workflow execution.
-                  "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job; "ansible" runs an AWX job.
-                enum:
-                - tekton
-                - job
-                - ansible
-                type: string
               parameters:
                 additionalProperties:
                   type: string
@@ -192,7 +182,6 @@ spec:
                 - workflowId
                 type: object
             required:
-            - executionEngine
             - remediationRequestRef
             - targetResource
             - workflowRef
@@ -318,6 +307,13 @@ spec:
                 items:
                   type: integer
                 type: array
+              executionEngine:
+                description: |-
+                  ExecutionEngine is the backend engine resolved from the DS workflow catalog
+                  at runtime by the WE controller. Set once during Pending phase via
+                  WorkflowQuerier.GetWorkflowExecutionEngine; immutable thereafter.
+                  Values: "tekton", "job", "ansible".
+                type: string
               executionRef:
                 description: ExecutionRef references the created execution resource
                   (PipelineRun or Job)
