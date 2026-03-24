@@ -33,7 +33,7 @@ Organizations running Red Hat Ansible Automation Platform (AAP) or AWX have exis
 
 ### Success Criteria
 
-1. WorkflowExecution CRD accepts `spec.executionEngine: "ansible"` and dispatches to `AnsibleExecutor`
+1. WE controller resolves `executionEngine: "ansible"` from the DS catalog at runtime, persists in `status.executionEngine` (Issue #518), and dispatches to `AnsibleExecutor`
 2. `AnsibleExecutor` implements the `Executor` interface (`Create`, `GetStatus`, `Cleanup`, `Engine`)
 3. `Create` launches an AWX Job Template via `POST /api/v2/job_templates/{id}/launch/` with workflow parameters as `extra_vars`
 4. `GetStatus` polls AWX job status and maps AWX states to WFE phases:
@@ -60,7 +60,7 @@ Organizations running Red Hat Ansible Automation Platform (AAP) or AWX have exis
 2. Gateway -> SP -> RO -> AIAnalysis selects workflow with engine: ansible
 3. RO creates WorkflowExecution CRD:
    spec:
-     executionEngine: "ansible"
+     # executionEngine resolved at runtime by WE from DS catalog (Issue #518)
      workflowRef:
        workflowId: crashloop-rollback-ansible
        executionBundle: "https://github.com/org/playbooks.git"
@@ -167,23 +167,23 @@ These variables are auto-injected by the executor and MUST NOT be declared as pa
 ## Acceptance Criteria
 
 ```gherkin
-Given a WorkflowExecution CRD with executionEngine "ansible" and valid engineConfig
-When the WE controller reconciles the CRD
+Given a WorkflowExecution CRD referencing a workflow with engine "ansible" in the DS catalog
+When the WE controller reconciles the CRD and resolves status.executionEngine: "ansible" (Issue #518)
 Then the AnsibleExecutor launches an AWX job with correct extra_vars
 And the WFE phase transitions from Pending to Running to Completed
 And the audit trail captures execution start, completion, and duration
 
-Given a WorkflowExecution CRD with executionEngine "ansible"
+Given a WorkflowExecution CRD with status.executionEngine "ansible"
 When the AWX job fails
 Then the WFE phase transitions to Failed
 And FailureDetails contains the AWX failure reason and message
 
-Given a WorkflowExecution CRD with executionEngine "ansible"
+Given a WorkflowExecution CRD with status.executionEngine "ansible"
 When the AWX API is unreachable
 Then the executor retries with exponential backoff
 And reports a transient error after retry exhaustion
 
-Given a WorkflowExecution CRD with executionEngine "ansible"
+Given a WorkflowExecution CRD with status.executionEngine "ansible"
 When the AnsibleExecutor builds extra_vars for the AWX job launch
 Then extra_vars SHALL contain WFE_NAME, WFE_NAMESPACE, RR_NAME, and RR_NAMESPACE
 And RR_NAME SHALL equal wfe.Spec.RemediationRequestRef.Name
@@ -208,3 +208,4 @@ And the playbook can reference the RR name without a Kubernetes API lookup
 |---------|------|---------|
 | 1.0 | 2026-03-02 | Initial BR |
 | 1.1 | 2026-03-04 | Add TR-6: Remediation Context Auto-Injection (WFE_NAME, WFE_NAMESPACE, RR_NAME, RR_NAMESPACE) |
+| 1.2 | 2026-03-04 | **Issue #518**: Updated all `spec.executionEngine` references to `status.executionEngine`. Engine resolved at runtime by WE controller from DS catalog; RO no longer sets it. Updated success criteria, use cases, and acceptance scenarios. |

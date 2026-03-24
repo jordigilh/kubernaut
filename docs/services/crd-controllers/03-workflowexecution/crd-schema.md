@@ -1,8 +1,8 @@
 ## CRD Schema Specification
 
-**Version**: 4.1
-**Last Updated**: 2025-12-06
-**Status**: ✅ Aligned with ADR-044, DD-CONTRACT-001 v1.4, ADR-043, DD-WE-004
+**Version**: 4.3
+**Last Updated**: 2026-03-04
+**Status**: ✅ Aligned with ADR-044, DD-CONTRACT-001 v1.4, ADR-043, DD-WE-004, Issue #518
 
 **Full Schema**: See [docs/design/CRD/04_WORKFLOW_EXECUTION_CRD.md](../../design/CRD/04_WORKFLOW_EXECUTION_CRD.md)
 
@@ -208,6 +208,14 @@ type WorkflowExecutionStatus struct {
     // Populated when Phase=Skipped
     // Enables RO to understand why workflow didn't execute
     SkipDetails *SkipDetails `json:"skipDetails,omitempty"`
+
+    // ExecutionEngine is the backend engine resolved from the DS workflow catalog
+    // at runtime by the WE controller. Set once during Pending phase via
+    // WorkflowQuerier.GetWorkflowExecutionEngine; immutable thereafter.
+    // Values: "tekton", "job", "ansible".
+    // Issue #518: Moved from spec to status -- WE resolves at runtime, not set by RO.
+    // +optional
+    ExecutionEngine string `json:"executionEngine,omitempty"`
 
     // Conditions provide detailed status information
     Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -471,6 +479,7 @@ spec:
 
 status:
   phase: Completed
+  executionEngine: "tekton"  # Resolved from DS catalog by WE controller (Issue #518)
   startTime: "2025-11-28T10:15:00Z"
   completionTime: "2025-11-28T10:18:30Z"
   duration: "3m30s"
@@ -545,6 +554,7 @@ spec:
 
 status:
   phase: Failed
+  executionEngine: "tekton"  # Resolved from DS catalog by WE controller (Issue #518)
   startTime: "2025-12-01T10:15:00Z"
   completionTime: "2025-12-01T10:15:45Z"
   duration: "45s"
@@ -1264,6 +1274,7 @@ func (r *WorkflowExecutionReconciler) checkResourceLock(
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.3 | 2026-03-04 | **Issue #518**: Added `executionEngine` to `WorkflowExecutionStatus`. Engine resolved at runtime by WE controller from DS catalog; immutable once set. Not on spec -- WFE spec describes *what* to execute, status holds *how*. Updated YAML examples to show `executionEngine` in status. |
 | 4.2 | 2026-02-18 | **Issue #91**: Removed `kubernaut.ai/remediation-request` and `kubernaut.ai/workflow-id` labels from WorkflowExecution CRD examples. Added Metadata and Filtering section: field selectors replace label-based filtering; `kubernaut.ai/workflow-execution` KEPT on PipelineRun (external resource). |
 | 4.1 | 2025-12-06 | **Exponential Backoff (DD-WE-004)**: Added `ConsecutiveFailures` and `NextAllowedExecution` status fields. Added `SkipReasonExhaustedRetries` and `SkipReasonPreviousExecutionFailed` constants. Backoff applies only to pre-execution failures; execution failures block retries immediately. |
 | 3.1 | 2025-12-01 | **Resource Locking (V1.0 Safety)**: Added `targetResource` to spec. Added `Skipped` phase with `SkipDetails` struct. Prevents parallel workflows on same target (ResourceBusy). Prevents redundant sequential workflows with same workflow+target (RecentlyRemediated). Added `SkipDetails`, `ConflictingWorkflowRef`, `RecentRemediationRef` types. Added controller logic for `checkResourceLock()`. Aligned with DD-CONTRACT-001 v1.4. Audit trail for skipped executions. |
