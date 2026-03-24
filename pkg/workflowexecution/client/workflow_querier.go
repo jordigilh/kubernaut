@@ -40,6 +40,10 @@ type WorkflowQuerier interface {
 	// DD-WORKFLOW-017: Execution details (engine, engineConfig) come from the workflow catalog entry.
 	// Returns nil when the workflow has no engineConfig.
 	GetWorkflowEngineConfig(ctx context.Context, workflowID string) (json.RawMessage, error)
+	// GetWorkflowExecutionEngine retrieves the execution engine and workflow name
+	// from the DS catalog. Issue #518: the WE controller resolves the engine at
+	// runtime rather than reading it from the WFE spec.
+	GetWorkflowExecutionEngine(ctx context.Context, workflowID string) (engine string, workflowName string, err error)
 }
 
 // WorkflowCatalogClient is a narrow interface satisfied by the ogen-generated
@@ -157,4 +161,28 @@ func (q *OgenWorkflowQuerier) GetWorkflowEngineConfig(ctx context.Context, workf
 		return nil, nil
 	}
 	return *rawMsg, nil
+}
+
+// GetWorkflowExecutionEngine retrieves the execution engine and workflow name
+// from the DS catalog entry. Issue #518: the WE controller resolves the engine
+// at runtime rather than reading it from the (now-removed) WFE spec field.
+func (q *OgenWorkflowQuerier) GetWorkflowExecutionEngine(ctx context.Context, workflowID string) (string, string, error) {
+	uid, err := uuid.Parse(workflowID)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid workflow ID %q: %w", workflowID, err)
+	}
+
+	res, err := q.client.GetWorkflowByID(ctx, ogenclient.GetWorkflowByIDParams{
+		WorkflowID: uid,
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("DS query failed for workflow %s: %w", workflowID, err)
+	}
+
+	wf, ok := res.(*ogenclient.RemediationWorkflow)
+	if !ok {
+		return "", "", fmt.Errorf("workflow %s not found in catalog", workflowID)
+	}
+
+	return wf.ExecutionEngine, wf.WorkflowName, nil
 }
