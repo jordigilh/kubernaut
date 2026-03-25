@@ -24,8 +24,8 @@ Test Plan:
 - UT-RC-002: resolve_owner_chain handles bare Pod (no ownerReferences)
 - UT-RC-003: resolve_owner_chain handles resource not found (empty chain)
 - UT-RC-004: resolve_owner_chain handles cluster-scoped resources (Node)
-- UT-RC-005: GetResourceContextTool returns root owner and history (not chain or hash)
-- UT-RC-006: GetResourceContextTool handles missing resource gracefully
+- UT-RC-005: GetNamespacedResourceContextTool returns root owner and history (not chain or hash)
+- UT-RC-006: GetNamespacedResourceContextTool handles missing resource gracefully
 """
 
 import pytest
@@ -140,8 +140,8 @@ class TestResolveOwnerChain:
         assert chain[0] == {"kind": "Node", "name": "worker-1", "namespace": ""}
 
 
-class TestGetResourceContextTool:
-    """UT-RC-005 through UT-RC-006: Tool invocation tests."""
+class TestGetNamespacedResourceContextTool:
+    """UT-RC-005 through UT-RC-006: Namespaced tool invocation tests."""
 
     @pytest.mark.asyncio
     async def test_returns_root_owner_and_history(self):

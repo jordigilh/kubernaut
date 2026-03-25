@@ -18,9 +18,9 @@ Tests for BR-496 v2: HAPI-Owned Target Resource Identity.
 HAPI owns the target resource identity by:
 1. Stripping TARGET_RESOURCE_* from workflow schema before the LLM sees it
 2. Injecting TARGET_RESOURCE_* from K8s-verified root_owner after LLM responds
+   (#524: only those declared in the workflow schema are injected)
 3. Constructing affectedResource from root_owner for Go backward compat
-4. Rejecting workflows missing canonical params in the validator
-5. Setting rca_incomplete when root_owner is missing
+4. Setting rca_incomplete when root_owner is missing
 
 Test Plan: docs/tests/496/TEST_PLAN.md
 
@@ -262,7 +262,7 @@ def _make_validator(workflow):
 
 
 class TestCanonicalParamValidation:
-    """TDD Group 2: Validator Step 0 (canonical param check) and Step 3 (HAPI_MANAGED_PARAMS skip)."""
+    """TDD Group 2: HAPI_MANAGED_PARAMS skip in Step 3 (#524: Step 0 canonical check removed)."""
 
     def test_ut_hapi_496_007_passes_missing_target_resource_name(self):
         """UT-HAPI-496-007: Workflow missing TARGET_RESOURCE_NAME passes (#524 relaxed)."""
