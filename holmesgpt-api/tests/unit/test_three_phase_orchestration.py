@@ -38,6 +38,10 @@ from typing import Dict, Any, Optional
 
 from src.extensions.incident.enrichment_service import EnrichmentResult
 
+# Common patch targets: these symbols are imported locally inside analyze_incident.
+_P = "src.extensions.llm_config"
+_LLM = "src.extensions.incident.llm_integration"
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -214,7 +218,7 @@ class TestConversationContinuityOrchestration:
 
         investigate_calls = []
 
-        async def mock_investigate(investigate_request, dal, config, previous_messages=None):
+        def mock_investigate(investigate_request, dal, config, previous_messages=None):
             investigate_calls.append({"previous_messages": previous_messages})
             if len(investigate_calls) == 1:
                 return phase1_result
@@ -222,16 +226,16 @@ class TestConversationContinuityOrchestration:
 
         mock_enrich = AsyncMock(return_value=ENRICHMENT_RESULT)
 
-        with patch("src.extensions.incident.llm_integration.investigate_issues", side_effect=mock_investigate), \
-             patch("src.extensions.incident.llm_integration.EnrichmentService") as MockES, \
-             patch("src.extensions.incident.llm_integration.get_audit_store") as mock_audit, \
-             patch("src.extensions.incident.llm_integration.create_data_storage_client", return_value=None), \
-             patch("src.extensions.incident.llm_integration.get_model_config_for_sdk", return_value=("mock-model", "openai")), \
-             patch("src.extensions.incident.llm_integration.prepare_toolsets_config_for_sdk", return_value={}), \
-             patch("src.extensions.incident.llm_integration.register_workflow_discovery_toolset", side_effect=lambda c, *a, **kw: c), \
-             patch("src.extensions.incident.llm_integration.register_resource_context_toolset", side_effect=lambda c, *a, **kw: c), \
-             patch("src.extensions.incident.llm_integration.sanitize_for_llm", side_effect=lambda x: x), \
-             patch("src.extensions.incident.llm_integration.parse_and_validate_investigation_result") as mock_parse:
+        with patch(f"{_LLM}.investigate_issues", side_effect=mock_investigate), \
+             patch(f"{_LLM}.EnrichmentService") as MockES, \
+             patch(f"{_LLM}.get_audit_store") as mock_audit, \
+             patch(f"{_LLM}.create_data_storage_client", return_value=None), \
+             patch(f"{_P}.get_model_config_for_sdk", return_value=("mock-model", "openai")), \
+             patch(f"{_P}.prepare_toolsets_config_for_sdk", return_value={}), \
+             patch(f"{_P}.register_workflow_discovery_toolset", side_effect=lambda c, *a, **kw: c), \
+             patch(f"{_P}.register_resource_context_toolset", side_effect=lambda c, *a, **kw: c), \
+             patch("src.sanitization.sanitize_for_llm", side_effect=lambda x: x), \
+             patch(f"{_LLM}.parse_and_validate_investigation_result") as mock_parse:
 
             mock_audit.return_value = MagicMock()
             MockES.return_value.enrich = mock_enrich
@@ -300,7 +304,7 @@ class TestThreePhaseFlow:
 
         call_sequence = []
 
-        async def mock_investigate(investigate_request, dal, config, previous_messages=None):
+        def mock_investigate(investigate_request, dal, config, previous_messages=None):
             call_sequence.append("investigate")
             if len([c for c in call_sequence if c == "investigate"]) == 1:
                 return phase1_result
@@ -313,16 +317,16 @@ class TestThreePhaseFlow:
             )
             return ENRICHMENT_RESULT
 
-        with patch("src.extensions.incident.llm_integration.investigate_issues", side_effect=mock_investigate), \
-             patch("src.extensions.incident.llm_integration.EnrichmentService") as MockES, \
-             patch("src.extensions.incident.llm_integration.get_audit_store") as mock_audit, \
-             patch("src.extensions.incident.llm_integration.create_data_storage_client", return_value=None), \
-             patch("src.extensions.incident.llm_integration.get_model_config_for_sdk", return_value=("mock-model", "openai")), \
-             patch("src.extensions.incident.llm_integration.prepare_toolsets_config_for_sdk", return_value={}), \
-             patch("src.extensions.incident.llm_integration.register_workflow_discovery_toolset", side_effect=lambda c, *a, **kw: c), \
-             patch("src.extensions.incident.llm_integration.register_resource_context_toolset", side_effect=lambda c, *a, **kw: c), \
-             patch("src.extensions.incident.llm_integration.sanitize_for_llm", side_effect=lambda x: x), \
-             patch("src.extensions.incident.llm_integration.parse_and_validate_investigation_result") as mock_parse:
+        with patch(f"{_LLM}.investigate_issues", side_effect=mock_investigate), \
+             patch(f"{_LLM}.EnrichmentService") as MockES, \
+             patch(f"{_LLM}.get_audit_store") as mock_audit, \
+             patch(f"{_LLM}.create_data_storage_client", return_value=None), \
+             patch(f"{_P}.get_model_config_for_sdk", return_value=("mock-model", "openai")), \
+             patch(f"{_P}.prepare_toolsets_config_for_sdk", return_value={}), \
+             patch(f"{_P}.register_workflow_discovery_toolset", side_effect=lambda c, *a, **kw: c), \
+             patch(f"{_P}.register_resource_context_toolset", side_effect=lambda c, *a, **kw: c), \
+             patch("src.sanitization.sanitize_for_llm", side_effect=lambda x: x), \
+             patch(f"{_LLM}.parse_and_validate_investigation_result") as mock_parse:
 
             mock_audit.return_value = MagicMock()
             MockES.return_value.enrich = mock_enrich
@@ -385,7 +389,7 @@ class TestThreePhaseFlow:
 
         investigate_call_count = 0
 
-        async def mock_investigate(investigate_request, dal, config, previous_messages=None):
+        def mock_investigate(investigate_request, dal, config, previous_messages=None):
             nonlocal investigate_call_count
             investigate_call_count += 1
             if investigate_call_count == 1:
@@ -396,16 +400,16 @@ class TestThreePhaseFlow:
 
         mock_enrich = AsyncMock(return_value=ENRICHMENT_RESULT)
 
-        with patch("src.extensions.incident.llm_integration.investigate_issues", side_effect=mock_investigate), \
-             patch("src.extensions.incident.llm_integration.EnrichmentService") as MockES, \
-             patch("src.extensions.incident.llm_integration.get_audit_store") as mock_audit, \
-             patch("src.extensions.incident.llm_integration.create_data_storage_client", return_value=None), \
-             patch("src.extensions.incident.llm_integration.get_model_config_for_sdk", return_value=("mock-model", "openai")), \
-             patch("src.extensions.incident.llm_integration.prepare_toolsets_config_for_sdk", return_value={}), \
-             patch("src.extensions.incident.llm_integration.register_workflow_discovery_toolset", side_effect=lambda c, *a, **kw: c), \
-             patch("src.extensions.incident.llm_integration.register_resource_context_toolset", side_effect=lambda c, *a, **kw: c), \
-             patch("src.extensions.incident.llm_integration.sanitize_for_llm", side_effect=lambda x: x), \
-             patch("src.extensions.incident.llm_integration.parse_and_validate_investigation_result") as mock_parse:
+        with patch(f"{_LLM}.investigate_issues", side_effect=mock_investigate), \
+             patch(f"{_LLM}.EnrichmentService") as MockES, \
+             patch(f"{_LLM}.get_audit_store") as mock_audit, \
+             patch(f"{_LLM}.create_data_storage_client", return_value=None), \
+             patch(f"{_P}.get_model_config_for_sdk", return_value=("mock-model", "openai")), \
+             patch(f"{_P}.prepare_toolsets_config_for_sdk", return_value={}), \
+             patch(f"{_P}.register_workflow_discovery_toolset", side_effect=lambda c, *a, **kw: c), \
+             patch(f"{_P}.register_resource_context_toolset", side_effect=lambda c, *a, **kw: c), \
+             patch("src.sanitization.sanitize_for_llm", side_effect=lambda x: x), \
+             patch(f"{_LLM}.parse_and_validate_investigation_result") as mock_parse:
 
             mock_audit.return_value = MagicMock()
             MockES.return_value.enrich = mock_enrich

@@ -36,6 +36,7 @@ including HolmesGPT SDK integration, self-correction loop, and audit trail.
 """
 
 import asyncio
+import json
 import os
 import logging
 from typing import Dict, Any, Optional, List
@@ -61,7 +62,8 @@ from .prompt_builder import (
     build_validation_error_feedback,
     build_resource_context_mismatch_feedback,
 )
-from .result_parser import parse_and_validate_investigation_result
+from .result_parser import parse_and_validate_investigation_result, _parse_affected_resource
+from .enrichment_service import EnrichmentService, EnrichmentFailure, EnrichmentResult
 from src.extensions.investigation_helpers import (
     audit_llm_request,
     audit_llm_response_and_tools,
@@ -72,6 +74,34 @@ from src.extensions.investigation_helpers import (
 logger = logging.getLogger(__name__)
 
 
+def _extract_phase1_json(analysis_text: str) -> Dict[str, Any]:
+    """Extract JSON from Phase 1 analysis text to get affectedResource.
+
+    Handles plain JSON, markdown code blocks, and section-header format.
+    Returns empty dict on failure.
+    """
+    import re as _re
+    if not analysis_text:
+        return {}
+    try:
+        return json.loads(analysis_text)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    match = _re.search(r'```json\s*(\{.*\})\s*```', analysis_text, _re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            pass
+    rca_match = _re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis_text, _re.DOTALL)
+    if rca_match:
+        try:
+            return {"root_cause_analysis": json.loads(rca_match.group(1))}
+        except json.JSONDecodeError:
+            pass
+    return {}
+
+
 # ========================================
 # BR-496 v2: HAPI-Owned Target Resource Identity
 # ========================================
@@ -80,26 +110,22 @@ def _inject_target_resource(
     result: Dict[str, Any],
     session_state: Dict[str, Any],
     remediation_id: str,
+    enrichment_result: Optional["EnrichmentResult"] = None,
 ) -> None:
     """Inject TARGET_RESOURCE_* and affectedResource from K8s-verified root_owner.
 
-    HAPI owns the target resource identity. The LLM never provides
-    affectedResource or TARGET_RESOURCE_* — HAPI derives them from
-    root_owner captured by get_namespaced_resource_context or
-    get_cluster_resource_context during the investigation.
+    #529: Prefer EnrichmentResult.root_owner (Phase 2) over session_state.
+    Falls back to session_state["root_owner"] for backward compatibility with
+    flows that haven't migrated to the 3-phase architecture yet.
 
     #524: Conditional injection — only inject TARGET_RESOURCE_* parameters
     that the workflow schema actually declares. Namespace is also skipped
     when resource_scope is 'cluster'.
-
-    Steps:
-    1. Read root_owner from session_state
-    2. If missing or malformed → rca_incomplete
-    3. Construct affectedResource from root_owner (Go backward compat)
-    4. Ensure root_cause_analysis exists before injecting affectedResource
-    5. If selected_workflow → inject only declared TARGET_RESOURCE_* params
     """
-    root_owner = session_state.get("root_owner")
+    if enrichment_result is not None and enrichment_result.root_owner is not None:
+        root_owner = enrichment_result.root_owner
+    else:
+        root_owner = session_state.get("root_owner")
 
     if root_owner is None:
         logger.warning({
@@ -523,20 +549,108 @@ async def analyze_incident(
         # BR-AUDIT-005: audit_store and remediation_id already initialized at function start
 
         # ========================================
-        # LLM SELF-CORRECTION LOOP (DD-HAPI-002 v1.2)
-        # With full audit trail (BR-AUDIT-005)
+        # THREE-PHASE SELF-CORRECTION LOOP (#529, DD-HAPI-002 v1.4)
+        # Phase 1: RCA + affectedResource
+        # Phase 2: HAPI-driven EnrichmentService
+        # Phase 3: Workflow selection with enrichment context
         # ========================================
         validation_errors_history: List[List[str]] = []
-        validation_attempts_history: List[Dict[str, Any]] = []  # For response
-        last_schema_hint: Optional[str] = None  # BR-HAPI-191: schema hint for self-correction
-        pending_mismatch_feedback: Optional[str] = None  # #516: resource context mismatch correction
+        validation_attempts_history: List[Dict[str, Any]] = []
+        last_schema_hint: Optional[str] = None
+        pending_mismatch_feedback: Optional[str] = None
         result = None
         workflow_id = None
+        enrichment_result_obj: Optional[EnrichmentResult] = None
+        phase1_messages: Optional[List[Dict[str, Any]]] = None
 
         for attempt in range(MAX_VALIDATION_ATTEMPTS):
             attempt_timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-            # Build prompt with error feedback for retries
+            # ─── PHASE 1: RCA + affectedResource ───
+            if enrichment_result_obj is None:
+                investigation_prompt = base_prompt
+
+                logger.info({
+                    "event": "phase1_rca_started",
+                    "incident_id": incident_id,
+                    "attempt": attempt + 1,
+                })
+
+                investigation_request = InvestigateRequest(
+                    source="kubernaut",
+                    title=f"Incident analysis for {request_data.get('signal_name')}",
+                    description=investigation_prompt,
+                    subject={
+                        "type": "incident",
+                        "incident_id": incident_id,
+                        "signal_name": request_data.get("signal_name")
+                    },
+                    context={
+                        "incident_id": incident_id,
+                        "issue_type": "incident",
+                        "attempt": attempt + 1,
+                        "phase": 1,
+                    },
+                    source_instance_id="holmesgpt-api"
+                )
+
+                audit_llm_request(audit_store, incident_id, remediation_id, config, investigation_prompt)
+
+                phase1_result = await asyncio.to_thread(
+                    investigate_issues,
+                    investigate_request=investigation_request,
+                    dal=dal,
+                    config=config,
+                    previous_messages=None,
+                )
+
+                audit_llm_response_and_tools(audit_store, incident_id, remediation_id, phase1_result)
+
+                phase1_json = _extract_phase1_json(
+                    phase1_result.analysis if phase1_result and phase1_result.analysis else ""
+                )
+                rca_data = phase1_json.get("root_cause_analysis", {}) if isinstance(phase1_json, dict) else {}
+                affected_resource = _parse_affected_resource(rca_data)
+
+                if affected_resource is None:
+                    logger.warning({
+                        "event": "phase1_no_affected_resource",
+                        "incident_id": incident_id,
+                        "attempt": attempt + 1,
+                    })
+                    continue
+
+                phase1_messages = getattr(phase1_result, "messages", None)
+
+                # ─── PHASE 2: Enrichment (HAPI-driven) ───
+                logger.info({
+                    "event": "phase2_enrichment_started",
+                    "incident_id": incident_id,
+                    "affected_resource": affected_resource,
+                })
+
+                enrichment_svc = EnrichmentService(
+                    k8s_client=None,
+                    ds_client=data_storage_client,
+                    label_detector=None,
+                )
+                try:
+                    enrichment_result_obj = await enrichment_svc.enrich(affected_resource)
+                except EnrichmentFailure as ef:
+                    logger.error({
+                        "event": "phase2_enrichment_failed",
+                        "incident_id": incident_id,
+                        "reason": ef.reason,
+                        "detail": ef.detail,
+                    })
+                    result = {
+                        "root_cause_analysis": rca_data,
+                        "needs_human_review": True,
+                        "human_review_reason": "rca_incomplete",
+                    }
+                    break
+
+            # ─── PHASE 3: Workflow Selection ───
             if pending_mismatch_feedback is not None:
                 investigation_prompt = base_prompt + pending_mismatch_feedback
                 pending_mismatch_feedback = None
@@ -544,22 +658,20 @@ async def analyze_incident(
                 investigation_prompt = base_prompt + build_validation_error_feedback(
                     validation_errors_history[-1],
                     attempt,
-                    schema_hint=last_schema_hint  # BR-HAPI-191: include parameter schema
+                    schema_hint=last_schema_hint,
                 )
             else:
                 investigation_prompt = base_prompt
 
-            # Log the prompt
-            print("\n" + "="*80)
-            print(f"🔍 INCIDENT ANALYSIS PROMPT TO LLM (Attempt {attempt + 1}/{MAX_VALIDATION_ATTEMPTS})")
-            print("="*80)
-            print(investigation_prompt)
-            print("="*80 + "\n")
+            logger.info({
+                "event": "phase3_workflow_selection_started",
+                "incident_id": incident_id,
+                "attempt": attempt + 1,
+            })
 
-            # Create investigation request
-            investigation_request = InvestigateRequest(
+            phase3_request = InvestigateRequest(
                 source="kubernaut",
-                title=f"Incident analysis for {request_data.get('signal_name')}",
+                title=f"Workflow selection for {request_data.get('signal_name')}",
                 description=investigation_prompt,
                 subject={
                     "type": "incident",
@@ -569,62 +681,39 @@ async def analyze_incident(
                 context={
                     "incident_id": incident_id,
                     "issue_type": "incident",
-                    "attempt": attempt + 1
+                    "attempt": attempt + 1,
+                    "phase": 3,
                 },
                 source_instance_id="holmesgpt-api"
             )
 
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # AUDIT: LLM REQUEST (BR-AUDIT-005, ADR-032 §1)
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             audit_llm_request(audit_store, incident_id, remediation_id, config, investigation_prompt)
 
-            # Call HolmesGPT SDK
-            logger.info({
-                "event": "calling_aiagent_sdk",
-                "incident_id": incident_id,
-                "attempt": attempt + 1,
-                "max_attempts": MAX_VALIDATION_ATTEMPTS
-            })
-            # DD-AA-HAPI-064: Offload sync Holmes SDK call to thread pool
-            # to keep the event loop responsive for session submit/poll requests
-            investigation_result = await asyncio.to_thread(
+            phase3_investigation_result = await asyncio.to_thread(
                 investigate_issues,
-                investigate_request=investigation_request,
+                investigate_request=phase3_request,
                 dal=dal,
                 config=config,
+                previous_messages=phase1_messages,
             )
 
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # AUDIT: LLM RESPONSE + TOOL CALLS (BR-AUDIT-005, ADR-032 §1)
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            audit_llm_response_and_tools(audit_store, incident_id, remediation_id, investigation_result)
+            audit_llm_response_and_tools(audit_store, incident_id, remediation_id, phase3_investigation_result)
 
-            # Parse and validate investigation result
             result, validation_result = parse_and_validate_investigation_result(
-                investigation_result,
+                phase3_investigation_result,
                 request_data,
                 data_storage_client=data_storage_client
             )
 
-            # Get workflow_id for audit
             workflow_id = result.get("selected_workflow", {}).get("workflow_id") if result.get("selected_workflow") else None
-
-            # Check if validation passed or no workflow to validate
             is_valid = validation_result is None or validation_result.is_valid
             validation_errors = validation_result.errors if validation_result and not validation_result.is_valid else []
 
-            # #524 GAP 2: Propagate workflow parameter schema into session_state
-            # so _inject_target_resource can conditionally inject only declared params.
-            # Always update on each attempt to avoid stale schema from a previous retry.
             if validation_result and validation_result.parameter_schema is not None:
                 session_state["workflow_schema"] = validation_result.parameter_schema
             elif validation_result and validation_result.parameter_schema is None:
                 session_state.pop("workflow_schema", None)
 
-            # #524 GAP 1: Post-selection scope mismatch guard.
-            # If validation passed but the LLM picked a node-scoped workflow while
-            # using the namespaced resource context tool, nudge the LLM to retry.
             if is_valid:
                 scope_nudge = _check_scope_mismatch(result, session_state)
                 if scope_nudge is not None:
@@ -637,9 +726,6 @@ async def analyze_incident(
                         "nudge": scope_nudge,
                     })
 
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # AUDIT: VALIDATION ATTEMPT (BR-AUDIT-005, DD-HAPI-002 v1.2)
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             audit_store.store_audit(create_validation_attempt_event(
                 incident_id=incident_id,
                 remediation_id=remediation_id,
@@ -650,7 +736,6 @@ async def analyze_incident(
                 workflow_id=workflow_id
             ))
 
-            # Build validation attempt record for response (BR-HAPI-197)
             validation_attempts_history.append({
                 "attempt": attempt + 1,
                 "workflow_id": workflow_id,
@@ -660,7 +745,6 @@ async def analyze_incident(
             })
 
             if is_valid:
-                # #516: Check resource context mismatch before accepting
                 mismatch_feedback = _check_resource_context_mismatch(
                     result, session_state, incident_id
                 )
@@ -683,9 +767,7 @@ async def analyze_incident(
                 })
                 break
             else:
-                # Validation failed - log and prepare for retry
                 validation_errors_history.append(validation_errors)
-                # BR-HAPI-191: Capture schema_hint for next retry's feedback prompt
                 if validation_result and validation_result.schema_hint:
                     last_schema_hint = validation_result.schema_hint
                 logger.warning({
@@ -694,44 +776,18 @@ async def analyze_incident(
                     "attempt": attempt + 1,
                     "max_attempts": MAX_VALIDATION_ATTEMPTS,
                     "errors": validation_errors,
-                    "message": "DD-HAPI-002 v1.2: Workflow validation failed, retrying with error feedback"
                 })
 
-        # After loop: Check if we exhausted all attempts
         handle_validation_exhaustion(
             result, validation_errors_history, MAX_VALIDATION_ATTEMPTS,
             audit_store, incident_id, remediation_id, workflow_id
         )
 
-        # Add validation history to response (BR-HAPI-197)
-        # E2E-HAPI-003: Only override if LLM didn't provide a history (for max_retries_exhausted simulation)
-        logger.info({
-            "event": "validation_history_decision",
-            "incident_id": incident_id,
-            "has_key": "validation_attempts_history" in result,
-            "llm_provided_count": len(result.get("validation_attempts_history", [])),
-            "hapi_loop_count": len(validation_attempts_history)
-        })
         if "validation_attempts_history" not in result or not result["validation_attempts_history"]:
             result["validation_attempts_history"] = validation_attempts_history
-            logger.info({
-                "event": "validation_history_using_hapi_loop",
-                "incident_id": incident_id,
-                "count": len(validation_attempts_history)
-            })
-        else:
-            logger.info({
-                "event": "validation_history_using_llm",
-                "incident_id": incident_id,
-                "count": len(result["validation_attempts_history"])
-            })
 
-        # BR-496 v2 + #524: HAPI owns the target resource identity.
-        # Inject TARGET_RESOURCE_* from root_owner (only declared params),
-        # construct affectedResource for Go backward compat, set rca_incomplete
-        # if root_owner missing.  workflow_schema in session_state (populated
-        # above) controls which params get injected.
-        _inject_target_resource(result, session_state, remediation_id)
+        # #529: Inject from EnrichmentResult (Phase 2) instead of session_state
+        _inject_target_resource(result, session_state, remediation_id, enrichment_result=enrichment_result_obj)
 
         # ADR-056: Inject runtime-computed detected_labels into response
         from src.extensions.llm_config import inject_detected_labels
