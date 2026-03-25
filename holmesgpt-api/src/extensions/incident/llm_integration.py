@@ -84,14 +84,19 @@ def _inject_target_resource(
 
     HAPI owns the target resource identity. The LLM never provides
     affectedResource or TARGET_RESOURCE_* — HAPI derives them from
-    root_owner captured by get_resource_context during the investigation.
+    root_owner captured by get_namespaced_resource_context or
+    get_cluster_resource_context during the investigation.
+
+    #524: Conditional injection — only inject TARGET_RESOURCE_* parameters
+    that the workflow schema actually declares. Namespace is also skipped
+    when resource_scope is 'cluster'.
 
     Steps:
     1. Read root_owner from session_state
     2. If missing or malformed → rca_incomplete
     3. Construct affectedResource from root_owner (Go backward compat)
     4. Ensure root_cause_analysis exists before injecting affectedResource
-    5. If selected_workflow → inject TARGET_RESOURCE_NAME/KIND/NAMESPACE
+    5. If selected_workflow → inject only declared TARGET_RESOURCE_* params
     """
     root_owner = session_state.get("root_owner")
 
@@ -119,6 +124,7 @@ def _inject_target_resource(
         return
 
     ns = root_owner.get("namespace", "")
+    resource_scope = session_state.get("resource_scope", "namespaced")
 
     affected_resource: Dict[str, str] = {"kind": kind, "name": name}
     if ns:
@@ -133,6 +139,7 @@ def _inject_target_resource(
     logger.info({
         "event": "target_resource_injected",
         "root_owner": root_owner,
+        "resource_scope": resource_scope,
         "remediation_id": remediation_id,
         "has_workflow": result.get("selected_workflow") is not None,
     })
@@ -144,10 +151,72 @@ def _inject_target_resource(
             params = {}
             selected_wf["parameters"] = params
 
-        params["TARGET_RESOURCE_NAME"] = name
-        params["TARGET_RESOURCE_KIND"] = kind
-        if ns:
+        # #524: Only inject parameters declared in the workflow schema.
+        declared = _get_declared_param_names(session_state)
+
+        if declared is None or "TARGET_RESOURCE_NAME" in declared:
+            params["TARGET_RESOURCE_NAME"] = name
+        if declared is None or "TARGET_RESOURCE_KIND" in declared:
+            params["TARGET_RESOURCE_KIND"] = kind
+        if (
+            ns
+            and resource_scope != "cluster"
+            and (declared is None or "TARGET_RESOURCE_NAMESPACE" in declared)
+        ):
             params["TARGET_RESOURCE_NAMESPACE"] = ns
+
+
+def _get_declared_param_names(session_state: Dict[str, Any]) -> Optional[set]:
+    """Extract declared parameter names from workflow_schema in session_state.
+
+    Returns None when no schema is available (backward compat: inject all).
+    """
+    schema = session_state.get("workflow_schema")
+    if not schema:
+        return None
+    return {p.get("name") for p in schema if p.get("name")}
+
+
+# #524: Action types that target cluster-scoped resources (Nodes, PVs, etc.)
+_NODE_SCOPED_ACTION_TYPES = frozenset({
+    "RemoveTaint",
+    "DrainNode",
+    "CordonNode",
+    "UncordonNode",
+    "RebootNode",
+})
+
+
+def _check_scope_mismatch(
+    result: Dict[str, Any],
+    session_state: Dict[str, Any],
+) -> Optional[str]:
+    """Detect mismatch between workflow target scope and resource context tool.
+
+    #524: If the LLM selected a node-scoped workflow but used the namespaced
+    tool (resource_scope='namespaced'), the root_owner is the workload's
+    Deployment — not the Node. Returns a nudge message for the self-correction
+    loop; None if no mismatch.
+    """
+    resource_scope = session_state.get("resource_scope")
+    if resource_scope is None:
+        return None
+
+    selected_wf = result.get("selected_workflow")
+    if selected_wf is None:
+        return None
+
+    action_type = selected_wf.get("action_type", "")
+    if action_type in _NODE_SCOPED_ACTION_TYPES and resource_scope == "namespaced":
+        return (
+            f"You selected a node-scoped workflow (action_type='{action_type}') but "
+            f"used the namespaced resource context tool. The root_owner may be a "
+            f"Deployment instead of the Node. Please call "
+            f"`get_cluster_resource_context` with the Node's kind and name, then "
+            f"re-select the workflow."
+        )
+
+    return None
 
 
 # ========================================

@@ -176,10 +176,9 @@ class WorkflowResponseValidator:
             )
             return ValidationResult(is_valid=False, errors=errors)
 
-        # STEP 0: Canonical Parameter Declaration Check (BR-496 v2)
-        canonical_errors = self._validate_canonical_params(workflow, workflow_id)
-        if canonical_errors:
-            return ValidationResult(is_valid=False, errors=canonical_errors)
+        # #524: Canonical parameter check removed — workflows no longer required
+        # to declare TARGET_RESOURCE_NAME/KIND/NAMESPACE. HAPI injects only
+        # those that are declared in the schema (conditional injection).
 
         # STEP 1b: Action-Type Cross-Check (DD-WORKFLOW-016, Gap 3)
         action_type_errors = self._validate_action_type_crosscheck(workflow)

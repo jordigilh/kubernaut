@@ -339,7 +339,8 @@ def create_incident_investigation_prompt(
 
     # ADR-056: DetectedLabels are no longer extracted from enrichment_results
     # for prompt construction. They are computed at runtime by HAPI's
-    # get_resource_context tool and used via session_state.
+    # get_namespaced_resource_context / get_cluster_resource_context tool
+    # and used via session_state.
 
     # Generate contextual descriptions
     priority_desc = PRIORITY_DESCRIPTIONS.get(priority, f"{priority} - Standard priority").format(business_category=business_category)
@@ -447,7 +448,7 @@ that a **{signal_name}** event will occur for **{namespace}/{resource_kind}/{res
             prompt += "\n"
 
     # ADR-056: Cluster environment characteristics are now computed at runtime
-    # by the get_resource_context tool (LabelDetector) and injected into
+    # by the get_namespaced_resource_context tool (LabelDetector) and injected into
     # DataStorage queries via session_state. No longer included in the prompt.
 
     # Issue #198: PDB-specific guidance for KubePodDisruptionBudgetAtLimit signals
@@ -459,7 +460,7 @@ that a **{signal_name}** event will occur for **{namespace}/{resource_kind}/{res
 **IMPORTANT**: This signal indicates a PodDisruptionBudget is blocking voluntary
 disruptions (drain/eviction). Before concluding this is a taint or scheduling issue:
 
-1. **Inspect the PDB spec**: Call `get_resource_context` for the PDB itself
+1. **Inspect the PDB spec**: Call `get_namespaced_resource_context` for the PDB itself
    (kind=PodDisruptionBudget) to understand its selector and minAvailable/maxUnavailable.
 2. **Check matched pods**: The PDB's selector identifies which pods it protects.
    Verify the replica count vs minAvailable constraint.
@@ -547,11 +548,21 @@ Based on your RCA, determine the signal_name that best describes the effect:
 
 ### Phase 3b: Identify the Root Owner (MANDATORY for remediation)
 
-Call `get_resource_context` with the resource you identified during RCA (kind, name, namespace):
-- The tool resolves the **root managing resource** (e.g., for a Pod it finds the managing Deployment) and returns:
-  - `root_owner`: The root managing resource (`kind`, `name`, `namespace`). The system uses this to target the correct resource for remediation.
-  - `remediation_history`: Past remediations for that resource. Use this to avoid repeating recently failed workflows.
-- **Example**: You call the tool for Pod "api-xyz-abc". The tool returns `root_owner: {{kind: Deployment, name: api, namespace: prod}}`.
+Call the appropriate resource context tool based on whether the resource is **namespaced** or **cluster-scoped**:
+
+- **`get_namespaced_resource_context`** — Use for namespaced resources (Pod, Deployment, StatefulSet, Service, etc.).
+  Pass `kind`, `name`, and `namespace`. The tool resolves the **root managing resource** via ownerReferences
+  (e.g., for a Pod it walks Pod → ReplicaSet → Deployment) and returns:
+  - `root_owner`: The root managing resource (`kind`, `name`, `namespace`).
+  - `remediation_history`: Past remediations for that resource.
+  - **Example**: You call the tool for Pod "api-xyz-abc" in namespace "prod". The tool returns `root_owner: {{kind: Deployment, name: api, namespace: prod}}`.
+
+- **`get_cluster_resource_context`** — Use for cluster-scoped resources (Node, PersistentVolume, Namespace, etc.).
+  Pass `kind` and `name` only (no namespace). The tool returns the resource itself as root_owner — no ownerReferences walk.
+  - **Example**: You call the tool for Node "worker-3". The tool returns `root_owner: {{kind: Node, name: worker-3}}` (no namespace).
+
+**Choose the right tool**: If the affected resource has a namespace, use `get_namespaced_resource_context`.
+If the resource is cluster-scoped (e.g., Node, PV), use `get_cluster_resource_context`.
 
 ### Phase 4: Discover and Select Workflow (MANDATORY - Three-Step Protocol)
 **YOU MUST** follow this three-step workflow discovery protocol:
