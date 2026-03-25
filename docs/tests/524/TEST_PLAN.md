@@ -4,7 +4,7 @@
 **Version**: 1.0
 **Created**: 2026-03-04
 **Author**: AI Assistant (Cursor)
-**Status**: Draft
+**Status**: Implemented
 **Branch**: `fix/1.1.0-rc9`
 
 **Authority**:
@@ -49,7 +49,7 @@
 |------|----------|------------|
 | Mock LLM tool name matching | CRITICAL | Update `test/services/mock-llm/src/server.py` — `_has_resource_context_tool` must match `get_namespaced_resource_context` or `get_cluster_resource_context`; `_generate_tool_call` emits new tool name |
 | `CANONICAL_TARGET_PARAMS` in conftest | HIGH | Keep constant, update comment from "must declare" to "commonly declared" — tests using it still pass, new tests without it also pass |
-| Schema not available at injection call site | MEDIUM | Store `workflow_schema` in `session_state` during validation step — validator already fetches schema; injection reads it from session_state |
+| Schema not available at injection call site | MEDIUM | `ValidationResult.parameter_schema` carries schema from validator → `llm_integration.py` stores it in `session_state["workflow_schema"]` → `_inject_target_resource` reads it. `result_parser.py` no longer clears `validation_result` to `None` on success, ensuring schema propagation on the happy path. |
 | 4 existing tests assert old behavior | MEDIUM | UT-496-007/008/009 updated to expect `is_valid=True`; UT-496-016 updated to assert new tool name |
 | Two tools in one toolset (SDK compat) | MEDIUM | Verified: `WorkflowDiscoveryToolset` already registers 3 tools per toolset — pattern is established |
 | CRD/OpenAPI description text | LOW | Update Go type comment in `aianalysis_types.go` → `make manifests` regenerates; OpenAPI source model → regenerate |
@@ -121,36 +121,38 @@ Tests validate **business outcomes**:
 
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |-------|-------------|----------|------|---------|--------|
-| #524-A | Cluster-scoped tool returns resource as root_owner with no namespace | P0 | Unit | UT-HAPI-524-001 | Pending |
-| #524-A | Cluster-scoped tool stores `resource_scope: "cluster"` in session_state | P0 | Unit | UT-HAPI-524-002 | Pending |
-| #524-A | Cluster-scoped tool skips owner chain walk (Node is root_owner) | P0 | Unit | UT-HAPI-524-003 | Pending |
-| #524-A | Cluster-scoped tool handles resource-not-found gracefully | P1 | Unit | UT-HAPI-524-004 | Pending |
-| #524-A | Cluster-scoped tool computes spec hash for cluster-scoped resource | P1 | Unit | UT-HAPI-524-005 | Pending |
-| #524-A | Cluster-scoped tool fetches remediation history without namespace | P1 | Unit | UT-HAPI-524-006 | Pending |
-| #524-A | Cluster-scoped tool detects labels with workload defaults for cluster-scoped | P2 | Unit | UT-HAPI-524-007 | Pending |
-| #524 | Renamed tool `get_namespaced_resource_context` has correct name attribute | P0 | Unit | UT-HAPI-524-010 | Pending |
-| #524 | Renamed tool stores `resource_scope: "namespaced"` in session_state | P0 | Unit | UT-HAPI-524-011 | Pending |
-| #524 | Renamed tool behavior is identical to old `get_resource_context` | P0 | Unit | UT-HAPI-524-012 | Pending |
-| #524 | Toolset contains both tools (namespaced + cluster) | P0 | Unit | UT-HAPI-524-013 | Pending |
-| #524-C | Validator passes workflow missing TARGET_RESOURCE_NAMESPACE | P0 | Unit | UT-HAPI-524-020 | Pending |
-| #524-C | Validator passes workflow missing all 3 canonical params | P0 | Unit | UT-HAPI-524-021 | Pending |
-| #524-C | Validator passes workflow declaring only TARGET_RESOURCE_NAME + KIND | P0 | Unit | UT-HAPI-524-022 | Pending |
-| #524-C | Validator still skips required-check for HAPI_MANAGED_PARAMS | P0 | Unit | UT-HAPI-524-023 | Pending |
-| #524-B | Injection skips TARGET_RESOURCE_NAMESPACE when resource_scope is "cluster" | P0 | Unit | UT-HAPI-524-030 | Pending |
-| #524-B | Injection skips TARGET_RESOURCE_NAMESPACE when workflow schema doesn't declare it | P0 | Unit | UT-HAPI-524-031 | Pending |
-| #524-B | Injection populates all 3 params for namespaced scope with full schema | P0 | Unit | UT-HAPI-524-032 | Pending |
-| #524-B | Injection populates only declared params (NAME + KIND only) | P0 | Unit | UT-HAPI-524-033 | Pending |
-| #524-B | Injection populates zero params when workflow declares none of the 3 | P1 | Unit | UT-HAPI-524-034 | Pending |
-| #524-B | affectedResource namespace omitted for cluster-scoped root_owner | P0 | Unit | UT-HAPI-524-035 | Pending |
-| #524 | Prompt contains `get_namespaced_resource_context` (not old name) | P0 | Unit | UT-HAPI-524-040 | Pending |
-| #524 | Prompt contains `get_cluster_resource_context` | P0 | Unit | UT-HAPI-524-041 | Pending |
-| #524 | Prompt does not contain old `get_resource_context` tool name | P0 | Unit | UT-HAPI-524-042 | Pending |
-| #524 | Prompt explains when to use each tool (namespaced vs cluster-scoped) | P1 | Unit | UT-HAPI-524-043 | Pending |
-| #524-5 | Validation guard: node-scoped workflow + namespaced tool → retry nudge | P0 | Unit | UT-HAPI-524-050 | Pending |
-| #524-5 | Validation guard: node-scoped workflow + cluster tool → no nudge | P0 | Unit | UT-HAPI-524-051 | Pending |
-| #524-5 | Validation guard: deployment-scoped workflow + namespaced tool → no nudge | P0 | Unit | UT-HAPI-524-052 | Pending |
-| #524-5 | Validation guard: resource_scope missing from session → no nudge (graceful) | P1 | Unit | UT-HAPI-524-053 | Pending |
-| #524 | Registration: both tools injected into SDK toolset manager | P1 | Unit | UT-HAPI-524-060 | Pending |
+| #524-A | Cluster-scoped tool returns resource as root_owner with no namespace | P0 | Unit | UT-HAPI-524-001 | Pass |
+| #524-A | Cluster-scoped tool stores `resource_scope: "cluster"` in session_state | P0 | Unit | UT-HAPI-524-002 | Pass |
+| #524-A | Cluster-scoped tool skips owner chain walk (Node is root_owner) | P0 | Unit | UT-HAPI-524-003 | Pass |
+| #524-A | Cluster-scoped tool handles resource-not-found gracefully | P1 | Unit | UT-HAPI-524-004 | Pass |
+| #524-A | Cluster-scoped tool computes spec hash for cluster-scoped resource | P1 | Unit | UT-HAPI-524-005 | Pass |
+| #524-A | Cluster-scoped tool fetches remediation history without namespace | P1 | Unit | UT-HAPI-524-006 | Pass |
+| #524-A | Cluster-scoped tool detects labels with workload defaults for cluster-scoped | P2 | Unit | UT-HAPI-524-007 | Deferred |
+| #524 | Renamed tool `get_namespaced_resource_context` has correct name attribute | P0 | Unit | UT-HAPI-524-010 | Pass |
+| #524 | Renamed tool stores `resource_scope: "namespaced"` in session_state | P0 | Unit | UT-HAPI-524-011 | Pass |
+| #524 | Renamed tool behavior is identical to old `get_resource_context` | P0 | Unit | UT-HAPI-524-012 | Pass |
+| #524 | Toolset contains both tools (namespaced + cluster) | P0 | Unit | UT-HAPI-524-013 | Pass |
+| #524-C | Validator passes workflow missing TARGET_RESOURCE_NAMESPACE | P0 | Unit | UT-HAPI-524-020 | Pass |
+| #524-C | Validator passes workflow missing all 3 canonical params | P0 | Unit | UT-HAPI-524-021 | Pass |
+| #524-C | Validator passes workflow declaring only TARGET_RESOURCE_NAME + KIND | P0 | Unit | UT-HAPI-524-022 | Pass |
+| #524-C | Validator still skips required-check for HAPI_MANAGED_PARAMS | P0 | Unit | UT-HAPI-524-023 | Pass |
+| #524-B | Injection skips TARGET_RESOURCE_NAMESPACE when resource_scope is "cluster" | P0 | Unit | UT-HAPI-524-030 | Pass |
+| #524-B | Injection skips TARGET_RESOURCE_NAMESPACE when workflow schema doesn't declare it | P0 | Unit | UT-HAPI-524-031 | Pass |
+| #524-B | Injection populates all 3 params for namespaced scope with full schema | P0 | Unit | UT-HAPI-524-032 | Pass |
+| #524-B | Injection populates only declared params (NAME + KIND only) | P0 | Unit | UT-HAPI-524-033 | Pass |
+| #524-B | Injection populates zero params when workflow declares none of the 3 | P1 | Unit | UT-HAPI-524-034 | Pass |
+| #524-B | affectedResource namespace omitted for cluster-scoped root_owner | P0 | Unit | UT-HAPI-524-035 | Pass |
+| #524 | Prompt contains `get_namespaced_resource_context` (not old name) | P0 | Unit | UT-HAPI-524-040 | Pass |
+| #524 | Prompt contains `get_cluster_resource_context` | P0 | Unit | UT-HAPI-524-041 | Pass |
+| #524 | Prompt does not contain old `get_resource_context` tool name | P0 | Unit | UT-HAPI-524-042 | Pass |
+| #524 | Prompt explains when to use each tool (namespaced vs cluster-scoped) | P1 | Unit | UT-HAPI-524-043 | Pass |
+| #524-5 | Validation guard: node-scoped workflow + namespaced tool → retry nudge | P0 | Unit | UT-HAPI-524-050 | Pass |
+| #524-5 | Validation guard: node-scoped workflow + cluster tool → no nudge | P0 | Unit | UT-HAPI-524-051 | Pass |
+| #524-5 | Validation guard: deployment-scoped workflow + namespaced tool → no nudge | P0 | Unit | UT-HAPI-524-052 | Pass |
+| #524-5 | Validation guard: resource_scope missing from session → no nudge (graceful) | P1 | Unit | UT-HAPI-524-053 | Pass |
+| #524 | ValidationResult.parameter_schema populated on successful validation | P0 | Unit | UT-HAPI-524-060 | Pass |
+| #524 | ValidationResult.parameter_schema populated on failed validation | P1 | Unit | UT-HAPI-524-061 | Pass |
+| #524 | ValidationResult.parameter_schema defaults to None when not provided | P1 | Unit | UT-HAPI-524-062 | Pass |
 
 ### Status Legend
 
@@ -370,11 +372,11 @@ All 4 tests fail because validation guard logic does not exist.
 Add `_check_scope_mismatch(result, session_state)` in `llm_integration.py`:
 1. If `session_state.get("resource_scope")` is None → return None (no nudge)
 2. Extract `action_type` from `result.get("selected_workflow", {}).get("action_type", "")`
-3. Define `NODE_SCOPED_ACTION_TYPES = {"RemoveTaint", "CordonDrain"}` (extensible set)
-4. If `action_type in NODE_SCOPED_ACTION_TYPES` and `resource_scope == "namespaced"` → return nudge string
+3. Define `_NODE_SCOPED_ACTION_TYPES = {"RemoveTaint", "DrainNode", "CordonNode", "UncordonNode", "RebootNode", "CleanupNode"}` (aligned with DD-WORKFLOW-016)
+4. If `action_type in _NODE_SCOPED_ACTION_TYPES` and `resource_scope == "namespaced"` → return nudge string
 5. Otherwise → return None
 
-Call `_check_scope_mismatch` after `_inject_target_resource` in `analyze_incident`. If nudge is returned, set `needs_human_review=True` and `human_review_reason="scope_mismatch"`, and log a warning. (Future: integrate with self-correction loop for retry.)
+Call `_check_scope_mismatch` in the self-correction loop (after validation, before `break`). If nudge is returned, treat it as a validation error that triggers LLM retry with the nudge as error feedback.
 
 All 4 tests pass.
 
@@ -385,26 +387,32 @@ All 4 tests pass.
 
 ---
 
-#### TDD Group 7: Toolset Registration
+#### TDD Group 7: Schema Propagation via ValidationResult
 
-**File under test**: `holmesgpt-api/src/extensions/llm_config.py`
-**Test file**: `holmesgpt-api/tests/unit/test_session_state_wiring.py`
+**File under test**: `holmesgpt-api/src/validation/workflow_response_validator.py`, `holmesgpt-api/src/extensions/incident/result_parser.py`
+**Test file**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
 
-##### RED Phase — Write failing test
+##### RED Phase — Write failing tests
 
 | ID | Business Outcome Under Test |
 |----|-----------------------------|
-| `UT-HAPI-524-060` | After registration, the SDK toolset manager contains a toolset named `"resource_context"` with 2 tools: `get_namespaced_resource_context` and `get_cluster_resource_context` |
-
-Test fails because toolset currently contains only 1 tool.
+| `UT-HAPI-524-060` | `ValidationResult.parameter_schema` is populated when validation succeeds — callers can access the workflow's parameter schema for conditional injection |
+| `UT-HAPI-524-061` | `ValidationResult.parameter_schema` is populated even when validation fails — schema is available for diagnostics and retry feedback |
+| `UT-HAPI-524-062` | `ValidationResult.parameter_schema` defaults to `None` when not provided — backward compatibility with callers that don't need it |
 
 ##### GREEN Phase — Minimal implementation
 
-`register_resource_context_toolset` already creates `ResourceContextToolset(...)`. Since Group 2 updates the toolset to contain both tools, this test passes after Group 2's implementation.
+1. Add `parameter_schema: Optional[List[Dict[str, Any]]] = None` field to `ValidationResult`
+2. In `validate()`, call `_get_parameter_schema(workflow)` and set `parameter_schema` in all return paths
+3. In `result_parser.py`, stop clearing `validation_result = None` on success so callers receive the full `ValidationResult`
+4. In `llm_integration.py`, propagate `validation_result.parameter_schema` into `session_state["workflow_schema"]`
+
+All 3 tests pass.
 
 ##### REFACTOR Phase
 
-- Verify `session_state` is shared across both tools within the toolset
+- Update UT-HAPI-372-006 to assert `validation_result is not None` and `is_valid=True` (new contract)
+- Toolset registration verified by UT-HAPI-524-013 (2 tools in toolset)
 
 ---
 
@@ -539,3 +547,4 @@ python -m pytest tests/unit/ -v --tb=short
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-04 | Initial test plan for #524 |
+| 1.1 | 2026-03-04 | Post-implementation sync: all tests Pass (except 007 Deferred), TDD Group 7 redesigned for schema propagation (060-062), CleanupNode added to node-scoped types, scope guard wired into self-correction loop |
