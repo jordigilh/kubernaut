@@ -100,17 +100,17 @@ type DataStorageClient interface {
 // DD-AUDIT-002 V2.0: Updated to use OpenAPI types directly
 // DD-AUDIT-002 V3.0: Removed client-side DLQ (over-engineered, server-side DLQ sufficient)
 type BufferedAuditStore struct {
-	buffer    chan *ogenclient.AuditEventRequest
-	flushChan chan chan error // Channel to signal flush request and receive completion
-	client    DataStorageClient
-	logger    logr.Logger
-	config    Config
-	metrics   MetricsLabels
-	done      chan struct{}
-	wg        sync.WaitGroup
-	closed    int32              // Atomic flag to prevent double-close
-	ctx       context.Context    // Store-scoped context for retry loop cancellation
-	ctxCancel context.CancelFunc // Cancel function for store-scoped context
+	buffer     chan *ogenclient.AuditEventRequest
+	flushChan  chan chan error // Channel to signal flush request and receive completion
+	client     DataStorageClient
+	logger     logr.Logger
+	config     Config
+	metrics    MetricsLabels
+	done       chan struct{}
+	wg         sync.WaitGroup
+	closed     int32 // Atomic flag to prevent double-close
+	ctx        context.Context    // Store-scoped context for retry loop cancellation
+	ctxCancel  context.CancelFunc // Cancel function for store-scoped context
 
 	// Metrics (atomic counters for thread-safe access)
 	bufferedCount    int64
@@ -158,9 +158,6 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 		ctx:       storeCtx,
 		ctxCancel: storeCancel,
 	}
-
-	// DD-AUDIT-004: Initialize buffer capacity metric for saturation monitoring
-	store.metrics.SetBufferCapacity(config.BufferSize)
 
 	// Start background worker
 	store.wg.Add(1)
@@ -226,7 +223,6 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.A
 	case s.buffer <- event:
 		// ✅ Event buffered successfully
 		newCount := atomic.AddInt64(&s.bufferedCount, 1)
-		s.metrics.RecordBuffered()
 
 		// DEBUG: Event successfully added to buffer
 		s.logger.Info("✅ Event buffered successfully",
@@ -407,9 +403,6 @@ func (s *BufferedAuditStore) backgroundWriter() {
 
 			// FIX: Moved inside case block - was incorrectly un-indented, causing events to be dropped
 			batch = append(batch, event)
-			bufferSize := len(s.buffer)
-			s.metrics.SetBufferSize(bufferSize)
-			s.metrics.SetBufferUtilization(bufferSize, s.config.BufferSize) // DD-AUDIT-004
 
 			// Write when batch is full
 			if len(batch) >= s.config.BatchSize {
@@ -482,9 +475,6 @@ func (s *BufferedAuditStore) backgroundWriter() {
 					"time_since_last_flush", timeSinceLastFlush)
 				lastFlushTime = time.Now()
 			}
-			bufferSize := len(s.buffer)
-			s.metrics.SetBufferSize(bufferSize)
-			s.metrics.SetBufferUtilization(bufferSize, s.config.BufferSize) // DD-AUDIT-004
 
 		case done := <-s.flushChan:
 			// Explicit flush requested (typically from tests or graceful shutdown prep)
@@ -552,11 +542,6 @@ func (s *BufferedAuditStore) backgroundWriter() {
 // - After MaxRetries: Drop batch and log
 func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventRequest) {
 	start := time.Now()
-	defer func() {
-		duration := time.Since(start).Seconds()
-		s.metrics.ObserveWriteDuration(duration)
-	}()
-
 	for attempt := 1; attempt <= s.config.MaxRetries; attempt++ {
 		// Use store-scoped context with per-attempt timeout
 		// During shutdown, s.ctx is cancelled so retry loops abort promptly
@@ -576,7 +561,6 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 			if !IsRetryable(err) {
 				// Non-retryable error (4xx) - don't retry, log as invalid
 				atomic.AddInt64(&s.failedBatchCount, 1)
-				s.metrics.RecordBatchFailed()
 
 				s.logger.Error(nil, "Dropping audit batch due to non-retryable error (invalid data)",
 					"batch_size", len(batch),
@@ -598,31 +582,28 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 						"attempt", attempt,
 					)
 					atomic.AddInt64(&s.failedBatchCount, 1)
-					s.metrics.RecordBatchFailed()
 					return
 				}
 				continue
 			}
 
-			// Final failure after max retries
-			atomic.AddInt64(&s.failedBatchCount, 1)
-			s.metrics.RecordBatchFailed()
+		// Final failure after max retries
+		atomic.AddInt64(&s.failedBatchCount, 1)
 
-			// DD-AUDIT-002 V3.0: Transport failures indicate infrastructure problem
-			// Server-side DLQ (in DataStorage) handles persistence failures
-			// Client-side audit loss is acceptable for transport failures (fix infrastructure)
-			s.logger.Error(err, "AUDIT DATA LOSS: Dropping batch after max retries (infrastructure unavailable)",
-				"batch_size", len(batch),
-				"max_retries", s.config.MaxRetries,
-				"error_type", "transport_failure",
-				"mitigation", "Fix DataStorage connectivity - ensure service is running and reachable",
-			)
-			return
+		// DD-AUDIT-002 V3.0: Transport failures indicate infrastructure problem
+		// Server-side DLQ (in DataStorage) handles persistence failures
+		// Client-side audit loss is acceptable for transport failures (fix infrastructure)
+		s.logger.Error(err, "AUDIT DATA LOSS: Dropping batch after max retries (infrastructure unavailable)",
+			"batch_size", len(batch),
+			"max_retries", s.config.MaxRetries,
+			"error_type", "transport_failure",
+			"mitigation", "Fix DataStorage connectivity - ensure service is running and reachable",
+		)
+		return
 		}
 
 		// Success
 		atomic.AddInt64(&s.writtenCount, int64(len(batch)))
-		s.metrics.RecordWritten(len(batch))
 
 		writeDuration := time.Since(start)
 		s.logger.V(1).Info("✅ Wrote audit batch",

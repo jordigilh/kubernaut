@@ -18,11 +18,21 @@ package audit
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	pkgaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
+
+// actionTypeCorrelationID returns a deterministic correlation ID for action-type
+// lifecycle audit events. These are internal to DataStorage (no RemediationRequest
+// to correlate with), but the OpenAPI schema requires correlation_id with minLength: 1.
+// Using a deterministic prefix lets operators query all lifecycle events for a given
+// action type.
+func actionTypeCorrelationID(actionType string) string {
+	return fmt.Sprintf("actiontype-%s", strings.ToLower(actionType))
+}
 
 // ActionType catalog event type constants (BR-WORKFLOW-007, ADR-059)
 const (
@@ -54,6 +64,7 @@ func NewActionTypeCreatedAuditEvent(
 	pkgaudit.SetEventOutcome(event, ogenclient.AuditEventRequestEventOutcomeSuccess)
 	pkgaudit.SetActor(event, "service", registeredBy)
 	pkgaudit.SetResource(event, "ActionType", actionType)
+	pkgaudit.SetCorrelationID(event, actionTypeCorrelationID(actionType))
 
 	payload := ogenclient.ActionTypeCatalogCreatedPayload{
 		EventType:    ogenclient.ActionTypeCatalogCreatedPayloadEventTypeDatastorageActiontypeCreated,
@@ -81,6 +92,7 @@ func NewActionTypeUpdatedAuditEvent(
 	pkgaudit.SetEventOutcome(event, ogenclient.AuditEventRequestEventOutcomeSuccess)
 	pkgaudit.SetActor(event, "service", updatedBy)
 	pkgaudit.SetResource(event, "ActionType", actionType)
+	pkgaudit.SetCorrelationID(event, actionTypeCorrelationID(actionType))
 
 	payload := ogenclient.ActionTypeCatalogUpdatedPayload{
 		EventType:      ogenclient.ActionTypeCatalogUpdatedPayloadEventTypeDatastorageActiontypeUpdated,
@@ -107,6 +119,7 @@ func NewActionTypeDisabledAuditEvent(
 	pkgaudit.SetEventOutcome(event, ogenclient.AuditEventRequestEventOutcomeSuccess)
 	pkgaudit.SetActor(event, "service", disabledBy)
 	pkgaudit.SetResource(event, "ActionType", actionType)
+	pkgaudit.SetCorrelationID(event, actionTypeCorrelationID(actionType))
 
 	payload := ogenclient.ActionTypeCatalogDisabledPayload{
 		EventType:  ogenclient.ActionTypeCatalogDisabledPayloadEventTypeDatastorageActiontypeDisabled,
@@ -132,6 +145,7 @@ func NewActionTypeReenabledAuditEvent(
 	pkgaudit.SetEventOutcome(event, ogenclient.AuditEventRequestEventOutcomeSuccess)
 	pkgaudit.SetActor(event, "service", reenabledBy)
 	pkgaudit.SetResource(event, "ActionType", actionType)
+	pkgaudit.SetCorrelationID(event, actionTypeCorrelationID(actionType))
 
 	payload := ogenclient.ActionTypeCatalogReenabledPayload{
 		EventType:     ogenclient.ActionTypeCatalogReenabledPayloadEventTypeDatastorageActiontypeReenabled,
@@ -159,6 +173,7 @@ func NewActionTypeDisableDeniedAuditEvent(
 	pkgaudit.SetEventOutcome(event, ogenclient.AuditEventRequestEventOutcomeFailure)
 	pkgaudit.SetActor(event, "service", requestedBy)
 	pkgaudit.SetResource(event, "ActionType", actionType)
+	pkgaudit.SetCorrelationID(event, actionTypeCorrelationID(actionType))
 
 	payload := ogenclient.ActionTypeCatalogDisableDeniedPayload{
 		EventType:              ogenclient.ActionTypeCatalogDisableDeniedPayloadEventTypeDatastorageActiontypeDisableDenied,
