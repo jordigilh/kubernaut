@@ -1073,3 +1073,89 @@ class TestCompletedButRecurringWarningInPrompt:
 
         assert "Reasoning Guidance" in result
         assert "recurring" in result.lower() or "recur" in result.lower()
+
+
+class TestIssue525MandatoryEscalation:
+    """Issue #525: Mandatory escalation language for zero-effectiveness recurring remediations."""
+
+    def test_ut_hapi_525_001_zero_effectiveness_mandatory_language(self):
+        """UT-HAPI-525-001: Recurring entries with effectivenessScore=0.0 produce mandatory MUST NOT language."""
+        context = {
+            "targetResource": "production/Deployment/memory-eater",
+            "currentSpecHash": "sha256:abc",
+            "regressionDetected": False,
+            "tier1": {
+                "window": "24h0m0s",
+                "chain": [
+                    {
+                        "remediationUID": "rr-525-1",
+                        "completedAt": "2026-03-04T06:00:00Z",
+                        "workflowType": "IncreaseMemoryLimits",
+                        "signalType": "OOMKilled",
+                        "outcome": "completed",
+                        "effectivenessScore": 0.0,
+                        "signalResolved": False,
+                    },
+                    {
+                        "remediationUID": "rr-525-2",
+                        "completedAt": "2026-03-04T08:00:00Z",
+                        "workflowType": "IncreaseMemoryLimits",
+                        "signalType": "OOMKilled",
+                        "outcome": "completed",
+                        "effectivenessScore": 0.0,
+                        "signalResolved": False,
+                    },
+                ],
+            },
+            "tier2": {"window": "2160h0m0s", "chain": []},
+        }
+        result = build_remediation_history_section(context, escalation_threshold=2)
+
+        assert "MUST NOT" in result, (
+            "Zero-effectiveness recurring entries must produce mandatory 'MUST NOT' language"
+        )
+        assert "Recommend selecting" not in result, (
+            "Mandatory variant must not contain old advisory 'Recommend selecting' text"
+        )
+        assert "IncreaseMemoryLimits" in result
+
+    def test_ut_hapi_525_002_mixed_effectiveness_advisory_language(self):
+        """UT-HAPI-525-002: Recurring entries with mixed effectivenessScore produce advisory, not mandatory."""
+        context = {
+            "targetResource": "production/Deployment/memory-eater",
+            "currentSpecHash": "sha256:abc",
+            "regressionDetected": False,
+            "tier1": {
+                "window": "24h0m0s",
+                "chain": [
+                    {
+                        "remediationUID": "rr-525-m1",
+                        "completedAt": "2026-03-04T06:00:00Z",
+                        "workflowType": "IncreaseMemoryLimits",
+                        "signalType": "OOMKilled",
+                        "outcome": "completed",
+                        "effectivenessScore": 0.8,
+                    },
+                    {
+                        "remediationUID": "rr-525-m2",
+                        "completedAt": "2026-03-04T08:00:00Z",
+                        "workflowType": "IncreaseMemoryLimits",
+                        "signalType": "OOMKilled",
+                        "outcome": "completed",
+                        "effectivenessScore": 0.75,
+                    },
+                ],
+            },
+            "tier2": {"window": "2160h0m0s", "chain": []},
+        }
+        result = build_remediation_history_section(context, escalation_threshold=2)
+
+        assert "REPEATED INEFFECTIVE" in result.upper(), (
+            "Mixed-effectiveness recurring entries must contain 'REPEATED INEFFECTIVE' warning"
+        )
+        assert "escalat" in result.lower(), (
+            "Advisory variant must contain 'Escalate' keyword"
+        )
+        assert "MUST NOT" not in result, (
+            "Mixed-effectiveness variant must NOT contain mandatory 'MUST NOT' language"
+        )
