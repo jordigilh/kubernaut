@@ -110,10 +110,44 @@ def _build_enrichment_context(enrichment_result: Optional["EnrichmentResult"]) -
     return "\n".join(parts) if len(parts) > 1 else ""
 
 
+def _extract_balanced_json(text: str, start: int) -> Optional[str]:
+    """Extract a balanced JSON object starting at position start.
+
+    Uses brace counting with string-literal awareness to handle nested
+    objects like ``{"affectedResource": {"kind": "Deployment"}}``.
+    """
+    if start >= len(text) or text[start] != '{':
+        return None
+    depth = 0
+    in_string = False
+    escape_next = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == '\\' and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return None
+
+
 def _extract_phase1_json(analysis_text: str) -> Dict[str, Any]:
     """Extract JSON from Phase 1 analysis text to get affectedResource.
 
-    Handles plain JSON, markdown code blocks, and section-header format.
+    Handles plain JSON, markdown code blocks, and section-header format
+    (including nested JSON objects like affectedResource).
     Returns empty dict on failure.
     """
     import re as _re
@@ -129,12 +163,16 @@ def _extract_phase1_json(analysis_text: str) -> Dict[str, Any]:
             return json.loads(match.group(1))
         except json.JSONDecodeError:
             pass
-    rca_match = _re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis_text, _re.DOTALL)
-    if rca_match:
-        try:
-            return {"root_cause_analysis": json.loads(rca_match.group(1))}
-        except json.JSONDecodeError:
-            pass
+    rca_header = _re.search(r'# root_cause_analysis\s*\n\s*', analysis_text)
+    if rca_header:
+        brace_start = analysis_text.find('{', rca_header.end())
+        if brace_start != -1:
+            balanced = _extract_balanced_json(analysis_text, brace_start)
+            if balanced:
+                try:
+                    return {"root_cause_analysis": json.loads(balanced)}
+                except json.JSONDecodeError:
+                    pass
     return {}
 
 
@@ -641,10 +679,19 @@ async def analyze_incident(
 
                 audit_llm_response_and_tools(audit_store, incident_id, remediation_id, phase1_result)
 
-                phase1_json = _extract_phase1_json(
-                    phase1_result.analysis if phase1_result and phase1_result.analysis else ""
-                )
-                rca_data = phase1_json.get("root_cause_analysis", {}) if isinstance(phase1_json, dict) else {}
+                rca_data: Dict[str, Any] = {}
+                if phase1_result and getattr(phase1_result, "sections", None):
+                    rca_section = phase1_result.sections.get("root_cause_analysis")
+                    if rca_section:
+                        try:
+                            rca_data = json.loads(rca_section)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                if not rca_data:
+                    phase1_json = _extract_phase1_json(
+                        phase1_result.analysis if phase1_result and phase1_result.analysis else ""
+                    )
+                    rca_data = phase1_json.get("root_cause_analysis", {}) if isinstance(phase1_json, dict) else {}
                 affected_resource = _parse_affected_resource(rca_data)
 
                 if affected_resource is None:
@@ -821,6 +868,19 @@ async def analyze_incident(
                     "max_attempts": MAX_VALIDATION_ATTEMPTS,
                     "errors": validation_errors,
                 })
+
+        if result is None:
+            logger.warning({
+                "event": "phase1_exhaustion_no_result",
+                "incident_id": incident_id,
+                "max_attempts": MAX_VALIDATION_ATTEMPTS,
+            })
+            result = {
+                "root_cause_analysis": {"summary": "Phase 1 failed to identify affected resource after all attempts"},
+                "needs_human_review": True,
+                "human_review_reason": "rca_incomplete",
+                "selected_workflow": None,
+            }
 
         handle_validation_exhaustion(
             result, validation_errors_history, MAX_VALIDATION_ATTEMPTS,
