@@ -833,3 +833,51 @@ class TestScopeMismatchGuard524:
         nudge = _check_scope_mismatch(result, session_state)
 
         assert nudge is None
+
+
+# ========================================
+# Issue #524 GAP fixes: Wiring validation
+# ========================================
+
+
+class TestValidationResultParameterSchema524:
+    """UT-HAPI-524-060 through 062: ValidationResult carries workflow parameter schema."""
+
+    def test_ut_hapi_524_060_parameter_schema_populated_on_success(self):
+        """UT-HAPI-524-060: Successful validation populates parameter_schema."""
+        from src.validation.workflow_response_validator import ValidationResult
+
+        schema = [
+            {"name": "TARGET_RESOURCE_NAME", "type": "string", "required": True},
+            {"name": "MEMORY_LIMIT", "type": "string", "required": True},
+        ]
+        vr = ValidationResult(
+            is_valid=True,
+            errors=[],
+            validated_execution_bundle="tekton-bundle:v1",
+            parameter_schema=schema,
+        )
+        assert vr.parameter_schema == schema
+        assert vr.is_valid is True
+
+    def test_ut_hapi_524_061_parameter_schema_populated_on_failure(self):
+        """UT-HAPI-524-061: Failed validation still carries parameter_schema."""
+        from src.validation.workflow_response_validator import ValidationResult
+
+        schema = [
+            {"name": "MEMORY_LIMIT", "type": "string", "required": True},
+        ]
+        vr = ValidationResult(
+            is_valid=False,
+            errors=["param X not in schema"],
+            parameter_schema=schema,
+        )
+        assert vr.parameter_schema == schema
+        assert vr.is_valid is False
+
+    def test_ut_hapi_524_062_parameter_schema_defaults_to_none(self):
+        """UT-HAPI-524-062: parameter_schema is None when not provided."""
+        from src.validation.workflow_response_validator import ValidationResult
+
+        vr = ValidationResult(is_valid=True)
+        assert vr.parameter_schema is None

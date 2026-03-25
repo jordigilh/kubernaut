@@ -13,9 +13,9 @@
 # limitations under the License.
 
 """
-Tests for get_resource_context tool -- label detection + one-shot reassessment.
+Tests for get_namespaced_resource_context / get_cluster_resource_context -- label detection + one-shot reassessment.
 
-ADR-056 v1.4 Phase 1: get_resource_context computes DetectedLabels for the
+ADR-056 v1.4 Phase 1: get_namespaced_resource_context / get_cluster_resource_context compute DetectedLabels for the
 RCA target resource (post-RCA) and stores them in session_state. When active
 labels are detected, includes detected_infrastructure in the response for
 LLM RCA reassessment. Second calls resolve context for revised targets but
@@ -129,13 +129,13 @@ def _make_mock_k8s(owner_chain=None):
 
 
 class TestResourceContextLabelDetection:
-    """UT-HAPI-056-034 through 042: get_resource_context computes labels for RCA target."""
+    """UT-HAPI-056-034 through 042: get_namespaced_resource_context / get_cluster_resource_context compute labels for RCA target."""
 
     @pytest.mark.asyncio
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_hapi_056_034_writes_detected_labels_to_session_state(self, mock_detector_cls):
         """UT-HAPI-056-034: Labels computed post-RCA are stored in session_state."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
@@ -159,7 +159,7 @@ class TestResourceContextLabelDetection:
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_hapi_056_035_writes_sentinel_on_none_detection(self, mock_detector_cls):
         """UT-HAPI-056-035: {} sentinel when LabelDetector returns None."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.return_value = None
@@ -181,7 +181,7 @@ class TestResourceContextLabelDetection:
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_hapi_056_036_preserves_return_behavior(self, mock_detector_cls):
         """UT-HAPI-056-036: root_owner + history always present in response."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
@@ -209,7 +209,7 @@ class TestResourceContextLabelDetection:
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_hapi_056_037_pod_deployment_chain_labels(self, mock_detector_cls):
         """UT-HAPI-056-037: Pod->RS->Deployment chain produces correct labels."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
@@ -231,7 +231,7 @@ class TestResourceContextLabelDetection:
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_hapi_056_038_deployment_only_chain_labels(self, mock_detector_cls):
         """UT-HAPI-056-038: Deployment-only chain produces correct labels."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.return_value = LABELS_HELM_MANAGED
@@ -252,7 +252,7 @@ class TestResourceContextLabelDetection:
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_hapi_056_039_statefulset_chain_labels(self, mock_detector_cls):
         """UT-HAPI-056-039: StatefulSet in owner chain produces stateful=true."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.return_value = LABELS_STATEFUL
@@ -273,7 +273,7 @@ class TestResourceContextLabelDetection:
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_hapi_056_040_namespace_metadata_none_fallback(self, mock_detector_cls):
         """UT-HAPI-056-040: Namespace metadata None does not crash detection."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.return_value = LABELS_ALL_DEFAULTS
@@ -296,7 +296,7 @@ class TestResourceContextLabelDetection:
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_hapi_056_041_label_detector_exception_writes_sentinel(self, mock_detector_cls):
         """UT-HAPI-056-041: LabelDetector exception writes {} sentinel, tool succeeds."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.side_effect = RuntimeError("detection failed")
@@ -319,7 +319,7 @@ class TestResourceContextLabelDetection:
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_hapi_056_042_no_session_state_no_crash(self, mock_detector_cls):
         """UT-HAPI-056-042: No session_state provided, detection runs without crash."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
@@ -344,7 +344,7 @@ class TestResourceContextRootOwnerCapture:
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_br_496_001_root_owner_stored_in_session_state(self, mock_detector_cls):
         """UT-BR-496-001: root_owner written to session_state after resolve_owner_chain."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.return_value = (LABELS_ALL_DEFAULTS, None)
@@ -368,7 +368,7 @@ class TestResourceContextRootOwnerCapture:
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_br_496_002_root_owner_last_write_wins(self, mock_detector_cls):
         """UT-BR-496-002: Second call overwrites root_owner (last-write-wins)."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.return_value = (LABELS_ALL_DEFAULTS, None)
@@ -393,7 +393,7 @@ class TestResourceContextRootOwnerCapture:
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_br_496_003_no_session_state_no_root_owner_crash(self, mock_detector_cls):
         """UT-BR-496-003: No session_state provided, root_owner not stored, no crash."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.return_value = (LABELS_ALL_DEFAULTS, None)
@@ -416,7 +416,7 @@ class TestResourceContextReassessment:
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_hapi_056_090_active_labels_include_detected_infrastructure(self, mock_detector_cls):
         """UT-HAPI-056-090: Active labels trigger detected_infrastructure in response."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
@@ -447,7 +447,7 @@ class TestResourceContextReassessment:
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_hapi_056_091_all_default_labels_omit_detected_infrastructure(self, mock_detector_cls):
         """UT-HAPI-056-091: All-default labels omit detected_infrastructure."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.return_value = LABELS_ALL_DEFAULTS
@@ -472,7 +472,7 @@ class TestResourceContextReassessment:
     @patch("src.detection.labels.LabelDetector")
     async def test_ut_hapi_056_092_second_call_skips_redetection(self, mock_detector_cls):
         """UT-HAPI-056-092: Second call skips label re-detection and omits detected_infrastructure."""
-        from toolsets.resource_context import GetResourceContextTool
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
