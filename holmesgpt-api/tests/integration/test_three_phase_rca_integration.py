@@ -36,41 +36,34 @@ Tests:
   IT-529-E-001:   Shared retry budget exhaustion when Phase 1 never provides affectedResource
 """
 
+import contextlib
 import json
 import pytest
-from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 _LLM = "src.extensions.incident.llm_integration"
 _CFG = "src.extensions.llm_config"
 
+# ---------------------------------------------------------------------------
+# Lightweight stand-ins (avoid Holmes SDK import chain on Python 3.14)
+# ---------------------------------------------------------------------------
+
+VALID_AFFECTED_RESOURCE = {"kind": "Pod", "name": "api-xyz", "namespace": "prod"}
+_ROOT_OWNER = {"kind": "Deployment", "name": "api", "namespace": "prod"}
+
 
 @dataclass
 class FakeInvestigationResult:
-    """Lightweight stand-in for holmes.core.models.InvestigationResult.
-
-    Avoids importing the full Holmes SDK which triggers a Pydantic V1
-    failure on Python 3.14 when SDK_CONFIG_FILE is set (integration conftest).
-    """
+    """Stand-in for holmes.core.models.InvestigationResult."""
     analysis: Optional[str] = None
     sections: Optional[Dict[str, Any]] = None
 
 
-# ---------------------------------------------------------------------------
-# Shared fixtures and helpers
-# ---------------------------------------------------------------------------
-
-VALID_AFFECTED_RESOURCE = {"kind": "Pod", "name": "api-xyz", "namespace": "prod"}
-
-
 @dataclass
 class FakeEnrichmentResult:
-    """Lightweight stand-in for EnrichmentResult.
-
-    Avoids importing src.extensions.incident.enrichment_service which triggers
-    the package __init__.py → llm_integration → Holmes SDK import chain.
-    """
+    """Stand-in for src.extensions.incident.enrichment_service.EnrichmentResult."""
     root_owner: Optional[Dict[str, str]] = None
     detected_labels: Optional[Dict[str, Any]] = None
     remediation_history: Optional[Dict[str, Any]] = None
@@ -83,36 +76,25 @@ class FakeEnrichmentFailure(Exception):
     detail: str = ""
 
 
-def _enrichment_result():
-    return FakeEnrichmentResult(
-        root_owner={"kind": "Deployment", "name": "api", "namespace": "prod"},
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+def _enrichment_result(**overrides):
+    defaults = dict(
+        root_owner=_ROOT_OWNER,
         detected_labels={"pdbProtected": True, "gitOpsManaged": False},
         remediation_history={"entries": []},
     )
+    defaults.update(overrides)
+    return FakeEnrichmentResult(**defaults)
 
 
-def _enrichment_with_labels():
-    return FakeEnrichmentResult(
-        root_owner={"kind": "Deployment", "name": "api", "namespace": "prod"},
-        detected_labels={
-            "pdbProtected": True,
-            "gitOpsManaged": True,
-            "gitOpsTool": "argocd",
-            "helmManaged": False,
-        },
-        remediation_history={"entries": [{"workflow": "scale-up", "outcome": "success"}]},
-    )
-
-
-def _make_incident_request(
-    incident_id: str = "inc-it-529",
-    signal_name: str = "OOMKill",
-    remediation_id: str = "rem-it-529",
-) -> dict:
+def _make_incident_request(incident_id: str = "inc-it-529") -> dict:
     return {
         "incident_id": incident_id,
-        "remediation_id": remediation_id,
-        "signal_name": signal_name,
+        "remediation_id": f"rem-{incident_id}",
+        "signal_name": "OOMKill",
         "severity": "critical",
         "signal_source": "prometheus",
         "resource_namespace": "prod",
@@ -129,7 +111,6 @@ def _make_incident_request(
 
 
 def _phase1_analysis_json(affected_resource=None):
-    """Build a Phase 1 analysis JSON string."""
     rca = {"summary": "OOM detected due to traffic spike", "severity": "critical"}
     if affected_resource:
         rca["affectedResource"] = affected_resource
@@ -137,7 +118,6 @@ def _phase1_analysis_json(affected_resource=None):
 
 
 def _phase3_analysis_json(workflow_id="oom-recovery-v1", confidence=0.92):
-    """Build a Phase 3 analysis JSON string with workflow selection."""
     return json.dumps({
         "root_cause_analysis": {"summary": "OOM detected"},
         "selected_workflow": {
@@ -156,17 +136,30 @@ def _phase3_analysis_json(workflow_id="oom-recovery-v1", confidence=0.92):
     })
 
 
-import contextlib
+def _phase_router(phase1_result, phase3_result):
+    """Return a mock_investigate that routes by investigate_request.context['phase']."""
+    def mock_investigate(investigate_request, dal, config):
+        phase = investigate_request.context.get("phase")
+        return phase1_result if phase == 1 else phase3_result
+    return mock_investigate
+
+
+def _valid_parse_return(phase3_json_str: str):
+    """Build the (result_dict, validation) tuple returned by parse_and_validate."""
+    return (
+        json.loads(phase3_json_str),
+        MagicMock(is_valid=True, errors=[], parameter_schema=None, schema_hint=None),
+    )
 
 
 @contextlib.contextmanager
 def _patched_analyze(investigate_fn, enrich_fn, parse_return):
-    """Context manager that patches all external boundaries for analyze_incident.
+    """Patch all external boundaries and yield analyze_incident ready to call.
 
-    Args:
-        investigate_fn: Side effect for investigate_issues (LLM boundary)
-        enrich_fn: Async callable for EnrichmentService.enrich
-        parse_return: Tuple (result_dict, validation_mock) for parse_and_validate
+    Usage::
+
+        with _patched_analyze(inv_fn, enrich_fn, parse_ret) as analyze:
+            result = await analyze(request, app_config={})
     """
     with patch(f"{_LLM}.get_audit_store") as mock_audit, \
          patch(f"{_LLM}.create_data_storage_client", return_value=None), \
@@ -183,7 +176,9 @@ def _patched_analyze(investigate_fn, enrich_fn, parse_return):
         mock_audit.return_value = MagicMock()
         MockES.return_value.enrich = enrich_fn
         mock_parse.return_value = parse_return
-        yield
+
+        from src.extensions.incident.llm_integration import analyze_incident
+        yield analyze_incident
 
 
 # ===========================================================================
@@ -202,59 +197,30 @@ class TestThreePhaseFlowIntegration:
 
     @pytest.mark.asyncio
     async def test_it_529_261_001_full_three_phase_flow(self):
-        """IT-529-261-001: Full Phase 1 → 2 → 3 flow produces valid result.
-
-        Given: Phase 1 returns valid affectedResource
-          And: EnrichmentService returns root_owner, labels, history
-          And: Phase 3 selects a workflow
-        When: analyze_incident runs
-        Then: Result contains selected_workflow with TARGET_RESOURCE from root_owner
-          And: Result contains detected_labels from enrichment
-          And: EnrichmentService was called with Phase 1's affectedResource
-        """
-        phase1_result = FakeInvestigationResult(
-            analysis=_phase1_analysis_json(VALID_AFFECTED_RESOURCE),
-        )
-        phase3_result = FakeInvestigationResult(
-            analysis=_phase3_analysis_json(),
-        )
+        phase1 = FakeInvestigationResult(analysis=_phase1_analysis_json(VALID_AFFECTED_RESOURCE))
+        phase3 = FakeInvestigationResult(analysis=_phase3_analysis_json())
 
         enrich_called_with = []
 
-        async def mock_enrich(affected_resource):
+        async def tracking_enrich(affected_resource):
             enrich_called_with.append(affected_resource)
             return _enrichment_result()
 
-        def mock_investigate(investigate_request, dal, config):
-            phase = investigate_request.context.get("phase")
-            return phase1_result if phase == 1 else phase3_result
-
-        parse_return = (
-            json.loads(phase3_result.analysis),
-            MagicMock(is_valid=True, errors=[], parameter_schema=None, schema_hint=None),
-        )
-
-        with _patched_analyze(mock_investigate, mock_enrich, parse_return):
-            from src.extensions.incident.llm_integration import analyze_incident
-            result = await analyze_incident(
-                _make_incident_request(incident_id="inc-it-261-001"),
-                app_config={},
-            )
+        with _patched_analyze(
+            _phase_router(phase1, phase3), tracking_enrich, _valid_parse_return(phase3.analysis),
+        ) as analyze:
+            result = await analyze(_make_incident_request("inc-it-261-001"), app_config={})
 
         assert result is not None, "analyze_incident must return a result"
         assert result.get("selected_workflow") is not None, "Phase 3 must select a workflow"
         assert result["selected_workflow"]["workflow_id"] == "oom-recovery-v1"
 
         params = result["selected_workflow"].get("parameters", {})
-        assert params.get("TARGET_RESOURCE_KIND") == "Deployment", (
-            "TARGET_RESOURCE_KIND must come from EnrichmentResult.root_owner"
-        )
-        assert params.get("TARGET_RESOURCE_NAME") == "api", (
-            "TARGET_RESOURCE_NAME must come from EnrichmentResult.root_owner"
-        )
+        assert params.get("TARGET_RESOURCE_KIND") == "Deployment"
+        assert params.get("TARGET_RESOURCE_NAME") == "api"
         assert params.get("TARGET_RESOURCE_NAMESPACE") == "prod"
 
-        assert len(enrich_called_with) == 1, "EnrichmentService.enrich must be called once"
+        assert len(enrich_called_with) == 1, "EnrichmentService.enrich called once"
         assert enrich_called_with[0] == VALID_AFFECTED_RESOURCE
 
 
@@ -271,54 +237,30 @@ class TestConversationContinuityIntegration:
 
     @pytest.mark.asyncio
     async def test_it_529_263_001_phase1_analysis_in_phase3_prompt(self):
-        """IT-529-263-001: Phase 1 analysis text present in Phase 3 prompt.
+        phase1 = FakeInvestigationResult(analysis=_phase1_analysis_json(VALID_AFFECTED_RESOURCE))
+        phase3 = FakeInvestigationResult(analysis=_phase3_analysis_json())
 
-        Given: Phase 1 returns analysis with specific RCA text
-        When: Phase 3 investigation prompt is constructed
-        Then: Phase 3 prompt contains the Phase 1 analysis text
-          And: Phase 3 prompt contains the enrichment context
-        """
-        phase1_text = "OOM detected due to traffic spike"
-        phase1_result = FakeInvestigationResult(
-            analysis=_phase1_analysis_json(VALID_AFFECTED_RESOURCE),
-        )
-        phase3_result = FakeInvestigationResult(
-            analysis=_phase3_analysis_json(),
-        )
+        captured_prompts = []
 
-        captured_phase3_prompts = []
-
-        def mock_investigate(investigate_request, dal, config):
+        def capturing_investigate(investigate_request, dal, config):
             phase = investigate_request.context.get("phase")
             if phase == 3:
-                captured_phase3_prompts.append(investigate_request.description)
-            return phase1_result if phase == 1 else phase3_result
+                captured_prompts.append(investigate_request.description)
+            return phase1 if phase == 1 else phase3
 
-        mock_enrich = AsyncMock(return_value=_enrichment_result())
-        parse_return = (
-            json.loads(phase3_result.analysis),
-            MagicMock(is_valid=True, errors=[], parameter_schema=None, schema_hint=None),
-        )
+        with _patched_analyze(
+            capturing_investigate,
+            AsyncMock(return_value=_enrichment_result()),
+            _valid_parse_return(phase3.analysis),
+        ) as analyze:
+            await analyze(_make_incident_request("inc-it-263-001"), app_config={})
 
-        with _patched_analyze(mock_investigate, mock_enrich, parse_return):
-            from src.extensions.incident.llm_integration import analyze_incident
-            await analyze_incident(
-                _make_incident_request(incident_id="inc-it-263-001"),
-                app_config={},
-            )
+        assert len(captured_prompts) >= 1, "Phase 3 prompt must be captured"
+        prompt = captured_prompts[0]
 
-        assert len(captured_phase3_prompts) >= 1, "Phase 3 prompt must be captured"
-        prompt = captured_phase3_prompts[0]
-
-        assert "Phase 1 Root Cause Analysis" in prompt, (
-            "Phase 3 prompt must contain the Phase 1 RCA section header"
-        )
-        assert phase1_text in prompt, (
-            "Phase 3 prompt must contain Phase 1 analysis content"
-        )
-        assert "Enrichment Context" in prompt or "enrichment" in prompt.lower(), (
-            "Phase 3 prompt must contain enrichment context"
-        )
+        assert "Phase 1 Root Cause Analysis" in prompt
+        assert "OOM detected due to traffic spike" in prompt
+        assert "Enrichment Context" in prompt or "enrichment" in prompt.lower()
 
 
 # ===========================================================================
@@ -328,44 +270,31 @@ class TestConversationContinuityIntegration:
 class TestEnrichmentLabelsIntegration:
     """IT-529-264-001: Post-RCA label detection via EnrichmentService.
 
-    Verifies that labels from EnrichmentService are:
-    1. Written to session_state["detected_labels"] for Phase 3 tools
-    2. Present in the final response via inject_detected_labels
+    Verifies that labels from EnrichmentService are present in the final
+    response via inject_detected_labels.
     """
 
     @pytest.mark.asyncio
     async def test_it_529_264_001_enrichment_labels_in_response(self):
-        """IT-529-264-001: Enrichment labels populate response detected_labels.
+        phase1 = FakeInvestigationResult(analysis=_phase1_analysis_json(VALID_AFFECTED_RESOURCE))
+        phase3 = FakeInvestigationResult(analysis=_phase3_analysis_json())
 
-        Given: EnrichmentService returns labels (pdbProtected=true, gitOpsManaged=true)
-        When: analyze_incident completes the three-phase flow
-        Then: Result contains detected_labels from enrichment
-          And: Labels include pdbProtected and gitOpsManaged
-        """
-        phase1_result = FakeInvestigationResult(
-            analysis=_phase1_analysis_json(VALID_AFFECTED_RESOURCE),
-        )
-        phase3_result = FakeInvestigationResult(
-            analysis=_phase3_analysis_json(),
-        )
-
-        mock_enrich = AsyncMock(return_value=_enrichment_with_labels())
-
-        def mock_investigate(investigate_request, dal, config):
-            phase = investigate_request.context.get("phase")
-            return phase1_result if phase == 1 else phase3_result
-
-        parse_return = (
-            json.loads(phase3_result.analysis),
-            MagicMock(is_valid=True, errors=[], parameter_schema=None, schema_hint=None),
+        enrichment = _enrichment_result(
+            detected_labels={
+                "pdbProtected": True,
+                "gitOpsManaged": True,
+                "gitOpsTool": "argocd",
+                "helmManaged": False,
+            },
+            remediation_history={"entries": [{"workflow": "scale-up", "outcome": "success"}]},
         )
 
-        with _patched_analyze(mock_investigate, mock_enrich, parse_return):
-            from src.extensions.incident.llm_integration import analyze_incident
-            result = await analyze_incident(
-                _make_incident_request(incident_id="inc-it-264-001"),
-                app_config={},
-            )
+        with _patched_analyze(
+            _phase_router(phase1, phase3),
+            AsyncMock(return_value=enrichment),
+            _valid_parse_return(phase3.analysis),
+        ) as analyze:
+            result = await analyze(_make_incident_request("inc-it-264-001"), app_config={})
 
         assert result is not None
         labels = result.get("detected_labels")
@@ -389,47 +318,28 @@ class TestEnrichmentFailureIntegration:
 
     @pytest.mark.asyncio
     async def test_it_529_265_001_enrichment_failure_produces_rca_incomplete(self):
-        """IT-529-265-001: EnrichmentService failure produces rca_incomplete.
+        phase1 = FakeInvestigationResult(analysis=_phase1_analysis_json(VALID_AFFECTED_RESOURCE))
 
-        Given: Phase 1 returns valid affectedResource
-          And: EnrichmentService raises EnrichmentFailure (infrastructure down)
-        When: analyze_incident runs
-        Then: Result has needs_human_review=True
-          And: Result has human_review_reason=rca_incomplete
-          And: Result has no selected_workflow
-        """
-        phase1_result = FakeInvestigationResult(
-            analysis=_phase1_analysis_json(VALID_AFFECTED_RESOURCE),
-        )
-
-        async def mock_enrich_fail(affected_resource):
+        async def failing_enrich(affected_resource):
             raise FakeEnrichmentFailure(
                 reason="k8s_api_unreachable",
                 detail="Failed to resolve owner chain after 3 retries",
             )
-
-        def mock_investigate(investigate_request, dal, config):
-            return phase1_result
 
         parse_return = (
             {"root_cause_analysis": {"summary": "OOM"}},
             MagicMock(is_valid=True, errors=[], parameter_schema=None, schema_hint=None),
         )
 
-        with _patched_analyze(mock_investigate, mock_enrich_fail, parse_return):
-            from src.extensions.incident.llm_integration import analyze_incident
-            result = await analyze_incident(
-                _make_incident_request(incident_id="inc-it-265-001"),
-                app_config={},
-            )
+        def phase1_only(investigate_request, dal, config):
+            return phase1
+
+        with _patched_analyze(phase1_only, failing_enrich, parse_return) as analyze:
+            result = await analyze(_make_incident_request("inc-it-265-001"), app_config={})
 
         assert result is not None
-        assert result.get("needs_human_review") is True, (
-            "Enrichment failure must trigger human review"
-        )
-        assert result.get("human_review_reason") == "rca_incomplete", (
-            "Enrichment failure reason must be rca_incomplete"
-        )
+        assert result.get("needs_human_review") is True
+        assert result.get("human_review_reason") == "rca_incomplete"
 
 
 # ===========================================================================
@@ -446,24 +356,13 @@ class TestRetryBudgetExhaustionIntegration:
 
     @pytest.mark.asyncio
     async def test_it_529_e_001_budget_exhaustion_produces_rca_incomplete(self):
-        """IT-529-E-001: Shared retry budget exhaustion → rca_incomplete.
+        phase1_no_ar = FakeInvestigationResult(analysis=_phase1_analysis_json())
 
-        Given: Phase 1 never returns affectedResource (all 3 attempts)
-        When: analyze_incident exhausts the retry budget
-        Then: Result has needs_human_review=True
-          And: Result has human_review_reason=rca_incomplete
-          And: Result has selected_workflow=None
-          And: EnrichmentService was never called
-        """
-        phase1_no_ar = FakeInvestigationResult(
-            analysis=_phase1_analysis_json(affected_resource=None),
-        )
+        call_count = 0
 
-        investigate_count = 0
-
-        def mock_investigate(investigate_request, dal, config):
-            nonlocal investigate_count
-            investigate_count += 1
+        def counting_investigate(investigate_request, dal, config):
+            nonlocal call_count
+            call_count += 1
             return phase1_no_ar
 
         mock_enrich = AsyncMock(return_value=_enrichment_result())
@@ -472,22 +371,14 @@ class TestRetryBudgetExhaustionIntegration:
             MagicMock(is_valid=True, errors=[], parameter_schema=None, schema_hint=None),
         )
 
-        with _patched_analyze(mock_investigate, mock_enrich, parse_return):
-            from src.extensions.incident.llm_integration import analyze_incident
-            result = await analyze_incident(
-                _make_incident_request(incident_id="inc-it-529-e-001"),
-                app_config={},
-            )
+        with _patched_analyze(counting_investigate, mock_enrich, parse_return) as analyze:
+            result = await analyze(_make_incident_request("inc-it-529-e-001"), app_config={})
 
         assert result is not None, "Must return a result even on budget exhaustion"
-        assert result.get("needs_human_review") is True, (
-            "Budget exhaustion must trigger human review"
-        )
+        assert result.get("needs_human_review") is True
         assert result.get("human_review_reason") == "rca_incomplete"
-        assert result.get("selected_workflow") is None, (
-            "No workflow when Phase 1 never provided affectedResource"
-        )
-        assert investigate_count == 3, (
-            f"Expected 3 Phase 1 attempts (MAX_VALIDATION_ATTEMPTS), got {investigate_count}"
+        assert result.get("selected_workflow") is None
+        assert call_count == 3, (
+            f"Expected 3 Phase 1 attempts (MAX_VALIDATION_ATTEMPTS), got {call_count}"
         )
         mock_enrich.assert_not_awaited()
