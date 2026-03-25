@@ -45,46 +45,21 @@ Architecture:
       3. After step 2 result → Return get_workflow tool call
       4. After step 3 result → Return final analysis with selected workflow
 
-    #529 THREE-PHASE RCA ARCHITECTURE (PENDING REFACTOR):
-    =====================================================
-    The current mock implements a SINGLE LLM call that produces both RCA and
-    workflow selection in one response. Issue #529 redesigns this into three
-    HAPI-driven phases with TWO separate LLM calls:
-
+    #529 Three-Phase RCA Architecture:
       Phase 1 (LLM call 1 - RCA):
         - HAPI sends investigation prompt with all tools available
-        - LLM optionally calls resource context tools (informational, no side effects)
+        - LLM optionally calls resource context tools (informational)
         - LLM returns RCA + affectedResource (NO workflow selection)
-        - Mock must detect Phase 1 and return RCA-only response
+        - Mock detects Phase 1 via absence of enrichment context markers
 
       Phase 2 (HAPI-driven - no LLM):
         - EnrichmentService resolves owner chain, detects labels, fetches history
-        - Not relevant to mock LLM
 
       Phase 3 (LLM call 2 - Workflow Selection):
         - HAPI sends enrichment context + Phase 1 messages as previous_messages
-        - LLM calls workflow discovery tools (list_available_actions, list_workflows, get_workflow)
+        - LLM calls workflow discovery tools
         - LLM returns workflow selection (NO RCA)
-        - Mock must detect Phase 3 by presence of enrichment context in prompt
-
-    EXPECTED REGRESSIONS (current mock vs required behavior):
-    ---------------------------------------------------------
-    REG-1: _handle_openai_request routes to single-phase discovery flow.
-           Must detect Phase 1 vs Phase 3 and route differently.
-
-    REG-2: _discovery_tool_call_response always sequences RC tools then workflow
-           tools. Phase 1 should only use RC tools (optional), Phase 3 should
-           only use workflow discovery tools.
-
-    REG-3: _final_analysis_response always returns RCA + selected_workflow
-           together. Phase 1 must return RCA + affectedResource only.
-           Phase 3 must return selected_workflow only (RCA already provided).
-
-    REG-4: _has_remediation_history_tool is dead code (BR-260 dropped).
-           Must be removed.
-
-    REG-5: _count_tool_results docstring references 5-step flow with
-           get_remediation_history. Must be updated for 3-phase protocol.
+        - Mock detects Phase 3 via enrichment context markers in prompt
 """
 
 import json
@@ -292,7 +267,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_namespace="production",
         rca_resource_name="ambiguous-pod",
         rca_resource_api_version="v1",
-        include_affected_resource=False,  # BR-496 v2: now the default — HAPI injects from root_owner
+        include_affected_resource=False,  # #529: LLM fails to provide affectedResource in Phase 1
         # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
         # Schema: NAMESPACE (required), POD_NAME (required)
         parameters={"NAMESPACE": "production", "POD_NAME": "ambiguous-pod"}
@@ -912,20 +887,6 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         for tool in tools:
             func = tool.get("function", {})
             if func.get("name") in rc_names:
-                return True
-        return False
-
-    @staticmethod
-    def _has_remediation_history_tool(tools: List[Dict[str, Any]]) -> bool:
-        """Check if the tools list includes get_remediation_history.
-
-        #529 BR-HAPI-260: When HAPI registers the dedicated history tool,
-        the mock must call it so session_state["queried_history_resources"]
-        is populated for BR-HAPI-262 verification.
-        """
-        for tool in tools:
-            func = tool.get("function", {})
-            if func.get("name") == "get_remediation_history":
                 return True
         return False
 
