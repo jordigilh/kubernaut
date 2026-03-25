@@ -27,7 +27,7 @@
 //
 // ADR-056: DetectedLabels and OwnerChain removed from EnrichmentResults.
 // DetectedLabels are now computed by HAPI post-RCA (see PostRCAContext).
-// OwnerChain is resolved by HAPI via get_resource_context tool (ADR-055).
+// OwnerChain is resolved by HAPI via get_namespaced_resource_context / get_cluster_resource_context (ADR-055).
 //
 // Design Decision: DD-WORKFLOW-001 v2.2, DD-CONTRACT-002
 // See: docs/architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md

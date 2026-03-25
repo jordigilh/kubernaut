@@ -792,7 +792,7 @@ _Appears in:_
 
 | Field| Type| Description|
 | ---| ---| ---|
-| `detectedLabels`| _DetectedLabels_| DetectedLabels contains cluster characteristics computed by HAPI's<br />LabelDetector during the get_resource_context tool invocation.|
+| `detectedLabels`| _DetectedLabels_| DetectedLabels contains cluster characteristics computed by HAPI's<br />LabelDetector during get_namespaced_resource_context or get_cluster_resource_context tool invocations.|
 | `setAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| SetAt records when the PostRCAContext was populated.<br />Used as the immutability guard: once SetAt is non-nil, the entire<br />PostRCAContext becomes immutable via CEL validation.|
 
 

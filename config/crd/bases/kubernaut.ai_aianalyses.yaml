@@ -708,7 +708,7 @@ spec:
                   detectedLabels:
                     description: |-
                       DetectedLabels contains cluster characteristics computed by HAPI's
-                      LabelDetector during the get_resource_context tool invocation.
+                      LabelDetector during get_namespaced_resource_context or get_cluster_resource_context tool invocations.
                     properties:
                       failedDetections:
                         description: |-

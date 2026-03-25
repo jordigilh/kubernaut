@@ -38,7 +38,7 @@ import (
 // BR-496 v2: HAPI-Owned Target Resource Identity E2E Tests
 //
 // Validates that HAPI (not the LLM) owns the target resource identity:
-//   - affectedResource is derived from get_resource_context's root_owner
+//   - affectedResource is derived from get_namespaced_resource_context's root_owner
 //   - TARGET_RESOURCE_* params are injected by HAPI into workflow parameters
 //   - The mock LLM does NOT provide affectedResource (proving HAPI injection)
 //
@@ -202,7 +202,7 @@ var _ = Describe("HAPI-Owned Target Resource [BR-496]", func() {
 
 		ar := aa.Status.RootCauseAnalysis.AffectedResource
 
-		// The memory-eater is a Deployment. get_resource_context resolves the
+		// The memory-eater is a Deployment. get_namespaced_resource_context resolves the
 		// owner chain: Pod → ReplicaSet → Deployment ("memory-eater").
 		// HAPI's _inject_target_resource copies root_owner into affectedResource.
 		Expect(ar.Kind).To(Equal("Deployment"),

@@ -648,8 +648,8 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             # Backward compatibility: return text response
             return self._text_response(scenario, request_data)
 
-        # DD-HAPI-017 + ADR-056 v1.4: Discovery protocol with optional resource context
-        # When get_resource_context is available, run it first (4-step flow);
+        # DD-HAPI-017 + ADR-056 v1.4 + #524: Discovery protocol with resource context.
+        # When a resource context tool is available, run it first (4-step flow);
         # otherwise fall back to the original 3-step flow.
         if self._has_three_step_tools(tools):
             has_rc = self._has_resource_context_tool(tools)
@@ -663,7 +663,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 return self._final_analysis_response(scenario, request_data)
             else:
                 return self._discovery_tool_call_response(
-                    scenario, request_data, tool_result_count, has_rc
+                    scenario, request_data, tool_result_count, has_rc, tools
                 )
 
         # Legacy two-phase flow (search_workflow_catalog)
@@ -827,18 +827,30 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
 
     def _has_resource_context_tool(self, tools: List[Dict[str, Any]]) -> bool:
         """
-        Check if the tools list includes get_resource_context.
+        Check if the tools list includes a resource context tool.
 
-        ADR-056 v1.4: When HAPI registers the resource context toolset,
-        the tools list will include 'get_resource_context'. The mock must
-        call it before workflow discovery so that HAPI populates
-        session_state["detected_labels"].
+        #524: Accepts both get_namespaced_resource_context and
+        get_cluster_resource_context (renamed from get_resource_context).
         """
+        rc_names = {"get_resource_context", "get_namespaced_resource_context", "get_cluster_resource_context"}
         for tool in tools:
             func = tool.get("function", {})
-            if func.get("name") == "get_resource_context":
+            if func.get("name") in rc_names:
                 return True
         return False
+
+    def _pick_resource_context_tool_name(self, tools: List[Dict[str, Any]]) -> str:
+        """Pick the resource context tool name registered by HAPI.
+
+        #524: Prefer get_namespaced_resource_context (new name), fall back to
+        get_resource_context (old name) for backward compatibility.
+        """
+        tool_names = {t.get("function", {}).get("name", "") for t in tools}
+        if "get_namespaced_resource_context" in tool_names:
+            return "get_namespaced_resource_context"
+        if "get_resource_context" in tool_names:
+            return "get_resource_context"
+        return "get_namespaced_resource_context"
 
     def _extract_resource_from_messages(
         self, messages: List[Dict[str, Any]], scenario: "MockScenario"
@@ -931,15 +943,16 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         request_data: Dict[str, Any],
         step: int,
         has_resource_context: bool,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Generate the next tool call in the discovery sequence.
 
-        ADR-056 v1.4 + DD-HAPI-017: When has_resource_context is True, use a
-        4-step flow that calls get_resource_context first so HAPI populates
-        session_state["detected_labels"]:
+        ADR-056 v1.4 + DD-HAPI-017 + #524: When has_resource_context is True,
+        use a 4-step flow that calls the resource context tool first so HAPI
+        populates session_state["detected_labels"] and root_owner:
 
-          Step 0: get_resource_context  (ADR-056 v1.4)
+          Step 0: get_namespaced_resource_context (or get_cluster_resource_context)
           Step 1: list_available_actions
           Step 2: list_workflows
           Step 3: get_workflow
@@ -963,7 +976,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         effective_step = step - 1 if has_resource_context else step
 
         if has_resource_context and step == 0:
-            # ADR-056 v1.4: Call get_resource_context first.
+            # ADR-056 v1.4 + #524: Call resource context tool first.
             # BR-496: When rca_override_prompt_resource is set, the LLM's RCA
             # targets a different resource than the one in the prompt (e.g., a
             # Certificate CRD instead of the Pod that fired the alert). Use the
@@ -976,7 +989,8 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 kind, name, namespace = self._extract_resource_from_messages(
                     messages, scenario
                 )
-            tool_name = "get_resource_context"
+            # #524: Emit the correct tool name based on what HAPI registered.
+            tool_name = self._pick_resource_context_tool_name(tools or [])
             tool_args = {"kind": kind, "name": name, "namespace": namespace}
             logger.info(
                 f"🔧 Discovery Step 0 (ADR-056): {tool_name}"
