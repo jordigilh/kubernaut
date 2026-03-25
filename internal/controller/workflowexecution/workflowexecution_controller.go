@@ -419,22 +419,34 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	// Prevents duplicate audit events when concurrent reconciles don't yet see a recently-created resource in cache.
 	resourceName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 	resourceExists := false
-	var resourceGetErr error
 	switch wfe.Status.ExecutionEngine {
 	case "job":
 		existingJob := &batchv1.Job{}
-		resourceGetErr = r.APIReader.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingJob)
-	default: // "tekton"
+		err := r.APIReader.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingJob)
+		if err == nil {
+			resourceExists = true
+		} else if apierrors.IsNotFound(err) && wfe.Status.ExecutionRef != nil {
+			logger.Error(err, "Execution resource not found - deleted externally during Pending phase",
+				"engine", wfe.Status.ExecutionEngine)
+			return r.MarkFailed(ctx, wfe, nil)
+		}
+	case "tekton":
 		existingPR := &tektonv1.PipelineRun{}
-		resourceGetErr = r.APIReader.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingPR)
-	}
-	if resourceGetErr == nil {
-		resourceExists = true
-	} else if apierrors.IsNotFound(resourceGetErr) && wfe.Status.ExecutionRef != nil {
-		// INT-EXTERN-02: Execution resource was deleted externally after we created it
-		logger.Error(resourceGetErr, "Execution resource not found - deleted externally during Pending phase",
+		err := r.APIReader.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingPR)
+		if err == nil {
+			resourceExists = true
+		} else if apierrors.IsNotFound(err) && wfe.Status.ExecutionRef != nil {
+			logger.Error(err, "Execution resource not found - deleted externally during Pending phase",
+				"engine", wfe.Status.ExecutionEngine)
+			return r.MarkFailed(ctx, wfe, nil)
+		}
+	case "ansible":
+		// AWX manages jobs externally — no K8s resource to check.
+		// Use ExecutionRef as the idempotency signal.
+		resourceExists = wfe.Status.ExecutionRef != nil
+	default:
+		logger.Info("Unknown engine for existence check, skipping audit guard",
 			"engine", wfe.Status.ExecutionEngine)
-		return r.MarkFailed(ctx, wfe, nil)
 	}
 
 	if !resourceExists {
@@ -697,7 +709,8 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 	if r.ExecutorRegistry != nil {
 		exec, execErr := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
 		if execErr != nil {
-			exec, _ = r.ExecutorRegistry.Get("tekton") // Fallback
+			logger.Error(execErr, "Unknown engine during cooldown cleanup, skipping",
+				"engine", wfe.Status.ExecutionEngine)
 		}
 		if exec != nil {
 			if err := exec.Cleanup(ctx, wfe, r.ExecutionNamespace); err != nil {
@@ -834,8 +847,8 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 	if r.ExecutorRegistry != nil {
 		exec, execErr := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
 		if execErr != nil {
-			logger.Error(execErr, "Unknown engine during cleanup, falling back to Tekton cleanup")
-			exec, _ = r.ExecutorRegistry.Get("tekton")
+			logger.Error(execErr, "Unknown engine during finalization cleanup, skipping executor cleanup",
+				"engine", wfe.Status.ExecutionEngine)
 		}
 		if exec != nil {
 			logger.Info("Cleaning up execution resource",
