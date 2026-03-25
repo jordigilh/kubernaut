@@ -817,6 +817,15 @@ async def analyze_incident(
                 data_storage_client=data_storage_client
             )
 
+            # #529: Phase 3 only returns workflow selection — the parser produces
+            # an empty/minimal root_cause_analysis.  Merge the Phase 1 RCA so the
+            # final response contains summary/severity/contributingFactors.
+            if rca_data:
+                phase3_rca = result.get("root_cause_analysis", {})
+                merged_rca = dict(rca_data)
+                merged_rca.update({k: v for k, v in phase3_rca.items() if v})
+                result["root_cause_analysis"] = merged_rca
+
             workflow_id = result.get("selected_workflow", {}).get("workflow_id") if result.get("selected_workflow") else None
             is_valid = validation_result is None or validation_result.is_valid
             validation_errors = validation_result.errors if validation_result and not validation_result.is_valid else []
