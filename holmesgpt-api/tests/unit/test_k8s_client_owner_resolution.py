@@ -17,7 +17,7 @@ Tests for K8s client spec hash computation.
 
 ADR-055: resolve_root_owner tests removed (pre-computation superseded by
 LLM-driven context enrichment). compute_spec_hash tests retained (reused
-by get_resource_context tool).
+by get_namespaced_resource_context / get_cluster_resource_context).
 
 Test Plan:
 - UT-K8S-006: compute_spec_hash delegates to canonical_spec_hash

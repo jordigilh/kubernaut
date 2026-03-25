@@ -15,7 +15,7 @@
 """
 Tests for workflow discovery label consumption from session_state.
 
-ADR-056 v1.4: Labels are computed by get_resource_context and stored in
+ADR-056 v1.4: Labels are computed by get_namespaced_resource_context / get_cluster_resource_context and stored in
 session_state["detected_labels"]. Workflow discovery tools read from
 session_state rather than computing labels themselves.
 
@@ -59,7 +59,7 @@ class TestDiscoveryReadsSessionState:
 
     @patch("src.toolsets.workflow_discovery.requests.get")
     def test_ut_hapi_056_043_reads_labels_from_session_state(self, mock_get):
-        """UT-HAPI-056-043: list_available_actions reads labels populated by get_resource_context."""
+        """UT-HAPI-056-043: list_available_actions reads labels populated by get_namespaced_resource_context / get_cluster_resource_context."""
         from src.toolsets.workflow_discovery import ListAvailableActionsTool
 
         mock_get.return_value = Mock(

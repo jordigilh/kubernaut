@@ -13,9 +13,9 @@
 # limitations under the License.
 
 """
-Tests for get_resource_context tool and resolve_owner_chain.
+Tests for get_namespaced_resource_context / get_cluster_resource_context (resource_context toolset) and resolve_owner_chain.
 
-ADR-055: The LLM calls get_resource_context after RCA to fetch remediation
+ADR-055: The LLM calls get_namespaced_resource_context / get_cluster_resource_context after RCA to fetch remediation
 context. The tool internally resolves the owner chain and spec hash, then
 returns only the root owner identity and remediation history to the LLM.
 

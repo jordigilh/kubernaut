@@ -324,7 +324,7 @@ def register_workflow_discovery_toolset(
     set once at toolset creation and propagated to all three tools as query
     parameters for the DS security gate (DD-HAPI-017).
 
-    ADR-056 v1.4: Labels are now detected by get_resource_context and stored
+    ADR-056 v1.4: Labels are now detected by get_namespaced_resource_context / get_cluster_resource_context and stored
     in session_state. Workflow discovery reads them from session_state.
 
     Args:
@@ -338,7 +338,7 @@ def register_workflow_discovery_toolset(
         environment: Namespace-derived environment (production/staging/development)
         priority: Severity-mapped priority (P0/P1/P2/P3)
         session_state: Shared mutable dict for inter-tool communication (ADR-056 v1.4).
-            Labels are populated by get_resource_context and consumed by discovery tools.
+            Labels are populated by get_namespaced_resource_context / get_cluster_resource_context and consumed by discovery tools.
 
     Returns:
         The same Config instance with workflow discovery registered via monkey-patch
@@ -449,7 +449,7 @@ def register_resource_context_toolset(
     ADR-055: LLM-Driven Context Enrichment (Post-RCA)
     ADR-056 v1.4: DetectedLabels computation for the RCA target resource.
 
-    After RCA, the LLM calls get_resource_context to fetch owner chain,
+    After RCA, the LLM calls get_namespaced_resource_context / get_cluster_resource_context to fetch owner chain,
     spec hash, remediation history, and infrastructure labels for the
     identified target resource.
 

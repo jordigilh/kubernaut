@@ -17,7 +17,7 @@ Lightweight Kubernetes client for HAPI spec hash computation and resource access
 
 ADR-055: Pre-computation of root owner from owner chain removed. Context
 enrichment (owner chain resolution, spec hash, remediation history) is now
-performed post-RCA by the LLM via the get_resource_context tool.
+performed post-RCA by the LLM via get_namespaced_resource_context / get_cluster_resource_context.
 
 Design Decisions:
 - DD-EM-002: Canonical spec hash cross-language compatibility
@@ -254,7 +254,7 @@ class K8sResourceClient:
     ) -> Optional[Dict[str, Any]]:
         """Async GET of namespace labels and annotations.
 
-        ADR-056: Used by get_resource_context to build k8s_context for
+        ADR-056: Used by get_namespaced_resource_context to build k8s_context for
         LabelDetector. Returns dict with 'labels' and 'annotations' keys,
         or None on error.
         """

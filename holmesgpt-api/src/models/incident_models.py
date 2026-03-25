@@ -51,7 +51,7 @@ class HumanReviewReason(str, Enum):
     # Use when LLM couldn't determine root cause or current state
     INVESTIGATION_INCONCLUSIVE = "investigation_inconclusive"
     # BR-496 v2: root_owner missing from session_state — HAPI cannot derive
-    # affectedResource or TARGET_RESOURCE_* without get_resource_context result.
+    # affectedResource or TARGET_RESOURCE_* without get_namespaced_resource_context / get_cluster_resource_context result.
     RCA_INCOMPLETE = "rca_incomplete"
 
 
@@ -205,7 +205,7 @@ class EnrichmentResults(BaseModel):
     used for workflow filtering and LLM context.
 
     ADR-056: detectedLabels removed -- now computed by HAPI post-RCA via LabelDetector.
-    ADR-055: ownerChain removed -- resolved by HAPI via get_resource_context tool.
+    ADR-055: ownerChain removed -- resolved by HAPI via get_namespaced_resource_context / get_cluster_resource_context (resource_context toolset).
 
     Design Decision: DD-HAPI-001
 

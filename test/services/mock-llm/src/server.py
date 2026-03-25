@@ -792,14 +792,14 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         DD-HAPI-017 + ADR-056 v1.4: Used by the discovery protocol to
         determine which step we're on.
 
-        4-step flow (with get_resource_context):
-          0 tool results → get_resource_context (ADR-056)
+        4-step flow (with get_namespaced_resource_context / get_cluster_resource_context):
+          0 tool results → get_namespaced_resource_context or get_cluster_resource_context (ADR-056)
           1 tool result  → list_available_actions
           2 tool results → list_workflows
           3 tool results → get_workflow
           4+ tool results → final analysis
 
-        3-step flow (without get_resource_context):
+        3-step flow (without resource context tools):
           0 tool results → list_available_actions
           1 tool result  → list_workflows
           2 tool results → get_workflow
@@ -859,7 +859,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         Extract resource identity (kind, name, namespace) from prompt messages.
 
         ADR-056 v1.4: The mock needs the actual resource coordinates to pass
-        to get_resource_context. HAPI's prompt_builder formats the resource as:
+        to get_namespaced_resource_context. HAPI's prompt_builder formats the resource as:
           "Resource: {namespace}/{kind}/{name}"
         If not found, fall back to scenario defaults.
 
@@ -898,9 +898,9 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         messages: List[Dict[str, Any]],
     ) -> Optional[Dict[str, str]]:
         """
-        Parse get_resource_context tool results for the root_owner field.
+        Parse get_namespaced_resource_context / get_cluster_resource_context tool results for the root_owner field.
 
-        ADR-056: A real LLM uses the root_owner returned by get_resource_context
+        ADR-056: A real LLM uses the root_owner returned by get_namespaced_resource_context / get_cluster_resource_context
         (e.g., Pod→Deployment) as the affectedResource. The mock must do the same
         so the RCA contains the correct owner rather than the raw signaling Pod.
         """
@@ -967,7 +967,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             scenario: The detected MockScenario
             request_data: Original request data
             step: Current step index (tool result count)
-            has_resource_context: Whether get_resource_context is available
+            has_resource_context: Whether get_namespaced_resource_context / get_cluster_resource_context (or legacy get_resource_context) is available
         """
         call_id = f"call_{uuid.uuid4().hex[:12]}"
         messages = request_data.get("messages", [])
@@ -1145,7 +1145,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             actual_kind, actual_name, actual_ns = self._extract_resource_from_messages(
                 messages, scenario
             )
-            # ADR-056: Prefer root_owner from get_resource_context tool result.
+            # ADR-056: Prefer root_owner from get_namespaced_resource_context / get_cluster_resource_context tool result.
             # A real LLM uses root_owner (Pod→Deployment) as affectedResource;
             # without this the mock returns the raw Pod from the prompt.
             root_owner = self._extract_root_owner_from_tool_results(messages)
@@ -1155,7 +1155,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 if root_owner.get("namespace"):
                     actual_ns = root_owner["namespace"]
                 logger.info(
-                    f"📍 ADR-056: Using root_owner from get_resource_context: "
+                    f"📍 ADR-056: Using root_owner from get_namespaced_resource_context / get_cluster_resource_context: "
                     f"{actual_kind}/{actual_name} in {actual_ns}"
                 )
             # DD-EM-004: When rca_override_prompt_resource is set, the LLM identifies

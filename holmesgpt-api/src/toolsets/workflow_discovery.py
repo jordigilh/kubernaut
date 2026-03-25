@@ -44,7 +44,7 @@ Audit Trail:
   - remediation_id passed via query param for correlation
 
 Label Detection (ADR-056 v1.4):
-  DetectedLabels are computed by get_resource_context (resource_context.py)
+  DetectedLabels are computed by get_namespaced_resource_context / get_cluster_resource_context (resource_context.py)
   for the RCA target resource and stored in session_state["detected_labels"].
   All three discovery tools read the cached labels from session_state for
   workflow filtering. Discovery tools do not compute labels themselves.
@@ -402,7 +402,7 @@ class _DiscoveryToolBase(Tool):
         object.__setattr__(self, "_detected_labels", detected_labels)
 
         # ADR-056 v1.4: Shared session state for inter-tool communication.
-        # Labels are detected by get_resource_context and stored in session_state.
+        # Labels are detected by get_namespaced_resource_context / get_cluster_resource_context and stored in session_state.
         object.__setattr__(self, "_session_state", session_state)
 
     def _build_context_params(self) -> Dict[str, Any]:
@@ -415,7 +415,7 @@ class _DiscoveryToolBase(Tool):
         strip_failed_detections applied before sending).
 
         ADR-056 v1.4: detected_labels are read from session_state["detected_labels"],
-        populated by get_resource_context (see resource_context.py).
+        populated by get_namespaced_resource_context / get_cluster_resource_context (see resource_context.py).
 
         NOTE: severity, component, environment, and priority are ALWAYS included
         because the DS OpenAPI spec declares them as required: true. Omitting any
@@ -432,7 +432,7 @@ class _DiscoveryToolBase(Tool):
             params["custom_labels"] = json.dumps(self._custom_labels)
 
         # ADR-056 v1.4: Read detected_labels from session_state (populated
-        # by get_resource_context). Failed detections are
+        # by get_namespaced_resource_context / get_cluster_resource_context). Failed detections are
         # stripped, then default/false values are excluded because DS
         # filters only need positive signals (True, non-empty string).
         if self._session_state and "detected_labels" in self._session_state:
@@ -947,7 +947,7 @@ class WorkflowDiscoveryToolset(Toolset):
                          calls (DD-AUTH-005). If None, falls back to unauthenticated
                          requests.get().
             session_state: Shared mutable dict for inter-tool communication (ADR-056 v1.4).
-                Labels are populated by get_resource_context and read by discovery tools.
+                Labels are populated by get_namespaced_resource_context / get_cluster_resource_context and read by discovery tools.
         """
         shared_kwargs = dict(
             remediation_id=remediation_id,
