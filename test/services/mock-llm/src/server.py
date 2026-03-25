@@ -673,46 +673,81 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         self._send_json_response(response)
 
 
+    def _is_phase3_request(self, messages: List[Dict[str, Any]]) -> bool:
+        """Detect if this is a Phase 3 (workflow selection) request.
+
+        #529: Phase 3 requests contain enrichment context from HAPI's
+        EnrichmentService. Detect by looking for enrichment markers in the
+        prompt that Phase 1 investigation prompts never contain.
+        """
+        for msg in messages:
+            content = str(msg.get("content", "")).lower()
+            if any(marker in content for marker in [
+                "enrichment context",
+                "enrichmentresult",
+                "resolved root owner",
+                "select a workflow",
+                "workflow selection",
+            ]):
+                return True
+        return False
+
     def _handle_openai_request(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate OpenAI-compatible response with tool call support."""
+        """Generate OpenAI-compatible response with tool call support.
+
+        #529: Routes to the appropriate protocol based on phase detection:
+        - Phase 3 (enrichment context present): workflow discovery flow
+        - Phase 1 (no enrichment context): RCA + affectedResource flow
+        - Legacy (search_workflow_catalog): backward compatible two-phase
+        """
         messages = request_data.get("messages", [])
         tools = request_data.get("tools", [])
 
-        # Detect scenario from prompt content
         scenario = self._detect_scenario(messages)
 
-        # Check if this is a tool result (multi-turn)
-        has_tool_result = self._has_tool_result(messages)
-
-        # Determine response type
         if self.force_text_response or not tools:
-            # Backward compatibility: return text response
             return self._text_response(scenario, request_data)
 
-        # DD-HAPI-017 + ADR-056 v1.4 + #524: Discovery protocol with resource context.
-        # When a resource context tool is available, run it first (4-step flow);
-        # otherwise fall back to the original 3-step flow.
+        # #529: Three-phase protocol detection
         if self._has_three_step_tools(tools):
-            has_rc = self._has_resource_context_tool(tools)
-            total_steps = 4 if has_rc else 3
+            is_phase3 = self._is_phase3_request(messages)
             tool_result_count = self._count_tool_results(messages)
-            logger.info(
-                f"🔍 Discovery protocol ({total_steps}-step): "
-                f"{tool_result_count} tool results so far"
-            )
-            if tool_result_count >= total_steps:
-                return self._final_analysis_response(scenario, request_data)
-            else:
-                return self._discovery_tool_call_response(
-                    scenario, request_data, tool_result_count, has_rc, tools
+
+            if is_phase3:
+                # Phase 3: Workflow selection with enrichment context.
+                # Skip resource context tools — go straight to workflow discovery.
+                logger.info(
+                    f"🔍 Phase 3 (workflow selection): "
+                    f"{tool_result_count} tool results so far"
                 )
+                if tool_result_count >= 3:
+                    return self._phase3_workflow_response(scenario, request_data)
+                else:
+                    return self._discovery_tool_call_response(
+                        scenario, request_data, tool_result_count,
+                        has_resource_context=False, tools=tools
+                    )
+            else:
+                # Phase 1: RCA investigation.
+                # Optionally call resource context tools, then return RCA-only.
+                has_rc = self._has_resource_context_tool(tools)
+                logger.info(
+                    f"🔍 Phase 1 (RCA): "
+                    f"{tool_result_count} tool results, has_rc={has_rc}"
+                )
+                if has_rc and tool_result_count == 0:
+                    return self._discovery_tool_call_response(
+                        scenario, request_data, 0,
+                        has_resource_context=True, tools=tools
+                    )
+                else:
+                    return self._phase1_rca_response(scenario, request_data)
 
         # Legacy two-phase flow (search_workflow_catalog)
+        has_tool_result = self._has_tool_result(messages)
         if has_tool_result:
-            # Phase 2: After tool result → return final analysis
             return self._final_analysis_response(scenario, request_data)
         else:
-            # Phase 1: Initial request → return tool call
             return self._tool_call_response(scenario, request_data)
 
     def _detect_scenario(self, messages: List[Dict[str, Any]]) -> MockScenario:
@@ -830,35 +865,21 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         """
         Count the number of tool result messages in the conversation.
 
-        DD-HAPI-017 + ADR-056 v1.4: Used by the discovery protocol to
-        determine which step we're on.
+        #529 Three-phase protocol:
 
-        #529 REGRESSION: When BR-HAPI-260 is implemented, HAPI registers
-        get_remediation_history as a tool. Without a 5-step flow that calls
-        this tool, session_state["queried_history_resources"] will be empty
-        and BR-HAPI-262 verification will reject every RCA with
-        history_not_queried. Must extend to 5-step flow.
+        Phase 1 (RCA) — optional resource context tools:
+          0 tool results → get_namespaced_resource_context / get_cluster_resource_context
+          1+ tool results → Phase 1 RCA response (affectedResource, no workflow)
 
-        5-step flow (with resource context + history tools, #529):
-          0 tool results → get_namespaced_resource_context or get_cluster_resource_context
-          1 tool result  → get_remediation_history (#529)
-          2 tool results → list_available_actions
-          3 tool results → list_workflows
-          4 tool results → get_workflow
-          5+ tool results → final analysis
-
-        4-step flow (with get_namespaced_resource_context / get_cluster_resource_context):
-          0 tool results → get_namespaced_resource_context or get_cluster_resource_context (ADR-056)
-          1 tool result  → list_available_actions
-          2 tool results → list_workflows
-          3 tool results → get_workflow
-          4+ tool results → final analysis
-
-        3-step flow (without resource context tools):
+        Phase 3 (Workflow Selection) — workflow discovery tools:
           0 tool results → list_available_actions
           1 tool result  → list_workflows
           2 tool results → get_workflow
-          3+ tool results → final analysis
+          3+ tool results → Phase 3 workflow response
+
+        Legacy 4-step flow (backward compatible, single-phase):
+          0 → resource_context, 1 → list_available_actions,
+          2 → list_workflows, 3 → get_workflow, 4+ → final analysis
         """
         count = 0
         for msg in messages:
@@ -1188,8 +1209,203 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             }
         }
 
+    def _phase1_rca_response(self, scenario: MockScenario, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate Phase 1 response: RCA + affectedResource only (no workflow).
+
+        #529: In the three-phase architecture, Phase 1 produces only the root
+        cause analysis and the affected resource. Workflow selection happens
+        in Phase 3 after HAPI's EnrichmentService provides owner resolution,
+        labels, and history.
+        """
+        messages = request_data.get("messages", [])
+
+        analysis_json: Dict[str, Any] = {
+            "root_cause_analysis": {
+                "summary": scenario.root_cause,
+                "severity": scenario.severity,
+                "signal_name": scenario.signal_name,
+                "contributing_factors": scenario.contributing_factors if scenario.contributing_factors else ["identified_by_mock_llm"],
+            },
+            "confidence": scenario.confidence,
+        }
+
+        if scenario.include_affected_resource:
+            actual_kind, actual_name, actual_ns = self._extract_resource_from_messages(
+                messages, scenario
+            )
+            root_owner = self._extract_root_owner_from_tool_results(messages)
+            if root_owner:
+                actual_kind = root_owner.get("kind", actual_kind)
+                actual_name = root_owner.get("name", actual_name)
+                if root_owner.get("namespace"):
+                    actual_ns = root_owner["namespace"]
+            if scenario.rca_override_prompt_resource:
+                actual_kind = scenario.rca_resource_kind
+                actual_name = scenario.rca_resource_name
+                if not actual_ns:
+                    actual_ns = scenario.rca_resource_namespace
+            affected_resource: Dict[str, str] = {
+                "kind": actual_kind,
+                "name": actual_name,
+            }
+            if scenario.rca_resource_api_version:
+                affected_resource["apiVersion"] = scenario.rca_resource_api_version
+            if actual_ns:
+                affected_resource["namespace"] = actual_ns
+            analysis_json["root_cause_analysis"]["affectedResource"] = affected_resource
+
+        # Handle special investigation outcomes
+        if scenario.name in ("problem_resolved", "problem_resolved_contradiction"):
+            analysis_json["investigation_outcome"] = "resolved"
+            analysis_json["can_recover"] = False
+            if scenario.needs_human_review_override is not None:
+                analysis_json["needs_human_review"] = scenario.needs_human_review_override
+
+        # Phase 1: No selected_workflow, no alternative_workflows
+        content = f"""Based on my investigation of the {scenario.signal_name} signal:
+
+# root_cause_analysis
+{json.dumps(analysis_json["root_cause_analysis"])}
+
+# confidence
+{analysis_json["confidence"]}
+"""
+        if "investigation_outcome" in analysis_json:
+            content += f"""
+# investigation_outcome
+{json.dumps(analysis_json.get("investigation_outcome"))}
+
+# can_recover
+{json.dumps(analysis_json.get("can_recover", False))}
+"""
+        if analysis_json.get("needs_human_review") is not None:
+            content += f"""
+# needs_human_review
+{json.dumps(analysis_json["needs_human_review"])}
+"""
+
+        logger.info(f"📤 PHASE 1 RESPONSE - Scenario: {scenario.name}, RCA only (no workflow)")
+
+        return {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            "object": "chat.completion",
+            "created": 1701388800,
+            "model": request_data.get("model", "mock-model"),
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": content,
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 600,
+                "completion_tokens": 150,
+                "total_tokens": 750,
+            },
+        }
+
+    def _phase3_workflow_response(self, scenario: MockScenario, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate Phase 3 response: workflow selection only (RCA already provided).
+
+        #529: Phase 3 receives enrichment context (resolved root owner, labels,
+        history) and Phase 1 conversation as previous_messages. Returns only the
+        workflow selection.
+        """
+        if not scenario.workflow_id:
+            analysis_json: Dict[str, Any] = {
+                "selected_workflow": None,
+                "needs_human_review": True,
+                "human_review_reason": "no_matching_workflows",
+            }
+        elif scenario.name == "low_confidence":
+            analysis_json = {
+                "selected_workflow": {
+                    "workflow_id": scenario.workflow_id,
+                    "title": scenario.workflow_title,
+                    "version": "1.0.0",
+                    "confidence": scenario.confidence,
+                    "rationale": "Multiple possible causes identified, confidence is low",
+                    "execution_engine": scenario.execution_engine,
+                    "parameters": scenario.parameters,
+                },
+                "alternative_workflows": [
+                    {
+                        "workflow_id": "d3c95ea1-66cb-6bf2-c59e-7dd27f1fec6d",
+                        "title": "Alternative Diagnostic Workflow",
+                        "confidence": 0.28,
+                        "rationale": "Alternative approach for ambiguous root cause",
+                    }
+                ],
+                "needs_human_review": False,
+                "human_review_reason": None,
+            }
+        else:
+            analysis_json = {
+                "selected_workflow": {
+                    "workflow_id": scenario.workflow_id,
+                    "title": scenario.workflow_title,
+                    "version": "1.0.0",
+                    "confidence": scenario.confidence,
+                    "rationale": f"Selected based on {scenario.signal_name} signal analysis",
+                    "execution_engine": scenario.execution_engine,
+                    "parameters": scenario.parameters,
+                },
+                "alternative_workflows": [
+                    {
+                        "workflow_id": "alt-manual-investigation",
+                        "title": "Manual Investigation",
+                        "confidence": 0.30,
+                        "rationale": "Operator-driven investigation as fallback approach",
+                    }
+                ],
+                "needs_human_review": False,
+                "human_review_reason": None,
+            }
+
+        content = f"""Based on the enrichment context and workflow catalog:
+
+# selected_workflow
+{json.dumps(analysis_json.get("selected_workflow"))}
+
+# alternative_workflows
+{json.dumps(analysis_json.get("alternative_workflows", []))}
+
+# needs_human_review
+{json.dumps(analysis_json.get("needs_human_review", False))}
+
+# human_review_reason
+{json.dumps(analysis_json.get("human_review_reason"))}
+"""
+        logger.info(f"📤 PHASE 3 RESPONSE - Scenario: {scenario.name}, workflow selection only")
+
+        return {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            "object": "chat.completion",
+            "created": 1701388800,
+            "model": request_data.get("model", "mock-model"),
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": content,
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 900,
+                "completion_tokens": 200,
+                "total_tokens": 1100,
+            },
+        }
+
     def _final_analysis_response(self, scenario: MockScenario, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate final analysis response after tool result (Phase 2)."""
+        """Generate final analysis response after tool result (legacy single-phase flow)."""
         messages = request_data.get("messages", [])
 
         # Build the analysis content
