@@ -37,7 +37,7 @@
 
 - **LLM-provided `affectedResource` parsing** (`result_parser.py`): `_parse_affected_resource()` extracts and validates two structure types — namespaced `{kind, name, namespace}` and cluster `{kind, name}`.
 - **EnrichmentService** (`enrichment_service.py` NEW): HAPI-driven Phase 2 service that takes parsed `affectedResource`, resolves K8s owner chain to root owner, detects infrastructure labels, fetches remediation history from DataStorage, and returns an `EnrichmentResult`. Retries infrastructure calls with exponential backoff (3 retries, 1s/2s/4s). Fails hard with `rca_incomplete` after retry exhaustion.
-- **Conversation continuity** (`investigation.py`, `models.py`, `tool_calling_llm.py`, `llm_integration.py`): Holmes SDK `investigate_issues` accepts `previous_messages`, returns `messages` on `InvestigationResult`. Phase 1 messages flow to Phase 3 via `previous_messages` for full conversation context.
+- **Conversation continuity** (`llm_integration.py`): Phase 1 RCA analysis text is captured and injected into the Phase 3 prompt as a "Phase 1 Root Cause Analysis" section. This gives the LLM full RCA context for workflow selection without requiring SDK modifications.
 - **Three-phase orchestration** (`llm_integration.py`): Phase 1 (RCA + affectedResource validation), Phase 2 (EnrichmentService), Phase 3 (workflow selection with enrichment context). Shared retry budget: `MAX_VALIDATION_ATTEMPTS = 3` across all phases.
 - **Resource context tool refactor** (`resource_context.py`): Strip `session_state` writes (`root_owner`, `resource_scope`, `detected_labels`). `_detect_labels_if_needed` still runs and returns `detected_infrastructure` to LLM but no longer writes to session_state. Tools are purely informational in Phase 1.
 - **Target resource injection update** (`llm_integration.py`): `_inject_target_resource` rewired to accept `EnrichmentResult.root_owner` instead of reading `session_state["root_owner"]`.
@@ -90,8 +90,8 @@ Every BR covered by at least Unit + Integration tests.
 | `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Phase 1 prompt (affectedResource instructions), Phase 3 prompt (enrichment context + workflow selection) | ~40 |
 | `holmesgpt-api/src/toolsets/resource_context.py` | Strip session_state writes, keep label detection return | ~30 |
 | `holmesgpt-api/src/toolsets/workflow_discovery.py` | Labels in `list_available_actions` response format | ~20 |
-| `dependencies/holmesgpt/holmes/core/investigation.py` | `previous_messages` parameter, messages in result | ~15 |
-| `dependencies/holmesgpt/holmes/core/models.py` | `InvestigationResult.messages` field | ~5 |
+| ~~`dependencies/holmesgpt/holmes/core/investigation.py`~~ | ~~SDK changes reverted — prompt-based continuity instead~~ | 0 |
+| ~~`dependencies/holmesgpt/holmes/core/models.py`~~ | ~~SDK changes reverted — no `messages` field needed~~ | 0 |
 
 **Total unit-testable**: ~440 lines new/modified
 
@@ -116,10 +116,9 @@ Every BR covered by at least Unit + Integration tests.
 | `UT-HAPI-261-004` | BR-HAPI-261 | Parser rejects `affectedResource` with wrong type (string instead of object) |
 | `UT-HAPI-261-005` | BR-HAPI-261 | Parser returns `None` when `affectedResource` absent from RCA response |
 | `UT-HAPI-261-006` | BR-HAPI-261 | `_inject_target_resource` uses `EnrichmentResult.root_owner` for conditional `TARGET_RESOURCE_*` injection |
-| `UT-HAPI-263-001` | BR-HAPI-263 | SDK `investigate_issues(previous_messages=...)` accepts and seeds conversation |
-| `UT-HAPI-263-002` | BR-HAPI-263 | SDK `InvestigationResult` includes full `messages` list from LLM conversation |
-| `UT-HAPI-263-003` | BR-HAPI-263 | HAPI threads Phase 1 messages to Phase 3 via `previous_messages` |
-| `UT-HAPI-263-004` | BR-HAPI-263 | First attempt passes `None` for `previous_messages` (no prior context); SDK behaves identically to current |
+| `UT-HAPI-263-001` | BR-HAPI-263 | Phase 3 prompt includes Phase 1 analysis text (prompt-based continuity) |
+| `UT-HAPI-263-002` | BR-HAPI-263 | Phase 1 analysis text persists across Phase 3 validation retries |
+| `UT-HAPI-263-003` | BR-HAPI-263 | Phase 3 prompt contains Phase 1 RCA section header and content |
 | `UT-HAPI-264-001` | BR-HAPI-264 | EnrichmentService detects labels for resolved root owner in Phase 2 |
 | `UT-HAPI-265-001` | BR-HAPI-265 | `list_available_actions` response includes detected infrastructure labels from EnrichmentService |
 | `UT-HAPI-265-002` | BR-HAPI-265 | Phase 3 prompt includes detected labels in enrichment context |
@@ -151,10 +150,10 @@ Every BR covered by at least Unit + Integration tests.
 |----|------|----------|------------|---------------|
 | R1 | `_inject_target_resource` temporarily broken between G4 (strip writes) and G5 (rewire to EnrichmentResult) | HIGH | G4 REFACTOR seeds `session_state` in existing injection tests as bridge; G5 GREEN rewires signature. Do NOT run E2E between CP5 and CP6. | `UT-HAPI-261-006`: validates EnrichmentResult injection |
 | R2 | ~22 existing tests depend on `session_state` writes from resource context tools | HIGH | G4 RED inventories all affected tests. G4 REFACTOR updates them: invert write assertions, keep return-value assertions. | `UT-529-RC-001/002/003`: validate stripped writes |
-| R3 | SDK backward compatibility — `previous_messages` may break existing callers | HIGH | Parameter is optional (defaults to `None`); `messages` in `InvestigationResult` is additive (new field) | `UT-HAPI-263-004`: validates `None` default |
+| R3 | ~~SDK backward compatibility~~ (RESOLVED — SDK changes reverted; prompt-based continuity has no backward compat risk) | LOW | No SDK changes; Phase 1 analysis injected into Phase 3 prompt at HAPI layer only | `UT-HAPI-263-001/002/003`: validate prompt injection |
 | R4 | LLM reliability — may not provide `affectedResource` or provide wrong structure | HIGH | Shared retry budget (3 attempts across phases); fail with `rca_incomplete` on exhaustion | `UT-HAPI-261-003/004/005`: invalid/missing parsing; `IT-HAPI-261-001`: full flow |
 | R5 | EnrichmentService infrastructure failures (K8s API, DS) | MEDIUM | Exponential backoff retries (3 retries, 1s/2s/4s); fail hard after exhaustion | `UT-529-E-003/004/005`: retry and fail-hard behavior; `IT-529-E-001`: integration retry |
-| R6 | Context window overflow — long conversations across Phase 1 -> Phase 3 | MEDIUM | Holmes SDK `ToolCallingLLM.call()` already has message truncation logic | `UT-HAPI-263-003`: validates message threading |
+| R6 | Context window overflow — Phase 1 analysis added to Phase 3 prompt | MEDIUM | Phase 1 analysis is typically concise (< 2K tokens); LLM context window is ample | `UT-HAPI-263-001`: validates prompt injection |
 | R7 | Regression on existing deployment-scoped flows | HIGH | Existing E2E tests remain green; resource context tools still available | Existing E2E suite (OOM, crashloop, rollback) |
 | R8 | DD-HAPI-016 version mismatch (test plan cited v1.3, actual v1.1) | LOW | Fixed in this version of test plan | N/A |
 
@@ -168,10 +167,10 @@ Tests are organized into 8 dependency-ordered TDD groups. Each group follows RED
 
 - `test/services/mock-llm/src/server.py`: Refactor for 3-phase protocol — Phase 1 returns RCA + `affectedResource` (no workflow), Phase 3 returns workflow selection given enrichment context. Remove `_has_remediation_history_tool` (BR-260 dropped).
 
-### Group 1: SDK Conversation Continuity (BR-HAPI-263 SDK)
+### Group 1: Prompt-Based Conversation Continuity (BR-HAPI-263)
 
-- Tests: UT-263-001, UT-263-002, UT-263-004
-- Files: `models.py`, `investigation.py`, `tool_calling_llm.py`
+- Tests: UT-263-001, UT-263-002
+- Files: `llm_integration.py` (Phase 1 analysis injected into Phase 3 prompt; no SDK changes)
 
 ### Group 2: affectedResource Parsing (BR-HAPI-261)
 
@@ -232,7 +231,7 @@ All 27 test scenarios have defined business outcomes (section 4). Risk-mitigatio
 - **Unit**: 22 scenarios covering ~440 lines of unit-testable code -> target >=80%
 - **Integration**: 5 scenarios covering three-phase loop, EnrichmentService wiring, and cross-component flow -> target >=80%
 - **2-Tier Minimum**: Every active BR covered by at least Unit + Integration
-- **Risk tests**: UT-529-E-003/004/005 (retry/fail-hard), UT-529-RC-001/002 (stripped writes), UT-HAPI-263-004 (backward compat)
+- **Risk tests**: UT-529-E-003/004/005 (retry/fail-hard), UT-529-RC-001/002 (stripped writes), UT-HAPI-263-001/002 (prompt-based continuity)
 
 ---
 

@@ -69,7 +69,6 @@ class TestEnrichmentLabelsInWorkflowDiscovery:
                     "affectedResource": {"kind": "Pod", "name": "api-xyz", "namespace": "prod"},
                 },
             }),
-            messages=[{"role": "assistant", "content": "RCA done"}],
         )
         phase3_result = InvestigationResult(
             analysis=json.dumps({
@@ -84,15 +83,13 @@ class TestEnrichmentLabelsInWorkflowDiscovery:
                     "parameters": {"MEMORY_LIMIT_NEW": "512Mi"},
                 },
             }),
-            messages=[],
         )
 
         captured_session_state = {}
 
-        def mock_investigate(investigate_request, dal, config, previous_messages=None):
-            if previous_messages is None:
-                return phase1_result
-            return phase3_result
+        def mock_investigate(investigate_request, dal, config):
+            phase = investigate_request.context.get("phase")
+            return phase1_result if phase == 1 else phase3_result
 
         mock_enrich = AsyncMock(return_value=ENRICHMENT_WITH_LABELS)
 
@@ -147,7 +144,6 @@ class TestEnrichmentLabelsInWorkflowDiscovery:
                     "affectedResource": {"kind": "Pod", "name": "api-xyz", "namespace": "prod"},
                 },
             }),
-            messages=[{"role": "assistant", "content": "RCA done"}],
         )
         phase3_result = InvestigationResult(
             analysis=json.dumps({
@@ -162,17 +158,15 @@ class TestEnrichmentLabelsInWorkflowDiscovery:
                     "parameters": {"MEMORY_LIMIT_NEW": "512Mi"},
                 },
             }),
-            messages=[],
         )
 
         phase3_prompts = []
 
-        def mock_investigate(investigate_request, dal, config, previous_messages=None):
-            if previous_messages is not None:
+        def mock_investigate(investigate_request, dal, config):
+            phase = investigate_request.context.get("phase")
+            if phase == 3:
                 phase3_prompts.append(investigate_request.description)
-            if previous_messages is None:
-                return phase1_result
-            return phase3_result
+            return phase1_result if phase == 1 else phase3_result
 
         mock_enrich = AsyncMock(return_value=ENRICHMENT_WITH_LABELS)
 

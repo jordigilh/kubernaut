@@ -637,7 +637,6 @@ async def analyze_incident(
                     investigate_request=investigation_request,
                     dal=dal,
                     config=config,
-                    previous_messages=None,
                 )
 
                 audit_llm_response_and_tools(audit_store, incident_id, remediation_id, phase1_result)
@@ -656,7 +655,7 @@ async def analyze_incident(
                     })
                     continue
 
-                phase1_messages = getattr(phase1_result, "messages", None)
+                phase1_analysis = phase1_result.analysis if phase1_result else None
 
                 # ─── PHASE 2: Enrichment (HAPI-driven) ───
                 logger.info({
@@ -692,18 +691,22 @@ async def analyze_incident(
                     session_state["detected_labels"] = enrichment_result_obj.detected_labels
 
             # ─── PHASE 3: Workflow Selection ───
+            phase1_context = ""
+            if phase1_analysis:
+                phase1_context = f"\n\n## Phase 1 Root Cause Analysis\n{phase1_analysis}\n"
+
             enrichment_context = _build_enrichment_context(enrichment_result_obj)
             if pending_mismatch_feedback is not None:
-                investigation_prompt = base_prompt + enrichment_context + pending_mismatch_feedback
+                investigation_prompt = base_prompt + phase1_context + enrichment_context + pending_mismatch_feedback
                 pending_mismatch_feedback = None
             elif validation_errors_history:
-                investigation_prompt = base_prompt + enrichment_context + build_validation_error_feedback(
+                investigation_prompt = base_prompt + phase1_context + enrichment_context + build_validation_error_feedback(
                     validation_errors_history[-1],
                     attempt,
                     schema_hint=last_schema_hint,
                 )
             else:
-                investigation_prompt = base_prompt + enrichment_context
+                investigation_prompt = base_prompt + phase1_context + enrichment_context
 
             logger.info({
                 "event": "phase3_workflow_selection_started",
@@ -736,7 +739,6 @@ async def analyze_incident(
                 investigate_request=phase3_request,
                 dal=dal,
                 config=config,
-                previous_messages=phase1_messages,
             )
 
             audit_llm_response_and_tools(audit_store, incident_id, remediation_id, phase3_investigation_result)

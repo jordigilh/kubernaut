@@ -15,68 +15,197 @@
 """
 Unit tests for BR-HAPI-263: Conversation Continuity.
 
-TDD Group 1: SDK-level conversation continuity.
-Tests that the Holmes SDK supports threading messages across
-investigation calls for the #529 three-phase RCA architecture.
+TDD Group 1: Prompt-based conversation continuity.
+Tests that Phase 1 RCA analysis text is carried forward into the Phase 3
+prompt so the LLM has full context for workflow selection.
+
+Implementation: Phase 1 analysis is injected as a "Phase 1 Root Cause
+Analysis" section in the Phase 3 prompt (no SDK changes required).
 """
 
+import json
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
-from typing import List, Dict, Optional
 
-from holmes.core.models import InvestigationResult, InvestigateRequest
+from holmes.core.models import InvestigationResult
+from src.extensions.incident.enrichment_service import EnrichmentResult
+
+_P = "src.extensions.llm_config"
+_LLM = "src.extensions.incident.llm_integration"
+
+VALID_AFFECTED_RESOURCE = {"kind": "Pod", "name": "api-xyz", "namespace": "prod"}
+
+ENRICHMENT_RESULT = EnrichmentResult(
+    root_owner={"kind": "Deployment", "name": "api", "namespace": "prod"},
+    detected_labels={"component": "backend"},
+    remediation_history={"entries": []},
+)
+
+PHASE1_ANALYSIS = json.dumps({
+    "root_cause_analysis": {
+        "summary": "OOM detected in pod api-xyz due to memory leak in request handler",
+        "affectedResource": VALID_AFFECTED_RESOURCE,
+    },
+})
 
 
-class TestSDKConversationContinuity:
-    """G1: SDK conversation continuity (BR-HAPI-263)."""
+class TestPromptBasedConversationContinuity:
+    """G1: Prompt-based conversation continuity (BR-HAPI-263)."""
 
-    def test_ut_hapi_263_001_investigate_issues_accepts_previous_messages(self):
-        """UT-HAPI-263-001: investigate_issues accepts previous_messages parameter.
+    @pytest.mark.asyncio
+    async def test_ut_hapi_263_001_phase3_prompt_includes_phase1_analysis(self):
+        """UT-HAPI-263-001: Phase 3 prompt includes Phase 1 analysis text.
 
-        BR-HAPI-263: The SDK investigate_issues function must accept an optional
-        previous_messages parameter to seed the LLM conversation with prior context.
+        BR-HAPI-263: The Phase 3 prompt must contain the Phase 1 RCA analysis
+        so the LLM has context about the root cause when selecting a workflow.
         """
-        from holmes.core.investigation import investigate_issues
-        import inspect
-
-        sig = inspect.signature(investigate_issues)
-        assert "previous_messages" in sig.parameters, (
-            "investigate_issues must accept 'previous_messages' parameter "
-            "for conversation continuity (BR-HAPI-263)"
+        phase1_result = InvestigationResult(analysis=PHASE1_ANALYSIS)
+        phase3_result = InvestigationResult(
+            analysis=json.dumps({
+                "root_cause_analysis": {"summary": "OOM detected"},
+                "selected_workflow": {
+                    "workflow_id": "oom-recovery-v1",
+                    "action_type": "IncreaseMemoryLimits",
+                    "version": "1.0.0",
+                    "confidence": 0.9,
+                    "rationale": "OOM recovery",
+                    "execution_engine": "tekton",
+                    "parameters": {"MEMORY_LIMIT_NEW": "512Mi"},
+                },
+            }),
         )
-        param = sig.parameters["previous_messages"]
-        assert param.default is None, (
-            "previous_messages must default to None for backward compatibility"
+
+        phase3_prompts = []
+
+        def mock_investigate(investigate_request, dal, config):
+            phase = investigate_request.context.get("phase")
+            if phase == 3:
+                phase3_prompts.append(investigate_request.description)
+            return phase1_result if phase == 1 else phase3_result
+
+        mock_enrich = AsyncMock(return_value=ENRICHMENT_RESULT)
+
+        with patch(f"{_LLM}.investigate_issues", side_effect=mock_investigate), \
+             patch(f"{_LLM}.EnrichmentService") as MockES, \
+             patch(f"{_LLM}.get_audit_store") as mock_audit, \
+             patch(f"{_LLM}.create_data_storage_client", return_value=None), \
+             patch(f"{_P}.get_model_config_for_sdk", return_value=("mock-model", "openai")), \
+             patch(f"{_P}.prepare_toolsets_config_for_sdk", return_value={}), \
+             patch(f"{_P}.register_workflow_discovery_toolset", side_effect=lambda c, *a, **kw: c), \
+             patch(f"{_P}.register_resource_context_toolset", side_effect=lambda c, *a, **kw: c), \
+             patch("src.sanitization.sanitize_for_llm", side_effect=lambda x: x), \
+             patch(f"{_LLM}.parse_and_validate_investigation_result") as mock_parse:
+
+            mock_audit.return_value = MagicMock()
+            MockES.return_value.enrich = mock_enrich
+            mock_parse.return_value = (
+                json.loads(phase3_result.analysis),
+                MagicMock(is_valid=True, errors=[], parameter_schema=None, schema_hint=None),
+            )
+
+            from src.extensions.incident.llm_integration import analyze_incident
+            await analyze_incident(
+                {"incident_id": "inc-263-001", "signal_name": "OOMKill", "remediation_id": "rem-001"},
+                app_config={},
+            )
+
+        assert len(phase3_prompts) >= 1, "Phase 3 prompt should have been captured"
+        prompt = phase3_prompts[0]
+        assert "Phase 1 Root Cause Analysis" in prompt, (
+            "Phase 3 prompt must contain the Phase 1 RCA section header"
+        )
+        assert "OOM detected in pod api-xyz" in prompt, (
+            "Phase 3 prompt must contain Phase 1 analysis content"
         )
 
-    def test_ut_hapi_263_002_investigation_result_includes_messages(self):
-        """UT-HAPI-263-002: InvestigationResult includes messages list.
+    @pytest.mark.asyncio
+    async def test_ut_hapi_263_002_phase1_analysis_survives_retry(self):
+        """UT-HAPI-263-002: Phase 1 analysis text persists across Phase 3 validation retries.
 
-        BR-HAPI-263: InvestigationResult must expose the full message history
-        from the LLM conversation so HAPI can thread it to the next phase.
+        BR-HAPI-263: When Phase 3 validation fails and retries, the Phase 1
+        analysis must still be present in the retried Phase 3 prompt.
         """
-        result = InvestigationResult(
-            analysis="test analysis",
-            messages=[
-                {"role": "system", "content": "system prompt"},
-                {"role": "user", "content": "investigate this"},
-                {"role": "assistant", "content": "analysis result"},
-            ],
-        )
-        assert result.messages is not None
-        assert len(result.messages) == 3
-        assert result.messages[0]["role"] == "system"
-        assert result.messages[2]["role"] == "assistant"
+        phase1_result = InvestigationResult(analysis=PHASE1_ANALYSIS)
 
-    def test_ut_hapi_263_004_none_previous_messages_backward_compatible(self):
-        """UT-HAPI-263-004: None previous_messages preserves current behavior.
-
-        BR-HAPI-263: When previous_messages is None (default), the SDK must
-        behave identically to the current implementation — no conversation
-        seeding, fresh investigation from scratch.
-        """
-        result = InvestigationResult(analysis="test")
-        assert result.messages is None, (
-            "Default InvestigationResult must have messages=None "
-            "for backward compatibility"
+        invalid_phase3 = InvestigationResult(
+            analysis=json.dumps({
+                "root_cause_analysis": {"summary": "OOM detected"},
+                "selected_workflow": {"workflow_id": "bad-workflow"},
+            }),
         )
+        valid_phase3 = InvestigationResult(
+            analysis=json.dumps({
+                "root_cause_analysis": {"summary": "OOM detected"},
+                "selected_workflow": {
+                    "workflow_id": "oom-recovery-v1",
+                    "action_type": "IncreaseMemoryLimits",
+                    "version": "1.0.0",
+                    "confidence": 0.9,
+                    "rationale": "OOM recovery",
+                    "execution_engine": "tekton",
+                    "parameters": {"MEMORY_LIMIT_NEW": "512Mi"},
+                },
+            }),
+        )
+
+        phase3_prompts = []
+        call_count = 0
+
+        def mock_investigate(investigate_request, dal, config):
+            nonlocal call_count
+            call_count += 1
+            phase = investigate_request.context.get("phase")
+            if phase == 3:
+                phase3_prompts.append(investigate_request.description)
+            if phase == 1:
+                return phase1_result
+            return invalid_phase3 if len(phase3_prompts) == 1 else valid_phase3
+
+        parse_call_count = 0
+
+        def mock_parse(investigation_result, request_data, data_storage_client=None):
+            nonlocal parse_call_count
+            parse_call_count += 1
+            parsed = json.loads(investigation_result.analysis)
+            if parse_call_count == 1:
+                return (
+                    parsed,
+                    MagicMock(is_valid=False, errors=["invalid workflow"], parameter_schema=None, schema_hint=None),
+                )
+            return (
+                parsed,
+                MagicMock(is_valid=True, errors=[], parameter_schema=None, schema_hint=None),
+            )
+
+        mock_enrich = AsyncMock(return_value=ENRICHMENT_RESULT)
+
+        with patch(f"{_LLM}.investigate_issues", side_effect=mock_investigate), \
+             patch(f"{_LLM}.EnrichmentService") as MockES, \
+             patch(f"{_LLM}.get_audit_store") as mock_audit, \
+             patch(f"{_LLM}.create_data_storage_client", return_value=None), \
+             patch(f"{_P}.get_model_config_for_sdk", return_value=("mock-model", "openai")), \
+             patch(f"{_P}.prepare_toolsets_config_for_sdk", return_value={}), \
+             patch(f"{_P}.register_workflow_discovery_toolset", side_effect=lambda c, *a, **kw: c), \
+             patch(f"{_P}.register_resource_context_toolset", side_effect=lambda c, *a, **kw: c), \
+             patch("src.sanitization.sanitize_for_llm", side_effect=lambda x: x), \
+             patch(f"{_LLM}.parse_and_validate_investigation_result", side_effect=mock_parse):
+
+            mock_audit.return_value = MagicMock()
+            MockES.return_value.enrich = mock_enrich
+
+            from src.extensions.incident.llm_integration import analyze_incident
+            await analyze_incident(
+                {"incident_id": "inc-263-002", "signal_name": "OOMKill", "remediation_id": "rem-001"},
+                app_config={},
+            )
+
+        assert len(phase3_prompts) >= 2, (
+            f"Expected at least 2 Phase 3 prompts (initial + retry), got {len(phase3_prompts)}"
+        )
+        for i, prompt in enumerate(phase3_prompts):
+            assert "Phase 1 Root Cause Analysis" in prompt, (
+                f"Phase 3 prompt attempt {i+1} must contain Phase 1 RCA section"
+            )
+            assert "OOM detected in pod api-xyz" in prompt, (
+                f"Phase 3 prompt attempt {i+1} must contain Phase 1 analysis content"
+            )

@@ -16,7 +16,7 @@
 Unit tests for #529 Three-Phase RCA Orchestration (G5).
 
 Business Requirements:
-- BR-HAPI-263: Conversation continuity — HAPI threads Phase 1 messages to Phase 3
+- BR-HAPI-263: Conversation continuity — Phase 1 analysis injected into Phase 3 prompt
 - BR-HAPI-261: _inject_target_resource uses EnrichmentResult.root_owner
 
 Design Decisions:
@@ -25,7 +25,7 @@ Design Decisions:
 
 Test Plan: docs/tests/529/TEST_PLAN.md — Group 5
 Tests:
-  UT-HAPI-263-003: HAPI threads Phase 1 messages to Phase 3 via previous_messages
+  UT-HAPI-263-003: Phase 3 prompt contains Phase 1 analysis text
   UT-HAPI-261-006: _inject_target_resource uses EnrichmentResult.root_owner
   UT-529-ORCH-001: analyze_incident calls EnrichmentService between Phase 1 and Phase 3
   UT-529-ORCH-002: Invalid affectedResource from Phase 1 triggers Phase 1 retry
@@ -33,8 +33,7 @@ Tests:
 
 import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, call
-from typing import Dict, Any, Optional
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.extensions.incident.enrichment_service import EnrichmentResult
 
@@ -46,12 +45,6 @@ _LLM = "src.extensions.incident.llm_integration"
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
-
-PHASE1_MESSAGES = [
-    {"role": "system", "content": "You are an SRE assistant."},
-    {"role": "user", "content": "Investigate OOMKill in pod api-xyz"},
-    {"role": "assistant", "content": '{"root_cause_analysis": {"summary": "OOM"}}'},
-]
 
 VALID_AFFECTED_RESOURCE = {"kind": "Pod", "name": "api-xyz", "namespace": "prod"}
 
@@ -172,31 +165,29 @@ class TestInjectFromEnrichmentResult:
 
 
 # ===========================================================================
-# UT-HAPI-263-003: HAPI threads Phase 1 messages to Phase 3
+# UT-HAPI-263-003: Phase 3 prompt contains Phase 1 analysis text
 # ===========================================================================
 
 class TestConversationContinuityOrchestration:
-    """G5: Conversation continuity at HAPI level (BR-HAPI-263)."""
+    """G5: Prompt-based conversation continuity at HAPI level (BR-HAPI-263)."""
 
     @pytest.mark.asyncio
-    async def test_ut_hapi_263_003_phase1_messages_threaded_to_phase3(self):
-        """UT-HAPI-263-003: HAPI threads Phase 1 messages to Phase 3 via previous_messages.
+    async def test_ut_hapi_263_003_phase3_prompt_contains_phase1_analysis(self):
+        """UT-HAPI-263-003: Phase 3 prompt contains Phase 1 analysis text.
 
-        BR-HAPI-263: analyze_incident must capture messages from the Phase 1
-        investigation result and pass them as previous_messages to the Phase 3
-        investigate_issues call for conversation continuity.
+        BR-HAPI-263: analyze_incident must capture the Phase 1 analysis text
+        and inject it into the Phase 3 prompt so the LLM has RCA context when
+        selecting a workflow.
         """
         from holmes.core.models import InvestigationResult
 
-        phase1_result = InvestigationResult(
-            analysis=json.dumps({
-                "root_cause_analysis": {
-                    "summary": "OOM detected",
-                    "affectedResource": VALID_AFFECTED_RESOURCE,
-                },
-            }),
-            messages=PHASE1_MESSAGES,
-        )
+        phase1_analysis_text = json.dumps({
+            "root_cause_analysis": {
+                "summary": "OOM detected",
+                "affectedResource": VALID_AFFECTED_RESOURCE,
+            },
+        })
+        phase1_result = InvestigationResult(analysis=phase1_analysis_text)
         phase3_result = InvestigationResult(
             analysis=json.dumps({
                 "root_cause_analysis": {"summary": "OOM detected"},
@@ -210,19 +201,15 @@ class TestConversationContinuityOrchestration:
                     "parameters": {"MEMORY_LIMIT_NEW": "512Mi"},
                 },
             }),
-            messages=PHASE1_MESSAGES + [
-                {"role": "user", "content": "enrichment context..."},
-                {"role": "assistant", "content": "workflow selected"},
-            ],
         )
 
-        investigate_calls = []
+        phase3_prompts = []
 
-        def mock_investigate(investigate_request, dal, config, previous_messages=None):
-            investigate_calls.append({"previous_messages": previous_messages})
-            if len(investigate_calls) == 1:
-                return phase1_result
-            return phase3_result
+        def mock_investigate(investigate_request, dal, config):
+            phase = investigate_request.context.get("phase")
+            if phase == 3:
+                phase3_prompts.append(investigate_request.description)
+            return phase1_result if phase == 1 else phase3_result
 
         mock_enrich = AsyncMock(return_value=ENRICHMENT_RESULT)
 
@@ -250,14 +237,13 @@ class TestConversationContinuityOrchestration:
                 app_config={},
             )
 
-        assert len(investigate_calls) >= 2, (
-            f"Expected at least 2 investigate_issues calls (Phase 1 + Phase 3), got {len(investigate_calls)}"
+        assert len(phase3_prompts) >= 1, "Phase 3 prompt should have been captured"
+        prompt = phase3_prompts[0]
+        assert "Phase 1 Root Cause Analysis" in prompt, (
+            "Phase 3 prompt must contain the Phase 1 RCA section header"
         )
-        assert investigate_calls[0]["previous_messages"] is None, (
-            "Phase 1 call must have previous_messages=None"
-        )
-        assert investigate_calls[1]["previous_messages"] == PHASE1_MESSAGES, (
-            "Phase 3 call must receive Phase 1 messages as previous_messages"
+        assert "OOM detected" in prompt, (
+            "Phase 3 prompt must contain Phase 1 analysis content"
         )
 
 
@@ -284,7 +270,6 @@ class TestThreePhaseFlow:
                     "affectedResource": VALID_AFFECTED_RESOURCE,
                 },
             }),
-            messages=PHASE1_MESSAGES,
         )
         phase3_result = InvestigationResult(
             analysis=json.dumps({
@@ -299,12 +284,11 @@ class TestThreePhaseFlow:
                     "parameters": {"MEMORY_LIMIT_NEW": "512Mi"},
                 },
             }),
-            messages=[],
         )
 
         call_sequence = []
 
-        def mock_investigate(investigate_request, dal, config, previous_messages=None):
+        def mock_investigate(investigate_request, dal, config):
             call_sequence.append("investigate")
             if len([c for c in call_sequence if c == "investigate"]) == 1:
                 return phase1_result
@@ -360,7 +344,6 @@ class TestThreePhaseFlow:
             analysis=json.dumps({
                 "root_cause_analysis": {"summary": "OOM detected"},
             }),
-            messages=[{"role": "assistant", "content": "no affectedResource"}],
         )
         phase1_with_ar = InvestigationResult(
             analysis=json.dumps({
@@ -369,7 +352,6 @@ class TestThreePhaseFlow:
                     "affectedResource": VALID_AFFECTED_RESOURCE,
                 },
             }),
-            messages=PHASE1_MESSAGES,
         )
         phase3_result = InvestigationResult(
             analysis=json.dumps({
@@ -384,12 +366,11 @@ class TestThreePhaseFlow:
                     "parameters": {"MEMORY_LIMIT_NEW": "512Mi"},
                 },
             }),
-            messages=[],
         )
 
         investigate_call_count = 0
 
-        def mock_investigate(investigate_request, dal, config, previous_messages=None):
+        def mock_investigate(investigate_request, dal, config):
             nonlocal investigate_call_count
             investigate_call_count += 1
             if investigate_call_count == 1:
