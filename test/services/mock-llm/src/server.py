@@ -651,18 +651,23 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
     def _is_phase3_request(self, messages: List[Dict[str, Any]]) -> bool:
         """Detect if this is a Phase 3 (workflow selection) request.
 
-        #529: Phase 3 requests contain enrichment context from HAPI's
-        EnrichmentService. Detect by looking for enrichment markers in the
-        prompt that Phase 1 investigation prompts never contain.
+        #529: Phase 3 requests contain enrichment context injected by HAPI's
+        _build_enrichment_context() and phase1_context block. These specific
+        headers are ONLY present in Phase 3 prompts — Phase 1 prompts never
+        contain them, even though Phase 1 mentions "workflow selection" in its
+        general instructions.
+
+        Markers must match headers produced by llm_integration.py:
+        - "## Enrichment Context (Phase 2" from _build_enrichment_context()
+        - "## Phase 1 Root Cause Analysis" from the phase1_context injection
+        - "**Root Owner**:" from _build_enrichment_context()
         """
         for msg in messages:
-            content = str(msg.get("content", "")).lower()
+            content = str(msg.get("content", ""))
             if any(marker in content for marker in [
-                "enrichment context",
-                "enrichmentresult",
-                "resolved root owner",
-                "select a workflow",
-                "workflow selection",
+                "## Enrichment Context (Phase 2",
+                "## Phase 1 Root Cause Analysis",
+                "**Root Owner**:",
             ]):
                 return True
         return False
