@@ -85,17 +85,11 @@ class TestEnrichmentLabelsInWorkflowDiscovery:
             }),
         )
 
-        captured_session_state = {}
-
         def mock_investigate(investigate_request, dal, config):
             phase = investigate_request.context.get("phase")
             return phase1_result if phase == 1 else phase3_result
 
         mock_enrich = AsyncMock(return_value=ENRICHMENT_WITH_LABELS)
-
-        def capture_register_workflow(config, app_config, **kwargs):
-            captured_session_state.update(kwargs.get("session_state", {}))
-            return config
 
         with patch(f"{_LLM}.investigate_issues", side_effect=mock_investigate), \
              patch(f"{_LLM}.EnrichmentService") as MockES, \

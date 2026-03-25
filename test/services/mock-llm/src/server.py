@@ -56,7 +56,7 @@ Architecture:
         - EnrichmentService resolves owner chain, detects labels, fetches history
 
       Phase 3 (LLM call 2 - Workflow Selection):
-        - HAPI sends enrichment context + Phase 1 messages as previous_messages
+        - HAPI injects enrichment context + Phase 1 analysis into the prompt
         - LLM calls workflow discovery tools
         - LLM returns workflow selection (NO RCA)
         - Mock detects Phase 3 via enrichment context markers in prompt
