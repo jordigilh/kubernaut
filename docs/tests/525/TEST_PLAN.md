@@ -1,17 +1,20 @@
 # Test Plan: Forward Hash Chain Detection for Ineffective Remediation Escalation
 
-**Feature**: Detect repeated remediation cycles where spec changes each time but the signal recurs, and escalate to manual review
-**Version**: 1.0
+**Feature**: Detect repeated remediation cycles where the same action type changes the spec each time but the signal recurs, and escalate to manual review
+**Version**: 2.0
 **Created**: 2026-03-04
+**Updated**: 2026-03-04
 **Author**: AI Assistant
-**Status**: Ready for Execution
-**Branch**: `fix/1.1.0-rc9`
+**Status**: Implemented
+**Branch**: `feature/v1.0-remaining-bugs-demos`
 
 **Authority**:
+- BR-ORCH-042.7: Forward hash chain detection (Issue #525)
 - BR-ORCH-042.5: Ineffective remediation chain escalation
 - Issue #214: CheckIneffectiveRemediationChain implementation
 - Issue #525: Escalation not triggered after repeated OOMKill cycles (regression)
 - Issue #224: Completed-but-recurring detection (HAPI prompt)
+- Issue #528: WorkflowType -> ActionType rename (tech-debt, v1.2)
 
 **Cross-References**:
 - [Testing Strategy](../../../.cursor/rules/03-testing-strategy.mdc)
@@ -24,7 +27,7 @@
 
 ### In Scope
 
-- **RO routing engine** (`pkg/remediationorchestrator/routing/blocking.go`): New `countForwardChain` function detecting forward-linked hash chains where each cycle's `PostRemediationSpecHash` feeds the next cycle's `PreRemediationSpecHash`
+- **RO routing engine** (`pkg/remediationorchestrator/routing/blocking.go`): Updated `countForwardChain` function with five-condition detection: same action type (WorkflowType), failed EA (SignalResolved==false), 1h time window, hash link continuity, threshold=2
 - **HAPI prompt builder** (`holmesgpt-api/src/extensions/remediation_history_prompt.py`): Strengthen the existing `_detect_completed_but_recurring` warning from advisory ("Recommend selecting") to mandatory ("You MUST NOT re-select") when effectivenessScore is zero
 
 ### Out of Scope
@@ -33,15 +36,19 @@
 - DataStorage remediation history API (data is already correct; only consumer logic changes)
 - Integration test for full RO controller + DS (existing IT-RO-214 tests cover the wiring)
 - E2E test (requires multi-cycle OOMKill scenario -- tracked separately in demo-scenarios repo)
+- WorkflowType -> ActionType rename (Issue #528, v1.2)
 
 ### Design Decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| Forward chain traversal, not EA healthScore check | Hash chain provides deterministic evidence of sequential remediation without cross-CRD correlation. Each entry's postHash == next entry's preHash proves causality. |
-| Reuse `IneffectiveChainThreshold` (3) for forward chain | Consistent with existing config; operators already tune this value. No new config fields needed. |
+| Threshold = 2 (not 3) | 2 DS entries + incoming RR = 3rd attempt blocked. Faster detection than Layer 1+2's threshold of 3. Separate `ForwardChainThreshold` config field. |
+| Same WorkflowType (action type) matching | Different action types mean different remediation approaches were tried. Only block when the *same* approach keeps failing. Uses `WorkflowType` field from `RemediationHistoryEntry` (DD-WORKFLOW-016 taxonomy). |
+| SignalResolved == false required | If a previous entry's EA succeeded (signal resolved), the signal recurring is a *new* problem, not a continuation. The pipeline guarantees EA completes before new RRs arrive -- no null handling needed. |
+| 1h ForwardChainWindow (not 4h) | Tighter window than IneffectiveTimeWindow. Forward chain pattern is acute (rapid repeated failures). Separate `ForwardChainWindow` config field. |
 | `countForwardChain` sorts entries ascending internally | DS returns entries descending (most recent first). Sorting a copy ascending decouples the algorithm from DS sort order. |
 | Inserted between Layer 1+2 and Layer 3 | Layer 1+2 short-circuits first (preserves existing behavior); forward chain is Layer 1b that catches the gap. |
+| `workflowType` parameter added to `CheckPostAnalysisConditions` | Reconciler already has the value from `AIAnalysis.Status.SelectedWorkflow.ActionType`. Consistent API: all routing-relevant data passed explicitly. |
 | Prompt uses two variants based on effectivenessScore | Zero-effectiveness entries get mandatory "MUST NOT" language; mixed-effectiveness entries keep strengthened advisory. |
 | Prompt change is belt-and-suspenders | RO guardrail is the primary defense; prompt escalation is secondary. |
 
@@ -50,7 +57,7 @@
 | Risk | Severity | Mitigation |
 |------|----------|------------|
 | DS returns entries descending; forward chain needs chronological order | HIGH | `countForwardChain` sorts a copy ascending. Test mock data uses descending order to match production. |
-| Existing UT-RO-214 test data could accidentally trigger forward chain | MEDIUM | Verified: existing test data uses `preHash="abc123hash"` with postHash `"post1"/"post2"/"post3"` -- no forward links formed. |
+| Existing UT-RO-214 test data could accidentally trigger forward chain | MEDIUM | Verified: existing test data uses `preHash="abc123hash"` with postHash `"post1"/"post2"/"post3"` -- no forward links. Also, no WorkflowType or SignalResolved set, so filter excludes them. |
 | Python UT-RH-PROMPT-035 assertion breakage from text change | MEDIUM | New text preserves "Escalate" keyword. UT-HAPI-525-002 validates variant B path (mixed effectiveness). |
 | `_detect_completed_but_recurring` needs effectivenessScore conditional | LOW | Two-variant generation: mandatory for zero-effectiveness, advisory for mixed. Separate test for each variant. |
 
@@ -62,7 +69,7 @@
 
 Authority: `03-testing-strategy.mdc` -- Per-Tier Testable Code Coverage.
 
-- **Unit (Go)**: >=80% of `countForwardChain` and integration point in `CheckIneffectiveRemediationChain` (7 scenarios cover all branches)
+- **Unit (Go)**: >=80% of `countForwardChain` and integration point in `CheckIneffectiveRemediationChain` (10 scenarios cover all branches including WorkflowType mismatch, EA success, window expiry)
 - **Unit (Python)**: >=80% of modified warning generation in `build_remediation_history_section` (2 scenarios cover both variants)
 
 ### 2-Tier Minimum
@@ -72,7 +79,7 @@ Authority: `03-testing-strategy.mdc` -- Per-Tier Testable Code Coverage.
 
 ### Business Outcome Quality Bar
 
-Tests validate that the **operator** sees remediation blocked with a clear escalation reason when the platform detects a forward hash chain proving repeated ineffective remediation. Tests also validate that the **LLM** receives mandatory (not advisory) escalation directives when history shows zero-effectiveness completed remediations.
+Tests validate that the **operator** sees remediation blocked with a clear escalation reason when the platform detects a forward hash chain proving repeated ineffective remediation of the same action type. Tests also validate that the **LLM** receives mandatory (not advisory) escalation directives when history shows zero-effectiveness completed remediations.
 
 ---
 
@@ -82,8 +89,8 @@ Tests validate that the **operator** sees remediation blocked with a clear escal
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `pkg/remediationorchestrator/routing/blocking.go` | `countForwardChain` (new), integration point in `CheckIneffectiveRemediationChain` | ~30 |
-| `holmesgpt-api/src/extensions/remediation_history_prompt.py` | Warning variant selection in `build_remediation_history_section` (lines 115-122) | ~15 |
+| `pkg/remediationorchestrator/routing/blocking.go` | `countForwardChain` (updated with 5-condition filter), integration point in `CheckIneffectiveRemediationChain`, `ForwardChainThreshold`/`ForwardChainWindow` config | ~50 |
+| `holmesgpt-api/src/extensions/remediation_history_prompt.py` | Warning variant selection in `build_remediation_history_section`, `_all_zero_effectiveness` helper | ~25 |
 
 ### Integration-Testable Code (I/O, wiring, cross-component)
 
@@ -97,15 +104,18 @@ Tests validate that the **operator** sees remediation blocked with a clear escal
 
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |-------|-------------|----------|------|---------|--------|
-| BR-ORCH-042.5 | Forward hash chain: 3 linked entries block with IneffectiveChain | P0 | Unit | UT-RO-525-001 | Pending |
-| BR-ORCH-042.5 | Forward chain requires link to incoming RR's preHash | P0 | Unit | UT-RO-525-002 | Pending |
-| BR-ORCH-042.5 | Broken forward chain does not block | P0 | Unit | UT-RO-525-003 | Pending |
-| BR-ORCH-042.5 | Forward chain below threshold does not block | P1 | Unit | UT-RO-525-004 | Pending |
-| BR-ORCH-042.5 | Missing postHash entries fail-open | P1 | Unit | UT-RO-525-005 | Pending |
-| BR-ORCH-042.5 | Layer 1+2 regression takes precedence over forward chain | P1 | Unit | UT-RO-525-006 | Pending |
-| BR-ORCH-042.5 | Memory-escalation scenario blocked (Issue #525 regression) | P0 | Unit | UT-RO-525-007 | Pending |
-| Issue #224 | Zero-effectiveness recurring entries produce mandatory escalation | P1 | Unit (Py) | UT-HAPI-525-001 | Pending |
-| Issue #224 | Mixed-effectiveness recurring entries produce advisory escalation | P1 | Unit (Py) | UT-HAPI-525-002 | Pending |
+| BR-ORCH-042.7 | Forward hash chain: 2 linked entries (same action type, failed EA, 1h window) block with IneffectiveChain | P0 | Unit | UT-RO-525-001 | Pass |
+| BR-ORCH-042.7 | Forward chain requires link to incoming RR's preHash | P0 | Unit | UT-RO-525-002 | Pass |
+| BR-ORCH-042.7 | Broken forward chain does not block | P0 | Unit | UT-RO-525-003 | Pass |
+| BR-ORCH-042.7 | Forward chain below threshold does not block | P1 | Unit | UT-RO-525-004 | Pass |
+| BR-ORCH-042.7 | Missing postHash entries fail-open | P1 | Unit | UT-RO-525-005 | Pass |
+| BR-ORCH-042.7 | Layer 1+2 regression takes precedence over forward chain | P1 | Unit | UT-RO-525-006 | Pass |
+| BR-ORCH-042.7 | Memory-escalation scenario blocked (Issue #525 regression) | P0 | Unit | UT-RO-525-007 | Pass |
+| BR-ORCH-042.7 | Different action type breaks chain | P0 | Unit | UT-RO-525-008 | Pass |
+| BR-ORCH-042.7 | Successful EA (SignalResolved=true) breaks chain | P0 | Unit | UT-RO-525-009 | Pass |
+| BR-ORCH-042.7 | Entries outside 1h window excluded | P1 | Unit | UT-RO-525-010 | Pass |
+| Issue #224 | Zero-effectiveness recurring entries produce mandatory escalation | P1 | Unit (Py) | UT-HAPI-525-001 | Pass |
+| Issue #224 | Mixed-effectiveness recurring entries produce advisory escalation | P1 | Unit (Py) | UT-HAPI-525-002 | Pass |
 
 ### Status Legend
 
@@ -132,17 +142,20 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 **Testable code scope**: `countForwardChain` in `pkg/remediationorchestrator/routing/blocking.go` -- target >=80% of new code
 
-**Constraint**: All mock data in DESCENDING order (most recent first) to match production DS behavior.
+**Constraint**: All mock data in DESCENDING order (most recent first) to match production DS behavior. All entries use `newForwardChainEntry` helper with explicit `WorkflowType` and `SignalResolved` fields.
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-RO-525-001` | Operator sees RR blocked with `IneffectiveChain` when 3 entries form forward hash chain within time window | Pending |
-| `UT-RO-525-002` | Forward chain requires incoming RR's preHash to match last entry's postHash | Pending |
-| `UT-RO-525-003` | Forward chain with gap (entry[1].postHash != entry[2].preHash) does NOT block | Pending |
-| `UT-RO-525-004` | Forward chain of 2 entries (below threshold 3) does NOT block | Pending |
-| `UT-RO-525-005` | Entries with missing postHash fail-open (no false positives) | Pending |
-| `UT-RO-525-006` | Layer 1+2 regression detection takes precedence over forward chain | Pending |
-| `UT-RO-525-007` | Memory-escalation scenario: 3 increasing-limits cycles detected and blocked | Pending |
+| `UT-RO-525-001` | Operator sees RR blocked with `IneffectiveChain` when 2 entries (same action type, failed EA, within 1h) form forward hash chain | Pass |
+| `UT-RO-525-002` | Forward chain requires incoming RR's preHash to match last entry's postHash | Pass |
+| `UT-RO-525-003` | Forward chain with gap in hash links does NOT block (chain length 1 < threshold 2) | Pass |
+| `UT-RO-525-004` | Forward chain of 1 entry (below threshold 2) does NOT block | Pass |
+| `UT-RO-525-005` | Entries with missing postHash fail-open (no false positives) | Pass |
+| `UT-RO-525-006` | Layer 1+2 regression detection takes precedence over forward chain | Pass |
+| `UT-RO-525-007` | Memory-escalation scenario: 2 increasing-limits cycles (same action type) detected and blocked | Pass |
+| `UT-RO-525-008` | Different WorkflowType (action type) on entries prevents chain formation | Pass |
+| `UT-RO-525-009` | Entry with SignalResolved=true (successful EA) prevents chain formation | Pass |
+| `UT-RO-525-010` | Entries outside the 1h ForwardChainWindow are excluded from chain detection | Pass |
 
 ### Tier 1: Unit Tests (Python -- HAPI Prompt)
 
@@ -150,8 +163,8 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-HAPI-525-001` | Zero-effectiveness recurring entries produce mandatory "MUST NOT" language | Pending |
-| `UT-HAPI-525-002` | Mixed-effectiveness recurring entries produce advisory with "Escalate" (not "MUST NOT") | Pending |
+| `UT-HAPI-525-001` | Zero-effectiveness recurring entries produce mandatory "MUST NOT" language | Pass |
+| `UT-HAPI-525-002` | Mixed-effectiveness recurring entries produce advisory with "Escalate" (not "MUST NOT") | Pass |
 
 ### Tier Skip Rationale
 
@@ -162,17 +175,16 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 ## 6. Test Cases (Detail)
 
-### UT-RO-525-001: Forward hash chain of 3 entries triggers block
+### UT-RO-525-001: Forward hash chain of 2 entries triggers block
 
-**BR**: BR-ORCH-042.5
+**BR**: BR-ORCH-042.7
 **Type**: Unit
 **File**: `test/unit/remediationorchestrator/routing/ineffective_chain_test.go`
 
-**Given**: DS returns 3 entries in descending order (most recent first):
-  - Entry 0: `preHash=C, postHash=D` (completed 1h ago) -- most recent
-  - Entry 1: `preHash=B, postHash=C` (completed 2h ago)
-  - Entry 2: `preHash=A, postHash=B` (completed 3h ago) -- oldest
-  - Incoming RR has `preRemediationSpecHash=D`
+**Given**: DS returns 2 entries in descending order (most recent first), both with `WorkflowType=IncreaseMemoryLimits`, `SignalResolved=false`, within 1h:
+  - Entry 0: `preHash=B, postHash=C` (completed 20min ago) -- most recent
+  - Entry 1: `preHash=A, postHash=B` (completed 40min ago) -- oldest
+  - Incoming RR has `preRemediationSpecHash=C`, `workflowType=IncreaseMemoryLimits`
 
 **When**: `CheckIneffectiveRemediationChain` is called
 
@@ -187,82 +199,64 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 ### UT-RO-525-002: Forward chain requires link to incoming RR
 
-**BR**: BR-ORCH-042.5
+**BR**: BR-ORCH-042.7
 **Type**: Unit
-**File**: `test/unit/remediationorchestrator/routing/ineffective_chain_test.go`
 
-**Given**: DS returns 3 forward-linked entries (A->B, B->C, C->D) in descending order, but incoming RR has `preRemediationSpecHash=X` (does NOT match `D`)
+**Given**: DS returns 2 forward-linked entries (A->B, B->C) within 1h, same action type, failed EA. Incoming RR has `preRemediationSpecHash=X` (does NOT match `C`)
 
 **When**: `CheckIneffectiveRemediationChain` is called
 
 **Then**: Returns nil
 
-**Acceptance Criteria**:
-- `blocked` is nil
-
 ---
 
 ### UT-RO-525-003: Broken forward chain does not block
 
-**BR**: BR-ORCH-042.5
+**BR**: BR-ORCH-042.7
 **Type**: Unit
-**File**: `test/unit/remediationorchestrator/routing/ineffective_chain_test.go`
 
-**Given**: DS returns 3 entries in descending order but entry[1]'s preHash does NOT match entry[2]'s postHash:
-  - Entry 0: `preHash=C, postHash=D` (1h ago)
-  - Entry 1: `preHash=X, postHash=C` (2h ago) -- gap: X != B
-  - Entry 2: `preHash=A, postHash=B` (3h ago)
+**Given**: DS returns 3 entries within 1h, same action type, failed EA. Entry[1]'s postHash does NOT match entry[0]'s preHash:
+  - Entry 0: `preHash=C, postHash=D` (10min ago)
+  - Entry 1: `preHash=X, postHash=Y` (20min ago) -- gap: Y != C
+  - Entry 2: `preHash=A, postHash=B` (30min ago)
   - Incoming RR preHash=D
 
 **When**: `CheckIneffectiveRemediationChain` is called
 
-**Then**: Returns nil (chain broken, only 2 linked entries below threshold 3)
-
-**Acceptance Criteria**:
-- `blocked` is nil
+**Then**: Returns nil (chain broken, only 1 linked entry below threshold 2)
 
 ---
 
 ### UT-RO-525-004: Below threshold does not block
 
-**BR**: BR-ORCH-042.5
+**BR**: BR-ORCH-042.7
 **Type**: Unit
-**File**: `test/unit/remediationorchestrator/routing/ineffective_chain_test.go`
 
-**Given**: DS returns 2 forward-linked entries (A->B, B->C) in descending order, incoming preHash=C
+**Given**: DS returns 1 entry (A->B), incoming preHash=B
 
 **When**: `CheckIneffectiveRemediationChain` is called
 
-**Then**: Returns nil (chain length 2 < threshold 3)
-
-**Acceptance Criteria**:
-- `blocked` is nil
+**Then**: Returns nil (chain length 1 < threshold 2)
 
 ---
 
 ### UT-RO-525-005: Missing postHash entries fail-open
 
-**BR**: BR-ORCH-042.5
+**BR**: BR-ORCH-042.7
 **Type**: Unit
-**File**: `test/unit/remediationorchestrator/routing/ineffective_chain_test.go`
 
-**Given**: DS returns 3 entries in descending order, none have `PostRemediationSpecHash` set
+**Given**: DS returns 2 entries with no `PostRemediationSpecHash` set
 
-**When**: `CheckIneffectiveRemediationChain` is called (forward chain evaluation)
+**When**: `CheckIneffectiveRemediationChain` is called
 
-**Then**: Returns nil (cannot determine forward links)
-
-**Acceptance Criteria**:
-- `blocked` is nil
-- No panics
+**Then**: Returns nil (fail-open)
 
 ---
 
 ### UT-RO-525-006: Layer 1+2 takes precedence over forward chain
 
-**BR**: BR-ORCH-042.5
+**BR**: BR-ORCH-042.7
 **Type**: Unit
-**File**: `test/unit/remediationorchestrator/routing/ineffective_chain_test.go`
 
 **Given**: DS returns 3 entries matching BOTH Layer 1+2 (all preHash == currentPreHash, regression) AND forming a forward chain
 
@@ -270,32 +264,61 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 **Then**: Returns `BlockingCondition` with message "hash chain match" (Layer 1+2), NOT "forward hash chain"
 
-**Acceptance Criteria**:
-- `blocked.Reason` equals `BlockReasonIneffectiveChain`
-- `blocked.Message` contains "hash chain match"
-- `blocked.Message` does NOT contain "forward hash chain"
-
 ---
 
 ### UT-RO-525-007: Memory-escalation scenario (Issue #525 regression)
 
-**BR**: BR-ORCH-042.5, Issue #525
+**BR**: BR-ORCH-042.7, Issue #525
 **Type**: Unit
-**File**: `test/unit/remediationorchestrator/routing/ineffective_chain_test.go`
 
-**Given**: DS returns 3 entries modeling the OOMKill memory-escalation scenario in descending order:
-  - Entry 0: `preHash=hash256, postHash=hash512` (1h ago) -- 256->512Mi
-  - Entry 1: `preHash=hash128, postHash=hash256` (2h ago) -- 128->256Mi
-  - Entry 2: `preHash=hash64, postHash=hash128` (3h ago) -- 64->128Mi
+**Given**: DS returns 2 entries modeling the OOMKill memory-escalation scenario:
+  - Entry 0: `preHash=hash256, postHash=hash512` (20min ago) -- 256->512Mi
+  - Entry 1: `preHash=hash128, postHash=hash256` (40min ago) -- 128->256Mi
+  - Both: `WorkflowType=IncreaseMemoryLimits`, `SignalResolved=false`
   - Incoming RR `preRemediationSpecHash=hash512` (OOMKill recurred at 512Mi)
 
 **When**: `CheckIneffectiveRemediationChain` is called
 
 **Then**: Returns `BlockingCondition`
 
-**Acceptance Criteria**:
-- `blocked` is non-nil
-- `blocked.Reason` equals `BlockReasonIneffectiveChain`
+---
+
+### UT-RO-525-008: Different action type breaks chain
+
+**BR**: BR-ORCH-042.7
+**Type**: Unit
+
+**Given**: 2 forward-linked entries within 1h, both `SignalResolved=false`, but different `WorkflowType` values (`"RestartPod"` vs `"IncreaseMemoryLimits"`)
+
+**When**: `CheckIneffectiveRemediationChain` called with `workflowType=IncreaseMemoryLimits`
+
+**Then**: Returns nil -- different action types mean different remediation approaches were tried
+
+---
+
+### UT-RO-525-009: Successful EA breaks chain
+
+**BR**: BR-ORCH-042.7
+**Type**: Unit
+
+**Given**: 2 forward-linked entries within 1h, same `WorkflowType`, but entry[1] has `SignalResolved=true`
+
+**When**: `CheckIneffectiveRemediationChain` is called
+
+**Then**: Returns nil -- successful EA proves the action type works; signal recurrence is a new problem
+
+---
+
+### UT-RO-525-010: Entries outside 1h forward chain window
+
+**BR**: BR-ORCH-042.7
+**Type**: Unit
+
+**Given**: 2 forward-linked entries, same `WorkflowType`, both `SignalResolved=false`, but oldest entry is 2h ago (outside 1h ForwardChainWindow)
+
+**When**: `CheckIneffectiveRemediationChain` is called
+
+**Then**: Returns nil -- entries outside the forward chain window are excluded
 
 ---
 
@@ -347,7 +370,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 - **Framework**: Ginkgo/Gomega BDD (mandatory)
 - **Mocks**: `mockHistoryQuerier` (existing -- mocks DS client, external dependency)
-- **Helpers**: `newDSEntry`, `newDSEntryNoHash`, `setupEngine` (existing)
+- **Helpers**: `newDSEntry`, `newDSEntryNoHash`, `newForwardChainEntry` (new), `setupEngine` (existing)
 - **Location**: `test/unit/remediationorchestrator/routing/ineffective_chain_test.go`
 
 ### Unit Tests (Python)
@@ -368,10 +391,10 @@ go test ./test/unit/remediationorchestrator/routing/... -v
 go test ./test/unit/remediationorchestrator/routing/... -ginkgo.focus="Issue #525"
 
 # Python unit tests -- all prompt tests
-cd holmesgpt-api && python -m pytest tests/unit/test_remediation_history_prompt.py -v
+cd holmesgpt-api && python3 -m pytest tests/unit/test_remediation_history_prompt.py -v
 
 # Python unit tests -- focus on Issue #525
-cd holmesgpt-api && python -m pytest tests/unit/test_remediation_history_prompt.py -k "525" -v
+cd holmesgpt-api && python3 -m pytest tests/unit/test_remediation_history_prompt.py -k "525" -v
 
 # Build validation
 go build ./...
@@ -385,3 +408,4 @@ go vet ./pkg/remediationorchestrator/routing/...
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-04 | Initial test plan for Issue #525 forward hash chain detection |
+| 2.0 | 2026-03-04 | Revised design: threshold=2, 1h window, WorkflowType matching, SignalResolved==false EA check. Added UT-RO-525-008/009/010. Updated from BR-ORCH-042.5 to BR-ORCH-042.7. All 12 tests passing. |
