@@ -74,6 +74,42 @@ from src.extensions.investigation_helpers import (
 logger = logging.getLogger(__name__)
 
 
+def _build_enrichment_context(enrichment_result: Optional["EnrichmentResult"]) -> str:
+    """Build an enrichment context section for the Phase 3 prompt.
+
+    #529 BR-HAPI-265: Provides the LLM with Phase 2 enrichment results
+    (root owner, detected labels, remediation history) so it can make
+    informed workflow selections.
+    """
+    if enrichment_result is None:
+        return ""
+
+    parts = ["\n\n## Enrichment Context (Phase 2 — Auto-Detected)\n"]
+
+    ro = enrichment_result.root_owner
+    if ro:
+        ns = ro.get("namespace", "")
+        ro_desc = f"{ro.get('kind', '?')}/{ro.get('name', '?')}"
+        if ns:
+            ro_desc += f" in namespace '{ns}'"
+        parts.append(f"**Root Owner**: {ro_desc}\n")
+
+    labels = enrichment_result.detected_labels
+    if labels:
+        label_items = {k: v for k, v in labels.items() if k != "failedDetections"}
+        if label_items:
+            parts.append("**Detected Infrastructure Labels**:")
+            parts.append(f"```json\n{json.dumps(label_items, indent=2)}\n```\n")
+
+    history = enrichment_result.remediation_history
+    if history:
+        entries = history.get("entries", []) if isinstance(history, dict) else []
+        if entries:
+            parts.append(f"**Remediation History**: {len(entries)} past remediation(s) for this resource.\n")
+
+    return "\n".join(parts) if len(parts) > 1 else ""
+
+
 def _extract_phase1_json(analysis_text: str) -> Dict[str, Any]:
     """Extract JSON from Phase 1 analysis text to get affectedResource.
 
@@ -650,18 +686,24 @@ async def analyze_incident(
                     }
                     break
 
+                # #529 BR-HAPI-265: Populate session_state with enrichment labels
+                # so Phase 3 workflow discovery tools can surface them in cluster_context.
+                if enrichment_result_obj.detected_labels:
+                    session_state["detected_labels"] = enrichment_result_obj.detected_labels
+
             # ─── PHASE 3: Workflow Selection ───
+            enrichment_context = _build_enrichment_context(enrichment_result_obj)
             if pending_mismatch_feedback is not None:
-                investigation_prompt = base_prompt + pending_mismatch_feedback
+                investigation_prompt = base_prompt + enrichment_context + pending_mismatch_feedback
                 pending_mismatch_feedback = None
             elif validation_errors_history:
-                investigation_prompt = base_prompt + build_validation_error_feedback(
+                investigation_prompt = base_prompt + enrichment_context + build_validation_error_feedback(
                     validation_errors_history[-1],
                     attempt,
                     schema_hint=last_schema_hint,
                 )
             else:
-                investigation_prompt = base_prompt
+                investigation_prompt = base_prompt + enrichment_context
 
             logger.info({
                 "event": "phase3_workflow_selection_started",
