@@ -140,35 +140,9 @@ class GetNamespacedResourceContextTool(Tool):
 
             root_owner = owner_chain[-1] if owner_chain else {"kind": kind, "name": name, "namespace": namespace}
 
-            # BR-496: Store K8s-verified root_owner in session_state so HAPI
-            # can compare it against the LLM's affectedResource after the
-            # self-correction loop.  Last-write-wins if the LLM calls this
-            # tool more than once.
-            # #524: resource_scope tracks which tool variant was used.
-            if self._session_state is not None:
-                new_target = {
-                    "kind": root_owner["kind"],
-                    "name": root_owner["name"],
-                    "namespace": root_owner.get("namespace", ""),
-                }
-
-                # #516: Clear stale detected_labels when target resource changes
-                prev_target = self._session_state.get("last_resource_context_target")
-                if (
-                    prev_target is not None
-                    and prev_target != new_target
-                    and "detected_labels" in self._session_state
-                ):
-                    del self._session_state["detected_labels"]
-                    logger.info({
-                        "event": "detected_labels_cleared_on_target_change",
-                        "previous_target": prev_target,
-                        "new_target": new_target,
-                    })
-
-                self._session_state["root_owner"] = root_owner
-                self._session_state["resource_scope"] = "namespaced"
-                self._session_state["last_resource_context_target"] = new_target
+            # #529: session_state writes removed. EnrichmentService (Phase 2)
+            # is the sole authoritative source for root_owner, resource_scope,
+            # and detected_labels. This tool is now purely informational.
 
             spec_hash = await self._k8s_client.compute_spec_hash(
                 root_owner["kind"], root_owner["name"], root_owner.get("namespace", "")
@@ -234,18 +208,15 @@ class GetNamespacedResourceContextTool(Tool):
         namespace: str,
         owner_chain: List[Dict[str, str]],
     ) -> Optional[Dict[str, Any]]:
-        """One-shot label detection: detect on first call, skip on subsequent calls.
+        """Detect infrastructure labels and return to LLM (informational only).
+
+        #529: No longer writes to session_state. EnrichmentService (Phase 2)
+        is the sole authoritative source. Label detection still runs so the
+        LLM can use the results during Phase 1 investigation.
 
         Returns a detected_infrastructure dict (with labels + note) when active
-        labels are found on the first call. Returns None when labels are all
-        defaults, when session_state is unavailable, or on subsequent calls.
+        labels are found. Returns None when labels are all defaults or on error.
         """
-        if self._session_state is None:
-            return None
-
-        if "detected_labels" in self._session_state:
-            return None
-
         try:
             from src.detection.labels import LabelDetector
 
@@ -254,10 +225,7 @@ class GetNamespacedResourceContextTool(Tool):
             labels = await detector.detect_labels(k8s_context, owner_chain)
 
             if labels is None:
-                self._session_state["detected_labels"] = {}
                 return None
-
-            self._session_state["detected_labels"] = labels
 
             if self._has_active_labels(labels):
                 display_labels = {
@@ -280,7 +248,6 @@ class GetNamespacedResourceContextTool(Tool):
                 "resource": f"{kind}/{namespace}/{name}",
                 "error": str(e),
             })
-            self._session_state["detected_labels"] = {}
             return None
 
     async def _build_k8s_context(
@@ -489,9 +456,7 @@ class GetClusterResourceContextTool(Tool):
         try:
             root_owner: Dict[str, str] = {"kind": kind, "name": name}
 
-            if self._session_state is not None:
-                self._session_state["root_owner"] = root_owner
-                self._session_state["resource_scope"] = "cluster"
+            # #529: session_state writes removed. EnrichmentService is authoritative.
 
             spec_hash = await self._k8s_client.compute_spec_hash(kind, name, "")
 

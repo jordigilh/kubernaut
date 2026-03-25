@@ -109,12 +109,16 @@ class TestResourceContextRefactor:
 
         tool = GetNamespacedResourceContextTool(
             k8s_client=mock_k8s,
-            history_fetcher=AsyncMock(return_value={"totalRemediations": 0}),
+            history_fetcher=MagicMock(return_value={"totalRemediations": 0}),
             session_state=session_state,
         )
 
         result = await tool._invoke_async(kind="Pod", name="test-pod", namespace="default")
 
         assert result is not None
-        result_str = str(result)
-        assert "root_owner" in result_str or "Deployment" in result_str
+        result_data = result.data if hasattr(result, "data") else str(result)
+        if isinstance(result_data, dict):
+            assert "root_owner" in result_data
+            assert result_data["root_owner"]["kind"] == "Deployment"
+        else:
+            assert "Deployment" in str(result_data)
