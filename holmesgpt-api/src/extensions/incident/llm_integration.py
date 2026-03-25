@@ -370,7 +370,7 @@ async def analyze_incident(
     remediation_id = request_data.get("remediation_id", "")
 
     # Use HolmesGPT SDK for AI-powered analysis (calls standalone Mock LLM in E2E)
-    # ADR-055: Context enrichment is post-RCA via get_resource_context tool.
+    # ADR-055: Context enrichment is post-RCA via get_namespaced_resource_context / get_cluster_resource_context.
     try:
         # BR-HAPI-211: Sanitize prompt BEFORE sending to LLM to prevent credential leakage
         from src.sanitization import sanitize_for_llm
@@ -442,7 +442,7 @@ async def analyze_incident(
             })
 
         # ADR-056 v1.4: Create shared session_state for inter-tool communication.
-        # Labels are detected by get_resource_context and read by workflow discovery.
+        # Labels are detected by get_namespaced_resource_context / get_cluster_resource_context and read by workflow discovery.
         session_state: Dict[str, Any] = {}
 
         # DD-HAPI-017: Register three-step workflow discovery toolset
@@ -451,7 +451,7 @@ async def analyze_incident(
             app_config,
             remediation_id=remediation_id,
             custom_labels=custom_labels,
-            detected_labels=None,  # ADR-056 v1.4: populated via session_state by get_resource_context
+            detected_labels=None,  # ADR-056 v1.4: populated via session_state by get_namespaced_resource_context / get_cluster_resource_context
             severity=request_data.get("severity", ""),
             component=request_data.get("resource_kind", ""),
             environment=request_data.get("environment", ""),
@@ -555,6 +555,26 @@ async def analyze_incident(
             is_valid = validation_result is None or validation_result.is_valid
             validation_errors = validation_result.errors if validation_result and not validation_result.is_valid else []
 
+            # #524 GAP 2: Propagate workflow parameter schema into session_state
+            # so _inject_target_resource can conditionally inject only declared params.
+            if validation_result and validation_result.parameter_schema is not None:
+                session_state["workflow_schema"] = validation_result.parameter_schema
+
+            # #524 GAP 1: Post-selection scope mismatch guard.
+            # If validation passed but the LLM picked a node-scoped workflow while
+            # using the namespaced resource context tool, nudge the LLM to retry.
+            if is_valid:
+                scope_nudge = _check_scope_mismatch(result, session_state)
+                if scope_nudge is not None:
+                    is_valid = False
+                    validation_errors = [scope_nudge]
+                    logger.warning({
+                        "event": "scope_mismatch_detected",
+                        "incident_id": incident_id,
+                        "attempt": attempt + 1,
+                        "nudge": scope_nudge,
+                    })
+
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             # AUDIT: VALIDATION ATTEMPT (BR-AUDIT-005, DD-HAPI-002 v1.2)
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -629,9 +649,11 @@ async def analyze_incident(
                 "count": len(result["validation_attempts_history"])
             })
 
-        # BR-496 v2: HAPI owns the target resource identity.
-        # Inject TARGET_RESOURCE_* from root_owner, construct affectedResource
-        # for Go backward compat, set rca_incomplete if root_owner missing.
+        # BR-496 v2 + #524: HAPI owns the target resource identity.
+        # Inject TARGET_RESOURCE_* from root_owner (only declared params),
+        # construct affectedResource for Go backward compat, set rca_incomplete
+        # if root_owner missing.  workflow_schema in session_state (populated
+        # above) controls which params get injected.
         _inject_target_resource(result, session_state, remediation_id)
 
         # ADR-056: Inject runtime-computed detected_labels into response
