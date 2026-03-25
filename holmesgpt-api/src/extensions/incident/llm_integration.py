@@ -184,6 +184,7 @@ _NODE_SCOPED_ACTION_TYPES = frozenset({
     "CordonNode",
     "UncordonNode",
     "RebootNode",
+    "CleanupNode",
 })
 
 

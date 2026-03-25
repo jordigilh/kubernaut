@@ -60,7 +60,9 @@ def parse_and_validate_investigation_result(
 
     Returns:
         Tuple of (result_dict, validation_result) where validation_result is None
-        if no workflow to validate or validation passed.
+        if no workflow to validate or no data_storage_client provided.  When
+        validation ran, the result is always returned (is_valid=True/False) so
+        callers can access parameter_schema for conditional injection (#524).
     """
     from src.validation.workflow_response_validator import WorkflowResponseValidator, ValidationResult
 
@@ -248,7 +250,6 @@ def parse_and_validate_investigation_result(
                 if validation_result.is_valid:
                     if validation_result.validated_execution_bundle:
                         selected_workflow["execution_bundle"] = validation_result.validated_execution_bundle
-                    validation_result = None  # Clear to indicate success
 
         except (json.JSONDecodeError, ValueError, SyntaxError) as e:
             logger.warning({
