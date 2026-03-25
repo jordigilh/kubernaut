@@ -151,12 +151,14 @@ class GetNamespacedResourceContextTool(Tool):
             history = []
             if self._history_fetcher:
                 try:
-                    history = self._history_fetcher(
+                    fetched = self._history_fetcher(
                         resource_kind=root_owner["kind"],
                         resource_name=root_owner["name"],
                         resource_namespace=root_owner.get("namespace", ""),
                         current_spec_hash=spec_hash,
                     )
+                    if fetched is not None:
+                        history = fetched
                 except Exception as e:
                     logger.warning({
                         "event": "remediation_history_fetch_failed",
@@ -463,12 +465,14 @@ class GetClusterResourceContextTool(Tool):
             history: list = []
             if self._history_fetcher:
                 try:
-                    history = self._history_fetcher(
+                    fetched = self._history_fetcher(
                         resource_kind=kind,
                         resource_name=name,
                         resource_namespace="",
                         current_spec_hash=spec_hash,
                     )
+                    if fetched is not None:
+                        history = fetched
                 except Exception as e:
                     logger.warning({
                         "event": "remediation_history_fetch_failed",

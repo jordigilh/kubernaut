@@ -58,15 +58,15 @@ def _parse_affected_resource(rca_data: Dict[str, Any]) -> Optional[Dict[str, str
     if not isinstance(raw, dict):
         logger.warning({"event": "invalid_affected_resource_type", "type": type(raw).__name__})
         return None
-    kind = raw.get("kind")
-    name = raw.get("name")
+    kind = str(raw.get("kind", "")).strip()
+    name = str(raw.get("name", "")).strip()
     if not kind or not name:
         logger.warning({"event": "missing_affected_resource_fields", "kind": kind, "name": name})
         return None
-    result: Dict[str, str] = {"kind": str(kind), "name": str(name)}
-    namespace = raw.get("namespace")
+    result: Dict[str, str] = {"kind": kind, "name": name}
+    namespace = str(raw.get("namespace", "")).strip()
     if namespace:
-        result["namespace"] = str(namespace)
+        result["namespace"] = namespace
     return result
 
 
