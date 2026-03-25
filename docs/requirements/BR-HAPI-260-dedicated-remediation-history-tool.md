@@ -4,7 +4,7 @@
 **Category**: HolmesGPT API Service
 **Priority**: P2
 **Target Version**: V1
-**Status**: Approved
+**Status**: DROPPED
 **Date**: 2026-03-25
 **Related Issue**: [#529](https://github.com/jordigilh/kubernaut/issues/529)
 
@@ -55,3 +55,4 @@ Provide a dedicated `get_remediation_history` LLM tool that decouples history qu
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-25 | Initial requirement: dedicated history tool with audit tracking (enforcement dropped) |
+| 1.1 | 2026-03-25 | DROPPED: Existing resource context tools (`get_namespaced_resource_context`, `get_cluster_resource_context`) already return remediation history. Phase 2 `EnrichmentService` provides authoritative history. Standalone tool adds complexity without benefit. |
