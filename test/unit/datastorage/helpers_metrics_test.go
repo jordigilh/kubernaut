@@ -209,17 +209,55 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 		})
 	})
 
+	Context("SanitizeQueryOperation", func() {
+		DescribeTable("should return known operations unchanged",
+			func(operation string, expected string) {
+				result := metrics.SanitizeQueryOperation(operation)
+				Expect(result).To(Equal(expected))
+			},
+
+			Entry("list", metrics.OperationList, metrics.OperationList),
+			Entry("get", metrics.OperationGet, metrics.OperationGet),
+			Entry("filter", metrics.OperationFilter, metrics.OperationFilter),
+		)
+
+		DescribeTable("should sanitize unknown operations to 'filter'",
+			func(unknownOperation string) {
+				result := metrics.SanitizeQueryOperation(unknownOperation)
+				Expect(result).To(Equal(metrics.OperationFilter), "Unknown operation should map to 'filter'")
+			},
+
+			Entry("custom operation", "custom_query"),
+			Entry("user input", "SELECT * FROM users"),
+			Entry("empty string", ""),
+		)
+
+		It("should maintain low cardinality", func() {
+			uniqueOperations := make(map[string]bool)
+			// Simulate many different operation names
+			for i := 0; i < 100; i++ {
+				operation := metrics.SanitizeQueryOperation("operation_" + string(rune(i)))
+				uniqueOperations[operation] = true
+			}
+
+			// Should only have the 3 known operations (unknown maps to "filter")
+			Expect(len(uniqueOperations)).To(BeNumerically("<=", 3),
+				"Operation cardinality should be bounded to 3 values")
+		})
+	})
+
 	Context("Overall Cardinality Protection", func() {
 		It("should maintain total cardinality under 100 across all metrics", func() {
 			// Calculate theoretical maximum cardinality
 			maxFailureReasons := 6    // 5 known + 1 unknown
 			maxValidationCombos := 60 // 10 fields × 6 reasons
-			maxTableStatus := 8        // 4 tables × 2 statuses
+			maxTableStatus := 8       // 4 tables × 2 statuses
+			maxOperations := 3        // 3 query operations
 
-			totalMaxCardinality := maxFailureReasons + maxValidationCombos + maxTableStatus
+			totalMaxCardinality := maxFailureReasons + maxValidationCombos + maxTableStatus + maxOperations
 
-			Expect(totalMaxCardinality).To(Equal(74),
-				"Total cardinality should be exactly 74")
+			Expect(totalMaxCardinality).To(Equal(77),
+				"Total cardinality should be exactly 77")
 			Expect(totalMaxCardinality).To(BeNumerically("<", 100),
 				"Total cardinality should be well under 100 (Prometheus best practice)")
 		})

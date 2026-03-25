@@ -50,13 +50,13 @@ import (
 //   - client: DLQ client for accessing Redis and logger
 //   - stream: Stream name (e.g., "notifications", "events") for metric labeling
 //   - streamKey: Full Redis stream key (e.g., "audit:dlq:notifications") for logging
-//   - messageType: Reserved for future use (previously used for enqueue metric)
+//   - messageType: Message type (e.g., "notification_audit", "audit_event") for metrics
 //
 // Capacity Thresholds:
 //   - 80%: INFO log + warning metric (monitoring recommended)
 //   - 90%: ERROR log + critical metric (urgent action needed)
 //   - 95%: ERROR log + imminent overflow metric (immediate action required)
-func (c *Client) monitorDLQCapacity(ctx context.Context, stream, streamKey, _ string) {
+func (c *Client) monitorDLQCapacity(ctx context.Context, stream, streamKey, messageType string) {
 	// Get current DLQ depth
 	depth, err := c.GetDLQDepth(ctx, stream)
 	if err != nil || c.maxLen <= 0 {
@@ -67,29 +67,35 @@ func (c *Client) monitorDLQCapacity(ctx context.Context, stream, streamKey, _ st
 	// Calculate capacity ratio (0.0 to 1.0)
 	capacityRatio := float64(depth) / float64(c.maxLen)
 
+	// Export Prometheus metrics (Gap 3.3 REFACTOR enhancement)
+	dlqCapacityRatio.WithLabelValues(stream).Set(capacityRatio)
+	dlqDepth.WithLabelValues(stream).Set(float64(depth))
+	dlqEnqueueTotal.WithLabelValues(stream, messageType).Inc()
+
 	// Reset all alert gauges first, then set active ones
 	// This ensures only the highest active threshold is set
 	dlqWarning.WithLabelValues(stream).Set(0)
 	dlqCritical.WithLabelValues(stream).Set(0)
+	dlqOverflowImminent.WithLabelValues(stream).Set(0)
 
 	// Log warnings at increasing severity levels + set alert metrics
-	// Two-tier warning system based on capacity ratio (80% warning, 90% critical)
-	if capacityRatio >= 0.90 {
-		// CRITICAL (90%+): Urgent action needed (includes 95%+ overflow imminent)
+	// Three-tier warning system based on capacity ratio
+	if capacityRatio >= 0.95 {
+		// IMMINENT OVERFLOW (95%+): Immediate action required
+		dlqOverflowImminent.WithLabelValues(stream).Set(1)
+		c.logger.Error(nil, "DLQ OVERFLOW IMMINENT - immediate action required",
+			"depth", depth,
+			"max", c.maxLen,
+			"ratio", fmt.Sprintf("%.2f%%", capacityRatio*100),
+			"stream", streamKey)
+	} else if capacityRatio >= 0.90 {
+		// CRITICAL (90%+): Urgent action needed
 		dlqCritical.WithLabelValues(stream).Set(1)
-		if capacityRatio >= 0.95 {
-			c.logger.Error(nil, "DLQ OVERFLOW IMMINENT - immediate action required",
-				"depth", depth,
-				"max", c.maxLen,
-				"ratio", fmt.Sprintf("%.2f%%", capacityRatio*100),
-				"stream", streamKey)
-		} else {
-			c.logger.Error(nil, "DLQ CRITICAL capacity - urgent action needed",
-				"depth", depth,
-				"max", c.maxLen,
-				"ratio", fmt.Sprintf("%.2f%%", capacityRatio*100),
-				"stream", streamKey)
-		}
+		c.logger.Error(nil, "DLQ CRITICAL capacity - urgent action needed",
+			"depth", depth,
+			"max", c.maxLen,
+			"ratio", fmt.Sprintf("%.2f%%", capacityRatio*100),
+			"stream", streamKey)
 	} else if capacityRatio >= 0.80 {
 		// WARNING (80%+): Monitoring recommended
 		dlqWarning.WithLabelValues(stream).Set(1)

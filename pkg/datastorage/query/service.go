@@ -20,8 +20,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -92,6 +94,14 @@ func NewService(db DBQuerier, logger logr.Logger) *Service {
 // CONVENTION (#213): All paginated remediation_audit queries must use id DESC as a
 // deterministic tiebreaker in ORDER BY to prevent row shifting between pages.
 func (s *Service) ListRemediationAudits(ctx context.Context, opts *ListOptions) ([]*models.RemediationAudit, error) {
+	// Track query duration for observability
+	// BR-STORAGE-019: Prometheus metrics
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		metrics.QueryDuration.WithLabelValues(metrics.OperationList).Observe(duration.Seconds())
+	}()
+
 	// Build base query
 	query := "SELECT * FROM remediation_audit WHERE 1=1"
 	args := []interface{}{}
@@ -136,6 +146,7 @@ func (s *Service) ListRemediationAudits(ctx context.Context, opts *ListOptions) 
 	// Execute query and scan results into intermediate type
 	var results []RemediationAuditResult
 	if err := s.db.SelectContext(ctx, &results, query, args...); err != nil {
+		metrics.QueryTotal.WithLabelValues(metrics.OperationList, metrics.StatusFailure).Inc()
 		s.logger.Error(err, "query failed",
 			"query", query)
 		return nil, fmt.Errorf("query failed: %w", err)
@@ -147,6 +158,7 @@ func (s *Service) ListRemediationAudits(ctx context.Context, opts *ListOptions) 
 		audits[i] = results[i].ToRemediationAudit()
 	}
 
+	metrics.QueryTotal.WithLabelValues(metrics.OperationList, metrics.StatusSuccess).Inc()
 	s.logger.Info("query successful",
 		"result_count", len(audits))
 

@@ -178,6 +178,8 @@ curl http://localhost:9090/metrics | grep datastorage
 # datastorage_cache_misses_total
 # datastorage_embedding_generation_duration_seconds
 # datastorage_validation_failures_total
+# datastorage_query_total
+# datastorage_query_duration_seconds
 ```
 
 ---
