@@ -426,10 +426,10 @@ class GetClusterResourceContextTool(Tool):
                 "this AFTER identifying the affected resource during Root "
                 "Cause Analysis when the target is cluster-scoped and has "
                 "no namespace. The tool returns the resource itself as the "
-                "root owner (no ownerReferences traversal), its remediation "
-                "history, and infrastructure characteristics. Do NOT use "
-                "this for namespaced resources like Pods or Deployments — "
-                "use get_namespaced_resource_context instead."
+                "root owner (no ownerReferences traversal) and its "
+                "remediation history. Do NOT use this for namespaced "
+                "resources like Pods or Deployments — use "
+                "get_namespaced_resource_context instead."
             ),
             parameters={
                 "kind": ToolParameter(
@@ -444,9 +444,9 @@ class GetClusterResourceContextTool(Tool):
                 ),
             },
             additional_instructions=(
-                "If the response includes 'detected_infrastructure', review "
-                "the infrastructure labels and consider whether they change "
-                "your root cause analysis or remediation approach."
+                "Use the root_owner identity and remediation_history to "
+                "inform your workflow selection for this cluster-scoped "
+                "resource."
             ),
         )
         object.__setattr__(self, "_k8s_client", k8s_client)

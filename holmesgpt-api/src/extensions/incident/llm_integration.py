@@ -169,10 +169,11 @@ def _inject_target_resource(
 def _get_declared_param_names(session_state: Dict[str, Any]) -> Optional[set]:
     """Extract declared parameter names from workflow_schema in session_state.
 
-    Returns None when no schema is available (backward compat: inject all).
+    Returns None when no schema key is present (backward compat: inject all).
+    Returns empty set when schema is an empty list (workflow declares no params).
     """
     schema = session_state.get("workflow_schema")
-    if not schema:
+    if schema is None:
         return None
     return {p.get("name") for p in schema if p.get("name")}
 
@@ -558,8 +559,11 @@ async def analyze_incident(
 
             # #524 GAP 2: Propagate workflow parameter schema into session_state
             # so _inject_target_resource can conditionally inject only declared params.
+            # Always update on each attempt to avoid stale schema from a previous retry.
             if validation_result and validation_result.parameter_schema is not None:
                 session_state["workflow_schema"] = validation_result.parameter_schema
+            elif validation_result and validation_result.parameter_schema is None:
+                session_state.pop("workflow_schema", None)
 
             # #524 GAP 1: Post-selection scope mismatch guard.
             # If validation passed but the LLM picked a node-scoped workflow while

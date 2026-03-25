@@ -41,7 +41,7 @@ import unittest
 import pytest
 from unittest.mock import Mock
 
-from src.extensions.incident.llm_integration import _inject_target_resource
+from src.extensions.incident.llm_integration import _inject_target_resource, _get_declared_param_names
 from src.extensions.incident.prompt_builder import create_incident_investigation_prompt
 from src.extensions.incident.result_parser import parse_and_validate_investigation_result
 from src.validation.workflow_response_validator import WorkflowResponseValidator
@@ -881,3 +881,30 @@ class TestValidationResultParameterSchema524:
 
         vr = ValidationResult(is_valid=True)
         assert vr.parameter_schema is None
+
+
+class TestGetDeclaredParamNames:
+    """F8: _get_declared_param_names distinguishes empty schema from missing."""
+
+    def test_missing_schema_returns_none(self):
+        """No workflow_schema key → None (inject all for backward compat)."""
+        assert _get_declared_param_names({}) is None
+
+    def test_none_schema_returns_none(self):
+        """workflow_schema explicitly set to None → None."""
+        assert _get_declared_param_names({"workflow_schema": None}) is None
+
+    def test_empty_schema_returns_empty_set(self):
+        """Empty list schema → empty set (workflow declares no params)."""
+        result = _get_declared_param_names({"workflow_schema": []})
+        assert result == set()
+        assert result is not None
+
+    def test_populated_schema_returns_names(self):
+        """Schema with entries → set of declared param names."""
+        schema = [
+            {"name": "TARGET_RESOURCE_NAME", "type": "string"},
+            {"name": "MEMORY_LIMIT", "type": "string"},
+        ]
+        result = _get_declared_param_names({"workflow_schema": schema})
+        assert result == {"TARGET_RESOURCE_NAME", "MEMORY_LIMIT"}
