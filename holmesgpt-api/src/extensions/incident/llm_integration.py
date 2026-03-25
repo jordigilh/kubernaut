@@ -493,12 +493,16 @@ async def analyze_incident(
 
     Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
 
-    Self-Correction Loop:
-    1. Call HolmesGPT SDK for RCA and workflow selection
-    2. Validate workflow response (existence, image, parameters)
-    3. If invalid, feed errors back to LLM for self-correction
-    4. Retry up to MAX_VALIDATION_ATTEMPTS times
-    5. If all attempts fail, set needs_human_review=True
+    Three-Phase Architecture (#529):
+      Phase 1: LLM provides RCA + affectedResource
+      Phase 2: EnrichmentService resolves K8s owner chain, detects labels, fetches history
+      Phase 3: LLM selects workflow using enrichment context + Phase 1 analysis
+
+    Self-Correction Loop (within Phase 3):
+    1. Validate workflow response (existence, image, parameters)
+    2. If invalid, feed errors back to LLM for self-correction
+    3. Retry up to MAX_VALIDATION_ATTEMPTS times
+    4. If all attempts fail, set needs_human_review=True
     
     Args:
         request_data: Incident request data dict
@@ -635,7 +639,6 @@ async def analyze_incident(
         result = None
         workflow_id = None
         enrichment_result_obj: Optional[EnrichmentResult] = None
-        phase1_messages: Optional[List[Dict[str, Any]]] = None
 
         for attempt in range(MAX_VALIDATION_ATTEMPTS):
             attempt_timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -711,10 +714,28 @@ async def analyze_incident(
                     "affected_resource": affected_resource,
                 })
 
+                from src.clients.k8s_client import get_k8s_client
+                from src.detection.labels import LabelDetector
+
+                try:
+                    k8s = get_k8s_client()
+                except Exception:
+                    k8s = None
+
+                detector_fn = None
+                if k8s:
+                    _detector = LabelDetector(k8s)
+
+                    async def _detect(root_owner, owner_chain):
+                        k8s_context = {"namespace": root_owner.get("namespace", "")}
+                        return await _detector.detect_labels(k8s_context, owner_chain)
+
+                    detector_fn = _detect
+
                 enrichment_svc = EnrichmentService(
-                    k8s_client=None,
+                    k8s_client=k8s,
                     ds_client=data_storage_client,
-                    label_detector=None,
+                    label_detector=detector_fn,
                 )
                 try:
                     enrichment_result_obj = await enrichment_svc.enrich(affected_resource)

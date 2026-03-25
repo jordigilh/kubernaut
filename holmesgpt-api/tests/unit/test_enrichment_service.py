@@ -222,5 +222,7 @@ class TestEnrichmentService:
 
         assert result.detected_labels is not None
         assert result.detected_labels.get("helmManaged") is True
-        # Label detection should be called with root owner, not original pod
         mock_label_detector.assert_called_once()
+        call_args = mock_label_detector.call_args
+        assert call_args[0][0] == {"kind": "Deployment", "name": "app", "namespace": "default"}
+        assert len(call_args[0][1]) == 2  # owner_chain has Pod + Deployment

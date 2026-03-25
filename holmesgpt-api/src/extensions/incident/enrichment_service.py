@@ -79,6 +79,12 @@ class EnrichmentService:
         name = affected_resource["name"]
         namespace = affected_resource.get("namespace", "")
 
+        if self._k8s is None:
+            raise EnrichmentFailure(
+                reason="rca_incomplete",
+                detail="K8s client unavailable — cannot resolve owner chain",
+            )
+
         owner_chain = await self._retry(
             lambda: self._k8s.resolve_owner_chain(kind, name, namespace),
             "resolve_owner_chain",
@@ -89,24 +95,29 @@ class EnrichmentService:
         detected_labels = None
         if self._label_detector:
             try:
-                detected_labels = await self._label_detector(root_owner)
-            except Exception:
-                logger.warning({"event": "label_detection_failed", "root_owner": root_owner})
+                detected_labels = await self._label_detector(
+                    root_owner, owner_chain,
+                )
+            except Exception as e:
+                logger.warning({"event": "label_detection_failed", "root_owner": root_owner, "error": str(e)})
 
         remediation_history = None
-        try:
-            remediation_history = await self._retry(
-                lambda: self._ds.query_remediation_history(
-                    target_kind=root_owner["kind"],
-                    target_name=root_owner["name"],
-                    target_namespace=root_owner.get("namespace", ""),
-                ),
-                "query_remediation_history",
-            )
-        except EnrichmentFailure:
-            raise
-        except Exception:
-            logger.warning({"event": "history_fetch_failed", "root_owner": root_owner})
+        if self._ds is not None:
+            try:
+                remediation_history = await self._retry(
+                    lambda: self._ds.query_remediation_history(
+                        target_kind=root_owner["kind"],
+                        target_name=root_owner["name"],
+                        target_namespace=root_owner.get("namespace", ""),
+                    ),
+                    "query_remediation_history",
+                )
+            except EnrichmentFailure:
+                logger.warning({"event": "history_retry_exhausted", "root_owner": root_owner})
+            except Exception:
+                logger.warning({"event": "history_fetch_failed", "root_owner": root_owner})
+        else:
+            logger.info({"event": "history_fetch_skipped", "reason": "no_ds_client"})
 
         return EnrichmentResult(
             root_owner=root_owner,
@@ -129,7 +140,8 @@ class EnrichmentService:
                     "delay_s": delay,
                     "error": str(e),
                 })
-                await asyncio.sleep(delay)
+                if attempt < len(RETRY_DELAYS) - 1:
+                    await asyncio.sleep(delay)
 
         raise EnrichmentFailure(
             reason="rca_incomplete",
