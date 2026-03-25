@@ -44,6 +44,47 @@ Architecture:
       2. After step 1 result → Return list_workflows tool call
       3. After step 2 result → Return get_workflow tool call
       4. After step 3 result → Return final analysis with selected workflow
+
+    #529 THREE-PHASE RCA ARCHITECTURE (PENDING REFACTOR):
+    =====================================================
+    The current mock implements a SINGLE LLM call that produces both RCA and
+    workflow selection in one response. Issue #529 redesigns this into three
+    HAPI-driven phases with TWO separate LLM calls:
+
+      Phase 1 (LLM call 1 - RCA):
+        - HAPI sends investigation prompt with all tools available
+        - LLM optionally calls resource context tools (informational, no side effects)
+        - LLM returns RCA + affectedResource (NO workflow selection)
+        - Mock must detect Phase 1 and return RCA-only response
+
+      Phase 2 (HAPI-driven - no LLM):
+        - EnrichmentService resolves owner chain, detects labels, fetches history
+        - Not relevant to mock LLM
+
+      Phase 3 (LLM call 2 - Workflow Selection):
+        - HAPI sends enrichment context + Phase 1 messages as previous_messages
+        - LLM calls workflow discovery tools (list_available_actions, list_workflows, get_workflow)
+        - LLM returns workflow selection (NO RCA)
+        - Mock must detect Phase 3 by presence of enrichment context in prompt
+
+    EXPECTED REGRESSIONS (current mock vs required behavior):
+    ---------------------------------------------------------
+    REG-1: _handle_openai_request routes to single-phase discovery flow.
+           Must detect Phase 1 vs Phase 3 and route differently.
+
+    REG-2: _discovery_tool_call_response always sequences RC tools then workflow
+           tools. Phase 1 should only use RC tools (optional), Phase 3 should
+           only use workflow discovery tools.
+
+    REG-3: _final_analysis_response always returns RCA + selected_workflow
+           together. Phase 1 must return RCA + affectedResource only.
+           Phase 3 must return selected_workflow only (RCA already provided).
+
+    REG-4: _has_remediation_history_tool is dead code (BR-260 dropped).
+           Must be removed.
+
+    REG-5: _count_tool_results docstring references 5-step flow with
+           get_remediation_history. Must be updated for 3-phase protocol.
 """
 
 import json
@@ -80,10 +121,7 @@ class MockScenario:
     rca_resource_namespace: str = "default"
     rca_resource_name: str = "test-pod"
     rca_resource_api_version: str = "v1"  # BR-HAPI-212: API version for GVK resolution
-    # #529 REGRESSION: When BR-HAPI-261 is implemented, HAPI will parse
-    # affectedResource from the LLM response. With default=False, all standard
-    # scenarios will escalate to rca_incomplete. Must change to True.
-    include_affected_resource: bool = False  # BR-496 v2: HAPI injects affectedResource from root_owner post-loop
+    include_affected_resource: bool = True  # #529: LLM provides affectedResource; HAPI parses and validates
     rca_override_prompt_resource: bool = False  # DD-EM-004: Use scenario kind/name instead of prompt-extracted
     parameters: Dict[str, str] = field(default_factory=dict)
     execution_engine: str = "tekton"  # BR-WE-014: Execution backend ("tekton" or "job")
@@ -853,6 +891,20 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         for tool in tools:
             func = tool.get("function", {})
             if func.get("name") in rc_names:
+                return True
+        return False
+
+    @staticmethod
+    def _has_remediation_history_tool(tools: List[Dict[str, Any]]) -> bool:
+        """Check if the tools list includes get_remediation_history.
+
+        #529 BR-HAPI-260: When HAPI registers the dedicated history tool,
+        the mock must call it so session_state["queried_history_resources"]
+        is populated for BR-HAPI-262 verification.
+        """
+        for tool in tools:
+            func = tool.get("function", {})
+            if func.get("name") == "get_remediation_history":
                 return True
         return False
 
