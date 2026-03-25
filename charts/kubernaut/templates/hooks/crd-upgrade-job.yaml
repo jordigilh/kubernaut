@@ -1,0 +1,88 @@
+# Helm v3 does not update CRDs during `helm upgrade` (only on `helm install`).
+# This pre-upgrade hook applies CRDs via server-side apply so schema changes
+# (field additions, removals, default changes) take effect on upgrade.
+# See: https://helm.sh/docs/chart_best_practices/custom_resource_definitions/
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-crd-manifests
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-3"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+data:
+  {{- range $path, $_ := .Files.Glob "files/crds/*.yaml" }}
+  {{ $path | base }}: |
+    {{- $.Files.Get $path | nindent 4 }}
+  {{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-crd-upgrade
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-2"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: crd-upgrade
+    spec:
+      serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
+      restartPolicy: Never
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.hooks | nindent 8 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
+      volumes:
+        - name: crds
+          configMap:
+            name: {{ include "kubernaut.fullname" . }}-crd-manifests
+      containers:
+        - name: apply-crds
+          image: {{ .Values.hooks.tlsCerts.image }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: crds
+              mountPath: /crds
+              readOnly: true
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "==> Applying CRD manifests (server-side apply)..."
+              APPLIED=0
+              FAILED=0
+              for f in /crds/*.yaml; do
+                name=$(basename "$f")
+                if kubectl apply --server-side --force-conflicts -f "$f"; then
+                  echo "    $name: applied"
+                  APPLIED=$((APPLIED + 1))
+                else
+                  echo "    $name: FAILED"
+                  FAILED=$((FAILED + 1))
+                fi
+              done
+              echo "==> CRD upgrade complete: $APPLIED applied, $FAILED failed"
+              if [ "$FAILED" -gt 0 ]; then
+                exit 1
+              fi
