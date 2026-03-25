@@ -1,10 +1,10 @@
 # DD-HAPI-006: Affected Resource in Root Cause Analysis
 
 **Status**: ✅ Approved
-**Version**: 1.5
+**Version**: 1.6
 **Date**: 2026-02-24
-**Last Updated**: 2026-03-24 (Issue #524: split resource context tools, conditional canonical injection)
-**Confidence**: 97%
+**Last Updated**: 2026-03-25 (Issue #529: three-phase RCA, LLM-provided affectedResource with HAPI owner resolution)
+**Confidence**: 95%
 **Authority**: Authoritative (Approved)
 
 ---
@@ -26,22 +26,27 @@ HolmesGPT-API returns `root_cause_analysis` in its `/incident/analyze` response.
 3. ❌ **Incorrect remediation** - workflows could target the wrong resource
 4. ❌ **Resource ambiguity** - multiple resources with same Kind/Name but different APIVersions
 
-### Current State (v1.5 — BR-496 v2 + Issue #524)
+### Current State (v1.6 — Issue #529: Three-Phase RCA)
 
 **HAPI Code** (`holmesgpt-api/src/extensions/incident/llm_integration.py`):
 ```python
-# BR-496 v2: HAPI owns the target resource identity.
-# _inject_target_resource derives affectedResource from K8s-verified root_owner
-# stored in session_state by get_namespaced_resource_context or get_cluster_resource_context.
-_inject_target_resource(result, session_state, remediation_id)
+# Issue #529: Three-phase RCA flow.
+# Phase 1: LLM provides affectedResource in RCA output.
+# Phase 2: EnrichmentService resolves owner chain, detects labels, fetches history.
+# Phase 3: LLM selects workflow with enriched context.
+# _inject_target_resource uses resolved root_owner from EnrichmentResult.
+_inject_target_resource(result, enrichment.root_owner, enrichment.resource_scope, session_state, remediation_id)
 ```
 
-**Architecture (v1.5)**: HAPI **owns** target resource identity — the LLM never provides `affectedResource`. Instead:
-- ✅ `get_namespaced_resource_context` (namespace-scoped targets) or `get_cluster_resource_context` (cluster-scoped targets, e.g. Node, PV) resolves the K8s owner chain where applicable and stores `root_owner` plus `resource_scope` (`"namespaced"` or `"cluster"`) in `session_state`
-- ✅ `_inject_target_resource` derives `affectedResource` from `root_owner` (K8s-verified)
+**Architecture (v1.6)**: Hybrid LLM-provided + HAPI-resolved model. The LLM explicitly declares `affectedResource`; HAPI validates and resolves it:
+- ✅ **Phase 1 (RCA)**: LLM investigates and provides `affectedResource` (`{kind, name}` or `{kind, name, namespace}`). Prompt instructs the LLM to declare the remediation target.
+- ✅ **Phase 2 (Enrichment)**: `EnrichmentService` resolves the K8s owner chain for the LLM-provided `affectedResource`, auto-correcting to the root owner (e.g., Pod → Deployment). Also detects infrastructure labels and fetches remediation history for the resolved root owner.
+- ✅ **Phase 3 (Workflow Selection)**: LLM receives enrichment context (resolved root owner + labels + history) and selects a workflow.
+- ✅ `_inject_target_resource` derives `affectedResource` from the resolved `root_owner` (K8s-verified via EnrichmentService)
 - ✅ `_inject_target_resource` injects declared `TARGET_RESOURCE_NAME` / `TARGET_RESOURCE_KIND` / `TARGET_RESOURCE_NAMESPACE` into workflow params (Issue #524: only parameters present in the workflow schema)
-- ✅ Prompts do **not** instruct the LLM to provide `affectedResource`
-- ✅ If `root_owner` is missing → `needs_human_review=true`, `human_review_reason=rca_incomplete`
+- ✅ Resource context tools (`get_namespaced_resource_context` / `get_cluster_resource_context`) no longer write `root_owner` or `detected_labels` to `session_state` — HAPI's EnrichmentService is the sole authoritative source
+- ✅ If `affectedResource` invalid → Phase 1 retry with feedback (conversation continuity, BR-HAPI-263)
+- ✅ If owner chain resolution fails after retries → `needs_human_review=true`, `human_review_reason=rca_incomplete`
 
 ---
 
@@ -529,6 +534,7 @@ type RootCauseAnalysis struct {
 | 1.3 | 2026-03-04 | BR-496 v1: Added Layer 1b — affectedResource mismatch detection. Resource context tool stores K8s-verified `root_owner` in `session_state`; post-loop check compares LLM's `affectedResource` against `root_owner`. Two new `human_review_reason` values: `affectedResource_mismatch`, `unverified_target_resource`. |
 | 1.4 | 2026-03-04 | BR-496 v2: HAPI-owned target resource identity. Replaced Layer 1b mismatch detection with `_inject_target_resource` — HAPI unconditionally derives `affectedResource` from `root_owner`. Removed `affectedResource_mismatch` and `unverified_target_resource` enum values. Added canonical `TARGET_RESOURCE_*` param injection and schema stripping. Simplified defense-in-depth from 4 layers to 3. Prompt no longer instructs LLM to provide `affectedResource`. Validator Step 0 enforced canonical params in workflow schemas (removed in v1.5 / Issue #524). |
 | 1.5 | 2026-03-24 | Issue #524: Renamed namespaced tool to `get_namespaced_resource_context`; added `get_cluster_resource_context` for cluster-scoped resources. Both live in the `resource_context` toolset. `resource_scope` stored in `session_state`. Canonical `TARGET_RESOURCE_*` injection and validation are **conditional** on workflow schema declarations; Step 0 mandatory canonical declaration check **removed**. Post-selection guard for node-scoped `action_type` vs namespaced resource-context mismatch. |
+| 1.6 | 2026-03-25 | Issue #529: Three-phase RCA architecture. LLM now provides `affectedResource` in Phase 1 RCA output; HAPI validates format and resolves K8s owner chain via `EnrichmentService` (Phase 2). Auto-corrects child resources to root owner (Pod -> Deployment). `_inject_target_resource` accepts resolved `root_owner` from `EnrichmentResult` instead of reading `session_state`. Resource context tools no longer write `root_owner` or `detected_labels` to `session_state`. BR-HAPI-262 (history verification) dropped. See BR-HAPI-261. |
 
 ---
 

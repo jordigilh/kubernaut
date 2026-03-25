@@ -2,7 +2,7 @@
 
 **Status**: ACCEPTED
 **Decision Date**: 2026-02-12
-**Version**: 1.6
+**Version**: 1.7
 **Confidence**: 96%
 **Applies To**: SignalProcessing, HolmesGPT API (HAPI), AIAnalysis Controller, Data Storage
 
@@ -19,6 +19,7 @@
 | 1.4 | 2026-02-20 | Architecture Team | Phase 1 implementation: move label detection from `workflow_discovery.py` (signal source) into the `resource_context` toolset (`get_namespaced_resource_context` for namespaced RCA targets; cluster-scoped targets use `get_cluster_resource_context`). Add conditional `detected_infrastructure` response for one-shot LLM reassessment when active labels exist. Second call on the appropriate tool resolves new target context but skips label re-detection. See DD-HAPI-017 v1.4, BR-HAPI-017-008. |
 | 1.5 | 2026-03-12 | Architecture Team | Status changed from PROPOSED to ACCEPTED. Implementation verified complete: label detection in resource context tools, session-state propagation, `failedDetections` stripping all operational. Dead code (`should_include_detected_labels()`) tracked as tech debt (#345). |
 | 1.6 | 2026-03-24 | Architecture Team | **Issue #524**: Document tool split — `get_namespaced_resource_context` and `get_cluster_resource_context` in the `resource_context` toolset; `resource_scope` in `session_state`. Narrative and diagrams updated from legacy `get_resource_context` name. |
+| 1.7 | 2026-03-25 | Architecture Team | **Issue #529**: Label detection moves from `resource_context` tools to `EnrichmentService` (Phase 2 of three-phase RCA). Labels are now detected for the K8s-verified root owner resolved by HAPI (not the resource the LLM investigated via the tool). `_detect_labels_if_needed` removed from `resource_context.py`; `_build_k8s_context` extracted to shared utility. Labels provided to LLM via enrichment prompt in Phase 3, not via tool response. `session_state["detected_labels"]` no longer written by resource context tools. See BR-HAPI-264. |
 
 ---
 

@@ -1,10 +1,32 @@
 # DD-HAPI-002: Workflow Response Validation Architecture
 
 **Date**: December 1, 2025
-**Status**: ✅ APPROVED (Updated v1.3)
+**Status**: ✅ APPROVED (Updated v1.4)
 **Deciders**: Architecture Team, Workflow Engine Team, HolmesGPT-API Team
-**Version**: 1.3
-**Related**: DD-WORKFLOW-002, DD-HAPI-001, BR-HAPI-191, BR-AI-023, DD-WE-006, GitHub Issue #241
+**Version**: 1.4
+**Related**: DD-WORKFLOW-002, DD-HAPI-001, BR-HAPI-191, BR-AI-023, DD-WE-006, GitHub Issue #241, GitHub Issue #529
+
+---
+
+## ⚠️ v1.4 UPDATE (March 25, 2026 — Issue #529)
+
+**Change**: Restructured from a **single self-correction loop** to a **three-phase architecture** with two distinct validation loops.
+
+**Problem** (GitHub Issue #529): The single loop performs RCA, context enrichment, and workflow validation in one pass. The LLM selects a workflow without seeing K8s-verified labels, resolved owner identity, or authoritative remediation history. This leads to suboptimal workflow selection.
+
+**New Architecture**:
+
+| Phase | Scope | Validation | Max Attempts |
+|-------|-------|------------|--------------|
+| **Phase 1: RCA** | LLM investigates, provides `affectedResource` | `affectedResource` format only (kind, name, optional namespace) | 3 |
+| **Phase 2: Enrichment** | HAPI resolves owner chain, detects labels, fetches history | Infrastructure retries (exponential backoff). Fail hard on exhaustion. | 3 per service |
+| **Phase 3: Workflow Selection** | LLM receives enrichment, selects workflow | Full workflow validation (existence, image, params, scope, context) | 3 |
+
+**Key changes**:
+- Phase 1 loop validates `affectedResource` only — no workflow validation
+- All workflow validation (Steps 1–3b below) moves to Phase 3
+- Conversation continuity (BR-HAPI-263) threads messages across Phase 1 → Phase 3
+- Scope mismatch and resource context mismatch checks move to Phase 3
 
 ---
 
@@ -627,6 +649,7 @@ See: `docs/requirements/BR-HAPI-191-workflow-parameter-validation.md`
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.4 | 2026-03-25 | **ARCHITECTURE**: Issue #529 three-phase RCA. Single self-correction loop split into Phase 1 (RCA + `affectedResource` validation) and Phase 3 (workflow validation with enriched context). Phase 2 is HAPI-side enrichment (owner resolution, labels, history) with exponential backoff retries. Conversation continuity (BR-HAPI-263) threads messages across phases. Workflow validation (Steps 1–3b) unchanged but moves to Phase 3. |
 | 1.3 | 2026-03-02 | **SECURITY**: Added Step 3b — undeclared parameter stripping (GitHub Issue #241). LLM-hallucinated params (e.g., GIT_PASSWORD) are silently removed before reaching execution. No-schema workflows have all params stripped. |
 | 1.2 | 2025-12-05 | **EXPANDED**: Added workflow existence and container image validation. Changed from tool-based to automatic validation. Added comprehensive implementation design. |
 | 1.1 | 2025-12-01 | **SIMPLIFIED**: Removed WE validation layer. HAPI is now sole validator. BR-WE-001 cancelled. |

@@ -2,8 +2,8 @@
 
 **Status**: ACCEPTED
 **Decision Date**: 2026-02-12
-**Version**: 1.4
-**Confidence**: 90%
+**Version**: 1.5
+**Confidence**: 92%
 **Applies To**: HolmesGPT API (HAPI), AIAnalysis Controller, SignalProcessing
 
 ---
@@ -17,6 +17,7 @@
 | 1.3 | 2026-02-24 | Architecture Team | **Issue #188 (DD-EM-003)**: Renamed `resolveEffectivenessTarget` to `resolveDualTargets` throughout. The function now returns `*creator.DualTarget{Signal, Remediation}` with explicit dual-target semantics. Updated compatibility table and data quality section. |
 | 1.2 | 2026-02-12 | Architecture Team | Refine tool return contract: `get_resource_context` returns only `root_owner` and `remediation_history` to the LLM. Owner chain traversal and spec hash computation are internal implementation details not exposed in the tool response. Update prompt Phase 3b accordingly. See also ADR-056 for DetectedLabels relocation. |
 | 1.4 | 2026-03-24 | Architecture Team | **Issue #524**: Namespaced tool renamed to `get_namespaced_resource_context`; added `get_cluster_resource_context` for cluster-scoped targets (Node, PV, etc.). Both tools registered in the `resource_context` toolset. `resource_scope` (`namespaced` / `cluster`) stored in `session_state`. Canonical `TARGET_RESOURCE_*` injection is conditional on workflow schema declarations; former validator Step 0 (mandatory canonical declarations) removed. |
+| 1.5 | 2026-03-25 | Architecture Team | **Issue #529**: Three-phase RCA architecture. Context enrichment moves from LLM-driven tool call to HAPI-driven `EnrichmentService` (Phase 2). LLM provides `affectedResource` in Phase 1; HAPI resolves owner chain, detects labels, and fetches history for the resolved root owner. Enrichment context sent to LLM in Phase 3 for informed workflow selection. Resource context tools no longer write `root_owner` or `detected_labels` to `session_state`; `EnrichmentService` is the sole authoritative source. BR-HAPI-262 (history verification enforcement) dropped — HAPI always provides verified history. See BR-HAPI-260, BR-HAPI-261, BR-HAPI-264. |
 
 ---
 
