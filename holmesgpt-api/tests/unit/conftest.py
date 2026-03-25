@@ -10,8 +10,9 @@ import os
 import time
 import tempfile
 
-# BR-496 v2: Canonical HAPI-managed params that every workflow schema must declare.
-# Shared across test files so mock workflows satisfy _validate_canonical_params.
+# BR-496 v2 / #524: Canonical HAPI-managed params commonly declared by workflows.
+# After #524 these are no longer mandatory — HAPI only injects those present
+# in the schema.  Kept as a convenience for tests that include all three.
 CANONICAL_TARGET_PARAMS = [
     {"name": "TARGET_RESOURCE_NAME", "type": "string", "required": True},
     {"name": "TARGET_RESOURCE_KIND", "type": "string", "required": True},
