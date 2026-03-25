@@ -80,6 +80,9 @@ class MockScenario:
     rca_resource_namespace: str = "default"
     rca_resource_name: str = "test-pod"
     rca_resource_api_version: str = "v1"  # BR-HAPI-212: API version for GVK resolution
+    # #529 REGRESSION: When BR-HAPI-261 is implemented, HAPI will parse
+    # affectedResource from the LLM response. With default=False, all standard
+    # scenarios will escalate to rca_incomplete. Must change to True.
     include_affected_resource: bool = False  # BR-496 v2: HAPI injects affectedResource from root_owner post-loop
     rca_override_prompt_resource: bool = False  # DD-EM-004: Use scenario kind/name instead of prompt-extracted
     parameters: Dict[str, str] = field(default_factory=dict)
@@ -791,6 +794,20 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
 
         DD-HAPI-017 + ADR-056 v1.4: Used by the discovery protocol to
         determine which step we're on.
+
+        #529 REGRESSION: When BR-HAPI-260 is implemented, HAPI registers
+        get_remediation_history as a tool. Without a 5-step flow that calls
+        this tool, session_state["queried_history_resources"] will be empty
+        and BR-HAPI-262 verification will reject every RCA with
+        history_not_queried. Must extend to 5-step flow.
+
+        5-step flow (with resource context + history tools, #529):
+          0 tool results → get_namespaced_resource_context or get_cluster_resource_context
+          1 tool result  → get_remediation_history (#529)
+          2 tool results → list_available_actions
+          3 tool results → list_workflows
+          4 tool results → get_workflow
+          5+ tool results → final analysis
 
         4-step flow (with get_namespaced_resource_context / get_cluster_resource_context):
           0 tool results → get_namespaced_resource_context or get_cluster_resource_context (ADR-056)
