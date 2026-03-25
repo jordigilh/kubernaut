@@ -866,19 +866,23 @@ async def analyze_incident(
             })
 
             if is_valid:
-                mismatch_feedback = _check_resource_context_mismatch(
-                    result, session_state, incident_id
-                )
-                if mismatch_feedback is not None:
-                    session_state.pop("detected_labels", None)
-                    validation_errors_history.append(["resource_context_mismatch"])
-                    pending_mismatch_feedback = mismatch_feedback
-                    logger.warning({
-                        "event": "resource_context_mismatch",
-                        "incident_id": incident_id,
-                        "attempt": attempt + 1,
-                    })
-                    continue
+                # #529: Skip the legacy resource-context mismatch check when the
+                # three-phase enrichment flow was used — Phase 2 EnrichmentService
+                # already resolved and validated the affected resource.
+                if enrichment_result_obj is None:
+                    mismatch_feedback = _check_resource_context_mismatch(
+                        result, session_state, incident_id
+                    )
+                    if mismatch_feedback is not None:
+                        session_state.pop("detected_labels", None)
+                        validation_errors_history.append(["resource_context_mismatch"])
+                        pending_mismatch_feedback = mismatch_feedback
+                        logger.warning({
+                            "event": "resource_context_mismatch",
+                            "incident_id": incident_id,
+                            "attempt": attempt + 1,
+                        })
+                        continue
 
                 logger.info({
                     "event": "workflow_validation_passed",
