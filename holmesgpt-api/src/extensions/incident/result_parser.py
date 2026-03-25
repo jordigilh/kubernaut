@@ -33,13 +33,41 @@ including JSON extraction, workflow validation, and human review determination.
 import json
 import re
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 
 # HolmesGPT SDK imports
 from holmes.core.models import InvestigationResult
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_affected_resource(rca_data: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """Extract and validate affectedResource from the RCA data.
+
+    BR-HAPI-261: The LLM provides affectedResource in its Phase 1 RCA response.
+    Two valid structures:
+      - Namespaced: {"kind": "...", "name": "...", "namespace": "..."}
+      - Cluster:    {"kind": "...", "name": "..."}
+
+    Returns the validated resource dict or None if absent/invalid.
+    """
+    raw = rca_data.get("affectedResource")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        logger.warning({"event": "invalid_affected_resource_type", "type": type(raw).__name__})
+        return None
+    kind = raw.get("kind")
+    name = raw.get("name")
+    if not kind or not name:
+        logger.warning({"event": "missing_affected_resource_fields", "kind": kind, "name": name})
+        return None
+    result: Dict[str, str] = {"kind": str(kind), "name": str(name)}
+    namespace = raw.get("namespace")
+    if namespace:
+        result["namespace"] = str(namespace)
+    return result
 
 
 def parse_and_validate_investigation_result(
