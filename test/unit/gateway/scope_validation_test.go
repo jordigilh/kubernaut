@@ -391,7 +391,7 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 	// ========================================
 	// UT-GW-002-008: nil ScopeChecker (backward compatibility)
 	// ========================================
-	It("[UT-GW-002-008] should accept signal when scope checker is nil (backward compat) (BR-SCOPE-002)", func() {
+	It("[UT-GW-002-008] should reject signal when scope checker is nil (deny-by-default) (BR-SCOPE-013)", func() {
 		By("1. Create Gateway server WITHOUT scope checker (nil)")
 		gwServer, err := newTestGatewayServer(k8sClient, metricsInstance, nil)
 		Expect(err).ToNot(HaveOccurred())
@@ -402,13 +402,13 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
 
-	By("3. Verify signal passes through (no scope filtering)")
-	Expect(err).ToNot(HaveOccurred(),
-		"BR-SCOPE-002: nil scopeChecker must not block signal processing")
-	Expect(response.Status).To(Equal(gatewaypkg.StatusCreated),
-		"BR-SCOPE-002: Signal must be accepted normally when scope filtering is disabled")
-		Expect(response.RemediationRequestName).ToNot(BeEmpty(),
-			"BR-SCOPE-002: RR CRD must be created when scope filtering is disabled")
+		By("3. Verify signal is rejected (deny-by-default when scope checker not initialized)")
+		Expect(err).ToNot(HaveOccurred(),
+			"BR-SCOPE-013: nil scopeChecker must produce rejection, not error")
+		Expect(response.Status).To(Equal(gatewaypkg.StatusRejected),
+			"BR-SCOPE-013: Signal must be rejected when scope checker is not initialized")
+		Expect(response.Rejection).ToNot(BeNil(),
+			"BR-SCOPE-013: Rejection response must contain actionable details")
 	})
 
 	// ========================================

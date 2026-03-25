@@ -138,6 +138,11 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			testName := fmt.Sprintf("e2e-job-failure-%s", uuid.New().String()[:8])
 			targetResource := fmt.Sprintf("default/deployment/job-fail-test-%s", uuid.New().String()[:8])
 
+			// Issue #518: WorkflowID must be a valid UUID (resolved at runtime via DS)
+			jobFailureUUID := infrastructure.RegisteredWorkflowUUIDs["test-job-intentional-failure"]
+			Expect(jobFailureUUID).ToNot(BeEmpty(),
+				"test-job-intentional-failure UUID should have been captured during workflow registration")
+
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testName,
@@ -151,7 +156,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID: "test-job-intentional-failure",
+						WorkflowID: jobFailureUUID,
 						Version:    "v1.0.0",
 						// Job failing image: exits with non-zero status
 						ExecutionBundle: fmt.Sprintf("%s/job-failing:%s",
@@ -475,8 +480,12 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 // ========================================
 
 // createTestJobWFE creates a WorkflowExecution for job-backend E2E (engine resolved from DS at runtime).
+// Issue #518: WorkflowID must be a valid UUID (resolved at runtime by the WE controller via DS).
 // Uses the pre-built job-hello-world image from quay.io/kubernaut-cicd.
 func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
+	jobHelloWorldUUID := infrastructure.RegisteredWorkflowUUIDs["test-job-hello-world"]
+	Expect(jobHelloWorldUUID).ToNot(BeEmpty(),
+		"test-job-hello-world UUID should have been captured during workflow registration")
 	return &workflowexecutionv1alpha1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -491,7 +500,7 @@ func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.Wo
 				Namespace:  controllerNamespace,
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID: "test-job-hello-world",
+				WorkflowID: jobHelloWorldUUID,
 				Version:    "v1.0.0",
 				// Job hello-world image: echoes params and exits 0
 				// Pre-built multi-arch image from quay.io/kubernaut-cicd (amd64 + arm64)

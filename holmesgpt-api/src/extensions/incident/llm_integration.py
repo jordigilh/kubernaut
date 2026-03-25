@@ -58,7 +58,8 @@ from src.audit import (
 from .constants import MAX_VALIDATION_ATTEMPTS
 from .prompt_builder import (
     create_incident_investigation_prompt,
-    build_validation_error_feedback
+    build_validation_error_feedback,
+    build_resource_context_mismatch_feedback,
 )
 from .result_parser import parse_and_validate_investigation_result
 from src.extensions.investigation_helpers import (
@@ -217,6 +218,58 @@ def _check_scope_mismatch(
             f"`get_cluster_resource_context` with the Node's kind and name, then "
             f"re-select the workflow."
         )
+
+    return None
+
+
+def _check_resource_context_mismatch(
+    result: Dict[str, Any],
+    session_state: Dict[str, Any],
+    incident_id: str,
+) -> Optional[str]:
+    """Return correction feedback if the LLM's affectedResource doesn't match
+    the last get_resource_context target, or None if they match.
+
+    Issue #516: The LLM may call get_resource_context for one resource during
+    early investigation but later identify a different resource as the RCA
+    target.  Since detected_labels are computed by get_resource_context, stale
+    labels from the wrong resource can lead to incorrect workflow selection.
+
+    Skipped when no workflow was selected (no remediation to validate).
+    """
+    if result.get("selected_workflow") is None:
+        return None
+
+    rca = result.get("root_cause_analysis")
+    if not isinstance(rca, dict):
+        return None
+
+    affected = rca.get("affectedResource")
+    if not isinstance(affected, dict):
+        return None
+
+    last_target = session_state.get("last_resource_context_target")
+
+    if last_target is None:
+        logger.warning({
+            "event": "resource_context_never_called",
+            "incident_id": incident_id,
+            "affected_resource": affected,
+        })
+        return build_resource_context_mismatch_feedback(affected, None)
+
+    if (
+        last_target.get("kind") != affected.get("kind")
+        or last_target.get("name") != affected.get("name")
+        or last_target.get("namespace", "") != affected.get("namespace", "")
+    ):
+        logger.warning({
+            "event": "resource_context_target_mismatch",
+            "incident_id": incident_id,
+            "affected_resource": affected,
+            "last_resource_context_target": last_target,
+        })
+        return build_resource_context_mismatch_feedback(affected, last_target)
 
     return None
 
@@ -476,6 +529,7 @@ async def analyze_incident(
         validation_errors_history: List[List[str]] = []
         validation_attempts_history: List[Dict[str, Any]] = []  # For response
         last_schema_hint: Optional[str] = None  # BR-HAPI-191: schema hint for self-correction
+        pending_mismatch_feedback: Optional[str] = None  # #516: resource context mismatch correction
         result = None
         workflow_id = None
 
@@ -483,7 +537,10 @@ async def analyze_incident(
             attempt_timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
             # Build prompt with error feedback for retries
-            if validation_errors_history:
+            if pending_mismatch_feedback is not None:
+                investigation_prompt = base_prompt + pending_mismatch_feedback
+                pending_mismatch_feedback = None
+            elif validation_errors_history:
                 investigation_prompt = base_prompt + build_validation_error_feedback(
                     validation_errors_history[-1],
                     attempt,
@@ -603,6 +660,21 @@ async def analyze_incident(
             })
 
             if is_valid:
+                # #516: Check resource context mismatch before accepting
+                mismatch_feedback = _check_resource_context_mismatch(
+                    result, session_state, incident_id
+                )
+                if mismatch_feedback is not None:
+                    session_state.pop("detected_labels", None)
+                    validation_errors_history.append(["resource_context_mismatch"])
+                    pending_mismatch_feedback = mismatch_feedback
+                    logger.warning({
+                        "event": "resource_context_mismatch",
+                        "incident_id": incident_id,
+                        "attempt": attempt + 1,
+                    })
+                    continue
+
                 logger.info({
                     "event": "workflow_validation_passed",
                     "incident_id": incident_id,

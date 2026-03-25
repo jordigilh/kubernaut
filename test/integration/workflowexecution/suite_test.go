@@ -488,16 +488,12 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 			},
 			TargetResource: targetResource,
 		},
-		Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-			ExecutionEngine: "tekton",
-		},
 	}
 }
 
-// createUniqueJobWFE creates a WorkflowExecution with ExecutionEngine "job" for Job backend tests
+// createUniqueJobWFE creates a WorkflowExecution for Job backend tests
 func createUniqueJobWFE(testID, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
 	wfe := createUniqueWFE(testID, targetResource)
-	wfe.Status.ExecutionEngine = "job"
 	testWorkflowQuerier.Engine = "job"
 	return wfe
 }

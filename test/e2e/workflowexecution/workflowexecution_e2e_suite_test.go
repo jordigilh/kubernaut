@@ -370,8 +370,12 @@ var _ = ReportAfterEach(func(report SpecReport) {
 // Test Helpers
 // ========================================
 
-// createTestWFE creates a WorkflowExecution for testing
+// createTestWFE creates a WorkflowExecution for testing.
+// Issue #518: WorkflowID must be a valid UUID (resolved at runtime by the WE controller via DS).
 func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
+	helloWorldUUID := infrastructure.RegisteredWorkflowUUIDs["test-hello-world"]
+	Expect(helloWorldUUID).ToNot(BeEmpty(),
+		"test-hello-world UUID should have been captured during workflow registration")
 	return &workflowexecutionv1alpha1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -386,7 +390,7 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 				Namespace:  controllerNamespace,
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID: "test-hello-world",
+				WorkflowID: helloWorldUUID,
 				Version:    "v1.0.0",
 				// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (amd64 + arm64)
 				// Built with `tkn bundle push` — contains Tekton Pipeline with required annotations

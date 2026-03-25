@@ -153,17 +153,21 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
 				return false
 			}
-			for i := range rrList.Items {
-				rr := &rrList.Items[i]
-				if rr.Spec.TargetResource.Namespace != testNamespace {
-					continue
-				}
+		for i := range rrList.Items {
+			rr := &rrList.Items[i]
+			if rr.Spec.TargetResource.Namespace != testNamespace {
+				continue
+			}
+			sig := strings.ToLower(rr.Spec.SignalName)
+			if sig == "backoff" || sig == "oomkilled" || sig == "oomkill" || strings.Contains(sig, "oom") {
 				remediationRequest = rr
-				GinkgoWriter.Printf("  ✅ RemediationRequest found: %s\n", rr.Name)
+				GinkgoWriter.Printf("  ✅ RemediationRequest found: %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
 				return true
 			}
-			return false
-		}, timeout, interval).Should(BeTrue(), "RemediationRequest should be created by Gateway")
+			GinkgoWriter.Printf("  ⏳ Skipping RR %s with signal %q (waiting for OOMKill/BackOff)\n", rr.Name, rr.Spec.SignalName)
+		}
+		return false
+	}, timeout, interval).Should(BeTrue(), "RemediationRequest should be created by Gateway")
 
 		// ================================================================
 		// Step 4: Verify SignalProcessing enriched the signal
@@ -944,15 +948,19 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
 				return false
 			}
-			for i := range rrList.Items {
-				rr := &rrList.Items[i]
-				if rr.Spec.TargetResource.Namespace != testNamespaceAM {
-					continue
-				}
+		for i := range rrList.Items {
+			rr := &rrList.Items[i]
+			if rr.Spec.TargetResource.Namespace != testNamespaceAM {
+				continue
+			}
+			sig := strings.ToLower(rr.Spec.SignalName)
+			if sig == "memoryexceedslimit" || strings.Contains(sig, "oom") {
 				remediationRequest = rr
-				GinkgoWriter.Printf("  ✅ RemediationRequest found (from AlertManager): %s\n", rr.Name)
+				GinkgoWriter.Printf("  ✅ RemediationRequest found (from AlertManager): %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
 				return true
 			}
+			GinkgoWriter.Printf("  ⏳ Skipping RR %s with signal %q (waiting for MemoryExceedsLimit)\n", rr.Name, rr.Spec.SignalName)
+		}
 			// Periodic diagnostic output every 10 polls (~30s)
 			if pollCount%10 == 0 {
 				GinkgoWriter.Printf("  ⏳ Still waiting for RR from AlertManager webhook (poll #%d)...\n", pollCount)

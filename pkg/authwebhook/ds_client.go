@@ -17,7 +17,9 @@ limitations under the License.
 package authwebhook
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -35,14 +37,16 @@ import (
 //
 // ADR-058: Used by RemediationWorkflowHandler to register/disable workflows in DS.
 type DSClientAdapter struct {
-	client *ogenclient.Client
-	logger logr.Logger
+	client     *ogenclient.Client
+	logger     logr.Logger
+	baseURL    string
+	httpClient *http.Client
 }
 
 // NewDSClientAdapterFromClient wraps an existing ogen client as a DSClientAdapter.
 // Use when the ogen client is shared across multiple adapters (e.g., audit + workflow).
 func NewDSClientAdapterFromClient(client *ogenclient.Client, logger logr.Logger) *DSClientAdapter {
-	return &DSClientAdapter{client: client, logger: logger}
+	return &DSClientAdapter{client: client, logger: logger, httpClient: http.DefaultClient}
 }
 
 // NewDSClientAdapter creates a DSClientAdapter from a Data Storage service URL.
@@ -72,8 +76,10 @@ func NewDSClientAdapter(baseURL string, timeout time.Duration, logger logr.Logge
 	}
 
 	return &DSClientAdapter{
-		client: client,
-		logger: logger,
+		client:     client,
+		logger:     logger,
+		baseURL:    baseURL,
+		httpClient: httpClient,
 	}, nil
 }
 
@@ -263,6 +269,65 @@ func (a *DSClientAdapter) DisableActionType(ctx context.Context, name string, di
 		return nil, rfc7807Error(fmt.Sprintf("disable action type %q: server error", name), (*ogenclient.RFC7807Problem)(v))
 	default:
 		return nil, fmt.Errorf("unexpected response type from DisableActionType: %T", res)
+	}
+}
+
+// ForceDisableActionType sends a force-disable request to DS, disabling the
+// specified orphaned workflows before attempting to disable the action type.
+// Issue #512: raw HTTP call because the ogen client doesn't support the force fields.
+func (a *DSClientAdapter) ForceDisableActionType(ctx context.Context, name string, disabledBy string, orphanedWorkflows []string) (*ActionTypeDisableResult, error) {
+	if a.baseURL == "" || a.httpClient == nil {
+		return nil, fmt.Errorf("ForceDisableActionType requires baseURL and httpClient (use NewDSClientAdapter)")
+	}
+
+	body := struct {
+		DisabledBy        string   `json:"disabledBy"`
+		Force             bool     `json:"force"`
+		OrphanedWorkflows []string `json:"orphanedWorkflows"`
+	}{
+		DisabledBy:        disabledBy,
+		Force:             true,
+		OrphanedWorkflows: orphanedWorkflows,
+	}
+
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal force-disable request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v1/action-types/%s/disable", a.baseURL, name)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("create force-disable request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("force-disable action type %q: %w", name, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return &ActionTypeDisableResult{Disabled: true}, nil
+	case http.StatusConflict:
+		var denied struct {
+			DependentWorkflowCount int      `json:"dependentWorkflowCount"`
+			DependentWorkflows     []string `json:"dependentWorkflows"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&denied); err != nil {
+			return nil, fmt.Errorf("decode force-disable denied response: %w", err)
+		}
+		return &ActionTypeDisableResult{
+			Disabled:               false,
+			DependentWorkflowCount: denied.DependentWorkflowCount,
+			DependentWorkflows:     denied.DependentWorkflows,
+		}, nil
+	case http.StatusNotFound:
+		return &ActionTypeDisableResult{Disabled: true}, nil
+	default:
+		return nil, fmt.Errorf("force-disable action type %q: unexpected status %d", name, resp.StatusCode)
 	}
 }
 

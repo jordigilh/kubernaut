@@ -146,8 +146,29 @@ class GetNamespacedResourceContextTool(Tool):
             # tool more than once.
             # #524: resource_scope tracks which tool variant was used.
             if self._session_state is not None:
+                new_target = {
+                    "kind": root_owner["kind"],
+                    "name": root_owner["name"],
+                    "namespace": root_owner.get("namespace", ""),
+                }
+
+                # #516: Clear stale detected_labels when target resource changes
+                prev_target = self._session_state.get("last_resource_context_target")
+                if (
+                    prev_target is not None
+                    and prev_target != new_target
+                    and "detected_labels" in self._session_state
+                ):
+                    del self._session_state["detected_labels"]
+                    logger.info({
+                        "event": "detected_labels_cleared_on_target_change",
+                        "previous_target": prev_target,
+                        "new_target": new_target,
+                    })
+
                 self._session_state["root_owner"] = root_owner
                 self._session_state["resource_scope"] = "namespaced"
+                self._session_state["last_resource_context_target"] = new_target
 
             spec_hash = await self._k8s_client.compute_spec_hash(
                 root_owner["kind"], root_owner["name"], root_owner.get("namespace", "")

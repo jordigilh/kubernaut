@@ -64,6 +64,10 @@ type actionTypeUpdateResponse struct {
 // actionTypeDisableRequest is the request body for PATCH /api/v1/action-types/{name}/disable.
 type actionTypeDisableRequest struct {
 	DisabledBy string `json:"disabledBy"`
+	// Force enables orphan recovery (#512): disable only the named workflows
+	// before attempting to disable the action type.
+	Force              bool     `json:"force,omitempty"`
+	OrphanedWorkflows  []string `json:"orphanedWorkflows,omitempty"`
 }
 
 // actionTypeDisableResponse is the response for PATCH /api/v1/action-types/{name}/disable.
@@ -272,16 +276,24 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	result, err := h.actionTypeRepo.Disable(r.Context(), name, req.DisabledBy)
-	if err != nil {
-		h.logger.Error(err, "Failed to disable action type", "name", name)
-		if errors.Is(err, actiontyperepo.ErrActionTypeNotFound) {
+	var (
+		result *actiontyperepo.DisableResult
+		disableErr error
+	)
+	if req.Force && len(req.OrphanedWorkflows) > 0 {
+		result, disableErr = h.actionTypeRepo.ForceDisable(r.Context(), name, req.DisabledBy, req.OrphanedWorkflows)
+	} else {
+		result, disableErr = h.actionTypeRepo.Disable(r.Context(), name, req.DisabledBy)
+	}
+	if disableErr != nil {
+		h.logger.Error(disableErr, "Failed to disable action type", "name", name, "force", req.Force)
+		if errors.Is(disableErr, actiontyperepo.ErrActionTypeNotFound) {
 			response.WriteRFC7807Error(w, http.StatusNotFound, "not-found",
 				"Not Found", fmt.Sprintf("Action type %q not found", name), h.logger)
 			return
 		}
 		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error",
-			"Database Error", fmt.Sprintf("Failed to disable action type: %v", err), h.logger)
+			"Database Error", fmt.Sprintf("Failed to disable action type: %v", disableErr), h.logger)
 		return
 	}
 

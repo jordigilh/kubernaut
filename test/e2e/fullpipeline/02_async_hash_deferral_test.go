@@ -19,6 +19,7 @@ package fullpipeline
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -206,18 +207,22 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 			if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
 				return false
 			}
-			for i := range rrList.Items {
-				rr := &rrList.Items[i]
-				if rr.Spec.TargetResource.Namespace != testNamespace {
-					continue
-				}
+		for i := range rrList.Items {
+			rr := &rrList.Items[i]
+			if rr.Spec.TargetResource.Namespace != testNamespace {
+				continue
+			}
+			sig := strings.ToLower(rr.Spec.SignalName)
+			if sig == "certmanagercertnotready" || strings.Contains(sig, "cert") {
 				remediationRequest = rr
-				GinkgoWriter.Printf("  ✅ RemediationRequest found: %s\n", rr.Name)
+				GinkgoWriter.Printf("  ✅ RemediationRequest found: %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
 				return true
 			}
-			return false
-		}, 2*time.Minute, 3*time.Second).Should(BeTrue(),
-			"RemediationRequest should be created by Gateway from CertManagerCertNotReady alert")
+			GinkgoWriter.Printf("  ⏳ Skipping RR %s with signal %q (waiting for CertManagerCertNotReady)\n", rr.Name, rr.Spec.SignalName)
+		}
+		return false
+	}, 2*time.Minute, 3*time.Second).Should(BeTrue(),
+		"RemediationRequest should be created by Gateway from CertManagerCertNotReady alert")
 
 		// ================================================================
 		// Step 5: Wait for AIAnalysis to complete

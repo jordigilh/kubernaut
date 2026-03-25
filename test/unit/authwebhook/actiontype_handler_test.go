@@ -43,9 +43,10 @@ import (
 // ========================================
 
 type mockActionTypeCatalogClient struct {
-	createFn  func(ctx context.Context, name string, desc ogenclient.ActionTypeDescription, registeredBy string) (*authwebhook.ActionTypeRegistrationResult, error)
-	updateFn  func(ctx context.Context, name string, desc ogenclient.ActionTypeDescription, updatedBy string) (*authwebhook.ActionTypeUpdateResult, error)
-	disableFn func(ctx context.Context, name string, disabledBy string) (*authwebhook.ActionTypeDisableResult, error)
+	createFn       func(ctx context.Context, name string, desc ogenclient.ActionTypeDescription, registeredBy string) (*authwebhook.ActionTypeRegistrationResult, error)
+	updateFn       func(ctx context.Context, name string, desc ogenclient.ActionTypeDescription, updatedBy string) (*authwebhook.ActionTypeUpdateResult, error)
+	disableFn      func(ctx context.Context, name string, disabledBy string) (*authwebhook.ActionTypeDisableResult, error)
+	forceDisableFn func(ctx context.Context, name string, disabledBy string, orphanedWorkflows []string) (*authwebhook.ActionTypeDisableResult, error)
 }
 
 func (m *mockActionTypeCatalogClient) CreateActionType(ctx context.Context, name string, desc ogenclient.ActionTypeDescription, registeredBy string) (*authwebhook.ActionTypeRegistrationResult, error) {
@@ -67,6 +68,13 @@ func (m *mockActionTypeCatalogClient) UpdateActionType(ctx context.Context, name
 func (m *mockActionTypeCatalogClient) DisableActionType(ctx context.Context, name string, disabledBy string) (*authwebhook.ActionTypeDisableResult, error) {
 	if m.disableFn != nil {
 		return m.disableFn(ctx, name, disabledBy)
+	}
+	return &authwebhook.ActionTypeDisableResult{Disabled: true}, nil
+}
+
+func (m *mockActionTypeCatalogClient) ForceDisableActionType(ctx context.Context, name string, disabledBy string, orphanedWorkflows []string) (*authwebhook.ActionTypeDisableResult, error) {
+	if m.forceDisableFn != nil {
+		return m.forceDisableFn(ctx, name, disabledBy, orphanedWorkflows)
 	}
 	return &authwebhook.ActionTypeDisableResult{Disabled: true}, nil
 }
@@ -613,6 +621,159 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 			Expect(updated.Status.RegisteredBy).To(Equal(testUserEmail))
 			Expect(updated.Status.RegisteredAt).NotTo(BeNil())
 			Expect(updated.Status.PreviouslyExisted).To(BeFalse())
+		})
+	})
+
+	// ========================================
+	// UT-AT-512-001: DELETE with orphaned DS entries — orphan recovery succeeds
+	// Issue #512: K8s cross-check detects no live RWs → force-disable
+	// ========================================
+	Describe("UT-AT-512-001: DELETE with orphaned DS entries triggers orphan recovery", func() {
+		It("should return Allowed when DS denies but no live RWs exist in K8s", func() {
+			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			scheme := newATScheme()
+			fakeK8s := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(at).
+				Build()
+
+			mockDS.disableFn = func(_ context.Context, _ string, _ string) (*authwebhook.ActionTypeDisableResult, error) {
+				return &authwebhook.ActionTypeDisableResult{
+					Disabled:               false,
+					DependentWorkflowCount: 1,
+					DependentWorkflows:     []string{"orphaned-wf"},
+				}, nil
+			}
+			forceDisableCalled := false
+			mockDS.forceDisableFn = func(_ context.Context, name string, _ string, orphaned []string) (*authwebhook.ActionTypeDisableResult, error) {
+				forceDisableCalled = true
+				Expect(name).To(Equal("RestartPod"))
+				Expect(orphaned).To(ConsistOf("orphaned-wf"))
+				return &authwebhook.ActionTypeDisableResult{Disabled: true}, nil
+			}
+
+			handlerWithK8s := authwebhook.NewActionTypeHandler(mockDS, mockAudit, fakeK8s)
+			resp := handlerWithK8s.Handle(ctx, buildATDeleteAdmissionRequest(at))
+
+			Expect(resp.Allowed).To(BeTrue(),
+				"DELETE should be Allowed when all DS-reported dependents are orphaned")
+			Expect(forceDisableCalled).To(BeTrue(),
+				"ForceDisableActionType should be called for orphan recovery")
+		})
+	})
+
+	// ========================================
+	// UT-AT-512-002: DELETE with live RWs — genuine denial
+	// Issue #512: K8s cross-check finds live RWs → no recovery
+	// ========================================
+	Describe("UT-AT-512-002: DELETE denied when live RWs exist in K8s", func() {
+		It("should return Denied when DS-reported dependents are live in K8s", func() {
+			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			rw := buildRemediationWorkflow("live-wf", "kubernaut-system")
+			rw.Spec.ActionType = "RestartPod"
+
+			scheme := newATScheme()
+			fakeK8s := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(at, rw).
+				Build()
+
+			mockDS.disableFn = func(_ context.Context, _ string, _ string) (*authwebhook.ActionTypeDisableResult, error) {
+				return &authwebhook.ActionTypeDisableResult{
+					Disabled:               false,
+					DependentWorkflowCount: 1,
+					DependentWorkflows:     []string{"live-wf"},
+				}, nil
+			}
+			forceDisableCalled := false
+			mockDS.forceDisableFn = func(_ context.Context, _ string, _ string, _ []string) (*authwebhook.ActionTypeDisableResult, error) {
+				forceDisableCalled = true
+				return nil, fmt.Errorf("should not be called")
+			}
+
+			handlerWithK8s := authwebhook.NewActionTypeHandler(mockDS, mockAudit, fakeK8s)
+			resp := handlerWithK8s.Handle(ctx, buildATDeleteAdmissionRequest(at))
+
+			Expect(resp.Allowed).To(BeFalse(),
+				"DELETE should be Denied when live RWs exist in K8s")
+			Expect(forceDisableCalled).To(BeFalse(),
+				"ForceDisableActionType should NOT be called when live RWs exist")
+		})
+	})
+
+	// ========================================
+	// UT-AT-512-003: DELETE with orphaned entries — force-disable fails
+	// Issue #512: Fallback to denial when force-disable fails
+	// ========================================
+	Describe("UT-AT-512-003: DELETE denied when force-disable fails", func() {
+		It("should return Denied when orphans detected but force-disable errors", func() {
+			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			scheme := newATScheme()
+			fakeK8s := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(at).
+				Build()
+
+			mockDS.disableFn = func(_ context.Context, _ string, _ string) (*authwebhook.ActionTypeDisableResult, error) {
+				return &authwebhook.ActionTypeDisableResult{
+					Disabled:               false,
+					DependentWorkflowCount: 1,
+					DependentWorkflows:     []string{"orphaned-wf"},
+				}, nil
+			}
+			mockDS.forceDisableFn = func(_ context.Context, _ string, _ string, _ []string) (*authwebhook.ActionTypeDisableResult, error) {
+				return nil, fmt.Errorf("DS connection error")
+			}
+
+			handlerWithK8s := authwebhook.NewActionTypeHandler(mockDS, mockAudit, fakeK8s)
+			resp := handlerWithK8s.Handle(ctx, buildATDeleteAdmissionRequest(at))
+
+			Expect(resp.Allowed).To(BeFalse(),
+				"DELETE should be Denied when force-disable fails (fallback to original denial)")
+		})
+	})
+
+	// ========================================
+	// UT-AT-512-004: DELETE with mixed live + orphaned — genuine denial
+	// Issue #512: Some deps are live, some orphaned → deny (don't force)
+	// ========================================
+	Describe("UT-AT-512-004: DELETE denied with mixed live and orphaned workflows", func() {
+		It("should return Denied when some dependents are live and some orphaned", func() {
+			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			rw := buildRemediationWorkflow("live-wf", "kubernaut-system")
+			rw.Spec.ActionType = "RestartPod"
+
+			scheme := newATScheme()
+			fakeK8s := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(at, rw).
+				Build()
+
+			mockDS.disableFn = func(_ context.Context, _ string, _ string) (*authwebhook.ActionTypeDisableResult, error) {
+				return &authwebhook.ActionTypeDisableResult{
+					Disabled:               false,
+					DependentWorkflowCount: 2,
+					DependentWorkflows:     []string{"live-wf", "orphaned-wf"},
+				}, nil
+			}
+			forceDisableCalled := false
+			mockDS.forceDisableFn = func(_ context.Context, name string, _ string, orphaned []string) (*authwebhook.ActionTypeDisableResult, error) {
+				forceDisableCalled = true
+				Expect(orphaned).To(ConsistOf("orphaned-wf"))
+				return &authwebhook.ActionTypeDisableResult{
+					Disabled:               false,
+					DependentWorkflowCount: 1,
+					DependentWorkflows:     []string{"live-wf"},
+				}, nil
+			}
+
+			handlerWithK8s := authwebhook.NewActionTypeHandler(mockDS, mockAudit, fakeK8s)
+			resp := handlerWithK8s.Handle(ctx, buildATDeleteAdmissionRequest(at))
+
+			Expect(resp.Allowed).To(BeFalse(),
+				"DELETE should be Denied when non-orphaned workflows remain")
+			Expect(forceDisableCalled).To(BeTrue(),
+				"ForceDisableActionType should be called to clean orphans even when live RWs exist")
 		})
 	})
 

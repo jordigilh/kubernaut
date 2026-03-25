@@ -239,14 +239,21 @@ func patchWebhookConfigsWithCABundle(kubeconfigPath string, writer io.Writer) er
 		}
 	}
 
-	// Patch ValidatingWebhookConfiguration
-	patchCmd := exec.Command("kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
-		"--kubeconfig", kubeconfigPath,
-		"--type=json",
-		"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/0/clientConfig/caBundle","value":"%s"}]`, caBundleB64))
-	if output, err := patchCmd.CombinedOutput(); err != nil {
-		_, _ = fmt.Fprintf(writer, "   ❌ Failed to patch validating webhook: %s\n", output)
-		return fmt.Errorf("failed to patch validating webhook: %w", err)
+	// Patch all ValidatingWebhookConfiguration webhooks (must match manifest order)
+	validatingWebhookNames := []string{
+		"notificationrequest.validate.kubernaut.ai",
+		"remediationworkflow.validate.kubernaut.ai",
+		"actiontype.validate.kubernaut.ai",
+	}
+	for i, vwName := range validatingWebhookNames {
+		patchCmd := exec.Command("kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
+			"--kubeconfig", kubeconfigPath,
+			"--type=json",
+			"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/%d/clientConfig/caBundle","value":"%s"}]`, i, caBundleB64))
+		if output, err := patchCmd.CombinedOutput(); err != nil {
+			_, _ = fmt.Fprintf(writer, "   ❌ Failed to patch %s: %s\n", vwName, output)
+			return fmt.Errorf("failed to patch validating webhook %s: %w", vwName, err)
+		}
 	}
 
 	return nil

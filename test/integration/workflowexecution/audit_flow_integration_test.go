@@ -86,6 +86,9 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 	// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
 	// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
 	dsClient = dsClients.OpenAPIClient
+
+	// #518: Ensure engine mock is reset before each test to prevent leak from Job tests
+	testWorkflowQuerier.Engine = "tekton"
 	})
 
 	Context("when workflow execution starts (BR-WE-005)", func() {
@@ -131,9 +134,6 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 					},
 					TargetResource: targetResource,
-				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -249,9 +249,6 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 					},
 					TargetResource: targetResource,
-				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
