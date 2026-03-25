@@ -6,7 +6,7 @@
 **Target Version**: V1.1
 **Status**: ✅ Approved
 **Date**: 2026-01-20
-**Last Updated**: 2026-03-04 (BR-496 v2: HAPI-owned target resource identity)
+**Last Updated**: 2026-03-24 (Issue #524: resource-context tool split; conditional `TARGET_RESOURCE_*` injection)
 
 **Related Design Decisions**:
 - [DD-HAPI-006 v1.3: Affected Resource in Root Cause Analysis](../architecture/decisions/DD-HAPI-006-affectedResource-in-rca.md)
@@ -148,20 +148,21 @@ HolmesGPT-API performs Root Cause Analysis (RCA) on Kubernetes signals and ident
 
 ### **FR-HAPI-212-002: LLM Prompt Engineering (Updated for BR-496 v2)**
 
-**Requirement (v1.4)**: HolmesGPT-API MUST **NOT** instruct the LLM to provide `affectedResource`. Instead, prompts instruct the LLM to call `get_resource_context` to identify the root owner resource.
+**Requirement (v1.5)**: HolmesGPT-API MUST **NOT** instruct the LLM to provide `affectedResource`. Instead, prompts instruct the LLM to call the appropriate `resource_context` tool: `get_namespaced_resource_context` for namespace-scoped resources, or `get_cluster_resource_context` for cluster-scoped resources (e.g., Node, PV).
 
-**Prompt Guidelines (v1.4)**:
+**Prompt Guidelines (v1.5)**:
 ```markdown
-Phase 3b: Call get_resource_context with the resource identified in your RCA
-to obtain the root managing resource (e.g., Pod → ReplicaSet → Deployment).
+Phase 3b: Call get_namespaced_resource_context or get_cluster_resource_context
+(whichever matches your RCA target's scope) with the resource identified in your RCA
+to obtain the root managing resource when an owner chain applies (e.g., Pod → ReplicaSet → Deployment).
 The root_owner returned by this tool identifies the actual remediation target.
 ```
 
-**Rationale**: BR-496 v2 shifts target resource identity to HAPI. The LLM's role is to call `get_resource_context` (which populates `root_owner` in `session_state`). HAPI then uses `root_owner` to inject `affectedResource` and `TARGET_RESOURCE_*` params.
+**Rationale**: BR-496 v2 shifts target resource identity to HAPI. The LLM's role is to call the matching resource-context tool (which populates `root_owner` and `resource_scope` in `session_state`). HAPI then uses `root_owner` to inject `affectedResource`. **`TARGET_RESOURCE_NAME` / `TARGET_RESOURCE_KIND` / `TARGET_RESOURCE_NAMESPACE` are injected into `selected_workflow.parameters` only when those keys are declared in the workflow schema** (Issue #524 — no longer unconditionally mandatory).
 
 **Acceptance Criteria**:
 1. ✅ LLM prompts do **NOT** include guidance on providing `affectedResource`
-2. ✅ LLM prompts instruct the LLM to call `get_resource_context`
+2. ✅ LLM prompts instruct the LLM to call `get_namespaced_resource_context` or `get_cluster_resource_context` as appropriate
 3. ✅ JSON examples in prompts do **NOT** contain `affectedResource`
 
 ---
@@ -226,7 +227,7 @@ root_cause_analysis:
 
 HAPI no longer relies on the LLM to provide `affectedResource`. Instead, `_inject_target_resource` derives it from `root_owner`:
 
-1. **`root_owner` present in `session_state`** → HAPI injects `affectedResource` (from `root_owner`) into `root_cause_analysis`, and injects `TARGET_RESOURCE_NAME/KIND/NAMESPACE` into `selected_workflow.parameters`. Any LLM-provided `affectedResource` is unconditionally overwritten.
+1. **`root_owner` present in `session_state`** → HAPI injects `affectedResource` (from `root_owner`) into `root_cause_analysis`, and injects `TARGET_RESOURCE_NAME` / `TARGET_RESOURCE_KIND` / `TARGET_RESOURCE_NAMESPACE` into `selected_workflow.parameters` **only for parameters declared on the workflow schema** (Issue #524). Any LLM-provided `affectedResource` is unconditionally overwritten.
 2. **`root_owner` missing from `session_state`** (tool not called or failed) → Set `needs_human_review=true`, `human_review_reason=rca_incomplete`. RO creates **NotificationRequest** (no remediation plan).
 3. **No workflow selected** → `affectedResource` still injected if `root_owner` present (for audit completeness), but `TARGET_RESOURCE_*` params not injected (no workflow to inject into).
 
@@ -458,15 +459,15 @@ HAPI no longer relies on the LLM to provide `affectedResource`. Instead, `_injec
 - ✅ Backward compatible (optional field)
 
 **Risks**:
-- ⚠️ **3% Gap**: `get_resource_context` may not be called by the LLM, leaving `root_owner` absent
+- ⚠️ **3% Gap**: The LLM may not call `get_namespaced_resource_context` / `get_cluster_resource_context`, leaving `root_owner` absent
   - **Mitigation**: `_inject_target_resource` detects missing `root_owner` and sets `rca_incomplete`
-  - **Mitigation**: Prompt Phase 3b explicitly instructs LLM to call `get_resource_context`
+  - **Mitigation**: Prompt Phase 3b explicitly instructs the LLM to call the correct resource-context tool for the target's scope
   - **Mitigation**: Layer 3 (RO) catches any remaining gaps at routing level
 
-> **Note (v1.4)**: The LLM reliability risk for `affectedResource` (previously 5%) is eliminated by BR-496 v2. HAPI derives the field from K8s-verified `root_owner`, not from LLM output. The remaining risk is limited to `get_resource_context` not being called.
+> **Note (v1.5)**: The LLM reliability risk for `affectedResource` (previously 5%) is eliminated by BR-496 v2. HAPI derives the field from K8s-verified `root_owner`, not from LLM output. The remaining risk is limited to the resource-context tool not being called. Canonical `TARGET_RESOURCE_*` workflow parameters are optional at the platform level until declared on a given workflow schema (Issue #524).
 
 ---
 
 **Document Control**:
 - **Created**: 2026-01-20
-- **Last Updated**: 2026-03-04 (BR-496 v2: HAPI-owned target resource identity — removed scenarios 8-9, updated FR-002 and FR-004)
+- **Last Updated**: 2026-03-24 (Issue #524: tool rename/split, conditional `TARGET_RESOURCE_*` injection — updated FR-002, FR-004, risks)

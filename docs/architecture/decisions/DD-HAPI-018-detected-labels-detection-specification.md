@@ -2,7 +2,7 @@
 
 **Status**: APPROVED
 **Decision Date**: 2026-02-12
-**Version**: 1.3
+**Version**: 1.4
 **Confidence**: 96%
 **Applies To**: HolmesGPT API (Python, authoritative implementation per ADR-056)
 
@@ -16,6 +16,7 @@
 | 1.1 | 2026-02-20 | Architecture Team | Update consumer guidance: detected labels are now both used as DS query filters AND surfaced to the LLM as read-only `cluster_context` in `list_available_actions` response. `failedDetections` fields excluded from both uses. See ADR-056 v1.3, DD-HAPI-017 v1.3. |
 | 1.2 | 2026-02-25 | Architecture Team | Add non-workload target context building (Issue #196). When the RCA target is a PodDisruptionBudget, `_build_k8s_context` resolves pod context from the PDB's selector. Node target deferred to Issue #203. New K8s client method: `list_pods_by_selector`. New conformance vectors: DL-HP-10, DL-EC-04. |
 | 1.3 | 2026-02-24 | Architecture Team | Add ArgoCD v3 annotation-based tracking support (Issue #218). ArgoCD v3.x defaults to `argocd.argoproj.io/tracking-id` annotation instead of v2's `argocd.argoproj.io/instance` label. Updated GitOps detection precedence table, input contract (`deploymentDetails.annotations`), and conformance vectors (DL-HP-11 through DL-HP-14). Removed stale reference to SP Go implementation (removed per ADR-056). |
+| 1.4 | 2026-03-24 | Architecture Team | **Issue #524**: Holmes tool rename — owner chain for namespaced targets is resolved by `get_namespaced_resource_context`; cluster-scoped targets use `get_cluster_resource_context` (same `resource_context` toolset). Updated references from legacy `get_resource_context`. |
 
 ---
 
@@ -97,12 +98,12 @@ Ordered list of owner references from the target resource up to the root owner.
 
 ### HAPI-Specific Input Mapping
 
-HAPI computes labels for the **RCA target resource** (not the signal source). The `get_resource_context` tool already resolves the root owner (owner chain traversal). HAPI MUST fetch the following via the Kubernetes Python client for the target resource:
+HAPI computes labels for the **RCA target resource** (not the signal source). The applicable `resource_context` tool (`get_namespaced_resource_context` for namespaced targets, `get_cluster_resource_context` for cluster-scoped targets) already resolves the root owner when an owner chain applies. HAPI MUST fetch the following via the Kubernetes Python client for the target resource:
 
 1. **Pod details**: `GET /api/v1/namespaces/{ns}/pods/{name}` -- labels and annotations
 2. **Deployment details**: `GET /apis/apps/v1/namespaces/{ns}/deployments/{name}` -- labels and annotations (v1.3: annotations added for ArgoCD v3 tracking-id)
 3. **Namespace metadata**: `GET /api/v1/namespaces/{ns}` -- labels and annotations
-4. **Owner chain**: Already resolved by `get_resource_context`
+4. **Owner chain**: Already resolved by the resource-context tool when applicable
 
 ---
 
@@ -312,7 +313,7 @@ API-based detections SHOULD use a TTL cache keyed by namespace to reduce K8s API
 | HPA | namespace | 1 minute | HPAs may adjust more frequently (scaling events) |
 | NetworkPolicy | namespace | 5 minutes | NetworkPolicies are relatively static |
 
-**HAPI note**: Caching is per-investigation in HAPI (each `investigate_issues()` call is independent). Within a single investigation, the `get_resource_context` tool typically runs once, so caching has limited benefit. However, if HAPI processes multiple investigations concurrently, a shared cache across investigations for the same namespace reduces API load. This is an implementation optimization, not a conformance requirement.
+**HAPI note**: Caching is per-investigation in HAPI (each `investigate_issues()` call is independent). Within a single investigation, a resource-context tool call (`get_namespaced_resource_context` or `get_cluster_resource_context`) typically runs once, so caching has limited benefit. However, if HAPI processes multiple investigations concurrently, a shared cache across investigations for the same namespace reduces API load. This is an implementation optimization, not a conformance requirement.
 
 ---
 
@@ -431,9 +432,9 @@ Per ADR-056, DetectedLabels computation was relocated from SP to HAPI. SP's orig
 | Document | Relationship |
 |----------|-------------|
 | **ADR-056** | Parent architectural decision: relocate DetectedLabels to HAPI post-RCA |
-| **ADR-055** | LLM-driven context enrichment: `get_resource_context` tool that will host label detection |
+| **ADR-055** | LLM-driven context enrichment: `resource_context` toolset (`get_namespaced_resource_context` / `get_cluster_resource_context`) hosts label detection |
 | **DD-WORKFLOW-001 v2.3** | Original detection method documentation (SP-specific) |
-| **DD-HAPI-017 v1.3** | Flow enforcement: `get_resource_context` must be called before workflow discovery. v1.3 adds `cluster_context` to `list_available_actions` response. |
+| **DD-HAPI-017 v1.3** | Flow enforcement: a resource-context tool must be called before workflow discovery. v1.3 adds `cluster_context` to `list_available_actions` response. |
 | **BR-SP-101** | DetectedLabels auto-detection business requirement |
 | **BR-SP-103** | FailedDetections tracking business requirement |
 | **Issue #102** | Implementation tracking issue |
@@ -454,8 +455,8 @@ Per ADR-056, DetectedLabels computation was relocated from SP to HAPI. SP's orig
 
 ---
 
-**Document Version**: 1.3
-**Last Updated**: February 24, 2026
+**Document Version**: 1.4
+**Last Updated**: March 24, 2026
 **Status**: APPROVED
 **Authority**: Authoritative detection specification for DetectedLabels (HAPI)
 **Confidence**: 96%

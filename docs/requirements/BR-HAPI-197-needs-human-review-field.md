@@ -168,7 +168,7 @@ When `needs_human_review` is `true`, operators SHALL have the following options:
 2. **Automatic Retry**: System automatically retrying analysis (requires separate BR)
 3. **Approval Workflow UI**: User interface for manual review (separate product feature)
 
-> **Note (2026-03-04)**: BR-HAPI-212 / BR-496 extends this BR with scenario 7 only: missing `root_owner` (e.g. `get_resource_context` not populated) when a workflow is selected → `rca_incomplete`. Scenarios 8-9 (`affectedResource` mismatch, unverified target resource) were removed in BR-496 v2. See BR-HAPI-212 for the scenario table.
+> **Note (2026-03-04)**: BR-HAPI-212 / BR-496 extends this BR with scenario 7 only: missing `root_owner` (e.g. `get_namespaced_resource_context` / `get_cluster_resource_context` not invoked or `session_state` not populated) when a workflow is selected → `rca_incomplete`. Scenarios 8-9 (`affectedResource` mismatch, unverified target resource) were removed in BR-496 v2. See BR-HAPI-212 for the scenario table.
 
 ---
 

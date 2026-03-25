@@ -1,7 +1,7 @@
 # Test Plan: BR-496 v2 — HAPI-Owned Target Resource Identity
 
 **Feature**: Eliminate affectedResource mismatch by having HAPI own target resource identity via standardized TARGET_RESOURCE_* parameters
-**Version**: 1.2
+**Version**: 1.3
 **Created**: 2026-03-04
 **Author**: AI Assistant (Cursor)
 **Status**: Draft
@@ -9,9 +9,10 @@
 
 **Authority**:
 - [BR-496]: affectedResource mismatch detection and prevention
-- [DD-HAPI-006 v1.4]: affectedResource in RCA — HAPI-owned via canonical params
-- [DD-WORKFLOW-003]: Parameterized Actions — TARGET_RESOURCE_* mandatory convention
+- [DD-HAPI-006 v1.4–v1.5]: affectedResource in RCA — HAPI-owned; canonical params injected only when declared (**Issue #524** removed mandatory validator Step 0)
+- [DD-WORKFLOW-003]: Parameterized Actions — TARGET_RESOURCE_* convention (catalog may omit undeclared slots per #524)
 - [ADR-043]: Workflow Schema Definition Standard
+- [Issue #524](../524/TEST_PLAN.md): `get_namespaced_resource_context` / `get_cluster_resource_context`, `resource_scope`, conditional injection
 
 **Cross-References**:
 - [Testing Strategy](../../.cursor/rules/03-testing-strategy.mdc)
@@ -27,7 +28,7 @@
 
 - **HAPI target injection** (`llm_integration.py`): Post-loop injection of TARGET_RESOURCE_* from `session_state["root_owner"]` into workflow parameters, construction of `affectedResource` for Go backward compat, `rca_incomplete` when root_owner missing
 - **Schema stripping** (`workflow_discovery.py`): Removal of TARGET_RESOURCE_* from `get_workflow` tool response before LLM sees it
-- **Schema validation** (`workflow_response_validator.py`): Step 0 — reject workflows missing canonical params; Step 3 — skip required-check for HAPI-managed params
+- **Schema validation** (`workflow_response_validator.py`): **No Step 0** (removed by Issue #524); Step 3 — skip required-check for HAPI-managed params when those params appear in the workflow schema
 - **Prompt update** (`prompt_builder.py`): Removal of `affectedResource` instructions from Phase 3b and JSON examples
 - **Parser update** (`result_parser.py`): Removal of BR-HAPI-212 `rca_incomplete` check for missing `affectedResource` from LLM output
 - **Test fixture migration**: All 33 workflow schemas standardized to TARGET_RESOURCE_NAME / TARGET_RESOURCE_KIND / TARGET_RESOURCE_NAMESPACE
@@ -57,8 +58,8 @@
 | HAPI strips canonical params from LLM-visible schema | LLM cannot produce inconsistent target identity if it never sees the target fields |
 | HAPI injects from K8s-verified root_owner | root_owner is resolved via owner chain (Pod → ReplicaSet → Deployment); more reliable than LLM interpretation |
 | affectedResource still in HAPI response | Zero Go changes; CRD, Rego, RO all continue reading same struct unchanged |
-| Validator rejects workflows missing canonical params | Forces migration; LLM self-correction loop can select a different workflow |
-| rca_incomplete replaces unverified_target_resource | Cleaner semantics: mandatory TARGET_RESOURCE_NAME/KIND cannot be populated |
+| Validator accepts workflows that omit undeclared canonical params | Issue #524: HAPI injects only `TARGET_RESOURCE_*` slots declared in the schema; cluster workflows need not declare namespace |
+| rca_incomplete replaces unverified_target_resource | Cleaner semantics when `root_owner` is missing at injection time |
 
 ---
 
@@ -81,7 +82,7 @@ Authority: `03-testing-strategy.mdc` — Per-Tier Testable Code Coverage.
 Tests validate **business outcomes**:
 - Operator sees correct `affectedResource` in CRD status (derived from K8s, not LLM)
 - Workflow execution receives correct TARGET_RESOURCE_* parameters
-- Invalid workflows (missing canonical params) are rejected with actionable error
+- Workflows without declared canonical params are valid; HAPI does not fail validation solely for omitted `TARGET_RESOURCE_*` declarations (Issue #524)
 - Investigation escalates to human review when target cannot be determined (root_owner missing)
 
 ---
@@ -93,7 +94,7 @@ Tests validate **business outcomes**:
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
 | `holmesgpt-api/src/extensions/incident/llm_integration.py` | `_inject_target_resource` (new), removal of `_check_affected_resource_mismatch`, `_affected_resource_matches` | ~70 new, ~70 removed |
-| `holmesgpt-api/src/validation/workflow_response_validator.py` | `_validate_canonical_params` (new Step 0), `_validate_parameters` (HAPI_MANAGED_PARAMS skip) | ~30 new, ~5 modified |
+| `holmesgpt-api/src/validation/workflow_response_validator.py` | `_validate_parameters` (HAPI_MANAGED_PARAMS skip); **Issue #524**: `_validate_canonical_params` (Step 0) removed | ~30 new, ~5 modified (historical); post-#524 no Step 0 |
 | `holmesgpt-api/src/extensions/incident/prompt_builder.py` | `create_incident_investigation_prompt` (Phase 3b simplification, JSON examples) | ~40 modified |
 | `holmesgpt-api/src/extensions/incident/result_parser.py` | `parse_and_validate_investigation_result` (remove rca_target extraction, remove BR-HAPI-212 check) | ~15 removed |
 
@@ -107,7 +108,7 @@ Tests validate **business outcomes**:
 
 | Component | What is tested |
 |-----------|----------------|
-| Full pipeline (Kind cluster) | Alert → Gateway → AA → HAPI → mock LLM → get_resource_context → get_workflow (stripped schema) → LLM response → HAPI injection → Go controller → CRD status with correct affectedResource and TARGET_RESOURCE_* |
+| Full pipeline (Kind cluster) | Alert → Gateway → AA → HAPI → mock LLM → get_namespaced_resource_context / get_cluster_resource_context → get_workflow (stripped schema) → LLM response → HAPI injection → Go controller → CRD status with correct affectedResource and declared TARGET_RESOURCE_* |
 
 ---
 
@@ -121,16 +122,16 @@ Tests validate **business outcomes**:
 | BR-496 | No param injection when no selected_workflow | P1 | Unit | UT-HAPI-496-004 | Pass |
 | BR-496 | affectedResource populated even without selected_workflow | P1 | Unit | UT-HAPI-496-005 | Pass |
 | BR-496 | Operational params preserved alongside injected canonical params | P0 | Unit | UT-HAPI-496-006 | Pass |
-| BR-496 | Validator rejects workflow missing TARGET_RESOURCE_NAME | P0 | Unit | UT-HAPI-496-007 | Pass |
-| BR-496 | Validator rejects workflow missing TARGET_RESOURCE_KIND | P0 | Unit | UT-HAPI-496-008 | Pass |
-| BR-496 | Validator rejects workflow missing TARGET_RESOURCE_NAMESPACE | P0 | Unit | UT-HAPI-496-009 | Pass |
+| BR-496 | Validator **passes** when workflow schema omits TARGET_RESOURCE_NAME (Issue #524; no Step 0 rejection) | P0 | Unit | UT-HAPI-496-007 | Pass |
+| BR-496 | Validator **passes** when workflow schema omits TARGET_RESOURCE_KIND | P0 | Unit | UT-HAPI-496-008 | Pass |
+| BR-496 | Validator **passes** when workflow schema omits TARGET_RESOURCE_NAMESPACE | P0 | Unit | UT-HAPI-496-009 | Pass |
 | BR-496 | Validator passes when all 3 canonical params declared | P0 | Unit | UT-HAPI-496-010 | Pass |
 | BR-496 | Required-check skipped for HAPI_MANAGED_PARAMS | P0 | Unit | UT-HAPI-496-011 | Pass |
 | BR-496 | Schema stripping removes TARGET_RESOURCE_* from tool response | P0 | Unit | UT-HAPI-496-012 | Pass |
 | BR-496 | Schema stripping preserves operational params | P0 | Unit | UT-HAPI-496-013 | Pass |
 | BR-496 | Schema stripping handles missing parameters section | P1 | Unit | UT-HAPI-496-014 | Pass |
 | BR-496 | Prompt does not contain affectedResource instructions | P1 | Unit | UT-HAPI-496-015 | Pass |
-| BR-496 | Prompt instructs LLM to call get_resource_context | P1 | Unit | UT-HAPI-496-016 | Pass |
+| BR-496 | Prompt instructs LLM to use `get_namespaced_resource_context` / `get_cluster_resource_context` (resource_context toolset) | P1 | Unit | UT-HAPI-496-016 | Pass |
 | BR-496 | Parser does not extract or validate affectedResource from LLM | P1 | Unit | UT-HAPI-496-017 | Pass |
 | BR-496 | Full pipeline: CRD affectedResource matches root_owner | P0 | E2E | E2E-FP-496-001 | Pass |
 | BR-496 | Full pipeline: WFE params contain injected TARGET_RESOURCE_* | P0 | E2E | E2E-FP-496-002 | Pass |
@@ -178,7 +179,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 |----|-----------------------------|
 | `UT-HAPI-496-001` | When a workflow is selected and root_owner is in session_state, TARGET_RESOURCE_NAME/KIND/NAMESPACE are injected into workflow parameters from the K8s-verified root_owner |
 | `UT-HAPI-496-002` | affectedResource is constructed in RCA from root_owner so Go controller, Rego policies, and RO can read the target without code changes |
-| `UT-HAPI-496-003` | When root_owner is missing from session_state (LLM never called get_resource_context), investigation is flagged rca_incomplete with needs_human_review=True |
+| `UT-HAPI-496-003` | When root_owner is missing from session_state (LLM never called `get_namespaced_resource_context` / `get_cluster_resource_context`), investigation is flagged rca_incomplete with needs_human_review=True |
 | `UT-HAPI-496-004` | When no workflow is selected (resolved/inconclusive), no TARGET_RESOURCE_* params are injected (no parameters dict to inject into) |
 | `UT-HAPI-496-005` | When no workflow is selected but root_owner is available, affectedResource is still populated in RCA for observability |
 | `UT-HAPI-496-006` | LLM-provided operational parameters (e.g., MEMORY_LIMIT_NEW) are preserved unchanged when HAPI injects canonical params alongside them |
@@ -212,29 +213,27 @@ All 8 tests pass.
 **File under test**: `holmesgpt-api/src/validation/workflow_response_validator.py`
 **Test file**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
 
+**Issue #524 note**: Mandatory **Step 0** (`_validate_canonical_params`) was **removed**. `UT-HAPI-496-007` / `008` / `009` now assert the validator **accepts** workflows whose schemas omit individual canonical parameters; `UT-HAPI-496-010` / `011` remain the positive-path and HAPI-managed skip coverage.
+
 ##### RED Phase — Write failing tests
 
 | ID | Business Outcome Under Test |
 |----|-----------------------------|
-| `UT-HAPI-496-007` | Workflow missing TARGET_RESOURCE_NAME is rejected with actionable error directing LLM to select a different workflow |
-| `UT-HAPI-496-008` | Workflow missing TARGET_RESOURCE_KIND is rejected with actionable error |
-| `UT-HAPI-496-009` | Workflow missing TARGET_RESOURCE_NAMESPACE is rejected with actionable error |
-| `UT-HAPI-496-010` | Workflow declaring all 3 canonical params passes Step 0 validation |
-| `UT-HAPI-496-011` | LLM response without TARGET_RESOURCE_* values passes Step 3 required-check (HAPI provides them, not LLM) |
+| `UT-HAPI-496-007` | Workflow schema omitting TARGET_RESOURCE_NAME **passes** validation (no Step 0 rejection) |
+| `UT-HAPI-496-008` | Workflow schema omitting TARGET_RESOURCE_KIND **passes** validation |
+| `UT-HAPI-496-009` | Workflow schema omitting TARGET_RESOURCE_NAMESPACE **passes** validation |
+| `UT-HAPI-496-010` | Workflow declaring all 3 canonical params passes validation with LLM params that omit canonical values |
+| `UT-HAPI-496-011` | LLM response without TARGET_RESOURCE_* values passes Step 3 required-check for HAPI-managed params (HAPI injects declared slots, not LLM) |
 
-All 5 tests fail because Step 0 does not exist and Step 3 does not skip HAPI-managed params.
+##### GREEN Phase — Minimal implementation (historical BR-496 v2, superseded in part by #524)
 
-##### GREEN Phase — Minimal implementation
-
-1. **Step 0 (new)**: After fetching the workflow schema, check that `TARGET_RESOURCE_NAME`, `TARGET_RESOURCE_KIND`, `TARGET_RESOURCE_NAMESPACE` are declared. If any missing, return `ValidationResult(is_valid=False, errors=[...])`.
-2. **Step 3 (modify)**: Define `HAPI_MANAGED_PARAMS = {"TARGET_RESOURCE_NAME", "TARGET_RESOURCE_KIND", "TARGET_RESOURCE_NAMESPACE"}`. Skip `required`-check for params in this set.
-
-All 5 tests pass.
+1. **Step 0 (removed in Issue #524)**: Previously rejected schemas missing any canonical declaration; **no longer called**.
+2. **Step 3**: `HAPI_MANAGED_PARAMS = {"TARGET_RESOURCE_NAME", "TARGET_RESOURCE_KIND", "TARGET_RESOURCE_NAMESPACE"}`. Skip `required`-check for params in this set when present in schema.
 
 ##### REFACTOR Phase
 
 - Share `HAPI_MANAGED_PARAMS` constant with injection logic (import from shared location)
-- Ensure validation error message is actionable ("select a different workflow")
+- Align tests and docs with conditional injection (`_inject_target_resource` only sets declared params)
 
 ---
 
@@ -277,14 +276,14 @@ All 4 tests pass.
 | ID | Business Outcome Under Test |
 |----|-----------------------------|
 | `UT-HAPI-496-015` | Investigation prompt does not instruct the LLM to set affectedResource in its JSON output (comprehensive search across entire prompt) |
-| `UT-HAPI-496-016` | Investigation prompt instructs the LLM to call get_resource_context for remediation_history |
+| `UT-HAPI-496-016` | Investigation prompt instructs the LLM to call `get_namespaced_resource_context` / `get_cluster_resource_context` for remediation history |
 | `UT-HAPI-496-017` | LLM response missing affectedResource does not trigger rca_incomplete in the parser (HAPI provides it post-loop) |
 
 UT-015 fails because prompt still contains 15+ `affectedResource` references. UT-017 fails because parser still has BR-HAPI-212 check.
 
 ##### GREEN Phase — Minimal implementation
 
-1. **prompt_builder.py**: Remove all `affectedResource` instructions from Phase 3b. Remove `affectedResource` from all JSON example blocks (success, failure, validation error templates). Keep `get_resource_context` instruction for remediation history.
+1. **prompt_builder.py**: Remove all `affectedResource` instructions from Phase 3b. Remove `affectedResource` from all JSON example blocks (success, failure, validation error templates). Keep instructions for `get_namespaced_resource_context` / `get_cluster_resource_context` (Issue #524) for remediation history.
 2. **result_parser.py**: Remove `rca_target` extraction (line 271-272). Remove BR-HAPI-212 conditional (lines 409-422) that triggers `rca_incomplete` for missing `affectedResource`.
 
 All 3 tests pass.
@@ -340,7 +339,7 @@ Test passes.
 
 | ID | Business Outcome Under Test |
 |----|-----------------------------|
-| `E2E-FP-496-001` | After full pipeline execution, CRD AIAnalysis.Status.RootCauseAnalysis.AffectedResource matches the root_owner resolved by get_resource_context (K8s-verified, not LLM-provided) |
+| `E2E-FP-496-001` | After full pipeline execution, CRD AIAnalysis.Status.RootCauseAnalysis.AffectedResource matches the root_owner resolved by `get_namespaced_resource_context` / `get_cluster_resource_context` (K8s-verified, not LLM-provided) |
 | `E2E-FP-496-002` | After full pipeline execution, WorkflowExecution.Spec.Parameters contains TARGET_RESOURCE_NAME, TARGET_RESOURCE_KIND, TARGET_RESOURCE_NAMESPACE matching the root_owner |
 | `E2E-FP-496-003` | Mock LLM response does not include affectedResource in its JSON, yet the CRD has it populated (proving HAPI injection) |
 
@@ -459,7 +458,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 - REPLICA_COUNT is "3"
 - TARGET_RESOURCE_NAME, TARGET_RESOURCE_KIND, TARGET_RESOURCE_NAMESPACE are present
 
-### UT-HAPI-496-007: Validator rejects missing TARGET_RESOURCE_NAME
+### UT-HAPI-496-007: Validator accepts schema omitting TARGET_RESOURCE_NAME (Issue #524)
 
 **BR**: BR-496
 **Type**: Unit
@@ -467,14 +466,13 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **Given**: A workflow schema declaring TARGET_RESOURCE_KIND and TARGET_RESOURCE_NAMESPACE but NOT TARGET_RESOURCE_NAME
 **When**: `WorkflowResponseValidator.validate(workflow_id, bundle, params)` is called
-**Then**: Returns `ValidationResult(is_valid=False)` with error containing "TARGET_RESOURCE_NAME"
+**Then**: Returns `ValidationResult(is_valid=True)` (no former Step 0 rejection)
 
 **Acceptance Criteria**:
-- is_valid is False
-- Error message identifies the missing param by name
-- Error message suggests selecting a different workflow
+- is_valid is True
+- HAPI will not inject TARGET_RESOURCE_NAME unless declared (conditional injection)
 
-### UT-HAPI-496-008: Validator rejects missing TARGET_RESOURCE_KIND
+### UT-HAPI-496-008: Validator accepts schema omitting TARGET_RESOURCE_KIND (Issue #524)
 
 **BR**: BR-496
 **Type**: Unit
@@ -482,13 +480,12 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **Given**: A workflow schema declaring TARGET_RESOURCE_NAME and TARGET_RESOURCE_NAMESPACE but NOT TARGET_RESOURCE_KIND
 **When**: `WorkflowResponseValidator.validate(workflow_id, bundle, params)` is called
-**Then**: Returns `ValidationResult(is_valid=False)` with error containing "TARGET_RESOURCE_KIND"
+**Then**: Returns `ValidationResult(is_valid=True)`
 
 **Acceptance Criteria**:
-- is_valid is False
-- Error message identifies the missing param
+- is_valid is True
 
-### UT-HAPI-496-009: Validator rejects missing TARGET_RESOURCE_NAMESPACE
+### UT-HAPI-496-009: Validator accepts schema omitting TARGET_RESOURCE_NAMESPACE (Issue #524)
 
 **BR**: BR-496
 **Type**: Unit
@@ -496,11 +493,10 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **Given**: A workflow schema declaring TARGET_RESOURCE_NAME and TARGET_RESOURCE_KIND but NOT TARGET_RESOURCE_NAMESPACE
 **When**: `WorkflowResponseValidator.validate(workflow_id, bundle, params)` is called
-**Then**: Returns `ValidationResult(is_valid=False)` with error containing "TARGET_RESOURCE_NAMESPACE"
+**Then**: Returns `ValidationResult(is_valid=True)`
 
 **Acceptance Criteria**:
-- is_valid is False
-- Error message identifies the missing param
+- is_valid is True
 
 ### UT-HAPI-496-010: Validator passes with all canonical params
 
@@ -513,7 +509,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 **Then**: Returns `ValidationResult(is_valid=True)`
 
 **Acceptance Criteria**:
-- Step 0 passes (all canonical params declared)
+- No Step 0 gate (Issue #524); schema may still declare all three for workflows that need full target triple
 - Step 3 passes (canonical params not flagged as missing despite not being in LLM response)
 
 ### UT-HAPI-496-011: Required-check skipped for HAPI-managed params
@@ -585,10 +581,10 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **Acceptance Criteria**:
 - Comprehensive regex search: `"affectedResource"` does not appear anywhere in the entire prompt string (covers Phase 3b, JSON examples, success/failure templates, validation error feedback)
-- Phase 3b section exists but only instructs calling get_resource_context
+- Phase 3b section instructs calling `get_namespaced_resource_context` / `get_cluster_resource_context` as appropriate
 - No remnant references in any JSON example blocks
 
-### UT-HAPI-496-016: Prompt instructs get_resource_context
+### UT-HAPI-496-016: Prompt instructs resource context tools (Issue #524)
 
 **BR**: BR-496
 **Type**: Unit
@@ -596,11 +592,13 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **Given**: Standard request_data for an incident investigation
 **When**: `create_incident_investigation_prompt(request_data)` is called
-**Then**: The returned prompt string contains instructions to call `get_resource_context` for remediation history
+**Then**: The returned prompt string contains instructions to call `get_namespaced_resource_context` and/or `get_cluster_resource_context` for remediation history
 
 **Acceptance Criteria**:
-- String "get_resource_context" appears in the prompt
+- String "get_namespaced_resource_context" appears in the prompt (namespaced path)
+- String "get_cluster_resource_context" appears when cluster-scoped guidance is included
 - String "remediation_history" or "remediation history" appears in Phase 3b context
+- Legacy string `get_resource_context` MUST NOT appear (tool renamed)
 
 ### UT-HAPI-496-017: Parser ignores missing affectedResource
 
@@ -685,7 +683,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **Given**: A Kind cluster with mock LLM configured for the oomkilled scenario, workflow schema with TARGET_RESOURCE_* declared
 **When**: An OOMKilled alert triggers the full pipeline (Gateway → AA → HAPI → mock LLM → RO → WFE)
-**Then**: The completed AIAnalysis CRD has `Status.RootCauseAnalysis.AffectedResource` with Kind="Deployment", Name matching the root_owner resolved by get_resource_context
+**Then**: The completed AIAnalysis CRD has `Status.RootCauseAnalysis.AffectedResource` with Kind="Deployment", Name matching the root_owner resolved by the resource context tool (`get_namespaced_resource_context` or `get_cluster_resource_context`)
 
 **Acceptance Criteria**:
 - AffectedResource.Kind matches root_owner kind (case-sensitive)
@@ -705,7 +703,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **Acceptance Criteria**:
 - All 3 canonical params present in WFE parameters
-- Values match the root_owner from get_resource_context
+- Values match the root_owner from the resource context tool invocation
 - Operational params (e.g., MEMORY_LIMIT_NEW) also present
 
 ### E2E-FP-496-003: Mock LLM response lacks affectedResource
@@ -770,3 +768,4 @@ go test ./test/e2e/fullpipeline/... -ginkgo.focus="E2E-FP-496"
 | 1.0 | 2026-03-04 | Initial test plan for BR-496 v2: HAPI-owned target resource identity |
 | 1.1 | 2026-03-04 | Added 4 risk mitigation tests (018-021): cluster-scoped, LLM overwrite, malformed params, enum cleanup. Added CRD enum cleanup to scope. R1: namespace optional for cluster-scoped resources. Strengthened UT-015 acceptance criteria. |
 | 1.2 | 2026-03-04 | Restructured section 5 into 6 TDD execution groups with explicit RED/GREEN/REFACTOR phases per group. Moved risk mitigation tests (018-020) into their respective component groups. |
+| 1.3 | 2026-03-24 | **Issue #524**: Document removal of validator Step 0; UT-HAPI-496-007/008/009 now **pass** (accept schemas omitting canonical params); UT-HAPI-496-016 asserts `get_namespaced_resource_context` / `get_cluster_resource_context`; cross-ref docs/tests/524. |

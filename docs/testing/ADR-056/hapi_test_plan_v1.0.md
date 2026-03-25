@@ -1,8 +1,8 @@
 # HAPI Test Plan for ADR-056
 
-**Version**: 1.2
+**Version**: 1.3
 **Created**: 2026-02-17
-**Updated**: 2026-02-20
+**Updated**: 2026-03-24
 **Status**: Active
 **Authority**: [ADR-056 v1.4](../../architecture/decisions/ADR-056-post-rca-label-computation.md), [DD-HAPI-017 v1.4](../../architecture/decisions/DD-HAPI-017-three-step-workflow-discovery-integration.md), [DD-HAPI-018 v1.1](../../architecture/decisions/DD-HAPI-018-detected-labels-detection-specification.md)
 **BRs**: BR-SP-101, BR-SP-103, BR-HAPI-194, BR-HAPI-250, BR-HAPI-252, BR-HAPI-017-007, BR-HAPI-017-008
@@ -17,7 +17,7 @@ This test plan covers the HAPI (HolmesGPT API, Python) service implementation of
 
 - **Cycle 1.1**: `LabelDetector` -- 8 cluster characteristics detection from K8s resources
 - **Cycle 1.2**: K8s client extensions -- PDB, HPA, NetworkPolicy, Namespace metadata queries
-- **Cycle 1.3**: `get_resource_context` tool -- session_state integration with LabelDetector
+- **Cycle 1.3**: `get_namespaced_resource_context` / `get_cluster_resource_context` tools (`resource_context` toolset) -- session_state integration with LabelDetector
 - **Cycle 2.1**: Flow enforcement -- prerequisite check in workflow discovery tools
 - **Cycle 2.2**: Context params -- `_build_context_params` reads from session_state
 - **Cycle 2.3**: Prompt removal -- detected_labels no longer injected into LLM prompts
@@ -77,7 +77,7 @@ def test_ut_hapi_056_001_argocd_pod_annotation(self):
 | BR-HAPI-194 | Honor failedDetections in workflow filtering | UT-HAPI-056-043 to 055, 071, 072 | 15 |
 | BR-HAPI-250/252 | DetectedLabels in HAPI response | UT-HAPI-056-063 to 067 | 5 |
 | BR-HAPI-017-007 | cluster_context in list_available_actions response | UT-HAPI-056-081 to 087, IT-HAPI-056-008 | 8 |
-| BR-HAPI-017-008 | One-shot reassessment via detected_infrastructure in get_resource_context | UT-HAPI-056-090 to 092 | 3 |
+| BR-HAPI-017-008 | One-shot reassessment via detected_infrastructure in resource-context tool response | UT-HAPI-056-090 to 092 | 3 |
 
 ---
 
@@ -709,10 +709,10 @@ Same as UT-HAPI-056-032 but for unexpected `Exception`. Returns `None`.
 ### UT-HAPI-056-090: Active labels include detected_infrastructure in response
 
 **Priority**: P0 | **BR**: BR-HAPI-017-008
-**Business Value**: When infrastructure characteristics are detected for the RCA target (e.g., GitOps management, PDB protection), the LLM receives them immediately in the `get_resource_context` response, enabling RCA reassessment before workflow discovery.
+**Business Value**: When infrastructure characteristics are detected for the RCA target (e.g., GitOps management, PDB protection), the LLM receives them immediately in the applicable resource-context tool response (`get_namespaced_resource_context` or `get_cluster_resource_context`), enabling RCA reassessment before workflow discovery.
 
 **Given**: K8s context where LabelDetector returns `gitOpsManaged=true, gitOpsTool=argocd`
-**When**: `get_resource_context` invocation completes (first call, session_state has no `detected_labels` key)
+**When**: `get_namespaced_resource_context` invocation completes (first call, session_state has no `detected_labels` key)
 **Then**: Response `data` contains `detected_infrastructure.labels` with active labels AND `detected_infrastructure.note` is present AND `root_owner` is still present AND `remediation_history` is still present
 
 **Acceptance Criteria**:
@@ -730,7 +730,7 @@ Same as UT-HAPI-056-032 but for unexpected `Exception`. Returns `None`.
 **Business Value**: When no meaningful infrastructure characteristics are detected, the response is clean and does not trigger unnecessary LLM reassessment.
 
 **Given**: K8s context where LabelDetector returns all-default labels (all booleans `false`, all strings empty)
-**When**: `get_resource_context` invocation completes
+**When**: `get_namespaced_resource_context` invocation completes
 **Then**: `detected_infrastructure` is NOT present in response `data` AND `root_owner` + `remediation_history` are present AND `session_state["detected_labels"]` is populated (with the default labels)
 
 **Acceptance Criteria**:
@@ -745,8 +745,8 @@ Same as UT-HAPI-056-032 but for unexpected `Exception`. Returns `None`.
 **Priority**: P0 | **BR**: BR-HAPI-017-008
 **Business Value**: One-shot guarantee prevents infinite reassessment loops. Second call resolves context for the revised target but does not re-detect labels or prompt reassessment.
 
-**Given**: `session_state` already has `"detected_labels"` key from a previous `get_resource_context` call (e.g., `{"gitOpsManaged": true}`)
-**When**: `get_resource_context` is called again with a **different** resource (kind=Node, name=worker-3)
+**Given**: `session_state` already has `"detected_labels"` key from a previous `get_namespaced_resource_context` call (e.g., `{"gitOpsManaged": true}`)
+**When**: `get_cluster_resource_context` is called for a **different** cluster-scoped resource (kind=Node, name=worker-3)
 **Then**: LabelDetector is NOT invoked AND `detected_infrastructure` is NOT in response AND `root_owner` resolves to the new target AND `session_state["detected_labels"]` retains the original labels
 
 **Acceptance Criteria**:
@@ -788,7 +788,7 @@ Same as UT-HAPI-056-032 but for unexpected `Exception`. Returns `None`.
 
 **Acceptance Criteria**:
 - Error result (not exception) returned
-- Error message mentions `get_resource_context` as the required prerequisite
+- Error message mentions `get_namespaced_resource_context` or `get_cluster_resource_context` (resource_context prerequisite) as required
 
 ---
 
@@ -1003,7 +1003,7 @@ Same as UT-HAPI-056-056 but for recovery prompt builder.
 ### UT-HAPI-056-061: Both registrations share same dict instance
 
 **Priority**: P0 | **BR**: BR-SP-101, BR-HAPI-194
-**Business Value**: This is the core wiring contract -- `get_resource_context` writes to session_state, `list_workflows` reads from it. They MUST share the same dict instance.
+**Business Value**: This is the core wiring contract -- `get_namespaced_resource_context` / `get_cluster_resource_context` write to session_state, `list_workflows` reads from it. They MUST share the same dict instance.
 
 **Given**: A single session_state dict passed to both `register_resource_context_toolset` and `register_workflow_discovery_toolset`
 **When**: Both toolsets are constructed
