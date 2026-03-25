@@ -255,8 +255,8 @@ class TestGetClusterResourceContextTool:
         mock_k8s.resolve_owner_chain.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_ut_hapi_524_002_stores_resource_scope_cluster(self):
-        """UT-HAPI-524-002: Cluster-scoped tool stores resource_scope='cluster' in session_state."""
+    async def test_ut_hapi_524_002_does_not_store_resource_scope_in_session_state(self):
+        """UT-HAPI-524-002: Cluster-scoped tool does not write resource_scope or root_owner to session_state (#529)."""
         from toolsets.resource_context import ResourceContextToolset
 
         mock_k8s = AsyncMock()
@@ -273,10 +273,13 @@ class TestGetClusterResourceContextTool:
         )
 
         cluster_tool = [t for t in toolset.tools if t.name == "get_cluster_resource_context"][0]
-        await cluster_tool._invoke_async(kind="Node", name="worker-3")
+        result = await cluster_tool._invoke_async(kind="Node", name="worker-3")
 
-        assert session_state["resource_scope"] == "cluster"
-        assert session_state["root_owner"] == {"kind": "Node", "name": "worker-3"}
+        assert result.status.value == "success"
+        assert result.data["root_owner"] == {"kind": "Node", "name": "worker-3"}
+        # #529: session_state writes removed; EnrichmentService is authoritative
+        assert "resource_scope" not in session_state
+        assert "root_owner" not in session_state
 
     @pytest.mark.asyncio
     async def test_ut_hapi_524_003_skips_owner_chain_walk(self):
@@ -401,8 +404,8 @@ class TestToolRename524:
         )
 
     @pytest.mark.asyncio
-    async def test_ut_hapi_524_011_stores_resource_scope_namespaced(self):
-        """UT-HAPI-524-011: Namespaced tool stores resource_scope='namespaced' in session_state."""
+    async def test_ut_hapi_524_011_does_not_store_resource_scope_namespaced(self):
+        """UT-HAPI-524-011: Namespaced tool does not write resource_scope to session_state (#529)."""
         from toolsets.resource_context import ResourceContextToolset
 
         mock_k8s = AsyncMock()
@@ -418,9 +421,11 @@ class TestToolRename524:
         )
 
         namespaced_tool = [t for t in toolset.tools if t.name == "get_namespaced_resource_context"][0]
-        await namespaced_tool._invoke_async(kind="Deployment", name="api", namespace="prod")
+        result = await namespaced_tool._invoke_async(kind="Deployment", name="api", namespace="prod")
 
-        assert session_state["resource_scope"] == "namespaced"
+        assert result.status.value == "success"
+        # #529: session_state writes removed; EnrichmentService is authoritative
+        assert "resource_scope" not in session_state
 
     @pytest.mark.asyncio
     async def test_ut_hapi_524_012_renamed_tool_behavior_identical(self):
