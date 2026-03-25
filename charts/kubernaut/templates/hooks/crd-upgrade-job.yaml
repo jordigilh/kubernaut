@@ -50,6 +50,7 @@ spec:
             name: {{ include "kubernaut.fullname" . }}-crd-manifests
       containers:
         - name: apply-crds
+          # Reuses the shared kubectl image from hooks.tlsCerts.image
           image: {{ .Values.hooks.tlsCerts.image }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}

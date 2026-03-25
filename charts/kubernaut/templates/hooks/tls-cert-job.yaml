@@ -240,6 +240,9 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["actiontypes", "remediationworkflows"]
     verbs: ["get", "create", "update", "patch"]
+  # #521: CRD upgrade hook needs SSA permissions on CRDs.
+  # Consolidated into the shared hook ClusterRole to avoid proliferating
+  # ClusterRoles/Bindings — all hooks share one SA and are short-lived.
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
     verbs: ["get", "list", "create", "update", "patch"]
