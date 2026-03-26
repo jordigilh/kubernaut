@@ -533,7 +533,9 @@ async def analyze_incident(
     try:
         # BR-HAPI-211: Sanitize prompt BEFORE sending to LLM to prevent credential leakage
         from src.sanitization import sanitize_for_llm
+        from src.extensions.incident.prompt_builder import create_phase3_workflow_prompt, PHASE3_SECTIONS
         base_prompt = sanitize_for_llm(create_incident_investigation_prompt(request_data))
+        phase3_base_prompt = sanitize_for_llm(create_phase3_workflow_prompt(request_data))
 
         # Create minimal DAL
         dal = MinimalDAL(cluster_name=request_data.get("cluster_name"))
@@ -833,22 +835,25 @@ async def analyze_incident(
                     session_state["root_owner"] = enrichment_result_obj.root_owner
 
             # ─── PHASE 3: Workflow Selection ───
+            # Issue #537 / BR-HAPI-263: Use focused Phase 3 prompt + custom
+            # sections so the LLM knows it is in workflow selection mode and
+            # produces output structured with the keys the HAPI parser expects.
             phase1_context = ""
             if phase1_analysis:
                 phase1_context = f"\n\n## Phase 1 Root Cause Analysis\n{phase1_analysis}\n"
 
             enrichment_context = _build_enrichment_context(enrichment_result_obj)
             if pending_mismatch_feedback is not None:
-                investigation_prompt = base_prompt + phase1_context + enrichment_context + pending_mismatch_feedback
+                investigation_prompt = phase3_base_prompt + phase1_context + enrichment_context + pending_mismatch_feedback
                 pending_mismatch_feedback = None
             elif validation_errors_history:
-                investigation_prompt = base_prompt + phase1_context + enrichment_context + build_validation_error_feedback(
+                investigation_prompt = phase3_base_prompt + phase1_context + enrichment_context + build_validation_error_feedback(
                     validation_errors_history[-1],
                     attempt,
                     schema_hint=last_schema_hint,
                 )
             else:
-                investigation_prompt = base_prompt + phase1_context + enrichment_context
+                investigation_prompt = phase3_base_prompt + phase1_context + enrichment_context
 
             logger.info({
                 "event": "phase3_workflow_selection_started",
@@ -871,6 +876,7 @@ async def analyze_incident(
                     "attempt": attempt + 1,
                     "phase": 3,
                 },
+                sections=PHASE3_SECTIONS,
                 source_instance_id="holmesgpt-api"
             )
 
