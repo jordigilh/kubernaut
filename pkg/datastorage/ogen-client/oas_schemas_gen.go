@@ -13,6 +13,306 @@ import (
 	"github.com/google/uuid"
 )
 
+// AI Agent Phase 2 enrichment completed event payload (aiagent.enrichment.completed) - SOC2 CC8.1,
+// Issue.
+// Ref: #/components/schemas/AIAgentEnrichmentCompletedPayload
+type AIAgentEnrichmentCompletedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentEnrichmentCompletedPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Incident correlation ID from request.
+	IncidentID string `json:"incident_id"`
+	// Resolved root owner resource kind (e.g., Deployment, StatefulSet).
+	RootOwnerKind string `json:"root_owner_kind"`
+	// Resolved root owner resource name.
+	RootOwnerName string `json:"root_owner_name"`
+	// Resolved root owner namespace (empty for cluster-scoped resources).
+	RootOwnerNamespace OptString `json:"root_owner_namespace"`
+	// Number of resources in the K8s owner chain (1 = no parent).
+	OwnerChainLength int `json:"owner_chain_length"`
+	// Infrastructure labels detected by LabelDetector (null when detector unavailable).
+	DetectedLabelsSummary OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary `json:"detected_labels_summary"`
+	// Labels that could not be detected (null when all succeeded or detector unavailable).
+	FailedDetections OptNilStringArray `json:"failed_detections"`
+	// Whether remediation history was successfully fetched from DataStorage.
+	RemediationHistoryFetched bool `json:"remediation_history_fetched"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentEnrichmentCompletedPayload) GetEventType() AIAgentEnrichmentCompletedPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentEnrichmentCompletedPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetIncidentID returns the value of IncidentID.
+func (s *AIAgentEnrichmentCompletedPayload) GetIncidentID() string {
+	return s.IncidentID
+}
+
+// GetRootOwnerKind returns the value of RootOwnerKind.
+func (s *AIAgentEnrichmentCompletedPayload) GetRootOwnerKind() string {
+	return s.RootOwnerKind
+}
+
+// GetRootOwnerName returns the value of RootOwnerName.
+func (s *AIAgentEnrichmentCompletedPayload) GetRootOwnerName() string {
+	return s.RootOwnerName
+}
+
+// GetRootOwnerNamespace returns the value of RootOwnerNamespace.
+func (s *AIAgentEnrichmentCompletedPayload) GetRootOwnerNamespace() OptString {
+	return s.RootOwnerNamespace
+}
+
+// GetOwnerChainLength returns the value of OwnerChainLength.
+func (s *AIAgentEnrichmentCompletedPayload) GetOwnerChainLength() int {
+	return s.OwnerChainLength
+}
+
+// GetDetectedLabelsSummary returns the value of DetectedLabelsSummary.
+func (s *AIAgentEnrichmentCompletedPayload) GetDetectedLabelsSummary() OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary {
+	return s.DetectedLabelsSummary
+}
+
+// GetFailedDetections returns the value of FailedDetections.
+func (s *AIAgentEnrichmentCompletedPayload) GetFailedDetections() OptNilStringArray {
+	return s.FailedDetections
+}
+
+// GetRemediationHistoryFetched returns the value of RemediationHistoryFetched.
+func (s *AIAgentEnrichmentCompletedPayload) GetRemediationHistoryFetched() bool {
+	return s.RemediationHistoryFetched
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentEnrichmentCompletedPayload) SetEventType(val AIAgentEnrichmentCompletedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentEnrichmentCompletedPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetIncidentID sets the value of IncidentID.
+func (s *AIAgentEnrichmentCompletedPayload) SetIncidentID(val string) {
+	s.IncidentID = val
+}
+
+// SetRootOwnerKind sets the value of RootOwnerKind.
+func (s *AIAgentEnrichmentCompletedPayload) SetRootOwnerKind(val string) {
+	s.RootOwnerKind = val
+}
+
+// SetRootOwnerName sets the value of RootOwnerName.
+func (s *AIAgentEnrichmentCompletedPayload) SetRootOwnerName(val string) {
+	s.RootOwnerName = val
+}
+
+// SetRootOwnerNamespace sets the value of RootOwnerNamespace.
+func (s *AIAgentEnrichmentCompletedPayload) SetRootOwnerNamespace(val OptString) {
+	s.RootOwnerNamespace = val
+}
+
+// SetOwnerChainLength sets the value of OwnerChainLength.
+func (s *AIAgentEnrichmentCompletedPayload) SetOwnerChainLength(val int) {
+	s.OwnerChainLength = val
+}
+
+// SetDetectedLabelsSummary sets the value of DetectedLabelsSummary.
+func (s *AIAgentEnrichmentCompletedPayload) SetDetectedLabelsSummary(val OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) {
+	s.DetectedLabelsSummary = val
+}
+
+// SetFailedDetections sets the value of FailedDetections.
+func (s *AIAgentEnrichmentCompletedPayload) SetFailedDetections(val OptNilStringArray) {
+	s.FailedDetections = val
+}
+
+// SetRemediationHistoryFetched sets the value of RemediationHistoryFetched.
+func (s *AIAgentEnrichmentCompletedPayload) SetRemediationHistoryFetched(val bool) {
+	s.RemediationHistoryFetched = val
+}
+
+// Infrastructure labels detected by LabelDetector (null when detector unavailable).
+type AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary struct{}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentEnrichmentCompletedPayloadEventType string
+
+const (
+	AIAgentEnrichmentCompletedPayloadEventTypeAiagentEnrichmentCompleted AIAgentEnrichmentCompletedPayloadEventType = "aiagent.enrichment.completed"
+)
+
+// AllValues returns all AIAgentEnrichmentCompletedPayloadEventType values.
+func (AIAgentEnrichmentCompletedPayloadEventType) AllValues() []AIAgentEnrichmentCompletedPayloadEventType {
+	return []AIAgentEnrichmentCompletedPayloadEventType{
+		AIAgentEnrichmentCompletedPayloadEventTypeAiagentEnrichmentCompleted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentEnrichmentCompletedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentEnrichmentCompletedPayloadEventTypeAiagentEnrichmentCompleted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentEnrichmentCompletedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentEnrichmentCompletedPayloadEventType(data) {
+	case AIAgentEnrichmentCompletedPayloadEventTypeAiagentEnrichmentCompleted:
+		*s = AIAgentEnrichmentCompletedPayloadEventTypeAiagentEnrichmentCompleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// AI Agent Phase 2 enrichment failure event payload (aiagent.enrichment.failed) - SOC2 CC8.1, Issue.
+// Ref: #/components/schemas/AIAgentEnrichmentFailedPayload
+type AIAgentEnrichmentFailedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentEnrichmentFailedPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Incident correlation ID from request.
+	IncidentID string `json:"incident_id"`
+	// Failure reason from EnrichmentFailure (e.g., rca_incomplete).
+	Reason string `json:"reason"`
+	// Detailed failure context including retry information.
+	Detail string `json:"detail"`
+	// Kind of the resource that was being enriched when failure occurred.
+	AffectedResourceKind string `json:"affected_resource_kind"`
+	// Name of the resource that was being enriched when failure occurred.
+	AffectedResourceName string `json:"affected_resource_name"`
+	// Namespace of the resource (empty for cluster-scoped).
+	AffectedResourceNamespace OptString `json:"affected_resource_namespace"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentEnrichmentFailedPayload) GetEventType() AIAgentEnrichmentFailedPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentEnrichmentFailedPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetIncidentID returns the value of IncidentID.
+func (s *AIAgentEnrichmentFailedPayload) GetIncidentID() string {
+	return s.IncidentID
+}
+
+// GetReason returns the value of Reason.
+func (s *AIAgentEnrichmentFailedPayload) GetReason() string {
+	return s.Reason
+}
+
+// GetDetail returns the value of Detail.
+func (s *AIAgentEnrichmentFailedPayload) GetDetail() string {
+	return s.Detail
+}
+
+// GetAffectedResourceKind returns the value of AffectedResourceKind.
+func (s *AIAgentEnrichmentFailedPayload) GetAffectedResourceKind() string {
+	return s.AffectedResourceKind
+}
+
+// GetAffectedResourceName returns the value of AffectedResourceName.
+func (s *AIAgentEnrichmentFailedPayload) GetAffectedResourceName() string {
+	return s.AffectedResourceName
+}
+
+// GetAffectedResourceNamespace returns the value of AffectedResourceNamespace.
+func (s *AIAgentEnrichmentFailedPayload) GetAffectedResourceNamespace() OptString {
+	return s.AffectedResourceNamespace
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentEnrichmentFailedPayload) SetEventType(val AIAgentEnrichmentFailedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentEnrichmentFailedPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetIncidentID sets the value of IncidentID.
+func (s *AIAgentEnrichmentFailedPayload) SetIncidentID(val string) {
+	s.IncidentID = val
+}
+
+// SetReason sets the value of Reason.
+func (s *AIAgentEnrichmentFailedPayload) SetReason(val string) {
+	s.Reason = val
+}
+
+// SetDetail sets the value of Detail.
+func (s *AIAgentEnrichmentFailedPayload) SetDetail(val string) {
+	s.Detail = val
+}
+
+// SetAffectedResourceKind sets the value of AffectedResourceKind.
+func (s *AIAgentEnrichmentFailedPayload) SetAffectedResourceKind(val string) {
+	s.AffectedResourceKind = val
+}
+
+// SetAffectedResourceName sets the value of AffectedResourceName.
+func (s *AIAgentEnrichmentFailedPayload) SetAffectedResourceName(val string) {
+	s.AffectedResourceName = val
+}
+
+// SetAffectedResourceNamespace sets the value of AffectedResourceNamespace.
+func (s *AIAgentEnrichmentFailedPayload) SetAffectedResourceNamespace(val OptString) {
+	s.AffectedResourceNamespace = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentEnrichmentFailedPayloadEventType string
+
+const (
+	AIAgentEnrichmentFailedPayloadEventTypeAiagentEnrichmentFailed AIAgentEnrichmentFailedPayloadEventType = "aiagent.enrichment.failed"
+)
+
+// AllValues returns all AIAgentEnrichmentFailedPayloadEventType values.
+func (AIAgentEnrichmentFailedPayloadEventType) AllValues() []AIAgentEnrichmentFailedPayloadEventType {
+	return []AIAgentEnrichmentFailedPayloadEventType{
+		AIAgentEnrichmentFailedPayloadEventTypeAiagentEnrichmentFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentEnrichmentFailedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentEnrichmentFailedPayloadEventTypeAiagentEnrichmentFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentEnrichmentFailedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentEnrichmentFailedPayloadEventType(data) {
+	case AIAgentEnrichmentFailedPayloadEventTypeAiagentEnrichmentFailed:
+		*s = AIAgentEnrichmentFailedPayloadEventTypeAiagentEnrichmentFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // AI Agent response failure event payload (aiagent.response.failed) - Emitted when an investigation
 // fails (DD-AUDIT-005, SOC2 CC8.1).
 // Ref: #/components/schemas/AIAgentResponseFailedPayload
@@ -2445,6 +2745,8 @@ type AuditEventEventData struct {
 	NotificationMessageEscalatedPayload    NotificationMessageEscalatedPayload
 	AIAgentResponsePayload                 AIAgentResponsePayload
 	AIAgentResponseFailedPayload           AIAgentResponseFailedPayload
+	AIAgentEnrichmentCompletedPayload      AIAgentEnrichmentCompletedPayload
+	AIAgentEnrichmentFailedPayload         AIAgentEnrichmentFailedPayload
 	LLMRequestPayload                      LLMRequestPayload
 	LLMResponsePayload                     LLMResponsePayload
 	LLMToolCallPayload                     LLMToolCallPayload
@@ -2522,6 +2824,8 @@ const (
 	NotificationMessageEscalatedPayloadAuditEventEventData                           AuditEventEventDataType = "notification.message.escalated"
 	AIAgentResponsePayloadAuditEventEventData                                        AuditEventEventDataType = "aiagent.response.complete"
 	AIAgentResponseFailedPayloadAuditEventEventData                                  AuditEventEventDataType = "aiagent.response.failed"
+	AIAgentEnrichmentCompletedPayloadAuditEventEventData                             AuditEventEventDataType = "aiagent.enrichment.completed"
+	AIAgentEnrichmentFailedPayloadAuditEventEventData                                AuditEventEventDataType = "aiagent.enrichment.failed"
 	LLMRequestPayloadAuditEventEventData                                             AuditEventEventDataType = "aiagent.llm.request"
 	LLMResponsePayloadAuditEventEventData                                            AuditEventEventDataType = "aiagent.llm.response"
 	LLMToolCallPayloadAuditEventEventData                                            AuditEventEventDataType = "aiagent.llm.tool_call"
@@ -2703,6 +3007,16 @@ func (s AuditEventEventData) IsAIAgentResponsePayload() bool {
 // IsAIAgentResponseFailedPayload reports whether AuditEventEventData is AIAgentResponseFailedPayload.
 func (s AuditEventEventData) IsAIAgentResponseFailedPayload() bool {
 	return s.Type == AIAgentResponseFailedPayloadAuditEventEventData
+}
+
+// IsAIAgentEnrichmentCompletedPayload reports whether AuditEventEventData is AIAgentEnrichmentCompletedPayload.
+func (s AuditEventEventData) IsAIAgentEnrichmentCompletedPayload() bool {
+	return s.Type == AIAgentEnrichmentCompletedPayloadAuditEventEventData
+}
+
+// IsAIAgentEnrichmentFailedPayload reports whether AuditEventEventData is AIAgentEnrichmentFailedPayload.
+func (s AuditEventEventData) IsAIAgentEnrichmentFailedPayload() bool {
+	return s.Type == AIAgentEnrichmentFailedPayloadAuditEventEventData
 }
 
 // IsLLMRequestPayload reports whether AuditEventEventData is LLMRequestPayload.
@@ -3538,6 +3852,48 @@ func NewAIAgentResponseFailedPayloadAuditEventEventData(v AIAgentResponseFailedP
 	return s
 }
 
+// SetAIAgentEnrichmentCompletedPayload sets AuditEventEventData to AIAgentEnrichmentCompletedPayload.
+func (s *AuditEventEventData) SetAIAgentEnrichmentCompletedPayload(v AIAgentEnrichmentCompletedPayload) {
+	s.Type = AIAgentEnrichmentCompletedPayloadAuditEventEventData
+	s.AIAgentEnrichmentCompletedPayload = v
+}
+
+// GetAIAgentEnrichmentCompletedPayload returns AIAgentEnrichmentCompletedPayload and true boolean if AuditEventEventData is AIAgentEnrichmentCompletedPayload.
+func (s AuditEventEventData) GetAIAgentEnrichmentCompletedPayload() (v AIAgentEnrichmentCompletedPayload, ok bool) {
+	if !s.IsAIAgentEnrichmentCompletedPayload() {
+		return v, false
+	}
+	return s.AIAgentEnrichmentCompletedPayload, true
+}
+
+// NewAIAgentEnrichmentCompletedPayloadAuditEventEventData returns new AuditEventEventData from AIAgentEnrichmentCompletedPayload.
+func NewAIAgentEnrichmentCompletedPayloadAuditEventEventData(v AIAgentEnrichmentCompletedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentEnrichmentCompletedPayload(v)
+	return s
+}
+
+// SetAIAgentEnrichmentFailedPayload sets AuditEventEventData to AIAgentEnrichmentFailedPayload.
+func (s *AuditEventEventData) SetAIAgentEnrichmentFailedPayload(v AIAgentEnrichmentFailedPayload) {
+	s.Type = AIAgentEnrichmentFailedPayloadAuditEventEventData
+	s.AIAgentEnrichmentFailedPayload = v
+}
+
+// GetAIAgentEnrichmentFailedPayload returns AIAgentEnrichmentFailedPayload and true boolean if AuditEventEventData is AIAgentEnrichmentFailedPayload.
+func (s AuditEventEventData) GetAIAgentEnrichmentFailedPayload() (v AIAgentEnrichmentFailedPayload, ok bool) {
+	if !s.IsAIAgentEnrichmentFailedPayload() {
+		return v, false
+	}
+	return s.AIAgentEnrichmentFailedPayload, true
+}
+
+// NewAIAgentEnrichmentFailedPayloadAuditEventEventData returns new AuditEventEventData from AIAgentEnrichmentFailedPayload.
+func NewAIAgentEnrichmentFailedPayloadAuditEventEventData(v AIAgentEnrichmentFailedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentEnrichmentFailedPayload(v)
+	return s
+}
+
 // SetLLMRequestPayload sets AuditEventEventData to LLMRequestPayload.
 func (s *AuditEventEventData) SetLLMRequestPayload(v LLMRequestPayload) {
 	s.Type = LLMRequestPayloadAuditEventEventData
@@ -4328,6 +4684,8 @@ type AuditEventRequestEventData struct {
 	NotificationMessageEscalatedPayload    NotificationMessageEscalatedPayload
 	AIAgentResponsePayload                 AIAgentResponsePayload
 	AIAgentResponseFailedPayload           AIAgentResponseFailedPayload
+	AIAgentEnrichmentCompletedPayload      AIAgentEnrichmentCompletedPayload
+	AIAgentEnrichmentFailedPayload         AIAgentEnrichmentFailedPayload
 	LLMRequestPayload                      LLMRequestPayload
 	LLMResponsePayload                     LLMResponsePayload
 	LLMToolCallPayload                     LLMToolCallPayload
@@ -4405,6 +4763,8 @@ const (
 	NotificationMessageEscalatedPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "notification.message.escalated"
 	AIAgentResponsePayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "aiagent.response.complete"
 	AIAgentResponseFailedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "aiagent.response.failed"
+	AIAgentEnrichmentCompletedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "aiagent.enrichment.completed"
+	AIAgentEnrichmentFailedPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "aiagent.enrichment.failed"
 	LLMRequestPayloadAuditEventRequestEventData                                                    AuditEventRequestEventDataType = "aiagent.llm.request"
 	LLMResponsePayloadAuditEventRequestEventData                                                   AuditEventRequestEventDataType = "aiagent.llm.response"
 	LLMToolCallPayloadAuditEventRequestEventData                                                   AuditEventRequestEventDataType = "aiagent.llm.tool_call"
@@ -4586,6 +4946,16 @@ func (s AuditEventRequestEventData) IsAIAgentResponsePayload() bool {
 // IsAIAgentResponseFailedPayload reports whether AuditEventRequestEventData is AIAgentResponseFailedPayload.
 func (s AuditEventRequestEventData) IsAIAgentResponseFailedPayload() bool {
 	return s.Type == AIAgentResponseFailedPayloadAuditEventRequestEventData
+}
+
+// IsAIAgentEnrichmentCompletedPayload reports whether AuditEventRequestEventData is AIAgentEnrichmentCompletedPayload.
+func (s AuditEventRequestEventData) IsAIAgentEnrichmentCompletedPayload() bool {
+	return s.Type == AIAgentEnrichmentCompletedPayloadAuditEventRequestEventData
+}
+
+// IsAIAgentEnrichmentFailedPayload reports whether AuditEventRequestEventData is AIAgentEnrichmentFailedPayload.
+func (s AuditEventRequestEventData) IsAIAgentEnrichmentFailedPayload() bool {
+	return s.Type == AIAgentEnrichmentFailedPayloadAuditEventRequestEventData
 }
 
 // IsLLMRequestPayload reports whether AuditEventRequestEventData is LLMRequestPayload.
@@ -5418,6 +5788,48 @@ func (s AuditEventRequestEventData) GetAIAgentResponseFailedPayload() (v AIAgent
 func NewAIAgentResponseFailedPayloadAuditEventRequestEventData(v AIAgentResponseFailedPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetAIAgentResponseFailedPayload(v)
+	return s
+}
+
+// SetAIAgentEnrichmentCompletedPayload sets AuditEventRequestEventData to AIAgentEnrichmentCompletedPayload.
+func (s *AuditEventRequestEventData) SetAIAgentEnrichmentCompletedPayload(v AIAgentEnrichmentCompletedPayload) {
+	s.Type = AIAgentEnrichmentCompletedPayloadAuditEventRequestEventData
+	s.AIAgentEnrichmentCompletedPayload = v
+}
+
+// GetAIAgentEnrichmentCompletedPayload returns AIAgentEnrichmentCompletedPayload and true boolean if AuditEventRequestEventData is AIAgentEnrichmentCompletedPayload.
+func (s AuditEventRequestEventData) GetAIAgentEnrichmentCompletedPayload() (v AIAgentEnrichmentCompletedPayload, ok bool) {
+	if !s.IsAIAgentEnrichmentCompletedPayload() {
+		return v, false
+	}
+	return s.AIAgentEnrichmentCompletedPayload, true
+}
+
+// NewAIAgentEnrichmentCompletedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentEnrichmentCompletedPayload.
+func NewAIAgentEnrichmentCompletedPayloadAuditEventRequestEventData(v AIAgentEnrichmentCompletedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentEnrichmentCompletedPayload(v)
+	return s
+}
+
+// SetAIAgentEnrichmentFailedPayload sets AuditEventRequestEventData to AIAgentEnrichmentFailedPayload.
+func (s *AuditEventRequestEventData) SetAIAgentEnrichmentFailedPayload(v AIAgentEnrichmentFailedPayload) {
+	s.Type = AIAgentEnrichmentFailedPayloadAuditEventRequestEventData
+	s.AIAgentEnrichmentFailedPayload = v
+}
+
+// GetAIAgentEnrichmentFailedPayload returns AIAgentEnrichmentFailedPayload and true boolean if AuditEventRequestEventData is AIAgentEnrichmentFailedPayload.
+func (s AuditEventRequestEventData) GetAIAgentEnrichmentFailedPayload() (v AIAgentEnrichmentFailedPayload, ok bool) {
+	if !s.IsAIAgentEnrichmentFailedPayload() {
+		return v, false
+	}
+	return s.AIAgentEnrichmentFailedPayload, true
+}
+
+// NewAIAgentEnrichmentFailedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentEnrichmentFailedPayload.
+func NewAIAgentEnrichmentFailedPayloadAuditEventRequestEventData(v AIAgentEnrichmentFailedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentEnrichmentFailedPayload(v)
 	return s
 }
 
@@ -11772,6 +12184,52 @@ func (s *NotificationMessageSentPayloadMetadata) init() NotificationMessageSentP
 	return m
 }
 
+// NewOptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary returns new OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary with value set to v.
+func NewOptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary(v *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary {
+	return OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary is optional *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary.
+type OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary struct {
+	Value *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary
+	Set   bool
+}
+
+// IsSet returns true if OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary was set.
+func (o OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Reset() {
+	var v *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) SetTo(v *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Get() (v *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Or(d *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptActionTypeDescription returns new OptActionTypeDescription with value set to v.
 func NewOptActionTypeDescription(v ActionTypeDescription) OptActionTypeDescription {
 	return OptActionTypeDescription{
@@ -13771,6 +14229,69 @@ func (o OptNilString) Get() (v string, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilString) Or(d string) string {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilStringArray returns new OptNilStringArray with value set to v.
+func NewOptNilStringArray(v []string) OptNilStringArray {
+	return OptNilStringArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilStringArray is optional nullable []string.
+type OptNilStringArray struct {
+	Value []string
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilStringArray was set.
+func (o OptNilStringArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilStringArray) Reset() {
+	var v []string
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilStringArray) SetTo(v []string) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilStringArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilStringArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []string
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilStringArray) Get() (v []string, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilStringArray) Or(d []string) []string {
 	if v, ok := o.Get(); ok {
 		return v
 	}

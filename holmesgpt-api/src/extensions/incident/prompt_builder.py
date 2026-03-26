@@ -924,3 +924,182 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 
     return prompt
 
+
+# Issue #537 / BR-HAPI-263: Custom sections for Phase 3 workflow selection.
+# These align with what the HAPI result parser (result_parser.py Pattern 2B)
+# extracts via section headers.  Passing them as `sections` to
+# InvestigateRequest ensures the SDK's system prompt tells the LLM to produce
+# output structured with these exact keys.
+PHASE3_SECTIONS: Dict[str, str] = {
+    "root_cause_analysis": (
+        'JSON object with "summary", "severity", "contributing_factors", '
+        'and "affectedResource". Summarize the root cause from Phase 1.'
+    ),
+    "confidence": (
+        "A decimal number between 0.0 and 1.0 representing your confidence "
+        "in the workflow selection (or in the investigation outcome if no workflow is selected)."
+    ),
+    "selected_workflow": (
+        'JSON object with "workflow_id", "confidence", "rationale", and "parameters". '
+        "Set to null if no workflow matches."
+    ),
+    "alternative_workflows": (
+        "JSON array of alternative workflow objects considered but not selected. "
+        "Each entry has workflow_id, confidence, and rationale. Use [] if none."
+    ),
+    "investigation_outcome": (
+        '"resolved" if the problem self-resolved and the resource is currently healthy, '
+        '"inconclusive" if the root cause could not be determined. '
+        "Set to null if a workflow was selected or the problem is still active."
+    ),
+}
+
+
+def create_phase3_workflow_prompt(
+    request_data: Dict[str, Any],
+) -> str:
+    """
+    Create a focused prompt for Phase 3 (Workflow Selection).
+
+    Issue #537 / BR-HAPI-263: Phase 3 creates a new LLM session that has no
+    memory of Phase 1.  This prompt provides ONLY the context needed for
+    workflow selection — incident summary, business context, three-step
+    discovery protocol, and the expected response format.  It deliberately
+    excludes investigation instructions (Phase 1 concerns) to prevent the
+    LLM from re-investigating instead of selecting a workflow.
+
+    The Phase 1 RCA and Phase 2 enrichment context are injected separately
+    by the caller (llm_integration.py) as appended sections.
+
+    Args:
+        request_data: IncidentRequest model data.
+
+    Returns:
+        Focused workflow selection prompt string.
+    """
+    signal_name = request_data.get("signal_name", "Unknown")
+    severity = request_data.get("severity", "unknown")
+    namespace = request_data.get("resource_namespace", "unknown")
+    resource_kind = request_data.get("resource_kind", "unknown")
+    resource_name = request_data.get("resource_name", "unknown")
+    environment = request_data.get("environment", "unknown")
+    priority = request_data.get("priority", "P2")
+    risk_tolerance = request_data.get("risk_tolerance", "medium")
+    business_category = request_data.get("business_category", "standard")
+    cluster_name = request_data.get("cluster_name", "unknown")
+    signal_mode = request_data.get("signal_mode") or "reactive"
+
+    priority_desc = PRIORITY_DESCRIPTIONS.get(
+        priority, f"{priority} - Standard priority"
+    ).format(business_category=business_category)
+    risk_desc = RISK_GUIDANCE.get(risk_tolerance, f"{risk_tolerance} risk tolerance")
+
+    proactive_note = ""
+    if signal_mode == "proactive":
+        proactive_note = f"\n\n**Proactive Mode**: This is a proactive signal — the incident is predicted but has NOT yet occurred. Select a preventive workflow appropriate for anticipated {signal_name} events."
+
+    prompt = f"""# Workflow Selection Request
+
+## Incident Context
+
+A **{severity} {signal_name}** event {'is predicted' if signal_mode == 'proactive' else 'occurred'} for **{namespace}/{resource_kind}/{resource_name}** in cluster **{cluster_name}**.
+
+**Technical Details**:
+- Signal Name: {signal_name}
+- Severity: {severity}
+- Signal Mode: {signal_mode}
+- Resource: {namespace}/{resource_kind}/{resource_name}
+
+**Business Impact Assessment**:
+- **Priority**: {priority_desc}
+- **Environment**: {environment}
+- **Risk Tolerance**: {risk_desc}
+{proactive_note}
+
+## Your Task
+
+You are in the **Workflow Selection** phase.  A root cause analysis (RCA) and
+enrichment context are provided below.  Your job is to select the most
+appropriate remediation workflow from the catalog using the three-step
+discovery protocol.
+
+**DO NOT re-investigate the incident.**  The investigation is complete.  Focus
+exclusively on workflow discovery and selection based on the RCA findings and
+enrichment context provided.
+
+## Workflow Discovery Protocol (Three-Step — MANDATORY)
+
+**Step 1**: Call `list_available_actions` to discover available remediation action types.
+Review all returned action types and their descriptions. Choose the action type that
+best matches the RCA findings.
+
+**Action Type Selection Rules** (apply BEFORE calling Step 2):
+- If `cluster_context` in the Step 1 response shows `gitOpsManaged=true`, you MUST prefer git-based action types (e.g., GitRevertCommit) over direct kubectl actions. GitOps environments require remediation via git to preserve source-of-truth integrity.
+- If the RCA reveals an error rate spike or SLO degradation that temporally correlates with a recent deployment revision change, prefer ProactiveRollback.
+- Always cross-reference each action type's `when_to_use` and `when_not_to_use` guidance against the RCA findings before selecting.
+
+**Step 2**: Call `list_workflows` with `action_type` set to your chosen action type.
+**CRITICAL**: If `pagination.hasMore` is true, call again with increased `offset` to
+review ALL workflows. Compare workflow descriptions, version notes, and suitability
+across ALL workflows before selecting.
+
+**Step 3**: Call `get_workflow` with the `workflow_id` of your selected workflow to
+retrieve its full parameter schema. If you get "not found", go back to Step 2
+and choose a different workflow.
+
+**Signal context filters** (severity, component, environment, priority, detected_labels)
+are automatically included in all discovery calls. You do NOT need to provide them
+manually.
+
+## Special Investigation Outcomes (BR-HAPI-200)
+
+Not all incidents result in a workflow recommendation. Handle these cases explicitly:
+
+### Outcome A: Problem Self-Resolved
+If the RCA confirms the problem has **already resolved on its own** and the resource
+is **currently healthy** (confidence >= 0.7):
+- Set `selected_workflow` to None
+- Set `investigation_outcome` to "resolved"
+
+### Outcome B: Investigation Inconclusive
+If the RCA **cannot determine** the root cause (confidence < 0.5):
+- Set `selected_workflow` to None
+- Set `investigation_outcome` to "inconclusive"
+
+### Outcome C: No Automated Remediation Available
+If the RCA identified the root cause but no workflow matched:
+- Set `selected_workflow` to None
+- Do NOT include `investigation_outcome`
+
+### Outcome D: Alert Not Actionable
+If the alert describes a **benign condition** that does not warrant remediation:
+- Set `selected_workflow` to None
+- Include `actionable: false` in your response
+
+## Expected Response Format
+
+**CRITICAL**: Use section header format. Each field must be on its own line with a
+`#` section header:
+
+# root_cause_analysis
+{{"summary": "Brief summary from Phase 1 RCA", "severity": "critical|high|medium|low|unknown", "contributing_factors": ["factor1", "factor2"], "affectedResource": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}}}
+
+# confidence
+0.95
+
+# selected_workflow
+{{"workflow_id": "workflow-id-from-catalog", "confidence": 0.95, "rationale": "Why this workflow was selected", "parameters": {{"PARAM_NAME": "value"}}}}
+
+# alternative_workflows
+[{{"workflow_id": "alt-workflow-id", "confidence": 0.75, "rationale": "Why this was considered but not selected"}}]
+
+**IMPORTANT**:
+- Select ONE workflow per incident as `selected_workflow`
+- Include up to 2-3 `alternative_workflows` (for audit/context only)
+- Each field must have its own `# field_name` header
+- If a field is not applicable, use `None` or `[]` as the value
+- Populate ALL required parameters from the workflow schema
+- Use the RCA findings to determine parameter values
+"""
+
+    return prompt

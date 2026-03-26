@@ -55,6 +55,8 @@ from src.audit.events import (  # noqa: E402
     create_aiagent_response_complete_event,
     create_aiagent_response_failed_event,  # #442: failure audit event
     create_hapi_response_complete_event,  # backward compat alias
+    create_enrichment_completed_event,  # #533: Phase 2 enrichment audit
+    create_enrichment_failed_event,  # #533: Phase 2 enrichment audit
 )
 from src.audit.factory import get_audit_store  # noqa: E402
 
@@ -69,5 +71,7 @@ __all__ = [
     "create_aiagent_response_complete_event",
     "create_aiagent_response_failed_event",
     "create_hapi_response_complete_event",  # backward compat alias
+    "create_enrichment_completed_event",
+    "create_enrichment_failed_event",
 ]
 

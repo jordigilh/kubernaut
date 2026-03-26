@@ -54,6 +54,8 @@ from holmes.core.investigation import investigate_issues
 from src.audit import (
     get_audit_store,
     create_validation_attempt_event,
+    create_enrichment_completed_event,  # #533: Phase 2 enrichment audit
+    create_enrichment_failed_event,  # #533: Phase 2 enrichment audit
 )
 
 from .constants import MAX_VALIDATION_ATTEMPTS
@@ -533,7 +535,9 @@ async def analyze_incident(
     try:
         # BR-HAPI-211: Sanitize prompt BEFORE sending to LLM to prevent credential leakage
         from src.sanitization import sanitize_for_llm
+        from src.extensions.incident.prompt_builder import create_phase3_workflow_prompt, PHASE3_SECTIONS
         base_prompt = sanitize_for_llm(create_incident_investigation_prompt(request_data))
+        phase3_base_prompt = sanitize_for_llm(create_phase3_workflow_prompt(request_data))
 
         # Create minimal DAL
         dal = MinimalDAL(cluster_name=request_data.get("cluster_name"))
@@ -815,6 +819,13 @@ async def analyze_incident(
                         "reason": ef.reason,
                         "detail": ef.detail,
                     })
+                    audit_store.store_audit(create_enrichment_failed_event(
+                        incident_id=incident_id,
+                        remediation_id=remediation_id,
+                        reason=ef.reason,
+                        detail=ef.detail,
+                        affected_resource=affected_resource,
+                    ))
                     result = {
                         "root_cause_analysis": rca_data,
                         "needs_human_review": True,
@@ -827,23 +838,46 @@ async def analyze_incident(
                 if enrichment_result_obj.detected_labels:
                     session_state["detected_labels"] = enrichment_result_obj.detected_labels
 
+                # Issue #535 / BR-HAPI-261: Store resolved root_owner in session_state
+                # so workflow discovery tools use the correct component filter.
+                if enrichment_result_obj.root_owner:
+                    session_state["root_owner"] = enrichment_result_obj.root_owner
+
+                # Issue #533 / BR-AUDIT-005: Emit enrichment completed audit event
+                _root = enrichment_result_obj.root_owner or affected_resource
+                _chain_len = 1
+                if _root.get("kind") != affected_resource.get("kind") or _root.get("name") != affected_resource.get("name"):
+                    _chain_len = 2
+                audit_store.store_audit(create_enrichment_completed_event(
+                    incident_id=incident_id,
+                    remediation_id=remediation_id,
+                    root_owner=_root,
+                    owner_chain_length=_chain_len,
+                    detected_labels=enrichment_result_obj.detected_labels,
+                    failed_detections=None,
+                    remediation_history_fetched=enrichment_result_obj.remediation_history is not None,
+                ))
+
             # ─── PHASE 3: Workflow Selection ───
+            # Issue #537 / BR-HAPI-263: Use focused Phase 3 prompt + custom
+            # sections so the LLM knows it is in workflow selection mode and
+            # produces output structured with the keys the HAPI parser expects.
             phase1_context = ""
             if phase1_analysis:
                 phase1_context = f"\n\n## Phase 1 Root Cause Analysis\n{phase1_analysis}\n"
 
             enrichment_context = _build_enrichment_context(enrichment_result_obj)
             if pending_mismatch_feedback is not None:
-                investigation_prompt = base_prompt + phase1_context + enrichment_context + pending_mismatch_feedback
+                investigation_prompt = phase3_base_prompt + phase1_context + enrichment_context + pending_mismatch_feedback
                 pending_mismatch_feedback = None
             elif validation_errors_history:
-                investigation_prompt = base_prompt + phase1_context + enrichment_context + build_validation_error_feedback(
+                investigation_prompt = phase3_base_prompt + phase1_context + enrichment_context + build_validation_error_feedback(
                     validation_errors_history[-1],
                     attempt,
                     schema_hint=last_schema_hint,
                 )
             else:
-                investigation_prompt = base_prompt + phase1_context + enrichment_context
+                investigation_prompt = phase3_base_prompt + phase1_context + enrichment_context
 
             logger.info({
                 "event": "phase3_workflow_selection_started",
@@ -866,6 +900,7 @@ async def analyze_incident(
                     "attempt": attempt + 1,
                     "phase": 3,
                 },
+                sections=PHASE3_SECTIONS,
                 source_instance_id="holmesgpt-api"
             )
 

@@ -42,6 +42,8 @@ Event Types (aiagent.{domain}.{action} convention):
   - aiagent.llm.tool_call: LLM tool invocation (e.g., list_available_actions)
   - aiagent.workflow.validation_attempt: Validation retry event
   - aiagent.response.complete: Full HAPI response (provider perspective)
+  - aiagent.enrichment.completed: Phase 2 enrichment success (#533)
+  - aiagent.enrichment.failed: Phase 2 enrichment failure (#533)
 
 Usage:
     from src.audit.events import (
@@ -80,6 +82,8 @@ from src.models.audit_models import (  # noqa: E402
     WorkflowValidationEventData,
     HAPIResponseEventData,  # DD-AUDIT-005: HAPI response complete event
     HAPIResponseFailedEventData,  # #442: HAPI response failure event
+    EnrichmentCompletedEventData,  # #533: Phase 2 enrichment completed
+    EnrichmentFailedEventData,  # #533: Phase 2 enrichment failed
 )
 
 
@@ -454,6 +458,92 @@ def create_aiagent_response_failed_event(
     return _create_adr034_event(
         event_type="aiagent.response.failed",
         operation="response_failed",
+        outcome="failure",
+        correlation_id=remediation_id or "unknown",
+        event_data=event_data_model,
+    )
+
+
+def create_enrichment_completed_event(
+    incident_id: str,
+    remediation_id: str,
+    root_owner: Dict[str, str],
+    owner_chain_length: int,
+    detected_labels: Optional[Dict[str, Any]] = None,
+    failed_detections: Optional[List[str]] = None,
+    remediation_history_fetched: bool = False,
+) -> AuditEventRequest:
+    """
+    Create Phase 2 enrichment completed audit event (ADR-034 compliant).
+
+    Business Requirement: BR-AUDIT-005 v2.0 (SOC2 CC8.1)
+    Issue: #533 — SOC2 audit event gaps in Phase 2 enrichment flow
+
+    Args:
+        incident_id: Incident identifier for correlation
+        remediation_id: Remediation request ID for audit correlation
+        root_owner: Resolved root owner dict with kind, name, namespace
+        owner_chain_length: Number of resources in the K8s owner chain
+        detected_labels: Infrastructure labels from LabelDetector (None if unavailable)
+        failed_detections: Labels that could not be detected (None if all succeeded)
+        remediation_history_fetched: Whether history was fetched from DataStorage
+    """
+    event_data_model = EnrichmentCompletedEventData(
+        event_type="aiagent.enrichment.completed",
+        event_id=str(uuid.uuid4()),
+        incident_id=incident_id,
+        root_owner_kind=root_owner.get("kind", ""),
+        root_owner_name=root_owner.get("name", ""),
+        root_owner_namespace=root_owner.get("namespace", ""),
+        owner_chain_length=owner_chain_length,
+        detected_labels_summary=detected_labels,
+        failed_detections=failed_detections,
+        remediation_history_fetched=remediation_history_fetched,
+    )
+
+    return _create_adr034_event(
+        event_type="aiagent.enrichment.completed",
+        operation="enrichment_completed",
+        outcome="success",
+        correlation_id=remediation_id,
+        event_data=event_data_model,
+    )
+
+
+def create_enrichment_failed_event(
+    incident_id: str,
+    remediation_id: Optional[str],
+    reason: str,
+    detail: str,
+    affected_resource: Dict[str, str],
+) -> AuditEventRequest:
+    """
+    Create Phase 2 enrichment failure audit event (ADR-034 compliant).
+
+    Business Requirement: BR-AUDIT-005 v2.0 (SOC2 CC8.1)
+    Issue: #533 — SOC2 audit event gaps in Phase 2 enrichment flow
+
+    Args:
+        incident_id: Incident identifier for correlation
+        remediation_id: Remediation request ID (None if not yet assigned)
+        reason: Failure reason from EnrichmentFailure (e.g., "rca_incomplete")
+        detail: Detailed failure context including retry information
+        affected_resource: Resource dict that was being enriched when failure occurred
+    """
+    event_data_model = EnrichmentFailedEventData(
+        event_type="aiagent.enrichment.failed",
+        event_id=str(uuid.uuid4()),
+        incident_id=incident_id,
+        reason=reason,
+        detail=detail,
+        affected_resource_kind=affected_resource.get("kind", ""),
+        affected_resource_name=affected_resource.get("name", ""),
+        affected_resource_namespace=affected_resource.get("namespace", ""),
+    )
+
+    return _create_adr034_event(
+        event_type="aiagent.enrichment.failed",
+        operation="enrichment_failed",
         outcome="failure",
         correlation_id=remediation_id or "unknown",
         event_data=event_data_model,

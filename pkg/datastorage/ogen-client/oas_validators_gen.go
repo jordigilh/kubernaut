@@ -9,6 +9,88 @@ import (
 	"github.com/ogen-go/ogen/validate"
 )
 
+func (s *AIAgentEnrichmentCompletedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.FailedDetections.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "failed_detections",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentEnrichmentCompletedPayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.enrichment.completed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *AIAgentEnrichmentFailedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentEnrichmentFailedPayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.enrichment.failed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *AIAgentResponseFailedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -952,6 +1034,16 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case AIAgentEnrichmentCompletedPayloadAuditEventEventData:
+		if err := s.AIAgentEnrichmentCompletedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentEnrichmentFailedPayloadAuditEventEventData:
+		if err := s.AIAgentEnrichmentFailedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case LLMRequestPayloadAuditEventEventData:
 		if err := s.LLMRequestPayload.Validate(); err != nil {
 			return err
@@ -1288,6 +1380,16 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case AIAgentResponseFailedPayloadAuditEventRequestEventData:
 		if err := s.AIAgentResponseFailedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentEnrichmentCompletedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentEnrichmentCompletedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentEnrichmentFailedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentEnrichmentFailedPayload.Validate(); err != nil {
 			return err
 		}
 		return nil

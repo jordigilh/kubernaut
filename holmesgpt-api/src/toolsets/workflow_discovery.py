@@ -405,6 +405,21 @@ class _DiscoveryToolBase(Tool):
         # Labels are detected by get_namespaced_resource_context / get_cluster_resource_context and stored in session_state.
         object.__setattr__(self, "_session_state", session_state)
 
+    def _effective_component(self) -> str:
+        """Return the resolved component kind for DS queries and logging.
+
+        Issue #535 / BR-HAPI-261: Prefers root_owner.kind from session_state
+        (populated after Phase 2 enrichment) over the alerting resource kind
+        set at toolset registration time.
+        """
+        if self._session_state:
+            root_owner = self._session_state.get("root_owner")
+            if isinstance(root_owner, dict):
+                resolved = root_owner.get("kind", "")
+                if resolved:
+                    return resolved
+        return self._component or ""
+
     def _build_context_params(self) -> Dict[str, Any]:
         """
         Build query parameters dict with signal context filters.
@@ -417,13 +432,15 @@ class _DiscoveryToolBase(Tool):
         ADR-056 v1.4: detected_labels are read from session_state["detected_labels"],
         populated by get_namespaced_resource_context / get_cluster_resource_context (see resource_context.py).
 
+        Issue #535 / BR-HAPI-261: component resolved via _effective_component().
+
         NOTE: severity, component, environment, and priority are ALWAYS included
         because the DS OpenAPI spec declares them as required: true. Omitting any
         of them causes a 400 Bad Request from the ogen request validator.
         """
         params: Dict[str, Any] = {}
         params["severity"] = self._severity or ""
-        params["component"] = self._component or ""
+        params["component"] = self._effective_component()
         params["environment"] = self._environment or ""
         params["priority"] = self._priority or ""
         if self._remediation_id:
@@ -572,7 +589,7 @@ class ListAvailableActionsTool(_DiscoveryToolBase):
 
             logger.info(
                 f"🔍 BR-HAPI-017-001 Step 1: Listing available actions — "
-                f"severity={self._severity}, component={self._component}, "
+                f"severity={self._severity}, component={self._effective_component()}, "
                 f"environment={self._environment}, priority={self._priority}, "
                 f"offset={offset}, limit={limit}"
             )
@@ -638,7 +655,7 @@ class ListAvailableActionsTool(_DiscoveryToolBase):
     def get_parameterized_one_liner(self, params: Dict) -> str:
         return (
             f"List available actions (severity={self._severity}, "
-            f"component={self._component}, env={self._environment})"
+            f"component={self._effective_component()}, env={self._environment})"
         )
 
 

@@ -42,9 +42,11 @@ from .constants import MAX_VALIDATION_ATTEMPTS
 from src.audit import get_audit_store  # Shared factory (no longer in llm_integration)
 from .prompt_builder import (
     create_incident_investigation_prompt,
+    create_phase3_workflow_prompt,
     build_cluster_context_section,
     build_mcp_filter_instructions,
-    build_validation_error_feedback
+    build_validation_error_feedback,
+    PHASE3_SECTIONS,
 )
 from .result_parser import (
     parse_and_validate_investigation_result,
@@ -81,6 +83,8 @@ __all__ = [
 
     # Prompt building (public API)
     "create_incident_investigation_prompt",
+    "create_phase3_workflow_prompt",
+    "PHASE3_SECTIONS",
     "build_cluster_context_section",
     "build_mcp_filter_instructions",
     "build_validation_error_feedback",
