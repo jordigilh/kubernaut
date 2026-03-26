@@ -89,7 +89,7 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.ApprovalRequired).To(BeTrue())
 			Expect(result.Degraded).To(BeFalse())
-			Expect(result.Reason).To(ContainSubstring("affected resource"))
+			Expect(result.Reason).To(ContainSubstring("remediation target"))
 		})
 
 		It("should require approval for production with failed detections", func() {
