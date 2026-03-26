@@ -45,14 +45,14 @@ func formatTargetResource(r remediationv1.ResourceIdentifier) string {
 }
 
 // resolveNotificationTargetResource returns the best available target resource for notifications (#305).
-// Prefers AI's AffectedResource (from LLM investigation) when the Gateway's TargetResource
+// Prefers AI's RemediationTarget (from LLM investigation) when the Gateway's TargetResource
 // is "Unknown" (e.g., when owner resolution failed for kube-state-metrics alerts).
 func resolveNotificationTargetResource(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) remediationv1.ResourceIdentifier {
 	if rr.Spec.TargetResource.Kind != "Unknown" {
 		return rr.Spec.TargetResource
 	}
-	if ai != nil && ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.AffectedResource != nil {
-		ar := ai.Status.RootCauseAnalysis.AffectedResource
+	if ai != nil && ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
+		ar := ai.Status.RootCauseAnalysis.RemediationTarget
 		return remediationv1.ResourceIdentifier{
 			Kind:      ar.Kind,
 			Name:      ar.Name,

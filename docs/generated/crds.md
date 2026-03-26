@@ -179,23 +179,6 @@ _Appears in:_
 | `catalogStatus`| _string_| CatalogStatus reflects the DS catalog state (active, disabled).|
 
 
-### AffectedResource
-
-
-AffectedResource identifies the Kubernetes resource identified by the LLM as the
-actual target for remediation. This may differ from the signal's source resource
-(e.g., the signal comes from a Pod, but the Deployment should be patched).
-
-_Appears in:_
-- [RootCauseAnalysis](#rootcauseanalysis)
-
-| Field| Type| Description|
-| ---| ---| ---|
-| `kind`| _string_| Kind is the Kubernetes resource kind (e.g., "Deployment", "StatefulSet", "DaemonSet")|
-| `name`| _string_| Name is the resource name|
-| `namespace`| _string_| Namespace is the resource namespace. Empty for cluster-scoped resources (e.g., Node, PersistentVolume).|
-
-
 ### AlternativeApproach
 
 
@@ -458,7 +441,7 @@ _Appears in:_
 | `correlationID`| _string_| CorrelationID is the name of the parent RemediationRequest.<br />Used as the correlation ID for audit events .|
 | `remediationRequestPhase`| _string_| RemediationRequestPhase is the RemediationRequest's OverallPhase at the time<br />the EA was created. Captured as an immutable spec field so the EM can branch<br />assessment logic based on the RR outcome (Verifying, Completed, Failed, TimedOut).<br />Verifying: happy path — WFE succeeded, EA created while RR awaits assessment .<br />Previously stored as the mutable label kubernaut.ai/rr-phase; moved to spec<br />for immutability and security.|
 | `signalTarget`| _[TargetResource](#targetresource)_| SignalTarget is the resource that triggered the alert.<br />Source: RR.Spec.TargetResource (from Gateway alert extraction).<br />Used by: health assessment, alert resolution, metrics queries .|
-| `remediationTarget`| _[TargetResource](#targetresource)_| RemediationTarget is the resource the workflow modified.<br />Source: AA.Status.RootCauseAnalysis.AffectedResource (from HAPI RCA resolution).<br />Used by: spec hash computation, drift detection .|
+| `remediationTarget`| _[TargetResource](#targetresource)_| RemediationTarget is the resource the workflow modified.<br />Source: AA.Status.RootCauseAnalysis.RemediationTarget (from HAPI RCA resolution).<br />Used by: spec hash computation, drift detection .|
 | `config`| _[EAConfig](#eaconfig)_| Config contains the assessment configuration parameters.|
 | `remediationCreatedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| RemediationCreatedAt is the creation timestamp of the parent RemediationRequest.<br />Set by the RO at EA creation time from rr.CreationTimestamp.<br />Used by the audit manager to compute resolution_time_seconds in the<br />assessment.completed event (CompletedAt - RemediationCreatedAt).|
 | `signalName`| _string_| SignalName is the original alert/signal name from the parent RemediationRequest.<br />Set by the RO at EA creation time from rr.Spec.SignalName.<br />Used by the audit manager to populate the signal_name field in assessment.completed<br />events (OBS-1: distinct from CorrelationID which is the RR name).|
@@ -1072,6 +1055,23 @@ _Appears in:_
 | `executionRef`| _[ObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectreference-v1-core)_| ExecutionRef references the WorkflowExecution CRD for this remediation.<br />Populated from workflowexecution.execution.started audit event.|
 
 
+### RemediationTarget
+
+
+RemediationTarget identifies the Kubernetes resource identified by the LLM as the
+actual target for remediation. This may differ from the signal's source resource
+(e.g., the signal comes from a Pod, but the Deployment should be patched).
+
+_Appears in:_
+- [RootCauseAnalysis](#rootcauseanalysis)
+
+| Field| Type| Description|
+| ---| ---| ---|
+| `kind`| _string_| Kind is the Kubernetes resource kind (e.g., "Deployment", "StatefulSet", "DaemonSet")|
+| `name`| _string_| Name is the resource name|
+| `namespace`| _string_| Namespace is the resource namespace. Empty for cluster-scoped resources (e.g., Node, PersistentVolume).|
+
+
 ## RemediationWorkflow
 
 
@@ -1286,7 +1286,7 @@ _Appears in:_
 | `severity`| _string_| Severity determined by RCA <br /> Aligned with HAPI/workflow catalog (critical, high, medium, low, unknown)|
 | `signalType`| _string_| Signal type determined by RCA (may differ from input)|
 | `contributingFactors`| _string array_| Contributing factors|
-| `affectedResource`| _[AffectedResource](#affectedresource)_| AffectedResource identifies the actual resource the LLM determined should be remediated.<br /> The LLM may identify a higher-level resource (e.g., Deployment) rather than<br />the Pod that generated the signal. The WFE creator should prefer this over the RR's<br />TargetResource when available to ensure the correct resource is patched.|
+| `remediationTarget`| _[RemediationTarget](#remediationtarget)_| RemediationTarget identifies the actual resource the LLM determined should be remediated.<br /> The LLM may identify a higher-level resource (e.g., Deployment) rather than<br />the Pod that generated the signal. The WFE creator should prefer this over the RR's<br />TargetResource when available to ensure the correct resource is patched.|
 
 
 ### SelectedWorkflow

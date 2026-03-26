@@ -365,10 +365,10 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 		input.Confidence = analysis.Status.SelectedWorkflow.Confidence
 	}
 
-	// ADR-055: Populate AffectedResource for Rego policy evaluation
-	if analysis.Status.RootCauseAnalysis != nil && analysis.Status.RootCauseAnalysis.AffectedResource != nil {
-		ar := analysis.Status.RootCauseAnalysis.AffectedResource
-		input.AffectedResource = &rego.AffectedResourceInput{
+	// ADR-055: Populate RemediationTarget for Rego policy evaluation
+	if analysis.Status.RootCauseAnalysis != nil && analysis.Status.RootCauseAnalysis.RemediationTarget != nil {
+		ar := analysis.Status.RootCauseAnalysis.RemediationTarget
+		input.RemediationTarget = &rego.RemediationTargetInput{
 			Kind:      ar.Kind,
 			Name:      ar.Name,
 			Namespace: ar.Namespace,

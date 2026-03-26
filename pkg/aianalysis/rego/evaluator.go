@@ -64,9 +64,9 @@ type PolicyInput struct {
 	Confidence float64  `json:"confidence"`
 	Warnings   []string `json:"warnings,omitempty"`
 
-	// ADR-055: Affected resource identified by LLM during RCA
+	// ADR-055: Remediation target identified by LLM during RCA
 	// Replaces target_in_owner_chain boolean with structured resource data
-	AffectedResource *AffectedResourceInput `json:"affected_resource,omitempty"`
+	RemediationTarget *RemediationTargetInput `json:"remediation_target,omitempty"`
 
 	// FailedDetections (DD-WORKFLOW-001 v2.1)
 	FailedDetections []string `json:"failed_detections,omitempty"`
@@ -84,10 +84,10 @@ type TargetResourceInput struct {
 	Namespace string `json:"namespace"`
 }
 
-// AffectedResourceInput is the LLM-identified target resource for Rego policy evaluation.
+// RemediationTargetInput is the LLM-identified target resource for Rego policy evaluation.
 // ADR-055: Replaces target_in_owner_chain boolean with structured resource data,
 // enabling granular per-kind approval policies.
-type AffectedResourceInput struct {
+type RemediationTargetInput struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"`
@@ -191,8 +191,8 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 		// HolmesGPT-API response data
 		"confidence": input.Confidence,
 		"warnings":   input.Warnings,
-		// ADR-055: Affected resource for granular per-kind policies
-		"affected_resource": input.AffectedResource,
+		// ADR-055: Remediation target for granular per-kind policies
+		"remediation_target": input.RemediationTarget,
 		// FailedDetections
 		"failed_detections": input.FailedDetections,
 	}

@@ -226,7 +226,7 @@ func (r *RoutingEngine) CheckPreAnalysisConditions(
 // has completed and the effective target resource is known.
 //
 // Issue #165: The caller resolves targetResource from AIAnalysis RCA
-// AffectedResource (falling back to RR.Spec.TargetResource). This fixes
+// RemediationTarget (falling back to RR.Spec.TargetResource). This fixes
 // the bug where CheckResourceBusy/CheckRecentlyRemediated used the
 // Gateway-assigned target instead of the AI-identified root cause target.
 //
@@ -486,7 +486,7 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 //
 // Issue #165: Accepts explicit targetResource parameter instead of reading
 // rr.Spec.TargetResource. The caller resolves the effective target from
-// AIAnalysis RCA AffectedResource (falling back to RR.Spec.TargetResource).
+// AIAnalysis RCA RemediationTarget (falling back to RR.Spec.TargetResource).
 //
 // BlockReason: "ResourceBusy"
 // RequeueAfter: 30 seconds (to check if WFE completes)
@@ -524,7 +524,7 @@ func (r *RoutingEngine) CheckResourceBusy(
 //
 // Issue #165: Accepts explicit targetResource parameter instead of reading
 // rr.Spec.TargetResource. The caller resolves the effective target from
-// AIAnalysis RCA AffectedResource (falling back to RR.Spec.TargetResource).
+// AIAnalysis RCA RemediationTarget (falling back to RR.Spec.TargetResource).
 //
 // BlockReason: "RecentlyRemediated"
 // RequeueAfter: Remaining cooldown duration

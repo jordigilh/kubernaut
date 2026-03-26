@@ -112,7 +112,7 @@ type EffectivenessAssessmentSpec struct {
 	SignalTarget TargetResource `json:"signalTarget"`
 
 	// RemediationTarget is the resource the workflow modified.
-	// Source: AA.Status.RootCauseAnalysis.AffectedResource (from HAPI RCA resolution).
+	// Source: AA.Status.RootCauseAnalysis.RemediationTarget (from HAPI RCA resolution).
 	// Used by: spec hash computation, drift detection (DD-EM-003).
 	// +kubebuilder:validation:Required
 	RemediationTarget TargetResource `json:"remediationTarget"`

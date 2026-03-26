@@ -723,7 +723,7 @@ func mapWarningsToSubReason(warnings []string) string {
 // ExtractRootCauseAnalysis extracts RCA from an IncidentResponse, including remediationTarget.
 // Issue #97: Centralizes RCA extraction (was duplicated in 5 handler functions).
 // BR-496 v2: remediationTarget is HAPI-injected from K8s-verified root_owner, not LLM-provided.
-// #542: HAPI emits "remediationTarget" in JSON; CRD stores it as AffectedResource (no schema change).
+// #542: HAPI emits "remediationTarget" in JSON; CRD stores it as RemediationTarget.
 func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalysis {
 	rcaMap := GetMapFromOptNil(rcaData)
 	if rcaMap == nil {
@@ -736,14 +736,14 @@ func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalys
 		ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
 	}
 
-	// #542: HAPI emits "remediationTarget"; maps to CRD's AffectedResource field.
+	// #542: HAPI emits "remediationTarget"; maps to CRD's RemediationTarget field.
 	if arRaw, ok := rcaMap["remediationTarget"]; ok {
 		if arMap, ok := arRaw.(map[string]interface{}); ok {
 			kind, _ := arMap["kind"].(string)
 			name, _ := arMap["name"].(string)
 			ns, _ := arMap["namespace"].(string)
 			if kind != "" && name != "" {
-				rca.AffectedResource = &aianalysisv1.AffectedResource{
+				rca.RemediationTarget = &aianalysisv1.RemediationTarget{
 					Kind:      kind,
 					Name:      name,
 					Namespace: ns,

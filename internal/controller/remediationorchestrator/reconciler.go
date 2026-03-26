@@ -966,32 +966,32 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			}
 		}
 
-		// DD-HAPI-006 v1.2 defense-in-depth: AffectedResource MUST be present for routing.
+		// DD-HAPI-006 v1.2 defense-in-depth: RemediationTarget MUST be present for routing.
 		// This is the RO layer of the three-layer chain (HAPI -> AA -> RO).
 		// WorkflowNotNeeded and ApprovalRequired are already handled above.
-		// Reaching here with empty AffectedResource means a data integrity issue.
+		// Reaching here with empty RemediationTarget means a data integrity issue.
 		if ai.Status.RootCauseAnalysis == nil ||
-			ai.Status.RootCauseAnalysis.AffectedResource == nil ||
-			ai.Status.RootCauseAnalysis.AffectedResource.Kind == "" ||
-			ai.Status.RootCauseAnalysis.AffectedResource.Name == "" {
-			logger.Error(fmt.Errorf("RCA AffectedResource missing on completed AIAnalysis"),
+			ai.Status.RootCauseAnalysis.RemediationTarget == nil ||
+			ai.Status.RootCauseAnalysis.RemediationTarget.Kind == "" ||
+			ai.Status.RootCauseAnalysis.RemediationTarget.Name == "" {
+			logger.Error(fmt.Errorf("RCA RemediationTarget missing on completed AIAnalysis"),
 				"Failing RR with ManualReviewRequired per DD-HAPI-006 v1.2 / BR-ORCH-036 v4.0",
 				"aianalysis", ai.Name)
 			if r.Recorder != nil {
 				r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonEscalatedToManualReview,
-					"AffectedResource missing on completed AIAnalysis - manual investigation required")
+					"RemediationTarget missing on completed AIAnalysis - manual investigation required")
 			}
-			return r.aiAnalysisHandler.HandleAffectedResourceMissing(ctx, rr, ai)
+			return r.aiAnalysisHandler.HandleRemediationTargetMissing(ctx, rr, ai)
 		}
 
 		// Post-AA routing checks: all checks including resource-level (issue #165).
-		// Target is the AI-identified AffectedResource, NOT rr.Spec.TargetResource.
+		// Target is the AI-identified RemediationTarget, NOT rr.Spec.TargetResource.
 		var workflowID, workflowType string
 		if ai.Status.SelectedWorkflow != nil {
 			workflowID = ai.Status.SelectedWorkflow.WorkflowID
 			workflowType = ai.Status.SelectedWorkflow.ActionType
 		}
-		ar := ai.Status.RootCauseAnalysis.AffectedResource
+		ar := ai.Status.RootCauseAnalysis.RemediationTarget
 		targetResource := ar.Kind + "/" + ar.Name
 		if ar.Namespace != "" {
 			targetResource = ar.Namespace + "/" + targetResource
@@ -2117,7 +2117,7 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 // createEffectivenessAssessmentIfNeeded creates an EA CRD if the eaCreator is wired.
 // ADR-EM-001: EA creation is ALWAYS non-fatal. The terminal phase transition must succeed
 // even if EA creation fails. Errors are logged but not propagated.
-// BR-HAPI-191: Resolves the target from AIAnalysis.AffectedResource when available,
+// BR-HAPI-191: Resolves the target from AIAnalysis.RemediationTarget when available,
 // so the EA assesses the resource the workflow actually modified (not the signal Pod).
 // Batch 3: After creating the EA, persists the EffectivenessAssessmentRef on the RR status
 // so that trackEffectivenessStatus can find the EA for condition tracking.
@@ -2130,7 +2130,7 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 
 	// DD-EM-003: Resolve dual targets for the EA.
 	// Signal target: from RR (always available).
-	// Remediation target: from AIAnalysis AffectedResource (when available), else RR fallback.
+	// Remediation target: from AIAnalysis RemediationTarget (when available), else RR fallback.
 	var dualTarget *creator.DualTarget
 	var isGitOpsManaged bool
 	var ai *aianalysisv1.AIAnalysis
@@ -3332,7 +3332,7 @@ func (r *Reconciler) SetAsyncPropagation(cfg roconfig.AsyncPropagationConfig) {
 // resolveDualTargets resolves both signal and remediation targets for the EA (DD-EM-003).
 //
 // Signal target: Always from RR.Spec.TargetResource (the resource that triggered the alert).
-// Remediation target: Prefers the LLM-identified AffectedResource from the AIAnalysis
+// Remediation target: Prefers the LLM-identified RemediationTarget from the AIAnalysis
 // RootCauseAnalysis. Falls back to RR.Spec.TargetResource when AI analysis is unavailable
 // or did not identify a specific resource.
 func resolveDualTargets(
@@ -3346,8 +3346,8 @@ func resolveDualTargets(
 	}
 
 	remediation := signal
-	if ai != nil && ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.AffectedResource != nil {
-		ar := ai.Status.RootCauseAnalysis.AffectedResource
+	if ai != nil && ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
+		ar := ai.Status.RootCauseAnalysis.RemediationTarget
 		if ar.Kind != "" && ar.Name != "" {
 			remediation = eav1.TargetResource{
 				Kind:      ar.Kind,
