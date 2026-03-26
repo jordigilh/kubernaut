@@ -2,7 +2,7 @@
 
 **Status**: ✅ APPROVED
 **Decision Date**: 2026-02-05
-**Version**: 1.4
+**Version**: 1.5
 **Confidence**: 92%
 **Applies To**: HolmesGPT API (HAPI), DataStorage Service (DS)
 
@@ -17,6 +17,7 @@
 | 1.2 | 2026-02-12 | Architecture Team | ADR-056 integration: Add Section 8 (tool-level flow enforcement requiring `get_resource_context` before workflow discovery). Remove `detected_labels` from LLM-facing tool parameters -- labels are now computed by HAPI internally and injected into DS queries transparently. Update BR-HAPI-017-001. Add DD-HAPI-018 cross-reference. |
 | 1.3 | 2026-02-20 | Architecture Team | Surface detected labels to LLM as read-only `cluster_context` in `list_available_actions` tool response (Step 1). Labels remain HAPI-computed and are NOT LLM-managed parameters. The LLM receives them for informed action type reasoning (e.g., GitOps-managed, HPA-enabled). Add BR-HAPI-017-007. Update Section 8 prompt builder impact. See ADR-056 v1.3. |
 | 1.4 | 2026-02-20 | Architecture Team | Phase 1 implementation: label detection moves from workflow_discovery (signal source) to `get_resource_context` (RCA target). When active labels are detected, `get_resource_context` returns `detected_infrastructure` for one-shot LLM RCA reassessment. Second calls resolve new target but skip label re-detection. Add BR-HAPI-017-008. Update Section 8 enforcement flow. See ADR-056 v1.4. |
+| 1.5 | 2026-03-24 | Architecture Team | **Issue #524**: `get_resource_context` renamed to `get_namespaced_resource_context`; added `get_cluster_resource_context` for cluster-scoped targets. Both tools live in the `resource_context` toolset. Session state records `resource_scope` (`namespaced` / `cluster`). Post-selection validation guard flags **node-scoped** `action_type` paired with **namespaced** resource-context usage. Former mandatory canonical-parameter validator Step 0 removed in HAPI (see DD-HAPI-006 v1.5, docs/tests/524). |
 
 ---
 
@@ -135,7 +136,7 @@ Three new tool classes replace `SearchWorkflowCatalogTool`:
 Each tool:
 - Extends `Tool` with its own parameters, description, and `_invoke` method
 - Passes signal context filters (severity, component, environment, priority, custom_labels) to DS
-- **v1.2 (ADR-056)**: `detected_labels` is NOT an LLM-facing parameter. HAPI reads `detected_labels` from internal session state (populated by `get_resource_context`) and injects them into DS queries transparently. See Section 8.
+- **v1.2 (ADR-056)**: `detected_labels` is NOT an LLM-facing parameter. HAPI reads `detected_labels` from internal session state (populated by `get_namespaced_resource_context` or `get_cluster_resource_context` — Issue #524) and injects them into DS queries transparently. See Section 8.
 - **v1.3**: `list_available_actions` (Step 1) surfaces detected labels as a read-only `cluster_context` section in the tool response. This gives the LLM explicit infrastructure context for action type selection without making labels a tool parameter. Steps 2 and 3 do not include `cluster_context`.
 - Passes `remediationId` as a query parameter for audit correlation (BR-AUDIT-021)
 - Returns a `StructuredToolResult` with clean LLM-rendered output (scores stripped)
@@ -155,13 +156,14 @@ Both prompt builders are updated to reference the three-step protocol:
 **Changes**:
 - All references to `search_workflow_catalog` are removed
 - New MCP filter instructions reference `list_available_actions`, `list_workflows`, `get_workflow`
-- Three-step flow instructions are added per the DD-WORKFLOW-016 prompt contract:
+- Prompt contract (RCA → resource context → three-step discovery) per DD-WORKFLOW-016 / ADR-055 / Issue #524:
   1. Complete RCA investigation first
-  2. Call `list_available_actions` to discover action types
-  3. Call `list_workflows` for the selected action type -- review ALL workflows before selecting
-  4. Call `get_workflow` to retrieve the parameter schema for the selected workflow
-  5. Populate parameters from RCA context
-- Step 2 pagination instruction: LLM MUST request all pages before making a decision
+  2. Call `get_namespaced_resource_context` (namespace-scoped target) or `get_cluster_resource_context` (cluster-scoped target) to obtain `root_owner`, remediation history, and (via session state) label context for discovery
+  3. Call `list_available_actions` to discover action types
+  4. Call `list_workflows` for the selected action type -- review ALL workflows before selecting
+  5. Call `get_workflow` to retrieve the parameter schema for the selected workflow
+  6. Populate parameters from RCA context (HAPI injects declared `TARGET_RESOURCE_*` per Issue #524 -- no mandatory Step 0 schema check)
+- Step 4 pagination instruction (`list_workflows`): LLM MUST request all pages before making a decision
 - The DD-LLM-001 query format (`<signal_type> <severity>`) is superseded for workflow discovery -- the three tools use structured parameters, not free-text queries
 
 ### 3. DS Client Regeneration
@@ -260,13 +262,15 @@ This contextual history is injected into the LLM prompt as the `## Remediation H
 - Workflow Discovery Guidance updated to remove success rate references
 - `ListWorkflowsTool` description and `additional_instructions` updated to remove success rate/execution count references
 
-### 8. Tool-Level Flow Enforcement: `get_resource_context` Prerequisite (v1.2, ADR-056)
+### 8. Tool-Level Flow Enforcement: Resource Context Prerequisite (v1.2 ADR-056, v1.5 Issue #524)
 
-**Decision**: HAPI MUST enforce that `get_resource_context` is called before any workflow discovery tool (`list_available_actions`, `list_workflows`, `get_workflow`). This is a tool-level prerequisite check, not prompt-level guidance.
+**Decision**: HAPI MUST enforce that a **resource context tool** from the `resource_context` toolset is called before any workflow discovery tool (`list_available_actions`, `list_workflows`, `get_workflow`). The LLM uses **`get_namespaced_resource_context`** for namespace-scoped RCA targets or **`get_cluster_resource_context`** for cluster-scoped targets (Node, PV, etc.). This is a tool-level prerequisite check, not prompt-level guidance.
 
-**Rationale**: ADR-056 relocates `DetectedLabels` computation from SP (signal source, pre-RCA) to HAPI (remediation target, post-RCA). The `get_resource_context` tool resolves the root owner and computes `DetectedLabels` for the actual target resource, storing them in internal session state. Workflow discovery tools read these labels from session state and inject them into DS queries. If `get_resource_context` has not been called, the labels are unavailable and workflow discovery would proceed without target-specific filtering -- potentially selecting inappropriate workflows.
+**Rationale**: ADR-056 relocates `DetectedLabels` computation from SP (signal source, pre-RCA) to HAPI (remediation target, post-RCA). The appropriate resource context tool resolves the target, records **`resource_scope`** (`"namespaced"` or `"cluster"`) in `session_state`, and computes `DetectedLabels` for that target, storing them in internal session state. Workflow discovery tools read these labels from session state and inject them into DS queries. If neither tool has run, the labels are unavailable and workflow discovery would proceed without target-specific filtering -- potentially selecting inappropriate workflows.
 
 Rather than degrading gracefully (proceeding without labels), HAPI enforces the correct flow by returning a structured error to the LLM, following the established self-correction pattern from DD-HAPI-002.
+
+**Issue #524 — post-selection guard**: After workflow selection, validation detects a **node-scoped** `action_type` combined with **`resource_scope: namespaced`** (i.e. the LLM used `get_namespaced_resource_context` for a flow that requires cluster-scoped context) and returns an actionable validation error so the LLM can self-correct (e.g. call `get_cluster_resource_context` and re-run discovery).
 
 #### Session State Mechanism
 
@@ -286,13 +290,14 @@ resource_context_toolset = ResourceContextToolset(
 
 Holmes SDK creates tool instances once per investigation and reuses them for all tool calls within that conversation. The same `session_state` dict reference is accessible to both toolsets.
 
-**No concurrency risk**: Phases 3b (`get_resource_context`) and 4 (workflow discovery) are sequential in the prompt. Holmes SDK only parallelizes tool calls within a single LLM response step, and these tools are in different prompt phases.
+**No concurrency risk**: Phase 3b (`get_namespaced_resource_context` / `get_cluster_resource_context`) and Phase 4 (workflow discovery) are sequential in the prompt. Holmes SDK only parallelizes tool calls within a single LLM response step, and these tools are in different prompt phases.
 
 #### Enforcement Flow
 
-1. **`get_resource_context._invoke()` (first call)**: After resolving the root owner, builds K8s context and computes labels per DD-HAPI-018. Writes to session state:
+1. **`get_namespaced_resource_context._invoke()` or `get_cluster_resource_context._invoke()` (first call)**: After resolving the target / root owner, builds K8s context and computes labels per DD-HAPI-018. Writes to session state:
    ```python
    self._session_state["detected_labels"] = computed_labels  # DetectedLabels dict
+   self._session_state["resource_scope"] = "namespaced"  # or "cluster"
    ```
    If label detection fails entirely (all K8s API queries fail), writes an empty dict as a sentinel:
    ```python
@@ -300,29 +305,30 @@ Holmes SDK creates tool instances once per investigation and reuses them for all
    ```
    **v1.4 (one-shot reassessment)**: If any label is "active" (boolean `True` or non-empty string, excluding `failedDetections`), includes `detected_infrastructure` in the tool response alongside `root_owner` + `remediation_history`. If all defaults, omits `detected_infrastructure`. The tool's `additional_instructions` guide the LLM to consider the infrastructure context for RCA reassessment.
 
-2. **`get_resource_context._invoke()` (second call, after reassessment)**: If the LLM reassesses and identifies a different target, it may call `get_resource_context` again. The guard check (`"detected_labels" in session_state`) skips label re-detection. The tool resolves `root_owner` + `remediation_history` for the new target but does NOT include `detected_infrastructure` in the response and does NOT overwrite `session_state["detected_labels"]`. This prevents infinite loops.
+2. **Second call (after reassessment)**: If the LLM reassesses and identifies a different target, it may call the **same** resource context tool again (namespaced vs cluster must match the new target). The guard check (`"detected_labels" in session_state`) skips label re-detection. The tool resolves `root_owner` + `remediation_history` for the new target but does NOT include `detected_infrastructure` in the response and does NOT overwrite `session_state["detected_labels"]`. This prevents infinite loops.
 
-3. **Discovery tool `_invoke()` methods** (`list_available_actions`, `list_workflows`, `get_workflow`): Read labels from session state (populated by step 1) and inject into DS query parameters transparently. If `session_state` has no `"detected_labels"` key (get_resource_context never called), proceed without label filtering -- graceful degradation.
+3. **Discovery tool `_invoke()` methods** (`list_available_actions`, `list_workflows`, `get_workflow`): Read labels from session state (populated by step 1) and inject into DS query parameters transparently. If `session_state` has no `"detected_labels"` key (no resource context tool called), proceed without label filtering -- graceful degradation.
 
-4. **LLM self-correction**: If the LLM calls workflow discovery before `get_resource_context`, discovery proceeds without label filtering. The `additional_instructions` on discovery tools guide the LLM to call `get_resource_context` first for best results.
+4. **LLM self-correction**: If the LLM calls workflow discovery before calling `get_namespaced_resource_context` or `get_cluster_resource_context`, discovery proceeds without label filtering. The `additional_instructions` on discovery tools guide the LLM to call the correct resource context tool first for best results.
 
 #### Failure Modes
 
 | Scenario | Behavior |
 |----------|----------|
-| LLM calls `list_workflows` before `get_resource_context` | Flow error returned; LLM self-corrects |
-| `get_resource_context` succeeds, all labels detected | Labels injected into DS queries normally |
-| `get_resource_context` succeeds, some labels fail (RBAC) | `detected_labels` contains partial results + `failedDetections`; DS queries use available labels |
-| `get_resource_context` succeeds, all label detections fail | Empty dict sentinel; DS queries proceed without label filters (acceptable -- equivalent to SP's all-fields-failed case) |
-| `get_resource_context` itself fails (K8s API unreachable) | Tool returns error to LLM; LLM may retry or proceed to workflow discovery which will also return flow error |
+| LLM calls `list_workflows` before `get_namespaced_resource_context` / `get_cluster_resource_context` | Flow error returned; LLM self-corrects |
+| Resource context tool succeeds, all labels detected | Labels injected into DS queries normally |
+| Resource context tool succeeds, some labels fail (RBAC) | `detected_labels` contains partial results + `failedDetections`; DS queries use available labels |
+| Resource context tool succeeds, all label detections fail | Empty dict sentinel; DS queries proceed without label filters (acceptable -- equivalent to SP's all-fields-failed case) |
+| Resource context tool itself fails (K8s API unreachable) | Tool returns error to LLM; LLM may retry or proceed to workflow discovery which will also return flow error |
+| Node-scoped `action_type` selected after `get_namespaced_resource_context` (Issue #524) | Post-selection validation guard returns error; LLM self-corrects (e.g. use `get_cluster_resource_context` and re-discover) |
 
 #### Prompt Builder Impact (v1.3)
 
 The prompt builder changes for ADR-056 are:
 
-1. **Remove DetectedLabels from prompt context**: The `build_cluster_context_section()` and `build_mcp_filter_instructions()` functions in `prompt_builder.py` currently inject SP-computed `DetectedLabels` into the prompt. Once ADR-056 is implemented, these sections are removed -- HAPI computes and injects labels internally via `get_resource_context`.
+1. **Remove DetectedLabels from prompt context**: The `build_cluster_context_section()` and `build_mcp_filter_instructions()` functions in `prompt_builder.py` currently inject SP-computed `DetectedLabels` into the prompt. Once ADR-056 is implemented, these sections are removed -- HAPI computes and injects labels internally via `get_namespaced_resource_context` / `get_cluster_resource_context`.
 
-2. **Phase 3b instruction update**: The `get_resource_context` instruction already exists in the prompt (Phase 3b). No change needed to the instruction text -- the tool's internal behavior changes (now also computes labels) but the LLM-facing contract (call with kind/name/namespace, receive root_owner + history) is unchanged.
+2. **Phase 3b instruction update**: Prompt Phase 3b instructs the LLM to call the **correct** resource context tool for the RCA target (namespace-scoped vs cluster-scoped). The LLM-facing contract: namespaced tool uses kind/name/namespace; cluster tool uses kind/name for cluster-scoped resources; responses include `root_owner` + `remediation_history` (plus optional `detected_infrastructure` per v1.4).
 
 3. **Phase 4 instruction update**: Remove any references to `detected_labels` as a parameter the LLM should provide. The "Signal context filters are automatically included" note already covers this.
 
@@ -429,8 +435,8 @@ When `detected_labels` are available in session state, the response includes:
 - **Acceptance Criteria**:
   - Three tool classes implemented, each with correct DS endpoint call and parameter mapping
   - All tools pass signal context filters (severity, component, environment, priority, custom_labels) to DS
-  - **v1.2**: `detected_labels` is NOT an LLM-facing parameter. Tools read labels from internal session state (populated by `get_resource_context` per ADR-056) and inject into DS queries transparently
-  - **v1.2**: All tools check session state for `get_resource_context` prerequisite (Section 8). If labels are absent, return flow error to LLM for self-correction
+  - **v1.2**: `detected_labels` is NOT an LLM-facing parameter. Tools read labels from internal session state (populated by `get_namespaced_resource_context` / `get_cluster_resource_context` per ADR-056, Issue #524) and inject into DS queries transparently
+  - **v1.2 / v1.5**: All tools check session state for resource-context prerequisite (Section 8). If labels are absent, return flow error to LLM for self-correction
   - All tools pass `remediationId` as query parameter for audit correlation
   - Tools return `StructuredToolResult` with clean LLM-rendered output (finalScore stripped)
   - Toolset registered in both incident and recovery `llm_integration.py`
@@ -503,21 +509,21 @@ When `detected_labels` are available in session state, the response includes:
   - `ListAvailableActionsTool.additional_instructions` references `cluster_context` for LLM guidance
 - **Authority**: ADR-056 v1.3, DD-HAPI-017 v1.3, DD-HAPI-018 v1.1
 
-### BR-HAPI-017-008: One-Shot Reassessment via detected_infrastructure in get_resource_context
+### BR-HAPI-017-008: One-Shot Reassessment via detected_infrastructure in resource context tools
 
 - **Category**: HAPI
 - **Priority**: P1
-- **Description**: When `get_resource_context` computes labels for the RCA target and any labels are "active" (at least one boolean `true` or non-empty string, excluding `failedDetections`), the tool MUST include a `detected_infrastructure` section in its response alongside `root_owner` and `remediation_history`. This enables the LLM to reassess its RCA strategy before entering workflow discovery. Labels are computed once (one-shot); subsequent calls for revised targets resolve context but skip label re-detection.
+- **Description**: When `get_namespaced_resource_context` or `get_cluster_resource_context` computes labels for the RCA target and any labels are "active" (at least one boolean `true` or non-empty string, excluding `failedDetections`), the tool MUST include a `detected_infrastructure` section in its response alongside `root_owner` and `remediation_history`. This enables the LLM to reassess its RCA strategy before entering workflow discovery. Labels are computed once (one-shot); subsequent calls for revised targets resolve context but skip label re-detection.
 - **Acceptance Criteria**:
-  - `get_resource_context` response includes `detected_infrastructure.labels` when any label is active (boolean `true` or non-empty string)
+  - Resource context tool response includes `detected_infrastructure.labels` when any label is active (boolean `true` or non-empty string)
   - `detected_infrastructure.labels` excludes `failedDetections` fields (same exclusion logic as `cluster_context`)
   - `detected_infrastructure` includes a `note` field guiding the LLM to consider infrastructure context for RCA
   - `detected_infrastructure` is omitted when all labels are defaults (all booleans `false`, all strings empty)
-  - `detected_infrastructure` is omitted on second and subsequent `get_resource_context` calls (session_state sentinel prevents re-detection)
+  - `detected_infrastructure` is omitted on second and subsequent calls to the same investigation’s first resource-context label pass (session_state sentinel prevents re-detection)
   - Second call still resolves `root_owner` + `remediation_history` for the new target
   - `session_state["detected_labels"]` is NOT overwritten on second call
   - Tool `additional_instructions` inform the LLM about reassessment and the no-re-detection rule
-- **Authority**: ADR-056 v1.4, DD-HAPI-017 v1.4
+- **Authority**: ADR-056 v1.4, DD-HAPI-017 v1.4–v1.5, Issue #524
 
 ---
 
@@ -534,7 +540,7 @@ When `detected_labels` are available in session state, the response includes:
 | **DD-004** | RFC 7807 error response standard. Error handling for DS responses follows this standard. |
 | **BR-HAPI-250** | Workflow catalog toolset (superseded BR-HAPI-046-050). **Superseded** by BR-HAPI-017-001 through 006. |
 | **BR-AUDIT-021-030 v2.0** | Workflow selection audit trail requirements. Updated for three-step protocol. |
-| **ADR-056 v1.4** | Post-RCA label computation relocation. Section 8 of this DD implements the HAPI-side flow enforcement and label injection. v1.3 surfaces labels as read-only `cluster_context` in `list_available_actions`. v1.4 adds one-shot reassessment via `detected_infrastructure` in `get_resource_context` (BR-HAPI-017-008). |
+| **ADR-056 v1.4** | Post-RCA label computation relocation. Section 8 of this DD implements the HAPI-side flow enforcement and label injection. v1.3 surfaces labels as read-only `cluster_context` in `list_available_actions`. v1.4 adds one-shot reassessment via `detected_infrastructure` in the resource context tools (BR-HAPI-017-008). **Issue #524** splits tools into `get_namespaced_resource_context` / `get_cluster_resource_context`. |
 | **DD-HAPI-018 v1.1** | DetectedLabels detection specification. Cross-language contract defining the 7 detection characteristics that HAPI implements per ADR-056. v1.1 adds `cluster_context` consumer guidance. |
 
 ---
@@ -553,10 +559,10 @@ When `detected_labels` are available in session state, the response includes:
 
 ---
 
-**Document Version**: 1.4
-**Last Updated**: February 20, 2026
+**Document Version**: 1.5
+**Last Updated**: March 24, 2026
 **Status**: ✅ APPROVED
-**Authority**: HAPI workflow discovery integration (implements DD-WORKFLOW-016 protocol + ADR-056 flow enforcement)
+**Authority**: HAPI workflow discovery integration (implements DD-WORKFLOW-016 protocol + ADR-056 flow enforcement + Issue #524 resource context split)
 **Confidence**: 92%
 
 **Confidence Gap (8%)**:

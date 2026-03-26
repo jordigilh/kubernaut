@@ -4,7 +4,7 @@
 **Title**: Consecutive Failure Blocking with Automatic Cooldown
 **Category**: ORCH (Remediation Orchestrator)
 **Priority**: 🔴 P0 (V1.0)
-**Version**: 1.4
+**Version**: 1.5
 **Date**: December 10, 2025
 **Status**: 🚧 IN PROGRESS
 **Related**: DD-GATEWAY-011, BR-GATEWAY-184 (superseded), BR-GATEWAY-185 (field selectors)
@@ -259,6 +259,8 @@ routing:
   ineffectiveChainThreshold: 3          # Consecutive ineffective remediations before block (Issue #214)
   recurrenceCountThreshold: 5           # Safety net: total entries in time window
   ineffectiveTimeWindow: "4h"           # Lookback window for ineffective chain detection
+  forwardChainThreshold: 2             # Forward-linked failed entries before block (Issue #525)
+  forwardChainWindow: "1h"             # Time window for forward chain detection (Issue #525)
 ```
 
 ---
@@ -356,13 +358,125 @@ Instead of modifying the consecutive failure counter, the system uses DataStorag
 
 **Implementation status**:
 - ✅ `CheckIneffectiveRemediationChain` in `blocking.go` (Issue #214, BR-ORCH-042.5)
-- ✅ DataStorage `get_resource_context` API provides remediation history to the LLM
+- ✅ HAPI `resource_context` tools (`get_namespaced_resource_context` / `get_cluster_resource_context`) provide remediation history to the LLM
 - ✅ HAPI prompt engineering leverages history context (`remediation_history_prompt.py`, BR-HAPI-016, DD-HAPI-016 v1.1)
 
 **Why not Option A/B?**
 - **Option A** (count completed-but-ineffective as failures): Punishes correct execution; undermines trust in success signals.
 - **Option B** (separate ineffective counter): Adds complexity without leveraging AI insight; a static counter cannot make nuanced decisions.
 - **Option C** (LLM-driven): Leverages the full context — the LLM can distinguish between "same fix, different root cause" vs "same root cause, fix not working" and choose accordingly.
+
+---
+
+### BR-ORCH-042.7: Forward Hash Chain Detection (Issue #525)
+
+**MUST**: RO SHALL detect consecutive remediations of the **same action type** that each modify the target resource spec but fail to resolve the signal, and block the next attempt.
+
+**Problem**: When a remediation action type is inherently wrong for a signal (e.g., `IncreaseMemoryLimits` for an unbounded memory leak), each cycle successfully modifies the resource (64Mi -> 128Mi -> 256Mi -> ...) so the pre-remediation hash differs each time. Layer 1+2 (hash regression detection) cannot catch this because the hash never reverts -- it always advances. The signal keeps recurring because the root cause is unaddressed.
+
+**Detection Algorithm** (Layer 1b, inserted between Layer 1+2 and Layer 3):
+
+Five conditions must ALL be met for an entry to participate in the forward chain:
+
+1. **Within ForwardChainWindow** (default 1h) -- tighter than the 4h IneffectiveTimeWindow
+2. **Same WorkflowType** (action type, DD-WORKFLOW-016 taxonomy) as the incoming RR
+3. **SignalResolved == false** -- EA confirmed the remediation was ineffective
+4. **Hash link continuity** -- `entry[i].PostRemediationSpecHash == entry[i+1].PreRemediationSpecHash`
+5. **Causality link** -- last entry's `PostRemediationSpecHash == incoming RR's PreRemediationSpecHash`
+
+**Threshold**: `ForwardChainThreshold` (default: 2). When 2 entries meet all conditions, the incoming RR (3rd attempt) is blocked.
+
+**Layered Detection Architecture**:
+
+```mermaid
+flowchart TD
+    RR["Incoming RR with preHash"] --> L12["Layer 1+2: Hash Regression + Spec Drift"]
+    L12 -->|"preHash matches OR HashMatch=preRemediation"| Block1["Block: IneffectiveChain"]
+    L12 -->|"No regression detected"| L1b["Layer 1b: Forward Hash Chain"]
+    L1b -->|"2 entries, same action type, failed EA, 1h window, hash-linked"| Block1b["Block: IneffectiveChain"]
+    L1b -->|"Conditions not met"| L3["Layer 3: Safety Net"]
+    L3 -->|"Total entries >= 5 in 4h"| Block3["Block: IneffectiveChain"]
+    L3 -->|"Below threshold"| Allow["Allow: Proceed to WFE"]
+```
+
+**Forward Chain Scenario (OOMKill Memory Escalation)**:
+
+```mermaid
+sequenceDiagram
+    participant Signal as OOMKill Signal
+    participant RO as Remediation Orchestrator
+    participant WFE as WorkflowExecution
+    participant EM as EffectivenessMonitor
+    participant DS as DataStorage
+
+    Note over Signal,DS: Cycle 1: 64Mi -> 128Mi
+    Signal->>RO: RR-1 (preHash=hash64)
+    RO->>WFE: IncreaseMemoryLimits
+    WFE-->>DS: Audit (preHash=hash64, postHash=hash128)
+    EM-->>DS: SignalResolved=false, Score=0.0
+
+    Note over Signal,DS: Cycle 2: 128Mi -> 256Mi
+    Signal->>RO: RR-2 (preHash=hash128)
+    RO->>WFE: IncreaseMemoryLimits
+    WFE-->>DS: Audit (preHash=hash128, postHash=hash256)
+    EM-->>DS: SignalResolved=false, Score=0.0
+
+    Note over Signal,DS: Cycle 3: Blocked!
+    Signal->>RO: RR-3 (preHash=hash256)
+    Note right of RO: Forward chain detected:<br/>hash64->hash128->hash256->incoming<br/>Same action type, both failed EA<br/>2 entries >= threshold 2
+    RO-->>RO: PhaseBlocked (IneffectiveChain)
+```
+
+**Decision Flowchart -- Which Layer Catches What**:
+
+```mermaid
+flowchart LR
+    subgraph patterns [Detection Patterns]
+        P1["Spec reverts to same bad state<br/>(e.g., external controller overrides)"]
+        P2["Spec advances but signal recurs<br/>(e.g., memory escalation)"]
+        P3["Many remediations, inconclusive hashes<br/>(safety net)"]
+    end
+
+    subgraph layers [Detection Layers]
+        L12["Layer 1+2<br/>Hash Regression"]
+        L1b["Layer 1b<br/>Forward Chain"]
+        L3["Layer 3<br/>Safety Net"]
+    end
+
+    P1 --> L12
+    P2 --> L1b
+    P3 --> L3
+```
+
+**Configuration**:
+
+```yaml
+# remediationorchestrator.yaml ConfigMap (ADR-030)
+routing:
+  forwardChainThreshold: 2           # Block after N forward-linked failed entries (Issue #525)
+  forwardChainWindow: "1h"           # Time window for forward chain detection
+```
+
+**Error handling**: Same as Layer 1+2 -- DS query failures fail-open. Forward chain filtering operates on entries already fetched by `GetRemediationHistory`.
+
+**EA guarantee**: The system does not accept new RRs for the same signal/target until the previous RR's effectiveness assessment completes. Therefore, `SignalResolved` is always populated when `countForwardChain` evaluates entries -- no null handling is needed.
+
+**WorkflowType source**: `AIAnalysis.Status.SelectedWorkflow.ActionType` (DD-WORKFLOW-016 taxonomy). Stored in DS as `RemediationHistoryEntry.WorkflowType`. See Issue #528 for the planned rename to `ActionType`.
+
+**Acceptance Criteria**:
+
+| ID | Criterion | Test |
+|----|-----------|------|
+| AC-042-7-1 | Forward chain of 2 entries (same action type, failed EA, within 1h, hash-linked) blocks incoming RR | UT-RO-525-001 |
+| AC-042-7-2 | Incoming RR preHash must link to last entry's postHash | UT-RO-525-002 |
+| AC-042-7-3 | Gap in hash links breaks chain below threshold | UT-RO-525-003 |
+| AC-042-7-4 | Chain length below threshold does not block | UT-RO-525-004 |
+| AC-042-7-5 | Missing postHash fails-open | UT-RO-525-005 |
+| AC-042-7-6 | Layer 1+2 takes precedence over forward chain | UT-RO-525-006 |
+| AC-042-7-7 | OOMKill memory-escalation scenario blocked | UT-RO-525-007 |
+| AC-042-7-8 | Different action type breaks chain | UT-RO-525-008 |
+| AC-042-7-9 | Successful EA (SignalResolved=true) breaks chain | UT-RO-525-009 |
+| AC-042-7-10 | Entries outside 1h window excluded | UT-RO-525-010 |
 
 ---
 
@@ -377,7 +491,8 @@ Instead of modifying the consecutive failure counter, the system uses DataStorag
 | Tier | Tests | Coverage |
 |------|-------|----------|
 | Unit | 8 | `consecutive_failure_test.go` |
-| Unit | 10 | `ineffective_chain_test.go` (Issue #214) |
+| Unit | 10 | `ineffective_chain_test.go` (Issue #214 -- Layer 1+2, Layer 3, cross-layer) |
+| Unit | 10 | `ineffective_chain_test.go` (Issue #525 -- Layer 1b forward chain) |
 | Integration | 4 | `blocking_integration_test.go` |
 | E2E | 2 | `blocking_e2e_test.go` |
 
@@ -392,4 +507,5 @@ Instead of modifying the consecutive failure counter, the system uses DataStorag
 | 1.2 | 2026-02-28 | Added BR-ORCH-042.5: Ineffective Remediation Chain Detection (Issue #214). Three-layer detection using DataStorage audit traces. |
 | 1.3 | 2026-03-02 | Added BR-ORCH-042.6: Documented Option C decision for completed-but-ineffective handling. Prompt engineering deferred to HAPI team. |
 | 1.4 | 2026-03-03 | Externalized routing config to YAML ConfigMap (ADR-030). Marked HAPI prompt engineering as implemented. Fixed latent zero-value bug for Issue #214 fields. |
+| 1.5 | 2026-03-04 | Added BR-ORCH-042.7: Forward hash chain detection (Issue #525). Five-condition Layer 1b with WorkflowType matching, EA failure check, 1h window, threshold=2. New config fields: `forwardChainThreshold`, `forwardChainWindow`. |
 

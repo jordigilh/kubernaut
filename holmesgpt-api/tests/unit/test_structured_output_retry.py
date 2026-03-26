@@ -229,10 +229,12 @@ class TestLegitimateNoWorkflowOutcomes:
         assert result.get("human_review_reason") == "no_matching_workflows"
 
     def test_ut_hapi_372_006_valid_workflow_passes_unchanged(self):
-        """UT-HAPI-372-006: Valid workflow selection passes validation, returns None.
+        """UT-HAPI-372-006: Valid workflow passes validation, returns is_valid=True.
 
         BR-HAPI-197: When the LLM selects a valid workflow that passes catalog
-        validation, validation_result is cleared to None (line 242 in parser).
+        validation, the ValidationResult is returned with is_valid=True (not
+        cleared to None) so callers can access parameter_schema for #524
+        conditional injection.
         """
         from src.extensions.incident import _parse_and_validate_investigation_result
         from src.validation.workflow_response_validator import ValidationResult
@@ -269,9 +271,10 @@ class TestLegitimateNoWorkflowOutcomes:
             investigation, request_data, data_storage_client=mock_ds
         )
 
-        assert validation_result is None, (
-            "Valid workflow must clear validation_result to None"
+        assert validation_result is not None, (
+            "Valid workflow must return ValidationResult (not None) for #524 schema propagation"
         )
+        assert validation_result.is_valid is True
         assert result.get("selected_workflow") is not None
         assert result["needs_human_review"] is False
 

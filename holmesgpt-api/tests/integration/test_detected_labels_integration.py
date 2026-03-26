@@ -224,7 +224,7 @@ class TestDetectedLabelsCaching:
         # not for every tool invocation
         assert mock_k8s.resolve_owner_chain.call_count <= 2, (
             "resolve_owner_chain should be called at most twice "
-            "(once for label detection, once for get_resource_context)"
+            "(once for label detection, once for get_namespaced_resource_context / get_cluster_resource_context)"
         )
 
 

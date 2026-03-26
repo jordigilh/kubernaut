@@ -791,7 +791,7 @@ for item in data.get('items', []):
 preload_hook_image() {
   local desc="ST-CHART-PRELOAD: Pre-load Helm hook image into Kind cluster"
   local hook_image
-  hook_image=$(grep -A1 'tlsCerts:' "$CHART_PATH/values.yaml" | grep 'image:' | awk '{print $2}' | head -1)
+  hook_image=$(grep -A5 'tlsCerts:' "$CHART_PATH/values.yaml" | grep 'image:' | awk '{print $2}' | head -1)
 
   if [[ -z "$hook_image" ]]; then
     tap_not_ok "$desc" "Could not determine hook image from chart values"

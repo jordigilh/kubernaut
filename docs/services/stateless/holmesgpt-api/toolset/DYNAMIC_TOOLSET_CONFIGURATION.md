@@ -498,7 +498,7 @@ class ContextAPIService:
         context_tasks = [
             self._get_namespace_context(namespace),
             self._get_alert_history(alert_name, namespace),
-            self._get_resource_context(namespace),
+            self._get_namespaced_resource_context(namespace),
             self._get_pattern_analysis(alert_name, labels)
         ]
 

@@ -18,7 +18,7 @@ limitations under the License.
 Cycle 2.4: session_state wiring in registration code
 
 ADR-056 v1.4: register_resource_context_toolset accepts session_state so
-that get_resource_context can detect labels and store them in session_state.
+that get_namespaced_resource_context / get_cluster_resource_context can detect labels and store them in session_state.
 register_workflow_discovery_toolset also accepts session_state so discovery
 tools can read labels written by resource_context (no k8s_client needed --
 labels come from session_state exclusively).

@@ -18,7 +18,7 @@ limitations under the License.
 Cycle 2.2: _build_context_params reads detected_labels from session_state
 
 Tests that _build_context_params() reads detected_labels from session_state
-(populated at runtime by get_resource_context / LabelDetector) instead of
+(populated at runtime by get_namespaced_resource_context / get_cluster_resource_context / LabelDetector) instead of
 relying solely on constructor-time detected_labels.
 
 Authority: ADR-056, DD-HAPI-017 Section 8

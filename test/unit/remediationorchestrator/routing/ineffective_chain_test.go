@@ -155,7 +155,7 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 				},
 			}
 
-			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash)
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash, "")
 			Expect(blocked).ToNot(BeNil(), "Should block when hash chain matches across threshold entries")
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonIneffectiveChain)))
 		})
@@ -182,7 +182,7 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 				},
 			}
 
-			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash)
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash, "")
 			Expect(blocked).ToNot(BeNil(), "Should block when consecutive regression/spec_drift entries detected")
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonIneffectiveChain)))
 		})
@@ -209,7 +209,7 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 				},
 			}
 
-			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash)
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash, "")
 			Expect(blocked).To(BeNil(), "Should not block when chain is broken by an effective entry")
 		})
 	})
@@ -235,7 +235,7 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 				},
 			}
 
-			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash)
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash, "")
 			Expect(blocked).To(BeNil(), "Should not block when hash data is missing (cannot determine chain)")
 		})
 	})
@@ -260,7 +260,7 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 				},
 			}
 
-			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash)
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash, "")
 			Expect(blocked).To(BeNil(), "Should not block when below chain threshold")
 		})
 	})
@@ -289,7 +289,7 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 				},
 			}
 
-			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash)
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash, "")
 			Expect(blocked).ToNot(BeNil(), "Should block via safety net when total entries >= threshold")
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonIneffectiveChain)))
 		})
@@ -315,7 +315,7 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 				},
 			}
 
-			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash)
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash, "")
 			Expect(blocked).To(BeNil(), "Should not block when entries are outside time window")
 		})
 	})
@@ -417,7 +417,7 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 			Expect(failBlocked).To(BeNil(), "2 failures < threshold 3, should not block")
 
 			// IneffectiveChain SHOULD block (3 regression entries)
-			chainBlocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash)
+			chainBlocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash, "")
 			Expect(chainBlocked).ToNot(BeNil(), "3 ineffective entries should trigger ineffective chain block")
 			Expect(chainBlocked.Reason).To(Equal(string(remediationv1.BlockReasonIneffectiveChain)))
 		})
@@ -442,8 +442,253 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 				},
 			}
 
-			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash)
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, rr, target, preHash, "")
 			Expect(blocked).To(BeNil(), "DS failures must fail-open (log + return nil)")
+		})
+	})
+})
+
+// newForwardChainEntry creates a DS entry with full forward-chain detection fields.
+// WorkflowType and SignalResolved are required for Layer 1b (Issue #525).
+func newForwardChainEntry(preHash, postHash, workflowType string, signalResolved bool, completedAt time.Time) ogenclient.RemediationHistoryEntry {
+	return ogenclient.RemediationHistoryEntry{
+		RemediationUID:          fmt.Sprintf("rr-uid-%d", completedAt.UnixNano()),
+		PreRemediationSpecHash:  ogenclient.NewOptString(preHash),
+		PostRemediationSpecHash: ogenclient.NewOptString(postHash),
+		HashMatch:               ogenclient.NewOptRemediationHistoryEntryHashMatch(ogenclient.RemediationHistoryEntryHashMatchNone),
+		Outcome:                 ogenclient.NewOptString("Completed"),
+		WorkflowType:            ogenclient.NewOptNilString(workflowType),
+		SignalResolved:          ogenclient.NewOptNilBool(signalResolved),
+		EffectivenessScore:      ogenclient.NewOptNilFloat64(0.0),
+		CompletedAt:             completedAt,
+	}
+}
+
+var _ = Describe("Forward Hash Chain Detection (Issue #525)", func() {
+	var (
+		ctx    context.Context
+		engine *routing.RoutingEngine
+	)
+
+	target := routing.TargetResource{
+		Kind:      "Deployment",
+		Name:      "memory-eater",
+		Namespace: "prod",
+	}
+
+	const actionType = "IncreaseMemoryLimits"
+
+	setupEngine := func(querier routing.RemediationHistoryQuerier) {
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithIndex(&remediationv1.RemediationRequest{}, "spec.signalFingerprint", func(obj client.Object) []string {
+				rr := obj.(*remediationv1.RemediationRequest)
+				if rr.Spec.SignalFingerprint == "" {
+					return nil
+				}
+				return []string{rr.Spec.SignalFingerprint}
+			}).
+			WithIndex(&workflowexecutionv1.WorkflowExecution{}, "spec.targetResource", func(obj client.Object) []string {
+				wfe := obj.(*workflowexecutionv1.WorkflowExecution)
+				if wfe.Spec.TargetResource == "" {
+					return nil
+				}
+				return []string{wfe.Spec.TargetResource}
+			}).
+			Build()
+
+		config := routing.Config{
+			ConsecutiveFailureThreshold:   3,
+			ConsecutiveFailureCooldown:    3600,
+			RecentlyRemediatedCooldown:    300,
+			ExponentialBackoffBase:        60,
+			ExponentialBackoffMax:         600,
+			ExponentialBackoffMaxExponent: 4,
+			IneffectiveChainThreshold:     3,
+			RecurrenceCountThreshold:      5,
+			IneffectiveTimeWindow:         4 * time.Hour,
+			ForwardChainThreshold:         2,
+			ForwardChainWindow:            1 * time.Hour,
+		}
+
+		engine = routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, &mocks.AlwaysManagedScopeChecker{}, querier)
+	}
+
+	makeRR := func(name, fingerprint string) *remediationv1.RemediationRequest {
+		return &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "default",
+				UID:       types.UID(name + "-uid"),
+			},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalFingerprint: fingerprint,
+			},
+		}
+	}
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	// ========================================
+	// Layer 1b: Forward hash chain (Issue #525)
+	// All mock data in DESCENDING order (most recent first) to match production DS.
+	// Threshold = 2 entries in DS + incoming RR = 3rd attempt triggers block.
+	// Conditions: same WorkflowType, SignalResolved==false, within 1h, hash-linked.
+	// ========================================
+
+	Context("UT-RO-525-001: Forward hash chain of 2 entries triggers block", func() {
+		It("should return BlockReasonIneffectiveChain when 2 entries form a forward hash chain linked to incoming RR", func() {
+			now := time.Now()
+			entries := []ogenclient.RemediationHistoryEntry{
+				newForwardChainEntry("hashB", "hashC", actionType, false, now.Add(-20*time.Minute)),
+				newForwardChainEntry("hashA", "hashB", actionType, false, now.Add(-40*time.Minute)),
+			}
+			setupEngine(&mockHistoryQuerier{entries: entries})
+
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, makeRR("rr-525-001", "fp-525-001"), target, "hashC", actionType)
+			Expect(blocked).ToNot(BeNil(), "Should block when 2 forward-linked entries connect to incoming RR")
+			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonIneffectiveChain)))
+			Expect(blocked.Message).To(ContainSubstring("forward hash chain"))
+		})
+	})
+
+	Context("UT-RO-525-002: Forward chain not linked to incoming RR", func() {
+		It("should return nil when incoming RR preHash does not match last entry's postHash", func() {
+			now := time.Now()
+			entries := []ogenclient.RemediationHistoryEntry{
+				newForwardChainEntry("hashB", "hashC", actionType, false, now.Add(-20*time.Minute)),
+				newForwardChainEntry("hashA", "hashB", actionType, false, now.Add(-40*time.Minute)),
+			}
+			setupEngine(&mockHistoryQuerier{entries: entries})
+
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, makeRR("rr-525-002", "fp-525-002"), target, "hashX", actionType)
+			Expect(blocked).To(BeNil(), "Should not block when incoming RR preHash does not link to chain")
+		})
+	})
+
+	Context("UT-RO-525-003: Broken forward chain (gap in hash links)", func() {
+		It("should return nil when a gap breaks the forward chain below threshold", func() {
+			now := time.Now()
+			// Gap between entry[1] and entry[0]: hashY != hashC
+			// Only entry[0] connects to incoming RR → chain length 1 < threshold 2
+			entries := []ogenclient.RemediationHistoryEntry{
+				newForwardChainEntry("hashC", "hashD", actionType, false, now.Add(-10*time.Minute)),
+				newForwardChainEntry("hashX", "hashY", actionType, false, now.Add(-20*time.Minute)),
+				newForwardChainEntry("hashA", "hashB", actionType, false, now.Add(-30*time.Minute)),
+			}
+			setupEngine(&mockHistoryQuerier{entries: entries})
+
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, makeRR("rr-525-003", "fp-525-003"), target, "hashD", actionType)
+			Expect(blocked).To(BeNil(), "Should not block when forward chain is broken by a gap")
+		})
+	})
+
+	Context("UT-RO-525-004: Below threshold (1 entry, threshold 2)", func() {
+		It("should return nil when forward chain length is below threshold", func() {
+			now := time.Now()
+			entries := []ogenclient.RemediationHistoryEntry{
+				newForwardChainEntry("hashA", "hashB", actionType, false, now.Add(-20*time.Minute)),
+			}
+			setupEngine(&mockHistoryQuerier{entries: entries})
+
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, makeRR("rr-525-004", "fp-525-004"), target, "hashB", actionType)
+			Expect(blocked).To(BeNil(), "Should not block when forward chain length (1) is below threshold (2)")
+		})
+	})
+
+	Context("UT-RO-525-005: Missing postHash entries fail-open", func() {
+		It("should return nil when entries lack PostRemediationSpecHash", func() {
+			now := time.Now()
+			entries := []ogenclient.RemediationHistoryEntry{
+				newDSEntryNoHash("Completed", now.Add(-20*time.Minute)),
+				newDSEntryNoHash("Completed", now.Add(-40*time.Minute)),
+			}
+			setupEngine(&mockHistoryQuerier{entries: entries})
+
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, makeRR("rr-525-005", "fp-525-005"), target, "anyHash", actionType)
+			Expect(blocked).To(BeNil(), "Should not block when entries lack postHash (fail-open)")
+		})
+	})
+
+	Context("UT-RO-525-006: Layer 1+2 regression takes precedence", func() {
+		It("should detect via Layer 1+2 (hash chain match) before forward chain", func() {
+			now := time.Now()
+			regressionHash := "regHash"
+			entries := []ogenclient.RemediationHistoryEntry{
+				newDSEntry(regressionHash, "hashC", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, "Completed", now.Add(-20*time.Minute)),
+				newDSEntry(regressionHash, "hashB", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, "Completed", now.Add(-30*time.Minute)),
+				newDSEntry(regressionHash, "hashA", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, "Completed", now.Add(-40*time.Minute)),
+			}
+			setupEngine(&mockHistoryQuerier{entries: entries})
+
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, makeRR("rr-525-006", "fp-525-006"), target, regressionHash, actionType)
+			Expect(blocked).ToNot(BeNil(), "Should block via Layer 1+2 regression")
+			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonIneffectiveChain)))
+			Expect(blocked.Message).To(ContainSubstring("hash chain match"))
+			Expect(blocked.Message).ToNot(ContainSubstring("forward hash chain"))
+		})
+	})
+
+	Context("UT-RO-525-007: Memory-escalation scenario (Issue #525 real-world regression)", func() {
+		It("should block when OOMKill triggers repeated memory increases forming a forward chain", func() {
+			now := time.Now()
+			entries := []ogenclient.RemediationHistoryEntry{
+				newForwardChainEntry("hash256", "hash512", actionType, false, now.Add(-20*time.Minute)),
+				newForwardChainEntry("hash128", "hash256", actionType, false, now.Add(-40*time.Minute)),
+			}
+			setupEngine(&mockHistoryQuerier{entries: entries})
+
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, makeRR("rr-525-007", "fp-525-007"), target, "hash512", actionType)
+			Expect(blocked).ToNot(BeNil(), "Memory-escalation scenario: 2 increasing-limits cycles should trigger block")
+			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonIneffectiveChain)))
+		})
+	})
+
+	Context("UT-RO-525-008: Different action type breaks chain", func() {
+		It("should return nil when entries have different WorkflowType values", func() {
+			now := time.Now()
+			entries := []ogenclient.RemediationHistoryEntry{
+				newForwardChainEntry("hashB", "hashC", "RestartPod", false, now.Add(-20*time.Minute)),
+				newForwardChainEntry("hashA", "hashB", actionType, false, now.Add(-40*time.Minute)),
+			}
+			setupEngine(&mockHistoryQuerier{entries: entries})
+
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, makeRR("rr-525-008", "fp-525-008"), target, "hashC", actionType)
+			Expect(blocked).To(BeNil(), "Should not block when entries have different action types")
+		})
+	})
+
+	Context("UT-RO-525-009: Successful EA breaks chain", func() {
+		It("should return nil when one entry has SignalResolved=true", func() {
+			now := time.Now()
+			entries := []ogenclient.RemediationHistoryEntry{
+				newForwardChainEntry("hashB", "hashC", actionType, false, now.Add(-20*time.Minute)),
+				newForwardChainEntry("hashA", "hashB", actionType, true, now.Add(-40*time.Minute)),
+			}
+			setupEngine(&mockHistoryQuerier{entries: entries})
+
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, makeRR("rr-525-009", "fp-525-009"), target, "hashC", actionType)
+			Expect(blocked).To(BeNil(), "Should not block when an entry has successful EA (SignalResolved=true)")
+		})
+	})
+
+	Context("UT-RO-525-010: Entries outside 1h forward chain window", func() {
+		It("should return nil when entries are outside the 1h forward chain window", func() {
+			now := time.Now()
+			entries := []ogenclient.RemediationHistoryEntry{
+				newForwardChainEntry("hashB", "hashC", actionType, false, now.Add(-50*time.Minute)),
+				newForwardChainEntry("hashA", "hashB", actionType, false, now.Add(-2*time.Hour)),
+			}
+			setupEngine(&mockHistoryQuerier{entries: entries})
+
+			blocked := engine.CheckIneffectiveRemediationChain(ctx, makeRR("rr-525-010", "fp-525-010"), target, "hashC", actionType)
+			Expect(blocked).To(BeNil(), "Should not block when entries fall outside the 1h forward chain window")
 		})
 	})
 })

@@ -40,7 +40,7 @@ class TestIncidentPromptDetectedLabels:
     def test_incident_prompt_omits_detected_labels_section(self):
         """
         ADR-056: DetectedLabels are now computed at runtime by HAPI's
-        get_resource_context tool, not injected into the initial prompt
+        get_namespaced_resource_context / get_cluster_resource_context tools, not injected into the initial prompt
         from enrichment_results.
         """
         from src.extensions.incident import _create_incident_investigation_prompt

@@ -395,4 +395,6 @@ valkey:
 # -- Hooks (post-install Jobs)
 hooks:
   tlsCerts:
+    # Shared kubectl image for all hook Jobs (TLS cert gen, CRD upgrade).
+    # Both hooks need kubectl — a single pinned image avoids duplication.
     image: docker.io/bitnami/kubectl:latest@sha256:6e2cdb22d6ab7264ea198c717f555e30536b54029d26c8781b9f25f78951b564

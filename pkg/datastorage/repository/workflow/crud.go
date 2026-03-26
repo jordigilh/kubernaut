@@ -314,19 +314,28 @@ func (r *Repository) List(ctx context.Context, filters *models.WorkflowSearchFil
 		}
 
 		// Label filters (JSONB queries)
+		// Issue #522: Wildcard parity with discovery path (buildContextFilterSQL).
+		// Stored labels may use "*" to match any query value; the SQL must include
+		// wildcard fallback conditions identical to the discovery path.
 		if filters.Severity != "" {
-			// Severity is JSONB array (e.g. ["critical","high"]), use ? operator
-			builder.WhereRaw(fmt.Sprintf("labels->'severity' ? $%d", builder.CurrentArgIndex()), filters.Severity)
+			// DD-WORKFLOW-001 v2.8: severity supports "*" wildcard (like environment/priority)
+			builder.WhereRaw(fmt.Sprintf("(labels->'severity' ? $%d OR labels->'severity' ? '*')", builder.CurrentArgIndex()), filters.Severity)
 		}
 		if filters.Component != "" {
-			builder.Where("labels->>'component' = ?", filters.Component)
+			// DD-WORKFLOW-016 v2.1: Case-insensitive + wildcard "*"
+			builder.WhereRaw(fmt.Sprintf("(LOWER(labels->>'component') = LOWER($%d) OR labels->>'component' = '*')", builder.CurrentArgIndex()), filters.Component)
 		}
 		// DD-WORKFLOW-001 v2.5: environment is JSONB array, use ? operator; supports "*" wildcard per OpenAPI spec
 		if filters.Environment != "" {
 			builder.WhereRaw(fmt.Sprintf("(labels->'environment' ? $%d OR labels->'environment' ? '*')", builder.CurrentArgIndex()), filters.Environment)
 		}
 		if filters.Priority != "" {
-			builder.Where("labels->>'priority' = ?", filters.Priority)
+			// DD-WORKFLOW-016 v2.1: Handle both scalar and array JSONB values + wildcard
+			idx := builder.CurrentArgIndex()
+			builder.WhereRaw(fmt.Sprintf(`(CASE WHEN jsonb_typeof(labels->'priority') = 'array'
+				THEN labels->'priority' ? $%d OR labels->'priority' ? '*'
+				ELSE labels->>'priority' = $%d OR labels->>'priority' = '*'
+			END)`, idx, idx), filters.Priority)
 		}
 		if len(filters.Status) > 0 {
 			builder.WhereRaw(fmt.Sprintf("status = ANY($%d)", builder.CurrentArgIndex()), filters.Status)

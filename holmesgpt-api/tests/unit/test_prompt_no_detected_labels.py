@@ -18,7 +18,7 @@ limitations under the License.
 Cycle 2.3: Remove detected_labels from LLM prompt construction
 
 ADR-056 relocates DetectedLabels computation to HAPI runtime (via
-get_resource_context / LabelDetector). The initial LLM prompt should
+get_namespaced_resource_context / get_cluster_resource_context / LabelDetector). The initial LLM prompt should
 NOT include the "Cluster Environment Characteristics" section derived
 from enrichment_results.detectedLabels, because labels are now
 computed at runtime by tools and injected into DataStorage queries

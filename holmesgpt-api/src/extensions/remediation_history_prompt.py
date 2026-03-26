@@ -113,12 +113,20 @@ def build_remediation_history_section(
 
     recurring = _detect_completed_but_recurring(all_entries, threshold=escalation_threshold)
     for workflow_type, count, signal_type in recurring:
-        sections.append(
-            f"**WARNING: REPEATED INEFFECTIVE REMEDIATION for '{workflow_type}'** -- "
-            f"Completed {count} times for signal '{signal_type}' but the issue continues "
-            "to recur. This suggests the workflow treats the symptom, not the root cause. "
-            "Recommend selecting `needs_human_review` or an alternative escalation workflow."
-        )
+        if _all_zero_effectiveness(all_entries, workflow_type, signal_type):
+            # Issue #525: Mandatory escalation when all recurring entries have zero effectiveness
+            sections.append(
+                f"**MANDATORY: You MUST NOT re-select '{workflow_type}' for signal "
+                f"'{signal_type}'.** This workflow has been applied {count} times with "
+                "zero effectiveness -- the signal continues to recur. Escalate to "
+                "`needs_human_review` or select a fundamentally different remediation approach."
+            )
+        else:
+            sections.append(
+                f"**WARNING: REPEATED INEFFECTIVE REMEDIATION for '{workflow_type}'** -- "
+                f"Completed {count} times for signal '{signal_type}' but the issue continues "
+                "to recur. Escalate to `needs_human_review` or an alternative approach."
+            )
         sections.append("")
 
     # Reasoning guidance
@@ -351,6 +359,35 @@ def _detect_declining_effectiveness(chain: List[Dict[str, Any]]) -> List[str]:
                 declining.append(wf_type)
 
     return declining
+
+
+def _all_zero_effectiveness(
+    chain: List[Dict[str, Any]],
+    workflow_type: str,
+    signal_type: str,
+) -> bool:
+    """Check if all completed recurring entries for a workflow+signal have zero effectiveness.
+
+    Issue #525: When all recurring entries have effectivenessScore == 0 (or None/missing)
+    and signalResolved is not True, the escalation should be mandatory rather than advisory.
+    """
+    COMPLETED_OUTCOMES = {"completed", "success", "Completed", "Success"}
+    matched = False
+    for entry in chain:
+        if entry.get("assessmentReason") == "spec_drift":
+            continue
+        outcome = entry.get("outcome", "")
+        if outcome not in COMPLETED_OUTCOMES:
+            continue
+        if entry.get("workflowType") != workflow_type or entry.get("signalType") != signal_type:
+            continue
+        matched = True
+        score = entry.get("effectivenessScore")
+        if score is not None and score > 0:
+            return False
+        if entry.get("signalResolved") is True:
+            return False
+    return matched
 
 
 def _detect_completed_but_recurring(

@@ -39,7 +39,7 @@ import (
 // from post-AA checks (all checks including resource-level with AI-resolved target).
 type Engine interface {
 	CheckPreAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest) (*BlockingCondition, error)
-	CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string) (*BlockingCondition, error)
+	CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string, workflowType string) (*BlockingCondition, error)
 	CheckUnmanagedResource(ctx context.Context, rr *remediationv1.RemediationRequest) *BlockingCondition
 	Config() Config
 	CalculateExponentialBackoff(consecutiveFailures int32) time.Duration
@@ -136,6 +136,16 @@ type Config struct {
 	// IneffectiveTimeWindow is the lookback window for both hash chain and safety net.
 	// Default: 4h
 	IneffectiveTimeWindow time.Duration
+
+	// ForwardChainThreshold is the number of forward-linked DS entries (same action type,
+	// failed EA) required to block the incoming RR as the Nth+1 attempt.
+	// Default: 2 (2 entries + incoming = block 3rd attempt). Issue #525.
+	ForwardChainThreshold int
+
+	// ForwardChainWindow is the time window for forward hash chain detection.
+	// Only entries within this window are considered for the forward chain.
+	// Default: 1h. Issue #525.
+	ForwardChainWindow time.Duration
 }
 
 // NewRoutingEngine creates a new RoutingEngine with the given client and config.
@@ -241,6 +251,7 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 	workflowID string,
 	targetResource string,
 	preRemediationSpecHash string,
+	workflowType string,
 ) (*BlockingCondition, error) {
 	if blocked := r.CheckUnmanagedResource(ctx, rr); blocked != nil {
 		return blocked, nil
@@ -281,7 +292,7 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 	// Issue #214: Ineffective remediation chain detection (LAST -- fail-open)
 	if preRemediationSpecHash != "" {
 		target := parseTargetResource(targetResource)
-		if chainBlocked := r.CheckIneffectiveRemediationChain(ctx, rr, target, preRemediationSpecHash); chainBlocked != nil {
+		if chainBlocked := r.CheckIneffectiveRemediationChain(ctx, rr, target, preRemediationSpecHash, workflowType); chainBlocked != nil {
 			return chainBlocked, nil
 		}
 	}
@@ -970,6 +981,7 @@ func (r *RoutingEngine) CheckIneffectiveRemediationChain(
 	rr *remediationv1.RemediationRequest,
 	target TargetResource,
 	preRemediationSpecHash string,
+	workflowType string,
 ) *BlockingCondition {
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
@@ -997,6 +1009,20 @@ func (r *RoutingEngine) CheckIneffectiveRemediationChain(
 			"chainCount", chainCount,
 			"threshold", r.config.IneffectiveChainThreshold)
 		return r.buildIneffectiveBlockCondition(chainCount, "hash chain match")
+	}
+
+	// Layer 1b: Forward hash chain -- spec changes each cycle but signal recurs (Issue #525)
+	forwardThreshold := r.config.ForwardChainThreshold
+	if forwardThreshold <= 0 {
+		forwardThreshold = 2
+	}
+	forwardCount := r.countForwardChain(entries, preRemediationSpecHash, workflowType)
+	if forwardCount >= forwardThreshold {
+		logger.Info("Ineffective remediation chain detected (Layer 1b forward hash chain)",
+			"forwardCount", forwardCount,
+			"threshold", forwardThreshold,
+			"workflowType", workflowType)
+		return r.buildIneffectiveBlockCondition(forwardCount, "forward hash chain")
 	}
 
 	// Layer 3: Safety net -- count total entries within time window
@@ -1036,6 +1062,79 @@ func (r *RoutingEngine) countIneffectiveChain(entries []ogenclient.RemediationHi
 	}
 
 	return consecutiveIneffective
+}
+
+// countForwardChain detects a connected sequence of remediations where each cycle's
+// PostRemediationSpecHash feeds the next cycle's PreRemediationSpecHash (Issue #525).
+// This catches the "spec changed each time but signal recurred" pattern (e.g., memory
+// limits increasing from 64Mi -> 128Mi -> 256Mi -> 512Mi with OOMKill recurring).
+//
+// Five conditions must ALL be met for an entry to participate in the chain:
+//  1. Within ForwardChainWindow (default 1h)
+//  2. Same WorkflowType (action type) as the incoming RR
+//  3. SignalResolved == false (EA confirmed the remediation was ineffective)
+//  4. Hash link continuity (entry[i].PostHash == entry[i+1].PreHash)
+//  5. Last entry's PostHash == incoming RR's PreHash (proves causality)
+//
+// The function filters entries first, sorts a copy ascending, then walks backward
+// from the tail to find the longest connected chain.
+func (r *RoutingEngine) countForwardChain(entries []ogenclient.RemediationHistoryEntry, currentPreHash string, workflowType string) int {
+	if len(entries) == 0 {
+		return 0
+	}
+
+	window := r.config.ForwardChainWindow
+	if window <= 0 {
+		window = 1 * time.Hour
+	}
+	cutoff := time.Now().Add(-window)
+
+	// Filter: within window, same action type, failed EA
+	var filtered []ogenclient.RemediationHistoryEntry
+	for i := range entries {
+		e := entries[i]
+		if e.CompletedAt.Before(cutoff) {
+			continue
+		}
+		if !e.WorkflowType.IsSet() || e.WorkflowType.Value != workflowType {
+			continue
+		}
+		if !e.SignalResolved.IsSet() || e.SignalResolved.Value {
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+
+	if len(filtered) == 0 {
+		return 0
+	}
+
+	sorted := make([]ogenclient.RemediationHistoryEntry, len(filtered))
+	copy(sorted, filtered)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].CompletedAt.Before(sorted[j].CompletedAt)
+	})
+
+	last := len(sorted) - 1
+	if !sorted[last].PostRemediationSpecHash.IsSet() || sorted[last].PostRemediationSpecHash.Value != currentPreHash {
+		return 0
+	}
+
+	chainLen := 1
+	for i := last; i > 0; i-- {
+		prev := sorted[i-1]
+		curr := sorted[i]
+		if !prev.PostRemediationSpecHash.IsSet() || !curr.PreRemediationSpecHash.IsSet() {
+			break
+		}
+		if prev.PostRemediationSpecHash.Value == curr.PreRemediationSpecHash.Value {
+			chainLen++
+		} else {
+			break
+		}
+	}
+
+	return chainLen
 }
 
 func isIneffectiveEntry(entry ogenclient.RemediationHistoryEntry, compareHash string) bool {

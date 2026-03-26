@@ -62,12 +62,16 @@ class ValidationResult:
         errors: List of error messages for failed validations
         validated_execution_bundle: Execution bundle from catalog (always use this)
         schema_hint: Formatted schema hint for LLM self-correction
+        parameter_schema: Workflow parameter schema from catalog (#524: for
+            conditional injection — stored in session_state so _inject_target_resource
+            knows which TARGET_RESOURCE_* params the workflow declares)
     """
 
     is_valid: bool
     errors: List[str] = field(default_factory=list)
     validated_execution_bundle: Optional[str] = None
     schema_hint: Optional[str] = None
+    parameter_schema: Optional[List[Dict[str, Any]]] = None
 
 
 # BR-496 v2: HAPI-managed canonical parameters.
@@ -176,10 +180,9 @@ class WorkflowResponseValidator:
             )
             return ValidationResult(is_valid=False, errors=errors)
 
-        # STEP 0: Canonical Parameter Declaration Check (BR-496 v2)
-        canonical_errors = self._validate_canonical_params(workflow, workflow_id)
-        if canonical_errors:
-            return ValidationResult(is_valid=False, errors=canonical_errors)
+        # #524: Canonical parameter check removed — workflows no longer required
+        # to declare TARGET_RESOURCE_NAME/KIND/NAMESPACE. HAPI injects only
+        # those that are declared in the schema (conditional injection).
 
         # STEP 1b: Action-Type Cross-Check (DD-WORKFLOW-016, Gap 3)
         action_type_errors = self._validate_action_type_crosscheck(workflow)
@@ -195,18 +198,23 @@ class WorkflowResponseValidator:
         param_errors = self._validate_parameters(parameters, workflow)
         errors.extend(param_errors)
 
+        # #524: Extract schema for conditional injection downstream
+        param_schema = self._get_parameter_schema(workflow) or None
+
         if errors:
             return ValidationResult(
                 is_valid=False,
                 errors=errors,
                 validated_execution_bundle=workflow.execution_bundle,
                 schema_hint=self._format_schema_hint(workflow),
+                parameter_schema=param_schema,
             )
 
         return ValidationResult(
             is_valid=True,
             errors=[],
             validated_execution_bundle=workflow.execution_bundle,
+            parameter_schema=param_schema,
         )
 
     def _validate_workflow_exists(self, workflow_id: str):
@@ -316,34 +324,6 @@ class WorkflowResponseValidator:
                 f"DD-WORKFLOW-016 Gap 3: action_type cross-check failed (graceful degradation): {e}"
             )
             return []
-
-    def _validate_canonical_params(self, workflow, workflow_id: str) -> List[str]:
-        """
-        STEP 0: Verify workflow schema declares HAPI-managed canonical parameters.
-
-        BR-496 v2: Every workflow MUST declare TARGET_RESOURCE_NAME,
-        TARGET_RESOURCE_KIND, and TARGET_RESOURCE_NAMESPACE in its schema.
-        HAPI injects these from root_owner after the LLM responds.
-        If any are missing, the workflow is rejected and the LLM should
-        select a different one via the self-correction loop.
-        """
-        param_schema = self._get_parameter_schema(workflow)
-        if not param_schema:
-            missing = sorted(HAPI_MANAGED_PARAMS)
-            return [
-                f"Workflow '{workflow_id}' is missing mandatory "
-                f"{', '.join(missing)} parameters — select a different workflow."
-            ]
-
-        declared_names = {p.get("name") for p in param_schema if p.get("name")}
-        missing = sorted(HAPI_MANAGED_PARAMS - declared_names)
-        if missing:
-            return [
-                f"Workflow '{workflow_id}' is missing mandatory "
-                f"{', '.join(missing)} parameters — select a different workflow."
-            ]
-
-        return []
 
     def _validate_execution_bundle(
         self, llm_bundle: Optional[str], catalog_bundle: str, workflow_id: str

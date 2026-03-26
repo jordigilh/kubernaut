@@ -13,7 +13,7 @@
 
 **Evidence from logs**:
 ```
-I1024 16:08:11.699282   64249 request.go:700] Waited for 29.556295958s due to client-side throttling, not priority and fairness, request: POST:https://api.stress.parodos.dev:6443/apis/authentication.k8s.io/v1/tokenreviews
+I1024 16:08:11.699282   64249 request.go:700] Waited for 29.556295958s due to client-side throttling, not priority and fairness, request: POST:https://api.<cluster>:6443/apis/authentication.k8s.io/v1/tokenreviews
 ```
 
 **What's happening**:

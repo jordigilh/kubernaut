@@ -209,7 +209,7 @@ def handle_validation_exhaustion(
     all_errors_summary = []
     for i, errors in enumerate(validation_errors_history):
         all_errors_summary.append(f"Attempt {i+1}: {'; '.join(errors)}")
-    result["warnings"].append(
+    result.setdefault("warnings", []).append(
         f"Workflow validation failed after {max_attempts} attempts. " +
         " | ".join(all_errors_summary)
     )

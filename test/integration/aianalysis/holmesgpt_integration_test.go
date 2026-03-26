@@ -119,7 +119,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 
 			Expect(err).NotTo(HaveOccurred())
 			// ADR-055: TargetInOwnerChain removed from HolmesGPT API response.
-			// The LLM now populates affectedResource directly via get_resource_context tool.
+			// The LLM now populates affectedResource directly via get_namespaced_resource_context / get_cluster_resource_context.
 		})
 
 		It("should return selected workflow - BR-AI-016", func() {

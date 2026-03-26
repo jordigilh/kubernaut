@@ -44,6 +44,22 @@ Architecture:
       2. After step 1 result → Return list_workflows tool call
       3. After step 2 result → Return get_workflow tool call
       4. After step 3 result → Return final analysis with selected workflow
+
+    #529 Three-Phase RCA Architecture:
+      Phase 1 (LLM call 1 - RCA):
+        - HAPI sends investigation prompt with all tools available
+        - LLM optionally calls resource context tools (informational)
+        - LLM returns RCA + affectedResource (NO workflow selection)
+        - Mock detects Phase 1 via absence of enrichment context markers
+
+      Phase 2 (HAPI-driven - no LLM):
+        - EnrichmentService resolves owner chain, detects labels, fetches history
+
+      Phase 3 (LLM call 2 - Workflow Selection):
+        - HAPI injects enrichment context + Phase 1 analysis into the prompt
+        - LLM calls workflow discovery tools
+        - LLM returns workflow selection (NO RCA)
+        - Mock detects Phase 3 via enrichment context markers in prompt
 """
 
 import json
@@ -80,7 +96,7 @@ class MockScenario:
     rca_resource_namespace: str = "default"
     rca_resource_name: str = "test-pod"
     rca_resource_api_version: str = "v1"  # BR-HAPI-212: API version for GVK resolution
-    include_affected_resource: bool = False  # BR-496 v2: HAPI injects affectedResource from root_owner post-loop
+    include_affected_resource: bool = True  # #529: LLM provides affectedResource; HAPI parses and validates
     rca_override_prompt_resource: bool = False  # DD-EM-004: Use scenario kind/name instead of prompt-extracted
     parameters: Dict[str, str] = field(default_factory=dict)
     execution_engine: str = "tekton"  # BR-WE-014: Execution backend ("tekton" or "job")
@@ -251,7 +267,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_namespace="production",
         rca_resource_name="ambiguous-pod",
         rca_resource_api_version="v1",
-        include_affected_resource=False,  # BR-496 v2: now the default — HAPI injects from root_owner
+        include_affected_resource=False,  # #529: LLM fails to provide affectedResource in Phase 1
         # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
         # Schema: NAMESPACE (required), POD_NAME (required)
         parameters={"NAMESPACE": "production", "POD_NAME": "ambiguous-pod"}
@@ -632,46 +648,86 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         self._send_json_response(response)
 
 
+    def _is_phase3_request(self, messages: List[Dict[str, Any]]) -> bool:
+        """Detect if this is a Phase 3 (workflow selection) request.
+
+        #529: Phase 3 requests contain enrichment context injected by HAPI's
+        _build_enrichment_context() and phase1_context block. These specific
+        headers are ONLY present in Phase 3 prompts — Phase 1 prompts never
+        contain them, even though Phase 1 mentions "workflow selection" in its
+        general instructions.
+
+        Markers must match headers produced by llm_integration.py:
+        - "## Enrichment Context (Phase 2" from _build_enrichment_context()
+        - "## Phase 1 Root Cause Analysis" from the phase1_context injection
+        - "**Root Owner**:" from _build_enrichment_context()
+        """
+        for msg in messages:
+            content = str(msg.get("content", ""))
+            if any(marker in content for marker in [
+                "## Enrichment Context (Phase 2",
+                "## Phase 1 Root Cause Analysis",
+                "**Root Owner**:",
+            ]):
+                return True
+        return False
+
     def _handle_openai_request(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate OpenAI-compatible response with tool call support."""
+        """Generate OpenAI-compatible response with tool call support.
+
+        #529: Routes to the appropriate protocol based on phase detection:
+        - Phase 3 (enrichment context present): workflow discovery flow
+        - Phase 1 (no enrichment context): RCA + affectedResource flow
+        - Legacy (search_workflow_catalog): backward compatible two-phase
+        """
         messages = request_data.get("messages", [])
         tools = request_data.get("tools", [])
 
-        # Detect scenario from prompt content
         scenario = self._detect_scenario(messages)
 
-        # Check if this is a tool result (multi-turn)
-        has_tool_result = self._has_tool_result(messages)
-
-        # Determine response type
         if self.force_text_response or not tools:
-            # Backward compatibility: return text response
             return self._text_response(scenario, request_data)
 
-        # DD-HAPI-017 + ADR-056 v1.4: Discovery protocol with optional resource context
-        # When get_resource_context is available, run it first (4-step flow);
-        # otherwise fall back to the original 3-step flow.
+        # #529: Three-phase protocol detection
         if self._has_three_step_tools(tools):
-            has_rc = self._has_resource_context_tool(tools)
-            total_steps = 4 if has_rc else 3
+            is_phase3 = self._is_phase3_request(messages)
             tool_result_count = self._count_tool_results(messages)
-            logger.info(
-                f"🔍 Discovery protocol ({total_steps}-step): "
-                f"{tool_result_count} tool results so far"
-            )
-            if tool_result_count >= total_steps:
-                return self._final_analysis_response(scenario, request_data)
-            else:
-                return self._discovery_tool_call_response(
-                    scenario, request_data, tool_result_count, has_rc
+
+            if is_phase3:
+                # Phase 3: Workflow selection with enrichment context.
+                # Skip resource context tools — go straight to workflow discovery.
+                logger.info(
+                    f"🔍 Phase 3 (workflow selection): "
+                    f"{tool_result_count} tool results so far"
                 )
+                if tool_result_count >= 3:
+                    return self._phase3_workflow_response(scenario, request_data)
+                else:
+                    return self._discovery_tool_call_response(
+                        scenario, request_data, tool_result_count,
+                        has_resource_context=False, tools=tools
+                    )
+            else:
+                # Phase 1: RCA investigation.
+                # Optionally call resource context tools, then return RCA-only.
+                has_rc = self._has_resource_context_tool(tools)
+                logger.info(
+                    f"🔍 Phase 1 (RCA): "
+                    f"{tool_result_count} tool results, has_rc={has_rc}"
+                )
+                if has_rc and tool_result_count == 0:
+                    return self._discovery_tool_call_response(
+                        scenario, request_data, 0,
+                        has_resource_context=True, tools=tools
+                    )
+                else:
+                    return self._phase1_rca_response(scenario, request_data)
 
         # Legacy two-phase flow (search_workflow_catalog)
+        has_tool_result = self._has_tool_result(messages)
         if has_tool_result:
-            # Phase 2: After tool result → return final analysis
             return self._final_analysis_response(scenario, request_data)
         else:
-            # Phase 1: Initial request → return tool call
             return self._tool_call_response(scenario, request_data)
 
     def _detect_scenario(self, messages: List[Dict[str, Any]]) -> MockScenario:
@@ -789,21 +845,21 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         """
         Count the number of tool result messages in the conversation.
 
-        DD-HAPI-017 + ADR-056 v1.4: Used by the discovery protocol to
-        determine which step we're on.
+        #529 Three-phase protocol:
 
-        4-step flow (with get_resource_context):
-          0 tool results → get_resource_context (ADR-056)
-          1 tool result  → list_available_actions
-          2 tool results → list_workflows
-          3 tool results → get_workflow
-          4+ tool results → final analysis
+        Phase 1 (RCA) — optional resource context tools:
+          0 tool results → get_namespaced_resource_context / get_cluster_resource_context
+          1+ tool results → Phase 1 RCA response (affectedResource, no workflow)
 
-        3-step flow (without get_resource_context):
+        Phase 3 (Workflow Selection) — workflow discovery tools:
           0 tool results → list_available_actions
           1 tool result  → list_workflows
           2 tool results → get_workflow
-          3+ tool results → final analysis
+          3+ tool results → Phase 3 workflow response
+
+        Legacy 4-step flow (backward compatible, single-phase):
+          0 → resource_context, 1 → list_available_actions,
+          2 → list_workflows, 3 → get_workflow, 4+ → final analysis
         """
         count = 0
         for msg in messages:
@@ -827,18 +883,30 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
 
     def _has_resource_context_tool(self, tools: List[Dict[str, Any]]) -> bool:
         """
-        Check if the tools list includes get_resource_context.
+        Check if the tools list includes a resource context tool.
 
-        ADR-056 v1.4: When HAPI registers the resource context toolset,
-        the tools list will include 'get_resource_context'. The mock must
-        call it before workflow discovery so that HAPI populates
-        session_state["detected_labels"].
+        #524: Accepts both get_namespaced_resource_context and
+        get_cluster_resource_context (renamed from get_resource_context).
         """
+        rc_names = {"get_resource_context", "get_namespaced_resource_context", "get_cluster_resource_context"}
         for tool in tools:
             func = tool.get("function", {})
-            if func.get("name") == "get_resource_context":
+            if func.get("name") in rc_names:
                 return True
         return False
+
+    def _pick_resource_context_tool_name(self, tools: List[Dict[str, Any]]) -> str:
+        """Pick the resource context tool name registered by HAPI.
+
+        #524: Prefer get_namespaced_resource_context (new name), fall back to
+        get_resource_context (old name) for backward compatibility.
+        """
+        tool_names = {t.get("function", {}).get("name", "") for t in tools}
+        if "get_namespaced_resource_context" in tool_names:
+            return "get_namespaced_resource_context"
+        if "get_resource_context" in tool_names:
+            return "get_resource_context"
+        return "get_namespaced_resource_context"
 
     def _extract_resource_from_messages(
         self, messages: List[Dict[str, Any]], scenario: "MockScenario"
@@ -847,7 +915,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         Extract resource identity (kind, name, namespace) from prompt messages.
 
         ADR-056 v1.4: The mock needs the actual resource coordinates to pass
-        to get_resource_context. HAPI's prompt_builder formats the resource as:
+        to get_namespaced_resource_context. HAPI's prompt_builder formats the resource as:
           "Resource: {namespace}/{kind}/{name}"
         If not found, fall back to scenario defaults.
 
@@ -886,9 +954,9 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         messages: List[Dict[str, Any]],
     ) -> Optional[Dict[str, str]]:
         """
-        Parse get_resource_context tool results for the root_owner field.
+        Parse get_namespaced_resource_context / get_cluster_resource_context tool results for the root_owner field.
 
-        ADR-056: A real LLM uses the root_owner returned by get_resource_context
+        ADR-056: A real LLM uses the root_owner returned by get_namespaced_resource_context / get_cluster_resource_context
         (e.g., Pod→Deployment) as the affectedResource. The mock must do the same
         so the RCA contains the correct owner rather than the raw signaling Pod.
         """
@@ -931,15 +999,16 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         request_data: Dict[str, Any],
         step: int,
         has_resource_context: bool,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Generate the next tool call in the discovery sequence.
 
-        ADR-056 v1.4 + DD-HAPI-017: When has_resource_context is True, use a
-        4-step flow that calls get_resource_context first so HAPI populates
-        session_state["detected_labels"]:
+        ADR-056 v1.4 + DD-HAPI-017 + #524: When has_resource_context is True,
+        use a 4-step flow that calls the resource context tool first so HAPI
+        populates session_state["detected_labels"] and root_owner:
 
-          Step 0: get_resource_context  (ADR-056 v1.4)
+          Step 0: get_namespaced_resource_context (or get_cluster_resource_context)
           Step 1: list_available_actions
           Step 2: list_workflows
           Step 3: get_workflow
@@ -954,7 +1023,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             scenario: The detected MockScenario
             request_data: Original request data
             step: Current step index (tool result count)
-            has_resource_context: Whether get_resource_context is available
+            has_resource_context: Whether get_namespaced_resource_context / get_cluster_resource_context (or legacy get_resource_context) is available
         """
         call_id = f"call_{uuid.uuid4().hex[:12]}"
         messages = request_data.get("messages", [])
@@ -963,7 +1032,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         effective_step = step - 1 if has_resource_context else step
 
         if has_resource_context and step == 0:
-            # ADR-056 v1.4: Call get_resource_context first.
+            # ADR-056 v1.4 + #524: Call resource context tool first.
             # BR-496: When rca_override_prompt_resource is set, the LLM's RCA
             # targets a different resource than the one in the prompt (e.g., a
             # Certificate CRD instead of the Pod that fired the alert). Use the
@@ -976,7 +1045,8 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 kind, name, namespace = self._extract_resource_from_messages(
                     messages, scenario
                 )
-            tool_name = "get_resource_context"
+            # #524: Emit the correct tool name based on what HAPI registered.
+            tool_name = self._pick_resource_context_tool_name(tools or [])
             tool_args = {"kind": kind, "name": name, "namespace": namespace}
             logger.info(
                 f"🔧 Discovery Step 0 (ADR-056): {tool_name}"
@@ -1105,8 +1175,309 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             }
         }
 
+    def _phase1_rca_response(self, scenario: MockScenario, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate Phase 1 response: RCA + affectedResource only (no workflow).
+
+        #529: In the three-phase architecture, Phase 1 produces only the root
+        cause analysis and the affected resource. Workflow selection happens
+        in Phase 3 after HAPI's EnrichmentService provides owner resolution,
+        labels, and history.
+        """
+        messages = request_data.get("messages", [])
+
+        analysis_json: Dict[str, Any] = {
+            "root_cause_analysis": {
+                "summary": scenario.root_cause,
+                "severity": scenario.severity,
+                "signal_name": scenario.signal_name,
+                "contributing_factors": scenario.contributing_factors if scenario.contributing_factors else ["identified_by_mock_llm"],
+            },
+            "confidence": scenario.confidence,
+        }
+
+        if scenario.include_affected_resource:
+            actual_kind, actual_name, actual_ns = self._extract_resource_from_messages(
+                messages, scenario
+            )
+            root_owner = self._extract_root_owner_from_tool_results(messages)
+            if root_owner:
+                actual_kind = root_owner.get("kind", actual_kind)
+                actual_name = root_owner.get("name", actual_name)
+                if root_owner.get("namespace"):
+                    actual_ns = root_owner["namespace"]
+            if scenario.rca_override_prompt_resource:
+                actual_kind = scenario.rca_resource_kind
+                actual_name = scenario.rca_resource_name
+                if not actual_ns:
+                    actual_ns = scenario.rca_resource_namespace
+            affected_resource: Dict[str, str] = {
+                "kind": actual_kind,
+                "name": actual_name,
+            }
+            if scenario.rca_resource_api_version:
+                affected_resource["apiVersion"] = scenario.rca_resource_api_version
+            if actual_ns:
+                affected_resource["namespace"] = actual_ns
+            analysis_json["root_cause_analysis"]["affectedResource"] = affected_resource
+
+        # Handle special investigation outcomes
+        if scenario.name in ("problem_resolved", "problem_resolved_contradiction"):
+            analysis_json["investigation_outcome"] = "resolved"
+            analysis_json["can_recover"] = False
+            if scenario.needs_human_review_override is not None:
+                analysis_json["needs_human_review"] = scenario.needs_human_review_override
+
+        # Phase 1: No selected_workflow, no alternative_workflows
+        content = f"""Based on my investigation of the {scenario.signal_name} signal:
+
+# root_cause_analysis
+{json.dumps(analysis_json["root_cause_analysis"])}
+
+# confidence
+{analysis_json["confidence"]}
+"""
+        if "investigation_outcome" in analysis_json:
+            content += f"""
+# investigation_outcome
+{json.dumps(analysis_json.get("investigation_outcome"))}
+
+# can_recover
+{json.dumps(analysis_json.get("can_recover", False))}
+"""
+        if analysis_json.get("needs_human_review") is not None:
+            content += f"""
+# needs_human_review
+{json.dumps(analysis_json["needs_human_review"])}
+"""
+
+        logger.info(f"📤 PHASE 1 RESPONSE - Scenario: {scenario.name}, RCA only (no workflow)")
+
+        return {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            "object": "chat.completion",
+            "created": 1701388800,
+            "model": request_data.get("model", "mock-model"),
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": content,
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 600,
+                "completion_tokens": 150,
+                "total_tokens": 750,
+            },
+        }
+
+    def _phase3_workflow_response(self, scenario: MockScenario, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate Phase 3 response: workflow selection only (RCA already provided).
+
+        #529: Phase 3 receives enrichment context (resolved root owner, labels,
+        history) and Phase 1 conversation as previous_messages. Returns only the
+        workflow selection.
+
+        Must mirror the scenario-specific behaviour of _final_analysis_response
+        (legacy flow) so that special scenarios (problem_resolved, low_confidence,
+        max_retries_exhausted, proactive) produce the fields downstream tests expect.
+        """
+        # BR-HAPI-200: problem resolved — no workflow, investigation_outcome=resolved
+        if scenario.name in ("problem_resolved", "problem_resolved_contradiction"):
+            analysis_json: Dict[str, Any] = {
+                "selected_workflow": None,
+                "investigation_outcome": "resolved",
+                "can_recover": False,
+                "needs_human_review": False,
+                "human_review_reason": None,
+            }
+            if scenario.needs_human_review_override is not None:
+                analysis_json["needs_human_review"] = scenario.needs_human_review_override
+            content = f"""Based on the enrichment context and investigation:
+
+The problem has self-resolved. No remediation workflow is needed.
+
+# confidence
+{scenario.confidence}
+
+# selected_workflow
+{json.dumps(analysis_json.get("selected_workflow"))}
+
+# investigation_outcome
+{json.dumps(analysis_json.get("investigation_outcome"))}
+
+# can_recover
+{json.dumps(analysis_json.get("can_recover", False))}
+
+# needs_human_review
+{json.dumps(analysis_json.get("needs_human_review", False))}
+
+# human_review_reason
+{json.dumps(analysis_json.get("human_review_reason"))}
+"""
+        elif scenario.name == "low_confidence":
+            alternatives_list = [
+                {
+                    "workflow_id": "d3c95ea1-66cb-6bf2-c59e-7dd27f1fec6d",
+                    "title": "Alternative Diagnostic Workflow",
+                    "confidence": 0.28,
+                    "rationale": "Alternative approach for ambiguous root cause",
+                },
+                {
+                    "workflow_id": "e4d06fb2-77dc-7cg3-d60f-8ee38g2gfd7e",
+                    "title": "Manual Investigation Required",
+                    "confidence": 0.22,
+                    "rationale": "Requires human expertise to determine correct remediation",
+                },
+            ]
+            analysis_json = {
+                "selected_workflow": {
+                    "workflow_id": scenario.workflow_id,
+                    "title": scenario.workflow_title,
+                    "version": "1.0.0",
+                    "confidence": scenario.confidence,
+                    "rationale": "Multiple possible causes identified, confidence is low",
+                    "execution_engine": scenario.execution_engine,
+                    "parameters": scenario.parameters,
+                },
+                "alternative_workflows": alternatives_list,
+                "needs_human_review": False,
+                "human_review_reason": None,
+            }
+            content = f"""Based on the enrichment context and workflow catalog:
+
+# selected_workflow
+{json.dumps(analysis_json.get("selected_workflow"))}
+
+# alternative_workflows
+{json.dumps(alternatives_list)}
+
+# needs_human_review
+{json.dumps(analysis_json.get("needs_human_review", False))}
+
+# human_review_reason
+{json.dumps(analysis_json.get("human_review_reason"))}
+"""
+        elif not scenario.workflow_id:
+            analysis_json = {
+                "selected_workflow": None,
+                "needs_human_review": True,
+                "human_review_reason": "no_matching_workflows",
+            }
+            if scenario.name == "max_retries_exhausted":
+                analysis_json["human_review_reason"] = "llm_parsing_error"
+                from datetime import datetime, timezone
+                base_time = datetime.now(timezone.utc)
+                analysis_json["validation_attempts_history"] = [
+                    {
+                        "attempt": 1,
+                        "workflow_id": None,
+                        "is_valid": False,
+                        "errors": ["Invalid JSON structure"],
+                        "timestamp": base_time.isoformat().replace("+00:00", "Z"),
+                    },
+                    {
+                        "attempt": 2,
+                        "workflow_id": None,
+                        "is_valid": False,
+                        "errors": ["Missing required field"],
+                        "timestamp": base_time.isoformat().replace("+00:00", "Z"),
+                    },
+                    {
+                        "attempt": 3,
+                        "workflow_id": None,
+                        "is_valid": False,
+                        "errors": ["Schema validation failed"],
+                        "timestamp": base_time.isoformat().replace("+00:00", "Z"),
+                    },
+                ]
+            content = f"""Based on the enrichment context and workflow catalog:
+
+# selected_workflow
+{json.dumps(analysis_json.get("selected_workflow"))}
+
+# needs_human_review
+{json.dumps(analysis_json.get("needs_human_review", False))}
+
+# human_review_reason
+{json.dumps(analysis_json.get("human_review_reason"))}
+
+# validation_attempts_history
+{json.dumps(analysis_json.get("validation_attempts_history", []))}
+"""
+        else:
+            analysis_json = {
+                "selected_workflow": {
+                    "workflow_id": scenario.workflow_id,
+                    "title": scenario.workflow_title,
+                    "version": "1.0.0",
+                    "confidence": scenario.confidence,
+                    "rationale": f"Selected based on {scenario.signal_name} signal analysis",
+                    "execution_engine": scenario.execution_engine,
+                    "parameters": scenario.parameters,
+                },
+                "alternative_workflows": [
+                    {
+                        "workflow_id": "alt-manual-investigation",
+                        "title": "Manual Investigation",
+                        "confidence": 0.30,
+                        "rationale": "Operator-driven investigation as fallback approach",
+                    }
+                ],
+                "needs_human_review": False,
+                "human_review_reason": None,
+            }
+            # BR-AI-084: Proactive scenarios include predictive language so the
+            # E2E test can assert proactive-aware analysis text.
+            preamble = "Based on the enrichment context and workflow catalog:"
+            if scenario.name == "oomkilled_predictive":
+                preamble = (
+                    "Based on the enrichment context, predicted OOMKill trend analysis, "
+                    "and workflow catalog — preemptive action recommended:"
+                )
+            content = f"""{preamble}
+
+# selected_workflow
+{json.dumps(analysis_json.get("selected_workflow"))}
+
+# alternative_workflows
+{json.dumps(analysis_json.get("alternative_workflows", []))}
+
+# needs_human_review
+{json.dumps(analysis_json.get("needs_human_review", False))}
+
+# human_review_reason
+{json.dumps(analysis_json.get("human_review_reason"))}
+"""
+        logger.info(f"📤 PHASE 3 RESPONSE - Scenario: {scenario.name}, workflow selection only")
+
+        return {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            "object": "chat.completion",
+            "created": 1701388800,
+            "model": request_data.get("model", "mock-model"),
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": content,
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 900,
+                "completion_tokens": 200,
+                "total_tokens": 1100,
+            },
+        }
+
     def _final_analysis_response(self, scenario: MockScenario, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate final analysis response after tool result (Phase 2)."""
+        """Generate final analysis response after tool result (legacy single-phase flow)."""
         messages = request_data.get("messages", [])
 
         # Build the analysis content
@@ -1131,7 +1502,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             actual_kind, actual_name, actual_ns = self._extract_resource_from_messages(
                 messages, scenario
             )
-            # ADR-056: Prefer root_owner from get_resource_context tool result.
+            # ADR-056: Prefer root_owner from get_namespaced_resource_context / get_cluster_resource_context tool result.
             # A real LLM uses root_owner (Pod→Deployment) as affectedResource;
             # without this the mock returns the raw Pod from the prompt.
             root_owner = self._extract_root_owner_from_tool_results(messages)
@@ -1141,7 +1512,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 if root_owner.get("namespace"):
                     actual_ns = root_owner["namespace"]
                 logger.info(
-                    f"📍 ADR-056: Using root_owner from get_resource_context: "
+                    f"📍 ADR-056: Using root_owner from get_namespaced_resource_context / get_cluster_resource_context: "
                     f"{actual_kind}/{actual_name} in {actual_ns}"
                 )
             # DD-EM-004: When rca_override_prompt_resource is set, the LLM identifies

@@ -33,13 +33,41 @@ including JSON extraction, workflow validation, and human review determination.
 import json
 import re
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 
 # HolmesGPT SDK imports
 from holmes.core.models import InvestigationResult
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_affected_resource(rca_data: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """Extract and validate affectedResource from the RCA data.
+
+    BR-HAPI-261: The LLM provides affectedResource in its Phase 1 RCA response.
+    Two valid structures:
+      - Namespaced: {"kind": "...", "name": "...", "namespace": "..."}
+      - Cluster:    {"kind": "...", "name": "..."}
+
+    Returns the validated resource dict or None if absent/invalid.
+    """
+    raw = rca_data.get("affectedResource")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        logger.warning({"event": "invalid_affected_resource_type", "type": type(raw).__name__})
+        return None
+    kind = str(raw.get("kind", "")).strip()
+    name = str(raw.get("name", "")).strip()
+    if not kind or not name:
+        logger.warning({"event": "missing_affected_resource_fields", "kind": kind, "name": name})
+        return None
+    result: Dict[str, str] = {"kind": kind, "name": name}
+    namespace = str(raw.get("namespace", "")).strip()
+    if namespace:
+        result["namespace"] = namespace
+    return result
 
 
 def parse_and_validate_investigation_result(
@@ -60,7 +88,9 @@ def parse_and_validate_investigation_result(
 
     Returns:
         Tuple of (result_dict, validation_result) where validation_result is None
-        if no workflow to validate or validation passed.
+        if no workflow to validate or no data_storage_client provided.  When
+        validation ran, the result is always returned (is_valid=True/False) so
+        callers can access parameter_schema for conditional injection (#524).
     """
     from src.validation.workflow_response_validator import WorkflowResponseValidator, ValidationResult
 
@@ -248,7 +278,6 @@ def parse_and_validate_investigation_result(
                 if validation_result.is_valid:
                     if validation_result.validated_execution_bundle:
                         selected_workflow["execution_bundle"] = validation_result.validated_execution_bundle
-                    validation_result = None  # Clear to indicate success
 
         except (json.JSONDecodeError, ValueError, SyntaxError) as e:
             logger.warning({

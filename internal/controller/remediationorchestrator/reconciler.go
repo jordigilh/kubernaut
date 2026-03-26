@@ -986,9 +986,10 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 
 		// Post-AA routing checks: all checks including resource-level (issue #165).
 		// Target is the AI-identified AffectedResource, NOT rr.Spec.TargetResource.
-		workflowID := ""
+		var workflowID, workflowType string
 		if ai.Status.SelectedWorkflow != nil {
 			workflowID = ai.Status.SelectedWorkflow.WorkflowID
+			workflowType = ai.Status.SelectedWorkflow.ActionType
 		}
 		ar := ai.Status.RootCauseAnalysis.AffectedResource
 		targetResource := ar.Kind + "/" + ar.Name
@@ -1029,7 +1030,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			}
 		}
 
-		blocked, err := r.routingEngine.CheckPostAnalysisConditions(ctx, rr, workflowID, targetResource, preHash)
+		blocked, err := r.routingEngine.CheckPostAnalysisConditions(ctx, rr, workflowID, targetResource, preHash, workflowType)
 		if err != nil {
 			logger.Error(err, "Failed to check routing conditions")
 			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil

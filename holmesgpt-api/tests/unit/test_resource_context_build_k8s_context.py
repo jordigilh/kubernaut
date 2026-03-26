@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Tests for _build_k8s_context in GetResourceContextTool.
+Tests for _build_k8s_context in GetNamespacedResourceContextTool.
 
 DD-HAPI-018 v1.2 conformance tests for context building across target kinds.
 Validates that _build_k8s_context produces the correct KubernetesContext
@@ -62,11 +62,11 @@ def _make_ns_metadata():
 async def test_e2e_aa_056_003_deployment_target_populates_pod_details_for_pdb():
     """E2E-AA-056-003: Deployment target populates pod_details from pod template for PDB detection.
 
-    When get_resource_context is called with kind=Deployment, _build_k8s_context
+    When get_namespaced_resource_context is called with kind=Deployment, _build_k8s_context
     must populate pod_details from spec.template.metadata.labels so that
     LabelDetector._detect_pdb can match PDB selectors against pod labels.
     """
-    from toolsets.resource_context import GetResourceContextTool
+    from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
     deploy = _make_deployment_with_pod_template({"app": "app-e2e-003"})
     mock_k8s = AsyncMock()
@@ -100,7 +100,7 @@ async def test_dl_hp_10_pdb_target_populates_pod_details_from_selector():
     matched pod. This allows LabelDetector._detect_pdb to correctly set
     pdbProtected=true.
     """
-    from toolsets.resource_context import GetResourceContextTool
+    from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
     pdb = _make_pdb("my-pdb", {"app": "api"})
     matched_pod = _make_pod("api-pod-abc", {"app": "api", "version": "v1"}, {"sidecar.istio.io/status": "{}"})
@@ -130,7 +130,7 @@ async def test_dl_ec_04_pdb_target_no_matching_pods():
     PDB's selector, pod_details is absent. PDB detection returns
     pdbProtected=false with no failedDetections (no query failure).
     """
-    from toolsets.resource_context import GetResourceContextTool
+    from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
     pdb = _make_pdb("my-pdb", {"app": "api"})
 
@@ -157,7 +157,7 @@ async def test_dl_ec_04_pdb_target_no_selector():
     DD-HAPI-018 v1.2: When the PDB has no spec.selector, pod_details is
     absent. This is safe (pdbProtected=false).
     """
-    from toolsets.resource_context import GetResourceContextTool
+    from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
     pdb_no_selector = MagicMock()
     pdb_no_selector.metadata.name = "my-pdb"
@@ -186,7 +186,7 @@ async def test_pdb_target_not_found_in_namespace():
     by name. If the target PDB is not in the list (deleted between RCA and
     context building), context building proceeds without pod_details.
     """
-    from toolsets.resource_context import GetResourceContextTool
+    from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
     other_pdb = _make_pdb("other-pdb", {"app": "other"})
 
@@ -218,7 +218,7 @@ async def test_regression_deployment_details_includes_annotations():
 
     BR-HAPI-255, DD-HAPI-018 v1.3
     """
-    from toolsets.resource_context import GetResourceContextTool
+    from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
     argocd_annotations = {
         "argocd.argoproj.io/tracking-id": "demo-gitops-app:apps/Deployment:demo-gitops/web-frontend",

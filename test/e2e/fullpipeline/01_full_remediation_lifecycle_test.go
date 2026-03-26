@@ -159,12 +159,14 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 				continue
 			}
 			sig := strings.ToLower(rr.Spec.SignalName)
-			if sig == "backoff" || sig == "oomkilled" || sig == "oomkill" || strings.Contains(sig, "oom") {
+			if sig == "backoff" || sig == "oomkilled" || sig == "oomkill" ||
+				sig == "failedmount" || sig == "memoryexceedslimit" ||
+				strings.Contains(sig, "oom") || strings.Contains(sig, "memory") {
 				remediationRequest = rr
 				GinkgoWriter.Printf("  ✅ RemediationRequest found: %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
 				return true
 			}
-			GinkgoWriter.Printf("  ⏳ Skipping RR %s with signal %q (waiting for OOMKill/BackOff)\n", rr.Name, rr.Spec.SignalName)
+			GinkgoWriter.Printf("  ⏳ Skipping RR %s with signal %q (waiting for OOMKill/BackOff/FailedMount)\n", rr.Name, rr.Spec.SignalName)
 		}
 		return false
 	}, timeout, interval).Should(BeTrue(), "RemediationRequest should be created by Gateway")

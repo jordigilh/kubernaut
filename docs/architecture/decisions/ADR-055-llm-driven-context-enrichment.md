@@ -2,8 +2,8 @@
 
 **Status**: ACCEPTED
 **Decision Date**: 2026-02-12
-**Version**: 1.3
-**Confidence**: 90%
+**Version**: 1.5
+**Confidence**: 92%
 **Applies To**: HolmesGPT API (HAPI), AIAnalysis Controller, SignalProcessing
 
 ---
@@ -16,6 +16,8 @@
 | 1.1 | 2026-02-12 | Architecture Team | Address 8 triage gaps: replace `target_in_owner_chain` with `affected_resource` Rego input (§2), preserve `ExtractRootCauseAnalysis` (§3), enforce `affectedResource` as required LLM response field (§4), clarify CRD deprecation (§5), clarify `current_spec_hash` scope (§6), document new `resolve_owner_chain` function + RBAC expansion (§7), update latency estimate (§8). [Deprecated - Issue #180: Recovery flow reference removed] *(§4 "required LLM response field" for target identity superseded by BR-496 v2 / DD-HAPI-006 v1.4: HAPI owns `affectedResource` via `root_owner` injection.)* |
 | 1.3 | 2026-02-24 | Architecture Team | **Issue #188 (DD-EM-003)**: Renamed `resolveEffectivenessTarget` to `resolveDualTargets` throughout. The function now returns `*creator.DualTarget{Signal, Remediation}` with explicit dual-target semantics. Updated compatibility table and data quality section. |
 | 1.2 | 2026-02-12 | Architecture Team | Refine tool return contract: `get_resource_context` returns only `root_owner` and `remediation_history` to the LLM. Owner chain traversal and spec hash computation are internal implementation details not exposed in the tool response. Update prompt Phase 3b accordingly. See also ADR-056 for DetectedLabels relocation. |
+| 1.4 | 2026-03-24 | Architecture Team | **Issue #524**: Namespaced tool renamed to `get_namespaced_resource_context`; added `get_cluster_resource_context` for cluster-scoped targets (Node, PV, etc.). Both tools registered in the `resource_context` toolset. `resource_scope` (`namespaced` / `cluster`) stored in `session_state`. Canonical `TARGET_RESOURCE_*` injection is conditional on workflow schema declarations; former validator Step 0 (mandatory canonical declarations) removed. |
+| 1.5 | 2026-03-25 | Architecture Team | **Issue #529**: Three-phase RCA architecture. Context enrichment moves from LLM-driven tool call to HAPI-driven `EnrichmentService` (Phase 2). LLM provides `affectedResource` in Phase 1; HAPI resolves owner chain, detects labels, and fetches history for the resolved root owner. Enrichment context sent to LLM in Phase 3 for informed workflow selection. Resource context tools no longer write `root_owner` or `detected_labels` to `session_state`; `EnrichmentService` is the sole authoritative source. BR-HAPI-262 (history verification enforcement) dropped — HAPI always provides verified history. BR-HAPI-260 (dedicated history tool) dropped — existing resource context tools already return history; EnrichmentService provides authoritative history in Phase 2. Resource context tools remain available as optional Phase 1 informational tools (label detection still returns `detected_infrastructure` to LLM but no longer writes to `session_state`). See BR-HAPI-261, BR-HAPI-264. |
 
 ---
 
@@ -70,7 +72,7 @@ Replace the pre-computation model with a three-phase, tool-driven flow where the
 Signal -> AIAnalysis Controller passes signal context to HAPI
   -> HAPI invokes LLM with signal context only (no pre-computed enrichment)
   -> Phase 1 (RCA): LLM analyzes signal, identifies root cause and affected resource
-  -> Phase 2 (Context): LLM calls get_resource_context(target) tool
+  -> Phase 2 (Context): LLM calls get_namespaced_resource_context or get_cluster_resource_context (from the resource_context toolset) for the RCA target
       -> Tool internally:
          1. Traverses K8s ownerReferences for identified target
          2. Identifies root managing resource (e.g., Pod -> Deployment)
@@ -176,17 +178,18 @@ risk_factors contains {"score": 60, "reason": "Production environment with state
 |------|--------|-----------|
 | No changes | SP owner chain enrichment stays -- it serves SP's own purposes (label detection, HPA detection, Rego evaluation) | Owner chain computation in SP is not affected |
 
-### Phase 2: Add New HAPI Tool
+### Phase 2: Add HAPI Resource Context Tools (`resource_context` Toolset)
 
-#### New Tool: `get_resource_context`
+#### Tools: `get_namespaced_resource_context` and `get_cluster_resource_context`
 
 ```python
-class GetResourceContextTool:
-    """Fetch remediation context for a resource identified during RCA.
+class GetNamespacedResourceContextTool:
+    """Fetch remediation context for a namespace-scoped RCA target.
 
     Internally traverses K8s ownerReferences, computes spec hash,
     and queries remediation history. Returns only the root owner
     identity and history -- chain traversal and hash are internal.
+    Stores resource_scope='namespaced' in session_state.
 
     Returns to LLM:
     - root_owner: The root managing resource (kind, name, namespace)
@@ -216,6 +219,8 @@ class GetResourceContextTool:
             remediation_history=history,
         )
 ```
+
+`get_cluster_resource_context` is the sibling tool for **cluster-scoped** RCA targets (e.g. Node, PersistentVolume): it resolves context without a namespace, sets `resource_scope='cluster'` in `session_state`, and follows the same internal pattern (spec hash + remediation history for the resolved target).
 
 #### New Function: `resolve_owner_chain`
 
@@ -261,7 +266,7 @@ async def resolve_owner_chain(
 
 #### RBAC Expansion
 
-The `get_resource_context` tool needs to read `ownerReferences` on resources during chain traversal AND read `.spec` for hash computation. The RBAC manifest must be expanded:
+The resource context tools need to read `ownerReferences` on resources during chain traversal AND read `.spec` for hash computation (plus cluster-scoped `get` where applicable for `get_cluster_resource_context`). The RBAC manifest must be expanded:
 
 ```yaml
 # deploy/holmesgpt-api/03-rbac.yaml
@@ -284,21 +289,21 @@ Note: `replicasets` added (needed for Pod -> ReplicaSet traversal). `pods` added
 
 #### Tool Registration
 
-The `get_resource_context` tool must be registered in the incident tool registry, alongside the existing DD-HAPI-017 workflow discovery tools.
+Both tools are registered on the **`resource_context` toolset** (`ResourceContextToolset` in `holmesgpt-api/src/toolsets/resource_context.py`), which is attached in the incident flow alongside the existing DD-HAPI-017 workflow discovery tools. The LLM sees `get_namespaced_resource_context` and `get_cluster_resource_context` as distinct tool names and must choose the one that matches the RCA target’s scope (Issue #524).
 
 #### Updated Prompt Flow
 
-> **Note (BR-496 v2, DD-HAPI-006 v1.4):** Stored remediation target identity is derived by HAPI from `root_owner` (`_inject_target_resource`), not taken as an unconstrained required LLM field. The numbered steps below reflect the original ADR-055 prompt contract.
+> **Note (BR-496 v2, DD-HAPI-006 v1.4–v1.5):** Stored remediation target identity is derived by HAPI from `root_owner` (`_inject_target_resource`), not taken as an unconstrained required LLM field. **Issue #524**: Use `get_namespaced_resource_context` vs `get_cluster_resource_context` per target scope; canonical `TARGET_RESOURCE_*` workflow params are injected only when declared in the workflow schema. The numbered steps below reflect the original ADR-055 prompt contract where they still apply.
 
 The HAPI system prompt instructs the LLM:
 
 1. **First**: Analyze the signal context and perform root cause analysis. Identify the root cause and the affected resource. The `affectedResource` field is **required** in your response.
-2. **Then**: Call `get_resource_context(kind, name, namespace)` for the identified target. The tool returns: (a) `root_owner` -- the root managing resource (e.g., a Pod's Deployment); use this as your `affectedResource`; (b) `remediation_history` -- past remediations for that resource. Owner chain traversal and spec hash computation are internal to the tool.
+2. **Then**: Call `get_namespaced_resource_context` (namespace-scoped target) or `get_cluster_resource_context` (cluster-scoped target) with the appropriate arguments. The tool returns: (a) `root_owner` -- the root managing resource (e.g., a Pod's Deployment); use this as your `affectedResource`; (b) `remediation_history` -- past remediations for that resource. Owner chain traversal and spec hash computation are internal to the tool.
 3. **Finally**: Use the three-step workflow discovery (DD-HAPI-017) to select the appropriate remediation workflow, informed by the remediation history.
 
 #### Response Validation
 
-> **Note (BR-496 v2, DD-HAPI-006 v1.4):** Target resource identity for downstream consumers is injected from `root_owner`; the following describes the original validator expectation for LLM output shape.
+> **Note (BR-496 v2, DD-HAPI-006 v1.4–v1.5):** Target resource identity for downstream consumers is injected from `root_owner`. **Issue #524** removed mandatory **Step 0** validation that required every workflow schema to declare `TARGET_RESOURCE_NAME` / `TARGET_RESOURCE_KIND` / `TARGET_RESOURCE_NAMESPACE`; HAPI injects only parameters that exist in the schema. The following still describes the original validator expectation for LLM RCA output shape where `affectedResource` was LLM-supplied.
 
 The `WorkflowResponseValidator` (3-attempt self-correction loop) is updated to validate that `affectedResource` is present in the RCA output. If the LLM omits it, the validator returns:
 
@@ -327,7 +332,7 @@ The LLM retries with the signal context (which includes the target resource kind
 
 #### `current_spec_hash` Scope
 
-The `current_spec_hash` computed by the `get_resource_context` tool is used **within the HAPI session only** -- for the remediation history lookup (DataStorage query). It is NOT surfaced in the HAPI response.
+The `current_spec_hash` computed by the resource context tools (`get_namespaced_resource_context` / `get_cluster_resource_context`) is used **within the HAPI session only** -- for the remediation history lookup (DataStorage query). It is NOT surfaced in the HAPI response.
 
 The Go-side `CapturePreRemediationHash` in the RO reconciler independently computes the spec hash from the K8s API at workflow execution time. This is correct: the RO captures the hash at the moment of remediation, not from a potentially stale HAPI response. No changes needed to the RO hash computation.
 
@@ -356,7 +361,7 @@ Issue #97 introduced these capabilities:
 | **`affectedResource` population** | Derived from pre-computed root owner in `llm_integration.py` Phase C | **SUPERSEDED**: LLM identifies affected resource directly during RCA. Enforced as required field via response validator. |
 | **`ExtractRootCauseAnalysis` centralization** | `response_processor.go` helper deduplicating 5 handler methods | **RETAINED**: Centralization is valuable. The Go-side extraction of `affectedResource` from the RCA JSON is correct regardless of how the LLM populates it. |
 | **`resolveDualTargets`** | `reconciler.go` uses `AffectedResource` for EA targeting (DD-EM-003) | **RETAINED + RENAMED**: Renamed from `resolveEffectivenessTarget` in Issue #188. Now returns `*creator.DualTarget{Signal, Remediation}` with explicit dual-target semantics. The `AffectedResource` field is populated by the LLM directly rather than by HAPI's Phase C fallback. |
-| **RBAC for apps/v1** | `03-rbac.yaml` grants read access for spec hash | **RETAINED + EXPANDED**: Still needed for the `get_resource_context` tool. Expanded to include `replicasets` and `pods` for owner chain traversal. |
+| **RBAC for apps/v1** | `03-rbac.yaml` grants read access for spec hash | **RETAINED + EXPANDED**: Still needed for the resource context tools. Expanded to include `replicasets` and `pods` for owner chain traversal (and cluster-scoped reads as required for `get_cluster_resource_context`). |
 | **`target_in_owner_chain` validation** | `result_parser.py` checks RCA target against pre-computed chain | **REPLACED**: Removed. `affected_resource` exposed as structured Rego input for granular per-kind approval policies. |
 
 ---
@@ -368,7 +373,7 @@ Issue #97 introduced these capabilities:
 3. **Simpler data flow**: Eliminates the SP -> RO -> AIAnalysis -> HAPI propagation of owner chain data across three service boundaries.
 4. **Cleaner LLM context**: RCA reasoning is not biased by pre-loaded remediation history for potentially the wrong resource.
 5. **Agentic pattern**: Aligns with modern LLM tool-use patterns where the agent drives information gathering based on its analysis.
-6. **Graceful degradation**: If the `get_resource_context` tool fails (K8s API unavailable, RBAC issues), the LLM can still complete RCA and workflow selection without historical context, and it can reason about the failure explicitly.
+6. **Graceful degradation**: If `get_namespaced_resource_context` / `get_cluster_resource_context` fails (K8s API unavailable, RBAC issues), the LLM can still complete RCA and workflow selection without historical context, and it can reason about the failure explicitly.
 7. **Better Rego policies**: `affected_resource` (kind, name, namespace) as Rego input enables granular, per-kind approval rules -- strictly more powerful than the previous boolean `target_in_owner_chain`.
 8. **Enforced data quality** *(superseded for identity — BR-496 v2 / DD-HAPI-006 v1.4: HAPI injects `affectedResource` from `root_owner`)*: `affectedResource` as a required response field with validation was intended to ensure downstream consumers (`resolveDualTargets` (DD-EM-003), WFE creator, audit trail) always have the target resource.
 
@@ -379,7 +384,7 @@ Issue #97 introduced these capabilities:
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
 | Additional latency from tool call round-trip | Medium | Low | Session-based async flow handles multi-turn interactions. Tool performs 3 sequential K8s/DS calls (~1-5s total). Spec hash + history fetch can be parallelized once root owner is known. |
-| LLM may not call `get_resource_context` | Low | Medium | System prompt explicitly instructs the 3-phase flow. Validation can check if tool was called. **BR-496 v2 (DD-HAPI-006 v1.4)**: If `selected_workflow` present but `root_owner` missing from `session_state`, HAPI flags `needs_human_review=true` with `human_review_reason=rca_incomplete`. |
+| LLM may not call `get_namespaced_resource_context` / `get_cluster_resource_context` | Low | Medium | System prompt explicitly instructs the 3-phase flow and correct tool for target scope. Validation can check if tool was called. **BR-496 v2 (DD-HAPI-006 v1.4)**: If `selected_workflow` present but `root_owner` missing from `session_state`, HAPI flags `needs_human_review=true` with `human_review_reason=rca_incomplete`. **Issue #524**: Post-selection guard can flag node-scoped `action_type` vs namespaced resource-context mismatch for self-correction. |
 | LLM omits `affectedResource` from RCA | Low | Low | `affectedResource` enforced as required field by response validator (3-attempt self-correction loop). Same pattern as `severity`, `summary`. |
 | LLM identifies wrong target, fetches wrong context | Low | Low | Same risk exists today (pre-computed context may also be for wrong resource). The new flow is strictly better because the LLM can correct itself. **BR-496 v2 (DD-HAPI-006 v1.4)**: Stored target identity follows K8s-verified `root_owner` via HAPI injection, not a mismatch-driven human review path. |
 | Rego policy breakage during migration | Medium | High | Rego input schema update (`target_in_owner_chain` → `affected_resource`) must be atomic. Test with existing E2E approval tests. See BR-AI-085-005 for default-deny safety pattern. |

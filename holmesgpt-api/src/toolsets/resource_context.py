@@ -19,13 +19,21 @@ ADR-055: LLM-Driven Context Enrichment (Post-RCA)
 ADR-056 v1.4: DetectedLabels computation for the RCA target resource.
 
 After the LLM performs Root Cause Analysis and identifies the affected resource,
-it calls get_resource_context to:
-  1. Resolve the owner chain via K8s ownerReferences traversal
-  2. Identify the root managing resource (e.g., Pod -> RS -> Deployment)
-  3. Compute a canonical spec hash (SHA-256) for the root owner
-  4. Query DataStorage for remediation history filtered by root owner + spec hash
-  5. Detect infrastructure labels for the RCA target (one-shot, ADR-056 v1.4)
-  6. Conditionally return detected_infrastructure for LLM RCA reassessment
+it calls one of two tools:
+
+  get_namespaced_resource_context — for namespaced resources (Pods, Deployments,
+  StatefulSets, etc.). Resolves owner chain and identifies the root managing
+  resource (e.g., Pod -> RS -> Deployment).
+
+  get_cluster_resource_context — for cluster-scoped resources (Nodes, PVs,
+  Namespaces, etc.). Returns the resource itself as root_owner without walking
+  the owner chain.
+
+Both tools:
+  1. Compute a canonical spec hash (SHA-256) for the root owner
+  2. Query DataStorage for remediation history filtered by root owner + spec hash
+  3. Detect infrastructure labels for the RCA target (one-shot, ADR-056 v1.4)
+  4. Store root_owner and resource_scope in session_state for downstream injection
 
 Returns to the LLM:
   - root_owner: Identity of the root managing resource (kind, name, namespace)
@@ -50,13 +58,12 @@ from holmes.core.tools import (
 logger = logging.getLogger(__name__)
 
 
-class GetResourceContextTool(Tool):
-    """LLM-callable tool that fetches remediation context for a K8s resource.
+class GetNamespacedResourceContextTool(Tool):
+    """LLM-callable tool for namespaced K8s resources (Pod, Deployment, etc.).
 
-    The LLM calls this after RCA to get the root managing resource,
-    remediation history, and infrastructure context for the identified
-    target resource. Owner chain traversal, spec hash computation, and
-    label detection are internal to the tool.
+    Resolves the owner chain via ownerReferences traversal to find the root
+    managing resource (e.g., Pod -> RS -> Deployment). Stores resource_scope
+    as 'namespaced' in session_state for downstream injection logic.
     """
 
     def __init__(
@@ -66,20 +73,20 @@ class GetResourceContextTool(Tool):
         session_state: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
-            name="get_resource_context",
+            name="get_namespaced_resource_context",
             description=(
-                "Get remediation context for a Kubernetes resource. Call this "
-                "AFTER identifying the affected resource during Root Cause "
-                "Analysis. The tool resolves the root managing resource (e.g., "
-                "a Pod's managing Deployment), returns its remediation "
-                "history, and detects infrastructure characteristics. "
-                "If infrastructure characteristics are detected (e.g., GitOps "
-                "management, PDB protection), review them to reassess your "
-                "RCA strategy before selecting a workflow."
+                "Get remediation context for a NAMESPACED Kubernetes resource "
+                "(Pod, Deployment, StatefulSet, DaemonSet, Service, etc.). "
+                "Call this AFTER identifying the affected resource during Root "
+                "Cause Analysis. The tool resolves the root managing resource "
+                "(e.g., a Pod's managing Deployment) via ownerReferences, "
+                "returns its remediation history, and detects infrastructure "
+                "characteristics. Do NOT use this for cluster-scoped resources "
+                "like Nodes — use get_cluster_resource_context instead."
             ),
             parameters={
                 "kind": ToolParameter(
-                    description="Kubernetes resource kind (e.g., Pod, Deployment, Node)",
+                    description="Kubernetes resource kind (e.g., Pod, Deployment, StatefulSet)",
                     type="string",
                     required=True,
                 ),
@@ -89,9 +96,9 @@ class GetResourceContextTool(Tool):
                     required=True,
                 ),
                 "namespace": ToolParameter(
-                    description="Resource namespace (empty for cluster-scoped resources)",
+                    description="Resource namespace",
                     type="string",
-                    required=False,
+                    required=True,
                 ),
             },
             additional_instructions=(
@@ -133,33 +140,9 @@ class GetResourceContextTool(Tool):
 
             root_owner = owner_chain[-1] if owner_chain else {"kind": kind, "name": name, "namespace": namespace}
 
-            # BR-496: Store K8s-verified root_owner in session_state so HAPI
-            # can compare it against the LLM's affectedResource after the
-            # self-correction loop.  Last-write-wins if the LLM calls this
-            # tool more than once.
-            if self._session_state is not None:
-                new_target = {
-                    "kind": root_owner["kind"],
-                    "name": root_owner["name"],
-                    "namespace": root_owner.get("namespace", ""),
-                }
-
-                # #516: Clear stale detected_labels when target resource changes
-                prev_target = self._session_state.get("last_resource_context_target")
-                if (
-                    prev_target is not None
-                    and prev_target != new_target
-                    and "detected_labels" in self._session_state
-                ):
-                    del self._session_state["detected_labels"]
-                    logger.info({
-                        "event": "detected_labels_cleared_on_target_change",
-                        "previous_target": prev_target,
-                        "new_target": new_target,
-                    })
-
-                self._session_state["root_owner"] = root_owner
-                self._session_state["last_resource_context_target"] = new_target
+            # #529: session_state writes removed. EnrichmentService (Phase 2)
+            # is the sole authoritative source for root_owner, resource_scope,
+            # and detected_labels. This tool is now purely informational.
 
             spec_hash = await self._k8s_client.compute_spec_hash(
                 root_owner["kind"], root_owner["name"], root_owner.get("namespace", "")
@@ -168,12 +151,14 @@ class GetResourceContextTool(Tool):
             history = []
             if self._history_fetcher:
                 try:
-                    history = self._history_fetcher(
+                    fetched = self._history_fetcher(
                         resource_kind=root_owner["kind"],
                         resource_name=root_owner["name"],
                         resource_namespace=root_owner.get("namespace", ""),
                         current_spec_hash=spec_hash,
                     )
+                    if fetched is not None:
+                        history = fetched
                 except Exception as e:
                     logger.warning({
                         "event": "remediation_history_fetch_failed",
@@ -225,18 +210,15 @@ class GetResourceContextTool(Tool):
         namespace: str,
         owner_chain: List[Dict[str, str]],
     ) -> Optional[Dict[str, Any]]:
-        """One-shot label detection: detect on first call, skip on subsequent calls.
+        """Detect infrastructure labels and return to LLM (informational only).
+
+        #529: No longer writes to session_state. EnrichmentService (Phase 2)
+        is the sole authoritative source. Label detection still runs so the
+        LLM can use the results during Phase 1 investigation.
 
         Returns a detected_infrastructure dict (with labels + note) when active
-        labels are found on the first call. Returns None when labels are all
-        defaults, when session_state is unavailable, or on subsequent calls.
+        labels are found. Returns None when labels are all defaults or on error.
         """
-        if self._session_state is None:
-            return None
-
-        if "detected_labels" in self._session_state:
-            return None
-
         try:
             from src.detection.labels import LabelDetector
 
@@ -245,10 +227,7 @@ class GetResourceContextTool(Tool):
             labels = await detector.detect_labels(k8s_context, owner_chain)
 
             if labels is None:
-                self._session_state["detected_labels"] = {}
                 return None
-
-            self._session_state["detected_labels"] = labels
 
             if self._has_active_labels(labels):
                 display_labels = {
@@ -271,7 +250,6 @@ class GetResourceContextTool(Tool):
                 "resource": f"{kind}/{namespace}/{name}",
                 "error": str(e),
             })
-            self._session_state["detected_labels"] = {}
             return None
 
     async def _build_k8s_context(
@@ -416,13 +394,131 @@ class GetResourceContextTool(Tool):
         return False
 
 
+class GetClusterResourceContextTool(Tool):
+    """LLM-callable tool for cluster-scoped K8s resources (Node, PV, Namespace).
+
+    #524: Returns the resource itself as root_owner — does NOT walk the owner
+    chain. Stores resource_scope as 'cluster' in session_state so downstream
+    injection logic skips TARGET_RESOURCE_NAMESPACE.
+    """
+
+    def __init__(
+        self,
+        k8s_client: Any,
+        history_fetcher: Optional[Callable] = None,
+        session_state: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(
+            name="get_cluster_resource_context",
+            description=(
+                "Get remediation context for a CLUSTER-SCOPED Kubernetes "
+                "resource (Node, PersistentVolume, Namespace, etc.). Call "
+                "this AFTER identifying the affected resource during Root "
+                "Cause Analysis when the target is cluster-scoped and has "
+                "no namespace. The tool returns the resource itself as the "
+                "root owner (no ownerReferences traversal) and its "
+                "remediation history. Do NOT use this for namespaced "
+                "resources like Pods or Deployments — use "
+                "get_namespaced_resource_context instead."
+            ),
+            parameters={
+                "kind": ToolParameter(
+                    description="Cluster-scoped Kubernetes resource kind (e.g., Node, PersistentVolume, Namespace)",
+                    type="string",
+                    required=True,
+                ),
+                "name": ToolParameter(
+                    description="Resource name",
+                    type="string",
+                    required=True,
+                ),
+            },
+            additional_instructions=(
+                "Use the root_owner identity and remediation_history to "
+                "inform your workflow selection for this cluster-scoped "
+                "resource."
+            ),
+        )
+        object.__setattr__(self, "_k8s_client", k8s_client)
+        object.__setattr__(self, "_history_fetcher", history_fetcher)
+        object.__setattr__(self, "_session_state", session_state)
+
+    def get_parameterized_one_liner(self, params: Dict) -> str:
+        kind = params.get("kind", "?")
+        name = params.get("name", "?")
+        return f"Get cluster resource context for {kind}/{name}"
+
+    def _invoke(self, params: Dict, user_approved: bool = False) -> StructuredToolResult:
+        kind = params.get("kind", "")
+        name = params.get("name", "")
+        return asyncio.run(self._invoke_async(kind, name))
+
+    async def _invoke_async(self, kind: str, name: str) -> StructuredToolResult:
+        """Cluster-scoped lookup: resource IS the root_owner, no owner chain."""
+        try:
+            root_owner: Dict[str, str] = {"kind": kind, "name": name}
+
+            # #529: session_state writes removed. EnrichmentService is authoritative.
+
+            spec_hash = await self._k8s_client.compute_spec_hash(kind, name, "")
+
+            history: list = []
+            if self._history_fetcher:
+                try:
+                    fetched = self._history_fetcher(
+                        resource_kind=kind,
+                        resource_name=name,
+                        resource_namespace="",
+                        current_spec_hash=spec_hash,
+                    )
+                    if fetched is not None:
+                        history = fetched
+                except Exception as e:
+                    logger.warning({
+                        "event": "remediation_history_fetch_failed",
+                        "resource": f"{kind}/{name}",
+                        "error": str(e),
+                    })
+
+            result_data: Dict[str, Any] = {
+                "root_owner": root_owner,
+                "remediation_history": history,
+            }
+
+            logger.info({
+                "event": "cluster_resource_context_resolved",
+                "resource": f"{kind}/{name}",
+                "root_owner": f"{kind}/{name}",
+                "has_spec_hash": bool(spec_hash),
+                "history_count": len(history),
+            })
+
+            return StructuredToolResult(
+                status=StructuredToolResultStatus.SUCCESS,
+                data=result_data,
+            )
+
+        except Exception as e:
+            logger.error({
+                "event": "cluster_resource_context_failed",
+                "resource": f"{kind}/{name}",
+                "error": str(e),
+            })
+            return StructuredToolResult(
+                status=StructuredToolResultStatus.ERROR,
+                data={"error": str(e)},
+            )
+
+
 class ResourceContextToolset(Toolset):
-    """Toolset providing get_resource_context to the LLM.
+    """Toolset providing get_namespaced_resource_context and
+    get_cluster_resource_context to the LLM.
 
     ADR-055: Registered alongside WorkflowDiscoveryToolset in the
     incident tool registry.
     ADR-056 v1.4: Computes DetectedLabels for the RCA target and stores
     in session_state for downstream workflow discovery tools.
+    #524: Two tools — namespaced (owner chain walk) and cluster (no walk).
     """
 
     def __init__(
@@ -431,7 +527,12 @@ class ResourceContextToolset(Toolset):
         history_fetcher: Optional[Callable] = None,
         session_state: Optional[Dict[str, Any]] = None,
     ):
-        tool = GetResourceContextTool(
+        namespaced_tool = GetNamespacedResourceContextTool(
+            k8s_client=k8s_client,
+            history_fetcher=history_fetcher,
+            session_state=session_state,
+        )
+        cluster_tool = GetClusterResourceContextTool(
             k8s_client=k8s_client,
             history_fetcher=history_fetcher,
             session_state=session_state,
@@ -443,7 +544,7 @@ class ResourceContextToolset(Toolset):
             docs_url="",
             icon_url="",
             prerequisites=[],
-            tools=[tool],
+            tools=[namespaced_tool, cluster_tool],
             enabled=True,
             status=ToolsetStatusEnum.ENABLED,
         )

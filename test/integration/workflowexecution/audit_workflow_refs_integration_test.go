@@ -162,6 +162,9 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						"namespace": namespace,
 					},
 				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					ExecutionEngine: "tekton",
+				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer func() {

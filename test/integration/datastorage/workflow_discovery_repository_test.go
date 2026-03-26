@@ -521,4 +521,75 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 			})
 		})
 	})
+
+	// ========================================
+	// Issue #522: Wildcard labels return 0 results
+	// ========================================
+	// Authority: Issue #522 (list_available_actions returns 0 when workflow labels use wildcards)
+	// Reproduction: Exact label values and query filters from the bug report.
+	// The workflow uses mixed exact + wildcard labels; the query uses values that
+	// should match via wildcard on component, environment, and priority.
+	// ========================================
+
+	Describe("ListActions - Issue #522 Reproduction", func() {
+		Context("IT-DS-522-001: mixed exact severity + wildcard component/environment/priority", func() {
+			It("should match a workflow with severity=[critical,high], component='*', environment=['*'], priority='*'", func() {
+				createTestWorkflowWithArrayLabels("522-emptydir", "v1.0.0", "IncreaseMemoryLimits",
+					[]string{"critical", "high"}, "*", []string{"*"}, "*", "active")
+
+				filters := &models.WorkflowDiscoveryFilters{
+					Severity:    "high",
+					Component:   "Node",
+					Environment: "unknown",
+					Priority:    "P3",
+				}
+				result, totalCount, err := workflowRepo.ListActions(ctx, filters, 0, 10)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(totalCount).To(Equal(1), "IT-DS-522-001: workflow with wildcard component/environment/priority must match specific query values")
+				Expect(result).To(HaveLen(1))
+				Expect(result[0].ActionType).To(Equal("IncreaseMemoryLimits"))
+				Expect(result[0].WorkflowCount).To(BeNumerically(">=", 1))
+			})
+		})
+
+		Context("IT-DS-522-002: all-wildcard labels with 'unknown' environment", func() {
+			It("should match a fully wildcarded workflow when environment=unknown", func() {
+				createTestWorkflowWithArrayLabels("522-allwild", "v1.0.0", "IncreaseMemoryLimits",
+					[]string{"*"}, "*", []string{"*"}, "*", "active")
+
+				filters := &models.WorkflowDiscoveryFilters{
+					Severity:    "high",
+					Component:   "Node",
+					Environment: "unknown",
+					Priority:    "P3",
+				}
+				result, totalCount, err := workflowRepo.ListActions(ctx, filters, 0, 10)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(totalCount).To(Equal(1), "IT-DS-522-002: all-wildcard workflow must match when environment=unknown")
+				Expect(result).To(HaveLen(1))
+			})
+		})
+
+		Context("IT-DS-522-003: ListWorkflowsByActionType with wildcard labels", func() {
+			It("should return the wildcard workflow in Step 2 discovery", func() {
+				createTestWorkflowWithArrayLabels("522-step2", "v1.0.0", "IncreaseMemoryLimits",
+					[]string{"critical", "high"}, "*", []string{"*"}, "*", "active")
+
+				filters := &models.WorkflowDiscoveryFilters{
+					Severity:    "high",
+					Component:   "Node",
+					Environment: "unknown",
+					Priority:    "P3",
+				}
+				results, totalCount, err := workflowRepo.ListWorkflowsByActionType(ctx, "IncreaseMemoryLimits", filters, 0, 10)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(totalCount).To(Equal(1), "IT-DS-522-003: wildcard workflow must appear in Step 2 discovery")
+				Expect(results).To(HaveLen(1))
+				Expect(results[0].ActionType).To(Equal("IncreaseMemoryLimits"))
+			})
+		})
+	})
 })

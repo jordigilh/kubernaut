@@ -421,7 +421,7 @@ type AIAnalysisStatus struct {
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.setAt) || self == oldSelf",message="postRCAContext is immutable once setAt is populated (ADR-056)"
 type PostRCAContext struct {
 	// DetectedLabels contains cluster characteristics computed by HAPI's
-	// LabelDetector during the get_resource_context tool invocation.
+	// LabelDetector during get_namespaced_resource_context or get_cluster_resource_context tool invocations.
 	// +optional
 	DetectedLabels *sharedtypes.DetectedLabels `json:"detectedLabels,omitempty"`
 	// SetAt records when the PostRCAContext was populated.

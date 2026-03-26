@@ -85,6 +85,9 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						"test": "value",
 					},
 				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					ExecutionEngine: "tekton",
+				},
 			}
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())

@@ -221,6 +221,91 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 		})
 	})
 
+	// ========================================
+	// Issue #522: Wildcard labels round-trip (ExtractLabels → DB → SQL match)
+	// ========================================
+	// Authority: Issue #522 (list_available_actions returns 0 with wildcard labels)
+	// Bug: Workflow registered with component="*", environment=["*"], priority="*"
+	// must survive the registration path and be matchable by discovery SQL.
+	// ========================================
+	Context("Issue #522: Wildcard labels in ExtractLabels", func() {
+		var parser *schema.Parser
+
+		BeforeEach(func() {
+			parser = schema.NewParser()
+		})
+
+		It("UT-DS-522-004: should extract wildcard component as scalar string", func() {
+			crd := testutil.NewTestWorkflowCRD("wc-522", "RestartPod", "tekton")
+			crd.Spec.Labels.Component = "*"
+			crd.Spec.Labels.Severity = []string{"critical", "high"}
+			crd.Spec.Labels.Environment = []string{"*"}
+			crd.Spec.Labels.Priority = "*"
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
+			Expect(err).ToNot(HaveOccurred())
+
+			labelsJSON, err := parser.ExtractLabels(parsedSchema)
+			Expect(err).ToNot(HaveOccurred())
+
+			var labels map[string]interface{}
+			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
+
+			Expect(labels).To(HaveKeyWithValue("component", "*"),
+				"UT-DS-522-004: wildcard component must be stored as scalar '*'")
+			Expect(labels["severity"]).To(Equal([]interface{}{"critical", "high"}),
+				"UT-DS-522-004: severity must be stored as JSONB array")
+			Expect(labels["environment"]).To(Equal([]interface{}{"*"}),
+				"UT-DS-522-004: wildcard environment must be stored as array ['*']")
+			Expect(labels).To(HaveKeyWithValue("priority", "*"),
+				"UT-DS-522-004: wildcard priority must remain '*' (ToUpper is identity)")
+		})
+
+		It("UT-DS-522-005: wildcard labels survive round-trip through MandatoryLabels", func() {
+			crd := testutil.NewTestWorkflowCRD("wc-522-rt", "RestartPod", "tekton")
+			crd.Spec.Labels.Component = "*"
+			crd.Spec.Labels.Severity = []string{"critical", "high"}
+			crd.Spec.Labels.Environment = []string{"*"}
+			crd.Spec.Labels.Priority = "*"
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
+			Expect(err).ToNot(HaveOccurred())
+
+			labelsJSON, err := parser.ExtractLabels(parsedSchema)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Simulate the handler path: unmarshal into MandatoryLabels
+			var ml models.MandatoryLabels
+			Expect(json.Unmarshal(labelsJSON, &ml)).To(Succeed())
+
+			Expect(ml.Component).To(Equal("*"),
+				"UT-DS-522-005: wildcard component must survive round-trip")
+			Expect(ml.Severity).To(Equal([]string{"critical", "high"}),
+				"UT-DS-522-005: mixed severity must survive round-trip")
+			Expect(ml.Environment).To(Equal([]string{"*"}),
+				"UT-DS-522-005: wildcard environment array must survive round-trip")
+			Expect(ml.Priority).To(Equal("*"),
+				"UT-DS-522-005: wildcard priority must survive round-trip")
+
+			// Re-serialize via Value() (what the DB stores)
+			dbValue, err := ml.Value()
+			Expect(err).ToNot(HaveOccurred())
+			dbBytes, ok := dbValue.([]byte)
+			Expect(ok).To(BeTrue(), "MandatoryLabels.Value() must return []byte")
+
+			var stored map[string]interface{}
+			Expect(json.Unmarshal(dbBytes, &stored)).To(Succeed())
+			Expect(stored).To(HaveKeyWithValue("component", "*"),
+				"UT-DS-522-005: DB-stored component must be scalar '*'")
+			Expect(stored["environment"]).To(Equal([]interface{}{"*"}),
+				"UT-DS-522-005: DB-stored environment must be array ['*']")
+			Expect(stored).To(HaveKeyWithValue("priority", "*"),
+				"UT-DS-522-005: DB-stored priority must be scalar '*'")
+		})
+	})
+
 	Context("C3: OCI Schema Extraction — Happy Path", func() {
 		It("UT-DS-017-003: should extract workflow-schema.yaml from OCI image", func() {
 			yamlContent := testutil.MarshalWorkflowCRD(baseOCITestCRD())

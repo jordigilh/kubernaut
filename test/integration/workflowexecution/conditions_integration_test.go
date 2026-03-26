@@ -68,6 +68,9 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						"MESSAGE": "Testing ExecutionCreated condition",
 					},
 				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					ExecutionEngine: "tekton",
+				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 

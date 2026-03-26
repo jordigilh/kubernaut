@@ -396,7 +396,8 @@ def create_incident_investigation_prompt(
 
     # ADR-056: DetectedLabels are no longer extracted from enrichment_results
     # for prompt construction. They are computed at runtime by HAPI's
-    # get_resource_context tool and used via session_state.
+    # get_namespaced_resource_context / get_cluster_resource_context tool
+    # and used via session_state.
 
     # Generate contextual descriptions
     priority_desc = PRIORITY_DESCRIPTIONS.get(priority, f"{priority} - Standard priority").format(business_category=business_category)
@@ -504,7 +505,7 @@ that a **{signal_name}** event will occur for **{namespace}/{resource_kind}/{res
             prompt += "\n"
 
     # ADR-056: Cluster environment characteristics are now computed at runtime
-    # by the get_resource_context tool (LabelDetector) and injected into
+    # by the get_namespaced_resource_context tool (LabelDetector) and injected into
     # DataStorage queries via session_state. No longer included in the prompt.
 
     # Issue #198: PDB-specific guidance for KubePodDisruptionBudgetAtLimit signals
@@ -516,7 +517,7 @@ that a **{signal_name}** event will occur for **{namespace}/{resource_kind}/{res
 **IMPORTANT**: This signal indicates a PodDisruptionBudget is blocking voluntary
 disruptions (drain/eviction). Before concluding this is a taint or scheduling issue:
 
-1. **Inspect the PDB spec**: Call `get_resource_context` for the PDB itself
+1. **Inspect the PDB spec**: Call `get_namespaced_resource_context` for the PDB itself
    (kind=PodDisruptionBudget) to understand its selector and minAvailable/maxUnavailable.
 2. **Check matched pods**: The PDB's selector identifies which pods it protects.
    Verify the replica count vs minAvailable constraint.
@@ -604,7 +605,7 @@ Based on your RCA, determine the signal_name that best describes the effect:
 
 ### Phase 3b: Identify the Root Owner (MANDATORY for remediation)
 
-Call `get_resource_context` with the **resource that needs remediation** (kind, name, namespace).
+Call the appropriate resource context tool with the **resource that needs remediation**.
 
 **CRITICAL**: This must be the resource whose configuration will be changed to fix the problem, NOT the resource that reported the signal. The signal source and the remediation target are often different:
 - **DiskPressure on a Node** caused by a Deployment using emptyDir → pass the **Deployment** (it needs a PVC migration), not the Node
@@ -613,14 +614,24 @@ Call `get_resource_context` with the **resource that needs remediation** (kind, 
 
 **Rule of thumb**: Ask yourself "which resource's spec/config must change to fix this?" — that is the resource to pass.
 
-The tool resolves the **root managing resource** (e.g., for a Pod it finds the managing Deployment) and returns:
+Choose the tool based on whether the resource is **namespaced** or **cluster-scoped**:
+
+- **`get_namespaced_resource_context`** — Use for namespaced resources (Pod, Deployment, StatefulSet, Service, etc.).
+  Pass `kind`, `name`, and `namespace`. The tool resolves the **root managing resource** via ownerReferences
+  (e.g., for a Pod it walks Pod → ReplicaSet → Deployment) and returns:
   - `root_owner`: The root managing resource (`kind`, `name`, `namespace`). The system uses this to target the correct resource for remediation.
   - `remediation_history`: Past remediations for that resource. Use this to avoid repeating recently failed workflows.
-  - `detected infrastructure labels`: The tool detects runtime characteristics of the target resource (e.g., gitOpsManaged, stateful, pdbProtected, hpaEnabled) that are used to filter workflows in Phase 4. Calling this tool before workflow discovery ensures you see the most relevant workflows for the target resource.
+  - `detected infrastructure labels`: Runtime characteristics of the target resource (e.g., gitOpsManaged, stateful, pdbProtected, hpaEnabled) used to filter workflows in Phase 4.
 
-**Important**: You may call `get_resource_context` multiple times during investigation, but you **must** call it for your **final** RCA target before starting Phase 4 (workflow discovery). The detected infrastructure labels from this call determine which workflows are available in `list_workflows`.
-- **Example 1**: Pod "api-xyz-abc" is OOMKilled. You pass the Pod. The tool returns `root_owner: {{kind: Deployment, name: api, namespace: prod}}`.
-- **Example 2**: Node "worker-3" has DiskPressure because Deployment "postgres-emptydir" uses emptyDir. You pass the **Deployment** (not the Node). The tool returns `root_owner: {{kind: Deployment, name: postgres-emptydir, namespace: prod}}`.
+- **`get_cluster_resource_context`** — Use for cluster-scoped resources (Node, PersistentVolume, Namespace, etc.).
+  Pass `kind` and `name` only (no namespace). The tool returns the resource itself as root_owner — no ownerReferences walk.
+  - `root_owner`: The resource itself (`kind`, `name`).
+  - `remediation_history`: Past remediations for that resource.
+
+**Important**: You may call the resource context tool multiple times during investigation, but you **must** call it for your **final** RCA target before starting Phase 4 (workflow discovery). The detected infrastructure labels from this call determine which workflows are available in `list_workflows`.
+- **Example 1**: Pod "api-xyz-abc" is OOMKilled. You pass the Pod using `get_namespaced_resource_context`. The tool returns `root_owner: {{kind: Deployment, name: api, namespace: prod}}`.
+- **Example 2**: Node "worker-3" has DiskPressure because Deployment "postgres-emptydir" uses emptyDir. You pass the **Deployment** using `get_namespaced_resource_context`. The tool returns `root_owner: {{kind: Deployment, name: postgres-emptydir, namespace: prod}}`.
+- **Example 3**: Node "worker-3" needs its taint removed. You pass the **Node** using `get_cluster_resource_context`. The tool returns `root_owner: {{kind: Node, name: worker-3}}`.
 
 ### Phase 4: Discover and Select Workflow (MANDATORY - Three-Step Protocol)
 **YOU MUST** follow this three-step workflow discovery protocol:
