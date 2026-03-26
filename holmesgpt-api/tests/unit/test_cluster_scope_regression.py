@@ -13,27 +13,30 @@
 # limitations under the License.
 
 """
-Issue #542: Cluster-scoped affectedResource regression.
+Issue #542: Cluster-scoped remediationTarget regression.
 
-Regression of #524 — the LLM sets affectedResource to the symptom resource
+Regression of #524 — the LLM sets remediationTarget to the symptom resource
 (e.g., Deployment) instead of the remediation target (e.g., Node) for
-scenarios like pending-taint and NodeNotReady.  Root cause: all
-affectedResource examples in the prompt show only namespaced resources,
-and the mock LLM always calls get_namespaced_resource_context regardless
-of scope.
+scenarios like pending-taint and NodeNotReady.  Root cause: field was named
+affectedResource (ambiguous), and examples only showed namespaced resources.
+Renamed to remediationTarget with principle-based guidance.
 
-Business Requirement: BR-HAPI-261 (LLM-provided affectedResource)
+Business Requirement: BR-HAPI-261 (LLM-provided remediationTarget)
 Issue: #542
 
 Test IDs:
-  UT-HAPI-542-001: Phase 1 prompt includes cluster-scoped affectedResource example
+  UT-HAPI-542-001: Phase 1 prompt includes cluster-scoped remediationTarget example
   UT-HAPI-542-002: Phase 1 prompt JSON success block shows cluster-scoped variant
   UT-HAPI-542-003: Phase 1 prompt JSON failure block shows cluster-scoped variant
-  UT-HAPI-542-004: Phase 3 prompt includes cluster-scoped affectedResource example
+  UT-HAPI-542-004: Phase 3 prompt includes cluster-scoped remediationTarget example
   UT-HAPI-542-005: PHASE3_SECTIONS description mentions scope-aware format
   UT-HAPI-542-006: Mock LLM picks get_cluster_resource_context for node_not_ready
   UT-HAPI-542-007: Mock LLM omits namespace from tool_args for cluster-scoped
   UT-HAPI-542-008: Mock LLM Phase 1 RCA omits namespace for cluster-scoped resource
+  UT-HAPI-542-009: Phase 1 prompt uses remediationTarget, not affectedResource
+  UT-HAPI-542-010: Phase 3 prompt uses remediationTarget, not affectedResource
+  UT-HAPI-542-011: Mock LLM Phase 1 RCA uses remediationTarget field name
+  UT-HAPI-542-012: Phase 1 prompt includes principle-based guidance for remediationTarget
 """
 
 import json
@@ -87,15 +90,15 @@ def _make_namespaced_request_data(**overrides):
 
 
 # ════════════════════════════════════════════════════════════════
-# Part A: Prompt Builder — cluster-scoped affectedResource examples
+# Part A: Prompt Builder — cluster-scoped remediationTarget examples
 # ════════════════════════════════════════════════════════════════
 
 class TestPhase1PromptClusterScopeExamples:
     """UT-HAPI-542-001 through 003: Phase 1 prompt must teach the LLM about
-    cluster-scoped affectedResource (no namespace)."""
+    cluster-scoped remediationTarget (no namespace)."""
 
     def test_ut_hapi_542_001_phase1_prompt_includes_cluster_scoped_example(self):
-        """UT-HAPI-542-001: Phase 1 prompt contains a cluster-scoped affectedResource
+        """UT-HAPI-542-001: Phase 1 prompt contains a cluster-scoped remediationTarget
         example showing {kind: Node, name: ...} WITHOUT namespace."""
         from src.extensions.incident import create_incident_investigation_prompt
 
@@ -105,21 +108,19 @@ class TestPhase1PromptClusterScopeExamples:
 
         assert '"kind": "Node"' in prompt or "'kind': 'Node'" in prompt, (
             "Phase 1 prompt must include at least one cluster-scoped "
-            "affectedResource example (e.g. Node) to prevent the LLM from "
+            "remediationTarget example (e.g. Node) to prevent the LLM from "
             "always defaulting to Deployment-style namespaced resources"
         )
 
     def test_ut_hapi_542_002_phase1_json_success_has_cluster_example(self):
         """UT-HAPI-542-002: Phase 1 prompt's JSON success response block shows
-        a cluster-scoped affectedResource variant (no 'namespace' key)."""
+        a cluster-scoped remediationTarget variant (no 'namespace' key)."""
         from src.extensions.incident import create_incident_investigation_prompt
 
         prompt = create_incident_investigation_prompt(
             _make_namespaced_request_data()
         )
 
-        # The success JSON block (lines ~662-686) must contain a cluster-scoped
-        # variant comment or example to teach the LLM the format.
         assert "cluster-scoped" in prompt.lower() or (
             '"kind": "Node"' in prompt
         ), (
@@ -136,26 +137,23 @@ class TestPhase1PromptClusterScopeExamples:
             _make_namespaced_request_data()
         )
 
-        # The structured data section is introduced by "REQUIRED FORMAT".
-        # The cluster-scoped variant appears right after the namespaced
-        # `# root_cause_analysis` example in that section.
         part2_idx = prompt.find("REQUIRED FORMAT")
         assert part2_idx >= 0, "Prompt must contain 'REQUIRED FORMAT' section"
 
         section_text = prompt[part2_idx:part2_idx + 800]
         assert "node" in section_text.lower() or "cluster-scoped" in section_text.lower(), (
             "The 'Part 2: Structured Data' section's '# root_cause_analysis' "
-            "example must document the cluster-scoped affectedResource format (no namespace)"
+            "example must document the cluster-scoped remediationTarget format (no namespace)"
         )
 
 
 class TestPhase3PromptClusterScopeExamples:
     """UT-HAPI-542-004 through 005: Phase 3 prompt and sections must be
-    scope-aware for affectedResource."""
+    scope-aware for remediationTarget."""
 
     def test_ut_hapi_542_004_phase3_prompt_includes_cluster_scoped_example(self):
         """UT-HAPI-542-004: Phase 3 prompt includes a cluster-scoped
-        affectedResource example alongside the namespaced one."""
+        remediationTarget example alongside the namespaced one."""
         from src.extensions.incident.prompt_builder import create_phase3_workflow_prompt
 
         prompt = create_phase3_workflow_prompt(_make_request_data())
@@ -166,18 +164,18 @@ class TestPhase3PromptClusterScopeExamples:
         section_text = prompt[rca_section_idx:rca_section_idx + 600]
         assert "node" in section_text.lower() or "cluster-scoped" in section_text.lower(), (
             "Phase 3 '# root_cause_analysis' example must document "
-            "the cluster-scoped affectedResource format"
+            "the cluster-scoped remediationTarget format"
         )
 
     def test_ut_hapi_542_005_phase3_sections_description_is_scope_aware(self):
         """UT-HAPI-542-005: PHASE3_SECTIONS root_cause_analysis description
-        mentions that affectedResource can be cluster-scoped (no namespace)."""
+        mentions that remediationTarget can be cluster-scoped (no namespace)."""
         from src.extensions.incident.prompt_builder import PHASE3_SECTIONS
 
         rca_desc = PHASE3_SECTIONS["root_cause_analysis"]
         assert "cluster" in rca_desc.lower() or "namespace" in rca_desc.lower(), (
             "PHASE3_SECTIONS['root_cause_analysis'] must mention that "
-            "affectedResource omits namespace for cluster-scoped resources"
+            "remediationTarget omits namespace for cluster-scoped resources"
         )
 
 
@@ -268,7 +266,7 @@ class TestMockLLMClusterScopeToolSelection:
 
     def test_ut_hapi_542_008_mock_phase1_rca_omits_namespace_for_cluster(self):
         """UT-HAPI-542-008: Mock LLM Phase 1 RCA response for node_not_ready
-        must produce an affectedResource without namespace."""
+        must produce a remediationTarget without namespace."""
         handler, scenarios = self._make_mock_handler()
         scenario = scenarios["node_not_ready"]
 
@@ -298,11 +296,131 @@ class TestMockLLMClusterScopeToolSelection:
             rca_json_str = rca_json_str[:end_idx]
 
         rca_data = json.loads(rca_json_str)
-        affected = rca_data.get("affectedResource", {})
+        target = rca_data.get("remediationTarget", {})
 
-        assert affected["kind"] == "Node"
-        assert affected["name"] == "worker-node-1"
-        assert "namespace" not in affected, (
-            f"Cluster-scoped affectedResource must NOT have 'namespace', "
-            f"got {affected}"
+        assert target["kind"] == "Node"
+        assert target["name"] == "worker-node-1"
+        assert "namespace" not in target, (
+            f"Cluster-scoped remediationTarget must NOT have 'namespace', "
+            f"got {target}"
+        )
+
+
+# ════════════════════════════════════════════════════════════════
+# Part C: Rename — affectedResource → remediationTarget (#542)
+# ════════════════════════════════════════════════════════════════
+
+class TestRemediationTargetRename:
+    """UT-HAPI-542-009 through 012: Verify the field is exclusively named
+    remediationTarget and that affectedResource no longer appears in
+    prompt text or LLM response schemas."""
+
+    def test_ut_hapi_542_009_phase1_prompt_uses_remediation_target(self):
+        """UT-HAPI-542-009: Phase 1 prompt must use 'remediationTarget',
+        not 'affectedResource'."""
+        from src.extensions.incident import create_incident_investigation_prompt
+
+        prompt = create_incident_investigation_prompt(
+            _make_namespaced_request_data()
+        )
+
+        assert "remediationTarget" in prompt, (
+            "Phase 1 prompt must contain the field name 'remediationTarget'"
+        )
+        assert "affectedResource" not in prompt, (
+            "Phase 1 prompt must NOT contain the old field name 'affectedResource'"
+        )
+
+    def test_ut_hapi_542_010_phase3_prompt_uses_remediation_target(self):
+        """UT-HAPI-542-010: Phase 3 prompt must use 'remediationTarget',
+        not 'affectedResource'."""
+        from src.extensions.incident.prompt_builder import (
+            create_phase3_workflow_prompt,
+            PHASE3_SECTIONS,
+        )
+
+        prompt = create_phase3_workflow_prompt(_make_request_data())
+
+        assert "remediationTarget" in prompt, (
+            "Phase 3 prompt must contain the field name 'remediationTarget'"
+        )
+        assert "affectedResource" not in prompt, (
+            "Phase 3 prompt must NOT contain the old field name 'affectedResource'"
+        )
+
+        rca_desc = PHASE3_SECTIONS["root_cause_analysis"]
+        assert "remediationTarget" in rca_desc, (
+            "PHASE3_SECTIONS description must reference 'remediationTarget'"
+        )
+        assert "affectedResource" not in rca_desc, (
+            "PHASE3_SECTIONS description must NOT reference 'affectedResource'"
+        )
+
+    def test_ut_hapi_542_011_mock_llm_rca_uses_remediation_target(self):
+        """UT-HAPI-542-011: Mock LLM Phase 1 RCA uses 'remediationTarget'
+        field name in the JSON response."""
+        import importlib.util
+        import os
+
+        server_path = os.path.normpath(os.path.join(
+            os.path.dirname(__file__), "..", "..", "..",
+            "test", "services", "mock-llm", "src", "server.py",
+        ))
+        spec = importlib.util.spec_from_file_location("mock_llm_server", server_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        handler = object.__new__(mod.MockLLMRequestHandler)
+        scenario = mod.MOCK_SCENARIOS["oomkilled"]
+
+        messages = [
+            {"role": "user", "content": "Investigate OOMKilled on api-server-abc123 in production"},
+            {"role": "tool", "content": json.dumps({
+                "root_owner": {"kind": "Deployment", "name": "api-server", "namespace": "production"},
+                "remediation_history": [],
+            })},
+        ]
+        request_data = {"messages": messages, "model": "mock-model"}
+
+        response = handler._phase1_rca_response(scenario, request_data)
+        content = response["choices"][0]["message"]["content"]
+
+        rca_header_idx = content.find("# root_cause_analysis")
+        assert rca_header_idx >= 0
+
+        rca_line = content[rca_header_idx:]
+        rca_json_start = rca_line.find("{")
+        rca_json_str = rca_line[rca_json_start:]
+        end_idx = rca_json_str.find("\n\n")
+        if end_idx > 0:
+            rca_json_str = rca_json_str[:end_idx]
+
+        rca_data = json.loads(rca_json_str)
+
+        assert "remediationTarget" in rca_data, (
+            f"Mock LLM RCA must use 'remediationTarget', got keys: {list(rca_data.keys())}"
+        )
+        assert "affectedResource" not in rca_data, (
+            "Mock LLM RCA must NOT use the old 'affectedResource' field name"
+        )
+
+    def test_ut_hapi_542_012_phase1_prompt_includes_principle_based_guidance(self):
+        """UT-HAPI-542-012: Phase 1 prompt includes principle-based guidance
+        explaining that remediationTarget is the resource the workflow will
+        operate on, not just the resource exhibiting symptoms."""
+        from src.extensions.incident import create_incident_investigation_prompt
+
+        prompt = create_incident_investigation_prompt(
+            _make_namespaced_request_data()
+        )
+
+        prompt_lower = prompt.lower()
+        has_guidance = (
+            "workflow" in prompt_lower
+            and "remediation" in prompt_lower
+            and ("operate" in prompt_lower or "act on" in prompt_lower or "target" in prompt_lower)
+        )
+        assert has_guidance, (
+            "Phase 1 prompt must include principle-based guidance explaining "
+            "that remediationTarget is the resource the workflow will operate on"
         )

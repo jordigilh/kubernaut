@@ -51,7 +51,7 @@ class HumanReviewReason(str, Enum):
     # Use when LLM couldn't determine root cause or current state
     INVESTIGATION_INCONCLUSIVE = "investigation_inconclusive"
     # BR-496 v2: root_owner missing from session_state — HAPI cannot derive
-    # affectedResource or TARGET_RESOURCE_* without get_namespaced_resource_context / get_cluster_resource_context result.
+    # remediationTarget or TARGET_RESOURCE_* without get_namespaced_resource_context / get_cluster_resource_context result.
     RCA_INCOMPLETE = "rca_incomplete"
 
 
@@ -360,7 +360,7 @@ class IncidentResponse(BaseModel):
     - alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY
     - needs_human_review: AI could not produce reliable result (Dec 6, 2025)
 
-    ADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input.
+    ADR-055: target_in_owner_chain removed -- replaced by remediation_target in Rego input.
     """
     incident_id: str = Field(..., description="Incident identifier from request")
     analysis: str = Field(..., description="Natural language analysis from LLM")
@@ -401,7 +401,7 @@ class IncidentResponse(BaseModel):
                     "Maps to AIAnalysis.Status.Actionability."
     )
 
-    # ADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input
+    # ADR-055: target_in_owner_chain removed -- replaced by remediation_target in Rego input
     warnings: List[str] = Field(
         default_factory=list,
         description="Non-fatal warnings (e.g., OwnerChain validation issues, low confidence)"

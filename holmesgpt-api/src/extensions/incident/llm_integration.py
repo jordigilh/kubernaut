@@ -64,7 +64,7 @@ from .prompt_builder import (
     build_validation_error_feedback,
     build_resource_context_mismatch_feedback,
 )
-from .result_parser import parse_and_validate_investigation_result, _parse_affected_resource
+from .result_parser import parse_and_validate_investigation_result, _parse_remediation_target
 from .enrichment_service import EnrichmentService, EnrichmentFailure, EnrichmentResult
 from src.extensions.investigation_helpers import (
     audit_llm_request,
@@ -116,7 +116,7 @@ def _extract_balanced_json(text: str, start: int) -> Optional[str]:
     """Extract a balanced JSON object starting at position start.
 
     Uses brace counting with string-literal awareness to handle nested
-    objects like ``{"affectedResource": {"kind": "Deployment"}}``.
+    objects like ``{"remediationTarget": {"kind": "Deployment"}}``.
     """
     if start >= len(text) or text[start] != '{':
         return None
@@ -146,10 +146,10 @@ def _extract_balanced_json(text: str, start: int) -> Optional[str]:
 
 
 def _extract_phase1_json(analysis_text: str) -> Dict[str, Any]:
-    """Extract JSON from Phase 1 analysis text to get affectedResource.
+    """Extract JSON from Phase 1 analysis text to get remediationTarget.
 
     Handles plain JSON, markdown code blocks, and section-header format
-    (including nested JSON objects like affectedResource).
+    (including nested JSON objects like remediationTarget).
     Returns empty dict on failure.
     """
     import re as _re
@@ -188,7 +188,7 @@ def _inject_target_resource(
     remediation_id: str,
     enrichment_result: Optional["EnrichmentResult"] = None,
 ) -> None:
-    """Inject TARGET_RESOURCE_* and affectedResource from K8s-verified root_owner.
+    """Inject TARGET_RESOURCE_* and remediationTarget from K8s-verified root_owner.
 
     #529: Prefer EnrichmentResult.root_owner (Phase 2) over session_state.
     Falls back to session_state["root_owner"] for backward compatibility with
@@ -229,15 +229,15 @@ def _inject_target_resource(
     ns = root_owner.get("namespace", "")
     resource_scope = session_state.get("resource_scope", "namespaced")
 
-    affected_resource: Dict[str, str] = {"kind": kind, "name": name}
+    remediation_target: Dict[str, str] = {"kind": kind, "name": name}
     if ns:
-        affected_resource["namespace"] = ns
+        remediation_target["namespace"] = ns
 
     rca = result.get("root_cause_analysis")
     if rca is None:
         rca = {}
         result["root_cause_analysis"] = rca
-    rca["affectedResource"] = affected_resource
+    rca["remediationTarget"] = remediation_target
 
     logger.info({
         "event": "target_resource_injected",
@@ -329,7 +329,7 @@ def _check_resource_context_mismatch(
     session_state: Dict[str, Any],
     incident_id: str,
 ) -> Optional[str]:
-    """Return correction feedback if the LLM's affectedResource doesn't match
+    """Return correction feedback if the LLM's remediationTarget doesn't match
     the last get_resource_context target, or None if they match.
 
     Issue #516: The LLM may call get_resource_context for one resource during
@@ -346,8 +346,8 @@ def _check_resource_context_mismatch(
     if not isinstance(rca, dict):
         return None
 
-    affected = rca.get("affectedResource")
-    if not isinstance(affected, dict):
+    target = rca.get("remediationTarget")
+    if not isinstance(target, dict):
         return None
 
     last_target = session_state.get("last_resource_context_target")
@@ -356,22 +356,22 @@ def _check_resource_context_mismatch(
         logger.warning({
             "event": "resource_context_never_called",
             "incident_id": incident_id,
-            "affected_resource": affected,
+            "remediation_target": target,
         })
-        return build_resource_context_mismatch_feedback(affected, None)
+        return build_resource_context_mismatch_feedback(target, None)
 
     if (
-        last_target.get("kind") != affected.get("kind")
-        or last_target.get("name") != affected.get("name")
-        or last_target.get("namespace", "") != affected.get("namespace", "")
+        last_target.get("kind") != target.get("kind")
+        or last_target.get("name") != target.get("name")
+        or last_target.get("namespace", "") != target.get("namespace", "")
     ):
         logger.warning({
             "event": "resource_context_target_mismatch",
             "incident_id": incident_id,
-            "affected_resource": affected,
+            "remediation_target": target,
             "last_resource_context_target": last_target,
         })
-        return build_resource_context_mismatch_feedback(affected, last_target)
+        return build_resource_context_mismatch_feedback(target, last_target)
 
     return None
 
@@ -496,7 +496,7 @@ async def analyze_incident(
     Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
 
     Three-Phase Architecture (#529):
-      Phase 1: LLM provides RCA + affectedResource
+      Phase 1: LLM provides RCA + remediationTarget
       Phase 2: EnrichmentService resolves K8s owner chain, detects labels, fetches history
       Phase 3: LLM selects workflow using enrichment context + Phase 1 analysis
 
@@ -632,7 +632,7 @@ async def analyze_incident(
 
         # ========================================
         # THREE-PHASE SELF-CORRECTION LOOP (#529, DD-HAPI-002 v1.4)
-        # Phase 1: RCA + affectedResource
+        # Phase 1: RCA + remediationTarget
         # Phase 2: HAPI-driven EnrichmentService
         # Phase 3: Workflow selection with enrichment context
         # ========================================
@@ -648,7 +648,7 @@ async def analyze_incident(
         for attempt in range(MAX_VALIDATION_ATTEMPTS):
             attempt_timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-            # ─── PHASE 1: RCA + affectedResource ───
+            # ─── PHASE 1: RCA + remediationTarget ───
             if enrichment_result_obj is None:
                 investigation_prompt = base_prompt
 
@@ -702,7 +702,7 @@ async def analyze_incident(
                             pass
                 if not rca_data:
                     rca_data = phase1_json.get("root_cause_analysis", {})
-                affected_resource = _parse_affected_resource(rca_data)
+                remediation_target = _parse_remediation_target(rca_data)
 
                 # BR-HAPI-200: Capture top-level Phase 1 fields that the
                 # parser must propagate into the final response (e.g.,
@@ -727,9 +727,9 @@ async def analyze_incident(
                                 except (json.JSONDecodeError, ValueError):
                                     pass
 
-                if affected_resource is None:
+                if remediation_target is None:
                     logger.warning({
-                        "event": "phase1_no_affected_resource",
+                        "event": "phase1_no_remediation_target",
                         "incident_id": incident_id,
                         "attempt": attempt + 1,
                     })
@@ -741,7 +741,7 @@ async def analyze_incident(
                 logger.info({
                     "event": "phase2_enrichment_started",
                     "incident_id": incident_id,
-                    "affected_resource": affected_resource,
+                    "remediation_target": remediation_target,
                 })
 
                 from src.clients.k8s_client import get_k8s_client
@@ -851,7 +851,7 @@ async def analyze_incident(
                     label_detector=detector_fn,
                 )
                 try:
-                    enrichment_result_obj = await enrichment_svc.enrich(affected_resource)
+                    enrichment_result_obj = await enrichment_svc.enrich(remediation_target)
                 except EnrichmentFailure as ef:
                     logger.error({
                         "event": "phase2_enrichment_failed",
@@ -864,7 +864,7 @@ async def analyze_incident(
                         remediation_id=remediation_id,
                         reason=ef.reason,
                         detail=ef.detail,
-                        affected_resource=affected_resource,
+                        affected_resource=remediation_target,
                     ))
                     result = {
                         "root_cause_analysis": rca_data,
@@ -884,9 +884,9 @@ async def analyze_incident(
                     session_state["root_owner"] = enrichment_result_obj.root_owner
 
                 # Issue #533 / BR-AUDIT-005: Emit enrichment completed audit event
-                _root = enrichment_result_obj.root_owner or affected_resource
+                _root = enrichment_result_obj.root_owner or remediation_target
                 _chain_len = 1
-                if _root.get("kind") != affected_resource.get("kind") or _root.get("name") != affected_resource.get("name"):
+                if _root.get("kind") != remediation_target.get("kind") or _root.get("name") != remediation_target.get("name"):
                     _chain_len = 2
                 audit_store.store_audit(create_enrichment_completed_event(
                     incident_id=incident_id,

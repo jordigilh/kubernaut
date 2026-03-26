@@ -369,7 +369,7 @@ class TestResourceContextMismatchCheck:
             "selected_workflow": {"workflow_id": "wf-1"},
             "root_cause_analysis": {
                 "summary": "Disk pressure from emptyDir",
-                "affectedResource": {"kind": "Deployment", "name": "postgres-emptydir", "namespace": "prod"},
+                "remediationTarget": {"kind": "Deployment", "name": "postgres-emptydir", "namespace": "prod"},
             },
         }
         session_state = {
@@ -390,7 +390,7 @@ class TestResourceContextMismatchCheck:
             "selected_workflow": {"workflow_id": "wf-1"},
             "root_cause_analysis": {
                 "summary": "OOMKilled",
-                "affectedResource": {"kind": "Deployment", "name": "api", "namespace": "prod"},
+                "remediationTarget": {"kind": "Deployment", "name": "api", "namespace": "prod"},
             },
         }
         session_state = {}
@@ -408,7 +408,7 @@ class TestResourceContextMismatchCheck:
             "selected_workflow": {"workflow_id": "wf-1"},
             "root_cause_analysis": {
                 "summary": "OOMKilled",
-                "affectedResource": {"kind": "Deployment", "name": "api", "namespace": "prod"},
+                "remediationTarget": {"kind": "Deployment", "name": "api", "namespace": "prod"},
             },
         }
         session_state = {
@@ -426,7 +426,7 @@ class TestResourceContextMismatchCheck:
             "selected_workflow": None,
             "root_cause_analysis": {
                 "summary": "Self-resolved",
-                "affectedResource": {"kind": "Deployment", "name": "api", "namespace": "prod"},
+                "remediationTarget": {"kind": "Deployment", "name": "api", "namespace": "prod"},
             },
         }
         session_state = {
@@ -462,7 +462,7 @@ class TestResourceContextMismatchFeedback:
         from src.extensions.incident.prompt_builder import build_resource_context_mismatch_feedback
 
         feedback = build_resource_context_mismatch_feedback(
-            affected_resource={"kind": "Deployment", "name": "postgres-emptydir", "namespace": "prod"},
+            remediation_target={"kind": "Deployment", "name": "postgres-emptydir", "namespace": "prod"},
             last_target={"kind": "Deployment", "name": "log-collector", "namespace": "prod"},
         )
 
@@ -476,7 +476,7 @@ class TestResourceContextMismatchFeedback:
         from src.extensions.incident.prompt_builder import build_resource_context_mismatch_feedback
 
         feedback = build_resource_context_mismatch_feedback(
-            affected_resource={"kind": "Deployment", "name": "api", "namespace": "prod"},
+            remediation_target={"kind": "Deployment", "name": "api", "namespace": "prod"},
             last_target=None,
         )
 
