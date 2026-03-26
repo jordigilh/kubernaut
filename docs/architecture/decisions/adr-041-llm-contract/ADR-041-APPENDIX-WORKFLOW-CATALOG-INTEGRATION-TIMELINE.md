@@ -26,7 +26,7 @@ Complete timeline of Claude's successful investigation and workflow selection fo
 
 ### Environment Setup
 
-**Kubernetes Cluster**: KIND local cluster (stress-worker-0.parodos.dev)
+**Kubernetes Cluster**: KIND local cluster (worker-0.example.com)
 **Namespace**: test-scenario-01
 **Test Pod**: memory-hungry-app-6f54dd6449-clr7g
 **Issue**: Container repeatedly OOMKilled (113 restart attempts)
@@ -36,7 +36,7 @@ Complete timeline of Claude's successful investigation and workflow selection fo
 - Command: `stress --vm 1 --vm-bytes 256M` (allocate 256MB)
 - Memory Limit: **128Mi** (insufficient for 256MB allocation)
 - Memory Request: 64Mi
-- Node: stress-worker-0.parodos.dev (51% memory utilization - not node-constrained)
+- Node: worker-0.example.com (51% memory utilization - not node-constrained)
 
 **Root Cause**: Configuration mismatch - 128Mi limit vs 256MB allocation requirement
 
@@ -158,7 +158,7 @@ Claude used HolmesGPT SDK's Kubernetes toolsets to gather comprehensive context:
 
 4. **Node Status**:
    ```
-   Node: stress-worker-0.parodos.dev
+   Node: worker-0.example.com
    Memory Pressure: False
    Disk Pressure: False
    PID Pressure: False
@@ -348,7 +348,7 @@ the memory limit to accommodate the workload."
       "Container command: stress --vm 1 --vm-bytes 256M (allocates 256MB)",
       "Memory limit: 128Mi (insufficient for 256MB allocation)",
       "Memory request: 64Mi",
-      "Node: stress-worker-0.parodos.dev (51% memory utilization - not constrained)",
+      "Node: worker-0.example.com (51% memory utilization - not constrained)",
       "Logs show: stress attempting 256MB allocation → OOMKilled",
       "Root cause: Configuration mismatch, not resource exhaustion"
     ]

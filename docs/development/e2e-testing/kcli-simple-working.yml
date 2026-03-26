@@ -3,7 +3,7 @@
 
 # Cluster Configuration
 cluster: ocp418-simple
-domain: kubernaut.io  # Change back to parodos.dev if preferred
+domain: kubernaut.io
 version: stable
 tag: '4.18'
 

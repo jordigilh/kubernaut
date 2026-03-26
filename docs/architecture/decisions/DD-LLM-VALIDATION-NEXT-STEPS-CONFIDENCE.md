@@ -2,7 +2,7 @@
 
 **Date**: November 14, 2025
 **Assessment Type**: Implementation Readiness Analysis
-**Cluster**: stress.parodos.dev (OCP 4.18)
+**Cluster**: OCP 4.18 (internal dev cluster)
 **Timeline**: 3-5 days
 
 ---
