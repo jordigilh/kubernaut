@@ -827,6 +827,11 @@ async def analyze_incident(
                 if enrichment_result_obj.detected_labels:
                     session_state["detected_labels"] = enrichment_result_obj.detected_labels
 
+                # Issue #535 / BR-HAPI-261: Store resolved root_owner in session_state
+                # so workflow discovery tools use the correct component filter.
+                if enrichment_result_obj.root_owner:
+                    session_state["root_owner"] = enrichment_result_obj.root_owner
+
             # ─── PHASE 3: Workflow Selection ───
             phase1_context = ""
             if phase1_analysis:

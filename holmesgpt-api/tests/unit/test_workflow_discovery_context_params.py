@@ -30,6 +30,21 @@ Test IDs:
   UT-HAPI-056-053: strip_failed_detections applied to session_state labels
   UT-HAPI-056-054: Empty sentinel {} in session_state produces no detected_labels param
   UT-HAPI-056-055: session_state present but detected_labels key missing (no param)
+
+Issue #535: _build_context_params uses root_owner kind from session_state
+
+Tests that _build_context_params() reads root_owner.kind from session_state
+(populated after Phase 2 enrichment resolves the owner chain) to override the
+stale component value set at toolset registration time.
+
+Authority: Issue #535
+Business Requirement: BR-HAPI-261
+
+Test IDs:
+  UT-HAPI-535-001: component overridden by root_owner kind from session_state
+  UT-HAPI-535-002: component falls back to constructor value when no root_owner
+  UT-HAPI-535-003: component falls back when root_owner has no kind field
+  UT-HAPI-535-004: component falls back when root_owner kind is empty string
 """
 
 import json
@@ -144,3 +159,79 @@ class TestBuildContextParamsSessionState:
         params = tool._build_context_params()
 
         assert "detected_labels" not in params
+
+
+class TestBuildContextParamsRootOwnerComponent:
+    """
+    Issue #535 / BR-HAPI-261: _build_context_params overrides the component
+    filter with root_owner.kind from session_state when available.
+
+    The toolset is registered early with component=resource_kind from the alert
+    signal (typically "Pod"). After Phase 2 enrichment resolves the owner chain,
+    session_state["root_owner"] contains the resolved root owner (e.g.,
+    {"kind": "Deployment", "name": "api", "namespace": "prod"}). The component
+    filter must reflect the resolved kind so DataStorage returns workflows
+    registered against the correct resource type.
+    """
+
+    def test_ut_hapi_535_001_component_overridden_by_root_owner_kind(self):
+        """UT-HAPI-535-001: component uses root_owner kind from session_state."""
+        session_state = {
+            "root_owner": {"kind": "Deployment", "name": "api", "namespace": "prod"},
+        }
+        tool = ListAvailableActionsTool(
+            severity="critical",
+            component="Pod",
+            environment="production",
+            priority="P0",
+            session_state=session_state,
+        )
+        params = tool._build_context_params()
+
+        assert params["component"] == "Deployment"
+
+    def test_ut_hapi_535_002_component_falls_back_when_no_root_owner(self):
+        """UT-HAPI-535-002: component uses constructor value when session_state has no root_owner."""
+        session_state = {}
+        tool = ListAvailableActionsTool(
+            severity="critical",
+            component="Pod",
+            environment="production",
+            priority="P0",
+            session_state=session_state,
+        )
+        params = tool._build_context_params()
+
+        assert params["component"] == "Pod"
+
+    def test_ut_hapi_535_003_component_falls_back_when_root_owner_has_no_kind(self):
+        """UT-HAPI-535-003: component uses constructor value when root_owner lacks kind field."""
+        session_state = {
+            "root_owner": {"name": "api", "namespace": "prod"},
+        }
+        tool = ListAvailableActionsTool(
+            severity="critical",
+            component="Pod",
+            environment="production",
+            priority="P0",
+            session_state=session_state,
+        )
+        params = tool._build_context_params()
+
+        assert params["component"] == "Pod"
+
+    def test_ut_hapi_535_004_component_falls_back_when_root_owner_kind_empty(self):
+        """UT-HAPI-535-004: component uses constructor value when root_owner.kind is empty string."""
+        session_state = {
+            "root_owner": {"kind": "", "name": "api", "namespace": "prod"},
+        }
+        tool = ListAvailableActionsTool(
+            severity="critical",
+            component="Pod",
+            environment="production",
+            priority="P0",
+            session_state=session_state,
+        )
+        params = tool._build_context_params()
+
+        assert params["component"] == "Pod"
