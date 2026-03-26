@@ -39,6 +39,8 @@ from datastorage.exceptions import ApiAttributeError
 from datastorage.exceptions import ApiException
 
 # import models into sdk package
+from datastorage.models.ai_agent_enrichment_completed_payload import AIAgentEnrichmentCompletedPayload
+from datastorage.models.ai_agent_enrichment_failed_payload import AIAgentEnrichmentFailedPayload
 from datastorage.models.ai_agent_response_failed_payload import AIAgentResponseFailedPayload
 from datastorage.models.ai_agent_response_payload import AIAgentResponsePayload
 from datastorage.models.ai_analysis_ai_agent_call_payload import AIAnalysisAIAgentCallPayload

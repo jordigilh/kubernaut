@@ -175,6 +175,8 @@ Class | Method | HTTP request | Description
 
 ## Documentation For Models
 
+ - [AIAgentEnrichmentCompletedPayload](docs/AIAgentEnrichmentCompletedPayload.md)
+ - [AIAgentEnrichmentFailedPayload](docs/AIAgentEnrichmentFailedPayload.md)
  - [AIAgentResponseFailedPayload](docs/AIAgentResponseFailedPayload.md)
  - [AIAgentResponsePayload](docs/AIAgentResponsePayload.md)
  - [AIAnalysisAIAgentCallPayload](docs/AIAnalysisAIAgentCallPayload.md)

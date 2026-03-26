@@ -38,6 +38,8 @@ datastorage/models/action_type_update_request.py
 datastorage/models/action_type_update_response.py
 datastorage/models/action_type_webhook_audit_payload.py
 datastorage/models/action_type_workflow_count_response.py
+datastorage/models/ai_agent_enrichment_completed_payload.py
+datastorage/models/ai_agent_enrichment_failed_payload.py
 datastorage/models/ai_agent_response_failed_payload.py
 datastorage/models/ai_agent_response_payload.py
 datastorage/models/ai_analysis_ai_agent_call_payload.py
@@ -138,6 +140,8 @@ datastorage/models/workflow_update_request.py
 datastorage/models/workflow_validation_payload.py
 datastorage/py.typed
 datastorage/rest.py
+docs/AIAgentEnrichmentCompletedPayload.md
+docs/AIAgentEnrichmentFailedPayload.md
 docs/AIAgentResponseFailedPayload.md
 docs/AIAgentResponsePayload.md
 docs/AIAnalysisAIAgentCallPayload.md
@@ -289,6 +293,8 @@ test/test_action_type_update_request.py
 test/test_action_type_update_response.py
 test/test_action_type_webhook_audit_payload.py
 test/test_action_type_workflow_count_response.py
+test/test_ai_agent_enrichment_completed_payload.py
+test/test_ai_agent_enrichment_failed_payload.py
 test/test_ai_agent_response_failed_payload.py
 test/test_ai_agent_response_payload.py
 test/test_ai_analysis_ai_agent_call_payload.py

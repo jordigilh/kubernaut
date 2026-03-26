@@ -66,7 +66,7 @@ Name | Type | Description | Notes
 **criticality** | **str** | Business criticality classification | [optional] 
 **sla_requirement** | **str** | SLA requirement for remediation | [optional] 
 **has_owner_chain** | **bool** | Whether the resource has an owner chain | [optional] 
-**owner_chain_length** | **int** | Length of the owner chain | [optional] 
+**owner_chain_length** | **int** | Number of resources in the K8s owner chain (1 &#x3D; no parent) | 
 **degraded_mode** | **bool** | Whether operating in degraded mode | 
 **has_namespace** | **bool** | Whether namespace context was enriched | [optional] 
 **has_pod** | **bool** | Whether pod context was enriched | [optional] 
@@ -143,6 +143,16 @@ Name | Type | Description | Notes
 **incident_id** | **str** | Incident correlation ID (remediation_id) | 
 **response_data** | [**IncidentResponseData**](IncidentResponseData.md) |  | 
 **duration_seconds** | **float** | Duration of the investigation before failure (seconds) | [optional] 
+**root_owner_kind** | **str** | Resolved root owner resource kind (e.g., Deployment, StatefulSet) | 
+**root_owner_name** | **str** | Resolved root owner resource name | 
+**root_owner_namespace** | **str** | Resolved root owner namespace (empty for cluster-scoped resources) | [optional] 
+**detected_labels_summary** | **object** | Infrastructure labels detected by LabelDetector (null when detector unavailable) | [optional] 
+**failed_detections** | **List[str]** | Labels that could not be detected (null when all succeeded or detector unavailable) | [optional] 
+**remediation_history_fetched** | **bool** | Whether remediation history was successfully fetched from DataStorage | 
+**detail** | **str** | Detailed failure context including retry information | 
+**affected_resource_kind** | **str** | Kind of the resource that was being enriched when failure occurred | 
+**affected_resource_name** | **str** | Name of the resource that was being enriched when failure occurred | 
+**affected_resource_namespace** | **str** | Namespace of the resource (empty for cluster-scoped) | [optional] 
 **model** | **str** | LLM model identifier | 
 **prompt_length** | **int** | Length of prompt sent to LLM | 
 **prompt_preview** | **str** | First 500 characters of prompt for audit | 

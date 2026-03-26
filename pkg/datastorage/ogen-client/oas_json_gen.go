@@ -15,6 +15,587 @@ import (
 )
 
 // Encode implements json.Marshaler.
+func (s *AIAgentEnrichmentCompletedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAgentEnrichmentCompletedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("event_id")
+		e.Str(s.EventID)
+	}
+	{
+		e.FieldStart("incident_id")
+		e.Str(s.IncidentID)
+	}
+	{
+		e.FieldStart("root_owner_kind")
+		e.Str(s.RootOwnerKind)
+	}
+	{
+		e.FieldStart("root_owner_name")
+		e.Str(s.RootOwnerName)
+	}
+	{
+		if s.RootOwnerNamespace.Set {
+			e.FieldStart("root_owner_namespace")
+			s.RootOwnerNamespace.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("owner_chain_length")
+		e.Int(s.OwnerChainLength)
+	}
+	{
+		if s.DetectedLabelsSummary.Set {
+			e.FieldStart("detected_labels_summary")
+			s.DetectedLabelsSummary.Encode(e)
+		}
+	}
+	{
+		if s.FailedDetections.Set {
+			e.FieldStart("failed_detections")
+			s.FailedDetections.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("remediation_history_fetched")
+		e.Bool(s.RemediationHistoryFetched)
+	}
+}
+
+var jsonFieldsNameOfAIAgentEnrichmentCompletedPayload = [10]string{
+	0: "event_type",
+	1: "event_id",
+	2: "incident_id",
+	3: "root_owner_kind",
+	4: "root_owner_name",
+	5: "root_owner_namespace",
+	6: "owner_chain_length",
+	7: "detected_labels_summary",
+	8: "failed_detections",
+	9: "remediation_history_fetched",
+}
+
+// Decode decodes AIAgentEnrichmentCompletedPayload from json.
+func (s *AIAgentEnrichmentCompletedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentCompletedPayload to nil")
+	}
+	var requiredBitSet [2]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "event_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.EventID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_id\"")
+			}
+		case "incident_id":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.IncidentID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"incident_id\"")
+			}
+		case "root_owner_kind":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Str()
+				s.RootOwnerKind = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"root_owner_kind\"")
+			}
+		case "root_owner_name":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.RootOwnerName = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"root_owner_name\"")
+			}
+		case "root_owner_namespace":
+			if err := func() error {
+				s.RootOwnerNamespace.Reset()
+				if err := s.RootOwnerNamespace.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"root_owner_namespace\"")
+			}
+		case "owner_chain_length":
+			requiredBitSet[0] |= 1 << 6
+			if err := func() error {
+				v, err := d.Int()
+				s.OwnerChainLength = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"owner_chain_length\"")
+			}
+		case "detected_labels_summary":
+			if err := func() error {
+				s.DetectedLabelsSummary.Reset()
+				if err := s.DetectedLabelsSummary.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detected_labels_summary\"")
+			}
+		case "failed_detections":
+			if err := func() error {
+				s.FailedDetections.Reset()
+				if err := s.FailedDetections.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"failed_detections\"")
+			}
+		case "remediation_history_fetched":
+			requiredBitSet[1] |= 1 << 1
+			if err := func() error {
+				v, err := d.Bool()
+				s.RemediationHistoryFetched = bool(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"remediation_history_fetched\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAgentEnrichmentCompletedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [2]uint8{
+		0b01011111,
+		0b00000010,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAgentEnrichmentCompletedPayload) {
+					name = jsonFieldsNameOfAIAgentEnrichmentCompletedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAgentEnrichmentCompletedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentCompletedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) encodeFields(e *jx.Encoder) {
+}
+
+var jsonFieldsNameOfAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary = [0]string{}
+
+// Decode decodes AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary from json.
+func (s *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		default:
+			return d.Skip()
+		}
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentCompletedPayloadEventType as json.
+func (s AIAgentEnrichmentCompletedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentEnrichmentCompletedPayloadEventType from json.
+func (s *AIAgentEnrichmentCompletedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentCompletedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentEnrichmentCompletedPayloadEventType(v) {
+	case AIAgentEnrichmentCompletedPayloadEventTypeAiagentEnrichmentCompleted:
+		*s = AIAgentEnrichmentCompletedPayloadEventTypeAiagentEnrichmentCompleted
+	default:
+		*s = AIAgentEnrichmentCompletedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentEnrichmentCompletedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentCompletedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *AIAgentEnrichmentFailedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAgentEnrichmentFailedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("event_id")
+		e.Str(s.EventID)
+	}
+	{
+		e.FieldStart("incident_id")
+		e.Str(s.IncidentID)
+	}
+	{
+		e.FieldStart("reason")
+		e.Str(s.Reason)
+	}
+	{
+		e.FieldStart("detail")
+		e.Str(s.Detail)
+	}
+	{
+		e.FieldStart("affected_resource_kind")
+		e.Str(s.AffectedResourceKind)
+	}
+	{
+		e.FieldStart("affected_resource_name")
+		e.Str(s.AffectedResourceName)
+	}
+	{
+		if s.AffectedResourceNamespace.Set {
+			e.FieldStart("affected_resource_namespace")
+			s.AffectedResourceNamespace.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfAIAgentEnrichmentFailedPayload = [8]string{
+	0: "event_type",
+	1: "event_id",
+	2: "incident_id",
+	3: "reason",
+	4: "detail",
+	5: "affected_resource_kind",
+	6: "affected_resource_name",
+	7: "affected_resource_namespace",
+}
+
+// Decode decodes AIAgentEnrichmentFailedPayload from json.
+func (s *AIAgentEnrichmentFailedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentFailedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "event_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.EventID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_id\"")
+			}
+		case "incident_id":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.IncidentID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"incident_id\"")
+			}
+		case "reason":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Str()
+				s.Reason = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reason\"")
+			}
+		case "detail":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Detail = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detail\"")
+			}
+		case "affected_resource_kind":
+			requiredBitSet[0] |= 1 << 5
+			if err := func() error {
+				v, err := d.Str()
+				s.AffectedResourceKind = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"affected_resource_kind\"")
+			}
+		case "affected_resource_name":
+			requiredBitSet[0] |= 1 << 6
+			if err := func() error {
+				v, err := d.Str()
+				s.AffectedResourceName = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"affected_resource_name\"")
+			}
+		case "affected_resource_namespace":
+			if err := func() error {
+				s.AffectedResourceNamespace.Reset()
+				if err := s.AffectedResourceNamespace.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"affected_resource_namespace\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAgentEnrichmentFailedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b01111111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAgentEnrichmentFailedPayload) {
+					name = jsonFieldsNameOfAIAgentEnrichmentFailedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAgentEnrichmentFailedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentFailedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentFailedPayloadEventType as json.
+func (s AIAgentEnrichmentFailedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentEnrichmentFailedPayloadEventType from json.
+func (s *AIAgentEnrichmentFailedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentFailedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentEnrichmentFailedPayloadEventType(v) {
+	case AIAgentEnrichmentFailedPayloadEventTypeAiagentEnrichmentFailed:
+		*s = AIAgentEnrichmentFailedPayloadEventTypeAiagentEnrichmentFailed
+	default:
+		*s = AIAgentEnrichmentFailedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentEnrichmentFailedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentFailedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *AIAgentResponseFailedPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -6436,6 +7017,90 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AIAgentEnrichmentCompletedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.enrichment.completed")
+		{
+			s := s.AIAgentEnrichmentCompletedPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("root_owner_kind")
+				e.Str(s.RootOwnerKind)
+			}
+			{
+				e.FieldStart("root_owner_name")
+				e.Str(s.RootOwnerName)
+			}
+			{
+				if s.RootOwnerNamespace.Set {
+					e.FieldStart("root_owner_namespace")
+					s.RootOwnerNamespace.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("owner_chain_length")
+				e.Int(s.OwnerChainLength)
+			}
+			{
+				if s.DetectedLabelsSummary.Set {
+					e.FieldStart("detected_labels_summary")
+					s.DetectedLabelsSummary.Encode(e)
+				}
+			}
+			{
+				if s.FailedDetections.Set {
+					e.FieldStart("failed_detections")
+					s.FailedDetections.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("remediation_history_fetched")
+				e.Bool(s.RemediationHistoryFetched)
+			}
+		}
+	case AIAgentEnrichmentFailedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.enrichment.failed")
+		{
+			s := s.AIAgentEnrichmentFailedPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("reason")
+				e.Str(s.Reason)
+			}
+			{
+				e.FieldStart("detail")
+				e.Str(s.Detail)
+			}
+			{
+				e.FieldStart("affected_resource_kind")
+				e.Str(s.AffectedResourceKind)
+			}
+			{
+				e.FieldStart("affected_resource_name")
+				e.Str(s.AffectedResourceName)
+			}
+			{
+				if s.AffectedResourceNamespace.Set {
+					e.FieldStart("affected_resource_namespace")
+					s.AffectedResourceNamespace.Encode(e)
+				}
+			}
+		}
 	case LLMRequestPayloadAuditEventEventData:
 		e.FieldStart("event_type")
 		e.Str("aiagent.llm.request")
@@ -7293,6 +7958,12 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.response.failed":
 					s.Type = AIAgentResponseFailedPayloadAuditEventEventData
 					found = true
+				case "aiagent.enrichment.completed":
+					s.Type = AIAgentEnrichmentCompletedPayloadAuditEventEventData
+					found = true
+				case "aiagent.enrichment.failed":
+					s.Type = AIAgentEnrichmentFailedPayloadAuditEventEventData
+					found = true
 				case "aiagent.llm.request":
 					s.Type = LLMRequestPayloadAuditEventEventData
 					found = true
@@ -7475,6 +8146,14 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case AIAgentResponseFailedPayloadAuditEventEventData:
 		if err := s.AIAgentResponseFailedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentEnrichmentCompletedPayloadAuditEventEventData:
+		if err := s.AIAgentEnrichmentCompletedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentEnrichmentFailedPayloadAuditEventEventData:
+		if err := s.AIAgentEnrichmentFailedPayload.Decode(d); err != nil {
 			return err
 		}
 	case LLMRequestPayloadAuditEventEventData:
@@ -9335,6 +10014,90 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AIAgentEnrichmentCompletedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.enrichment.completed")
+		{
+			s := s.AIAgentEnrichmentCompletedPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("root_owner_kind")
+				e.Str(s.RootOwnerKind)
+			}
+			{
+				e.FieldStart("root_owner_name")
+				e.Str(s.RootOwnerName)
+			}
+			{
+				if s.RootOwnerNamespace.Set {
+					e.FieldStart("root_owner_namespace")
+					s.RootOwnerNamespace.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("owner_chain_length")
+				e.Int(s.OwnerChainLength)
+			}
+			{
+				if s.DetectedLabelsSummary.Set {
+					e.FieldStart("detected_labels_summary")
+					s.DetectedLabelsSummary.Encode(e)
+				}
+			}
+			{
+				if s.FailedDetections.Set {
+					e.FieldStart("failed_detections")
+					s.FailedDetections.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("remediation_history_fetched")
+				e.Bool(s.RemediationHistoryFetched)
+			}
+		}
+	case AIAgentEnrichmentFailedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.enrichment.failed")
+		{
+			s := s.AIAgentEnrichmentFailedPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("reason")
+				e.Str(s.Reason)
+			}
+			{
+				e.FieldStart("detail")
+				e.Str(s.Detail)
+			}
+			{
+				e.FieldStart("affected_resource_kind")
+				e.Str(s.AffectedResourceKind)
+			}
+			{
+				e.FieldStart("affected_resource_name")
+				e.Str(s.AffectedResourceName)
+			}
+			{
+				if s.AffectedResourceNamespace.Set {
+					e.FieldStart("affected_resource_namespace")
+					s.AffectedResourceNamespace.Encode(e)
+				}
+			}
+		}
 	case LLMRequestPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
 		e.Str("aiagent.llm.request")
@@ -10192,6 +10955,12 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.response.failed":
 					s.Type = AIAgentResponseFailedPayloadAuditEventRequestEventData
 					found = true
+				case "aiagent.enrichment.completed":
+					s.Type = AIAgentEnrichmentCompletedPayloadAuditEventRequestEventData
+					found = true
+				case "aiagent.enrichment.failed":
+					s.Type = AIAgentEnrichmentFailedPayloadAuditEventRequestEventData
+					found = true
 				case "aiagent.llm.request":
 					s.Type = LLMRequestPayloadAuditEventRequestEventData
 					found = true
@@ -10374,6 +11143,14 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case AIAgentResponseFailedPayloadAuditEventRequestEventData:
 		if err := s.AIAgentResponseFailedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentEnrichmentCompletedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentEnrichmentCompletedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentEnrichmentFailedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentEnrichmentFailedPayload.Decode(d); err != nil {
 			return err
 		}
 	case LLMRequestPayloadAuditEventRequestEventData:
@@ -21309,6 +22086,40 @@ func (s *NotificationMessageSentPayloadMetadata) UnmarshalJSON(data []byte) erro
 	return s.Decode(d)
 }
 
+// Encode encodes *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary as json.
+func (o OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary from json.
+func (o *OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary to nil")
+	}
+	o.Set = true
+	o.Value = new(AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes ActionTypeDescription as json.
 func (o OptActionTypeDescription) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -22669,6 +23480,69 @@ func (s OptNilString) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptNilString) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes []string as json.
+func (o OptNilStringArray) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	e.ArrStart()
+	for _, elem := range o.Value {
+		e.Str(elem)
+	}
+	e.ArrEnd()
+}
+
+// Decode decodes []string from json.
+func (o *OptNilStringArray) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilStringArray to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v []string
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	o.Value = make([]string, 0)
+	if err := d.Arr(func(d *jx.Decoder) error {
+		var elem string
+		v, err := d.Str()
+		elem = string(v)
+		if err != nil {
+			return err
+		}
+		o.Value = append(o.Value, elem)
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilStringArray) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilStringArray) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
