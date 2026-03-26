@@ -702,24 +702,26 @@ async def analyze_incident(
 
                 # BR-HAPI-200: Capture top-level Phase 1 fields that the
                 # parser must propagate into the final response (e.g.,
-                # investigation_outcome, can_recover).
+                # investigation_outcome, can_recover, confidence).
                 phase1_top_level = {}
-                for _k in ("investigation_outcome", "can_recover"):
+                _phase1_propagate_keys = ("investigation_outcome", "can_recover", "confidence")
+                for _k in _phase1_propagate_keys:
                     if _k in phase1_json:
                         phase1_top_level[_k] = phase1_json[_k]
                 # Also parse from section headers (# investigation_outcome\n"resolved")
-                if not phase1_top_level and phase1_raw:
+                if phase1_raw:
                     import re as _re
-                    for _field in ("investigation_outcome", "can_recover"):
-                        _m = _re.search(
-                            rf'#\s+{_field}\s*\n\s*(.+)',
-                            phase1_raw,
-                        )
-                        if _m:
-                            try:
-                                phase1_top_level[_field] = json.loads(_m.group(1).strip())
-                            except (json.JSONDecodeError, ValueError):
-                                pass
+                    for _field in _phase1_propagate_keys:
+                        if _field not in phase1_top_level:
+                            _m = _re.search(
+                                rf'#\s+{_field}\s*\n\s*(.+)',
+                                phase1_raw,
+                            )
+                            if _m:
+                                try:
+                                    phase1_top_level[_field] = json.loads(_m.group(1).strip())
+                                except (json.JSONDecodeError, ValueError):
+                                    pass
 
                 if affected_resource is None:
                     logger.warning({

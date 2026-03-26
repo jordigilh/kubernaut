@@ -1300,6 +1300,9 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
 
 The problem has self-resolved. No remediation workflow is needed.
 
+# confidence
+{scenario.confidence}
+
 # selected_workflow
 {json.dumps(analysis_json.get("selected_workflow"))}
 
