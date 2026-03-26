@@ -668,6 +668,8 @@ and choose a different workflow.
     "contributing_factors": ["factor1", "factor2"],
     "affectedResource": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}
   }},
+  // For cluster-scoped resources (e.g. Node, PersistentVolume, Namespace, ClusterRole, StorageClass), omit "namespace":
+  // "affectedResource": {{"kind": "Node", "name": "worker-3"}}
   "selected_workflow": {{
     "workflow_id": "workflow-id-from-mcp-search",
     "confidence": 0.95,
@@ -695,6 +697,8 @@ and choose a different workflow.
     "contributing_factors": ["factor1", "factor2"],
     "affectedResource": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}
   }},
+  // For cluster-scoped resources (e.g. Node, PersistentVolume, Namespace, ClusterRole, StorageClass), omit "namespace":
+  // "affectedResource": {{"kind": "Node", "name": "worker-3"}}
   "selected_workflow": null,
   "rationale": "Workflow discovery failed: [error details]. RCA completed but workflow selection unavailable."
 }}
@@ -902,6 +906,9 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 # root_cause_analysis
 {{"summary": "Brief summary of root cause", "severity": "critical|high|medium|low|unknown", "contributing_factors": ["factor1", "factor2"], "affectedResource": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}}}
 
+For cluster-scoped resources (e.g. Node, PersistentVolume, Namespace, ClusterRole, StorageClass), omit "namespace":
+{{"summary": "Node taint blocking scheduling", "severity": "critical", "contributing_factors": ["taint"], "affectedResource": {{"kind": "Node", "name": "worker-3"}}}}
+
 # confidence
 0.95
 
@@ -933,7 +940,10 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 PHASE3_SECTIONS: Dict[str, str] = {
     "root_cause_analysis": (
         'JSON object with "summary", "severity", "contributing_factors", '
-        'and "affectedResource". Summarize the root cause from Phase 1.'
+        'and "affectedResource" ({kind, name, namespace} for namespaced '
+        "resources; {kind, name} without namespace for cluster-scoped "
+        "resources like Node, PersistentVolume, or ClusterRole). "
+        "Summarize the root cause from Phase 1."
     ),
     "confidence": (
         "A decimal number between 0.0 and 1.0 representing your confidence "
@@ -1083,6 +1093,9 @@ If the alert describes a **benign condition** that does not warrant remediation:
 
 # root_cause_analysis
 {{"summary": "Brief summary from Phase 1 RCA", "severity": "critical|high|medium|low|unknown", "contributing_factors": ["factor1", "factor2"], "affectedResource": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}}}
+
+For cluster-scoped resources (e.g. Node, PersistentVolume, Namespace, ClusterRole, StorageClass), omit "namespace":
+{{"summary": "Node taint blocking scheduling", "severity": "critical", "contributing_factors": ["taint"], "affectedResource": {{"kind": "Node", "name": "worker-3"}}}}
 
 # confidence
 0.95

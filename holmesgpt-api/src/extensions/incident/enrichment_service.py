@@ -66,11 +66,11 @@ class EnrichmentService:
     def __init__(
         self,
         k8s_client: Any,
-        ds_client: Any,
+        history_fetcher: Optional[Callable[..., Coroutine]] = None,
         label_detector: Optional[Callable[..., Coroutine]] = None,
     ):
         self._k8s = k8s_client
-        self._ds = ds_client
+        self._history_fetcher = history_fetcher
         self._label_detector = label_detector
 
     async def enrich(self, affected_resource: Dict[str, str]) -> EnrichmentResult:
@@ -102,10 +102,10 @@ class EnrichmentService:
                 logger.warning({"event": "label_detection_failed", "root_owner": root_owner, "error": str(e)})
 
         remediation_history = None
-        if self._ds is not None:
+        if self._history_fetcher is not None:
             try:
                 remediation_history = await self._retry(
-                    lambda: self._ds.query_remediation_history(
+                    lambda: self._history_fetcher(
                         target_kind=root_owner["kind"],
                         target_name=root_owner["name"],
                         target_namespace=root_owner.get("namespace", ""),
@@ -117,7 +117,7 @@ class EnrichmentService:
             except Exception:
                 logger.warning({"event": "history_fetch_failed", "root_owner": root_owner})
         else:
-            logger.info({"event": "history_fetch_skipped", "reason": "no_ds_client"})
+            logger.info({"event": "history_fetch_skipped", "reason": "no_history_fetcher"})
 
         return EnrichmentResult(
             root_owner=root_owner,

@@ -46,7 +46,7 @@ class TestEnrichmentService:
             {"kind": "Deployment", "name": "api-server", "namespace": "production"},
         ]
 
-        service = EnrichmentService(k8s_client=mock_k8s, ds_client=AsyncMock())
+        service = EnrichmentService(k8s_client=mock_k8s, history_fetcher=AsyncMock(return_value=None))
         result = await service.enrich(
             affected_resource={"kind": "Pod", "name": "api-server-abc123", "namespace": "production"}
         )
@@ -59,8 +59,9 @@ class TestEnrichmentService:
     async def test_ut_529_e_002_fetches_remediation_history(self):
         """UT-529-E-002: EnrichmentService fetches history for resolved root owner.
 
-        BR-HAPI-264: After resolving the root owner, the EnrichmentService
-        fetches remediation history from DataStorage for that owner.
+        BR-HAPI-264 / #540: After resolving the root owner, the EnrichmentService
+        fetches remediation history via the history_fetcher callable, which wraps
+        the remediation_history_client wrapper with spec hash computation.
         """
         from src.extensions.incident.enrichment_service import EnrichmentService
 
@@ -69,19 +70,23 @@ class TestEnrichmentService:
             {"kind": "Deployment", "name": "api-server", "namespace": "production"},
         ]
 
-        mock_ds = AsyncMock()
-        mock_ds.query_remediation_history.return_value = {
+        mock_history_fetcher = AsyncMock(return_value={
             "totalRemediations": 3,
             "recentRemediations": [{"workflowId": "wf-1", "outcome": "success"}],
-        }
+        })
 
-        service = EnrichmentService(k8s_client=mock_k8s, ds_client=mock_ds)
+        service = EnrichmentService(k8s_client=mock_k8s, history_fetcher=mock_history_fetcher)
         result = await service.enrich(
             affected_resource={"kind": "Deployment", "name": "api-server", "namespace": "production"}
         )
 
         assert result.remediation_history is not None
         assert result.remediation_history["totalRemediations"] == 3
+        mock_history_fetcher.assert_called_once_with(
+            target_kind="Deployment",
+            target_name="api-server",
+            target_namespace="production",
+        )
 
     @pytest.mark.asyncio
     async def test_ut_529_e_003_retries_k8s_with_backoff(self):
@@ -98,7 +103,7 @@ class TestEnrichmentService:
             [{"kind": "Deployment", "name": "api-server", "namespace": "production"}],
         ]
 
-        service = EnrichmentService(k8s_client=mock_k8s, ds_client=AsyncMock())
+        service = EnrichmentService(k8s_client=mock_k8s, history_fetcher=AsyncMock(return_value=None))
         result = await service.enrich(
             affected_resource={"kind": "Pod", "name": "pod-1", "namespace": "default"}
         )
@@ -107,10 +112,10 @@ class TestEnrichmentService:
         assert mock_k8s.resolve_owner_chain.call_count == 3
 
     @pytest.mark.asyncio
-    async def test_ut_529_e_004_retries_ds_with_backoff(self):
-        """UT-529-E-004: EnrichmentService retries DS client with exponential backoff.
+    async def test_ut_529_e_004_retries_history_fetcher_with_backoff(self):
+        """UT-529-E-004: EnrichmentService retries history_fetcher with exponential backoff.
 
-        BR-HAPI-264: DataStorage calls also use exponential backoff retries.
+        BR-HAPI-264 / #540: History fetcher calls use exponential backoff retries.
         """
         from src.extensions.incident.enrichment_service import EnrichmentService
 
@@ -119,19 +124,18 @@ class TestEnrichmentService:
             {"kind": "Deployment", "name": "api-server", "namespace": "production"},
         ]
 
-        mock_ds = AsyncMock()
-        mock_ds.query_remediation_history.side_effect = [
+        mock_history_fetcher = AsyncMock(side_effect=[
             Exception("DS connection refused"),
             {"totalRemediations": 1, "recentRemediations": []},
-        ]
+        ])
 
-        service = EnrichmentService(k8s_client=mock_k8s, ds_client=mock_ds)
+        service = EnrichmentService(k8s_client=mock_k8s, history_fetcher=mock_history_fetcher)
         result = await service.enrich(
             affected_resource={"kind": "Deployment", "name": "api-server", "namespace": "production"}
         )
 
         assert result.remediation_history is not None
-        assert mock_ds.query_remediation_history.call_count == 2
+        assert mock_history_fetcher.call_count == 2
 
     @pytest.mark.asyncio
     async def test_ut_529_e_005_fails_hard_after_retry_exhaustion(self):
@@ -148,7 +152,7 @@ class TestEnrichmentService:
         mock_k8s = AsyncMock()
         mock_k8s.resolve_owner_chain.side_effect = Exception("K8s API down")
 
-        service = EnrichmentService(k8s_client=mock_k8s, ds_client=AsyncMock())
+        service = EnrichmentService(k8s_client=mock_k8s, history_fetcher=AsyncMock(return_value=None))
 
         with pytest.raises(EnrichmentFailure) as exc_info:
             await service.enrich(
@@ -171,13 +175,16 @@ class TestEnrichmentService:
             {"kind": "Deployment", "name": "api-server", "namespace": "production"},
         ]
 
-        mock_ds = AsyncMock()
-        mock_ds.query_remediation_history.return_value = {
+        mock_history_fetcher = AsyncMock(return_value={
             "totalRemediations": 0,
             "recentRemediations": [],
-        }
+        })
 
-        service = EnrichmentService(k8s_client=mock_k8s, ds_client=mock_ds, label_detector=AsyncMock(return_value={"gitOpsManaged": True}))
+        service = EnrichmentService(
+            k8s_client=mock_k8s,
+            history_fetcher=mock_history_fetcher,
+            label_detector=AsyncMock(return_value={"gitOpsManaged": True}),
+        )
         result = await service.enrich(
             affected_resource={"kind": "Deployment", "name": "api-server", "namespace": "production"}
         )
@@ -208,12 +215,9 @@ class TestEnrichmentService:
             "stateful": False,
         }
 
-        mock_ds = AsyncMock()
-        mock_ds.query_remediation_history.return_value = None
-
         service = EnrichmentService(
             k8s_client=mock_k8s,
-            ds_client=mock_ds,
+            history_fetcher=AsyncMock(return_value=None),
             label_detector=mock_label_detector,
         )
         result = await service.enrich(
@@ -226,3 +230,25 @@ class TestEnrichmentService:
         call_args = mock_label_detector.call_args
         assert call_args[0][0] == {"kind": "Deployment", "name": "app", "namespace": "default"}
         assert len(call_args[0][1]) == 2  # owner_chain has Pod + Deployment
+
+    @pytest.mark.asyncio
+    async def test_ut_540_001_history_fetcher_none_skips_history(self):
+        """UT-540-001: EnrichmentService gracefully skips history when no fetcher.
+
+        #540: When history_fetcher is None, enrichment proceeds without
+        remediation history (same as ds_client=None behavior before).
+        """
+        from src.extensions.incident.enrichment_service import EnrichmentService
+
+        mock_k8s = AsyncMock()
+        mock_k8s.resolve_owner_chain.return_value = [
+            {"kind": "Deployment", "name": "api-server", "namespace": "production"},
+        ]
+
+        service = EnrichmentService(k8s_client=mock_k8s, history_fetcher=None)
+        result = await service.enrich(
+            affected_resource={"kind": "Deployment", "name": "api-server", "namespace": "production"}
+        )
+
+        assert result.root_owner is not None
+        assert result.remediation_history is None
