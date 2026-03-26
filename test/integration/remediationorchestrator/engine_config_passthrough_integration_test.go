@@ -102,7 +102,7 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 			Summary:    "Memory leak detected",
 			Severity:   "critical",
 			SignalType: "alert",
-			AffectedResource: &aianalysisv1.AffectedResource{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "Deployment",
 				Name:      "leaky-app",
 				Namespace: ns,

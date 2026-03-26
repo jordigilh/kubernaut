@@ -159,12 +159,12 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			Confidence:     0.92,
 			Rationale:      "High confidence match for CPU remediation",
 		}
-		// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 		analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "CPU throttling due to resource limits",
 			Severity:   "critical",
 			SignalType: "alert",
-			AffectedResource: &aianalysisv1.AffectedResource{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "Deployment",
 				Name:      "test-app-ea",
 				Namespace: testNS,
@@ -404,12 +404,12 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 				Confidence:      0.92,
 				Rationale:       "High confidence match for CPU remediation",
 			}
-			// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "CPU throttling due to resource limits",
 				Severity:   "critical",
 				SignalType: "alert",
-				AffectedResource: &aianalysisv1.AffectedResource{
+				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "Deployment",
 					Name:      "test-app-fail",
 					Namespace: testNS,

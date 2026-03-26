@@ -89,12 +89,12 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			ExecutionBundle: "test-image:latest",
 			Confidence:     0.95,
 		}
-		// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
 			Severity:   "critical",
 			SignalType: "alert",
-			AffectedResource: &aianalysisv1.AffectedResource{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "Deployment",
 				Name:      "test-app",
 				Namespace: ns,
@@ -274,12 +274,12 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			WorkflowID: "wf-restart-pods", Version: "v1.0.0",
 			ExecutionBundle: "test-image:latest", Confidence: 0.95,
 		}
-		// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
 			Severity:   "critical",
 			SignalType: "alert",
-			AffectedResource: &aianalysisv1.AffectedResource{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "Deployment",
 				Name:      "test-app",
 				Namespace: ns,
@@ -457,7 +457,7 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 			Summary:    "OOM kill detected",
 			Severity:   "critical",
 			SignalType: "alert",
-			AffectedResource: &aianalysisv1.AffectedResource{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "Deployment",
 				Name:      "test-app",
 				Namespace: ns,
@@ -503,12 +503,12 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 // ============================================================================
 // EA DUAL-TARGET RESOLUTION INTEGRATION TESTS (Issue #188, DD-EM-003)
 // Business Requirement: resolveDualTargets correctly derives SignalTarget from RR
-// and RemediationTarget from AA.status.rootCauseAnalysis.affectedResource.
+// and RemediationTarget from AA.status.rootCauseAnalysis.remediationTarget.
 // ============================================================================
 var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 
 	// ========================================
-	// IT-RO-188-003: Divergent targets when AA has a different affectedResource
+	// IT-RO-188-003: Divergent targets when AA has a different remediationTarget
 	// ========================================
 	It("IT-RO-188-003: should create EA with divergent targets when AA identifies a different affected resource", func() {
 		ns := createTestNamespace("ro-dt-003")
@@ -537,7 +537,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
 
-		By("Completing AIAnalysis with a DIFFERENT affectedResource than RR target")
+		By("Completing AIAnalysis with a DIFFERENT remediationTarget than RR target")
 		aiName := fmt.Sprintf("ai-%s", rr.Name)
 		ai := &aianalysisv1.AIAnalysis{}
 		Eventually(func() error {
@@ -554,7 +554,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			Summary:    "HPA maxed out, scaling target pod autoscaler",
 			Severity:   "critical",
 			SignalType: "alert",
-			AffectedResource: &aianalysisv1.AffectedResource{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "HorizontalPodAutoscaler",
 				Name:      "api-frontend-hpa",
 				Namespace: ns,
@@ -601,20 +601,20 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			"DD-EM-003: SignalTarget.Name should come from RR.Spec.TargetResource")
 		Expect(ea.Spec.SignalTarget.Namespace).To(Equal(ns))
 
-		// DD-EM-003: RemediationTarget = AA's AffectedResource (the modified resource)
+		// DD-EM-003: RemediationTarget = AA's RemediationTarget (the modified resource)
 		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("HorizontalPodAutoscaler"),
-			"DD-EM-003: RemediationTarget.Kind should come from AA.status.rootCauseAnalysis.affectedResource")
+			"DD-EM-003: RemediationTarget.Kind should come from AA.status.rootCauseAnalysis.remediationTarget")
 		Expect(ea.Spec.RemediationTarget.Name).To(Equal("api-frontend-hpa"),
-			"DD-EM-003: RemediationTarget.Name should come from AA.status.rootCauseAnalysis.affectedResource")
+			"DD-EM-003: RemediationTarget.Name should come from AA.status.rootCauseAnalysis.remediationTarget")
 		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(ns))
 	})
 
 	// ========================================
-	// IT-RO-188-003b: Defense-in-depth when AA has empty affectedResource
+	// IT-RO-188-003b: Defense-in-depth when AA has empty remediationTarget
 	// DD-HAPI-006 v1.2 / BR-ORCH-036 v4.0: RO must fail with ManualReviewRequired
-	// when AffectedResource is nil or has empty Kind/Name.
+	// when RemediationTarget is nil or has empty Kind/Name.
 	// ========================================
-	It("IT-RO-188-003b: should fail with ManualReviewRequired when AA has empty affectedResource", func() {
+	It("IT-RO-188-003b: should fail with ManualReviewRequired when AA has empty remediationTarget", func() {
 		ns := createTestNamespace("ro-dt-003b")
 		defer deleteTestNamespace(ns)
 
@@ -639,7 +639,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
 
-		By("Completing AIAnalysis with EMPTY affectedResource (no RCA resource identified)")
+		By("Completing AIAnalysis with EMPTY remediationTarget (no RCA resource identified)")
 		aiName := fmt.Sprintf("ai-%s", rr.Name)
 		ai := &aianalysisv1.AIAnalysis{}
 		Eventually(func() error {
@@ -656,7 +656,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			Summary:    "Generic OOM detected",
 			Severity:   "high",
 			SignalType: "alert",
-			AffectedResource: &aianalysisv1.AffectedResource{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "",
 				Name:      "",
 				Namespace: "",
@@ -674,7 +674,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 
 		By("Verifying ManualReviewRequired is set")
 		Expect(rr.Status.RequiresManualReview).To(BeTrue(),
-			"BR-ORCH-036 v4.0: RR should have RequiresManualReview=true when AffectedResource is missing")
+			"BR-ORCH-036 v4.0: RR should have RequiresManualReview=true when RemediationTarget is missing")
 		Expect(rr.Status.Outcome).To(Equal("ManualReviewRequired"),
 			"BR-ORCH-036 v4.0: RR outcome should be ManualReviewRequired")
 	})

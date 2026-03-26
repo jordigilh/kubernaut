@@ -324,7 +324,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 // Test Plan: docs/testing/COOLDOWN_GW_RO/TEST_PLAN.md
 //
 // BUSINESS VALUE:
-// Validates the reconciler preserves AffectedResource.Kind casing
+// Validates the reconciler preserves RemediationTarget.Kind casing
 // when building the targetResource string for routing checks. The
 // routing engine uses a field-indexed lookup on WFE.spec.targetResource,
 // so a case mismatch silently bypasses the RecentlyRemediated cooldown.
@@ -388,7 +388,7 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 		wfe.Status.ExecutionEngine = "job"
 		Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
 
-		By("Completing AIAnalysis with AffectedResource.Kind = 'Deployment' (uppercase)")
+		By("Completing AIAnalysis with RemediationTarget.Kind = 'Deployment' (uppercase)")
 		aiName := fmt.Sprintf("ai-%s", rr.Name)
 		ai := &aianalysisv1.AIAnalysis{}
 		Eventually(func() error {
@@ -405,7 +405,7 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 			Summary:    "OOM kill detected",
 			Severity:   "critical",
 			SignalType: "alert",
-			AffectedResource: &aianalysisv1.AffectedResource{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "Deployment",
 				Name:      "test-app",
 				Namespace: ns,

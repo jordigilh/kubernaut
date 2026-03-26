@@ -107,7 +107,7 @@ var _ = Describe("HolmesGPTClient", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.Analysis).To(Equal("Root cause: OOM"))
-				// ADR-055: target_in_owner_chain removed, replaced by affected_resource in Rego input
+				// ADR-055: target_in_owner_chain removed, replaced by remediation_target in Rego input
 				Expect(resp.Confidence).To(BeNumerically("~", 0.85, 0.01))
 			})
 		})

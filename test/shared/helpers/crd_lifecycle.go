@@ -128,7 +128,7 @@ type AICompletionOpts struct {
 }
 
 // SimulateAICompletedWithWorkflow updates AI status as completed with a workflow
-// selection and AffectedResource (required for routing to WorkflowExecution).
+// selection and RemediationTarget (required for routing to WorkflowExecution).
 // Uses RetryOnConflict to handle races with the RO controller.
 func SimulateAICompletedWithWorkflow(ctx context.Context, k8sClient client.Client, ai *aianalysisv1.AIAnalysis, opts AICompletionOpts) {
 	By("Simulating AI completion with workflow selection (AA controller behavior)")
@@ -167,7 +167,7 @@ func SimulateAICompletedWithWorkflow(ctx context.Context, k8sClient client.Clien
 			Summary:    "Root cause identified",
 			Severity:   "critical",
 			SignalType: "alert",
-			AffectedResource: &aianalysisv1.AffectedResource{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      targetKind,
 				Name:      targetName,
 				Namespace: opts.TargetNamespace,

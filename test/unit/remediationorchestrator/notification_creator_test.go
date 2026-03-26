@@ -1339,7 +1339,7 @@ var _ = Describe("NotificationCreator", func() {
 	})
 
 	// ========================================
-	// #305: Target resource resolution — prefer AI AffectedResource over Unknown
+	// #305: Target resource resolution — prefer AI RemediationTarget over Unknown
 	// ========================================
 	Describe("Target resource resolution (#305)", func() {
 		var (
@@ -1355,7 +1355,7 @@ var _ = Describe("NotificationCreator", func() {
 			ctx = context.Background()
 		})
 
-		It("UT-NT-305-001: completion body should use AI AffectedResource when TargetResource is Unknown", func() {
+		It("UT-NT-305-001: completion body should use AI RemediationTarget when TargetResource is Unknown", func() {
 			client := fakeClient.Build()
 			nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
@@ -1369,7 +1369,7 @@ var _ = Describe("NotificationCreator", func() {
 			ai := helpers.NewCompletedAIAnalysis("test-ai-305", "default")
 			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:  "OOM kills in payment-api",
-				AffectedResource: &aianalysisv1.AffectedResource{
+				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "Deployment",
 					Name:      "payment-api",
 					Namespace: "production",
@@ -1384,11 +1384,11 @@ var _ = Describe("NotificationCreator", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(nr.Spec.Body).To(ContainSubstring("Deployment"),
-				"#305: Body should use AI AffectedResource.Kind when TargetResource is Unknown")
+				"#305: Body should use AI RemediationTarget.Kind when TargetResource is Unknown")
 			Expect(nr.Spec.Body).To(ContainSubstring("payment-api"),
-				"#305: Body should use AI AffectedResource.Name when TargetResource is Unknown")
+				"#305: Body should use AI RemediationTarget.Name when TargetResource is Unknown")
 			Expect(nr.Spec.Body).ToNot(ContainSubstring("- **Kind**: Unknown"),
-				"#305: Body should NOT show 'Unknown' when AI AffectedResource is available")
+				"#305: Body should NOT show 'Unknown' when AI RemediationTarget is available")
 		})
 
 		It("UT-NT-305-002: completion body should keep TargetResource when it is valid", func() {
@@ -1399,7 +1399,7 @@ var _ = Describe("NotificationCreator", func() {
 			ai := helpers.NewCompletedAIAnalysis("test-ai-305b", "default")
 			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary: "Some issue",
-				AffectedResource: &aianalysisv1.AffectedResource{
+				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "Deployment",
 					Name:      "web-frontend",
 					Namespace: "production",
@@ -1419,7 +1419,7 @@ var _ = Describe("NotificationCreator", func() {
 				"#305: Body should keep TargetResource.Name when it is valid (not Unknown)")
 		})
 
-		It("UT-NT-305-003: approval body should use AI AffectedResource when TargetResource is Unknown", func() {
+		It("UT-NT-305-003: approval body should use AI RemediationTarget when TargetResource is Unknown", func() {
 			client := fakeClient.Build()
 			nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
@@ -1434,7 +1434,7 @@ var _ = Describe("NotificationCreator", func() {
 			ai.Status.ApprovalReason = "Production namespace"
 			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary: "Memory leak",
-				AffectedResource: &aianalysisv1.AffectedResource{
+				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "StatefulSet",
 					Name:      "redis-primary",
 					Namespace: "cache",
@@ -1449,9 +1449,9 @@ var _ = Describe("NotificationCreator", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(nr.Spec.Body).To(ContainSubstring("StatefulSet"),
-				"#305: Approval body should use AI AffectedResource.Kind when TargetResource is Unknown")
+				"#305: Approval body should use AI RemediationTarget.Kind when TargetResource is Unknown")
 			Expect(nr.Spec.Body).To(ContainSubstring("redis-primary"),
-				"#305: Approval body should use AI AffectedResource.Name when TargetResource is Unknown")
+				"#305: Approval body should use AI RemediationTarget.Name when TargetResource is Unknown")
 		})
 	})
 })

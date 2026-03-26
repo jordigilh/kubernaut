@@ -321,12 +321,12 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			Confidence:     0.95,
 			Rationale:      "High confidence workflow match for pod restart scenario",
 		}
-		// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 		analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected on pod",
 			Severity:   "critical",
 			SignalType: "alert",
-			AffectedResource: &aianalysisv1.AffectedResource{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "Pod",
 				Name:      "test-pod-oomkilled",
 				Namespace: testNS,

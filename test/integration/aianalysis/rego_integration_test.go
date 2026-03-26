@@ -65,7 +65,7 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 		It("should auto-approve staging environment", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "staging",
-				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "staging"},
+				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "staging"},
 				FailedDetections: []string{},
 				Warnings:         []string{},
 				Confidence:       0.95,
@@ -77,8 +77,8 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 			Expect(result.Reason).To(ContainSubstring("Auto-approved"))
 		})
 
-		// ADR-055 + BR-AI-085-005: Missing affected_resource = default-deny
-		It("should require approval when affected resource is missing", func() {
+		// ADR-055 + BR-AI-085-005: Missing remediation_target = default-deny
+		It("should require approval when remediation target is missing", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "production",
 				FailedDetections: []string{},
@@ -95,7 +95,7 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 		It("should require approval for production with failed detections", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "production",
-				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				FailedDetections: []string{"gitOpsManaged"},
 				Warnings:         []string{},
 				Confidence:       0.79,
@@ -109,7 +109,7 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 		It("should auto-approve production with all validations passing", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "production",
-				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				FailedDetections: []string{},
 				Warnings:         []string{},
 				Confidence:       0.95,
@@ -130,7 +130,7 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 		It("should auto-approve development environment with affected resource", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "development",
-				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "development"},
+				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "development"},
 				FailedDetections: []string{"gitOpsManaged"},
 				Confidence:       0.50,
 			})
@@ -142,7 +142,7 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 		It("should auto-approve qa environment", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "qa",
-				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "qa"},
+				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "qa"},
 				FailedDetections: []string{},
 				Confidence:       0.75,
 			})
@@ -154,7 +154,7 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 		It("should auto-approve test environment", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "test",
-				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "test"},
+				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "test"},
 				Confidence:       0.80,
 			})
 
@@ -167,7 +167,7 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 		It("should require approval for production with warnings", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "production",
-				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				FailedDetections: []string{},
 				Warnings:         []string{"High resource utilization detected"},
 				Confidence:       0.79,
@@ -185,7 +185,7 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 			// from the is_sensitive_resource rule (score 80), which would mask the reason.
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "production",
-				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "db", Namespace: "production"},
+				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "db", Namespace: "production"},
 				FailedDetections: []string{},
 				Confidence:       0.79,
 				DetectedLabels: map[string]interface{}{
@@ -249,7 +249,7 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 				},
 
 				// ADR-055: Affected resource (replaces target_in_owner_chain)
-				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "web-app", Namespace: "staging"},
+				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "web-app", Namespace: "staging"},
 
 				// HolmesGPT-API response data
 				Confidence: 0.92,

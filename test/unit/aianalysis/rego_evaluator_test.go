@@ -75,7 +75,7 @@ var _ = Describe("RegoEvaluator", func() {
 			It("should auto-approve production environment with clean state and high confidence", func() {
 				input := &rego.PolicyInput{
 					Environment: "production",
-					AffectedResource: &rego.AffectedResourceInput{
+					RemediationTarget: &rego.RemediationTargetInput{
 						Kind: "Deployment", Name: "api", Namespace: "production",
 					},
 					Confidence: 0.85,
@@ -110,10 +110,10 @@ var _ = Describe("RegoEvaluator", func() {
 			})
 
 			DescribeTable("based on environment and data quality",
-				func(env string, affectedResource *rego.AffectedResourceInput, confidence float64, failedDetections []string, warnings []string, expectedApproval bool) {
+				func(env string, remediationTarget *rego.RemediationTargetInput, confidence float64, failedDetections []string, warnings []string, expectedApproval bool) {
 					input := &rego.PolicyInput{
 						Environment:      env,
-						AffectedResource: affectedResource,
+						RemediationTarget: remediationTarget,
 						Confidence:       confidence,
 						FailedDetections: failedDetections,
 						Warnings:         warnings,
@@ -124,34 +124,34 @@ var _ = Describe("RegoEvaluator", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(result.ApprovalRequired).To(Equal(expectedApproval))
 				},
-				// BR-AI-085-005: Missing affected resource = approval required (default-deny)
-				Entry("production + missing affected resource",
-					"production", (*rego.AffectedResourceInput)(nil), 0.9, nil, nil, true),
+				// BR-AI-085-005: Missing remediation target = approval required (default-deny)
+				Entry("production + missing remediation target",
+					"production", (*rego.RemediationTargetInput)(nil), 0.9, nil, nil, true),
 			Entry("production + failed detections + high confidence → auto-approve",
-				"production", &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.9, []string{"gitOpsManaged"}, nil, false),
+				"production", &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.9, []string{"gitOpsManaged"}, nil, false),
 			Entry("production + warnings + high confidence → auto-approve",
-				"production", &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.9, nil, []string{"High memory pressure"}, false),
+				"production", &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.9, nil, []string{"High memory pressure"}, false),
 				Entry("production + low confidence",
-					"production", &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.6, nil, nil, true),
+					"production", &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.6, nil, nil, true),
 
 				// Non-production = auto-approve (regardless of issues)
 				Entry("development + missing affected resource",
-					"development", (*rego.AffectedResourceInput)(nil), 0.5, []string{"gitOpsManaged"}, nil, true),
+					"development", (*rego.RemediationTargetInput)(nil), 0.5, []string{"gitOpsManaged"}, nil, true),
 				Entry("staging + any state",
-					"staging", &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "staging"}, 0.8, nil, nil, false),
+					"staging", &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "staging"}, 0.8, nil, nil, false),
 
 			// Production + high confidence + clean state → auto-approve
 			Entry("production + clean state + high confidence → auto-approve",
-				"production", &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.9, nil, nil, false),
+				"production", &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.9, nil, nil, false),
 			)
 
 		// #206: Confidence-based auto-approval for production environments
 		// When confidence >= 0.8 and no critical safety conditions, production should auto-approve
 		DescribeTable("confidence-based auto-approval in production",
-			func(confidence float64, affectedResource *rego.AffectedResourceInput, failedDetections []string, warnings []string, expectedApproval bool, expectedReasonSubstring string) {
+			func(confidence float64, remediationTarget *rego.RemediationTargetInput, failedDetections []string, warnings []string, expectedApproval bool, expectedReasonSubstring string) {
 				input := &rego.PolicyInput{
 					Environment:      "production",
-					AffectedResource: affectedResource,
+					RemediationTarget: remediationTarget,
 					Confidence:       confidence,
 					FailedDetections: failedDetections,
 					Warnings:         warnings,
@@ -169,41 +169,41 @@ var _ = Describe("RegoEvaluator", func() {
 			},
 			// #206: High confidence (>= 0.8) + clean state → auto-approve
 			Entry("UT-AIA-CONF-001: high confidence + clean state → auto-approve",
-				0.95, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				0.95, &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				[]string{}, []string{},
 				false, "Auto-approved"),
 			Entry("UT-AIA-CONF-002: confidence exactly 0.8 + clean state → auto-approve (#206)",
-				0.8, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				0.8, &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				[]string{}, []string{},
 				false, "Auto-approved"),
 			Entry("UT-AIA-CONF-002b: confidence 0.85 + clean state → auto-approve (#206)",
-				0.85, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				0.85, &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				[]string{}, []string{},
 				false, "Auto-approved"),
 			// High confidence + failed detections → auto-approve (minor data quality issues)
 			Entry("UT-AIA-CONF-003: high confidence + failed detections → auto-approve",
-				0.95, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				0.95, &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				[]string{"gitOpsManaged"}, []string{},
 				false, "Auto-approved"),
 			// High confidence + warnings → auto-approve
 			Entry("UT-AIA-CONF-004: high confidence + warnings → auto-approve",
-				0.92, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				0.92, &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				[]string{}, []string{"High memory pressure"},
 				false, "Auto-approved"),
 			// #206: Low confidence (< 0.8) → still require approval
 			Entry("UT-AIA-CONF-005: confidence 0.79 (just below threshold) → require approval (#206)",
-				0.79, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				0.79, &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				[]string{}, []string{},
 				true, "Production environment"),
 			Entry("UT-AIA-CONF-006: low confidence 0.6 → require approval",
-				0.6, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				0.6, &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				[]string{}, []string{},
 				true, "Production environment"),
 			// Safety: missing affected resource → ALWAYS require approval regardless of confidence
-			Entry("UT-AIA-CONF-007: high confidence + missing affected resource → require approval",
-				0.99, (*rego.AffectedResourceInput)(nil),
+			Entry("UT-AIA-CONF-007: high confidence + missing remediation target → require approval",
+				0.99, (*rego.RemediationTargetInput)(nil),
 				[]string{}, []string{},
-				true, "Missing affected resource"),
+				true, "Missing remediation target"),
 		)
 
 		// BR-AI-013: Policy evaluation based on environment and severity
@@ -211,7 +211,7 @@ var _ = Describe("RegoEvaluator", func() {
 				func(severity string, env string, expectedApproval bool) {
 					input := &rego.PolicyInput{
 						Environment: env,
-						AffectedResource: &rego.AffectedResourceInput{
+						RemediationTarget: &rego.RemediationTargetInput{
 							Kind: "Deployment", Name: "api", Namespace: env,
 						},
 						Confidence: 0.9, // High confidence
@@ -247,7 +247,7 @@ var _ = Describe("RegoEvaluator", func() {
 			func(confidence float64, threshold *float64, expectedApproval bool, desc string) {
 				input := &rego.PolicyInput{
 					Environment: "production",
-					AffectedResource: &rego.AffectedResourceInput{
+					RemediationTarget: &rego.RemediationTargetInput{
 						Kind: "Deployment", Name: "api", Namespace: "production",
 					},
 					Confidence:          confidence,
@@ -297,7 +297,7 @@ var _ = Describe("RegoEvaluator", func() {
 							Name:      "test-pod",
 							Namespace: "default",
 						},
-						AffectedResource: &rego.AffectedResourceInput{
+						RemediationTarget: &rego.RemediationTargetInput{
 							Kind: "Deployment", Name: "api", Namespace: "default",
 						},
 						Confidence: 0.9,

@@ -86,7 +86,7 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 			Summary:    "Config drift detected",
 			Severity:   "critical",
 			SignalType: "alert",
-			AffectedResource: &aianalysisv1.AffectedResource{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "Deployment",
 				Name:      "test-app",
 				Namespace: ns,
@@ -258,7 +258,7 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 			Summary:    "Predicted OOM kill based on memory trend",
 			Severity:   "critical",
 			SignalType: "alert",
-			AffectedResource: &aianalysisv1.AffectedResource{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "Deployment",
 				Name:      "test-app",
 				Namespace: ns,
