@@ -49,7 +49,7 @@ Architecture:
       Phase 1 (LLM call 1 - RCA):
         - HAPI sends investigation prompt with all tools available
         - LLM optionally calls resource context tools (informational)
-        - LLM returns RCA + affectedResource (NO workflow selection)
+        - LLM returns RCA + remediationTarget (NO workflow selection)
         - Mock detects Phase 1 via absence of enrichment context markers
 
       Phase 2 (HAPI-driven - no LLM):
@@ -96,7 +96,7 @@ class MockScenario:
     rca_resource_namespace: str = "default"
     rca_resource_name: str = "test-pod"
     rca_resource_api_version: str = "v1"  # BR-HAPI-212: API version for GVK resolution
-    include_affected_resource: bool = True  # #529: LLM provides affectedResource; HAPI parses and validates
+    include_affected_resource: bool = True  # #529: LLM provides remediationTarget; HAPI parses and validates
     rca_override_prompt_resource: bool = False  # DD-EM-004: Use scenario kind/name instead of prompt-extracted
     parameters: Dict[str, str] = field(default_factory=dict)
     execution_engine: str = "tekton"  # BR-WE-014: Execution backend ("tekton" or "job")
@@ -267,7 +267,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_namespace="production",
         rca_resource_name="ambiguous-pod",
         rca_resource_api_version="v1",
-        include_affected_resource=False,  # #529: LLM fails to provide affectedResource in Phase 1
+        include_affected_resource=False,  # #529: LLM fails to provide remediationTarget in Phase 1
         # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
         # Schema: NAMESPACE (required), POD_NAME (required)
         parameters={"NAMESPACE": "production", "POD_NAME": "ambiguous-pod"}
@@ -677,7 +677,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
 
         #529: Routes to the appropriate protocol based on phase detection:
         - Phase 3 (enrichment context present): workflow discovery flow
-        - Phase 1 (no enrichment context): RCA + affectedResource flow
+        - Phase 1 (no enrichment context): RCA + remediationTarget flow
         - Legacy (search_workflow_catalog): backward compatible two-phase
         """
         messages = request_data.get("messages", [])
@@ -849,7 +849,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
 
         Phase 1 (RCA) — optional resource context tools:
           0 tool results → get_namespaced_resource_context / get_cluster_resource_context
-          1+ tool results → Phase 1 RCA response (affectedResource, no workflow)
+          1+ tool results → Phase 1 RCA response (remediationTarget, no workflow)
 
         Phase 3 (Workflow Selection) — workflow discovery tools:
           0 tool results → list_available_actions
@@ -957,7 +957,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         Parse get_namespaced_resource_context / get_cluster_resource_context tool results for the root_owner field.
 
         ADR-056: A real LLM uses the root_owner returned by get_namespaced_resource_context / get_cluster_resource_context
-        (e.g., Pod→Deployment) as the affectedResource. The mock must do the same
+        (e.g., Pod→Deployment) as the remediationTarget. The mock must do the same
         so the RCA contains the correct owner rather than the raw signaling Pod.
         """
         for msg in messages:
@@ -1036,7 +1036,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             # BR-496: When rca_override_prompt_resource is set, the LLM's RCA
             # targets a different resource than the one in the prompt (e.g., a
             # Certificate CRD instead of the Pod that fired the alert). Use the
-            # scenario's target so root_owner matches the final affectedResource.
+            # scenario's target so root_owner matches the final remediationTarget.
             if scenario.rca_override_prompt_resource:
                 kind = scenario.rca_resource_kind
                 name = scenario.rca_resource_name
@@ -1184,10 +1184,10 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         }
 
     def _phase1_rca_response(self, scenario: MockScenario, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate Phase 1 response: RCA + affectedResource only (no workflow).
+        """Generate Phase 1 response: RCA + remediationTarget only (no workflow).
 
         #529: In the three-phase architecture, Phase 1 produces only the root
-        cause analysis and the affected resource. Workflow selection happens
+        cause analysis and the remediation target. Workflow selection happens
         in Phase 3 after HAPI's EnrichmentService provides owner resolution,
         labels, and history.
         """
@@ -1218,15 +1218,15 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 actual_name = scenario.rca_resource_name
                 if not actual_ns:
                     actual_ns = scenario.rca_resource_namespace
-            affected_resource: Dict[str, str] = {
+            remediation_target: Dict[str, str] = {
                 "kind": actual_kind,
                 "name": actual_name,
             }
             if scenario.rca_resource_api_version:
-                affected_resource["apiVersion"] = scenario.rca_resource_api_version
+                remediation_target["apiVersion"] = scenario.rca_resource_api_version
             if actual_ns:
-                affected_resource["namespace"] = actual_ns
-            analysis_json["root_cause_analysis"]["affectedResource"] = affected_resource
+                remediation_target["namespace"] = actual_ns
+            analysis_json["root_cause_analysis"]["remediationTarget"] = remediation_target
 
         # Handle special investigation outcomes
         if scenario.name in ("problem_resolved", "problem_resolved_contradiction"):
@@ -1500,8 +1500,8 @@ The problem has self-resolved. No remediation workflow is needed.
             "confidence": scenario.confidence
         }
 
-        # BR-HAPI-212: Conditionally include affectedResource in RCA
-        # This allows testing scenarios where affectedResource is missing despite workflow being selected
+        # BR-HAPI-212: Conditionally include remediationTarget in RCA
+        # This allows testing scenarios where remediationTarget is missing despite workflow being selected
         if scenario.include_affected_resource:
             # ADR-056 / FP-E2E: Extract actual resource from the HAPI prompt so
             # the RCA response matches the real workload (namespace, name) instead
@@ -1511,7 +1511,7 @@ The problem has self-resolved. No remediation workflow is needed.
                 messages, scenario
             )
             # ADR-056: Prefer root_owner from get_namespaced_resource_context / get_cluster_resource_context tool result.
-            # A real LLM uses root_owner (Pod→Deployment) as affectedResource;
+            # A real LLM uses root_owner (Pod→Deployment) as remediationTarget;
             # without this the mock returns the raw Pod from the prompt.
             root_owner = self._extract_root_owner_from_tool_results(messages)
             if root_owner:
@@ -1531,18 +1531,16 @@ The problem has self-resolved. No remediation workflow is needed.
                 actual_name = scenario.rca_resource_name
                 if not actual_ns:
                     actual_ns = scenario.rca_resource_namespace
-            affected_resource = {
+            remediation_target = {
                 "kind": actual_kind,
                 "name": actual_name,
             }
-            # Add apiVersion if present (BR-HAPI-212: Optional field for GVK resolution)
             if scenario.rca_resource_api_version:
-                affected_resource["apiVersion"] = scenario.rca_resource_api_version
-            # Add namespace if present (not applicable for cluster-scoped resources)
+                remediation_target["apiVersion"] = scenario.rca_resource_api_version
             if actual_ns:
-                affected_resource["namespace"] = actual_ns
+                remediation_target["namespace"] = actual_ns
 
-            analysis_json["root_cause_analysis"]["affectedResource"] = affected_resource
+            analysis_json["root_cause_analysis"]["remediationTarget"] = remediation_target
 
         # BR-HAPI-200: Handle problem resolved case (investigation_outcome: "resolved")
         if scenario.name in ("problem_resolved", "problem_resolved_contradiction"):

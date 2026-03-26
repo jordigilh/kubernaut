@@ -2,7 +2,7 @@
 Unit tests for Mock LLM rca_incomplete scenario (BR-HAPI-212).
 
 This test validates the new "rca_incomplete" scenario added to support
-integration testing of BR-HAPI-212 (Missing affectedResource in RCA path).
+integration testing of BR-HAPI-212 (Missing remediationTarget in RCA path).
 """
 
 import pytest
@@ -24,7 +24,7 @@ class TestRCAIncompleteScenario:
         assert scenario.name == "rca_incomplete"
         assert scenario.signal_name == "MOCK_RCA_INCOMPLETE"
 
-        # Verify workflow IS selected (BR-HAPI-212: Workflow selected but affectedResource missing)
+        # Verify workflow IS selected (BR-HAPI-212: Workflow selected but remediationTarget missing)
         assert scenario.workflow_id != "", "rca_incomplete should have a workflow_id (not empty)"
         assert scenario.workflow_name == "generic-restart-v1", "rca_incomplete should use generic-restart-v1"
         assert scenario.workflow_title != "", "rca_incomplete should have a workflow_title"
@@ -77,7 +77,7 @@ class TestRCAIncompleteScenario:
         assert "POD_NAME" in scenario.parameters, "rca_incomplete should have POD_NAME parameter"
 
     def test_rca_incomplete_rca_context(self):
-        """Verify rca_incomplete includes RCA context (even though affectedResource won't be in response)."""
+        """Verify rca_incomplete includes RCA context (even though remediationTarget won't be in response)."""
         scenario = MOCK_SCENARIOS["rca_incomplete"]
 
         # RCA context should be present in scenario definition
@@ -128,14 +128,14 @@ class TestRCAIncompleteIntegrationPattern:
             "MOCK_RCA_INCOMPLETE should appear exactly once in scenarios"
 
     def test_include_affected_resource_flag_usage(self):
-        """BR-496 v2: All scenarios have include_affected_resource=False (HAPI injects post-loop)."""
-        scenarios_with_affected_resource = [
-            scenario for scenario in MOCK_SCENARIOS.values()
-            if scenario.include_affected_resource
+        """#529: rca_incomplete is the only scenario with include_affected_resource=False."""
+        scenarios_without_resource = [
+            scenario.name for scenario in MOCK_SCENARIOS.values()
+            if not scenario.include_affected_resource
         ]
 
-        assert len(scenarios_with_affected_resource) == 0, \
-            "BR-496 v2: No scenario should include affectedResource — HAPI injects from root_owner"
+        assert scenarios_without_resource == ["rca_incomplete"], \
+            f"Only rca_incomplete should omit remediationTarget, got: {scenarios_without_resource}"
 
     def test_rca_incomplete_workflow_validation_trigger(self):
         """Verify rca_incomplete scenario will trigger HAPI validation (BR-HAPI-212)."""
@@ -143,17 +143,17 @@ class TestRCAIncompleteIntegrationPattern:
 
         # BR-HAPI-212 validation should trigger when:
         # 1. selected_workflow is not None (workflow IS selected)
-        # 2. affectedResource is missing from root_cause_analysis
+        # 2. remediationTarget is missing from root_cause_analysis
         # 3. investigation_outcome is not "resolved"
 
         # Condition 1: Workflow selected
         assert scenario.workflow_id != "", \
             "Workflow must be selected for BR-HAPI-212 validation to trigger"
 
-        # Condition 2: affectedResource will be missing in response
+        # Condition 2: remediationTarget will be missing in response
         assert scenario.include_affected_resource == False, \
-            "affectedResource must be missing for BR-HAPI-212 validation to trigger"
+            "remediationTarget must be missing for BR-HAPI-212 validation to trigger"
 
         # Condition 3: investigation_outcome is not "resolved" (implied, no investigation_outcome set)
         # This is implicit - rca_incomplete scenario doesn't set investigation_outcome="resolved"
-        # HAPI validation will see: workflow selected + missing affectedResource → needs_human_review=True
+        # HAPI validation will see: workflow selected + missing remediationTarget → needs_human_review=True

@@ -144,10 +144,10 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	// ADR-056: Extract detected_labels from HAPI response into PostRCAContext
 	p.populatePostRCAContext(analysis, resp.DetectedLabels.Value, resp.DetectedLabels.Set, resp.DetectedLabels.Null)
 
-	// ADR-055: TargetInOwnerChain removed. affectedResource is now a first-class
+	// ADR-055: TargetInOwnerChain removed. remediationTarget is now a first-class
 	// LLM RCA output, not derived from pre-computed owner chain.
 
-	// Store root cause analysis (if present) - uses centralized helper with affectedResource
+	// Store root cause analysis (if present) - uses centralized helper with remediationTarget
 	if len(resp.RootCauseAnalysis) > 0 {
 		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
 			analysis.Status.RootCause = rca.Summary
@@ -368,7 +368,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 		}
 	}
 
-	// Preserve RCA if available - Issue #97: uses centralized helper with affectedResource
+	// Preserve RCA if available - Issue #97: uses centralized helper with remediationTarget
 	if len(resp.RootCauseAnalysis) > 0 {
 		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
 			analysis.Status.RootCauseAnalysis = rca
@@ -408,7 +408,7 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 
 	analysis.Status.Warnings = resp.Warnings
 
-	// Store RCA if available - Issue #97: uses centralized helper with affectedResource
+	// Store RCA if available - Issue #97: uses centralized helper with remediationTarget
 	if len(resp.RootCauseAnalysis) > 0 {
 		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
 			analysis.Status.RootCauseAnalysis = rca
@@ -720,9 +720,10 @@ func mapWarningsToSubReason(warnings []string) string {
 	}
 }
 
-// ExtractRootCauseAnalysis extracts RCA from an IncidentResponse, including affectedResource.
+// ExtractRootCauseAnalysis extracts RCA from an IncidentResponse, including remediationTarget.
 // Issue #97: Centralizes RCA extraction (was duplicated in 5 handler functions).
-// BR-496 v2: affectedResource is HAPI-injected from K8s-verified root_owner, not LLM-provided.
+// BR-496 v2: remediationTarget is HAPI-injected from K8s-verified root_owner, not LLM-provided.
+// #542: HAPI emits "remediationTarget" in JSON; CRD stores it as AffectedResource (no schema change).
 func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalysis {
 	rcaMap := GetMapFromOptNil(rcaData)
 	if rcaMap == nil {
@@ -735,8 +736,8 @@ func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalys
 		ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
 	}
 
-	// BR-496 v2: affectedResource is HAPI-injected from K8s-verified root_owner
-	if arRaw, ok := rcaMap["affectedResource"]; ok {
+	// #542: HAPI emits "remediationTarget"; maps to CRD's AffectedResource field.
+	if arRaw, ok := rcaMap["remediationTarget"]; ok {
 		if arMap, ok := arRaw.(map[string]interface{}); ok {
 			kind, _ := arMap["kind"].(string)
 			name, _ := arMap["name"].(string)
