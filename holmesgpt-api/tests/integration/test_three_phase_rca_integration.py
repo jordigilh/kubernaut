@@ -113,7 +113,7 @@ def _make_incident_request(incident_id: str = "inc-it-529") -> dict:
 def _phase1_analysis_json(affected_resource=None):
     rca = {"summary": "OOM detected due to traffic spike", "severity": "critical"}
     if affected_resource:
-        rca["affectedResource"] = affected_resource
+        rca["remediationTarget"] = affected_resource
     return json.dumps({"root_cause_analysis": rca})
 
 

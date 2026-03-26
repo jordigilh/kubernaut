@@ -157,14 +157,14 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 		analysis.Status.Reason = "WorkflowResolutionFailed"
 		analysis.Status.NeedsHumanReview = true
 		analysis.Status.HumanReviewReason = "rca_incomplete"
-		analysis.Status.Message = "RCA analysis incomplete: missing affectedResource field in incident data"
+		analysis.Status.Message = "RCA analysis incomplete: missing remediationTarget field in incident data"
 		Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
 			By("Validating AIAnalysis status fields")
 			Expect(analysis.Status.NeedsHumanReview).To(BeTrue(), "NeedsHumanReview must be true")
 			Expect(analysis.Status.HumanReviewReason).To(Equal("rca_incomplete"), "HumanReviewReason must match Mock LLM scenario")
 			Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"), "Reason should be WorkflowResolutionFailed")
-			Expect(analysis.Status.Message).To(ContainSubstring("affectedResource"), "Message should explain missing affectedResource")
+			Expect(analysis.Status.Message).To(ContainSubstring("remediationTarget"), "Message should explain missing remediationTarget")
 
 			By("Waiting for RO to create NotificationRequest")
 			var notification *notificationv1.NotificationRequest

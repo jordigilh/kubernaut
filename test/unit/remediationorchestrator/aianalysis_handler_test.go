@@ -594,7 +594,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai.Status.Phase = "Failed"
 				ai.Status.NeedsHumanReview = true
 				ai.Status.HumanReviewReason = "rca_incomplete"
-				ai.Status.Message = "RCA is missing affectedResource - cannot determine target"
+				ai.Status.Message = "RCA is missing remediationTarget - cannot determine target"
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -746,7 +746,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai.Status.Phase = "Failed"
 				ai.Status.NeedsHumanReview = true
 				ai.Status.HumanReviewReason = "rca_incomplete"
-				ai.Status.Message = "RCA missing affectedResource"
+				ai.Status.Message = "RCA missing remediationTarget"
 				ai.Status.RootCause = "Pod crash loop detected"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)

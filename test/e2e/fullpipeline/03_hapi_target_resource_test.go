@@ -39,9 +39,9 @@ import (
 // BR-496 v2: HAPI-Owned Target Resource Identity E2E Tests
 //
 // Validates that HAPI (not the LLM) owns the target resource identity:
-//   - affectedResource is derived from get_namespaced_resource_context's root_owner
+//   - remediationTarget is derived from get_namespaced_resource_context's root_owner
 //   - TARGET_RESOURCE_* params are injected by HAPI into workflow parameters
-//   - The mock LLM does NOT provide affectedResource (proving HAPI injection)
+//   - The mock LLM does NOT provide remediationTarget (proving HAPI injection)
 //
 // Pipeline: OOMKill → Gateway → RO → SP → AA → HAPI(MockLLM) → WE(Job)
 var _ = Describe("HAPI-Owned Target Resource [BR-496]", func() {

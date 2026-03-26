@@ -44,7 +44,7 @@ ENRICHMENT_RESULT = EnrichmentResult(
 PHASE1_ANALYSIS = json.dumps({
     "root_cause_analysis": {
         "summary": "OOM detected in pod api-xyz due to memory leak in request handler",
-        "affectedResource": VALID_AFFECTED_RESOURCE,
+        "remediationTarget": VALID_AFFECTED_RESOURCE,
     },
 })
 

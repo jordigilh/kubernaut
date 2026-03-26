@@ -66,7 +66,7 @@ class TestEnrichmentLabelsInWorkflowDiscovery:
             analysis=json.dumps({
                 "root_cause_analysis": {
                     "summary": "OOM detected",
-                    "affectedResource": {"kind": "Pod", "name": "api-xyz", "namespace": "prod"},
+                    "remediationTarget": {"kind": "Pod", "name": "api-xyz", "namespace": "prod"},
                 },
             }),
         )
@@ -135,7 +135,7 @@ class TestEnrichmentLabelsInWorkflowDiscovery:
             analysis=json.dumps({
                 "root_cause_analysis": {
                     "summary": "OOM detected",
-                    "affectedResource": {"kind": "Pod", "name": "api-xyz", "namespace": "prod"},
+                    "remediationTarget": {"kind": "Pod", "name": "api-xyz", "namespace": "prod"},
                 },
             }),
         )

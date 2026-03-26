@@ -140,7 +140,7 @@ func (m *MockHolmesGPTClient) WithSuccessResponse(analysis string, confidence fl
 }
 
 // WithFullResponse configures the mock to return a complete response including RCA and workflow.
-// ADR-055: targetInOwnerChain parameter removed - affectedResource is now in RCA output.
+// ADR-055: targetInOwnerChain parameter removed - remediationTarget is now in RCA output.
 func (m *MockHolmesGPTClient) WithFullResponse(
 	analysis string,
 	confidence float64,

@@ -205,7 +205,7 @@ func SimulateAINeedsHumanReview(ctx context.Context, k8sClient client.Client, ai
 		ai.Status.Reason = "WorkflowResolutionFailed"
 		ai.Status.NeedsHumanReview = true
 		ai.Status.HumanReviewReason = "rca_incomplete"
-		ai.Status.Message = "RCA analysis incomplete: missing affectedResource field in incident data"
+		ai.Status.Message = "RCA analysis incomplete: missing remediationTarget field in incident data"
 		return k8sClient.Status().Update(ctx, ai)
 	})).To(Succeed())
 }
