@@ -178,7 +178,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 				Summary:    "Memory exhaustion due to unbounded cache growth",
 				Severity:   "critical",
 				SignalType: "alert",
-				AffectedResource: &aianalysisv1.AffectedResource{
+				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "Pod",
 					Name:      "test-pod-completion",
 					Namespace: testNS,

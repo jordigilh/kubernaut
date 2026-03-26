@@ -42,26 +42,27 @@ from holmes.core.models import InvestigationResult
 logger = logging.getLogger(__name__)
 
 
-def _parse_affected_resource(rca_data: Dict[str, Any]) -> Optional[Dict[str, str]]:
-    """Extract and validate affectedResource from the RCA data.
+def _parse_remediation_target(rca_data: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """Extract and validate remediationTarget from the RCA data.
 
-    BR-HAPI-261: The LLM provides affectedResource in its Phase 1 RCA response.
+    BR-HAPI-261 / #542: The LLM provides remediationTarget in its Phase 1 RCA
+    response — the resource the workflow will operate on.
     Two valid structures:
       - Namespaced: {"kind": "...", "name": "...", "namespace": "..."}
       - Cluster:    {"kind": "...", "name": "..."}
 
     Returns the validated resource dict or None if absent/invalid.
     """
-    raw = rca_data.get("affectedResource")
+    raw = rca_data.get("remediationTarget")
     if raw is None:
         return None
     if not isinstance(raw, dict):
-        logger.warning({"event": "invalid_affected_resource_type", "type": type(raw).__name__})
+        logger.warning({"event": "invalid_remediation_target_type", "type": type(raw).__name__})
         return None
     kind = str(raw.get("kind", "")).strip()
     name = str(raw.get("name", "")).strip()
     if not kind or not name:
-        logger.warning({"event": "missing_affected_resource_fields", "kind": kind, "name": name})
+        logger.warning({"event": "missing_remediation_target_fields", "kind": kind, "name": name})
         return None
     result: Dict[str, str] = {"kind": kind, "name": name}
     namespace = str(raw.get("namespace", "")).strip()
@@ -427,7 +428,7 @@ def parse_and_validate_investigation_result(
     # BR-HAPI-197: Confidence threshold enforcement is AIAnalysis's responsibility, not HAPI's
     # HAPI only sets needs_human_review for validation failures, not confidence thresholds
     # AIAnalysis will apply the 70% threshold (V1.0) or configurable rules (V1.1, BR-HAPI-198)
-    # BR-496 v2: affectedResource validation removed from parser — HAPI injects it
+    # BR-496 v2: remediationTarget validation removed from parser — HAPI injects it
     # from K8s-verified root_owner post-loop via _inject_target_resource.
 
     # E2E-HAPI-003: Extract validation_attempts_history from LLM if provided

@@ -255,13 +255,13 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Step 5: Update AIAnalysis status with needsHumanReview=true (rca_incomplete reason)
-			// This simulates HAPI returning needs_human_review=true due to missing affectedResource (BR-HAPI-212)
+			// This simulates HAPI returning needs_human_review=true due to missing remediationTarget (BR-HAPI-212)
 			analysis.Status = aianalysisv1.AIAnalysisStatus{
 				Phase:             "Failed",
 				Reason:            "WorkflowResolutionFailed",
 				NeedsHumanReview:  true,
 				HumanReviewReason: "rca_incomplete",
-				Message:           "RCA is missing affectedResource - cannot determine target for remediation",
+				Message:           "RCA is missing remediationTarget - cannot determine target for remediation",
 			}
 			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 

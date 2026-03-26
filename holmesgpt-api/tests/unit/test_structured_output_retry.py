@@ -254,7 +254,7 @@ class TestLegitimateNoWorkflowOutcomes:
     "summary": "DiskPressure caused by emptyDir growth on postgres-emptydir.",
     "severity": "critical",
     "contributing_factors": ["emptyDir volume growth"],
-    "affectedResource": {"kind": "Deployment", "name": "postgres-emptydir", "namespace": "disk-pressure-demo"}
+    "remediationTarget": {"kind": "Deployment", "name": "postgres-emptydir", "namespace": "disk-pressure-demo"}
   },
   "confidence": 0.9,
   "selected_workflow": {

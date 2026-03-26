@@ -92,7 +92,7 @@ func completeAA() *aianalysisv1.AIAnalysis {
 				Severity:           "critical",
 				SignalType:         "OOMKilled",
 				ContributingFactors: []string{"high memory usage"},
-				AffectedResource:   &aianalysisv1.AffectedResource{Kind: "Deployment", Name: "my-app", Namespace: "default"},
+				RemediationTarget:   &aianalysisv1.RemediationTarget{Kind: "Deployment", Name: "my-app", Namespace: "default"},
 			},
 			SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 				WorkflowID:           "restart-pod",

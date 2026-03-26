@@ -97,7 +97,7 @@ class TestInjectTargetResource:
         assert params["TARGET_RESOURCE_NAMESPACE"] == "demo"
 
     def test_ut_hapi_496_002_affected_resource_constructed_for_go_compat(self):
-        """UT-HAPI-496-002: affectedResource constructed in RCA from root_owner for Go backward compat."""
+        """UT-HAPI-496-002: remediationTarget constructed in RCA from root_owner for Go backward compat."""
         result = _make_result(
             selected_workflow={
                 "workflow_id": "oom-recovery-v1",
@@ -108,7 +108,7 @@ class TestInjectTargetResource:
 
         _inject_target_resource(result, session_state, "rem-001")
 
-        ar = result["root_cause_analysis"]["affectedResource"]
+        ar = result["root_cause_analysis"]["remediationTarget"]
         assert ar["kind"] == "Deployment"
         assert ar["name"] == "postgres-emptydir"
         assert ar["namespace"] == "demo"
@@ -128,7 +128,7 @@ class TestInjectTargetResource:
         assert result["needs_human_review"] is True
         assert result["human_review_reason"] == "rca_incomplete"
         assert "TARGET_RESOURCE_NAME" not in result["selected_workflow"]["parameters"]
-        assert "affectedResource" not in result["root_cause_analysis"]
+        assert "remediationTarget" not in result["root_cause_analysis"]
 
     def test_ut_hapi_496_004_no_injection_when_no_workflow(self):
         """UT-HAPI-496-004: No TARGET_RESOURCE_* injection when no selected_workflow."""
@@ -140,14 +140,14 @@ class TestInjectTargetResource:
         assert result["selected_workflow"] is None
         assert "needs_human_review" not in result
 
-    def test_ut_hapi_496_005_affected_resource_populated_without_workflow(self):
-        """UT-HAPI-496-005: affectedResource populated in RCA even when no workflow selected."""
+    def test_ut_hapi_496_005_remediation_target_populated_without_workflow(self):
+        """UT-HAPI-496-005: remediationTarget populated in RCA even when no workflow selected."""
         result = _make_result(selected_workflow=None)
         session_state = {"root_owner": ROOT_OWNER_DEPLOYMENT}
 
         _inject_target_resource(result, session_state, "rem-001")
 
-        ar = result["root_cause_analysis"]["affectedResource"]
+        ar = result["root_cause_analysis"]["remediationTarget"]
         assert ar["kind"] == "Deployment"
         assert ar["name"] == "postgres-emptydir"
         assert ar["namespace"] == "demo"
@@ -192,13 +192,13 @@ class TestInjectTargetResource:
         assert params["TARGET_RESOURCE_KIND"] == "Node"
         assert "TARGET_RESOURCE_NAMESPACE" not in params
 
-        ar = result["root_cause_analysis"]["affectedResource"]
+        ar = result["root_cause_analysis"]["remediationTarget"]
         assert ar["kind"] == "Node"
         assert ar["name"] == "worker-1"
         assert "namespace" not in ar
 
-    def test_ut_hapi_496_019_llm_provided_affected_resource_overwritten(self):
-        """UT-HAPI-496-019: LLM-provided affectedResource unconditionally overwritten by root_owner."""
+    def test_ut_hapi_496_019_llm_provided_remediation_target_overwritten(self):
+        """UT-HAPI-496-019: LLM-provided remediationTarget unconditionally overwritten by root_owner."""
         result = _make_result(
             selected_workflow={
                 "workflow_id": "oom-recovery-v1",
@@ -208,7 +208,7 @@ class TestInjectTargetResource:
                 "summary": "OOM detected",
                 "severity": "high",
                 "contributing_factors": [],
-                "affectedResource": {
+                "remediationTarget": {
                     "kind": "Pod",
                     "name": "api-xyz-123",
                     "namespace": "prod",
@@ -225,7 +225,7 @@ class TestInjectTargetResource:
 
         _inject_target_resource(result, session_state, "rem-003")
 
-        ar = result["root_cause_analysis"]["affectedResource"]
+        ar = result["root_cause_analysis"]["remediationTarget"]
         assert ar["kind"] == "Deployment"
         assert ar["name"] == "api"
         assert ar["namespace"] == "prod"
@@ -438,9 +438,9 @@ class TestPromptAndParser(unittest.TestCase):
         """
         prompt = create_incident_investigation_prompt(STANDARD_REQUEST_DATA)
         self.assertIn(
-            "affectedResource",
+            "remediationTarget",
             prompt,
-            "#516: Prompt must include affectedResource in JSON example for mismatch validation",
+            "#516: Prompt must include remediationTarget in JSON example for mismatch validation",
         )
 
     def test_ut_hapi_496_016_prompt_instructs_resource_context_tools(self):
@@ -720,7 +720,7 @@ class TestConditionalInjection524:
 
         _inject_target_resource(result, session_state, "rem-524-035")
 
-        ar = result["root_cause_analysis"]["affectedResource"]
+        ar = result["root_cause_analysis"]["remediationTarget"]
         assert ar["kind"] == "Node"
         assert ar["name"] == "worker-3"
         assert "namespace" not in ar

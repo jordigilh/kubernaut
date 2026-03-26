@@ -120,9 +120,9 @@ func (c *WorkflowExecutionCreator) Create(
 				EngineConfig:          ai.Status.SelectedWorkflow.EngineConfig,
 			},
 			// TargetResource: String format "namespace/kind/name" (per API contract)
-			// BR-HAPI-191: Prefer LLM-identified AffectedResource (e.g., Deployment)
-			// over the RR's TargetResource (e.g., Pod) when available.
-			// The LLM often identifies the correct higher-level resource to patch.
+		// BR-HAPI-191: Prefer LLM-identified RemediationTarget (e.g., Deployment)
+		// over the RR's TargetResource (e.g., Pod) when available.
+		// The LLM often identifies the correct higher-level resource to patch.
 			TargetResource: resolveTargetResource(rr, ai),
 			// Parameters: Direct pass-through from AIAnalysis
 			Parameters: ai.Status.SelectedWorkflow.Parameters,
@@ -185,14 +185,14 @@ func BuildTargetResourceString(rr *remediationv1.RemediationRequest) string {
 }
 
 // resolveTargetResource determines the target resource string for the WorkflowExecution.
-// BR-HAPI-191: Prefers the LLM-identified AffectedResource from RootCauseAnalysis when
+// BR-HAPI-191: Prefers the LLM-identified RemediationTarget from RootCauseAnalysis when
 // available, falling back to the RemediationRequest's TargetResource.
 // The LLM may identify a higher-level owner resource (e.g., Deployment) rather than the
 // Pod that generated the signal, which is the correct target for patching operations.
 func resolveTargetResource(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) string {
-	// Prefer AffectedResource from RCA if available
-	if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.AffectedResource != nil {
-		ar := ai.Status.RootCauseAnalysis.AffectedResource
+	// Prefer RemediationTarget from RCA if available
+	if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
+		ar := ai.Status.RootCauseAnalysis.RemediationTarget
 		if ar.Kind != "" && ar.Name != "" {
 			if ar.Namespace != "" {
 				return fmt.Sprintf("%s/%s/%s", ar.Namespace, ar.Kind, ar.Name)

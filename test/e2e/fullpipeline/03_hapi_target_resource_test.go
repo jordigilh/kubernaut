@@ -39,9 +39,9 @@ import (
 // BR-496 v2: HAPI-Owned Target Resource Identity E2E Tests
 //
 // Validates that HAPI (not the LLM) owns the target resource identity:
-//   - affectedResource is derived from get_namespaced_resource_context's root_owner
+//   - remediationTarget is derived from get_namespaced_resource_context's root_owner
 //   - TARGET_RESOURCE_* params are injected by HAPI into workflow parameters
-//   - The mock LLM does NOT provide affectedResource (proving HAPI injection)
+//   - The mock LLM does NOT provide remediationTarget (proving HAPI injection)
 //
 // Pipeline: OOMKill → Gateway → RO → SP → AA → HAPI(MockLLM) → WE(Job)
 var _ = Describe("HAPI-Owned Target Resource [BR-496]", func() {
@@ -67,13 +67,13 @@ var _ = Describe("HAPI-Owned Target Resource [BR-496]", func() {
 		testCancel()
 	})
 
-	// E2E-FP-496-001: CRD affectedResource matches root_owner
+	// E2E-FP-496-001: CRD remediationTarget matches root_owner
 	// E2E-FP-496-002: WFE params contain injected TARGET_RESOURCE_*
-	// E2E-FP-496-003: Mock LLM response lacks affectedResource (HAPI adds it)
+	// E2E-FP-496-003: Mock LLM response lacks remediationTarget (HAPI adds it)
 	//
 	// All three test IDs are validated in a single pipeline execution to avoid
 	// duplicating the 5-10 minute Kind cluster pipeline setup.
-	It("should populate affectedResource and TARGET_RESOURCE_* from root_owner, not from LLM [E2E-FP-496-001/002/003]", func() {
+	It("should populate remediationTarget and TARGET_RESOURCE_* from root_owner, not from LLM [E2E-FP-496-001/002/003]", func() {
 
 		// ================================================================
 		// Step 1: Create a managed namespace and deploy memory-eater
@@ -190,34 +190,34 @@ var _ = Describe("HAPI-Owned Target Resource [BR-496]", func() {
 			"AIAnalysis should reach Completed phase")
 
 		// ================================================================
-		// E2E-FP-496-001: CRD affectedResource matches root_owner
+		// E2E-FP-496-001: CRD remediationTarget matches root_owner
 		// ================================================================
-		By("[E2E-FP-496-001] Verifying AIAnalysis affectedResource matches K8s root_owner")
+		By("[E2E-FP-496-001] Verifying AIAnalysis remediationTarget matches K8s root_owner")
 		aa := &aianalysisv1.AIAnalysis{}
 		Expect(apiReader.Get(testCtx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
 
-		// E2E-FP-496-003: The mock LLM does NOT include affectedResource in its
+		// E2E-FP-496-003: The mock LLM does NOT include remediationTarget in its
 		// JSON response (include_affected_resource=False). The presence of this
 		// field in the CRD proves HAPI's _inject_target_resource populated it
 		// from root_owner (K8s owner chain: Pod → ReplicaSet → Deployment).
 		Expect(aa.Status.RootCauseAnalysis).ToNot(BeNil(),
 			"AIAnalysis should have rootCauseAnalysis (mock LLM returns RCA)")
-		Expect(aa.Status.RootCauseAnalysis.AffectedResource).ToNot(BeNil(),
-			"[E2E-FP-496-003] affectedResource must be populated even though mock LLM omits it (HAPI injection)")
+		Expect(aa.Status.RootCauseAnalysis.RemediationTarget).ToNot(BeNil(),
+			"[E2E-FP-496-003] remediationTarget must be populated even though mock LLM omits it (HAPI injection)")
 
-		ar := aa.Status.RootCauseAnalysis.AffectedResource
+		ar := aa.Status.RootCauseAnalysis.RemediationTarget
 
 		// The memory-eater is a Deployment. get_namespaced_resource_context resolves the
 		// owner chain: Pod → ReplicaSet → Deployment ("memory-eater").
-		// HAPI's _inject_target_resource copies root_owner into affectedResource.
+		// HAPI's _inject_target_resource copies root_owner into remediationTarget.
 		Expect(ar.Kind).To(Equal("Deployment"),
-			"[E2E-FP-496-001] affectedResource.kind should be Deployment (root_owner of memory-eater Pod)")
+			"[E2E-FP-496-001] remediationTarget.kind should be Deployment (root_owner of memory-eater Pod)")
 		Expect(ar.Name).To(Equal("memory-eater"),
-			"[E2E-FP-496-001] affectedResource.name should be memory-eater (Deployment name)")
+			"[E2E-FP-496-001] remediationTarget.name should be memory-eater (Deployment name)")
 		Expect(ar.Namespace).To(Equal(testNamespace),
-			"[E2E-FP-496-001] affectedResource.namespace should match the test namespace")
+			"[E2E-FP-496-001] remediationTarget.namespace should match the test namespace")
 
-		GinkgoWriter.Printf("  [E2E-FP-496-001] affectedResource: %s/%s/%s (K8s-verified root_owner)\n",
+		GinkgoWriter.Printf("  [E2E-FP-496-001] remediationTarget: %s/%s/%s (K8s-verified root_owner)\n",
 			ar.Kind, ar.Name, ar.Namespace)
 
 		// ================================================================
@@ -261,19 +261,19 @@ var _ = Describe("HAPI-Owned Target Resource [BR-496]", func() {
 		GinkgoWriter.Printf("  [E2E-FP-496-002] WFE params: TARGET_RESOURCE_NAME=%s, KIND=%s, NAMESPACE=%s\n",
 			params["TARGET_RESOURCE_NAME"], params["TARGET_RESOURCE_KIND"], params["TARGET_RESOURCE_NAMESPACE"])
 
-		// Cross-validation: WFE params must be consistent with AA affectedResource
+		// Cross-validation: WFE params must be consistent with AA remediationTarget
 		Expect(params["TARGET_RESOURCE_NAME"]).To(Equal(ar.Name),
-			"TARGET_RESOURCE_NAME must match affectedResource.name")
+			"TARGET_RESOURCE_NAME must match remediationTarget.name")
 		Expect(params["TARGET_RESOURCE_KIND"]).To(Equal(ar.Kind),
-			"TARGET_RESOURCE_KIND must match affectedResource.kind")
+			"TARGET_RESOURCE_KIND must match remediationTarget.kind")
 		Expect(params["TARGET_RESOURCE_NAMESPACE"]).To(Equal(ar.Namespace),
-			"TARGET_RESOURCE_NAMESPACE must match affectedResource.namespace")
+			"TARGET_RESOURCE_NAMESPACE must match remediationTarget.namespace")
 
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("HAPI-OWNED TARGET RESOURCE TEST COMPLETE [BR-496]")
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		GinkgoWriter.Println("  E2E-FP-496-001: affectedResource populated from K8s root_owner")
+		GinkgoWriter.Println("  E2E-FP-496-001: remediationTarget populated from K8s root_owner")
 		GinkgoWriter.Println("  E2E-FP-496-002: TARGET_RESOURCE_* injected into WFE params")
-		GinkgoWriter.Println("  E2E-FP-496-003: Mock LLM omits affectedResource, HAPI adds it")
+		GinkgoWriter.Println("  E2E-FP-496-003: Mock LLM omits remediationTarget, HAPI adds it")
 	})
 })

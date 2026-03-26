@@ -77,7 +77,7 @@ func (c *EffectivenessAssessmentCreator) StabilizationWindow() time.Duration {
 // effectiveness assessment (DD-EM-003).
 //
 // Signal: The resource that triggered the alert (from RR.Spec.TargetResource).
-// Remediation: The resource the workflow actually modified (from AA.Status.RootCauseAnalysis.AffectedResource).
+// Remediation: The resource the workflow actually modified (from AA.Status.RootCauseAnalysis.RemediationTarget).
 // These may differ (e.g., alert on Deployment, workflow patches HPA).
 type DualTarget struct {
 	Signal      eav1.TargetResource

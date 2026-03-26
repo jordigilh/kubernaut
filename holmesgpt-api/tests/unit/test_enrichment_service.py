@@ -48,7 +48,7 @@ class TestEnrichmentService:
 
         service = EnrichmentService(k8s_client=mock_k8s, history_fetcher=AsyncMock(return_value=None))
         result = await service.enrich(
-            affected_resource={"kind": "Pod", "name": "api-server-abc123", "namespace": "production"}
+            remediation_target={"kind": "Pod", "name": "api-server-abc123", "namespace": "production"}
         )
 
         assert result.root_owner is not None
@@ -77,7 +77,7 @@ class TestEnrichmentService:
 
         service = EnrichmentService(k8s_client=mock_k8s, history_fetcher=mock_history_fetcher)
         result = await service.enrich(
-            affected_resource={"kind": "Deployment", "name": "api-server", "namespace": "production"}
+            remediation_target={"kind": "Deployment", "name": "api-server", "namespace": "production"}
         )
 
         assert result.remediation_history is not None
@@ -105,7 +105,7 @@ class TestEnrichmentService:
 
         service = EnrichmentService(k8s_client=mock_k8s, history_fetcher=AsyncMock(return_value=None))
         result = await service.enrich(
-            affected_resource={"kind": "Pod", "name": "pod-1", "namespace": "default"}
+            remediation_target={"kind": "Pod", "name": "pod-1", "namespace": "default"}
         )
 
         assert result.root_owner is not None
@@ -131,7 +131,7 @@ class TestEnrichmentService:
 
         service = EnrichmentService(k8s_client=mock_k8s, history_fetcher=mock_history_fetcher)
         result = await service.enrich(
-            affected_resource={"kind": "Deployment", "name": "api-server", "namespace": "production"}
+            remediation_target={"kind": "Deployment", "name": "api-server", "namespace": "production"}
         )
 
         assert result.remediation_history is not None
@@ -156,7 +156,7 @@ class TestEnrichmentService:
 
         with pytest.raises(EnrichmentFailure) as exc_info:
             await service.enrich(
-                affected_resource={"kind": "Pod", "name": "pod-1", "namespace": "default"}
+                remediation_target={"kind": "Pod", "name": "pod-1", "namespace": "default"}
             )
 
         assert "rca_incomplete" in str(exc_info.value).lower() or exc_info.value.reason == "rca_incomplete"
@@ -186,7 +186,7 @@ class TestEnrichmentService:
             label_detector=AsyncMock(return_value={"gitOpsManaged": True}),
         )
         result = await service.enrich(
-            affected_resource={"kind": "Deployment", "name": "api-server", "namespace": "production"}
+            remediation_target={"kind": "Deployment", "name": "api-server", "namespace": "production"}
         )
 
         assert result.root_owner is not None
@@ -221,7 +221,7 @@ class TestEnrichmentService:
             label_detector=mock_label_detector,
         )
         result = await service.enrich(
-            affected_resource={"kind": "Pod", "name": "pod-1", "namespace": "default"}
+            remediation_target={"kind": "Pod", "name": "pod-1", "namespace": "default"}
         )
 
         assert result.detected_labels is not None
@@ -247,7 +247,7 @@ class TestEnrichmentService:
 
         service = EnrichmentService(k8s_client=mock_k8s, history_fetcher=None)
         result = await service.enrich(
-            affected_resource={"kind": "Deployment", "name": "api-server", "namespace": "production"}
+            remediation_target={"kind": "Deployment", "name": "api-server", "namespace": "production"}
         )
 
         assert result.root_owner is not None

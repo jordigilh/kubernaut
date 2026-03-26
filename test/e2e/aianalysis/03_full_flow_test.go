@@ -126,9 +126,9 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			Expect(analysis.Status.RootCauseAnalysis.SignalType).NotTo(BeEmpty())
 			Expect(analysis.Status.RootCauseAnalysis.ContributingFactors).To(ContainElement("identified_by_mock_llm"))
 
-			// E2E-AA-163-001: AffectedResource populated from mock LLM (crashloop scenario returns Deployment)
-			Expect(analysis.Status.RootCauseAnalysis.AffectedResource).NotTo(BeNil())
-			Expect(analysis.Status.RootCauseAnalysis.AffectedResource.Kind).To(Equal("Deployment"))
+			// E2E-AA-163-001: RemediationTarget populated from mock LLM (crashloop scenario returns Deployment)
+			Expect(analysis.Status.RootCauseAnalysis.RemediationTarget).NotTo(BeNil())
+			Expect(analysis.Status.RootCauseAnalysis.RemediationTarget.Kind).To(Equal("Deployment"))
 
 			// E2E-AA-163-002: Condition assertions for completed AA
 			Expect(analysis.Status.Conditions).To(ContainElements(

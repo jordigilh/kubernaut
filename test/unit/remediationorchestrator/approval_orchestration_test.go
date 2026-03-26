@@ -404,7 +404,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 						Rationale:      "Pod restart recommended",
 					},
 					ApprovalRequired: true,
-					ApprovalReason:   "Missing affected resource - cannot determine remediation target (BR-AI-085-005)",
+					ApprovalReason:   "Missing remediation target - cannot determine resource to remediate (BR-AI-085-005)",
 				},
 			}
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
@@ -415,7 +415,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 			rar := &remediationv1.RemediationApprovalRequest{}
 			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, rar)).To(Succeed())
 
-			Expect(rar.Spec.WhyApprovalRequired).To(ContainSubstring("Missing affected resource"))
+			Expect(rar.Spec.WhyApprovalRequired).To(ContainSubstring("Missing remediation target"))
 			Expect(rar.Spec.WhyApprovalRequired).ToNot(ContainSubstring("is below"))
 		})
 

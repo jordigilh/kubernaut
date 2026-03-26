@@ -809,7 +809,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 // Business Requirement: BR-EM-004 (correct target routing for effectiveness assessment)
 //
 // Verifies that the RO populates SignalTarget from the RR's TargetResource
-// and RemediationTarget from the AI's AffectedResource.
+// and RemediationTarget from the AI's RemediationTarget.
 // ============================================================================
 var _ = Describe("EA Dual-Target Creation (DD-EM-003)", func() {
 
@@ -872,13 +872,13 @@ var _ = Describe("EA Dual-Target Creation (DD-EM-003)", func() {
 		Expect(ea.Spec.SignalTarget.Namespace).To(Equal(rr.Spec.TargetResource.Namespace),
 			"DD-EM-003: SignalTarget.Namespace must come from the RR (signal source)")
 
-		// DD-EM-003: RemediationTarget comes from AI's AffectedResource
+		// DD-EM-003: RemediationTarget comes from AI's RemediationTarget
 		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Deployment"),
-			"DD-EM-003: RemediationTarget.Kind must come from AI AffectedResource")
+			"DD-EM-003: RemediationTarget.Kind must come from AI RemediationTarget")
 		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-deployment"),
-			"DD-EM-003: RemediationTarget.Name must come from AI AffectedResource")
+			"DD-EM-003: RemediationTarget.Name must come from AI RemediationTarget")
 		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(namespace),
-			"DD-EM-003: RemediationTarget.Namespace must come from AI AffectedResource")
+			"DD-EM-003: RemediationTarget.Namespace must come from AI RemediationTarget")
 
 		// The targets should differ (the whole point of dual-target)
 		Expect(ea.Spec.SignalTarget.Name).ToNot(Equal(ea.Spec.RemediationTarget.Name),

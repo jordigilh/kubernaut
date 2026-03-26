@@ -420,13 +420,13 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(mockEvaluator.LastInput.Confidence).To(BeNumerically("~", 0.92, 0.01))
 			})
 
-			// ADR-055: TargetInOwnerChain replaced by AffectedResource
-			It("should pass AffectedResource from RCA status", func() {
+			// ADR-055: TargetInOwnerChain replaced by RemediationTarget
+			It("should pass RemediationTarget from RCA status", func() {
 				analysis := createTestAnalysis()
 				analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 					Summary:  "OOM detected",
 					Severity: "high",
-					AffectedResource: &aianalysisv1.AffectedResource{
+					RemediationTarget: &aianalysisv1.RemediationTarget{
 						Kind:      "Deployment",
 						Name:      "api-server",
 						Namespace: "production",
@@ -437,10 +437,10 @@ var _ = Describe("AnalyzingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.AffectedResource).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.AffectedResource.Kind).To(Equal("Deployment"))
-				Expect(mockEvaluator.LastInput.AffectedResource.Name).To(Equal("api-server"))
-				Expect(mockEvaluator.LastInput.AffectedResource.Namespace).To(Equal("production"))
+				Expect(mockEvaluator.LastInput.RemediationTarget).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.RemediationTarget.Kind).To(Equal("Deployment"))
+				Expect(mockEvaluator.LastInput.RemediationTarget.Name).To(Equal("api-server"))
+				Expect(mockEvaluator.LastInput.RemediationTarget.Namespace).To(Equal("production"))
 			})
 
 			It("should pass Warnings from status", func() {

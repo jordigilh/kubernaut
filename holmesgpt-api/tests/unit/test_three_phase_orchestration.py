@@ -66,7 +66,7 @@ def _make_result(
         "needs_human_review": False,
     }
     if affected_resource:
-        result["root_cause_analysis"]["affectedResource"] = affected_resource
+        result["root_cause_analysis"]["remediationTarget"] = affected_resource
     if selected_workflow is not None:
         result["selected_workflow"] = selected_workflow
     else:
@@ -109,7 +109,7 @@ class TestInjectFromEnrichmentResult:
         assert params["TARGET_RESOURCE_KIND"] == "Deployment", "Should use EnrichmentResult root_owner kind"
         assert params["TARGET_RESOURCE_NAMESPACE"] == "prod", "Should use EnrichmentResult root_owner namespace"
 
-        ar = result["root_cause_analysis"]["affectedResource"]
+        ar = result["root_cause_analysis"]["remediationTarget"]
         assert ar["kind"] == "Deployment"
         assert ar["name"] == "api"
         assert ar["namespace"] == "prod"
@@ -184,7 +184,7 @@ class TestConversationContinuityOrchestration:
         phase1_analysis_text = json.dumps({
             "root_cause_analysis": {
                 "summary": "OOM detected",
-                "affectedResource": VALID_AFFECTED_RESOURCE,
+                "remediationTarget": VALID_AFFECTED_RESOURCE,
             },
         })
         phase1_result = InvestigationResult(analysis=phase1_analysis_text)
@@ -267,7 +267,7 @@ class TestThreePhaseFlow:
             analysis=json.dumps({
                 "root_cause_analysis": {
                     "summary": "OOM detected",
-                    "affectedResource": VALID_AFFECTED_RESOURCE,
+                    "remediationTarget": VALID_AFFECTED_RESOURCE,
                 },
             }),
         )
@@ -349,7 +349,7 @@ class TestThreePhaseFlow:
             analysis=json.dumps({
                 "root_cause_analysis": {
                     "summary": "OOM detected",
-                    "affectedResource": VALID_AFFECTED_RESOURCE,
+                    "remediationTarget": VALID_AFFECTED_RESOURCE,
                 },
             }),
         )

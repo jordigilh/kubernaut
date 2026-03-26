@@ -96,7 +96,7 @@ var _ = Describe("NotificationRequest Retry Integration (#281)", Label("integrat
 			Summary:    "Memory leak in container",
 			Severity:   "critical",
 			SignalType: "alert",
-			AffectedResource: &aianalysisv1.AffectedResource{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "Deployment",
 				Name:      "test-app",
 				Namespace: ns,

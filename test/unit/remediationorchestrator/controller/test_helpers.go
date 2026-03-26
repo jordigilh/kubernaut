@@ -200,7 +200,7 @@ func newSignalProcessing(name, namespace, rrName string, phase signalprocessingv
 }
 
 // newAIAnalysisCompleted creates a completed AIAnalysis CRD
-// DD-HAPI-006: AffectedResource is mandatory for completed AA (HAPI validates via ADR-055)
+// DD-HAPI-006: RemediationTarget is mandatory for completed AA (HAPI validates via ADR-055)
 func newAIAnalysisCompleted(name, namespace, rrName string, confidence float64, workflowID string) *aianalysisv1.AIAnalysis {
 	ai := newAIAnalysis(name, namespace, rrName, aianalysisv1.PhaseCompleted)
 	now := metav1.Now()
@@ -214,7 +214,7 @@ func newAIAnalysisCompleted(name, namespace, rrName string, confidence float64, 
 	ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 		Summary:  "Test root cause",
 		Severity: "high",
-		AffectedResource: &aianalysisv1.AffectedResource{
+		RemediationTarget: &aianalysisv1.RemediationTarget{
 			Kind:      "Deployment",
 			Name:      "test-deployment",
 			Namespace: namespace,

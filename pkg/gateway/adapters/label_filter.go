@@ -41,7 +41,7 @@ type LabelFilter interface {
 // Thanos, VictoriaMetrics, Grafana, Loki, Jaeger, etc.) via substring and
 // prefix matching.
 //
-// SME-approved (#191): Covers 90%+ of cases. LLM's affectedResource field
+// SME-approved (#191): Covers 90%+ of cases. LLM's remediationTarget field
 // provides a safety net for edge cases.
 type monitoringMetadataFilter struct {
 	logger logr.Logger

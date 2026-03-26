@@ -815,9 +815,14 @@ spec:
               rootCauseAnalysis:
                 description: Root cause analysis details
                 properties:
-                  affectedResource:
+                  contributingFactors:
+                    description: Contributing factors
+                    items:
+                      type: string
+                    type: array
+                  remediationTarget:
                     description: |-
-                      AffectedResource identifies the actual resource the LLM determined should be remediated.
+                      RemediationTarget identifies the actual resource the LLM determined should be remediated.
                       BR-HAPI-191: The LLM may identify a higher-level resource (e.g., Deployment) rather than
                       the Pod that generated the signal. The WFE creator should prefer this over the RR's
                       TargetResource when available to ensure the correct resource is patched.
@@ -837,11 +842,6 @@ spec:
                     - kind
                     - name
                     type: object
-                  contributingFactors:
-                    description: Contributing factors
-                    items:
-                      type: string
-                    type: array
                   severity:
                     description: |-
                       Severity determined by RCA (normalized per DD-SEVERITY-001 v1.1)

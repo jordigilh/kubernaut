@@ -313,7 +313,7 @@ class TestResultParserExecutionBundle:
                 "summary": "OOM detected in pod app-1",
                 "severity": "critical",
                 "contributing_factors": ["memory leak"],
-                "affectedResource": "pod/app-1",
+                "remediationTarget": "pod/app-1",
             },
             "selected_workflow": {
                 "workflow_id": "test-wf-001",
@@ -362,7 +362,7 @@ class TestResultParserExecutionBundle:
                 "summary": "OOM detected",
                 "severity": "critical",
                 "contributing_factors": ["memory leak"],
-                "affectedResource": "pod/app-1",
+                "remediationTarget": "pod/app-1",
             },
             "selected_workflow": {
                 "workflow_id": "test-wf-001",

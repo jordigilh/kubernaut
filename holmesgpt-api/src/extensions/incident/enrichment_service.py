@@ -19,13 +19,13 @@ EnrichmentService — Phase 2 of the #529 Three-Phase RCA Architecture.
 
 Business Requirements:
 - BR-HAPI-264: Post-RCA infrastructure label detection
-- BR-HAPI-261: Owner chain resolution for LLM-provided affectedResource
+- BR-HAPI-261: Owner chain resolution for LLM-provided remediationTarget
 
 Design Decisions:
 - ADR-055 v1.5: EnrichmentService is sole authoritative source for enrichment
 - ADR-056 v1.7: Label detection via EnrichmentService in Phase 2
 
-Given an affectedResource from the LLM's Phase 1 response, this service:
+Given a remediationTarget from the LLM's Phase 1 response, this service:
 1. Resolves the K8s owner chain to the root owner (e.g., Pod -> Deployment)
 2. Detects infrastructure labels for the resolved root owner
 3. Fetches remediation history from DataStorage for the root owner
@@ -73,11 +73,11 @@ class EnrichmentService:
         self._history_fetcher = history_fetcher
         self._label_detector = label_detector
 
-    async def enrich(self, affected_resource: Dict[str, str]) -> EnrichmentResult:
-        """Run Phase 2 enrichment for the given affectedResource."""
-        kind = affected_resource["kind"]
-        name = affected_resource["name"]
-        namespace = affected_resource.get("namespace", "")
+    async def enrich(self, remediation_target: Dict[str, str]) -> EnrichmentResult:
+        """Run Phase 2 enrichment for the given remediationTarget."""
+        kind = remediation_target["kind"]
+        name = remediation_target["name"]
+        namespace = remediation_target.get("namespace", "")
 
         if self._k8s is None:
             raise EnrichmentFailure(

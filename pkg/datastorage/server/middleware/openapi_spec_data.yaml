@@ -2457,6 +2457,8 @@ components:
             - $ref: '#/components/schemas/NotificationMessageEscalatedPayload'
             - $ref: '#/components/schemas/AIAgentResponsePayload'
             - $ref: '#/components/schemas/AIAgentResponseFailedPayload'
+            - $ref: '#/components/schemas/AIAgentEnrichmentCompletedPayload'
+            - $ref: '#/components/schemas/AIAgentEnrichmentFailedPayload'
             - $ref: '#/components/schemas/LLMRequestPayload'
             - $ref: '#/components/schemas/LLMResponsePayload'
             - $ref: '#/components/schemas/LLMToolCallPayload'
@@ -2533,6 +2535,8 @@ components:
               'notification.message.escalated': '#/components/schemas/NotificationMessageEscalatedPayload'
               'aiagent.response.complete': '#/components/schemas/AIAgentResponsePayload'
               'aiagent.response.failed': '#/components/schemas/AIAgentResponseFailedPayload'
+              'aiagent.enrichment.completed': '#/components/schemas/AIAgentEnrichmentCompletedPayload'
+              'aiagent.enrichment.failed': '#/components/schemas/AIAgentEnrichmentFailedPayload'
               'aiagent.llm.request': '#/components/schemas/LLMRequestPayload'
               'aiagent.llm.response': '#/components/schemas/LLMResponsePayload'
               'aiagent.llm.tool_call': '#/components/schemas/LLMToolCallPayload'
@@ -5104,6 +5108,94 @@ components:
           format: float
           description: Duration of the investigation before failure (seconds)
           example: 120.5
+
+    AIAgentEnrichmentCompletedPayload:
+      type: object
+      required: [event_type, event_id, incident_id, root_owner_kind, root_owner_name, owner_chain_length, remediation_history_fetched]
+      description: AI Agent Phase 2 enrichment completed event payload (aiagent.enrichment.completed) - SOC2 CC8.1, Issue #533
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.enrichment.completed']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+          example: "evt-enrich-ok-abc123"
+        incident_id:
+          type: string
+          description: Incident correlation ID from request
+          example: "incident-payment-api-2026-03-04-abc123"
+        root_owner_kind:
+          type: string
+          description: Resolved root owner resource kind (e.g., Deployment, StatefulSet)
+          example: "Deployment"
+        root_owner_name:
+          type: string
+          description: Resolved root owner resource name
+          example: "api-server"
+        root_owner_namespace:
+          type: string
+          description: Resolved root owner namespace (empty for cluster-scoped resources)
+          example: "production"
+        owner_chain_length:
+          type: integer
+          description: Number of resources in the K8s owner chain (1 = no parent)
+          example: 3
+        detected_labels_summary:
+          type: object
+          nullable: true
+          description: Infrastructure labels detected by LabelDetector (null when detector unavailable)
+          example: {"gitOpsManaged": true, "pdbProtected": false, "hpaEnabled": true}
+        failed_detections:
+          type: array
+          nullable: true
+          items:
+            type: string
+          description: Labels that could not be detected (null when all succeeded or detector unavailable)
+          example: ["networkIsolated", "serviceMesh"]
+        remediation_history_fetched:
+          type: boolean
+          description: Whether remediation history was successfully fetched from DataStorage
+          example: true
+
+    AIAgentEnrichmentFailedPayload:
+      type: object
+      required: [event_type, event_id, incident_id, reason, detail, affected_resource_kind, affected_resource_name]
+      description: AI Agent Phase 2 enrichment failure event payload (aiagent.enrichment.failed) - SOC2 CC8.1, Issue #533
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.enrichment.failed']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+          example: "evt-enrich-fail-abc123"
+        incident_id:
+          type: string
+          description: Incident correlation ID from request
+          example: "incident-payment-api-2026-03-04-abc123"
+        reason:
+          type: string
+          description: Failure reason from EnrichmentFailure (e.g., rca_incomplete)
+          example: "rca_incomplete"
+        detail:
+          type: string
+          description: Detailed failure context including retry information
+          example: "resolve_owner_chain failed after 3 retries: ConnectionError"
+        affected_resource_kind:
+          type: string
+          description: Kind of the resource that was being enriched when failure occurred
+          example: "Pod"
+        affected_resource_name:
+          type: string
+          description: Name of the resource that was being enriched when failure occurred
+          example: "api-xyz-12345"
+        affected_resource_namespace:
+          type: string
+          description: Namespace of the resource (empty for cluster-scoped)
+          example: "production"
 
     IncidentResponseData:
       type: object

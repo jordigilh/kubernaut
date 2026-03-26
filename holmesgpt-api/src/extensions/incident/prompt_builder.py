@@ -277,20 +277,20 @@ Your previous workflow response had validation errors:
 
 
 def build_resource_context_mismatch_feedback(
-    affected_resource: Dict[str, str],
+    remediation_target: Dict[str, str],
     last_target: Optional[Dict[str, str]],
 ) -> str:
-    """Build correction feedback when the LLM's affectedResource doesn't match the last
+    """Build correction feedback when the LLM's remediationTarget doesn't match the last
     get_resource_context call.
 
     Issue #516: The LLM may call get_resource_context for one resource during investigation
     but identify a different resource as the RCA target.  Because detected_labels are
     computed by get_resource_context, stale labels can cause incorrect workflow selection.
     """
-    ar_desc = f"{affected_resource.get('kind', '?')}/{affected_resource.get('name', '?')}"
-    ar_ns = affected_resource.get("namespace", "")
-    if ar_ns:
-        ar_desc += f" in namespace '{ar_ns}'"
+    rt_desc = f"{remediation_target.get('kind', '?')}/{remediation_target.get('name', '?')}"
+    rt_ns = remediation_target.get("namespace", "")
+    if rt_ns:
+        rt_desc += f" in namespace '{rt_ns}'"
 
     if last_target is None:
         return f"""
@@ -300,10 +300,10 @@ def build_resource_context_mismatch_feedback(
 You did not call `get_resource_context` during your investigation. This tool is **REQUIRED**
 to resolve the root owner and retrieve remediation history for your RCA target.
 
-Your affectedResource is **{ar_desc}**.
+Your remediationTarget is **{rt_desc}**.
 
 **You MUST**:
-1. Call `get_resource_context` for your RCA target ({ar_desc})
+1. Call `get_resource_context` for your RCA target ({rt_desc})
 2. Review the `root_owner` and `remediation_history` returned
 3. Re-run the three-step workflow discovery protocol (the detected infrastructure labels
    from this call determine which workflows are available in `list_workflows`)
@@ -319,7 +319,7 @@ Your affectedResource is **{ar_desc}**.
 
 ## ⚠️ RESOURCE CONTEXT MISMATCH — CORRECTION REQUIRED
 
-Your `affectedResource` is **{ar_desc}** but `get_resource_context` was last called for
+Your `remediationTarget` is **{rt_desc}** but `get_resource_context` was last called for
 **{lt_desc}**.
 
 Calling `get_resource_context` for a different resource changes the **detected infrastructure
@@ -327,7 +327,7 @@ labels** (gitOpsManaged, stateful, pdbProtected, hpaEnabled, etc.) which affect 
 are returned by `list_workflows`.
 
 **You MUST**:
-1. Call `get_resource_context` for your actual RCA target ({ar_desc})
+1. Call `get_resource_context` for your actual RCA target ({rt_desc})
 2. Review the updated `root_owner`, `remediation_history`, and detected labels
 3. Re-run the three-step workflow discovery protocol with the updated context
 4. Re-submit your JSON response with the corrected workflow selection
@@ -666,10 +666,10 @@ and choose a different workflow.
     "summary": "Brief summary of root cause from investigation",
     "severity": "critical|high|medium|low|unknown",
     "contributing_factors": ["factor1", "factor2"],
-    "affectedResource": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}
+    "remediationTarget": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}
   }},
   // For cluster-scoped resources (e.g. Node, PersistentVolume, Namespace, ClusterRole, StorageClass), omit "namespace":
-  // "affectedResource": {{"kind": "Node", "name": "worker-3"}}
+  // "remediationTarget": {{"kind": "Node", "name": "worker-3"}}
   "selected_workflow": {{
     "workflow_id": "workflow-id-from-mcp-search",
     "confidence": 0.95,
@@ -695,10 +695,10 @@ and choose a different workflow.
     "summary": "Root cause from investigation",
     "severity": "critical|high|medium|low|unknown",
     "contributing_factors": ["factor1", "factor2"],
-    "affectedResource": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}
+    "remediationTarget": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}
   }},
   // For cluster-scoped resources (e.g. Node, PersistentVolume, Namespace, ClusterRole, StorageClass), omit "namespace":
-  // "affectedResource": {{"kind": "Node", "name": "worker-3"}}
+  // "remediationTarget": {{"kind": "Node", "name": "worker-3"}}
   "selected_workflow": null,
   "rationale": "Workflow discovery failed: [error details]. RCA completed but workflow selection unavailable."
 }}
@@ -903,11 +903,13 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 
 **REQUIRED FORMAT** - Each field must be on its own line with section header:
 
+**`remediationTarget`**: The resource whose spec or configuration must change to remediate the incident — this is the resource the workflow will operate on. It may differ from the resource that reported the signal. Ask: "which resource must be modified to fix this?"
+
 # root_cause_analysis
-{{"summary": "Brief summary of root cause", "severity": "critical|high|medium|low|unknown", "contributing_factors": ["factor1", "factor2"], "affectedResource": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}}}
+{{"summary": "Brief summary of root cause", "severity": "critical|high|medium|low|unknown", "contributing_factors": ["factor1", "factor2"], "remediationTarget": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}}}
 
 For cluster-scoped resources (e.g. Node, PersistentVolume, Namespace, ClusterRole, StorageClass), omit "namespace":
-{{"summary": "Node taint blocking scheduling", "severity": "critical", "contributing_factors": ["taint"], "affectedResource": {{"kind": "Node", "name": "worker-3"}}}}
+{{"summary": "Node taint blocking scheduling", "severity": "critical", "contributing_factors": ["taint"], "remediationTarget": {{"kind": "Node", "name": "worker-3"}}}}
 
 # confidence
 0.95
@@ -940,7 +942,7 @@ For cluster-scoped resources (e.g. Node, PersistentVolume, Namespace, ClusterRol
 PHASE3_SECTIONS: Dict[str, str] = {
     "root_cause_analysis": (
         'JSON object with "summary", "severity", "contributing_factors", '
-        'and "affectedResource" ({kind, name, namespace} for namespaced '
+        'and "remediationTarget" ({kind, name, namespace} for namespaced '
         "resources; {kind, name} without namespace for cluster-scoped "
         "resources like Node, PersistentVolume, or ClusterRole). "
         "Summarize the root cause from Phase 1."
@@ -1092,10 +1094,10 @@ If the alert describes a **benign condition** that does not warrant remediation:
 `#` section header:
 
 # root_cause_analysis
-{{"summary": "Brief summary from Phase 1 RCA", "severity": "critical|high|medium|low|unknown", "contributing_factors": ["factor1", "factor2"], "affectedResource": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}}}
+{{"summary": "Brief summary from Phase 1 RCA", "severity": "critical|high|medium|low|unknown", "contributing_factors": ["factor1", "factor2"], "remediationTarget": {{"kind": "Deployment", "name": "resource-name", "namespace": "namespace"}}}}
 
 For cluster-scoped resources (e.g. Node, PersistentVolume, Namespace, ClusterRole, StorageClass), omit "namespace":
-{{"summary": "Node taint blocking scheduling", "severity": "critical", "contributing_factors": ["taint"], "affectedResource": {{"kind": "Node", "name": "worker-3"}}}}
+{{"summary": "Node taint blocking scheduling", "severity": "critical", "contributing_factors": ["taint"], "remediationTarget": {{"kind": "Node", "name": "worker-3"}}}}
 
 # confidence
 0.95

@@ -44,7 +44,7 @@ import (
 var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)", func() {
 
 	// driveToCompletedWithCRDTarget drives the RO pipeline to Completed with a CRD
-	// remediation target and optional GitOps labels. The AffectedResource.Kind is set
+	// remediation target and optional GitOps labels. The RemediationTarget.Kind is set
 	// to "EffectivenessAssessment" which resolves to a non-built-in API group in envtest,
 	// triggering CRD detection in the RO reconciler.
 	driveToCompletedWithCRDTarget := func(ns, rrName string, gitOpsManaged bool) *remediationv1.RemediationRequest {
@@ -88,7 +88,7 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 			Summary:    "Operator CRD drift detected",
 			Severity:   "critical",
 			SignalType: "alert",
-			AffectedResource: &aianalysisv1.AffectedResource{
+			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "EffectivenessAssessment", // CRD kind (kubernaut.ai) → resolved via KindsFor in envtest
 				Name:      "test-ea-target",
 				Namespace: ns,

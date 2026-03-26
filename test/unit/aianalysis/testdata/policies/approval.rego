@@ -25,10 +25,10 @@ is_high_severity if {
     input.severity == "P0"
 }
 
-# ADR-055: Check if affected_resource is present
-has_affected_resource if {
-    input.affected_resource
-    input.affected_resource.kind != ""
+# ADR-055: Check if remediation_target is present
+has_remediation_target if {
+    input.remediation_target
+    input.remediation_target.kind != ""
 }
 
 has_warnings if {
@@ -56,10 +56,10 @@ is_high_confidence if {
 
 default require_approval := false
 
-# BR-AI-085-005: Default-deny when affected_resource is missing (ADR-055)
+# BR-AI-085-005: Default-deny when remediation_target is missing (ADR-055)
 # Safety: ALWAYS require approval regardless of confidence
 require_approval if {
-    not has_affected_resource
+    not has_remediation_target
 }
 
 # Production + low confidence → require approval
@@ -86,8 +86,8 @@ require_approval if {
 # Scored Risk Factors for Reason Generation
 # =============================================================================
 
-risk_factors contains {"score": 90, "reason": "Missing affected resource - cannot determine remediation target (BR-AI-085-005)"} if {
-    not has_affected_resource
+risk_factors contains {"score": 90, "reason": "Missing remediation target - cannot determine resource to remediate (BR-AI-085-005)"} if {
+    not has_remediation_target
 }
 
 risk_factors contains {"score": 60, "reason": "Data quality issues detected in production environment"} if {

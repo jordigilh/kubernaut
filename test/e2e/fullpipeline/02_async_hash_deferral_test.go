@@ -249,14 +249,14 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		aa := &aianalysisv1.AIAnalysis{}
 		Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
 		Expect(aa.Status.RootCauseAnalysis).ToNot(BeNil(), "RCA should be populated")
-		Expect(aa.Status.RootCauseAnalysis.AffectedResource).ToNot(BeNil(),
-			"AffectedResource should be populated by Mock LLM cert_not_ready scenario")
-		Expect(aa.Status.RootCauseAnalysis.AffectedResource.Kind).To(Equal("Certificate"),
+		Expect(aa.Status.RootCauseAnalysis.RemediationTarget).ToNot(BeNil(),
+			"RemediationTarget should be populated by Mock LLM cert_not_ready scenario")
+		Expect(aa.Status.RootCauseAnalysis.RemediationTarget.Kind).To(Equal("Certificate"),
 			"RCA affected resource kind must be Certificate (CRD trigger for async detection)")
-		GinkgoWriter.Printf("  ✅ AIAnalysis AffectedResource: %s/%s/%s\n",
-			aa.Status.RootCauseAnalysis.AffectedResource.Namespace,
-			aa.Status.RootCauseAnalysis.AffectedResource.Kind,
-			aa.Status.RootCauseAnalysis.AffectedResource.Name)
+		GinkgoWriter.Printf("  ✅ AIAnalysis RemediationTarget: %s/%s/%s\n",
+			aa.Status.RootCauseAnalysis.RemediationTarget.Namespace,
+			aa.Status.RootCauseAnalysis.RemediationTarget.Kind,
+			aa.Status.RootCauseAnalysis.RemediationTarget.Name)
 
 		// ================================================================
 		// Step 6: Verify WorkflowExecution and Job
@@ -357,7 +357,7 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		Expect(ea.Spec.Config.HashComputeDelay.Duration).To(BeNumerically(">", 0),
 			"HashComputeDelay should be a positive duration")
 
-		// Verify remediation target is Certificate (from AIAnalysis.AffectedResource)
+		// Verify remediation target is Certificate (from AIAnalysis.RemediationTarget)
 		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Certificate"),
 			"EA remediation target should be Certificate (from AIAnalysis RCA)")
 
