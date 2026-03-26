@@ -54,6 +54,8 @@ from holmes.core.investigation import investigate_issues
 from src.audit import (
     get_audit_store,
     create_validation_attempt_event,
+    create_enrichment_completed_event,  # #533: Phase 2 enrichment audit
+    create_enrichment_failed_event,  # #533: Phase 2 enrichment audit
 )
 
 from .constants import MAX_VALIDATION_ATTEMPTS
@@ -817,6 +819,13 @@ async def analyze_incident(
                         "reason": ef.reason,
                         "detail": ef.detail,
                     })
+                    audit_store.store_audit(create_enrichment_failed_event(
+                        incident_id=incident_id,
+                        remediation_id=remediation_id,
+                        reason=ef.reason,
+                        detail=ef.detail,
+                        affected_resource=affected_resource,
+                    ))
                     result = {
                         "root_cause_analysis": rca_data,
                         "needs_human_review": True,
@@ -833,6 +842,21 @@ async def analyze_incident(
                 # so workflow discovery tools use the correct component filter.
                 if enrichment_result_obj.root_owner:
                     session_state["root_owner"] = enrichment_result_obj.root_owner
+
+                # Issue #533 / BR-AUDIT-005: Emit enrichment completed audit event
+                _root = enrichment_result_obj.root_owner or affected_resource
+                _chain_len = 1
+                if _root.get("kind") != affected_resource.get("kind") or _root.get("name") != affected_resource.get("name"):
+                    _chain_len = 2
+                audit_store.store_audit(create_enrichment_completed_event(
+                    incident_id=incident_id,
+                    remediation_id=remediation_id,
+                    root_owner=_root,
+                    owner_chain_length=_chain_len,
+                    detected_labels=enrichment_result_obj.detected_labels,
+                    failed_detections=None,
+                    remediation_history_fetched=enrichment_result_obj.remediation_history is not None,
+                ))
 
             # ─── PHASE 3: Workflow Selection ───
             # Issue #537 / BR-HAPI-263: Use focused Phase 3 prompt + custom
