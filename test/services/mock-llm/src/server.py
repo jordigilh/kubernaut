@@ -1045,12 +1045,20 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 kind, name, namespace = self._extract_resource_from_messages(
                     messages, scenario
                 )
-            # #524: Emit the correct tool name based on what HAPI registered.
-            tool_name = self._pick_resource_context_tool_name(tools or [])
-            tool_args = {"kind": kind, "name": name, "namespace": namespace}
+            # #542: Pick the correct resource context tool based on scope.
+            # Cluster-scoped resources (empty namespace) use
+            # get_cluster_resource_context; namespaced resources use
+            # get_namespaced_resource_context.
+            is_cluster_scoped = not namespace
+            if is_cluster_scoped:
+                tool_name = "get_cluster_resource_context"
+                tool_args = {"kind": kind, "name": name}
+            else:
+                tool_name = self._pick_resource_context_tool_name(tools or [])
+                tool_args = {"kind": kind, "name": name, "namespace": namespace}
             logger.info(
                 f"🔧 Discovery Step 0 (ADR-056): {tool_name}"
-                f"({kind}/{name} in {namespace})"
+                f"({kind}/{name}{'' if is_cluster_scoped else ' in ' + namespace})"
             )
 
         elif effective_step == 0:
