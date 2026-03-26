@@ -987,27 +987,34 @@ def create_phase3_workflow_prompt(
     risk_tolerance = request_data.get("risk_tolerance", "medium")
     business_category = request_data.get("business_category", "standard")
     cluster_name = request_data.get("cluster_name", "unknown")
+    signal_mode = request_data.get("signal_mode") or "reactive"
 
     priority_desc = PRIORITY_DESCRIPTIONS.get(
         priority, f"{priority} - Standard priority"
     ).format(business_category=business_category)
     risk_desc = RISK_GUIDANCE.get(risk_tolerance, f"{risk_tolerance} risk tolerance")
 
+    proactive_note = ""
+    if signal_mode == "proactive":
+        proactive_note = f"\n\n**Proactive Mode**: This is a proactive signal — the incident is predicted but has NOT yet occurred. Select a preventive workflow appropriate for anticipated {signal_name} events."
+
     prompt = f"""# Workflow Selection Request
 
 ## Incident Context
 
-A **{severity} {signal_name}** event occurred for **{namespace}/{resource_kind}/{resource_name}** in cluster **{cluster_name}**.
+A **{severity} {signal_name}** event {'is predicted' if signal_mode == 'proactive' else 'occurred'} for **{namespace}/{resource_kind}/{resource_name}** in cluster **{cluster_name}**.
 
 **Technical Details**:
 - Signal Name: {signal_name}
 - Severity: {severity}
+- Signal Mode: {signal_mode}
 - Resource: {namespace}/{resource_kind}/{resource_name}
 
 **Business Impact Assessment**:
 - **Priority**: {priority_desc}
 - **Environment**: {environment}
 - **Risk Tolerance**: {risk_desc}
+{proactive_note}
 
 ## Your Task
 

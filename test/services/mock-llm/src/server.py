@@ -793,7 +793,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         # in the Technical Details section, making it the only reliable source
         # for determining which scenario THIS specific incident requires.
         # ────────────────────────────────────────────────────────────────────
-        signal_match = re.search(r'signal name:\s*(\S+)', content)
+        signal_match = re.search(r'signal name:\s*(\w+)', content)
         if signal_match:
             actual_signal = signal_match.group(1).strip().lower()
             logger.info(f"📋 PRIMARY: Extracted signal_name='{actual_signal}' from prompt")
