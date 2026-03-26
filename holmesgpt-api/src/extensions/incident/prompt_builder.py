@@ -999,6 +999,11 @@ def create_phase3_workflow_prompt(
 
 A **{severity} {signal_name}** event occurred for **{namespace}/{resource_kind}/{resource_name}** in cluster **{cluster_name}**.
 
+**Technical Details**:
+- Signal Name: {signal_name}
+- Severity: {severity}
+- Resource: {namespace}/{resource_kind}/{resource_name}
+
 **Business Impact Assessment**:
 - **Priority**: {priority_desc}
 - **Environment**: {environment}
