@@ -639,6 +639,7 @@ async def analyze_incident(
         result = None
         workflow_id = None
         enrichment_result_obj: Optional[EnrichmentResult] = None
+        phase1_top_level: Dict[str, Any] = {}
 
         for attempt in range(MAX_VALIDATION_ATTEMPTS):
             attempt_timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -683,6 +684,11 @@ async def analyze_incident(
                 audit_llm_response_and_tools(audit_store, incident_id, remediation_id, phase1_result)
 
                 rca_data: Dict[str, Any] = {}
+                phase1_raw = phase1_result.analysis if phase1_result and phase1_result.analysis else ""
+                phase1_json = _extract_phase1_json(phase1_raw)
+                if not isinstance(phase1_json, dict):
+                    phase1_json = {}
+
                 if phase1_result and getattr(phase1_result, "sections", None):
                     rca_section = phase1_result.sections.get("root_cause_analysis")
                     if rca_section:
@@ -691,11 +697,29 @@ async def analyze_incident(
                         except (json.JSONDecodeError, TypeError):
                             pass
                 if not rca_data:
-                    phase1_json = _extract_phase1_json(
-                        phase1_result.analysis if phase1_result and phase1_result.analysis else ""
-                    )
-                    rca_data = phase1_json.get("root_cause_analysis", {}) if isinstance(phase1_json, dict) else {}
+                    rca_data = phase1_json.get("root_cause_analysis", {})
                 affected_resource = _parse_affected_resource(rca_data)
+
+                # BR-HAPI-200: Capture top-level Phase 1 fields that the
+                # parser must propagate into the final response (e.g.,
+                # investigation_outcome, can_recover).
+                phase1_top_level = {}
+                for _k in ("investigation_outcome", "can_recover"):
+                    if _k in phase1_json:
+                        phase1_top_level[_k] = phase1_json[_k]
+                # Also parse from section headers (# investigation_outcome\n"resolved")
+                if not phase1_top_level and phase1_raw:
+                    import re as _re
+                    for _field in ("investigation_outcome", "can_recover"):
+                        _m = _re.search(
+                            rf'#\s+{_field}\s*\n\s*(.+)',
+                            phase1_raw,
+                        )
+                        if _m:
+                            try:
+                                phase1_top_level[_field] = json.loads(_m.group(1).strip())
+                            except (json.JSONDecodeError, ValueError):
+                                pass
 
                 if affected_resource is None:
                     logger.warning({
@@ -727,7 +751,50 @@ async def analyze_incident(
                     _detector = LabelDetector(k8s)
 
                     async def _detect(root_owner, owner_chain):
-                        k8s_context = {"namespace": root_owner.get("namespace", "")}
+                        namespace = root_owner.get("namespace", "")
+                        kind = root_owner.get("kind", "")
+                        name = root_owner.get("name", "")
+                        k8s_context: Dict[str, Any] = {"namespace": namespace}
+
+                        if kind == "Pod":
+                            pod = await k8s._get_resource_metadata("Pod", name, namespace)
+                            if pod is not None:
+                                k8s_context["pod_details"] = {
+                                    "name": name,
+                                    "labels": pod.metadata.labels or {},
+                                    "annotations": pod.metadata.annotations or {},
+                                }
+
+                        for entry in (owner_chain or []):
+                            if entry.get("kind") == "Deployment":
+                                deploy = await k8s._get_resource_metadata(
+                                    "Deployment", entry["name"], entry.get("namespace", ""),
+                                )
+                                if deploy is not None:
+                                    k8s_context["deployment_details"] = {
+                                        "name": entry["name"],
+                                        "labels": deploy.metadata.labels or {},
+                                        "annotations": deploy.metadata.annotations or {},
+                                    }
+                                    if "pod_details" not in k8s_context:
+                                        template = getattr(getattr(deploy, "spec", None), "template", None)
+                                        if template is not None:
+                                            meta = getattr(template, "metadata", None)
+                                            if meta is not None:
+                                                pod_labels = getattr(meta, "labels", None) or {}
+                                                if pod_labels:
+                                                    k8s_context["pod_details"] = {
+                                                        "name": entry["name"],
+                                                        "labels": pod_labels,
+                                                        "annotations": getattr(meta, "annotations", None) or {},
+                                                    }
+                                break
+
+                        ns_meta = await k8s.get_namespace_metadata(namespace)
+                        if ns_meta is not None:
+                            k8s_context["namespace_labels"] = ns_meta.get("labels", {})
+                            k8s_context["namespace_annotations"] = ns_meta.get("annotations", {})
+
                         return await _detector.detect_labels(k8s_context, owner_chain)
 
                     detector_fn = _detect
@@ -825,6 +892,12 @@ async def analyze_incident(
                 merged_rca = dict(rca_data)
                 merged_rca.update({k: v for k, v in phase3_rca.items() if v})
                 result["root_cause_analysis"] = merged_rca
+
+            # BR-HAPI-200: Propagate top-level Phase 1 fields (investigation_outcome,
+            # can_recover) that Phase 3 may also return.  Phase 3 values take precedence;
+            # Phase 1 values fill in anything the Phase 3 parser didn't produce.
+            for _key, _val in phase1_top_level.items():
+                result.setdefault(_key, _val)
 
             workflow_id = result.get("selected_workflow", {}).get("workflow_id") if result.get("selected_workflow") else None
             is_valid = validation_result is None or validation_result.is_valid
