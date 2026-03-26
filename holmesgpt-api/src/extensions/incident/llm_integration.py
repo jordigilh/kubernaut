@@ -805,9 +805,49 @@ async def analyze_incident(
 
                     detector_fn = _detect
 
+                # #540: Build a history_fetcher closure that uses the
+                # remediation_history_client wrapper with spec hash computation.
+                history_fetcher_fn = None
+                try:
+                    from src.clients.remediation_history_client import (
+                        create_remediation_history_api,
+                        query_remediation_history,
+                    )
+                    _history_api = create_remediation_history_api(
+                        app_config.to_dict() if app_config else None,
+                    )
+                    if _history_api is not None:
+                        async def _fetch_history(
+                            target_kind: str,
+                            target_name: str,
+                            target_namespace: str,
+                        ):
+                            spec_hash = await k8s.compute_spec_hash(
+                                target_kind, target_name, target_namespace,
+                            )
+                            if not spec_hash:
+                                logger.debug({
+                                    "event": "spec_hash_unavailable",
+                                    "target": f"{target_kind}/{target_name}",
+                                })
+                                return None
+                            return query_remediation_history(
+                                api=_history_api,
+                                target_kind=target_kind,
+                                target_name=target_name,
+                                target_namespace=target_namespace,
+                                current_spec_hash=spec_hash,
+                            )
+                        history_fetcher_fn = _fetch_history
+                except Exception as e:
+                    logger.warning({
+                        "event": "history_fetcher_init_failed",
+                        "error": str(e),
+                    })
+
                 enrichment_svc = EnrichmentService(
                     k8s_client=k8s,
-                    ds_client=data_storage_client,
+                    history_fetcher=history_fetcher_fn,
                     label_detector=detector_fn,
                 )
                 try:
