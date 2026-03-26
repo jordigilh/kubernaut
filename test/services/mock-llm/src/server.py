@@ -1280,14 +1280,56 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         #529: Phase 3 receives enrichment context (resolved root owner, labels,
         history) and Phase 1 conversation as previous_messages. Returns only the
         workflow selection.
+
+        Must mirror the scenario-specific behaviour of _final_analysis_response
+        (legacy flow) so that special scenarios (problem_resolved, low_confidence,
+        max_retries_exhausted, proactive) produce the fields downstream tests expect.
         """
-        if not scenario.workflow_id:
+        # BR-HAPI-200: problem resolved — no workflow, investigation_outcome=resolved
+        if scenario.name in ("problem_resolved", "problem_resolved_contradiction"):
             analysis_json: Dict[str, Any] = {
                 "selected_workflow": None,
-                "needs_human_review": True,
-                "human_review_reason": "no_matching_workflows",
+                "investigation_outcome": "resolved",
+                "can_recover": False,
+                "needs_human_review": False,
+                "human_review_reason": None,
             }
+            if scenario.needs_human_review_override is not None:
+                analysis_json["needs_human_review"] = scenario.needs_human_review_override
+            content = f"""Based on the enrichment context and investigation:
+
+The problem has self-resolved. No remediation workflow is needed.
+
+# selected_workflow
+{json.dumps(analysis_json.get("selected_workflow"))}
+
+# investigation_outcome
+{json.dumps(analysis_json.get("investigation_outcome"))}
+
+# can_recover
+{json.dumps(analysis_json.get("can_recover", False))}
+
+# needs_human_review
+{json.dumps(analysis_json.get("needs_human_review", False))}
+
+# human_review_reason
+{json.dumps(analysis_json.get("human_review_reason"))}
+"""
         elif scenario.name == "low_confidence":
+            alternatives_list = [
+                {
+                    "workflow_id": "d3c95ea1-66cb-6bf2-c59e-7dd27f1fec6d",
+                    "title": "Alternative Diagnostic Workflow",
+                    "confidence": 0.28,
+                    "rationale": "Alternative approach for ambiguous root cause",
+                },
+                {
+                    "workflow_id": "e4d06fb2-77dc-7cg3-d60f-8ee38g2gfd7e",
+                    "title": "Manual Investigation Required",
+                    "confidence": 0.22,
+                    "rationale": "Requires human expertise to determine correct remediation",
+                },
+            ]
             analysis_json = {
                 "selected_workflow": {
                     "workflow_id": scenario.workflow_id,
@@ -1298,17 +1340,71 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                     "execution_engine": scenario.execution_engine,
                     "parameters": scenario.parameters,
                 },
-                "alternative_workflows": [
-                    {
-                        "workflow_id": "d3c95ea1-66cb-6bf2-c59e-7dd27f1fec6d",
-                        "title": "Alternative Diagnostic Workflow",
-                        "confidence": 0.28,
-                        "rationale": "Alternative approach for ambiguous root cause",
-                    }
-                ],
+                "alternative_workflows": alternatives_list,
                 "needs_human_review": False,
                 "human_review_reason": None,
             }
+            content = f"""Based on the enrichment context and workflow catalog:
+
+# selected_workflow
+{json.dumps(analysis_json.get("selected_workflow"))}
+
+# alternative_workflows
+{json.dumps(alternatives_list)}
+
+# needs_human_review
+{json.dumps(analysis_json.get("needs_human_review", False))}
+
+# human_review_reason
+{json.dumps(analysis_json.get("human_review_reason"))}
+"""
+        elif not scenario.workflow_id:
+            analysis_json = {
+                "selected_workflow": None,
+                "needs_human_review": True,
+                "human_review_reason": "no_matching_workflows",
+            }
+            if scenario.name == "max_retries_exhausted":
+                analysis_json["human_review_reason"] = "llm_parsing_error"
+                from datetime import datetime, timezone
+                base_time = datetime.now(timezone.utc)
+                analysis_json["validation_attempts_history"] = [
+                    {
+                        "attempt": 1,
+                        "workflow_id": None,
+                        "is_valid": False,
+                        "errors": ["Invalid JSON structure"],
+                        "timestamp": base_time.isoformat().replace("+00:00", "Z"),
+                    },
+                    {
+                        "attempt": 2,
+                        "workflow_id": None,
+                        "is_valid": False,
+                        "errors": ["Missing required field"],
+                        "timestamp": base_time.isoformat().replace("+00:00", "Z"),
+                    },
+                    {
+                        "attempt": 3,
+                        "workflow_id": None,
+                        "is_valid": False,
+                        "errors": ["Schema validation failed"],
+                        "timestamp": base_time.isoformat().replace("+00:00", "Z"),
+                    },
+                ]
+            content = f"""Based on the enrichment context and workflow catalog:
+
+# selected_workflow
+{json.dumps(analysis_json.get("selected_workflow"))}
+
+# needs_human_review
+{json.dumps(analysis_json.get("needs_human_review", False))}
+
+# human_review_reason
+{json.dumps(analysis_json.get("human_review_reason"))}
+
+# validation_attempts_history
+{json.dumps(analysis_json.get("validation_attempts_history", []))}
+"""
         else:
             analysis_json = {
                 "selected_workflow": {
@@ -1331,8 +1427,15 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 "needs_human_review": False,
                 "human_review_reason": None,
             }
-
-        content = f"""Based on the enrichment context and workflow catalog:
+            # BR-AI-084: Proactive scenarios include predictive language so the
+            # E2E test can assert proactive-aware analysis text.
+            preamble = "Based on the enrichment context and workflow catalog:"
+            if scenario.name == "oomkilled_predictive":
+                preamble = (
+                    "Based on the enrichment context, predicted OOMKill trend analysis, "
+                    "and workflow catalog — preemptive action recommended:"
+                )
+            content = f"""{preamble}
 
 # selected_workflow
 {json.dumps(analysis_json.get("selected_workflow"))}
