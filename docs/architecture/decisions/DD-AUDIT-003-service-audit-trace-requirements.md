@@ -2,10 +2,17 @@
 
 **Status**: ✅ **APPROVED** (Production Standard)
 **Date**: November 8, 2025
-**Last Reviewed**: March 9, 2026
-**Version**: 1.7
+**Last Reviewed**: March 25, 2026
+**Version**: 1.8
 **Confidence**: 95%
 **Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 12 services
+
+**Recent Changes** (v1.8 - March 25, 2026):
+- **HolmesGPT API Service**: Added 2 Phase 2 enrichment audit events per Issue #533:
+  - `aiagent.enrichment.completed` — Phase 2 enrichment succeeded (root_owner resolved, labels detected, history fetched)
+  - `aiagent.enrichment.failed` — Phase 2 enrichment failed after retry exhaustion (captures reason, detail, affected_resource)
+- **Authority**: BR-AUDIT-005 v2.0 (SOC2 CC8.1), #533, #529 (three-phase RCA architecture)
+- **OpenAPI**: New `AIAgentEnrichmentCompletedPayload` and `AIAgentEnrichmentFailedPayload` schemas added to discriminated union
 
 **Recent Changes** (v1.7 - March 9, 2026):
 - **Auth Webhook**: Added as P0 service (12th service, 7th MUST) per BR-WORKFLOW-007 / Issue #300
@@ -706,7 +713,7 @@ context_api:
 | **Signal Processing Controller** | ✅ **SHOULD** | P1 | Operational visibility (enrichment) |
 | **Remediation Orchestrator Controller** | ✅ **SHOULD** | P1 | Operational visibility (coordination) |
 | **Context API Service** | ❌ **NO** | N/A | Read-only, no state changes |
-| **HolmesGPT API Service** | ✅ **MUST** | P0 | LLM interactions and investigation outcomes (DD-AUDIT-005, BR-AUDIT-005). Emits `aiagent.*` events: `aiagent.llm.request`, `aiagent.llm.response`, `aiagent.llm.tool_call`, `aiagent.workflow.validation_attempt`, `aiagent.response.complete`, `aiagent.response.failed` |
+| **HolmesGPT API Service** | ✅ **MUST** | P0 | LLM interactions and investigation outcomes (DD-AUDIT-005, BR-AUDIT-005). Emits `aiagent.*` events: `aiagent.llm.request`, `aiagent.llm.response`, `aiagent.llm.tool_call`, `aiagent.workflow.validation_attempt`, `aiagent.response.complete`, `aiagent.response.failed`, `aiagent.enrichment.completed`, `aiagent.enrichment.failed` |
 | **Dynamic Toolset Service** | ❌ **NO** | N/A | Configuration, read-only |
 
 **Total**: **10 out of 12 services** generate audit traces (83%)
