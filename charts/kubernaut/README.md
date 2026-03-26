@@ -199,6 +199,11 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 | `holmesgptApi.llm.model` | LLM model for quickstart (`gpt-4o`, `claude-sonnet-4-20250514`) | `""` |
 | `holmesgptApi.sdkConfigContent` | Full SDK config YAML (via `--set-file`; overrides provider/model) | `""` |
 | `holmesgptApi.existingSdkConfigMap` | Pre-existing ConfigMap for SDK config (highest priority) | `""` |
+| `holmesgptApi.prometheus.enabled` | Enable Prometheus toolset in auto-generated SDK config | `false` |
+| `holmesgptApi.prometheus.url` | Prometheus/Thanos URL | `""` |
+| `holmesgptApi.prometheus.ocpMonitoringRbac` | Create RBAC for OCP monitoring stack | `false` |
+| `holmesgptApi.prometheus.tls.enabled` | Enable TLS CA trust for Prometheus connections | `false` |
+| `holmesgptApi.prometheus.tls.caConfigMapName` | ConfigMap with CA PEM (leave empty on OCP) | `""` |
 
 **SDK config precedence**: `existingSdkConfigMap` > `sdkConfigContent` > `llm.provider`+`llm.model` > fail.
 
@@ -231,6 +236,18 @@ For Vertex AI, Azure, or advanced setups (toolsets, MCP servers), use `sdkConfig
 | `notification.routing.content` | Full routing YAML (via `--set-file`; overrides slack shortcut) | `""` |
 | `notification.routing.existingConfigMap` | Pre-existing routing ConfigMap (highest priority) | `""` |
 | `notification.credentials` | Additional projected volume sources from Secrets | `[]` |
+
+### WorkflowExecution
+
+| Parameter | Description | Default |
+|---|---|---|
+| `workflowexecution.config.execution.cooldownPeriod` | Cooldown between workflow executions | `1m` |
+| `workflowexecution.config.ansible.apiURL` | AWX/AAP API URL (enables Ansible engine) | _(not set)_ |
+| `workflowexecution.config.ansible.insecure` | Skip TLS verification for AWX API | `false` |
+| `workflowexecution.config.ansible.organizationID` | AWX organization ID | `1` |
+| `workflowexecution.config.ansible.tokenSecretRef.name` | Secret containing AWX API token | `""` |
+| `workflowexecution.config.ansible.tokenSecretRef.key` | Key within the Secret | `token` |
+| `workflowexecution.config.ansible.tokenSecretRef.namespace` | Secret namespace (defaults to release namespace) | _(release ns)_ |
 
 ### Gateway
 
@@ -308,6 +325,22 @@ helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --version <new-version> \
   -n kubernaut-system -f my-values.yaml
 ```
+
+> **Warning — Do not `kubectl patch` Helm-managed ConfigMaps** (#539):
+> Using `kubectl patch` on chart-managed ConfigMaps (e.g., `holmesgpt-sdk-config`,
+> `workflowexecution-config`) transfers field ownership to the `kubectl-patch` field
+> manager. Subsequent `helm upgrade` will fail with a server-side apply conflict.
+>
+> Instead, use Helm values at install/upgrade time:
+> - **Prometheus toolset**: `--set holmesgptApi.prometheus.enabled=true --set holmesgptApi.prometheus.url=<url>`
+> - **Ansible/AAP engine**: `--set workflowexecution.config.ansible.apiURL=<url>`
+>
+> If you already have conflicting ConfigMaps, delete them before upgrading — Helm
+> will recreate them with the correct values:
+> ```bash
+> kubectl delete cm holmesgpt-sdk-config workflowexecution-config -n kubernaut-system
+> helm upgrade kubernaut ... -f my-values.yaml
+> ```
 
 ## Uninstalling
 

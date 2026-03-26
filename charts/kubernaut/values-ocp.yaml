@@ -40,12 +40,8 @@ effectivenessmonitor:
     ocpMonitoringRbac: true
 
 holmesgptApi:
-  # Prometheus toolset disabled by default to avoid schema bloat (#434).
-  # Empirical data: enabling adds ~65K tokens/investigation (+30%) and biases
-  # the LLM toward unnecessary infrastructure queries. Re-enable with:
-  #   --set holmesgptApi.prometheus.enabled=true
   prometheus:
-    enabled: false
+    enabled: true
     url: "https://prometheus-k8s.openshift-monitoring.svc:9091"
     ocpMonitoringRbac: true
 
