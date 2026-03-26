@@ -10,7 +10,7 @@
 #
 # Confidence-based auto-approval: high-confidence (>= threshold) production
 # analyses auto-approve unless critical safety conditions are present
-# (missing affected_resource, sensitive resources).
+# (missing remediation_target, sensitive resources).
 
 package aianalysis.approval
 
@@ -43,19 +43,19 @@ is_stateful if {
     input.detected_labels["stateful"] == true
 }
 
-# ADR-055: Check if affected_resource is present (required LLM output)
-has_affected_resource if {
-    input.affected_resource
-    input.affected_resource.kind != ""
+# ADR-055: Check if remediation_target is present (required LLM output)
+has_remediation_target if {
+    input.remediation_target
+    input.remediation_target.kind != ""
 }
 
-# ADR-055: Check if affected resource is a sensitive kind
+# ADR-055: Check if remediation target is a sensitive kind
 is_sensitive_resource if {
-    input.affected_resource.kind == "Node"
+    input.remediation_target.kind == "Node"
 }
 
 is_sensitive_resource if {
-    input.affected_resource.kind == "StatefulSet"
+    input.remediation_target.kind == "StatefulSet"
 }
 
 has_warnings if {
@@ -103,9 +103,9 @@ is_high_confidence if {
 # Critical safety rules: ALWAYS require approval regardless of confidence.
 # Production environment rules: Only require approval when confidence < confidence_threshold.
 
-# BR-AI-085-005: Default-deny when affected_resource is missing (ADR-055)
+# BR-AI-085-005: Default-deny when remediation_target is missing (ADR-055)
 require_approval if {
-    not has_affected_resource
+    not has_remediation_target
 }
 
 # ADR-055: Production + sensitive resource kind ALWAYS requires approval
@@ -145,8 +145,8 @@ require_approval if {
 # SCORED RISK FACTORS FOR REASON GENERATION
 # ========================================
 
-risk_factors contains {"score": 90, "reason": "Missing affected resource - cannot determine remediation target (BR-AI-085-005)"} if {
-    not has_affected_resource
+risk_factors contains {"score": 90, "reason": "Missing remediation target - cannot determine resource to remediate (BR-AI-085-005)"} if {
+    not has_remediation_target
 }
 
 risk_factors contains {"score": 80, "reason": "Production environment with sensitive resource kind - requires manual approval"} if {
