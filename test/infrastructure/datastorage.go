@@ -1171,7 +1171,7 @@ data:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: datastorage-db-secret
+  name: postgresql-secret
 stringData:
   db-secrets.yaml: |
     username: slm_user
@@ -1324,7 +1324,7 @@ spec:
         projected:
           sources:
           - secret:
-              name: datastorage-db-secret
+              name: postgresql-secret
               items:
               - key: db-secrets.yaml
                 path: db-secrets.yaml
