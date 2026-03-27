@@ -80,7 +80,7 @@ func buildITNotification(body string, metadata map[string]string) *notificationv
 // buildTestOrchestrator creates a standalone delivery orchestrator for integration testing.
 func buildTestOrchestrator(channels map[string]delivery.Service, enrich *enrichment.Enricher) *delivery.Orchestrator {
 	sanitizer := sanitization.NewSanitizer()
-	metricsRecorder := notificationmetrics.NewPrometheusRecorder()
+	metricsRecorder := notificationmetrics.NewNoOpRecorder()
 	statusManager := notificationstatus.NewManager(nil, nil)
 
 	orch := delivery.NewOrchestrator(sanitizer, metricsRecorder, statusManager, logr.Discard())
