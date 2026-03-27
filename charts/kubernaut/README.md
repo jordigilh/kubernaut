@@ -164,6 +164,26 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
 
 ### BYO PostgreSQL / Valkey
 
+When using external PostgreSQL, the secret referenced by `existingSecret` must
+contain **both** the `POSTGRES_*` env-var keys **and** the `db-secrets.yaml` key
+(DataStorage reads credentials from this file). Chart validation is skipped for
+BYO infrastructure — ensure secrets exist before installing.
+
+```bash
+# BYO PostgreSQL secret — must include db-secrets.yaml for DataStorage
+kubectl create secret generic my-pg-credentials \
+  --from-literal=POSTGRES_USER=myuser \
+  --from-literal=POSTGRES_PASSWORD=mypass \
+  --from-literal=POSTGRES_DB=mydb \
+  --from-literal=db-secrets.yaml="$(printf 'username: myuser\npassword: mypass')" \
+  -n kubernaut-system
+
+# BYO Valkey secret
+kubectl create secret generic my-valkey-credentials \
+  --from-literal=valkey-secrets.yaml="$(printf 'password: mypass')" \
+  -n kubernaut-system
+```
+
 ```yaml
 postgresql:
   enabled: false

@@ -437,8 +437,7 @@ run_pre_003() {
     --from-literal=POSTGRES_USER=slm_user \
     --from-literal=POSTGRES_PASSWORD="$test_password" \
     --from-literal=POSTGRES_DB=action_history \
-    --from-literal="db-secrets.yaml=username: slm_user
-password: ${test_password}" \
+    --from-literal="db-secrets.yaml=$(printf 'username: slm_user\npassword: %s' "$test_password")" \
     -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
 
   kubectl create secret generic kubernaut-valkey-credentials \
