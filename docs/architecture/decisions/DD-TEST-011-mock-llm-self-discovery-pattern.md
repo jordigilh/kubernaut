@@ -11,6 +11,73 @@
 
 ## Changelog
 
+### Version 4.0 — Go Rewrite & Deterministic UUIDs (2026-03-04)
+**Status**: 📋 **PLANNED** (specification phase, implementation pending)
+
+**Decision Change**: File-Based Configuration Pattern → **Deterministic UUID Generation** (eliminates ConfigMap sync entirely)
+
+**Reason for Change**: Issue #531 rewrites the Mock LLM from Python to Go. Issue #548 introduces deterministic UUID generation in DataStorage. Together, these changes make the entire ConfigMap sync infrastructure obsolete.
+
+**Key Insight (v4.0)**: When both DataStorage and Mock LLM use the same deterministic UUID function (`pkg/shared/uuid.DeterministicUUID(workflowName, environment)`), there is no synchronization problem to solve. Both services independently compute identical UUIDs — no ConfigMap, no YAML config file, no rollout restart.
+
+**Impact on v3.0 Infrastructure**:
+
+| v3.0 Component | v4.0 Status | Rationale |
+|----------------|-------------|-----------|
+| `MOCK_LLM_CONFIG_PATH` env var | **OPTIONAL** | No longer required; retained as optional override for manual testing/debugging (BR-MOCK-033) |
+| `load_scenarios_from_file()` | **REMOVED** (as required path) | Deterministic UUIDs are the default; optional YAML overrides still load from file if `MOCK_LLM_CONFIG_PATH` is set |
+| `scenarios.yaml` ConfigMap | **REMOVED** | No UUID mapping file needed |
+| `UpdateMockLLMConfigMap()` helper | **REMOVED** | No ConfigMap to update |
+| `WriteMockLLMConfigFile()` helper | **REMOVED** | No config file to write |
+| `SortedWorkflowUUIDKeys()` helper | **REMOVED** | No UUID keys to sort |
+| ConfigMap volume mount in deployment | **REMOVED** | No volume needed |
+| Rollout restart after DS seeding | **REMOVED** | Mock LLM ready immediately |
+| `SYNC_ON_STARTUP` env var | **REMOVED** | No sync mechanism at all |
+| `/health` readiness probe | **UNCHANGED** | Still used for liveness/readiness |
+
+**New Architecture**:
+
+```
+Test Suite Startup (Simplified):
+1. Deploy DataStorage → seed workflows (UUIDs generated deterministically)
+2. Deploy Mock LLM (no ConfigMap, no config file)
+   - Mock LLM starts → computes UUIDs from shared function
+   - /health returns 200 immediately
+3. Deploy HAPI → LLM_ENDPOINT=http://mock-llm:8080
+4. Tests run — UUIDs match between DataStorage and Mock LLM ✅
+```
+
+**Additional Architectural Changes (Go Rewrite)**:
+
+The Go rewrite (#531) introduces several architectural improvements beyond UUID management:
+
+1. **DAG-based conversation engine** (#560): Replaces hardcoded if/else routing with a declarative state machine
+2. **Scenario registry** (#564): Self-registering scenarios, one file per scenario
+3. **Shared OpenAI types** (#562): Compile-time contract enforcement between Mock LLM and HAPI
+4. **HTTP verification API** (#563): Behavioral test assertions from Go tests
+5. **Fault injection** (#565): Configurable failure modes for resilience testing
+6. **Declarative YAML scenarios** (#566): Non-developers can author scenarios
+7. **Pillar composition** (#567): Framework for Threat Remediation (#554) and Cost Optimization (#555)
+8. **Prometheus metrics** (#568): Observability for E2E debugging
+
+**Business Requirements**: See [Mock LLM BUSINESS_REQUIREMENTS.md](../../services/test-infrastructure/mock-llm/BUSINESS_REQUIREMENTS.md) (46 BRs across 10 categories)
+
+**Dependencies**:
+- #548 — Deterministic UUIDs in DataStorage (must land first or in parallel)
+- #433 — HAPI Go rewrite (shared types consumer)
+
+**Backward Compatibility**:
+- v4.0 maintains the same HTTP API contract (endpoints, request/response shapes)
+- v4.0 maintains the same container contract (port 8080, non-root user 1001, `/health` probe)
+- Existing integration and E2E tests pass without modification (beyond image name change)
+- v3.0 file-based config pattern still works as an optional override (BR-MOCK-033)
+
+**Confidence**: 95% (specification complete, implementation pending)
+
+**Related Issues**: #531, #548, #560-#568
+
+---
+
 ### Version 3.0 - Validation Complete (2026-01-14)
 **Status**: ✅ **VALIDATED** - All 3 testing tiers passing (104/104 tests)
 
@@ -959,16 +1026,17 @@ Test Execution:
 
 ## Document Metadata
 
-**Document Status**: ✅ **AUTHORITATIVE & VALIDATED**
-**Version**: 3.0 (File-Based Configuration Pattern - Fully Validated)
-**Approved By**: User (jordigilh) - 2026-01-14 (v1.0), 2026-01-14 (v2.0), 2026-01-14 (v2.1), 2026-01-14 (v3.0)
-**Implementation Status**: ✅ **COMPLETED & VALIDATED** (File-based pattern implemented, 104/104 tests passing)
-**Documentation Status**: ✅ **COMPREHENSIVE** (DD-TEST-011 + test/services/mock-llm/README.md)
-**Validation Status**: ✅ **100% PASS RATE** (Python Unit: 11/11, Integration: 57/57, E2E: 36/36)
-**Production Ready**: ✅ **YES** (Validated across all 3 testing tiers)
-**Next Review**: 2026-04-14 (3 months)
+**Document Status**: ✅ **AUTHORITATIVE** (v3.0 validated; v4.0 planned)
+**Version**: 4.0 (Go Rewrite & Deterministic UUIDs — Planned)
+**Approved By**: User (jordigilh) - 2026-01-14 (v1.0), 2026-01-14 (v2.0), 2026-01-14 (v2.1), 2026-01-14 (v3.0), 2026-03-04 (v4.0 specification)
+**Implementation Status**: ✅ v3.0 **COMPLETED & VALIDATED** | 📋 v4.0 **SPECIFICATION PHASE** (#531)
+**Documentation Status**: ✅ **COMPREHENSIVE** (DD-TEST-011 + test/services/mock-llm/README.md + Mock LLM BUSINESS_REQUIREMENTS.md)
+**Validation Status**: ✅ v3.0 **100% PASS RATE** (Python Unit: 11/11, Integration: 57/57, E2E: 36/36)
+**Production Ready**: ✅ v3.0 **YES** | 📋 v4.0 pending implementation
+**Next Review**: When #531 implementation begins
 
 **Revision History**:
+- **v4.0** (2026-03-04): Go Rewrite & Deterministic UUIDs — eliminates ConfigMap sync via shared UUID function (#531, #548). Adds DAG engine, scenario registry, verification API, fault injection, shared types, pillar composition, metrics. See Mock LLM BUSINESS_REQUIREMENTS.md (46 BRs)
 - **v3.0-validated** (2026-01-14): Validation complete - 104/104 tests passing, HAPI fix, integration test path fix, production ready
 - **v3.0** (2026-01-14): File-based refactoring - Removed HTTP endpoints, simplified to file reader, added unit tests, created comprehensive README
 - **v2.1** (2026-01-14): Documentation enhancement - Added complete ConfigMap YAML examples, Mock LLM deployment specs, and configuration examples
