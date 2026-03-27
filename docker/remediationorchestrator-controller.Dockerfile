@@ -60,11 +60,28 @@ USER 65534
 EXPOSE 9090 8081
 ENTRYPOINT ["/remediationorchestrator-controller"]
 
+ARG APP_VERSION
+ARG GIT_COMMIT
+ARG BUILD_DATE
+
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-remediationorchestrator"
+	org.opencontainers.image.title="kubernaut-remediationorchestrator" \
+	org.opencontainers.image.description="Core orchestration controller that manages the remediation lifecycle from signal detection through workflow execution and effectiveness assessment." \
+	org.opencontainers.image.vendor="Kubernaut"
+
+LABEL name="kubernaut-remediationorchestrator" \
+	vendor="Kubernaut" \
+	summary="Kubernaut Remediation Orchestrator Controller" \
+	description="Core orchestration controller that manages the remediation lifecycle from signal detection through workflow execution and effectiveness assessment." \
+	maintainer="jgil@redhat.com" \
+	component="remediationorchestrator-controller" \
+	part-of="kubernaut" \
+	io.k8s.description="Remediation Orchestrator Controller for Kubernaut" \
+	io.k8s.display-name="Kubernaut Remediation Orchestrator" \
+	io.openshift.tags="kubernaut,remediationorchestrator,controller,orchestration,remediation,microservice"
 
 # ============================================================================
 # Stage 2b: Development/E2E runtime (ubi10-minimal -- debug + coverage, DD-TEST-007)
@@ -81,8 +98,14 @@ USER 1001
 EXPOSE 9090 8081
 ENTRYPOINT ["/usr/local/bin/remediationorchestrator-controller"]
 
+ARG APP_VERSION
+ARG GIT_COMMIT
+ARG BUILD_DATE
+
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-remediationorchestrator"
+	org.opencontainers.image.title="kubernaut-remediationorchestrator" \
+	org.opencontainers.image.description="Core orchestration controller that manages the remediation lifecycle from signal detection through workflow execution and effectiveness assessment." \
+	org.opencontainers.image.vendor="Kubernaut"

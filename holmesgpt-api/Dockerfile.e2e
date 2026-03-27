@@ -104,10 +104,21 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 ENTRYPOINT ["./entrypoint.sh"]
 CMD []
 
+ARG APP_VERSION=v1.1.0-rc6
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
+	org.opencontainers.image.version="${APP_VERSION}" \
+	org.opencontainers.image.revision="${GIT_COMMIT}" \
+	org.opencontainers.image.created="${BUILD_DATE}" \
+	org.opencontainers.image.title="kubernaut-holmesgpt-api-e2e" \
+	org.opencontainers.image.description="Minimal E2E test build of HolmesGPT API with standalone Mock LLM service." \
+	org.opencontainers.image.vendor="Kubernaut"
+
 # Red Hat UBI9 compatible metadata labels
 LABEL name="kubernaut-holmesgpt-api-e2e" \
 	vendor="Kubernaut" \
-	version="1.0.0-e2e" \
+	version="${APP_VERSION}" \
 	release="1" \
 	summary="HolmesGPT API - E2E Test Image (Minimal Dependencies)" \
 	description="Minimal build for E2E testing with standalone Mock LLM service - no cloud providers (1.5GB saved)" \

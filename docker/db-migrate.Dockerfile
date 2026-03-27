@@ -1,4 +1,4 @@
-# db-migrate: UBI9-minimal image bundling goose + psql for database migrations.
+# db-migrate: UBI10-minimal image bundling goose + psql for database migrations.
 #
 # Eliminates runtime binary downloads (curl/wget from GitHub) so the migration
 # Job works in disconnected/air-gapped environments (#351, C1).
@@ -11,15 +11,15 @@
 #
 # Multi-arch: TARGETARCH is set automatically by --platform.
 
-ARG APP_VERSION
-ARG GIT_COMMIT
-ARG BUILD_DATE
+ARG APP_VERSION=unknown
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 
 FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS production
 
-ARG APP_VERSION
-ARG GIT_COMMIT
-ARG BUILD_DATE
+ARG APP_VERSION=unknown
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 ARG TARGETARCH
 
 ENV GOOSE_VERSION=v3.24.1
@@ -52,7 +52,7 @@ USER 1001
 
 LABEL name="kubernaut-db-migrate" \
 	vendor="Kubernaut" \
-	summary="Kubernaut Database Migration - goose + psql on UBI9-minimal" \
+	summary="Kubernaut Database Migration - goose + psql on UBI10-minimal" \
 	description="Bundles goose SQL migration tool and PostgreSQL client for Helm post-install/post-upgrade database migrations in connected and disconnected environments." \
 	maintainer="jgil@redhat.com" \
 	component="db-migrate" \
@@ -65,7 +65,9 @@ LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-db-migrate"
+	org.opencontainers.image.title="kubernaut-db-migrate" \
+	org.opencontainers.image.description="Database migration image bundling goose and psql for Kubernaut Helm chart hooks in connected and disconnected environments." \
+	org.opencontainers.image.vendor="Kubernaut"
 
 ENTRYPOINT ["/usr/local/bin/goose"]
 CMD ["--help"]

@@ -89,21 +89,26 @@ EXPOSE 8080 9090
 ENTRYPOINT ["/data-storage"]
 CMD []
 
+ARG APP_VERSION=v1.1.0-rc6
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-datastorage"
+	org.opencontainers.image.title="kubernaut-data-storage" \
+	org.opencontainers.image.description="Persistent storage service for remediation audit trails with PostgreSQL dual-write support." \
+	org.opencontainers.image.vendor="Kubernaut"
 LABEL name="kubernaut-data-storage" \
 	vendor="Kubernaut" \
 	summary="Kubernaut Data Storage Service - Audit Trail Persistence" \
-	description="A microservice component of Kubernaut that provides persistent storage for remediation audit trails, dual-write to PostgreSQL and vector databases, with pgvector integration for semantic search capabilities." \
+	description="A microservice component of Kubernaut that provides persistent storage for remediation audit trails with PostgreSQL dual-write support." \
 	maintainer="jgil@redhat.com" \
 	component="data-storage" \
 	part-of="kubernaut" \
 	io.k8s.description="Data Storage Service for audit trail persistence and vector search" \
 	io.k8s.display-name="Kubernaut Data Storage Service" \
-	io.openshift.tags="kubernaut,data-storage,audit,postgres,pgvector,database,persistence,microservice"
+	io.openshift.tags="kubernaut,data-storage,audit,postgres,database,persistence,microservice"
 
 # ============================================================================
 # Stage 2b: Development/E2E runtime (ubi10-minimal -- debug + coverage, DD-TEST-007)
@@ -122,8 +127,13 @@ EXPOSE 8080 9090
 ENTRYPOINT ["/usr/local/bin/data-storage"]
 CMD []
 
+ARG APP_VERSION=v1.1.0-rc6
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-datastorage"
+	org.opencontainers.image.title="kubernaut-data-storage" \
+	org.opencontainers.image.description="Persistent storage service for remediation audit trails with PostgreSQL dual-write support." \
+	org.opencontainers.image.vendor="Kubernaut"

@@ -109,12 +109,14 @@ LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-holmesgpt-api"
+	org.opencontainers.image.title="kubernaut-holmesgpt-api" \
+	org.opencontainers.image.description="Python microservice providing AI-powered recovery analysis via HolmesGPT SDK and LLM integration." \
+	org.opencontainers.image.vendor="Kubernaut"
 
 # Red Hat UBI9 compatible metadata labels
 LABEL name="kubernaut-holmesgpt-api" \
 	vendor="Kubernaut" \
-	version="1.0.0" \
+	version="${APP_VERSION}" \
 	release="1" \
 	summary="HolmesGPT API - AI-Powered Recovery Analysis Service" \
 	description="A Python microservice component of Kubernaut that provides AI-powered recovery analysis for Kubernaut using HolmesGPT SDK and LLM integration." \
