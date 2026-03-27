@@ -26,6 +26,13 @@ The chart does **not** auto-generate credentials — this prevents password leak
 via rendered Helm templates and avoids silent `lookup` failures on OCP / restricted-RBAC
 environments.
 
+The chart validates that required secrets exist at install/upgrade time and fails
+with an actionable error if they are missing. This validation is automatically
+skipped during `helm template` (no cluster access). **Note:** If the Helm installer
+ServiceAccount lacks `get` permission on Namespaces, the validation is also
+skipped — operators in restricted-RBAC environments must ensure secrets exist
+manually before installing.
+
 ```bash
 # 1. Create namespace
 kubectl create namespace kubernaut-system

@@ -796,6 +796,9 @@ stringData:
   POSTGRES_USER: slm_user
   POSTGRES_PASSWORD: test_password
   POSTGRES_DB: action_history
+  db-secrets.yaml: |
+    username: slm_user
+    password: test_password
 ---
 apiVersion: v1
 kind: Service
@@ -1022,15 +1025,6 @@ data:
     logging:
       level: debug
       format: json
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgresql-secret
-stringData:
-  db-secrets.yaml: |
-    username: slm_user
-    password: test_password
 ---
 apiVersion: v1
 kind: Secret
