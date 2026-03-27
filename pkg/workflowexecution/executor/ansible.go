@@ -32,6 +32,28 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
+// CredentialTypeField represents a single input field definition for an AWX credential type.
+type CredentialTypeField struct {
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Type      string `json:"type"`
+	Secret    bool   `json:"secret,omitempty"`
+	Multiline bool   `json:"multiline,omitempty"`
+}
+
+// CredentialTypeInputs defines the input schema for an AWX credential type.
+type CredentialTypeInputs struct {
+	Fields []CredentialTypeField `json:"fields"`
+}
+
+// CredentialTypeInjectors defines how AWX injects credential values into jobs.
+// File templates are rendered by AWX's Jinja2 engine and written to temp files.
+// Env vars reference either Jinja2 placeholders or tower.filename.* paths.
+type CredentialTypeInjectors struct {
+	File map[string]string `json:"file,omitempty"`
+	Env  map[string]string `json:"env,omitempty"`
+}
+
 // AWXClient defines the interface for AWX/AAP REST API operations.
 // Mocked in unit tests; real implementation provided by AWXHTTPClient.
 type AWXClient interface {
@@ -43,8 +65,9 @@ type AWXClient interface {
 	// Credential lifecycle for dependencies.secrets injection (BR-WE-015).
 	// The executor dynamically creates AWX credential types per unique K8s Secret name,
 	// then creates ephemeral credentials per WFE execution and cleans them up after completion.
-	CreateCredentialType(ctx context.Context, name string, inputs, injectors map[string]interface{}) (int, error)
+	CreateCredentialType(ctx context.Context, name string, inputs CredentialTypeInputs, injectors CredentialTypeInjectors) (int, error)
 	FindCredentialTypeByName(ctx context.Context, name string) (int, error)
+	FindCredentialTypeByKind(ctx context.Context, kind string, managed bool) (int, error)
 	CreateCredential(ctx context.Context, name string, credTypeID, orgID int, inputs map[string]string) (int, error)
 	DeleteCredential(ctx context.Context, credentialID int) error
 	LaunchJobTemplateWithCreds(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error)
@@ -63,14 +86,43 @@ const (
 	credentialTypePrefix = "kubernaut-secret-"
 	credentialPrefix     = "kubernaut-ephemeral-"
 
-	// K8s credential injection (#497, #500).
+	// K8s credential injection (#497, #500, #552).
 	// The built-in AWX type was extended for Job Template use in ansible/awx#7629.
-	k8sBuiltinCredTypeName  = "OpenShift or Kubernetes API Bearer Token"
-	k8sFallbackCredTypeName = "kubernaut-k8s-bearer-token"
-	k8sCredentialPrefix     = "kubernaut-k8s-"
+	// v2 uses kubeconfig-file injection instead of env vars (#552).
+	k8sBuiltinCredTypeName    = "OpenShift or Kubernetes API Bearer Token"
+	k8sFallbackCredTypeName   = "kubernaut-k8s-bearer-token"
+	k8sFallbackCredTypeNameV2 = "kubernaut-k8s-bearer-token-v2"
+	k8sCredentialPrefix       = "kubernaut-k8s-"
 
 	inClusterTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	inClusterCAPath    = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+	// kubeconfigTemplate is a Jinja2 template rendered by AWX when injecting
+	// credentials into an Ansible job. It generates a standard kubeconfig file
+	// that kubernetes.core modules read via K8S_AUTH_KUBECONFIG. The template
+	// conditionally uses certificate-authority-data or insecure-skip-tls-verify
+	// depending on whether ssl_ca_cert is supplied.
+	kubeconfigTemplate = `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: {{host}}
+{% if ssl_ca_cert %}
+    certificate-authority-data: {{ssl_ca_cert | b64encode}}
+{% else %}
+    insecure-skip-tls-verify: true
+{% endif %}
+  name: target
+contexts:
+- context:
+    cluster: target
+    user: kubernaut
+  name: default
+current-context: default
+users:
+- name: kubernaut
+  user:
+    token: {{bearer_token}}`
 )
 
 // InClusterCredentials holds Kubernetes API credentials read from the
@@ -323,21 +375,21 @@ func (a *AnsibleExecutor) ensureCredentialType(
 
 	envPrefix := "KUBERNAUT_SECRET_" + sanitizeEnvSegment(secretName) + "_"
 
-	fields := make([]map[string]interface{}, 0, len(secretData))
+	fields := make([]CredentialTypeField, 0, len(secretData))
 	envMap := make(map[string]string, len(secretData))
 
 	for key := range secretData {
-		fields = append(fields, map[string]interface{}{
-			"id":     key,
-			"label":  key,
-			"type":   "string",
-			"secret": true,
+		fields = append(fields, CredentialTypeField{
+			ID:     key,
+			Label:  key,
+			Type:   "string",
+			Secret: true,
 		})
 		envMap[envPrefix+sanitizeEnvSegment(key)] = "{{" + key + "}}"
 	}
 
-	inputs := map[string]interface{}{"fields": fields}
-	injectors := map[string]interface{}{"env": envMap}
+	inputs := CredentialTypeInputs{Fields: fields}
+	injectors := CredentialTypeInjectors{Env: envMap}
 
 	id, err = a.AWXClient.CreateCredentialType(ctx, typeName, inputs, injectors)
 	if err != nil {
@@ -351,58 +403,89 @@ func (a *AnsibleExecutor) ensureCredentialType(
 // resolveK8sCredentialTypeID finds the AWX credential type suitable for injecting
 // K8S_AUTH_* environment variables into the playbook execution environment.
 //
-// Strategy:
-//  1. Look for the built-in "OpenShift or Kubernetes API Bearer Token" type,
-//     which was extended for Job Template env injection in ansible/awx#7629
-//     (see also ansible/awx#5735).
-//  2. Fall back to a custom "kubernaut-k8s-bearer-token" type with explicit
-//     K8S_AUTH_* injectors if the built-in type is absent (older AWX versions).
+// Strategy (5-step, #552):
+//  1. FindCredentialTypeByName(k8sBuiltinCredTypeName)   → return if found
+//  2. FindCredentialTypeByKind("kubernetes", true)        → return if found (AAP renamed built-in)
+//  3. FindCredentialTypeByName(k8sFallbackCredTypeName)   → return if found (existing v1 custom)
+//  4. FindCredentialTypeByName(k8sFallbackCredTypeNameV2) → return if found (v2 custom)
+//  5. CreateCredentialType(k8sFallbackCredTypeNameV2)     → create with kubeconfig-file injectors
 func (a *AnsibleExecutor) resolveK8sCredentialTypeID(ctx context.Context) (int, error) {
-	id, err := a.AWXClient.FindCredentialTypeByName(ctx, k8sBuiltinCredTypeName)
-	if err == nil {
+	// Step 1: built-in by name
+	if id, err := a.AWXClient.FindCredentialTypeByName(ctx, k8sBuiltinCredTypeName); err == nil {
 		return id, nil
 	}
 
-	id, err = a.AWXClient.FindCredentialTypeByName(ctx, k8sFallbackCredTypeName)
-	if err == nil {
+	// Step 2: built-in by kind (AAP may use a different display name)
+	if id, err := a.AWXClient.FindCredentialTypeByKind(ctx, "kubernetes", true); err == nil {
+		a.Logger.Info("Resolved K8s credential type via kind-based lookup", "id", id)
 		return id, nil
 	}
 
-	a.Logger.Info("Built-in K8s credential type not found, creating custom fallback",
-		"builtInName", k8sBuiltinCredTypeName, "fallbackName", k8sFallbackCredTypeName)
+	// Step 3: existing v1 custom type
+	if id, err := a.AWXClient.FindCredentialTypeByName(ctx, k8sFallbackCredTypeName); err == nil {
+		return id, nil
+	}
 
-	inputs := map[string]interface{}{
-		"fields": []map[string]interface{}{
-			{"id": "host", "label": "Kubernetes API Host", "type": "string"},
-			{"id": "bearer_token", "label": "API Bearer Token", "type": "string", "secret": true},
-			{"id": "ssl_ca_cert", "label": "CA Certificate", "type": "string", "secret": true, "multiline": true},
+	// Step 4: existing v2 custom type
+	if id, err := a.AWXClient.FindCredentialTypeByName(ctx, k8sFallbackCredTypeNameV2); err == nil {
+		return id, nil
+	}
+
+	// Step 5: create v2 custom type with kubeconfig-file injectors
+	a.Logger.Info("All K8s credential type lookups failed, creating v2 custom type",
+		"name", k8sFallbackCredTypeNameV2)
+
+	inputs := CredentialTypeInputs{
+		Fields: []CredentialTypeField{
+			{ID: "host", Label: "Kubernetes API Host", Type: "string"},
+			{ID: "bearer_token", Label: "API Bearer Token", Type: "string", Secret: true},
+			{ID: "ssl_ca_cert", Label: "CA Certificate", Type: "string", Secret: true, Multiline: true},
 		},
 	}
 
-	injectors := map[string]interface{}{
-		"file": map[string]interface{}{
-			"template.kubernaut_k8s_ca": "{{ssl_ca_cert}}",
+	injectors := CredentialTypeInjectors{
+		File: map[string]string{
+			"template.kubeconfig": kubeconfigTemplate,
 		},
-		"env": map[string]interface{}{
-			"K8S_AUTH_HOST":        "{{host}}",
-			"K8S_AUTH_API_KEY":     "{{bearer_token}}",
-			"K8S_AUTH_SSL_CA_CERT": "{{tower.filename.kubernaut_k8s_ca}}",
-			"K8S_AUTH_VERIFY_SSL":  "True",
+		Env: map[string]string{
+			"K8S_AUTH_KUBECONFIG": "{{tower.filename.kubeconfig}}",
 		},
 	}
 
-	id, err = a.AWXClient.CreateCredentialType(ctx, k8sFallbackCredTypeName, inputs, injectors)
+	id, err := a.AWXClient.CreateCredentialType(ctx, k8sFallbackCredTypeNameV2, inputs, injectors)
 	if err != nil {
-		return 0, fmt.Errorf("create K8s credential type %q: %w", k8sFallbackCredTypeName, err)
+		return 0, fmt.Errorf("create K8s credential type %q: %w", k8sFallbackCredTypeNameV2, err)
 	}
 
-	a.Logger.Info("Created custom K8s credential type", "name", k8sFallbackCredTypeName, "id", id)
+	a.Logger.Info("Created v2 custom K8s credential type", "name", k8sFallbackCredTypeNameV2, "id", id)
 	return id, nil
+}
+
+// k8sCredentialInputs holds the credential field values for a K8s API credential.
+// Provides type-safe construction before conversion to the generic map expected
+// by CreateCredential.
+type k8sCredentialInputs struct {
+	Host        string
+	BearerToken string
+	CACert      string
+}
+
+func (i k8sCredentialInputs) toMap() map[string]string {
+	m := map[string]string{
+		"host":         i.Host,
+		"bearer_token": i.BearerToken,
+	}
+	if i.CACert != "" {
+		m["ssl_ca_cert"] = i.CACert
+	}
+	return m
 }
 
 // injectK8sCredential creates an ephemeral AWX credential containing the WE
 // controller's in-cluster K8s API credentials so that playbooks using
 // kubernetes.core modules can authenticate to the cluster API.
+// When the CA cert is empty (e.g. in dev clusters), the ssl_ca_cert input is
+// omitted so the kubeconfig template falls back to insecure-skip-tls-verify (#552).
 func (a *AnsibleExecutor) injectK8sCredential(ctx context.Context, wfeName string) (int, error) {
 	creds, err := a.InClusterCredentialsFn()
 	if err != nil {
@@ -414,14 +497,17 @@ func (a *AnsibleExecutor) injectK8sCredential(ctx context.Context, wfeName strin
 		return 0, fmt.Errorf("resolve K8s credential type: %w", err)
 	}
 
-	inputs := map[string]string{
-		"host":         creds.Host,
-		"bearer_token": creds.Token,
-		"ssl_ca_cert":  creds.CACert,
+	k8sInputs := k8sCredentialInputs{
+		Host:        creds.Host,
+		BearerToken: creds.Token,
+		CACert:      creds.CACert,
+	}
+	if creds.CACert == "" {
+		a.Logger.Info("WARNING: Empty CA cert — playbook will use insecure TLS", "wfe", wfeName)
 	}
 
 	credName := k8sCredentialPrefix + wfeName
-	credID, err := a.AWXClient.CreateCredential(ctx, credName, typeID, a.OrganizationID, inputs)
+	credID, err := a.AWXClient.CreateCredential(ctx, credName, typeID, a.OrganizationID, k8sInputs.toMap())
 	if err != nil {
 		return 0, fmt.Errorf("create K8s credential %q: %w", credName, err)
 	}
