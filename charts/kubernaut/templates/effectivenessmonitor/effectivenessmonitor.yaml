@@ -213,9 +213,8 @@ spec:
         {{- end }}
 {{- if .Values.effectivenessmonitor.external.ocpMonitoringRbac }}
 ---
-# Issue #452: OCP monitoring RBAC.
-# Grants the EM service account read access to cluster monitoring
-# (Prometheus metrics and AlertManager alerts) on OCP.
+# Issue #452: OCP monitoring RBAC — Prometheus metrics.
+# Grants the EM service account read access to cluster monitoring on OCP.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -230,10 +229,14 @@ subjects:
   - kind: ServiceAccount
     name: effectivenessmonitor-controller
     namespace: {{ .Release.Namespace }}
+{{- if .Values.effectivenessmonitor.external.alertManagerEnabled }}
 ---
-# Issue #471: Chart-managed ClusterRole for AlertManager API access on OCP.
-# EM calls GET /api/v2/alerts on the in-cluster AlertManager to assess
-# whether the remediation resolved the triggering alert.
+# Issue #576: OCP AlertManager API access via kube-rbac-proxy.
+# On OCP, AlertManager sits behind kube-rbac-proxy which performs
+# SubjectAccessReview on resource-level permissions — nonResourceURLs
+# are not evaluated by the proxy. This ClusterRole grants the
+# resource-level permission that kube-rbac-proxy checks.
+# On Kind/vanilla K8s (ocpMonitoringRbac=false), this block is not rendered.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -241,7 +244,8 @@ metadata:
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
 rules:
-  - nonResourceURLs: ["/api/v2/alerts", "/api/v2/alerts/*", "/-/ready"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["alertmanagers/api"]
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -258,6 +262,7 @@ subjects:
   - kind: ServiceAccount
     name: effectivenessmonitor-controller
     namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- end }}
 ---
 apiVersion: v1
