@@ -60,11 +60,16 @@ USER 65534
 EXPOSE 9090 8081
 ENTRYPOINT ["/aianalysis-controller"]
 
+ARG APP_VERSION=v1.1.0-rc6
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-aianalysis"
+	org.opencontainers.image.title="kubernaut-aianalysis" \
+	org.opencontainers.image.description="Controller that coordinates AI-powered root cause analysis via HolmesGPT for automated remediation discovery." \
+	org.opencontainers.image.vendor="Kubernaut"
 LABEL name="kubernaut-aianalysis" \
 	vendor="Kubernaut" \
 	summary="AIAnalysis Controller - AI-Powered Kubernetes Analysis" \
@@ -91,8 +96,13 @@ USER 1001
 EXPOSE 9090 8081
 ENTRYPOINT ["/usr/local/bin/aianalysis-controller"]
 
+ARG APP_VERSION=v1.1.0-rc6
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-aianalysis"
+	org.opencontainers.image.title="kubernaut-aianalysis" \
+	org.opencontainers.image.description="Controller that coordinates AI-powered root cause analysis via HolmesGPT for automated remediation discovery." \
+	org.opencontainers.image.vendor="Kubernaut"

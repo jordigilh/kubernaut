@@ -49,8 +49,9 @@ type mockAWXClient struct {
 	getStatusFunc             func(ctx context.Context, jobID int) (*executor.AWXJobStatus, error)
 	cancelFunc                func(ctx context.Context, jobID int) error
 	findTemplateByNameFn      func(ctx context.Context, name string) (int, error)
-	createCredentialTypeFn    func(ctx context.Context, name string, inputs, injectors map[string]interface{}) (int, error)
+	createCredentialTypeFn    func(ctx context.Context, name string, inputs executor.CredentialTypeInputs, injectors executor.CredentialTypeInjectors) (int, error)
 	findCredentialTypeByNameFn func(ctx context.Context, name string) (int, error)
+	findCredentialTypeByKindFn func(ctx context.Context, kind string, managed bool) (int, error)
 	createCredentialFn        func(ctx context.Context, name string, credTypeID, orgID int, inputs map[string]string) (int, error)
 	deleteCredentialFn        func(ctx context.Context, credentialID int) error
 	launchWithCredsFn         func(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error)
@@ -85,7 +86,7 @@ func (m *mockAWXClient) FindJobTemplateByName(ctx context.Context, name string) 
 	return 10, nil
 }
 
-func (m *mockAWXClient) CreateCredentialType(ctx context.Context, name string, inputs, injectors map[string]interface{}) (int, error) {
+func (m *mockAWXClient) CreateCredentialType(ctx context.Context, name string, inputs executor.CredentialTypeInputs, injectors executor.CredentialTypeInjectors) (int, error) {
 	if m.createCredentialTypeFn != nil {
 		return m.createCredentialTypeFn(ctx, name, inputs, injectors)
 	}
@@ -97,6 +98,13 @@ func (m *mockAWXClient) FindCredentialTypeByName(ctx context.Context, name strin
 		return m.findCredentialTypeByNameFn(ctx, name)
 	}
 	return 1, nil
+}
+
+func (m *mockAWXClient) FindCredentialTypeByKind(ctx context.Context, kind string, managed bool) (int, error) {
+	if m.findCredentialTypeByKindFn != nil {
+		return m.findCredentialTypeByKindFn(ctx, kind, managed)
+	}
+	return 0, fmt.Errorf("credential type with kind %q not found", kind)
 }
 
 func (m *mockAWXClient) CreateCredential(ctx context.Context, name string, credTypeID, orgID int, inputs map[string]string) (int, error) {
@@ -502,7 +510,7 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
 				return 0, fmt.Errorf("AWX credential type %q not found", name)
 			}
-			awxClient.createCredentialTypeFn = func(_ context.Context, name string, inputs, injectors map[string]interface{}) (int, error) {
+			awxClient.createCredentialTypeFn = func(_ context.Context, name string, _ executor.CredentialTypeInputs, _ executor.CredentialTypeInjectors) (int, error) {
 				createdCredTypeName = name
 				return 15, nil
 			}
@@ -559,7 +567,7 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 				return 15, nil // Already exists
 			}
 			createTypeCalled := false
-			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, _ executor.CredentialTypeInjectors) (int, error) {
 				createTypeCalled = true
 				return 0, fmt.Errorf("should not be called")
 			}
@@ -851,7 +859,7 @@ var _ = Describe("AnsibleExecutor dependencies.configMaps injection (BR-WE-015)"
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
 				return 0, fmt.Errorf("not found")
 			}
-			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, _ executor.CredentialTypeInjectors) (int, error) {
 				return 15, nil
 			}
 			awxClient.createCredentialFn = func(_ context.Context, _ string, _ int, _ int, _ map[string]string) (int, error) {
@@ -967,7 +975,7 @@ var _ = Describe("AnsibleExecutor credential merging (#365, BR-WE-015)", func() 
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
 				return 0, fmt.Errorf("not found")
 			}
-			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, _ executor.CredentialTypeInjectors) (int, error) {
 				return 15, nil
 			}
 			awxClient.createCredentialFn = func(_ context.Context, _ string, _ int, _ int, _ map[string]string) (int, error) {
@@ -1031,7 +1039,7 @@ var _ = Describe("AnsibleExecutor credential merging (#365, BR-WE-015)", func() 
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
 				return 0, fmt.Errorf("not found")
 			}
-			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, _ executor.CredentialTypeInjectors) (int, error) {
 				return 15, nil
 			}
 			awxClient.createCredentialFn = func(_ context.Context, _ string, _ int, _ int, _ map[string]string) (int, error) {
@@ -1090,7 +1098,7 @@ var _ = Describe("AnsibleExecutor credential merging (#365, BR-WE-015)", func() 
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
 				return 0, fmt.Errorf("not found")
 			}
-			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, _ executor.CredentialTypeInjectors) (int, error) {
 				return 15, nil
 			}
 			awxClient.createCredentialFn = func(_ context.Context, _ string, _ int, _ int, _ map[string]string) (int, error) {
@@ -1142,7 +1150,7 @@ var _ = Describe("AnsibleExecutor credential merging (#365, BR-WE-015)", func() 
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
 				return 0, fmt.Errorf("not found")
 			}
-			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, _ executor.CredentialTypeInjectors) (int, error) {
 				return 15, nil
 			}
 			awxClient.createCredentialFn = func(_ context.Context, _ string, _ int, _ int, _ map[string]string) (int, error) {
@@ -1299,7 +1307,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 				}
 				return 0, fmt.Errorf("not found")
 			}
-			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, _ executor.CredentialTypeInjectors) (int, error) {
 				return 15, nil
 			}
 			awxClient.createCredentialFn = func(_ context.Context, name string, credTypeID, _ int, _ map[string]string) (int, error) {
@@ -1359,7 +1367,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 			Expect(launchCalled).To(BeTrue(), "should fall back to standard launch without credentials")
 		})
 
-		It("UT-WE-500-004: should use custom fallback type when built-in type not found", func() {
+		It("UT-WE-552-012: should create v2 custom type with kubeconfig injectors when all lookups fail", func() {
 			fakeClient = newFakeClient()
 			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
@@ -1370,17 +1378,16 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
 				return 0, fmt.Errorf("not found: %s", name)
 			}
-			awxClient.createCredentialTypeFn = func(_ context.Context, name string, inputs, injectors map[string]interface{}) (int, error) {
+			awxClient.findCredentialTypeByKindFn = func(_ context.Context, kind string, managed bool) (int, error) {
+				return 0, fmt.Errorf("not found by kind: %s", kind)
+			}
+			awxClient.createCredentialTypeFn = func(_ context.Context, name string, _ executor.CredentialTypeInputs, injectors executor.CredentialTypeInjectors) (int, error) {
 				createdTypeName = name
 
-				By("Verifying custom type has correct injector structure")
-				Expect(injectors).To(HaveKey("env"))
-				envMap, ok := injectors["env"].(map[string]interface{})
-				Expect(ok).To(BeTrue())
-				Expect(envMap).To(HaveKeyWithValue("K8S_AUTH_HOST", "{{host}}"))
-				Expect(envMap).To(HaveKeyWithValue("K8S_AUTH_API_KEY", "{{bearer_token}}"))
-				Expect(envMap).To(HaveKey("K8S_AUTH_SSL_CA_CERT"))
-				Expect(envMap).To(HaveKeyWithValue("K8S_AUTH_VERIFY_SSL", "True"))
+				By("Verifying custom type has kubeconfig file injector (not env vars)")
+				Expect(injectors.File).To(HaveKey("template.kubeconfig"))
+				Expect(injectors.Env).To(HaveKeyWithValue("K8S_AUTH_KUBECONFIG", "{{tower.filename.kubeconfig}}"))
+				Expect(injectors.Env).ToNot(HaveKey("K8S_AUTH_HOST"), "env-var injection replaced by kubeconfig")
 
 				return 99, nil
 			}
@@ -1400,8 +1407,8 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(createdTypeName).To(Equal("kubernaut-k8s-bearer-token"),
-				"should create custom fallback type when built-in is absent")
+			Expect(createdTypeName).To(Equal("kubernaut-k8s-bearer-token-v2"),
+				"should create v2 custom type with kubeconfig injectors")
 		})
 
 		It("UT-WE-500-005: should reuse existing custom fallback type", func() {
@@ -1419,9 +1426,12 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 				}
 				return 0, fmt.Errorf("not found")
 			}
+			awxClient.findCredentialTypeByKindFn = func(_ context.Context, _ string, _ bool) (int, error) {
+				return 0, fmt.Errorf("not found by kind")
+			}
 
 			createTypeCalled := false
-			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, _ executor.CredentialTypeInjectors) (int, error) {
 				createTypeCalled = true
 				return 0, fmt.Errorf("should not be called")
 			}
@@ -1467,6 +1477,463 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 			Expect(err).ToNot(HaveOccurred())
 			Expect(deletedCredIDs).To(ConsistOf(42, 88),
 				"both dependency and K8s ephemeral credentials should be deleted")
+		})
+	})
+
+	// =====================================================================
+	// #552: Kubeconfig injection fix for AWX/AAP credential type resolution
+	// =====================================================================
+	// Authority: BR-WE-015, BR-WE-017, #552
+	// Replaces env-var injection with kubeconfig-file injection and adds
+	// kind-based fallback for built-in K8s credential type discovery.
+	// =====================================================================
+
+	Context("Issue #552: Credential type resolution strategies", func() {
+		It("UT-WE-552-004: should resolve built-in type by name on first attempt", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
+				if name == "OpenShift or Kubernetes API Bearer Token" {
+					return 5, nil
+				}
+				return 0, fmt.Errorf("not found")
+			}
+
+			kindCalled := false
+			awxClient.findCredentialTypeByKindFn = func(_ context.Context, _ string, _ bool) (int, error) {
+				kindCalled = true
+				return 0, fmt.Errorf("should not be called")
+			}
+			createTypeCalled := false
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, _ executor.CredentialTypeInjectors) (int, error) {
+				createTypeCalled = true
+				return 0, fmt.Errorf("should not be called")
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, credTypeID, _ int, _ map[string]string) (int, error) {
+				Expect(credTypeID).To(Equal(5))
+				return 88, nil
+			}
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-builtin-name", "kubernaut-system", engineConfig, nil)
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(kindCalled).To(BeFalse(), "FindCredentialTypeByKind should not be called when built-in found by name")
+			Expect(createTypeCalled).To(BeFalse(), "CreateCredentialType should not be called when built-in found by name")
+		})
+
+		It("UT-WE-552-005: should fall back to kind-based lookup when name lookups fail", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
+				if name == "OpenShift or Kubernetes API Bearer Token" {
+					return 0, fmt.Errorf("not found")
+				}
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.findCredentialTypeByKindFn = func(_ context.Context, kind string, managed bool) (int, error) {
+				Expect(kind).To(Equal("kubernetes"))
+				Expect(managed).To(BeTrue())
+				return 7, nil
+			}
+			createTypeCalled := false
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, _ executor.CredentialTypeInjectors) (int, error) {
+				createTypeCalled = true
+				return 0, fmt.Errorf("should not be called")
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, credTypeID, _ int, _ map[string]string) (int, error) {
+				Expect(credTypeID).To(Equal(7))
+				return 88, nil
+			}
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-kind-fallback", "kubernaut-system", engineConfig, nil)
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createTypeCalled).To(BeFalse(), "CreateCredentialType should not be called when found by kind")
+		})
+
+		It("UT-WE-552-006: should create v2 custom type when all lookups fail", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.findCredentialTypeByKindFn = func(_ context.Context, _ string, _ bool) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+
+			var createdTypeName string
+			awxClient.createCredentialTypeFn = func(_ context.Context, name string, _ executor.CredentialTypeInputs, _ executor.CredentialTypeInjectors) (int, error) {
+				createdTypeName = name
+				return 99, nil
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, credTypeID, _ int, _ map[string]string) (int, error) {
+				Expect(credTypeID).To(Equal(99))
+				return 88, nil
+			}
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-create-v2", "kubernaut-system", engineConfig, nil)
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createdTypeName).To(Equal("kubernaut-k8s-bearer-token-v2"),
+				"should create v2 custom type when all lookups fail")
+		})
+
+		It("UT-WE-552-007: should reuse existing v1 custom type before creating v2", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
+				if name == "OpenShift or Kubernetes API Bearer Token" {
+					return 0, fmt.Errorf("not found")
+				}
+				if name == "kubernaut-k8s-bearer-token" {
+					return 99, nil
+				}
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.findCredentialTypeByKindFn = func(_ context.Context, _ string, _ bool) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+
+			createTypeCalled := false
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, _ executor.CredentialTypeInjectors) (int, error) {
+				createTypeCalled = true
+				return 0, fmt.Errorf("should not be called")
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, credTypeID, _ int, _ map[string]string) (int, error) {
+				Expect(credTypeID).To(Equal(99))
+				return 88, nil
+			}
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-reuse-v1", "kubernaut-system", engineConfig, nil)
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createTypeCalled).To(BeFalse(), "should reuse v1 type, not create v2")
+		})
+	})
+
+	Context("Issue #552: Kubeconfig injector structure", func() {
+		It("UT-WE-552-001: should use file-based kubeconfig injector, not env vars", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.findCredentialTypeByKindFn = func(_ context.Context, _ string, _ bool) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, injectors executor.CredentialTypeInjectors) (int, error) {
+				By("Verifying file injector contains kubeconfig template")
+				Expect(injectors.File).To(HaveKey("template.kubeconfig"))
+
+				By("Verifying env injector points to kubeconfig file, no K8S_AUTH_HOST")
+				Expect(injectors.Env).To(HaveKeyWithValue("K8S_AUTH_KUBECONFIG", "{{tower.filename.kubeconfig}}"))
+				Expect(injectors.Env).ToNot(HaveKey("K8S_AUTH_HOST"))
+
+				return 99, nil
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, _, _ int, _ map[string]string) (int, error) {
+				return 88, nil
+			}
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-kubeconfig-injector", "kubernaut-system", engineConfig, nil)
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("UT-WE-552-002: kubeconfig template should contain required fields", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.findCredentialTypeByKindFn = func(_ context.Context, _ string, _ bool) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, injectors executor.CredentialTypeInjectors) (int, error) {
+				kubeconfigTmpl := injectors.File["template.kubeconfig"]
+
+				By("Verifying kubeconfig template contains Jinja2 placeholders")
+				Expect(kubeconfigTmpl).To(ContainSubstring("{{host}}"))
+				Expect(kubeconfigTmpl).To(ContainSubstring("{{bearer_token}}"))
+				Expect(kubeconfigTmpl).To(ContainSubstring("certificate-authority-data"))
+
+				return 99, nil
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, _, _ int, _ map[string]string) (int, error) {
+				return 88, nil
+			}
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-kubeconfig-template", "kubernaut-system", engineConfig, nil)
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("UT-WE-552-003: K8S_AUTH_KUBECONFIG env var should reference tower filename", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.findCredentialTypeByKindFn = func(_ context.Context, _ string, _ bool) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, injectors executor.CredentialTypeInjectors) (int, error) {
+				Expect(injectors.Env["K8S_AUTH_KUBECONFIG"]).To(Equal("{{tower.filename.kubeconfig}}"))
+				return 99, nil
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, _, _ int, _ map[string]string) (int, error) {
+				return 88, nil
+			}
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-kubeconfig-env", "kubernaut-system", engineConfig, nil)
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("Issue #552: Empty CA cert handling", func() {
+		mockInClusterCredsEmptyCA := func() (*executor.InClusterCredentials, error) {
+			return &executor.InClusterCredentials{
+				Host:   "https://10.0.0.1:6443",
+				Token:  "fake-sa-token-for-testing",
+				CACert: "",
+			}, nil
+		}
+
+		It("UT-WE-552-008: empty CA should produce insecure-skip-tls-verify in kubeconfig", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCredsEmptyCA
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.findCredentialTypeByKindFn = func(_ context.Context, _ string, _ bool) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _ executor.CredentialTypeInputs, injectors executor.CredentialTypeInjectors) (int, error) {
+				kubeconfigTmpl := injectors.File["template.kubeconfig"]
+
+				By("Kubeconfig template should handle missing CA via Jinja2 conditional")
+				Expect(kubeconfigTmpl).To(ContainSubstring("insecure-skip-tls-verify"))
+
+				return 99, nil
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, _, _ int, _ map[string]string) (int, error) {
+				return 88, nil
+			}
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-empty-ca-kubeconfig", "kubernaut-system", engineConfig, nil)
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("UT-WE-552-009: empty CA should omit ssl_ca_cert from credential inputs", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCredsEmptyCA
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
+				if name == "OpenShift or Kubernetes API Bearer Token" {
+					return 5, nil
+				}
+				return 0, fmt.Errorf("not found")
+			}
+
+			var capturedInputs map[string]string
+			awxClient.createCredentialFn = func(_ context.Context, _ string, _, _ int, inputs map[string]string) (int, error) {
+				capturedInputs = inputs
+				return 88, nil
+			}
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-empty-ca-inputs", "kubernaut-system", engineConfig, nil)
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(capturedInputs).To(HaveKeyWithValue("host", "https://10.0.0.1:6443"))
+			Expect(capturedInputs).To(HaveKeyWithValue("bearer_token", "fake-sa-token-for-testing"))
+			Expect(capturedInputs).ToNot(HaveKey("ssl_ca_cert"), "empty CA cert should not be included in inputs")
+		})
+
+		It("UT-WE-552-010: non-empty CA should include ssl_ca_cert in credential inputs", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCreds // has valid CA cert
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
+				if name == "OpenShift or Kubernetes API Bearer Token" {
+					return 5, nil
+				}
+				return 0, fmt.Errorf("not found")
+			}
+
+			var capturedInputs map[string]string
+			awxClient.createCredentialFn = func(_ context.Context, _ string, _, _ int, inputs map[string]string) (int, error) {
+				capturedInputs = inputs
+				return 88, nil
+			}
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-valid-ca-inputs", "kubernaut-system", engineConfig, nil)
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(capturedInputs).To(HaveKeyWithValue("host", "https://10.0.0.1:6443"))
+			Expect(capturedInputs).To(HaveKeyWithValue("bearer_token", "fake-sa-token-for-testing"))
+			Expect(capturedInputs).To(HaveKey("ssl_ca_cert"), "valid CA cert should be included in inputs")
+			Expect(capturedInputs["ssl_ca_cert"]).To(ContainSubstring("BEGIN CERTIFICATE"))
+		})
+
+		It("UT-WE-552-011: full happy path with valid creds and built-in type", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
+				if name == "OpenShift or Kubernetes API Bearer Token" {
+					return 5, nil
+				}
+				return 0, fmt.Errorf("not found")
+			}
+
+			var capturedInputs map[string]string
+			var capturedCredTypeID int
+			awxClient.createCredentialFn = func(_ context.Context, _ string, credTypeID, _ int, inputs map[string]string) (int, error) {
+				capturedInputs = inputs
+				capturedCredTypeID = credTypeID
+				return 88, nil
+			}
+
+			var launchedCredIDs []int
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, credIDs []int) (int, error) {
+				launchedCredIDs = credIDs
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-happy-path", "kubernaut-system", engineConfig, nil)
+
+			ref, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ref).To(ContainSubstring("awx-job-"))
+
+			By("Verifying built-in type ID was used")
+			Expect(capturedCredTypeID).To(Equal(5))
+
+			By("Verifying credential inputs include host, token, and CA cert")
+			Expect(capturedInputs).To(HaveKeyWithValue("host", "https://10.0.0.1:6443"))
+			Expect(capturedInputs).To(HaveKeyWithValue("bearer_token", "fake-sa-token-for-testing"))
+			Expect(capturedInputs).To(HaveKey("ssl_ca_cert"))
+
+			By("Verifying K8s credential was attached to launch")
+			Expect(launchedCredIDs).To(ContainElement(88))
 		})
 	})
 })

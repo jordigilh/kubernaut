@@ -60,11 +60,28 @@ USER 65534
 EXPOSE 9090 8081
 ENTRYPOINT ["/effectivenessmonitor-controller"]
 
+ARG APP_VERSION
+ARG GIT_COMMIT
+ARG BUILD_DATE
+
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-effectivenessmonitor"
+	org.opencontainers.image.title="kubernaut-effectivenessmonitor" \
+	org.opencontainers.image.description="Controller that assesses remediation effectiveness by comparing pre and post-remediation resource state using canonical spec hashing." \
+	org.opencontainers.image.vendor="Kubernaut"
+
+LABEL name="kubernaut-effectivenessmonitor" \
+	vendor="Kubernaut" \
+	summary="Kubernaut Effectiveness Monitor Controller" \
+	description="Controller that assesses remediation effectiveness by comparing pre and post-remediation resource state using canonical spec hashing." \
+	maintainer="jgil@redhat.com" \
+	component="effectivenessmonitor-controller" \
+	part-of="kubernaut" \
+	io.k8s.description="Effectiveness Monitor Controller for Kubernaut" \
+	io.k8s.display-name="Kubernaut Effectiveness Monitor" \
+	io.openshift.tags="kubernaut,effectivenessmonitor,controller,effectiveness,assessment,microservice"
 
 # ============================================================================
 # Stage 2b: Development/E2E runtime (ubi10-minimal -- debug + coverage, DD-TEST-007)
@@ -81,8 +98,14 @@ USER 1001
 EXPOSE 9090 8081
 ENTRYPOINT ["/usr/local/bin/effectivenessmonitor-controller"]
 
+ARG APP_VERSION
+ARG GIT_COMMIT
+ARG BUILD_DATE
+
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-effectivenessmonitor"
+	org.opencontainers.image.title="kubernaut-effectivenessmonitor" \
+	org.opencontainers.image.description="Controller that assesses remediation effectiveness by comparing pre and post-remediation resource state using canonical spec hashing." \
+	org.opencontainers.image.vendor="Kubernaut"

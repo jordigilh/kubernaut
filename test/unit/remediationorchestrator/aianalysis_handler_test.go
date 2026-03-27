@@ -36,6 +36,8 @@ import (
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var _ = Describe("AIAnalysisHandler", func() {
@@ -761,6 +763,304 @@ var _ = Describe("AIAnalysisHandler", func() {
 				// Verify metadata contains humanReviewReason
 				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("humanReviewReason", "rca_incomplete"))
 				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("rootCauseAnalysis", "Pod crash loop detected"))
+			})
+		})
+
+		// =====================================================
+		// Issue #550: ManualReviewRequired Completion Path
+		// When NeedsHumanReview=true AND SelectedWorkflow=nil,
+		// RR transitions to Completed (not Failed).
+		// =====================================================
+		Context("Issue #550: ManualReviewRequired Completion Path", func() {
+			// UT-RO-550-001: Core happy path — Phase + Outcome + RequiresManualReview
+			It("UT-RO-550-001: should transition to Completed with Outcome=ManualReviewRequired when NeedsHumanReview=true and SelectedWorkflow=nil", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.NeedsHumanReview = true
+				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.Message = "No matching workflows found for this alert type"
+				ai.Status.SelectedWorkflow = nil
+
+				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
+				Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
+				Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
+			})
+
+			// UT-RO-550-002: NotificationRequest creation
+			It("UT-RO-550-002: should create ManualReview NotificationRequest", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.NeedsHumanReview = true
+				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.Message = "No matching workflows found"
+				ai.Status.SelectedWorkflow = nil
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1))
+				Expect(nrList.Items[0].Name).To(Equal("nr-manual-review-test-rr"))
+				Expect(nrList.Items[0].Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
+			})
+
+			// UT-RO-550-003: NextAllowedExecution with 24h delay
+			It("UT-RO-550-003: should set NextAllowedExecution when noActionRequiredDelay is 24h", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.NeedsHumanReview = true
+				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.SelectedWorkflow = nil
+
+				beforeCall := time.Now()
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedRR.Status.NextAllowedExecution).To(HaveField("Time", BeTemporally("~", beforeCall.Add(24*time.Hour), time.Minute)))
+			})
+
+			// UT-RO-550-003b: NextAllowedExecution nil when delay=0 (opt-out)
+			It("UT-RO-550-003b: should NOT set NextAllowedExecution when noActionRequiredDelay is 0", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 0)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.NeedsHumanReview = true
+				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.SelectedWorkflow = nil
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
+				Expect(updatedRR.Status.NextAllowedExecution).To(BeNil(), "NextAllowedExecution should be nil when delay is zero")
+			})
+
+			// UT-RO-550-004: CompletedAt + Message propagation
+			It("UT-RO-550-004: should set CompletedAt and propagate Message from AIAnalysis", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.NeedsHumanReview = true
+				ai.Status.HumanReviewReason = "rca_incomplete"
+				ai.Status.Message = "Orphaned PVCs detected — cannot determine remediation target"
+				ai.Status.SelectedWorkflow = nil
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedRR.Status.CompletedAt).NotTo(BeNil())
+				Expect(updatedRR.Status.CompletedAt.Time).To(BeTemporally("~", time.Now(), 5*time.Second))
+				Expect(updatedRR.Status.Message).To(Equal("Orphaned PVCs detected — cannot determine remediation target"))
+			})
+
+			// UT-RO-550-005: Ready condition True
+			It("UT-RO-550-005: should set Ready condition to True", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.NeedsHumanReview = true
+				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.SelectedWorkflow = nil
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedRR.Status.Conditions).To(ContainElement(SatisfyAll(
+					HaveField("Type", Equal("Ready")),
+					HaveField("Status", Equal(metav1.ConditionTrue)),
+				)))
+			})
+
+			// UT-RO-550-006: transitionToFailed NOT called
+			It("UT-RO-550-006: should NOT call transitionToFailed for no-workflow ManualReviewRequired", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.NeedsHumanReview = true
+				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.SelectedWorkflow = nil
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(transitionFailedCalls).To(Equal(0), "transitionToFailed should NOT be called for Completed path")
+			})
+
+			// UT-RO-550-007: Regression guard — APIError without NeedsHumanReview still calls transitionToFailed
+			It("UT-RO-550-007: should call transitionToFailed when NeedsHumanReview=false and Reason=APIError (regression guard)", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.Reason = "APIError"
+				ai.Status.NeedsHumanReview = false
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(transitionFailedCalls).To(Equal(1), "transitionToFailed should be called for APIError without NeedsHumanReview")
+			})
+
+			// UT-RO-550-008: Routing split guard — NeedsHumanReview=true WITH SelectedWorkflow still calls transitionToFailed
+			It("UT-RO-550-008: should call transitionToFailed when NeedsHumanReview=true and SelectedWorkflow is non-nil (routing split guard)", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.NeedsHumanReview = true
+				ai.Status.HumanReviewReason = "low_confidence"
+				// SelectedWorkflow is already non-nil from NewCompletedAIAnalysis
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(transitionFailedCalls).To(Equal(1), "transitionToFailed should be called when SelectedWorkflow is present")
+			})
+
+			// UT-RO-550-009: Regression guard — WorkflowResolutionFailed without NeedsHumanReview
+			It("UT-RO-550-009: should call transitionToFailed when Reason=WorkflowResolutionFailed and NeedsHumanReview=false (regression guard)", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.Reason = "WorkflowResolutionFailed"
+				ai.Status.NeedsHumanReview = false
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(transitionFailedCalls).To(Equal(1), "transitionToFailed should be called for WorkflowResolutionFailed")
+			})
+
+			// UT-RO-550-010: Notification metadata includes HumanReviewReason and RootCause
+			It("UT-RO-550-010: should include HumanReviewReason and RootCause in notification metadata", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.NeedsHumanReview = true
+				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.RootCause = "Orphaned PVCs in namespace production"
+				ai.Status.SelectedWorkflow = nil
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1))
+				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("humanReviewReason", "no_matching_workflows"))
+				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("rootCauseAnalysis", "Orphaned PVCs in namespace production"))
+			})
+
+			// UT-RO-550-011: NotificationRequestRefs tracking
+			It("UT-RO-550-011: should track NotificationRequestRef for the manual review notification", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.NeedsHumanReview = true
+				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.SelectedWorkflow = nil
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedRR.Status.NotificationRequestRefs).To(HaveLen(1))
+				Expect(updatedRR.Status.NotificationRequestRefs[0].Name).To(Equal("nr-manual-review-test-rr"))
+				Expect(updatedRR.Status.NotificationRequestRefs[0].Kind).To(Equal("NotificationRequest"))
+			})
+
+			// UT-RO-550-012: NoActionNeededTotal metric with reason=manual_review
+			It("UT-RO-550-012: should increment NoActionNeededTotal metric with reason=manual_review", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				reg := prometheus.NewRegistry()
+				m := rometrics.NewMetricsWithRegistry(reg)
+				nc = creator.NewNotificationCreator(client, scheme, m)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, m, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.NeedsHumanReview = true
+				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.SelectedWorkflow = nil
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				val := testutil.ToFloat64(m.NoActionNeededTotal.WithLabelValues("manual_review", "default"))
+				Expect(val).To(Equal(float64(1)), "NoActionNeededTotal should be incremented with reason=manual_review")
 			})
 		})
 	})

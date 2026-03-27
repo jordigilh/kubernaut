@@ -655,11 +655,11 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	})
 
 	// ========================================
-	// UT-RO-EA-012: No EA when AIA fails with WorkflowResolutionFailed (#240)
-	// Issue #240: When AIA fails to find matching workflows, no remediation
-	// was ever attempted, so EA would assess unchanged resources.
+	// UT-RO-EA-012: No EA when AIA WorkflowResolutionFailed with NeedsHumanReview (#240, #550)
+	// Issue #240: No remediation was attempted, so EA would assess unchanged resources.
+	// Issue #550: NeedsHumanReview + no SelectedWorkflow → Completed with ManualReviewRequired.
 	// ========================================
-	It("UT-RO-EA-012: should NOT create EA when AIA fails with WorkflowResolutionFailed (#240)", func() {
+	It("UT-RO-EA-012: should NOT create EA when AIA WorkflowResolutionFailed completes with ManualReviewRequired (#240, #550)", func() {
 		rrName := "rr-ea-012"
 		namespace := "test-ns"
 		aiName := "ai-" + rrName
@@ -667,7 +667,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		// RR in Analyzing phase with AIAnalysisRef
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseAnalyzing, "", aiName, "")
 
-		// Failed AIAnalysis with WorkflowResolutionFailed (no matching workflows)
+		// Failed AIAnalysis with WorkflowResolutionFailed + NeedsHumanReview (no matching workflows)
 		ai := newAIAnalysisWorkflowResolutionFailed(aiName, namespace, rrName)
 
 		k8sClient := fake.NewClientBuilder().
@@ -692,12 +692,14 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		// Verify RR transitioned to Failed
+		// Issue #550: NeedsHumanReview + no SelectedWorkflow → Completed (not Failed)
 		fetchedRR := &remediationv1.RemediationRequest{}
 		err = k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
-			"RR should have transitioned to Failed after AIA WorkflowResolutionFailed")
+		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
+			"Issue #550: no-workflow ManualReviewRequired should transition to Completed")
+		Expect(fetchedRR.Status.Outcome).To(Equal("ManualReviewRequired"),
+			"Issue #550: Outcome should be ManualReviewRequired")
 
 		// Issue #240: EA must NOT be created when no remediation was attempted
 		ea := &eav1.EffectivenessAssessment{}
@@ -705,7 +707,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 			Name:      "ea-" + rrName,
 			Namespace: namespace,
 		}, ea)
-		Expect(err).To(HaveOccurred(), "Issue #240: EA should NOT be created when AIA fails (no WFE)")
+		Expect(err).To(HaveOccurred(), "Issue #240: EA should NOT be created when no WFE ran")
 	})
 
 	// ========================================

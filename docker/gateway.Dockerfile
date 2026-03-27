@@ -18,8 +18,8 @@ ARG GOOS=linux
 ARG GOARCH=${TARGETARCH:-amd64}
 ARG GOFLAGS=""
 ARG APP_VERSION=v1.1.0-rc6
-ARG GIT_COMMIT=dev
-ARG BUILD_DATE=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 
 USER root
 RUN dnf update -y && \
@@ -62,11 +62,16 @@ USER 65534
 EXPOSE 8080 9090 8081
 ENTRYPOINT ["/gateway"]
 
+ARG APP_VERSION=v1.1.0-rc6
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-gateway"
+	org.opencontainers.image.title="kubernaut-gateway" \
+	org.opencontainers.image.description="REST API gateway that routes external requests to internal Kubernaut services with authentication and validation." \
+	org.opencontainers.image.vendor="Kubernaut"
 LABEL name="kubernaut-gateway" \
 	vendor="Kubernaut" \
 	summary="Kubernaut Gateway Service - Signal Ingestion & Processing" \
@@ -93,8 +98,13 @@ USER 1001
 EXPOSE 8080 9090 8081
 ENTRYPOINT ["/usr/local/bin/gateway"]
 
+ARG APP_VERSION=v1.1.0-rc6
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-gateway"
+	org.opencontainers.image.title="kubernaut-gateway" \
+	org.opencontainers.image.description="REST API gateway that routes external requests to internal Kubernaut services with authentication and validation." \
+	org.opencontainers.image.vendor="Kubernaut"

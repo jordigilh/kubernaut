@@ -62,11 +62,17 @@ USER 65534
 EXPOSE 8080 9090 8081
 ENTRYPOINT ["/workflowexecution"]
 
+ARG APP_VERSION
+ARG GIT_COMMIT
+ARG BUILD_DATE
+
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-workflowexecution"
+	org.opencontainers.image.title="kubernaut-workflowexecution" \
+	org.opencontainers.image.description="Controller that manages Kubernetes Job and Tekton PipelineRun execution for automated remediation workflows." \
+	org.opencontainers.image.vendor="Kubernaut"
 LABEL name="kubernaut-workflowexecution" \
 	vendor="Kubernaut" \
 	summary="Kubernaut WorkflowExecution Controller - Kubernetes CRD Controller" \
@@ -93,8 +99,14 @@ USER 1001
 EXPOSE 8080 9090 8081
 ENTRYPOINT ["/usr/local/bin/workflowexecution"]
 
+ARG APP_VERSION
+ARG GIT_COMMIT
+ARG BUILD_DATE
+
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-workflowexecution"
+	org.opencontainers.image.title="kubernaut-workflowexecution" \
+	org.opencontainers.image.description="Controller that manages Kubernetes Job and Tekton PipelineRun execution for automated remediation workflows." \
+	org.opencontainers.image.vendor="Kubernaut"

@@ -391,11 +391,12 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 		ai.Status.CompletedAt = &aiNow
 		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
-		By("Waiting for Failed phase")
+		// Issue #550: NeedsHumanReview=true + SelectedWorkflow=nil → PhaseCompleted (not PhaseFailed)
+		By("Waiting for Completed phase (Issue #550: no-workflow ManualReviewRequired)")
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 			return rr.Status.OverallPhase
-		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
+		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
 
 		By("Verifying EA was NOT created (Issue #240: no WFE ever ran)")
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
@@ -405,6 +406,7 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 		}, 5*time.Second, interval).ShouldNot(Succeed(), "Issue #240: EA should NOT be created when AIA fails")
 
 		By("Verifying RR has RequiresManualReview set")
+		_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 		Expect(rr.Status.RequiresManualReview).To(BeTrue(),
 			"RR should require manual review when AIA fails with WorkflowResolutionFailed")
 	})

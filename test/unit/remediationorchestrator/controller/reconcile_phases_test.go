@@ -722,12 +722,12 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 })
 
 // ========================================
-// UT-RO-214-010: CapturePreRemediationHash Terminal Failure
-// Issue #214: When CapturePreRemediationHash returns hashErr != nil,
-// the RR must transition to Failed (cannot safely remediate without
-// knowing the target resource state).
+// UT-RO-214-010: CapturePreRemediationHash Soft-Fail on API Errors
+// Issue #545: When CapturePreRemediationHash encounters reader.Get() errors
+// (Forbidden, transient), the RR proceeds with empty hash (degraded EA)
+// rather than transitioning to Failed. A K8s Warning Event is emitted.
 // ========================================
-var _ = Describe("UT-RO-214-010: CapturePreRemediationHash hashErr terminal (Issue #214)", func() {
+var _ = Describe("UT-RO-214-010: CapturePreRemediationHash API error soft-fail (Issue #545)", func() {
 	var (
 		ctx    context.Context
 		scheme *runtime.Scheme
@@ -745,7 +745,7 @@ var _ = Describe("UT-RO-214-010: CapturePreRemediationHash hashErr terminal (Iss
 		_ = eav1.AddToScheme(scheme)
 	})
 
-	It("should transition RR to Failed when apiReader returns error for target resource", func() {
+	It("should proceed with empty hash when apiReader returns error for target resource", func() {
 		initialObjects := []client.Object{
 			newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
 			newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
@@ -799,22 +799,23 @@ var _ = Describe("UT-RO-214-010: CapturePreRemediationHash hashErr terminal (Iss
 			},
 			mockRouting,
 		)
-		// UT-RO-214-010: REST mapper needed for CapturePreRemediationHash to resolve "Deployment" -> apps/v1
 		reconciler.SetRESTMapper(newTestRESTMapper())
 
-		result, err := reconciler.Reconcile(ctx, ctrl.Request{
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
 		})
 
-		Expect(err).ToNot(HaveOccurred(), "Reconciler should not return error (terminal failure is handled internally)")
-		Expect(result).To(Equal(ctrl.Result{}), "No requeue after terminal failure")
+		Expect(err).ToNot(HaveOccurred(), "Reconciler should not return error")
 
 		var finalRR remediationv1.RemediationRequest
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: "default"}, &finalRR)).To(Succeed())
-		Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
-			"RR should transition to Failed when pre-remediation hash capture fails")
-		Expect(finalRR.Status.FailureReason).ToNot(BeNil(), "FailureReason should be set")
-		Expect(*finalRR.Status.FailureReason).To(ContainSubstring("Cannot determine target resource state"),
-			"FailureReason should indicate hash capture failure")
+		Expect(finalRR.Status.OverallPhase).ToNot(Equal(remediationv1.PhaseFailed),
+			"RR should NOT fail when hash capture soft-fails (Issue #545)")
+		Expect(finalRR.Status.PreRemediationSpecHash).To(BeEmpty(),
+			"Hash should be empty when capture was degraded")
+
+		// Verify a HashCaptureDegraded warning event was emitted
+		Eventually(recorder.Events).Should(Receive(ContainSubstring("HashCaptureDegraded")),
+			"A warning event should be emitted when hash capture is degraded")
 	})
 })

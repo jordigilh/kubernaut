@@ -77,14 +77,14 @@ var _ = Describe("AWXHTTPClient Credential API (BR-WE-015)", func() {
 				_, _ = w.Write([]byte(`{"id": 15}`))
 			})
 
-			inputs := map[string]interface{}{
-				"fields": []map[string]interface{}{
-					{"id": "username", "label": "username", "type": "string", "secret": true},
-					{"id": "password", "label": "password", "type": "string", "secret": true},
+			inputs := executor.CredentialTypeInputs{
+				Fields: []executor.CredentialTypeField{
+					{ID: "username", Label: "username", Type: "string", Secret: true},
+					{ID: "password", Label: "password", Type: "string", Secret: true},
 				},
 			}
-			injectors := map[string]interface{}{
-				"env": map[string]string{
+			injectors := executor.CredentialTypeInjectors{
+				Env: map[string]string{
 					"KUBERNAUT_SECRET_GITEA_REPO_CREDS_USERNAME": "{{username}}",
 					"KUBERNAUT_SECRET_GITEA_REPO_CREDS_PASSWORD": "{{password}}",
 				},
@@ -101,7 +101,7 @@ var _ = Describe("AWXHTTPClient Credential API (BR-WE-015)", func() {
 				_, _ = w.Write([]byte(`{"detail": "name already exists"}`))
 			})
 
-			_, err := client.CreateCredentialType(ctx, "dup", nil, nil)
+			_, err := client.CreateCredentialType(ctx, "dup", executor.CredentialTypeInputs{}, executor.CredentialTypeInjectors{})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("400"))
 		})

@@ -178,7 +178,7 @@ func (c *AWXHTTPClient) FindJobTemplateByName(ctx context.Context, name string) 
 	return result.Results[0].ID, nil
 }
 
-func (c *AWXHTTPClient) CreateCredentialType(ctx context.Context, name string, inputs, injectors map[string]interface{}) (int, error) {
+func (c *AWXHTTPClient) CreateCredentialType(ctx context.Context, name string, inputs CredentialTypeInputs, injectors CredentialTypeInjectors) (int, error) {
 	url := fmt.Sprintf("%s/api/v2/credential_types/", c.baseURL)
 
 	payload := map[string]interface{}{
@@ -252,6 +252,43 @@ func (c *AWXHTTPClient) FindCredentialTypeByName(ctx context.Context, name strin
 
 	if result.Count == 0 {
 		return 0, fmt.Errorf("AWX credential type %q not found", name)
+	}
+
+	return result.Results[0].ID, nil
+}
+
+func (c *AWXHTTPClient) FindCredentialTypeByKind(ctx context.Context, kind string, managed bool) (int, error) {
+	url := fmt.Sprintf("%s/api/v2/credential_types/?kind=%s&managed=%t", c.baseURL, kind, managed)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0, fmt.Errorf("create credential type kind search request: %w", err)
+	}
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("AWX credential type kind search request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("AWX credential type kind search returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Count   int `json:"count"`
+		Results []struct {
+			ID int `json:"id"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("decode credential type kind search response: %w", err)
+	}
+
+	if result.Count == 0 {
+		return 0, fmt.Errorf("AWX credential type with kind=%q managed=%t not found", kind, managed)
 	}
 
 	return result.Results[0].ID, nil

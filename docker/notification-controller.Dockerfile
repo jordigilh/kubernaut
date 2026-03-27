@@ -63,11 +63,16 @@ EXPOSE 8080 8081
 ENTRYPOINT ["/manager"]
 CMD []
 
+ARG APP_VERSION=v1.1.0-rc6
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-notification"
+	org.opencontainers.image.title="kubernaut-notification-controller" \
+	org.opencontainers.image.description="Controller that delivers remediation lifecycle notifications to Slack, email, and webhook channels." \
+	org.opencontainers.image.vendor="Kubernaut"
 LABEL name="kubernaut-notification-controller" \
 	vendor="Kubernaut" \
 	summary="Kubernaut Notification Controller - CRD-based Notification Management" \
@@ -95,8 +100,13 @@ EXPOSE 8080 8081
 ENTRYPOINT ["/usr/local/bin/manager"]
 CMD []
 
+ARG APP_VERSION=v1.1.0-rc6
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.version="${APP_VERSION}" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
-	org.opencontainers.image.title="kubernaut-notification"
+	org.opencontainers.image.title="kubernaut-notification-controller" \
+	org.opencontainers.image.description="Controller that delivers remediation lifecycle notifications to Slack, email, and webhook channels." \
+	org.opencontainers.image.vendor="Kubernaut"

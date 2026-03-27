@@ -3,11 +3,12 @@
 **Service**: RemediationOrchestrator Controller
 **Category**: V1.0 Core Requirements
 **Priority**: P0 (CRITICAL)
-**Version**: 4.0
-**Date**: 2026-02-24
-**Status**: 🚧 Planned
-**Related BRs**: BR-ORCH-032 (WE Skip Handling), BR-ORCH-001 (Approval Notification), BR-HAPI-197 (needs_human_review), BR-HAPI-200 (resolved/inconclusive)
+**Version**: 5.0
+**Date**: 2026-03-04
+**Status**: ✅ Implemented (v5.0)
+**Related BRs**: BR-ORCH-032 (WE Skip Handling), BR-ORCH-001 (Approval Notification), BR-HAPI-197 (needs_human_review), BR-HAPI-200 (resolved/inconclusive), BR-ORCH-037 (Workflow Not Needed)
 **Related DDs**: DD-WE-004 (Exponential Backoff Cooldown), DD-AIANALYSIS-003 (Completion Substates)
+**GitHub Issues**: [#550](https://github.com/jordigilh/kubernaut/issues/550)
 
 ---
 
@@ -482,10 +483,67 @@ const (
 
 ---
 
+## Issue #550: No-Workflow ManualReviewRequired → Completed (v5.0)
+
+### Problem
+
+When the LLM intentionally omits a workflow selection (`has_workflow: False, needs_human_review: True`) — e.g., because no matching workflows exist in the catalog — the RR was transitioning to `Failed` with `Outcome=ManualReviewRequired`. This is incorrect: the AI made a valid assessment, not a failure. The `Failed` phase inflates failure metrics, triggers false escalation via `ConsecutiveFailureCount`, and misrepresents the outcome to operators.
+
+### Decision
+
+**When `ai.Status.NeedsHumanReview=true` AND `ai.Status.SelectedWorkflow=nil`, the RR transitions to `Completed` with `Outcome=ManualReviewRequired` instead of `Failed`.**
+
+The routing split is at `handleHumanReviewRequired` in `pkg/remediationorchestrator/handler/aianalysis.go`:
+- `SelectedWorkflow == nil` → new `handleManualReviewCompleted` → `PhaseCompleted`
+- `SelectedWorkflow != nil` (low confidence rejection) → existing `createManualReviewAndUpdateStatus` → `PhaseFailed`
+
+### Key design choices
+
+| Decision | Rationale |
+|----------|-----------|
+| Change at RO handler level, not AA level | AA faithfully represents what happened (Failed + NeedsHumanReview). RO decides the RR outcome. Minimal blast radius. |
+| Reuse `NoActionRequiredDelayHours` (24h default) for cooldown | Avoids new config field. Same suppression semantics as BR-ORCH-037. |
+| Split by `ai.Status.SelectedWorkflow == nil` | Low-confidence WITH a selected workflow remains `Failed` (operator reviews rejected workflow). No-workflow is a valid "nothing to do" outcome. |
+| Reuse `CreateManualReviewNotification` | Notification content (RCA, warnings, humanReviewReason) is identical; only the RR terminal state differs. |
+| Emit `NoActionNeededTotal` with `reason="manual_review"` | Reuses existing metric. Dashboards can distinguish `problem_resolved` from `manual_review`. |
+
+### New fields set on RR by `handleManualReviewCompleted`
+
+- `OverallPhase = Completed`
+- `Outcome = "ManualReviewRequired"`
+- `RequiresManualReview = true`
+- `CompletedAt = now`
+- `NextAllowedExecution = now + NoActionRequiredDelayHours` (if delay > 0)
+- `Message` = propagated from `ai.Status.Message`
+- `Ready` condition = `True`
+- `NotificationRequestRefs` = ref to created `nr-manual-review-{rr-name}`
+
+### Acceptance Criteria (v5.0)
+
+| ID | Criterion | Test Coverage |
+|----|-----------|---------------|
+| AC-036-50 | RR phase is `Completed` (not `Failed`) when NeedsHumanReview + no SelectedWorkflow | Unit (UT-RO-550-001), Integration (IT-RO-550-001) |
+| AC-036-51 | NotificationRequest created on Completed path (operator still informed) | Unit (UT-RO-550-002) |
+| AC-036-52 | NextAllowedExecution set for 24h cooldown (suppresses duplicate RRs) | Unit (UT-RO-550-003) |
+| AC-036-53 | `transitionToFailed` NOT called (no ConsecutiveFailureCount increment) | Unit (UT-RO-550-006) |
+| AC-036-54 | Infrastructure failures (APIError) still transition to Failed | Unit (UT-RO-550-007) |
+| AC-036-55 | Low confidence WITH selected workflow still transitions to Failed | Unit (UT-RO-550-008) |
+| AC-036-56 | NoActionNeededTotal metric recorded with reason="manual_review" | Unit (UT-RO-550-012) |
+
+### Implementation
+
+- **Branch**: `fix/v1.1.0-rc13`
+- **Files changed**: `pkg/remediationorchestrator/handler/aianalysis.go` (new `handleManualReviewCompleted`, modified `handleHumanReviewRequired` routing)
+- **Test plan**: [docs/tests/550/TEST_PLAN.md](../tests/550/TEST_PLAN.md)
+- **GitHub Issue**: [#550](https://github.com/jordigilh/kubernaut/issues/550)
+
+---
+
 ## Changelog
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 5.0 | 2026-03-04 | **#550: No-workflow ManualReviewRequired → Completed**: When AI intentionally omits workflow (`NeedsHumanReview=true`, `SelectedWorkflow=nil`), RR transitions to `Completed + ManualReviewRequired` instead of `Failed`. Routing split by `SelectedWorkflow == nil` in `handleHumanReviewRequired`. Reuses 24h cooldown, ManualReview notification, and `NoActionNeededTotal` metric with `reason="manual_review"`. 13 new unit tests + 2 new integration tests. See test plan docs/tests/550/TEST_PLAN.md. |
 | 4.0 | 2026-02-24 | **Defense-in-depth guard**: Added RO guard for AA completed with missing AffectedResource (nil or empty Kind/Name). Completes three-layer chain (HAPI → AA → RO) for "cannot identify RCA target" scenario. All layers produce same response: Failed + ManualReviewRequired + NotificationRequest. See DD-HAPI-006 v1.2. |
 | 3.0 | 2026-02-09 | **Escalation principle**: Any failure without automatic recovery MUST be notified. Added AIAnalysis infrastructure failures (APIError/MaxRetriesExceeded, TransientError, PermanentError) as notification triggers. Previously, these failures silently transitioned RR to Failed without operator notification. Also increased AA controller default HAPI timeout from 60s to 10m to accommodate real LLM response times (temporary; will be replaced by session-based pulling design). |
 | 2.0 | 2025-12-07 | Extended to include all AIAnalysis WorkflowResolutionFailed scenarios (7 SubReasons), added BR-HAPI-200 InvestigationInconclusive |
@@ -493,6 +551,6 @@ const (
 
 ---
 
-**Document Version**: 4.0
-**Last Updated**: February 24, 2026
+**Document Version**: 5.0
+**Last Updated**: March 4, 2026
 **Maintained By**: Kubernaut Architecture Team

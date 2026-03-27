@@ -999,12 +999,12 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// Issue #214: Capture pre-remediation hash BEFORE routing so CheckIneffectiveRemediationChain can use it.
 		// DD-EM-002 + DD-EM-003: Hash must match the resource the workflow patches.
 		remTarget := resolveDualTargets(rr, ai).Remediation
-		preHash, hashErr := CapturePreRemediationHash(
+		preHash, degradedReason, hashErr := CapturePreRemediationHash(
 			ctx, r.apiReader, r.restMapper,
 			remTarget.Kind, remTarget.Name, remTarget.Namespace,
 		)
 		if hashErr != nil {
-			// Issue #214: hashErr != nil is terminal -- cannot safely remediate without knowing target state
+			// Hard errors (NestedMap/CanonicalSpecHash) are terminal
 			logger.Error(hashErr, "Failed to capture pre-remediation hash (terminal)")
 			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.OverallPhase = remediationv1.PhaseFailed
@@ -1016,6 +1016,14 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 				return ctrl.Result{}, updateErr
 			}
 			return ctrl.Result{}, nil
+		}
+		if degradedReason != "" {
+			// Issue #545: Soft-fail — EA will be degraded but pipeline continues
+			logger.Info("Pre-remediation hash capture degraded, EA may be non-functional",
+				"degradedReason", degradedReason, "target", fmt.Sprintf("%s/%s", remTarget.Kind, remTarget.Name))
+			r.Recorder.Eventf(rr, corev1.EventTypeWarning, "HashCaptureDegraded",
+				"Pre-remediation hash unavailable for %s/%s: %s — effectiveness assessment will be degraded",
+				remTarget.Kind, remTarget.Name, degradedReason)
 		}
 		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
 			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
@@ -1220,12 +1228,19 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 
 		// DD-EM-002 + DD-EM-003: Capture pre-remediation spec hash of the remediation target.
 		remTarget := resolveDualTargets(rr, ai).Remediation
-		preHash, hashErr := CapturePreRemediationHash(
+		preHash, degradedReason, hashErr := CapturePreRemediationHash(
 			ctx, r.apiReader, r.restMapper,
 			remTarget.Kind, remTarget.Name, remTarget.Namespace,
 		)
 		if hashErr != nil {
 			logger.Error(hashErr, "Failed to capture pre-remediation hash after approval (non-fatal)")
+		}
+		if degradedReason != "" {
+			logger.Info("Pre-remediation hash capture degraded after approval, EA may be non-functional",
+				"degradedReason", degradedReason, "target", fmt.Sprintf("%s/%s", remTarget.Kind, remTarget.Name))
+			r.Recorder.Eventf(rr, corev1.EventTypeWarning, "HashCaptureDegraded",
+				"Pre-remediation hash unavailable for %s/%s: %s — effectiveness assessment will be degraded",
+				remTarget.Kind, remTarget.Name, degradedReason)
 		}
 		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
 			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
@@ -3363,10 +3378,11 @@ func resolveDualTargets(
 // CapturePreRemediationHash fetches the target resource via an uncached reader,
 // extracts its .spec, and computes the canonical SHA-256 hash (DD-EM-002).
 //
-// Returns empty string (no error) when:
-//   - The resource is not found (non-fatal: RO logs and continues)
-//   - The resource has no .spec field
-//   - The REST mapper cannot resolve the Kind
+// Returns (hash, degradedReason, err) where:
+//   - ("sha256:...", "", nil) on success
+//   - ("", "", nil) when legitimately no hash: NotFound, no .spec, unknown GVK
+//   - ("", "reason", nil) when degraded: Forbidden, transient API errors (Issue #545 defense-in-depth)
+//   - ("", "", err) on hard errors: NestedMap or CanonicalSpecHash failures
 //
 // This is exported for testability from the test package.
 func CapturePreRemediationHash(
@@ -3376,7 +3392,7 @@ func CapturePreRemediationHash(
 	targetKind string,
 	targetName string,
 	targetNamespace string,
-) (string, error) {
+) (string, string, error) {
 	logger := log.FromContext(ctx)
 
 	// Resolve Kind to GVK via REST mapper
@@ -3384,7 +3400,7 @@ func CapturePreRemediationHash(
 	if err != nil {
 		logger.V(1).Info("Cannot resolve GVK for kind, skipping pre-remediation hash",
 			"kind", targetKind, "error", err)
-		return "", nil
+		return "", "", nil
 	}
 
 	// Fetch the resource using unstructured client
@@ -3395,28 +3411,33 @@ func CapturePreRemediationHash(
 		if apierrors.IsNotFound(err) {
 			logger.V(1).Info("Target resource not found, skipping pre-remediation hash",
 				"kind", targetKind, "name", targetName, "namespace", targetNamespace)
-			return "", nil
+			return "", "", nil
 		}
-		return "", fmt.Errorf("failed to fetch target resource %s/%s: %w", targetKind, targetName, err)
+		// Issue #545: Soft-fail on access errors (Forbidden, transient API errors).
+		// The EA will be degraded but the remediation pipeline continues.
+		reason := fmt.Sprintf("failed to fetch target resource %s/%s: %v", targetKind, targetName, err)
+		logger.Info("Pre-remediation hash capture degraded (soft-fail)",
+			"kind", targetKind, "name", targetName, "namespace", targetNamespace, "reason", reason)
+		return "", reason, nil
 	}
 
 	// Extract .spec from unstructured
 	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
 	if err != nil {
-		return "", fmt.Errorf("failed to extract .spec from %s/%s: %w", targetKind, targetName, err)
+		return "", "", fmt.Errorf("failed to extract .spec from %s/%s: %w", targetKind, targetName, err)
 	}
 	if !found || spec == nil {
 		logger.V(1).Info("Target resource has no .spec, skipping pre-remediation hash",
 			"kind", targetKind, "name", targetName)
-		return "", nil
+		return "", "", nil
 	}
 
 	// Compute canonical hash
 	hash, err := canonicalhash.CanonicalSpecHash(spec)
 	if err != nil {
-		return "", fmt.Errorf("failed to compute canonical hash for %s/%s: %w", targetKind, targetName, err)
+		return "", "", fmt.Errorf("failed to compute canonical hash for %s/%s: %w", targetKind, targetName, err)
 	}
 
-	return hash, nil
+	return hash, "", nil
 }
 
