@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -36,6 +37,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/internal/version"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
@@ -45,8 +47,10 @@ import (
 	notificationconfig "github.com/jordigilh/kubernaut/pkg/notification/config"
 	"github.com/jordigilh/kubernaut/pkg/notification/credentials"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
+	"github.com/jordigilh/kubernaut/pkg/notification/enrichment"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	"github.com/sony/gobreaker"
@@ -413,6 +417,28 @@ func main() {
 	logger.Info("Delivery Orchestrator initialized with registration pattern (DD-NOT-007)")
 	logger.Info("Registered startup channels (per-receiver Slack registered on routing config load)",
 		"channels", startupChannels)
+
+	// ========================================
+	// #553: Workflow Name Enrichment
+	// Resolves workflow UUIDs to human-readable names in notification bodies
+	// before delivery. Uses the DataStorage catalog API.
+	// ========================================
+	dsOgenClient, err := ogenclient.NewClient(
+		cfg.DataStorage.URL,
+		ogenclient.WithClient(&http.Client{
+			Timeout:   cfg.DataStorage.Timeout,
+			Transport: auth.NewServiceAccountTransportWithBase(http.DefaultTransport.(*http.Transport).Clone()),
+		}),
+	)
+	if err != nil {
+		logger.Error(err, "Failed to create DataStorage ogen client for workflow name resolution")
+		os.Exit(1)
+	}
+
+	dsResolver := enrichment.NewDataStorageResolver(dsOgenClient, ctrl.Log.WithName("workflow-resolver"))
+	notifEnricher := enrichment.NewEnricher(dsResolver, ctrl.Log.WithName("notification-enricher"))
+	deliveryOrchestrator.SetEnricher(notifEnricher)
+	logger.Info("Notification enricher initialized (#553: workflow name resolution)")
 
 	// Setup controller with delivery services + sanitization + audit + metrics + EventRecorder + statusManager + deliveryOrchestrator + circuitBreaker
 	if err = (&notification.NotificationRequestReconciler{

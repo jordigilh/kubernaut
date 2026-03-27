@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/notification/enrichment"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
@@ -92,6 +93,7 @@ type Orchestrator struct {
 	sanitizer     *sanitization.Sanitizer
 	metrics       notificationmetrics.Recorder
 	statusManager *notificationstatus.Manager
+	enricher      *enrichment.Enricher
 
 	// Logger
 	logger logr.Logger
@@ -166,6 +168,11 @@ func (o *Orchestrator) HasChannel(channel string) bool {
 	return exists
 }
 
+// SetEnricher sets the notification enricher for workflow name resolution (#553).
+func (o *Orchestrator) SetEnricher(e *enrichment.Enricher) {
+	o.enricher = e
+}
+
 // DeliverToChannels orchestrates delivery to all configured channels.
 //
 // This is the main entry point extracted from controller's handleDeliveryLoop().
@@ -199,6 +206,12 @@ func (o *Orchestrator) DeliverToChannels(
 		DeliveryResults:  make(map[string]error),
 		FailureCount:     0,
 		DeliveryAttempts: []notificationv1alpha1.DeliveryAttempt{}, // Collect attempts for batch update
+	}
+
+	// #553: Enrich notification body (resolve workflow UUID → name) before delivery.
+	// Operates on a DeepCopy so the original cached object is never mutated.
+	if o.enricher != nil {
+		notification = o.enricher.EnrichNotification(ctx, notification)
 	}
 
 	// Process each channel
