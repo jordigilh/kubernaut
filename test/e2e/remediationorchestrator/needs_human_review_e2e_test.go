@@ -189,12 +189,12 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			Expect(notification.Spec.Metadata).To(HaveKeyWithValue("humanReviewReason", "rca_incomplete"), "Metadata must include humanReviewReason")
 			Expect(notification.Spec.Metadata).To(HaveKey("remediationRequest"), "Metadata must reference RemediationRequest")
 
-			By("Validating RemediationRequest status")
+			By("Validating RemediationRequest status (#550: no-workflow ManualReviewRequired → Completed)")
 			updatedRR := &remediationv1.RemediationRequest{}
 			Eventually(func() remediationv1.RemediationPhase {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR)
 				return updatedRR.Status.OverallPhase
-			}, timeout, interval).Should(Equal(remediationv1.PhaseFailed), "RR should be in Failed phase")
+			}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted), "RR should be in Completed phase per #550")
 			Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"), "Outcome should be ManualReviewRequired")
 			Expect(updatedRR.Status.RequiresManualReview).To(BeTrue(), "RequiresManualReview flag must be true")
 
