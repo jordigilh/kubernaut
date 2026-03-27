@@ -103,22 +103,9 @@ data:
 {{ .Values.notification.routing.content | indent 4 }}
 {{- else if .Values.notification.slack.secretName }}
     route:
-      receiver: default-console
-      routes:
-        - match:
-            type: escalation
-          receiver: slack-alerts
-        - match:
-            type: approval_required
-          receiver: slack-alerts
-        - match:
-            type: failed
-          receiver: slack-alerts
+      receiver: slack-and-console
     receivers:
-      - name: default-console
-        consoleConfigs:
-          - enabled: true
-      - name: slack-alerts
+      - name: slack-and-console
         consoleConfigs:
           - enabled: true
         slackConfigs:
