@@ -122,24 +122,20 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			Expect(notification.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", rrName), "Metadata should include RR name")
 
 			// Step 6: Validate RemediationRequest status was updated
+			// Issue #550: SelectedWorkflow=nil + NeedsHumanReview=true → PhaseCompleted (not PhaseFailed)
 			Eventually(func() remediationv1.RemediationPhase {
 				updatedRR := &remediationv1.RemediationRequest{}
 				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: ROControllerNamespace}, updatedRR)
 				return updatedRR.Status.OverallPhase
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(remediationv1.PhaseFailed), "RR should be in Failed phase")
-
-			// Step 7: Validate RR status was updated
-			Eventually(func() remediationv1.RemediationPhase {
-				updatedRR := &remediationv1.RemediationRequest{}
-				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: ROControllerNamespace}, updatedRR)
-				return updatedRR.Status.OverallPhase
-			}, 60*time.Second, 500*time.Millisecond).Should(Equal(remediationv1.PhaseFailed), "RR should be in Failed phase")
+			}, 60*time.Second, 500*time.Millisecond).Should(Equal(remediationv1.PhaseCompleted), "RR should be in Completed phase (Issue #550)")
 
 			// Validate RR status fields
 			updatedRR := &remediationv1.RemediationRequest{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: ROControllerNamespace}, updatedRR)).To(Succeed())
 			Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"), "Outcome should be ManualReviewRequired")
 			Expect(updatedRR.Status.RequiresManualReview).To(BeTrue(), "RequiresManualReview flag should be true")
+			Expect(updatedRR.Status.CompletedAt).NotTo(BeNil(), "CompletedAt should be set for Completed phase")
+			Expect(updatedRR.Status.NextAllowedExecution).NotTo(BeNil(), "NextAllowedExecution should be set for cooldown suppression")
 
 			// Validate notification reference was added to RR status
 			Expect(updatedRR.Status.NotificationRequestRefs).ToNot(BeEmpty(), "RR should track at least one notification reference")
@@ -202,6 +198,9 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 				}
 				return false
 			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue(), "NotificationRequest for this RR should be created")
+
+			// Issue #550: With SelectedWorkflow=nil, RR now goes to PhaseCompleted (not PhaseFailed),
+			// but we still verify no WorkflowExecution is created.
 
 			// Step 6: Verify NO WorkflowExecution was created for this RR (filter for parallel test isolation)
 			Consistently(func() int {
@@ -288,16 +287,147 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			Expect(notification.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", rrName))
 
 			// Step 7: Validate RR status
+			// Issue #550: SelectedWorkflow=nil + NeedsHumanReview=true → PhaseCompleted (not PhaseFailed)
 			Eventually(func() remediationv1.RemediationPhase {
 				updatedRR := &remediationv1.RemediationRequest{}
 				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: ROControllerNamespace}, updatedRR)
 				return updatedRR.Status.OverallPhase
-			}, 60*time.Second, 500*time.Millisecond).Should(Equal(remediationv1.PhaseFailed), "RR should be in Failed phase")
+			}, 60*time.Second, 500*time.Millisecond).Should(Equal(remediationv1.PhaseCompleted), "RR should be in Completed phase (Issue #550)")
 
 			updatedRR := &remediationv1.RemediationRequest{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: ROControllerNamespace}, updatedRR)).To(Succeed())
 			Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"), "Outcome should be ManualReviewRequired")
 			Expect(updatedRR.Status.RequiresManualReview).To(BeTrue(), "RequiresManualReview flag should be true")
+		})
+	})
+
+	// =====================================================
+	// Issue #550: ManualReviewRequired Completion Path
+	// =====================================================
+	Context("IT-RO-550-001: Full RO reconciliation - no workflow + needsHumanReview → Completed", func() {
+		It("should transition RR to Completed with ManualReviewRequired when SelectedWorkflow is nil and needsHumanReview=true", func() {
+			rrName := "integ-test-rr-550-completed"
+			_ = createRemediationRequest(testNamespace, rrName)
+
+			spName := "sp-" + rrName
+			Eventually(func() error {
+				sp := &signalprocessingv1.SignalProcessing{}
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
+			}, 60*time.Second, 500*time.Millisecond).Should(Succeed(), "SignalProcessing should be created by RO")
+
+			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
+
+			aiName := "ai-" + rrName
+			var analysis *aianalysisv1.AIAnalysis
+			Eventually(func() error {
+				analysis = &aianalysisv1.AIAnalysis{}
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: aiName, Namespace: ROControllerNamespace}, analysis)
+			}, 60*time.Second, 500*time.Millisecond).Should(Succeed(), "AIAnalysis should be created by RO")
+
+			// SelectedWorkflow=nil: no workflow selected, needs human review
+			analysis.Status = aianalysisv1.AIAnalysisStatus{
+				Phase:             "Failed",
+				NeedsHumanReview:  true,
+				HumanReviewReason: "no_matching_workflows",
+				Message:           "No matching workflows found for PVC alert type",
+				RootCause:         "Orphaned PVCs detected in namespace production",
+			}
+			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
+
+			// Wait for NotificationRequest
+			var notification *notificationv1.NotificationRequest
+			Eventually(func() bool {
+				notificationList := &notificationv1.NotificationRequestList{}
+				_ = k8sManager.GetAPIReader().List(ctx, notificationList, client.InNamespace(ROControllerNamespace))
+				for i := range notificationList.Items {
+					nr := &notificationList.Items[i]
+					if (nr.Spec.RemediationRequestRef != nil && nr.Spec.RemediationRequestRef.Name == rrName) ||
+						(nr.Spec.Metadata != nil && nr.Spec.Metadata["remediationRequest"] == rrName) {
+						notification = nr
+						return true
+					}
+				}
+				return false
+			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue(), "NotificationRequest should be created")
+
+			Expect(notification.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
+			Expect(notification.Spec.Metadata).To(HaveKeyWithValue("humanReviewReason", "no_matching_workflows"))
+
+			// Validate RR transitions to PhaseCompleted (not PhaseFailed)
+			Eventually(func() remediationv1.RemediationPhase {
+				updatedRR := &remediationv1.RemediationRequest{}
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: ROControllerNamespace}, updatedRR)
+				return updatedRR.Status.OverallPhase
+			}, 60*time.Second, 500*time.Millisecond).Should(Equal(remediationv1.PhaseCompleted), "RR should be in Completed phase")
+
+			updatedRR := &remediationv1.RemediationRequest{}
+			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: ROControllerNamespace}, updatedRR)).To(Succeed())
+			Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
+			Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
+			Expect(updatedRR.Status.CompletedAt).NotTo(BeNil())
+			Expect(updatedRR.Status.NextAllowedExecution).NotTo(BeNil(), "NextAllowedExecution should be set for cooldown suppression")
+			Expect(updatedRR.Status.NotificationRequestRefs).NotTo(BeEmpty())
+		})
+	})
+
+	Context("IT-RO-550-002: Full RO reconciliation - has workflow + needsHumanReview → Failed (unchanged)", func() {
+		It("should transition RR to Failed when SelectedWorkflow is non-nil and needsHumanReview=true", func() {
+			rrName := "integ-test-rr-550-failed"
+			_ = createRemediationRequest(testNamespace, rrName)
+
+			spName := "sp-" + rrName
+			Eventually(func() error {
+				sp := &signalprocessingv1.SignalProcessing{}
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
+			}, 60*time.Second, 500*time.Millisecond).Should(Succeed(), "SignalProcessing should be created by RO")
+
+			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+
+			aiName := "ai-" + rrName
+			var analysis *aianalysisv1.AIAnalysis
+			Eventually(func() error {
+				analysis = &aianalysisv1.AIAnalysis{}
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: aiName, Namespace: ROControllerNamespace}, analysis)
+			}, 60*time.Second, 500*time.Millisecond).Should(Succeed(), "AIAnalysis should be created by RO")
+
+			// SelectedWorkflow is non-nil: workflow present but rejected due to low confidence
+			analysis.Status = aianalysisv1.AIAnalysisStatus{
+				Phase:             "Failed",
+				NeedsHumanReview:  true,
+				HumanReviewReason: "low_confidence",
+				Message:           "AI confidence (0.55) below threshold (0.70)",
+				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+					WorkflowID: "restart-pod-v1",
+					Confidence: 0.55,
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
+
+			// Wait for NotificationRequest
+			Eventually(func() bool {
+				notificationList := &notificationv1.NotificationRequestList{}
+				_ = k8sManager.GetAPIReader().List(ctx, notificationList, client.InNamespace(ROControllerNamespace))
+				for i := range notificationList.Items {
+					nr := &notificationList.Items[i]
+					if (nr.Spec.RemediationRequestRef != nil && nr.Spec.RemediationRequestRef.Name == rrName) ||
+						(nr.Spec.Metadata != nil && nr.Spec.Metadata["remediationRequest"] == rrName) {
+						return true
+					}
+				}
+				return false
+			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue(), "NotificationRequest should be created")
+
+			// Validate RR transitions to PhaseFailed (old path, SelectedWorkflow non-nil)
+			Eventually(func() remediationv1.RemediationPhase {
+				updatedRR := &remediationv1.RemediationRequest{}
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: ROControllerNamespace}, updatedRR)
+				return updatedRR.Status.OverallPhase
+			}, 60*time.Second, 500*time.Millisecond).Should(Equal(remediationv1.PhaseFailed), "RR should be in Failed phase (workflow present but rejected)")
+
+			updatedRR := &remediationv1.RemediationRequest{}
+			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: ROControllerNamespace}, updatedRR)).To(Succeed())
+			Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
+			Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
 		})
 	})
 })
