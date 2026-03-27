@@ -32,7 +32,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   ttlSecondsAfterFinished: 300
-  backoffLimit: 3
+  backoffLimit: 4
   template:
     metadata:
       labels:
@@ -70,6 +70,21 @@ spec:
             - -c
             - |
               set -e
+              echo "==> Waiting for RBAC propagation..."
+              DEADLINE=$(($(date +%s) + 30))
+              while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+                if kubectl auth can-i patch customresourcedefinitions 2>/dev/null | grep -q yes; then
+                  echo "    RBAC ready"
+                  break
+                fi
+                echo "    RBAC not yet propagated, retrying..."
+                sleep 2
+              done
+              if ! kubectl auth can-i patch customresourcedefinitions 2>/dev/null | grep -q yes; then
+                echo "ERROR: RBAC not propagated after 30s — aborting"
+                exit 1
+              fi
+
               echo "==> Applying CRD manifests (server-side apply)..."
               APPLIED=0
               FAILED=0
