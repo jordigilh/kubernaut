@@ -19,18 +19,44 @@ Kubernaut is an autonomous Kubernetes remediation platform that detects incident
 - Tekton Pipelines (optional)
 - Ansible Automation Platform (AAP) / AWX (optional)
 
-## Quick Start (2 Commands)
+## Quick Start
 
-The chart is fully self-contained -- policies, demo workflows, and infrastructure credentials are all embedded. You only need to provide LLM credentials.
+Infrastructure secrets must be pre-created before installing the chart (#557).
+The chart does **not** auto-generate credentials — this prevents password leaks
+via rendered Helm templates and avoids silent `lookup` failures on OCP / restricted-RBAC
+environments.
+
+The chart validates that required secrets exist at install/upgrade time and fails
+with an actionable error if they are missing. This validation is automatically
+skipped during `helm template` (no cluster access). **Note:** If the Helm installer
+ServiceAccount lacks `get` permission on Namespaces, the validation is also
+skipped — operators in restricted-RBAC environments must ensure secrets exist
+manually before installing.
 
 ```bash
-# 1. Create namespace and LLM credentials
+# 1. Create namespace
 kubectl create namespace kubernaut-system
+
+# 2. Create PostgreSQL + DataStorage credentials (single consolidated secret)
+PG_PASSWORD=$(openssl rand -base64 24)
+kubectl create secret generic postgresql-secret \
+  --from-literal=POSTGRES_USER=slm_user \
+  --from-literal=POSTGRES_PASSWORD="$PG_PASSWORD" \
+  --from-literal=POSTGRES_DB=action_history \
+  --from-literal=db-secrets.yaml="$(printf 'username: slm_user\npassword: %s' "$PG_PASSWORD")" \
+  -n kubernaut-system
+
+# 3. Create Valkey credentials
+kubectl create secret generic valkey-secret \
+  --from-literal=valkey-secrets.yaml="$(printf 'password: %s' "$(openssl rand -base64 24)")" \
+  -n kubernaut-system
+
+# 4. Create LLM credentials
 kubectl create secret generic llm-credentials \
   --from-literal=OPENAI_API_KEY=sk-... \
   -n kubernaut-system
 
-# 2. Install
+# 5. Install
 helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --set holmesgptApi.llm.provider=openai \
@@ -39,7 +65,6 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
 
 This deploys the full platform with:
 
-- Auto-generated PostgreSQL, DataStorage, and Valkey credentials
 - Default SignalProcessing Rego policy (environment, severity, priority, custom labels)
 - Default AIAnalysis approval policy (production requires approval, non-production auto-approves)
 - 25 ActionTypes and 20 RemediationWorkflows for common scenarios
@@ -106,22 +131,20 @@ route:
 
 ## Production Configuration
 
-For production environments, pre-create your own Secrets and provide custom policies:
+For production environments, use custom secret names and provide custom policies:
 
 ```bash
-# 1. Create credential Secrets
+# 1. Create credential Secrets with custom names
+PG_PASSWORD=$(openssl rand -base64 24)
 kubectl create secret generic pg-credentials \
   --from-literal=POSTGRES_USER=kubernaut \
-  --from-literal=POSTGRES_PASSWORD=$(openssl rand -base64 24) \
+  --from-literal=POSTGRES_PASSWORD="$PG_PASSWORD" \
   --from-literal=POSTGRES_DB=kubernaut \
-  -n kubernaut-system
-
-kubectl create secret generic ds-db-credentials \
-  --from-literal=db-secrets.yaml=$'username: kubernaut\npassword: '$(openssl rand -base64 24) \
+  --from-literal=db-secrets.yaml="$(printf 'username: kubernaut\npassword: %s' "$PG_PASSWORD")" \
   -n kubernaut-system
 
 kubectl create secret generic vk-credentials \
-  --from-literal=valkey-secrets.yaml=$'password: '$(openssl rand -base64 24) \
+  --from-literal=valkey-secrets.yaml="$(printf 'password: %s' "$(openssl rand -base64 24)")" \
   -n kubernaut-system
 
 kubectl create secret generic llm-credentials \
@@ -132,7 +155,6 @@ kubectl create secret generic llm-credentials \
 helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --set postgresql.auth.existingSecret=pg-credentials \
-  --set datastorage.dbExistingSecret=ds-db-credentials \
   --set valkey.existingSecret=vk-credentials \
   --set demoContent.enabled=false \
   --set-file holmesgptApi.sdkConfigContent=my-sdk-config.yaml \
@@ -141,6 +163,26 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
 ```
 
 ### BYO PostgreSQL / Valkey
+
+When using external PostgreSQL, the secret referenced by `existingSecret` must
+contain **both** the `POSTGRES_*` env-var keys **and** the `db-secrets.yaml` key
+(DataStorage reads credentials from this file). Chart validation is skipped for
+BYO infrastructure — ensure secrets exist before installing.
+
+```bash
+# BYO PostgreSQL secret — must include db-secrets.yaml for DataStorage
+kubectl create secret generic my-pg-credentials \
+  --from-literal=POSTGRES_USER=myuser \
+  --from-literal=POSTGRES_PASSWORD=mypass \
+  --from-literal=POSTGRES_DB=mydb \
+  --from-literal=db-secrets.yaml="$(printf 'username: myuser\npassword: mypass')" \
+  -n kubernaut-system
+
+# BYO Valkey secret
+kubectl create secret generic my-valkey-credentials \
+  --from-literal=valkey-secrets.yaml="$(printf 'password: mypass')" \
+  -n kubernaut-system
+```
 
 ```yaml
 postgresql:
@@ -270,12 +312,12 @@ For Vertex AI, Azure, or advanced setups (toolsets, MCP servers), use `sdkConfig
 | Parameter | Description | Default |
 |---|---|---|
 | `postgresql.enabled` | Deploy in-chart PostgreSQL | `true` |
-| `postgresql.auth.existingSecret` | Pre-created Secret (empty = auto-generate) | `""` |
+| `postgresql.auth.existingSecret` | Pre-created Secret name (empty = expect `postgresql-secret`) | `""` |
 | `postgresql.variant` | Image variant: `upstream` or `ocp` | `upstream` |
 | `postgresql.host` | External host (when `enabled=false`) | `""` |
-| `datastorage.dbExistingSecret` | Pre-created Secret (empty = auto-generate) | `""` |
+| `datastorage.dbExistingSecret` | DEPRECATED: db-secrets.yaml is now in postgresql-secret | `""` |
 | `valkey.enabled` | Deploy in-chart Valkey | `true` |
-| `valkey.existingSecret` | Pre-created Secret (empty = auto-generate) | `""` |
+| `valkey.existingSecret` | Pre-created Secret name (empty = expect `valkey-secret`) | `""` |
 | `valkey.host` | External host (when `enabled=false`) | `""` |
 
 ### TLS

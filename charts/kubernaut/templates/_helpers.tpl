@@ -94,15 +94,16 @@ When using external PostgreSQL, falls through to the external auth settings.
 
 {{/*
 Return the Secret name for DataStorage DB credentials.
-DataStorage uses a db-secrets.yaml key (different format from PostgreSQL's
-POSTGRES_USER/PASSWORD/DB keys), so it supports its own existingSecret field.
-Precedence: datastorage.dbExistingSecret > chart-managed "datastorage-db-secret".
+DataStorage reads db-secrets.yaml (YAML with username + password) from the
+consolidated postgresql-secret. This ensures a single source of truth for DB
+credentials, eliminating password mismatch risks (#557).
+Precedence: datastorage.dbExistingSecret (deprecated) > postgresql.auth.existingSecret > "postgresql-secret".
 */}}
 {{- define "kubernaut.datastorage.dbSecretName" -}}
 {{- if .Values.datastorage.dbExistingSecret -}}
 {{- .Values.datastorage.dbExistingSecret -}}
 {{- else -}}
-datastorage-db-secret
+{{- include "kubernaut.postgresql.secretName" . -}}
 {{- end -}}
 {{- end }}
 

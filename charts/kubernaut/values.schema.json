@@ -298,7 +298,7 @@
         "dbExistingSecret": {
           "type": "string",
           "default": "",
-          "description": "Name of pre-created Secret with db-secrets.yaml key; overrides chart-managed datastorage-db-secret"
+          "description": "DEPRECATED: db-secrets.yaml is now in postgresql-secret. Set only for BYO PostgreSQL with a separate DataStorage secret."
         },
         "resources": { "$ref": "#/definitions/resources" },
         "service": { "$ref": "#/definitions/serviceConfig" },
@@ -712,7 +712,7 @@
             "existingSecret": {
               "type": "string",
               "default": "",
-              "description": "Pre-created Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys. Empty = auto-generate."
+              "description": "Pre-created Secret name with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, db-secrets.yaml keys. Empty = expect 'postgresql-secret'."
             },
             "username": { "type": "string", "default": "slm_user" },
             "database": { "type": "string", "default": "action_history" }
@@ -759,7 +759,7 @@
         "existingSecret": {
           "type": "string",
           "default": "",
-          "description": "Pre-created Secret with valkey-secrets.yaml key. Empty = auto-generate."
+          "description": "Pre-created Secret name with valkey-secrets.yaml key. Empty = expect 'valkey-secret'."
         },
         "storage": {
           "type": "object",

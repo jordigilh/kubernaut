@@ -394,7 +394,6 @@ tls_flags() {
 
 production_secret_flags() {
   echo "--set postgresql.auth.existingSecret=kubernaut-pg-credentials"
-  echo "--set datastorage.dbExistingSecret=kubernaut-ds-credentials"
   echo "--set valkey.existingSecret=kubernaut-valkey-credentials"
   echo "--set holmesgptApi.llm.provider=openai"
   echo "--set holmesgptApi.llm.model=gpt-4o"
@@ -433,15 +432,12 @@ run_pre_003() {
   local pass=true
   local test_password="smoke-test-pass"
 
+  # Consolidated PostgreSQL + DataStorage secret (#557)
   kubectl create secret generic kubernaut-pg-credentials \
     --from-literal=POSTGRES_USER=slm_user \
     --from-literal=POSTGRES_PASSWORD="$test_password" \
     --from-literal=POSTGRES_DB=action_history \
-    -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
-
-  kubectl create secret generic kubernaut-ds-credentials \
-    --from-literal="db-secrets.yaml=username: slm_user
-password: ${test_password}" \
+    --from-literal="db-secrets.yaml=$(printf 'username: slm_user\npassword: %s' "$test_password")" \
     -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
 
   kubectl create secret generic kubernaut-valkey-credentials \
@@ -450,14 +446,14 @@ password: ${test_password}" \
 
   kubectl create secret generic kubernaut-llm-credentials --from-literal=OPENAI_API_KEY=sk-smoke-test-placeholder -n "$NAMESPACE" >/dev/null 2>&1 || pass=false # pre-commit:allow-sensitive
 
-  local secret_count=4
+  local secret_count=3
   if [[ -n "$PULL_SECRET" && -n "${PULL_SECRET_SERVER:-}" ]]; then
     kubectl create secret docker-registry "$PULL_SECRET" \
       --docker-server="$PULL_SECRET_SERVER" \
       --docker-username="${PULL_SECRET_USER:-}" \
       --docker-password="${PULL_SECRET_TOKEN:-}" \
       -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
-    secret_count=5
+    secret_count=4
   fi
 
   if $pass; then
@@ -915,7 +911,6 @@ flow_b_quickstart() {
 # ---------------------------------------------------------------------------
 template_common_args() {
   echo "--set" "postgresql.auth.existingSecret=dummy"
-  echo "--set" "datastorage.dbExistingSecret=dummy"
   echo "--set" "valkey.existingSecret=dummy"
 }
 

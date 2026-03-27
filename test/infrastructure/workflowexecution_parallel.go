@@ -368,7 +368,7 @@ data:
       maxIdleConns: 5
       connMaxLifetime: 5m
       # ADR-030 Section 6: Secrets from file
-      secretsFile: /etc/datastorage/secrets/db-credentials.yaml
+      secretsFile: /etc/datastorage/secrets/db-secrets.yaml
       usernameKey: username
       passwordKey: password
     redis:
@@ -378,7 +378,7 @@ data:
       dlqMaxLen: 10000
       dlqConsumerGroup: audit_processors
       # ADR-030 Section 6: Secrets from file
-      secretsFile: /etc/datastorage/secrets/redis-credentials.yaml
+      secretsFile: /etc/datastorage/secrets/redis-secrets.yaml
       passwordKey: password
     logging:
       level: info
@@ -397,10 +397,10 @@ data:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: datastorage-db-secret
+  name: postgresql-secret
   namespace: kubernaut-system
 stringData:
-  db-credentials.yaml: |
+  db-secrets.yaml: |
     username: slm_user
     password: test_password
 ---
@@ -410,7 +410,7 @@ metadata:
   name: redis-secret
   namespace: kubernaut-system
 stringData:
-  redis-credentials.yaml: |
+  redis-secrets.yaml: |
     password: ""
 `
 	cmd = exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
@@ -478,15 +478,15 @@ spec:
         projected:
           sources:
           - secret:
-              name: datastorage-db-secret
+              name: postgresql-secret
               items:
-              - key: db-credentials.yaml
-                path: db-credentials.yaml
+              - key: db-secrets.yaml
+                path: db-secrets.yaml
           - secret:
               name: redis-secret
               items:
-              - key: redis-credentials.yaml
-                path: redis-credentials.yaml
+              - key: redis-secrets.yaml
+                path: redis-secrets.yaml
 ---
 apiVersion: v1
 kind: Service

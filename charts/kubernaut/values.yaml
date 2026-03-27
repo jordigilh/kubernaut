@@ -78,7 +78,7 @@ datastorage:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
-  dbExistingSecret: ""  # pre-created Secret with db-secrets.yaml key; empty = auto-generate
+  dbExistingSecret: ""  # DEPRECATED: db-secrets.yaml is now in postgresql-secret. Set only for BYO PostgreSQL with a separate DataStorage secret.
   config:
     database:
       sslMode: "disable"
@@ -338,9 +338,9 @@ authwebhook:
       cpu: 200m
 
 # -- PostgreSQL (DataStorage backend)
-# Credentials: auto-generated on first install when existingSecret is empty.
-#   Upgrade: existing passwords are preserved via lookup.
-#   Production: pre-create a Secret and set existingSecret.
+# Credentials: MUST be pre-created before install (#557).
+#   The secret must contain keys: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB,
+#   and db-secrets.yaml (YAML with username + password for DataStorage).
 #   BYO (#256): Set postgresql.enabled=false and provide postgresql.host.
 postgresql:
   enabled: true  # set false to use an external PostgreSQL instance
@@ -354,7 +354,7 @@ postgresql:
   variant: upstream
   image: postgres:16-alpine  # OCP: registry.redhat.io/rhel10/postgresql-16
   auth:
-    existingSecret: ""  # pre-created Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys; empty = auto-generate
+    existingSecret: ""  # pre-created Secret name; empty = expect "postgresql-secret" to exist
     username: slm_user
     database: action_history
   replicas: 1
@@ -371,15 +371,15 @@ postgresql:
 
 # -- Valkey (DataStorage DLQ)
 # Valkey is a BSD-licensed Redis-compatible in-memory data store.
-# Credentials: auto-generated on first install when existingSecret is empty.
-#   Production: pre-create a Secret and set existingSecret.
+# Credentials: MUST be pre-created before install (#557).
+#   The secret must contain key: valkey-secrets.yaml (YAML with password).
 #   BYO (#256): Set valkey.enabled=false and provide valkey.host.
 valkey:
   enabled: true  # set false to use an external Valkey/Redis instance
   host: ""       # required when enabled=false (e.g., "valkey.example.com")
   port: 6379
   image: valkey/valkey:8-alpine
-  existingSecret: ""  # pre-created Secret with valkey-secrets.yaml key; empty = auto-generate
+  existingSecret: ""  # pre-created Secret name; empty = expect "valkey-secret" to exist
   replicas: 1
   storage:
     size: 512Mi

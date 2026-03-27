@@ -908,6 +908,9 @@ stringData:
   POSTGRES_USER: slm_user
   POSTGRES_PASSWORD: test_password
   POSTGRES_DB: action_history
+  db-secrets.yaml: |
+    username: slm_user
+    password: test_password
 ---
 apiVersion: v1
 kind: Service
@@ -1171,15 +1174,6 @@ data:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: datastorage-db-secret
-stringData:
-  db-secrets.yaml: |
-    username: slm_user
-    password: test_password
----
-apiVersion: v1
-kind: Secret
-metadata:
   name: redis-secret
 stringData:
   redis-secrets.yaml: |
@@ -1324,7 +1318,7 @@ spec:
         projected:
           sources:
           - secret:
-              name: datastorage-db-secret
+              name: postgresql-secret
               items:
               - key: db-secrets.yaml
                 path: db-secrets.yaml
