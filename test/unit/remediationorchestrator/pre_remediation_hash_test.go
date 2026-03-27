@@ -18,16 +18,20 @@ package remediationorchestrator
 
 import (
 	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 )
@@ -93,10 +97,11 @@ var _ = Describe("CapturePreRemediationHash (DD-EM-002)", func() {
 			WithObjects(deploy).
 			Build()
 
-		hash, err := controller.CapturePreRemediationHash(
+		hash, degradedReason, err := controller.CapturePreRemediationHash(
 			ctx, fakeClient, restMapper, "Deployment", "nginx", "default",
 		)
 		Expect(err).ToNot(HaveOccurred())
+		Expect(degradedReason).To(BeEmpty(), "Success should not set degradedReason")
 		Expect(hash).To(HavePrefix("sha256:"))
 		Expect(hash).To(HaveLen(71))
 	})
@@ -106,10 +111,11 @@ var _ = Describe("CapturePreRemediationHash (DD-EM-002)", func() {
 			WithScheme(scheme).
 			Build()
 
-		hash, err := controller.CapturePreRemediationHash(
+		hash, degradedReason, err := controller.CapturePreRemediationHash(
 			ctx, fakeClient, restMapper, "Deployment", "nonexistent", "default",
 		)
 		Expect(err).ToNot(HaveOccurred())
+		Expect(degradedReason).To(BeEmpty(), "NotFound is legitimate, not degraded")
 		Expect(hash).To(BeEmpty(), "Missing resource should return empty hash, not an error")
 	})
 
@@ -133,11 +139,74 @@ var _ = Describe("CapturePreRemediationHash (DD-EM-002)", func() {
 			WithObjects(cm).
 			Build()
 
-		hash, err := controller.CapturePreRemediationHash(
+		hash, degradedReason, err := controller.CapturePreRemediationHash(
 			ctx, fakeClient, restMapper, "ConfigMap", "test-config", "default",
 		)
 		Expect(err).ToNot(HaveOccurred())
+		Expect(degradedReason).To(BeEmpty(), "No .spec is legitimate, not degraded")
 		Expect(hash).To(BeEmpty(), "Resource without .spec should return empty hash")
+	})
+
+	// UT-RO-545-001: Forbidden error yields empty hash (degraded soft-fail)
+	It("UT-RO-545-001: should return degraded soft-fail when RBAC denies access (Forbidden)", func() {
+		restMapper.(*meta.DefaultRESTMapper).Add(
+			schema.GroupVersionKind{Group: "cert-manager.io", Version: "v1", Kind: "Certificate"},
+			meta.RESTScopeNamespace,
+		)
+
+		forbiddenClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					return apierrors.NewForbidden(
+						schema.GroupResource{Group: "cert-manager.io", Resource: "certificates"},
+						key.Name,
+						fmt.Errorf("user system:serviceaccount:kubernaut:remediationorchestrator-controller is not allowed to get certificates"),
+					)
+				},
+			}).
+			Build()
+
+		hash, degradedReason, err := controller.CapturePreRemediationHash(
+			ctx, forbiddenClient, restMapper, "Certificate", "demo-app-cert", "demo-cert-failure",
+		)
+		Expect(err).ToNot(HaveOccurred(), "Forbidden should soft-fail, not return error")
+		Expect(hash).To(BeEmpty(), "Hash should be empty on Forbidden")
+		Expect(degradedReason).ToNot(BeEmpty(), "degradedReason should describe the access denial")
+		Expect(degradedReason).To(ContainSubstring("forbidden"), "degradedReason should mention forbidden")
+	})
+
+	// UT-RO-545-002: K8s InternalError yields empty hash (degraded soft-fail)
+	It("UT-RO-545-002: should return degraded soft-fail when K8s API returns InternalError", func() {
+		internalErrClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					return apierrors.NewInternalError(fmt.Errorf("etcd timeout"))
+				},
+			}).
+			Build()
+
+		hash, degradedReason, err := controller.CapturePreRemediationHash(
+			ctx, internalErrClient, restMapper, "Deployment", "failing-deploy", "default",
+		)
+		Expect(err).ToNot(HaveOccurred(), "InternalError should soft-fail, not return error")
+		Expect(hash).To(BeEmpty(), "Hash should be empty on InternalError")
+		Expect(degradedReason).ToNot(BeEmpty(), "degradedReason should describe the fetch failure")
+	})
+
+	// UT-RO-545-004: Unknown Kind returns empty hash
+	It("UT-RO-545-004: should return empty hash when GVK cannot be resolved (unknown Kind)", func() {
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			Build()
+
+		hash, degradedReason, err := controller.CapturePreRemediationHash(
+			ctx, fakeClient, restMapper, "UnknownCRD", "something", "default",
+		)
+		Expect(err).ToNot(HaveOccurred(), "Unknown Kind should soft-fail")
+		Expect(degradedReason).To(BeEmpty(), "Unknown GVK is legitimate, not degraded")
+		Expect(hash).To(BeEmpty(), "Unknown Kind should return empty hash")
 	})
 })
 
