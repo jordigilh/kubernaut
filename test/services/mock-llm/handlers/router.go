@@ -18,7 +18,10 @@ package handlers
 import (
 	"net/http"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/fault"
+	mockmetrics "github.com/jordigilh/kubernaut/test/services/mock-llm/metrics"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/tracker"
 )
@@ -28,6 +31,12 @@ func NewRouter(registry *scenarios.Registry, forceText bool) http.Handler {
 	return NewFullRouter(registry, forceText, "", nil)
 }
 
+// NewMetricsRouter creates the HTTP mux with all Mock LLM endpoints plus
+// a /metrics endpoint serving Prometheus-format metrics.
+func NewMetricsRouter(registry *scenarios.Registry, forceText bool) http.Handler {
+	return NewFullRouterWithMetrics(registry, forceText, "", nil, mockmetrics.NewMetrics())
+}
+
 // NewFullRouter creates the HTTP mux with all Mock LLM endpoints,
 // including verification, fault injection, and header recording APIs.
 func NewFullRouter(
@@ -35,6 +44,18 @@ func NewFullRouter(
 	forceText bool,
 	recordHeaders string,
 	faultInjector *fault.Injector,
+) http.Handler {
+	return NewFullRouterWithMetrics(registry, forceText, recordHeaders, faultInjector, nil)
+}
+
+// NewFullRouterWithMetrics creates the HTTP mux with all Mock LLM endpoints,
+// including verification, fault injection, header recording, and Prometheus metrics.
+func NewFullRouterWithMetrics(
+	registry *scenarios.Registry,
+	forceText bool,
+	recordHeaders string,
+	faultInjector *fault.Injector,
+	m *mockmetrics.Metrics,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -55,6 +76,7 @@ func NewFullRouter(
 		tracker:        t,
 		headerRecorder: hr,
 		faultInjector:  faultInjector,
+		metrics:        m,
 	}
 
 	// Health
@@ -73,7 +95,7 @@ func NewFullRouter(
 	mux.HandleFunc("/api/generate", h.handleOllama)
 
 	// Verification API
-	vh := &verificationHandler{tracker: t, headerRecorder: hr}
+	vh := &verificationHandler{tracker: t, headerRecorder: hr, metrics: m}
 	mux.HandleFunc("/api/test/tool-calls", vh.handleGetToolCalls)
 	mux.HandleFunc("/api/test/scenario", vh.handleGetScenario)
 	mux.HandleFunc("/api/test/dag-path", vh.handleGetDAGPath)
@@ -86,6 +108,11 @@ func NewFullRouter(
 	mux.HandleFunc("/api/test/fault", fh.handleConfigureFault)
 	mux.HandleFunc("/api/test/fault/status", fh.handleGetFault)
 	mux.HandleFunc("/api/test/fault/reset", fh.handleResetFault)
+
+	// Prometheus metrics endpoint (BR-MOCK-080)
+	if m != nil {
+		mux.Handle("/metrics", promhttp.HandlerFor(m.Registry(), promhttp.HandlerOpts{}))
+	}
 
 	return strictRouter(mux)
 }
