@@ -101,9 +101,9 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	go func() {
 		cfg := E2EImageConfig{
 			ServiceName:      "mock-llm",
-			ImageName:        "mock-llm", // No kubernaut/ prefix (matches old behavior)
-			DockerfilePath:   "test/services/mock-llm/Dockerfile",
-			BuildContextPath: filepath.Join(projectRoot, "test/services/mock-llm"),
+			ImageName:        "mock-llm",
+			DockerfilePath:   "test/services/mock-llm/go.Dockerfile",
+			BuildContextPath: projectRoot,
 			EnableCoverage:   false,
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
