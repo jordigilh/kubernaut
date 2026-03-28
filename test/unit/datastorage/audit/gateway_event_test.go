@@ -32,14 +32,13 @@ import (
 // Gateway Service uses this builder to create audit events for:
 // - Signal ingestion (Prometheus AlertManager, K8s Events)
 // - Deduplication decisions
-// - Storm detection
 // - Environment classification
 // - Priority assignment
 //
 // Business Requirements:
 // - BR-STORAGE-033-004: Gateway-specific event data structure
 // - BR-STORAGE-033-005: Support for Prometheus and K8s Event signals
-// - BR-STORAGE-033-006: Deduplication and storm metadata tracking
+// - BR-STORAGE-033-006: Deduplication metadata tracking
 //
 // Testing Principle: Behavior + Correctness
 // ========================================
@@ -168,7 +167,7 @@ var _ = Describe("GatewayEventBuilder", func() {
 		})
 	})
 
-	Context("BR-STORAGE-033-006: Deduplication and storm metadata tracking", func() {
+	Context("BR-STORAGE-033-006: Deduplication metadata tracking", func() {
 		It("should track deduplication status", func() {
 			builder := audit.NewGatewayEvent("signal.received").
 				WithSignalType("alert").
@@ -182,46 +181,6 @@ var _ = Describe("GatewayEventBuilder", func() {
 			gatewayData, _ := data["gateway"].(map[string]interface{})
 
 			Expect(gatewayData).To(HaveKeyWithValue("deduplication_status", "duplicate"))
-		})
-
-		It("should track storm detection", func() {
-			builder := audit.NewGatewayEvent("signal.received").
-				WithSignalType("alert").
-				WithSignalName("PodCrashLoop").
-				WithStorm("storm-2025-11-18-001")
-
-			eventData, err := builder.Build()
-			Expect(err).ToNot(HaveOccurred())
-
-			data, _ := eventData["data"].(map[string]interface{})
-			gatewayData, _ := data["gateway"].(map[string]interface{})
-
-			Expect(gatewayData).To(HaveKeyWithValue("storm_detected", true))
-			Expect(gatewayData).To(HaveKeyWithValue("storm_id", "storm-2025-11-18-001"))
-		})
-
-		It("should not include storm_id if no storm detected", func() {
-			builder := audit.NewGatewayEvent("signal.received").
-				WithSignalType("alert").
-				WithSignalName("TestAlert")
-
-			eventData, err := builder.Build()
-			Expect(err).ToNot(HaveOccurred())
-
-			data, _ := eventData["data"].(map[string]interface{})
-			gatewayData, _ := data["gateway"].(map[string]interface{})
-
-			// storm_detected should default to false
-			stormDetected, ok := gatewayData["storm_detected"]
-			if ok {
-				Expect(stormDetected).To(BeFalse())
-			}
-
-			// storm_id should not be present or be empty
-			stormID, ok := gatewayData["storm_id"]
-			if ok {
-				Expect(stormID).To(BeEmpty())
-			}
 		})
 	})
 

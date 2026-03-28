@@ -51,7 +51,6 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
@@ -96,13 +95,13 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: func() string {
-					h := sha256.Sum256([]byte(uuid.New().String()))
-					return hex.EncodeToString(h[:])
-				}(),
-					SignalName:        "E2EAuditWiringTest",
-					Severity:          "critical",
-					SignalType:        "alert",
-					TargetType:        "kubernetes",
+						h := sha256.Sum256([]byte(uuid.New().String()))
+						return hex.EncodeToString(h[:])
+					}(),
+					SignalName: "E2EAuditWiringTest",
+					Severity:   "critical",
+					SignalType: "alert",
+					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
 						Name:      "e2e-test-app",
@@ -110,26 +109,21 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 
 			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
 
-		// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
-		// Per universal standard: All services use RemediationRequest.Name for audit correlation
-		correlationID = testRR.Name
+			// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+			// Per universal standard: All services use RemediationRequest.Name for audit correlation
+			correlationID = testRR.Name
 
-		GinkgoWriter.Printf("🚀 E2E: Created RemediationRequest %s/%s (correlation_id: %s)\n",
-			controllerNamespace, testRR.Name, correlationID)
+			GinkgoWriter.Printf("🚀 E2E: Created RemediationRequest %s/%s (correlation_id: %s)\n",
+				controllerNamespace, testRR.Name, correlationID)
 
-		By("Completing SP lifecycle so RR progresses past Processing")
-		sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
-		helpers.SimulateSPCompletion(ctx, k8sClient, sp)
+			By("Completing SP lifecycle so RR progresses past Processing")
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
+			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 		})
 
 		AfterEach(func() {

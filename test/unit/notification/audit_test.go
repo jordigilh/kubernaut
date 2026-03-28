@@ -377,7 +377,8 @@ var _ = Describe("Audit Helpers", func() {
 			It("should use notification UID as correlation_id fallback", func() {
 				// Edge Case: Missing correlation ID (DD-AUDIT-CORRELATION-002)
 				notification.Spec.RemediationRequestRef = nil // No RemediationRequestRef
-				notification.Spec.Metadata = map[string]string{} // No remediationRequestName
+				notification.Spec.Context = nil
+				notification.Spec.Extensions = map[string]string{}
 
 				event, err := helpers.CreateMessageSentEvent(notification, "slack")
 
@@ -423,18 +424,19 @@ var _ = Describe("Audit Helpers", func() {
 
 		// ===== 100% COVERAGE FIX: Additional Input Validation =====
 
-		Context("when Metadata is nil (not empty map)", func() {
+		Context("when Context and Extensions are nil", func() {
 			It("should use notification UID as correlation_id fallback", func() {
-				// Edge Case: nil Metadata (different from empty map)
+				// Edge Case: nil Context/Extensions (different from empty extensions map)
 				// BEHAVIOR: Event creation succeeds
 				// CORRECTNESS: correlation_id falls back to notification.UID (per DD-AUDIT-CORRELATION-002)
 				notification.Spec.RemediationRequestRef = nil // No RemediationRequestRef
-				notification.Spec.Metadata = nil // nil, not map[string]string{}
+				notification.Spec.Context = nil
+				notification.Spec.Extensions = nil
 
 				event, err := helpers.CreateMessageSentEvent(notification, "slack")
 
 				Expect(err).ToNot(HaveOccurred(),
-					"BEHAVIOR: Event creation should succeed with nil Metadata")
+					"BEHAVIOR: Event creation should succeed with nil Context and Extensions")
 				Expect(event.CorrelationID).To(Equal(string(notification.UID)),
 					"CORRECTNESS: Correlation ID MUST fallback to notification.UID when RemediationRequestRef is nil (per DD-AUDIT-CORRELATION-002)")
 			})
@@ -709,13 +711,13 @@ func createTestNotification() *notificationv1alpha1.NotificationRequest {
 			},
 			Type:     notificationv1alpha1.NotificationTypeSimple,
 			Priority: notificationv1alpha1.NotificationPriorityCritical,
+			Severity: "critical",
 			Subject:  "Test Alert: Database Connection Failed",
 			Body:     "Critical alert detected in production database cluster",
-			Metadata: map[string]string{
+			Extensions: map[string]string{
 				"remediationRequestName": "remediation-123",
 				"cluster":                "production-cluster",
 				"namespace":              "database",
-				"severity":               "critical",
 			},
 		},
 	}
@@ -728,7 +730,7 @@ func createTestNotificationWithID(id int) *notificationv1alpha1.NotificationRequ
 	notification.Name = fmt.Sprintf("test-notification-%d", id)
 	// DD-AUDIT-CORRELATION-002: Update RemediationRequestRef.Name (not metadata)
 	notification.Spec.RemediationRequestRef.Name = fmt.Sprintf("remediation-%d", id)
-	notification.Spec.Metadata["remediationRequestName"] = fmt.Sprintf("remediation-%d", id)
+	notification.Spec.Extensions["remediationRequestName"] = fmt.Sprintf("remediation-%d", id)
 	return notification
 }
 

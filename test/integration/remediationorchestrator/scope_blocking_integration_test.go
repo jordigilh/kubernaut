@@ -90,7 +90,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 		}, fetched)).To(Succeed())
 
 		if fetched.Status.OverallPhase == remediationv1.PhaseBlocked {
-			Expect(fetched.Status.BlockReason).ToNot(Equal(string(remediationv1.BlockReasonUnmanagedResource)),
+			Expect(fetched.Status.BlockReason).ToNot(Equal(remediationv1.BlockReasonUnmanagedResource),
 				"RR in managed namespace should NOT be blocked for UnmanagedResource")
 		}
 
@@ -125,7 +125,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			}, fetched); err != nil {
 				return ""
 			}
-			return fetched.Status.BlockReason
+			return string(fetched.Status.BlockReason)
 		}, timeout, interval).Should(Equal(string(remediationv1.BlockReasonUnmanagedResource)),
 			"RR in unmanaged namespace should be blocked with UnmanagedResource reason")
 
@@ -194,7 +194,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			}, fetched); err != nil {
 				return ""
 			}
-			return fetched.Status.BlockReason
+			return string(fetched.Status.BlockReason)
 		}, timeout, interval).Should(Equal(string(remediationv1.BlockReasonUnmanagedResource)),
 			"RR should be blocked with UnmanagedResource reason")
 
@@ -206,7 +206,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 		}, fetched)).To(Succeed())
 
 		Expect(fetched.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
-		Expect(fetched.Status.BlockReason).To(Equal(string(remediationv1.BlockReasonUnmanagedResource)))
+		Expect(fetched.Status.BlockReason).To(Equal(remediationv1.BlockReasonUnmanagedResource))
 		Expect(fetched.Status.BlockMessage).To(ContainSubstring("kubernaut.ai/managed=true"),
 			"Block message should include remediation instructions")
 		Expect(fetched.Status.BlockedUntil).ToNot(BeNil(),
@@ -238,7 +238,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 				return false
 			}
 			return fetched.Status.OverallPhase == remediationv1.PhaseBlocked &&
-				fetched.Status.BlockReason == string(remediationv1.BlockReasonUnmanagedResource) &&
+				fetched.Status.BlockReason == remediationv1.BlockReasonUnmanagedResource &&
 				fetched.Status.BlockedUntil != nil
 		}, timeout, interval).Should(BeTrue(),
 			"RR should be blocked with BlockedUntil set")
@@ -255,9 +255,9 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 
 		// Verify the blockedUntil is in the near future (within scope backoff bounds: ~5s)
 		now := time.Now()
-		Expect(firstBlockedUntil.After(now.Add(-2 * time.Second))).To(BeTrue(),
+		Expect(firstBlockedUntil.After(now.Add(-2*time.Second))).To(BeTrue(),
 			"BlockedUntil should be near-future")
-		Expect(firstBlockedUntil.Before(now.Add(30 * time.Second))).To(BeTrue(),
+		Expect(firstBlockedUntil.Before(now.Add(30*time.Second))).To(BeTrue(),
 			"BlockedUntil should not be more than 30s in the future (initial backoff ~5s + jitter)")
 
 		GinkgoWriter.Printf("✅ IT-RO-010-004: Exponential backoff verified — blockedUntil: %s\n",
@@ -286,7 +286,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			}, fetched); err != nil {
 				return ""
 			}
-			return fetched.Status.BlockReason
+			return string(fetched.Status.BlockReason)
 		}, timeout, interval).Should(Equal(string(remediationv1.BlockReasonUnmanagedResource)),
 			"RR should be initially blocked with UnmanagedResource")
 
@@ -333,7 +333,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 		}, fetched)).To(Succeed())
 		Expect(fetched.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked),
 			"Phase must remain Blocked after re-validation")
-		Expect(fetched.Status.BlockReason).To(Equal(string(remediationv1.BlockReasonUnmanagedResource)),
+		Expect(fetched.Status.BlockReason).To(Equal(remediationv1.BlockReasonUnmanagedResource),
 			"BlockReason must still be UnmanagedResource")
 		Expect(fetched.Status.ConsecutiveFailureCount).To(BeNumerically(">", initialFailureCount),
 			"ConsecutiveFailureCount should increment on re-block (drives backoff progression)")
@@ -388,7 +388,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			}, fetched); err != nil {
 				return ""
 			}
-			return fetched.Status.BlockReason
+			return string(fetched.Status.BlockReason)
 		}, timeout, interval).Should(Equal(string(remediationv1.BlockReasonUnmanagedResource)),
 			"RR should be initially blocked")
 

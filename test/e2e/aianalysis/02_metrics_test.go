@@ -28,7 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	// DD-005 V3.0: Import metric constants from production code
 	aametrics "github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 )
@@ -42,31 +42,31 @@ func seedMetricsWithAnalysis() {
 	ctx := context.Background()
 
 	// Create successful analysis to populate success metrics
-	analysis := &aianalysisv1alpha1.AIAnalysis{
+	analysis := &aianalysisv1.AIAnalysis{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "metrics-seed-success-" + randomSuffix(),
 			Namespace: controllerNamespace,
 		},
-		Spec: aianalysisv1alpha1.AIAnalysisSpec{
+		Spec: aianalysisv1.AIAnalysisSpec{
 			RemediationRequestRef: corev1.ObjectReference{
 				Name:      "metrics-seed-rem",
 				Namespace: controllerNamespace,
 			},
 			RemediationID: "metrics-seed-001",
-			AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-				SignalContext: aianalysisv1alpha1.SignalContextInput{
+			AnalysisRequest: aianalysisv1.AnalysisRequest{
+				SignalContext: aianalysisv1.SignalContextInput{
 					Fingerprint:      "metrics-seed-fp",
 					Severity:        "medium",
 					SignalName:       "PodCrashLooping",
 					Environment:      "staging",
 					BusinessPriority: "P2",
-					TargetResource: aianalysisv1alpha1.TargetResource{
+					TargetResource: aianalysisv1.TargetResource{
 						Kind:      "Pod",
 						Namespace: "default",
 						Name:      "test-pod",
 					},
 				},
-				AnalysisTypes: []string{"investigation"},
+				AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 			},
 		},
 	}
@@ -84,31 +84,31 @@ func seedMetricsWithAnalysis() {
 
 	// Create failed analysis to populate failure metrics
 	// BR-HAPI-197: Ensure aianalysis_failures_total metric is populated
-	failedAnalysis := &aianalysisv1alpha1.AIAnalysis{
+	failedAnalysis := &aianalysisv1.AIAnalysis{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "metrics-seed-failed-" + randomSuffix(),
 			Namespace: controllerNamespace,
 		},
-		Spec: aianalysisv1alpha1.AIAnalysisSpec{
+		Spec: aianalysisv1.AIAnalysisSpec{
 			RemediationRequestRef: corev1.ObjectReference{
 				Name:      "metrics-seed-rem-fail",
 				Namespace: controllerNamespace,
 			},
 			RemediationID: "metrics-seed-fail-001",
-			AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-				SignalContext: aianalysisv1alpha1.SignalContextInput{
+			AnalysisRequest: aianalysisv1.AnalysisRequest{
+				SignalContext: aianalysisv1.SignalContextInput{
 					Fingerprint:      "TRIGGER_WORKFLOW_RESOLUTION_FAILURE", // Special fingerprint to trigger failure
 					Severity:         "critical",
 					SignalName:       "TestFailureScenario",
 					Environment:      "staging",
 					BusinessPriority: "P1",
-					TargetResource: aianalysisv1alpha1.TargetResource{
+					TargetResource: aianalysisv1.TargetResource{
 						Kind:      "Pod",
 						Namespace: "default",
 						Name:      "test-pod-fail",
 					},
 				},
-				AnalysisTypes: []string{"investigation"},
+				AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 			},
 		},
 	}

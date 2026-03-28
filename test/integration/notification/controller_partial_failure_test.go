@@ -120,7 +120,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 						BackoffMultiplier:     1,
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-file-log",
 					},
 				},
@@ -280,7 +280,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 						BackoffMultiplier:     1,
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-file-log",
 					},
 				},
@@ -388,7 +388,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 						BackoffMultiplier:     1,
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-file-log",
 					},
 				},

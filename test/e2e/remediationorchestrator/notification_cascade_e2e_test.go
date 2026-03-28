@@ -28,7 +28,6 @@ import (
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	"github.com/google/uuid"
 )
@@ -76,11 +75,6 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 						Kind:      "Deployment",
 						Name:      "test-app",
 						Namespace: testNamespace,
-					},
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
 					},
 				},
 			}
@@ -140,11 +134,6 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 						Kind:      "Deployment",
 						Name:      "test-app",
 						Namespace: testNamespace,
-					},
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
 					},
 				},
 			}

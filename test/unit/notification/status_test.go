@@ -70,17 +70,17 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 
 			// Record first attempt (console success)
 			err := statusManager.RecordDeliveryAttempt(ctx, notification, notificationv1alpha1.DeliveryAttempt{
-				Channel:   "console",
+				Channel:   notificationv1alpha1.DeliveryChannelName("console"),
 				Timestamp: metav1.Now(),
-				Status:    "success",
+				Status:    notificationv1alpha1.DeliveryAttemptStatusSuccess,
 			})
 			Expect(err).ToNot(HaveOccurred())
 
 			// Record second attempt (Slack failure)
 			err = statusManager.RecordDeliveryAttempt(ctx, notification, notificationv1alpha1.DeliveryAttempt{
-				Channel:   "slack",
+				Channel:   notificationv1alpha1.DeliveryChannelName("slack"),
 				Timestamp: metav1.Now(),
-				Status:    "failed",
+				Status:    notificationv1alpha1.DeliveryAttemptStatusFailed,
 				Error:     "webhook returned 503",
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -94,10 +94,10 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(updated.Status.DeliveryAttempts).To(HaveLen(2))
-			Expect(updated.Status.DeliveryAttempts[0].Channel).To(Equal("console"))
-			Expect(updated.Status.DeliveryAttempts[0].Status).To(Equal("success"))
-			Expect(updated.Status.DeliveryAttempts[1].Channel).To(Equal("slack"))
-			Expect(updated.Status.DeliveryAttempts[1].Status).To(Equal("failed"))
+			Expect(updated.Status.DeliveryAttempts[0].Channel).To(Equal(notificationv1alpha1.DeliveryChannelName("console")))
+			Expect(updated.Status.DeliveryAttempts[0].Status).To(Equal(notificationv1alpha1.DeliveryAttemptStatusSuccess))
+			Expect(updated.Status.DeliveryAttempts[1].Channel).To(Equal(notificationv1alpha1.DeliveryChannelName("slack")))
+			Expect(updated.Status.DeliveryAttempts[1].Status).To(Equal(notificationv1alpha1.DeliveryAttemptStatusFailed))
 			Expect(updated.Status.DeliveryAttempts[1].Error).To(Equal("webhook returned 503"))
 
 			Expect(updated.Status.TotalAttempts).To(Equal(2))
@@ -118,9 +118,9 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 			// Record 3 failed attempts for Slack
 			for i := 1; i <= 3; i++ {
 				err := statusManager.RecordDeliveryAttempt(ctx, notification, notificationv1alpha1.DeliveryAttempt{
-					Channel:   "slack",
+					Channel:   notificationv1alpha1.DeliveryChannelName("slack"),
 					Timestamp: metav1.Now(),
-					Status:    "failed",
+					Status:    notificationv1alpha1.DeliveryAttemptStatusFailed,
 					Error:     "network timeout",
 				})
 				Expect(err).ToNot(HaveOccurred())
@@ -170,7 +170,7 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 					}, updated)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(updated.Status.Phase).To(Equal(newPhase))
-					Expect(updated.Status.Reason).To(Equal("TestReason"))
+					Expect(updated.Status.Reason).To(Equal(notificationv1alpha1.NotificationStatusReason("TestReason")))
 					Expect(updated.Status.Message).To(Equal("Test message"))
 				} else {
 					Expect(err).To(HaveOccurred())
@@ -198,7 +198,7 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 			Expect(fakeClient.Create(ctx, notification)).To(Succeed())
 
 			// Update to terminal phase (Sent)
-			err := statusManager.UpdatePhase(ctx, notification, notificationv1alpha1.NotificationPhaseSent, "AllDeliveriesSucceeded", "All channels delivered", nil)
+			err := statusManager.UpdatePhase(ctx, notification, notificationv1alpha1.NotificationPhaseSent, string(notificationv1alpha1.StatusReasonAllDeliveriesSucceeded), "All channels delivered", nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify completion time set

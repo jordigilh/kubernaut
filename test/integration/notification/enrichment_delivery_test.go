@@ -24,6 +24,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -63,6 +64,10 @@ func (c *capturingService) getBodies() []string {
 }
 
 func buildITNotification(body string, metadata map[string]string) *notificationv1alpha1.NotificationRequest {
+	nctx := &notificationv1alpha1.NotificationContext{}
+	if wfID, ok := metadata["workflowId"]; ok {
+		nctx.Workflow = &notificationv1alpha1.WorkflowContext{WorkflowID: wfID}
+	}
 	return &notificationv1alpha1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "nr-it-enrichment",
@@ -70,9 +75,9 @@ func buildITNotification(body string, metadata map[string]string) *notificationv
 			UID:       types.UID("it-uid-001"),
 		},
 		Spec: notificationv1alpha1.NotificationRequestSpec{
-			Subject:  "Remediation Completed: test-signal",
-			Body:     body,
-			Metadata: metadata,
+			Subject: "Remediation Completed: test-signal",
+			Body:    body,
+			Context: nctx,
 		},
 	}
 }
@@ -80,7 +85,7 @@ func buildITNotification(body string, metadata map[string]string) *notificationv
 // buildTestOrchestrator creates a standalone delivery orchestrator for integration testing.
 func buildTestOrchestrator(channels map[string]delivery.Service, enrich *enrichment.Enricher) *delivery.Orchestrator {
 	sanitizer := sanitization.NewSanitizer()
-	metricsRecorder := notificationmetrics.NewNoOpRecorder()
+	metricsRecorder := notificationmetrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 	statusManager := notificationstatus.NewManager(nil, nil)
 
 	orch := delivery.NewOrchestrator(sanitizer, metricsRecorder, statusManager, logr.Discard())

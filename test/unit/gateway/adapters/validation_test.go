@@ -40,7 +40,7 @@ var _ = Describe("BR-GATEWAY-003: Payload Validation", func() {
 	})
 
 	// Following testing-strategy.md guidance: Use DescribeTable for validation tests
-	// "BEST PRACTICE: Use Ginkgo's DescribeTable for environment classification and storm detection testing"
+	// "BEST PRACTICE: Use Ginkgo's DescribeTable for environment classification and validation testing"
 	// Validation tests have consistent logic (reject invalid payload) with varying inputs
 	//
 	// NOTE: Tests simulate full HTTP handler flow (Parse + Validate)

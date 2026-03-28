@@ -369,15 +369,15 @@ environment := {"environment": lower(env), "source": "namespace-labels"} if {
     env := input.namespace.labels["kubernaut.ai/environment"]
     env != ""
 }
-environment := {"environment": "production", "source": "configmap"} if {
+environment := {"environment": "production", "source": "rego-inference"} if {
     not input.namespace.labels["kubernaut.ai/environment"]
     startswith(input.namespace.name, "prod")
 }
-environment := {"environment": "staging", "source": "configmap"} if {
+environment := {"environment": "staging", "source": "rego-inference"} if {
     not input.namespace.labels["kubernaut.ai/environment"]
     startswith(input.namespace.name, "staging")
 }
-environment := {"environment": "development", "source": "configmap"} if {
+environment := {"environment": "development", "source": "rego-inference"} if {
     not input.namespace.labels["kubernaut.ai/environment"]
     startswith(input.namespace.name, "dev")
 }

@@ -26,7 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
@@ -84,21 +84,21 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 
 			analysisName := fmt.Sprintf("inflight-shutdown-%s", uniqueSuffix)
 
-			analysis := &aianalysisv1alpha1.AIAnalysis{
+			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      analysisName,
 					Namespace: testNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: fmt.Sprintf("rem-%s", uniqueSuffix),
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("shutdown-test-%s", uniqueSuffix),
 							Severity:         "critical",
 							SignalName:       "TestSignal",
 							Environment:      "test",
 							BusinessPriority: "P1",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod",
 								Namespace: testNamespace,
@@ -109,7 +109,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 								},
 							},
 						},
-						AnalysisTypes: []string{"incident-analysis"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -129,9 +129,9 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 				}
 				return analysis.Status.Phase
 			}, 30*time.Second, 1*time.Second).Should(Or(
-				Equal(aianalysisv1alpha1.PhaseInvestigating),
-				Equal(aianalysisv1alpha1.PhaseAnalyzing),
-				Equal(aianalysisv1alpha1.PhaseCompleted), // May complete quickly
+				Equal(aianalysisv1.PhaseInvestigating),
+				Equal(aianalysisv1.PhaseAnalyzing),
+				Equal(aianalysisv1.PhaseCompleted), // May complete quickly
 			), "Should start analysis")
 
 			// Simulate shutdown by cancelling context (in real shutdown, manager stops reconciliation)
@@ -150,8 +150,8 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 				}
 				return analysis.Status.Phase
 			}, 60*time.Second, 2*time.Second).Should(Or(
-				Equal(aianalysisv1alpha1.PhaseCompleted),
-				Equal(aianalysisv1alpha1.PhaseFailed),
+				Equal(aianalysisv1.PhaseCompleted),
+				Equal(aianalysisv1.PhaseFailed),
 			), "Should complete analysis before shutdown")
 
 			// CORRECTNESS VALIDATION: Analysis fully recorded
@@ -177,21 +177,21 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 
 			analysisName := fmt.Sprintf("post-shutdown-%s", uniqueSuffix)
 
-			analysis := &aianalysisv1alpha1.AIAnalysis{
+			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      analysisName,
 					Namespace: testNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: fmt.Sprintf("rem-%s", uniqueSuffix),
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("post-shutdown-%s", uniqueSuffix),
 							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
 							SignalName:       "TestSignal",
 							Environment:      "test",
 							BusinessPriority: "P3",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod",
 								Namespace: testNamespace,
@@ -202,7 +202,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 								},
 							},
 						},
-						AnalysisTypes: []string{"incident-analysis"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -222,8 +222,8 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 				}
 				return analysis.Status.Phase
 			}, 60*time.Second, 2*time.Second).Should(Or(
-				Equal(aianalysisv1alpha1.PhaseCompleted),
-				Equal(aianalysisv1alpha1.PhaseFailed),
+				Equal(aianalysisv1.PhaseCompleted),
+				Equal(aianalysisv1.PhaseFailed),
 			), "Normal operation: analysis should complete (SIGTERM behavior would be tested in E2E)")
 
 			GinkgoWriter.Printf("✅ Normal operation validated (full shutdown would be tested in E2E)\n")
@@ -251,21 +251,21 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 
 			analysisName := fmt.Sprintf("audit-flush-%s", uniqueSuffix)
 
-			analysis := &aianalysisv1alpha1.AIAnalysis{
+			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      analysisName,
 					Namespace: testNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: fmt.Sprintf("rem-%s", uniqueSuffix),
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("audit-test-%s", uniqueSuffix),
 							Severity:         "critical",
 							SignalName:       "AuditTest",
 							Environment:      "test",
 							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "audit-test-pod",
 								Namespace: testNamespace,
@@ -276,7 +276,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 								},
 							},
 						},
-						AnalysisTypes: []string{"incident-analysis"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -295,8 +295,8 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 				}
 				return analysis.Status.Phase
 			}, 60*time.Second, 2*time.Second).Should(Or(
-				Equal(aianalysisv1alpha1.PhaseCompleted),
-				Equal(aianalysisv1alpha1.PhaseFailed),
+				Equal(aianalysisv1.PhaseCompleted),
+				Equal(aianalysisv1.PhaseFailed),
 			), "Analysis should complete and generate audit events")
 
 			// BEHAVIOR VALIDATION: Audit events persisted to Data Storage

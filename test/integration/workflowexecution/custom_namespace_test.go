@@ -134,9 +134,8 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 			Expect(err).ToNot(HaveOccurred(), "PipelineRun should exist in ExecutionNamespace")
 			Expect(foundPR.Namespace).To(Equal(WorkflowExecutionNS), "PipelineRun should be in kubernaut-workflows")
 
-			By("Verifying ServiceAccount is correct in ExecutionNamespace")
-			// PipelineRun should reference the ServiceAccount in the execution namespace
-			Expect(foundPR.Spec.TaskRunTemplate.ServiceAccountName).To(Equal("kubernaut-workflow-runner"))
+			By("Verifying no platform default SA is injected on PipelineRun (DD-WE-005 v2)")
+			Expect(foundPR.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty())
 
 			By("Verifying WFE tracks PipelineRun correctly (cross-namespace)")
 			// WFE in "default" should track PipelineRun in "kubernaut-workflows"

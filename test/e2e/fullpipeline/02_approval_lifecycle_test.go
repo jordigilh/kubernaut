@@ -177,7 +177,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		for i := range spList.Items {
 			sp := &spList.Items[i]
 			if sp.Spec.RemediationRequestRef.Name == remediationRequest.Name {
-				Expect(sp.Status.EnvironmentClassification.Environment).To(Equal("production"),
+				Expect(sp.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1.EnvironmentProduction),
 					"SP should classify namespace as production (kubernaut.ai/environment label)")
 				Expect(sp.Status.EnvironmentClassification.Source).To(Equal("namespace-labels"),
 					"SP should classify from namespace labels when kubernaut.ai/environment is set")

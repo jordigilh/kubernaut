@@ -49,7 +49,6 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // listEventsForObject returns corev1.Events for the given object name in the namespace,
@@ -358,11 +357,6 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 						},
 						FiringTime:   metav1.Now(),
 						ReceivedTime: metav1.Now(),
-						Deduplication: sharedtypes.DeduplicationInfo{
-							FirstOccurrence: metav1.Now(),
-							LastOccurrence:  metav1.Now(),
-							OccurrenceCount: 1,
-						},
 					},
 				}
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -407,11 +401,6 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 					},
 					FiringTime:   metav1.Now(),
 					ReceivedTime: metav1.Now(),
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: metav1.Now(),
-						LastOccurrence:  metav1.Now(),
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr4)).To(Succeed())

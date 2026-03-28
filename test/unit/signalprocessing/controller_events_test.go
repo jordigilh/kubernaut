@@ -330,11 +330,11 @@ var _ = Describe("SignalProcessing Controller K8s Events [DD-EVENT-001]", func()
 					},
 				},
 					EnvironmentClassification: &signalprocessingv1alpha1.EnvironmentClassification{
-						Environment: "production",
+						Environment: signalprocessingv1alpha1.EnvironmentProduction,
 						Source:      "mock",
 					},
 					PriorityAssignment: &signalprocessingv1alpha1.PriorityAssignment{
-						Priority: "P1",
+						Priority: signalprocessingv1alpha1.PriorityP1,
 						Source:   "mock",
 					},
 				},

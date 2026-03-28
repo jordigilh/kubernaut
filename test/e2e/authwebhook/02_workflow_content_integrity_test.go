@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // buildRemediationWorkflowCRD constructs a RemediationWorkflow CRD object.
@@ -161,7 +162,7 @@ var _ = Describe("Workflow Content Integrity E2E Tests (BR-WORKFLOW-006)", Seria
 				"CRD creation should be allowed by the webhook")
 
 			updatedRW := waitForCRDStatus(crdName, 30*time.Second)
-			Expect(updatedRW.Status.CatalogStatus).To(Equal("active"),
+			Expect(updatedRW.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive),
 				"CRD .status.catalogStatus should be 'active' after registration")
 		})
 	})
@@ -184,8 +185,8 @@ var _ = Describe("Workflow Content Integrity E2E Tests (BR-WORKFLOW-006)", Seria
 
 			Eventually(func() string {
 				return queryDSWorkflowStatus(dsWorkflowID)
-			}, 30*time.Second, 2*time.Second).Should(Equal("disabled"),
-				"DS workflow status should be 'disabled' after CRD deletion")
+			}, 30*time.Second, 2*time.Second).Should(Equal("Disabled"),
+				"DS workflow status should be 'Disabled' after CRD deletion")
 		})
 	})
 
@@ -212,7 +213,7 @@ var _ = Describe("Workflow Content Integrity E2E Tests (BR-WORKFLOW-006)", Seria
 			updatedRW2 := waitForCRDStatus(crdName, 30*time.Second)
 			Expect(updatedRW2.Status.WorkflowID).To(Equal(originalUUID),
 				"Re-enabled workflow should have the original UUID")
-			Expect(updatedRW2.Status.CatalogStatus).To(Equal("active"),
+			Expect(updatedRW2.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive),
 				"Re-enabled workflow should have status 'active'")
 		})
 	})
@@ -240,7 +241,7 @@ var _ = Describe("Workflow Content Integrity E2E Tests (BR-WORKFLOW-006)", Seria
 			updatedRW2 := waitForCRDStatus(crdName, 30*time.Second)
 			Expect(updatedRW2.Status.WorkflowID).ToNot(Equal(originalUUID),
 				"Different content should produce a new UUID")
-			Expect(updatedRW2.Status.CatalogStatus).To(Equal("active"),
+			Expect(updatedRW2.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive),
 				"New workflow should have status 'active'")
 		})
 	})

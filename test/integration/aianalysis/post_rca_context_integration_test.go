@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
@@ -57,41 +57,41 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 	)
 
 	// newIncidentAnalysis creates a standard AIAnalysis CR for incident tests.
-	newIncidentAnalysis := func(suffix string) *aianalysisv1alpha1.AIAnalysis {
+	newIncidentAnalysis := func(suffix string) *aianalysisv1.AIAnalysis {
 		rrName := helpers.UniqueTestName("remediation-" + suffix)
-		return &aianalysisv1alpha1.AIAnalysis{
+		return &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      helpers.UniqueTestName("it-aa-056-" + suffix),
 				Namespace: testNamespace,
 			},
-			Spec: aianalysisv1alpha1.AIAnalysisSpec{
+			Spec: aianalysisv1.AIAnalysisSpec{
 				RemediationRequestRef: corev1.ObjectReference{
 					Name:      rrName,
 					Namespace: testNamespace,
 				},
 				RemediationID: rrName,
-				AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-					SignalContext: aianalysisv1alpha1.SignalContextInput{
+				AnalysisRequest: aianalysisv1.AnalysisRequest{
+					SignalContext: aianalysisv1.SignalContextInput{
 						Fingerprint:      "fp-it-aa-056-" + suffix,
 						Severity:         "critical",
 						SignalName:       "CrashLoopBackOff",
 						Environment:      "staging",
 						BusinessPriority: "P1",
-						TargetResource: aianalysisv1alpha1.TargetResource{
+						TargetResource: aianalysisv1.TargetResource{
 							Kind:      "Pod",
 							Name:      "test-app",
 							Namespace: testNamespace,
 						},
 						EnrichmentResults: sharedtypes.EnrichmentResults{},
 					},
-					AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
 				},
 			},
 		}
 	}
 
 	// waitForTerminalPhase waits until the AIAnalysis CR reaches a terminal phase.
-	waitForTerminalPhase := func(analysis *aianalysisv1alpha1.AIAnalysis) {
+	waitForTerminalPhase := func(analysis *aianalysisv1.AIAnalysis) {
 		Eventually(func() string {
 			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
 			return string(analysis.Status.Phase)

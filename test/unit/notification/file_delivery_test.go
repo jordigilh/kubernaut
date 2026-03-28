@@ -261,10 +261,10 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 					Namespace: "default",
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Subject: "Metadata Preservation Test",
-					Body:    "Testing metadata field preservation for audit correlation",
-					Metadata: map[string]string{
-						"severity":               "critical",
+					Subject:  "Metadata Preservation Test",
+					Body:     "Testing metadata field preservation for audit correlation",
+					Severity: "critical",
+					Extensions: map[string]string{
 						"remediationRequestName": "rr-pod-crash-abc123",
 						"cluster":                "production",
 						"environment":            "prod",
@@ -283,13 +283,13 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			var saved notificationv1alpha1.NotificationRequest
 			Expect(json.Unmarshal(data, &saved)).To(Succeed())
 
-			// CORRECTNESS: Metadata map preserved (BR-NOT-064)
-			Expect(saved.Spec.Metadata).ToNot(BeNil(), "Metadata map must not be nil when explicitly set")
-			Expect(saved.Spec.Metadata).To(HaveLen(4), "All metadata fields must be preserved")
-			Expect(saved.Spec.Metadata["severity"]).To(Equal("critical"), "severity field must be preserved")
-			Expect(saved.Spec.Metadata["remediationRequestName"]).To(Equal("rr-pod-crash-abc123"), "remediationRequestName field must be preserved for audit correlation")
-			Expect(saved.Spec.Metadata["cluster"]).To(Equal("production"), "cluster field must be preserved")
-			Expect(saved.Spec.Metadata["environment"]).To(Equal("prod"), "environment field must be preserved")
+			// CORRECTNESS: Spec severity and extensions preserved (BR-NOT-064)
+			Expect(saved.Spec.Severity).To(Equal("critical"), "severity must be preserved on spec")
+			Expect(saved.Spec.Extensions).ToNot(BeNil(), "Extensions map must not be nil when explicitly set")
+			Expect(saved.Spec.Extensions).To(HaveLen(3), "All extension fields must be preserved")
+			Expect(saved.Spec.Extensions["remediationRequestName"]).To(Equal("rr-pod-crash-abc123"), "remediationRequestName field must be preserved for audit correlation")
+			Expect(saved.Spec.Extensions["cluster"]).To(Equal("production"), "cluster field must be preserved")
+			Expect(saved.Spec.Extensions["environment"]).To(Equal("prod"), "environment field must be preserved")
 		})
 
 		It("should handle nil metadata gracefully (optional field)", func() {
@@ -300,9 +300,8 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 					Namespace: "default",
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Subject:  "No Metadata Test",
-					Body:     "Testing nil metadata handling",
-					Metadata: nil, // Explicitly nil (optional field)
+					Subject: "No Metadata Test",
+					Body:    "Testing nil metadata handling",
 				},
 			}
 

@@ -33,7 +33,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -122,33 +122,33 @@ var _ = Describe("E2E-AA ADR-056 DetectedLabels", Label("e2e", "adr-056", "detec
 
 	// newAnalysisCR creates an AIAnalysis CR. ADR-057: AIAnalysis lives in kubernaut-system.
 	// TargetResource.Namespace stays as testNS (where Deployment/PDB exist for label detection).
-	newAnalysisCR := func(suffix, deployName string) *aianalysisv1alpha1.AIAnalysis {
-		return &aianalysisv1alpha1.AIAnalysis{
+	newAnalysisCR := func(suffix, deployName string) *aianalysisv1.AIAnalysis {
+		return &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-aa-056-" + suffix + "-" + randomSuffix(),
 				Namespace: controllerNamespace,
 			},
-			Spec: aianalysisv1alpha1.AIAnalysisSpec{
+			Spec: aianalysisv1.AIAnalysisSpec{
 				RemediationRequestRef: corev1.ObjectReference{
 					Name:      "e2e-rr-" + suffix,
 					Namespace: controllerNamespace,
 				},
 				RemediationID: "e2e-rem-056-" + suffix,
-				AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-					SignalContext: aianalysisv1alpha1.SignalContextInput{
+				AnalysisRequest: aianalysisv1.AnalysisRequest{
+					SignalContext: aianalysisv1.SignalContextInput{
 						Fingerprint:      "e2e-fp-056-" + suffix,
 						Severity:         "critical",
 						SignalName:       "CrashLoopBackOff",
 						Environment:      "production",
 						BusinessPriority: "P0",
-						TargetResource: aianalysisv1alpha1.TargetResource{
+						TargetResource: aianalysisv1.TargetResource{
 							Kind:      "Deployment",
 							Name:      deployName,
 							Namespace: testNS,
 						},
 						EnrichmentResults: sharedtypes.EnrichmentResults{},
 					},
-					AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
 				},
 			},
 		}

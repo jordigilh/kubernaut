@@ -47,7 +47,6 @@ import (
 // Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)
 // Validates that signals from different namespaces are isolated:
 // - CRDs are created in the correct namespace
-// - Storm buffers are isolated per namespace
 // - Deduplication is scoped to namespace
 //
 // Business Requirements:
@@ -117,7 +116,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (Integration)", Ordered, La
 		// Use same signal name for both namespaces to test isolation
 		signalName := fmt.Sprintf("IsolationTest-%s", uuid.New().String()[:8])
 
-		// Step 1: Send signals to namespace 1 - enough to trigger storm threshold
+		// Step 1: Send multiple signals to namespace 1
 		testLogger.Info("Step 1: Send 10 signals to namespace 1")
 
 		for i := 0; i < 10; i++ {
@@ -141,7 +140,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (Integration)", Ordered, La
 		}
 		testLogger.Info("  ✅ Sent 10 signals to namespace 1")
 
-		// Step 2: Send signals to namespace 2 - enough to trigger storm threshold
+		// Step 2: Send multiple signals to namespace 2
 		testLogger.Info("")
 		testLogger.Info("Step 2: Send 10 signals to namespace 2")
 

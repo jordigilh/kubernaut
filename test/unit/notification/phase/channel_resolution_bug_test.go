@@ -70,7 +70,7 @@ var _ = Describe("#263: Channel Resolution Variable Shadowing Bug", func() {
 			Expect(decision.NextPhase).ToNot(Equal(notificationphase.Sent),
 				"#263: Zero channels must NOT produce Sent — this masks delivery failures. "+
 					"Current bug: totalSuccessful(0) == totalChannels(0) returns true.")
-			Expect(decision.Reason).ToNot(Equal("AllDeliveriesSucceeded"),
+			Expect(decision.Reason).ToNot(Equal(string(notificationv1.StatusReasonAllDeliveriesSucceeded)),
 				"#263: 0 successful deliveries to 0 channels is NOT 'all deliveries succeeded'")
 		})
 
@@ -104,7 +104,7 @@ var _ = Describe("#263: Channel Resolution Variable Shadowing Bug", func() {
 
 			Expect(decision.NextPhase).To(Equal(notificationphase.Failed),
 				"#263: Empty channel list must transition to Failed, not Sent")
-			Expect(decision.Reason).To(Equal("NoChannelsResolved"),
+			Expect(decision.Reason).To(Equal(string(notificationv1.StatusReasonNoChannelsResolved)),
 				"#263: Reason must indicate no channels were resolved for delivery")
 			Expect(decision.IsTerminal).To(BeTrue())
 			Expect(decision.IsPermanentFailure).To(BeTrue())
@@ -143,8 +143,8 @@ var _ = Describe("#263: Channel Resolution Variable Shadowing Bug", func() {
 				},
 				FailureCount: 0,
 				DeliveryAttempts: []notificationv1.DeliveryAttempt{
-					{Channel: "slack:default-console", Status: "success", Attempt: 1, Timestamp: metav1.Now()},
-					{Channel: "console", Status: "success", Attempt: 1, Timestamp: metav1.Now()},
+					{Channel: notificationv1.DeliveryChannelName("slack:default-console"), Status: notificationv1.DeliveryAttemptStatusSuccess, Attempt: 1, Timestamp: metav1.Now()},
+					{Channel: notificationv1.DeliveryChannelName("console"), Status: notificationv1.DeliveryAttemptStatusSuccess, Attempt: 1, Timestamp: metav1.Now()},
 				},
 			}
 
@@ -159,7 +159,7 @@ var _ = Describe("#263: Channel Resolution Variable Shadowing Bug", func() {
 
 			Expect(decision.NextPhase).To(Equal(notificationphase.Sent),
 				"Both routing-resolved channels succeeded → Sent")
-			Expect(decision.Reason).To(Equal("AllDeliveriesSucceeded"))
+			Expect(decision.Reason).To(Equal(string(notificationv1.StatusReasonAllDeliveriesSucceeded)))
 			Expect(decision.Message).To(ContainSubstring("2 channel(s)"),
 				"Message must reflect the 2 routing-resolved channels, not 0")
 			Expect(decision.IsTerminal).To(BeTrue())
@@ -202,8 +202,8 @@ var _ = Describe("#263: Channel Resolution Variable Shadowing Bug", func() {
 				},
 				FailureCount: 1,
 				DeliveryAttempts: []notificationv1.DeliveryAttempt{
-					{Channel: "console", Status: "success", Attempt: 1, Timestamp: metav1.Now()},
-					{Channel: "slack:default-console", Status: "failed", Error: "webhook returned 403", Attempt: 1, Timestamp: metav1.Now()},
+					{Channel: notificationv1.DeliveryChannelName("console"), Status: notificationv1.DeliveryAttemptStatusSuccess, Attempt: 1, Timestamp: metav1.Now()},
+					{Channel: notificationv1.DeliveryChannelName("slack:default-console"), Status: notificationv1.DeliveryAttemptStatusFailed, Error: "webhook returned 403", Attempt: 1, Timestamp: metav1.Now()},
 				},
 			}
 

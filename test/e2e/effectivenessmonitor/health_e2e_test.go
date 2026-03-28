@@ -49,6 +49,8 @@ var _ = Describe("EffectivenessMonitor Health Check E2E Tests", Label("e2e"), fu
 
 		By("Seeding workflowexecution.execution.started event (no_execution guard)")
 		seedWorkflowStartedEvent(correlationID)
+		By("Seeding workflowexecution.workflow.completed event (full scope, #573 G4)")
+		seedWorkflowCompletedEvent(correlationID)
 
 		// The target pod "nonexistent-pod" does not exist in the namespace,
 		// so the health check should produce a score of 0.0.

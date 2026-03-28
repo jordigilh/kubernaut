@@ -167,7 +167,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 					Priority: notificationv1.NotificationPriorityCritical,
 					Subject:  "Approval Expired for " + rrName,
 					Body:     "RemediationApprovalRequest " + rarName + " has expired without decision.",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"remediationApprovalRequest": rarName,
 					},
 				},
@@ -180,7 +180,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 			}, timeout, interval).Should(BeTrue())
 
 			Expect(nr.Spec.RemediationRequestRef).To(HaveField("Name", Equal(rrName)))
-			Expect(nr.Spec.Metadata).To(HaveKeyWithValue("remediationApprovalRequest", rarName))
+			Expect(nr.Spec.Extensions).To(HaveKeyWithValue("remediationApprovalRequest", rarName))
 		})
 	})
 
@@ -217,7 +217,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 					return err
 				}
 				rr.Status.OverallPhase = remediationv1.PhaseSkipped
-				rr.Status.SkipReason = "AI confidence below threshold (0.65 < 0.70)"
+				rr.Status.SkipReason = remediationv1.SkipReasonExhaustedRetries
 				return k8sClient.Status().Update(ctx, rr)
 			}, timeout, interval).Should(Succeed())
 
@@ -236,7 +236,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 					Type:     notificationv1.NotificationTypeManualReview,
 					Priority: notificationv1.NotificationPriorityHigh,
 					Subject:  "Workflow Skipped for " + rrName,
-					Body:     "RemediationRequest " + rrName + " skipped due to: " + rr.Status.SkipReason,
+					Body:     "RemediationRequest " + rrName + " skipped due to: " + string(rr.Status.SkipReason),
 				},
 			}
 			Expect(k8sClient.Create(ctx, nr)).To(Succeed())

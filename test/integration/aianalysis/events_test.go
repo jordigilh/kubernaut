@@ -39,7 +39,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
@@ -83,32 +83,32 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 		It("should emit AIAnalysisCreated, InvestigationComplete, AnalysisCompleted in order when lifecycle completes", func() {
 			rrName := helpers.UniqueTestName("test-remediation")
 			analysisName := helpers.UniqueTestName("integration-events-happy")
-			analysis := &aianalysisv1alpha1.AIAnalysis{
+			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      analysisName,
 					Namespace: testNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      rrName,
 						Namespace: testNamespace,
 					},
 					RemediationID: rrName,
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-events-001",
 							Severity:         "medium",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod",
 								Namespace: testNamespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
 					},
 				},
 			}
@@ -156,32 +156,32 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 			// The AA controller detects the failed session and moves to Failed phase.
 			rrName := helpers.UniqueTestName("test-remediation-fail")
 			analysisName := helpers.UniqueTestName("integration-events-fail")
-			analysis := &aianalysisv1alpha1.AIAnalysis{
+			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      analysisName,
 					Namespace: testNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      rrName,
 						Namespace: testNamespace,
 					},
 					RemediationID: rrName,
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-events-fail",
 							Severity:         "medium",
 							SignalName:       "MOCK_RCA_PERMANENT_ERROR",
 							Environment:      "staging",
 							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod",
 								Namespace: testNamespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -223,32 +223,32 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 			// environment triggers the human review flow.
 			rrName := helpers.UniqueTestName("test-remediation-hr")
 			analysisName := helpers.UniqueTestName("integration-events-hr")
-			analysis := &aianalysisv1alpha1.AIAnalysis{
+			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      analysisName,
 					Namespace: testNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      rrName,
 						Namespace: testNamespace,
 					},
 					RemediationID: rrName,
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-events-hr",
 							Severity:         "critical",
 							SignalName:       "MOCK_NO_WORKFLOW_FOUND",
 							Environment:      "production",
 							BusinessPriority: "P1",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "failing-pod",
 								Namespace: testNamespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"incident-analysis", "workflow-selection"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeWorkflowSelection},
 					},
 				},
 			}
@@ -293,32 +293,32 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 		It("should emit SessionCreated event when HAPI investigation session is submitted", func() {
 			rrName := helpers.UniqueTestName("test-remediation-session")
 			analysisName := helpers.UniqueTestName("integration-events-session-created")
-			analysis := &aianalysisv1alpha1.AIAnalysis{
+			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      analysisName,
 					Namespace: testNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      rrName,
 						Namespace: testNamespace,
 					},
 					RemediationID: rrName,
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-session-created",
 							Severity:         "medium",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod-session",
 								Namespace: testNamespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
 					},
 				},
 			}

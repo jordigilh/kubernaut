@@ -30,7 +30,6 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // E2E Tests for BR-HAPI-197: Human Review Required Flag
@@ -88,11 +87,6 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -103,67 +97,67 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				return k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
 			}, timeout, interval).Should(Succeed())
 
-		By("Waiting for RO to create SignalProcessing CRD")
-		var sp *signalprocessingv1.SignalProcessing
-		Eventually(func() bool {
-			spList := &signalprocessingv1.SignalProcessingList{}
-			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
-			for i := range spList.Items {
-				if len(spList.Items[i].OwnerReferences) > 0 &&
-					spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
-					spList.Items[i].OwnerReferences[0].Name == rr.Name {
-					sp = &spList.Items[i]
-					return true
+			By("Waiting for RO to create SignalProcessing CRD")
+			var sp *signalprocessingv1.SignalProcessing
+			Eventually(func() bool {
+				spList := &signalprocessingv1.SignalProcessingList{}
+				_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
+				for i := range spList.Items {
+					if len(spList.Items[i].OwnerReferences) > 0 &&
+						spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						spList.Items[i].OwnerReferences[0].Name == rr.Name {
+						sp = &spList.Items[i]
+						return true
+					}
 				}
+				return false
+			}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created by RO")
+
+			By("Manually updating SignalProcessing status to Completed (simulating SP controller)")
+			sp.Status.Phase = signalprocessingv1.PhaseCompleted
+			sp.Status.Severity = "critical"
+			sp.Status.SignalMode = "reactive"
+			sp.Status.SignalName = sp.Spec.Signal.Name
+			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
+				Environment:  signalprocessingv1.EnvironmentProduction,
+				Source:       "namespace-labels",
+				ClassifiedAt: metav1.Now(),
 			}
-			return false
-		}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created by RO")
+			sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
+				Priority:   signalprocessingv1.PriorityP1,
+				Source:     "rego-policy",
+				AssignedAt: metav1.Now(),
+			}
+			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
-		By("Manually updating SignalProcessing status to Completed (simulating SP controller)")
-		sp.Status.Phase = signalprocessingv1.PhaseCompleted
-		sp.Status.Severity = "critical"
-		sp.Status.SignalMode = "reactive"
-		sp.Status.SignalName = sp.Spec.Signal.Name
-		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
-			Environment:  "production",
-			Source:       "namespace-labels",
-			ClassifiedAt: metav1.Now(),
-		}
-		sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
-			Priority:   "P1",
-			Source:     "rego-policy",
-			AssignedAt: metav1.Now(),
-		}
-		Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
-
-		By("Waiting for RO to create AIAnalysis CRD")
-		var analysis *aianalysisv1.AIAnalysis
-		Eventually(func() bool {
-			analysisList := &aianalysisv1.AIAnalysisList{}
-			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
-			for i := range analysisList.Items {
-				if len(analysisList.Items[i].OwnerReferences) > 0 &&
-					analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
-					analysisList.Items[i].OwnerReferences[0].Name == rr.Name {
-					analysis = &analysisList.Items[i]
-					return true
+			By("Waiting for RO to create AIAnalysis CRD")
+			var analysis *aianalysisv1.AIAnalysis
+			Eventually(func() bool {
+				analysisList := &aianalysisv1.AIAnalysisList{}
+				_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
+				for i := range analysisList.Items {
+					if len(analysisList.Items[i].OwnerReferences) > 0 &&
+						analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						analysisList.Items[i].OwnerReferences[0].Name == rr.Name {
+						analysis = &analysisList.Items[i]
+						return true
+					}
 				}
-			}
-			return false
-		}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
+				return false
+			}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
 
-		By("Manually updating AIAnalysis status with needsHumanReview=true (simulating HAPI response)")
-		analysis.Status.Phase = aianalysisv1.PhaseFailed
-		analysis.Status.Reason = "WorkflowResolutionFailed"
-		analysis.Status.NeedsHumanReview = true
-		analysis.Status.HumanReviewReason = "rca_incomplete"
-		analysis.Status.Message = "RCA analysis incomplete: missing remediationTarget field in incident data"
-		Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
+			By("Manually updating AIAnalysis status with needsHumanReview=true (simulating HAPI response)")
+			analysis.Status.Phase = aianalysisv1.PhaseFailed
+			analysis.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
+			analysis.Status.NeedsHumanReview = true
+			analysis.Status.HumanReviewReason = "rca_incomplete"
+			analysis.Status.Message = "RCA analysis incomplete: missing remediationTarget field in incident data"
+			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
 			By("Validating AIAnalysis status fields")
 			Expect(analysis.Status.NeedsHumanReview).To(BeTrue(), "NeedsHumanReview must be true")
 			Expect(analysis.Status.HumanReviewReason).To(Equal("rca_incomplete"), "HumanReviewReason must match Mock LLM scenario")
-			Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"), "Reason should be WorkflowResolutionFailed")
+			Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed), "Reason should be WorkflowResolutionFailed")
 			Expect(analysis.Status.Message).To(ContainSubstring("remediationTarget"), "Message should explain missing remediationTarget")
 
 			By("Waiting for RO to create NotificationRequest")
@@ -186,8 +180,8 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			Expect(notification.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview), "Notification type must be ManualReview")
 			Expect(notification.Spec.Subject).To(ContainSubstring("Manual Review Required"), "Subject should indicate manual review")
 			Expect(notification.Spec.Body).To(ContainSubstring("Review Required"), "Body should mention manual review")
-			Expect(notification.Spec.Metadata).To(HaveKeyWithValue("humanReviewReason", "rca_incomplete"), "Metadata must include humanReviewReason")
-			Expect(notification.Spec.Metadata).To(HaveKey("remediationRequest"), "Metadata must reference RemediationRequest")
+			Expect(notification.Spec.Context.Review.HumanReviewReason).To(Equal("rca_incomplete"), "Context must include humanReviewReason")
+			Expect(notification.Spec.Context.Lineage.RemediationRequest).To(Equal(rr.Name), "Context must reference RemediationRequest")
 
 			By("Validating RemediationRequest status (#550: no-workflow ManualReviewRequired → Completed)")
 			updatedRR := &remediationv1.RemediationRequest{}
@@ -211,9 +205,9 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				return count
 			}, 10*time.Second, interval).Should(Equal(0), "NO WorkflowExecution should exist - remediation blocked")
 
-		// Note: Audit trail validation for "orchestrator.routing.human_review" event
-		// is deferred to a future sprint. The core business logic (NotificationRequest
-		// creation and WorkflowExecution blocking) has been validated above.
+			// Note: Audit trail validation for "orchestrator.routing.human_review" event
+			// is deferred to a future sprint. The core business logic (NotificationRequest
+			// creation and WorkflowExecution blocking) has been validated above.
 		})
 	})
 
@@ -244,11 +238,6 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -259,80 +248,80 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				return k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
 			}, timeout, interval).Should(Succeed())
 
-		By("Waiting for RO to create SignalProcessing CRD")
-		var sp *signalprocessingv1.SignalProcessing
-		Eventually(func() bool {
-			spList := &signalprocessingv1.SignalProcessingList{}
-			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
-			for i := range spList.Items {
-				if len(spList.Items[i].OwnerReferences) > 0 &&
-					spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
-					spList.Items[i].OwnerReferences[0].Name == rr.Name {
-					sp = &spList.Items[i]
-					return true
+			By("Waiting for RO to create SignalProcessing CRD")
+			var sp *signalprocessingv1.SignalProcessing
+			Eventually(func() bool {
+				spList := &signalprocessingv1.SignalProcessingList{}
+				_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
+				for i := range spList.Items {
+					if len(spList.Items[i].OwnerReferences) > 0 &&
+						spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						spList.Items[i].OwnerReferences[0].Name == rr.Name {
+						sp = &spList.Items[i]
+						return true
+					}
 				}
+				return false
+			}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created by RO")
+
+			By("Manually updating SignalProcessing status to Completed (simulating SP controller)")
+			sp.Status.Phase = signalprocessingv1.PhaseCompleted
+			sp.Status.Severity = "critical"
+			sp.Status.SignalMode = "reactive"
+			sp.Status.SignalName = sp.Spec.Signal.Name
+			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
+				Environment:  signalprocessingv1.EnvironmentProduction,
+				Source:       "namespace-labels",
+				ClassifiedAt: metav1.Now(),
 			}
-			return false
-		}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created by RO")
+			sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
+				Priority:   signalprocessingv1.PriorityP1,
+				Source:     "rego-policy",
+				AssignedAt: metav1.Now(),
+			}
+			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
-		By("Manually updating SignalProcessing status to Completed (simulating SP controller)")
-		sp.Status.Phase = signalprocessingv1.PhaseCompleted
-		sp.Status.Severity = "critical"
-		sp.Status.SignalMode = "reactive"
-		sp.Status.SignalName = sp.Spec.Signal.Name
-		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
-			Environment:  "production",
-			Source:       "namespace-labels",
-			ClassifiedAt: metav1.Now(),
-		}
-		sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
-			Priority:   "P1",
-			Source:     "rego-policy",
-			AssignedAt: metav1.Now(),
-		}
-		Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
-
-		By("Waiting for RO to create AIAnalysis CRD")
-		var analysis *aianalysisv1.AIAnalysis
-		Eventually(func() bool {
-			analysisList := &aianalysisv1.AIAnalysisList{}
-			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
-			for i := range analysisList.Items {
-				if len(analysisList.Items[i].OwnerReferences) > 0 &&
-					analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
-					analysisList.Items[i].OwnerReferences[0].Name == rr.Name {
-					analysis = &analysisList.Items[i]
-					return true
+			By("Waiting for RO to create AIAnalysis CRD")
+			var analysis *aianalysisv1.AIAnalysis
+			Eventually(func() bool {
+				analysisList := &aianalysisv1.AIAnalysisList{}
+				_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
+				for i := range analysisList.Items {
+					if len(analysisList.Items[i].OwnerReferences) > 0 &&
+						analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						analysisList.Items[i].OwnerReferences[0].Name == rr.Name {
+						analysis = &analysisList.Items[i]
+						return true
+					}
 				}
-			}
-			return false
-		}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
+				return false
+			}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
 
-		By("Manually updating AIAnalysis status with needsHumanReview=false (simulating HAPI response)")
-		analysis.Status.Phase = aianalysisv1.PhaseCompleted
-		analysis.Status.Reason = "AnalysisCompleted"
-		analysis.Status.NeedsHumanReview = false
-		analysis.Status.HumanReviewReason = ""
-		analysis.Status.Message = "Workflow recommended: restart-pod-v1"
-		analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:     "restart-pod-v1",
-			Version:        "1.0.0",
-			ExecutionBundle: "quay.io/kubernaut/restart-pod:v1",
-			Confidence:     0.95,
-			Rationale:      "High confidence workflow match for pod restart scenario",
-		}
-		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
-		analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-			Summary:    "OOM kill detected on pod",
-			Severity:   "critical",
-			SignalType: "alert",
-			RemediationTarget: &aianalysisv1.RemediationTarget{
-				Kind:      "Pod",
-				Name:      "test-pod-oomkilled",
-				Namespace: testNS,
-			},
-		}
-		Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
+			By("Manually updating AIAnalysis status with needsHumanReview=false (simulating HAPI response)")
+			analysis.Status.Phase = aianalysisv1.PhaseCompleted
+			analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
+			analysis.Status.NeedsHumanReview = false
+			analysis.Status.HumanReviewReason = ""
+			analysis.Status.Message = "Workflow recommended: restart-pod-v1"
+			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+				WorkflowID:      "restart-pod-v1",
+				Version:         "1.0.0",
+				ExecutionBundle: "quay.io/kubernaut/restart-pod:v1",
+				Confidence:      0.95,
+				Rationale:       "High confidence workflow match for pod restart scenario",
+			}
+			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
+			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary:    "OOM kill detected on pod",
+				Severity:   "critical",
+				SignalType: "alert",
+				RemediationTarget: &aianalysisv1.RemediationTarget{
+					Kind:      "Pod",
+					Name:      "test-pod-oomkilled",
+					Namespace: testNS,
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
 			By("Validating AIAnalysis status (needs_human_review=false)")
 			Expect(analysis.Status.NeedsHumanReview).To(BeFalse(), "NeedsHumanReview must be false for normal flow")

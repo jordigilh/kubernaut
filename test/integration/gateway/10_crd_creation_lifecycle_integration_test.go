@@ -220,7 +220,6 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 		testLogger.Info("Verified:")
 		testLogger.Info(fmt.Sprintf("  ✅ CRD created in namespace: %s", crd.Namespace))
 		testLogger.Info(fmt.Sprintf("  ✅ CRD name: %s", crd.Name))
-		testLogger.Info(fmt.Sprintf("  ✅ Affected resources: %d", len(crd.Spec.AffectedResources)))
 		testLogger.Info("  ✅ Signal fingerprint present")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})

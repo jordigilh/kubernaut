@@ -38,7 +38,6 @@ import (
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // Issue #88: NotificationRequest completion events lost for terminal-phase RemediationRequests
@@ -83,11 +82,6 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
-				Deduplication: sharedtypes.DeduplicationInfo{
-					FirstOccurrence: now,
-					LastOccurrence:  now,
-					OccurrenceCount: 1,
-				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -129,8 +123,10 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 				Priority: notificationv1.NotificationPriorityLow,
 				Subject:  "Remediation Completed",
 				Body:     "Test completion notification for terminal tracking",
-				Metadata: map[string]string{
-					"remediationRequest": rrName,
+				Context: &notificationv1.NotificationContext{
+					Lineage: &notificationv1.LineageContext{
+						RemediationRequest: rrName,
+					},
 				},
 			},
 		}
@@ -214,11 +210,6 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
-				Deduplication: sharedtypes.DeduplicationInfo{
-					FirstOccurrence: now,
-					LastOccurrence:  now,
-					OccurrenceCount: 1,
-				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -256,8 +247,10 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 				Priority: notificationv1.NotificationPriorityHigh,
 				Subject:  "Remediation Timed Out",
 				Body:     "Test timeout notification",
-				Metadata: map[string]string{
-					"remediationRequest": rrName,
+				Context: &notificationv1.NotificationContext{
+					Lineage: &notificationv1.LineageContext{
+						RemediationRequest: rrName,
+					},
 				},
 			},
 		}

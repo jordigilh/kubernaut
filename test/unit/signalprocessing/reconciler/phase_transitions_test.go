@@ -142,7 +142,7 @@ var _ = Describe("SignalProcessing Phase State Machine", func() {
 		Context("PHASE-09: initialized resource has StartTime", func() {
 			It("should have StartTime after initialization", func() {
 				sp := createTestSP(signalprocessingv1alpha1.PhasePending)
-				Expect(sp.Status.StartTime).ToNot(BeNil())
+				Expect(sp.Status.StartTime.IsZero()).To(BeFalse())
 			})
 		})
 	})
@@ -162,7 +162,6 @@ var _ = Describe("SignalProcessing Phase State Machine", func() {
 					},
 				}
 
-				Expect(sp.Status.KubernetesContext).ToNot(BeNil())
 				Expect(sp.Status.KubernetesContext.Namespace.Name).To(Equal("test-ns"))
 			})
 		})
@@ -172,18 +171,16 @@ var _ = Describe("SignalProcessing Phase State Machine", func() {
 				sp := createTestSP(signalprocessingv1alpha1.PhaseCategorizing)
 				// Simulate classification results
 				sp.Status.EnvironmentClassification = &signalprocessingv1alpha1.EnvironmentClassification{
-					Environment: "production",
+					Environment: signalprocessingv1alpha1.EnvironmentProduction,
 					Source:      "namespace-labels",
 				}
 				sp.Status.PriorityAssignment = &signalprocessingv1alpha1.PriorityAssignment{
-					Priority: "P0",
+					Priority: signalprocessingv1alpha1.PriorityP0,
 					Source:   "policy-matrix",
 				}
 
-				Expect(sp.Status.EnvironmentClassification).ToNot(BeNil())
-				Expect(sp.Status.EnvironmentClassification.Environment).To(Equal("production"))
-				Expect(sp.Status.PriorityAssignment).ToNot(BeNil())
-				Expect(sp.Status.PriorityAssignment.Priority).To(Equal("P0"))
+				Expect(sp.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentProduction))
+				Expect(sp.Status.PriorityAssignment.Priority).To(Equal(signalprocessingv1alpha1.PriorityP0))
 			})
 		})
 
@@ -193,14 +190,14 @@ var _ = Describe("SignalProcessing Phase State Machine", func() {
 				// Simulate categorization result
 				sp.Status.BusinessClassification = &signalprocessingv1alpha1.BusinessClassification{
 					BusinessUnit: "platform",
-					Criticality:  "high",
+					Criticality:  signalprocessingv1alpha1.CriticalityHigh,
 				}
 				now := metav1.Now()
 				sp.Status.CompletionTime = &now
 
-				Expect(sp.Status.BusinessClassification).ToNot(BeNil())
 				Expect(sp.Status.BusinessClassification.BusinessUnit).To(Equal("platform"))
-				Expect(sp.Status.CompletionTime).ToNot(BeNil())
+				Expect(sp.Status.BusinessClassification.Criticality).To(Equal(signalprocessingv1alpha1.CriticalityHigh))
+				Expect(sp.Status.CompletionTime.IsZero()).To(BeFalse())
 			})
 		})
 	})
@@ -227,7 +224,7 @@ var _ = Describe("SignalProcessing Phase State Machine", func() {
 				now := metav1.Now()
 				sp.Status.LastFailureTime = &now
 
-				Expect(sp.Status.LastFailureTime).ToNot(BeNil())
+				Expect(sp.Status.LastFailureTime.IsZero()).To(BeFalse())
 			})
 		})
 	})

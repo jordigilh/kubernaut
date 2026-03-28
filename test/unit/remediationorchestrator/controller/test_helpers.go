@@ -59,7 +59,7 @@ func (m *MockRoutingEngine) CheckPreAnalysisConditions(ctx context.Context, rr *
 	return nil, nil // Always return not blocked for unit tests
 }
 
-func (m *MockRoutingEngine) CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string, workflowType string) (*routing.BlockingCondition, error) {
+func (m *MockRoutingEngine) CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string, actionType string) (*routing.BlockingCondition, error) {
 	return nil, nil // Always return not blocked for unit tests
 }
 
@@ -82,6 +82,11 @@ func (m *MockRoutingEngine) CalculateExponentialBackoff(consecutiveFailures int3
 // ptr is a helper to get pointer to bool
 func ptr(b bool) *bool {
 	return &b
+}
+
+// float64Ptr is a helper to get pointer to float64
+func float64Ptr(f float64) *float64 {
+	return &f
 }
 
 // newWorkflowExecutionCompleted creates a completed WorkflowExecution CRD

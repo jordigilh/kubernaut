@@ -147,7 +147,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 					WorkflowID:   existingUUID,
 					WorkflowName: "integrity-test-wf",
 					Version:      "1.0.0",
-					Status:       "active",
+					Status:       "Active",
 					Content:      integrityBaseYAML,
 					ContentHash:  computeTestHash(integrityBaseYAML),
 				},
@@ -186,7 +186,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 					WorkflowID:   oldUUID,
 					WorkflowName: "integrity-test-wf",
 					Version:      "1.0.0",
-					Status:       "active",
+					Status:       "Active",
 					Content:      integrityBaseYAML,
 					ContentHash:  computeTestHash(integrityBaseYAML),
 				},
@@ -209,7 +209,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 			Expect(mockRepo.updateStatusCalls).To(HaveLen(1),
 				"Old workflow should have its status updated")
 			Expect(mockRepo.updateStatusCalls[0].WorkflowID).To(Equal(oldUUID))
-			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("superseded"),
+			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("Superseded"),
 				"Old workflow should be marked as superseded")
 
 			Expect(mockRepo.createdWorkflows).To(HaveLen(1),
@@ -229,7 +229,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 					WorkflowID:   disabledUUID,
 					WorkflowName: "integrity-test-wf",
 					Version:      "1.0.0",
-					Status:       "disabled",
+					Status:       "Disabled",
 					Content:      integrityBaseYAML,
 					ContentHash:  computeTestHash(integrityBaseYAML),
 				},
@@ -251,7 +251,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 
 			Expect(mockRepo.updateStatusCalls).To(HaveLen(1))
 			Expect(mockRepo.updateStatusCalls[0].WorkflowID).To(Equal(disabledUUID))
-			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("active"),
+			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("Active"),
 				"Disabled workflow should be re-enabled to active")
 
 			Expect(mockRepo.createdWorkflows).To(BeEmpty(),
@@ -271,7 +271,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 					WorkflowID:   disabledUUID,
 					WorkflowName: "integrity-test-wf",
 					Version:      "1.0.0",
-					Status:       "disabled",
+					Status:       "Disabled",
 					Content:      integrityBaseYAML,
 					ContentHash:  computeTestHash(integrityBaseYAML),
 				},
@@ -308,7 +308,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 					WorkflowID:   oldUUID,
 					WorkflowName: "integrity-test-wf",
 					Version:      "1.0.0",
-					Status:       "active",
+					Status:       "Active",
 					Content:      integrityBaseYAML,
 					ContentHash:  computeTestHash(integrityBaseYAML),
 				},
@@ -324,8 +324,8 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 
 			Expect(mockRepo.updateStatusCalls).To(HaveLen(1),
 				"Old workflow should be status-updated, not deleted")
-			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("superseded"),
-				"Old record must be marked 'superseded' — never deleted")
+			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("Superseded"),
+				"Old record must be marked 'Superseded' — never deleted")
 			Expect(mockRepo.updateStatusCalls[0].Reason).To(ContainSubstring("content hash"),
 				"Reason should reference content hash mismatch for auditability")
 		})
@@ -342,7 +342,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 					WorkflowID:   "old-uuid-006",
 					WorkflowName: "integrity-test-wf",
 					Version:      "1.0.0",
-					Status:       "active",
+					Status:       "Active",
 					Content:      integrityBaseYAML,
 					ContentHash:  computeTestHash(integrityBaseYAML),
 				},
@@ -358,7 +358,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 
 			var resp map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &resp)).To(Succeed())
-			Expect(resp["status"]).To(Equal("active"),
+			Expect(resp["status"]).To(Equal("Active"),
 				"Response should contain the new ACTIVE workflow, not the superseded one")
 		})
 	})
@@ -374,7 +374,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 					WorkflowID:   winnerUUID,
 					WorkflowName: "integrity-test-wf",
 					Version:      "1.0.0",
-					Status:       "active",
+					Status:       "Active",
 					Content:      integrityBaseYAML,
 					ContentHash:  computeTestHash(integrityBaseYAML),
 				},
@@ -420,7 +420,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 					WorkflowName: "integrity-test-wf",
 					Version:      "0.9.0",
 					ActionType:   "ScaleMemory",
-					Status:       "active",
+					Status:       "Active",
 					Content:      "old-content",
 					ContentHash:  "old-hash",
 				},
@@ -439,7 +439,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 				"Exactly one UpdateStatus call expected (supersede old)")
 			Expect(mockRepo.updateStatusCalls[0].WorkflowID).To(Equal(oldUUID),
 				"Superseded workflow should be the old version")
-			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("superseded"),
+			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("Superseded"),
 				"Old entry must be marked superseded")
 
 			Expect(mockRepo.createdWorkflows).To(HaveLen(1),
@@ -462,7 +462,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 					WorkflowName: "integrity-test-wf",
 					Version:      "1.0.0",
 					ActionType:   "ScaleMemory",
-					Status:       "active",
+					Status:       "Active",
 					Content:      integrityModifiedYAML,
 					ContentHash:  computeTestHash(integrityModifiedYAML),
 				},
@@ -478,7 +478,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 				"New version should be created (201), got %d: %s", rr.Code, rr.Body.String())
 
 			Expect(mockRepo.updateStatusCalls).To(HaveLen(1))
-			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("superseded"),
+			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("Superseded"),
 				"Old entry status should be superseded")
 			Expect(mockRepo.updateStatusCalls[0].Reason).To(ContainSubstring("superseded"),
 				"Reason should explain the supersession")
@@ -503,7 +503,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 					WorkflowID:   existingUUID,
 					WorkflowName: "integrity-test-wf",
 					Version:      "1.0.0",
-					Status:       "active",
+					Status:       "Active",
 					Content:      integrityBaseYAML,
 					ContentHash:  computeTestHash(integrityBaseYAML),
 				},

@@ -30,7 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	aaconstants "github.com/jordigilh/kubernaut/pkg/aianalysis"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
@@ -103,25 +103,25 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			// 1. Create AIAnalysis CRD (triggers business logic)
 			testID := uuid.New().String()[:8]
 			rrName := fmt.Sprintf("test-rr-%s", testID)
-			aianalysis := &aianalysisv1alpha1.AIAnalysis{
+			aianalysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("metrics-test-success-%s", testID),
 					Namespace: namespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: namespace,
 					},
 					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fp-001",
 							Severity:         "critical",
 							SignalName:       "OOMKilled",
 							Environment:      "staging",
 							BusinessPriority: "P1",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod",
 								Namespace: namespace,
@@ -129,7 +129,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						// DD-AIANALYSIS-005: v1.x single analysis type only
-						AnalysisTypes: []string{"incident-analysis"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -137,7 +137,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 
 			// 2. Wait for business outcome (reconciliation completes)
 			Eventually(func() string {
-				var updated aianalysisv1alpha1.AIAnalysis
+				var updated aianalysisv1.AIAnalysis
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
 					return ""
 				}
@@ -158,32 +158,32 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			// Note: Mock HolmesGPT client returns success, so this tests the happy path
 			testID := uuid.New().String()[:8]
 			rrName := fmt.Sprintf("test-rr-success-%s", testID)
-			aianalysis := &aianalysisv1alpha1.AIAnalysis{
+			aianalysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("metrics-test-success-%s", testID),
 					Namespace: namespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: namespace,
 					},
 					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fp-002",
 							Severity:         "critical",
 							SignalName:       "OOMKilled",
 							Environment:      "staging",
 							BusinessPriority: "P1",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "success-pod",
 								Namespace: namespace,
 							},
 						},
 						// DD-AIANALYSIS-005: v1.x single analysis type only
-						AnalysisTypes: []string{"incident-analysis"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -191,7 +191,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 
 			// 3. Wait for successful completion
 			Eventually(func() string {
-				var updated aianalysisv1alpha1.AIAnalysis
+				var updated aianalysisv1.AIAnalysis
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
 					return ""
 				}
@@ -219,25 +219,25 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			// 1. Create AIAnalysis for production (should require approval)
 			testID := uuid.New().String()[:8]
 			rrName := fmt.Sprintf("test-rr-prod-%s", testID)
-			aianalysis := &aianalysisv1alpha1.AIAnalysis{
+			aianalysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("metrics-test-approval-%s", testID),
 					Namespace: namespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: namespace,
 					},
 					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fp-003",
 							Severity:         "critical",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production", // Production should require approval
 							BusinessPriority: "P0",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "prod-pod",
 								Namespace: namespace,
@@ -245,7 +245,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						// DD-AIANALYSIS-005: v1.x single analysis type only
-						AnalysisTypes: []string{"incident-analysis"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -253,7 +253,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 
 			// 2. Wait for analysis phase to complete
 			Eventually(func() bool {
-				var updated aianalysisv1alpha1.AIAnalysis
+				var updated aianalysisv1.AIAnalysis
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
 					return false
 				}
@@ -282,32 +282,32 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			// 1. Create AIAnalysis that will select a workflow
 			testID := uuid.New().String()[:8]
 			rrName := fmt.Sprintf("test-rr-confidence-%s", testID)
-			aianalysis := &aianalysisv1alpha1.AIAnalysis{
+			aianalysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("metrics-test-confidence-%s", testID),
 					Namespace: namespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: namespace,
 					},
 					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fp-004",
 							Severity:         "critical",
 							SignalName:       "ImagePullBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "confidence-pod",
 								Namespace: namespace,
 							},
 						},
 						// DD-AIANALYSIS-005: v1.x single analysis type only
-						AnalysisTypes: []string{"incident-analysis"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -315,7 +315,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 
 			// 2. Wait for workflow selection to complete
 			Eventually(func() bool {
-				var updated aianalysisv1alpha1.AIAnalysis
+				var updated aianalysisv1.AIAnalysis
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
 					return false
 				}
@@ -339,31 +339,31 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			// 1. Create AIAnalysis that will trigger policy evaluation
 			testID := uuid.New().String()[:8]
 			rrName := fmt.Sprintf("test-rr-rego-%s", testID)
-			aianalysis := &aianalysisv1alpha1.AIAnalysis{
+			aianalysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("metrics-test-rego-%s", testID),
 					Namespace: namespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: namespace,
 					},
 					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fp-005",
 							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
 							SignalName:       "PodEviction",
 							Environment:      "development",
 							BusinessPriority: "P3",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "rego-pod",
 								Namespace: namespace,
 							},
 						},
-						AnalysisTypes: []string{"incident-analysis"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -371,7 +371,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 
 			// 2. Wait for analysis to complete
 			Eventually(func() string {
-				var updated aianalysisv1alpha1.AIAnalysis
+				var updated aianalysisv1.AIAnalysis
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
 					return ""
 				}

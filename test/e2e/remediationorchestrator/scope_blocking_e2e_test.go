@@ -27,7 +27,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
@@ -84,11 +83,6 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
-				Deduplication: sharedtypes.DeduplicationInfo{
-					FirstOccurrence: now,
-					LastOccurrence:  now,
-					OccurrenceCount: 1,
-				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -100,7 +94,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			if err := apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched); err != nil {
 				return ""
 			}
-			return fetched.Status.BlockReason
+			return string(fetched.Status.BlockReason)
 		}, timeout, interval).Should(Equal(string(remediationv1.BlockReasonUnmanagedResource)),
 			"RR should be blocked with UnmanagedResource reason by the RO controller")
 
@@ -148,11 +142,6 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
-				Deduplication: sharedtypes.DeduplicationInfo{
-					FirstOccurrence: now,
-					LastOccurrence:  now,
-					OccurrenceCount: 1,
-				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -175,7 +164,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 		Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
 
 		if fetched.Status.OverallPhase == remediationv1.PhaseBlocked {
-			Expect(fetched.Status.BlockReason).ToNot(Equal(string(remediationv1.BlockReasonUnmanagedResource)),
+			Expect(fetched.Status.BlockReason).ToNot(Equal(remediationv1.BlockReasonUnmanagedResource),
 				"RR in managed namespace should NOT be blocked for UnmanagedResource")
 		}
 
@@ -218,11 +207,6 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
-				Deduplication: sharedtypes.DeduplicationInfo{
-					FirstOccurrence: now,
-					LastOccurrence:  now,
-					OccurrenceCount: 1,
-				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -234,7 +218,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			if err := apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched); err != nil {
 				return ""
 			}
-			return fetched.Status.BlockReason
+			return string(fetched.Status.BlockReason)
 		}, timeout, interval).Should(Equal(string(remediationv1.BlockReasonUnmanagedResource)))
 
 		GinkgoWriter.Println("✅ RR blocked — now adding managed label to namespace")
@@ -260,7 +244,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			}
 			// Check if no longer blocked for UnmanagedResource
 			if fetched.Status.OverallPhase == remediationv1.PhaseBlocked &&
-				fetched.Status.BlockReason == string(remediationv1.BlockReasonUnmanagedResource) {
+				fetched.Status.BlockReason == remediationv1.BlockReasonUnmanagedResource {
 				return false
 			}
 			return true

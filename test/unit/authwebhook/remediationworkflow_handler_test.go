@@ -28,6 +28,7 @@ import (
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	admissionv1 "k8s.io/api/admission/v1"
 	authv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,7 +56,7 @@ func (m *mockWorkflowCatalogClient) CreateWorkflowInline(ctx context.Context, co
 		WorkflowID:   "550e8400-e29b-41d4-a716-446655440000",
 		WorkflowName: "test-workflow",
 		Version:      "1.0.0",
-		Status:       "active",
+		Status:       string(sharedtypes.CatalogStatusActive),
 	}, nil
 }
 
@@ -130,7 +131,7 @@ func buildRemediationWorkflowWithStatus(name, namespace, workflowID string) *rwv
 	rw := buildRemediationWorkflow(name, namespace)
 	rw.Status = rwv1alpha1.RemediationWorkflowStatus{
 		WorkflowID:    workflowID,
-		CatalogStatus: "active",
+		CatalogStatus: sharedtypes.CatalogStatusActive,
 		RegisteredBy:  testUserEmail,
 	}
 	return rw
@@ -246,7 +247,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 					WorkflowID:   "550e8400-e29b-41d4-a716-446655440000",
 					WorkflowName: "scale-memory",
 					Version:      "1.0.0",
-					Status:       "active",
+					Status:       string(sharedtypes.CatalogStatusActive),
 				}, nil
 			}
 
@@ -336,7 +337,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 					WorkflowID:        "550e8400-e29b-41d4-a716-446655440000",
 					WorkflowName:      "scale-memory",
 					Version:           "1.0.0",
-					Status:            "active",
+					Status:            string(sharedtypes.CatalogStatusActive),
 					PreviouslyExisted: true,
 				}, nil
 			}
@@ -445,7 +446,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 				capturedBy = registeredBy
 				return &authwebhook.WorkflowRegistrationResult{
 					WorkflowID: "test-id",
-					Status:     "active",
+					Status:     string(sharedtypes.CatalogStatusActive),
 				}, nil
 			}
 
@@ -478,7 +479,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 					WorkflowID:   "550e8400-e29b-41d4-a716-446655440000",
 					WorkflowName: "scale-memory",
 					Version:      "1.0.0",
-					Status:       "active",
+					Status:       string(sharedtypes.CatalogStatusActive),
 				}, nil
 			}
 
@@ -508,7 +509,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 					WorkflowID:   "new-uuid-after-update",
 					WorkflowName: "git-revert-v1",
 					Version:      "1.0.1",
-					Status:       "active",
+					Status:       string(sharedtypes.CatalogStatusActive),
 				}, nil
 			}
 
@@ -535,7 +536,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 					WorkflowID:        "existing-uuid-idempotent",
 					WorkflowName:      "git-revert-v1",
 					Version:           "1.0.0",
-					Status:            "active",
+					Status:            string(sharedtypes.CatalogStatusActive),
 					PreviouslyExisted: true,
 				}, nil
 			}
@@ -583,7 +584,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 				capturedBy = registeredBy
 				return &authwebhook.WorkflowRegistrationResult{
 					WorkflowID: "test-id",
-					Status:     "active",
+					Status:     string(sharedtypes.CatalogStatusActive),
 				}, nil
 			}
 
@@ -625,7 +626,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 					WorkflowID:        newUUID,
 					WorkflowName:      "integrity-supersede",
 					Version:           "1.0.0",
-					Status:            "active",
+					Status:            string(sharedtypes.CatalogStatusActive),
 					PreviouslyExisted: false,
 					Superseded:        true,
 					SupersededID:      supersededUUID,
@@ -673,7 +674,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 					WorkflowID:        originalUUID,
 					WorkflowName:      "integrity-reenable",
 					Version:           "1.0.0",
-					Status:            "active",
+					Status:            string(sharedtypes.CatalogStatusActive),
 					PreviouslyExisted: true,
 					Superseded:        false,
 				}, nil
@@ -751,7 +752,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 					WorkflowID:        "uuid-status-test-001",
 					WorkflowName:      "scale-memory-status",
 					Version:           "1.0.0",
-					Status:            "active",
+					Status:            string(sharedtypes.CatalogStatusActive),
 					PreviouslyExisted: false,
 				}, nil
 			}
@@ -773,7 +774,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			// Verify all status fields
 			updated := &rwv1alpha1.RemediationWorkflow{}
 			Expect(fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "scale-memory-status"), updated)).To(Succeed())
-			Expect(updated.Status.CatalogStatus).To(Equal("active"))
+			Expect(updated.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive))
 			Expect(updated.Status.RegisteredBy).To(Equal(testUserEmail))
 			Expect(updated.Status.RegisteredAt).NotTo(BeNil())
 			Expect(updated.Status.PreviouslyExisted).To(BeFalse())

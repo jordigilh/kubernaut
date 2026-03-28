@@ -30,7 +30,6 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // E2E-RO-106-001: Proactive Signal Mode Propagation
@@ -83,11 +82,6 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
-				Deduplication: sharedtypes.DeduplicationInfo{
-					FirstOccurrence: now,
-					LastOccurrence:  now,
-					OccurrenceCount: 1,
-				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -114,15 +108,15 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 		sp.Status.Severity = "critical"
 		// BR-SP-106: Proactive signal mode fields
 		sp.Status.SignalMode = "proactive"
-		sp.Status.SignalName = "OOMKilled"                   // Normalized from PredictedOOMKill
-		sp.Status.SourceSignalName = "PredictedOOMKill"    // Preserved for SOC2 audit trail
+		sp.Status.SignalName = "OOMKilled"              // Normalized from PredictedOOMKill
+		sp.Status.SourceSignalName = "PredictedOOMKill" // Preserved for SOC2 audit trail
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
-			Environment:  "production",
+			Environment:  signalprocessingv1.EnvironmentProduction,
 			Source:       "namespace-labels",
 			ClassifiedAt: metav1.Now(),
 		}
 		sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
-			Priority:   "P1",
+			Priority:   signalprocessingv1.PriorityP1,
 			Source:     "rego-policy",
 			AssignedAt: metav1.Now(),
 		}
@@ -180,11 +174,6 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
-				Deduplication: sharedtypes.DeduplicationInfo{
-					FirstOccurrence: now,
-					LastOccurrence:  now,
-					OccurrenceCount: 1,
-				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -212,12 +201,12 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 		sp.Status.SignalMode = "reactive"
 		sp.Status.SignalName = "OOMKilled" // Unchanged for reactive
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
-			Environment:  "production",
+			Environment:  signalprocessingv1.EnvironmentProduction,
 			Source:       "namespace-labels",
 			ClassifiedAt: metav1.Now(),
 		}
 		sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
-			Priority:   "P1",
+			Priority:   signalprocessingv1.PriorityP1,
 			Source:     "rego-policy",
 			AssignedAt: metav1.Now(),
 		}

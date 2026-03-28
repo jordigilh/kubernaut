@@ -78,8 +78,8 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 			By("Simulating delivery attempts on the NR status (slack + console channels)")
 			nr.Status.Phase = notificationv1.NotificationPhaseSending
 			nr.Status.DeliveryAttempts = []notificationv1.DeliveryAttempt{
-				{Channel: "slack", Attempt: 1, Status: "success", Timestamp: metav1.Now()},
-				{Channel: "console", Attempt: 1, Status: "success", Timestamp: metav1.Now()},
+				{Channel: notificationv1.DeliveryChannelName("slack"), Attempt: 1, Status: notificationv1.DeliveryAttemptStatusSuccess, Timestamp: metav1.Now()},
+				{Channel: notificationv1.DeliveryChannelName("console"), Attempt: 1, Status: notificationv1.DeliveryAttemptStatusSuccess, Timestamp: metav1.Now()},
 			}
 			nr.Status.TotalAttempts = 2
 			nr.Status.SuccessfulDeliveries = 2

@@ -92,7 +92,7 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 						},
 					},
 					// DD-AIANALYSIS-005: v1.x supports single analysis type only
-					AnalysisTypes: []string{"investigation"},
+					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 				},
 			},
 		}
@@ -153,7 +153,7 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 			"NeedsHumanReview=true for low confidence scenarios")
 
 		// Status should indicate low confidence failure
-		Expect(result.Status.Reason).To(Equal("WorkflowResolutionFailed"),
+		Expect(result.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed),
 			"Reason should be 'WorkflowResolutionFailed' (umbrella category)")
 		Expect(result.Status.SubReason).To(Equal("LowConfidence"),
 			"SubReason should be 'LowConfidence' for specific failure type")
@@ -236,7 +236,7 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 					fmt.Sprintf("NeedsHumanReview should be %v for %s", tc.expectedApproval, tc.scenario))
 
 				// Per reconciliation-phases.md v2.1: Reason = umbrella, SubReason = specific
-				Expect(result.Status.Reason).To(Equal("WorkflowResolutionFailed"),
+				Expect(result.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed),
 					"Reason should be umbrella category per BR-HAPI-197")
 
 				// Map expectedReason (from test case) to SubReason enum

@@ -140,7 +140,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts: 3, // Allow retries for observability
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-slack",
 					},
 				},
@@ -283,7 +283,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Multi-Channel Observability Test",
 					Body:     "Testing per-channel observability",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-slack",
 					},
 				},

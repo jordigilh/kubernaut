@@ -126,10 +126,14 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 					Priority: notificationv1alpha1.NotificationPriority([]string{"low", "medium", "high"}[i-1]),
 					Subject:  "E2E Correlation Test - Notification " + string(rune('0'+i)),
 					Body:     "Testing audit correlation across multiple notifications",
-					Metadata: map[string]string{
-						"remediationRequestName": correlationID,
-						"cluster":                "test-cluster",
-						"attemptNumber":          string(rune('0' + i)),
+					Context: &notificationv1alpha1.NotificationContext{
+						Lineage: &notificationv1alpha1.LineageContext{
+							RemediationRequest: correlationID,
+						},
+					},
+					Extensions: map[string]string{
+						"cluster":       "test-cluster",
+						"attemptNumber": string(rune('0' + i)),
 					},
 				},
 			}

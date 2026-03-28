@@ -116,7 +116,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 								Name:      "test-pod",
 							},
 						},
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -297,7 +297,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 								Name:      "recovered-pod",
 							},
 						},
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -336,7 +336,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			// Verify status fields (BR-HAPI-200 Outcome A)
 			Expect(finalAnalysis.Status.Phase).To(Equal(aianalysisv1.PhaseCompleted),
 				"Phase should be Completed")
-			Expect(finalAnalysis.Status.Reason).To(Equal("WorkflowNotNeeded"),
+			Expect(finalAnalysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded),
 				"Reason should be WorkflowNotNeeded")
 			Expect(finalAnalysis.Status.SubReason).To(Equal("ProblemResolved"),
 				"SubReason should be ProblemResolved")
@@ -472,7 +472,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 								Name:      "recovered-pod",
 							},
 						},
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -497,7 +497,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			Expect(k8sClient.Get(testCtx, client.ObjectKeyFromObject(analysis), &finalAnalysis)).To(Succeed())
 
 			Expect(finalAnalysis.Status.Phase).To(Equal(aianalysisv1.PhaseCompleted))
-			Expect(finalAnalysis.Status.Reason).To(Equal("WorkflowNotNeeded"))
+			Expect(finalAnalysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
 			Expect(finalAnalysis.Status.SubReason).To(Equal("ProblemResolved"))
 			Expect(finalAnalysis.Status.NeedsHumanReview).To(BeFalse(),
 				"#301: needs_human_review should be false after parser contradiction override")

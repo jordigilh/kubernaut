@@ -361,7 +361,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 				Status: remediationv1.RemediationRequestStatus{
 					OverallPhase: remediationv1.PhaseBlocked,
-					BlockReason:  string(remediationv1.BlockReasonDuplicateInProgress),
+					BlockReason:  remediationv1.BlockReasonDuplicateInProgress,
 					DuplicateOf:  "rr-a-older",
 				},
 			}
@@ -1150,7 +1150,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "", "", "")
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(blocked.Reason).To(Equal("ConsecutiveFailures")) // First check should win
+			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonConsecutiveFailures))) // First check should win
 		})
 
 		It("should return first blocking condition found via CheckPreAnalysisConditions", func() {

@@ -28,9 +28,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
@@ -642,7 +642,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseTimedOut),
 			"RR should have transitioned to TimedOut via phase timeout")
-		Expect(*fetchedRR.Status.TimeoutPhase).To(Equal("Processing"),
+		Expect(*fetchedRR.Status.TimeoutPhase).To(Equal(remediationv1.PhaseProcessing),
 			"TimeoutPhase should indicate which phase timed out")
 
 		// Issue #240: EA must NOT be created on phase timeout

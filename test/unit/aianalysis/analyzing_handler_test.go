@@ -105,7 +105,7 @@ var _ = Describe("AnalyzingHandler", func() {
 							Namespace: "default",
 						},
 					},
-					AnalysisTypes: []string{"investigation", "analysis"},
+					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause},
 				},
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
@@ -194,7 +194,7 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
 				Expect(analysis.Status.ApprovalContext.RecommendedActions).To(HaveLen(1))
-				Expect(analysis.Status.ApprovalContext.RecommendedActions[0].Action).To(Equal("wf-restart-pod"))
+				Expect(analysis.Status.ApprovalContext.RecommendedActions[0].WorkflowId).To(Equal("wf-restart-pod"))
 			})
 
 			// BR-AI-019: Investigation summary from RootCauseAnalysis
@@ -281,8 +281,8 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(analysis.Status.ApprovalContext.PolicyEvaluation).NotTo(BeNil(), "Policy evaluation should be visible to operator")
 				// Business outcome: Operator sees clear decision status
 				Expect(analysis.Status.ApprovalContext.PolicyEvaluation.Decision).To(
-					BeElementOf("manual_review_required", aianalysis.OutcomeAutoApproved, "degraded_mode"),
-					"Decision should be one of the valid business outcomes",
+					BeElementOf(aianalysisv1.PolicyDecisionManualReviewRequired, aianalysisv1.PolicyDecisionDegradedMode),
+					"Decision should be one of the valid policy outcomes when approval is required",
 				)
 			})
 		})
@@ -365,8 +365,8 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.ApprovalContext).NotTo(BeNil(), "ApprovalContext should exist for operator")
 				Expect(analysis.Status.ApprovalContext.PolicyEvaluation).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.PolicyEvaluation.Decision).To(Equal("degraded_mode"),
-					"Operator should see clear 'degraded_mode' status")
+				Expect(analysis.Status.ApprovalContext.PolicyEvaluation.Decision).To(Equal(aianalysisv1.PolicyDecisionDegradedMode),
+					"Operator should see clear degraded-mode policy decision")
 			})
 		})
 
@@ -382,7 +382,7 @@ var _ = Describe("AnalyzingHandler", func() {
 				// Business outcome: Analysis terminates (doesn't hang)
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should fail when no workflow available")
 				// Business outcome: Clear reason for operators/debugging
-				Expect(analysis.Status.Reason).To(Equal("NoWorkflowSelected"), "Reason should identify the issue")
+				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonNoWorkflowSelected), "Reason should identify the issue")
 				Expect(analysis.Status.Message).To(ContainSubstring("workflow"), "Message should explain missing workflow")
 			})
 
@@ -529,8 +529,8 @@ var _ = Describe("AnalyzingHandler", func() {
 				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = &sharedtypes.BusinessClassification{
 					BusinessUnit:   "payments",
 					ServiceOwner:   "team-checkout",
-					Criticality:    "critical",
-					SLARequirement: "platinum",
+					Criticality:    sharedtypes.CriticalityCritical,
+					SLARequirement: sharedtypes.SLARequirementPlatinum,
 				}
 
 				_, err := handler.Handle(ctx, analysis)
@@ -540,8 +540,8 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(mockEvaluator.LastInput.BusinessClassification).NotTo(BeNil())
 				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("business_unit", "payments"))
 				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("service_owner", "team-checkout"))
-				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("criticality", "critical"))
-				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("sla_requirement", "platinum"))
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("criticality", string(sharedtypes.CriticalityCritical)))
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("sla_requirement", string(sharedtypes.SLARequirementPlatinum)))
 			})
 
 			It("should not set BusinessClassification when nil in EnrichmentResults", func() {
@@ -558,7 +558,7 @@ var _ = Describe("AnalyzingHandler", func() {
 			It("should map only populated BusinessClassification fields", func() {
 				analysis := createTestAnalysis()
 				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = &sharedtypes.BusinessClassification{
-					Criticality: "high",
+					Criticality: sharedtypes.CriticalityHigh,
 				}
 
 				_, err := handler.Handle(ctx, analysis)
@@ -566,7 +566,7 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(mockEvaluator.LastInput).NotTo(BeNil())
 				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveLen(1))
-				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("criticality", "high"))
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("criticality", string(sharedtypes.CriticalityHigh)))
 			})
 		})
 

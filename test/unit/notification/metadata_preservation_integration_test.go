@@ -77,8 +77,8 @@ var _ = Describe("Metadata Preservation Integration Test (Controller → Orchest
 					Subject:  "E2E Test: Critical Priority Notification",
 					Body:     "CRITICAL: Testing priority-based routing with file audit trail",
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Metadata: map[string]string{
-						"severity":               "critical",
+					Severity: "critical",
+					Extensions: map[string]string{
 						"alert-name":             "CriticalSystemFailure",
 						"cluster":                "production",
 						"environment":            "prod",
@@ -92,11 +92,11 @@ var _ = Describe("Metadata Preservation Integration Test (Controller → Orchest
 			sanitized.Spec.Subject = sanitizer.Sanitize(notification.Spec.Subject)
 			sanitized.Spec.Body = sanitizer.Sanitize(notification.Spec.Body)
 
-			// VALIDATION: Metadata preserved after sanitization
-			Expect(sanitized.Spec.Metadata).ToNot(BeNil(), "Metadata must not be nil after sanitization")
-			Expect(sanitized.Spec.Metadata).To(HaveLen(5), "All 5 metadata fields must be preserved after sanitization")
-			Expect(sanitized.Spec.Metadata["severity"]).To(Equal("critical"), "severity field must be preserved")
-			Expect(sanitized.Spec.Metadata["remediationRequestName"]).To(Equal("rr-pod-crash-abc123"), "remediationRequestName must be preserved for BR-NOT-064 correlation")
+			// VALIDATION: Spec severity and extensions preserved after sanitization
+			Expect(sanitized.Spec.Severity).To(Equal("critical"), "severity must be preserved on spec")
+			Expect(sanitized.Spec.Extensions).ToNot(BeNil(), "Extensions must not be nil after sanitization")
+			Expect(sanitized.Spec.Extensions).To(HaveLen(4), "All extension fields must be preserved after sanitization")
+			Expect(sanitized.Spec.Extensions["remediationRequestName"]).To(Equal("rr-pod-crash-abc123"), "remediationRequestName must be preserved for BR-NOT-064 correlation")
 
 			// Step 3: Deliver to file (what orchestrator does)
 			err := fileService.Deliver(ctx, sanitized)
@@ -114,12 +114,12 @@ var _ = Describe("Metadata Preservation Integration Test (Controller → Orchest
 			err = json.Unmarshal(data, &savedNotification)
 			Expect(err).ToNot(HaveOccurred(), "File should contain valid JSON")
 
-			// FINAL VALIDATION: Metadata preserved in file (this is what E2E test line 169 checks)
-			Expect(savedNotification.Spec.Metadata).ToNot(BeNil(), "Metadata must not be nil in saved file")
-			Expect(savedNotification.Spec.Metadata).To(HaveLen(5), "All 5 metadata fields must be preserved in file")
-			Expect(savedNotification.Spec.Metadata["severity"]).To(Equal("critical"),
-				"E2E TEST LINE 169 EQUIVALENT: Metadata['severity'] must equal 'critical' (BR-NOT-064)")
-			Expect(savedNotification.Spec.Metadata["remediationRequestName"]).To(Equal("rr-pod-crash-abc123"),
+			// FINAL VALIDATION: Severity and extensions preserved in file (this is what E2E test line 169 checks)
+			Expect(savedNotification.Spec.Severity).To(Equal("critical"),
+				"E2E TEST LINE 169 EQUIVALENT: spec.severity must equal 'critical' (BR-NOT-064)")
+			Expect(savedNotification.Spec.Extensions).ToNot(BeNil(), "Extensions must not be nil in saved file")
+			Expect(savedNotification.Spec.Extensions).To(HaveLen(4), "All extension fields must be preserved in file")
+			Expect(savedNotification.Spec.Extensions["remediationRequestName"]).To(Equal("rr-pod-crash-abc123"),
 				"remediationRequestName must be preserved for audit correlation")
 		})
 
@@ -131,9 +131,8 @@ var _ = Describe("Metadata Preservation Integration Test (Controller → Orchest
 					Namespace: "default",
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Subject:  "No Metadata Test",
-					Body:     "Testing nil metadata handling",
-					Metadata: nil, // Explicitly nil
+					Subject: "No Metadata Test",
+					Body:    "Testing nil metadata handling",
 				},
 			}
 
@@ -164,10 +163,10 @@ var _ = Describe("Metadata Preservation Integration Test (Controller → Orchest
 					Namespace: "default",
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Subject: "Special Characters Test",
-					Body:    "Testing metadata with special characters",
-					Metadata: map[string]string{
-						"severity":      "critical",
+					Subject:  "Special Characters Test",
+					Body:     "Testing metadata with special characters",
+					Severity: "critical",
+					Extensions: map[string]string{
 						"special-chars": "value-with-dashes_and_underscores",
 						"long-value":    "this-is-a-very-long-value-that-should-not-be-truncated-by-any-processing",
 						"unicode":       "✅ 🚨 ⚠️ emoji-test",
@@ -190,9 +189,10 @@ var _ = Describe("Metadata Preservation Integration Test (Controller → Orchest
 			Expect(json.Unmarshal(data, &saved)).To(Succeed())
 
 			// All special characters preserved
-			Expect(saved.Spec.Metadata["special-chars"]).To(Equal("value-with-dashes_and_underscores"))
-			Expect(saved.Spec.Metadata["long-value"]).To(Equal("this-is-a-very-long-value-that-should-not-be-truncated-by-any-processing"))
-			Expect(saved.Spec.Metadata["unicode"]).To(Equal("✅ 🚨 ⚠️ emoji-test"))
+			Expect(saved.Spec.Severity).To(Equal("critical"))
+			Expect(saved.Spec.Extensions["special-chars"]).To(Equal("value-with-dashes_and_underscores"))
+			Expect(saved.Spec.Extensions["long-value"]).To(Equal("this-is-a-very-long-value-that-should-not-be-truncated-by-any-processing"))
+			Expect(saved.Spec.Extensions["unicode"]).To(Equal("✅ 🚨 ⚠️ emoji-test"))
 		})
 	})
 })

@@ -130,7 +130,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					Labels:          labels,
 					CustomLabels:    models.CustomLabels{},
 					DetectedLabels:  models.DetectedLabels{},
-					Status:          "active",
+					Status:          "Active",
 					ExecutionEngine: "argo-workflows",
 					IsLatestVersion: true,
 					ActionType:      "ScaleReplicas",
@@ -187,7 +187,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			Expect(parsedDesc.What).To(Equal("Integration test workflow"))
 				Expect(dbContent).To(ContainSubstring("scale"))
 				Expect(dbContentHash).To(Equal(contentHash))
-				Expect(dbStatus).To(Equal("active"))
+				Expect(dbStatus).To(Equal("Active"))
 				Expect(dbExecutionEngine).To(Equal("argo-workflows"))
 				Expect(dbIsLatestVersion).To(BeTrue(), "is_latest_version should be true")
 				Expect(dbCreatedAt).ToNot(BeZero())
@@ -234,7 +234,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					Labels:          labels,
 					CustomLabels:    models.CustomLabels{},
 					DetectedLabels:  models.DetectedLabels{},
-					Status:          "active",
+					Status:          "Active",
 					ExecutionEngine: "argo-workflows",
 					IsLatestVersion: true,
 					ActionType:      "ScaleReplicas",
@@ -255,7 +255,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					Labels:          labels,
 					CustomLabels:    models.CustomLabels{},
 					DetectedLabels:  models.DetectedLabels{},
-					Status:          "active",
+					Status:          "Active",
 					ExecutionEngine: "argo-workflows",
 					IsLatestVersion: true,
 					ActionType:      "ScaleReplicas",
@@ -301,7 +301,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Labels:          labels,
 				CustomLabels:    models.CustomLabels{},
 				DetectedLabels:  models.DetectedLabels{},
-				Status:          "active",
+				Status:          "Active",
 				ExecutionEngine: "argo-workflows",
 				IsLatestVersion: true,
 				ActionType:      "ScaleReplicas",
@@ -325,7 +325,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(retrievedWorkflow.Name).To(Equal("Test Workflow Get"))
 				// Description is now StructuredDescription (BR-WORKFLOW-004, migration 026)
 			Expect(retrievedWorkflow.Description.What).To(Equal("Test workflow for Get method"))
-				Expect(retrievedWorkflow.Status).To(Equal("active"))
+				Expect(retrievedWorkflow.Status).To(Equal("Active"))
 				Expect(retrievedWorkflow.ExecutionEngine).To(Equal(models.ExecutionEngine("argo-workflows")))
 				Expect(retrievedWorkflow.IsLatestVersion).To(BeTrue())
 				Expect(retrievedWorkflow.CreatedAt).ToNot(BeZero())
@@ -363,9 +363,9 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				version string
 				status  string
 			}{
-				{fmt.Sprintf("wf-repo-%s-list-1", testID), "v1.0.0", "active"},
-				{fmt.Sprintf("wf-repo-%s-list-2", testID), "v1.0.0", "disabled"},
-				{fmt.Sprintf("wf-repo-%s-list-3", testID), "v1.0.0", "active"},
+				{fmt.Sprintf("wf-repo-%s-list-1", testID), "v1.0.0", "Active"},
+				{fmt.Sprintf("wf-repo-%s-list-2", testID), "v1.0.0", "Disabled"},
+				{fmt.Sprintf("wf-repo-%s-list-3", testID), "v1.0.0", "Active"},
 			}
 
 			for _, wf := range workflows {
@@ -435,7 +435,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			It("should filter workflows by status", func() {
 				// ACT: List only active workflows
 				filters := &models.WorkflowSearchFilters{
-					Status: []string{"active"},
+					Status: []string{"Active"},
 				}
 				workflows, total, err := workflowRepo.List(ctx, filters, 50, 0)
 
@@ -445,7 +445,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(total).To(Equal(2))
 
 				for _, wf := range workflows {
-					Expect(wf.Status).To(Equal("active"))
+					Expect(wf.Status).To(Equal("Active"))
 				}
 			})
 		})
@@ -529,7 +529,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Labels:          labels,
 				CustomLabels:    models.CustomLabels{},
 				DetectedLabels:  models.DetectedLabels{},
-				Status:          "active",
+				Status:          "Active",
 				ExecutionEngine: "argo-workflows",
 				IsLatestVersion: true,
 				ActionType:      "ScaleReplicas",
@@ -545,7 +545,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 		Context("with valid status change (active → disabled)", func() {
 			It("should update status with reason and metadata", func() {
 				// ACT: Update status to disabled (use workflow_id UUID, not workflow_name)
-				err := workflowRepo.UpdateStatus(ctx, workflowID, "v1.0.0", "disabled", "Test disable reason", "test-user")
+				err := workflowRepo.UpdateStatus(ctx, workflowID, "v1.0.0", "Disabled", "Test disable reason", "test-user")
 
 				// ASSERT: Update succeeds
 				Expect(err).ToNot(HaveOccurred())
@@ -562,7 +562,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				`, workflowName, "v1.0.0").Scan(&dbStatus, &dbDisabledAt, &dbDisabledBy, &dbDisabledReason)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(dbStatus).To(Equal("disabled"), "Status should be disabled")
+				Expect(dbStatus).To(Equal("Disabled"), "Status should be disabled")
 				Expect(dbDisabledAt).ToNot(BeNil(), "disabled_at should be set")
 				Expect(dbDisabledBy).ToNot(BeNil(), "disabled_by should be set")
 				Expect(*dbDisabledBy).To(Equal("test-user"))
@@ -597,7 +597,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				ContentHash:     hash,
 				Labels:          models.MandatoryLabels{Severity: severity, Component: component, Environment: environment, Priority: priority},
 				ExecutionEngine: models.ExecutionEngineTekton,
-				Status:          "active",
+				Status:          "Active",
 				IsLatestVersion: true,
 				ActionType:      "ScaleReplicas",
 			}

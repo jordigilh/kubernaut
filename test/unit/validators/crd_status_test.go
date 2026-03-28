@@ -52,20 +52,20 @@ func completeSP() *signalprocessingv1.SignalProcessing {
 				Workload:  &sharedtypes.WorkloadDetails{Kind: "Deployment", Name: "my-app"},
 			},
 			EnvironmentClassification: &signalprocessingv1.EnvironmentClassification{
-				Environment:  "production",
+				Environment:  signalprocessingv1.EnvironmentProduction,
 				Source:       "namespace-labels",
 				ClassifiedAt: now,
 			},
 			PriorityAssignment: &signalprocessingv1.PriorityAssignment{
-				Priority:   "P0",
+				Priority:   signalprocessingv1.PriorityP0,
 				Source:     "rego-policy",
 				AssignedAt: now,
 			},
 			BusinessClassification: &sharedtypes.BusinessClassification{
 				BusinessUnit:    "payments",
 				ServiceOwner:    "platform-team",
-				Criticality:     "critical",
-				SLARequirement:  "platinum",
+				Criticality:     sharedtypes.CriticalityCritical,
+				SLARequirement:  sharedtypes.SLARequirementPlatinum,
 			},
 			Severity:   "critical",
 			SignalMode: "reactive",
@@ -135,10 +135,10 @@ func completeAAWithApproval() *aianalysisv1.AIAnalysis {
 		ConfidenceLevel:       "medium",
 		InvestigationSummary:  "Root cause identified",
 		EvidenceCollected:     []string{"Memory metrics"},
-		RecommendedActions:    []aianalysisv1.RecommendedAction{{Action: "Restart pod", Rationale: "Clear memory"}},
+		RecommendedActions:    []aianalysisv1.RecommendedAction{{WorkflowId: "restart-pod", Rationale: "Clear memory"}},
 		AlternativesConsidered: []aianalysisv1.AlternativeApproach{{Approach: "Scale up", ProsCons: "Slower"}},
 		WhyApprovalRequired:   "Policy requires manual review",
-		PolicyEvaluation:     &aianalysisv1.PolicyEvaluation{PolicyName: "approval-policy", MatchedRules: []string{"low-confidence"}, Decision: "manual_review_required"},
+		PolicyEvaluation:     &aianalysisv1.PolicyEvaluation{PolicyName: "approval-policy", MatchedRules: []string{"low-confidence"}, Decision: aianalysisv1.PolicyDecisionManualReviewRequired},
 	}
 	return aa
 }
@@ -192,10 +192,10 @@ func completeWE() *workflowexecutionv1.WorkflowExecution {
 			ObservedGeneration: 1,
 			StartTime:         &now,
 			CompletionTime:    &now,
-			Duration:          "2m30s",
+			Duration:          &metav1.Duration{Duration: 150 * time.Second},
 			ExecutionRef:      &corev1.LocalObjectReference{Name: "pipelinerun-123"},
 			ExecutionStatus: &workflowexecutionv1.ExecutionStatusSummary{
-				Status:         "True",
+				Status:         corev1.ConditionTrue,
 				Reason:         "Succeeded",
 				Message:        "Completed",
 				CompletedTasks: 3,
@@ -219,7 +219,7 @@ func completeNT() *notificationv1.NotificationRequest {
 			ProcessingStartedAt: &now,
 			CompletionTime:     &now,
 			DeliveryAttempts: []notificationv1.DeliveryAttempt{
-				{Channel: "slack", Attempt: 1, Timestamp: now, Status: "success", DurationSeconds: 0.5},
+				{Channel: notificationv1.DeliveryChannelName("slack"), Attempt: 1, Timestamp: now, Status: notificationv1.DeliveryAttemptStatusSuccess, DurationSeconds: 0.5},
 			},
 			TotalAttempts: 1,
 			Conditions: []metav1.Condition{
@@ -277,8 +277,17 @@ func completeRAR() *remediationv1.RemediationApprovalRequest {
 			RecommendedActions: []remediationv1.ApprovalRecommendedAction{
 				{Action: "Approve", Rationale: "Safe to proceed"},
 			},
+			AlternativesConsidered: []remediationv1.ApprovalAlternative{
+				{Approach: "Manual restart", ProsCons: "Safe but slow"},
+			},
 			WhyApprovalRequired: "Policy requires review",
 			RequiredBy:          now,
+			EvidenceCollected:   []string{"Pod OOMKilled 3 times in 10 minutes"},
+			PolicyEvaluation: &remediationv1.ApprovalPolicyEvaluation{
+				PolicyName:   "low-confidence-review",
+				MatchedRules: []string{"confidence_below_threshold"},
+				Decision:     "ManualReviewRequired",
+			},
 		},
 		Status: remediationv1.RemediationApprovalRequestStatus{
 			Decision:   remediationv1.ApprovalDecisionApproved,
@@ -465,6 +474,6 @@ var _ = Describe("ValidateRARSpec", func() {
 	It("returns expected failure count for an empty RemediationApprovalRequest spec", func() {
 		rar := &remediationv1.RemediationApprovalRequest{}
 		failures := crdvalidators.ValidateRARSpec(rar)
-		Expect(failures).To(HaveLen(13))
+		Expect(failures).To(HaveLen(16))
 	})
 })

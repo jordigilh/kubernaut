@@ -38,7 +38,6 @@ import (
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var _ = Describe("Notification Lifecycle Integration", Label("integration", "notification-lifecycle"), func() {
@@ -74,11 +73,6 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
-				Deduplication: sharedtypes.DeduplicationInfo{
-					FirstOccurrence: now,
-					LastOccurrence:  now,
-					OccurrenceCount: 1,
-				},
 				SignalLabels: map[string]string{
 					"test": "notification-lifecycle",
 				},
@@ -111,8 +105,10 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 					Priority: notificationv1.NotificationPriorityMedium,
 					Subject:  "Test Notification",
 					Body:     "Test notification body for integration test",
-					Metadata: map[string]string{
-						"remediationRequest": testRR.Name,
+					Context: &notificationv1.NotificationContext{
+						Lineage: &notificationv1.LineageContext{
+							RemediationRequest: testRR.Name,
+						},
 					},
 				},
 			}

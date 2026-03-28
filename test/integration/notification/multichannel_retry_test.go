@@ -152,7 +152,7 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60, // CRD minimum validation
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-slack",
 					},
 				},
@@ -192,13 +192,13 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 			consoleAttempts := 0
 			slackAttempts := 0
 			for _, attempt := range notif.Status.DeliveryAttempts {
-				if attempt.Channel == "console" {
+				if attempt.Channel == notificationv1alpha1.DeliveryChannelName("console") {
 					consoleAttempts++
-					Expect(attempt.Status).To(Equal("success"), "Console attempt should succeed")
+					Expect(attempt.Status).To(Equal(notificationv1alpha1.DeliveryAttemptStatusSuccess), "Console attempt should succeed")
 				}
-				if attempt.Channel == "slack" {
+				if attempt.Channel == notificationv1alpha1.DeliveryChannelName("slack") {
 					slackAttempts++
-					Expect(attempt.Status).To(Equal("failed"), "Slack attempts should all fail")
+					Expect(attempt.Status).To(Equal(notificationv1alpha1.DeliveryAttemptStatusFailed), "Slack attempts should all fail")
 				}
 			}
 			Expect(consoleAttempts).To(Equal(1), "Exactly 1 console delivery attempt")
@@ -243,7 +243,7 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60, // CRD minimum validation
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "slack-only",
 					},
 				},

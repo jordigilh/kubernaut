@@ -68,7 +68,8 @@ var _ = Describe("Validity Window Runtime Guard (Issue #188, BR-EM-009)", func()
 		cfg.ValidityWindow = validityWindow
 
 		r := controller.NewReconciler(
-			fakeClient, s,
+			fakeClient, fakeClient,
+			s,
 			record.NewFakeRecorder(100),
 			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 			nil, nil,

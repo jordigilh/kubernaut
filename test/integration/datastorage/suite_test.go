@@ -946,7 +946,7 @@ func verifyAndCreatePublicSchemaConstraints(ctx context.Context, targetDB *sql.D
 	createIndexSQL := `
 		CREATE UNIQUE INDEX uq_workflow_name_version_active
 		ON public.remediation_workflow_catalog (workflow_name, version)
-		WHERE status = 'active'
+		WHERE status = 'Active'
 	`
 	_, err = targetDB.ExecContext(ctx, createIndexSQL)
 	if err != nil {

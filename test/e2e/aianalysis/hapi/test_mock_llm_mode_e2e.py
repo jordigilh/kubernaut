@@ -70,7 +70,6 @@ def sample_incident_request():
         "cluster_name": "prod-cluster-1",
         "is_duplicate": False,
         "occurrence_count": 1,
-        "is_storm": False,
         "enrichment_results": {
             "detectedLabels": {
                 "gitOpsManaged": True,

@@ -493,7 +493,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			}, timeout, interval).Should(BeTrue())
 
 			ai.Status.Phase = aianalysisv1.PhaseFailed
-			ai.Status.Reason = "AIAnalysisInternalError"
+			ai.Status.Reason = aianalysisv1.ReasonAPIError
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
 			// Wait for RR to fail

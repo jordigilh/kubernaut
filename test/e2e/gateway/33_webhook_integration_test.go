@@ -45,7 +45,6 @@ import (
 // 2. CRD created in Kubernetes with correct business metadata
 // 3. Deduplication tracked via CRD status.deduplication (DD-GATEWAY-011)
 // 4. Duplicate alerts return 202 and NO new CRD created
-// 5. Storm detection aggregates multiple alerts into single CRD
 //
 // This REPLACES the old tests that only verified HTTP response body structure.
 

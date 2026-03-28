@@ -150,7 +150,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 			}, timeout, interval).Should(Equal(remediationv1.PhaseBlocked), "Expected 4th RR to be Blocked after 3 consecutive failures")
 
 			// Validate BlockReason
-			Expect(rr4.Status.BlockReason).To(Equal("ConsecutiveFailures"))
+			Expect(rr4.Status.BlockReason).To(Equal(remediationv1.BlockReasonConsecutiveFailures))
 			Expect(rr4.Status.BlockMessage).To(ContainSubstring("consecutive"), "BlockMessage should describe consecutive failure reason")
 		})
 	})

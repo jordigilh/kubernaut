@@ -198,7 +198,7 @@ var _ = Describe("InvestigatingHandler", func() {
 							Namespace: "default",
 						},
 					},
-					AnalysisTypes: []string{"investigation"},
+					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 				},
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
@@ -400,7 +400,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 					Expect(err).NotTo(HaveOccurred())
 					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should fail immediately")
-					Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"), "Should use umbrella reason")
+					Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed), "Should use umbrella reason")
 					Expect(analysis.Status.SubReason).To(Equal(expectedSubReason), "Should map enum to SubReason")
 				},
 				Entry("workflow_not_found → WorkflowNotFound", "workflow_not_found", "WorkflowNotFound"),
@@ -424,7 +424,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 					Expect(err).NotTo(HaveOccurred())
 					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
-					Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"))
+					Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed))
 					Expect(analysis.Status.SubReason).To(Equal(expectedSubReason))
 				},
 				// WorkflowNotFound patterns
@@ -645,7 +645,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				// Business outcome: Analysis completes successfully (no remediation needed)
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted), "Should be Completed (not Analyzing)")
-				Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"), "Should indicate no workflow needed")
+				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded), "Should indicate no workflow needed")
 				Expect(analysis.Status.SubReason).To(Equal("ProblemResolved"), "Should specify problem self-resolved")
 				// Terminal state - no requeue
 				Expect(result.RequeueAfter).To(BeZero(), "Should NOT requeue (terminal success)")
@@ -764,7 +764,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
 						"#301: HAPI self-resolved signal should bypass hasSubstantiveRCA")
-					Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"))
+					Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
 					Expect(analysis.Status.SubReason).To(Equal("ProblemResolved"))
 					Expect(analysis.Status.NeedsHumanReview).To(BeFalse(),
 						"Self-resolved problems do not need human review")
@@ -837,7 +837,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
 						"#301: Self-resolved signal should bypass RCA factor analysis")
-					Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"))
+					Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
 					Expect(analysis.Status.SubReason).To(Equal("ProblemResolved"))
 				})
 			})
@@ -871,11 +871,11 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				if shouldBeResolved {
 					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted), "Should be Completed (resolved)")
-					Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"))
+					Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
 				} else {
 					// BR-AI-050: Confidence <0.7 is terminal failure (reconciliation-phases.md v2.1)
 					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should fail for confidence <0.7 (BR-AI-050)")
-					Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"), "Umbrella category per structured taxonomy")
+					Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed), "Umbrella category per structured taxonomy")
 					Expect(analysis.Status.SubReason).To(Equal("LowConfidence"), "Specific cause per reconciliation-phases.md v2.1:334")
 				}
 			},
@@ -1123,7 +1123,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
 					"#388: Not-actionable alert should complete (not fail)")
-				Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"),
+				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded),
 					"#388: Should use WorkflowNotNeeded reason")
 				Expect(analysis.Status.SubReason).To(Equal("NotActionable"),
 					"#388: SubReason must be NotActionable (distinct from ProblemResolved)")
@@ -1174,7 +1174,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
 					"#388: Not-actionable signal should override #208 substantive-RCA check")
-				Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"))
+				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
 				Expect(analysis.Status.SubReason).To(Equal("NotActionable"))
 				Expect(analysis.Status.Actionability).To(Equal(aianalysis.ActionabilityNotActionable),
 					"#388: Actionability must be NotActionable even with substantive RCA")

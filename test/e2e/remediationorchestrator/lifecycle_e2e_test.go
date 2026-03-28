@@ -27,7 +27,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -44,7 +43,6 @@ import (
 // - Kind cluster running with isolated kubeconfig
 // - All CRDs installed (handled by BeforeSuite)
 // - NO running RO controller (tests simulate controller behavior)
-//
 var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 	var testNS string
 
@@ -82,11 +80,6 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -150,11 +143,6 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -224,11 +212,6 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -299,11 +282,6 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -320,7 +298,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(ai), ai); err != nil {
 					return ""
 				}
-				return ai.Status.Reason
+				return string(ai.Status.Reason)
 			}, timeout, interval).Should(Equal("WorkflowNotNeeded"))
 
 			By("E2E-RO-353-001: Verifying NextAllowedExecution suppression window (#353)")
@@ -371,11 +349,6 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -431,11 +404,6 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -452,7 +420,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())
 			createdRR.Status.Deduplication = &remediationv1.DeduplicationStatus{
 				FirstSeenAt:     &fiveMinutesAgo,
-				LastSeenAt:     &now,
+				LastSeenAt:      &now,
 				OccurrenceCount: 2,
 			}
 			createdRR.Status.DuplicateOf = "rr-original-parent"

@@ -266,7 +266,7 @@ var _ = Describe("Workflow Content Integrity Integration Tests (BR-WORKFLOW-006)
 
 			Eventually(func() string {
 				return queryWorkflowStatus(wr1.WorkflowID)
-			}, 5*time.Second, 500*time.Millisecond).Should(Equal("superseded"),
+			}, 5*time.Second, 500*time.Millisecond).Should(Equal("Superseded"),
 				"Old workflow should be marked as superseded")
 		})
 	})
@@ -286,7 +286,7 @@ var _ = Describe("Workflow Content Integrity Integration Tests (BR-WORKFLOW-006)
 			wr1 := registerIntegrityWorkflow(httpServer.URL, yamlContent)
 			Expect(wr1.StatusCode).To(Equal(http.StatusCreated))
 
-			err := workflowRepo.UpdateStatus(ctx, wr1.WorkflowID, "1.0.0", "disabled", "test disable", "test-user")
+			err := workflowRepo.UpdateStatus(ctx, wr1.WorkflowID, "1.0.0", "Disabled", "test disable", "test-user")
 			Expect(err).ToNot(HaveOccurred())
 
 			wr2 := registerIntegrityWorkflow(httpServer.URL, yamlContent)
@@ -297,7 +297,7 @@ var _ = Describe("Workflow Content Integrity Integration Tests (BR-WORKFLOW-006)
 
 			Eventually(func() string {
 				return queryWorkflowStatus(wr1.WorkflowID)
-			}, 5*time.Second, 500*time.Millisecond).Should(Equal("active"))
+			}, 5*time.Second, 500*time.Millisecond).Should(Equal("Active"))
 		})
 	})
 
@@ -317,7 +317,7 @@ var _ = Describe("Workflow Content Integrity Integration Tests (BR-WORKFLOW-006)
 			wr1 := registerIntegrityWorkflow(httpServer.URL, yamlOriginal)
 			Expect(wr1.StatusCode).To(Equal(http.StatusCreated))
 
-			err := workflowRepo.UpdateStatus(ctx, wr1.WorkflowID, "1.0.0", "disabled", "test disable", "test-user")
+			err := workflowRepo.UpdateStatus(ctx, wr1.WorkflowID, "1.0.0", "Disabled", "test disable", "test-user")
 			Expect(err).ToNot(HaveOccurred())
 
 			wr2 := registerIntegrityWorkflow(httpServer.URL, yamlModified)
@@ -392,7 +392,7 @@ var _ = Describe("Workflow Content Integrity Integration Tests (BR-WORKFLOW-006)
 
 			var activeCount int
 			err := db.QueryRow(
-				"SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_name = $1 AND status = 'active'", testID,
+				"SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_name = $1 AND status = 'Active'", testID,
 			).Scan(&activeCount)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(activeCount).To(Equal(1), "Exactly one active record should exist")
@@ -412,7 +412,7 @@ var _ = Describe("Workflow Content Integrity Integration Tests (BR-WORKFLOW-006)
 				Version:          "1.0.0",
 				SchemaVersion:    "1.0",
 				Name:             testID,
-				Status:           "active",
+				Status:           "Active",
 				IsLatestVersion:  true,
 				Content:          "content-1",
 				ContentHash:      "hash-1",
@@ -428,7 +428,7 @@ var _ = Describe("Workflow Content Integrity Integration Tests (BR-WORKFLOW-006)
 				Version:          "1.0.0",
 				SchemaVersion:    "1.0",
 				Name:             testID,
-				Status:           "active",
+				Status:           "Active",
 				IsLatestVersion:  true,
 				Content:          "content-2",
 				ContentHash:      "hash-2",

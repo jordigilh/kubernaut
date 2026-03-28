@@ -129,15 +129,15 @@ var _ = Describe("BR-STORAGE-020: FailedDetections Support", func() {
 				// ARRANGE: Valid field names per DD-WORKFLOW-001 v2.2
 				// Using constants from models package
 				// NOTE: podSecurityLevel removed in v2.2 (PSP deprecated, PSS is namespace-level)
-				validFields := []string{"gitOpsManaged", "gitOpsTool", "pdbProtected", "hpaEnabled", "stateful", "helmManaged", "networkIsolated", "serviceMesh"}
+				validFields := []string{"gitOpsManaged", "gitOpsTool", "pdbProtected", "hpaEnabled", "stateful", "helmManaged", "networkIsolated", "serviceMesh", "resourceQuotaConstrained"}
 
 				dl := &models.DetectedLabels{
 					FailedDetections: validFields,
 				}
 
-				// ASSERT: All valid fields are accepted (8 fields per DD-WORKFLOW-001 v2.2)
-				// podSecurityLevel removed in v2.2
-				Expect(dl.FailedDetections).To(HaveLen(8))
+				// ASSERT: All valid fields are accepted (9 fields per DD-HAPI-018 v1.4)
+				// podSecurityLevel removed in v2.2; resourceQuotaConstrained added in #366
+				Expect(dl.FailedDetections).To(HaveLen(9))
 				for _, field := range validFields {
 					Expect(dl.FailedDetections).To(ContainElement(field))
 				}
@@ -148,6 +148,7 @@ var _ = Describe("BR-STORAGE-020: FailedDetections Support", func() {
 				Expect(models.IsValidFailedDetectionField("gitOpsManaged")).To(BeTrue())
 				Expect(models.IsValidFailedDetectionField("pdbProtected")).To(BeTrue())
 				Expect(models.IsValidFailedDetectionField("hpaEnabled")).To(BeTrue())
+				Expect(models.IsValidFailedDetectionField("resourceQuotaConstrained")).To(BeTrue())
 
 				// ASSERT: Invalid field names return false
 				Expect(models.IsValidFailedDetectionField("invalidField")).To(BeFalse())

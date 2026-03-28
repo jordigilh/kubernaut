@@ -536,7 +536,7 @@ func CountGoroutines() int {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// STORM DETECTION HELPERS (DO-REFACTOR)
+// DEDUPLICATION HELPERS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // GenerateDuplicateScenario generates N alerts for deduplication testing

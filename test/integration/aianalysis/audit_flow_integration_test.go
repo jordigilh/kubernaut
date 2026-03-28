@@ -171,7 +171,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 						},
 						// DD-AIANALYSIS-005: v1.x supports single analysis type only
 						// Multiple values in AnalysisTypes are ignored by controller
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -439,7 +439,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 								Namespace: namespace,
 							},
 						},
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -550,7 +550,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 								Namespace: namespace,
 							},
 						},
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -639,7 +639,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 							},
 						},
 						// DD-AIANALYSIS-005: v1.x single analysis type only
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -750,7 +750,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 							},
 						},
 						// DD-AIANALYSIS-005: v1.x single analysis type only
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -859,7 +859,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 							},
 						},
 						// DD-AIANALYSIS-005: v1.x single analysis type only
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -944,7 +944,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 								Namespace: namespace,
 							},
 						},
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}

@@ -27,6 +27,7 @@ import (
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -88,7 +89,7 @@ func buildRWForReconciler(name, namespace, workflowID, actionType string) *rwv1a
 	if workflowID != "" {
 		rw.Status = rwv1alpha1.RemediationWorkflowStatus{
 			WorkflowID:    workflowID,
-			CatalogStatus: "active",
+			CatalogStatus: sharedtypes.CatalogStatusActive,
 		}
 	}
 	return rw

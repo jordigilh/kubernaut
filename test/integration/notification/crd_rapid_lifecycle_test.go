@@ -87,7 +87,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 						Subject:  fmt.Sprintf("Rapid Lifecycle Cycle %d", cycle+1),
 						Body:     fmt.Sprintf("Testing rapid create-delete-create (cycle %d)", cycle+1),
 						Priority: notificationv1alpha1.NotificationPriorityMedium,
-						Metadata: map[string]string{
+						Extensions: map[string]string{
 							"test-channel-set": "console-slack",
 						},
 					},
@@ -167,7 +167,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 						Subject:  fmt.Sprintf("Rapid Same-Name Test (Cycle %d)", cycle+1),
 						Body:     fmt.Sprintf("Testing rapid create-delete-create with same name (cycle %d)", cycle+1),
 						Priority: notificationv1alpha1.NotificationPriorityHigh,
-						Metadata: map[string]string{
+						Extensions: map[string]string{
 							"test-channel-set": "console-slack",
 						},
 					},
@@ -247,7 +247,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 						Subject:  fmt.Sprintf("Extreme Rapid Test %d", i),
 						Body:     "Stress testing rapid create-delete",
 						Priority: notificationv1alpha1.NotificationPriorityLow,
-						Metadata: map[string]string{
+						Extensions: map[string]string{
 							"test-channel-set": "console-slack",
 						},
 					},

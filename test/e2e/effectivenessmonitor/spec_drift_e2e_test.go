@@ -72,6 +72,8 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 
 		By("Seeding workflowexecution.execution.started event (no_execution guard)")
 		seedWorkflowStartedEvent(correlationID)
+		By("Seeding workflowexecution.workflow.completed event (full scope, #573 G4)")
+		seedWorkflowCompletedEvent(correlationID)
 
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
@@ -229,6 +231,8 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 
 		By("Seeding workflowexecution.execution.started event (no_execution guard)")
 		seedWorkflowStartedEvent(correlationID)
+		By("Seeding workflowexecution.workflow.completed event (full scope, #573 G4)")
+		seedWorkflowCompletedEvent(correlationID)
 
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),

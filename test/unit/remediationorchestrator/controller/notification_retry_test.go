@@ -512,3 +512,222 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 			"NotificationRequestRefs should remain unchanged")
 	})
 })
+
+// ============================================================================
+// VERIFICATION CONTEXT RECONCILER INTEGRATION TESTS (#318)
+// Business Requirement: BR-ORCH-045 (completion notification includes EA verification)
+//
+// These tests exercise the full reconciler path: ensureNotificationsCreated
+// fetches the EA via EffectivenessAssessmentRef and passes it to
+// CreateCompletionNotification, which populates the verification section.
+// ============================================================================
+var _ = Describe("Completion Notification Verification Context (#318)", func() {
+
+	var (
+		ctx                 context.Context
+		scheme              = setupScheme()
+		stabilizationWindow = 30 * time.Second
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	// ========================================
+	// IT-RO-318-004: Reconciler fetches EA via ref
+	// ========================================
+	It("IT-RO-318-004: should include EA verification data in completion notification when EA ref exists", func() {
+		rrName := "rr-it-318-004"
+		namespace := "test-ns"
+		aiName := fmt.Sprintf("ai-%s", rrName)
+		eaName := fmt.Sprintf("ea-%s", rrName)
+		completionNTName := fmt.Sprintf("nr-completion-%s", rrName)
+
+		deadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              rrName,
+				Namespace:         namespace,
+				CreationTimestamp: metav1.Now(),
+				UID:               types.UID(rrName + "-uid"),
+			},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalName:        "test-signal",
+				SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+				Severity:          "critical",
+				SignalType:        "alert",
+				TargetType:        "kubernetes",
+				FiringTime:        metav1.Now(),
+				ReceivedTime:      metav1.Now(),
+				TargetResource: remediationv1.ResourceIdentifier{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: namespace,
+				},
+			},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseVerifying,
+				Outcome:      "Remediated",
+				EffectivenessAssessmentRef: &corev1.ObjectReference{
+					Kind:      "EffectivenessAssessment",
+					Name:      eaName,
+					Namespace: namespace,
+				},
+				VerificationDeadline: &deadline,
+			},
+		}
+
+		ai := &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      aiName,
+				Namespace: namespace,
+			},
+			Status: aianalysisv1.AIAnalysisStatus{
+				Phase:     aianalysisv1.PhaseCompleted,
+				RootCause: "Memory leak in container",
+			},
+		}
+
+		ea := &eav1.EffectivenessAssessment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      eaName,
+				Namespace: namespace,
+			},
+			Spec: eav1.EffectivenessAssessmentSpec{
+				CorrelationID:           rrName,
+				RemediationRequestPhase: "Verifying",
+			},
+			Status: eav1.EffectivenessAssessmentStatus{
+				Phase:            eav1.PhaseCompleted,
+				AssessmentReason: eav1.AssessmentReasonFull,
+				ValidityDeadline: &deadline,
+				Components: eav1.EAComponents{
+					HealthAssessed:          true,
+					HealthScore:             float64Ptr(1.0),
+					AlertAssessed:           true,
+					AlertScore:              float64Ptr(1.0),
+					MetricsAssessed:         true,
+					MetricsScore:            float64Ptr(1.0),
+					HashComputed:            true,
+					PostRemediationSpecHash: "sha256:abc123",
+					CurrentSpecHash:         "sha256:abc123",
+				},
+			},
+		}
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr, ai, ea).
+			WithStatusSubresource(rr, ea).
+			Build()
+
+		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
+		reconciler := controller.NewReconciler(
+			k8sClient, k8sClient, scheme,
+			nil, recorder, roMetrics,
+			controller.TimeoutConfig{Verifying: 30 * time.Minute},
+			&MockRoutingEngine{},
+			eaCreator,
+		)
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		nr := &notificationv1.NotificationRequest{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: completionNTName, Namespace: namespace}, nr)
+		Expect(err).ToNot(HaveOccurred(), "Completion NotificationRequest should exist")
+
+		Expect(nr.Spec.Body).To(ContainSubstring("Verification Results"))
+		Expect(nr.Spec.Body).To(ContainSubstring("Verification passed"))
+
+		Expect(nr.Spec.Context.Verification.Assessed).To(BeTrue())
+		Expect(nr.Spec.Context.Verification.Outcome).To(Equal("passed"))
+		Expect(nr.Spec.Context.Verification.Reason).To(Equal("full"))
+	})
+
+	// ========================================
+	// IT-RO-318-005: Reconciler handles missing EA ref gracefully
+	// ========================================
+	It("IT-RO-318-005: should create completion notification with 'not available' when EA ref is nil", func() {
+		rrName := "rr-it-318-005"
+		namespace := "test-ns"
+		aiName := fmt.Sprintf("ai-%s", rrName)
+		completionNTName := fmt.Sprintf("nr-completion-%s", rrName)
+
+		deadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              rrName,
+				Namespace:         namespace,
+				CreationTimestamp: metav1.Now(),
+				UID:               types.UID(rrName + "-uid"),
+			},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalName:        "test-signal",
+				SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+				Severity:          "critical",
+				SignalType:        "alert",
+				TargetType:        "kubernetes",
+				FiringTime:        metav1.Now(),
+				ReceivedTime:      metav1.Now(),
+				TargetResource: remediationv1.ResourceIdentifier{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: namespace,
+				},
+			},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase:               remediationv1.PhaseVerifying,
+				Outcome:                    "Remediated",
+				EffectivenessAssessmentRef: nil,
+				VerificationDeadline:       &deadline,
+			},
+		}
+
+		ai := &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      aiName,
+				Namespace: namespace,
+			},
+			Status: aianalysisv1.AIAnalysisStatus{
+				Phase:     aianalysisv1.PhaseCompleted,
+				RootCause: "Memory leak in container",
+			},
+		}
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr, ai).
+			WithStatusSubresource(rr).
+			Build()
+
+		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
+		reconciler := controller.NewReconciler(
+			k8sClient, k8sClient, scheme,
+			nil, recorder, roMetrics,
+			controller.TimeoutConfig{Verifying: 30 * time.Minute},
+			&MockRoutingEngine{},
+			eaCreator,
+		)
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		nr := &notificationv1.NotificationRequest{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: completionNTName, Namespace: namespace}, nr)
+		Expect(err).ToNot(HaveOccurred(), "Completion NotificationRequest should exist even without EA ref")
+
+		Expect(nr.Spec.Body).To(ContainSubstring("not available"))
+
+		Expect(nr.Spec.Context.Verification.Assessed).To(BeFalse())
+		Expect(nr.Spec.Context.Verification.Outcome).To(Equal("unavailable"))
+	})
+})

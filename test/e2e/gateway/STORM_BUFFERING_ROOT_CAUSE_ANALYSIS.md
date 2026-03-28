@@ -1,3 +1,7 @@
+> **Historical Note (v1.2):** This document contains references to storm detection / aggregation
+> which was removed in v1.2 per DD-GATEWAY-015. Storm-related content is retained for historical
+> context only and does not reflect current architecture.
+
 # Storm Buffering Root Cause Analysis
 
 **Date**: 2024-11-24

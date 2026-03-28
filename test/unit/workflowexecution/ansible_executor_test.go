@@ -172,7 +172,7 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		awxClient = &mockAWXClient{}
-		ansibleExec = executor.NewAnsibleExecutor(awxClient, nil, 1, ctrl.Log.WithName("test"))
+		ansibleExec = executor.NewAnsibleExecutor(awxClient, nil, nil, 1, ctrl.Log.WithName("test"))
 	})
 
 	It("should return engine name 'ansible'", func() {
@@ -204,9 +204,9 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 				"REPLICAS":  "3",
 			})
 
-			ref, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(ref).To(ContainSubstring("awx-job-"))
+			Expect(result.ResourceName).To(ContainSubstring("awx-job-"))
 			Expect(capturedTemplateID).To(Equal(99))
 			Expect(capturedExtraVars).To(HaveKeyWithValue("NAMESPACE", "default"))
 			Expect(capturedExtraVars).To(HaveKeyWithValue("REPLICAS", BeNumerically("==", 3)))
@@ -320,16 +320,17 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 	Context("GetStatus", func() {
 		It("UT-WE-015-002: should map all 7 AWX states to correct WFE phases", func() {
 			testCases := []struct {
-				awxStatus     string
-				expectedPhase string
+				awxStatus            string
+				expectedPhase        string
+				expectedCondStatus   corev1.ConditionStatus
 			}{
-				{"pending", workflowexecutionv1alpha1.PhasePending},
-				{"waiting", workflowexecutionv1alpha1.PhasePending},
-				{"running", workflowexecutionv1alpha1.PhaseRunning},
-				{"successful", workflowexecutionv1alpha1.PhaseCompleted},
-				{"failed", workflowexecutionv1alpha1.PhaseFailed},
-				{"error", workflowexecutionv1alpha1.PhaseFailed},
-				{"canceled", workflowexecutionv1alpha1.PhaseFailed},
+				{"pending", workflowexecutionv1alpha1.PhasePending, corev1.ConditionUnknown},
+				{"waiting", workflowexecutionv1alpha1.PhasePending, corev1.ConditionUnknown},
+				{"running", workflowexecutionv1alpha1.PhaseRunning, corev1.ConditionUnknown},
+				{"successful", workflowexecutionv1alpha1.PhaseCompleted, corev1.ConditionTrue},
+				{"failed", workflowexecutionv1alpha1.PhaseFailed, corev1.ConditionFalse},
+				{"error", workflowexecutionv1alpha1.PhaseFailed, corev1.ConditionFalse},
+				{"canceled", workflowexecutionv1alpha1.PhaseFailed, corev1.ConditionFalse},
 			}
 
 			for _, tc := range testCases {
@@ -348,7 +349,7 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 				Expect(err).ToNot(HaveOccurred(), "AWX status %q should not error", tc.awxStatus)
 				Expect(result.Phase).To(Equal(tc.expectedPhase),
 					"AWX status %q should map to %q, got %q", tc.awxStatus, tc.expectedPhase, result.Phase)
-				Expect(result.Summary.Status).To(Equal(tc.expectedPhase), "summary status should match phase")
+				Expect(result.Summary.Status).To(Equal(tc.expectedCondStatus), "summary condition status should match phase mapping")
 			}
 		})
 
@@ -431,7 +432,7 @@ var _ = Describe("MapAWXStatusToResult (BR-WE-015)", func() {
 		result := executor.MapAWXStatusToResult(status)
 		Expect(result.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
 		Expect(result.Message).To(ContainSubstring("connection refused"))
-		Expect(result.Summary.Status).To(Equal(workflowexecutionv1alpha1.PhaseFailed), "summary should reflect failure phase")
+		Expect(result.Summary.Status).To(Equal(corev1.ConditionFalse), "summary should reflect failure condition")
 	})
 
 	It("should handle unknown AWX status gracefully", func() {
@@ -498,7 +499,7 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 			})
 
 			fakeClient = newFakeClient(secret, wfe)
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			var createdCredTypeName string
 			var createdCredName string
@@ -535,9 +536,9 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 				},
 			}
 
-			ref, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+			result, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(ref).To(ContainSubstring("awx-job-"))
+			Expect(result.ResourceName).To(ContainSubstring("awx-job-"))
 			Expect(createdCredTypeName).To(Equal("kubernaut-secret-gitea-repo-creds"))
 			Expect(createdCredName).To(ContainSubstring("gitea-repo-creds"))
 			Expect(launchedWithCreds).To(ContainElement(42))
@@ -560,7 +561,7 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 				},
 			}
 			fakeClient = newFakeClient(secret)
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
@@ -598,7 +599,7 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 
 		It("UT-WE-015-032: should skip credential injection when no dependencies", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			launchCalled := false
 			launchWithCredsCalled := false
@@ -626,7 +627,7 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 
 		It("UT-WE-015-033: should return error when K8s Secret not found", func() {
 			fakeClient = newFakeClient() // No secret
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 
@@ -651,7 +652,7 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 	Context("Cleanup with ephemeral credentials", func() {
 		It("UT-WE-015-034: should delete ephemeral credentials from status before cancelling job", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			var deletedCredIDs []int
 			awxClient.deleteCredentialFn = func(_ context.Context, credID int) error {
@@ -684,7 +685,7 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 
 		It("UT-WE-015-035: should continue cleanup when credential deletion fails", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			awxClient.deleteCredentialFn = func(_ context.Context, credID int) error {
 				if credID == 42 {
@@ -711,7 +712,7 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 
 		It("UT-WE-015-036: should skip credential cleanup when no credential IDs in status", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			deleteCredCalled := false
 			awxClient.deleteCredentialFn = func(_ context.Context, _ int) error {
@@ -791,7 +792,7 @@ var _ = Describe("AnsibleExecutor dependencies.configMaps injection (BR-WE-015)"
 			})
 
 			fakeClient = newFakeClient(cm, wfe)
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			var capturedExtraVars map[string]interface{}
 			launchCalled := false
@@ -853,7 +854,7 @@ var _ = Describe("AnsibleExecutor dependencies.configMaps injection (BR-WE-015)"
 			wfe := newAnsibleWFE("we-both-deps", "kubernaut-system", engineConfig, nil)
 
 			fakeClient = newFakeClient(secret, cm, wfe)
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
@@ -892,7 +893,7 @@ var _ = Describe("AnsibleExecutor dependencies.configMaps injection (BR-WE-015)"
 
 		It("UT-WE-015-042: should return error when ConfigMap not found", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 
@@ -969,7 +970,7 @@ var _ = Describe("AnsibleExecutor credential merging (#365, BR-WE-015)", func() 
 			wfe := newAnsibleWFE("we-merge-creds", "kubernaut-system", engineConfig, nil)
 
 			fakeClient = newFakeClient(secret, wfe)
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
@@ -998,9 +999,9 @@ var _ = Describe("AnsibleExecutor credential merging (#365, BR-WE-015)", func() 
 				},
 			}
 
-			ref, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+			result, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(ref).To(Equal("awx-job-77"))
+			Expect(result.ResourceName).To(Equal("awx-job-77"))
 
 			By("Verifying template credentials 100, 200 are present in the launch")
 			Expect(launchedCredIDs).To(ContainElement(100),
@@ -1033,7 +1034,7 @@ var _ = Describe("AnsibleExecutor credential merging (#365, BR-WE-015)", func() 
 			wfe := newAnsibleWFE("we-dedup-creds", "kubernaut-system", engineConfig, nil)
 
 			fakeClient = newFakeClient(secret, wfe)
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
@@ -1092,7 +1093,7 @@ var _ = Describe("AnsibleExecutor credential merging (#365, BR-WE-015)", func() 
 			wfe := newAnsibleWFE("we-no-template-creds", "kubernaut-system", engineConfig, nil)
 
 			fakeClient = newFakeClient(secret, wfe)
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
@@ -1144,7 +1145,7 @@ var _ = Describe("AnsibleExecutor credential merging (#365, BR-WE-015)", func() 
 			wfe := newAnsibleWFE("we-cred-fetch-fail", "kubernaut-system", engineConfig, nil)
 
 			fakeClient = newFakeClient(secret, wfe)
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
@@ -1172,12 +1173,12 @@ var _ = Describe("AnsibleExecutor credential merging (#365, BR-WE-015)", func() 
 				},
 			}
 
-			ref, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+			result, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
 
 			By("Verifying launch succeeded despite credential fetch failure")
 			Expect(err).ToNot(HaveOccurred(),
 				"Create must not fail when GetJobTemplateCredentials errors — degraded launch is acceptable")
-			Expect(ref).To(Equal("awx-job-77"))
+			Expect(result.ResourceName).To(Equal("awx-job-77"))
 
 			By("Verifying only ephemeral credential was sent (template creds could not be fetched)")
 			Expect(launchedCredIDs).To(Equal([]int{42}),
@@ -1230,7 +1231,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 	Context("Create injects K8s credential alongside dependency secrets", func() {
 		It("UT-WE-500-001: should inject K8s credential when no dependency secrets exist", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1262,9 +1263,9 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 			})
 			wfe := newAnsibleWFE("we-k8s-cred-test", "kubernaut-system", engineConfig, nil)
 
-			ref, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(ref).To(ContainSubstring("awx-job-"))
+			Expect(result.ResourceName).To(ContainSubstring("awx-job-"))
 
 			By("Verifying K8s credential was created with controller SA token")
 			Expect(capturedCredName).To(Equal("kubernaut-k8s-we-k8s-cred-test"))
@@ -1295,7 +1296,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 			wfe := newAnsibleWFE("we-k8s-plus-secrets", "kubernaut-system", engineConfig, nil)
 
 			fakeClient = newFakeClient(secret, wfe)
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1341,7 +1342,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 		It("UT-WE-500-003: should proceed without K8s credential when in-cluster creds unavailable", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = func() (*executor.InClusterCredentials, error) {
 				return nil, fmt.Errorf("in-cluster environment not detected: KUBERNETES_SERVICE_HOST or KUBERNETES_SERVICE_PORT not set")
 			}
@@ -1359,17 +1360,17 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 			})
 			wfe := newAnsibleWFE("we-no-incluster", "kubernaut-system", engineConfig, nil)
 
-			ref, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 
 			By("Verifying job still launches (degraded, without K8s cred)")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(ref).To(ContainSubstring("awx-job-"))
+			Expect(result.ResourceName).To(ContainSubstring("awx-job-"))
 			Expect(launchCalled).To(BeTrue(), "should fall back to standard launch without credentials")
 		})
 
 		It("UT-WE-552-012: should create v2 custom type with kubeconfig injectors when all lookups fail", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1413,7 +1414,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 		It("UT-WE-500-005: should reuse existing custom fallback type", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1456,7 +1457,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 		It("UT-WE-500-006: K8s credential should be cleaned up with other ephemeral credentials", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 
 			var deletedCredIDs []int
 			awxClient.deleteCredentialFn = func(_ context.Context, credID int) error {
@@ -1491,7 +1492,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 	Context("Issue #552: Credential type resolution strategies", func() {
 		It("UT-WE-552-004: should resolve built-in type by name on first attempt", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1534,7 +1535,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 		It("UT-WE-552-005: should fall back to kind-based lookup when name lookups fail", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1575,7 +1576,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 		It("UT-WE-552-006: should create v2 custom type when all lookups fail", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1613,7 +1614,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 		It("UT-WE-552-007: should reuse existing v1 custom type before creating v2", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1658,7 +1659,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 	Context("Issue #552: Kubeconfig injector structure", func() {
 		It("UT-WE-552-001: should use file-based kubeconfig injector, not env vars", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1697,7 +1698,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 		It("UT-WE-552-002: kubeconfig template should contain required fields", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1736,7 +1737,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 		It("UT-WE-552-003: K8S_AUTH_KUBECONFIG env var should reference tower filename", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1779,7 +1780,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 		It("UT-WE-552-008: empty CA should produce insecure-skip-tls-verify in kubeconfig", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCredsEmptyCA
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1816,7 +1817,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 		It("UT-WE-552-009: empty CA should omit ssl_ca_cert from credential inputs", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCredsEmptyCA
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1852,7 +1853,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 		It("UT-WE-552-010: non-empty CA should include ssl_ca_cert in credential inputs", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCreds // has valid CA cert
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1889,7 +1890,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 		It("UT-WE-552-011: full happy path with valid creds and built-in type", func() {
 			fakeClient = newFakeClient()
-			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
 			ansibleExec.InClusterCredentialsFn = mockInClusterCreds
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
@@ -1920,9 +1921,9 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 			})
 			wfe := newAnsibleWFE("we-happy-path", "kubernaut-system", engineConfig, nil)
 
-			ref, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(ref).To(ContainSubstring("awx-job-"))
+			Expect(result.ResourceName).To(ContainSubstring("awx-job-"))
 
 			By("Verifying built-in type ID was used")
 			Expect(capturedCredTypeID).To(Equal(5))

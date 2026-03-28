@@ -143,7 +143,7 @@ var _ = Describe("Notification Controller K8s Events [DD-EVENT-001]", func() {
 				WithStatusSubresource(nt).
 				Build()
 
-			metricsRecorder := notificationmetrics.NewPrometheusRecorderWithRegistry(prometheus.NewRegistry())
+			metricsRecorder := notificationmetrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 			statusManager := notificationstatus.NewManager(fakeClient, fakeClient)
 			sanitizer := sanitization.NewSanitizer()
 			auditManager := notificationaudit.NewManager("test")
@@ -218,7 +218,7 @@ var _ = Describe("Notification Controller K8s Events [DD-EVENT-001]", func() {
 				WithStatusSubresource(nt).
 				Build()
 
-			metricsRecorder := notificationmetrics.NewPrometheusRecorderWithRegistry(prometheus.NewRegistry())
+			metricsRecorder := notificationmetrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 			statusManager := notificationstatus.NewManager(fakeClient, fakeClient)
 			sanitizer := sanitization.NewSanitizer()
 			auditManager := notificationaudit.NewManager("test")

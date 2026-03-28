@@ -25,7 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -44,35 +44,35 @@ var _ = Describe("E2E-AA-064: Session-Based Async Flow", Label("e2e", "session",
 	)
 
 	Context("E2E-AA-064-001: AA async submit/poll/result flow (incident)", func() {
-		var analysis *aianalysisv1alpha1.AIAnalysis
+		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
-			analysis = &aianalysisv1alpha1.AIAnalysis{
+			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-session-async-" + randomSuffix(),
 					Namespace: controllerNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-remediation-session",
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-session-001",
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-session-001",
 							Severity:         "medium",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "session-test-pod",
 								Namespace: "staging",
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
 					},
 				},
 			}

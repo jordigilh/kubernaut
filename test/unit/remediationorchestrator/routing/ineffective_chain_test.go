@@ -449,15 +449,15 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 })
 
 // newForwardChainEntry creates a DS entry with full forward-chain detection fields.
-// WorkflowType and SignalResolved are required for Layer 1b (Issue #525).
-func newForwardChainEntry(preHash, postHash, workflowType string, signalResolved bool, completedAt time.Time) ogenclient.RemediationHistoryEntry {
+// ActionType and SignalResolved are required for Layer 1b (Issue #525).
+func newForwardChainEntry(preHash, postHash, actionType string, signalResolved bool, completedAt time.Time) ogenclient.RemediationHistoryEntry {
 	return ogenclient.RemediationHistoryEntry{
 		RemediationUID:          fmt.Sprintf("rr-uid-%d", completedAt.UnixNano()),
 		PreRemediationSpecHash:  ogenclient.NewOptString(preHash),
 		PostRemediationSpecHash: ogenclient.NewOptString(postHash),
 		HashMatch:               ogenclient.NewOptRemediationHistoryEntryHashMatch(ogenclient.RemediationHistoryEntryHashMatchNone),
 		Outcome:                 ogenclient.NewOptString("Completed"),
-		WorkflowType:            ogenclient.NewOptNilString(workflowType),
+		ActionType:              ogenclient.NewOptNilString(actionType),
 		SignalResolved:          ogenclient.NewOptNilBool(signalResolved),
 		EffectivenessScore:      ogenclient.NewOptNilFloat64(0.0),
 		CompletedAt:             completedAt,
@@ -539,7 +539,7 @@ var _ = Describe("Forward Hash Chain Detection (Issue #525)", func() {
 	// Layer 1b: Forward hash chain (Issue #525)
 	// All mock data in DESCENDING order (most recent first) to match production DS.
 	// Threshold = 2 entries in DS + incoming RR = 3rd attempt triggers block.
-	// Conditions: same WorkflowType, SignalResolved==false, within 1h, hash-linked.
+	// Conditions: same ActionType, SignalResolved==false, within 1h, hash-linked.
 	// ========================================
 
 	Context("UT-RO-525-001: Forward hash chain of 2 entries triggers block", func() {
@@ -651,7 +651,7 @@ var _ = Describe("Forward Hash Chain Detection (Issue #525)", func() {
 	})
 
 	Context("UT-RO-525-008: Different action type breaks chain", func() {
-		It("should return nil when entries have different WorkflowType values", func() {
+		It("should return nil when entries have different ActionType values", func() {
 			now := time.Now()
 			entries := []ogenclient.RemediationHistoryEntry{
 				newForwardChainEntry("hashB", "hashC", "RestartPod", false, now.Add(-20*time.Minute)),

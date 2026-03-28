@@ -85,7 +85,7 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 				Subject:  "E2E Test: Multi-Channel Fanout",
 				Body:     "Testing delivery to console, file, and log channels simultaneously",
 				Priority: notificationv1alpha1.NotificationPriorityHigh,
-				Metadata: map[string]string{
+				Extensions: map[string]string{
 					"test-channel-set": "console-file-log",
 				},
 			},
@@ -162,8 +162,8 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 			// Verify each channel appears in delivery attempts
 			channelsSeen := make(map[string]bool)
 			for _, attempt := range notification.Status.DeliveryAttempts {
-				channelsSeen[attempt.Channel] = true
-				Expect(attempt.Status).To(Equal("success"), "All attempts should succeed")
+				channelsSeen[string(attempt.Channel)] = true
+				Expect(attempt.Status).To(Equal(notificationv1alpha1.DeliveryAttemptStatusSuccess), "All attempts should succeed")
 			}
 
 			Expect(channelsSeen).To(HaveKey("console"), "Console channel should be in delivery attempts")
@@ -195,14 +195,14 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 				Subject:  "E2E Test: Log Channel Structured Output",
 				Body:     "Testing structured JSON log delivery",
 				Priority: notificationv1alpha1.NotificationPriorityLow,
-				Metadata: map[string]string{
+				Extensions: map[string]string{
 					"test-channel-set": "log-only",
 					"test-key":         "test-value",
 					"cluster":          "e2e-cluster",
 					"namespace":        "default",
 					"alert-name":       "TestAlert",
 				},
-				},
+			},
 			}
 
 			err := k8sClient.Create(ctx, notification)
@@ -236,13 +236,13 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 
 			// Verify delivery attempt details
 			logAttempt := notification.Status.DeliveryAttempts[0]
-			Expect(logAttempt.Channel).To(Equal("log"), "Delivery attempt should be for log channel")
-			Expect(logAttempt.Status).To(Equal("success"), "Log delivery should succeed")
+			Expect(logAttempt.Channel).To(Equal(notificationv1alpha1.DeliveryChannelName("log")), "Delivery attempt should be for log channel")
+			Expect(logAttempt.Status).To(Equal(notificationv1alpha1.DeliveryAttemptStatusSuccess), "Log delivery should succeed")
 			Expect(logAttempt.Timestamp).ToNot(BeZero(), "Delivery attempt should have timestamp")
 
 			By("BUSINESS OUTCOME VALIDATION (BR-NOT-053)")
 			// ✅ Log channel delivers notifications as structured JSON to stdout
-			// ✅ Metadata fields are preserved in log output
+			// ✅ Spec fields are preserved in log output
 			// ✅ Delivery is recorded in status with timestamps
 			// ✅ Log channel works independently without file channel
 			//

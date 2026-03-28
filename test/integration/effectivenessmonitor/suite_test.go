@@ -356,6 +356,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	reconciler := controller.NewReconciler(
 		k8sManager.GetClient(),
+		k8sManager.GetAPIReader(),
 		k8sManager.GetScheme(),
 		k8sManager.GetEventRecorderFor("effectivenessmonitor-controller"),
 		controllerMetrics,

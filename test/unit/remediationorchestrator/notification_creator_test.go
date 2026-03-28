@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
@@ -47,6 +48,7 @@ var _ = Describe("NotificationCreator", func() {
 		_ = remediationv1.AddToScheme(scheme)
 		_ = notificationv1.AddToScheme(scheme)
 		_ = aianalysisv1.AddToScheme(scheme)
+		_ = eav1.AddToScheme(scheme)
 	})
 
 	Describe("CreateApprovalNotification", func() {
@@ -508,11 +510,11 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", "test-rr"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("aiAnalysis", "test-ai"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("approvalReason", "low_confidence"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("confidence", "0.75"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("selectedWorkflow", "restart-pod"))
+				Expect(nr.Spec.Context.Lineage.RemediationRequest).To(Equal("test-rr"))
+				Expect(nr.Spec.Context.Lineage.AIAnalysis).To(Equal("test-ai"))
+				Expect(nr.Spec.Context.Analysis.ApprovalReason).To(Equal("low_confidence"))
+				Expect(nr.Spec.Context.Workflow.Confidence).To(Equal("0.75"))
+				Expect(nr.Spec.Context.Workflow.SelectedWorkflow).To(Equal("restart-pod"))
 			})
 		})
 	})
@@ -544,7 +546,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source: creator.ManualReviewSourceAIAnalysis,
+					Source: notificationv1.ReviewSourceAIAnalysis,
 					Reason: "WorkflowResolutionFailed",
 				}
 
@@ -564,7 +566,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source: creator.ManualReviewSourceAIAnalysis,
+					Source: notificationv1.ReviewSourceAIAnalysis,
 					Reason: "WorkflowResolutionFailed",
 				}
 
@@ -582,7 +584,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source:    creator.ManualReviewSourceAIAnalysis,
+					Source:    notificationv1.ReviewSourceAIAnalysis,
 					Reason:    "WorkflowResolutionFailed",
 					SubReason: "WorkflowNotFound",
 					Message:   "No matching workflow found",
@@ -600,7 +602,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source:    creator.ManualReviewSourceAIAnalysis,
+					Source:    notificationv1.ReviewSourceAIAnalysis,
 					Reason:    "WorkflowResolutionFailed",
 					SubReason: "ImageMismatch",
 					Message:   "Workflow image version mismatch",
@@ -625,7 +627,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source:    creator.ManualReviewSourceAIAnalysis,
+					Source:    notificationv1.ReviewSourceAIAnalysis,
 					Reason:    "WorkflowResolutionFailed",
 					SubReason: "NoMatchingWorkflows",
 					Message:   "No workflows matched",
@@ -654,7 +656,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source:    creator.ManualReviewSourceAIAnalysis,
+					Source:    notificationv1.ReviewSourceAIAnalysis,
 					Reason:    "WorkflowResolutionFailed",
 					SubReason: "LowConfidence",
 					Message:   "Confidence too low",
@@ -680,7 +682,7 @@ var _ = Describe("NotificationCreator", func() {
 
 					rr := helpers.NewRemediationRequest("test-rr", "default")
 					reviewCtx := &creator.ManualReviewContext{
-						Source:    creator.ManualReviewSourceAIAnalysis,
+						Source:    notificationv1.ReviewSourceAIAnalysis,
 						Reason:    "WorkflowResolutionFailed",
 						SubReason: subReason,
 						Message:   "Test message",
@@ -716,7 +718,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source:       creator.ManualReviewSourceWorkflowExecution,
+					Source:       notificationv1.ReviewSourceWorkflowExecution,
 					Reason:       "ExhaustedRetries",
 					SubReason:    "",
 					Message:      "Maximum retry count reached",
@@ -742,7 +744,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source:            creator.ManualReviewSourceWorkflowExecution,
+					Source:            notificationv1.ReviewSourceWorkflowExecution,
 					Reason:            "PreviousExecutionFailed",
 					SubReason:         "",
 					Message:           "Previous execution failed",
@@ -769,7 +771,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Spec.Severity = "critical"
 				reviewCtx := &creator.ManualReviewContext{
-					Source:    creator.ManualReviewSourceAIAnalysis,
+					Source:    notificationv1.ReviewSourceAIAnalysis,
 					Reason:    "WorkflowResolutionFailed",
 					SubReason: "WorkflowNotFound",
 					Message:   "Test",
@@ -785,7 +787,7 @@ var _ = Describe("NotificationCreator", func() {
 				Expect(nr.Spec.RemediationRequestRef.Name).To(Equal("test-rr"))
 				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
 				Expect(nr.Spec.Severity).To(Equal("critical"))
-				Expect(nr.Spec.ReviewSource).To(Equal("AIAnalysis"))
+				Expect(nr.Spec.ReviewSource).To(Equal(notificationv1.ReviewSourceAIAnalysis))
 				Expect(nr.Labels).To(BeNil())
 			})
 		})
@@ -798,7 +800,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source:            creator.ManualReviewSourceAIAnalysis,
+					Source:            notificationv1.ReviewSourceAIAnalysis,
 					Reason:            "WorkflowResolutionFailed",
 					SubReason:         "WorkflowNotFound",
 					Message:           "No workflow found for alert type",
@@ -812,11 +814,11 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", "test-rr"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("source", "AIAnalysis"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("reason", "WorkflowResolutionFailed"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("subReason", "WorkflowNotFound"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("rootCauseAnalysis", "Pod crash loop detected"))
+				Expect(nr.Spec.ReviewSource).To(Equal(notificationv1.ReviewSourceAIAnalysis))
+				Expect(nr.Spec.Context.Lineage.RemediationRequest).To(Equal("test-rr"))
+				Expect(nr.Spec.Context.Review.Reason).To(Equal("WorkflowResolutionFailed"))
+				Expect(nr.Spec.Context.Review.SubReason).To(Equal("WorkflowNotFound"))
+				Expect(nr.Spec.Context.Review.RootCauseAnalysis).To(Equal("Pod crash loop detected"))
 			})
 
 			// Test #35: Sets metadata for WorkflowExecution source with retry info
@@ -826,7 +828,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source:       creator.ManualReviewSourceWorkflowExecution,
+					Source:       notificationv1.ReviewSourceWorkflowExecution,
 					Reason:       "ExhaustedRetries",
 					SubReason:    "",
 					Message:      "Max retries exceeded",
@@ -842,12 +844,12 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", "test-rr"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("source", "WorkflowExecution"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("reason", "ExhaustedRetries"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("retryCount", "3"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("maxRetries", "3"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("lastExitCode", "137"))
+				Expect(nr.Spec.ReviewSource).To(Equal(notificationv1.ReviewSourceWorkflowExecution))
+				Expect(nr.Spec.Context.Lineage.RemediationRequest).To(Equal("test-rr"))
+				Expect(nr.Spec.Context.Review.Reason).To(Equal("ExhaustedRetries"))
+				Expect(nr.Spec.Context.Execution.RetryCount).To(Equal("3"))
+				Expect(nr.Spec.Context.Execution.MaxRetries).To(Equal("3"))
+				Expect(nr.Spec.Context.Execution.LastExitCode).To(Equal("137"))
 			})
 		})
 
@@ -858,7 +860,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source:            creator.ManualReviewSourceAIAnalysis,
+					Source:            notificationv1.ReviewSourceAIAnalysis,
 					Reason:            "WorkflowResolutionFailed",
 					SubReason:         "LowConfidence",
 					Message:           "AI confidence below threshold",
@@ -884,7 +886,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source:    creator.ManualReviewSourceAIAnalysis,
+					Source:    notificationv1.ReviewSourceAIAnalysis,
 					Reason:    "WorkflowResolutionFailed",
 					SubReason: "WorkflowNotFound",
 					Message:   "No workflow found",
@@ -906,7 +908,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source:            creator.ManualReviewSourceWorkflowExecution,
+					Source:            notificationv1.ReviewSourceWorkflowExecution,
 					Reason:            "ExhaustedRetries",
 					Message:           "All retries failed",
 					RetryCount:        3,
@@ -940,7 +942,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source:  creator.ManualReviewSourceWorkflowExecution,
+					Source:  notificationv1.ReviewSourceWorkflowExecution,
 					Reason:  "ExhaustedRetries",
 					Message: "Critical failure",
 				}
@@ -961,7 +963,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
-					Source:    creator.ManualReviewSourceAIAnalysis,
+					Source:    notificationv1.ReviewSourceAIAnalysis,
 					Reason:    "WorkflowResolutionFailed",
 					SubReason: "LowConfidence",
 					Message:   "Medium priority failure",
@@ -1007,7 +1009,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				_, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				_, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to check existing NotificationRequest"))
 			})
@@ -1024,7 +1026,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				_, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				_, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to create NotificationRequest"))
 			})
@@ -1038,7 +1040,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(name).To(Equal("nr-completion-test-rr"))
 
@@ -1058,7 +1060,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("my-remediation", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(name).To(Equal("nr-completion-my-remediation"))
 			})
@@ -1073,11 +1075,11 @@ var _ = Describe("NotificationCreator", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
 				// First call creates the notification
-				name1, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				name1, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Second call should return same name without error
-				name2, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				name2, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(name2).To(Equal(name1))
 
@@ -1097,7 +1099,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1117,7 +1119,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr.UID = "" // Clear UID
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				_, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				_, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("UID is required"))
 			})
@@ -1131,7 +1133,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1154,7 +1156,7 @@ var _ = Describe("NotificationCreator", func() {
 					Summary: "Deployment rollout failed",
 				}
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1179,7 +1181,7 @@ var _ = Describe("NotificationCreator", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.RootCause = "Memory exhaustion in container"
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1201,15 +1203,15 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", rr.Name))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("workflowId", ai.Status.SelectedWorkflow.WorkflowID))
+				Expect(nr.Spec.Context.Lineage.RemediationRequest).To(Equal(rr.Name))
+				Expect(nr.Spec.Context.Workflow.WorkflowID).To(Equal(ai.Status.SelectedWorkflow.WorkflowID))
 			})
 		})
 
@@ -1221,7 +1223,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1243,7 +1245,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1269,7 +1271,7 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
-				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				nr := &notificationv1.NotificationRequest{}
@@ -1306,14 +1308,14 @@ var _ = Describe("NotificationCreator", func() {
 			rr.Status.Outcome = "Remediated"
 			ai := helpers.NewCompletedAIAnalysis("test-ai-304", "default")
 
-			name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+			name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			nr := &notificationv1.NotificationRequest{}
 			err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(nr.Spec.Metadata).To(HaveKeyWithValue("outcome", "Remediated"),
+			Expect(nr.Spec.Context.Analysis.Outcome).To(Equal("Remediated"),
 				"#304: BR-ORCH-045 requires completion notification metadata to include actual Outcome")
 			Expect(nr.Spec.Body).To(ContainSubstring("Remediated"),
 				"#304: BR-ORCH-045 requires completion notification body to include actual Outcome")
@@ -1326,14 +1328,18 @@ var _ = Describe("NotificationCreator", func() {
 			rr := helpers.NewRemediationRequest("test-rr-304b", "default")
 			ai := helpers.NewCompletedAIAnalysis("test-ai-304b", "default")
 
-			name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+			name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			nr := &notificationv1.NotificationRequest{}
 			err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(nr.Spec.Metadata["outcome"]).To(BeEmpty(),
+			var outcome string
+			if nr.Spec.Context != nil && nr.Spec.Context.Analysis != nil {
+				outcome = nr.Spec.Context.Analysis.Outcome
+			}
+			Expect(outcome).To(BeEmpty(),
 				"#304: When Outcome is not set, metadata should reflect empty outcome (demonstrating the bug)")
 		})
 	})
@@ -1376,7 +1382,7 @@ var _ = Describe("NotificationCreator", func() {
 				},
 			}
 
-			name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+			name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			nr := &notificationv1.NotificationRequest{}
@@ -1406,7 +1412,7 @@ var _ = Describe("NotificationCreator", func() {
 				},
 			}
 
-			name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton")
+			name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			nr := &notificationv1.NotificationRequest{}
@@ -1452,6 +1458,115 @@ var _ = Describe("NotificationCreator", func() {
 				"#305: Approval body should use AI RemediationTarget.Kind when TargetResource is Unknown")
 			Expect(nr.Spec.Body).To(ContainSubstring("redis-primary"),
 				"#305: Approval body should use AI RemediationTarget.Name when TargetResource is Unknown")
+		})
+	})
+
+	// =====================================================
+	// #318: COMPLETION NOTIFICATION WITH EA VERIFICATION
+	// =====================================================
+	Describe("Completion notification with EA verification (#318)", func() {
+		var (
+			fakeClient *fake.ClientBuilder
+			nc         *creator.NotificationCreator
+			ctx        context.Context
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme)
+			ctx = context.Background()
+		})
+
+		Context("IT-RO-318-001: Completion notification body contains verification section", func() {
+			It("should include Verification Results section with passed summary for full EA", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr-318-001", "default")
+				rr.Status.Outcome = "Remediated"
+				ai := helpers.NewCompletedAIAnalysis("test-ai-318-001", "default")
+				ea := &eav1.EffectivenessAssessment{
+					Status: eav1.EffectivenessAssessmentStatus{
+						Phase:            eav1.PhaseCompleted,
+						AssessmentReason: eav1.AssessmentReasonFull,
+						Components: eav1.EAComponents{
+							HealthAssessed:  true,
+							HealthScore:     float64Ptr(1.0),
+							AlertAssessed:   true,
+							AlertScore:      float64Ptr(1.0),
+							MetricsAssessed: true,
+							MetricsScore:    float64Ptr(1.0),
+							HashComputed:    true,
+						},
+					},
+				}
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", ea)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Body).To(ContainSubstring("Verification Results"))
+				Expect(nr.Spec.Body).To(ContainSubstring("Verification passed"))
+				Expect(nr.Spec.Body).To(ContainSubstring(rr.Spec.SignalName))
+			})
+		})
+
+		Context("IT-RO-318-002: Completion notification typed context populated", func() {
+			It("should populate Context.Verification with spec_drift data", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr-318-002", "default")
+				rr.Status.Outcome = "Remediated"
+				ai := helpers.NewCompletedAIAnalysis("test-ai-318-002", "default")
+				ea := &eav1.EffectivenessAssessment{
+					Status: eav1.EffectivenessAssessmentStatus{
+						Phase:            eav1.PhaseCompleted,
+						AssessmentReason: eav1.AssessmentReasonSpecDrift,
+						Components: eav1.EAComponents{
+							HashComputed:            true,
+							PostRemediationSpecHash: "abc123",
+							CurrentSpecHash:         "def456",
+						},
+					},
+				}
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", ea)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Context.Verification.Assessed).To(BeTrue())
+				Expect(nr.Spec.Context.Verification.Outcome).To(Equal("inconclusive"))
+				Expect(nr.Spec.Context.Verification.Reason).To(Equal("spec_drift"))
+				Expect(nr.Spec.Context.Verification.Summary).To(ContainSubstring("modified by an external entity"))
+			})
+		})
+
+		Context("IT-RO-318-003: Completion notification with nil EA", func() {
+			It("should create notification successfully with not available verification", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr-318-003", "default")
+				rr.Status.Outcome = "Remediated"
+				ai := helpers.NewCompletedAIAnalysis("test-ai-318-003", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "", nil)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Body).To(ContainSubstring("Verification: not available"))
+				Expect(nr.Spec.Context.Verification.Assessed).To(BeFalse())
+				Expect(nr.Spec.Context.Verification.Outcome).To(Equal("unavailable"))
+			})
 		})
 	})
 })

@@ -8,7 +8,6 @@ import (
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // GenerateTestFingerprint creates a valid 64-character hex fingerprint for testing.
@@ -41,13 +40,12 @@ var ValidTestFingerprints = map[string]string{
 	"enrich-svc":        GenerateTestFingerprint("enrich-svc-test"),
 	"enrich-ns":         GenerateTestFingerprint("enrich-ns-test"),
 	"enrich-degraded":   GenerateTestFingerprint("enrich-degraded-test"),
-	"env-configmap":     GenerateTestFingerprint("env-configmap-test"),
+	"env-rego":          GenerateTestFingerprint("env-rego-test"),
 	"env-label":         GenerateTestFingerprint("env-label-priority-test"),
 	"priority-rego":     GenerateTestFingerprint("priority-rego-test"),
 	"priority-fallback": GenerateTestFingerprint("priority-fallback-test"),
-	"priority-cm":       GenerateTestFingerprint("priority-configmap-test"),
+	"priority-rego-cm":  GenerateTestFingerprint("priority-rego-policy-test"),
 	"business-label":    GenerateTestFingerprint("business-label-test"),
-	"business-pattern":  GenerateTestFingerprint("business-pattern-test"),
 	"ownerchain":        GenerateTestFingerprint("ownerchain-real-test"),
 	"detect-pdb":        GenerateTestFingerprint("detect-pdb-test"),
 	"detect-hpa":        GenerateTestFingerprint("detect-hpa-test"),
@@ -161,16 +159,6 @@ func CreateTestRemediationRequest(name, namespace, fingerprint, severity string,
 			FiringTime:   metav1.Now(),
 			ReceivedTime: metav1.Now(),
 
-			// Deduplication (uses shared type from pkg/shared/types/deduplication.go)
-			Deduplication: sharedtypes.DeduplicationInfo{
-				IsDuplicate:     false,
-				FirstOccurrence: metav1.Now(),
-				LastOccurrence:  metav1.Now(),
-				OccurrenceCount: 1,
-			},
-
-			// Storm detection (optional for tests)
-			IsStorm: false,
 		},
 	}
 }

@@ -689,7 +689,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 			mockEval := &mockPolicyEvaluator{
 				EvaluateEnvironmentFunc: func(_ context.Context, _ evaluator.PolicyInput) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
 					envCalled = true
-					return &signalprocessingv1alpha1.EnvironmentClassification{Environment: "unknown", Source: "default", ClassifiedAt: metav1.Now()}, nil
+					return &signalprocessingv1alpha1.EnvironmentClassification{Environment: signalprocessingv1alpha1.EnvironmentUnknown, Source: "default", ClassifiedAt: metav1.Now()}, nil
 				},
 			}
 
@@ -754,7 +754,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 			mockEval := &mockPolicyEvaluator{
 				EvaluateEnvironmentFunc: func(_ context.Context, _ evaluator.PolicyInput) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
 					envCalled = true
-					return &signalprocessingv1alpha1.EnvironmentClassification{Environment: "unknown", Source: "default", ClassifiedAt: metav1.Now()}, nil
+					return &signalprocessingv1alpha1.EnvironmentClassification{Environment: signalprocessingv1alpha1.EnvironmentUnknown, Source: "default", ClassifiedAt: metav1.Now()}, nil
 				},
 			}
 
@@ -817,7 +817,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 			mockEval := &mockPolicyEvaluator{
 				EvaluateEnvironmentFunc: func(_ context.Context, _ evaluator.PolicyInput) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
 					envCalled = true
-					return &signalprocessingv1alpha1.EnvironmentClassification{Environment: "unknown", Source: "default", ClassifiedAt: metav1.Now()}, nil
+					return &signalprocessingv1alpha1.EnvironmentClassification{Environment: signalprocessingv1alpha1.EnvironmentUnknown, Source: "default", ClassifiedAt: metav1.Now()}, nil
 				},
 			}
 
@@ -889,7 +889,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					envCalled = true
 					Expect(input.Namespace.Labels).To(HaveKeyWithValue("kubernaut.ai/environment", "production"))
 					return &signalprocessingv1alpha1.EnvironmentClassification{
-						Environment:  "production",
+						Environment:  signalprocessingv1alpha1.EnvironmentProduction,
 						Source:       "namespace-labels",
 						ClassifiedAt: metav1.Now(),
 					}, nil
@@ -962,10 +962,10 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 							},
 						},
 						EnvironmentClassification: &signalprocessingv1alpha1.EnvironmentClassification{
-							Environment: "production",
+							Environment: signalprocessingv1alpha1.EnvironmentProduction,
 						},
 						PriorityAssignment: &signalprocessingv1alpha1.PriorityAssignment{
-							Priority: "P1",
+							Priority: signalprocessingv1alpha1.PriorityP1,
 						},
 					},
 				}
@@ -1065,10 +1065,10 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 							},
 						},
 						EnvironmentClassification: &signalprocessingv1alpha1.EnvironmentClassification{
-							Environment: "production",
+							Environment: signalprocessingv1alpha1.EnvironmentProduction,
 						},
 						PriorityAssignment: &signalprocessingv1alpha1.PriorityAssignment{
-							Priority: "P1",
+							Priority: signalprocessingv1alpha1.PriorityP1,
 						},
 					},
 				}
@@ -1202,14 +1202,27 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					capturedEnvironmentInput = &input
 					// Return classification based on actual namespace labels (like the real Rego policy)
 					if env, ok := input.Namespace.Labels["kubernaut.ai/environment"]; ok && env != "" {
+						var classified signalprocessingv1alpha1.Environment
+						switch env {
+						case "production":
+							classified = signalprocessingv1alpha1.EnvironmentProduction
+						case "staging":
+							classified = signalprocessingv1alpha1.EnvironmentStaging
+						case "development":
+							classified = signalprocessingv1alpha1.EnvironmentDevelopment
+						case "test":
+							classified = signalprocessingv1alpha1.EnvironmentTest
+						default:
+							classified = signalprocessingv1alpha1.Environment(env)
+						}
 						return &signalprocessingv1alpha1.EnvironmentClassification{
-							Environment:  env,
+							Environment:  classified,
 							Source:       "namespace-labels",
 							ClassifiedAt: metav1.Now(),
 						}, nil
 					}
 					return &signalprocessingv1alpha1.EnvironmentClassification{
-						Environment:  "unknown",
+						Environment:  signalprocessingv1alpha1.EnvironmentUnknown,
 						Source:       "default",
 						ClassifiedAt: metav1.Now(),
 					}, nil
@@ -1249,8 +1262,8 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 				Namespace: staleSP.Namespace,
 			}, resultSP)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(resultSP.Status.EnvironmentClassification.Environment).To(Equal("production"),
-				"SP-CACHE-002: Environment must be 'production', not 'unknown' from stale cache")
+			Expect(resultSP.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentProduction),
+				"SP-CACHE-002: Environment must be Production, not unknown from stale cache")
 		})
 	})
 

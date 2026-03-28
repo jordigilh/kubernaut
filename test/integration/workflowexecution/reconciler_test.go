@@ -164,7 +164,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			updatedWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseCompleted), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(updatedWFE.Status.CompletionTime.Time).To(BeTemporally("<=", time.Now()))
-			Expect(updatedWFE.Status.Duration).To(ContainSubstring("s"))
+			Expect(updatedWFE.Status.Duration).NotTo(BeNil(), "Duration must be set")
 		})
 
 		It("should sync WFE status when PipelineRun fails", func() {
@@ -248,8 +248,8 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			}
 		})
 
-		It("should use default ServiceAccount when not specified", func() {
-			By("Creating a WorkflowExecution without ServiceAccount")
+		It("should leave TaskRunTemplate serviceAccount empty when WFE has no ExecutionConfig SA (DD-WE-005 v2)", func() {
+			By("Creating a WorkflowExecution without ExecutionConfig service account")
 			wfe = createUniqueWFE("sa-default", "default/deployment/sa-test")
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
@@ -257,30 +257,23 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying default ServiceAccount is used")
-			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(Equal("kubernaut-workflow-runner"))
+			By("Verifying no platform default SA is injected (namespace default applies at runtime)")
+			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty())
 		})
 
-		// NOTE: Custom ServiceAccount per-WFE is NOT supported by design.
-		// The controller uses a cluster-admin configured SA for security.
-		// This test verifies that ExecutionConfig.ServiceAccountName is ignored
-		// in favor of the controller-level ServiceAccountName configuration.
-		It("should ignore ExecutionConfig ServiceAccount and use controller default", func() {
+		// DD-WE-005 v2 / Issue #501: SA at spec top level.
+		It("should use Spec.ServiceAccountName on PipelineRun when set", func() {
 			By("Creating a WorkflowExecution with custom ServiceAccount in spec")
 			wfe = createUniqueWFE("sa-custom", "default/deployment/sa-custom-test")
-			wfe.Spec.ExecutionConfig = &workflowexecutionv1alpha1.ExecutionConfig{
-				ServiceAccountName: "custom-workflow-sa", // This should be IGNORED
-			}
+			wfe.Spec.ServiceAccountName = "custom-workflow-sa"
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
 			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying controller-level ServiceAccount is used (not spec)")
-			// The controller is configured with "kubernaut-workflow-runner"
-			// in the test suite, so that's what should be used
-			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(Equal("kubernaut-workflow-runner"))
+			By("Verifying WFE spec service account is propagated to TaskRunTemplate")
+			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(Equal("custom-workflow-sa"))
 		})
 	})
 

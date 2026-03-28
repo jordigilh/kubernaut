@@ -62,7 +62,6 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -311,13 +310,13 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 				if updated.Status.PriorityAssignment == nil {
 					return ""
 				}
-				return updated.Status.PriorityAssignment.Priority
+				return string(updated.Status.PriorityAssignment.Priority)
 			}, timeout, interval).Should(Equal("P0"))
 
 			By("Verifying business outcome: production critical = highest urgency")
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &final)).To(Succeed())
-			Expect(final.Status.PriorityAssignment.Priority).To(Equal("P0"))
+			Expect(final.Status.PriorityAssignment.Priority).To(Equal(signalprocessingv1alpha1.PriorityP0))
 			// Accept either rego-policy (with Rego engine) or policy-matrix (fallback)
 			Expect(final.Status.PriorityAssignment.Source).To(BeElementOf("rego-policy", "policy-matrix"))
 		})
@@ -363,7 +362,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 				if updated.Status.PriorityAssignment == nil {
 					return ""
 				}
-				return updated.Status.PriorityAssignment.Priority
+				return string(updated.Status.PriorityAssignment.Priority)
 			}, timeout, interval).Should(Equal("P1"))
 		})
 	})
@@ -449,7 +448,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 				if updated.Status.PriorityAssignment == nil {
 					return ""
 				}
-				return updated.Status.PriorityAssignment.Priority
+				return string(updated.Status.PriorityAssignment.Priority)
 			}, timeout, interval).Should(Equal("P1"))
 		})
 
@@ -492,7 +491,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 				if updated.Status.PriorityAssignment == nil {
 					return ""
 				}
-				return updated.Status.PriorityAssignment.Priority
+				return string(updated.Status.PriorityAssignment.Priority)
 			}, timeout, interval).Should(Equal("P3"))
 		})
 	})
@@ -512,7 +511,7 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 	})
 
 	// TDD RED: This test will FAIL until controller classifies environment
-	It("BR-SP-051: should classify production from namespace label with high confidence", func() {
+	It("BR-SP-051: should classify production from namespace label", func() {
 		By("Creating namespace with production label")
 		testNs = helpers.CreateTestNamespaceAndWait(k8sClient, "e2e-env", helpers.WithLabels(map[string]string{
 			"kubernaut.ai/environment": "production",
@@ -566,8 +565,8 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 			if updated.Status.EnvironmentClassification == nil {
 				return ""
 			}
-			return updated.Status.EnvironmentClassification.Environment
-		}, timeout, interval).Should(Equal("production"))
+			return string(updated.Status.EnvironmentClassification.Environment)
+		}, timeout, interval).Should(Equal(string(signalprocessingv1alpha1.EnvironmentProduction)))
 
 		By("Verifying environment classification from namespace label")
 		var final signalprocessingv1alpha1.SignalProcessing
@@ -619,8 +618,8 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 			if updated.Status.EnvironmentClassification == nil {
 				return ""
 			}
-			return updated.Status.EnvironmentClassification.Environment
-		}, timeout, interval).Should(Equal("unknown"))
+			return string(updated.Status.EnvironmentClassification.Environment)
+		}, timeout, interval).Should(Equal(string(signalprocessingv1alpha1.EnvironmentUnknown)))
 	})
 })
 
@@ -880,13 +879,6 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 				},
 				FiringTime:   metav1.Now(),
 				ReceivedTime: metav1.Now(),
-				Deduplication: sharedtypes.DeduplicationInfo{
-					IsDuplicate:     false,
-					FirstOccurrence: metav1.Now(),
-					LastOccurrence:  metav1.Now(),
-					OccurrenceCount: 1,
-				},
-				IsStorm: false,
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())

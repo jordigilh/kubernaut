@@ -51,7 +51,7 @@ func validWorkflowJSON(workflowID string) map[string]interface{} {
 			"environment": []string{"production"},
 			"priority":    "P0",
 		},
-		"status": "active",
+		"status": "Active",
 	}
 }
 
@@ -224,7 +224,7 @@ var _ = Describe("UT-AW-446: DSClientAdapter Workflow operations", Label("unit",
 			Expect(result.WorkflowID).To(Equal("550e8400-e29b-41d4-a716-446655440000"))
 			Expect(result.WorkflowName).To(Equal("crashloop-rollback"))
 			Expect(result.Version).To(Equal("1.0.0"))
-			Expect(result.Status).To(Equal("active"))
+			Expect(result.Status).To(Equal("Active"))
 			Expect(result.PreviouslyExisted).To(BeFalse())
 		})
 

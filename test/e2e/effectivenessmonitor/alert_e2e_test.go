@@ -80,6 +80,8 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 
 		By("Seeding workflowexecution.execution.started event (no_execution guard)")
 		seedWorkflowStartedEvent(correlationID)
+		By("Seeding workflowexecution.workflow.completed event (full scope, #573 G4)")
+		seedWorkflowCompletedEvent(correlationID)
 
 		name := uniqueName("ea-ar-resolved")
 		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.
@@ -133,6 +135,8 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 
 		By("Seeding workflowexecution.execution.started event (no_execution guard)")
 		seedWorkflowStartedEvent(correlationID)
+		By("Seeding workflowexecution.workflow.completed event (full scope, #573 G4)")
+		seedWorkflowCompletedEvent(correlationID)
 
 		name := uniqueName("ea-ar-firing")
 		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.

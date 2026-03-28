@@ -69,7 +69,8 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 		cfg.ValidityWindow = 1 * time.Millisecond
 
 		r := controller.NewReconciler(
-			fakeClient, s,
+			fakeClient, fakeClient,
+			s,
 			record.NewFakeRecorder(100),
 			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 			nil, nil, // Prom + AM clients

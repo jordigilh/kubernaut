@@ -31,24 +31,24 @@ import (
 // Priority: P3 - Nice-to-have (E2E metrics tests already exist)
 //
 // Test Coverage:
-// - PrometheusRecorder methods (DD-METRICS-001 pattern)
+// - *Metrics convenience methods (DD-METRICS-001 1-layer pattern)
 // - 8 helper functions: Record*/Update* functions
 // - Label validation
 // - Value increments/observations
 // - DD-005 V3.0 naming compliance
 //
-// Note: These are unit tests for the PrometheusRecorder methods themselves.
+// Note: These are unit tests for the *Metrics methods themselves.
 //       E2E metrics validation exists in test/e2e/notification/04_metrics_validation_test.go
 //
-// Changes (DD-005 V3.0 compliance):
+// Changes (DD-005 V3.0 / DD-METRICS-001 compliance):
 // - Migrated from internal/controller/notification/metrics.go (DELETED)
-// - Now uses pkg/notification/metrics.PrometheusRecorder (DD-METRICS-001)
+// - Uses pkg/notification/metrics.*Metrics directly (DD-METRICS-001 1-layer pattern)
 // - Uses DD-005 V3.0 compliant metric names
 // ========================================
 
 var _ = Describe("Prometheus Metrics Unit Tests", func() {
 	var (
-		recorder *notificationmetrics.PrometheusRecorder
+		recorder *notificationmetrics.Metrics
 		registry *prometheus.Registry
 	)
 
@@ -57,9 +57,9 @@ var _ = Describe("Prometheus Metrics Unit Tests", func() {
 		// This prevents panics from registering the same metrics multiple times
 		registry = prometheus.NewRegistry()
 
-		// Create a new PrometheusRecorder with the test-specific registry
+		// Create a new *Metrics with the test-specific registry
 		// DD-METRICS-001: Dependency-injected metrics pattern
-		recorder = notificationmetrics.NewPrometheusRecorderWithRegistry(registry)
+		recorder = notificationmetrics.NewMetricsWithRegistry(registry)
 	})
 
 	// ========================================
@@ -105,42 +105,7 @@ var _ = Describe("Prometheus Metrics Unit Tests", func() {
 	})
 
 	// ========================================
-	// TEST 3: UpdateFailureRatio (Gauge) - No-op in current implementation
-	// ========================================
-	Context("UpdateFailureRatio", func() {
-		It("should handle failure ratio updates without panicking (no-op)", func() {
-			// Note: This metric is not currently exposed in DD-005 V3.0 consolidated metrics
-			// Kept for interface compliance
-			Expect(func() {
-				recorder.UpdateFailureRatio("default", 0.15)
-			}).ToNot(Panic(), "Updating failure ratio should not panic")
-		})
-
-		It("should allow ratio updates for same namespace without panicking (no-op)", func() {
-			Expect(func() {
-				recorder.UpdateFailureRatio("prod", 0.05)
-				recorder.UpdateFailureRatio("prod", 0.12) // Update
-			}).ToNot(Panic(), "Updating failure ratio multiple times should not panic")
-		})
-	})
-
-	// ========================================
-	// TEST 4: RecordStuckDuration (Histogram) - No-op in current implementation
-	// ========================================
-	Context("RecordStuckDuration", func() {
-		It("should handle stuck duration recording without panicking (no-op)", func() {
-			// Note: This metric is not currently exposed in DD-005 V3.0 consolidated metrics
-			// Kept for interface compliance
-			Expect(func() {
-				recorder.RecordStuckDuration("default", 120)  // 2 minutes
-				recorder.RecordStuckDuration("default", 600)  // 10 minutes
-				recorder.RecordStuckDuration("default", 1200) // 20 minutes
-			}).ToNot(Panic(), "Recording stuck durations should not panic")
-		})
-	})
-
-	// ========================================
-	// TEST 5: UpdatePhaseCount (Gauge)
+	// TEST 3: UpdatePhaseCount (Gauge)
 	// ========================================
 	Context("UpdatePhaseCount", func() {
 		It("should set kubernaut_notification_reconciler_active gauge without panicking", func() {
@@ -177,18 +142,4 @@ var _ = Describe("Prometheus Metrics Unit Tests", func() {
 		})
 	})
 
-	// ========================================
-	// TEST 8: RecordSlackBackoff (Histogram) - No-op in current implementation
-	// ========================================
-	Context("RecordSlackBackoff", func() {
-		It("should handle Slack backoff duration recording without panicking (no-op)", func() {
-			// Note: This metric is not currently exposed in DD-005 V3.0 consolidated metrics
-			// Kept for interface compliance
-			Expect(func() {
-				recorder.RecordSlackBackoff("default", 30)  // 30s
-				recorder.RecordSlackBackoff("default", 60)  // 1m
-				recorder.RecordSlackBackoff("default", 120) // 2m
-			}).ToNot(Panic(), "Recording Slack backoff durations should not panic")
-		})
-	})
 })

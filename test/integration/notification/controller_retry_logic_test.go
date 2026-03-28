@@ -123,7 +123,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 						BackoffMultiplier:     2,  // Same as production (exponential 2x)
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-file",
 					},
 				},
@@ -312,7 +312,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "file-only",
 					},
 				},

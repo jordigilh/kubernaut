@@ -133,24 +133,8 @@ var _ = Describe("Config.Validate - Unit Tests", Label("config", "validation"), 
 		})
 	})
 
-	// ========================================
-	// TEST 4: Invalid Service Account
-	// ========================================
-	Context("BR-WE-007: Invalid Service Account", func() {
-		It("should fail with clear error for empty service account", func() {
-			cfg := config.DefaultConfig()
-			cfg.Execution.ServiceAccount = "" // Invalid!
-
-			err := cfg.Validate()
-
-			Expect(err).To(HaveOccurred(), "Empty service account should be rejected")
-			Expect(err.Error()).To(Or(
-				ContainSubstring("ServiceAccount"),
-				ContainSubstring("service"),
-				ContainSubstring("required"),
-			), "Error message should mention service account")
-		})
-	})
+	// TEST 4: Removed -- DD-WE-005 v2.0 removed ServiceAccount from config
+	// (SA now comes from WFE spec per-workflow)
 
 	// Issue #99: TEST 5 (DD-WE-004 Invalid Backoff Settings) removed per DD-RO-002 Phase 3
 
@@ -229,7 +213,6 @@ var _ = Describe("Config.Validate - Unit Tests", Label("config", "validation"), 
 				Execution: config.ExecutionConfig{
 					Namespace:      "",               // Invalid!
 					CooldownPeriod: -1 * time.Minute, // Invalid!
-					ServiceAccount: "",               // Invalid!
 				},
 			// Issue #99: BackoffConfig removed (DD-RO-002 Phase 3)
 			DataStorage: sharedconfig.DataStorageConfig{

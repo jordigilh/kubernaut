@@ -110,7 +110,7 @@ var _ = Describe("ActionType DS Audit Constructors [BR-WORKFLOW-007]", func() {
 
 			Expect(event.EventType).To(Equal(dsaudit.EventTypeActionTypeReenabled))
 			payload := event.EventData.ActionTypeCatalogReenabledPayload
-			Expect(string(payload.PreviousState)).To(Equal("disabled"))
+			Expect(string(payload.PreviousState)).To(Equal("Disabled"))
 			Expect(payload.DisabledAt).To(BeTemporally("~", prevDisabledAt, time.Second))
 			Expect(payload.DisabledBy).To(Equal("ops"))
 			Expect(payload.ReenabledBy).To(Equal("admin"))

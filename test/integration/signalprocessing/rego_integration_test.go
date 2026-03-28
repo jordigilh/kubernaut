@@ -15,11 +15,11 @@ limitations under the License.
 */
 
 // Package signalprocessing_test contains Rego integration tests for SignalProcessing.
-// These tests validate Rego policy loading, evaluation, and security with real ConfigMaps.
+// These tests validate Rego policy loading, evaluation, and security with real K8s ConfigMaps.
 //
 // Defense-in-Depth Strategy (per 03-testing-strategy.mdc):
 // - Unit tests (70%+): Rego engine logic (test/unit/signalprocessing/)
-// - Integration tests (>50%): Real ConfigMap interaction (this file)
+// - Integration tests (>50%): Real Rego policy interaction (this file)
 // - E2E/BR tests (10-15%): Complete workflow validation (test/e2e/signalprocessing/)
 //
 // TDD Phase: RED - Tests define expected Rego behavior
@@ -48,6 +48,7 @@ package signalprocessing
 import (
 	"strings"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -59,16 +60,16 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
-// Rego integration tests validate ConfigMap-based policy loading with real K8s API.
+// Rego integration tests validate Rego policy loading from ConfigMaps with real K8s API.
 // These test policy hot-reload behavior per BR-SP-072 and DD-INFRA-001.
 var _ = Describe("SignalProcessing Rego Integration", func() {
 	// ========================================
 	// POLICY LOAD TESTS (3 tests)
 	// ========================================
 
-	Context("Policy Load - ConfigMap Integration", func() {
-		// Load environment.rego from ConfigMap
-		It("BR-SP-051: should load environment.rego policy from ConfigMap", func() {
+	Context("Policy Load - Rego Policy from ConfigMap", func() {
+		// Load environment.rego from Rego policy ConfigMap
+		It("BR-SP-051: should load environment.rego Rego policy from ConfigMap", func() {
 			By("Creating namespace")
 			ns := createTestNamespaceWithLabels("rego-env-load", map[string]string{
 				"kubernaut.ai/environment": "production",
@@ -99,13 +100,11 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			// The suite_test.go creates environment.rego in kubernaut-system
-			Expect(final.Status.EnvironmentClassification).ToNot(BeNil())
-			Expect(final.Status.EnvironmentClassification.Environment).To(Equal("production"))
+			Expect(final.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentProduction))
 		})
 
-		// Load priority.rego from ConfigMap
-		It("BR-SP-070: should load priority.rego policy from ConfigMap", func() {
+		// Load priority.rego from Rego policy ConfigMap
+		It("BR-SP-070: should load priority.rego Rego policy from ConfigMap", func() {
 			By("Creating namespace")
 			ns := createTestNamespaceWithLabels("rego-pri-load", map[string]string{
 				"kubernaut.ai/environment": "production",
@@ -136,9 +135,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			// Production + Critical = P0 per priority.rego
-			Expect(final.Status.PriorityAssignment).ToNot(BeNil())
-			Expect(final.Status.PriorityAssignment.Priority).To(Equal("P0"))
+			Expect(final.Status.PriorityAssignment.Priority).To(Equal(signalprocessingv1alpha1.PriorityP0))
 		})
 
 		// NOTE: BR-SP-102 labels.rego test removed - DD-INFRA-001 replaced ConfigMap with file-based hot-reload
@@ -182,9 +179,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.EnvironmentClassification).ToNot(BeNil())
-			Expect(final.Status.EnvironmentClassification.Environment).To(Equal("staging"))
-			// Note: Confidence field removed per DD-SP-001 V1.1
+			Expect(final.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentStaging))
 		})
 
 		// Priority assignment evaluation
@@ -219,9 +214,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.PriorityAssignment).ToNot(BeNil())
-			// Development + warning = P3 per priority.rego
-			Expect(final.Status.PriorityAssignment.Priority).To(Equal("P3"))
+			Expect(final.Status.PriorityAssignment.Priority).To(Equal(signalprocessingv1alpha1.PriorityP3))
 		})
 
 		// NOTE: BR-SP-102 CustomLabels extraction test removed - DD-INFRA-001 replaced ConfigMap with file-based hot-reload
@@ -239,9 +232,9 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 		// NOTE: BR-SP-071 invalid policy test removed - DD-INFRA-001 replaced ConfigMap with file-based hot-reload
 		// Coverage: hot_reloader_test.go
 
-		// Missing ConfigMap falls back to defaults
-		It("BR-SP-053: should fall back to defaults when ConfigMap is missing", func() {
-			By("Creating namespace without any ConfigMaps")
+		// Missing Rego policy ConfigMap falls back to defaults
+		It("BR-SP-053: should fall back to defaults when Rego policy ConfigMap is missing", func() {
+			By("Creating namespace without any Rego policy ConfigMaps")
 			ns := createTestNamespace("rego-fallback-missing")
 			defer deleteTestNamespace(ns)
 
@@ -271,8 +264,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 
 			// Should complete with default environment
 			Expect(final.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
-			Expect(final.Status.EnvironmentClassification).ToNot(BeNil())
-			Expect(final.Status.EnvironmentClassification.Environment).To(Equal("unknown"))
+			Expect(final.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentUnknown))
 		})
 	})
 
@@ -397,9 +389,16 @@ labels["computed"] := [result] if {
 	// VALIDATION TESTS (3 tests)
 	// ========================================
 
-	Context("Validation - Output Limits", func() {
-		// NOTE: DD-WORKFLOW-001 key truncation test removed - DD-INFRA-001 replaced ConfigMap with file-based hot-reload
-		// Coverage: Unit tests for key truncation
+	// Serial: These tests modify the shared unified policy file via hot-reload.
+	// DD-INFRA-001: ConfigMap-based policy loading replaced with file-based hot-reload.
+	Context("Validation - Output Limits", Serial, func() {
+		const originalLabelPolicy = `default labels := {}
+`
+		AfterEach(func() {
+			By("Restoring original Rego policy to prevent test pollution")
+			updateLabelsPolicyFile(originalLabelPolicy)
+			time.Sleep(500 * time.Millisecond)
+		})
 
 		// Value truncation (100 chars)
 		It("DD-WORKFLOW-001: should truncate values longer than 100 characters", func() {
@@ -407,30 +406,17 @@ labels["computed"] := [result] if {
 			ns := createTestNamespace("rego-val-value")
 			defer deleteTestNamespace(ns)
 
-			By("Creating ConfigMap with long values")
-			longValue := strings.Repeat("y", 200) // 200 character value
-			validationConfigMap := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "signalprocessing-labels-config",
-					Namespace: ns,
-				},
-				Data: map[string]string{
-					"labels.rego": `package signalprocessing.customlabels
-
-import rego.v1
-
-labels["longvalue"] := ["` + longValue + `"] if { true }
+			By("Updating unified policy with long-value labels rules")
+			longValue := strings.Repeat("y", 200)
+			updateLabelsPolicyFile(`labels["longvalue"] := ["` + longValue + `"] if { true }
 labels["shortvalue"] := ["ok"] if { true }
-`,
-				},
-			}
-			Expect(k8sClient.Create(ctx, validationConfigMap)).To(Succeed())
+`)
 
 			By("Creating SignalProcessing CR")
 			sp := createSignalProcessingCR(ns, "rego-val-value-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["rego-vlv-01"],
 				Name:        "RegoValValueTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -450,8 +436,7 @@ labels["shortvalue"] := ["ok"] if { true }
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			// Values should be truncated
+			Expect(final.Status.KubernetesContext.CustomLabels).ToNot(BeEmpty(), "CustomLabels should be populated by Rego policy")
 			for _, values := range final.Status.KubernetesContext.CustomLabels {
 				for _, v := range values {
 					Expect(len(v)).To(BeNumerically("<=", 100), "Value should be truncated to 100 chars")
@@ -465,30 +450,18 @@ labels["shortvalue"] := ["ok"] if { true }
 			ns := createTestNamespace("rego-val-maxkeys")
 			defer deleteTestNamespace(ns)
 
-			By("Creating ConfigMap with more than 10 keys")
-			// Generate policy with 15 keys
+			By("Updating unified policy with 15 label keys")
 			policyBuilder := strings.Builder{}
-			policyBuilder.WriteString("package signalprocessing.customlabels\n\nimport rego.v1\n\n")
 			for i := 0; i < 15; i++ {
 				policyBuilder.WriteString("labels[\"key" + string(rune('a'+i)) + "\"] := [\"value\"] if { true }\n")
 			}
-
-			validationConfigMap := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "signalprocessing-labels-config",
-					Namespace: ns,
-				},
-				Data: map[string]string{
-					"labels.rego": policyBuilder.String(),
-				},
-			}
-			Expect(k8sClient.Create(ctx, validationConfigMap)).To(Succeed())
+			updateLabelsPolicyFile(policyBuilder.String())
 
 			By("Creating SignalProcessing CR")
 			sp := createSignalProcessingCR(ns, "rego-val-maxkeys-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["rego-vmk-01"],
 				Name:        "RegoValMaxKeysTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -508,8 +481,7 @@ labels["shortvalue"] := ["ok"] if { true }
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			// Should have at most 10 keys
+			Expect(final.Status.KubernetesContext.CustomLabels).ToNot(BeEmpty(), "CustomLabels should be populated by Rego policy")
 			Expect(len(final.Status.KubernetesContext.CustomLabels)).To(BeNumerically("<=", 10), "Should have max 10 keys")
 		})
 	})

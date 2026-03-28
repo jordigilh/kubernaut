@@ -84,7 +84,7 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 			},
 			CustomLabels:    models.CustomLabels{},
 			DetectedLabels:  dl,
-			Status:          "active",
+			Status:          "Active",
 			ExecutionEngine: "tekton",
 			IsLatestVersion: true,
 		}

@@ -421,7 +421,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).ToNot(HaveOccurred(), "Failed to create real audit store")
 
 	// Pattern 1: Create Metrics recorder (DD-METRICS-001)
-	metricsRecorder := notificationmetrics.NewPrometheusRecorder()
+	metricsRecorder := notificationmetrics.NewMetrics()
 	GinkgoWriter.Println("  ✅ Metrics recorder initialized (Pattern 1)")
 
 	// Pattern 2: Create Status Manager for centralized status updates
@@ -460,9 +460,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("  ✅ All 4 channels registered: console, slack, file, log (#261)")
 
 	// #261: Routing is the sole authority for channel resolution.
-	// Tests select their channel set by setting spec.Metadata["test-channel-set"] to one of:
+	// Tests select their channel set by setting spec.Extensions["test-channel-set"] to one of:
 	//   "slack-only", "console-slack", "all-channels"
-	// Notifications without this metadata key default to console-only.
+	// Notifications without this extensions key default to console-only.
 	testRouter := routing.NewRouter(ctrl.Log.WithName("test-routing"))
 	Expect(testRouter.LoadConfig([]byte(`
 route:
@@ -537,7 +537,7 @@ receivers:
 		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
 			// Update metrics on state change
 			if metricsRecorder != nil {
-				metricsRecorder.UpdateCircuitBreakerState(name, to)
+				metricsRecorder.UpdateCircuitBreakerState(name, int(to))
 			}
 		},
 	})

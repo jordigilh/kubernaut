@@ -31,6 +31,7 @@ import (
 
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ========================================
@@ -101,7 +102,7 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 		By("Verifying all status fields")
 		updated := &atv1alpha1.ActionType{}
 		Expect(k8sClient.Get(testCtx, client.ObjectKeyFromObject(at), updated)).To(Succeed())
-		Expect(updated.Status.CatalogStatus).To(Equal("active"))
+		Expect(updated.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive))
 		Expect(updated.Status.RegisteredBy).ToNot(BeZero(),
 			"registeredBy should be populated with the K8s user")
 		Expect(updated.Status.RegisteredAt).ToNot(BeZero(),
@@ -380,7 +381,7 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 		updated := &atv1alpha1.ActionType{}
 		Expect(k8sClient.Get(testCtx, client.ObjectKeyFromObject(at), updated)).To(Succeed())
 		Expect(updated.Status.Registered).To(BeTrue())
-		Expect(updated.Status.CatalogStatus).To(Equal("active"))
+		Expect(updated.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive))
 
 		GinkgoWriter.Println("✅ Re-enable: previouslyExisted=true, status=active")
 	})
@@ -390,10 +391,14 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 	// BR-WORKFLOW-007.4
 	// ========================================
 	It("E2E-AT-300-AUDIT: audit events emitted for ActionType lifecycle", func() {
-		By("Querying DS audit API for ActionType events")
+		By("Polling DS audit API until cross-service admitted event arrives")
 
-		// Poll for audit events: the authwebhook's buffered audit store flushes
-		// every 5 seconds in E2E, so we need to retry until events appear.
+		// The authwebhook's BufferedAuditStore flushes every 5s in E2E
+		// (test/infrastructure/authwebhook_e2e.go). DS-local events appear
+		// immediately, but the cross-service actiontype.admitted.create event
+		// must traverse: authwebhook buffer -> 5s flush -> HTTP POST -> DS.
+		// Use 60s timeout to match aianalysis/05_audit_trail_test.go pattern
+		// and accommodate writeBatchWithRetry backoff (1s+4s+9s) under CI pressure.
 		// ADR-034 v1.8: event_category=actiontype (domain-based category)
 		var eventTypes []string
 		queryURL := fmt.Sprintf("%s/api/v1/audit/events?event_category=actiontype&limit=50", dataStorageURL)
@@ -401,13 +406,13 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 		Eventually(func() []string {
 			resp, err := authHTTPClient.Get(queryURL)
 			if err != nil {
-				GinkgoWriter.Printf("⚠️ Audit query failed: %v\n", err)
+				GinkgoWriter.Printf("Audit query failed: %v\n", err)
 				return nil
 			}
 			defer resp.Body.Close()
 
 			if resp.StatusCode != 200 {
-				GinkgoWriter.Printf("⚠️ Audit query returned %d\n", resp.StatusCode)
+				GinkgoWriter.Printf("Audit query returned %d\n", resp.StatusCode)
 				return nil
 			}
 
@@ -417,7 +422,7 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 				} `json:"data"`
 			}
 			if err := json.NewDecoder(resp.Body).Decode(&auditResp); err != nil {
-				GinkgoWriter.Printf("⚠️ Failed to decode audit response: %v\n", err)
+				GinkgoWriter.Printf("Failed to decode audit response: %v\n", err)
 				return nil
 			}
 
@@ -425,13 +430,10 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 			for _, e := range auditResp.Data {
 				eventTypes = append(eventTypes, e.EventType)
 			}
+			GinkgoWriter.Printf("Audit events so far (%d): %v\n", len(eventTypes), eventTypes)
 			return eventTypes
-		}, 15*time.Second, 2*time.Second).ShouldNot(BeEmpty(),
-			"ActionType audit events should appear within 15s (flush interval is 5s)")
-
-		GinkgoWriter.Printf("Audit events found: %v\n", eventTypes)
-
-		Expect(eventTypes).To(ContainElement("actiontype.admitted.create"),
-			"At least one CREATE audit event should exist")
+		}, 60*time.Second, 2*time.Second).Should(
+			ContainElement("actiontype.admitted.create"),
+			"Cross-service audit event (authwebhook -> DS) should appear within 60s (flush interval is 5s)")
 	})
 })

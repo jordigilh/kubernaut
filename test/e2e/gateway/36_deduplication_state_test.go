@@ -90,7 +90,6 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		// err := testClient.List(testCtx, crdList, client.InNamespace(sharedNamespace))
 		// if err == nil { ... }
 
-		// Clean up Redis state to prevent storm detection and deduplication interference
 		By("Flushing Redis database")
 		// Namespace cleanup happens in AfterSuite (batch deletion)
 	})

@@ -25,7 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -41,29 +41,29 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 	// Pending → Investigating → Analyzing → Completed
 
 	Context("Production incident analysis - BR-AI-001", func() {
-		var analysis *aianalysisv1alpha1.AIAnalysis
+		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
 			_ = createTestNamespace("full-flow-prod")
-			analysis = &aianalysisv1alpha1.AIAnalysis{
+			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-prod-incident-" + randomSuffix(),
 					Namespace: controllerNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-remediation",
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-001",
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-001",
 							Severity:        "medium",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P1",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Deployment",
 								Name:      "payment-service",
 								Namespace: "payments",
@@ -77,7 +77,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 								},
 							},
 						},
-						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
 					},
 				},
 			}
@@ -162,35 +162,35 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 	})
 
 	Context("Staging incident analysis - auto-approve", func() {
-		var analysis *aianalysisv1alpha1.AIAnalysis
+		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
-			analysis = &aianalysisv1alpha1.AIAnalysis{
+			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-staging-incident-" + randomSuffix(),
 					Namespace: controllerNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-remediation-staging",
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-002",
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-002",
 							Severity:        "medium",
 							SignalName:       "OOMKilled",
 							Environment:      "staging", // Non-production = auto-approve
 							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "web-app",
 								Namespace: "staging",
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"investigation", "workflow-selection"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeWorkflowSelection},
 					},
 				},
 			}
@@ -217,36 +217,36 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 	})
 
 	Context("Data quality warnings - BR-AI-011", func() {
-		var analysis *aianalysisv1alpha1.AIAnalysis
+		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
 			_ = createTestNamespace("full-flow-data-quality")
-			analysis = &aianalysisv1alpha1.AIAnalysis{
+			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-data-quality-" + randomSuffix(),
 					Namespace: controllerNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-remediation-dq",
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-004",
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-004",
 							Severity:        "medium",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-app",
 								Namespace: "production",
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -274,36 +274,36 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 
 	// E2E-AA-163-003: AlternativeWorkflows - Mock LLM low_confidence scenario returns alternative_workflows
 	Context("Low confidence scenario - alternative workflows", func() {
-		var analysis *aianalysisv1alpha1.AIAnalysis
+		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
 			_ = createTestNamespace("full-flow-low-conf")
-			analysis = &aianalysisv1alpha1.AIAnalysis{
+			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-low-conf-" + randomSuffix(),
 					Namespace: controllerNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-remediation-low-conf",
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-low-conf",
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-low-conf",
 							Severity:         "medium",
 							SignalName:       "MOCK_LOW_CONFIDENCE", // Triggers mock scenario with alternative_workflows
 							Environment:      "staging",
 							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "web-app",
 								Namespace: "staging",
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
 					},
 				},
 			}
@@ -325,7 +325,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 
 			By("Verifying failure reason per BR-HAPI-197 AC-4")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
-			Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"))
+			Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed))
 			Expect(analysis.Status.SubReason).To(Equal("LowConfidence"))
 			Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
 				"NeedsHumanReview must be true when confidence < threshold (BR-HAPI-197)")
@@ -342,36 +342,36 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 
 	// E2E-AA-163-004: ValidationAttemptsHistory - Mock LLM max_retries_exhausted scenario
 	Context("Max retries exhausted - validation attempts history", func() {
-		var analysis *aianalysisv1alpha1.AIAnalysis
+		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
 			_ = createTestNamespace("full-flow-max-retries")
-			analysis = &aianalysisv1alpha1.AIAnalysis{
+			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-max-retries-" + randomSuffix(),
 					Namespace: controllerNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-remediation-max-retries",
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-max-retries",
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-max-retries",
 							Severity:         "high",
 							SignalName:       "MOCK_MAX_RETRIES_EXHAUSTED", // Triggers mock scenario with 3 failed validation attempts
 							Environment:      "staging",
 							BusinessPriority: "P1",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "llm-parse-fail-pod",
 								Namespace: "staging",
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
 					},
 				},
 			}

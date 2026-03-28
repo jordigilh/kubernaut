@@ -188,7 +188,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			// Then: Only one RemediationRequest created, others increment hit count
 
 			// Business Scenario:
-			// - Alert storm: Multiple AlertManager instances send same alert
+			// - High duplicate volume: Multiple AlertManager instances send same alert
 			// - Network retry: Webhook client retries thinking request failed
 			// - Multi-datacenter: Same alert from different sources
 

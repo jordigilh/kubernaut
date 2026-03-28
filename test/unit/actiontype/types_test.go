@@ -28,6 +28,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/scheme"
@@ -83,7 +84,7 @@ status:
   registered: true
   registeredBy: "system:serviceaccount:kubernaut-system:authwebhook"
   activeWorkflowCount: 3
-  catalogStatus: "active"
+  catalogStatus: "Active"
   previouslyExisted: false
 `
 			var at atv1alpha1.ActionType
@@ -99,7 +100,7 @@ status:
 			Expect(at.Status.Registered).To(BeTrue())
 			Expect(at.Status.RegisteredBy).To(Equal("system:serviceaccount:kubernaut-system:authwebhook"))
 			Expect(at.Status.ActiveWorkflowCount).To(Equal(3))
-			Expect(at.Status.CatalogStatus).To(Equal("active"))
+			Expect(at.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive))
 			Expect(at.Status.PreviouslyExisted).To(BeFalse())
 		})
 	})
@@ -147,7 +148,7 @@ status:
 				RegisteredBy:        "system:serviceaccount:kubernaut-system:authwebhook",
 				PreviouslyExisted:   true,
 				ActiveWorkflowCount: 5,
-				CatalogStatus:       "active",
+				CatalogStatus:       sharedtypes.CatalogStatusActive,
 			}
 
 			copied := original.DeepCopy()

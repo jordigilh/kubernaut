@@ -35,9 +35,9 @@ var _ = Describe("BR-AUTH-001: Delivery Channel Extraction from DeliveryAttempts
 
 		It("UT-AW-276-001: produces sorted, deduplicated list from mixed deliveryAttempts", func() {
 			attempts := []notificationv1.DeliveryAttempt{
-				{Channel: "slack", Attempt: 1, Status: "success", Timestamp: metav1.Now()},
-				{Channel: "console", Attempt: 1, Status: "success", Timestamp: metav1.Now()},
-				{Channel: "slack", Attempt: 2, Status: "failed", Timestamp: metav1.Now()},
+				{Channel: notificationv1.DeliveryChannelName("slack"), Attempt: 1, Status: notificationv1.DeliveryAttemptStatusSuccess, Timestamp: metav1.Now()},
+				{Channel: notificationv1.DeliveryChannelName("console"), Attempt: 1, Status: notificationv1.DeliveryAttemptStatusSuccess, Timestamp: metav1.Now()},
+				{Channel: notificationv1.DeliveryChannelName("slack"), Attempt: 2, Status: notificationv1.DeliveryAttemptStatusFailed, Timestamp: metav1.Now()},
 			}
 
 			channels := authwebhook.ExtractDeliveryChannels(attempts)
@@ -64,11 +64,11 @@ var _ = Describe("BR-AUTH-001: Delivery Channel Extraction from DeliveryAttempts
 
 		It("UT-AW-276-003: deduplicates channels across multiple retries", func() {
 			attempts := []notificationv1.DeliveryAttempt{
-				{Channel: "slack", Attempt: 1, Status: "failed", Timestamp: metav1.Now()},
-				{Channel: "slack", Attempt: 2, Status: "failed", Timestamp: metav1.Now()},
-				{Channel: "slack", Attempt: 3, Status: "failed", Timestamp: metav1.Now()},
-				{Channel: "slack", Attempt: 4, Status: "failed", Timestamp: metav1.Now()},
-				{Channel: "slack", Attempt: 5, Status: "success", Timestamp: metav1.Now()},
+				{Channel: notificationv1.DeliveryChannelName("slack"), Attempt: 1, Status: notificationv1.DeliveryAttemptStatusFailed, Timestamp: metav1.Now()},
+				{Channel: notificationv1.DeliveryChannelName("slack"), Attempt: 2, Status: notificationv1.DeliveryAttemptStatusFailed, Timestamp: metav1.Now()},
+				{Channel: notificationv1.DeliveryChannelName("slack"), Attempt: 3, Status: notificationv1.DeliveryAttemptStatusFailed, Timestamp: metav1.Now()},
+				{Channel: notificationv1.DeliveryChannelName("slack"), Attempt: 4, Status: notificationv1.DeliveryAttemptStatusFailed, Timestamp: metav1.Now()},
+				{Channel: notificationv1.DeliveryChannelName("slack"), Attempt: 5, Status: notificationv1.DeliveryAttemptStatusSuccess, Timestamp: metav1.Now()},
 			}
 
 			channels := authwebhook.ExtractDeliveryChannels(attempts)

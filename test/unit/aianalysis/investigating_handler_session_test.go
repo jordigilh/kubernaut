@@ -141,7 +141,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 							Namespace: "default",
 						},
 					},
-					AnalysisTypes: []string{"investigation"},
+					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 				},
 			},
 			Status: aianalysisv1.AIAnalysisStatus{

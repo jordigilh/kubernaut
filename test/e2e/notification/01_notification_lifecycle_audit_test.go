@@ -125,9 +125,13 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Lifecycle Test",
 				Body:     "Testing full notification lifecycle with audit trail",
-				Metadata: map[string]string{
-					"remediationRequestName": correlationID,
-					"cluster":                "test-cluster",
+				Context: &notificationv1alpha1.NotificationContext{
+					Lineage: &notificationv1alpha1.LineageContext{
+						RemediationRequest: correlationID,
+					},
+				},
+				Extensions: map[string]string{
+					"cluster": "test-cluster",
 				},
 			},
 		}
@@ -195,8 +199,8 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		Expect(nr.Status.SuccessfulDeliveries).To(Equal(1), "E2E-NT-163-002: SuccessfulDeliveries should be 1")
 		Expect(nr.Status.FailedDeliveries).To(Equal(0), "E2E-NT-163-002: FailedDeliveries should be 0")
 		Expect(nr.Status.DeliveryAttempts).To(HaveLen(1), "E2E-NT-163-003: Should have exactly one DeliveryAttempt")
-		Expect(nr.Status.DeliveryAttempts[0].Channel).To(Equal("console"), "E2E-NT-163-003: Channel should be console")
-		Expect(nr.Status.DeliveryAttempts[0].Status).To(Equal("success"), "E2E-NT-163-003: Status should be success")
+		Expect(nr.Status.DeliveryAttempts[0].Channel).To(Equal(notificationv1alpha1.DeliveryChannelName("console")), "E2E-NT-163-003: Channel should be console")
+		Expect(nr.Status.DeliveryAttempts[0].Status).To(Equal(notificationv1alpha1.DeliveryAttemptStatusSuccess), "E2E-NT-163-003: Status should be success")
 		Expect(nr.Status.DeliveryAttempts[0].DurationSeconds).To(BeNumerically(">=", 0), "E2E-NT-163-003: DurationSeconds should be populated (>=0: sub-ms console delivery rounds to 0)")
 
 		// ===== STEP 3: Verify controller emitted audit events (side effect) =====
@@ -290,9 +294,13 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Routing Fallback Test",
 				Body:     "Testing RoutingFallback condition with routing rules",
-				Metadata: map[string]string{
-					"remediationRequestName": correlationID,
-					"cluster":                "test-cluster",
+				Context: &notificationv1alpha1.NotificationContext{
+					Lineage: &notificationv1alpha1.LineageContext{
+						RemediationRequest: correlationID,
+					},
+				},
+				Extensions: map[string]string{
+					"cluster": "test-cluster",
 				},
 			},
 		}

@@ -73,6 +73,7 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 
 		r := controller.NewReconciler(
 			fakeClient,
+			fakeClient,
 			s,
 			record.NewFakeRecorder(100),
 			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),

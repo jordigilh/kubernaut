@@ -23,6 +23,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
@@ -50,7 +51,7 @@ var _ = Describe("Orchestrator Channel Registration (DD-NOT-007)", func() {
 		orchestrator  *delivery.Orchestrator
 		mockService   *mockDeliveryService
 		sanitizer     *sanitization.Sanitizer
-		metrics       notificationmetrics.Recorder
+		metrics       *notificationmetrics.Metrics
 		statusManager *notificationstatus.Manager
 		logger        = ctrl.Log.WithName("test-orchestrator")
 		ctx           = context.Background()
@@ -58,8 +59,8 @@ var _ = Describe("Orchestrator Channel Registration (DD-NOT-007)", func() {
 
 	BeforeEach(func() {
 		// Create orchestrator WITHOUT channel parameters (DD-NOT-007)
-		// Use NoOpRecorder for DeliverToChannels tests (avoids nil metrics panic)
-		metrics = notificationmetrics.NewNoOpRecorder()
+		// Use isolated *Metrics for DeliverToChannels tests (avoids nil metrics panic)
+		metrics = notificationmetrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		orchestrator = delivery.NewOrchestrator(
 			sanitizer,
 			metrics,
@@ -273,7 +274,7 @@ var _ = Describe("Orchestrator Channel Registration (DD-NOT-007)", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.DeliveryAttempts).To(HaveLen(1))
-			Expect(result.DeliveryAttempts[0].Status).To(Equal("success"))
+			Expect(result.DeliveryAttempts[0].Status).To(Equal(notificationv1alpha1.DeliveryAttemptStatusSuccess))
 			Expect(result.DeliveryAttempts[0].DurationSeconds).To(BeNumerically(">", 0),
 				"DurationSeconds must be set after successful delivery")
 		})

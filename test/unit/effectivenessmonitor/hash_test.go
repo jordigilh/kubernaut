@@ -110,6 +110,81 @@ var _ = Describe("Spec Hash Computer (DD-EM-002)", func() {
 		})
 	})
 
+	Describe("ConfigMap-Aware Composite Hash (#396, BR-EM-004)", func() {
+
+		It("UT-EM-396-001: Compute with ConfigMapHashes produces composite hash", func() {
+			spec := map[string]interface{}{"replicas": float64(3)}
+
+			specOnlyResult := computer.Compute(hash.SpecHashInput{Spec: spec})
+
+			cmHashes := map[string]string{
+				"my-config": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+			}
+			compositeResult := computer.Compute(hash.SpecHashInput{
+				Spec:            spec,
+				ConfigMapHashes: cmHashes,
+			})
+
+			Expect(compositeResult.Hash).To(HavePrefix("sha256:"))
+			Expect(compositeResult.Hash).To(HaveLen(71))
+			Expect(compositeResult.Component.Assessed).To(BeTrue())
+			Expect(compositeResult.Hash).ToNot(Equal(specOnlyResult.Hash),
+				"composite hash with ConfigMaps must differ from spec-only hash")
+		})
+
+		It("UT-EM-396-002: Compute without ConfigMapHashes produces spec-only hash (backward compat)", func() {
+			spec := map[string]interface{}{"replicas": float64(3)}
+
+			withoutCM := computer.Compute(hash.SpecHashInput{Spec: spec})
+			withNilCM := computer.Compute(hash.SpecHashInput{Spec: spec, ConfigMapHashes: nil})
+			withEmptyCM := computer.Compute(hash.SpecHashInput{Spec: spec, ConfigMapHashes: map[string]string{}})
+
+			Expect(withoutCM.Hash).To(Equal(withNilCM.Hash),
+				"nil ConfigMapHashes must produce same hash as omitted")
+			Expect(withoutCM.Hash).To(Equal(withEmptyCM.Hash),
+				"empty ConfigMapHashes must produce same hash as omitted")
+		})
+
+		It("UT-EM-396-003: Match=true when pre and post composite hashes are identical", func() {
+			spec := map[string]interface{}{"replicas": float64(3)}
+			cmHashes := map[string]string{
+				"my-config": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+			}
+
+			preResult := computer.Compute(hash.SpecHashInput{Spec: spec, ConfigMapHashes: cmHashes})
+
+			postResult := computer.Compute(hash.SpecHashInput{
+				Spec:            spec,
+				PreHash:         preResult.Hash,
+				ConfigMapHashes: cmHashes,
+			})
+
+			Expect(postResult.Match).To(HaveValue(BeTrue()),
+				"identical spec + identical ConfigMap hashes must produce Match=true")
+		})
+
+		It("UT-EM-396-004: Match=false when ConfigMap data changed between pre and post", func() {
+			spec := map[string]interface{}{"replicas": float64(3)}
+			cmHashesV1 := map[string]string{
+				"my-config": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			}
+			cmHashesV2 := map[string]string{
+				"my-config": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			}
+
+			preResult := computer.Compute(hash.SpecHashInput{Spec: spec, ConfigMapHashes: cmHashesV1})
+
+			postResult := computer.Compute(hash.SpecHashInput{
+				Spec:            spec,
+				PreHash:         preResult.Hash,
+				ConfigMapHashes: cmHashesV2,
+			})
+
+			Expect(postResult.Match).To(HaveValue(BeFalse()),
+				"different ConfigMap content hashes must produce Match=false")
+		})
+	})
+
 	Describe("Pre/Post Hash Comparison (DD-EM-002)", func() {
 
 		It("UT-EM-SH-006: Match=true when pre and post hashes are identical", func() {
@@ -124,8 +199,7 @@ var _ = Describe("Spec Hash Computer (DD-EM-002)", func() {
 			}
 
 			result := computer.Compute(input)
-			Expect(result.Match).ToNot(BeNil())
-			Expect(*result.Match).To(BeTrue(), "Same spec should match pre-hash")
+			Expect(result.Match).To(HaveValue(BeTrue()), "Same spec should match pre-hash")
 			Expect(result.PreHash).To(Equal(preResult.Hash))
 		})
 
@@ -136,8 +210,7 @@ var _ = Describe("Spec Hash Computer (DD-EM-002)", func() {
 			}
 
 			result := computer.Compute(input)
-			Expect(result.Match).ToNot(BeNil())
-			Expect(*result.Match).To(BeFalse(), "Different spec should not match pre-hash")
+			Expect(result.Match).To(HaveValue(BeFalse()), "Different spec should not match pre-hash")
 		})
 
 		It("UT-EM-SH-008: Match=nil when no PreHash provided", func() {

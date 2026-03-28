@@ -15,11 +15,11 @@ limitations under the License.
 */
 
 // Package signalprocessing_test contains Hot-Reload integration tests for SignalProcessing.
-// These tests validate ConfigMap-based policy hot-reload functionality.
+// These tests validate Rego policy hot-reload functionality via ConfigMap file watching.
 //
 // Defense-in-Depth Strategy (per 03-testing-strategy.mdc):
 // - Unit tests (70%+): Hot-reload logic (test/unit/signalprocessing/)
-// - Integration tests (>50%): Real ConfigMap interaction (this file)
+// - Integration tests (>50%): Real Rego policy interaction (this file)
 // - E2E tests (10-15%): Complete workflow validation (test/e2e/signalprocessing/)
 //
 // TDD Phase: RED - Tests define expected hot-reload behavior
@@ -33,10 +33,10 @@ limitations under the License.
 // - BR-SP-072: Recovery - watcher restart after error
 //
 // Business Requirements Coverage:
-// - BR-SP-072: ConfigMap hot-reload without restart (5 tests)
+// - BR-SP-072: Rego policy hot-reload without restart (5 tests)
 //
 // NOTE: These tests verify hot-reload behavior through the controller's
-// ability to pick up ConfigMap changes and apply updated policies to
+// ability to pick up Rego policy changes and apply updated policies to
 // subsequent SignalProcessing reconciliations.
 package signalprocessing
 
@@ -67,15 +67,15 @@ environment := {"environment": lower(env), "source": "namespace-labels"} if {
     env := input.namespace.labels["kubernaut.ai/environment"]
     env != ""
 }
-environment := {"environment": "production", "source": "configmap"} if {
+environment := {"environment": "production", "source": "rego-inference"} if {
     not input.namespace.labels["kubernaut.ai/environment"]
     startswith(input.namespace.name, "prod")
 }
-environment := {"environment": "staging", "source": "configmap"} if {
+environment := {"environment": "staging", "source": "rego-inference"} if {
     not input.namespace.labels["kubernaut.ai/environment"]
     startswith(input.namespace.name, "staging")
 }
-environment := {"environment": "development", "source": "configmap"} if {
+environment := {"environment": "development", "source": "rego-inference"} if {
     not input.namespace.labels["kubernaut.ai/environment"]
     startswith(input.namespace.name, "dev")
 }
@@ -141,7 +141,7 @@ func updateLabelsPolicyFile(labelsRules string) {
 	time.Sleep(2 * time.Second)
 }
 
-// BR-SP-072 hot-reload using ConfigMap watching (fsnotify-based).
+// BR-SP-072 hot-reload using Rego policy file watching (fsnotify-based).
 // Uses shared pkg/shared/hotreload/FileWatcher component per DD-INFRA-001.
 //
 // ⚠️  Serial: Hot-reload tests manipulate shared policy files on disk
@@ -164,9 +164,9 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 	// FILE WATCH TEST (1 test)
 	// ========================================
 
-	Context("File Watch - ConfigMap Change Detection", func() {
-		// BR-SP-072: Policy file change detected via fsnotify
-		It("BR-SP-072: should detect policy file change in ConfigMap", func() {
+	Context("File Watch - Rego Policy Change Detection", func() {
+		// BR-SP-072: Rego policy file change detected via fsnotify
+		It("BR-SP-072: should detect Rego policy file change", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("hr-file-watch")
 			defer deleteTestNamespace(ns)

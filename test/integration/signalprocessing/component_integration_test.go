@@ -34,9 +34,9 @@ limitations under the License.
 //
 // Business Requirements Coverage:
 // - BR-SP-001: K8s Context Enrichment (7 tests)
-// - BR-SP-002: Business Classification (2 tests)
+// - BR-SP-002: Business Classification (1 test)
 // - BR-SP-051: Namespace Label Environment (1 test)
-// - BR-SP-052: ConfigMap Fallback (1 test)
+// - BR-SP-052: Rego Policy Fallback (1 test)
 // - BR-SP-070: Priority Assignment (1 test)
 // - BR-SP-071: Severity Fallback (1 test)
 // - BR-SP-072: Hot-Reload Policy (2 tests)
@@ -355,20 +355,20 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 	// Environment Classifier COMPONENT TESTS (3 tests)
 	// ========================================
 
-	Context("Environment Classifier - Real ConfigMap Interaction", func() {
-		// Real ConfigMap lookup for environment classification
-		It("BR-SP-052: should classify environment from real ConfigMap", func() {
-			By("Creating namespace with prefix matching ConfigMap rules")
+	Context("Environment Classifier - Rego Policy Evaluation", func() {
+		// Rego policy evaluation for environment classification
+		It("BR-SP-052: should classify environment via Rego policy", func() {
+			By("Creating namespace with prefix matching Rego policy rules")
 			// The suite_test.go creates a ConfigMap with rules:
 			// - startswith(namespace, "prod") → production
 			// - startswith(namespace, "staging") → staging
-			ns := createTestNamespace("prod-configmap-test")
+			ns := createTestNamespace("prod-rego-test")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR")
-			sp := createSignalProcessingCR(ns, "env-configmap-test", signalprocessingv1alpha1.SignalData{
-				Fingerprint: ValidTestFingerprints["env-configmap"],
-				Name:        "EnvConfigMapTest",
+			sp := createSignalProcessingCR(ns, "env-rego-test", signalprocessingv1alpha1.SignalData{
+				Fingerprint: ValidTestFingerprints["env-rego"],
+				Name:        "EnvRegoPolicyTest",
 				Severity: "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
@@ -385,15 +385,15 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying ConfigMap-based classification")
+			By("Verifying Rego-based classification")
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.EnvironmentClassification).To(And(Not(BeNil()), HaveField("Environment", Equal("production"))))
+			Expect(final.Status.EnvironmentClassification).To(And(Not(BeNil()), HaveField("Environment", Equal(signalprocessingv1alpha1.EnvironmentProduction))))
 		})
 
-		// Namespace label priority over ConfigMap
-		It("BR-SP-051: should prioritize namespace label over ConfigMap rules", func() {
+		// Namespace label priority over Rego pattern
+		It("BR-SP-051: should prioritize namespace label over Rego pattern rules", func() {
 			By("Creating namespace with explicit label contradicting prefix")
 			// Namespace name starts with "prod" but label says "staging"
 			ns := createTestNamespaceWithLabels("prod-but-staging", map[string]string{
@@ -425,9 +425,8 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.EnvironmentClassification).To(And(Not(BeNil()), HaveField("Environment", Equal("staging"))))
-			// Label should override ConfigMap pattern matching
-			// Note: Confidence field removed per DD-SP-001 V1.1
+			Expect(final.Status.EnvironmentClassification).To(And(Not(BeNil()), HaveField("Environment", Equal(signalprocessingv1alpha1.EnvironmentStaging))))
+			// Label should override Rego pattern matching
 		})
 
 		// NOTE: Hot-reload test removed - covered by dedicated hot_reloader_test.go
@@ -470,7 +469,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal("P0"))))
+			Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal(signalprocessingv1alpha1.PriorityP0))))
 			// Production + Critical = P0 per priority.rego
 			Expect(final.Status.PriorityAssignment.Source).To(ContainSubstring("rego"))
 		})
@@ -505,26 +504,26 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		var final signalprocessingv1alpha1.SignalProcessing
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-		Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal("P3"))))
+		Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal(signalprocessingv1alpha1.PriorityP3))))
 		// Issue #98: Score-based policy: severity_score=3 (critical) + env_score=0 (unknown) = composite 3 → P3
 		// Previously P1 under N*M policy. Score-based treats unknown env as zero contribution.
 		})
 
-		// ConfigMap policy load
-		It("BR-SP-072: should load priority policy from ConfigMap", func() {
-			// The suite_test.go already creates the priority ConfigMap
+		// Rego policy load
+		It("BR-SP-072: should load priority Rego policy from ConfigMap", func() {
+			// The suite_test.go already creates the priority Rego policy ConfigMap
 			// This test verifies the policy was loaded correctly
 
 			By("Creating namespace")
-			ns := createTestNamespaceWithLabels("priority-configmap", map[string]string{
+			ns := createTestNamespaceWithLabels("priority-rego-policy", map[string]string{
 				"kubernaut.ai/environment": "staging",
 			})
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR with warning severity")
-			sp := createSignalProcessingCR(ns, "priority-configmap-test", signalprocessingv1alpha1.SignalData{
-				Fingerprint: ValidTestFingerprints["priority-cm"],
-				Name:        "PriorityConfigMapTest",
+			sp := createSignalProcessingCR(ns, "priority-rego-policy-test", signalprocessingv1alpha1.SignalData{
+				Fingerprint: ValidTestFingerprints["priority-rego-cm"],
+				Name:        "PriorityRegoPolicyTest",
 				Severity: "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
@@ -541,20 +540,20 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying ConfigMap policy was used")
+			By("Verifying Rego policy was used")
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal("P2"))))
-			// Staging + warning = P2 per ConfigMap policy
+			Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal(signalprocessingv1alpha1.PriorityP2))))
+			// Staging + warning = P2 per Rego policy
 		})
 	})
 
 	// ========================================
-	// Business Classifier COMPONENT TESTS (2 tests)
+	// Business Classifier COMPONENT TESTS (1 test)
 	// ========================================
 
-	Context("Business Classifier - Label and Pattern Based", func() {
+	Context("Business Classifier - Label Based", func() {
 		// Label-based classification
 		It("BR-SP-002: should classify business unit from namespace label", func() {
 			By("Creating namespace with team label")
@@ -590,40 +589,6 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			Expect(final.Status.BusinessClassification).To(And(Not(BeNil()), HaveField("BusinessUnit", Equal("payments"))))
 		})
 
-		// Pattern-based classification
-		It("BR-SP-002: should classify business unit from namespace pattern", func() {
-			By("Creating namespace with business-indicative name")
-			ns := createTestNamespace("finance-app")
-			defer deleteTestNamespace(ns)
-
-			By("Creating SignalProcessing CR")
-			sp := createSignalProcessingCR(ns, "business-pattern-test", signalprocessingv1alpha1.SignalData{
-				Fingerprint: ValidTestFingerprints["business-pattern"],
-				Name:        "BusinessPatternTest",
-				Severity: "high",
-				Type:        "alert",
-				TargetType:  "kubernetes",
-				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-					Kind:      "Pod",
-					Name:      "test-pod",
-					Namespace: ns,
-				},
-				ReceivedTime: metav1.Now(),
-			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
-
-			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
-			Expect(err).ToNot(HaveOccurred())
-
-			By("Verifying pattern-based business classification")
-			var final signalprocessingv1alpha1.SignalProcessing
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
-
-			// Pattern matching may or may not populate BusinessUnit depending on rules
-			// This test validates the classification attempt was made
-			Expect(final.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
-		})
 	})
 
 	// ========================================
