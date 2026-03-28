@@ -417,9 +417,9 @@ jobs:
             image_name: db-migrate
           # Test Fixtures (1)
           - service: mock-llm
-            dockerfile: test/services/mock-llm/Dockerfile
+            dockerfile: test/services/mock-llm/go.Dockerfile
             image_name: mock-llm
-            context: test/services/mock-llm
+            context: .
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -467,10 +467,10 @@ jobs:
           
           # Go service images are built with coverage instrumentation (GOFLAGS=-cover)
           # so E2E tests can collect real service coverage via GOCOVERDIR.
-          # Python (holmesgpt-api) and test fixtures (mock-llm) don't use GOFLAGS.
+          # Python (holmesgpt-api) doesn't use GOFLAGS.
           COVERAGE_ARG=""
           case "${{ matrix.service }}" in
-            holmesgpt-api|mock-llm) ;;
+            holmesgpt-api) ;;
             *) COVERAGE_ARG="--build-arg GOFLAGS=-cover"
                echo "   📊 Coverage instrumentation: enabled (GOFLAGS=-cover)" ;;
           esac
