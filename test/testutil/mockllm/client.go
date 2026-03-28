@@ -16,6 +16,7 @@ limitations under the License.
 package mockllm
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -95,6 +96,30 @@ func (c *Client) AssertRequestCount(expected int) {
 	resp := c.getJSON("/api/test/request-count")
 	count := int(resp["count"].(float64))
 	ExpectWithOffset(1, count).To(Equal(expected), "request count mismatch")
+}
+
+// ConfigureFault sets fault injection via the API.
+func (c *Client) ConfigureFault(enabled bool, statusCode int, message string) {
+	cfg := map[string]interface{}{
+		"enabled":     enabled,
+		"status_code": statusCode,
+		"message":     message,
+	}
+	data, _ := json.Marshal(cfg)
+	resp, err := http.Post(c.baseURL+"/api/test/fault", "application/json", bytes.NewReader(data))
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	defer resp.Body.Close()
+	ExpectWithOffset(1, resp.StatusCode).To(Equal(200))
+}
+
+// ResetFault disables fault injection.
+func (c *Client) ResetFault() {
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/test/fault/reset", nil)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	resp, err := http.DefaultClient.Do(req)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	defer resp.Body.Close()
+	ExpectWithOffset(1, resp.StatusCode).To(Equal(200))
 }
 
 // Reset clears all verification state.

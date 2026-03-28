@@ -23,6 +23,7 @@ type Config struct {
 	StatusCode int    `json:"status_code"`
 	Message    string `json:"message"`
 	DelayMs    int    `json:"delay_ms,omitempty"`
+	Count      int    `json:"count,omitempty"` // 0 = unlimited; >0 = auto-disable after N faults
 }
 
 // Injector manages configurable fault injection for the Mock LLM.
@@ -44,10 +45,20 @@ func (fi *Injector) Configure(cfg Config) {
 }
 
 // IsActive returns true if fault injection is enabled.
+// When Count > 0, decrements the remaining count and auto-disables when exhausted.
 func (fi *Injector) IsActive() bool {
-	fi.mu.RLock()
-	defer fi.mu.RUnlock()
-	return fi.config.Enabled
+	fi.mu.Lock()
+	defer fi.mu.Unlock()
+	if !fi.config.Enabled {
+		return false
+	}
+	if fi.config.Count > 0 {
+		fi.config.Count--
+		if fi.config.Count == 0 {
+			fi.config.Enabled = false
+		}
+	}
+	return true
 }
 
 // StatusCode returns the configured HTTP status code.
