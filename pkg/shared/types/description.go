@@ -25,7 +25,7 @@ package types
 // This is the canonical type. CRD types (api/) keep kubebuilder-annotated copies
 // and convert via DescriptionFromCRD / DescriptionToCRD helpers on their packages.
 // The ogen-generated wire types use snake_case on the REST boundary and convert
-// via OgenDescriptionToShared / SharedDescriptionToOgen.
+// via the ogenconv subpackage (pkg/shared/types/ogenconv).
 type StructuredDescription struct {
 	What          string `json:"what" yaml:"what"`
 	WhenToUse     string `json:"whenToUse" yaml:"whenToUse"`

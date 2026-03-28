@@ -98,6 +98,30 @@ manifests: controller-gen sync-version ## Generate WebhookConfiguration, Cluster
 	@echo "📋 Syncing CRDs to Helm chart..."
 	@cp -f config/crd/bases/*.yaml charts/kubernaut/crds/
 	@echo "✅ charts/kubernaut/crds/ updated"
+	@$(MAKE) sync-embed
+
+.PHONY: sync-embed
+sync-embed: ## Sync migration SQL and CRD YAMLs into pkg/shared/assets/ for Go embed (DD-4, Issue #578)
+	@echo "📋 Syncing embedded assets for kubernaut-operator..."
+	@mkdir -p pkg/shared/assets/migrations pkg/shared/assets/crds
+	@cp -f migrations/*.sql pkg/shared/assets/migrations/
+	@cp -f config/crd/bases/kubernaut.ai_*.yaml pkg/shared/assets/crds/
+	@echo "✅ pkg/shared/assets/ updated (migrations + CRDs)"
+
+.PHONY: validate-embed
+validate-embed: sync-embed ## Validate embedded assets are in sync with source files (CI drift detection)
+	@echo "🔍 Checking embedded assets for drift..."
+	@if ! git diff --quiet pkg/shared/assets/; then \
+		echo ""; \
+		echo "❌ Embedded assets are out of sync!"; \
+		echo ""; \
+		echo "📋 Drifted files:"; \
+		git diff --name-only pkg/shared/assets/; \
+		echo ""; \
+		echo "🔧 To fix: run 'make sync-embed' and commit the changes"; \
+		exit 1; \
+	fi
+	@echo "✅ Embedded assets are in sync"
 
 .PHONY: sync-version
 sync-version: ## Propagate VERSION file to Chart.yaml, values, Dockerfiles, and docs

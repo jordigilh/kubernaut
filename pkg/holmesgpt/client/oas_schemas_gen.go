@@ -304,8 +304,8 @@ func (*HTTPValidationError) incidentSessionResultEndpointAPIV1IncidentSessionSes
 func (*HTTPValidationError) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {}
 
 // Structured reason for needs_human_review=true.
-// Business Requirements: BR-HAPI-197, BR-HAPI-200, BR-HAPI-212
-// Design Decision: DD-HAPI-002 v1.2
+// Business Requirements: BR-HAPI-197, BR-HAPI-200, BR-496
+// Design Decision: DD-HAPI-002 v1.2, DD-HAPI-006 v1.3
 // AIAnalysis uses this for reliable subReason mapping instead of parsing warnings.
 // Ref: #/components/schemas/HumanReviewReason
 type HumanReviewReason string
