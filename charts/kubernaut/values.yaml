@@ -260,7 +260,7 @@ effectivenessmonitor:
     alertManagerUrl: "http://kube-prometheus-stack-alertmanager.monitoring.svc:9093"
     alertManagerEnabled: false
     # tlsCaFile: ""  # Path to PEM CA bundle for HTTPS (OCP: /etc/ssl/em/service-ca.crt)
-    # ocpMonitoringRbac: false  # Create ClusterRoleBindings for OCP monitoring access
+    # ocpMonitoringRbac: false  # OCP: cluster-monitoring-view CRB + alertmanagers/api ClusterRole (Issue #576)
   resources:
     requests:
       memory: 64Mi

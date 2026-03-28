@@ -112,6 +112,9 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 		})
 		Expect(err).ToNot(HaveOccurred(), "Failed to inject 'after' metrics")
 
+		By("Seeding workflowexecution.execution.started event (no_execution guard)")
+		seedWorkflowStartedEvent(correlationID)
+
 		By("Creating an EffectivenessAssessment CRD with all components enabled")
 		name := uniqueName("ea-rc-happy")
 		createEA(testNS, name, correlationID,
@@ -199,6 +202,9 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 		})
 		Expect(err).ToNot(HaveOccurred(), "Failed to inject 'after' metrics")
 
+		By("Seeding workflowexecution.execution.started event (no_execution guard)")
+		seedWorkflowStartedEvent(correlationID)
+
 		name := uniqueName("ea-ae-events")
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
@@ -247,6 +253,10 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 
 		name := uniqueName("ea-sh-hash")
 		correlationID := uniqueName("corr-sh-hash")
+
+		By("Seeding workflowexecution.execution.started event (no_execution guard)")
+		seedWorkflowStartedEvent(correlationID)
+
 		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),

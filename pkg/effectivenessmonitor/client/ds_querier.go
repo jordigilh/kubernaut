@@ -61,48 +61,34 @@ func NewDataStorageHTTPQuerierWithTransport(baseURL string, timeout time.Duratio
 	}
 }
 
+// auditEventsResponse matches the AuditEventsQueryResponse envelope returned by
+// GET /api/v1/audit/events (see api/openapi/data-storage-v1.yaml).
+// Issue #575: EM was decoding the bare array, but DS wraps events in this object.
+type auditEventsResponse struct {
+	Data []auditEvent `json:"data"`
+}
+
+// auditEvent carries the subset of fields EM needs from each audit event.
+type auditEvent struct {
+	EventType string         `json:"event_type"`
+	EventData auditEventData `json:"event_data"`
+}
+
+type auditEventData struct {
+	PreRemediationSpecHash string `json:"pre_remediation_spec_hash,omitempty"`
+}
+
 // QueryPreRemediationHash queries DataStorage for audit events matching the
 // correlation ID and extracts the pre_remediation_spec_hash from the
 // remediation.workflow_created event (DD-EM-002).
 func (q *dataStorageHTTPQuerier) QueryPreRemediationHash(ctx context.Context, correlationID string) (string, error) {
-	// Build URL: GET /api/v1/audit/events?correlation_id=<id>&event_type=remediation.workflow_created
-	u, err := url.Parse(q.baseURL)
+	events, err := q.queryAuditEvents(ctx, correlationID, "remediation.workflow_created")
 	if err != nil {
-		return "", fmt.Errorf("invalid DS base URL: %w", err)
-	}
-	u.Path = "/api/v1/audit/events"
-	params := url.Values{}
-	params.Set("correlation_id", correlationID)
-	params.Set("event_type", "remediation.workflow_created")
-	u.RawQuery = params.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create DS request: %w", err)
+		return "", err
 	}
 
-	resp, err := q.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("DS query failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("DS returned HTTP %d for correlation_id=%s", resp.StatusCode, correlationID)
-	}
-
-	var events []map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
-		return "", fmt.Errorf("failed to decode DS response: %w", err)
-	}
-
-	// Find the first remediation.workflow_created event with a pre_remediation_spec_hash
 	for _, event := range events {
-		eventData, ok := event["event_data"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if hash, ok := eventData["pre_remediation_spec_hash"].(string); ok && hash != "" {
+		if hash := event.EventData.PreRemediationSpecHash; hash != "" {
 			return hash, nil
 		}
 	}
@@ -110,41 +96,55 @@ func (q *dataStorageHTTPQuerier) QueryPreRemediationHash(ctx context.Context, co
 	return "", nil
 }
 
-// HasWorkflowStarted checks if a workflowexecution.workflow.started event
+// HasWorkflowStarted checks if a workflowexecution.execution.started event
 // exists for the given correlation ID (ADR-EM-001 Section 5).
 // Returns false when no such event exists, indicating the remediation
 // failed before workflow execution began (e.g., AA failed, approval rejected).
+//
+// Note: The WE controller emits "workflowexecution.execution.started" (Gap #6,
+// BR-AUDIT-005) when a PipelineRun is created. The ADR references the higher-level
+// "workflowexecution.workflow.started" but that event type is never emitted.
 func (q *dataStorageHTTPQuerier) HasWorkflowStarted(ctx context.Context, correlationID string) (bool, error) {
-	// Build URL: GET /api/v1/audit/events?correlation_id=<id>&event_type=workflowexecution.workflow.started
+	events, err := q.queryAuditEvents(ctx, correlationID, "workflowexecution.execution.started")
+	if err != nil {
+		return false, err
+	}
+
+	return len(events) > 0, nil
+}
+
+// queryAuditEvents calls GET /api/v1/audit/events with the given filters and
+// decodes the paginated envelope response.
+func (q *dataStorageHTTPQuerier) queryAuditEvents(ctx context.Context, correlationID, eventType string) ([]auditEvent, error) {
 	u, err := url.Parse(q.baseURL)
 	if err != nil {
-		return false, fmt.Errorf("invalid DS base URL: %w", err)
+		return nil, fmt.Errorf("invalid DS base URL: %w", err)
 	}
 	u.Path = "/api/v1/audit/events"
 	params := url.Values{}
 	params.Set("correlation_id", correlationID)
-	params.Set("event_type", "workflowexecution.workflow.started")
+	params.Set("event_type", eventType)
 	u.RawQuery = params.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return false, fmt.Errorf("failed to create DS request: %w", err)
+		return nil, fmt.Errorf("failed to create DS request: %w", err)
 	}
 
 	resp, err := q.httpClient.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("DS query failed: %w", err)
+		return nil, fmt.Errorf("DS query failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("DS returned HTTP %d for correlation_id=%s", resp.StatusCode, correlationID)
+		return nil, fmt.Errorf("DS returned HTTP %d for correlation_id=%s", resp.StatusCode, correlationID)
 	}
 
-	var events []map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
-		return false, fmt.Errorf("failed to decode DS response: %w", err)
+	var envelope auditEventsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("failed to decode DS response: %w", err)
 	}
 
-	return len(events) > 0, nil
+	return envelope.Data, nil
 }

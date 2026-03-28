@@ -20,9 +20,10 @@ limitations under the License.
 // events to the Data Storage service via the pkg/audit shared library.
 //
 // Audit Events:
-// - workflow.started: PipelineRun initiated
+// - execution.started: PipelineRun initiated (Gap #6, BR-AUDIT-005)
 // - workflow.completed: PipelineRun succeeded
 // - workflow.failed: PipelineRun failed or timed out
+// - selection.completed: Workflow selected from spec (Gap #5, BR-AUDIT-005)
 //
 // Per ADR-032: Audit is MANDATORY for WorkflowExecution (P0 service).
 // Per DD-AUDIT-004: Uses type-safe WorkflowExecutionAuditPayload structures.
@@ -68,11 +69,10 @@ const (
 // Per ADR-034 v1.5: ALL event types from WorkflowExecution controller use "workflowexecution" prefix
 // These match the event_type enum values in data-storage-v1.yaml
 const (
-	EventTypeStarted            = "workflowexecution.workflow.started"    // Per OpenAPI spec discriminator
+	EventTypeExecutionStarted   = "workflowexecution.execution.started"   // Gap #6 (BR-AUDIT-005) - PipelineRun created
 	EventTypeCompleted          = "workflowexecution.workflow.completed"  // Per OpenAPI spec discriminator
 	EventTypeFailed             = "workflowexecution.workflow.failed"     // Per OpenAPI spec discriminator
 	EventTypeSelectionCompleted = "workflowexecution.selection.completed" // Gap #5 (BR-AUDIT-005) - Per ADR-034 v1.5
-	EventTypeExecutionStarted   = "workflowexecution.execution.started"   // Gap #6 (BR-AUDIT-005) - Per ADR-034 v1.5
 )
 
 // Event category constant (from OpenAPI spec)
@@ -88,7 +88,7 @@ const (
 // Usage:
 //
 //	auditMgr := audit.NewManager(auditStore, logger)
-//	err := auditMgr.RecordWorkflowStarted(ctx, wfe)
+//	err := auditMgr.RecordExecutionWorkflowStarted(ctx, wfe, pipelineRunName, namespace)
 type Manager struct {
 	store  audit.AuditStore
 	logger logr.Logger
@@ -107,13 +107,6 @@ func NewManager(store audit.AuditStore, logger logr.Logger) *Manager {
 		store:  store,
 		logger: logger,
 	}
-}
-
-// RecordWorkflowStarted records a workflow.started audit event.
-//
-// This event is emitted when a PipelineRun is successfully created.
-func (m *Manager) RecordWorkflowStarted(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
-	return m.recordAuditEvent(ctx, wfe, EventTypeStarted, "success")
 }
 
 // RecordWorkflowCompleted records a workflow.completed audit event.
@@ -394,14 +387,11 @@ func (m *Manager) recordAuditEvent(
 	// Set event data using ogen union constructor based on action
 	// Per OGEN-MIGRATION: Direct assignment with union constructor for type safety
 	switch action {
-	case EventTypeStarted:
-		event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData(payload)
 	case EventTypeCompleted:
 		event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData(payload)
 	case EventTypeFailed:
 		event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData(payload)
 	default:
-		// Fallback for any other event types (e.g., workflow.selection.completed)
 		event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData(payload)
 	}
 

@@ -47,6 +47,9 @@ var _ = Describe("EffectivenessMonitor Health Check E2E Tests", Label("e2e"), fu
 		name := uniqueName("ea-hc-missing")
 		correlationID := uniqueName("corr-hc")
 
+		By("Seeding workflowexecution.execution.started event (no_execution guard)")
+		seedWorkflowStartedEvent(correlationID)
+
 		// The target pod "nonexistent-pod" does not exist in the namespace,
 		// so the health check should produce a score of 0.0.
 		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.

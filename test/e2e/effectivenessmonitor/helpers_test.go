@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ============================================================================
@@ -241,5 +242,49 @@ func waitForEAPhase(name, expectedPhase string) *eav1.EffectivenessAssessment {
 // uniqueName generates a unique name for test resources using the Ginkgo process index.
 func uniqueName(prefix string) string {
 	return fmt.Sprintf("%s-p%d-%d", prefix, GinkgoParallelProcess(), time.Now().UnixNano()%100000)
+}
+
+// ============================================================================
+// DataStorage Audit Event Seeding
+// ============================================================================
+
+// seedWorkflowStartedEvent posts a workflowexecution.execution.started audit event
+// to DataStorage for the given correlation ID. This satisfies the EM's no_execution
+// guard (ADR-EM-001 Section 5) which checks DS for evidence that a workflow ran.
+//
+// In production the WE controller emits this event; in E2E EM tests (no WE controller)
+// the test must seed it explicitly.
+func seedWorkflowStartedEvent(correlationID string) {
+	GinkgoHelper()
+	event := &ogenclient.AuditEventRequest{
+		Version:       "1.0",
+		EventType:     "workflowexecution.execution.started",
+		EventTimestamp: time.Now().UTC(),
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
+		EventAction:   "started",
+		EventOutcome:  ogenclient.AuditEventRequestEventOutcomeSuccess,
+		CorrelationID: correlationID,
+		EventData: ogenclient.NewAuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData(
+			ogenclient.WorkflowExecutionAuditPayload{
+				EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted,
+				WorkflowID:      "e2e-test-workflow",
+				WorkflowVersion: "v1.0.0",
+				TargetResource:  "Pod/target-pod",
+				Phase:           ogenclient.WorkflowExecutionAuditPayloadPhaseRunning,
+				ContainerImage:  "registry.io/test/workflow:latest",
+				ExecutionName:   fmt.Sprintf("wfe-%s", correlationID),
+			},
+		),
+	}
+
+	resp, err := auditClient.CreateAuditEvent(ctx, event)
+	Expect(err).ToNot(HaveOccurred(), "Failed to seed workflowexecution.execution.started event for %s", correlationID)
+
+	switch resp.(type) {
+	case *ogenclient.AuditEventResponse:
+		GinkgoWriter.Printf("  Seeded execution.started event for correlationID=%s\n", correlationID)
+	default:
+		Fail(fmt.Sprintf("Unexpected DS response type %T when seeding audit event", resp))
+	}
 }
 

@@ -190,7 +190,7 @@ sequenceDiagram
     RO->>DS: audit: remediation.workflow_created (preHash passed from caller, no redundant API call)
     RO->>WFE: Create WorkflowExecution CRD
     WFE->>K8s: Create Job or PipelineRun
-    WFE->>DS: audit: workflowexecution.workflow.started (with parameters)
+    WFE->>DS: audit: workflowexecution.execution.started (with parameters)
     WFE->>WFE: Monitor execution
     WFE->>DS: audit: workflowexecution.workflow.completed
 
@@ -313,7 +313,7 @@ sequenceDiagram
         Ctrl->>Ctrl: Parse remediation.workflow_created from audit trail (DataStorage fallback)
     end
     Ctrl->>Ctrl: Parse gateway.signal.received (signal metadata, fingerprint)
-    Ctrl->>Ctrl: Parse workflowexecution.workflow.started (workflow_id, version, parameters)
+    Ctrl->>Ctrl: Parse workflowexecution.execution.started (workflow_id, version, parameters)
     Ctrl->>Ctrl: Parse workflowexecution.workflow.completed/failed (outcome, duration)
 
     Note over Ctrl,K8s: Step 3 — Health checks (immediate)
@@ -412,13 +412,13 @@ sequenceDiagram
     Ctrl->>DS: GET /api/v1/audit/events?correlation_id={ea.spec.correlationID}
     DS-->>Ctrl: Partial audit trail
 
-    alt No workflowexecution.workflow.started event
+    alt No workflowexecution.execution.started event
         Note over Ctrl: Failure before execution (e.g., AA failed, approval rejected)
         Ctrl->>Ctrl: Skip health checks, metrics, hash comparison
         Ctrl->>EA: Update: phase=Completed, reason=no_execution
         Ctrl->>DS: POST audit: effectiveness.assessment.completed (reason=no_execution)
         Note over DS: DS returns score=null for this correlation ID (no component events)
-    else workflowexecution.workflow.started exists but no completed event
+    else workflowexecution.execution.started exists but no completed event
         Note over Ctrl: Execution started but timed out or failed
         Ctrl->>K8s: Health checks (target may be in degraded state)
         Ctrl->>DS: POST audit: effectiveness.health.assessed
@@ -594,7 +594,7 @@ flowchart LR
     end
 
     subgraph execution [Actual Execution]
-        A4["workflowexecution.workflow.started
+        A4["workflowexecution.execution.started
         workflow_id, version, parameters
         (post-normalization, AUTHORITATIVE)"]
     end
@@ -641,9 +641,9 @@ The AA controller performs type normalization (`map[string]interface{}` to `map[
 | Event | Parameter Format | Example | Role |
 |-------|-----------------|---------|------|
 | `aiagent.response.complete` | Native JSON types | `{"memory_limit": 512}` | What the LLM **recommended** |
-| `workflowexecution.workflow.started` | String (post-normalization) | `{"memory_limit": "512"}` | What was **actually applied** (authoritative) |
+| `workflowexecution.execution.started` | String (post-normalization) | `{"memory_limit": "512"}` | What was **actually applied** (authoritative) |
 
-The EM reads parameters from `workflowexecution.workflow.started` because it assesses "did what was actually done work?" — not "did what was recommended work?"
+The EM reads parameters from `workflowexecution.execution.started` because it assesses "did what was actually done work?" — not "did what was recommended work?"
 
 ---
 
@@ -866,7 +866,7 @@ Emitted when the EM finishes processing the EA CRD (all components done, validit
 | `completed_at` | string (RFC3339) | When the EA reached Completed phase (Batch 3: implemented in OpenAPI + `RecordAssessmentCompleted`) |
 | `assessment_duration_seconds` | float (nullable) | Seconds from RR creation to assessment completion (Batch 3: renamed from `resolution_time_seconds` per OBS-2) |
 
-### 9.3 `workflowexecution.workflow.started` Enhancement
+### 9.3 `workflowexecution.execution.started` Enhancement
 
 The existing `WorkflowExecutionAuditPayload` requires an additional field:
 
@@ -1083,7 +1083,7 @@ When the EM queries DataStorage for the audit trail of a given `correlation_id` 
 |------------------|-----------------|----------|
 | `gateway.signal.received` | `signalName`, `fingerprint`, `signal_source`, `labels` | Signal identity for AlertManager query, adapter identity (Issue #166) |
 | `remediation.workflow_created` | `pre_remediation_spec_hash`, `target_resource`, `workflow_type` | Pre/post hash comparison, target identification |
-| `workflowexecution.workflow.started` | `workflow_id`, `workflow_version`, `parameters`, `container_image` | What was actually executed (SOC2 authoritative) |
+| `workflowexecution.execution.started` | `workflow_id`, `workflow_version`, `parameters`, `container_image` | What was actually executed (SOC2 authoritative) |
 | `workflowexecution.workflow.completed` | `completed_at`, `duration` | Execution outcome, timing for metric windows |
 | `workflowexecution.workflow.failed` | `failure_reason`, `failure_message` | Failure context for partial assessment |
 | `orchestrator.lifecycle.completed` | `completed_at` | RR completion time (stabilization timer start) |
@@ -1184,7 +1184,7 @@ Before EM implementation can begin, these changes to existing services are requi
 | `EffectivenessAssessment` CRD definition | Platform | Define CRD schema (`effectiveness.kubernaut.io/v1alpha1`), install in cluster. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
 | RO creates EA CRD on terminal phase | RO | Create EA CRD with ownerRef to RR when RR enters Verifying (happy path) or when RR reaches Completed/Failed/TimedOut. Set RR Condition `EffectivenessAssessed=False`. Watch EA CRDs and update RR Condition when EA completes. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
 | `remediation.workflow_created` audit event | RO | Emit new event with `pre_remediation_spec_hash` before creating WFE CRD. RO must query API server directly (uncached) for target resource spec. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
-| Add `parameters` to WFE audit | WFE | Include `map[string]string` parameters in `workflowexecution.workflow.started` payload. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
+| Add `parameters` to WFE audit | WFE | Include `map[string]string` parameters in `workflowexecution.execution.started` payload. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
 | DS OpenAPI schema updates | DS | Add `remediation.workflow_created` and EM component event types (`effectiveness.health.assessed`, `effectiveness.alert.assessed`, `effectiveness.metrics.assessed`, `effectiveness.hash.computed`, `effectiveness.assessment.completed`) to discriminated union. Add `parameters` field to `WorkflowExecutionAuditPayload`. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
 | DS on-demand score computation | DS | Implement effectiveness score computation by aggregating component events for a given correlation ID, applying base weights (health 0.40, alert 0.35, metrics 0.25) with proportional redistribution for missing components. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
 | RR Condition infrastructure | RO | Add `EffectivenessAssessed` condition type to RR status. Ensure `Conditions` is in the `Always mutable` tier (already the case per DD-017 v2.1 CEL rules). | [#82](https://github.com/jordigilh/kubernaut/issues/82) |

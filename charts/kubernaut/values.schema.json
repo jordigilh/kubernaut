@@ -593,7 +593,7 @@
             "alertManagerUrl": { "type": "string" },
             "alertManagerEnabled": { "type": "boolean" },
             "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS connections to Prometheus/AlertManager" },
-            "ocpMonitoringRbac": { "type": "boolean", "default": false, "description": "Create ClusterRoleBindings for OCP monitoring access" }
+            "ocpMonitoringRbac": { "type": "boolean", "default": false, "description": "Create ClusterRoleBinding for cluster-monitoring-view and (when alertManagerEnabled) a ClusterRole granting monitoring.coreos.com/alertmanagers/api access for OCP kube-rbac-proxy" }
           }
         },
         "resources": { "$ref": "#/definitions/resources" },
