@@ -64,8 +64,9 @@ func NewFullRouter(
 	mux.HandleFunc("/v1/models", h.handleModels)
 	mux.HandleFunc("/api/tags", h.handleModels)
 
-	// OpenAI chat completions
+	// OpenAI chat completions (BR-MOCK-001: both /v1/ prefixed and unprefixed)
 	mux.HandleFunc("/v1/chat/completions", h.handleOpenAI)
+	mux.HandleFunc("/chat/completions", h.handleOpenAI)
 
 	// Ollama endpoints
 	mux.HandleFunc("/api/chat", h.handleOllama)

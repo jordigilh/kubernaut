@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/conversation"
 )
 
@@ -75,9 +76,37 @@ type ScenarioWithConfig interface {
 	Config() MockScenarioConfig
 }
 
+// DefaultRegistryWithOverrides returns a fully populated registry with optional
+// per-scenario overrides applied. If overrides is nil, behaves identically to
+// DefaultRegistry.
+func DefaultRegistryWithOverrides(overrides *config.Overrides) *Registry {
+	r := defaultRegistryInternal()
+	if overrides != nil {
+		for _, s := range r.scenarios {
+			cs, ok := s.(*configScenario)
+			if !ok {
+				continue
+			}
+			if ov, found := overrides.Scenarios[cs.config.ScenarioName]; found {
+				if ov.WorkflowID != "" {
+					cs.config.WorkflowID = ov.WorkflowID
+				}
+				if ov.Confidence != nil {
+					cs.config.Confidence = *ov.Confidence
+				}
+			}
+		}
+	}
+	return r
+}
+
 // DefaultRegistry returns a fully populated registry with all 15 scenarios
 // and a default fallback, matching the Python MOCK_SCENARIOS catalog.
 func DefaultRegistry() *Registry {
+	return defaultRegistryInternal()
+}
+
+func defaultRegistryInternal() *Registry {
 	r := NewRegistry()
 
 	// Mock keyword scenarios (highest priority = 1.0)

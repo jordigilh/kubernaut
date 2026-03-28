@@ -218,6 +218,9 @@ func SeedTestWorkflowsInDataStorage(client *ogenclient.Client, output io.Writer)
 // REMOVED: registerWorkflowInDataStorage() - Now uses infrastructure.RegisterWorkflowInDataStorage()
 // See: test/infrastructure/workflow_seeding.go for shared implementation
 
+// Deprecated: WriteMockLLMConfigFile is part of the legacy ConfigMap sync infrastructure.
+// The Go Mock LLM uses deterministic UUIDs (pkg/shared/uuid) and optional YAML overrides.
+//
 // WriteMockLLMConfigFile writes a YAML configuration file for Mock LLM
 // Pattern: DD-TEST-011 v2.0 - File-Based Configuration
 // Mock LLM reads workflow UUIDs from YAML file at startup (no HTTP calls)

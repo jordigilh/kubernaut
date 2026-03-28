@@ -33,7 +33,12 @@ import (
 func main() {
 	cfg := config.LoadFromEnv()
 
-	registry := scenarios.DefaultRegistry()
+	overrides, err := config.LoadYAMLOverrides(cfg.ConfigPath)
+	if err != nil {
+		log.Fatalf("Failed to load YAML overrides from %s: %v", cfg.ConfigPath, err)
+	}
+
+	registry := scenarios.DefaultRegistryWithOverrides(overrides)
 
 	router := handlers.NewFullRouter(registry, cfg.ForceText, cfg.RecordHeaders, nil)
 

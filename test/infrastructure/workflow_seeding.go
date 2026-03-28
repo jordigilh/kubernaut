@@ -166,6 +166,9 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 	}
 }
 
+// Deprecated: SortedWorkflowUUIDKeys is part of the legacy ConfigMap sync infrastructure.
+// The Go Mock LLM uses deterministic UUIDs and no longer requires external UUID synchronization.
+//
 // SortedWorkflowUUIDKeys returns the keys of a workflowUUIDs map sorted so that
 // ":production" entries come after all other environments for the same workflow name.
 // This is critical because the Mock LLM's load_scenarios_from_file does last-write-wins
