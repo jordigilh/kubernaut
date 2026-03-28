@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestKAPIConfig(t *testing.T) {
+func TestKubernautAgentConfig(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "KAPI Config Unit Suite")
+	RunSpecs(t, "Kubernaut Agent Config Unit Suite")
 }

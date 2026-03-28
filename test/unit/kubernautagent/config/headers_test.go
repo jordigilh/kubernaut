@@ -22,13 +22,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/kapi/config"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 )
 
 var _ = Describe("Custom Header Config — #417", func() {
 
-	// UT-KAPI-417-012: Config rejects malformed header definitions
-	Describe("UT-KAPI-417-012: Config validation rejects malformed definitions", func() {
+	// UT-KA-417-012: Config rejects malformed header definitions
+	Describe("UT-KA-417-012: Config validation rejects malformed definitions", func() {
 		It("should reject a header with missing name", func() {
 			defs := []config.HeaderDefinition{
 				{Name: "", Value: "some-value"},
@@ -67,8 +67,8 @@ var _ = Describe("Custom Header Config — #417", func() {
 		})
 	})
 
-	// UT-KAPI-417-011: Config rejects reserved header names
-	Describe("UT-KAPI-417-011: Reserved header name rejection", func() {
+	// UT-KA-417-011: Config rejects reserved header names
+	Describe("UT-KA-417-011: Reserved header name rejection", func() {
 		DescribeTable("should reject reserved header names",
 			func(name string) {
 				defs := []config.HeaderDefinition{
@@ -96,36 +96,36 @@ var _ = Describe("Custom Header Config — #417", func() {
 		})
 	})
 
-	// UT-KAPI-417-010: Startup validation fails fast on missing secretKeyRef
-	Describe("UT-KAPI-417-010: Startup fail-fast on missing secret", func() {
+	// UT-KA-417-010: Startup validation fails fast on missing secretKeyRef
+	Describe("UT-KA-417-010: Startup fail-fast on missing secret", func() {
 		It("should return error when secretKeyRef env var is unset", func() {
-			os.Unsetenv("KAPI_TEST_MISSING_SECRET")
+			os.Unsetenv("KA_TEST_MISSING_SECRET")
 			defs := []config.HeaderDefinition{
-				{Name: "Authorization", SecretKeyRef: "KAPI_TEST_MISSING_SECRET"},
+				{Name: "Authorization", SecretKeyRef: "KA_TEST_MISSING_SECRET"},
 			}
 			err := config.ValidateHeaderSources(defs)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("KAPI_TEST_MISSING_SECRET"))
+			Expect(err.Error()).To(ContainSubstring("KA_TEST_MISSING_SECRET"))
 		})
 
 		It("should return error when secretKeyRef env var is empty string", func() {
-			os.Setenv("KAPI_TEST_EMPTY_SECRET", "")
-			defer os.Unsetenv("KAPI_TEST_EMPTY_SECRET")
+			os.Setenv("KA_TEST_EMPTY_SECRET", "")
+			defer os.Unsetenv("KA_TEST_EMPTY_SECRET")
 
 			defs := []config.HeaderDefinition{
-				{Name: "Authorization", SecretKeyRef: "KAPI_TEST_EMPTY_SECRET"},
+				{Name: "Authorization", SecretKeyRef: "KA_TEST_EMPTY_SECRET"},
 			}
 			err := config.ValidateHeaderSources(defs)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("KAPI_TEST_EMPTY_SECRET"))
+			Expect(err.Error()).To(ContainSubstring("KA_TEST_EMPTY_SECRET"))
 		})
 
 		It("should succeed when secretKeyRef env var has a value", func() {
-			os.Setenv("KAPI_TEST_VALID_SECRET", "my-api-key")
-			defer os.Unsetenv("KAPI_TEST_VALID_SECRET")
+			os.Setenv("KA_TEST_VALID_SECRET", "my-api-key")
+			defer os.Unsetenv("KA_TEST_VALID_SECRET")
 
 			defs := []config.HeaderDefinition{
-				{Name: "Authorization", SecretKeyRef: "KAPI_TEST_VALID_SECRET"},
+				{Name: "Authorization", SecretKeyRef: "KA_TEST_VALID_SECRET"},
 			}
 			err := config.ValidateHeaderSources(defs)
 			Expect(err).NotTo(HaveOccurred())
@@ -141,8 +141,8 @@ var _ = Describe("Custom Header Config — #417", func() {
 		})
 	})
 
-	// UT-KAPI-417-013: Config accepts zero custom headers
-	Describe("UT-KAPI-417-013: Zero custom headers is valid", func() {
+	// UT-KA-417-013: Config accepts zero custom headers
+	Describe("UT-KA-417-013: Zero custom headers is valid", func() {
 		It("should return empty slice and no error for nil input", func() {
 			result, err := config.ParseCustomHeaders(nil)
 			Expect(err).NotTo(HaveOccurred())

@@ -27,8 +27,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/kapi/config"
-	"github.com/jordigilh/kubernaut/pkg/kapi/llm/transport"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 )
 
 // capturingTransport records the request forwarded by the outer RoundTripper.
@@ -43,8 +43,8 @@ func (c *capturingTransport) RoundTrip(req *http.Request) (*http.Response, error
 
 var _ = Describe("AuthHeadersTransport — #417", func() {
 
-	// UT-KAPI-417-016: RoundTripper request cloning contract
-	Describe("UT-KAPI-417-016: Request cloning contract", func() {
+	// UT-KA-417-016: RoundTripper request cloning contract
+	Describe("UT-KA-417-016: Request cloning contract", func() {
 		It("should not mutate the original request", func() {
 			inner := &capturingTransport{}
 			headers := []config.HeaderDefinition{
@@ -68,8 +68,8 @@ var _ = Describe("AuthHeadersTransport — #417", func() {
 		})
 	})
 
-	// UT-KAPI-417-001: RoundTripper injects all configured headers
-	Describe("UT-KAPI-417-001: Inject all configured headers", func() {
+	// UT-KA-417-001: RoundTripper injects all configured headers
+	Describe("UT-KA-417-001: Inject all configured headers", func() {
 		It("should inject all headers into the outbound request", func() {
 			inner := &capturingTransport{}
 			headers := []config.HeaderDefinition{
@@ -93,13 +93,13 @@ var _ = Describe("AuthHeadersTransport — #417", func() {
 		})
 	})
 
-	// UT-KAPI-417-008: Mixed sources in single request
-	Describe("UT-KAPI-417-008: Mixed sources all injected", func() {
+	// UT-KA-417-008: Mixed sources in single request
+	Describe("UT-KA-417-008: Mixed sources all injected", func() {
 		It("should resolve secretKeyRef, filePath, and value in one request", func() {
-			os.Setenv("KAPI_TEST_MIXED_SECRET", "secret-from-env")
-			defer os.Unsetenv("KAPI_TEST_MIXED_SECRET")
+			os.Setenv("KA_TEST_MIXED_SECRET", "secret-from-env")
+			defer os.Unsetenv("KA_TEST_MIXED_SECRET")
 
-			tmpFile, err := os.CreateTemp("", "kapi-test-mixed-*")
+			tmpFile, err := os.CreateTemp("", "ka-test-mixed-*")
 			Expect(err).NotTo(HaveOccurred())
 			defer os.Remove(tmpFile.Name())
 			err = os.WriteFile(tmpFile.Name(), []byte("jwt-from-file"), 0644)
@@ -107,7 +107,7 @@ var _ = Describe("AuthHeadersTransport — #417", func() {
 
 			inner := &capturingTransport{}
 			headers := []config.HeaderDefinition{
-				{Name: "x-api-key", SecretKeyRef: "KAPI_TEST_MIXED_SECRET"},
+				{Name: "x-api-key", SecretKeyRef: "KA_TEST_MIXED_SECRET"},
 				{Name: "Authorization", FilePath: tmpFile.Name()},
 				{Name: "x-tenant-id", Value: "kubernaut-prod"},
 			}
@@ -123,10 +123,10 @@ var _ = Describe("AuthHeadersTransport — #417", func() {
 		})
 	})
 
-	// UT-KAPI-417-007: Concurrent filePath reads
-	Describe("UT-KAPI-417-007: Concurrent filePath reads are safe", func() {
+	// UT-KA-417-007: Concurrent filePath reads
+	Describe("UT-KA-417-007: Concurrent filePath reads are safe", func() {
 		It("should handle 100 concurrent requests without panics or garbled values", func() {
-			tmpFile, err := os.CreateTemp("", "kapi-test-concurrent-*")
+			tmpFile, err := os.CreateTemp("", "ka-test-concurrent-*")
 			Expect(err).NotTo(HaveOccurred())
 			defer os.Remove(tmpFile.Name())
 			err = os.WriteFile(tmpFile.Name(), []byte("concurrent-token"), 0644)
@@ -162,8 +162,8 @@ var _ = Describe("AuthHeadersTransport — #417", func() {
 		})
 	})
 
-	// UT-KAPI-417-017: Header values absent from request body
-	Describe("UT-KAPI-417-017: Header values do not appear in request body", func() {
+	// UT-KA-417-017: Header values absent from request body
+	Describe("UT-KA-417-017: Header values do not appear in request body", func() {
 		It("should not modify the request body", func() {
 			inner := &capturingTransport{}
 			headers := []config.HeaderDefinition{

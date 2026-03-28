@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kapi_test
+package kubernautagent_test
 
 import (
 	"encoding/json"
@@ -25,8 +25,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/kapi/config"
-	llmclient "github.com/jordigilh/kubernaut/pkg/kapi/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
+	llmclient "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
 // mockLLMServer simulates the Mock LLM verification API (#570).
@@ -78,8 +78,8 @@ func (m *mockLLMServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 var _ = Describe("Auth Headers Mock LLM Verification — #417", func() {
 
-	// IT-KAPI-417-006: End-to-end with Mock LLM verification API
-	Describe("IT-KAPI-417-006: Mock LLM records and exposes injected headers", func() {
+	// IT-KA-417-006: End-to-end with Mock LLM verification API
+	Describe("IT-KA-417-006: Mock LLM records and exposes injected headers", func() {
 		var (
 			mockLLM *mockLLMServer
 			server  *httptest.Server
