@@ -252,7 +252,7 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 - [ ] DAG path traversal is recorded for the verification API (BR-MOCK-041)
 - [ ] Engine supports multiple concurrent conversations without state leakage
 
-**Implementation Status**: 📋 Planned
+**Implementation Status**: ✅ Implemented (v1.3, Phase 1B — DAG engine, builders, conditions, handler wiring 2026-03-28)
 
 **Related Issues**: #560
 

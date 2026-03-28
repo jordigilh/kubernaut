@@ -38,3 +38,26 @@ func HasResourceContextTool(tools []openai.Tool) bool {
 	}
 	return false
 }
+
+// ToolResultCountEqual evaluates to true when the context has exactly N tool results.
+type ToolResultCountEqual struct {
+	N int
+}
+
+func (c *ToolResultCountEqual) Evaluate(ctx *Context) bool {
+	return ctx.CountToolResults() == c.N
+}
+
+// ToolResultCountGE evaluates to true when the context has >= N tool results.
+type ToolResultCountGE struct {
+	N int
+}
+
+func (c *ToolResultCountGE) Evaluate(ctx *Context) bool {
+	return ctx.CountToolResults() >= c.N
+}
+
+// AlwaysTrue is a fallback condition that always evaluates to true.
+type AlwaysTrue struct{}
+
+func (c *AlwaysTrue) Evaluate(_ *Context) bool { return true }

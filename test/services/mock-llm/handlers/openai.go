@@ -96,28 +96,22 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine conversation mode and current step
-	mode := conversation.SelectMode(req.Tools)
-	toolResultCount := ctx.CountToolResults()
-
-	if mode.Name() == "legacy" {
-		if toolResultCount > 0 {
-			writeJSON(w, http.StatusOK, response.BuildTextResponse(model, cfg))
-		} else {
-			h.trackToolCall(openai.ToolSearchWorkflowCatalog)
-			writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, openai.ToolSearchWorkflowCatalog, cfg))
-		}
+	// DAG-based conversation routing (replaces legacy SelectMode step counting)
+	dag := conversation.SelectDAG(req.Tools)
+	execResult, err := dag.Execute(ctx)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError,
+			response.BuildErrorResponse("DAG execution error: "+err.Error()))
 		return
 	}
 
-	// Three-step / four-step mode
-	totalToolSteps := mode.TotalSteps() - 1
-	if toolResultCount >= totalToolSteps {
+	hr := execResult.Result
+	switch hr.ResponseType {
+	case conversation.StepToolCall:
+		h.trackToolCall(hr.ToolName)
+		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, hr.ToolName, cfg))
+	default:
 		writeJSON(w, http.StatusOK, response.BuildTextResponse(model, cfg))
-	} else {
-		toolName := mode.ToolNameForStep(toolResultCount)
-		h.trackToolCall(toolName)
-		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, toolName, cfg))
 	}
 }
 
