@@ -27,6 +27,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow"
+	shareduuid "github.com/jordigilh/kubernaut/pkg/shared/uuid"
 )
 
 // ========================================
@@ -141,6 +142,11 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 				// ASSERT: Create succeeds
 				Expect(err).ToNot(HaveOccurred(), "Create should succeed")
+
+				// ASSERT: WorkflowID is deterministic (#548)
+				expectedUUID := shareduuid.DeterministicUUID(workflowName)
+				Expect(testWorkflow.WorkflowID).To(Equal(expectedUUID),
+					"WorkflowID should be deterministic based on workflow name")
 
 				// ASSERT: Verify workflow persisted with correct composite PK
 				// Use Eventually to handle transaction commit delays (DS-FLAKY-006 fix)
