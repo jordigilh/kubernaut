@@ -211,34 +211,134 @@ See [Milestone Closure](#milestone-closure).
 
 ## Hotfix / Patch Release Workflow
 
-Use this workflow for critical fixes against a released version.
+Use this workflow for critical fixes against a released version (e.g., v1.1.1
+fixing a bug in v1.1.0) while `main` has moved on to the next minor (v1.2).
 
-### Step 1: Create a hotfix branch
+### Branching model
 
-```bash
-git checkout main && git pull origin main
-git checkout -b fix/vX.Y.Z
+```mermaid
+gitGraph
+  commit id: "v1.2 dev"
+  commit id: "tag v1.1.0" tag: "v1.1.0"
+  branch release/v1.1
+  checkout release/v1.1
+  branch fix/v1.1.1
+  checkout fix/v1.1.1
+  commit id: "hotfix"
+  checkout release/v1.1
+  merge fix/v1.1.1 id: "tag v1.1.1" tag: "v1.1.1"
+  checkout main
+  cherry-pick id: "tag v1.1.1"
+  commit id: "v1.2 continues"
 ```
 
-### Step 2: Cherry-pick or implement the fix
+Key concepts:
+- The **tag** (`v1.1.0`) is the permanent reference point. No maintenance branch
+  is needed until a hotfix is required.
+- The **maintenance branch** (`release/v1.1`) is created from the tag only when
+  the first hotfix is needed. Subsequent patches (v1.1.2, v1.1.3) reuse it.
+- Fixes must be **forward-ported** to `main` so the next minor also includes them.
 
-If the fix already exists on a feature branch:
+### Step 1: Create the maintenance branch (first patch only)
+
+If `release/v1.1` does not already exist, create it from the GA tag:
+
+```bash
+git fetch origin
+git checkout -b release/v1.1 v1.1.0
+git push -u origin release/v1.1
+```
+
+For subsequent patches (v1.1.2+), just check out the existing branch:
+
+```bash
+git checkout release/v1.1 && git pull origin release/v1.1
+```
+
+### Step 2: Create a fix branch from the maintenance branch
+
+```bash
+git checkout -b fix/v1.1.1 release/v1.1
+```
+
+### Step 3: Apply the fix
+
+If the fix already exists on `main`, cherry-pick it:
 
 ```bash
 git cherry-pick <commit-sha>
 ```
 
-Otherwise, implement the fix directly on the hotfix branch following TDD.
+If it conflicts, resolve manually. If the fix does not exist yet, implement it
+directly on the fix branch following TDD.
 
-### Step 3: Bump Chart.yaml and CHANGELOG
+### Step 4: Bump Chart.yaml and CHANGELOG
 
-Update `Chart.yaml` to the patch version. Add a CHANGELOG entry under a new
-`## [X.Y.Z]` section above the previous release.
+- `Chart.yaml`: set `version: 1.1.1` and `appVersion: "1.1.1"`
+- `CHANGELOG.md`: add a `## [1.1.1] - YYYY-MM-DD` section **above** the
+  `[1.1.0]` entry. Add the comparison link:
+  ```markdown
+  [1.1.1]: https://github.com/jordigilh/kubernaut/compare/v1.1.0...v1.1.1
+  ```
 
-### Step 4: PR, merge, tag
+### Step 5: Push and open PR targeting the maintenance branch
 
-Follow the same PR → merge → tag flow as the [GA Release Workflow](#ga-release-workflow),
-substituting the patch version.
+```bash
+git push -u origin fix/v1.1.1
+gh pr create --base release/v1.1 --title "fix: v1.1.1" --body "..."
+```
+
+> **Important**: the PR base is `release/v1.1`, not `main`.
+
+### Step 6: Merge the PR
+
+Wait for CI to pass, then merge. Record the merge commit SHA.
+
+### Step 7: Tag the merge commit on the maintenance branch
+
+```bash
+git checkout release/v1.1 && git pull origin release/v1.1
+MERGE_SHA=$(git log --oneline -1 --format='%H')
+git tag -a v1.1.1 "$MERGE_SHA" -m "v1.1.1"
+git push origin v1.1.1
+```
+
+This triggers the release workflow. Since `1.1.1` has no pre-release suffix, it is
+treated as a stable release and `:latest` tags will be updated.
+
+### Step 8: Monitor and verify
+
+```bash
+gh run list --workflow=release.yml --limit 1
+gh run watch
+```
+
+Follow the full [Verification Checklist](#verification-checklist), including
+`:latest` tags.
+
+### Step 9: Forward-port the fix to `main`
+
+This step ensures the next minor release (v1.2) also includes the hotfix:
+
+```bash
+git checkout main && git pull origin main
+git cherry-pick <fix-commit-sha>
+```
+
+If the cherry-pick conflicts (e.g., the code around the fix has changed on `main`),
+open a PR instead:
+
+```bash
+git checkout -b forward-port/v1.1.1 main
+git cherry-pick --no-commit <fix-commit-sha>
+# resolve conflicts
+git commit -m "fix: forward-port v1.1.1 hotfix to main"
+git push -u origin forward-port/v1.1.1
+gh pr create --title "fix: forward-port v1.1.1 to main" --body "..."
+```
+
+> **Do not skip this step.** Without forward-porting, the fix will be missing from
+> v1.2 and will regress when users upgrade.
 
 ---
 
@@ -246,11 +346,13 @@ substituting the patch version.
 
 The release workflow (`.github/workflows/release.yml`) has 5 stages:
 
-```
-┌──────────┐    ┌─────────────────────────┐    ┌──────────────┐    ┌──────────────┐    ┌─────────────┐
-│ Prepare  │───>│ Build & Push Images     │───>│ Multi-Arch   │───>│ Helm Publish │───>│ GitHub      │
-│          │    │ (24 parallel jobs)      │    │ Manifests    │    │              │    │ Release     │
-└──────────┘    └─────────────────────────┘    └──────────────┘    └──────────────┘    └─────────────┘
+```mermaid
+flowchart LR
+  Prepare --> BuildPush["Build & Push Images<br/>(24 parallel jobs)"]
+  BuildPush --> Manifests["Multi-Arch<br/>Manifests"]
+  BuildPush --> HelmPublish["Helm Publish"]
+  Manifests --> Release["GitHub<br/>Release"]
+  HelmPublish --> Release
 ```
 
 ### Stage 0: Prepare
