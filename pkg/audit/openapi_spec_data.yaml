@@ -5223,6 +5223,37 @@ components:
           description: Namespace of the resource (empty for cluster-scoped)
           example: "production"
 
+    AIAgentResponseFailedPayload:
+      type: object
+      required: [event_type, event_id, incident_id, error_message, phase]
+      description: AI Agent response failure event payload (aiagent.response.failed) - Emitted when an investigation fails (DD-AUDIT-005, SOC2 CC8.1)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.response.failed']
+          description: Event type for discriminator
+        event_id:
+          type: string
+          description: Unique event identifier
+          example: "evt-hapi-fail-123-abc"
+        incident_id:
+          type: string
+          description: Incident correlation ID from request
+          example: "incident-payment-api-2025-12-17-abc123"
+        error_message:
+          type: string
+          description: Error message from the failed investigation
+          example: "LLM request timed out after 120 seconds"
+        phase:
+          type: string
+          description: Phase in which the failure occurred
+          example: "llm_analysis"
+        duration_seconds:
+          type: number
+          format: float
+          description: Duration of the investigation before failure (seconds)
+          example: 120.5
+
     IncidentResponseData:
       type: object
       required: [incidentId, analysis, rootCauseAnalysis, confidence, timestamp]
