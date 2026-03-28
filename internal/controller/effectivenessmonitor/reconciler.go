@@ -431,7 +431,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// Step 6b: no_execution guard (ADR-EM-001 Section 5)
-	// If no workflowexecution.workflow.started event exists, the remediation failed
+	// If no workflowexecution.execution.started event exists, the remediation failed
 	// before execution began (e.g., AA failed, approval rejected). Skip all component
 	// checks and complete with reason=no_execution.
 	if r.DSQuerier != nil {

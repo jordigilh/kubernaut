@@ -96,12 +96,16 @@ func (q *dataStorageHTTPQuerier) QueryPreRemediationHash(ctx context.Context, co
 	return "", nil
 }
 
-// HasWorkflowStarted checks if a workflowexecution.workflow.started event
+// HasWorkflowStarted checks if a workflowexecution.execution.started event
 // exists for the given correlation ID (ADR-EM-001 Section 5).
 // Returns false when no such event exists, indicating the remediation
 // failed before workflow execution began (e.g., AA failed, approval rejected).
+//
+// Note: The WE controller emits "workflowexecution.execution.started" (Gap #6,
+// BR-AUDIT-005) when a PipelineRun is created. The ADR references the higher-level
+// "workflowexecution.workflow.started" but that event type is never emitted.
 func (q *dataStorageHTTPQuerier) HasWorkflowStarted(ctx context.Context, correlationID string) (bool, error) {
-	events, err := q.queryAuditEvents(ctx, correlationID, "workflowexecution.workflow.started")
+	events, err := q.queryAuditEvents(ctx, correlationID, "workflowexecution.execution.started")
 	if err != nil {
 		return false, err
 	}

@@ -146,12 +146,12 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 	// ── HasWorkflowStarted (Issue #575) ──────────────────────
 
 	Context("HasWorkflowStarted", func() {
-		It("UT-EM-DSQ-006: should return true when workflow.started event exists", func() {
+		It("UT-EM-DSQ-006: should return true when execution.started event exists", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				Expect(r.URL.Query().Get("event_type")).To(Equal("workflowexecution.workflow.started"))
+				Expect(r.URL.Query().Get("event_type")).To(Equal("workflowexecution.execution.started"))
 				serveDSEnvelope(w, []map[string]interface{}{
 					{
-						"event_type":     "workflowexecution.workflow.started",
+						"event_type":     "workflowexecution.execution.started",
 						"correlation_id": "corr-started",
 					},
 				})
@@ -163,7 +163,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 			Expect(started).To(BeTrue())
 		})
 
-		It("UT-EM-DSQ-007: should return false when no workflow.started event exists", func() {
+		It("UT-EM-DSQ-007: should return false when no execution.started event exists", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				serveDSEnvelope(w, []map[string]interface{}{})
 			}))
