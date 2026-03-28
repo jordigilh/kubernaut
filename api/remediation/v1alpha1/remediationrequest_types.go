@@ -21,8 +21,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -139,8 +137,35 @@ const (
 	PhaseCancelled RemediationPhase = "Cancelled"
 )
 
+// SkipReason represents the reason why a RemediationRequest was skipped.
+// Reference: DD-RO-002 (centralized routing responsibility)
+// +kubebuilder:validation:Enum=RecentlyRemediated;ResourceBusy;ExhaustedRetries;PreviousExecutionFailed
+type SkipReason string
+
+const (
+	SkipReasonRecentlyRemediated      SkipReason = "RecentlyRemediated"
+	SkipReasonResourceBusy            SkipReason = "ResourceBusy"
+	SkipReasonExhaustedRetries        SkipReason = "ExhaustedRetries"
+	SkipReasonPreviousExecutionFailed SkipReason = "PreviousExecutionFailed"
+)
+
+// FailurePhase represents the orchestration phase where a failure occurred.
+// BR-COMMON-001: PascalCase for CRD phase values.
+// +kubebuilder:validation:Enum=Configuration;SignalProcessing;AIAnalysis;Approval;WorkflowExecution;Blocked
+type FailurePhase string
+
+const (
+	FailurePhaseConfiguration     FailurePhase = "Configuration"
+	FailurePhaseSignalProcessing  FailurePhase = "SignalProcessing"
+	FailurePhaseAIAnalysis        FailurePhase = "AIAnalysis"
+	FailurePhaseApproval          FailurePhase = "Approval"
+	FailurePhaseWorkflowExecution FailurePhase = "WorkflowExecution"
+	FailurePhaseBlocked           FailurePhase = "Blocked"
+)
+
 // BlockReason represents the reason why a RemediationRequest is blocked (non-terminal).
 // Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
+// +kubebuilder:validation:Enum=ConsecutiveFailures;DuplicateInProgress;ResourceBusy;RecentlyRemediated;ExponentialBackoff;UnmanagedResource;IneffectiveChain
 type BlockReason string
 
 const (
@@ -299,30 +324,6 @@ type RemediationRequestSpec struct {
 
 	// When Gateway received the signal
 	ReceivedTime metav1.Time `json:"receivedTime"`
-
-	// Deduplication Metadata (DEPRECATED per DD-GATEWAY-011)
-	// Tracking information for duplicate signal suppression
-	// Uses shared type for API contract alignment with SignalProcessing CRD
-	// DD-GATEWAY-011: DEPRECATED - Moved to status.deduplication
-	// Gateway Team Fix (2025-12-12): Made optional to unblock Gateway integration tests
-	Deduplication sharedtypes.DeduplicationInfo `json:"deduplication,omitempty"`
-
-	// Storm Detection
-	// True if this signal is part of a detected alert storm
-	IsStorm bool `json:"isStorm,omitempty"`
-
-	// Storm type: "rate" (frequency-based) or "pattern" (similar alerts)
-	StormType string `json:"stormType,omitempty"`
-
-	// Time window for storm detection (e.g., "5m")
-	StormWindow string `json:"stormWindow,omitempty"`
-
-	// Number of alerts in the storm
-	StormAlertCount int `json:"stormAlertCount,omitempty"`
-
-	// List of affected resources in an aggregated storm (e.g., "namespace:Pod:name")
-	// Only populated for aggregated storm CRDs
-	AffectedResources []string `json:"affectedResources,omitempty"`
 
 	// ========================================
 	// SIGNAL METADATA (PHASE 1 ADDITION)
@@ -504,16 +505,12 @@ type RemediationRequestStatus struct {
 	// V1.0 Update: Enhanced for centralized routing (DD-RO-002)
 	// ========================================
 
-	// SkipReason indicates why this remediation was skipped
-	// Valid values:
-	// - "ResourceBusy": Another workflow executing on same target
-	// - "RecentlyRemediated": Target recently remediated, cooldown period active
-	// - "ExponentialBackoff": Pre-execution failures, backoff window active
-	// - "ExhaustedRetries": Max consecutive failures reached
-	// - "PreviousExecutionFailed": Previous execution failed during workflow run
-	// Only set when OverallPhase = "Skipped" or "Failed"
+	// SkipReason indicates why this remediation was skipped.
+	// Only set when OverallPhase = Skipped or Failed.
 	// Reference: DD-RO-002 (centralized routing responsibility)
-	SkipReason string `json:"skipReason,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Enum=RecentlyRemediated;ResourceBusy;ExhaustedRetries;PreviousExecutionFailed
+	SkipReason SkipReason `json:"skipReason,omitempty"`
 
 	// SkipMessage provides human-readable details about why remediation was skipped
 	// Examples:
@@ -567,7 +564,8 @@ type RemediationRequestStatus struct {
 	// Only set when OverallPhase = "Blocked"
 	// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
 	// +optional
-	BlockReason string `json:"blockReason,omitempty"`
+	// +kubebuilder:validation:Enum=ConsecutiveFailures;DuplicateInProgress;ResourceBusy;RecentlyRemediated;ExponentialBackoff;UnmanagedResource;IneffectiveChain
+	BlockReason BlockReason `json:"blockReason,omitempty"`
 
 	// BlockMessage provides human-readable details about why remediation is blocked
 	// Examples:
@@ -613,9 +611,11 @@ type RemediationRequestStatus struct {
 	// FAILURE/TIMEOUT TRACKING
 	// ========================================
 
-	// FailurePhase indicates which phase failed (e.g., "ai_analysis", "workflow_execution")
-	// Only set when OverallPhase = "failed"
-	FailurePhase *string `json:"failurePhase,omitempty"`
+	// FailurePhase indicates which orchestration phase failed.
+	// Only set when OverallPhase = Failed.
+	// +optional
+	// +kubebuilder:validation:Enum=Configuration;SignalProcessing;AIAnalysis;Approval;WorkflowExecution;Blocked
+	FailurePhase *FailurePhase `json:"failurePhase,omitempty"`
 
 	// FailureReason provides a human-readable reason for the failure
 	// Only set when OverallPhase = "failed"
@@ -645,9 +645,10 @@ type RemediationRequestStatus struct {
 	// +kubebuilder:validation:Enum=Remediated;NoActionRequired;ManualReviewRequired;VerificationTimedOut
 	Outcome string `json:"outcome,omitempty"`
 
-	// TimeoutPhase indicates which phase timed out
-	// Only set when OverallPhase = "timeout"
-	TimeoutPhase *string `json:"timeoutPhase,omitempty"`
+	// TimeoutPhase indicates which orchestration phase timed out.
+	// Only set when OverallPhase = TimedOut.
+	// +optional
+	TimeoutPhase *RemediationPhase `json:"timeoutPhase,omitempty"`
 
 	// TimeoutTime records when the timeout occurred
 	// Only set when OverallPhase = "timeout"
@@ -738,6 +739,13 @@ type RemediationRequestStatus struct {
 	// Reference: BR-AUDIT-005 Gap #6 (Execution Reference)
 	// +optional
 	ExecutionRef *corev1.ObjectReference `json:"executionRef,omitempty"`
+
+	// RemediationTarget identifies the Kubernetes resource the LLM determined should be
+	// remediated. Populated from AIAnalysis.Status.RootCauseAnalysis.AffectedResource.
+	// May differ from Spec.TargetResource (e.g., Deployment vs Pod).
+	// Reference: BR-HAPI-191, Issue #387
+	// +optional
+	RemediationTarget *ResourceIdentifier `json:"remediationTarget,omitempty"`
 }
 
 // WorkflowReference captures workflow catalog information for audit trail.
@@ -786,6 +794,10 @@ type DeduplicationStatus struct {
 // +kubebuilder:selectablefield:JSONPath=.spec.severity
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.overallPhase`
 // +kubebuilder:printcolumn:name="Outcome",type=string,JSONPath=`.status.outcome`
+// +kubebuilder:printcolumn:name="Source",type=string,JSONPath=`.spec.signalSource`,priority=1
+// +kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.targetResource.name`,priority=1
+// +kubebuilder:printcolumn:name="RCA Target",type=string,JSONPath=`.status.remediationTarget.name`,priority=1
+// +kubebuilder:printcolumn:name="Workflow",type=string,JSONPath=`.status.selectedWorkflowRef.workflowId`,priority=1
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 

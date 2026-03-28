@@ -89,6 +89,42 @@ type AIAnalysisTimeoutConfig struct {
 	AnalyzingTimeout metav1.Duration `json:"analyzingTimeout,omitempty"`
 }
 
+// AnalysisType represents a type of analysis to perform.
+// +kubebuilder:validation:Enum=Investigation;RootCause;WorkflowSelection
+type AnalysisType string
+
+const (
+	AnalysisTypeInvestigation     AnalysisType = "Investigation"
+	AnalysisTypeRootCause         AnalysisType = "RootCause"
+	AnalysisTypeWorkflowSelection AnalysisType = "WorkflowSelection"
+)
+
+// AIAnalysisReason represents the umbrella failure or completion reason.
+// Per K8s convention, reasons cover all terminal states (success and failure).
+// +kubebuilder:validation:Enum=AnalysisCompleted;WorkflowResolutionFailed;WorkflowNotNeeded;NoWorkflowSelected;RegoEvaluationError;TransientError;APIError
+type AIAnalysisReason string
+
+const (
+	ReasonAnalysisCompleted        AIAnalysisReason = "AnalysisCompleted"
+	ReasonWorkflowResolutionFailed AIAnalysisReason = "WorkflowResolutionFailed"
+	ReasonWorkflowNotNeeded        AIAnalysisReason = "WorkflowNotNeeded"
+	ReasonNoWorkflowSelected       AIAnalysisReason = "NoWorkflowSelected"
+	ReasonRegoEvaluationError      AIAnalysisReason = "RegoEvaluationError"
+	ReasonTransientError           AIAnalysisReason = "TransientError"
+	ReasonAPIError                 AIAnalysisReason = "APIError"
+)
+
+// PolicyDecision represents the Rego policy evaluation outcome.
+// +kubebuilder:validation:Enum=Approved;ManualReviewRequired;Denied;DegradedMode
+type PolicyDecision string
+
+const (
+	PolicyDecisionApproved             PolicyDecision = "Approved"
+	PolicyDecisionManualReviewRequired PolicyDecision = "ManualReviewRequired"
+	PolicyDecisionDenied               PolicyDecision = "Denied"
+	PolicyDecisionDegradedMode         PolicyDecision = "DegradedMode"
+)
+
 // AnalysisRequest contains the structured analysis request
 // DD-CONTRACT-002: Self-contained context for AIAnalysis
 type AnalysisRequest struct {
@@ -96,9 +132,9 @@ type AnalysisRequest struct {
 	// +kubebuilder:validation:Required
 	SignalContext SignalContextInput `json:"signalContext"`
 
-	// Analysis types to perform (e.g., "investigation", "root-cause", "workflow-selection")
+	// Analysis types to perform
 	// +kubebuilder:validation:MinItems=1
-	AnalysisTypes []string `json:"analysisTypes"`
+	AnalysisTypes []AnalysisType `json:"analysisTypes"`
 }
 
 // SignalContextInput contains enriched signal context from SignalProcessing
@@ -229,14 +265,14 @@ type PolicyEvaluation struct {
 	PolicyName string `json:"policyName"`
 	// Rules that matched
 	MatchedRules []string `json:"matchedRules,omitempty"`
-	// Decision: approved, manual_review_required, denied
-	Decision string `json:"decision"`
+	// Decision from policy evaluation
+	Decision PolicyDecision `json:"decision"`
 }
 
 // RecommendedAction describes a remediation action with rationale
 type RecommendedAction struct {
-	// Action type
-	Action string `json:"action"`
+	// WorkflowId is the catalog workflow identifier for this recommendation
+	WorkflowId string `json:"workflowId"`
 	// Rationale explaining why this action is recommended
 	Rationale string `json:"rationale"`
 }
@@ -280,8 +316,9 @@ type AIAnalysisStatus struct {
 	// +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Completed;Failed
 	Phase   string `json:"phase"`
 	Message string `json:"message,omitempty"`
-	// Reason provides the umbrella failure category (e.g., "WorkflowResolutionFailed")
-	Reason string `json:"reason,omitempty"`
+	// Reason provides the umbrella failure or completion category.
+	// +optional
+	Reason AIAnalysisReason `json:"reason,omitempty"`
 	// SubReason provides specific failure cause within the Reason category
 	// BR-HAPI-197: Maps to needs_human_review triggers from HolmesGPT-API
 	// BR-HAPI-200: Added InvestigationInconclusive, ProblemResolved for new investigation outcomes
@@ -526,6 +563,15 @@ type SelectedWorkflow struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +optional
 	EngineConfig *apiextensionsv1.JSON `json:"engineConfig,omitempty"`
+
+	// ServiceAccountName is the pre-existing ServiceAccount for the execution
+	// resource (Job, PipelineRun, or Ansible TokenRequest).
+	// DD-WE-005 v2.0: Operators pre-create SAs with appropriate RBAC in the
+	// execution namespace. If absent, K8s assigns the namespace's default SA
+	// (Job/Tekton) or the Ansible executor uses the controller's in-cluster
+	// credentials (#500 fallback).
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 }
 
 // AlternativeWorkflow contains alternative workflows considered but not selected.

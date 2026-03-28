@@ -15,15 +15,6 @@ metadata:
     app: workflowexecution-controller
     {{- include "kubernaut.labels" . | nindent 4 }}
 ---
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: kubernaut-workflow-runner
-  namespace: {{ include "kubernaut.workflowNamespace" . }}
-  labels:
-    app: kubernaut-workflow-runner
-    {{- include "kubernaut.labels" . | nindent 4 }}
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -106,6 +97,10 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "create", "delete", "patch", "update"]
+  # Issue #501: TokenRequest API for per-workflow SA tokens (Ansible executor)
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    verbs: ["create"]
   - apiGroups: ["cert-manager.io"]
     resources: ["certificates"]
     verbs: ["get", "list"]
@@ -156,21 +151,6 @@ subjects:
     name: workflowexecution-controller
     namespace: {{ .Release.Namespace }}
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: kubernaut-workflow-runner
-  labels:
-    {{- include "kubernaut.labels" . | nindent 4 }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: kubernaut-workflow-runner
-subjects:
-  - kind: ServiceAccount
-    name: kubernaut-workflow-runner
-    namespace: {{ include "kubernaut.workflowNamespace" . }}
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -189,7 +169,6 @@ data:
     execution:
       namespace: {{ include "kubernaut.workflowNamespace" . }}
       cooldownPeriod: {{ .Values.workflowexecution.config.execution.cooldownPeriod | default "1m" }}
-      serviceAccount: kubernaut-workflow-runner
     datastorage:
       url: "{{ include "kubernaut.datastorage.url" . }}"
       timeout: 10s

@@ -107,7 +107,7 @@ rules:
     resources: ["events"]
     verbs: ["create", "patch"]
   - apiGroups: [""]
-    resources: ["pods", "nodes", "services", "namespaces", "persistentvolumes"]
+    resources: ["pods", "nodes", "services", "namespaces", "persistentvolumes", "configmaps"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]

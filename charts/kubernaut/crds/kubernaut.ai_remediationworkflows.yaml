@@ -147,6 +147,15 @@ spec:
                   engineConfig:
                     description: EngineConfig holds engine-specific configuration
                     x-kubernetes-preserve-unknown-fields: true
+                  serviceAccountName:
+                    description: |-
+                      ServiceAccountName is the pre-existing ServiceAccount for the execution
+                      resource (Job, PipelineRun, or Ansible TokenRequest).
+                      DD-WE-005 v2.0: Operators pre-create SAs with appropriate RBAC in the
+                      execution namespace. If absent, K8s assigns the namespace's default SA
+                      (Job/Tekton) or the Ansible executor uses the controller's in-cluster
+                      credentials (#500 fallback).
+                    type: string
                 type: object
               labels:
                 description: Labels contains mandatory matching/filtering criteria
@@ -294,8 +303,24 @@ spec:
             description: RemediationWorkflowStatus defines the observed state of RemediationWorkflow
             properties:
               catalogStatus:
-                description: CatalogStatus reflects the DS catalog state (active,
-                  disabled, deprecated, archived)
+                allOf:
+                - enum:
+                  - Active
+                  - Invalid
+                  - Pending
+                  - Deprecated
+                  - Archived
+                  - Disabled
+                  - Superseded
+                - enum:
+                  - Active
+                  - Invalid
+                  - Pending
+                  - Deprecated
+                  - Archived
+                  - Disabled
+                  - Superseded
+                description: CatalogStatus reflects the DS catalog lifecycle state.
                 type: string
               previouslyExisted:
                 description: PreviouslyExisted indicates if this workflow was re-registered

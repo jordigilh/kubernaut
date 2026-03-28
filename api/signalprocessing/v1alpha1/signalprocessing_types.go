@@ -287,16 +287,59 @@ type OwnerChainEntry = sharedtypes.OwnerChainEntry
 // BusinessClassification aliases the shared business classification type.
 type BusinessClassification = sharedtypes.BusinessClassification
 
+// Criticality aliases the shared criticality enum type.
+type Criticality = sharedtypes.Criticality
+
+// Re-export Criticality constants for consumer convenience.
+const (
+	CriticalityCritical = sharedtypes.CriticalityCritical
+	CriticalityHigh     = sharedtypes.CriticalityHigh
+	CriticalityMedium   = sharedtypes.CriticalityMedium
+	CriticalityLow      = sharedtypes.CriticalityLow
+)
+
+// SLARequirement aliases the shared SLA requirement enum type.
+type SLARequirement = sharedtypes.SLARequirement
+
+// Re-export SLARequirement constants for consumer convenience.
+const (
+	SLARequirementPlatinum = sharedtypes.SLARequirementPlatinum
+	SLARequirementGold     = sharedtypes.SLARequirementGold
+	SLARequirementSilver   = sharedtypes.SLARequirementSilver
+	SLARequirementBronze   = sharedtypes.SLARequirementBronze
+)
+
+// Environment represents a canonical deployment environment.
+// DD-WORKFLOW-001 v2.2: 4 canonical environments + Unknown fallback.
+// +kubebuilder:validation:Enum=Production;Staging;Development;Test;Unknown
+type Environment string
+
+const (
+	EnvironmentProduction  Environment = "Production"
+	EnvironmentStaging     Environment = "Staging"
+	EnvironmentDevelopment Environment = "Development"
+	EnvironmentTest        Environment = "Test"
+	EnvironmentUnknown     Environment = "Unknown"
+)
+
+// Priority represents an operational priority level.
+// BR-SP-070-072: Priority Assignment.
+// +kubebuilder:validation:Enum=P0;P1;P2;P3
+type Priority string
+
+const (
+	PriorityP0 Priority = "P0"
+	PriorityP1 Priority = "P1"
+	PriorityP2 Priority = "P2"
+	PriorityP3 Priority = "P3"
+)
+
 // EnvironmentClassification from DD-CATEGORIZATION-001.
 // BR-SP-051-053: Environment Classification (Updated per BR-SP-080 V2.0)
-// DD-WORKFLOW-001 v2.2: 4 canonical environments (production, staging, development, test)
-// DD-SP-001 V1.1: Removed Confidence field (redundant with source)
 // BR-SP-080 V2.0: Removed signal-labels source (security vulnerability)
 type EnvironmentClassification struct {
-	// Environment: production, staging, development, test
-	Environment string `json:"environment"`
+	Environment Environment `json:"environment"`
 	// Source of classification: namespace-labels, rego-inference, default
-	// Valid sources per BR-SP-080 V2.0 (signal-labels removed for security)
 	Source string `json:"source"`
 	// When classification was performed
 	ClassifiedAt metav1.Time `json:"classifiedAt"`
@@ -304,12 +347,10 @@ type EnvironmentClassification struct {
 
 // PriorityAssignment from DD-CATEGORIZATION-001.
 // BR-SP-070-072: Priority Assignment (Updated per BR-SP-080 V2.0)
-// DD-SP-001 V1.1: Removed Confidence field (redundant with source)
 type PriorityAssignment struct {
-	// Priority level: P0, P1, P2, P3
-	Priority string `json:"priority"`
+	// +kubebuilder:validation:Enum=P0;P1;P2;P3
+	Priority Priority `json:"priority"`
 	// Source of assignment: rego-policy, severity-fallback, default
-	// Per BR-SP-071: severity-fallback used when Rego fails (severity-only fallback)
 	Source string `json:"source"`
 	// Which Rego rule matched (if applicable)
 	PolicyName string `json:"policyName,omitempty"`

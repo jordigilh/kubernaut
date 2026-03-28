@@ -80,6 +80,264 @@ const (
 	NotificationPhaseFailed        NotificationPhase = "Failed"
 )
 
+// +kubebuilder:validation:Enum=AIAnalysis;WorkflowExecution
+type ReviewSourceType string
+
+const (
+	ReviewSourceAIAnalysis        ReviewSourceType = "AIAnalysis"
+	ReviewSourceWorkflowExecution ReviewSourceType = "WorkflowExecution"
+)
+
+// +kubebuilder:validation:Enum=success;failed;timeout;invalid
+type DeliveryAttemptStatus string
+
+const (
+	DeliveryAttemptStatusSuccess DeliveryAttemptStatus = "success"
+	DeliveryAttemptStatusFailed  DeliveryAttemptStatus = "failed"
+	DeliveryAttemptStatusTimeout DeliveryAttemptStatus = "timeout"
+	DeliveryAttemptStatusInvalid DeliveryAttemptStatus = "invalid"
+)
+
+type NotificationStatusReason string
+
+const (
+	StatusReasonAllDeliveriesSucceeded NotificationStatusReason = "AllDeliveriesSucceeded"
+	StatusReasonPartialDeliverySuccess NotificationStatusReason = "PartialDeliverySuccess"
+	StatusReasonAllDeliveriesFailed    NotificationStatusReason = "AllDeliveriesFailed"
+	StatusReasonNoChannelsResolved     NotificationStatusReason = "NoChannelsResolved"
+	StatusReasonPartialFailureRetrying NotificationStatusReason = "PartialFailureRetrying"
+	StatusReasonMaxRetriesExhausted    NotificationStatusReason = "MaxRetriesExhausted"
+)
+
+type DeliveryChannelName string
+
+type ActionLinkServiceType string
+
+const (
+	ActionLinkServiceGrafana    ActionLinkServiceType = "grafana"
+	ActionLinkServicePrometheus ActionLinkServiceType = "prometheus"
+)
+
+// NotificationContext provides structured context for a notification,
+// replacing the former unstructured Metadata map[string]string.
+type NotificationContext struct {
+	// Lineage tracks parent resource references for audit correlation.
+	// +optional
+	Lineage *LineageContext `json:"lineage,omitempty"`
+
+	// Workflow captures selected workflow details (approval/completion notifications).
+	// +optional
+	Workflow *WorkflowContext `json:"workflow,omitempty"`
+
+	// Analysis captures AI analysis results (approval/completion notifications).
+	// +optional
+	Analysis *AnalysisContext `json:"analysis,omitempty"`
+
+	// Review captures manual review context (manual-review notifications).
+	// +optional
+	Review *ReviewContext `json:"review,omitempty"`
+
+	// Execution captures execution and retry context (manual-review WE source, timeout notifications).
+	// +optional
+	Execution *ExecutionContext `json:"execution,omitempty"`
+
+	// Dedup captures deduplication context (bulk duplicate notifications).
+	// +optional
+	Dedup *DedupContext `json:"dedup,omitempty"`
+
+	// Target captures target resource context (timeout notifications).
+	// +optional
+	Target *TargetContext `json:"target,omitempty"`
+
+	// Verification captures EA verification results (completion notifications, #318).
+	// Enables routing rules to match on verification outcome (e.g., inconclusive -> escalation).
+	// +optional
+	Verification *VerificationContext `json:"verification,omitempty"`
+}
+
+// FlattenToMap reconstructs a flat map[string]string from the typed sub-structs.
+// Used by routing resolver and audit manager for backward compatibility.
+// Only non-empty fields are included. Nil sub-structs are safely skipped.
+func (c *NotificationContext) FlattenToMap() map[string]string {
+	if c == nil {
+		return map[string]string{}
+	}
+	m := make(map[string]string)
+	if c.Lineage != nil {
+		setIfNonEmpty(m, "remediationRequest", c.Lineage.RemediationRequest)
+		setIfNonEmpty(m, "aiAnalysis", c.Lineage.AIAnalysis)
+	}
+	if c.Workflow != nil {
+		setIfNonEmpty(m, "selectedWorkflow", c.Workflow.SelectedWorkflow)
+		setIfNonEmpty(m, "confidence", c.Workflow.Confidence)
+		setIfNonEmpty(m, "workflowId", c.Workflow.WorkflowID)
+		setIfNonEmpty(m, "executionEngine", c.Workflow.ExecutionEngine)
+	}
+	if c.Analysis != nil {
+		setIfNonEmpty(m, "approvalReason", c.Analysis.ApprovalReason)
+		setIfNonEmpty(m, "rootCause", c.Analysis.RootCause)
+		setIfNonEmpty(m, "outcome", c.Analysis.Outcome)
+	}
+	if c.Review != nil {
+		setIfNonEmpty(m, "reason", c.Review.Reason)
+		setIfNonEmpty(m, "subReason", c.Review.SubReason)
+		setIfNonEmpty(m, "humanReviewReason", c.Review.HumanReviewReason)
+		setIfNonEmpty(m, "rootCauseAnalysis", c.Review.RootCauseAnalysis)
+	}
+	if c.Execution != nil {
+		setIfNonEmpty(m, "retryCount", c.Execution.RetryCount)
+		setIfNonEmpty(m, "maxRetries", c.Execution.MaxRetries)
+		setIfNonEmpty(m, "lastExitCode", c.Execution.LastExitCode)
+		setIfNonEmpty(m, "previousExecution", c.Execution.PreviousExecution)
+		setIfNonEmpty(m, "timeoutPhase", c.Execution.TimeoutPhase)
+		setIfNonEmpty(m, "phaseTimeout", c.Execution.PhaseTimeout)
+	}
+	if c.Dedup != nil {
+		setIfNonEmpty(m, "duplicateCount", c.Dedup.DuplicateCount)
+	}
+	if c.Target != nil {
+		setIfNonEmpty(m, "targetResource", c.Target.TargetResource)
+	}
+	if c.Verification != nil {
+		if c.Verification.Assessed {
+			m["verificationAssessed"] = "true"
+		} else {
+			m["verificationAssessed"] = "false"
+		}
+		setIfNonEmpty(m, "verificationOutcome", c.Verification.Outcome)
+		setIfNonEmpty(m, "verificationReason", c.Verification.Reason)
+		if c.Verification.Degraded {
+			m["verificationDegraded"] = "true"
+		} else {
+			m["verificationDegraded"] = "false"
+		}
+		setIfNonEmpty(m, "verificationDegradedReason", c.Verification.DegradedReason)
+	}
+	return m
+}
+
+func setIfNonEmpty(m map[string]string, key, value string) {
+	if value != "" {
+		m[key] = value
+	}
+}
+
+// LineageContext tracks parent resource references for audit correlation (BR-NOT-064).
+type LineageContext struct {
+	// RemediationRequest is the name of the parent RemediationRequest.
+	// +optional
+	RemediationRequest string `json:"remediationRequest,omitempty"`
+	// AIAnalysis is the name of the parent AIAnalysis.
+	// +optional
+	AIAnalysis string `json:"aiAnalysis,omitempty"`
+}
+
+// WorkflowContext captures selected workflow details.
+type WorkflowContext struct {
+	// SelectedWorkflow is the ID of the workflow selected by AI.
+	// +optional
+	SelectedWorkflow string `json:"selectedWorkflow,omitempty"`
+	// Confidence is the AI confidence score (as string, e.g. "0.95").
+	// +optional
+	Confidence string `json:"confidence,omitempty"`
+	// WorkflowID is the ID of the executed workflow.
+	// +optional
+	WorkflowID string `json:"workflowId,omitempty"`
+	// ExecutionEngine is the engine used to execute the workflow.
+	// +optional
+	ExecutionEngine string `json:"executionEngine,omitempty"`
+}
+
+// AnalysisContext captures AI analysis results.
+type AnalysisContext struct {
+	// ApprovalReason explains why approval was required.
+	// +optional
+	ApprovalReason string `json:"approvalReason,omitempty"`
+	// RootCause is the AI-determined root cause summary.
+	// +optional
+	RootCause string `json:"rootCause,omitempty"`
+	// Outcome is the remediation outcome (e.g., "Success", "Failed").
+	// +optional
+	Outcome string `json:"outcome,omitempty"`
+}
+
+// ReviewContext captures manual review details (BR-ORCH-036).
+type ReviewContext struct {
+	// Reason is the high-level failure reason (e.g., "WorkflowResolutionFailed").
+	// +optional
+	Reason string `json:"reason,omitempty"`
+	// SubReason provides granular detail (e.g., "WorkflowNotFound").
+	// +optional
+	SubReason string `json:"subReason,omitempty"`
+	// HumanReviewReason from HAPI when needs_human_review=true (BR-HAPI-197).
+	// +optional
+	HumanReviewReason string `json:"humanReviewReason,omitempty"`
+	// RootCauseAnalysis from AIAnalysis if available.
+	// +optional
+	RootCauseAnalysis string `json:"rootCauseAnalysis,omitempty"`
+}
+
+// ExecutionContext captures execution and retry data.
+type ExecutionContext struct {
+	// RetryCount is the number of retries attempted.
+	// +optional
+	RetryCount string `json:"retryCount,omitempty"`
+	// MaxRetries is the maximum number of retries allowed.
+	// +optional
+	MaxRetries string `json:"maxRetries,omitempty"`
+	// LastExitCode is the last exit code from the workflow execution.
+	// +optional
+	LastExitCode string `json:"lastExitCode,omitempty"`
+	// PreviousExecution is the name of the previous WorkflowExecution.
+	// +optional
+	PreviousExecution string `json:"previousExecution,omitempty"`
+	// TimeoutPhase is the phase that timed out.
+	// +optional
+	TimeoutPhase string `json:"timeoutPhase,omitempty"`
+	// PhaseTimeout is the duration string for the phase timeout.
+	// +optional
+	PhaseTimeout string `json:"phaseTimeout,omitempty"`
+}
+
+// DedupContext captures deduplication context (BR-ORCH-034).
+type DedupContext struct {
+	// DuplicateCount is the number of duplicate signals.
+	// +optional
+	DuplicateCount string `json:"duplicateCount,omitempty"`
+}
+
+// TargetContext captures target resource context.
+type TargetContext struct {
+	// TargetResource in "Kind/Name" format.
+	// +optional
+	TargetResource string `json:"targetResource,omitempty"`
+}
+
+// VerificationContext captures EA verification results for completion notifications (#318).
+// Enables programmatic routing (e.g., inconclusive outcomes -> escalation channel).
+type VerificationContext struct {
+	// Assessed indicates whether verification was performed at all.
+	Assessed bool `json:"assessed"`
+	// Outcome is the high-level result: "passed", "partial", "inconclusive", "unavailable".
+	// +optional
+	Outcome string `json:"outcome,omitempty"`
+	// Reason maps to EffectivenessAssessment.Status.AssessmentReason.
+	// +optional
+	Reason string `json:"reason,omitempty"`
+	// Summary is the operator-facing human-readable message.
+	// +optional
+	Summary string `json:"summary,omitempty"`
+	// Degraded indicates that the EA was unable to reliably compare pre- and
+	// post-remediation state because hash capture failed (Issue #546).
+	// Routing rules can match on this to escalate degraded notifications.
+	// +optional
+	Degraded bool `json:"degraded,omitempty"`
+	// DegradedReason describes why the EA is degraded (e.g., RBAC Forbidden for
+	// the target CRD). Empty when Degraded is false.
+	// +optional
+	DegradedReason string `json:"degradedReason,omitempty"`
+}
+
 // RetryPolicy defines retry behavior for notification delivery
 type RetryPolicy struct {
 	// Maximum number of delivery attempts
@@ -110,7 +368,7 @@ type RetryPolicy struct {
 // ActionLink represents an external service action link
 type ActionLink struct {
 	// Service name (github, grafana, prometheus, kubernetes-dashboard, etc.)
-	Service string `json:"service"`
+	Service ActionLinkServiceType `json:"service"`
 
 	// Action link URL
 	URL string `json:"url"`
@@ -173,12 +431,19 @@ type NotificationRequestSpec struct {
 	// ReviewSource indicates what triggered manual review (for manual-review notifications)
 	// Issue #91: promoted from mutable label to immutable spec field
 	// +optional
-	ReviewSource string `json:"reviewSource,omitempty"`
+	ReviewSource ReviewSourceType `json:"reviewSource,omitempty"`
 
-	// Metadata for context (key-value pairs)
-	// Examples: remediationRequestName, cluster, namespace, alertName
+	// Context provides typed, structured notification context replacing the
+	// former unstructured Metadata map. Each sub-struct is optional (nil means
+	// not applicable for this notification type).
 	// +optional
-	Metadata map[string]string `json:"metadata,omitempty"`
+	Context *NotificationContext `json:"context,omitempty"`
+
+	// Extensions holds arbitrary key-value pairs for routing and custom data
+	// that don't fit the typed Context schema (e.g., test routing overrides,
+	// vendor-specific tags). Routing rules can match on these keys.
+	// +optional
+	Extensions map[string]string `json:"extensions,omitempty"`
 
 	// Action links to external services
 	// +optional
@@ -199,7 +464,7 @@ type NotificationRequestSpec struct {
 // DeliveryAttempt records a single delivery attempt to a channel
 type DeliveryAttempt struct {
 	// Channel name
-	Channel string `json:"channel"`
+	Channel DeliveryChannelName `json:"channel"`
 
 	// Attempt number (1-based)
 	Attempt int `json:"attempt"`
@@ -208,7 +473,7 @@ type DeliveryAttempt struct {
 	Timestamp metav1.Time `json:"timestamp"`
 
 	// Status of this attempt (success, failed, timeout, invalid)
-	Status string `json:"status"`
+	Status DeliveryAttemptStatus `json:"status"`
 
 	// Error message if failed
 	// +optional
@@ -263,7 +528,7 @@ type NotificationRequestStatus struct {
 
 	// Reason for current phase
 	// +optional
-	Reason string `json:"reason,omitempty"`
+	Reason NotificationStatusReason `json:"reason,omitempty"`
 
 	// Human-readable message about current state
 	// +optional

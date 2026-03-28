@@ -18,6 +18,8 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ActionTypeSpec defines the desired state of ActionType.
@@ -77,9 +79,10 @@ type ActionTypeStatus struct {
 	// +optional
 	ActiveWorkflowCount int `json:"activeWorkflowCount,omitempty"`
 
-	// CatalogStatus reflects the DS catalog state (active, disabled).
+	// CatalogStatus reflects the DS catalog lifecycle state.
 	// +optional
-	CatalogStatus string `json:"catalogStatus,omitempty"`
+	// +kubebuilder:validation:Enum=Active;Invalid;Pending;Deprecated;Archived;Disabled;Superseded
+	CatalogStatus sharedtypes.CatalogStatus `json:"catalogStatus,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -322,12 +322,6 @@ func (in *RemediationRequestSpec) DeepCopyInto(out *RemediationRequestSpec) {
 	out.TargetResource = in.TargetResource
 	in.FiringTime.DeepCopyInto(&out.FiringTime)
 	in.ReceivedTime.DeepCopyInto(&out.ReceivedTime)
-	in.Deduplication.DeepCopyInto(&out.Deduplication)
-	if in.AffectedResources != nil {
-		in, out := &in.AffectedResources, &out.AffectedResources
-		*out = make([]string, len(*in))
-		copy(*out, *in)
-	}
 	if in.SignalLabels != nil {
 		in, out := &in.SignalLabels, &out.SignalLabels
 		*out = make(map[string]string, len(*in))
@@ -431,7 +425,7 @@ func (in *RemediationRequestStatus) DeepCopyInto(out *RemediationRequestStatus) 
 	}
 	if in.FailurePhase != nil {
 		in, out := &in.FailurePhase, &out.FailurePhase
-		*out = new(string)
+		*out = new(FailurePhase)
 		**out = **in
 	}
 	if in.FailureReason != nil {
@@ -441,7 +435,7 @@ func (in *RemediationRequestStatus) DeepCopyInto(out *RemediationRequestStatus) 
 	}
 	if in.TimeoutPhase != nil {
 		in, out := &in.TimeoutPhase, &out.TimeoutPhase
-		*out = new(string)
+		*out = new(RemediationPhase)
 		**out = **in
 	}
 	if in.TimeoutTime != nil {
@@ -481,6 +475,11 @@ func (in *RemediationRequestStatus) DeepCopyInto(out *RemediationRequestStatus) 
 	if in.ExecutionRef != nil {
 		in, out := &in.ExecutionRef, &out.ExecutionRef
 		*out = new(corev1.ObjectReference)
+		**out = **in
+	}
+	if in.RemediationTarget != nil {
+		in, out := &in.RemediationTarget, &out.RemediationTarget
+		*out = new(ResourceIdentifier)
 		**out = **in
 	}
 }

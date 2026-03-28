@@ -261,6 +261,7 @@ effectivenessmonitor:
     alertManagerEnabled: false
     # tlsCaFile: ""  # Path to PEM CA bundle for HTTPS (OCP: /etc/ssl/em/service-ca.crt)
     # ocpMonitoringRbac: false  # OCP: cluster-monitoring-view CRB + alertmanagers/api ClusterRole (Issue #576)
+  # initImage: "registry.access.redhat.com/ubi10/ubi-minimal:latest"  # Init container image for wait-for-service-ca (Issue #484)
   resources:
     requests:
       memory: 64Mi

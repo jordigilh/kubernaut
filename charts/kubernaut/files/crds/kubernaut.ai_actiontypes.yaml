@@ -105,8 +105,24 @@ spec:
                   Best-effort, updated asynchronously by the RW admission webhook handler.
                 type: integer
               catalogStatus:
-                description: CatalogStatus reflects the DS catalog state (active,
-                  disabled).
+                allOf:
+                - enum:
+                  - Active
+                  - Invalid
+                  - Pending
+                  - Deprecated
+                  - Archived
+                  - Disabled
+                  - Superseded
+                - enum:
+                  - Active
+                  - Invalid
+                  - Pending
+                  - Deprecated
+                  - Archived
+                  - Disabled
+                  - Superseded
+                description: CatalogStatus reflects the DS catalog lifecycle state.
                 type: string
               previouslyExisted:
                 description: PreviouslyExisted indicates if this action type was re-enabled
