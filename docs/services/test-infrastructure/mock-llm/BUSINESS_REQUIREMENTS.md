@@ -54,7 +54,7 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 - P1 (High): 16 BRs — architectural improvements enabling extensibility
 - P2 (Medium): 8 BRs — enhancements for future pillars and advanced testing
 
-**Implementation Status**: All 📋 Planned (Go rewrite not yet started)
+**Implementation Status**: In progress — Phase 1A (#561) complete, remaining phases planned
 
 **Traceability**: Each BR maps to one or more GitHub sub-issues under #531:
 
@@ -97,9 +97,9 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 - [ ] Response `usage` tokens: fixed values per response type for determinism
 - [ ] Response `Content-Type: application/json`
 
-**Implementation Status**: 📋 Planned
+**Implementation Status**: ✅ Implemented (v1.3, Phase 1A — `/chat/completions` route alias added 2026-03-28)
 
-**Related Issues**: #531, #562 (shared types)
+**Related Issues**: #531, #561, #562 (shared types)
 
 **Audit Note**: Python also accepts POST to any unknown path and returns `{"status":"ok","path":"<path>"}` (200). The Go rewrite SHOULD return 404 for unknown paths instead (see BR-MOCK-005).
 

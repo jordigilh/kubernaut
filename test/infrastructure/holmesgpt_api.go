@@ -991,6 +991,10 @@ spec:
 	return nil
 }
 
+// Deprecated: UpdateMockLLMConfigMap is no longer needed when using the Go Mock LLM with
+// deterministic UUIDs (pkg/shared/uuid). The Go Mock LLM computes UUIDs at startup via
+// DefaultRegistryWithOverrides. This function will be removed when E2E suites are migrated.
+//
 // UpdateMockLLMConfigMap updates the Mock LLM ConfigMap with workflow UUIDs
 // obtained after seeding workflows in DataStorage, then restarts the Mock LLM
 // deployment to pick up the new configuration.
