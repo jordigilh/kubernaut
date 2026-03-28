@@ -2745,44 +2745,44 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}
 			})
 
-			It("should emit audit event when workflow starts (Running phase)", func() {
-				// Given: WFE in Pending phase
-				suffix := uuid.New().String()[:8]
-				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      fmt.Sprintf("test-wfe-audit-start-%s", suffix),
-						Namespace: "default",
+		It("should emit audit event when workflow starts (Running phase)", func() {
+			// Given: WFE in Pending phase
+			suffix := uuid.New().String()[:8]
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("test-wfe-audit-start-%s", suffix),
+					Namespace: "default",
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name: fmt.Sprintf("rr-start-%s", suffix),
 					},
-					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						RemediationRequestRef: corev1.ObjectReference{
-							Name: fmt.Sprintf("rr-start-%s", suffix),
-						},
-						TargetResource: "default/deployment/my-app",
-						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-							WorkflowID:     "test-workflow",
-							ExecutionBundle: "ghcr.io/test/workflow:v1",
-						},
+					TargetResource: "default/deployment/my-app",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "test-workflow",
+						ExecutionBundle: "ghcr.io/test/workflow:v1",
 					},
-					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-						Phase: workflowexecutionv1alpha1.PhasePending,
-					},
-				}
-				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					Phase: workflowexecutionv1alpha1.PhasePending,
+				},
+			}
+			Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
-				// When: Workflow transitions to Running
-				now := metav1.Now()
-				wfe.Status.Phase = workflowexecutionv1alpha1.PhaseRunning
-				wfe.Status.StartTime = &now
-				Expect(fakeClient.Status().Update(ctx, wfe)).To(Succeed())
+			// When: Workflow transitions to Running
+			now := metav1.Now()
+			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseRunning
+			wfe.Status.StartTime = &now
+			Expect(fakeClient.Status().Update(ctx, wfe)).To(Succeed())
 
-				// And: AuditManager records the started event
-				err := reconciler.AuditManager.RecordWorkflowStarted(ctx, wfe)
+			// And: AuditManager records the execution.started event (production path)
+			err := reconciler.AuditManager.RecordExecutionWorkflowStarted(ctx, wfe, "test-pipelinerun", "kubernaut-workflows")
 
-				// Then: Audit store should receive the event
-				Expect(err).ToNot(HaveOccurred())
-				Expect(auditStore.events).To(HaveLen(1))
-				Expect(auditStore.events[0].EventType).To(Equal(audit.EventTypeStarted))
-			})
+			// Then: Audit store should receive the event
+			Expect(err).ToNot(HaveOccurred())
+			Expect(auditStore.events).To(HaveLen(1))
+			Expect(auditStore.events[0].EventType).To(Equal(audit.EventTypeExecutionStarted))
+		})
 
 			It("should emit audit event when workflow completes", func() {
 				// Given: WFE in Running phase
@@ -2879,14 +2879,14 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					},
 				}
 
-				// When: AuditManager records with nil store
-				err := nilStoreManager.RecordWorkflowStarted(ctx, wfe)
+			// When: AuditManager records with nil store (production path)
+			err := nilStoreManager.RecordExecutionWorkflowStarted(ctx, wfe, "test-pipelinerun", "kubernaut-workflows")
 
-				// Then: Should return error per ADR-032 "No Audit Loss"
-				// ADR-032: "Audit writes are MANDATORY, not best-effort"
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("AuditStore"))
-				Expect(err.Error()).To(ContainSubstring("ADR-032"))
+			// Then: Should return error per ADR-032 "No Audit Loss"
+			// ADR-032: "Audit writes are MANDATORY, not best-effort"
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("AuditStore"))
+			Expect(err.Error()).To(ContainSubstring("ADR-032"))
 			})
 
 			// ========================================
@@ -2913,13 +2913,13 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					},
 				}
 
-				// When: AuditManager records the started event
-				err := reconciler.AuditManager.RecordWorkflowStarted(ctx, wfeNoCorrelation)
+			// When: AuditManager records the execution.started event (production path)
+			err := reconciler.AuditManager.RecordExecutionWorkflowStarted(ctx, wfeNoCorrelation, "test-pipelinerun", "kubernaut-workflows")
 
-				// Then: Should succeed without panic
-				// AuditManager uses RemediationRequestRef.Name as correlation ID
-				Expect(err).ToNot(HaveOccurred())
-				Expect(auditStore.events).To(HaveLen(1))
+			// Then: Should succeed without panic
+			// AuditManager uses RemediationRequestRef.Name as correlation ID
+			Expect(err).ToNot(HaveOccurred())
+			Expect(auditStore.events).To(HaveLen(1))
 			})
 
 			It("should handle WFE with nil labels gracefully", func() {
@@ -2943,11 +2943,11 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					},
 				}
 
-				// When: AuditManager records the started event
-				err := reconciler.AuditManager.RecordWorkflowStarted(ctx, wfeNilLabels)
+			// When: AuditManager records the execution.started event (production path)
+			err := reconciler.AuditManager.RecordExecutionWorkflowStarted(ctx, wfeNilLabels, "test-pipelinerun", "kubernaut-workflows")
 
-				// Then: Should succeed without panic
-				Expect(err).ToNot(HaveOccurred())
+			// Then: Should succeed without panic
+			Expect(err).ToNot(HaveOccurred())
 			})
 		})
 
@@ -2968,49 +2968,46 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				auditMgr = audit.NewManager(store, logr.Discard())
 			})
 
-			It("should include parameters in workflow.started audit event", func() {
-				// Given: WFE with post-normalization parameters
-				suffix := uuid.New().String()[:8]
-				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      fmt.Sprintf("test-wfe-params-started-%s", suffix),
-						Namespace: "default",
+		It("should include parameters in execution.started audit event", func() {
+			// Given: WFE with post-normalization parameters
+			suffix := uuid.New().String()[:8]
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("test-wfe-params-started-%s", suffix),
+					Namespace: "default",
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name: fmt.Sprintf("rr-params-started-%s", suffix),
 					},
-					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						RemediationRequestRef: corev1.ObjectReference{
-							Name: fmt.Sprintf("rr-params-started-%s", suffix),
-						},
-						TargetResource: "default/deployment/payment-api",
-						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-							WorkflowID:     "kubectl-restart-deployment",
-							Version:        "v1.0.0",
-							ExecutionBundle: "ghcr.io/kubernaut/kubectl-actions:v1.28",
-						},
-						Parameters: map[string]string{
-							"NAMESPACE":       "payment",
-							"DEPLOYMENT_NAME": "payment-api",
-						},
+					TargetResource: "default/deployment/payment-api",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "kubectl-restart-deployment",
+						Version:        "v1.0.0",
+						ExecutionBundle: "ghcr.io/kubernaut/kubectl-actions:v1.28",
 					},
-					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-						Phase: workflowexecutionv1alpha1.PhaseRunning,
+					Parameters: map[string]string{
+						"NAMESPACE":       "payment",
+						"DEPLOYMENT_NAME": "payment-api",
 					},
-				}
+				},
+			}
 
-				// When: RecordWorkflowStarted is called
-				err := auditMgr.RecordWorkflowStarted(testCtx, wfe)
+			// When: RecordExecutionWorkflowStarted is called (production path)
+			err := auditMgr.RecordExecutionWorkflowStarted(testCtx, wfe, "payment-api-run-abc", "kubernaut-workflows")
 
-				// Then: Audit event should contain parameters
-				Expect(err).ToNot(HaveOccurred())
-				Expect(store.events).To(HaveLen(1))
+			// Then: Audit event should contain parameters
+			Expect(err).ToNot(HaveOccurred())
+			Expect(store.events).To(HaveLen(1))
 
-				eventData := parseEventData(store.events[0].EventData)
-				Expect(eventData).To(HaveKey("parameters"))
+			eventData := parseEventData(store.events[0].EventData)
+			Expect(eventData).To(HaveKey("parameters"))
 
-				params, ok := eventData["parameters"].(map[string]interface{})
-				Expect(ok).To(BeTrue(), "parameters should be a map")
-				Expect(params["NAMESPACE"]).To(Equal("payment"))
-				Expect(params["DEPLOYMENT_NAME"]).To(Equal("payment-api"))
-			})
+			params, ok := eventData["parameters"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "parameters should be a map")
+			Expect(params["NAMESPACE"]).To(Equal("payment"))
+			Expect(params["DEPLOYMENT_NAME"]).To(Equal("payment-api"))
+		})
 
 			It("should include parameters in execution.started audit event", func() {
 				// Given: WFE with post-normalization parameters
@@ -3121,80 +3118,77 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}
 			})
 
-			It("should populate all required audit event fields correctly for workflow.started", func() {
-				// Given: Complete WFE with all fields
-				suffix := uuid.New().String()[:8]
-				wfeName := fmt.Sprintf("wfe-audit-validation-start-%s", suffix)
-				rrName := fmt.Sprintf("rr-audit-validation-%s", suffix)
-				startTime := metav1.Now()
-				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      wfeName,
-						Namespace: "production",
+		It("should populate all required audit event fields correctly for execution.started", func() {
+			// Given: Complete WFE with all fields
+			suffix := uuid.New().String()[:8]
+			wfeName := fmt.Sprintf("wfe-audit-validation-start-%s", suffix)
+			rrName := fmt.Sprintf("rr-audit-validation-%s", suffix)
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      wfeName,
+					Namespace: "production",
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name: rrName,
 					},
-					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						RemediationRequestRef: corev1.ObjectReference{
-							Name: rrName,
-						},
-						TargetResource: "production/deployment/payment-api",
-						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-							WorkflowID:     "increase-memory-conservative",
-							ExecutionBundle: "ghcr.io/kubernaut/workflows/increase-memory:v1.2.0",
-						},
-						Parameters: map[string]string{
-							"NAMESPACE":       "production",
-							"DEPLOYMENT_NAME": "payment-api",
-						},
+					TargetResource: "production/deployment/payment-api",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "increase-memory-conservative",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/increase-memory:v1.2.0",
 					},
-					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-						Phase:     workflowexecutionv1alpha1.PhaseRunning,
-						StartTime: &startTime,
+					Parameters: map[string]string{
+						"NAMESPACE":       "production",
+						"DEPLOYMENT_NAME": "payment-api",
 					},
-				}
-				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					Phase: workflowexecutionv1alpha1.PhaseRunning,
+				},
+			}
+			Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
-				// When: AuditManager records the started event
-				err := reconciler.AuditManager.RecordWorkflowStarted(ctx, wfe)
+			// When: AuditManager records the execution.started event (production path)
+			err := reconciler.AuditManager.RecordExecutionWorkflowStarted(ctx, wfe, "payment-api-run-abc", "kubernaut-workflows")
 
-				// Then: All audit event fields should be correctly populated
-				Expect(err).ToNot(HaveOccurred())
-				Expect(auditStore.events).To(HaveLen(1))
+			// Then: All audit event fields should be correctly populated
+			Expect(err).ToNot(HaveOccurred())
+			Expect(auditStore.events).To(HaveLen(1))
 
-				event := auditStore.events[0]
+			event := auditStore.events[0]
 
-				// Event Classification
-				Expect(event.EventType).To(Equal(audit.EventTypeStarted))
-				Expect(string(event.EventCategory)).To(Equal("workflowexecution"))
-				Expect(event.EventAction).To(Equal(audit.ActionStarted))
-				Expect(string(event.EventOutcome)).To(Equal(string(sharedaudit.OutcomeSuccess)))
+			// Event Classification
+			Expect(event.EventType).To(Equal(audit.EventTypeExecutionStarted))
+			Expect(string(event.EventCategory)).To(Equal("workflowexecution"))
+			Expect(event.EventAction).To(Equal(audit.ActionStarted))
+			Expect(string(event.EventOutcome)).To(Equal(string(sharedaudit.OutcomeSuccess)))
 
-				// Actor Information
-				Expect(event.ActorType.Value).To(Equal("service"))
-				Expect(event.ActorID.Value).To(Equal("workflowexecution-controller"))
+			// Actor Information
+			Expect(event.ActorType.Value).To(Equal("service"))
+			Expect(event.ActorID.Value).To(Equal("workflowexecution-controller"))
 
-				// Resource Information
-				Expect(event.ResourceType.Value).To(Equal("WorkflowExecution"))
-				Expect(event.ResourceID.Value).To(Equal(wfeName))
+			// Resource Information
+			Expect(event.ResourceType.Value).To(Equal("WorkflowExecution"))
+			Expect(event.ResourceID.Value).To(Equal(wfeName))
 
-				// Correlation (AuditManager uses RemediationRequestRef.Name)
-				Expect(event.CorrelationID).To(Equal(rrName))
+			// Correlation (AuditManager uses RemediationRequestRef.Name)
+			Expect(event.CorrelationID).To(Equal(rrName))
 
-				// Namespace context
-				Expect(event.Namespace.IsSet()).To(BeTrue())
-				Expect(event.Namespace.Value).To(Equal("production"))
+			// Namespace context
+			Expect(event.Namespace.IsSet()).To(BeTrue())
+			Expect(event.Namespace.Value).To(Equal("production"))
 
-				// Event Identity (auto-generated)
-				Expect(event.EventTimestamp).ToNot(BeZero())
+			// Event Identity (auto-generated)
+			Expect(event.EventTimestamp).ToNot(BeZero())
 
-				// Event Data (structured type - parse and validate)
-				Expect(event.EventData).To(Not(BeNil()), "EventData must be populated for workflow.started audit event")
-				eventData := parseEventData(event.EventData)
-				Expect(eventData["workflow_id"]).To(Equal("increase-memory-conservative"))
-				Expect(eventData["target_resource"]).To(Equal("production/deployment/payment-api"))
-				Expect(eventData["container_image"]).To(Equal("ghcr.io/kubernaut/workflows/increase-memory:v1.2.0"))
-				Expect(eventData["execution_name"]).To(Equal(wfeName))
-				Expect(eventData["phase"]).To(Equal("Running"))
-			})
+			// Event Data (structured type - parse and validate)
+			Expect(event.EventData).To(Not(BeNil()), "EventData must be populated for execution.started audit event")
+			eventData := parseEventData(event.EventData)
+			Expect(eventData["workflow_id"]).To(Equal("increase-memory-conservative"))
+			Expect(eventData["target_resource"]).To(Equal("production/deployment/payment-api"))
+			Expect(eventData["container_image"]).To(Equal("ghcr.io/kubernaut/workflows/increase-memory:v1.2.0"))
+			Expect(eventData["execution_name"]).To(Equal(wfeName))
+		})
 
 			It("should include failure details in audit event for workflow.failed", func() {
 				// Given: WFE with failure details
@@ -3267,42 +3261,39 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			// V1.0: workflow.skipped test removed - routing moved to RO (DD-RO-002)
 			// WFE no longer has skip logic; RO handles routing before WFE creation
 
-			It("should use RemediationRequestRef.Name as correlation ID", func() {
-				// Given: WFE with RemediationRequestRef
-				suffix := uuid.New().String()[:8]
-				wfeName := fmt.Sprintf("wfe-corr-test-%s", suffix)
-				rrName := fmt.Sprintf("rr-corr-test-%s", suffix)
-				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      wfeName,
-						Namespace: "default",
+		It("should use RemediationRequestRef.Name as correlation ID", func() {
+			// Given: WFE with RemediationRequestRef
+			suffix := uuid.New().String()[:8]
+			wfeName := fmt.Sprintf("wfe-corr-test-%s", suffix)
+			rrName := fmt.Sprintf("rr-corr-test-%s", suffix)
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      wfeName,
+					Namespace: "default",
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name: rrName,
 					},
-					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						RemediationRequestRef: corev1.ObjectReference{
-							Name: rrName,
-						},
-						TargetResource: "default/deployment/app",
-						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-							WorkflowID:     "test-workflow",
-							ExecutionBundle: "ghcr.io/test/workflow:v1",
-						},
+					TargetResource: "default/deployment/app",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "test-workflow",
+						ExecutionBundle: "ghcr.io/test/workflow:v1",
 					},
-					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-						Phase: workflowexecutionv1alpha1.PhaseRunning,
-					},
-				}
-				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+				},
+			}
+			Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
-				// When: AuditManager records the started event
-				err := reconciler.AuditManager.RecordWorkflowStarted(ctx, wfe)
+			// When: AuditManager records the execution.started event (production path)
+			err := reconciler.AuditManager.RecordExecutionWorkflowStarted(ctx, wfe, "test-pipelinerun", "kubernaut-workflows")
 
-				// Then: CorrelationID should be RemediationRequestRef.Name
-				Expect(err).ToNot(HaveOccurred())
-				Expect(auditStore.events).To(HaveLen(1))
+			// Then: CorrelationID should be RemediationRequestRef.Name
+			Expect(err).ToNot(HaveOccurred())
+			Expect(auditStore.events).To(HaveLen(1))
 
-				event := auditStore.events[0]
-				Expect(event.CorrelationID).To(Equal(rrName))
-			})
+			event := auditStore.events[0]
+			Expect(event.CorrelationID).To(Equal(rrName))
+		})
 
 			It("should populate timing information when available", func() {
 				// Given: WFE with complete timing information
