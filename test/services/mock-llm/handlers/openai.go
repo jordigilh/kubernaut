@@ -105,6 +105,10 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.tracker != nil {
+		h.tracker.RecordDAGPath(execResult.Path)
+	}
+
 	hr := execResult.Result
 	switch hr.ResponseType {
 	case conversation.StepToolCall:
