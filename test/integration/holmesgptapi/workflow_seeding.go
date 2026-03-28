@@ -61,6 +61,9 @@ func SeedTestWorkflowsInDataStorage(client *ogenclient.Client, output io.Writer)
 // Eliminated ~100 lines of duplicate code (severity enum conversion, priority enum conversion,
 // OpenAPI request building, error handling, UUID extraction)
 
+// Deprecated: WriteMockLLMConfigFile is part of the legacy ConfigMap sync infrastructure.
+// The Go Mock LLM uses deterministic UUIDs (pkg/shared/uuid) and optional YAML overrides.
+//
 // WriteMockLLMConfigFile writes Mock LLM configuration file with workflow UUIDs
 // Pattern: DD-TEST-011 v2.0 - File-Based Configuration
 // Format: YAML with "workflow_name:environment" → "uuid" mappings

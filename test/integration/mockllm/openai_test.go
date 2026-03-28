@@ -83,6 +83,22 @@ var _ = Describe("OpenAI + Ollama Endpoints", func() {
 		})
 	})
 
+	Describe("IT-MOCK-001-004: OpenAI /chat/completions (unprefixed)", func() {
+		It("should return same response as /v1/chat/completions", func() {
+			body := chatRequest("- Signal Name: OOMKilled\n- Namespace: default", nil)
+			resp, err := http.Post(server.URL+"/chat/completions", "application/json", body)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(200))
+
+			var result openai.ChatCompletionResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&result)).To(Succeed())
+			Expect(result.Choices).To(HaveLen(1))
+			Expect(result.Choices[0].FinishReason).To(Equal("stop"))
+			Expect(result.Choices[0].Message.Content).NotTo(BeNil())
+		})
+	})
+
 	Describe("IT-MOCK-002: Ollama /api/chat", func() {
 		It("IT-MOCK-002-001: should return Ollama response with done=true", func() {
 			body := ollamaChatRequest("- Signal Name: CrashLoopBackOff\n- Namespace: staging")
