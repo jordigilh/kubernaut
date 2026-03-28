@@ -41,7 +41,7 @@ type ToolDefinition struct {
 	Parameters  interface{} `json:"parameters"`
 }
 
-// Tool name constants shared between Mock LLM and KAPI.
+// Tool name constants shared between Mock LLM and Kubernaut Agent.
 // These must match the Python Mock LLM string values exactly.
 const (
 	ToolSearchWorkflowCatalog        = "search_workflow_catalog"

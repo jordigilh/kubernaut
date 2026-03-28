@@ -6,13 +6,13 @@
 **Last Updated**: 2026-03-04
 **Status**: 📋 Specification Phase
 **Parent Issue**: #531 (Rewrite Mock LLM service in Go)
-**Parent Service**: Part of #433 (KAPI Go rewrite)
+**Parent Service**: Part of #433 (Kubernaut Agent Go rewrite)
 
 ---
 
 ## 📋 Overview
 
-The **Mock LLM Service** is a test infrastructure service that simulates an LLM provider (OpenAI, Ollama) for deterministic, cost-free testing of Kubernaut's AI-driven remediation pipeline. It is consumed by KAPI (via `LLM_ENDPOINT`) and must be indistinguishable from a real LLM provider at the HTTP API level.
+The **Mock LLM Service** is a test infrastructure service that simulates an LLM provider (OpenAI, Ollama) for deterministic, cost-free testing of Kubernaut's AI-driven remediation pipeline. It is consumed by Kubernaut Agent (via `LLM_ENDPOINT`) and must be indistinguishable from a real LLM provider at the HTTP API level.
 
 ### Architecture
 
@@ -28,9 +28,9 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 - Prometheus metrics for observability
 
 **Relationship with Other Services**:
-- **KAPI** (#433): Primary consumer — sends chat completion requests, receives tool calls and content responses
+- **Kubernaut Agent** (#433): Primary consumer — sends chat completion requests, receives tool calls and content responses
 - **DataStorage** (#548): Shares deterministic UUID generation function for workflow identity consistency
-- **AIAnalysis Controller**: Indirect consumer via KAPI — validates end-to-end remediation pipeline
+- **AIAnalysis Controller**: Indirect consumer via Kubernaut Agent — validates end-to-end remediation pipeline
 - **Integration/E2E Tests**: Direct consumer via verification API for behavioral assertions
 
 ### Service Responsibilities
@@ -81,7 +81,7 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: KAPI sends requests to this endpoint. The mock must be a transparent drop-in for `LLM_ENDPOINT`.
+**Rationale**: Kubernaut Agent sends requests to this endpoint. The mock must be a transparent drop-in for `LLM_ENDPOINT`.
 
 **Acceptance Criteria**:
 - [ ] `POST /v1/chat/completions` accepts `ChatCompletionRequest` with `model`, `messages`, `tools` fields
@@ -151,7 +151,7 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: Some test scenarios validate KAPI's handling of text-only LLM responses (no tool calling). This mode ensures coverage of the non-tool-call code path.
+**Rationale**: Some test scenarios validate Kubernaut Agent's handling of text-only LLM responses (no tool calling). This mode ensures coverage of the non-tool-call code path.
 
 > **Audit Finding**: The Python Mock LLM declares `MOCK_LLM_FORCE_TEXT` in deployment manifests and Go infrastructure, but the **Python server never reads this env var**. The `force_text_response` flag is only settable via the in-process `MockLLMServer(..., force_text_response=True)` constructor. The Go rewrite MUST fix this gap by actually reading the environment variable.
 
@@ -192,11 +192,11 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 #### BR-MOCK-006: Auth Header Passthrough
 
-**Description**: The Mock LLM service MUST accept and record custom authentication headers sent by KAPI (#417) without rejecting requests that lack them.
+**Description**: The Mock LLM service MUST accept and record custom authentication headers sent by Kubernaut Agent (#417) without rejecting requests that lack them.
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: KAPI v1.3 (#417) injects custom HTTP headers (Authorization, x-api-key, x-tenant-id, filePath-sourced JWTs) into all outbound LLM requests via an `http.RoundTripper` wrapper. The Mock LLM must accept these headers transparently so integration tests can verify the header injection works end-to-end. Existing tests that send no auth headers must continue to work.
+**Rationale**: Kubernaut Agent v1.3 (#417) injects custom HTTP headers (Authorization, x-api-key, x-tenant-id, filePath-sourced JWTs) into all outbound LLM requests via an `http.RoundTripper` wrapper. The Mock LLM must accept these headers transparently so integration tests can verify the header injection works end-to-end. Existing tests that send no auth headers must continue to work.
 
 **Acceptance Criteria**:
 - [ ] Requests with custom auth headers are accepted and processed normally (no validation, no rejection)
@@ -219,7 +219,7 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 **Priority**: P1 (HIGH)
 
-**Rationale**: #417's acceptance criterion requires "integration test with mock LLM verifying headers are received." Without an HTTP-accessible API, Go tests cannot assert that KAPI's `http.RoundTripper` wrapper correctly injected the expected headers.
+**Rationale**: #417's acceptance criterion requires "integration test with mock LLM verifying headers are received." Without an HTTP-accessible API, Go tests cannot assert that Kubernaut Agent's `http.RoundTripper` wrapper correctly injected the expected headers.
 
 **Acceptance Criteria**:
 - [ ] `GET /api/test/headers` returns all recorded headers across all requests with request sequence and conversation ID
@@ -283,7 +283,7 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: Implements the DD-HAPI-017 protocol. KAPI registers these three tools and expects the LLM to call them in sequence.
+**Rationale**: Implements the DD-HAPI-017 protocol. Kubernaut Agent registers these three tools and expects the LLM to call them in sequence.
 
 **Acceptance Criteria**:
 - [ ] First turn: returns `list_available_actions` tool call
@@ -300,11 +300,11 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 #### BR-MOCK-013: Three-Phase RCA Mode (#529)
 
-**Description**: The Mock LLM service MUST support the three-phase RCA protocol: Phase 1 (root cause analysis) → Phase 2 (enrichment, handled by KAPI) → Phase 3 (workflow selection with enriched context).
+**Description**: The Mock LLM service MUST support the three-phase RCA protocol: Phase 1 (root cause analysis) → Phase 2 (enrichment, handled by Kubernaut Agent) → Phase 3 (workflow selection with enriched context).
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: Implements the #529 three-phase architecture. Phase 2 is executed by KAPI (not the LLM), so the mock handles Phase 1 and Phase 3 responses.
+**Rationale**: Implements the #529 three-phase architecture. Phase 2 is executed by Kubernaut Agent (not the LLM), so the mock handles Phase 1 and Phase 3 responses.
 
 **Acceptance Criteria**:
 - [ ] Phase 1: returns structured RCA content with `root_cause_analysis`, `remediation_target`, and `contributing_factors`
@@ -401,11 +401,11 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 #### BR-MOCK-022: Signal Name-Based Scenario Detection
 
-**Description**: The Mock LLM service MUST detect scenarios by extracting and matching the signal name from KAPI's structured prompt (pattern: `Signal Name:\s*(\w+)`).
+**Description**: The Mock LLM service MUST detect scenarios by extracting and matching the signal name from Kubernaut Agent's structured prompt (pattern: `Signal Name:\s*(\w+)`).
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: Real KAPI prompts include the signal name. This detection path handles production-like scenarios where no mock keyword is injected.
+**Rationale**: Real Kubernaut Agent prompts include the signal name. This detection path handles production-like scenarios where no mock keyword is injected.
 
 **Acceptance Criteria**:
 - [ ] Extracts signal name via regex from message content
@@ -726,7 +726,7 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 **Priority**: P2 (MEDIUM)
 
-**Rationale**: Enables testing of KAPI's retry logic, error handling, and circuit breaker behavior against realistic LLM failure patterns.
+**Rationale**: Enables testing of Kubernaut Agent's retry logic, error handling, and circuit breaker behavior against realistic LLM failure patterns.
 
 **Acceptance Criteria**:
 - [ ] `POST /api/test/inject-fault` accepts fault type, count (optional), delay (optional), scenario filter (optional)
@@ -780,7 +780,7 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 **Priority**: P2 (MEDIUM)
 
-**Rationale**: Tests KAPI's retry logic with realistic intermittent failure patterns.
+**Rationale**: Tests Kubernaut Agent's retry logic with realistic intermittent failure patterns.
 
 **Acceptance Criteria**:
 - [ ] Configurable failure count before success
@@ -820,12 +820,12 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 **Priority**: P1 (HIGH)
 
-**Rationale**: Compile-time contract enforcement. If KAPI changes a field name, Mock LLM fails to build. No more drift between mock and consumer.
+**Rationale**: Compile-time contract enforcement. If Kubernaut Agent changes a field name, Mock LLM fails to build. No more drift between mock and consumer.
 
 **Acceptance Criteria**:
 - [ ] Shared package at `pkg/shared/types/openai/` with `ChatCompletionRequest`, `ChatCompletionResponse`, `Choice`, `Message`, `Usage`
 - [ ] Mock LLM imports and uses shared types for response construction
-- [ ] KAPI (#433) imports same types for request construction
+- [ ] Kubernaut Agent (#433) imports same types for request construction
 - [ ] No string-literal OpenAI field names in Mock LLM handler code
 
 **Implementation Status**: 📋 Planned
@@ -836,7 +836,7 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 #### BR-MOCK-061: Shared Tool Definition Constants
 
-**Description**: Tool names used by both KAPI and Mock LLM MUST be defined as constants in a shared package.
+**Description**: Tool names used by both Kubernaut Agent and Mock LLM MUST be defined as constants in a shared package.
 
 **Priority**: P1 (HIGH)
 
@@ -845,7 +845,7 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 **Acceptance Criteria**:
 - [ ] Constants for: `search_workflow_catalog`, `list_available_actions`, `list_workflows`, `get_workflow`
 - [ ] Constants for resource context tools: `fetchKubernetesResourceYaml`, `listNamespacedEvents`, etc.
-- [ ] Both Mock LLM and KAPI import from the same package
+- [ ] Both Mock LLM and Kubernaut Agent import from the same package
 
 **Implementation Status**: 📋 Planned
 
@@ -1126,7 +1126,7 @@ A formal test plan will be created before implementation per DD-TEST-006. The te
 | Component | Test Focus |
 |-----------|------------|
 | Container contract | Port, probes, env vars, startup time |
-| KAPI integration | KAPI → Mock LLM → correct response flow |
+| Kubernaut Agent integration | Kubernaut Agent → Mock LLM → correct response flow |
 | AIAnalysis pipeline | Full signal → RCA → workflow selection flow |
 
 ---
@@ -1145,13 +1145,13 @@ A formal test plan will be created before implementation per DD-TEST-006. The te
 
 ---
 
-### RISK-MOCK-002: Shared Types Dependency on KAPI (#433)
+### RISK-MOCK-002: Shared Types Dependency on Kubernaut Agent (#433)
 
 **Severity**: MEDIUM
 **Probability**: LOW
-**Impact**: BR-MOCK-060 through BR-MOCK-062 define shared types that both Mock LLM and KAPI will consume. If #433 changes direction or the OpenAI types need different shapes than expected, rework is needed.
+**Impact**: BR-MOCK-060 through BR-MOCK-062 define shared types that both Mock LLM and Kubernaut Agent will consume. If #433 changes direction or the OpenAI types need different shapes than expected, rework is needed.
 
-**Mitigation**: Mock LLM is the first consumer of the shared types package. Design the types based on the OpenAI API spec (stable, well-documented), not on KAPI-specific assumptions. When KAPI (#433) implementation proceeds, it adopts the existing shared types.
+**Mitigation**: Mock LLM is the first consumer of the shared types package. Design the types based on the OpenAI API spec (stable, well-documented), not on Kubernaut Agent-specific assumptions. When Kubernaut Agent (#433) implementation proceeds, it adopts the existing shared types.
 
 **Status**: Open
 
@@ -1188,9 +1188,9 @@ A formal test plan will be created before implementation per DD-TEST-006. The te
 
 **Severity**: MEDIUM
 **Probability**: HIGH (already exists)
-**Impact**: The env var is set in Go infrastructure (`mock_llm.go`) and E2E deployment manifests but **never read by the Python server**. No existing test actually validates force-text behavior via the container. If the Go rewrite implements it, it may surface hidden bugs in KAPI's text-only code path.
+**Impact**: The env var is set in Go infrastructure (`mock_llm.go`) and E2E deployment manifests but **never read by the Python server**. No existing test actually validates force-text behavior via the container. If the Go rewrite implements it, it may surface hidden bugs in Kubernaut Agent's text-only code path.
 
-**Mitigation**: Implement BR-MOCK-004 properly in Go. Add integration tests that exercise the force-text path to ensure KAPI handles it correctly. This is a net improvement over the current state.
+**Mitigation**: Implement BR-MOCK-004 properly in Go. Add integration tests that exercise the force-text path to ensure Kubernaut Agent handles it correctly. This is a net improvement over the current state.
 
 **Status**: Open — fix validated during implementation
 
@@ -1242,8 +1242,8 @@ Cross-reference audit of: Python Mock LLM source (`server.py`, `__main__.py`, `D
 ## 🔗 Related Documentation
 
 - **Parent Issue**: [#531](https://github.com/jordigilh/kubernaut/issues/531) — Rewrite Mock LLM service in Go
-- **Parent Service**: [#433](https://github.com/jordigilh/kubernaut/issues/433) — KAPI Go rewrite
-- **KAPI Business Requirements**: [BUSINESS_REQUIREMENTS.md](../../stateless/holmesgpt-api/BUSINESS_REQUIREMENTS.md)
+- **Parent Service**: [#433](https://github.com/jordigilh/kubernaut/issues/433) — Kubernaut Agent Go rewrite
+- **Kubernaut Agent Business Requirements**: [BUSINESS_REQUIREMENTS.md](../../stateless/holmesgpt-api/BUSINESS_REQUIREMENTS.md)
 - **DD-TEST-011**: [Mock LLM Configuration Pattern](../../../architecture/decisions/DD-TEST-011-mock-llm-self-discovery-pattern.md)
 - **TD-HAPI-001**: [Extract Mock LLM to External Service](../../../development/technical-debt/TD-HAPI-001-extract-mock-llm-to-external-service.md) (COMPLETE)
 - **#548**: Deterministic UUIDs in DataStorage
