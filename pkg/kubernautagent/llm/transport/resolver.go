@@ -41,7 +41,7 @@ func ResolveSecretKeyRef(envVar string) (string, error) {
 
 // ResolveFilePath reads a header value from a file, trimming whitespace.
 // The file is re-read on every call to support sidecar-rotated tokens
-// without requiring a KAPI restart.
+// without requiring a Kubernaut Agent restart.
 func ResolveFilePath(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
