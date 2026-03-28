@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kapi_test
+package kubernautagent_test
 
 import (
 	"bytes"
@@ -26,14 +26,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/kapi/config"
-	llmclient "github.com/jordigilh/kubernaut/pkg/kapi/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
+	llmclient "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
 var _ = Describe("Auth Headers Integration — #417", func() {
 
-	// IT-KAPI-417-001: Full round trip with all three source types
-	Describe("IT-KAPI-417-001: Full round trip with all three sources", func() {
+	// IT-KA-417-001: Full round trip with all three source types
+	Describe("IT-KA-417-001: Full round trip with all three sources", func() {
 		var (
 			server  *httptest.Server
 			headers map[string]string
@@ -55,17 +55,17 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 		})
 
 		It("should inject headers from all three sources over real HTTP", func() {
-			os.Setenv("KAPI_IT_TEST_API_KEY", "secret-key-123")
-			defer os.Unsetenv("KAPI_IT_TEST_API_KEY")
+			os.Setenv("KA_IT_TEST_API_KEY", "secret-key-123")
+			defer os.Unsetenv("KA_IT_TEST_API_KEY")
 
-			tmpFile, err := os.CreateTemp("", "kapi-it-token-*")
+			tmpFile, err := os.CreateTemp("", "ka-it-token-*")
 			Expect(err).NotTo(HaveOccurred())
 			defer os.Remove(tmpFile.Name())
 			err = os.WriteFile(tmpFile.Name(), []byte("jwt-token-xyz"), 0644)
 			Expect(err).NotTo(HaveOccurred())
 
 			hdefs := []config.HeaderDefinition{
-				{Name: "x-api-key", SecretKeyRef: "KAPI_IT_TEST_API_KEY"},
+				{Name: "x-api-key", SecretKeyRef: "KA_IT_TEST_API_KEY"},
 				{Name: "Authorization", FilePath: tmpFile.Name()},
 				{Name: "x-tenant-id", Value: "kubernaut-prod"},
 			}
@@ -84,8 +84,8 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 		})
 	})
 
-	// IT-KAPI-417-003: Backward compatibility — zero custom headers
-	Describe("IT-KAPI-417-003: Backward compatibility with zero headers", func() {
+	// IT-KA-417-003: Backward compatibility — zero custom headers
+	Describe("IT-KA-417-003: Backward compatibility with zero headers", func() {
 		It("should send requests without extra headers when none configured", func() {
 			var receivedHeaders http.Header
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -107,8 +107,8 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 		})
 	})
 
-	// IT-KAPI-417-002: Provider-agnostic transport
-	Describe("IT-KAPI-417-002: Headers injected for multiple endpoints", func() {
+	// IT-KA-417-002: Provider-agnostic transport
+	Describe("IT-KA-417-002: Headers injected for multiple endpoints", func() {
 		It("should inject headers for both OpenAI and Ollama endpoints", func() {
 			openaiHeaders := make(map[string]string)
 			openai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -143,8 +143,8 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 		})
 	})
 
-	// IT-KAPI-417-004: Error log credential scrubbing
-	Describe("IT-KAPI-417-004: Error log does not contain header value", func() {
+	// IT-KA-417-004: Error log credential scrubbing
+	Describe("IT-KA-417-004: Error log does not contain header value", func() {
 		It("should redact sensitive header values in log output on error", func() {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -155,10 +155,10 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 			logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 			hdefs := []config.HeaderDefinition{
-				{Name: "Authorization", SecretKeyRef: "KAPI_IT_SCRUB_SECRET"},
+				{Name: "Authorization", SecretKeyRef: "KA_IT_SCRUB_SECRET"},
 			}
-			os.Setenv("KAPI_IT_SCRUB_SECRET", "Bearer super-secret-key-do-not-leak")
-			defer os.Unsetenv("KAPI_IT_SCRUB_SECRET")
+			os.Setenv("KA_IT_SCRUB_SECRET", "Bearer super-secret-key-do-not-leak")
+			defer os.Unsetenv("KA_IT_SCRUB_SECRET")
 
 			client, err := llmclient.NewLLMClientWithLogger(server.URL, hdefs, logger)
 			Expect(err).NotTo(HaveOccurred())
@@ -172,8 +172,8 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 		})
 	})
 
-	// IT-KAPI-417-005: Token rotation without restart
-	Describe("IT-KAPI-417-005: Token rotation without restart", func() {
+	// IT-KA-417-005: Token rotation without restart
+	Describe("IT-KA-417-005: Token rotation without restart", func() {
 		It("should pick up new token after file update", func() {
 			capturedTokens := make([]string, 0, 2)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +182,7 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 			}))
 			defer server.Close()
 
-			tmpFile, err := os.CreateTemp("", "kapi-it-rotation-*")
+			tmpFile, err := os.CreateTemp("", "ka-it-rotation-*")
 			Expect(err).NotTo(HaveOccurred())
 			defer os.Remove(tmpFile.Name())
 			err = os.WriteFile(tmpFile.Name(), []byte("token-v1"), 0644)

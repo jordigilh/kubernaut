@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kapi_test
+package transport_test
 
 import (
 	"testing"
@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestKAPIIntegration(t *testing.T) {
+func TestKubernautAgentTransport(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "KAPI Auth Headers Integration Suite")
+	RunSpecs(t, "Kubernaut Agent Auth Headers Transport Unit Suite")
 }
