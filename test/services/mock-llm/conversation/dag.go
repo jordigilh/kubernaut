@@ -28,8 +28,12 @@ type ResponseHandler interface {
 }
 
 // HandlerResult holds the output from a node handler.
+// ResponseType and ToolName allow the HTTP handler to build the correct
+// response using existing response.Build* functions (DAG as routing oracle).
 type HandlerResult struct {
-	NodeName string
+	NodeName     string
+	ResponseType StepType
+	ToolName     string
 }
 
 // Transition defines a conditional edge between DAG nodes.
@@ -56,6 +60,7 @@ type DAG struct {
 type ExecutionResult struct {
 	TerminalNode string
 	Path         []string
+	Result       *HandlerResult
 }
 
 // NewDAG creates a new DAG with the given initial node name.
@@ -102,7 +107,15 @@ func (d *DAG) Execute(ctx *Context) (*ExecutionResult, error) {
 		path = append(path, current)
 
 		if len(node.Transitions) == 0 {
-			return &ExecutionResult{TerminalNode: current, Path: path}, nil
+			var hr *HandlerResult
+			if node.Handler != nil {
+				var herr error
+				hr, herr = node.Handler.Handle(ctx)
+				if herr != nil {
+					return nil, fmt.Errorf("dag: handler error at node %q: %w", current, herr)
+				}
+			}
+			return &ExecutionResult{TerminalNode: current, Path: path, Result: hr}, nil
 		}
 
 		next := ""

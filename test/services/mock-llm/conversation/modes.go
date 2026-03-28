@@ -25,7 +25,8 @@ const (
 	StepFinalAnalysis                 // Step produces the final analysis text
 )
 
-// ConversationMode defines the conversation flow for a particular tool configuration.
+// Deprecated: ConversationMode is superseded by DAG-based conversation routing.
+// Use SelectDAG and DAG.Execute instead. Will be removed after all callers migrate.
 type ConversationMode struct {
 	name  string
 	steps []step
@@ -89,7 +90,8 @@ func ThreeStepMode(hasResourceContext bool) *ConversationMode {
 	return &ConversationMode{name: name, steps: steps}
 }
 
-// SelectMode determines the appropriate conversation mode from the tools list.
+// Deprecated: SelectMode is superseded by SelectDAG which returns a *DAG.
+// Use SelectDAG for DAG-based conversation routing.
 func SelectMode(tools []openai.Tool) *ConversationMode {
 	if HasThreeStepTools(tools) {
 		return ThreeStepMode(HasResourceContextTool(tools))
