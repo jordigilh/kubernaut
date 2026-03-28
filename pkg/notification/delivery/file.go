@@ -126,7 +126,7 @@ func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notific
 	// NT-1: Apply timeout from config if set
 	if s.timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, s.timeout)
+		_, cancel = context.WithTimeout(ctx, s.timeout)
 		defer cancel()
 	}
 

@@ -72,7 +72,7 @@ class TestRemediationOrchestratorAuditPayload(unittest.TestCase):
                 pre_remediation_spec_hash = 'sha256:a1b2c3d4e5f6...',
                 target_resource = 'payment/Deployment/payment-api',
                 workflow_version = '1.0.0',
-                workflow_type = 'ScaleReplicas',
+                action_type = 'ScaleReplicas',
                 ea_name = 'ea-restart-payment-api-abc123',
                 hash_compute_delay = '4m0s',
                 alert_check_delay = '5m0s',

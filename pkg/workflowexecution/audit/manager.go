@@ -354,18 +354,16 @@ func (m *Manager) recordAuditEvent(
 		ExecutionName:   wfe.Name,
 	}
 
-	// Add timing info if available
 	if wfe.Status.StartTime != nil {
 		payload.StartedAt.SetTo(wfe.Status.StartTime.Time)
 	}
 	if wfe.Status.CompletionTime != nil {
 		payload.CompletedAt.SetTo(wfe.Status.CompletionTime.Time)
 	}
-	if wfe.Status.Duration != "" {
-		payload.Duration.SetTo(wfe.Status.Duration)
+	if wfe.Status.Duration != nil {
+		payload.Duration.SetTo(wfe.Status.Duration.Duration.String())
 	}
 
-	// Add failure details if present
 	if wfe.Status.FailureDetails != nil {
 		payload.FailureReason.SetTo(api.WorkflowExecutionAuditPayloadFailureReason(wfe.Status.FailureDetails.Reason))
 		payload.FailureMessage.SetTo(wfe.Status.FailureDetails.Message)
@@ -374,7 +372,6 @@ func (m *Manager) recordAuditEvent(
 		}
 	}
 
-	// Add PipelineRun reference if present
 	if wfe.Status.ExecutionRef != nil {
 		payload.PipelinerunName.SetTo(wfe.Status.ExecutionRef.Name)
 	}
@@ -515,18 +512,16 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 		}
 	}
 
-	// Add timing info if available
 	if wfe.Status.StartTime != nil {
 		payload.StartedAt.SetTo(wfe.Status.StartTime.Time)
 	}
 	if wfe.Status.CompletionTime != nil {
 		payload.CompletedAt.SetTo(wfe.Status.CompletionTime.Time)
 	}
-	if wfe.Status.Duration != "" {
-		payload.Duration.SetTo(wfe.Status.Duration)
+	if wfe.Status.Duration != nil {
+		payload.Duration.SetTo(wfe.Status.Duration.Duration.String())
 	}
 
-	// Add failure details if present
 	if wfe.Status.FailureDetails != nil {
 		payload.FailureReason.SetTo(api.WorkflowExecutionAuditPayloadFailureReason(wfe.Status.FailureDetails.Reason))
 		payload.FailureMessage.SetTo(wfe.Status.FailureDetails.Message)
@@ -535,12 +530,10 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 		}
 	}
 
-	// Add PipelineRun reference if present
 	if wfe.Status.ExecutionRef != nil {
 		payload.PipelinerunName.SetTo(wfe.Status.ExecutionRef.Name)
 	}
 
-	// Add execution parameters for SOC2 chain of custody (Issue #103)
 	if len(wfe.Spec.Parameters) > 0 {
 		payload.Parameters.SetTo(api.WorkflowExecutionAuditPayloadParameters(wfe.Spec.Parameters))
 	}

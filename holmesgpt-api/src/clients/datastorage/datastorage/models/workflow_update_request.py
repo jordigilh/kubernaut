@@ -41,8 +41,8 @@ class WorkflowUpdateRequest(BaseModel):
         if value is None:
             return value
 
-        if value not in ('active', 'disabled', 'deprecated', 'archived'):
-            raise ValueError("must be one of enum values ('active', 'disabled', 'deprecated', 'archived')")
+        if value not in ('Active', 'Disabled', 'Deprecated', 'Archived'):
+            raise ValueError("must be one of enum values ('Active', 'Disabled', 'Deprecated', 'Archived')")
         return value
 
     model_config = {

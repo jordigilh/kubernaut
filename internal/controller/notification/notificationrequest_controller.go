@@ -131,7 +131,7 @@ type NotificationRequestReconciler struct {
 	//
 	// WIRED IN: cmd/notification/main.go
 	// USED IN: All reconciliation methods that emit metrics
-	Metrics notificationmetrics.Recorder
+	Metrics *notificationmetrics.Metrics
 
 	// ========================================
 	// EVENT RECORDER (K8s Events for Debugging)
@@ -268,8 +268,8 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 		var lastFailedAttempt *notificationv1alpha1.DeliveryAttempt
 		for i := len(notification.Status.DeliveryAttempts) - 1; i >= 0; i-- {
 			attempt := &notification.Status.DeliveryAttempts[i]
-			if attempt.Status == "failed" {
-				lastFailedAttempt = attempt
+		if attempt.Status == notificationv1alpha1.DeliveryAttemptStatusFailed {
+			lastFailedAttempt = attempt
 				break
 			}
 		}
@@ -719,7 +719,7 @@ func (r *NotificationRequestReconciler) cleanupAuditEventTracking(notificationKe
 func countSuccessfulAttempts(attempts []notificationv1alpha1.DeliveryAttempt) int {
 	count := 0
 	for _, attempt := range attempts {
-		if attempt.Status == "success" {
+		if attempt.Status == notificationv1alpha1.DeliveryAttemptStatusSuccess {
 			count++
 		}
 	}
@@ -1155,7 +1155,7 @@ func (r *NotificationRequestReconciler) transitionToSent(
 		ctx,
 		notification,
 		notificationv1alpha1.NotificationPhaseSent,
-		"AllDeliveriesSucceeded",
+		string(notificationv1alpha1.StatusReasonAllDeliveriesSucceeded),
 		fmt.Sprintf("Successfully delivered to %d channel(s)", totalSuccessful),
 		attempts,
 		append(preservedConditions, metav1.Condition{
@@ -1217,7 +1217,7 @@ func (r *NotificationRequestReconciler) transitionToRetrying(
 		ctx,
 		notification,
 		notificationv1alpha1.NotificationPhaseRetrying,
-		"PartialFailureRetrying",
+		string(notificationv1alpha1.StatusReasonPartialFailureRetrying),
 		fmt.Sprintf("Delivered to %d/%d channel(s), retrying failed channels with backoff %v",
 			notification.Status.SuccessfulDeliveries,
 			len(resolvedChannels),
@@ -1280,7 +1280,7 @@ func (r *NotificationRequestReconciler) transitionToPartiallySent(
 		ctx,
 		notification,
 		notificationv1alpha1.NotificationPhasePartiallySent,
-		"PartialDeliverySuccess",
+		string(notificationv1alpha1.StatusReasonPartialDeliverySuccess),
 		fmt.Sprintf("Delivered to %d/%d channel(s), others failed",
 			totalSuccessful,
 			len(resolvedChannels)),

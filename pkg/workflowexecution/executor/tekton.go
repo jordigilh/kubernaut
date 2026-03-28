@@ -34,24 +34,16 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
-// DefaultServiceAccountName is the default SA for PipelineRuns
-const DefaultServiceAccountName = "kubernaut-workflow-runner"
-
 // TektonExecutor implements the Executor interface for Tekton PipelineRuns.
-// Extracted from WorkflowExecutionReconciler (BR-WE-014).
+// DD-WE-005 v2.0: SA is read from WFE spec at execution time, not from executor config.
 type TektonExecutor struct {
-	Client             client.Client
-	ServiceAccountName string
+	Client client.Client
 }
 
 // NewTektonExecutor creates a new TektonExecutor.
-func NewTektonExecutor(c client.Client, serviceAccountName string) *TektonExecutor {
-	if serviceAccountName == "" {
-		serviceAccountName = DefaultServiceAccountName
-	}
+func NewTektonExecutor(c client.Client) *TektonExecutor {
 	return &TektonExecutor{
-		Client:             c,
-		ServiceAccountName: serviceAccountName,
+		Client: c,
 	}
 }
 
@@ -66,13 +58,13 @@ func (t *TektonExecutor) Engine() string {
 // DD-WE-002: PipelineRuns created in dedicated execution namespace
 // DD-WE-003: Deterministic name for atomic locking
 // DD-WE-006: opts.Dependencies are added as workspace bindings.
-func (t *TektonExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) (string, error) {
+func (t *TektonExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) (*CreateResult, error) {
 	pr := t.buildPipelineRun(wfe, namespace, opts.Dependencies)
 
 	if err := t.Client.Create(ctx, pr); err != nil {
-		return "", err // Preserve original error for IsAlreadyExists checks
+		return nil, err // Preserve original error for IsAlreadyExists checks
 	}
-	return pr.Name, nil
+	return &CreateResult{ResourceName: pr.Name}, nil
 }
 
 // GetStatus retrieves the current status of the PipelineRun and maps it to ExecutionResult.
@@ -200,7 +192,7 @@ func (t *TektonExecutor) buildPipelineRun(wfe *workflowexecutionv1alpha1.Workflo
 			Params:     params,
 			Workspaces: workspaces,
 			TaskRunTemplate: tektonv1.PipelineTaskRunTemplate{
-				ServiceAccountName: t.ServiceAccountName,
+				ServiceAccountName: wfe.Spec.ServiceAccountName,
 			},
 		},
 	}
@@ -237,7 +229,7 @@ func buildDependencyWorkspaces(deps *models.WorkflowDependencies) []tektonv1.Wor
 // buildStatusSummary creates a lightweight status summary from a PipelineRun.
 func (t *TektonExecutor) buildStatusSummary(ctx context.Context, pr *tektonv1.PipelineRun) *workflowexecutionv1alpha1.ExecutionStatusSummary {
 	summary := &workflowexecutionv1alpha1.ExecutionStatusSummary{
-		Status: "Unknown",
+		Status: corev1.ConditionUnknown,
 	}
 
 	summary.TotalTasks = len(pr.Status.ChildReferences)
@@ -265,7 +257,7 @@ func (t *TektonExecutor) buildStatusSummary(ctx context.Context, pr *tektonv1.Pi
 
 	succeededCond := pr.Status.GetCondition(apis.ConditionSucceeded)
 	if succeededCond != nil {
-		summary.Status = string(succeededCond.Status)
+		summary.Status = corev1.ConditionStatus(succeededCond.Status)
 		summary.Reason = succeededCond.Reason
 		summary.Message = succeededCond.Message
 	}

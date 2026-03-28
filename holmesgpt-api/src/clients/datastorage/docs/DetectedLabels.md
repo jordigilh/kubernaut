@@ -15,6 +15,7 @@ Name | Type | Description | Notes
 **helm_managed** | **bool** | Resource is managed by Helm | [optional] 
 **network_isolated** | **bool** | NetworkPolicy restricts traffic | [optional] 
 **service_mesh** | **str** | Service mesh type: istio, linkerd, or * (wildcard &#x3D; any mesh) | [optional] 
+**resource_quota_constrained** | **bool** | ResourceQuota exists in namespace (#366) | [optional] 
 
 ## Example
 

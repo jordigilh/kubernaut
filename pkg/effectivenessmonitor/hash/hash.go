@@ -67,6 +67,12 @@ type SpecHashInput struct {
 	// Format: "sha256:<hex>". Empty string if not available.
 	// When provided, the Computer will compare pre and post hashes.
 	PreHash string
+	// ConfigMapHashes is a map of ConfigMap name -> content hash ("sha256:<hex>").
+	// Pre-computed by the caller using pkg/shared/hash.ConfigMapDataHash.
+	// When non-empty, the Computer produces a composite hash that incorporates
+	// both the spec hash and the ConfigMap content hashes (#396, BR-EM-004).
+	// When nil or empty, the Computer falls back to spec-only hash.
+	ConfigMapHashes map[string]string
 }
 
 // Computer computes deterministic canonical hashes of Kubernetes resource specs
@@ -96,7 +102,7 @@ func (c *computer) Compute(input SpecHashInput) ComputeResult {
 		spec = map[string]interface{}{}
 	}
 
-	postHash, err := canonicalhash.CanonicalSpecHash(spec)
+	specHash, err := canonicalhash.CanonicalSpecHash(spec)
 	if err != nil {
 		return ComputeResult{
 			Component: types.ComponentResult{
@@ -104,6 +110,18 @@ func (c *computer) Compute(input SpecHashInput) ComputeResult {
 				Assessed:  false,
 				Error:     fmt.Errorf("canonical hash computation failed: %w", err),
 				Details:   "failed to compute canonical spec hash: " + err.Error(),
+			},
+		}
+	}
+
+	postHash, err := canonicalhash.CompositeSpecHash(specHash, input.ConfigMapHashes)
+	if err != nil {
+		return ComputeResult{
+			Component: types.ComponentResult{
+				Component: types.ComponentHash,
+				Assessed:  false,
+				Error:     fmt.Errorf("composite hash computation failed: %w", err),
+				Details:   "failed to compute composite spec hash: " + err.Error(),
 			},
 		}
 	}

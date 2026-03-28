@@ -30,6 +30,7 @@ import logging
 from src.models.incident_models import IncidentRequest, IncidentResponse
 from .llm_integration import analyze_incident
 from src.audit import get_audit_store, create_aiagent_response_complete_event, create_aiagent_response_failed_event  # DD-AUDIT-005, #442
+from src.metrics.token_accumulator import TokenAccumulator, set_token_accumulator  # #435
 from src.middleware.user_context import get_authenticated_user  # DD-AUTH-006
 from src.metrics import get_global_metrics  # BR-HAPI-011, BR-HAPI-301
 from src.errors import PROBLEM_JSON_ERROR_RESPONSES  # BR-HAPI-200: Shared RFC 7807 error responses
@@ -63,6 +64,9 @@ async def _run_incident_investigation(session_manager: SessionManager, session_i
         metrics = get_global_metrics()
         start_time = time.time()
 
+        # #435: Session-scoped token accumulation via ContextVar
+        acc = TokenAccumulator()
+        set_token_accumulator(acc)
         try:
             result = await analyze_incident(data, mcp_config=None, app_config=app_config, metrics=metrics)
         except Exception as exc:
@@ -78,6 +82,10 @@ async def _run_incident_investigation(session_manager: SessionManager, session_i
                 label="failure audit",
             )
             raise
+        finally:
+            # Clear ContextVar to prevent leaks to other coroutines.
+            # `acc` remains readable as a local variable for the success audit below.
+            set_token_accumulator(None)
 
         if isinstance(result, dict):
             response_dict = result
@@ -91,6 +99,8 @@ async def _run_incident_investigation(session_manager: SessionManager, session_i
                 incident_id=data.get("incident_id", ""),
                 remediation_id=data.get("remediation_id", ""),
                 response_data=response_dict,
+                total_prompt_tokens=acc.prompt_tokens,
+                total_completion_tokens=acc.completion_tokens,
             ),
             label="success audit",
         )

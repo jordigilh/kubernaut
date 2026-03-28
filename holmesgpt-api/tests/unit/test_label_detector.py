@@ -42,12 +42,14 @@ def _make_k8s_queries(
     pdbs=None, pdbs_error=None,
     hpas=None, hpas_error=None,
     netpols=None, netpols_error=None,
+    resource_quotas=None, resource_quotas_error=None,
 ):
     """Build a mock K8s queries object for LabelDetector."""
     queries = AsyncMock()
     queries.list_pdbs = AsyncMock(return_value=(pdbs or [], pdbs_error))
     queries.list_hpas = AsyncMock(return_value=(hpas or [], hpas_error))
     queries.list_network_policies = AsyncMock(return_value=(netpols or [], netpols_error))
+    queries.list_resource_quotas = AsyncMock(return_value=(resource_quotas or [], resource_quotas_error))
     return queries
 
 
@@ -92,7 +94,7 @@ class TestLabelDetectorHappyPath:
         }
         owner_chain = []
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert result["gitOpsManaged"] is True
@@ -128,7 +130,7 @@ class TestLabelDetectorHappyPath:
             },
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result is not None
         assert result["gitOpsManaged"] is True
@@ -163,7 +165,7 @@ class TestLabelDetectorHappyPath:
             },
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result is not None
         assert result["gitOpsManaged"] is True
@@ -199,7 +201,7 @@ class TestLabelDetectorHappyPath:
             },
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result is not None
         assert result["gitOpsManaged"] is True
@@ -233,7 +235,7 @@ class TestLabelDetectorHappyPath:
             },
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result is not None
         assert result["gitOpsManaged"] is True
@@ -256,7 +258,7 @@ class TestLabelDetectorHappyPath:
         }
         owner_chain = []
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert result["gitOpsManaged"] is True
@@ -276,7 +278,7 @@ class TestLabelDetectorHappyPath:
             "deployment_details": {"name": "api", "labels": {}},
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result["gitOpsManaged"] is True
         assert result["gitOpsTool"] == "argocd"
@@ -295,7 +297,7 @@ class TestLabelDetectorHappyPath:
             "deployment_details": {"name": "api", "labels": {}},
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result["gitOpsManaged"] is True
         assert result["gitOpsTool"] == "flux"
@@ -315,7 +317,7 @@ class TestLabelDetectorHappyPath:
             "deployment_details": {"name": "api", "labels": {}},
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result["gitOpsManaged"] is True
         assert result["gitOpsTool"] == "flux"
@@ -345,7 +347,7 @@ class TestLabelDetectorHappyPath:
             },
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result is not None
         assert result["gitOpsManaged"] is True
@@ -370,7 +372,7 @@ class TestLabelDetectorHappyPath:
         }
         owner_chain = []
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert result["pdbProtected"] is True
@@ -394,7 +396,7 @@ class TestLabelDetectorHappyPath:
         }
         owner_chain = []
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert result["hpaEnabled"] is True
@@ -420,7 +422,7 @@ class TestLabelDetectorHappyPath:
             {"kind": "StatefulSet", "name": "db", "namespace": "prod"},
         ]
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert result["stateful"] is True
@@ -445,7 +447,7 @@ class TestLabelDetectorHappyPath:
         }
         owner_chain = []
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert result["helmManaged"] is True
@@ -472,7 +474,7 @@ class TestLabelDetectorHappyPath:
             },
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result is not None
         assert result["helmManaged"] is True
@@ -492,7 +494,7 @@ class TestLabelDetectorHappyPath:
         }
         owner_chain = []
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert result["networkIsolated"] is True
@@ -516,7 +518,7 @@ class TestLabelDetectorHappyPath:
         }
         owner_chain = []
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert result["serviceMesh"] == "istio"
@@ -539,7 +541,7 @@ class TestLabelDetectorHappyPath:
         }
         owner_chain = []
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert result["serviceMesh"] == "linkerd"
@@ -573,7 +575,7 @@ class TestLabelDetectorEdgeCases:
             {"kind": "Deployment", "name": "simple-app", "namespace": "default"},
         ]
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert result["gitOpsManaged"] is False
@@ -594,7 +596,7 @@ class TestLabelDetectorEdgeCases:
         queries = _make_k8s_queries()
         detector = LabelDetector(queries)
 
-        result = await detector.detect_labels(None, None)
+        result, _ = await detector.detect_labels(None, None)
 
         assert result is None
 
@@ -622,7 +624,7 @@ class TestLabelDetectorEdgeCases:
         }
         owner_chain = []
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert result["gitOpsManaged"] is True
@@ -667,7 +669,7 @@ class TestGitOpsToolMutualExclusivity:
             },
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result["gitOpsManaged"] is True
         assert result["gitOpsTool"] == "argocd"
@@ -700,7 +702,7 @@ class TestGitOpsToolMutualExclusivity:
             },
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result["gitOpsManaged"] is True
         assert result["gitOpsTool"] == "argocd"
@@ -732,7 +734,7 @@ class TestGitOpsToolMutualExclusivity:
             "namespace_labels": {"argocd.argoproj.io/instance": "my-app"},
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result["gitOpsManaged"] is True
         assert result["gitOpsTool"] == "flux"
@@ -769,7 +771,7 @@ class TestGitOpsToolMutualExclusivity:
             },
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result["gitOpsManaged"] is True
         assert result["gitOpsTool"] == "argocd"
@@ -823,7 +825,7 @@ class TestGitOpsDriftRegressions:
             "namespace_annotations": {},
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result is not None
         assert result["gitOpsManaged"] is True, (
@@ -859,7 +861,7 @@ class TestGitOpsDriftRegressions:
             "namespace_annotations": {},
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result is not None
         assert result["gitOpsManaged"] is False, (
@@ -889,7 +891,7 @@ class TestLabelDetectorErrorHandling:
         }
         owner_chain = []
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert result["pdbProtected"] is False
@@ -912,7 +914,7 @@ class TestLabelDetectorErrorHandling:
         }
         owner_chain = []
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert result["hpaEnabled"] is False
@@ -944,7 +946,7 @@ class TestLabelDetectorErrorHandling:
         }
         owner_chain = []
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert result["pdbProtected"] is False
@@ -972,7 +974,7 @@ class TestLabelDetectorErrorHandling:
         }
         owner_chain = []
 
-        result = await detector.detect_labels(k8s_context, owner_chain)
+        result, _ = await detector.detect_labels(k8s_context, owner_chain)
 
         assert result is not None
         assert "hpaEnabled" in result["failedDetections"]
@@ -1009,7 +1011,7 @@ class TestLabelDetectorBranchGaps:
             "namespace_annotations": {"argocd.argoproj.io/managed": "true"},
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result is not None
         assert result["gitOpsManaged"] is True
@@ -1038,7 +1040,7 @@ class TestLabelDetectorBranchGaps:
             },
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result is not None
         assert result["pdbProtected"] is False
@@ -1068,7 +1070,7 @@ class TestLabelDetectorBranchGaps:
             },
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result is not None
         assert result["pdbProtected"] is False
@@ -1096,8 +1098,196 @@ class TestLabelDetectorBranchGaps:
             },
         }
 
-        result = await detector.detect_labels(k8s_context, [])
+        result, _ = await detector.detect_labels(k8s_context, [])
 
         assert result is not None
         assert result["hpaEnabled"] is False
         assert "hpaEnabled" not in result["failedDetections"]
+
+
+def _make_resource_quota(hard, used):
+    """Build a mock ResourceQuota with given hard limits and used values."""
+    quota = MagicMock()
+    quota.status.hard = hard
+    quota.status.used = used
+    quota.spec.hard = hard
+    return quota
+
+
+class TestLabelDetectorResourceQuota:
+    """UT-HAPI-366-004 through UT-HAPI-366-010: ResourceQuota detection (#366).
+
+    Business Requirements:
+      - BR-SP-101: DetectedLabels Auto-Detection
+      - BR-SP-103: FailedDetections Tracking
+      - BR-HAPI-250: DetectedLabels in workflow search
+
+    Design: detect_labels() returns Tuple[Optional[Dict], Optional[Dict]]
+    where second element is quota_summary (Option C).
+    """
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_366_004_quota_constrained_true_when_quota_exists(self):
+        """UT-HAPI-366-004: resourceQuotaConstrained=true in labels when ResourceQuota exists."""
+        from detection.labels import LabelDetector
+
+        quota = _make_resource_quota(
+            hard={"cpu": "4"},
+            used={"cpu": "2"},
+        )
+        queries = _make_k8s_queries(resource_quotas=[quota])
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "prod",
+            "pod_details": {"name": "api-pod", "labels": {"app": "api"}, "annotations": {}},
+            "deployment_details": {"name": "api", "labels": {"app": "api"}},
+        }
+
+        labels, quota_summary = await detector.detect_labels(k8s_context, [])
+
+        assert labels is not None
+        assert labels["resourceQuotaConstrained"] is True
+        assert "resourceQuotaConstrained" not in labels["failedDetections"]
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_366_005_quota_constrained_false_when_no_quota(self):
+        """UT-HAPI-366-005: resourceQuotaConstrained=false when no ResourceQuota exists."""
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries(resource_quotas=[])
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "prod",
+            "pod_details": {"name": "api-pod", "labels": {"app": "api"}, "annotations": {}},
+            "deployment_details": {"name": "api", "labels": {"app": "api"}},
+        }
+
+        labels, quota_summary = await detector.detect_labels(k8s_context, [])
+
+        assert labels is not None
+        assert labels["resourceQuotaConstrained"] is False
+        assert "resourceQuotaConstrained" not in labels["failedDetections"]
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_366_006_failed_detections_on_rbac_error(self):
+        """UT-HAPI-366-006: failedDetections includes resourceQuotaConstrained on RBAC error."""
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries(resource_quotas_error="Forbidden")
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "prod",
+            "pod_details": {"name": "api-pod", "labels": {"app": "api"}, "annotations": {}},
+            "deployment_details": {"name": "api", "labels": {"app": "api"}},
+        }
+
+        labels, quota_summary = await detector.detect_labels(k8s_context, [])
+
+        assert labels is not None
+        assert labels["resourceQuotaConstrained"] is False
+        assert "resourceQuotaConstrained" in labels["failedDetections"]
+        assert quota_summary is None
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_366_007_quota_summary_has_hard_and_used_keys(self):
+        """UT-HAPI-366-007: Quota summary has cpu/memory/pods with hard and used keys."""
+        from detection.labels import LabelDetector
+
+        quota = _make_resource_quota(
+            hard={"cpu": "4", "memory": "8Gi", "pods": "20"},
+            used={"cpu": "2500m", "memory": "6Gi", "pods": "15"},
+        )
+        queries = _make_k8s_queries(resource_quotas=[quota])
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "prod",
+            "pod_details": {"name": "api-pod", "labels": {"app": "api"}, "annotations": {}},
+            "deployment_details": {"name": "api", "labels": {"app": "api"}},
+        }
+
+        labels, quota_summary = await detector.detect_labels(k8s_context, [])
+
+        assert quota_summary is not None
+        assert quota_summary["cpu_hard"] == "4"
+        assert quota_summary["cpu_used"] == "2500m"
+        assert quota_summary["memory_hard"] == "8Gi"
+        assert quota_summary["memory_used"] == "6Gi"
+        assert quota_summary["pods_hard"] == "20"
+        assert quota_summary["pods_used"] == "15"
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_366_008_quota_summary_aggregates_multiple_quotas(self):
+        """UT-HAPI-366-008: Quota summary aggregates across 2 quotas (tightest hard per resource)."""
+        from detection.labels import LabelDetector
+
+        quota_a = _make_resource_quota(
+            hard={"cpu": "4"},
+            used={"cpu": "2"},
+        )
+        quota_b = _make_resource_quota(
+            hard={"memory": "8Gi"},
+            used={"memory": "6Gi"},
+        )
+        queries = _make_k8s_queries(resource_quotas=[quota_a, quota_b])
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "prod",
+            "pod_details": {"name": "api-pod", "labels": {"app": "api"}, "annotations": {}},
+            "deployment_details": {"name": "api", "labels": {"app": "api"}},
+        }
+
+        labels, quota_summary = await detector.detect_labels(k8s_context, [])
+
+        assert labels["resourceQuotaConstrained"] is True
+        assert quota_summary is not None
+        assert "cpu_hard" in quota_summary
+        assert "memory_hard" in quota_summary
+        assert quota_summary["cpu_hard"] == "4"
+        assert quota_summary["memory_hard"] == "8Gi"
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_366_009_quota_summary_none_when_no_quotas(self):
+        """UT-HAPI-366-009: Quota summary is None when no quotas exist."""
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries(resource_quotas=[])
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "prod",
+            "pod_details": {"name": "api-pod", "labels": {"app": "api"}, "annotations": {}},
+            "deployment_details": {"name": "api", "labels": {"app": "api"}},
+        }
+
+        labels, quota_summary = await detector.detect_labels(k8s_context, [])
+
+        assert quota_summary is None
+        assert labels["resourceQuotaConstrained"] is False
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_366_010_quota_summary_none_on_detection_error(self):
+        """UT-HAPI-366-010: Quota summary is None on detection error (graceful degradation)."""
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        queries.list_resource_quotas = AsyncMock(
+            side_effect=Exception("connection refused")
+        )
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "prod",
+            "pod_details": {"name": "api-pod", "labels": {"app": "api"}, "annotations": {}},
+            "deployment_details": {"name": "api", "labels": {"app": "api"}},
+        }
+
+        labels, quota_summary = await detector.detect_labels(k8s_context, [])
+
+        assert quota_summary is None
+        assert labels["resourceQuotaConstrained"] is False
+        assert "resourceQuotaConstrained" in labels["failedDetections"]

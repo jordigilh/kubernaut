@@ -254,7 +254,7 @@ func (c *ApprovalCreator) buildApprovalRequest(
 			rar.Spec.PolicyEvaluation = &remediationv1.ApprovalPolicyEvaluation{
 				PolicyName:   ac.PolicyEvaluation.PolicyName,
 				MatchedRules: ac.PolicyEvaluation.MatchedRules,
-				Decision:     ac.PolicyEvaluation.Decision,
+				Decision:     string(ac.PolicyEvaluation.Decision),
 			}
 		}
 	}

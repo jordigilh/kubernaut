@@ -40,12 +40,18 @@ class TestWorkflowSearchResponse(unittest.TestCase):
                     datastorage.models.workflow_search_result.WorkflowSearchResult(
                         workflow_id = '', 
                         title = '', 
-                        description = '', 
+                        description = datastorage.models.structured_description.StructuredDescription(
+                            what = '', 
+                            when_to_use = '', 
+                            when_not_to_use = '', 
+                            preconditions = '', ), 
                         schema_version = '', 
                         schema_image = 'ghcr.io/kubernaut/workflows/oomkill:v1.0.0@sha256:abc123...', 
                         schema_digest = 'sha256:abc123...', 
                         execution_bundle = '', 
                         execution_bundle_digest = '', 
+                        execution_engine = 'tekton', 
+                        service_account_name = 'my-workflow-sa', 
                         confidence = 0.0, 
                         label_boost = 0.0, 
                         label_penalty = 0.0, 
@@ -61,7 +67,8 @@ class TestWorkflowSearchResponse(unittest.TestCase):
                             stateful = True, 
                             helm_managed = True, 
                             network_isolated = True, 
-                            service_mesh = 'istio', ), 
+                            service_mesh = 'istio', 
+                            resource_quota_constrained = True, ), 
                         parameters = { }, )
                     ],
                 total_results = 56,
@@ -80,9 +87,10 @@ class TestWorkflowSearchResponse(unittest.TestCase):
                         stateful = True, 
                         helm_managed = True, 
                         network_isolated = True, 
-                        service_mesh = 'istio', ), 
+                        service_mesh = 'istio', 
+                        resource_quota_constrained = True, ), 
                     status = [
-                        'active'
+                        'Active'
                         ], )
             )
         else:

@@ -47,8 +47,8 @@ class ActionTypeCatalogReenabledPayload(BaseModel):
     @field_validator('previous_state')
     def previous_state_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('disabled'):
-            raise ValueError("must be one of enum values ('disabled')")
+        if value not in ('Disabled'):
+            raise ValueError("must be one of enum values ('Disabled')")
         return value
 
     model_config = {

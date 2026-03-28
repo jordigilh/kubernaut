@@ -133,7 +133,7 @@ func ValidateSPStatus(sp *signalprocessingv1.SignalProcessing) []string {
 	if s.EnvironmentClassification == nil {
 		f = append(f, "SP: EnvironmentClassification not populated -- approval policy cannot evaluate environment, workflow matching may fail")
 	} else {
-		f = appendIfNonEmpty(f, checkNonEmpty("SP: EnvironmentClassification.Environment", "approval policy cannot determine if production", s.EnvironmentClassification.Environment))
+		f = appendIfNonEmpty(f, checkNonEmpty("SP: EnvironmentClassification.Environment", "approval policy cannot determine if production", string(s.EnvironmentClassification.Environment)))
 		f = appendIfNonEmpty(f, checkNonEmpty("SP: EnvironmentClassification.Source", "audit trail missing classification source", s.EnvironmentClassification.Source))
 		f = appendIfNonEmpty(f, checkNonZeroTime("SP: EnvironmentClassification.ClassifiedAt", "audit trail missing classification timestamp", s.EnvironmentClassification.ClassifiedAt))
 	}
@@ -142,7 +142,7 @@ func ValidateSPStatus(sp *signalprocessingv1.SignalProcessing) []string {
 	if s.PriorityAssignment == nil {
 		f = append(f, "SP: PriorityAssignment not populated -- priority-based routing unavailable")
 	} else {
-		f = appendIfNonEmpty(f, checkNonEmpty("SP: PriorityAssignment.Priority", "downstream consumers cannot prioritize remediation", s.PriorityAssignment.Priority))
+		f = appendIfNonEmpty(f, checkNonEmpty("SP: PriorityAssignment.Priority", "downstream consumers cannot prioritize remediation", string(s.PriorityAssignment.Priority)))
 		f = appendIfNonEmpty(f, checkNonEmpty("SP: PriorityAssignment.Source", "audit trail missing priority assignment source", s.PriorityAssignment.Source))
 		f = appendIfNonEmpty(f, checkNonZeroTime("SP: PriorityAssignment.AssignedAt", "audit trail missing priority assignment timestamp", s.PriorityAssignment.AssignedAt))
 	}
@@ -306,12 +306,14 @@ func ValidateWEStatus(we *workflowexecutionv1.WorkflowExecution) []string {
 	if s.ObservedGeneration <= 0 {
 		f = append(f, "WE: ObservedGeneration not set -- controller may not have reconciled")
 	}
-	f = appendIfNonEmpty(f, checkNonEmpty("WE: Duration", "execution duration not recorded for SLA tracking", s.Duration))
+	if s.Duration == nil {
+		f = append(f, "WE: Duration not set -- execution duration not recorded for SLA tracking")
+	}
 	f = appendIfNonEmpty(f, checkNonNil("WE: ExecutionRef", "no reference to underlying execution resource (Job/PipelineRun)", s.ExecutionRef))
 	if s.ExecutionStatus == nil {
 		f = append(f, "WE: ExecutionStatus not populated -- execution result unknown")
 	} else {
-		f = appendIfNonEmpty(f, checkNonEmpty("WE: ExecutionStatus.Status", "execution result status missing", s.ExecutionStatus.Status))
+		f = appendIfNonEmpty(f, checkNonEmpty("WE: ExecutionStatus.Status", "execution result status missing", string(s.ExecutionStatus.Status)))
 	}
 	f = appendIfNonEmpty(f, checkConditions("WE: Conditions", "controller status conditions missing", s.Conditions))
 

@@ -75,7 +75,7 @@ class TestBuildRemediationHistorySection:
                         "completedAt": "2026-02-12T10:00:00Z",
                         "signalType": "alert",
                         "signalFingerprint": "fp-001",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.85,
                         "hashMatch": "postRemediation",
@@ -129,7 +129,7 @@ class TestBuildRemediationHistorySection:
                         "remediationUID": "rr-reg",
                         "completedAt": "2026-02-12T10:00:00Z",
                         "signalType": "alert",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "hashMatch": "preRemediation",
                         "effectivenessScore": 0.5,
@@ -156,7 +156,7 @@ class TestBuildRemediationHistorySection:
                         "remediationUID": "rr-t1",
                         "completedAt": "2026-02-12T10:00:00Z",
                         "signalType": "alert",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "hashMatch": "preRemediation",
                         "effectivenessScore": 0.5,
@@ -170,7 +170,7 @@ class TestBuildRemediationHistorySection:
                         "remediationUID": "rr-t2-001",
                         "completedAt": "2026-01-15T08:00:00Z",
                         "signalType": "alert",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.9,
                         "hashMatch": "postRemediation",
@@ -179,7 +179,7 @@ class TestBuildRemediationHistorySection:
                         "remediationUID": "rr-t2-002",
                         "completedAt": "2026-01-10T12:00:00Z",
                         "signalType": "alert",
-                        "workflowType": "scale-up",
+                        "actionType": "scale-up",
                         "outcome": "failure",
                         "effectivenessScore": 0.2,
                         "hashMatch": "none",
@@ -326,7 +326,7 @@ class TestDecliningEffectiveness:
     """UT-RH-PROMPT-013 through UT-RH-PROMPT-015: Declining effectiveness trend detection."""
 
     def test_declining_same_workflow_detected(self):
-        """UT-RH-PROMPT-013: Three entries with same workflowType and declining scores triggers warning.
+        """UT-RH-PROMPT-013: Three entries with same actionType and declining scores triggers warning.
 
         Scenario: Memory leak in payment-api causes repeated OOMKilled events.
         Same 'restart' workflow applied 3 times with decreasing effectiveness:
@@ -345,21 +345,21 @@ class TestDecliningEffectiveness:
                     {
                         "remediationUID": "rr-decline-1",
                         "completedAt": "2026-02-12T06:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.80,
                     },
                     {
                         "remediationUID": "rr-decline-2",
                         "completedAt": "2026-02-12T12:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.60,
                     },
                     {
                         "remediationUID": "rr-decline-3",
                         "completedAt": "2026-02-12T16:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.30,
                     },
@@ -384,21 +384,21 @@ class TestDecliningEffectiveness:
                     {
                         "remediationUID": "rr-mix-1",
                         "completedAt": "2026-02-12T06:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.80,
                     },
                     {
                         "remediationUID": "rr-mix-2",
                         "completedAt": "2026-02-12T12:00:00Z",
-                        "workflowType": "scale-up",
+                        "actionType": "scale-up",
                         "outcome": "success",
                         "effectivenessScore": 0.60,
                     },
                     {
                         "remediationUID": "rr-mix-3",
                         "completedAt": "2026-02-12T16:00:00Z",
-                        "workflowType": "increase-memory",
+                        "actionType": "increase-memory",
                         "outcome": "success",
                         "effectivenessScore": 0.30,
                     },
@@ -422,14 +422,14 @@ class TestDecliningEffectiveness:
                     {
                         "remediationUID": "rr-two-1",
                         "completedAt": "2026-02-12T06:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.80,
                     },
                     {
                         "remediationUID": "rr-two-2",
                         "completedAt": "2026-02-12T12:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.30,
                     },
@@ -457,7 +457,7 @@ class TestSignalResolvedFormatting:
                     {
                         "remediationUID": "rr-unresolved",
                         "completedAt": "2026-02-12T10:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.3,
                         "signalResolved": False,
@@ -486,7 +486,7 @@ class TestPartialHealthChecks:
                     {
                         "remediationUID": "rr-partial-hc",
                         "completedAt": "2026-02-12T10:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.7,
                         "healthChecks": {
@@ -524,7 +524,7 @@ class TestMetricDeltaArrowNotation:
                     {
                         "remediationUID": "rr-arrow",
                         "completedAt": "2026-02-12T10:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.9,
                         "metricDeltas": {
@@ -560,7 +560,7 @@ class TestSpecDriftFormatting:
                         "remediationUID": "rr-sd-001",
                         "completedAt": "2026-02-14T07:00:00Z",
                         "signalType": "CrashLoop",
-                        "workflowType": "ScaleUp",
+                        "actionType": "ScaleUp",
                         "outcome": "Completed",
                         "effectivenessScore": 0.0,
                         "assessmentReason": "spec_drift",
@@ -591,7 +591,7 @@ class TestSpecDriftFormatting:
                     {
                         "remediationUID": "rr-sd-hm",
                         "completedAt": "2026-02-14T07:00:00Z",
-                        "workflowType": "ScaleUp",
+                        "actionType": "ScaleUp",
                         "outcome": "Completed",
                         "effectivenessScore": 0.0,
                         "assessmentReason": "spec_drift",
@@ -627,14 +627,14 @@ class TestSpecDriftFormatting:
                     {
                         "remediationUID": "rr-d1",
                         "completedAt": "2026-02-12T06:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.80,
                     },
                     {
                         "remediationUID": "rr-d2",
                         "completedAt": "2026-02-12T12:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.0,
                         "assessmentReason": "spec_drift",
@@ -642,7 +642,7 @@ class TestSpecDriftFormatting:
                     {
                         "remediationUID": "rr-d3",
                         "completedAt": "2026-02-12T16:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.70,
                     },
@@ -668,14 +668,14 @@ class TestSpecDriftFormatting:
                     {
                         "remediationUID": "rr-m1",
                         "completedAt": "2026-02-12T06:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.90,
                     },
                     {
                         "remediationUID": "rr-m2",
                         "completedAt": "2026-02-12T10:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.0,
                         "assessmentReason": "spec_drift",
@@ -683,7 +683,7 @@ class TestSpecDriftFormatting:
                     {
                         "remediationUID": "rr-m3",
                         "completedAt": "2026-02-12T14:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.85,
                     },
@@ -707,7 +707,7 @@ class TestSpecDriftFormatting:
                     {
                         "remediationUID": "rr-note",
                         "completedAt": "2026-02-14T07:00:00Z",
-                        "workflowType": "ScaleUp",
+                        "actionType": "ScaleUp",
                         "outcome": "Completed",
                         "effectivenessScore": 0.0,
                         "assessmentReason": "spec_drift",
@@ -736,7 +736,7 @@ class TestSpecDriftFormatting:
                     {
                         "remediationUID": "rr-t2-sd",
                         "completedAt": "2026-01-15T08:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.0,
                         "assessmentReason": "spec_drift",
@@ -764,7 +764,7 @@ class TestSpecDriftFormatting:
                     {
                         "remediationUID": "rr-chain-a",
                         "completedAt": "2026-02-14T07:00:00Z",
-                        "workflowType": "ScaleUp",
+                        "actionType": "ScaleUp",
                         "outcome": "Completed",
                         "effectivenessScore": 0.0,
                         "assessmentReason": "spec_drift",
@@ -774,7 +774,7 @@ class TestSpecDriftFormatting:
                     {
                         "remediationUID": "rr-chain-b",
                         "completedAt": "2026-02-14T08:00:00Z",
-                        "workflowType": "Restart",
+                        "actionType": "Restart",
                         "outcome": "Completed",
                         "effectivenessScore": 0.85,
                         "assessmentReason": "full",
@@ -804,7 +804,7 @@ class TestSpecDriftFormatting:
                     {
                         "remediationUID": "rr-solo-sd",
                         "completedAt": "2026-02-14T07:00:00Z",
-                        "workflowType": "ScaleUp",
+                        "actionType": "ScaleUp",
                         "outcome": "Completed",
                         "effectivenessScore": 0.0,
                         "assessmentReason": "spec_drift",
@@ -875,21 +875,21 @@ class TestDetectCompletedButRecurring:
         chain = [
             {
                 "remediationUID": "rr-rec-1",
-                "workflowType": "IncreaseMemoryLimits",
+                "actionType": "IncreaseMemoryLimits",
                 "signalType": "OOMKilled",
                 "outcome": "completed",
             },
             {
                 "remediationUID": "rr-rec-2",
-                "workflowType": "IncreaseMemoryLimits",
+                "actionType": "IncreaseMemoryLimits",
                 "signalType": "OOMKilled",
                 "outcome": "completed",
             },
         ]
         result = _detect_completed_but_recurring(chain, threshold=2)
         assert len(result) == 1
-        wf, count, signal = result[0]
-        assert wf == "IncreaseMemoryLimits"
+        action_type, count, signal = result[0]
+        assert action_type == "IncreaseMemoryLimits"
         assert count == 2
         assert signal == "OOMKilled"
 
@@ -898,7 +898,7 @@ class TestDetectCompletedButRecurring:
         chain = [
             {
                 "remediationUID": "rr-single",
-                "workflowType": "IncreaseMemoryLimits",
+                "actionType": "IncreaseMemoryLimits",
                 "signalType": "OOMKilled",
                 "outcome": "completed",
             },
@@ -911,13 +911,13 @@ class TestDetectCompletedButRecurring:
         chain = [
             {
                 "remediationUID": "rr-diff-1",
-                "workflowType": "IncreaseMemoryLimits",
+                "actionType": "IncreaseMemoryLimits",
                 "signalType": "OOMKilled",
                 "outcome": "completed",
             },
             {
                 "remediationUID": "rr-diff-2",
-                "workflowType": "RestartDeployment",
+                "actionType": "RestartDeployment",
                 "signalType": "OOMKilled",
                 "outcome": "completed",
             },
@@ -930,13 +930,13 @@ class TestDetectCompletedButRecurring:
         chain = [
             {
                 "remediationUID": "rr-fail-1",
-                "workflowType": "IncreaseMemoryLimits",
+                "actionType": "IncreaseMemoryLimits",
                 "signalType": "OOMKilled",
                 "outcome": "completed",
             },
             {
                 "remediationUID": "rr-fail-2",
-                "workflowType": "IncreaseMemoryLimits",
+                "actionType": "IncreaseMemoryLimits",
                 "signalType": "OOMKilled",
                 "outcome": "failed",
             },
@@ -949,13 +949,13 @@ class TestDetectCompletedButRecurring:
         chain = [
             {
                 "remediationUID": "rr-sd-1",
-                "workflowType": "IncreaseMemoryLimits",
+                "actionType": "IncreaseMemoryLimits",
                 "signalType": "OOMKilled",
                 "outcome": "completed",
             },
             {
                 "remediationUID": "rr-sd-2",
-                "workflowType": "IncreaseMemoryLimits",
+                "actionType": "IncreaseMemoryLimits",
                 "signalType": "OOMKilled",
                 "outcome": "completed",
                 "assessmentReason": "spec_drift",
@@ -969,7 +969,7 @@ class TestDetectCompletedButRecurring:
         chain = [
             {
                 "remediationUID": f"rr-thr-{i}",
-                "workflowType": "IncreaseMemoryLimits",
+                "actionType": "IncreaseMemoryLimits",
                 "signalType": "OOMKilled",
                 "outcome": "completed",
             }
@@ -1000,7 +1000,7 @@ class TestCompletedButRecurringWarningInPrompt:
                     {
                         "remediationUID": "rr-warn-1",
                         "completedAt": "2026-02-12T06:00:00Z",
-                        "workflowType": "IncreaseMemoryLimits",
+                        "actionType": "IncreaseMemoryLimits",
                         "signalType": "OOMKilled",
                         "outcome": "completed",
                         "effectivenessScore": 0.8,
@@ -1008,7 +1008,7 @@ class TestCompletedButRecurringWarningInPrompt:
                     {
                         "remediationUID": "rr-warn-2",
                         "completedAt": "2026-02-12T12:00:00Z",
-                        "workflowType": "IncreaseMemoryLimits",
+                        "actionType": "IncreaseMemoryLimits",
                         "signalType": "OOMKilled",
                         "outcome": "completed",
                         "effectivenessScore": 0.75,
@@ -1036,7 +1036,7 @@ class TestCompletedButRecurringWarningInPrompt:
                     {
                         "remediationUID": "rr-nw-1",
                         "completedAt": "2026-02-12T06:00:00Z",
-                        "workflowType": "IncreaseMemoryLimits",
+                        "actionType": "IncreaseMemoryLimits",
                         "signalType": "OOMKilled",
                         "outcome": "completed",
                         "effectivenessScore": 0.8,
@@ -1061,7 +1061,7 @@ class TestCompletedButRecurringWarningInPrompt:
                     {
                         "remediationUID": "rr-rg",
                         "completedAt": "2026-02-12T06:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.8,
                     },
@@ -1090,7 +1090,7 @@ class TestIssue525MandatoryEscalation:
                     {
                         "remediationUID": "rr-525-1",
                         "completedAt": "2026-03-04T06:00:00Z",
-                        "workflowType": "IncreaseMemoryLimits",
+                        "actionType": "IncreaseMemoryLimits",
                         "signalType": "OOMKilled",
                         "outcome": "completed",
                         "effectivenessScore": 0.0,
@@ -1099,7 +1099,7 @@ class TestIssue525MandatoryEscalation:
                     {
                         "remediationUID": "rr-525-2",
                         "completedAt": "2026-03-04T08:00:00Z",
-                        "workflowType": "IncreaseMemoryLimits",
+                        "actionType": "IncreaseMemoryLimits",
                         "signalType": "OOMKilled",
                         "outcome": "completed",
                         "effectivenessScore": 0.0,
@@ -1131,7 +1131,7 @@ class TestIssue525MandatoryEscalation:
                     {
                         "remediationUID": "rr-525-m1",
                         "completedAt": "2026-03-04T06:00:00Z",
-                        "workflowType": "IncreaseMemoryLimits",
+                        "actionType": "IncreaseMemoryLimits",
                         "signalType": "OOMKilled",
                         "outcome": "completed",
                         "effectivenessScore": 0.8,
@@ -1139,7 +1139,7 @@ class TestIssue525MandatoryEscalation:
                     {
                         "remediationUID": "rr-525-m2",
                         "completedAt": "2026-03-04T08:00:00Z",
-                        "workflowType": "IncreaseMemoryLimits",
+                        "actionType": "IncreaseMemoryLimits",
                         "signalType": "OOMKilled",
                         "outcome": "completed",
                         "effectivenessScore": 0.75,

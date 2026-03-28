@@ -97,7 +97,6 @@ const (
 //
 // 2. Processing pipeline:
 //   - Deduplication: Check if signal was seen before (K8s status-based per DD-GATEWAY-011)
-//   - Storm detection: Identify alert storms (rate-based, pattern-based)
 //   - Note: Classification and priority removed (2025-12-06) - now owned by Signal Processing
 //
 // 3. CRD creation:
@@ -131,12 +130,9 @@ type Server struct {
 
 	// Core processing components
 	adapterRegistry *adapters.AdapterRegistry
-	// DD-GATEWAY-011: CRDUpdater REMOVED - replaced by StatusUpdater
-	// Old: crdUpdater updated Spec.Deduplication (WRONG!)
-	// New: statusUpdater updates Status.Deduplication (CORRECT!)
-	// DD-GATEWAY-011 + DD-GATEWAY-012: Status-based deduplication and storm aggregation
+	// DD-GATEWAY-011 + DD-GATEWAY-012: Status-based deduplication
 	// Redis DEPRECATED - all state now in K8s RR status
-	statusUpdater *processing.StatusUpdater                  // Updates RR status.deduplication and status.stormAggregation
+	statusUpdater *processing.StatusUpdater                  // Updates RR status.deduplication
 	phaseChecker  *processing.PhaseBasedDeduplicationChecker // Phase-based deduplication logic
 	crdCreator    *processing.CRDCreator
 	lockManager   *processing.DistributedLockManager // BR-GATEWAY-190: K8s Lease-based distributed locking
@@ -192,7 +188,7 @@ type Server struct {
 // This initializes:
 // - Redis client with connection pooling
 // - Kubernetes client (controller-runtime)
-// - Processing pipeline components (deduplication, storm, CRD creation)
+// - Processing pipeline components (deduplication, CRD creation)
 // - Middleware (authentication, rate limiting)
 // - HTTP routes (adapters, health, metrics)
 //
@@ -486,11 +482,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// Initialize processing pipeline components
 	adapterRegistry := adapters.NewAdapterRegistry(logger)
 
-	// DD-GATEWAY-011: CRDUpdater REMOVED - replaced by StatusUpdater
-	// Old CRDUpdater updated Spec.Deduplication (incorrect per DD-GATEWAY-011)
-	// StatusUpdater now handles status updates (status.deduplication)
-
-	// DD-GATEWAY-015 / BR-GATEWAY-093: Circuit Breaker Integration (TDD GREEN COMPLETE)
+	// DD-GATEWAY-016 / BR-GATEWAY-093: Circuit Breaker Integration (TDD GREEN COMPLETE)
 	// ========================================
 	// Circuit breaker protects Gateway from K8s API cascading failures
 	//
@@ -514,7 +506,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	//   - BR-GATEWAY-093-B: Prevent cascade failures during K8s API overload
 	//   - BR-GATEWAY-093-C: Observable metrics for SRE response
 	//
-	// Design Decision: DD-GATEWAY-015 (K8s API Circuit Breaker Implementation)
+	// Design Decision: DD-GATEWAY-016 (K8s API Circuit Breaker Implementation)
 	// ========================================
 	cbClient := k8s.NewClientWithCircuitBreaker(k8sClient, metricsInstance)
 
@@ -983,8 +975,8 @@ func (s *Server) sendSuccessResponse(
 	statusCode := http.StatusCreated
 	if response.Status == StatusRejected {
 		statusCode = http.StatusOK // HTTP 200 for scope rejection (not an error, just informational)
-	} else if response.Status == StatusAccepted || response.Status == StatusDeduplicated || response.Duplicate {
-		statusCode = http.StatusAccepted // HTTP 202 for storm aggregation and deduplication
+	} else if response.Status == StatusDeduplicated || response.Duplicate {
+		statusCode = http.StatusAccepted // HTTP 202 for deduplication
 	}
 
 	// Record metrics
@@ -1147,43 +1139,24 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 	return NewRejectedResponse(signal.Namespace, signal.Resource.Kind, signal.Resource.Name), nil
 }
 
-// ProcessSignal implements adapters.SignalProcessor interface
+// ProcessSignal implements adapters.SignalProcessor interface.
 //
-// This is the main signal processing pipeline, called by adapter handlers.
-//
-// Pipeline stages:
-// 1. Deduplication check (Redis lookup)
-// 2. If duplicate: Update Redis metadata, return HTTP 202
-// 3. Storm detection (rate-based + pattern-based)
-// 4. CRD creation (Kubernetes API)
-// 5. Store deduplication metadata (Redis)
-// 6. Return HTTP 201 with CRD details
-//
-// Note: Environment classification and Priority assignment removed (2025-12-06)
-// These are now owned by Signal Processing service per DD-CATEGORIZATION-001
-//
-// Performance:
-// - Typical latency (new signal): p95 ~50ms, p99 ~80ms
-//   - Deduplication check: ~3ms
-//   - Storm detection: ~3ms
-//   - CRD creation: ~30ms (Kubernetes API)
-//   - Redis store: ~3ms
-//
-// - Typical latency (duplicate signal): p95 ~10ms, p99 ~20ms
-//   - Deduplication check: ~3ms
-//   - Redis update: ~3ms
-//   - No CRD creation (fast path)
-//
-// ProcessSignal implements adapters.SignalProcessor interface
-// TDD REFACTOR: Simplified by extracting helper methods
-//
-// This is the main signal processing pipeline orchestrator.
+// Main signal processing pipeline orchestrator, called by adapter handlers.
+// TDD REFACTOR: Simplified by extracting helper methods.
 //
 // Pipeline stages:
 // 1. Scope validation → validateScope() rejects unmanaged resources
-// 2. Deduplication check → processDuplicateSignal() if duplicate
-// 3. Storm detection → processStormAggregation() if storm detected
-// 4. CRD creation → createRemediationRequestCRD() for new signals
+// 2. Optional distributed lock (DD-GATEWAY-013) for multi-replica safety
+// 3. Deduplication check → K8s status lookup (DD-GATEWAY-011); if duplicate,
+//    update status.deduplication on the existing RemediationRequest and return HTTP 202
+// 4. CRD creation → createRemediationRequestCRD() for new signals; return HTTP 201
+//
+// Note: Environment classification and Priority assignment removed (2025-12-06).
+// These are now owned by Signal Processing service per DD-CATEGORIZATION-001.
+//
+// Performance (order-of-magnitude; varies by cluster and API load):
+// - New signal: p95 often ~50-80ms — K8s dedup check, CRD creation (Kubernetes API).
+// - Duplicate: p95 often lower — K8s dedup check and status patch; no new CRD.
 func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSignal) (*ProcessingResponse, error) {
 	start := time.Now()
 	logger := middleware.GetLogger(ctx)
@@ -1315,7 +1288,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 		return NewDuplicateResponseFromRR(signal.Fingerprint, existingRR), nil
 	}
 
-	// 2. CRD creation pipeline (DD-GATEWAY-012: No storm buffering - create RR immediately)
+	// 2. CRD creation pipeline
 	return s.createRemediationRequestCRD(ctx, signal, start)
 }
 
@@ -1436,18 +1409,13 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 // AlertManager/webhook callers don't need this information - they only need to know
 // if the alert was accepted (HTTP status code).
 type ProcessingResponse struct {
-	Status                      string `json:"status"` // "created", "duplicate", "accepted", or "rejected"
+	Status                      string `json:"status"` // "created", "duplicate", or "rejected"
 	Message                     string `json:"message"`
 	Fingerprint                 string `json:"fingerprint"`
 	Duplicate                   bool   `json:"duplicate"`
 	RemediationRequestName      string `json:"remediationRequestName,omitempty"`
 	RemediationRequestNamespace string `json:"remediationRequestNamespace,omitempty"`
-	// Note: RemediationPath removed (2025-12-06) - SP derives risk_tolerance via Rego per DD-WORKFLOW-001
-	Metadata *processing.DeduplicationMetadata `json:"metadata,omitempty"` // Deduplication info only
-	// Storm aggregation fields (BR-GATEWAY-016)
-	IsStorm   bool   `json:"isStorm,omitempty"`   // true if alert is part of a storm
-	StormType string `json:"stormType,omitempty"` // "rate" or "pattern"
-	WindowID  string `json:"windowID,omitempty"`  // aggregation window identifier
+	Metadata                    *processing.DeduplicationMetadata `json:"metadata,omitempty"`
 	// BR-SCOPE-002: Rejection details for unmanaged resource signals
 	Rejection *RejectionResponse `json:"rejection,omitempty"`
 }
@@ -1457,7 +1425,6 @@ type ProcessingResponse struct {
 const (
 	StatusCreated      = "created"   // RemediationRequest CRD created
 	StatusDeduplicated = "duplicate" // Signal deduplicated to existing RR (matches OpenAPI enum)
-	StatusAccepted     = "accepted"  // Alert accepted for storm aggregation (CRD will be created later)
 )
 
 // NewDuplicateResponseFromRR creates a ProcessingResponse for duplicate signals using K8s RR data
@@ -1491,28 +1458,6 @@ func NewDuplicateResponseFromRR(fingerprint string, rr *remediationv1alpha1.Reme
 			LastOccurrence:        lastOccurrence,
 			RemediationRequestRef: fmt.Sprintf("%s/%s", rr.Namespace, rr.Name),
 		},
-	}
-}
-
-// NewStormAggregationResponse creates a ProcessingResponse for storm aggregation
-// TDD REFACTOR: Extracted factory function for storm aggregation response pattern
-// Business Outcome: Consistent storm aggregation handling (BR-013)
-func NewStormAggregationResponse(fingerprint, windowID, stormType string, resourceCount int, isNewWindow bool) *ProcessingResponse {
-	var message string
-	if isNewWindow {
-		message = fmt.Sprintf("Storm aggregation window started (window ID: %s, CRD will be created after 1 minute)", windowID)
-	} else {
-		message = fmt.Sprintf("Alert added to storm aggregation window (window ID: %s, %d resources aggregated)", windowID, resourceCount)
-	}
-
-	return &ProcessingResponse{
-		Status:      StatusAccepted,
-		Message:     message,
-		Fingerprint: fingerprint,
-		Duplicate:   false,
-		IsStorm:     true,
-		StormType:   stormType,
-		WindowID:    windowID,
 	}
 }
 

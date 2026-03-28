@@ -33,14 +33,14 @@ class RemediationHistorySummary(BaseModel):
     """ # noqa: E501
     remediation_uid: StrictStr = Field(description="RemediationRequest UID (correlation key)", alias="remediationUID")
     signal_type: Optional[StrictStr] = Field(default=None, description="Type of signal", alias="signalType")
-    workflow_type: Optional[StrictStr] = Field(default=None, description="Workflow type applied (null if escalated)", alias="workflowType")
+    action_type: Optional[StrictStr] = Field(default=None, description="Action type applied (null if escalated)", alias="actionType")
     outcome: Optional[StrictStr] = Field(default=None, description="Remediation outcome")
     effectiveness_score: Optional[Union[Annotated[float, Field(le=1, strict=True, ge=0)], Annotated[int, Field(le=1, strict=True, ge=0)]]] = Field(default=None, description="EM effectiveness score (0.0-1.0)", alias="effectivenessScore")
     signal_resolved: Optional[StrictBool] = Field(default=None, description="Whether the originating signal was resolved", alias="signalResolved")
     hash_match: Optional[StrictStr] = Field(default=None, description="Result of three-way hash comparison against currentSpecHash", alias="hashMatch")
     assessment_reason: Optional[StrictStr] = Field(default=None, description="Reason/status of the effectiveness assessment (same enum as RemediationHistoryEntry). When \"spec_drift\", effectiveness score is unreliable (DD-EM-002 v1.1). ", alias="assessmentReason")
     completed_at: datetime = Field(description="When the remediation was completed", alias="completedAt")
-    __properties: ClassVar[List[str]] = ["remediationUID", "signalType", "workflowType", "outcome", "effectivenessScore", "signalResolved", "hashMatch", "assessmentReason", "completedAt"]
+    __properties: ClassVar[List[str]] = ["remediationUID", "signalType", "actionType", "outcome", "effectivenessScore", "signalResolved", "hashMatch", "assessmentReason", "completedAt"]
 
     @field_validator('hash_match')
     def hash_match_validate_enum(cls, value):
@@ -99,10 +99,10 @@ class RemediationHistorySummary(BaseModel):
             },
             exclude_none=True,
         )
-        # set to None if workflow_type (nullable) is None
+        # set to None if action_type (nullable) is None
         # and model_fields_set contains the field
-        if self.workflow_type is None and "workflow_type" in self.model_fields_set:
-            _dict['workflowType'] = None
+        if self.action_type is None and "action_type" in self.model_fields_set:
+            _dict['actionType'] = None
 
         # set to None if effectiveness_score (nullable) is None
         # and model_fields_set contains the field
@@ -133,7 +133,7 @@ class RemediationHistorySummary(BaseModel):
         _obj = cls.model_validate({
             "remediationUID": obj.get("remediationUID"),
             "signalType": obj.get("signalType"),
-            "workflowType": obj.get("workflowType"),
+            "actionType": obj.get("actionType"),
             "outcome": obj.get("outcome"),
             "effectivenessScore": obj.get("effectivenessScore"),
             "signalResolved": obj.get("signalResolved"),

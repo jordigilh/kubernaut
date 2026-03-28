@@ -131,8 +131,9 @@ func (c *WorkflowExecutionCreator) Create(
 			Rationale:  ai.Status.SelectedWorkflow.Rationale,
 			// Issue #518: ExecutionEngine removed from spec — resolved at runtime by
 			// the WE controller from the DS catalog via WorkflowQuerier.
-			// ExecutionConfig: Optional timeout from RemediationRequest
-			ExecutionConfig: c.buildExecutionConfig(rr),
+			// Issue #501: ServiceAccountName is now top-level, engine-agnostic
+			ServiceAccountName: ai.Status.SelectedWorkflow.ServiceAccountName,
+			ExecutionConfig:    c.buildExecutionConfig(rr),
 		},
 	}
 
@@ -205,13 +206,12 @@ func resolveTargetResource(rr *remediationv1.RemediationRequest, ai *aianalysisv
 }
 
 // buildExecutionConfig builds ExecutionConfig from RemediationRequest timeouts.
+// Issue #501: ServiceAccountName moved to Spec.ServiceAccountName.
 func (c *WorkflowExecutionCreator) buildExecutionConfig(rr *remediationv1.RemediationRequest) *workflowexecutionv1.ExecutionConfig {
-	// Use custom timeout if specified in RemediationRequest (BR-ORCH-028)
 	if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Executing != nil && rr.Status.TimeoutConfig.Executing.Duration > 0 {
 		return &workflowexecutionv1.ExecutionConfig{
 			Timeout: rr.Status.TimeoutConfig.Executing,
 		}
 	}
-	// Return nil to use WorkflowExecution controller defaults
 	return nil
 }

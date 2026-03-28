@@ -25,6 +25,7 @@ import (
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	admissionv1 "k8s.io/api/admission/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -304,7 +305,7 @@ func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registered
 
 	now := metav1.Now()
 	rw.Status.WorkflowID = result.WorkflowID
-	rw.Status.CatalogStatus = result.Status
+	rw.Status.CatalogStatus = sharedtypes.CatalogStatus(result.Status)
 	rw.Status.RegisteredBy = registeredBy
 	rw.Status.RegisteredAt = &now
 	rw.Status.PreviouslyExisted = result.PreviouslyExisted

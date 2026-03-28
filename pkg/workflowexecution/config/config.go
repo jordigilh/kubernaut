@@ -17,7 +17,7 @@ limitations under the License.
 // Package config provides configuration types for the WorkflowExecution controller.
 //
 // Configuration Structure (ADR-030):
-//   - ExecutionConfig: PipelineRun execution settings (namespace, service account, cooldown)
+//   - ExecutionConfig: PipelineRun execution settings (namespace, cooldown)
 //   - (BackoffConfig removed in V1.0 per DD-RO-002 Phase 3)
 //   - DataStorageConfig: Data Storage connectivity (BR-WE-005, ADR-030)
 //   - ControllerConfig: Controller runtime settings (metrics, health probes, leader election)
@@ -66,18 +66,15 @@ type SecretKeyRef struct {
 	Key       string `yaml:"key" validate:"required"`
 }
 
-// ExecutionConfig holds settings for Tekton PipelineRun execution.
+// ExecutionConfig holds settings for PipelineRun / Job execution.
 //
 // Business Requirements:
 // - BR-WE-003: Execution namespace isolation (DD-WE-002)
-// - BR-WE-007: Service account configuration
 // - DD-WE-001: Cooldown period for resource locking
+// Note: ServiceAccount is per-workflow (DD-WE-005 v2.0), not in operator config.
 type ExecutionConfig struct {
 	// Namespace where PipelineRuns are created (DD-WE-002)
 	Namespace string `yaml:"namespace" validate:"required"`
-
-	// ServiceAccount for PipelineRuns
-	ServiceAccount string `yaml:"serviceAccount" validate:"required"`
 
 	// CooldownPeriod prevents redundant sequential workflows (DD-WE-001)
 	CooldownPeriod time.Duration `yaml:"cooldownPeriod" validate:"required,gt=0"`
@@ -111,7 +108,6 @@ func DefaultConfig() *Config {
 	return &Config{
 		Execution: ExecutionConfig{
 			Namespace:      "kubernaut-workflows",
-			ServiceAccount: "kubernaut-workflow-runner",
 			CooldownPeriod: 5 * time.Minute,
 		},
 		DataStorage: sharedconfig.DefaultDataStorageConfig(),

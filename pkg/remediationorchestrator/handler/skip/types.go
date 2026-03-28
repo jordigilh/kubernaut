@@ -92,5 +92,5 @@ type Context struct {
 
 	// TransitionToFailedFunc delegates to reconciler's audit-emitting failure transition
 	// Used by skip handlers to emit lifecycle.failed audit events
-	TransitionToFailedFunc func(context.Context, *remediationv1.RemediationRequest, string, string) (ctrl.Result, error)
+	TransitionToFailedFunc func(context.Context, *remediationv1.RemediationRequest, remediationv1.FailurePhase, string) (ctrl.Result, error)
 }

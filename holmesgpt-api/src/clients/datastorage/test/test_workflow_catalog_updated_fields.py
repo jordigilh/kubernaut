@@ -36,7 +36,7 @@ class TestWorkflowCatalogUpdatedFields(unittest.TestCase):
         model = WorkflowCatalogUpdatedFields()
         if include_optional:
             return WorkflowCatalogUpdatedFields(
-                status = 'disabled',
+                status = 'Disabled',
                 disabled_by = 'admin@example.com',
                 disabled_reason = 'Security vulnerability detected',
                 version = '1.0.1',

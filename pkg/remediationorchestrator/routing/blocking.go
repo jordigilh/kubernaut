@@ -39,7 +39,7 @@ import (
 // from post-AA checks (all checks including resource-level with AI-resolved target).
 type Engine interface {
 	CheckPreAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest) (*BlockingCondition, error)
-	CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string, workflowType string) (*BlockingCondition, error)
+	CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string, actionType string) (*BlockingCondition, error)
 	CheckUnmanagedResource(ctx context.Context, rr *remediationv1.RemediationRequest) *BlockingCondition
 	Config() Config
 	CalculateExponentialBackoff(consecutiveFailures int32) time.Duration
@@ -251,7 +251,7 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 	workflowID string,
 	targetResource string,
 	preRemediationSpecHash string,
-	workflowType string,
+	actionType string,
 ) (*BlockingCondition, error) {
 	if blocked := r.CheckUnmanagedResource(ctx, rr); blocked != nil {
 		return blocked, nil
@@ -292,7 +292,7 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 	// Issue #214: Ineffective remediation chain detection (LAST -- fail-open)
 	if preRemediationSpecHash != "" {
 		target := parseTargetResource(targetResource)
-		if chainBlocked := r.CheckIneffectiveRemediationChain(ctx, rr, target, preRemediationSpecHash, workflowType); chainBlocked != nil {
+		if chainBlocked := r.CheckIneffectiveRemediationChain(ctx, rr, target, preRemediationSpecHash, actionType); chainBlocked != nil {
 			return chainBlocked, nil
 		}
 	}
@@ -981,7 +981,7 @@ func (r *RoutingEngine) CheckIneffectiveRemediationChain(
 	rr *remediationv1.RemediationRequest,
 	target TargetResource,
 	preRemediationSpecHash string,
-	workflowType string,
+	actionType string,
 ) *BlockingCondition {
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
@@ -1016,12 +1016,12 @@ func (r *RoutingEngine) CheckIneffectiveRemediationChain(
 	if forwardThreshold <= 0 {
 		forwardThreshold = 2
 	}
-	forwardCount := r.countForwardChain(entries, preRemediationSpecHash, workflowType)
+	forwardCount := r.countForwardChain(entries, preRemediationSpecHash, actionType)
 	if forwardCount >= forwardThreshold {
 		logger.Info("Ineffective remediation chain detected (Layer 1b forward hash chain)",
 			"forwardCount", forwardCount,
 			"threshold", forwardThreshold,
-			"workflowType", workflowType)
+			"actionType", actionType)
 		return r.buildIneffectiveBlockCondition(forwardCount, "forward hash chain")
 	}
 
@@ -1071,14 +1071,14 @@ func (r *RoutingEngine) countIneffectiveChain(entries []ogenclient.RemediationHi
 //
 // Five conditions must ALL be met for an entry to participate in the chain:
 //  1. Within ForwardChainWindow (default 1h)
-//  2. Same WorkflowType (action type) as the incoming RR
+//  2. Same ActionType as the incoming RR
 //  3. SignalResolved == false (EA confirmed the remediation was ineffective)
 //  4. Hash link continuity (entry[i].PostHash == entry[i+1].PreHash)
 //  5. Last entry's PostHash == incoming RR's PreHash (proves causality)
 //
 // The function filters entries first, sorts a copy ascending, then walks backward
 // from the tail to find the longest connected chain.
-func (r *RoutingEngine) countForwardChain(entries []ogenclient.RemediationHistoryEntry, currentPreHash string, workflowType string) int {
+func (r *RoutingEngine) countForwardChain(entries []ogenclient.RemediationHistoryEntry, currentPreHash string, actionType string) int {
 	if len(entries) == 0 {
 		return 0
 	}
@@ -1096,7 +1096,7 @@ func (r *RoutingEngine) countForwardChain(entries []ogenclient.RemediationHistor
 		if e.CompletedAt.Before(cutoff) {
 			continue
 		}
-		if !e.WorkflowType.IsSet() || e.WorkflowType.Value != workflowType {
+		if !e.ActionType.IsSet() || e.ActionType.Value != actionType {
 			continue
 		}
 		if !e.SignalResolved.IsSet() || e.SignalResolved.Value {

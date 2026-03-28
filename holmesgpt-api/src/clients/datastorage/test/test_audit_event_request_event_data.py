@@ -88,7 +88,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 pre_remediation_spec_hash = 'sha256:a1b2c3d4...',
                 target_resource = 'payment/deployment/payment-api',
                 workflow_version = 'v1.2.0',
-                workflow_type = 'ScaleReplicas',
+                action_type = '',
                 ea_name = 'ea-restart-payment-api-abc123',
                 hash_compute_delay = '4m0s',
                 alert_check_delay = '5m0s',
@@ -156,7 +156,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 workflow_name = 'crashloop-rollback-v1',
                 clear_reason = 'Manual approval by ops team',
                 cleared_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
-                previous_state = 'disabled',
+                previous_state = 'Disabled',
                 new_state = 'Running',
                 request_name = 'approve-payment-api-2025-12-17-abc123',
                 decided_at = '2026-01-15T10:30Z',
@@ -187,9 +187,10 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                             stateful = True, 
                             helm_managed = True, 
                             network_isolated = True, 
-                            service_mesh = 'istio', ), 
+                            service_mesh = 'istio', 
+                            resource_quota_constrained = True, ), 
                         status = [
-                            'active'
+                            'Active'
                             ], ), ),
                 results = datastorage.models.results_metadata.ResultsMetadata(
                     total_found = 10, 
@@ -210,7 +211,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                     duration_ms = 150, ),
                 version = '1.0.0',
                 schema_version = '1.0',
-                status = 'active',
+                status = 'Active',
                 is_latest_version = True,
                 execution_engine = 'argo',
                 name = 'Restart OOMKilled Pod',
@@ -266,6 +267,8 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                             workflow_id = '', 
                             rationale = '', )
                         ], ),
+                total_prompt_tokens = 0,
+                total_completion_tokens = 0,
                 duration_seconds = 120.5,
                 root_owner_kind = 'Deployment',
                 root_owner_name = 'api-server',
@@ -360,7 +363,6 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                     alert_resolved = True, 
                     active_count = 0, 
                     resolution_time_seconds = 1.337, ),
-                action_type = '',
                 registered_by = '',
                 was_reenabled = True,
                 old_description = datastorage.models.action_type_description_payload.ActionTypeDescriptionPayload(
@@ -404,6 +406,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 reason = 'full',
                 target_resource = 'payment/deployment/payment-api',
                 workflow_version = 'v1.2.0',
+                action_type = '',
                 phase = 'llm_analysis',
                 signal = 'high-memory-payment-api-abc123',
                 environment = 'production',
@@ -423,7 +426,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 workflow_name = 'crashloop-rollback-v1',
                 clear_reason = 'Manual approval by ops team',
                 cleared_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
-                previous_state = 'disabled',
+                previous_state = 'Disabled',
                 new_state = 'Running',
                 request_name = 'approve-payment-api-2025-12-17-abc123',
                 decided_at = '2026-01-15T10:30Z',
@@ -450,9 +453,10 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                             stateful = True, 
                             helm_managed = True, 
                             network_isolated = True, 
-                            service_mesh = 'istio', ), 
+                            service_mesh = 'istio', 
+                            resource_quota_constrained = True, ), 
                         status = [
-                            'active'
+                            'Active'
                             ], ), ),
                 results = datastorage.models.results_metadata.ResultsMetadata(
                     total_found = 10, 
@@ -472,7 +476,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 search_metadata = datastorage.models.search_execution_metadata.SearchExecutionMetadata(
                     duration_ms = 150, ),
                 version = '1.0.0',
-                status = 'active',
+                status = 'Active',
                 is_latest_version = True,
                 execution_engine = 'argo',
                 name = 'Restart OOMKilled Pod',
@@ -546,7 +550,6 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 modified_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
                 correlation_id = 'restart-payment-api-2026-02-12-abc123',
                 component = 'health',
-                action_type = '',
                 registered_by = '',
                 was_reenabled = True,
                 old_description = datastorage.models.action_type_description_payload.ActionTypeDescriptionPayload(

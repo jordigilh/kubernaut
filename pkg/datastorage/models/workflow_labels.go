@@ -118,7 +118,7 @@ type DetectedLabels struct {
 	// If empty/nil, all detections succeeded
 	// Validated: only accepts values from ValidDetectedLabelFields
 	// Authority: DD-WORKFLOW-001 v2.1 (Detection Failure Handling)
-	FailedDetections []string `json:"failedDetections,omitempty" validate:"omitempty,dive,oneof=gitOpsManaged gitOpsTool pdbProtected hpaEnabled stateful helmManaged networkIsolated serviceMesh"`
+	FailedDetections []string `json:"failedDetections,omitempty" validate:"omitempty,dive,oneof=gitOpsManaged gitOpsTool pdbProtected hpaEnabled stateful helmManaged networkIsolated serviceMesh resourceQuotaConstrained"`
 
 	// ========================================
 	// GITOPS MANAGEMENT (DD-WORKFLOW-001 v2.3)
@@ -192,6 +192,15 @@ type DetectedLabels struct {
 	// API Call: kubectl get pod -o jsonpath='{.metadata.annotations}'
 	// Clarification: Uses annotations, not direct mesh API checks
 	ServiceMesh string `json:"serviceMesh,omitempty" validate:"omitempty,oneof=istio linkerd *"`
+
+	// ========================================
+	// RESOURCE CONSTRAINTS (#366, DD-HAPI-018 v1.4)
+	// ========================================
+
+	// ResourceQuotaConstrained indicates if any ResourceQuota exists in namespace
+	// Detection: List ResourceQuotas in namespace
+	// API Call: kubectl get resourcequota -n <namespace> -o json
+	ResourceQuotaConstrained bool `json:"resourceQuotaConstrained,omitempty"`
 }
 
 // ========================================
@@ -340,6 +349,7 @@ var ValidDetectedLabelFields = []string{
 	"helmManaged",
 	"networkIsolated",
 	"serviceMesh",
+	"resourceQuotaConstrained",
 }
 
 // ========================================

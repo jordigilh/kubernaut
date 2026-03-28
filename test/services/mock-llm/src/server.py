@@ -100,6 +100,7 @@ class MockScenario:
     rca_override_prompt_resource: bool = False  # DD-EM-004: Use scenario kind/name instead of prompt-extracted
     parameters: Dict[str, str] = field(default_factory=dict)
     execution_engine: str = "tekton"  # BR-WE-014: Execution backend ("tekton" or "job")
+    service_account_name: str = ""  # DD-WE-005 v2.0: Pre-created SA for Job/PipelineRun RBAC
     contributing_factors: List[str] = field(default_factory=list)  # #301: RCA contributing factors
     needs_human_review_override: Optional[bool] = None  # #301: Force needs_human_review in response
 
@@ -126,6 +127,8 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         parameters={"MEMORY_LIMIT_NEW": "512Mi"},
         # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
         execution_engine="job",
+        # DD-WE-005 v2.0: SA with cross-namespace RBAC for kubectl get/patch in remediate.sh
+        service_account_name="workflow-job-executor",
     ),
     "crashloop": MockScenario(
         name="crashloop",
@@ -292,6 +295,8 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         parameters={"MEMORY_LIMIT_NEW": "512Mi"},
         # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
         execution_engine="job",
+        # DD-WE-005 v2.0: SA with cross-namespace RBAC for kubectl get/patch in remediate.sh
+        service_account_name="workflow-job-executor",
     ),
     "predictive_no_action": MockScenario(
         name="predictive_no_action",
@@ -1341,8 +1346,7 @@ The problem has self-resolved. No remediation workflow is needed.
                     "rationale": "Requires human expertise to determine correct remediation",
                 },
             ]
-            analysis_json = {
-                "selected_workflow": {
+            sw_dict: Dict[str, Any] = {
                     "workflow_id": scenario.workflow_id,
                     "title": scenario.workflow_title,
                     "version": "1.0.0",
@@ -1350,7 +1354,11 @@ The problem has self-resolved. No remediation workflow is needed.
                     "rationale": "Multiple possible causes identified, confidence is low",
                     "execution_engine": scenario.execution_engine,
                     "parameters": scenario.parameters,
-                },
+                }
+            if scenario.service_account_name:
+                sw_dict["service_account_name"] = scenario.service_account_name
+            analysis_json = {
+                "selected_workflow": sw_dict,
                 "alternative_workflows": alternatives_list,
                 "needs_human_review": False,
                 "human_review_reason": None,
@@ -1417,8 +1425,7 @@ The problem has self-resolved. No remediation workflow is needed.
 {json.dumps(analysis_json.get("validation_attempts_history", []))}
 """
         else:
-            analysis_json = {
-                "selected_workflow": {
+            sw_dict_p3: Dict[str, Any] = {
                     "workflow_id": scenario.workflow_id,
                     "title": scenario.workflow_title,
                     "version": "1.0.0",
@@ -1426,7 +1433,11 @@ The problem has self-resolved. No remediation workflow is needed.
                     "rationale": f"Selected based on {scenario.signal_name} signal analysis",
                     "execution_engine": scenario.execution_engine,
                     "parameters": scenario.parameters,
-                },
+                }
+            if scenario.service_account_name:
+                sw_dict_p3["service_account_name"] = scenario.service_account_name
+            analysis_json = {
+                "selected_workflow": sw_dict_p3,
                 "alternative_workflows": [
                     {
                         "workflow_id": "alt-manual-investigation",
@@ -1567,15 +1578,18 @@ The problem has self-resolved. No remediation workflow is needed.
         # E2E-HAPI-002: Handle low confidence case with alternative workflows
         elif scenario.name == "low_confidence":
             # Primary workflow with low confidence
-            analysis_json["selected_workflow"] = {
+            sw_lc: Dict[str, Any] = {
                 "workflow_id": scenario.workflow_id,
                 "title": scenario.workflow_title,
                 "version": "1.0.0",
                 "confidence": scenario.confidence,  # 0.35 - triggers human review
                 "rationale": "Multiple possible causes identified, confidence is low",
                 "execution_engine": scenario.execution_engine,  # BR-WE-014
-                "parameters": scenario.parameters
+                "parameters": scenario.parameters,
             }
+            if scenario.service_account_name:
+                sw_lc["service_account_name"] = scenario.service_account_name
+            analysis_json["selected_workflow"] = sw_lc
             # E2E-HAPI-002: Add alternative workflows for human review
             alternatives_list = [
                 {
@@ -1679,15 +1693,18 @@ null
 {json.dumps(analysis_json.get("validation_attempts_history", []))}
 """
         else:
-            analysis_json["selected_workflow"] = {
+            sw_p2: Dict[str, Any] = {
                 "workflow_id": scenario.workflow_id,
                 "title": scenario.workflow_title,
                 "version": "1.0.0",
                 "confidence": scenario.confidence,
                 "rationale": f"Selected based on {scenario.signal_name} signal analysis",
                 "execution_engine": scenario.execution_engine,  # BR-WE-014
-                "parameters": scenario.parameters
+                "parameters": scenario.parameters,
             }
+            if scenario.service_account_name:
+                sw_p2["service_account_name"] = scenario.service_account_name
+            analysis_json["selected_workflow"] = sw_p2
             # #307: Include alternative_workflows so ApprovalContext.AlternativesConsidered
             # is populated when policy-driven approval gates are triggered (BR-AI-076).
             alternatives_list = [
@@ -1818,7 +1835,7 @@ null
     "version": "1.0.0",
     "confidence": {scenario.confidence},
     "rationale": "Selected based on signal analysis",
-    "execution_engine": "{scenario.execution_engine}"
+    "execution_engine": "{scenario.execution_engine}"{f',{chr(10)}    "service_account_name": "{scenario.service_account_name}"' if scenario.service_account_name else ''}
   }}
 }}
 ```

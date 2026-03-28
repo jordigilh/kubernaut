@@ -70,6 +70,7 @@ class ValidationResult:
     is_valid: bool
     errors: List[str] = field(default_factory=list)
     validated_execution_bundle: Optional[str] = None
+    validated_service_account_name: Optional[str] = None
     schema_hint: Optional[str] = None
     parameter_schema: Optional[List[Dict[str, Any]]] = None
 
@@ -198,6 +199,8 @@ class WorkflowResponseValidator:
         param_errors = self._validate_parameters(parameters, workflow)
         errors.extend(param_errors)
 
+        # DD-WE-005 v2.0: Extract service_account_name from catalog workflow
+        sa_name = getattr(workflow, "service_account_name", None)
         # #524: Extract schema for conditional injection downstream
         param_schema = self._get_parameter_schema(workflow) or None
 
@@ -206,6 +209,7 @@ class WorkflowResponseValidator:
                 is_valid=False,
                 errors=errors,
                 validated_execution_bundle=workflow.execution_bundle,
+                validated_service_account_name=sa_name,
                 schema_hint=self._format_schema_hint(workflow),
                 parameter_schema=param_schema,
             )
@@ -214,6 +218,7 @@ class WorkflowResponseValidator:
             is_valid=True,
             errors=[],
             validated_execution_bundle=workflow.execution_bundle,
+            validated_service_account_name=sa_name,
             parameter_schema=param_schema,
         )
 

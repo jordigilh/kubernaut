@@ -65,7 +65,9 @@ class TestAIAgentResponsePayload(unittest.TestCase):
                         datastorage.models.incident_response_data_alternative_workflows_inner.IncidentResponseData_alternativeWorkflows_inner(
                             workflow_id = '', 
                             rationale = '', )
-                        ], )
+                        ], ),
+                total_prompt_tokens = 0,
+                total_completion_tokens = 0
             )
         else:
             return AIAgentResponsePayload(

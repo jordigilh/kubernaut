@@ -113,6 +113,21 @@ func (q *dataStorageHTTPQuerier) HasWorkflowStarted(ctx context.Context, correla
 	return len(events) > 0, nil
 }
 
+// HasWorkflowCompleted checks if a workflowexecution.workflow.completed event
+// exists for the given correlation ID (ADR-EM-001 Section 5).
+// Used to differentiate partial vs full assessment paths (#573 G4).
+//
+// Note: Unlike execution.started (#575), the WE controller emits the higher-level
+// "workflowexecution.workflow.completed" event type (see pkg/workflowexecution/audit/manager.go).
+func (q *dataStorageHTTPQuerier) HasWorkflowCompleted(ctx context.Context, correlationID string) (bool, error) {
+	events, err := q.queryAuditEvents(ctx, correlationID, "workflowexecution.workflow.completed")
+	if err != nil {
+		return false, err
+	}
+
+	return len(events) > 0, nil
+}
+
 // queryAuditEvents calls GET /api/v1/audit/events with the given filters and
 // decodes the paginated envelope response.
 func (q *dataStorageHTTPQuerier) queryAuditEvents(ctx context.Context, correlationID, eventType string) ([]auditEvent, error) {

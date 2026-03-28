@@ -10,6 +10,8 @@ Name | Type | Description | Notes
 **event_id** | **str** | Unique event identifier | 
 **incident_id** | **str** | Incident correlation ID from request | 
 **response_data** | [**IncidentResponseData**](IncidentResponseData.md) |  | 
+**total_prompt_tokens** | **int** | Total prompt tokens consumed across all LLM calls in this investigation session (#435) | [optional] 
+**total_completion_tokens** | **int** | Total completion tokens consumed across all LLM calls in this investigation session (#435) | [optional] 
 
 ## Example
 

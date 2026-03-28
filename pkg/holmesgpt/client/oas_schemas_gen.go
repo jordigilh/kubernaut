@@ -870,16 +870,6 @@ type IncidentRequest struct {
 	OccurrenceCount OptNilInt `json:"occurrence_count"`
 	// Dedup window.
 	DeduplicationWindowMinutes OptNilInt `json:"deduplication_window_minutes"`
-	// Storm detected.
-	IsStorm OptNilBool `json:"is_storm"`
-	// Storm signal count.
-	StormSignalCount OptNilInt `json:"storm_signal_count"`
-	// Storm window.
-	StormWindowMinutes OptNilInt `json:"storm_window_minutes"`
-	// Storm type.
-	StormType OptNilString `json:"storm_type"`
-	// Affected resources.
-	AffectedResources OptNilStringArray `json:"affected_resources"`
 	// Firing time.
 	FiringTime OptNilString `json:"firing_time"`
 	// Received time.
@@ -984,31 +974,6 @@ func (s *IncidentRequest) GetOccurrenceCount() OptNilInt {
 // GetDeduplicationWindowMinutes returns the value of DeduplicationWindowMinutes.
 func (s *IncidentRequest) GetDeduplicationWindowMinutes() OptNilInt {
 	return s.DeduplicationWindowMinutes
-}
-
-// GetIsStorm returns the value of IsStorm.
-func (s *IncidentRequest) GetIsStorm() OptNilBool {
-	return s.IsStorm
-}
-
-// GetStormSignalCount returns the value of StormSignalCount.
-func (s *IncidentRequest) GetStormSignalCount() OptNilInt {
-	return s.StormSignalCount
-}
-
-// GetStormWindowMinutes returns the value of StormWindowMinutes.
-func (s *IncidentRequest) GetStormWindowMinutes() OptNilInt {
-	return s.StormWindowMinutes
-}
-
-// GetStormType returns the value of StormType.
-func (s *IncidentRequest) GetStormType() OptNilString {
-	return s.StormType
-}
-
-// GetAffectedResources returns the value of AffectedResources.
-func (s *IncidentRequest) GetAffectedResources() OptNilStringArray {
-	return s.AffectedResources
 }
 
 // GetFiringTime returns the value of FiringTime.
@@ -1134,31 +1099,6 @@ func (s *IncidentRequest) SetOccurrenceCount(val OptNilInt) {
 // SetDeduplicationWindowMinutes sets the value of DeduplicationWindowMinutes.
 func (s *IncidentRequest) SetDeduplicationWindowMinutes(val OptNilInt) {
 	s.DeduplicationWindowMinutes = val
-}
-
-// SetIsStorm sets the value of IsStorm.
-func (s *IncidentRequest) SetIsStorm(val OptNilBool) {
-	s.IsStorm = val
-}
-
-// SetStormSignalCount sets the value of StormSignalCount.
-func (s *IncidentRequest) SetStormSignalCount(val OptNilInt) {
-	s.StormSignalCount = val
-}
-
-// SetStormWindowMinutes sets the value of StormWindowMinutes.
-func (s *IncidentRequest) SetStormWindowMinutes(val OptNilInt) {
-	s.StormWindowMinutes = val
-}
-
-// SetStormType sets the value of StormType.
-func (s *IncidentRequest) SetStormType(val OptNilString) {
-	s.StormType = val
-}
-
-// SetAffectedResources sets the value of AffectedResources.
-func (s *IncidentRequest) SetAffectedResources(val OptNilStringArray) {
-	s.AffectedResources = val
 }
 
 // SetFiringTime sets the value of FiringTime.
@@ -2243,69 +2183,6 @@ func (o OptNilString) Get() (v string, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilString) Or(d string) string {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptNilStringArray returns new OptNilStringArray with value set to v.
-func NewOptNilStringArray(v []string) OptNilStringArray {
-	return OptNilStringArray{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilStringArray is optional nullable []string.
-type OptNilStringArray struct {
-	Value []string
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilStringArray was set.
-func (o OptNilStringArray) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilStringArray) Reset() {
-	var v []string
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilStringArray) SetTo(v []string) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilStringArray) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilStringArray) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v []string
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilStringArray) Get() (v []string, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilStringArray) Or(d []string) []string {
 	if v, ok := o.Get(); ok {
 		return v
 	}

@@ -25,8 +25,9 @@ Business Requirements:
   - BR-SP-103:       FailedDetections tracking
   - BR-HAPI-194:     Honor failedDetections in workflow filtering
   - BR-HAPI-017-008: One-shot reassessment via detected_infrastructure
+  - BR-HAPI-250:     DetectedLabels in workflow search (#366: ResourceQuota)
 
-Test Matrix: 12 tests
+Test Matrix: 17 tests
   - UT-HAPI-056-034: Does not write detected_labels to session_state (#529)
   - UT-HAPI-056-035: None detection does not write detected_labels to session_state (#529)
   - UT-HAPI-056-036: Preserves return behavior (root_owner + history always present)
@@ -39,6 +40,11 @@ Test Matrix: 12 tests
   - UT-HAPI-056-090: Active labels include detected_infrastructure in response
   - UT-HAPI-056-091: All-default labels omit detected_infrastructure
   - UT-HAPI-056-092: Second call still runs detection; detected_infrastructure when active (#529)
+  - UT-HAPI-366-011: quota_details in result_data when quotas exist (#366)
+  - UT-HAPI-366-012: quota_details absent when no quotas (#366)
+  - UT-HAPI-366-013: Labels dict contains only flat values (#366)
+  - IT-HAPI-366-001: Full pipeline with quotas present (#366)
+  - IT-HAPI-366-002: Full pipeline with no quotas (#366)
 """
 
 import pytest
@@ -108,6 +114,41 @@ LABELS_ALL_DEFAULTS = {
     "serviceMesh": "",
 }
 
+LABELS_QUOTA_CONSTRAINED = {
+    "failedDetections": [],
+    "gitOpsManaged": False,
+    "gitOpsTool": "",
+    "pdbProtected": False,
+    "hpaEnabled": False,
+    "stateful": False,
+    "helmManaged": False,
+    "networkIsolated": False,
+    "serviceMesh": "",
+    "resourceQuotaConstrained": True,
+}
+
+LABELS_NO_QUOTA = {
+    "failedDetections": [],
+    "gitOpsManaged": False,
+    "gitOpsTool": "",
+    "pdbProtected": False,
+    "hpaEnabled": False,
+    "stateful": False,
+    "helmManaged": False,
+    "networkIsolated": False,
+    "serviceMesh": "",
+    "resourceQuotaConstrained": False,
+}
+
+QUOTA_SUMMARY_FIXTURE = {
+    "cpu_hard": "4",
+    "cpu_used": "2500m",
+    "memory_hard": "8Gi",
+    "memory_used": "6Gi",
+    "pods_hard": "20",
+    "pods_used": "15",
+}
+
 
 def _make_mock_k8s(owner_chain=None):
     """Create a mock K8s client with standard return values."""
@@ -137,7 +178,7 @@ class TestResourceContextLabelDetection:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
+        mock_detector.detect_labels.return_value = (LABELS_GITOPS_ARGOCD, None)
         mock_detector_cls.return_value = mock_detector
 
         session_state = {}
@@ -163,7 +204,7 @@ class TestResourceContextLabelDetection:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = None
+        mock_detector.detect_labels.return_value = (None, None)
         mock_detector_cls.return_value = mock_detector
 
         session_state = {}
@@ -187,7 +228,7 @@ class TestResourceContextLabelDetection:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
+        mock_detector.detect_labels.return_value = (LABELS_GITOPS_ARGOCD, None)
         mock_detector_cls.return_value = mock_detector
 
         session_state = {}
@@ -215,7 +256,7 @@ class TestResourceContextLabelDetection:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
+        mock_detector.detect_labels.return_value = (LABELS_GITOPS_ARGOCD, None)
         mock_detector_cls.return_value = mock_detector
 
         session_state = {}
@@ -240,7 +281,7 @@ class TestResourceContextLabelDetection:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_HELM_MANAGED
+        mock_detector.detect_labels.return_value = (LABELS_HELM_MANAGED, None)
         mock_detector_cls.return_value = mock_detector
 
         session_state = {}
@@ -264,7 +305,7 @@ class TestResourceContextLabelDetection:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_STATEFUL
+        mock_detector.detect_labels.return_value = (LABELS_STATEFUL, None)
         mock_detector_cls.return_value = mock_detector
 
         session_state = {}
@@ -288,7 +329,7 @@ class TestResourceContextLabelDetection:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_ALL_DEFAULTS
+        mock_detector.detect_labels.return_value = (LABELS_ALL_DEFAULTS, None)
         mock_detector_cls.return_value = mock_detector
 
         session_state = {}
@@ -336,7 +377,7 @@ class TestResourceContextLabelDetection:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
+        mock_detector.detect_labels.return_value = (LABELS_GITOPS_ARGOCD, None)
         mock_detector_cls.return_value = mock_detector
 
         mock_k8s = _make_mock_k8s()
@@ -361,7 +402,7 @@ class TestResourceContextRootOwnerCapture:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_ALL_DEFAULTS
+        mock_detector.detect_labels.return_value = (LABELS_ALL_DEFAULTS, None)
         mock_detector_cls.return_value = mock_detector
 
         session_state = {}
@@ -388,7 +429,7 @@ class TestResourceContextRootOwnerCapture:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_ALL_DEFAULTS
+        mock_detector.detect_labels.return_value = (LABELS_ALL_DEFAULTS, None)
         mock_detector_cls.return_value = mock_detector
 
         session_state = {}
@@ -415,7 +456,7 @@ class TestResourceContextRootOwnerCapture:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_ALL_DEFAULTS
+        mock_detector.detect_labels.return_value = (LABELS_ALL_DEFAULTS, None)
         mock_detector_cls.return_value = mock_detector
 
         mock_k8s = _make_mock_k8s()
@@ -438,7 +479,7 @@ class TestResourceContextTargetTracking:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_ALL_DEFAULTS
+        mock_detector.detect_labels.return_value = (LABELS_ALL_DEFAULTS, None)
         mock_detector_cls.return_value = mock_detector
 
         session_state = {}
@@ -466,8 +507,8 @@ class TestResourceContextTargetTracking:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return LABELS_GITOPS_ARGOCD
-            return LABELS_STATEFUL
+                return (LABELS_GITOPS_ARGOCD, None)
+            return (LABELS_STATEFUL, None)
 
         mock_detector = AsyncMock()
         mock_detector.detect_labels.side_effect = detect_labels_side_effect
@@ -497,7 +538,7 @@ class TestResourceContextTargetTracking:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
+        mock_detector.detect_labels.return_value = (LABELS_GITOPS_ARGOCD, None)
         mock_detector_cls.return_value = mock_detector
 
         session_state = {}
@@ -517,7 +558,7 @@ class TestResourceContextTargetTracking:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_ALL_DEFAULTS
+        mock_detector.detect_labels.return_value = (LABELS_ALL_DEFAULTS, None)
         mock_detector_cls.return_value = mock_detector
 
         session_state = {}
@@ -541,7 +582,7 @@ class TestResourceContextReassessment:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
+        mock_detector.detect_labels.return_value = (LABELS_GITOPS_ARGOCD, None)
         mock_detector_cls.return_value = mock_detector
 
         session_state = {}
@@ -572,7 +613,7 @@ class TestResourceContextReassessment:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_ALL_DEFAULTS
+        mock_detector.detect_labels.return_value = (LABELS_ALL_DEFAULTS, None)
         mock_detector_cls.return_value = mock_detector
 
         session_state = {}
@@ -598,7 +639,7 @@ class TestResourceContextReassessment:
         from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
 
         mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
+        mock_detector.detect_labels.return_value = (LABELS_GITOPS_ARGOCD, None)
         mock_detector_cls.return_value = mock_detector
 
         original_labels = {"gitOpsManaged": True, "gitOpsTool": "argocd"}
@@ -622,3 +663,154 @@ class TestResourceContextReassessment:
         # #529: session_state writes removed; EnrichmentService is authoritative
         assert session_state["detected_labels"] is original_labels
         mock_detector.detect_labels.assert_called_once()
+
+
+class TestResourceContextQuotaDetails:
+    """UT-HAPI-366-011 through UT-HAPI-366-013: quota_details in tool result (#366).
+
+    Design: detect_labels() returns Tuple[Optional[Dict], Optional[Dict]].
+    _detect_labels_if_needed returns (detected_infra, quota_details) tuple.
+    """
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_366_011_quota_details_in_result_when_quotas_exist(self, mock_detector_cls):
+        """UT-HAPI-366-011: quota_details top-level field in tool result_data when quotas exist."""
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = (LABELS_QUOTA_CONSTRAINED, QUOTA_SUMMARY_FIXTURE)
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s()
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
+
+        result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+
+        assert result.status.value == "success"
+        data = result.data
+        assert "quota_details" in data
+        assert data["quota_details"]["cpu_hard"] == "4"
+        assert data["quota_details"]["memory_hard"] == "8Gi"
+        assert data["quota_details"]["pods_hard"] == "20"
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_366_012_quota_details_absent_when_no_quotas(self, mock_detector_cls):
+        """UT-HAPI-366-012: quota_details absent from tool result_data when no quotas."""
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = (LABELS_NO_QUOTA, None)
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s()
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
+
+        result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+
+        assert result.status.value == "success"
+        data = result.data
+        assert "quota_details" not in data
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_366_013_labels_dict_flat_values_only(self, mock_detector_cls):
+        """UT-HAPI-366-013: detected_infrastructure.labels contains only flat bool/string values."""
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = (LABELS_QUOTA_CONSTRAINED, QUOTA_SUMMARY_FIXTURE)
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s()
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
+
+        result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+
+        assert result.status.value == "success"
+        data = result.data
+        assert "detected_infrastructure" in data
+        labels = data["detected_infrastructure"]["labels"]
+        for key, value in labels.items():
+            assert isinstance(value, (bool, str)), (
+                f"Label '{key}' has type {type(value).__name__}, expected bool or str"
+            )
+
+
+class TestResourceContextQuotaIntegration:
+    """IT-HAPI-366-001 through IT-HAPI-366-002: Full pipeline integration (#366).
+
+    Uses real LabelDetector (not patched) with mocked K8s client.
+    """
+
+    @pytest.mark.asyncio
+    async def test_it_hapi_366_001_full_pipeline_quotas_present(self):
+        """IT-HAPI-366-001: Full pipeline with quotas -> label=true + quota_details in result."""
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
+
+        mock_k8s = _make_mock_k8s()
+        quota = MagicMock()
+        quota.status.hard = {"cpu": "4", "memory": "8Gi", "pods": "20"}
+        quota.status.used = {"cpu": "2500m", "memory": "6Gi", "pods": "15"}
+        quota.spec.hard = {"cpu": "4", "memory": "8Gi", "pods": "20"}
+        mock_k8s.list_resource_quotas = AsyncMock(return_value=([quota], None))
+        mock_k8s.list_pdbs = AsyncMock(return_value=([], None))
+        mock_k8s.list_hpas = AsyncMock(return_value=([], None))
+        mock_k8s.list_network_policies = AsyncMock(return_value=([], None))
+
+        session_state = {}
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
+
+        result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+
+        assert result.status.value == "success"
+        assert "detected_labels" not in session_state
+        data = result.data
+        assert "quota_details" in data
+        assert data["quota_details"]["cpu_hard"] == "4"
+        assert data["quota_details"]["memory_used"] == "6Gi"
+        assert "detected_infrastructure" in data
+        labels = data["detected_infrastructure"]["labels"]
+        assert labels["resourceQuotaConstrained"] is True
+        for value in labels.values():
+            assert not isinstance(value, dict), "Labels must be flat (no nested dicts)"
+
+    @pytest.mark.asyncio
+    async def test_it_hapi_366_002_full_pipeline_no_quotas(self):
+        """IT-HAPI-366-002: Full pipeline with no quotas -> label=false + no quota_details."""
+        from toolsets.resource_context import GetNamespacedResourceContextTool as GetResourceContextTool
+
+        mock_k8s = _make_mock_k8s()
+        mock_k8s.list_resource_quotas = AsyncMock(return_value=([], None))
+        mock_k8s.list_pdbs = AsyncMock(return_value=([], None))
+        mock_k8s.list_hpas = AsyncMock(return_value=([], None))
+        mock_k8s.list_network_policies = AsyncMock(return_value=([], None))
+
+        session_state = {}
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
+
+        result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+
+        assert result.status.value == "success"
+        assert "detected_labels" not in session_state
+        data = result.data
+        assert "quota_details" not in data

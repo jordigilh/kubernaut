@@ -415,6 +415,16 @@ func (p *Parser) ExtractExecutionBundle(schema *models.WorkflowSchema) *string {
 	return nil
 }
 
+// ExtractServiceAccountName extracts the optional serviceAccountName from the
+// execution section. Returns nil when absent (DB stores NULL), or a pointer
+// to the SA name when present. DD-WE-005 v2.0.
+func (p *Parser) ExtractServiceAccountName(schema *models.WorkflowSchema) *string {
+	if schema.Execution != nil && schema.Execution.ServiceAccountName != "" {
+		return &schema.Execution.ServiceAccountName
+	}
+	return nil
+}
+
 // ExtractEngineConfig extracts the raw engine-specific configuration (BR-WE-016).
 // Converts the YAML-parsed interface{} to json.RawMessage for storage.
 // Returns nil if the schema has no engineConfig section.

@@ -8,7 +8,7 @@ Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **remediation_uid** | **str** | RemediationRequest UID (correlation key) | 
 **signal_type** | **str** | Type of signal | [optional] 
-**workflow_type** | **str** | Workflow type applied (null if escalated) | [optional] 
+**action_type** | **str** | Action type applied (null if escalated) | [optional] 
 **outcome** | **str** | Remediation outcome | [optional] 
 **effectiveness_score** | **float** | EM effectiveness score (0.0-1.0) | [optional] 
 **signal_resolved** | **bool** | Whether the originating signal was resolved | [optional] 

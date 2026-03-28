@@ -57,6 +57,10 @@ type AssessmentConfig struct {
 	// ValidityWindow is the maximum duration for assessment completion.
 	// Default: 30m. Range: [30s, 24h].
 	ValidityWindow time.Duration `yaml:"validityWindow"`
+
+	// MaxConcurrentReconciles limits the number of concurrent EA reconciliations.
+	// ADR-EM-001 section 10. Default: 10. Range: [1, ∞).
+	MaxConcurrentReconciles int `yaml:"maxConcurrentReconciles"`
 }
 
 // ExternalConfig defines external service connection parameters.
@@ -82,14 +86,23 @@ type ExternalConfig struct {
 	// On OCP, populated via the service-serving CA ConfigMap injection.
 	// Issue #452: OCP service-serving CA support.
 	TLSCaFile string `yaml:"tlsCaFile"`
+
+	// PrometheusLookback is the duration before EA creation to query Prometheus.
+	// ADR-EM-001 section 10. Default: 30m. Range: [1m, ∞).
+	PrometheusLookback time.Duration `yaml:"prometheusLookback"`
+
+	// ScrapeInterval is the Prometheus scrape interval used to derive requeue timing.
+	// ADR-EM-001 section 10. Default: 60s. Range: [5s, ∞).
+	ScrapeInterval time.Duration `yaml:"scrapeInterval"`
 }
 
 // DefaultConfig returns safe defaults for the Effectiveness Monitor.
 func DefaultConfig() *Config {
 	return &Config{
 		Assessment: AssessmentConfig{
-			StabilizationWindow: 5 * time.Minute,
-			ValidityWindow:      30 * time.Minute,
+			StabilizationWindow:     5 * time.Minute,
+			ValidityWindow:          30 * time.Minute,
+			MaxConcurrentReconciles: 10,
 		},
 		DataStorage: sharedconfig.DefaultDataStorageConfig(),
 		Controller: sharedconfig.ControllerConfig{
@@ -104,6 +117,8 @@ func DefaultConfig() *Config {
 			AlertManagerURL:     "http://alertmanager:9093",
 			AlertManagerEnabled: true,
 			ConnectionTimeout:   10 * time.Second,
+			PrometheusLookback:  30 * time.Minute,
+			ScrapeInterval:      60 * time.Second,
 		},
 	}
 }
@@ -167,12 +182,10 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("controller.healthProbeAddr is required")
 	}
 
-	// Validate TLS CA file (Issue #452)
-	if c.External.TLSCaFile != "" {
-		if _, err := os.Stat(c.External.TLSCaFile); err != nil {
-			return fmt.Errorf("external.tlsCaFile %q: %w", c.External.TLSCaFile, err)
-		}
-	}
+	// Issue #484: TLSCaFile is NOT validated at config-load time.
+	// On OCP the service-ca operator injects the CA bundle asynchronously;
+	// the file may not exist when the process starts. The startup retry
+	// loop in main.go waits for it, and the CAReloader hot-reloads changes.
 
 	// Validate external service config
 	if c.External.PrometheusEnabled && c.External.PrometheusURL == "" {
@@ -183,6 +196,15 @@ func (c *Config) Validate() error {
 	}
 	if c.External.ConnectionTimeout <= 0 {
 		return fmt.Errorf("external.connectionTimeout must be positive")
+	}
+	if c.External.PrometheusLookback < 1*time.Minute {
+		return fmt.Errorf("external.prometheusLookback must be at least 1m, got %v", c.External.PrometheusLookback)
+	}
+	if c.External.ScrapeInterval < 5*time.Second {
+		return fmt.Errorf("external.scrapeInterval must be at least 5s, got %v", c.External.ScrapeInterval)
+	}
+	if c.Assessment.MaxConcurrentReconciles < 1 {
+		return fmt.Errorf("assessment.maxConcurrentReconciles must be at least 1, got %d", c.Assessment.MaxConcurrentReconciles)
 	}
 
 	return nil

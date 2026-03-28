@@ -7,8 +7,8 @@
 #
 # Issue #91: Routing now uses spec fields + metadata instead of labels.
 # Match keys correspond to spec field names (type, severity, phase,
-# review-source, priority) and spec.metadata keys (skip-reason,
-# investigation-outcome, environment, etc.).
+# review-source, priority) and spec.context / spec.extensions keys
+# (skip-reason, investigation-outcome, environment, etc.).
 #
 # Use as a ConfigMap for the Notification Controller.
 #

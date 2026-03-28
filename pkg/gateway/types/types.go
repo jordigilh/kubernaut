@@ -25,8 +25,7 @@ import (
 //
 // This struct represents the unified format for all signal types (Prometheus alerts,
 // Kubernetes events, etc.) after adapter-specific parsing. It contains only the
-// data needed for Gateway's processing pipeline (deduplication, storm detection,
-// and CRD creation).
+// data needed for Gateway's processing pipeline (deduplication and CRD creation).
 //
 // Note: Classification and priority assignment removed from Gateway (2025-12-06).
 // Signal Processing service now owns these per DD-CATEGORIZATION-001.

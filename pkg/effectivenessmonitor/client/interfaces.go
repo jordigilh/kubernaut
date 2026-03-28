@@ -70,10 +70,15 @@ type DataStorageQuerier interface {
 	// associated with a given correlation ID. Returns empty string if not found.
 	QueryPreRemediationHash(ctx context.Context, correlationID string) (string, error)
 
-	// HasWorkflowStarted checks if a workflowexecution.workflow.started event
+	// HasWorkflowStarted checks if a workflowexecution.execution.started event
 	// exists for the given correlation ID. Returns false if not found.
 	// ADR-EM-001 Section 5: Used to detect the no_execution path.
 	HasWorkflowStarted(ctx context.Context, correlationID string) (bool, error)
+
+	// HasWorkflowCompleted checks if a workflowexecution.workflow.completed event
+	// exists for the given correlation ID. Returns false if not found.
+	// ADR-EM-001 Section 5: Used to differentiate partial vs full assessment paths (#573 G4).
+	HasWorkflowCompleted(ctx context.Context, correlationID string) (bool, error)
 }
 
 // ========================================

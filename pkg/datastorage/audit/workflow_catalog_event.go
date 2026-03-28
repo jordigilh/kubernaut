@@ -51,7 +51,7 @@ const (
 // Rationale: Workflow operations involve business logic (state changes, version management)
 // unlike pure CRUD operations (audit persistence) which are redundant to audit.
 //
-// Note: Workflow disabling is captured via workflow.updated with status="disabled" in updated_fields.
+// Note: Workflow disabling is captured via workflow.updated with status="Disabled" in updated_fields.
 // ========================================
 
 // NewWorkflowCreatedAuditEvent creates an audit event for workflow creation

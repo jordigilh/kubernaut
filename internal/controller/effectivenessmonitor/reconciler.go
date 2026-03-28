@@ -43,6 +43,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
@@ -86,6 +87,8 @@ type Reconciler struct {
 
 	// restMapper resolves Kind to GVR for unstructured resource fetches.
 	restMapper meta.RESTMapper
+	// apiReader bypasses the informer cache for direct API server reads (DD-EM-002, #396).
+	apiReader client.Reader
 
 	// Configuration
 	Config ReconcilerConfig
@@ -120,7 +123,7 @@ type ReconcilerConfig struct {
 func DefaultReconcilerConfig() ReconcilerConfig {
 	return ReconcilerConfig{
 		ValidityWindow:              30 * time.Minute,
-		PrometheusLookback:          10 * time.Minute,
+		PrometheusLookback:          30 * time.Minute,
 		RequeueGenericError:         emconfig.RequeueGenericError,
 		RequeueAssessmentInProgress: emconfig.RequeueAssessmentInProgress,
 	}
@@ -131,6 +134,7 @@ func DefaultReconcilerConfig() ReconcilerConfig {
 // Per DD-AUDIT-003: AuditManager wired via dependency injection (Pattern 2).
 func NewReconciler(
 	c client.Client,
+	apiReader client.Reader,
 	s *runtime.Scheme,
 	recorder record.EventRecorder,
 	m *emmetrics.Metrics,
@@ -142,6 +146,7 @@ func NewReconciler(
 ) *Reconciler {
 	return &Reconciler{
 		Client:             c,
+		apiReader:          apiReader,
 		Scheme:             s,
 		Recorder:           recorder,
 		Metrics:            m,
@@ -156,6 +161,62 @@ func NewReconciler(
 		validityChecker:    validity.NewChecker(),
 		Config:             cfg,
 	}
+}
+
+// assessmentScope classifies how deeply the reconciler should assess an EA,
+// based on the workflow execution lifecycle (ADR-EM-001 §5, #573 G4).
+type assessmentScope int
+
+const (
+	// scopeFull runs all configured component checks (health, hash, alert, metrics).
+	scopeFull assessmentScope = iota
+	// scopePartial runs only health + hash. Used when the WFE started but never
+	// completed — metrics and alerts are meaningless without a completed workflow.
+	scopePartial
+	// scopeNoExecution skips all component checks. Used when no WFE started event
+	// exists (remediation failed before execution, e.g., AA rejected).
+	scopeNoExecution
+)
+
+// determineAssessmentScope queries DataStorage to classify the assessment depth.
+// Returns scopeFull when DSQuerier is nil or on transient errors (graceful degradation).
+func (r *Reconciler) determineAssessmentScope(ctx context.Context, correlationID string) assessmentScope {
+	if r.DSQuerier == nil {
+		return scopeFull
+	}
+
+	logger := log.FromContext(ctx)
+
+	started, err := r.DSQuerier.HasWorkflowStarted(ctx, correlationID)
+	if err != nil {
+		logger.Error(err, "Failed to check workflow started status (non-fatal, assuming full assessment)",
+			"correlationID", correlationID)
+		return scopeFull
+	}
+	if !started {
+		return scopeNoExecution
+	}
+
+	completed, err := r.DSQuerier.HasWorkflowCompleted(ctx, correlationID)
+	if err != nil {
+		logger.Error(err, "Failed to check workflow completed status (non-fatal, assuming full assessment)",
+			"correlationID", correlationID)
+		return scopeFull
+	}
+	if !completed {
+		return scopePartial
+	}
+
+	return scopeFull
+}
+
+// validateEASpec checks for unrecoverable spec errors that should immediately fail the EA.
+// Returns the validation failure reason, or empty string if the spec is valid.
+func validateEASpec(ea *eav1.EffectivenessAssessment) string {
+	if ea.Spec.CorrelationID == "" {
+		return "correlationID is required"
+	}
+	return ""
 }
 
 // Reconcile handles a single reconciliation of an EffectivenessAssessment.
@@ -193,6 +254,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		"phase", ea.Status.Phase,
 	)
 
+	// Step 1b: Spec validation — fail-fast for unrecoverable spec errors (#573, ADR-EM-001 §11)
+	if reason := validateEASpec(ea); reason != "" {
+		return r.failAssessment(ctx, ea, reason)
+	}
+
 	// Step 2: Check terminal state
 	currentPhase := ea.Status.Phase
 	if currentPhase == "" {
@@ -209,7 +275,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	stabilizationAnchor := ea.CreationTimestamp
 	isAsync := ea.Spec.Config.HashComputeDelay != nil && ea.Spec.Config.HashComputeDelay.Duration > 0
 	if isAsync {
-		stabilizationAnchor = metav1.NewTime(ea.CreationTimestamp.Time.Add(ea.Spec.Config.HashComputeDelay.Duration))
+		stabilizationAnchor = metav1.NewTime(ea.CreationTimestamp.Add(ea.Spec.Config.HashComputeDelay.Duration))
 	}
 
 	var windowState validity.WindowState
@@ -255,6 +321,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				logger.Error(err, "Failed to persist WaitingForPropagation phase")
 				return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
 			}
+
+			r.emitScheduledEventIfFirst(ctx, ea)
 		}
 
 		remaining := time.Until(hashDeadline.Time)
@@ -329,6 +397,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				logger.Error(err, "Failed to persist Stabilizing phase and derived timing")
 				return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
 			}
+
+			r.emitScheduledEventIfFirst(ctx, ea)
 		}
 
 		logger.Info("Stabilization window active, requeueing", "remaining", remaining)
@@ -391,59 +461,66 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// was modified (likely by another remediation) and the assessment is invalid.
 	// Metrics and alerts would measure the wrong resource state.
 	if ea.Status.Components.HashComputed && ea.Status.Components.PostRemediationSpecHash != "" {
-		currentSpec := r.getTargetSpec(ctx, ea.Spec.RemediationTarget)
-		currentHash, hashErr := canonicalhash.CanonicalSpecHash(currentSpec)
-		if hashErr != nil {
-			logger.Error(hashErr, "Failed to compute current spec hash for drift check")
+		currentSpec, _ := r.getTargetSpec(ctx, ea.Spec.RemediationTarget)
+		specHash, specHashErr := canonicalhash.CanonicalSpecHash(currentSpec)
+		if specHashErr != nil {
+			logger.Error(specHashErr, "Failed to compute current spec hash for drift check")
 		} else {
-			ea.Status.Components.CurrentSpecHash = currentHash
-
-			if currentHash != ea.Status.Components.PostRemediationSpecHash {
-				logger.Info("Spec drift detected — resource modified since post-remediation hash (DD-EM-002 v1.1)",
-					"postRemediationHash", ea.Status.Components.PostRemediationSpecHash,
-					"currentHash", currentHash,
-					"correlationID", ea.Spec.CorrelationID,
-				)
-
-				// Set SpecIntegrity condition to False (DD-CRD-002)
-				conditions.SetCondition(ea, conditions.ConditionSpecIntegrity,
-					metav1.ConditionFalse, conditions.ReasonSpecDrifted,
-					fmt.Sprintf("Target spec hash changed: %s -> %s",
-						ea.Status.Components.PostRemediationSpecHash, currentHash))
-
-				// Set AssessmentComplete condition with SpecDrift reason
-				conditions.SetCondition(ea, conditions.ConditionAssessmentComplete,
-					metav1.ConditionTrue, conditions.ReasonSpecDrift,
-					"Assessment invalidated: target resource spec was modified (spec drift detected)")
-
-			r.Recorder.Event(ea, corev1.EventTypeWarning, events.EventReasonSpecDriftDetected,
-				fmt.Sprintf("Target resource spec modified during assessment (correlation: %s)", ea.Spec.CorrelationID))
-
-				// Complete with spec_drift reason — do NOT assess metrics/alerts
-				return r.completeAssessmentWithReason(ctx, ea, eav1.AssessmentReasonSpecDrift)
+			driftConfigMapHashes := r.resolveConfigMapHashes(ctx, currentSpec, ea.Spec.RemediationTarget)
+			if len(driftConfigMapHashes) > 0 {
+				logger.V(2).Info("Drift guard resolved ConfigMap hashes",
+					"configMapCount", len(driftConfigMapHashes),
+					"correlationID", ea.Spec.CorrelationID)
 			}
+			currentHash, compositeErr := canonicalhash.CompositeSpecHash(specHash, driftConfigMapHashes)
+			if compositeErr != nil {
+				logger.Error(compositeErr, "Failed to compute composite hash for drift check")
+			} else {
+				ea.Status.Components.CurrentSpecHash = currentHash
 
-			// Spec unchanged — set positive condition
-			conditions.SetCondition(ea, conditions.ConditionSpecIntegrity,
-				metav1.ConditionTrue, conditions.ReasonSpecUnchanged,
-				"Target resource spec unchanged since post-remediation hash")
+				if currentHash != ea.Status.Components.PostRemediationSpecHash {
+					logger.Info("Spec drift detected — resource modified since post-remediation hash (DD-EM-002 v1.1)",
+						"postRemediationHash", ea.Status.Components.PostRemediationSpecHash,
+						"currentHash", currentHash,
+						"correlationID", ea.Spec.CorrelationID,
+					)
+
+					conditions.SetCondition(ea, conditions.ConditionSpecIntegrity,
+						metav1.ConditionFalse, conditions.ReasonSpecDrifted,
+						fmt.Sprintf("Target spec hash changed: %s -> %s",
+							ea.Status.Components.PostRemediationSpecHash, currentHash))
+
+					conditions.SetCondition(ea, conditions.ConditionAssessmentComplete,
+						metav1.ConditionTrue, conditions.ReasonSpecDrift,
+						"Assessment invalidated: target resource spec was modified (spec drift detected)")
+
+					r.Recorder.Event(ea, corev1.EventTypeWarning, events.EventReasonSpecDriftDetected,
+						fmt.Sprintf("Target resource spec modified during assessment (correlation: %s)", ea.Spec.CorrelationID))
+
+					return r.completeAssessmentWithReason(ctx, ea, eav1.AssessmentReasonSpecDrift)
+				}
+
+				conditions.SetCondition(ea, conditions.ConditionSpecIntegrity,
+					metav1.ConditionTrue, conditions.ReasonSpecUnchanged,
+					"Target resource spec unchanged since post-remediation hash")
+			}
 		}
 	}
 
-	// Step 6b: no_execution guard (ADR-EM-001 Section 5)
-	// If no workflowexecution.execution.started event exists, the remediation failed
-	// before execution began (e.g., AA failed, approval rejected). Skip all component
-	// checks and complete with reason=no_execution.
-	if r.DSQuerier != nil {
-		started, err := r.DSQuerier.HasWorkflowStarted(ctx, ea.Spec.CorrelationID)
-		if err != nil {
-			logger.Error(err, "Failed to check workflow started status (non-fatal, continuing assessment)",
-				"correlationID", ea.Spec.CorrelationID)
-		} else if !started {
-			logger.Info("No workflow execution started for this correlation ID — completing as no_execution",
-				"correlationID", ea.Spec.CorrelationID)
-			return r.completeAssessmentWithReason(ctx, ea, eav1.AssessmentReasonNoExecution)
-		}
+	// Step 6b: Assessment scope determination (ADR-EM-001 §5, #573 G4)
+	// Query DataStorage to classify the assessment depth based on WFE lifecycle:
+	//   scopeNoExecution → WFE never started → complete immediately
+	//   scopePartial     → WFE started but not completed → health+hash only
+	//   scopeFull        → WFE completed (or DSQuerier unavailable) → all components
+	scope := r.determineAssessmentScope(ctx, ea.Spec.CorrelationID)
+	if scope == scopeNoExecution {
+		logger.Info("No workflow execution started for this correlation ID — completing as no_execution",
+			"correlationID", ea.Spec.CorrelationID)
+		return r.completeAssessmentWithReason(ctx, ea, eav1.AssessmentReasonNoExecution)
+	}
+	if scope == scopePartial {
+		logger.Info("Workflow started but not completed — narrowing to health+hash assessment (ADR-EM-001 §5)",
+			"correlationID", ea.Spec.CorrelationID)
 	}
 
 	// Step 7: Run component checks (skip already-completed)
@@ -524,6 +601,25 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		if healthResult.Component.Score != nil && ea.Status.Components.AlertDecayRetries == 0 {
 			r.emitHealthEvent(ctx, ea, healthResult)
 		}
+	}
+
+	// Step 7a: Partial-execution early completion (ADR-EM-001 §5, #573 G4)
+	// When WFE started but completed event isn't in DS yet, health+hash are done but
+	// alert/metrics should only be skipped if we're confident the workflow genuinely
+	// didn't complete. The workflow.completed event may be delayed by DS's async batch
+	// writer (typically <5s). Requeue within a grace period to re-evaluate scope;
+	// after the grace period, accept partial as the final state.
+	if scope == scopePartial && ea.Status.Components.HealthAssessed && ea.Status.Components.HashComputed {
+		const partialGracePeriod = 30 * time.Second
+		age := time.Since(ea.CreationTimestamp.Time)
+		if age < partialGracePeriod {
+			logger.Info("Partial scope within grace period — requeueing to re-evaluate after workflow.completed may arrive",
+				"correlationID", ea.Spec.CorrelationID,
+				"eaAge", age.Round(time.Second),
+				"gracePeriod", partialGracePeriod)
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+		return r.completeAssessmentWithReason(ctx, ea, eav1.AssessmentReasonPartial)
 	}
 
 	// Alert check (BR-EM-002) - skip if disabled or client unavailable.
@@ -649,7 +745,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 		// Post-update event emission (after successful persist)
 		if pendingTransition {
-			r.emitPendingTransitionEvents(ctx, ea)
+			r.emitAssessingTransitionEvents(ctx, ea)
 		}
 		if completing {
 			r.emitCompletionMetricsAndEvents(ctx, ea, ea.Status.AssessmentReason)
@@ -668,7 +764,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 // SetupWithManager registers the controller with the manager.
 // Creates a field index on spec.correlationID for O(1) lookups and kubectl
 // field-selector support (e.g., kubectl get ea --field-selector spec.correlationID=rr-xxx).
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *Reconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentReconciles ...int) error {
 	// Field index on spec.correlationID for efficient lookups and kubectl UX
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(),
@@ -685,9 +781,16 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("failed to create correlationID field index: %w", err)
 	}
 
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&eav1.EffectivenessAssessment{}).
-		Complete(r)
+	builder := ctrl.NewControllerManagedBy(mgr).
+		For(&eav1.EffectivenessAssessment{})
+
+	if len(maxConcurrentReconciles) > 0 && maxConcurrentReconciles[0] > 0 {
+		builder = builder.WithOptions(ctrlcontroller.TypedOptions[ctrl.Request]{
+			MaxConcurrentReconciles: maxConcurrentReconciles[0],
+		})
+	}
+
+	return builder.Complete(r)
 }
 
 // SetRESTMapper sets the REST mapper used to resolve Kind -> GVR for unstructured fetches.
@@ -733,7 +836,18 @@ func (r *Reconciler) assessHash(ctx context.Context, ea *eav1.EffectivenessAsses
 	logger := log.FromContext(ctx)
 
 	// Step 1: Fetch target spec from K8s API (DD-EM-003: hash uses RemediationTarget)
-	spec := r.getTargetSpec(ctx, ea.Spec.RemediationTarget)
+	spec, postHashDegradedReason := r.getTargetSpec(ctx, ea.Spec.RemediationTarget)
+
+	// Issue #546: Set EA condition based on spec fetch result
+	if postHashDegradedReason != "" {
+		conditions.SetCondition(ea, conditions.ConditionPostHashCaptured,
+			metav1.ConditionFalse, conditions.ReasonPostHashCaptureFailed, postHashDegradedReason)
+		logger.Info("Post-remediation spec fetch degraded, hash comparison will be unreliable",
+			"degradedReason", postHashDegradedReason)
+	} else {
+		conditions.SetCondition(ea, conditions.ConditionPostHashCaptured,
+			metav1.ConditionTrue, conditions.ReasonPostHashCaptured, "Post-remediation spec hash captured")
+	}
 
 	// Step 2: Read pre-remediation hash from EA spec (set by RO via RR status).
 	// Falls back to DataStorage query for backward compatibility with EAs created
@@ -744,10 +858,14 @@ func (r *Reconciler) assessHash(ctx context.Context, ea *eav1.EffectivenessAsses
 		preHash = r.queryPreRemediationHash(ctx, ea.Spec.CorrelationID)
 	}
 
-	// Step 3: Compute post-hash and compare with pre-hash
+	// Step 3: Resolve ConfigMap content hashes (#396, BR-EM-004)
+	configMapHashes := r.resolveConfigMapHashes(ctx, spec, ea.Spec.RemediationTarget)
+
+	// Step 4: Compute post-hash (composite when ConfigMaps present) and compare with pre-hash
 	result := r.hashComputer.Compute(hash.SpecHashInput{
-		Spec:    spec,
-		PreHash: preHash,
+		Spec:            spec,
+		PreHash:         preHash,
+		ConfigMapHashes: configMapHashes,
 	})
 
 	if result.Hash != "" {
@@ -758,6 +876,58 @@ func (r *Reconciler) assessHash(ctx context.Context, ea *eav1.EffectivenessAsses
 		)
 	}
 	return result
+}
+
+// resolveConfigMapHashes extracts ConfigMap references from the resource spec,
+// fetches each ConfigMap via the uncached apiReader (bypassing the informer cache),
+// and returns a map of name -> content hash.
+// Missing/forbidden ConfigMaps produce a deterministic sentinel hash.
+func (r *Reconciler) resolveConfigMapHashes(
+	ctx context.Context,
+	spec map[string]interface{},
+	target eav1.TargetResource,
+) map[string]string {
+	refs := canonicalhash.ExtractConfigMapRefs(spec, target.Kind)
+	if len(refs) == 0 {
+		return nil
+	}
+
+	logger := log.FromContext(ctx)
+	configMapHashes := make(map[string]string, len(refs))
+
+	for _, cmName := range refs {
+		cm := &corev1.ConfigMap{}
+		key := client.ObjectKey{Name: cmName, Namespace: target.Namespace}
+		if err := r.apiReader.Get(ctx, key, cm); err != nil {
+			// All fetch errors (404, 403, transient) use sentinel to ensure deterministic
+			// hash computation: the same set of ConfigMap names always contributes to the
+			// composite hash, preventing false-positive drift from intermittent failures.
+			sentinelData := map[string]string{"__sentinel__": fmt.Sprintf("__absent:%s__", cmName)}
+			sentinelHash, hashErr := canonicalhash.ConfigMapDataHash(sentinelData, nil)
+			if hashErr != nil {
+				logger.Error(hashErr, "Failed to compute sentinel hash for ConfigMap", "configMap", cmName)
+				continue
+			}
+			configMapHashes[cmName] = sentinelHash
+			if apierrors.IsNotFound(err) || apierrors.IsForbidden(err) {
+				logger.V(1).Info("ConfigMap not accessible, using sentinel hash",
+					"configMap", cmName, "namespace", target.Namespace, "reason", err.Error())
+			} else {
+				logger.Error(err, "Transient ConfigMap fetch error, using sentinel hash",
+					"configMap", cmName, "namespace", target.Namespace)
+			}
+			continue
+		}
+
+		cmHash, err := canonicalhash.ConfigMapDataHash(cm.Data, cm.BinaryData)
+		if err != nil {
+			logger.Error(err, "Failed to compute hash for ConfigMap, skipping", "configMap", cmName)
+			continue
+		}
+		configMapHashes[cmName] = cmHash
+	}
+
+	return configMapHashes
 }
 
 // assessAlert checks if the original alert has resolved (BR-EM-002).
@@ -1193,9 +1363,14 @@ func ComputePodHealthStats(pods []*corev1.Pod, remediationStartedAt *metav1.Time
 
 // getTargetSpec retrieves a target resource's .spec as an unstructured map from the K8s API.
 // Uses the REST mapper to resolve the Kind to a GVR, then fetches via unstructured client.
-// Returns an empty map on error (graceful degradation — hash is still computed, just from empty spec).
+//
+// Returns (spec, degradedReason) where:
+//   - (specMap, "") on success
+//   - (emptyMap, "") when not applicable: NotFound, no .spec, unknown GVK, nil RESTMapper
+//   - (emptyMap, "reason") when degraded: Forbidden, transient API errors (Issue #546)
+//
 // DD-EM-003: Caller decides which target to pass (RemediationTarget for hash, etc.).
-func (r *Reconciler) getTargetSpec(ctx context.Context, target eav1.TargetResource) map[string]interface{} {
+func (r *Reconciler) getTargetSpec(ctx context.Context, target eav1.TargetResource) (map[string]interface{}, string) {
 	logger := log.FromContext(ctx)
 
 	if r.restMapper == nil {
@@ -1204,14 +1379,14 @@ func (r *Reconciler) getTargetSpec(ctx context.Context, target eav1.TargetResour
 			"kind":      target.Kind,
 			"name":      target.Name,
 			"namespace": target.Namespace,
-		}
+		}, ""
 	}
 
 	gvk, err := k8sutil.ResolveGVKForKind(r.restMapper, target.Kind)
 	if err != nil {
 		logger.Error(err, "Failed to resolve GVK for target resource kind",
 			"kind", target.Kind)
-		return map[string]interface{}{}
+		return map[string]interface{}{}, ""
 	}
 
 	obj := &unstructured.Unstructured{}
@@ -1225,10 +1400,10 @@ func (r *Reconciler) getTargetSpec(ctx context.Context, target eav1.TargetResour
 			logger.Info("Target resource not found, computing hash from empty spec",
 				"kind", target.Kind,
 				"name", target.Name)
-		} else {
-			logger.Error(err, "Failed to fetch target resource")
+			return map[string]interface{}{}, ""
 		}
-		return map[string]interface{}{}
+		logger.Error(err, "Failed to fetch target resource")
+		return map[string]interface{}{}, fmt.Sprintf("failed to fetch target resource %s/%s: %v", target.Kind, target.Name, err)
 	}
 
 	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
@@ -1236,13 +1411,13 @@ func (r *Reconciler) getTargetSpec(ctx context.Context, target eav1.TargetResour
 		logger.V(1).Info("Target resource has no .spec field",
 			"kind", target.Kind,
 			"name", target.Name)
-		return map[string]interface{}{}
+		return map[string]interface{}{}, ""
 	}
 
 	logger.V(2).Info("Target spec retrieved",
 		"kind", target.Kind,
 		"name", target.Name)
-	return spec
+	return spec, ""
 }
 
 // queryPreRemediationHash queries DataStorage for the pre-remediation spec hash
@@ -1315,6 +1490,35 @@ func (r *Reconciler) completeAssessment(ctx context.Context, ea *eav1.Effectiven
 	r.emitCompletionMetricsAndEvents(ctx, ea, reason)
 
 	logger.Info("Assessment completed",
+		"reason", reason,
+		"correlationID", ea.Spec.CorrelationID,
+	)
+
+	return ctrl.Result{}, nil
+}
+
+// failAssessment transitions the EA to PhaseFailed for unrecoverable conditions (#573).
+// Unlike completeAssessment (which uses PhaseCompleted), this sets PhaseFailed and
+// reason "unrecoverable". The RO handles PhaseFailed in trackEffectivenessStatus.
+func (r *Reconciler) failAssessment(ctx context.Context, ea *eav1.EffectivenessAssessment, reason string) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	now := metav1.Now()
+	ea.Status.Phase = eav1.PhaseFailed
+	ea.Status.CompletedAt = &now
+	ea.Status.AssessmentReason = "unrecoverable"
+	ea.Status.Message = fmt.Sprintf("Assessment failed: %s", reason)
+
+	conditions.SetCondition(ea, conditions.ConditionAssessmentComplete, metav1.ConditionFalse, "ValidationFailed", ea.Status.Message)
+
+	if err := r.Status().Update(ctx, ea); err != nil {
+		logger.Error(err, "Failed to update EA to Failed",
+			"reason", reason, "resourceVersion", ea.ResourceVersion)
+		return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
+	}
+
+	r.Recorder.Event(ea, corev1.EventTypeWarning, "AssessmentFailed", ea.Status.Message)
+	logger.Info("Assessment failed due to unrecoverable condition",
 		"reason", reason,
 		"correlationID", ea.Spec.CorrelationID,
 	)
@@ -1593,14 +1797,25 @@ func (r *Reconciler) emitMetricsEvent(ctx context.Context, ea *eav1.Effectivenes
 	})
 }
 
-// emitPendingTransitionEvents emits K8s events and audit events for the
-// Pending -> Assessing phase transition. Called after the status update succeeds.
-func (r *Reconciler) emitPendingTransitionEvents(ctx context.Context, ea *eav1.EffectivenessAssessment) {
-	// Emit assessment_scheduled audit event (BR-EM-009.4)
+// emitScheduledEventIfFirst emits the assessment.scheduled audit event and K8s event
+// when ValidityDeadline is first set (WFP or Stabilizing transition).
+// Called exactly once per EA lifecycle at the point where ValidityDeadline is persisted
+// (#573, ADR-EM-001 §9.2.0). NOT called from the Assessing transition to avoid duplicates.
+func (r *Reconciler) emitScheduledEventIfFirst(ctx context.Context, ea *eav1.EffectivenessAssessment) {
 	r.emitAuditEvent(ctx, emtypes.AuditAssessmentScheduled, func() error {
 		return r.AuditManager.RecordAssessmentScheduled(ctx, ea, r.Config.ValidityWindow)
 	})
 
+	r.Recorder.Event(ea, corev1.EventTypeNormal, "AssessmentScheduled",
+		fmt.Sprintf("Assessment scheduled for correlation %s (deadline: %s)",
+			ea.Spec.CorrelationID, ea.Status.ValidityDeadline.Format("15:04:05")))
+}
+
+// emitAssessingTransitionEvents emits the AssessmentStarted K8s event for the
+// transition to Assessing phase. Called after the status update succeeds.
+// The scheduled event is NOT emitted here — it was already emitted at the WFP or
+// Stabilizing entry point where ValidityDeadline was first persisted.
+func (r *Reconciler) emitAssessingTransitionEvents(ctx context.Context, ea *eav1.EffectivenessAssessment) {
 	r.Recorder.Event(ea, corev1.EventTypeNormal, events.EventReasonAssessmentStarted,
 		fmt.Sprintf("Assessment started for correlation %s", ea.Spec.CorrelationID))
 }

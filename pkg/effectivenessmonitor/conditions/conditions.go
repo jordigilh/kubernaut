@@ -30,7 +30,7 @@ import (
 )
 
 // ========================================
-// CONDITION TYPES (4 per DD-CRD-002-EA)
+// CONDITION TYPES (5 per DD-CRD-002-EA, Issue #546)
 // ========================================
 
 const (
@@ -50,6 +50,12 @@ const (
 	// False when the decay situation resolves (alert clears, hypothesis killed,
 	// or validity expires).
 	ConditionAlertDecayDetected = "AlertDecayDetected"
+
+	// ConditionPostHashCaptured indicates whether the EM successfully captured the
+	// post-remediation spec hash from the target resource (Issue #546).
+	// True when spec was fetched and hash computed; False when the spec fetch was
+	// degraded (e.g., RBAC Forbidden). The condition Message contains the reason.
+	ConditionPostHashCaptured = "PostHashCaptured"
 )
 
 // ========================================
@@ -118,6 +124,20 @@ const (
 
 	// ReasonSpecDrifted indicates the target resource spec hash has changed since post-remediation.
 	ReasonSpecDrifted = "SpecDrifted"
+)
+
+// ========================================
+// CONDITION REASONS: PostHashCaptured (Issue #546)
+// ========================================
+
+const (
+	// ReasonPostHashCaptured indicates the EM successfully fetched the target spec and computed the hash.
+	ReasonPostHashCaptured = "PostHashCaptured"
+
+	// ReasonPostHashCaptureFailed indicates the EM could not fetch the target spec
+	// due to an access error (Forbidden, transient API error). The hash component
+	// proceeds with an empty spec, but the assessment is degraded.
+	ReasonPostHashCaptureFailed = "PostHashCaptureFailed"
 )
 
 // ========================================

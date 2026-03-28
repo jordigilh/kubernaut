@@ -2,7 +2,7 @@
 # Per IMPLEMENTATION_PLAN_V1.22.md Day 4 specification
 #
 # BR-SP-051: Primary detection from namespace labels (kubernaut.ai/environment)
-# BR-SP-051: Case-insensitive matching (uses lower() function)
+# BR-SP-051: Label value is passed through as output; evaluator normalizes at the boundary (PascalCase CRD enum).
 # BR-SP-052: DEPRECATED (2025-12-20) - ConfigMap fallback removed from Go code
 #            Operators can implement ConfigMap-like logic in Rego if needed
 # BR-SP-053: DEPRECATED (2025-12-20) - Go "unknown" default removed
@@ -20,7 +20,7 @@
 #
 # Output Schema:
 # {
-#   "environment": "production",
+#   "environment": "Production",
 #   "source": "namespace-labels"
 # }
 
@@ -32,9 +32,9 @@ import rego.v1
 # PRIMARY: Namespace Labels (kubernaut.ai/environment)
 # ============================================================================
 # Per BR-SP-051: Only kubernaut.ai/ prefixed labels
-# Per BR-SP-051: Case-insensitive matching (normalize to lowercase)
+# Per BR-SP-051: Output uses the label value as-is (evaluator normalizes).
 
-result := {"environment": lower(env), "source": "namespace-labels"} if {
+result := {"environment": env, "source": "namespace-labels"} if {
     env := input.namespace.labels["kubernaut.ai/environment"]
     env != ""
 }
@@ -46,12 +46,12 @@ result := {"environment": lower(env), "source": "namespace-labels"} if {
 # Examples:
 #
 # Detect from namespace name pattern:
-# result := {"environment": "production", "source": "namespace-pattern"} if {
+# result := {"environment": "Production", "source": "namespace-pattern"} if {
 #     startswith(input.namespace.name, "prod-")
 # }
 #
 # Detect from other labels:
-# result := {"environment": lower(env), "source": "env-label"} if {
+# result := {"environment": env, "source": "env-label"} if {
 #     env := input.namespace.labels["env"]
 #     env != ""
 # }
@@ -64,7 +64,7 @@ result := {"environment": lower(env), "source": "namespace-labels"} if {
 # Go code has NO fallback - this default is the single source of truth.
 #
 # Example customizations:
-# - default result := {"environment": "development", "source": "default"} (safe default)
+# - default result := {"environment": "Development", "source": "default"} (safe default)
 # - default result := {"environment": "", "source": "unclassified"} (empty = no classification)
 #
 default result := {"environment": "", "source": "unclassified"}

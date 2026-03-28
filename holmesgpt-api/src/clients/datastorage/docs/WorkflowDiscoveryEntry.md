@@ -15,6 +15,7 @@ Name | Type | Description | Notes
 **schema_image** | **str** | OCI image used to extract the workflow schema | [optional] 
 **execution_bundle** | **str** | OCI execution bundle reference (digest-pinned) | [optional] 
 **execution_engine** | **str** | Execution engine (tekton, job) | [optional] 
+**service_account_name** | **str** | Per-workflow ServiceAccount name (DD-WE-005 v2.0). Omitted if not set. | [optional] 
 
 ## Example
 

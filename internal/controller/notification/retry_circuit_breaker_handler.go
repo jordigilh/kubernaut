@@ -70,7 +70,7 @@ func (r *NotificationRequestReconciler) channelAlreadySucceeded(notification *no
 	// Check persisted success in status
 	persistedSuccess := false
 	for _, attempt := range notification.Status.DeliveryAttempts {
-		if attempt.Channel == channel && attempt.Status == "success" {
+		if string(attempt.Channel) == channel && attempt.Status == notificationv1alpha1.DeliveryAttemptStatusSuccess {
 			persistedSuccess = true
 			break
 		}
@@ -88,11 +88,11 @@ func (r *NotificationRequestReconciler) getChannelAttemptCount(notification *not
 	// Count persisted attempts from status
 	persistedCount := 0
 	for _, attempt := range notification.Status.DeliveryAttempts {
-		if attempt.Channel == channel {
+		if string(attempt.Channel) == channel {
 			persistedCount++
 		}
 	}
-	
+
 	// DD-NOT-008: Get total count (persisted + in-flight) from orchestrator
 	// This prevents concurrent reconciliations from both thinking attemptCount < MaxAttempts
 	return r.DeliveryOrchestrator.GetTotalAttemptCount(notification, channel, persistedCount)
@@ -103,7 +103,7 @@ func (r *NotificationRequestReconciler) getChannelAttemptCount(notification *not
 // BR-NOT-052: Automatic Retry - distinguishes permanent from transient failures
 func (r *NotificationRequestReconciler) hasChannelPermanentError(notification *notificationv1alpha1.NotificationRequest, channel string) bool {
 	for _, attempt := range notification.Status.DeliveryAttempts {
-		if attempt.Channel == channel && attempt.Status == "failed" {
+		if string(attempt.Channel) == channel && attempt.Status == notificationv1alpha1.DeliveryAttemptStatusFailed {
 			// Check if error message indicates permanent failure
 			if strings.Contains(attempt.Error, PermanentFailureMarker) {
 				return true
@@ -120,9 +120,10 @@ func (r *NotificationRequestReconciler) getMaxAttemptCount(notification *notific
 	attemptCounts := make(map[string]int)
 
 	for _, attempt := range notification.Status.DeliveryAttempts {
-		attemptCounts[attempt.Channel]++
-		if attemptCounts[attempt.Channel] > maxAttempt {
-			maxAttempt = attemptCounts[attempt.Channel]
+		ch := string(attempt.Channel)
+		attemptCounts[ch]++
+		if attemptCounts[ch] > maxAttempt {
+			maxAttempt = attemptCounts[ch]
 		}
 	}
 

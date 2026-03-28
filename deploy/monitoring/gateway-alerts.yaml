@@ -42,7 +42,6 @@ data:
                 - All webhook requests are being rejected with 503
                 - Prometheus is retrying alerts (may exhaust retries after 15 minutes)
                 - Cannot guarantee zero duplicate CRDs
-                - Storm protection is disabled
 
                 **Immediate Actions**:
                 1. Check Redis HA status: `kubectl get pods -n kubernaut-system -l app=redis`
@@ -175,7 +174,7 @@ data:
                 2. Estimate recovery time based on current outage duration
                 3. Consider scaling Gateway replicas before Redis recovery
                 4. Monitor Gateway resource usage during recovery
-                5. Prepare for potential alert storm after recovery
+                5. Prepare for a surge of retried alerts after recovery
 
                 **Runbook**: https://github.com/jordigilh/kubernaut/blob/main/docs/runbooks/gateway-alert-backlog.md
 

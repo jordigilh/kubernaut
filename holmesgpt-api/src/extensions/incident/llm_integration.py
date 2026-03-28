@@ -71,6 +71,8 @@ from src.extensions.investigation_helpers import (
     audit_llm_response_and_tools,
     handle_validation_exhaustion,
 )
+from src.metrics.token_accumulator import get_token_accumulator  # #435
+
 # ADR-056: DetectedLabels import removed -- no longer extracted from request
 
 logger = logging.getLogger(__name__)
@@ -801,7 +803,8 @@ async def analyze_incident(
                             k8s_context["namespace_labels"] = ns_meta.get("labels", {})
                             k8s_context["namespace_annotations"] = ns_meta.get("annotations", {})
 
-                        return await _detector.detect_labels(k8s_context, owner_chain)
+                        labels, _quota = await _detector.detect_labels(k8s_context, owner_chain)
+                        return labels
 
                     detector_fn = _detect
 
@@ -946,6 +949,19 @@ async def analyze_incident(
 
             audit_llm_request(audit_store, incident_id, remediation_id, config, investigation_prompt)
 
+            # Call HolmesGPT SDK
+            logger.info({
+                "event": "calling_aiagent_sdk",
+                "incident_id": incident_id,
+                "attempt": attempt + 1,
+                "max_attempts": MAX_VALIDATION_ATTEMPTS
+            })
+            # #435: Snapshot token total before SDK call to compute per-call delta
+            _acc = get_token_accumulator()
+            _token_snapshot = _acc.total() if _acc else 0
+
+            # DD-AA-HAPI-064: Offload sync Holmes SDK call to thread pool
+            # to keep the event loop responsive for session submit/poll requests
             phase3_investigation_result = await asyncio.to_thread(
                 investigate_issues,
                 investigate_request=phase3_request,
@@ -953,7 +969,14 @@ async def analyze_incident(
                 config=config,
             )
 
-            audit_llm_response_and_tools(audit_store, incident_id, remediation_id, phase3_investigation_result)
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # AUDIT: LLM RESPONSE + TOOL CALLS (BR-AUDIT-005, ADR-032 §1)
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # #435: Per-call token delta (not cumulative session total)
+            _tokens_used = (_acc.total() - _token_snapshot) if _acc else None
+            audit_llm_response_and_tools(
+                audit_store, incident_id, remediation_id, phase3_investigation_result, tokens_used=_tokens_used
+            )
 
             result, validation_result = parse_and_validate_investigation_result(
                 phase3_investigation_result,

@@ -27,17 +27,12 @@ data:
         burst: 10
 
     # DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free (K8s-native)
-    # All deduplication and storm state managed via RR status fields
+    # Deduplication state managed via RR status fields
 
     # Business logic configuration
     processing:
       deduplication:
         cooldownPeriod: 5m
-
-      storm:
-        rateThreshold: 10
-        patternThreshold: 5
-        aggregationWindow: 1m
 
       environment:
         cacheTtl: 30s

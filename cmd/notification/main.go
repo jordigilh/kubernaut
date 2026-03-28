@@ -327,7 +327,7 @@ func main() {
 	// See: docs/architecture/decisions/DD-METRICS-001-controller-metrics-wiring-pattern.md
 	// ========================================
 	// Create metrics recorder for dependency injection (DD-METRICS-001 compliance)
-	metricsRecorder := notificationmetrics.NewPrometheusRecorder()
+	metricsRecorder := notificationmetrics.NewMetrics()
 
 	// Initialize metrics with zero values to ensure they appear in Prometheus immediately
 	// This is critical for E2E metrics validation tests
@@ -376,7 +376,7 @@ func main() {
 
 			// Update Prometheus metric
 			if metricsRecorder != nil {
-				metricsRecorder.UpdateCircuitBreakerState(name, to)
+				metricsRecorder.UpdateCircuitBreakerState(name, int(to))
 			}
 		},
 	})

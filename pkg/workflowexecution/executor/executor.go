@@ -37,23 +37,41 @@ type CreateOptions struct {
 	Dependencies *models.WorkflowDependencies
 }
 
+// Warning represents a non-fatal issue detected during execution resource
+// creation. The reconciler translates warnings into WFE conditions and K8s
+// events so operators can observe them via kubectl.
+type Warning struct {
+	Type    string // Condition type, e.g. "TokenTTLInsufficient"
+	Reason  string // Machine-readable reason, e.g. "TokenTTLShortened"
+	Message string // Human-readable detail
+}
+
+// CreateResult is the return value of Executor.Create.
+// Issue #501: Extended from a bare resource name string to carry optional
+// warnings (e.g. token TTL shortened by the API server).
+type CreateResult struct {
+	ResourceName string
+	Warnings     []Warning
+}
+
 // Executor defines the interface for workflow execution backends.
-// Both TektonExecutor and JobExecutor implement this interface.
+// Tekton, Job, and Ansible executors implement this interface.
 //
 // Lifecycle:
-//  1. Create - Creates the execution resource (PipelineRun or Job) in the execution namespace
+//  1. Create - Creates the execution resource in the execution namespace
 //  2. GetStatus - Polls the execution resource for current status
 //  3. Cleanup - Deletes the execution resource during WFE deletion
 type Executor interface {
-	// Create builds and creates the execution resource (PipelineRun or Job)
-	// in the specified execution namespace. Returns the name of the created resource.
+	// Create builds and creates the execution resource (PipelineRun, Job, or
+	// AWX job) in the specified execution namespace. Returns a CreateResult
+	// containing the resource name and any non-fatal warnings.
 	//
 	// The execution resource name MUST be deterministic based on targetResource
 	// to provide atomic resource locking (DD-WE-003).
 	//
 	// DD-WE-006: opts.Dependencies carries schema-declared infrastructure dependencies
 	// to be mounted as volumes (Job) or workspace bindings (Tekton).
-	Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) (string, error)
+	Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) (*CreateResult, error)
 
 	// GetStatus retrieves the current status of the execution resource.
 	// Returns an ExecutionResult that maps the backend-specific status to WFE phases.
@@ -66,7 +84,7 @@ type Executor interface {
 	// Returns nil if the resource doesn't exist (idempotent).
 	Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error
 
-	// Engine returns the execution engine identifier ("tekton" or "job")
+	// Engine returns the execution engine identifier ("tekton", "job", or "ansible")
 	Engine() string
 }
 

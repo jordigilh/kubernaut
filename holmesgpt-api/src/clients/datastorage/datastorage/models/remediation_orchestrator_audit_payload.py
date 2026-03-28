@@ -59,7 +59,7 @@ class RemediationOrchestratorAuditPayload(BaseModel):
     pre_remediation_spec_hash: Optional[StrictStr] = Field(default=None, description="Canonical SHA-256 hash of the target resource's .spec before remediation. Computed using DD-EM-002 canonical spec hash algorithm. Format: \"sha256:<hex>\" ")
     target_resource: Optional[StrictStr] = Field(default=None, description="Target resource identifier in format \"namespace/Kind/name\" or \"Kind/name\" for cluster-scoped. Used by remediation.workflow_created to capture what resource is being remediated. ")
     workflow_version: Optional[StrictStr] = Field(default=None, description="Version of the selected workflow")
-    workflow_type: Optional[StrictStr] = Field(default=None, description="Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery. Used by DS remediation history to populate workflowType on entries and summaries. ")
+    action_type: Optional[StrictStr] = Field(default=None, description="Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery. Used by DS remediation history to populate actionType on entries and summaries. ")
     ea_name: Optional[StrictStr] = Field(default=None, description="Name of the EffectivenessAssessment CRD created by the RO. Only present for orchestrator.ea.created events. ")
     hash_compute_delay: Optional[StrictStr] = Field(default=None, description="Duration-based hash compute delay set on the EA config by the RO. Computed from GitOps sync + operator reconcile delays for async targets. Format: Go duration string. Only present for orchestrator.ea.created events. Reference: DD-EM-004, BR-RO-103, Issue #277 ")
     alert_check_delay: Optional[StrictStr] = Field(default=None, description="Duration-based alert check delay set on the EA config by the RO. Set for proactive signals where the triggering alert needs extra time to resolve. Format: Go duration string. Reference: BR-EM-009, BR-RO-103, Issue #277 ")
@@ -67,7 +67,7 @@ class RemediationOrchestratorAuditPayload(BaseModel):
     operator_reconcile_delay: Optional[StrictStr] = Field(default=None, description="Operator reconcile delay from RO async propagation config. Only present for orchestrator.ea.created events when target is CRD-managed. Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.4 ")
     is_gitops_managed: Optional[StrictBool] = Field(default=None, description="Whether the remediation target was detected as GitOps-managed. Only present for orchestrator.ea.created events. ")
     is_crd: Optional[StrictBool] = Field(default=None, description="Whether the remediation target is a CRD (non-built-in group). Only present for orchestrator.ea.created events. ")
-    __properties: ClassVar[List[str]] = ["event_type", "rr_name", "namespace", "outcome", "duration_ms", "failure_phase", "failure_reason", "error_details", "from_phase", "to_phase", "transition_reason", "rar_name", "required_by", "workflow_id", "confidence_str", "decision", "approved_by", "rejected_by", "rejection_reason", "message", "reason", "sub_reason", "notification_name", "timeout_config", "pre_remediation_spec_hash", "target_resource", "workflow_version", "workflow_type", "ea_name", "hash_compute_delay", "alert_check_delay", "gitops_sync_delay", "operator_reconcile_delay", "is_gitops_managed", "is_crd"]
+    __properties: ClassVar[List[str]] = ["event_type", "rr_name", "namespace", "outcome", "duration_ms", "failure_phase", "failure_reason", "error_details", "from_phase", "to_phase", "transition_reason", "rar_name", "required_by", "workflow_id", "confidence_str", "decision", "approved_by", "rejected_by", "rejection_reason", "message", "reason", "sub_reason", "notification_name", "timeout_config", "pre_remediation_spec_hash", "target_resource", "workflow_version", "action_type", "ea_name", "hash_compute_delay", "alert_check_delay", "gitops_sync_delay", "operator_reconcile_delay", "is_gitops_managed", "is_crd"]
 
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
@@ -198,7 +198,7 @@ class RemediationOrchestratorAuditPayload(BaseModel):
             "pre_remediation_spec_hash": obj.get("pre_remediation_spec_hash"),
             "target_resource": obj.get("target_resource"),
             "workflow_version": obj.get("workflow_version"),
-            "workflow_type": obj.get("workflow_type"),
+            "action_type": obj.get("action_type"),
             "ea_name": obj.get("ea_name"),
             "hash_compute_delay": obj.get("hash_compute_delay"),
             "alert_check_delay": obj.get("alert_check_delay"),

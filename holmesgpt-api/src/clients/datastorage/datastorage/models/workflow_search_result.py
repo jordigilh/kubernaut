@@ -19,10 +19,11 @@ import json
 
 
 from typing import Any, ClassVar, Dict, List, Optional, Union
-from pydantic import BaseModel, StrictStr
+from pydantic import BaseModel, StrictStr, field_validator
 from pydantic import Field
 from typing_extensions import Annotated
 from datastorage.models.detected_labels import DetectedLabels
+from datastorage.models.structured_description import StructuredDescription
 try:
     from typing import Self
 except ImportError:
@@ -34,12 +35,14 @@ class WorkflowSearchResult(BaseModel):
     """ # noqa: E501
     workflow_id: StrictStr = Field(description="UUID primary key (DD-WORKFLOW-002 v3.0)", alias="workflowId")
     title: StrictStr = Field(description="Human-readable workflow name")
-    description: StrictStr = Field(description="Workflow description")
+    description: StructuredDescription
     schema_version: Optional[StrictStr] = Field(default=None, description="Schema format version (e.g., 1.0, 1.1). #255", alias="schemaVersion")
     schema_image: Optional[StrictStr] = Field(default=None, description="OCI image used to extract the workflow schema", alias="schemaImage")
     schema_digest: Optional[StrictStr] = Field(default=None, description="OCI schema image digest", alias="schemaDigest")
     execution_bundle: Optional[StrictStr] = Field(default=None, description="OCI execution bundle reference (digest-pinned)", alias="executionBundle")
     execution_bundle_digest: Optional[StrictStr] = Field(default=None, description="OCI execution bundle digest", alias="executionBundleDigest")
+    execution_engine: Optional[StrictStr] = Field(default=None, description="Execution engine (tekton, job, ansible)", alias="executionEngine")
+    service_account_name: Optional[StrictStr] = Field(default=None, description="Per-workflow ServiceAccount name (DD-WE-005 v2.0). Omitted if not set.", alias="serviceAccountName")
     confidence: Union[Annotated[float, Field(le=1.0, strict=True, ge=0.0)], Annotated[int, Field(le=1, strict=True, ge=0)]] = Field(description="Normalized label score (0.0-1.0)")
     label_boost: Optional[Union[Annotated[float, Field(le=0.39, strict=True, ge=0.0)], Annotated[int, Field(le=0, strict=True, ge=0)]]] = Field(default=None, description="Boost from matching DetectedLabels", alias="labelBoost")
     label_penalty: Optional[Union[Annotated[float, Field(le=0.2, strict=True, ge=0.0)], Annotated[int, Field(le=0, strict=True, ge=0)]]] = Field(default=None, description="Penalty from conflicting DetectedLabels", alias="labelPenalty")
@@ -48,7 +51,17 @@ class WorkflowSearchResult(BaseModel):
     custom_labels: Optional[Dict[str, List[StrictStr]]] = Field(default=None, description="Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format", alias="customLabels")
     detected_labels: Optional[DetectedLabels] = Field(default=None, alias="detectedLabels")
     parameters: Optional[Dict[str, Any]] = Field(default=None, description="Workflow parameter schema (JSONB) - describes expected parameters")
-    __properties: ClassVar[List[str]] = ["workflowId", "title", "description", "schemaVersion", "schemaImage", "schemaDigest", "executionBundle", "executionBundleDigest", "confidence", "labelBoost", "labelPenalty", "finalScore", "rank", "customLabels", "detectedLabels", "parameters"]
+    __properties: ClassVar[List[str]] = ["workflowId", "title", "description", "schemaVersion", "schemaImage", "schemaDigest", "executionBundle", "executionBundleDigest", "executionEngine", "serviceAccountName", "confidence", "labelBoost", "labelPenalty", "finalScore", "rank", "customLabels", "detectedLabels", "parameters"]
+
+    @field_validator('execution_engine')
+    def execution_engine_validate_enum(cls, value):
+        """Validates the enum"""
+        if value is None:
+            return value
+
+        if value not in ('tekton', 'job', 'ansible'):
+            raise ValueError("must be one of enum values ('tekton', 'job', 'ansible')")
+        return value
 
     model_config = {
         "populate_by_name": True,
@@ -87,6 +100,9 @@ class WorkflowSearchResult(BaseModel):
             },
             exclude_none=True,
         )
+        # override the default output from pydantic by calling `to_dict()` of description
+        if self.description:
+            _dict['description'] = self.description.to_dict()
         # override the default output from pydantic by calling `to_dict()` of detected_labels
         if self.detected_labels:
             _dict['detectedLabels'] = self.detected_labels.to_dict()
@@ -104,12 +120,14 @@ class WorkflowSearchResult(BaseModel):
         _obj = cls.model_validate({
             "workflowId": obj.get("workflowId"),
             "title": obj.get("title"),
-            "description": obj.get("description"),
+            "description": StructuredDescription.from_dict(obj.get("description")) if obj.get("description") is not None else None,
             "schemaVersion": obj.get("schemaVersion"),
             "schemaImage": obj.get("schemaImage"),
             "schemaDigest": obj.get("schemaDigest"),
             "executionBundle": obj.get("executionBundle"),
             "executionBundleDigest": obj.get("executionBundleDigest"),
+            "executionEngine": obj.get("executionEngine"),
+            "serviceAccountName": obj.get("serviceAccountName"),
             "confidence": obj.get("confidence"),
             "labelBoost": obj.get("labelBoost"),
             "labelPenalty": obj.get("labelPenalty"),

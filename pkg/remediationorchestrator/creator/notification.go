@@ -19,6 +19,7 @@ package creator
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,10 +29,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	emconditions "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/conditions"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 )
 
 // formatTargetResource formats a ResourceIdentifier for notification bodies.
@@ -126,7 +132,7 @@ func (c *NotificationCreator) CreateApprovalNotification(
 
 	// Build NotificationRequest for approval
 	// #260: Channels resolved by NT routing rules (BR-NOT-065), not set by RO
-	// API Contract: Uses Subject/Body (not Title/Message), Metadata (not Context)
+	// API Contract: Uses Subject/Body (not Title/Message), Context + Extensions
 	nr := &notificationv1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -146,13 +152,18 @@ func (c *NotificationCreator) CreateApprovalNotification(
 			Severity: rr.Spec.Severity,
 			Subject:  fmt.Sprintf("Approval Required: %s", rr.Spec.SignalName),
 			Body:     c.buildApprovalBody(rr, ai, resolveNotificationTargetResource(rr, ai)),
-			Metadata: map[string]string{
-				"remediationRequest": rr.Name,
-				"aiAnalysis":         ai.Name,
-				"approvalReason":     ai.Status.ApprovalReason,
-				"confidence":         fmt.Sprintf("%.2f", ai.Status.SelectedWorkflow.Confidence),
-				"selectedWorkflow":   ai.Status.SelectedWorkflow.WorkflowID,
-				"severity":           rr.Spec.Severity,
+			Context: &notificationv1.NotificationContext{
+				Lineage: &notificationv1.LineageContext{
+					RemediationRequest: rr.Name,
+					AIAnalysis:         ai.Name,
+				},
+				Workflow: &notificationv1.WorkflowContext{
+					SelectedWorkflow: ai.Status.SelectedWorkflow.WorkflowID,
+					Confidence:       fmt.Sprintf("%.2f", ai.Status.SelectedWorkflow.Confidence),
+				},
+				Analysis: &notificationv1.AnalysisContext{
+					ApprovalReason: ai.Status.ApprovalReason,
+				},
 			},
 		},
 	}
@@ -252,12 +263,14 @@ func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationReq
 
 // CreateCompletionNotification creates a NotificationRequest for successful remediation completion (BR-ORCH-045).
 // This is triggered when WorkflowExecution completes successfully and the RemediationRequest transitions to Completed.
+// #318: ea is optional -- nil produces "Verification: not available" (graceful degradation).
 // Reference: BR-ORCH-045 (completion notification), BR-ORCH-031 (cascade deletion), BR-ORCH-035 (ref tracking)
 func (c *NotificationCreator) CreateCompletionNotification(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
 	ai *aianalysisv1.AIAnalysis,
 	executionEngine string,
+	ea *eav1.EffectivenessAssessment,
 ) (string, error) {
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
@@ -295,9 +308,12 @@ func (c *NotificationCreator) CreateCompletionNotification(
 	}
 	// Issue #518: executionEngine is now passed as parameter (sourced from WFE status).
 
+	// #318 + #546: Build verification summary from EA (with RR for hash degradation)
+	verificationText, verificationCtx := BuildVerificationSummary(ea, rr)
+
 	// Build NotificationRequest for completion
 	// #260: Channels resolved by NT routing rules (BR-NOT-065), not set by RO
-	// API Contract: Uses Subject/Body (not Title/Message), Metadata (not Context)
+	// API Contract: Uses Subject/Body (not Title/Message), Context + Extensions
 	nr := &notificationv1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -316,14 +332,21 @@ func (c *NotificationCreator) CreateCompletionNotification(
 			Priority: notificationv1.NotificationPriorityLow,
 			Severity: rr.Spec.Severity,
 			Subject:  fmt.Sprintf("Remediation Completed: %s", rr.Spec.SignalName),
-			Body:     c.buildCompletionBody(rr, ai, rootCause, workflowID, executionEngine, actionType, rationale, resolveNotificationTargetResource(rr, ai)),
-			Metadata: map[string]string{
-				"remediationRequest": rr.Name,
-				"aiAnalysis":         ai.Name,
-				"workflowId":         workflowID,
-				"executionEngine":    executionEngine,
-				"rootCause":          rootCause,
-				"outcome":            string(rr.Status.Outcome),
+			Body:     c.buildCompletionBody(rr, ai, rootCause, workflowID, executionEngine, actionType, rationale, resolveNotificationTargetResource(rr, ai), verificationText),
+			Context: &notificationv1.NotificationContext{
+				Lineage: &notificationv1.LineageContext{
+					RemediationRequest: rr.Name,
+					AIAnalysis:         ai.Name,
+				},
+				Workflow: &notificationv1.WorkflowContext{
+					WorkflowID:      workflowID,
+					ExecutionEngine: executionEngine,
+				},
+				Analysis: &notificationv1.AnalysisContext{
+					RootCause: rootCause,
+					Outcome:   string(rr.Status.Outcome),
+				},
+				Verification: verificationCtx,
 			},
 		},
 	}
@@ -357,11 +380,13 @@ func (c *NotificationCreator) CreateCompletionNotification(
 }
 
 // buildCompletionBody builds the completion notification body.
+// #318: verificationText is appended as a "Verification Results" section before the closing tagline.
 func (c *NotificationCreator) buildCompletionBody(
 	rr *remediationv1.RemediationRequest,
 	_ *aianalysisv1.AIAnalysis,
 	rootCause, workflowID, executionEngine, actionType, rationale string,
 	target remediationv1.ResourceIdentifier,
+	verificationText string,
 ) string {
 	workflowLabel := workflowID
 	if actionType != "" {
@@ -393,6 +418,10 @@ func (c *NotificationCreator) buildCompletionBody(
 
 	if rationale != "" {
 		body += fmt.Sprintf("\n\n**Selection Rationale**:\n%s", rationale)
+	}
+
+	if verificationText != "" {
+		body += fmt.Sprintf("\n\n**Verification Results**:\n%s", verificationText)
 	}
 
 	body += "\n\nThis incident was automatically detected and remediated by Kubernaut."
@@ -427,7 +456,7 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 	}
 
 	// Build bulk notification
-	// API Contract: Uses Subject/Body (not Title/Message), Metadata (not Context)
+	// API Contract: Uses Subject/Body (not Title/Message), Context + Extensions
 	nr := &notificationv1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -447,9 +476,13 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 			Severity: "low",
 			Subject:  fmt.Sprintf("Remediation Completed with %d Duplicates", rr.Status.DuplicateCount),
 			Body:     c.buildBulkDuplicateBody(rr),
-			Metadata: map[string]string{
-				"remediationRequest": rr.Name,
-				"duplicateCount":     fmt.Sprintf("%d", rr.Status.DuplicateCount),
+			Context: &notificationv1.NotificationContext{
+				Lineage: &notificationv1.LineageContext{
+					RemediationRequest: rr.Name,
+				},
+				Dedup: &notificationv1.DedupContext{
+					DuplicateCount: fmt.Sprintf("%d", rr.Status.DuplicateCount),
+				},
 			},
 		},
 	}
@@ -503,21 +536,12 @@ All duplicate signals have been handled by this remediation.`,
 // MANUAL REVIEW NOTIFICATIONS (BR-ORCH-036)
 // ========================================
 
-// ManualReviewSource indicates the source of the manual review requirement.
-type ManualReviewSource string
-
-const (
-	// ManualReviewSourceAIAnalysis indicates AIAnalysis WorkflowResolutionFailed
-	ManualReviewSourceAIAnalysis ManualReviewSource = "AIAnalysis"
-	// ManualReviewSourceWorkflowExecution indicates WE ExhaustedRetries or ExecutionFailure
-	ManualReviewSourceWorkflowExecution ManualReviewSource = "WorkflowExecution"
-)
 
 // ManualReviewContext provides context for manual review notifications.
 // Used by both AIAnalysis and WorkflowExecution failure scenarios.
 type ManualReviewContext struct {
 	// Source indicates which component triggered the manual review
-	Source ManualReviewSource
+	Source notificationv1.ReviewSourceType
 	// Reason is the high-level failure reason (e.g., "WorkflowResolutionFailed", "ExhaustedRetries", "HumanReviewRequired")
 	Reason string
 	// SubReason provides granular detail (e.g., "WorkflowNotFound", "LowConfidence")
@@ -579,8 +603,8 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 	// Determine priority based on source and reason (per BR-ORCH-036 priority mapping)
 	priority := c.mapManualReviewPriority(reviewCtx)
 
-	// Build metadata with context-specific fields
-	metadata := c.buildManualReviewMetadata(rr, reviewCtx)
+	// Build notification context
+	nCtx := c.buildManualReviewContext(rr, reviewCtx)
 
 	// Build NotificationRequest for manual review
 	// #260: Channels resolved by NT routing rules (BR-NOT-065), not set by RO
@@ -601,10 +625,10 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 			Type:         notificationv1.NotificationTypeManualReview,
 			Priority:     priority,
 			Severity:     rr.Spec.Severity,
-			ReviewSource: string(reviewCtx.Source),
-			Subject:  fmt.Sprintf("⚠️ Manual Review Required: %s", rr.Spec.SignalName),
-			Body:     c.buildManualReviewBody(rr, reviewCtx),
-			Metadata: metadata,
+			ReviewSource: reviewCtx.Source,
+			Subject:      fmt.Sprintf("⚠️ Manual Review Required: %s", rr.Spec.SignalName),
+			Body:         c.buildManualReviewBody(rr, reviewCtx),
+			Context:      nCtx,
 		},
 	}
 
@@ -643,7 +667,7 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 // - AI NoMatchingWorkflows, LowConfidence, InvestigationInconclusive → medium
 // - BR-ORCH-036 v3.0: AI infrastructure failures (MaxRetriesExceeded, TransientError, PermanentError) → high
 func (c *NotificationCreator) mapManualReviewPriority(ctx *ManualReviewContext) notificationv1.NotificationPriority {
-	if ctx.Source == ManualReviewSourceWorkflowExecution {
+	if ctx.Source == notificationv1.ReviewSourceWorkflowExecution {
 		// All WE failures are critical (cluster state may be unknown)
 		return notificationv1.NotificationPriorityCritical
 	}
@@ -664,45 +688,39 @@ func (c *NotificationCreator) mapManualReviewPriority(ctx *ManualReviewContext) 
 }
 
 
-// buildManualReviewMetadata builds the metadata map for manual review notifications.
-// Includes source-specific fields for context.
-func (c *NotificationCreator) buildManualReviewMetadata(rr *remediationv1.RemediationRequest, ctx *ManualReviewContext) map[string]string {
-	metadata := map[string]string{
-		"remediationRequest": rr.Name,
-		"source":             string(ctx.Source),
-		"reason":             ctx.Reason,
+// buildManualReviewContext builds typed notification context for manual review notifications.
+func (c *NotificationCreator) buildManualReviewContext(rr *remediationv1.RemediationRequest, ctx *ManualReviewContext) *notificationv1.NotificationContext {
+	nCtx := &notificationv1.NotificationContext{
+		Lineage: &notificationv1.LineageContext{
+			RemediationRequest: rr.Name,
+		},
+		Review: &notificationv1.ReviewContext{
+			Reason: ctx.Reason,
+		},
 	}
-
-	// Add SubReason if present
 	if ctx.SubReason != "" {
-		metadata["subReason"] = ctx.SubReason
+		nCtx.Review.SubReason = ctx.SubReason
 	}
-
-	// BR-HAPI-197: Add HumanReviewReason if present (explicit HAPI decision)
 	if ctx.HumanReviewReason != "" {
-		metadata["humanReviewReason"] = ctx.HumanReviewReason
+		nCtx.Review.HumanReviewReason = ctx.HumanReviewReason
 	}
-
-	// Add RootCauseAnalysis if present (from AIAnalysis)
 	if ctx.RootCauseAnalysis != "" {
-		metadata["rootCauseAnalysis"] = ctx.RootCauseAnalysis
+		nCtx.Review.RootCauseAnalysis = ctx.RootCauseAnalysis
 	}
-
-	// Add WorkflowExecution-specific fields
-	if ctx.Source == ManualReviewSourceWorkflowExecution {
+	if ctx.Source == notificationv1.ReviewSourceWorkflowExecution {
+		nCtx.Execution = &notificationv1.ExecutionContext{}
 		if ctx.RetryCount > 0 || ctx.MaxRetries > 0 {
-			metadata["retryCount"] = fmt.Sprintf("%d", ctx.RetryCount)
-			metadata["maxRetries"] = fmt.Sprintf("%d", ctx.MaxRetries)
+			nCtx.Execution.RetryCount = fmt.Sprintf("%d", ctx.RetryCount)
+			nCtx.Execution.MaxRetries = fmt.Sprintf("%d", ctx.MaxRetries)
 		}
 		if ctx.LastExitCode != 0 {
-			metadata["lastExitCode"] = fmt.Sprintf("%d", ctx.LastExitCode)
+			nCtx.Execution.LastExitCode = fmt.Sprintf("%d", ctx.LastExitCode)
 		}
 		if ctx.PreviousExecution != "" {
-			metadata["previousExecution"] = ctx.PreviousExecution
+			nCtx.Execution.PreviousExecution = ctx.PreviousExecution
 		}
 	}
-
-	return metadata
+	return nCtx
 }
 
 // buildManualReviewBody builds the manual review notification body.
@@ -746,7 +764,7 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 	}
 
 	// Add WorkflowExecution-specific context
-	if ctx.Source == ManualReviewSourceWorkflowExecution {
+	if ctx.Source == notificationv1.ReviewSourceWorkflowExecution {
 		if ctx.RetryCount > 0 || ctx.MaxRetries > 0 {
 			body += fmt.Sprintf("\n\n**Retry Information**:\n- Retries attempted: %d/%d", ctx.RetryCount, ctx.MaxRetries)
 		}
@@ -770,4 +788,129 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 3. Mark as resolved if no action is needed`
 
 	return body
+}
+
+// ========================================
+// #318: VERIFICATION SUMMARY BUILDER
+// ========================================
+
+var verificationMessages = map[string]struct {
+	summary string
+	outcome string
+}{
+	eav1.AssessmentReasonFull:              {"Verification passed: all checks confirmed the remediation was effective.", "passed"},
+	eav1.AssessmentReasonPartial:           {"Verification partially completed: some checks could not be performed for this resource type.", "partial"},
+	eav1.AssessmentReasonSpecDrift:         {"Verification inconclusive: the resource spec was modified by an external entity after remediation.", "inconclusive"},
+	eav1.AssessmentReasonAlertDecayTimeout: {"Verification inconclusive: related alerts persisted beyond the assessment window.", "inconclusive"},
+	eav1.AssessmentReasonMetricsTimedOut:   {"Verification partially completed: metrics were not available before the assessment deadline.", "partial"},
+	eav1.AssessmentReasonExpired:           {"Verification could not be completed: the assessment window expired.", "unavailable"},
+	eav1.AssessmentReasonNoExecution:       {"Verification skipped: no workflow execution was found.", "unavailable"},
+}
+
+// BuildVerificationSummary maps an EA and RR to a human-readable verification summary
+// and a typed VerificationContext for programmatic routing.
+// Returns ("Verification: not available.", {Assessed:false, Outcome:"unavailable"}) when EA is nil.
+// Issue #546: Checks RR PreRemediationHashCaptured and EA PostHashCaptured conditions
+// to detect hash-capture degradation and include actionable guidance.
+func BuildVerificationSummary(ea *eav1.EffectivenessAssessment, rr *remediationv1.RemediationRequest) (string, *notificationv1.VerificationContext) {
+	if ea == nil {
+		return "Verification: not available.", &notificationv1.VerificationContext{
+			Assessed: false,
+			Outcome:  "unavailable",
+		}
+	}
+
+	reason := ea.Status.AssessmentReason
+	entry, ok := verificationMessages[reason]
+	if !ok {
+		return fmt.Sprintf("Verification: unknown assessment reason %q.", reason), &notificationv1.VerificationContext{
+			Assessed: true,
+			Outcome:  "unavailable",
+			Reason:   reason,
+		}
+	}
+
+	summary := entry.summary
+	bullets := BuildComponentBullets(ea)
+	if bullets != "" {
+		summary += "\n" + bullets
+	}
+
+	ctx := &notificationv1.VerificationContext{
+		Assessed: true,
+		Outcome:  entry.outcome,
+		Reason:   reason,
+		Summary:  entry.summary,
+	}
+
+	// Issue #546: Check for hash-capture degradation
+	degradedReasons := collectHashDegradationReasons(rr, ea)
+	if len(degradedReasons) > 0 {
+		ctx.Degraded = true
+		ctx.DegradedReason = strings.Join(degradedReasons, "; ")
+		summary += "\n\n" + buildDegradationWarning(degradedReasons)
+	}
+
+	return summary, ctx
+}
+
+// collectHashDegradationReasons checks RR and EA conditions for hash-capture failures (Issue #546).
+func collectHashDegradationReasons(rr *remediationv1.RemediationRequest, ea *eav1.EffectivenessAssessment) []string {
+	var reasons []string
+
+	if rr != nil {
+		cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionPreRemediationHashCaptured)
+		if cond != nil && cond.Status == metav1.ConditionFalse {
+			reasons = append(reasons, fmt.Sprintf("Pre-remediation hash: %s", cond.Message))
+		}
+	}
+
+	if ea != nil {
+		cond := meta.FindStatusCondition(ea.Status.Conditions, emconditions.ConditionPostHashCaptured)
+		if cond != nil && cond.Status == metav1.ConditionFalse {
+			reasons = append(reasons, fmt.Sprintf("Post-remediation hash: %s", cond.Message))
+		}
+	}
+
+	return reasons
+}
+
+// buildDegradationWarning produces an operator-facing warning with actionable RBAC guidance.
+func buildDegradationWarning(reasons []string) string {
+	var b strings.Builder
+	b.WriteString("**Effectiveness Assessment: Degraded**\n")
+	for _, r := range reasons {
+		b.WriteString(fmt.Sprintf("- %s\n", r))
+	}
+	b.WriteString("\nThe effectiveness assessment could not reliably compare pre- and post-remediation resource state.\n")
+	b.WriteString("Action: Grant the controller ServiceAccount read access to the affected resource type, or verify the 'view' ClusterRoleBinding is present.")
+	return b.String()
+}
+
+// BuildComponentBullets produces bullet lines for non-passing assessed components.
+// Omits components that were not assessed or that passed (score >= 1.0).
+// Returns empty string when all assessed components pass (e.g., "full" reason).
+func BuildComponentBullets(ea *eav1.EffectivenessAssessment) string {
+	if ea == nil {
+		return ""
+	}
+
+	var bullets []string
+	c := ea.Status.Components
+
+	if c.HealthAssessed && c.HealthScore != nil && *c.HealthScore < 1.0 {
+		bullets = append(bullets, "- Pod health: not recovered")
+	}
+	if c.AlertAssessed && c.AlertScore != nil && *c.AlertScore < 1.0 {
+		bullets = append(bullets, "- Related alerts: still firing")
+	}
+	if c.HashComputed && c.PostRemediationSpecHash != "" && c.CurrentSpecHash != "" &&
+		c.PostRemediationSpecHash != c.CurrentSpecHash {
+		bullets = append(bullets, "- Resource integrity: spec modified externally after remediation")
+	}
+	if c.MetricsAssessed && c.MetricsScore != nil && *c.MetricsScore < 1.0 {
+		bullets = append(bullets, "- Metrics: anomaly persists")
+	}
+
+	return strings.Join(bullets, "\n")
 }

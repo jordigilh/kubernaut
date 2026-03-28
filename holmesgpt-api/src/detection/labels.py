@@ -23,7 +23,7 @@ ADR-056: Computes labels for the actual RCA target resource (post-RCA)
 rather than the signal source (pre-RCA).
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
@@ -32,15 +32,16 @@ logger = logging.getLogger(__name__)
 class LabelDetector:
     """Detects cluster characteristics for a Kubernetes resource.
 
-    Implements the 7 detection characteristics defined in DD-HAPI-018:
+    Implements the 8 detection characteristics defined in DD-HAPI-018 v1.4:
     gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged,
-    networkIsolated, serviceMesh.
+    networkIsolated, serviceMesh, resourceQuotaConstrained (#366).
 
     Args:
         k8s_queries: Object providing async K8s API query methods:
             - list_pdbs(namespace) -> (list, error_str|None)
             - list_hpas(namespace) -> (list, error_str|None)
             - list_network_policies(namespace) -> (list, error_str|None)
+            - list_resource_quotas(namespace) -> (list, error_str|None)
     """
 
     def __init__(self, k8s_queries):
@@ -50,14 +51,17 @@ class LabelDetector:
         self,
         k8s_context: Optional[Dict[str, Any]],
         owner_chain: Optional[List[Dict[str, str]]],
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Detect cluster characteristics for a resource.
 
-        Returns None if k8s_context is None. Otherwise returns a dict with
-        all DetectedLabels fields per DD-HAPI-018 schema.
+        Returns (None, None) if k8s_context is None. Otherwise returns
+        (labels_dict, quota_summary) where quota_summary is None when
+        no ResourceQuotas exist or detection fails.
+
+        #366 Option C: Tuple return keeps labels flat and quota data separate.
         """
         if k8s_context is None:
-            return None
+            return None, None
 
         result = {
             "failedDetections": [],
@@ -69,6 +73,7 @@ class LabelDetector:
             "helmManaged": False,
             "networkIsolated": False,
             "serviceMesh": "",
+            "resourceQuotaConstrained": False,
         }
 
         namespace = k8s_context.get("namespace", "")
@@ -80,8 +85,9 @@ class LabelDetector:
         self._detect_helm(k8s_context, result)
         await self._detect_network_policy(namespace, result)
         self._detect_service_mesh(k8s_context, result)
+        quota_summary = await self._detect_resource_quota(namespace, result)
 
-        return result
+        return result, quota_summary
 
     def _detect_gitops(self, k8s_context: Dict, result: Dict) -> None:
         """Detect GitOps management (ArgoCD or Flux).
@@ -275,6 +281,60 @@ class LabelDetector:
         if "linkerd.io/proxy-version" in pod_annotations:
             result["serviceMesh"] = "linkerd"
             return
+
+    async def _detect_resource_quota(
+        self, namespace: str, result: Dict
+    ) -> Optional[Dict[str, str]]:
+        """Detect ResourceQuota constraints in namespace (#366).
+
+        Sets resourceQuotaConstrained=true when any ResourceQuota exists.
+        Returns a quota_summary dict with {resource}_hard and {resource}_used
+        keys (raw K8s quantity strings), or None if no quotas/error.
+        """
+        try:
+            quotas, error = await self._k8s.list_resource_quotas(namespace)
+            if error:
+                result["resourceQuotaConstrained"] = False
+                result["failedDetections"].append("resourceQuotaConstrained")
+                return None
+
+            if not quotas:
+                return None
+
+            result["resourceQuotaConstrained"] = True
+            return self._summarize_quotas(quotas)
+        except Exception as exc:
+            logger.warning("ResourceQuota detection failed: %s", exc)
+            result["resourceQuotaConstrained"] = False
+            result["failedDetections"].append("resourceQuotaConstrained")
+            return None
+
+    @staticmethod
+    def _summarize_quotas(quotas: List[Any]) -> Dict[str, str]:
+        """Aggregate quota hard limits and usage across multiple ResourceQuotas.
+
+        For each resource type (cpu, memory, pods, etc.), takes both hard and
+        used values from the first quota that defines each key. Values are raw
+        K8s quantity strings -- no parsing or arithmetic is performed.
+        """
+        hard: Dict[str, str] = {}
+        used: Dict[str, str] = {}
+        for quota in quotas:
+            quota_hard = quota.status.hard or {}
+            quota_used = quota.status.used or {}
+            for resource, value in quota_hard.items():
+                if resource not in hard:
+                    hard[resource] = value
+            for resource, value in quota_used.items():
+                if resource not in used:
+                    used[resource] = value
+
+        summary: Dict[str, str] = {}
+        for resource in hard:
+            summary[f"{resource}_hard"] = hard[resource]
+        for resource in used:
+            summary[f"{resource}_used"] = used[resource]
+        return summary
 
 
 def _labels_match(selector: Dict[str, str], pod_labels: Dict[str, str]) -> bool:

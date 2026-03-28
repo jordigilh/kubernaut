@@ -8,12 +8,14 @@ Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **workflow_id** | **str** | UUID primary key (DD-WORKFLOW-002 v3.0) | 
 **title** | **str** | Human-readable workflow name | 
-**description** | **str** | Workflow description | 
+**description** | [**StructuredDescription**](StructuredDescription.md) |  | 
 **schema_version** | **str** | Schema format version (e.g., 1.0, 1.1). #255 | [optional] 
 **schema_image** | **str** | OCI image used to extract the workflow schema | [optional] 
 **schema_digest** | **str** | OCI schema image digest | [optional] 
 **execution_bundle** | **str** | OCI execution bundle reference (digest-pinned) | [optional] 
 **execution_bundle_digest** | **str** | OCI execution bundle digest | [optional] 
+**execution_engine** | **str** | Execution engine (tekton, job, ansible) | [optional] 
+**service_account_name** | **str** | Per-workflow ServiceAccount name (DD-WE-005 v2.0). Omitted if not set. | [optional] 
 **confidence** | **float** | Normalized label score (0.0-1.0) | 
 **label_boost** | **float** | Boost from matching DetectedLabels | [optional] 
 **label_penalty** | **float** | Penalty from conflicting DetectedLabels | [optional] 

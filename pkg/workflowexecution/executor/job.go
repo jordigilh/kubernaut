@@ -36,22 +36,17 @@ const (
 )
 
 // JobExecutor implements the Executor interface for Kubernetes Jobs.
-// Used for single-step remediations that don't require Tekton pipeline machinery.
+// DD-WE-005 v2.0: SA is read from WFE spec at execution time, not from executor config.
 //
 // Authority: BR-WE-014 (Kubernetes Job Execution Backend)
 type JobExecutor struct {
-	Client             client.Client
-	ServiceAccountName string
+	Client client.Client
 }
 
 // NewJobExecutor creates a new JobExecutor.
-func NewJobExecutor(c client.Client, serviceAccountName string) *JobExecutor {
-	if serviceAccountName == "" {
-		serviceAccountName = DefaultServiceAccountName
-	}
+func NewJobExecutor(c client.Client) *JobExecutor {
 	return &JobExecutor{
-		Client:             c,
-		ServiceAccountName: serviceAccountName,
+		Client: c,
 	}
 }
 
@@ -66,13 +61,13 @@ func (j *JobExecutor) Engine() string {
 // The Job runs the container image from the workflow catalog with parameters
 // injected as environment variables. DD-WE-006: opts.Dependencies are mounted
 // as volumes at /run/kubernaut/secrets/<name> and /run/kubernaut/configmaps/<name>.
-func (j *JobExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) (string, error) {
+func (j *JobExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) (*CreateResult, error) {
 	job := j.buildJob(wfe, namespace, opts.Dependencies)
 
 	if err := j.Client.Create(ctx, job); err != nil {
-		return "", err // Preserve original error for IsAlreadyExists checks
+		return nil, err // Preserve original error for IsAlreadyExists checks
 	}
-	return job.Name, nil
+	return &CreateResult{ResourceName: job.Name}, nil
 }
 
 // GetStatus retrieves the current status of the Job and maps it to ExecutionResult.
@@ -228,7 +223,7 @@ func (j *JobExecutor) buildJob(wfe *workflowexecutionv1alpha1.WorkflowExecution,
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy:      corev1.RestartPolicyNever,
-					ServiceAccountName: j.ServiceAccountName,
+					ServiceAccountName: wfe.Spec.ServiceAccountName,
 					Volumes:            volumes,
 					Containers: []corev1.Container{
 						{
@@ -312,20 +307,20 @@ func (j *JobExecutor) buildEnvVars(wfe *workflowexecutionv1alpha1.WorkflowExecut
 // buildStatusSummary creates a lightweight status summary from a Job.
 func (j *JobExecutor) buildStatusSummary(job *batchv1.Job) *workflowexecutionv1alpha1.ExecutionStatusSummary {
 	summary := &workflowexecutionv1alpha1.ExecutionStatusSummary{
-		Status:     "Unknown",
-		TotalTasks: 1, // Jobs are always single-step
+		Status:     corev1.ConditionUnknown,
+		TotalTasks: 1,
 	}
 
 	if job.Status.Succeeded > 0 {
-		summary.Status = "True"
+		summary.Status = corev1.ConditionTrue
 		summary.Reason = "Succeeded"
 		summary.CompletedTasks = 1
 	} else if job.Status.Failed > 0 {
-		summary.Status = "False"
+		summary.Status = corev1.ConditionFalse
 		summary.Reason = "Failed"
 		summary.Message = fmt.Sprintf("%d pod(s) failed", job.Status.Failed)
 	} else if job.Status.Active > 0 {
-		summary.Status = "Unknown"
+		summary.Status = corev1.ConditionUnknown
 		summary.Reason = "Running"
 		summary.Message = fmt.Sprintf("%d pod(s) active", job.Status.Active)
 	}

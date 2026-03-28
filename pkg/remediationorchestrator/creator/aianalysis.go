@@ -108,11 +108,11 @@ func (c *AIAnalysisCreator) Create(
 			// Analysis request with signal context
 			AnalysisRequest: aianalysisv1.AnalysisRequest{
 				SignalContext: c.buildSignalContext(rr, sp),
-				AnalysisTypes: []string{
-					"investigation",
-					"root-cause",
-					"workflow-selection",
-				},
+			AnalysisTypes: []aianalysisv1.AnalysisType{
+				aianalysisv1.AnalysisTypeInvestigation,
+				aianalysisv1.AnalysisTypeRootCause,
+				aianalysisv1.AnalysisTypeWorkflowSelection,
+			},
 			},
 		},
 	}
@@ -155,13 +155,13 @@ func (c *AIAnalysisCreator) buildSignalContext(
 	sp *signalprocessingv1.SignalProcessing,
 ) aianalysisv1.SignalContextInput {
 	// Environment and Priority come from SP status only (no longer on RR.Spec)
-	environment := "unknown"
-	priority := "P2" // Default medium priority
+	environment := "Unknown"
+	priority := "P2"
 	if sp.Status.EnvironmentClassification != nil && sp.Status.EnvironmentClassification.Environment != "" {
-		environment = sp.Status.EnvironmentClassification.Environment
+		environment = string(sp.Status.EnvironmentClassification.Environment)
 	}
 	if sp.Status.PriorityAssignment != nil && sp.Status.PriorityAssignment.Priority != "" {
-		priority = sp.Status.PriorityAssignment.Priority
+		priority = string(sp.Status.PriorityAssignment.Priority)
 	}
 
 	// BR-SP-106: SignalType from SP status (normalized by signal mode classifier)

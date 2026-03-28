@@ -153,7 +153,6 @@ func main() {
 	setupLog.Info("WorkflowExecution controller configuration",
 		"executionNamespace", cfg.Execution.Namespace,
 		"cooldownPeriod", cfg.Execution.CooldownPeriod,
-		"serviceAccount", cfg.Execution.ServiceAccount,
 		"metricsAddr", cfg.Controller.MetricsAddr,
 		"healthProbeAddr", cfg.Controller.HealthProbeAddr,
 		"dataStorageURL", cfg.DataStorage.URL,
@@ -241,8 +240,8 @@ func main() {
 	// for ensuring Tekton Pipelines is installed in the cluster.
 	// ========================================
 	executorRegistry := weexecutor.NewRegistry()
-	executorRegistry.Register("tekton", weexecutor.NewTektonExecutor(mgr.GetClient(), cfg.Execution.ServiceAccount))
-	executorRegistry.Register("job", weexecutor.NewJobExecutor(mgr.GetClient(), cfg.Execution.ServiceAccount))
+	executorRegistry.Register("tekton", weexecutor.NewTektonExecutor(mgr.GetClient()))
+	executorRegistry.Register("job", weexecutor.NewJobExecutor(mgr.GetClient()))
 
 	// BR-WE-015: Conditionally register Ansible executor if configured.
 	// Uses a direct clientset (not the cached mgr.GetClient()) because the
@@ -265,7 +264,7 @@ func main() {
 				if orgID <= 0 {
 					orgID = 1
 				}
-				executorRegistry.Register("ansible", weexecutor.NewAnsibleExecutor(awxClient, mgr.GetClient(), orgID, ctrl.Log.WithName("ansible-executor")))
+				executorRegistry.Register("ansible", weexecutor.NewAnsibleExecutor(awxClient, mgr.GetClient(), directClientset, orgID, ctrl.Log.WithName("ansible-executor")))
 				setupLog.Info("Ansible executor registered", "awxURL", cfg.Ansible.APIURL, "organizationID", orgID)
 			}
 		}
@@ -298,7 +297,6 @@ func main() {
 		StatusManager:       statusManager, // DD-PERF-001: Atomic status updates
 		ExecutionNamespace:  cfg.Execution.Namespace,
 		CooldownPeriod:      cfg.Execution.CooldownPeriod,
-		ServiceAccountName:  cfg.Execution.ServiceAccount,
 		AuditStore:          auditStore,   // DD-AUDIT-003: Audit store for BR-WE-005
 		PhaseManager:        phaseManager, // P0: Phase State Machine (validated transitions)
 		AuditManager:        auditManager,    // P3: Audit Manager (typed audit methods)

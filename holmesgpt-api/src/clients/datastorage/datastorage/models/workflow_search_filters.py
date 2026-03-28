@@ -61,8 +61,8 @@ class WorkflowSearchFilters(BaseModel):
             return value
 
         for i in value:
-            if i not in ('active', 'disabled', 'deprecated', 'archived'):
-                raise ValueError("each list item must be one of ('active', 'disabled', 'deprecated', 'archived')")
+            if i not in ('Active', 'Disabled', 'Deprecated', 'Archived'):
+                raise ValueError("each list item must be one of ('Active', 'Disabled', 'Deprecated', 'Archived')")
         return value
 
     model_config = {

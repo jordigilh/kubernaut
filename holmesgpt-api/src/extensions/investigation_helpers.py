@@ -108,12 +108,14 @@ def audit_llm_response_and_tools(
     incident_id: str,
     remediation_id: str,
     investigation_result,
+    tokens_used: Optional[int] = None,
 ) -> None:
     """
     Audit the LLM response and any tool calls made during investigation.
 
     Business Requirement: BR-AUDIT-005
     Design Decision: ADR-032 §1 (audit is MANDATORY)
+    Issue: #435 - Wire LLM token usage into audit traces
 
     Must be called AFTER the SDK investigate_issues() call returns.
 
@@ -122,6 +124,7 @@ def audit_llm_response_and_tools(
         incident_id: Incident ID for correlation
         remediation_id: Remediation ID for correlation
         investigation_result: The InvestigationResult from the HolmesGPT SDK
+        tokens_used: Total tokens consumed in the session (#435)
     """
     require_audit_store(audit_store, incident_id, remediation_id)
 
@@ -145,6 +148,7 @@ def audit_llm_response_and_tools(
         analysis_length=analysis_length,
         analysis_preview=analysis_preview,
         tool_call_count=tool_call_count,
+        tokens_used=tokens_used,
     ))
 
     # Audit individual tool calls if any

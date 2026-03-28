@@ -216,7 +216,7 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 		// Update status to indicate retry
 		analysis.Status.Message = fmt.Sprintf("Transient error (attempt %d/%d): %v",
 			analysis.Status.ConsecutiveFailures, MaxRetries, err)
-		analysis.Status.Reason = "TransientError"
+		analysis.Status.Reason = aianalysisv1.ReasonTransientError
 		analysis.Status.SubReason = mapErrorTypeToSubReason(classification.ErrorType) // Map to valid CRD enum
 
 		// Record metric for transient errors
@@ -243,8 +243,8 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 		analysis.Status.CompletedAt = &now
 		analysis.Status.Message = fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v",
 			analysis.Status.ConsecutiveFailures, err)
-		analysis.Status.Reason = "APIError"
-		analysis.Status.SubReason = "MaxRetriesExceeded"
+	analysis.Status.Reason = aianalysisv1.ReasonAPIError
+	analysis.Status.SubReason = "MaxRetriesExceeded"
 
 		// Record metric for max retries exceeded
 		h.metrics.RecordFailure("APIError", "MaxRetriesExceeded")
@@ -268,7 +268,7 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now                       // Per crd-schema.md: set on terminal state
 	analysis.Status.Message = fmt.Sprintf("Permanent error: %v", err)
-	analysis.Status.Reason = "APIError"
+	analysis.Status.Reason = aianalysisv1.ReasonAPIError
 	analysis.Status.SubReason = mapErrorTypeToSubReason(classification.ErrorType) // Map to valid CRD enum
 
 	// Record metric for permanent errors

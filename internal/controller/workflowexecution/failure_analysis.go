@@ -112,10 +112,9 @@ func (r *WorkflowExecutionReconciler) ExtractFailureDetails(ctx context.Context,
 		WasExecutionFailure: false, // Default: pre-execution failure
 	}
 
-	// Calculate execution time before failure
 	if startTime != nil {
-		duration := time.Since(startTime.Time)
-		details.ExecutionTimeBeforeFailure = duration.Round(time.Second).String()
+		d := time.Since(startTime.Time).Round(time.Second)
+		details.ExecutionTimeBeforeFailure = &metav1.Duration{Duration: d}
 	}
 
 	// Handle nil PipelineRun (deleted externally)
@@ -295,9 +294,8 @@ func (r *WorkflowExecutionReconciler) GenerateNaturalLanguageSummary(wfe *workfl
 		sb.WriteString(fmt.Sprintf("Error: %s\n", details.Message))
 	}
 
-	// Execution time
-	if details.ExecutionTimeBeforeFailure != "" {
-		sb.WriteString(fmt.Sprintf("Failed after: %s\n", details.ExecutionTimeBeforeFailure))
+	if details.ExecutionTimeBeforeFailure != nil {
+		sb.WriteString(fmt.Sprintf("Failed after: %s\n", details.ExecutionTimeBeforeFailure.Duration))
 	}
 
 	// Reason-specific recommendations

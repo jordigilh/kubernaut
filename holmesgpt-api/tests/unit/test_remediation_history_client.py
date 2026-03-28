@@ -152,7 +152,7 @@ class TestQueryRemediationHistory:
                     {
                         "remediationUID": "rr-001",
                         "completedAt": "2026-02-12T10:00:00Z",
-                        "workflowType": "restart",
+                        "actionType": "restart",
                         "outcome": "success",
                         "effectivenessScore": 0.85,
                         "hashMatch": "preRemediation",

@@ -51,6 +51,7 @@ class RemediationWorkflow(BaseModel):
     schema_digest: Optional[StrictStr] = Field(default=None, description="OCI schema image digest", alias="schemaDigest")
     execution_bundle: Optional[StrictStr] = Field(default=None, description="OCI execution bundle reference (digest-pinned)", alias="executionBundle")
     execution_bundle_digest: Optional[StrictStr] = Field(default=None, description="OCI execution bundle digest", alias="executionBundleDigest")
+    service_account_name: Optional[StrictStr] = Field(default=None, description="Pre-existing ServiceAccount for Job/PipelineRun (DD-WE-005 v2.0). Absent = K8s namespace default SA.", alias="serviceAccountName")
     labels: MandatoryLabels
     custom_labels: Optional[Dict[str, List[StrictStr]]] = Field(default=None, description="Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format", alias="customLabels")
     detected_labels: Optional[DetectedLabels] = Field(default=None, alias="detectedLabels")
@@ -74,13 +75,13 @@ class RemediationWorkflow(BaseModel):
     updated_at: Optional[datetime] = Field(default=None, alias="updatedAt")
     created_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, alias="createdBy")
     updated_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, alias="updatedBy")
-    __properties: ClassVar[List[str]] = ["workflowId", "workflowName", "actionType", "version", "schemaVersion", "name", "description", "owner", "maintainer", "content", "contentHash", "parameters", "executionEngine", "schemaImage", "schemaDigest", "executionBundle", "executionBundleDigest", "labels", "customLabels", "detectedLabels", "status", "disabledAt", "disabledBy", "disabledReason", "isLatestVersion", "previousVersion", "deprecationNotice", "versionNotes", "changeSummary", "approvedBy", "approvedAt", "expectedSuccessRate", "expectedDurationSeconds", "actualSuccessRate", "totalExecutions", "successfulExecutions", "createdAt", "updatedAt", "createdBy", "updatedBy"]
+    __properties: ClassVar[List[str]] = ["workflowId", "workflowName", "actionType", "version", "schemaVersion", "name", "description", "owner", "maintainer", "content", "contentHash", "parameters", "executionEngine", "schemaImage", "schemaDigest", "executionBundle", "executionBundleDigest", "serviceAccountName", "labels", "customLabels", "detectedLabels", "status", "disabledAt", "disabledBy", "disabledReason", "isLatestVersion", "previousVersion", "deprecationNotice", "versionNotes", "changeSummary", "approvedBy", "approvedAt", "expectedSuccessRate", "expectedDurationSeconds", "actualSuccessRate", "totalExecutions", "successfulExecutions", "createdAt", "updatedAt", "createdBy", "updatedBy"]
 
     @field_validator('status')
     def status_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('active', 'disabled', 'deprecated', 'archived', 'superseded'):
-            raise ValueError("must be one of enum values ('active', 'disabled', 'deprecated', 'archived', 'superseded')")
+        if value not in ('Active', 'Disabled', 'Deprecated', 'Archived', 'Superseded'):
+            raise ValueError("must be one of enum values ('Active', 'Disabled', 'Deprecated', 'Archived', 'Superseded')")
         return value
 
     model_config = {
@@ -158,6 +159,7 @@ class RemediationWorkflow(BaseModel):
             "schemaDigest": obj.get("schemaDigest"),
             "executionBundle": obj.get("executionBundle"),
             "executionBundleDigest": obj.get("executionBundleDigest"),
+            "serviceAccountName": obj.get("serviceAccountName"),
             "labels": MandatoryLabels.from_dict(obj.get("labels")) if obj.get("labels") is not None else None,
             "customLabels": obj.get("customLabels"),
             "detectedLabels": DetectedLabels.from_dict(obj.get("detectedLabels")) if obj.get("detectedLabels") is not None else None,

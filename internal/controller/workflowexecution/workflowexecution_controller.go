@@ -54,6 +54,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -100,8 +101,6 @@ const (
 	// DefaultCooldownPeriod is the default time between workflow executions on same target
 	DefaultCooldownPeriod = 5 * time.Minute
 
-	// DefaultServiceAccountName is the default SA for PipelineRuns
-	DefaultServiceAccountName = "kubernaut-workflow-runner"
 )
 
 // WorkflowExecutionReconciler reconciles a WorkflowExecution object
@@ -154,10 +153,6 @@ type WorkflowExecutionReconciler struct {
 	// CooldownPeriod prevents redundant sequential workflows (DD-WE-001)
 	// Default: 5 minutes
 	CooldownPeriod time.Duration
-
-	// ServiceAccountName for PipelineRuns
-	// Default: "kubernaut-workflow-runner"
-	ServiceAccountName string
 
 	// AuditStore for writing audit events (BR-WE-005, ADR-032)
 	// Uses pkg/audit buffered store via Data Storage Service
@@ -496,7 +491,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		}
 	}
 
-	createdName, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
+	createResult, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
 	if createErr != nil {
 		if apierrors.IsAlreadyExists(createErr) {
 			// DD-WE-003 Layer 2: Execution-time collision handling
@@ -508,9 +503,9 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 			// If the existing Job is in a terminal state (Succeeded/Failed), clean it up
 			// and retry creation. If still running, the lock is valid -- fail the WFE.
 			if wfe.Status.ExecutionEngine == "job" {
-				retryName, handled, requeueForGC := r.handleJobAlreadyExists(ctx, exec, wfe, resourceName, createOpts)
+				retryResult, handled, requeueForGC := r.handleJobAlreadyExists(ctx, exec, wfe, resourceName, createOpts)
 				if handled {
-					createdName = retryName
+					createResult = retryResult
 					createErr = nil
 				} else if requeueForGC {
 					// Issue #383: Background GC hasn't removed the stale Job yet.
@@ -530,6 +525,21 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 				fmt.Sprintf("Failed to create %s execution resource: %v", wfe.Status.ExecutionEngine, createErr))
 			return ctrl.Result{}, markErr
 		}
+	}
+
+	createdName := createResult.ResourceName
+
+	// Issue #501: Process warnings from CreateResult (e.g., TokenTTL issues)
+	for _, w := range createResult.Warnings {
+		meta.SetStatusCondition(&wfe.Status.Conditions, metav1.Condition{
+			Type:               w.Type,
+			Status:             metav1.ConditionTrue,
+			Reason:             w.Reason,
+			Message:            w.Message,
+			ObservedGeneration: wfe.Generation,
+		})
+		r.Recorder.Event(wfe, corev1.EventTypeWarning, w.Reason, w.Message)
+		logger.Info("CreateResult warning applied", "type", w.Type, "reason", w.Reason)
 	}
 
 	// ========================================
@@ -1050,30 +1060,30 @@ func sanitizeLabelValue(s string) string {
 //
 // Returns:
 //
-//	(createdName, true, false)  — Job cleaned up and recreation succeeded.
-//	("", false, true)           — Cleanup accepted but GC pending; caller should requeue.
-//	("", false, false)          — Lock is valid (Job still running) or unrecoverable error.
+//	(createResult, true, false) — Job cleaned up and recreation succeeded.
+//	(nil, false, true)          — Cleanup accepted but GC pending; caller should requeue.
+//	(nil, false, false)         — Lock is valid (Job still running) or unrecoverable error.
 func (r *WorkflowExecutionReconciler) handleJobAlreadyExists(
 	ctx context.Context,
 	exec weexecutor.Executor,
 	wfe *workflowexecutionv1alpha1.WorkflowExecution,
 	resourceName string,
 	createOpts weexecutor.CreateOptions,
-) (string, bool, bool) {
+) (*weexecutor.CreateResult, bool, bool) {
 	logger := log.FromContext(ctx)
 
 	jobExec, ok := exec.(*weexecutor.JobExecutor)
 	if !ok {
-		return "", false, false
+		return nil, false, false
 	}
 
 	completed, checkErr := jobExec.IsCompleted(ctx, wfe.Spec.TargetResource, r.ExecutionNamespace)
 	if checkErr != nil {
 		logger.V(1).Info("Could not check existing Job state (may have been deleted)", "error", checkErr)
-		return "", false, false
+		return nil, false, false
 	}
 	if !completed {
-		return "", false, false
+		return nil, false, false
 	}
 
 	logger.Info("Stale completed Job detected, cleaning up before retry (Issue #374)",
@@ -1086,26 +1096,23 @@ func (r *WorkflowExecutionReconciler) handleJobAlreadyExists(
 	}
 	if cleanErr := jobExec.Cleanup(ctx, cleanupWFE, r.ExecutionNamespace); cleanErr != nil {
 		logger.Error(cleanErr, "Failed to clean up completed Job", "resource", resourceName)
-		return "", false, false
+		return nil, false, false
 	}
 
-	retryName, retryErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
+	retryResult, retryErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
 	if retryErr != nil {
 		if apierrors.IsAlreadyExists(retryErr) {
-			// Issue #383: Cleanup uses DeletePropagationBackground, so the API server
-			// accepted the delete but the GC hasn't removed the object yet. Requeue
-			// to let the GC finish rather than permanently failing the WFE.
 			logger.Info("Job cleanup accepted but GC pending, will requeue (Issue #383)",
 				"resource", resourceName)
-			return "", false, true
+			return nil, false, true
 		}
 		logger.Error(retryErr, "Failed to create Job after stale cleanup", "resource", resourceName)
-		return "", false, false
+		return nil, false, false
 	}
 
 	logger.Info("Successfully recreated Job after stale cleanup (Issue #374)",
-		"resource", resourceName, "newJob", retryName)
-	return retryName, true, false
+		"resource", resourceName, "newJob", retryResult.ResourceName)
+	return retryResult, true, false
 }
 
 // ========================================
@@ -1200,11 +1207,8 @@ func (r *WorkflowExecutionReconciler) BuildPipelineRun(wfe *workflowexecutionv1a
 		Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.TargetResource},
 	})
 
-	// Get service account name (use default if not set)
-	saName := r.ServiceAccountName
-	if saName == "" {
-		saName = DefaultServiceAccountName
-	}
+	// DD-WE-005 v2.0 / Issue #501: SA at spec top level, engine-agnostic.
+	saName := wfe.Spec.ServiceAccountName
 
 	return &tektonv1.PipelineRun{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1296,7 +1300,7 @@ func (r *WorkflowExecutionReconciler) FindWFEForOwnedResource(ctx context.Contex
 // Provides visibility into task progress during execution (v3.2)
 func (r *WorkflowExecutionReconciler) BuildPipelineRunStatusSummary(ctx context.Context, pr *tektonv1.PipelineRun) *workflowexecutionv1alpha1.ExecutionStatusSummary {
 	summary := &workflowexecutionv1alpha1.ExecutionStatusSummary{
-		Status: "Unknown",
+		Status: corev1.ConditionUnknown,
 	}
 
 	// Extract task counts from ChildReferences
@@ -1326,7 +1330,7 @@ func (r *WorkflowExecutionReconciler) BuildPipelineRunStatusSummary(ctx context.
 	// Get Succeeded condition
 	succeededCond := pr.Status.GetCondition(apis.ConditionSucceeded)
 	if succeededCond != nil {
-		summary.Status = string(succeededCond.Status)
+		summary.Status = corev1.ConditionStatus(succeededCond.Status)
 		summary.Reason = succeededCond.Reason
 		summary.Message = succeededCond.Message
 	}
@@ -1357,12 +1361,12 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 		completionTime = &now
 	}
 
-	var durationStr string
+	var durationVal *metav1.Duration
 	var durationSeconds float64
 	if wfe.Status.StartTime != nil && completionTime != nil {
-		duration := completionTime.Sub(wfe.Status.StartTime.Time)
-		durationStr = duration.Round(time.Second).String()
-		durationSeconds = duration.Seconds()
+		d := completionTime.Sub(wfe.Status.StartTime.Time).Round(time.Second)
+		durationVal = &metav1.Duration{Duration: d}
+		durationSeconds = d.Seconds()
 	}
 
 	// ========================================
@@ -1381,7 +1385,7 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 		wfe.Status.CompletionTime = completionTime
 
 		// Set duration
-		wfe.Status.Duration = durationStr
+		wfe.Status.Duration = durationVal
 
 		// Issue #118 Gap 4: persist ExecutionStatus inside callback (survives refetch)
 		if len(summary) > 0 && summary[0] != nil {
@@ -1450,14 +1454,13 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 	logger := log.FromContext(ctx)
 	logger.Info("Marking WorkflowExecution as Failed")
 
-	// Calculate values for atomic update
 	now := metav1.Now()
-	var durationStr string
+	var durationVal *metav1.Duration
 	var durationSeconds float64
 	if wfe.Status.StartTime != nil {
-		duration := now.Sub(wfe.Status.StartTime.Time)
-		durationStr = duration.Round(time.Second).String()
-		durationSeconds = duration.Seconds()
+		d := now.Sub(wfe.Status.StartTime.Time).Round(time.Second)
+		durationVal = &metav1.Duration{Duration: d}
+		durationSeconds = d.Seconds()
 	}
 
 	// Extract failure details (Day 7: includes TaskRun-specific fields, Day 6 Extension: WasExecutionFailure)
@@ -1524,7 +1527,7 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 		wfe.Status.CompletionTime = &now
 
 		// Set duration
-		wfe.Status.Duration = durationStr
+		wfe.Status.Duration = durationVal
 
 		// Set failure details
 		wfe.Status.FailureDetails = failureDetails
