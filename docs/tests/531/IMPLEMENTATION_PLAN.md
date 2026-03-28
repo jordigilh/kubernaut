@@ -205,41 +205,34 @@ for legacy + three-step modes.
 
 ---
 
-### Phase 5: Extensibility (#566, #567)
+### Phase 5: Extensibility (#566, #567) — DEFERRED (out of scope for v1.3)
 
-**Goal**: Declarative YAML scenarios and pillar composition framework.
-**Estimated effort**: 3-4 days
-**Test Plans**: `docs/tests/566/TEST_PLAN.md`, `docs/tests/567/TEST_PLAN.md` (to be created before execution)
+**Status**: Deferred. Milestone removed from both issues. See GitHub comments for full justification.
 
-**BRs**: BR-MOCK-070 through BR-MOCK-073
+**#566 (YAML Scenarios)**: Deferred until a non-Go consumer needs scenario authoring. Current Go-file-per-scenario pattern (Phase 2) is sufficient.
 
-**TDD Sequence for #566**:
-
-1. **RED**: Tests for YAML scenario loader, Go template response generation
-2. **GREEN**: Implement `scenarios/loader.go` (YAML parsing + validation), `scenarios/templates/` (Go templates), integrate with registry (lower priority than Go scenarios)
-3. **REFACTOR**: Convert 3 existing scenarios to YAML as proof-of-concept
-
-**TDD Sequence for #567**:
-
-1. **RED**: Tests for `Pillar` abstraction, `ToolRegistry`, DAG fragment composition
-2. **GREEN**: Implement `scenarios/pillar.go` with abstraction types; refactor alert remediation scenarios to use pillar
-3. **REFACTOR**: Document pillar authoring guide
+**#567 (Pillar Composition)**: Deferred until a second AIOps pillar (#554 Threat Remediation or #555 Cost Optimization) enters active development. Building a multi-pillar framework with a single consumer risks premature abstraction.
 
 ---
 
-### Phase 6: Observability (#568)
+### Phase 6: Observability (#568) — COMPLETED
 
 **Goal**: Prometheus metrics endpoint.
-**Estimated effort**: 1 day
-**Test Plan**: `docs/tests/568/TEST_PLAN.md` (to be created before execution)
+**Test Plan**: `docs/tests/568/TEST_PLAN.md`
 
 **BRs**: BR-MOCK-080 through BR-MOCK-083
 
-**TDD Sequence**:
+**Implementation Summary**:
 
-1. **RED**: Tests for `/metrics` endpoint, counter increments
-2. **GREEN**: Register `prometheus/client_golang` metrics; add middleware for request counting; wire DAG phase transition counters
-3. **REFACTOR**: Add metric reset on `/api/test/reset`
+- Created `test/services/mock-llm/metrics/metrics.go` with 4 Prometheus collectors:
+  - `mock_llm_requests_total` (counter: endpoint, status_code, scenario)
+  - `mock_llm_response_duration_seconds` (histogram: endpoint, scenario)
+  - `mock_llm_scenario_detection_total` (counter: scenario, method)
+  - `mock_llm_dag_phase_transitions_total` (counter: from_node, to_node)
+- Wired `/metrics` endpoint via `promhttp.HandlerFor` in router
+- Metrics reset on `POST /api/test/reset` via `Metrics.Reset()`
+- Tests: 4 unit (UT-MOCK-568-001..004) + 7 integration (IT-MOCK-568-001..007)
+- Zero regressions: 98 unit + 59 integration tests pass
 
 ---
 
