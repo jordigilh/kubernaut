@@ -1,0 +1,94 @@
+{
+  "legacy_turn1": {
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "index": 0,
+          "message": {
+            "content": null,
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"query\": \"NodeNotReady critical\", \"rca_resource\": {\"signal_name\": \"NodeNotReady\", \"kind\": \"Node\", \"namespace\": \"\", \"name\": \"worker-node-1\"}}",
+                  "name": "search_workflow_catalog"
+                },
+                "id": "call_4727936ef5c9",
+                "type": "function"
+              }
+            ]
+          }
+        }
+      ],
+      "created": 1701388800,
+      "id": "chatcmpl-5316847b",
+      "model": "mock-model",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 50,
+        "prompt_tokens": 500,
+        "total_tokens": 550
+      }
+    },
+    "status_code": 200
+  },
+  "text_only": {
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\nNode experiencing disk pressure\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"Node experiencing disk pressure\",\n    \"severity\": \"critical\",\n    \"contributing_factors\": [\"traffic_spike\", \"resource_limits\"]\n  },\n  \"selected_workflow\": {\n    \"workflow_id\": \"node-drain-reboot-v1\",\n    \"version\": \"1.0.0\",\n    \"confidence\": 0.9,\n    \"rationale\": \"Selected based on signal analysis\",\n    \"execution_engine\": \"tekton\"\n  }\n}\n```\n",
+            "role": "assistant"
+          }
+        }
+      ],
+      "created": 1701388800,
+      "id": "chatcmpl-2ea62e85",
+      "model": "mock-model",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 50,
+        "prompt_tokens": 100,
+        "total_tokens": 150
+      }
+    },
+    "status_code": 200
+  },
+  "three_step_turn1": {
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "index": 0,
+          "message": {
+            "content": null,
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"limit\": 100}",
+                  "name": "list_available_actions"
+                },
+                "id": "call_94cef4eea4c3",
+                "type": "function"
+              }
+            ]
+          }
+        }
+      ],
+      "created": 1701388800,
+      "id": "chatcmpl-27a8af8b",
+      "model": "mock-model",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 50,
+        "prompt_tokens": 500,
+        "total_tokens": 550
+      }
+    },
+    "status_code": 200
+  }
+}
