@@ -5,6 +5,78 @@ All notable changes to Kubernaut will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-03-28
+
+### Added
+
+#### CRD Schema Hardening (#453–#459, #483)
+
+- **Typed enums for all CRD status and reason fields** — Replaced raw strings with typed Go enums across all 9 CRDs: `SkipReason`, `BlockReason`, `FailurePhase` (RemediationRequest), `AnalysisType`, `Reason`, `PolicyDecision` (AIAnalysis), `Environment`, `Priority` (SignalProcessing), `ExecutionStatus` as `ConditionStatus` (WorkflowExecution), `Criticality`, `SLARequirement` (shared BusinessClassification), `CatalogStatus` (RemediationWorkflow, ActionType). Provides compile-time safety and OpenAPI validation.
+- **Duration fields migrated to `metav1.Duration`** (#455) — WorkflowExecution duration strings replaced with structured `metav1.Duration` types.
+- **Wide printer columns for RemediationRequest** (#387) — `kubectl get remediationrequests` now shows phase, outcome, severity, target, and age in wide format.
+- **OAS catalog status alignment** (#483) — DataStorage OpenAPI enum values aligned with PascalCase CRD convention.
+
+#### Per-Workflow ServiceAccount (DD-WE-005 v2.0, #481)
+
+- **End-to-end SA propagation** — `serviceAccountName` field added to RemediationWorkflow, ActionType, AIAnalysis, RemediationRequest, and WorkflowExecution CRDs. Propagated through HAPI validation, RO controller, and WE executors.
+- **Executor SA injection** — Ansible and Job executors use per-workflow SA instead of the hardcoded default, enabling least-privilege RBAC per remediation workflow.
+- **DataStorage SA persistence** — Workflow catalog stores and returns `serviceAccountName` for catalog consistency.
+
+#### WE Ansible TokenRequest Injection (#501)
+
+- **TokenRequest API integration** — Ansible executor injects short-lived SA tokens via the Kubernetes TokenRequest API with configurable TTL validation, replacing long-lived secrets.
+- **CRD schema migration** — `serviceAccount` string field migrated to structured `spec.serviceAccountName` with backward compatibility.
+
+#### DS Resilience and Startup Reconciliation (#548)
+
+- **Deterministic UUIDv5 workflow IDs** — Workflow IDs derived from content hash (UUIDv5), ensuring idempotent re-registration after PVC wipe.
+- **Authwebhook startup reconciler** — New startup reconciler in authwebhook re-registers all RemediationWorkflows with DataStorage on controller startup, recovering from PVC data loss without manual intervention.
+
+#### Hash-Capture Degradation Notifications (#546)
+
+- **Degradation condition types** — New `PreRemediationHashCaptured` and `PostRemediationHashCaptured` condition types in VerificationContext surface hash-capture failures.
+- **RO and EM reconciler integration** — Both controllers set degradation conditions when hash capture fails, propagating status to parent resources.
+- **Completion notification enrichment** — Completion notifications now include hash-capture degradation status for operator visibility.
+
+#### Effectiveness Monitor ADR-EM-001 Gaps (#573)
+
+- **G1: Failed phase** — EM transitions EA to `Failed` for unrecoverable conditions (missing correlation, invalid spec).
+- **G2: Scheduled event timing** — `effectiveness.assessment.scheduled` audit event emitted on all three entry transitions (WaitingForPropagation, Stabilizing, Assessing).
+- **G3: Config knobs** — `prometheusLookback`, `maxConcurrentReconciles`, and `scrapeInterval` configurable via YAML.
+- **G4: Assessment path differentiation** — Reconciler branches assessment depth based on WFE started/completed status. Partial-scope grace period (30s) handles async event propagation.
+
+#### Feature Enrichments (#318, #366, #396, #435)
+
+- **EA verification in completion notifications** (#318) — Completion notifications include effectiveness assessment results (health score, alert resolution, spec drift).
+- **ResourceQuota detection** (#366) — Signal Processing detects namespace ResourceQuota/LimitRange constraints and surfaces them to the LLM via `ResourceQuotaConstrained` in DetectedLabels.
+- **ConfigMap composite hashing** (#396) — RO and EM spec hash computation includes mounted ConfigMap content for drift detection across configuration changes.
+- **LLM token usage in audit traces** (#435) — Token counts from HolmesGPT responses wired into audit events for cost tracking and usage analysis.
+
+#### Notification Metrics (DD-METRICS-001)
+
+- **1-layer metrics architecture** — Collapsed 3-layer notification metrics (interface → recorder → metrics) into a single `*Metrics` struct with direct Prometheus counter/histogram methods.
+
+### Fixed
+
+- **Duplicate scheduled audit event** — Removed duplicate `effectiveness.assessment.scheduled` emission from `emitAssessingTransitionEvents`.
+- **HasWorkflowCompleted event type** — Corrected from `workflowexecution.execution.completed` to `workflowexecution.workflow.completed` to match the WE controller's actual event type.
+- **Notification CircuitBreakerState type assertion** — Fixed `UpdateCircuitBreakerState` type assertion that would panic on non-string values.
+
+### Changed
+
+- **CRD: Storm detection fields removed** (#448, DD-GATEWAY-015) — `stormCorrelationId`, `stormWindowId`, and related fields removed from SignalProcessing and RemediationRequest CRDs. All storm detection code removed from gateway.
+- **EM client constructors simplified** — Prometheus and AlertManager HTTP clients now accept `(url, timeout)` instead of a pre-configured `*http.Client`.
+- **Database migrations** — `002_add_service_account_name.sql` adds SA column; `003_capitalize_catalog_status.sql` normalizes enum casing.
+
+### Upgrade Notes
+
+- **Breaking: Storm detection removed** — `stormCorrelationId` and `stormWindowId` fields no longer exist in SignalProcessing and RemediationRequest CRDs. Any custom tooling reading these fields must be updated.
+- **Breaking: CRD typed enums** — String fields replaced with typed enums across all CRDs. Existing resources with free-form string values that don't match the enum will fail validation on update.
+- **Breaking: `metav1.Duration` fields** — WorkflowExecution duration fields now require Go duration format (e.g., `30s`, `5m`) instead of free-form strings.
+- **Database migration required** — Run migrations 002 and 003 before upgrading controllers. The Helm pre-upgrade hook handles this automatically.
+
+[1.2.0]: https://github.com/jordigilh/kubernaut/compare/v1.1.0...v1.2.0
+
 ## [1.1.0] - 2026-03-28
 
 ### Added
