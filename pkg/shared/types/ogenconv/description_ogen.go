@@ -14,16 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package types
+package ogenconv
 
 import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // OgenDescriptionToShared converts an ogen-generated ActionTypeDescription
 // (snake_case REST wire format) to the canonical shared type.
-func OgenDescriptionToShared(d ogenclient.ActionTypeDescription) StructuredDescription {
-	return StructuredDescription{
+func OgenDescriptionToShared(d ogenclient.ActionTypeDescription) sharedtypes.StructuredDescription {
+	return sharedtypes.StructuredDescription{
 		What:          d.What,
 		WhenToUse:     d.WhenToUse,
 		WhenNotToUse:  d.WhenNotToUse.Value,
@@ -33,7 +34,7 @@ func OgenDescriptionToShared(d ogenclient.ActionTypeDescription) StructuredDescr
 
 // SharedDescriptionToOgen converts the canonical shared type to an ogen-generated
 // ActionTypeDescription (snake_case REST wire format).
-func SharedDescriptionToOgen(d StructuredDescription) ogenclient.ActionTypeDescription {
+func SharedDescriptionToOgen(d sharedtypes.StructuredDescription) ogenclient.ActionTypeDescription {
 	desc := ogenclient.ActionTypeDescription{
 		What:      d.What,
 		WhenToUse: d.WhenToUse,
