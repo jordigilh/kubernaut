@@ -93,6 +93,10 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 
 		name := uniqueName("ea-mc-improve")
 		correlationID := uniqueName("corr-mc-improve")
+
+		By("Seeding workflowexecution.execution.started event (no_execution guard)")
+		seedWorkflowStartedEvent(correlationID)
+
 		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
@@ -157,6 +161,10 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 
 		name := uniqueName("ea-mc-nochange")
 		correlationID := uniqueName("corr-mc-nochange")
+
+		By("Seeding workflowexecution.execution.started event (no_execution guard)")
+		seedWorkflowStartedEvent(correlationID)
+
 		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),

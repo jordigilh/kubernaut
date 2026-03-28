@@ -69,6 +69,10 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 
 		correlationID := uniqueName("corr-sd-drift")
 		name := uniqueName("ea-sd-drift")
+
+		By("Seeding workflowexecution.execution.started event (no_execution guard)")
+		seedWorkflowStartedEvent(correlationID)
+
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
 		)
@@ -222,6 +226,10 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 
 		correlationID := uniqueName("corr-sd-nodrift")
 		name := uniqueName("ea-sd-nodrift")
+
+		By("Seeding workflowexecution.execution.started event (no_execution guard)")
+		seedWorkflowStartedEvent(correlationID)
+
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
 		)

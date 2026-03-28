@@ -78,6 +78,9 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 		createTargetPod(testNS, "target-pod")
 		waitForPodReady(testNS, "target-pod")
 
+		By("Seeding workflowexecution.execution.started event (no_execution guard)")
+		seedWorkflowStartedEvent(correlationID)
+
 		name := uniqueName("ea-ar-resolved")
 		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.
 		createEA(testNS, name, correlationID,
@@ -127,6 +130,9 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 		By("Creating a target pod and EA")
 		createTargetPod(testNS, "target-pod")
 		waitForPodReady(testNS, "target-pod")
+
+		By("Seeding workflowexecution.execution.started event (no_execution guard)")
+		seedWorkflowStartedEvent(correlationID)
 
 		name := uniqueName("ea-ar-firing")
 		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.
