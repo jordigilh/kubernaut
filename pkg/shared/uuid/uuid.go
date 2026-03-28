@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package uuid provides deterministic UUID v5 generation for Kubernaut workflows.
 //
-// All workflow identifiers across Kubernaut (DataStorage, Mock LLM, KAPI) are
+// All workflow identifiers across Kubernaut (DataStorage, Mock LLM, Kubernaut Agent) are
 // derived from the workflow name using a fixed namespace, guaranteeing that
 // independent services produce identical UUIDs for the same workflow without
 // any cross-service synchronization (Issue #548).

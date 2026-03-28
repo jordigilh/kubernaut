@@ -3,7 +3,7 @@
 > **Template**: IEEE 829-2008 + Kubernaut Hybrid v2.0
 
 **Test Plan Identifier**: TP-417-v1.0
-**Feature**: KAPI injects configurable custom HTTP headers (Authorization, API keys, sidecar-rotated JWTs) into all outbound LLM API requests via an `http.RoundTripper` wrapper, enabling enterprise proxy/gateway authentication without coupling KAPI to any specific identity provider or token lifecycle.
+**Feature**: Kubernaut Agent (KA) injects configurable custom HTTP headers (Authorization, API keys, sidecar-rotated JWTs) into all outbound LLM API requests via an `http.RoundTripper` wrapper, enabling enterprise proxy/gateway authentication without coupling KA to any specific identity provider or token lifecycle.
 **Version**: 1.0
 **Created**: 2026-03-04
 **Author**: AI Assistant
@@ -16,7 +16,7 @@
 
 ### 1.1 Purpose
 
-This test plan validates that KAPI (#433) correctly injects custom authentication headers into all outbound LLM requests. Enterprise deployments route LLM traffic through API gateways (Azure APIM, Kong, Apigee, AWS API Gateway) or SSO-fronted proxies that require authentication headers. KAPI must support arbitrary headers from three value sources (`secretKeyRef`, `filePath`, `value`) without hardcoding any auth scheme.
+This test plan validates that Kubernaut Agent (KA) (#433) correctly injects custom authentication headers into all outbound LLM requests. Enterprise deployments route LLM traffic through API gateways (Azure APIM, Kong, Apigee, AWS API Gateway) or SSO-fronted proxies that require authentication headers. KA must support arbitrary headers from three value sources (`secretKeyRef`, `filePath`, `value`) without hardcoding any auth scheme.
 
 The test plan also validates that sensitive header values are never leaked into logs, metrics, or error messages (DD-HAPI-019-003, G4: Credential Scrubbing). Header values are injected at the `http.Transport` layer below prompt assembly, so they should never appear in LLM-bound content — but a defense-in-depth test validates this assumption.
 
@@ -24,7 +24,7 @@ The test plan also validates that sensitive header values are never leaked into 
 
 1. **Header injection correctness**: All configured headers are present in every outbound LLM request, with the correct values from all three sources
 2. **Token rotation support**: `filePath`-sourced headers reflect the current file content on each request, supporting sidecar-rotated tokens without restart
-3. **Backward compatibility**: KAPI without custom headers configured behaves identically to a default installation
+3. **Backward compatibility**: Kubernaut Agent without custom headers configured behaves identically to a default installation
 4. **Credential safety**: Sensitive header values from `secretKeyRef` and `filePath` are redacted from all logs, metrics labels, and LLM-bound prompt content
 5. **End-to-end verification**: Mock LLM (#570) receives and records the injected headers, verifiable via the verification API
 
@@ -32,11 +32,11 @@ The test plan also validates that sensitive header values are never leaked into 
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| Unit test pass rate | 100% | `go test ./test/unit/kapi/...` |
-| Integration test pass rate | 100% | `go test ./test/integration/kapi/...` |
-| Unit-testable code coverage | >=80% | `go test -coverprofile` on `pkg/kapi/llm/transport/`, `pkg/kapi/config/` |
+| Unit test pass rate | 100% | `go test ./test/unit/kubernautagent/...` |
+| Integration test pass rate | 100% | `go test ./test/integration/kubernautagent/...` |
+| Unit-testable code coverage | >=80% | `go test -coverprofile` on `pkg/kubernautagent/llm/transport/`, `pkg/kubernautagent/config/` |
 | Integration-testable code coverage | >=80% | `go test -coverprofile` on handler/client wiring |
-| Existing test regressions | 0 | Existing KAPI test suites pass with auth headers feature merged |
+| Existing test regressions | 0 | Existing Kubernaut Agent test suites pass with auth headers feature merged |
 
 ---
 
@@ -56,7 +56,7 @@ The test plan also validates that sensitive header values are never leaked into 
 - [Test Case Specification Template](../../testing/TEST_CASE_SPECIFICATION_TEMPLATE.md)
 - [Integration/E2E No-Mocks Policy](../../testing/INTEGRATION_E2E_NO_MOCKS_POLICY.md)
 - [Testing Guidelines](../../development/business-requirements/TESTING_GUIDELINES.md)
-- Issue #433: KAPI Go rewrite (parent)
+- Issue #433: Kubernaut Agent Go rewrite (parent)
 - Issue #531: Mock LLM Go rewrite (provides test verification infrastructure)
 - Issue #493: TLS for all inter-pod HTTP communication (transport layer, orthogonal)
 
@@ -66,25 +66,25 @@ The test plan also validates that sensitive header values are never leaked into 
 
 | ID | Risk | Impact | Probability | Affected Tests | Mitigation |
 |----|------|--------|-------------|----------------|------------|
-| R1 | **`filePath` race condition** — sidecar writes token while KAPI reads it | Partial read produces garbled token; LLM gateway rejects request | Medium | UT-KAPI-417-007, IT-KAPI-417-005 | Atomic file read (read into buffer, not streaming). UT-KAPI-417-007 tests concurrent read-during-write. |
-| R2 | **Secret not mounted** — `secretKeyRef` references a Secret that doesn't exist in the Pod | KAPI fails to start or sends empty header value | High | UT-KAPI-417-004, UT-KAPI-417-010 | Fail-fast at startup: validate all `secretKeyRef` sources resolve to non-empty values. UT-KAPI-417-010 tests startup validation. |
-| R3 | **Credential leakage via logs** — header value appears in HTTP debug logs or error messages | Security incident — API keys exposed in cluster logs | High | UT-KAPI-417-009 | RoundTripper redacts header values from all log output. UT-KAPI-417-009 validates no sensitive values in structured log fields. |
-| R4 | **Mock LLM #570 not landed** — auth header verification API unavailable | IT-KAPI-417-006 (end-to-end verification) blocked | Medium | IT-KAPI-417-006 | Use `httptest.Server` with custom handler that captures headers as a fallback. Migrate to Mock LLM verification API when #570 lands. |
-| R5 | **LangChainGo transport override** — LangChainGo replaces or wraps the custom `http.Transport` | Headers silently dropped; LLM gateway rejects unauthenticated requests | Medium | IT-KAPI-417-001, IT-KAPI-417-002 | Integration tests verify headers arrive at a real HTTP server, not just that the RoundTripper is configured. |
-| R6 | **Header name collision** — custom header overwrites a standard header (Content-Type, Accept) | Malformed requests to LLM provider | Low | UT-KAPI-417-011 | Validate header names against a deny list at config parse time. UT-KAPI-417-011 tests rejection of reserved names. |
-| R7 | **`filePath` missing at request time** — sidecar hasn't started or file deleted between requests | Request fails (blocking remediation) or proceeds without auth (security issue) | Medium | UT-KAPI-417-014 | Return error from `RoundTrip` with clear message identifying the missing file path. |
-| R8 | **Request mutation violates RoundTripper contract** — implementation modifies original `*http.Request` instead of cloning | Data race: concurrent callers see each other's injected headers | Medium | UT-KAPI-417-016 | Clone request via `req.Clone(req.Context())` before adding headers. UT-KAPI-417-016 validates original is unchanged. |
+| R1 | **`filePath` race condition** — sidecar writes token while the Kubernaut Agent reads it | Partial read produces garbled token; LLM gateway rejects request | Medium | UT-KA-417-007, IT-KA-417-005 | Atomic file read (read into buffer, not streaming). UT-KA-417-007 tests concurrent read-during-write. |
+| R2 | **Secret not mounted** — `secretKeyRef` references a Secret that doesn't exist in the Pod | Kubernaut Agent fails to start or sends empty header value | High | UT-KA-417-004, UT-KA-417-010 | Fail-fast at startup: validate all `secretKeyRef` sources resolve to non-empty values. UT-KA-417-010 tests startup validation. |
+| R3 | **Credential leakage via logs** — header value appears in HTTP debug logs or error messages | Security incident — API keys exposed in cluster logs | High | UT-KA-417-009 | RoundTripper redacts header values from all log output. UT-KA-417-009 validates no sensitive values in structured log fields. |
+| R4 | **Mock LLM #570 not landed** — auth header verification API unavailable | IT-KA-417-006 (end-to-end verification) blocked | Medium | IT-KA-417-006 | Use `httptest.Server` with custom handler that captures headers as a fallback. Migrate to Mock LLM verification API when #570 lands. |
+| R5 | **LangChainGo transport override** — LangChainGo replaces or wraps the custom `http.Transport` | Headers silently dropped; LLM gateway rejects unauthenticated requests | Medium | IT-KA-417-001, IT-KA-417-002 | Integration tests verify headers arrive at a real HTTP server, not just that the RoundTripper is configured. |
+| R6 | **Header name collision** — custom header overwrites a standard header (Content-Type, Accept) | Malformed requests to LLM provider | Low | UT-KA-417-011 | Validate header names against a deny list at config parse time. UT-KA-417-011 tests rejection of reserved names. |
+| R7 | **`filePath` missing at request time** — sidecar hasn't started or file deleted between requests | Request fails (blocking remediation) or proceeds without auth (security issue) | Medium | UT-KA-417-014 | Return error from `RoundTrip` with clear message identifying the missing file path. |
+| R8 | **Request mutation violates RoundTripper contract** — implementation modifies original `*http.Request` instead of cloning | Data race: concurrent callers see each other's injected headers | Medium | UT-KA-417-016 | Clone request via `req.Clone(req.Context())` before adding headers. UT-KA-417-016 validates original is unchanged. |
 
 ### 3.1 Risk-to-Test Traceability
 
 | Risk | Primary Tests | Secondary Tests |
 |------|--------------|-----------------|
-| R1 (filePath race) | UT-KAPI-417-007 | IT-KAPI-417-005 |
-| R2 (secret not mounted) | UT-KAPI-417-010 | UT-KAPI-417-004 |
-| R3 (credential leakage) | UT-KAPI-417-009 | IT-KAPI-417-004 |
-| R5 (transport override) | IT-KAPI-417-001 | IT-KAPI-417-002 |
-| R7 (filePath missing at runtime) | UT-KAPI-417-014 | UT-KAPI-417-015 |
-| R8 (request mutation) | UT-KAPI-417-016 | — |
+| R1 (filePath race) | UT-KA-417-007 | IT-KA-417-005 |
+| R2 (secret not mounted) | UT-KA-417-010 | UT-KA-417-004 |
+| R3 (credential leakage) | UT-KA-417-009 | IT-KA-417-004 |
+| R5 (transport override) | IT-KA-417-001 | IT-KA-417-002 |
+| R7 (filePath missing at runtime) | UT-KA-417-014 | UT-KA-417-015 |
+| R8 (request mutation) | UT-KA-417-016 | — |
 
 ---
 
@@ -92,25 +92,25 @@ The test plan also validates that sensitive header values are never leaked into 
 
 ### 4.1 Features to be Tested
 
-- **RoundTripper wrapper** (`pkg/kapi/llm/transport/auth_headers.go`): Custom `http.RoundTripper` that injects configured headers into every outbound request before delegating to the inner transport
-- **Header value resolver** (`pkg/kapi/llm/transport/resolver.go`): Resolves header values from three sources — `value` (literal), `secretKeyRef` (env var or mounted file), `filePath` (re-read per request)
-- **Config parser** (`pkg/kapi/config/headers.go`): Parses Helm-provided header configuration into typed header definitions with validation
-- **Credential scrubbing** (`pkg/kapi/llm/transport/scrub.go`): Ensures sensitive header values are redacted from logs, error messages, and any LLM-bound content
-- **Startup validation** (`cmd/kapi/main.go`): Fail-fast validation that all configured header sources are resolvable at startup
+- **RoundTripper wrapper** (`pkg/kubernautagent/llm/transport/auth_headers.go`): Custom `http.RoundTripper` that injects configured headers into every outbound request before delegating to the inner transport
+- **Header value resolver** (`pkg/kubernautagent/llm/transport/resolver.go`): Resolves header values from three sources — `value` (literal), `secretKeyRef` (env var or mounted file), `filePath` (re-read per request)
+- **Config parser** (`pkg/kubernautagent/config/headers.go`): Parses Helm-provided header configuration into typed header definitions with validation
+- **Credential scrubbing** (`pkg/kubernautagent/llm/transport/scrub.go`): Ensures sensitive header values are redacted from logs, error messages, and any LLM-bound content
+- **Startup validation** (`cmd/kubernautagent/main.go`): Fail-fast validation that all configured header sources are resolvable at startup
 
 ### 4.2 Features Not to be Tested
 
-- **Token acquisition/refresh**: KAPI does NOT handle OAuth token lifecycle — that is the sidecar's responsibility. The `filePath` source simply reads whatever the sidecar wrote.
+- **Token acquisition/refresh**: Kubernaut Agent does NOT handle OAuth token lifecycle — that is the sidecar's responsibility. The `filePath` source simply reads whatever the sidecar wrote.
 - **Helm chart templating**: Helm `values.yaml` → ConfigMap/Secret rendering is tested by Helm's own test framework, not by Go unit tests.
 - **TLS transport** (#493): Orthogonal to auth headers. TLS encrypts the transport; auth headers authenticate the request. Tested separately.
-- **LLM provider authentication logic**: KAPI doesn't validate tokens against the provider. It injects headers; the provider decides if they're valid.
+- **LLM provider authentication logic**: KA doesn't validate tokens against the provider. It injects headers; the provider decides if they're valid.
 - **Mock LLM header recording internals**: Tested by TP-531 (Mock LLM test plan). This plan only verifies that Mock LLM *receives* the headers.
 
 ### 4.3 Design Decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| RoundTripper pattern (not middleware) | Headers must be injected at the `http.Transport` layer to work with any LangChainGo backend (OpenAI, Ollama, custom). Middleware would only work for KAPI's own HTTP server, not outbound LLM client calls. |
+| RoundTripper pattern (not middleware) | Headers must be injected at the `http.Transport` layer to work with any LangChainGo backend (OpenAI, Ollama, custom). Middleware would only work for the Kubernaut Agent's own HTTP server, not outbound LLM client calls. |
 | `filePath` re-read on every request (no cache) | Sidecar-rotated tokens have unpredictable rotation schedules. Caching risks serving an expired token. File reads are <1ms for small token files. |
 | Fail-fast on missing `secretKeyRef` | A misconfigured Secret is a deployment error, not a runtime error. Better to fail at startup than to silently send unauthenticated requests. |
 | Reserved header deny list | Prevents accidental override of `Content-Type`, `Accept`, `User-Agent`, `Host` which would break the LLM request. |
@@ -136,7 +136,7 @@ Every acceptance criterion from #417 is covered by at least 2 tiers:
 ### 5.3 Business Outcome Quality Bar
 
 Tests validate **business outcomes**:
-1. **Enterprise gateways authenticate KAPI requests** — correct headers arrive at the LLM endpoint
+1. **Enterprise gateways authenticate Kubernaut Agent requests** — correct headers arrive at the LLM endpoint
 2. **Sidecar token rotation works without restart** — `filePath` headers reflect current file content
 3. **API keys never leak** — logs and metrics contain redacted values, not plaintext secrets
 4. **Operators can configure any header** — arbitrary names and values from any of the three sources
@@ -148,9 +148,9 @@ Tests validate **business outcomes**:
 1. All P0 tests pass (0 failures)
 2. All P1 tests pass or have documented exceptions
 3. Per-tier coverage >=80%
-4. No regressions in existing KAPI test suites
+4. No regressions in existing Kubernaut Agent test suites
 5. All three value sources (`secretKeyRef`, `filePath`, `value`) inject correct header values in integration tests
-6. No sensitive header values appear in any log output (verified by UT-KAPI-417-009)
+6. No sensitive header values appear in any log output (verified by UT-KA-417-009)
 
 **FAIL** — any of the following:
 
@@ -164,13 +164,13 @@ Tests validate **business outcomes**:
 
 **Suspend testing when**:
 
-- **KAPI #433 base not buildable**: Auth headers depend on the KAPI LLM client infrastructure. If the base HTTP client isn't implemented, header injection tests are meaningless.
-- **Mock LLM #570 not available**: IT-KAPI-417-006 (end-to-end verification) is blocked. Other integration tests can proceed using `httptest.Server`.
-- **Build broken**: `go build ./cmd/kapi/...` fails.
+- **Kubernaut Agent (KA) #433 base not buildable**: Auth headers depend on the Kubernaut Agent LLM client infrastructure. If the base HTTP client isn't implemented, header injection tests are meaningless.
+- **Mock LLM #570 not available**: IT-KA-417-006 (end-to-end verification) is blocked. Other integration tests can proceed using `httptest.Server`.
+- **Build broken**: `go build ./cmd/kubernautagent/...` fails.
 
 **Resume testing when**:
 
-- KAPI base LLM client compiles and can make outbound HTTP calls
+- Kubernaut Agent base LLM client compiles and can make outbound HTTP calls
 - Mock LLM #570 merged → unblock end-to-end verification test
 - Build fixed
 
@@ -182,28 +182,28 @@ Tests validate **business outcomes**:
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `pkg/kapi/llm/transport/auth_headers.go` | `NewAuthHeadersTransport`, `RoundTrip` | ~50 |
-| `pkg/kapi/llm/transport/resolver.go` | `ResolveValue`, `ResolveSecretKeyRef`, `ResolveFilePath`, `ResolveAll` | ~80 |
-| `pkg/kapi/llm/transport/scrub.go` | `RedactHeaderValue`, `IsSensitiveSource` | ~30 |
-| `pkg/kapi/config/headers.go` | `ParseCustomHeaders`, `ValidateHeaderName`, `ValidateSource` | ~60 |
+| `pkg/kubernautagent/llm/transport/auth_headers.go` | `NewAuthHeadersTransport`, `RoundTrip` | ~50 |
+| `pkg/kubernautagent/llm/transport/resolver.go` | `ResolveValue`, `ResolveSecretKeyRef`, `ResolveFilePath`, `ResolveAll` | ~80 |
+| `pkg/kubernautagent/llm/transport/scrub.go` | `RedactHeaderValue`, `IsSensitiveSource` | ~30 |
+| `pkg/kubernautagent/config/headers.go` | `ParseCustomHeaders`, `ValidateHeaderName`, `ValidateSource` | ~60 |
 | **Total unit-testable** | | **~220** |
 
 ### 6.2 Integration-Testable Code (I/O, wiring)
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `pkg/kapi/llm/transport/resolver.go` | `ResolveFilePath` (actual file read) | ~20 |
-| `pkg/kapi/llm/client.go` | `NewLLMClient` (wires transport with auth headers) | ~30 |
-| `cmd/kapi/main.go` | Startup validation of header sources | ~20 |
+| `pkg/kubernautagent/llm/transport/resolver.go` | `ResolveFilePath` (actual file read) | ~20 |
+| `pkg/kubernautagent/llm/client.go` | `NewLLMClient` (wires transport with auth headers) | ~30 |
+| `cmd/kubernautagent/main.go` | Startup validation of header sources | ~20 |
 | **Total integration-testable** | | **~70** |
 
 ### 6.3 Version Identification
 
 | Item | Version/Commit | Notes |
 |------|----------------|-------|
-| Code under test | `development/v1.3` HEAD | KAPI auth headers implementation |
-| Dependency: KAPI base client | #433 (In progress) | Must have working `http.Client` with configurable transport |
-| Dependency: Mock LLM verification | #570 (Open) | For IT-KAPI-417-006. Fallback: `httptest.Server` |
+| Code under test | `development/v1.3` HEAD | Kubernaut Agent auth headers implementation |
+| Dependency: Kubernaut Agent base client | #433 (In progress) | Must have working `http.Client` with configurable transport |
+| Dependency: Mock LLM verification | #570 (Open) | For IT-KA-417-006. Fallback: `httptest.Server` |
 
 ---
 
@@ -211,28 +211,28 @@ Tests validate **business outcomes**:
 
 | BR / AC | Description | Priority | Tier | Test ID | Status |
 |---------|-------------|----------|------|---------|--------|
-| AC-417-01 | Arbitrary key-value headers configurable | P0 | Unit | UT-KAPI-417-001 | Pending |
-| AC-417-01 | Arbitrary headers — over HTTP | P0 | Integration | IT-KAPI-417-001 | Pending |
-| AC-417-02 | `secretKeyRef` source resolves from env/volume | P0 | Unit | UT-KAPI-417-002..003 | Pending |
-| AC-417-02 | `secretKeyRef` — over HTTP | P0 | Integration | IT-KAPI-417-002 | Pending |
-| AC-417-03 | `filePath` source re-reads on each request | P0 | Unit | UT-KAPI-417-005..006 | Pending |
-| AC-417-03 | `filePath` re-read — file rotation | P0 | Integration | IT-KAPI-417-005 | Pending |
-| AC-417-04 | `value` source inlines from config | P0 | Unit | UT-KAPI-417-004 | Pending |
-| AC-417-04 | `value` — over HTTP | P0 | Integration | IT-KAPI-417-001 | Pending |
-| AC-417-05 | Headers at transport layer (provider-agnostic) | P0 | Integration | IT-KAPI-417-001..002 | Pending |
-| AC-417-06 | Sensitive values from Secrets/files only | P0 | Unit | UT-KAPI-417-009 | Pending |
-| AC-417-07 | No token lifecycle management | P1 | Unit | UT-KAPI-417-005 | Pending |
-| AC-417-08 | Unit tests for RoundTripper (all 3 sources) | P0 | Unit | UT-KAPI-417-001..008 | Pending |
-| AC-417-09 | Integration test with Mock LLM | P0 | Integration | IT-KAPI-417-006 | Pending |
-| — | Startup validation (fail-fast on missing source) | P1 | Unit | UT-KAPI-417-010 | Pending |
-| — | Reserved header name rejection | P1 | Unit | UT-KAPI-417-011 | Pending |
-| — | Backward compat (no headers configured) | P0 | Integration | IT-KAPI-417-003 | Pending |
-| — | Config parse error handling | P1 | Unit | UT-KAPI-417-012 | Pending |
-| — | Concurrent filePath reads thread-safe | P1 | Unit | UT-KAPI-417-007 | Pending |
-| — | filePath missing at request time returns clear error | P1 | Unit | UT-KAPI-417-014 | Pending |
-| — | filePath empty file content rejected | P1 | Unit | UT-KAPI-417-015 | Pending |
-| — | RoundTripper request cloning contract | P0 | Unit | UT-KAPI-417-016 | Pending |
-| — | Header values absent from request body (defense-in-depth) | P2 | Unit | UT-KAPI-417-017 | Pending |
+| AC-417-01 | Arbitrary key-value headers configurable | P0 | Unit | UT-KA-417-001 | Pending |
+| AC-417-01 | Arbitrary headers — over HTTP | P0 | Integration | IT-KA-417-001 | Pending |
+| AC-417-02 | `secretKeyRef` source resolves from env/volume | P0 | Unit | UT-KA-417-002..003 | Pending |
+| AC-417-02 | `secretKeyRef` — over HTTP | P0 | Integration | IT-KA-417-002 | Pending |
+| AC-417-03 | `filePath` source re-reads on each request | P0 | Unit | UT-KA-417-005..006 | Pending |
+| AC-417-03 | `filePath` re-read — file rotation | P0 | Integration | IT-KA-417-005 | Pending |
+| AC-417-04 | `value` source inlines from config | P0 | Unit | UT-KA-417-004 | Pending |
+| AC-417-04 | `value` — over HTTP | P0 | Integration | IT-KA-417-001 | Pending |
+| AC-417-05 | Headers at transport layer (provider-agnostic) | P0 | Integration | IT-KA-417-001..002 | Pending |
+| AC-417-06 | Sensitive values from Secrets/files only | P0 | Unit | UT-KA-417-009 | Pending |
+| AC-417-07 | No token lifecycle management | P1 | Unit | UT-KA-417-005 | Pending |
+| AC-417-08 | Unit tests for RoundTripper (all 3 sources) | P0 | Unit | UT-KA-417-001..008 | Pending |
+| AC-417-09 | Integration test with Mock LLM | P0 | Integration | IT-KA-417-006 | Pending |
+| — | Startup validation (fail-fast on missing source) | P1 | Unit | UT-KA-417-010 | Pending |
+| — | Reserved header name rejection | P1 | Unit | UT-KA-417-011 | Pending |
+| — | Backward compat (no headers configured) | P0 | Integration | IT-KA-417-003 | Pending |
+| — | Config parse error handling | P1 | Unit | UT-KA-417-012 | Pending |
+| — | Concurrent filePath reads thread-safe | P1 | Unit | UT-KA-417-007 | Pending |
+| — | filePath missing at request time returns clear error | P1 | Unit | UT-KA-417-014 | Pending |
+| — | filePath empty file content rejected | P1 | Unit | UT-KA-417-015 | Pending |
+| — | RoundTripper request cloning contract | P0 | Unit | UT-KA-417-016 | Pending |
+| — | Header values absent from request body (defense-in-depth) | P2 | Unit | UT-KA-417-017 | Pending |
 
 ### Status Legend
 
@@ -248,52 +248,52 @@ Tests validate **business outcomes**:
 
 ### Test ID Naming Convention
 
-Format: `{TIER}-KAPI-417-{SEQUENCE}`
+Format: `{TIER}-KA-417-{SEQUENCE}`
 
 - **TIER**: `UT` (Unit), `IT` (Integration)
-- **SERVICE**: `KAPI`
+- **SERVICE**: `KA` (Kubernaut Agent)
 - **ISSUE**: `417`
 
 ### Tier 1: Unit Tests
 
-**Testable code scope**: `pkg/kapi/llm/transport/`, `pkg/kapi/config/headers.go`. Target: >=80% of ~220 lines.
+**Testable code scope**: `pkg/kubernautagent/llm/transport/`, `pkg/kubernautagent/config/headers.go`. Target: >=80% of ~220 lines.
 
 #### 8.1.1 RoundTripper — Header Injection
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-KAPI-417-001` | RoundTripper injects all configured headers into outbound request before delegating to inner transport | Pending |
-| `UT-KAPI-417-002` | `secretKeyRef` source resolves header value from environment variable | Pending |
-| `UT-KAPI-417-003` | `secretKeyRef` source resolves header value from mounted file (volume mount simulated as env) | Pending |
-| `UT-KAPI-417-004` | `value` source inlines the literal string as header value | Pending |
-| `UT-KAPI-417-005` | `filePath` source reads file content as header value (simulated via temp file) | Pending |
-| `UT-KAPI-417-006` | `filePath` source returns updated content when file is overwritten between requests (token rotation) | Pending |
-| `UT-KAPI-417-007` | Concurrent `filePath` reads from multiple goroutines do not panic or produce garbled values | Pending |
-| `UT-KAPI-417-008` | Multiple headers from mixed sources (secretKeyRef + filePath + value) all injected in a single request | Pending |
+| `UT-KA-417-001` | RoundTripper injects all configured headers into outbound request before delegating to inner transport | Pending |
+| `UT-KA-417-002` | `secretKeyRef` source resolves header value from environment variable | Pending |
+| `UT-KA-417-003` | `secretKeyRef` source resolves header value from mounted file (volume mount simulated as env) | Pending |
+| `UT-KA-417-004` | `value` source inlines the literal string as header value | Pending |
+| `UT-KA-417-005` | `filePath` source reads file content as header value (simulated via temp file) | Pending |
+| `UT-KA-417-006` | `filePath` source returns updated content when file is overwritten between requests (token rotation) | Pending |
+| `UT-KA-417-007` | Concurrent `filePath` reads from multiple goroutines do not panic or produce garbled values | Pending |
+| `UT-KA-417-008` | Multiple headers from mixed sources (secretKeyRef + filePath + value) all injected in a single request | Pending |
 
 #### 8.1.2 Credential Safety
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-KAPI-417-009` | Sensitive header values (`secretKeyRef`, `filePath` sources) are redacted in log output; `value` source is not redacted | Pending |
+| `UT-KA-417-009` | Sensitive header values (`secretKeyRef`, `filePath` sources) are redacted in log output; `value` source is not redacted | Pending |
 
 #### 8.1.3 Config Validation
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-KAPI-417-010` | Startup validation fails fast with clear error when `secretKeyRef` env var is empty or unset | Pending |
-| `UT-KAPI-417-011` | Config rejects reserved header names (`Content-Type`, `Accept`, `Host`, `User-Agent`) with descriptive error | Pending |
-| `UT-KAPI-417-012` | Config rejects malformed header definitions (missing name, missing source, both `value` and `secretKeyRef` set, duplicate header names) | Pending |
-| `UT-KAPI-417-013` | Config accepts zero custom headers (empty list) — no-op RoundTripper, no overhead | Pending |
+| `UT-KA-417-010` | Startup validation fails fast with clear error when `secretKeyRef` env var is empty or unset | Pending |
+| `UT-KA-417-011` | Config rejects reserved header names (`Content-Type`, `Accept`, `Host`, `User-Agent`) with descriptive error | Pending |
+| `UT-KA-417-012` | Config rejects malformed header definitions (missing name, missing source, both `value` and `secretKeyRef` set, duplicate header names) | Pending |
+| `UT-KA-417-013` | Config accepts zero custom headers (empty list) — no-op RoundTripper, no overhead | Pending |
 
 #### 8.1.4 Runtime Safety
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-KAPI-417-014` | `filePath` file missing at request time returns clear error identifying the missing path (not a panic or empty value) | Pending |
-| `UT-KAPI-417-015` | `filePath` file exists but is empty returns error (empty auth token is worse than no auth) | Pending |
-| `UT-KAPI-417-016` | Original `*http.Request` headers unchanged after `RoundTrip` returns — request cloned before mutation (RoundTripper contract) | Pending |
-| `UT-KAPI-417-017` | Header values injected at transport layer do NOT appear in the request body (defense-in-depth: headers never leak into LLM prompt content) | Pending |
+| `UT-KA-417-014` | `filePath` file missing at request time returns clear error identifying the missing path (not a panic or empty value) | Pending |
+| `UT-KA-417-015` | `filePath` file exists but is empty returns error (empty auth token is worse than no auth) | Pending |
+| `UT-KA-417-016` | Original `*http.Request` headers unchanged after `RoundTrip` returns — request cloned before mutation (RoundTripper contract) | Pending |
+| `UT-KA-417-017` | Header values injected at transport layer do NOT appear in the request body (defense-in-depth: headers never leak into LLM prompt content) | Pending |
 
 ---
 
@@ -303,27 +303,27 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `IT-KAPI-417-001` | Full round trip: KAPI LLM client with 3 headers (one per source type) sends request to `httptest.Server` — all 3 headers present with correct values | Pending |
-| `IT-KAPI-417-002` | Headers injected for both OpenAI and Ollama endpoints (provider-agnostic transport layer) | Pending |
-| `IT-KAPI-417-003` | KAPI with zero custom headers configured sends request without any extra headers (backward compat) | Pending |
-| `IT-KAPI-417-004` | Error log from a failed LLM request does NOT contain the `Authorization` header value (credential scrubbing in error path) | Pending |
-| `IT-KAPI-417-005` | Token file updated between two consecutive requests — second request carries new token value (rotation without restart) | Pending |
-| `IT-KAPI-417-006` | End-to-end: KAPI sends request with `Authorization: Bearer test-token` to Mock LLM → `GET /api/test/headers` returns recorded header | Pending |
+| `IT-KA-417-001` | Full round trip: Kubernaut Agent LLM client with 3 headers (one per source type) sends request to `httptest.Server` — all 3 headers present with correct values | Pending |
+| `IT-KA-417-002` | Headers injected for both OpenAI and Ollama endpoints (provider-agnostic transport layer) | Pending |
+| `IT-KA-417-003` | Kubernaut Agent with zero custom headers configured sends request without any extra headers (backward compat) | Pending |
+| `IT-KA-417-004` | Error log from a failed LLM request does NOT contain the `Authorization` header value (credential scrubbing in error path) | Pending |
+| `IT-KA-417-005` | Token file updated between two consecutive requests — second request carries new token value (rotation without restart) | Pending |
+| `IT-KA-417-006` | End-to-end: Kubernaut Agent sends request with `Authorization: Bearer test-token` to Mock LLM → `GET /api/test/headers` returns recorded header | Pending |
 
 ### Tier Skip Rationale
 
-- **E2E**: Deferred. The full pipeline (signal → AA → KAPI → LLM) is tested by existing E2E suites. Adding auth headers to E2E would require provisioning Secrets and sidecars in Kind, which adds infrastructure cost for marginal coverage beyond unit + integration. Can be added when Helm chart tests (#239) are implemented.
+- **E2E**: Deferred. The full pipeline (signal → AA → Kubernaut Agent → LLM) is tested by existing E2E suites. Adding auth headers to E2E would require provisioning Secrets and sidecars in Kind, which adds infrastructure cost for marginal coverage beyond unit + integration. Can be added when Helm chart tests (#239) are implemented.
 
 ---
 
 ## 9. Test Cases
 
-### UT-KAPI-417-001: RoundTripper injects all configured headers
+### UT-KA-417-001: RoundTripper injects all configured headers
 
 **BR**: AC-417-01, AC-417-05, AC-417-08
 **Priority**: P0
 **Type**: Unit
-**File**: `test/unit/kapi/transport/auth_headers_test.go`
+**File**: `test/unit/kubernautagent/transport/auth_headers_test.go`
 
 **Preconditions**:
 - Three header definitions: `x-api-key` (value: `"test-key"`), `x-tenant-id` (value: `"prod"`), `Authorization` (value: `"Bearer abc123"`)
@@ -349,12 +349,12 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 
 ---
 
-### UT-KAPI-417-006: filePath re-read on token rotation
+### UT-KA-417-006: filePath re-read on token rotation
 
 **BR**: AC-417-03
 **Priority**: P0
 **Type**: Unit
-**File**: `test/unit/kapi/transport/resolver_test.go`
+**File**: `test/unit/kubernautagent/transport/resolver_test.go`
 
 **Preconditions**:
 - Temporary file containing `"token-v1"`
@@ -371,7 +371,7 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 3. No caching — file is re-read on every call
 
 **Acceptance Criteria**:
-- **Behavior**: Sidecar-rotated token is picked up on the next LLM request without KAPI restart
+- **Behavior**: Sidecar-rotated token is picked up on the next LLM request without Kubernaut Agent restart
 - **Correctness**: No stale token served after file update
 - **Accuracy**: Trailing newlines/whitespace stripped from file content (sidecar may write `token\n`)
 
@@ -379,12 +379,12 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 
 ---
 
-### UT-KAPI-417-009: Credential scrubbing in logs
+### UT-KA-417-009: Credential scrubbing in logs
 
 **BR**: AC-417-06, DD-HAPI-005
 **Priority**: P0
 **Type**: Unit
-**File**: `test/unit/kapi/transport/scrub_test.go`
+**File**: `test/unit/kubernautagent/transport/scrub_test.go`
 
 **Preconditions**:
 - Header definitions: `Authorization` (secretKeyRef → `"Bearer secret-key"`), `x-tenant-id` (value → `"prod"`)
@@ -409,12 +409,12 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 
 ---
 
-### UT-KAPI-417-010: Startup fail-fast on missing secret
+### UT-KA-417-010: Startup fail-fast on missing secret
 
 **BR**: AC-417-06, R2
 **Priority**: P1
 **Type**: Unit
-**File**: `test/unit/kapi/config/headers_test.go`
+**File**: `test/unit/kubernautagent/config/headers_test.go`
 
 **Preconditions**:
 - Header definition with `secretKeyRef` pointing to env var `LLM_API_KEY`
@@ -431,7 +431,7 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 3. Error message does NOT suggest a default value (fail-fast, not fail-soft)
 
 **Acceptance Criteria**:
-- **Behavior**: KAPI refuses to start with a misconfigured Secret rather than silently sending unauthenticated requests
+- **Behavior**: Kubernaut Agent refuses to start with a misconfigured Secret rather than silently sending unauthenticated requests
 - **Correctness**: Error is actionable — operator knows which Secret to fix
 - **Accuracy**: Non-secret sources (`value`, existing `filePath`) do not trigger this validation
 
@@ -439,12 +439,12 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 
 ---
 
-### IT-KAPI-417-001: Full round trip with all three source types
+### IT-KA-417-001: Full round trip with all three source types
 
 **BR**: AC-417-01..05, AC-417-08
 **Priority**: P0
 **Type**: Integration
-**File**: `test/integration/kapi/auth_headers_test.go`
+**File**: `test/integration/kubernautagent/auth_headers_test.go`
 
 **Preconditions**:
 - `httptest.Server` that captures all received request headers
@@ -452,7 +452,7 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 - Env var `TEST_API_KEY=secret-key-123` for `secretKeyRef` source
 
 **Test Steps**:
-1. **Given**: A KAPI LLM client configured with:
+1. **Given**: A Kubernaut Agent LLM client configured with:
    - `x-api-key` from `secretKeyRef` (env: `TEST_API_KEY`)
    - `Authorization` from `filePath` (temp file: `"jwt-token-xyz"`)
    - `x-tenant-id` from `value` (`"kubernaut-prod"`)
@@ -474,17 +474,17 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 
 ---
 
-### IT-KAPI-417-005: Token rotation without restart
+### IT-KA-417-005: Token rotation without restart
 
 **BR**: AC-417-03
 **Priority**: P0
 **Type**: Integration
-**File**: `test/integration/kapi/auth_headers_test.go`
+**File**: `test/integration/kubernautagent/auth_headers_test.go`
 
 **Preconditions**:
 - `httptest.Server` capturing headers
 - Temp file initially containing `"token-v1"`
-- KAPI LLM client with `Authorization` header from `filePath`
+- Kubernaut Agent LLM client with `Authorization` header from `filePath`
 
 **Test Steps**:
 1. **Given**: Client configured with `filePath` source pointing to temp file with `"token-v1"`
@@ -494,10 +494,10 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 **Expected Results**:
 1. First request: `Authorization: token-v1`
 2. Second request (after file update): `Authorization: token-v2`
-3. No KAPI restart between requests
+3. No Kubernaut Agent restart between requests
 
 **Acceptance Criteria**:
-- **Behavior**: Vault Agent / cert-manager sidecar rotates token → KAPI picks it up on next LLM call
+- **Behavior**: Vault Agent / cert-manager sidecar rotates token → KA picks it up on next LLM call
 - **Correctness**: No stale token served
 - **Accuracy**: File is re-read per request, not cached
 
@@ -505,21 +505,21 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 
 ---
 
-### IT-KAPI-417-006: End-to-end with Mock LLM verification API
+### IT-KA-417-006: End-to-end with Mock LLM verification API
 
 **BR**: AC-417-09, BR-MOCK-006, BR-MOCK-007
 **Priority**: P0
 **Type**: Integration
-**File**: `test/integration/kapi/auth_headers_mockllm_test.go`
+**File**: `test/integration/kubernautagent/auth_headers_mockllm_test.go`
 
 **Preconditions**:
 - Mock LLM Go server running (httptest.Server or container)
 - Mock LLM #570 verification API available
-- KAPI LLM client configured with `Authorization: Bearer test-token-e2e`
+- Kubernaut Agent LLM client configured with `Authorization: Bearer test-token-e2e`
 
 **Test Steps**:
 1. **Given**: Mock LLM server running with auth header recording enabled
-2. **When**: KAPI sends `POST /v1/chat/completions` with `Authorization: Bearer test-token-e2e`
+2. **When**: Kubernaut Agent sends `POST /v1/chat/completions` with `Authorization: Bearer test-token-e2e`
 3. **Then**: `GET /api/test/headers` on Mock LLM returns the recorded `Authorization` header
 
 **Expected Results**:
@@ -529,19 +529,19 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 
 **Acceptance Criteria**:
 - **Behavior**: The acceptance criterion from #417 — "Integration test with mock LLM verifying headers are received" — is satisfied
-- **Correctness**: Header value matches what KAPI was configured to send
+- **Correctness**: Header value matches what KA was configured to send
 - **Accuracy**: Mock LLM processes the request normally (auth headers don't interfere with scenario routing)
 
 **Dependencies**: Mock LLM #570 (fallback: `httptest.Server` with custom handler)
 
 ---
 
-### UT-KAPI-417-014: filePath missing at request time
+### UT-KA-417-014: filePath missing at request time
 
 **BR**: R7 (filePath missing at runtime)
 **Priority**: P1
 **Type**: Unit
-**File**: `test/unit/kapi/transport/resolver_test.go`
+**File**: `test/unit/kubernautagent/transport/resolver_test.go`
 
 **Preconditions**:
 - Header definition with `filePath` pointing to `/tmp/nonexistent-token.txt`
@@ -566,12 +566,12 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 
 ---
 
-### UT-KAPI-417-015: filePath empty file content rejected
+### UT-KA-417-015: filePath empty file content rejected
 
 **BR**: R7 (filePath missing at runtime)
 **Priority**: P1
 **Type**: Unit
-**File**: `test/unit/kapi/transport/resolver_test.go`
+**File**: `test/unit/kubernautagent/transport/resolver_test.go`
 
 **Preconditions**:
 - Temporary file exists but is empty (0 bytes)
@@ -595,12 +595,12 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 
 ---
 
-### UT-KAPI-417-016: RoundTripper request cloning contract
+### UT-KA-417-016: RoundTripper request cloning contract
 
 **BR**: R8 (request mutation)
 **Priority**: P0
 **Type**: Unit
-**File**: `test/unit/kapi/transport/auth_headers_test.go`
+**File**: `test/unit/kubernautagent/transport/auth_headers_test.go`
 
 **Preconditions**:
 - An `AuthHeadersTransport` configured with `Authorization: Bearer test`
@@ -626,12 +626,12 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 
 ---
 
-### UT-KAPI-417-017: Header values absent from request body
+### UT-KA-417-017: Header values absent from request body
 
 **BR**: I3 (defense-in-depth)
 **Priority**: P2
 **Type**: Unit
-**File**: `test/unit/kapi/transport/auth_headers_test.go`
+**File**: `test/unit/kubernautagent/transport/auth_headers_test.go`
 
 **Preconditions**:
 - An `AuthHeadersTransport` configured with a sensitive header `Authorization: Bearer secret-token-xyz`
@@ -663,15 +663,15 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 - **Framework**: Ginkgo/Gomega BDD (mandatory)
 - **Mocks**: Mock `http.RoundTripper` (captures outbound request for header inspection)
 - **Test data**: Temporary files for `filePath` tests, env vars for `secretKeyRef` tests
-- **Location**: `test/unit/kapi/transport/`, `test/unit/kapi/config/`
+- **Location**: `test/unit/kubernautagent/transport/`, `test/unit/kubernautagent/config/`
 - **Anti-patterns avoided**: No `time.Sleep()` — use `Eventually()` for async assertions. No `Skip()`. No direct audit store testing.
 
 ### 10.2 Integration Tests
 
 - **Framework**: Ginkgo/Gomega BDD (mandatory)
 - **Mocks**: ZERO mocks — real HTTP via `httptest.NewServer`
-- **Infrastructure**: `httptest.Server` (header capturing), temp files (token rotation), Mock LLM Go server (IT-KAPI-417-006)
-- **Location**: `test/integration/kapi/`
+- **Infrastructure**: `httptest.Server` (header capturing), temp files (token rotation), Mock LLM Go server (IT-KA-417-006)
+- **Location**: `test/integration/kubernautagent/`
 - **Anti-patterns avoided**: No `time.Sleep()`. No mocks of business logic. No HTTP endpoint tests for pure logic.
 
 ### 10.3 Tools & Versions
@@ -689,15 +689,15 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 
 | Dependency | Type | Status | Impact if Not Available | Workaround |
 |------------|------|--------|-------------------------|------------|
-| KAPI base LLM client (#433) | Code | In progress | All tests blocked — no `http.Client` to wrap | Implement auth headers transport standalone; wire into KAPI client when available |
-| Mock LLM #570 | Code | Open | IT-KAPI-417-006 blocked | Use `httptest.Server` with custom handler that records headers |
+| Kubernaut Agent base LLM client (#433) | Code | In progress | All tests blocked — no `http.Client` to wrap | Implement auth headers transport standalone; wire into the Kubernaut Agent client when available |
+| Mock LLM #570 | Code | Open | IT-KA-417-006 blocked | Use `httptest.Server` with custom handler that records headers |
 
 ### 11.2 Execution Order
 
-1. **Phase 1 — Config & resolver (Unit)**: UT-KAPI-417-010..013 (config validation), UT-KAPI-417-002..006 (resolver logic)
-2. **Phase 2 — RoundTripper & scrubbing (Unit)**: UT-KAPI-417-001 (injection), UT-KAPI-417-008 (mixed sources), UT-KAPI-417-009 (scrubbing), UT-KAPI-417-007 (concurrency)
-3. **Phase 3 — HTTP round trips (Integration)**: IT-KAPI-417-001..005 (httptest-based)
-4. **Phase 4 — Mock LLM verification (Integration)**: IT-KAPI-417-006 (when #570 lands)
+1. **Phase 1 — Config & resolver (Unit)**: UT-KA-417-010..013 (config validation), UT-KA-417-002..006 (resolver logic)
+2. **Phase 2 — RoundTripper & scrubbing (Unit)**: UT-KA-417-001 (injection), UT-KA-417-008 (mixed sources), UT-KA-417-009 (scrubbing), UT-KA-417-007 (concurrency)
+3. **Phase 3 — HTTP round trips (Integration)**: IT-KA-417-001..005 (httptest-based)
+4. **Phase 4 — Mock LLM verification (Integration)**: IT-KA-417-006 (when #570 lands)
 
 ---
 
@@ -706,8 +706,8 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 | Deliverable | Location | Description |
 |-------------|----------|-------------|
 | This test plan | `docs/tests/417/TEST_PLAN.md` | Strategy, risk analysis, and test design |
-| Unit test suite | `test/unit/kapi/transport/`, `test/unit/kapi/config/` | 13 Ginkgo BDD tests for resolver, RoundTripper, scrubbing, config |
-| Integration test suite | `test/integration/kapi/` | 6 Ginkgo BDD tests for full HTTP round trips and Mock LLM verification |
+| Unit test suite | `test/unit/kubernautagent/transport/`, `test/unit/kubernautagent/config/` | 13 Ginkgo BDD tests for resolver, RoundTripper, scrubbing, config |
+| Integration test suite | `test/integration/kubernautagent/` | 6 Ginkgo BDD tests for full HTTP round trips and Mock LLM verification |
 | Coverage report | CI artifact | Per-tier coverage percentages |
 
 ---
@@ -716,16 +716,16 @@ Format: `{TIER}-KAPI-417-{SEQUENCE}`
 
 ```bash
 # Unit tests
-go test ./test/unit/kapi/... -ginkgo.v
+go test ./test/unit/kubernautagent/... -ginkgo.v
 
 # Integration tests
-go test ./test/integration/kapi/... -ginkgo.v
+go test ./test/integration/kubernautagent/... -ginkgo.v
 
 # Specific test by ID
-go test ./test/unit/kapi/... -ginkgo.focus="UT-KAPI-417-006"
+go test ./test/unit/kubernautagent/... -ginkgo.focus="UT-KA-417-006"
 
 # Coverage — unit tier
-go test ./test/unit/kapi/... -coverprofile=unit_coverage.out
+go test ./test/unit/kubernautagent/... -coverprofile=unit_coverage.out
 go tool cover -func=unit_coverage.out
 ```
 
@@ -750,19 +750,19 @@ go tool cover -func=unit_coverage.out
 | # | Finding | Severity | Resolution |
 |---|---------|----------|------------|
 | G1 | FR-HAPI-433-10 referenced in v1.0 but no FR document exists | Medium | Removed reference; #417 acceptance criteria are the authoritative source |
-| G2 | No test for `filePath` absent at request time (sidecar race) | High | Added UT-KAPI-417-014 |
-| G3 | No test for empty file content from sidecar | Medium | Added UT-KAPI-417-015 |
-| G4 | No test for `http.RoundTripper` contract (request cloning) | High | Added UT-KAPI-417-016 |
-| G5 | Duplicate header names in config not tested | Medium | Extended UT-KAPI-417-012 to reject duplicate names |
-| G6 | Scrubbing scope only covered logs/errors, not LLM-bound content | Low | Added UT-KAPI-417-017 (defense-in-depth: header values absent from request body) |
+| G2 | No test for `filePath` absent at request time (sidecar race) | High | Added UT-KA-417-014 |
+| G3 | No test for empty file content from sidecar | Medium | Added UT-KA-417-015 |
+| G4 | No test for `http.RoundTripper` contract (request cloning) | High | Added UT-KA-417-016 |
+| G5 | Duplicate header names in config not tested | Medium | Extended UT-KA-417-012 to reject duplicate names |
+| G6 | Scrubbing scope only covered logs/errors, not LLM-bound content | Low | Added UT-KA-417-017 (defense-in-depth: header values absent from request body) |
 
 ### Inconsistencies Resolved
 
 | # | Finding | Severity | Resolution |
 |---|---------|----------|------------|
-| I1 | #417 issue body says "HAPI SHALL support..." but v1.3 work targets KAPI | Medium | Noted in test plan; issue title is provider-agnostic. A comment will be added to #417 clarifying KAPI is the consumer. |
+| I1 | #417 issue body says "HAPI SHALL support..." but v1.3 work targets Kubernaut Agent | Medium | Noted in test plan; issue title is provider-agnostic. A comment will be added to #417 clarifying KA is the consumer. |
 | I2 | DD-HAPI-005 cited for credential scrubbing — but that DD covers LLM input sanitization, not HTTP header redaction | High | Fixed: now cites DD-HAPI-019-003 (G4: Credential Scrubbing) |
-| I3 | #417 says "redacted from any LLM-bound content" but header values are injected at transport layer below prompt assembly | Low | Clarified in plan: real risk is logs/metrics/errors. UT-KAPI-417-017 provides defense-in-depth validation. |
+| I3 | #417 says "redacted from any LLM-bound content" but header values are injected at transport layer below prompt assembly | Low | Clarified in plan: real risk is logs/metrics/errors. UT-KA-417-017 provides defense-in-depth validation. |
 
 ---
 
@@ -771,4 +771,4 @@ go tool cover -func=unit_coverage.out
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-04 | Initial test plan (IEEE 829 hybrid). 19 tests across 2 tiers covering 9 acceptance criteria + 4 defensive tests. 6 risks with traceability. Suspension criteria for #433 base client and #570 Mock LLM dependencies. |
-| 1.1 | 2026-03-04 | Audit: added 4 unit tests (UT-KAPI-417-014..017) for runtime safety — filePath missing/empty at request time, RoundTripper request cloning contract, header value isolation from request body. Added risks R7 (filePath missing), R8 (request mutation). Fixed DD reference: DD-HAPI-019-003 G4 replaces DD-HAPI-005. Clarified scrubbing scope (logs/errors, not LLM prompts). Total: 23 tests (17 unit + 6 integration). |
+| 1.1 | 2026-03-04 | Audit: added 4 unit tests (UT-KA-417-014..017) for runtime safety — filePath missing/empty at request time, RoundTripper request cloning contract, header value isolation from request body. Added risks R7 (filePath missing), R8 (request mutation). Fixed DD reference: DD-HAPI-019-003 G4 replaces DD-HAPI-005. Clarified scrubbing scope (logs/errors, not LLM prompts). Total: 23 tests (17 unit + 6 integration). |

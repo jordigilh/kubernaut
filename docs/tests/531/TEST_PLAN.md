@@ -16,7 +16,7 @@
 
 ### 1.1 Purpose
 
-This test plan validates that the Go rewrite of the Mock LLM service (#531) produces a drop-in replacement for the existing Python Mock LLM. The Go Mock LLM must be indistinguishable from a real LLM provider at the HTTP API level and must preserve identical behavior for all 15+ existing test scenarios consumed by KAPI (#433) and the integration/E2E test suites.
+This test plan validates that the Go rewrite of the Mock LLM service (#531) produces a drop-in replacement for the existing Python Mock LLM. The Go Mock LLM must be indistinguishable from a real LLM provider at the HTTP API level and must preserve identical behavior for all 15+ existing test scenarios consumed by Kubernaut Agent (#433) and the integration/E2E test suites.
 
 The test plan also validates the new architectural capabilities (DAG conversation engine, scenario registry, verification API, deterministic UUIDs) that make the Mock LLM extensible for future AIOps pillars (threat remediation, cost optimization).
 
@@ -62,8 +62,8 @@ The test plan also validates the new architectural capabilities (DAG conversatio
 - DD-HAPI-017: Three-step workflow discovery protocol
 - Issue #529: Three-phase RCA architecture
 - Issue #548: Deterministic UUIDs in DataStorage
-- Issue #417: Support custom authentication headers for LLM proxy endpoints (KAPI auth)
-- Issue #433: KAPI Go rewrite (primary consumer of Mock LLM)
+- Issue #417: Support custom authentication headers for LLM proxy endpoints (Kubernaut Agent auth)
+- Issue #433: Kubernaut Agent Go rewrite (primary consumer of Mock LLM)
 - Issue #570: Mock LLM auth header passthrough and verification
 
 ---
@@ -81,7 +81,7 @@ The test plan also validates the new architectural capabilities (DAG conversatio
 | R5 | **Concurrent request safety** — DAG engine or tracker corrupted under concurrent load | Flaky test failures, data leakage between conversations | Medium | UT-MOCK-010-004, UT-MOCK-040-001 | UT-MOCK-010-004 tests concurrent DAG execution. Tracker uses `sync.Mutex` (UT-MOCK-040-001 validates thread safety). |
 | R6 | **Keyword alias coverage gap** — `mock_not_reproducible` → `problem_resolved` is undocumented | Alias missed during migration, existing tests fail | Low | UT-MOCK-026-007 | Explicit test case for the alias in the scenario catalog table. |
 | R7 | **Invalid UUIDs in low_confidence scenario** — `7cg3` not valid hex | Go UUID validation rejects Python-era test data | Low | UT-MOCK-026-005 | Preserve exact Python strings without format validation (per RISK-MOCK-004 in BR). |
-| R8 | **Shared types divergence** — `pkg/shared/types/openai/` shape doesn't match KAPI's expectations | Compile-time errors when KAPI imports shared types | Medium | UT-MOCK-060-001, UT-MOCK-061-001 | Design shared types from OpenAI API spec (stable, well-documented), not KAPI-specific assumptions. Mock LLM is first consumer. |
+| R8 | **Shared types divergence** — `pkg/shared/types/openai/` shape doesn't match Kubernaut Agent's expectations | Compile-time errors when Kubernaut Agent imports shared types | Medium | UT-MOCK-060-001, UT-MOCK-061-001 | Design shared types from OpenAI API spec (stable, well-documented), not Kubernaut Agent-specific assumptions. Mock LLM is first consumer. |
 | R9 | **Auth header recording unbounded memory** — high-traffic tests flood header store | OOM or slow verification API responses | Low | UT-MOCK-006-003 | Record only configured header names (not all headers). Reset between tests via `POST /api/test/reset`. |
 
 ### 3.1 Risk-to-Test Traceability
@@ -108,18 +108,18 @@ Every High or Certain-probability risk has explicit test coverage:
 - **Configuration** (`internal/config/`): Environment variable parsing, deterministic UUID generation, optional YAML overrides
 - **Conversation context** (`internal/conversation/context.go`): Message parsing, tool result extraction, Phase 3 marker detection, resource/owner extraction
 - **Verification API** (`internal/handlers/verification.go`): Tool call recording, conversation path query, scenario detection query, auth header recording, state reset
-- **Auth header passthrough** (`internal/handlers/headers.go`): Record configurable auth headers per request for verification by KAPI integration tests (#417)
+- **Auth header passthrough** (`internal/handlers/headers.go`): Record configurable auth headers per request for verification by Kubernaut Agent integration tests (#417)
 - **Fault injection** (`internal/fault/`): Runtime fault injection API, permanent error keyword, intermittent and timeout modes
 - **Container contract**: Image size, startup time, port, UID, probe path
 
 ### 4.2 Features Not to be Tested
 
-- **KAPI Go rewrite** (#433): Separate issue, separate test plan. Mock LLM tests validate the mock's behavior, not KAPI's consumption of it. KAPI's test suites will implicitly validate the Go Mock LLM when the image is swapped.
+- **Kubernaut Agent Go rewrite** (#433): Separate issue, separate test plan. Mock LLM tests validate the mock's behavior, not Kubernaut Agent's consumption of it. Kubernaut Agent's test suites will implicitly validate the Go Mock LLM when the image is swapped.
 - **Declarative YAML scenarios** (#566): P2 enhancement — architecture accommodates it but implementation deferred. Tested when implemented.
 - **Pillar composition** (#567): P2 enhancement — abstraction defined but no concrete security/cost scenarios. Tested when pillars are added.
 - **Prometheus metrics** (#568): P2 enhancement — scaffolded but `/metrics` endpoint tested only when implemented.
 - **Streaming responses**: Not supported in current Python implementation. Out of scope for v1.0 Go rewrite.
-- **Full pipeline E2E** (signal → AA → KAPI → Mock LLM → RO → WE): Validated by existing `test/e2e/aianalysis/` and `test/e2e/fullpipeline/` suites which use Mock LLM as infrastructure. Those tests implicitly validate the Go Mock LLM when the image is swapped.
+- **Full pipeline E2E** (signal → AA → Kubernaut Agent → Mock LLM → RO → WE): Validated by existing `test/e2e/aianalysis/` and `test/e2e/fullpipeline/` suites which use Mock LLM as infrastructure. Those tests implicitly validate the Go Mock LLM when the image is swapped.
 
 ### 4.3 Design Decisions
 
@@ -127,11 +127,11 @@ Every High or Certain-probability risk has explicit test coverage:
 |----------|-----------|
 | Unit tests target pure logic (DAG engine, detection, context extraction, response builders) | These components have no I/O and can be tested in isolation at sub-millisecond speed |
 | Integration tests use `net/http/httptest` for real HTTP | Mock LLM is an HTTP server — integration tests validate the full request→response cycle over real HTTP |
-| E2E tests validate container contract only | Image size, startup time, port, probes — tested via `docker build` + `docker run`. Full pipeline E2E deferred to KAPI/AA test suites which already use Mock LLM as infrastructure |
+| E2E tests validate container contract only | Image size, startup time, port, probes — tested via `docker build` + `docker run`. Full pipeline E2E deferred to Kubernaut Agent/AA test suites which already use Mock LLM as infrastructure |
 | Table-driven tests for scenario catalog (BR-MOCK-026) | 15+ scenarios share identical structure; table-driven approach prevents 15 redundant test files |
 | Deterministic UUID tests import `pkg/shared/uuid` directly | Validates the shared function produces identical output in both Mock LLM and DataStorage contexts |
 | No mocks of internal components in integration tests | All Mock LLM internal components are business logic under `internal/` — only external I/O (HTTP) is real |
-| Consumer is KAPI (#433), not HAPI | v1.3 uses the Go-based KAPI as the LLM client. All test assertions validate KAPI compatibility, not Python HAPI |
+| Consumer is Kubernaut Agent (#433), not HAPI | v1.3 uses the Go-based Kubernaut Agent as the LLM client. All test assertions validate Kubernaut Agent compatibility, not Python HAPI |
 
 ---
 
@@ -154,7 +154,7 @@ Every business requirement is covered by at least 2 test tiers:
 ### 5.3 Business Outcome Quality Bar
 
 Tests validate **business outcomes**:
-1. **KAPI receives correct responses** — OpenAI/Ollama wire-compatible, deterministic, scenario-appropriate
+1. **Kubernaut Agent receives correct responses** — OpenAI/Ollama wire-compatible, deterministic, scenario-appropriate
 2. **Tests can assert conversation behavior** — verification API reports tool calls, DAG paths, matched scenarios
 3. **Existing tests don't break** — backward compatibility with all current integration and E2E test contracts
 4. **New scenarios are easy to add** — registry pattern enables adding scenarios without modifying existing code
@@ -239,7 +239,7 @@ Tests validate **business outcomes**:
 | Code under test | `development/v1.3` HEAD | Mock LLM Go implementation |
 | Dependency: deterministic UUIDs | #548 (Open) | Required for UT-MOCK-030/031. Stubbed until merged. |
 | Dependency: shared OpenAI types | #562 (Open) | Created as part of #531. First consumer is Mock LLM. |
-| Dependency: KAPI Go rewrite | #433 (In progress) | Mock LLM is upstream of KAPI. Shared types (#562) bridge the two. |
+| Dependency: Kubernaut Agent Go rewrite | #433 (In progress) | Mock LLM is upstream of Kubernaut Agent. Shared types (#562) bridge the two. |
 | Reference: Python Mock LLM | `test/services/mock-llm/src/server.py` | Source of truth for response shapes and scenario behavior during migration |
 
 ---
@@ -367,7 +367,7 @@ Format: `{TIER}-MOCK-{BR_NUMBER}-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-MOCK-001-001` | OpenAI response contains all required fields (id, object, created, model, choices, usage) so KAPI can deserialize it | Pending |
+| `UT-MOCK-001-001` | OpenAI response contains all required fields (id, object, created, model, choices, usage) so Kubernaut Agent can deserialize it | Pending |
 | `UT-MOCK-001-002` | Response `id` follows `chatcmpl-{8hex}` format and `created` is fixed (1701388800) for deterministic assertions | Pending |
 | `UT-MOCK-001-003` | Tool call response has correct `finish_reason: tool_calls` and arguments as JSON string | Pending |
 | `UT-MOCK-001-004` | Content response has correct `finish_reason: stop` with markdown-embedded JSON | Pending |
@@ -414,7 +414,7 @@ Format: `{TIER}-MOCK-{BR_NUMBER}-{SEQUENCE}`
 | `UT-MOCK-020-003` | `registry.List()` returns metadata for all registered scenarios (enables auto-documentation) | Pending |
 | `UT-MOCK-021-001` | Keyword `mock_oomkilled` matches OOMKilled scenario case-insensitively (also matches `MOCK_OOMKILLED`) | Pending |
 | `UT-MOCK-021-002` | Space variant `mock oomkilled` matches identically to underscore variant | Pending |
-| `UT-MOCK-022-001` | Regex `signal name:\s*(\w+)` extracts signal from KAPI prompt content | Pending |
+| `UT-MOCK-022-001` | Regex `signal name:\s*(\w+)` extracts signal from Kubernaut Agent prompt content | Pending |
 | `UT-MOCK-022-002` | Signal normalization maps `OOMKilled` → `oomkilled`, `CrashLoopBackOff` → `crashloop` | Pending |
 | `UT-MOCK-023-001` | Proactive markers (`proactive mode`, `predicted` + `not yet occurred`) detected in content | Pending |
 | `UT-MOCK-023-002` | Proactive + OOM signal routes to `oomkilled_proactive` scenario (not `oomkilled`) | Pending |
@@ -562,7 +562,7 @@ Format: `{TIER}-MOCK-{BR_NUMBER}-{SEQUENCE}`
 
 ### Tier Skip Rationale
 
-- **E2E (full pipeline)**: Deferred. The full pipeline (signal → AA → KAPI → Mock LLM → RO → WE) is validated by existing `test/e2e/aianalysis/` and `test/e2e/fullpipeline/` suites which use Mock LLM as infrastructure. Those tests will implicitly validate the Go Mock LLM when the image is swapped.
+- **E2E (full pipeline)**: Deferred. The full pipeline (signal → AA → Kubernaut Agent → Mock LLM → RO → WE) is validated by existing `test/e2e/aianalysis/` and `test/e2e/fullpipeline/` suites which use Mock LLM as infrastructure. Those tests will implicitly validate the Go Mock LLM when the image is swapped.
 - **Category 8 (Extensibility)**: BR-MOCK-070 through 073 are P2 framework-level abstractions. Architecture tests are covered implicitly by the scenario registry unit tests. Explicit extensibility tests added when concrete security/cost scenarios exist.
 - **Category 9 (Observability)**: BR-MOCK-080 through 083 are P2 metrics. Scaffolding tested when `/metrics` endpoint is implemented (#568).
 
@@ -968,5 +968,5 @@ go tool cover -func=int_coverage.out
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2026-03-04 | Initial test plan (IEEE 829 hybrid format). 84 tests across 3 tiers covering 47 BRs. Risk-first design with 8 risks and explicit traceability to mitigating tests. Pass/fail and suspension/resumption criteria defined. KAPI as primary consumer (not HAPI). Execution order aligned with TDD phasing and #548 dependency. |
+| 1.0 | 2026-03-04 | Initial test plan (IEEE 829 hybrid format). 84 tests across 3 tiers covering 47 BRs. Risk-first design with 8 risks and explicit traceability to mitigating tests. Pass/fail and suspension/resumption criteria defined. Kubernaut Agent as primary consumer (not HAPI). Execution order aligned with TDD phasing and #548 dependency. |
 | 1.1 | 2026-03-04 | Added BR-MOCK-006 (auth header passthrough) and BR-MOCK-007 (auth header verification API) for #417/#570 integration. +3 unit tests (UT-MOCK-006-001..003), +6 integration tests (IT-MOCK-006-001..002, IT-MOCK-007-001..004). Total: 93 tests, 49 BRs, 9 risks. |
