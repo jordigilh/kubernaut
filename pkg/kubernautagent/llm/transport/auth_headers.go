@@ -21,7 +21,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/jordigilh/kubernaut/pkg/kapi/config"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 )
 
 // AuthHeadersTransport implements http.RoundTripper to inject custom

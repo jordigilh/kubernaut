@@ -20,8 +20,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/jordigilh/kubernaut/pkg/kapi/config"
-	"github.com/jordigilh/kubernaut/pkg/kapi/llm/transport"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 )
 
 // NewLLMClient creates an http.Client with custom authentication headers
