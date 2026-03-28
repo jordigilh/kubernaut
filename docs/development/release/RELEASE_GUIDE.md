@@ -217,19 +217,27 @@ fixing a bug in v1.1.0) while `main` has moved on to the next minor (v1.2).
 ### Branching model
 
 ```mermaid
-gitGraph
-  commit id: "v1.2 dev"
-  commit id: "tag v1.1.0" tag: "v1.1.0"
-  branch release/v1.1
-  checkout release/v1.1
-  branch fix/v1.1.1
-  checkout fix/v1.1.1
-  commit id: "hotfix"
-  checkout release/v1.1
-  merge fix/v1.1.1 id: "tag v1.1.1" tag: "v1.1.1"
-  checkout main
-  cherry-pick id: "tag v1.1.1"
-  commit id: "v1.2 continues"
+flowchart TD
+  subgraph mainBranch ["main (v1.2 development)"]
+    M1["v1.2 dev commits"] --> M2["tag v1.1.0"]
+    M2 --> M3["v1.2 continues"]
+    M3 --> M4["cherry-pick hotfix"]
+    M4 --> M5["v1.2 dev resumes"]
+  end
+
+  subgraph maintBranch ["release/v1.1 (maintenance)"]
+    R1["branch from tag"] --> R2["merge fix"]
+    R2 --> R3["tag v1.1.1"]
+  end
+
+  subgraph fixBranch ["fix/v1.1.1"]
+    F1["implement hotfix"]
+  end
+
+  M2 -- "create branch" --> R1
+  R1 -- "create branch" --> F1
+  F1 -- "PR merge" --> R2
+  R3 -. "forward-port" .-> M4
 ```
 
 Key concepts:
