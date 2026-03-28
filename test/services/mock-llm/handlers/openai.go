@@ -44,6 +44,7 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 
 	// Check fault injection
 	if h.faultInjector != nil && h.faultInjector.IsActive() {
+		applyFaultDelay(h.faultInjector)
 		writeJSON(w, h.faultInjector.StatusCode(),
 			response.BuildErrorResponse(h.faultInjector.Message()))
 		return

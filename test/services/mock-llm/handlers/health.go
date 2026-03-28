@@ -18,6 +18,9 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"time"
+
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/fault"
 )
 
 func (h *handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -29,4 +32,10 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(data)
+}
+
+func applyFaultDelay(fi *fault.Injector) {
+	if d := fi.DelayMs(); d > 0 {
+		time.Sleep(time.Duration(d) * time.Millisecond)
+	}
 }
