@@ -63,7 +63,7 @@ func NewRemediationRequest(name, namespace string) *RemediationRequestBuilder {
 				SignalFingerprint: "0000000000000000000000000000000000000000000000000000000000000000", // Default 64-char hex
 				SignalName:        "default-signal",
 				Severity:          "medium",
-				TargetType:        "pod",
+				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Pod",
 					Name:      "default-resource",
@@ -122,7 +122,7 @@ func (b *RemediationRequestBuilder) WithMessage(message string) *RemediationRequ
 }
 
 // WithSkipReason sets the skip reason.
-func (b *RemediationRequestBuilder) WithSkipReason(reason string) *RemediationRequestBuilder {
+func (b *RemediationRequestBuilder) WithSkipReason(reason remediationv1.SkipReason) *RemediationRequestBuilder {
 	b.rr.Status.SkipReason = reason
 	return b
 }
@@ -146,7 +146,7 @@ func (b *RemediationRequestBuilder) WithConsecutiveFailureCount(count int32) *Re
 }
 
 // WithBlockReason sets the block reason.
-func (b *RemediationRequestBuilder) WithBlockReason(reason string) *RemediationRequestBuilder {
+func (b *RemediationRequestBuilder) WithBlockReason(reason remediationv1.BlockReason) *RemediationRequestBuilder {
 	b.rr.Status.BlockReason = reason
 	return b
 }

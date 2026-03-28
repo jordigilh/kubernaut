@@ -110,8 +110,8 @@ var _ = Describe("AIAnalysisCreator", func() {
 			// (per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md and DD-SEVERITY-001)
 			completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
 			// Override SP status to have custom environment/priority/severity for test
-			completedSP.Status.EnvironmentClassification.Environment = "production"
-			completedSP.Status.PriorityAssignment.Priority = "P0"
+			completedSP.Status.EnvironmentClassification.Environment = signalprocessingv1.EnvironmentProduction
+			completedSP.Status.PriorityAssignment.Priority = signalprocessingv1.PriorityP0
 			completedSP.Status.Severity = "critical" // DD-SEVERITY-001: Normalized severity from SP
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
 				WithStatusSubresource(completedSP).Build()
@@ -147,8 +147,8 @@ var _ = Describe("AIAnalysisCreator", func() {
 			Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal(completedSP.Status.SignalName))
 			// DD-SEVERITY-001: Severity, Environment, and Priority come from SP.Status (normalized)
 			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Severity).To(Equal(completedSP.Status.Severity))
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Environment).To(Equal(completedSP.Status.EnvironmentClassification.Environment))
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.BusinessPriority).To(Equal(completedSP.Status.PriorityAssignment.Priority))
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Environment).To(Equal(string(completedSP.Status.EnvironmentClassification.Environment)))
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.BusinessPriority).To(Equal(string(completedSP.Status.PriorityAssignment.Priority)))
 
 				// Verify TargetResource
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.TargetResource.Kind).To(Equal(rr.Spec.TargetResource.Kind))
@@ -156,7 +156,11 @@ var _ = Describe("AIAnalysisCreator", func() {
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.TargetResource.Namespace).To(Equal(rr.Spec.TargetResource.Namespace))
 
 				// Verify AnalysisTypes
-				Expect(createdAI.Spec.AnalysisRequest.AnalysisTypes).To(ContainElements("investigation", "root-cause", "workflow-selection"))
+				Expect(createdAI.Spec.AnalysisRequest.AnalysisTypes).To(ContainElements(
+					aianalysisv1.AnalysisTypeInvestigation,
+					aianalysisv1.AnalysisTypeRootCause,
+					aianalysisv1.AnalysisTypeWorkflowSelection,
+				))
 			})
 
 			It("should pass through enrichment results from SignalProcessing.Status", func() {
@@ -530,8 +534,8 @@ var _ = Describe("AIAnalysisCreator", func() {
 			completedSP.Status.BusinessClassification = &signalprocessingv1.BusinessClassification{
 				BusinessUnit:   "payments",
 				ServiceOwner:   "team-checkout",
-				Criticality:    "critical",
-				SLARequirement: "platinum",
+				Criticality:    signalprocessingv1.CriticalityCritical,
+				SLARequirement: signalprocessingv1.SLARequirementPlatinum,
 			}
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
@@ -549,8 +553,8 @@ var _ = Describe("AIAnalysisCreator", func() {
 			bc := createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification
 			Expect(bc.BusinessUnit).To(Equal("payments"))
 			Expect(bc.ServiceOwner).To(Equal("team-checkout"))
-			Expect(bc.Criticality).To(Equal("critical"))
-			Expect(bc.SLARequirement).To(Equal("platinum"))
+			Expect(bc.Criticality).To(Equal(signalprocessingv1.CriticalityCritical))
+			Expect(bc.SLARequirement).To(Equal(signalprocessingv1.SLARequirementPlatinum))
 		})
 
 		It("should not set BusinessClassification when SP has none", func() {
@@ -574,7 +578,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 		It("should handle partial BusinessClassification fields", func() {
 			completedSP := helpers.NewCompletedSignalProcessing("sp-partial-bizclass", "default")
 			completedSP.Status.BusinessClassification = &signalprocessingv1.BusinessClassification{
-				Criticality: "high",
+				Criticality: signalprocessingv1.CriticalityHigh,
 			}
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
@@ -590,7 +594,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			bc := createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification
-			Expect(bc.Criticality).To(Equal("high"))
+			Expect(bc.Criticality).To(Equal(signalprocessingv1.CriticalityHigh))
 			Expect(bc.BusinessUnit).To(BeEmpty())
 			Expect(bc.ServiceOwner).To(BeEmpty())
 			Expect(bc.SLARequirement).To(BeEmpty())

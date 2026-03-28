@@ -122,12 +122,11 @@ var _ = Describe("Test 06: Concurrent Signal Handling (Integration)", Ordered, L
 		var wg sync.WaitGroup
 		var successCount int64
 		var errorCount int64
-		var acceptedCount int64  // StatusAccepted (including duplicates)
-		var createdCount int64    // StatusCreated (new CRDs)
+		var deduplicatedCount int64 // StatusDeduplicated
+		var createdCount int64      // StatusCreated (new CRDs)
 
-		// Use a SINGLE signal name so signals aggregate together (BR-GATEWAY-008)
-		// This triggers storm aggregation when threshold is reached
-		sharedSignalName := fmt.Sprintf("ConcurrentStormSignal-%s", uuid.New().String()[:8])
+		// Use a SINGLE alert name so concurrent sends exercise shared-name behavior (BR-GATEWAY-008)
+		sharedSignalName := fmt.Sprintf("ConcurrentSharedAlert-%s", uuid.New().String()[:8])
 
 		for g := 0; g < numGoroutines; g++ {
 			wg.Add(1)
@@ -135,7 +134,6 @@ var _ = Describe("Test 06: Concurrent Signal Handling (Integration)", Ordered, L
 				defer wg.Done()
 
 				for i := 0; i < signalsPerGoroutine; i++ {
-					// All signals share the same signalName to trigger storm aggregation
 					signal := createNormalizedSignal(SignalBuilder{
 						AlertName: sharedSignalName,
 						Namespace:  testNamespace,
@@ -158,8 +156,8 @@ var _ = Describe("Test 06: Concurrent Signal Handling (Integration)", Ordered, L
 
 					// Track response status
 					switch response.Status {
-					case gateway.StatusAccepted, gateway.StatusDeduplicated:
-						atomic.AddInt64(&acceptedCount, 1)
+					case gateway.StatusDeduplicated:
+						atomic.AddInt64(&deduplicatedCount, 1)
 						atomic.AddInt64(&successCount, 1)
 					case gateway.StatusCreated:
 						atomic.AddInt64(&createdCount, 1)
@@ -174,7 +172,7 @@ var _ = Describe("Test 06: Concurrent Signal Handling (Integration)", Ordered, L
 		wg.Wait()
 
 		testLogger.Info(fmt.Sprintf("  Completed: %d success, %d errors", successCount, errorCount))
-		testLogger.Info(fmt.Sprintf("  Response statuses: Created=%d, Accepted/Duplicate=%d", createdCount, acceptedCount))
+		testLogger.Info(fmt.Sprintf("  Response statuses: Created=%d, Deduplicated=%d", createdCount, deduplicatedCount))
 
 		// Step 2: Verify no errors occurred
 		testLogger.Info("")
@@ -211,7 +209,7 @@ var _ = Describe("Test 06: Concurrent Signal Handling (Integration)", Ordered, L
 
 		testLogger.Info(fmt.Sprintf("  Found %d CRDs (filtered from %d total)", crdCount, len(crdList.Items)))
 
-		// CRD count should be less than total signals (due to storm aggregation)
+		// CRD count should not exceed total signals (deduplication may reduce CRDs)
 		// but greater than 0
 		Expect(crdCount).To(BeNumerically(">", 0),
 			"At least some CRDs should be created")

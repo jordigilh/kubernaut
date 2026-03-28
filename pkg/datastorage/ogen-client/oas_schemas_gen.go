@@ -437,6 +437,10 @@ type AIAgentResponsePayload struct {
 	// Incident correlation ID from request.
 	IncidentID   string               `json:"incident_id"`
 	ResponseData IncidentResponseData `json:"response_data"`
+	// Total prompt tokens consumed across all LLM calls in this investigation session (#435).
+	TotalPromptTokens OptInt `json:"total_prompt_tokens"`
+	// Total completion tokens consumed across all LLM calls in this investigation session (#435).
+	TotalCompletionTokens OptInt `json:"total_completion_tokens"`
 }
 
 // GetEventType returns the value of EventType.
@@ -459,6 +463,16 @@ func (s *AIAgentResponsePayload) GetResponseData() IncidentResponseData {
 	return s.ResponseData
 }
 
+// GetTotalPromptTokens returns the value of TotalPromptTokens.
+func (s *AIAgentResponsePayload) GetTotalPromptTokens() OptInt {
+	return s.TotalPromptTokens
+}
+
+// GetTotalCompletionTokens returns the value of TotalCompletionTokens.
+func (s *AIAgentResponsePayload) GetTotalCompletionTokens() OptInt {
+	return s.TotalCompletionTokens
+}
+
 // SetEventType sets the value of EventType.
 func (s *AIAgentResponsePayload) SetEventType(val AIAgentResponsePayloadEventType) {
 	s.EventType = val
@@ -477,6 +491,16 @@ func (s *AIAgentResponsePayload) SetIncidentID(val string) {
 // SetResponseData sets the value of ResponseData.
 func (s *AIAgentResponsePayload) SetResponseData(val IncidentResponseData) {
 	s.ResponseData = val
+}
+
+// SetTotalPromptTokens sets the value of TotalPromptTokens.
+func (s *AIAgentResponsePayload) SetTotalPromptTokens(val OptInt) {
+	s.TotalPromptTokens = val
+}
+
+// SetTotalCompletionTokens sets the value of TotalCompletionTokens.
+func (s *AIAgentResponsePayload) SetTotalCompletionTokens(val OptInt) {
+	s.TotalCompletionTokens = val
 }
 
 // Event type for discriminator (matches parent event_type).
@@ -1426,7 +1450,7 @@ func (s *ActionTypeCatalogReenabledPayloadEventType) UnmarshalText(data []byte) 
 type ActionTypeCatalogReenabledPayloadPreviousState string
 
 const (
-	ActionTypeCatalogReenabledPayloadPreviousStateDisabled ActionTypeCatalogReenabledPayloadPreviousState = "disabled"
+	ActionTypeCatalogReenabledPayloadPreviousStateDisabled ActionTypeCatalogReenabledPayloadPreviousState = "Disabled"
 )
 
 // AllValues returns all ActionTypeCatalogReenabledPayloadPreviousState values.
@@ -1896,7 +1920,7 @@ func (*ActionTypeDisableResponse) disableActionTypeRes() {}
 type ActionTypeDisableResponseStatus string
 
 const (
-	ActionTypeDisableResponseStatusDisabled ActionTypeDisableResponseStatus = "disabled"
+	ActionTypeDisableResponseStatusDisabled ActionTypeDisableResponseStatus = "Disabled"
 )
 
 // AllValues returns all ActionTypeDisableResponseStatus values.
@@ -7105,6 +7129,8 @@ type DetectedLabels struct {
 	NetworkIsolated OptBool `json:"networkIsolated"`
 	// Service mesh type: istio, linkerd, or * (wildcard = any mesh).
 	ServiceMesh OptDetectedLabelsServiceMesh `json:"serviceMesh"`
+	// ResourceQuota exists in namespace (#366).
+	ResourceQuotaConstrained OptBool `json:"resourceQuotaConstrained"`
 }
 
 // GetFailedDetections returns the value of FailedDetections.
@@ -7152,6 +7178,11 @@ func (s *DetectedLabels) GetServiceMesh() OptDetectedLabelsServiceMesh {
 	return s.ServiceMesh
 }
 
+// GetResourceQuotaConstrained returns the value of ResourceQuotaConstrained.
+func (s *DetectedLabels) GetResourceQuotaConstrained() OptBool {
+	return s.ResourceQuotaConstrained
+}
+
 // SetFailedDetections sets the value of FailedDetections.
 func (s *DetectedLabels) SetFailedDetections(val []DetectedLabelsFailedDetectionsItem) {
 	s.FailedDetections = val
@@ -7197,17 +7228,23 @@ func (s *DetectedLabels) SetServiceMesh(val OptDetectedLabelsServiceMesh) {
 	s.ServiceMesh = val
 }
 
+// SetResourceQuotaConstrained sets the value of ResourceQuotaConstrained.
+func (s *DetectedLabels) SetResourceQuotaConstrained(val OptBool) {
+	s.ResourceQuotaConstrained = val
+}
+
 type DetectedLabelsFailedDetectionsItem string
 
 const (
-	DetectedLabelsFailedDetectionsItemGitOpsManaged   DetectedLabelsFailedDetectionsItem = "gitOpsManaged"
-	DetectedLabelsFailedDetectionsItemGitOpsTool      DetectedLabelsFailedDetectionsItem = "gitOpsTool"
-	DetectedLabelsFailedDetectionsItemPdbProtected    DetectedLabelsFailedDetectionsItem = "pdbProtected"
-	DetectedLabelsFailedDetectionsItemHpaEnabled      DetectedLabelsFailedDetectionsItem = "hpaEnabled"
-	DetectedLabelsFailedDetectionsItemStateful        DetectedLabelsFailedDetectionsItem = "stateful"
-	DetectedLabelsFailedDetectionsItemHelmManaged     DetectedLabelsFailedDetectionsItem = "helmManaged"
-	DetectedLabelsFailedDetectionsItemNetworkIsolated DetectedLabelsFailedDetectionsItem = "networkIsolated"
-	DetectedLabelsFailedDetectionsItemServiceMesh     DetectedLabelsFailedDetectionsItem = "serviceMesh"
+	DetectedLabelsFailedDetectionsItemGitOpsManaged            DetectedLabelsFailedDetectionsItem = "gitOpsManaged"
+	DetectedLabelsFailedDetectionsItemGitOpsTool               DetectedLabelsFailedDetectionsItem = "gitOpsTool"
+	DetectedLabelsFailedDetectionsItemPdbProtected             DetectedLabelsFailedDetectionsItem = "pdbProtected"
+	DetectedLabelsFailedDetectionsItemHpaEnabled               DetectedLabelsFailedDetectionsItem = "hpaEnabled"
+	DetectedLabelsFailedDetectionsItemStateful                 DetectedLabelsFailedDetectionsItem = "stateful"
+	DetectedLabelsFailedDetectionsItemHelmManaged              DetectedLabelsFailedDetectionsItem = "helmManaged"
+	DetectedLabelsFailedDetectionsItemNetworkIsolated          DetectedLabelsFailedDetectionsItem = "networkIsolated"
+	DetectedLabelsFailedDetectionsItemServiceMesh              DetectedLabelsFailedDetectionsItem = "serviceMesh"
+	DetectedLabelsFailedDetectionsItemResourceQuotaConstrained DetectedLabelsFailedDetectionsItem = "resourceQuotaConstrained"
 )
 
 // AllValues returns all DetectedLabelsFailedDetectionsItem values.
@@ -7221,6 +7258,7 @@ func (DetectedLabelsFailedDetectionsItem) AllValues() []DetectedLabelsFailedDete
 		DetectedLabelsFailedDetectionsItemHelmManaged,
 		DetectedLabelsFailedDetectionsItemNetworkIsolated,
 		DetectedLabelsFailedDetectionsItemServiceMesh,
+		DetectedLabelsFailedDetectionsItemResourceQuotaConstrained,
 	}
 }
 
@@ -7242,6 +7280,8 @@ func (s DetectedLabelsFailedDetectionsItem) MarshalText() ([]byte, error) {
 	case DetectedLabelsFailedDetectionsItemNetworkIsolated:
 		return []byte(s), nil
 	case DetectedLabelsFailedDetectionsItemServiceMesh:
+		return []byte(s), nil
+	case DetectedLabelsFailedDetectionsItemResourceQuotaConstrained:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -7274,6 +7314,9 @@ func (s *DetectedLabelsFailedDetectionsItem) UnmarshalText(data []byte) error {
 		return nil
 	case DetectedLabelsFailedDetectionsItemServiceMesh:
 		*s = DetectedLabelsFailedDetectionsItemServiceMesh
+		return nil
+	case DetectedLabelsFailedDetectionsItemResourceQuotaConstrained:
+		*s = DetectedLabelsFailedDetectionsItemResourceQuotaConstrained
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -10554,10 +10597,10 @@ func (s *ListWorkflowsByActionTypeSeverity) UnmarshalText(data []byte) error {
 type ListWorkflowsStatus string
 
 const (
-	ListWorkflowsStatusActive     ListWorkflowsStatus = "active"
-	ListWorkflowsStatusDisabled   ListWorkflowsStatus = "disabled"
-	ListWorkflowsStatusDeprecated ListWorkflowsStatus = "deprecated"
-	ListWorkflowsStatusArchived   ListWorkflowsStatus = "archived"
+	ListWorkflowsStatusActive     ListWorkflowsStatus = "Active"
+	ListWorkflowsStatusDisabled   ListWorkflowsStatus = "Disabled"
+	ListWorkflowsStatusDeprecated ListWorkflowsStatus = "Deprecated"
+	ListWorkflowsStatusArchived   ListWorkflowsStatus = "Archived"
 )
 
 // AllValues returns all ListWorkflowsStatus values.
@@ -17416,8 +17459,8 @@ type RemediationHistoryEntry struct {
 	SignalFingerprint OptString `json:"signalFingerprint"`
 	// Type of signal (e.g. HighCPULoad, OOMKilled).
 	SignalType OptString `json:"signalType"`
-	// Workflow type applied (null if escalated to human review).
-	WorkflowType OptNilString `json:"workflowType"`
+	// Action type applied (null if escalated to human review).
+	ActionType OptNilString `json:"actionType"`
 	// Remediation outcome (Success, Failed, Escalated).
 	Outcome OptString `json:"outcome"`
 	// EM effectiveness score (0.0-1.0). Null if assessment not yet completed
@@ -17464,9 +17507,9 @@ func (s *RemediationHistoryEntry) GetSignalType() OptString {
 	return s.SignalType
 }
 
-// GetWorkflowType returns the value of WorkflowType.
-func (s *RemediationHistoryEntry) GetWorkflowType() OptNilString {
-	return s.WorkflowType
+// GetActionType returns the value of ActionType.
+func (s *RemediationHistoryEntry) GetActionType() OptNilString {
+	return s.ActionType
 }
 
 // GetOutcome returns the value of Outcome.
@@ -17544,9 +17587,9 @@ func (s *RemediationHistoryEntry) SetSignalType(val OptString) {
 	s.SignalType = val
 }
 
-// SetWorkflowType sets the value of WorkflowType.
-func (s *RemediationHistoryEntry) SetWorkflowType(val OptNilString) {
-	s.WorkflowType = val
+// SetActionType sets the value of ActionType.
+func (s *RemediationHistoryEntry) SetActionType(val OptNilString) {
+	s.ActionType = val
 }
 
 // SetOutcome sets the value of Outcome.
@@ -17742,8 +17785,8 @@ type RemediationHistorySummary struct {
 	RemediationUID string `json:"remediationUID"`
 	// Type of signal.
 	SignalType OptString `json:"signalType"`
-	// Workflow type applied (null if escalated).
-	WorkflowType OptNilString `json:"workflowType"`
+	// Action type applied (null if escalated).
+	ActionType OptNilString `json:"actionType"`
 	// Remediation outcome.
 	Outcome OptString `json:"outcome"`
 	// EM effectiveness score (0.0-1.0).
@@ -17770,9 +17813,9 @@ func (s *RemediationHistorySummary) GetSignalType() OptString {
 	return s.SignalType
 }
 
-// GetWorkflowType returns the value of WorkflowType.
-func (s *RemediationHistorySummary) GetWorkflowType() OptNilString {
-	return s.WorkflowType
+// GetActionType returns the value of ActionType.
+func (s *RemediationHistorySummary) GetActionType() OptNilString {
+	return s.ActionType
 }
 
 // GetOutcome returns the value of Outcome.
@@ -17815,9 +17858,9 @@ func (s *RemediationHistorySummary) SetSignalType(val OptString) {
 	s.SignalType = val
 }
 
-// SetWorkflowType sets the value of WorkflowType.
-func (s *RemediationHistorySummary) SetWorkflowType(val OptNilString) {
-	s.WorkflowType = val
+// SetActionType sets the value of ActionType.
+func (s *RemediationHistorySummary) SetActionType(val OptNilString) {
+	s.ActionType = val
 }
 
 // SetOutcome sets the value of Outcome.
@@ -18196,8 +18239,8 @@ type RemediationOrchestratorAuditPayload struct {
 	WorkflowVersion OptString `json:"workflow_version"`
 	// Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
 	// Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery.
-	// Used by DS remediation history to populate workflowType on entries and summaries.
-	WorkflowType OptString `json:"workflow_type"`
+	// Used by DS remediation history to populate actionType on entries and summaries.
+	ActionType OptString `json:"action_type"`
 	// Name of the EffectivenessAssessment CRD created by the RO.
 	// Only present for orchestrator.ea.created events.
 	EaName OptString `json:"ea_name"`
@@ -18362,9 +18405,9 @@ func (s *RemediationOrchestratorAuditPayload) GetWorkflowVersion() OptString {
 	return s.WorkflowVersion
 }
 
-// GetWorkflowType returns the value of WorkflowType.
-func (s *RemediationOrchestratorAuditPayload) GetWorkflowType() OptString {
-	return s.WorkflowType
+// GetActionType returns the value of ActionType.
+func (s *RemediationOrchestratorAuditPayload) GetActionType() OptString {
+	return s.ActionType
 }
 
 // GetEaName returns the value of EaName.
@@ -18537,9 +18580,9 @@ func (s *RemediationOrchestratorAuditPayload) SetWorkflowVersion(val OptString) 
 	s.WorkflowVersion = val
 }
 
-// SetWorkflowType sets the value of WorkflowType.
-func (s *RemediationOrchestratorAuditPayload) SetWorkflowType(val OptString) {
-	s.WorkflowType = val
+// SetActionType sets the value of ActionType.
+func (s *RemediationOrchestratorAuditPayload) SetActionType(val OptString) {
+	s.ActionType = val
 }
 
 // SetEaName sets the value of EaName.
@@ -19086,10 +19129,13 @@ type RemediationWorkflow struct {
 	// OCI execution bundle reference (digest-pinned).
 	ExecutionBundle OptString `json:"executionBundle"`
 	// OCI execution bundle digest.
-	ExecutionBundleDigest OptString         `json:"executionBundleDigest"`
-	Labels                MandatoryLabels   `json:"labels"`
-	CustomLabels          OptCustomLabels   `json:"customLabels"`
-	DetectedLabels        OptDetectedLabels `json:"detectedLabels"`
+	ExecutionBundleDigest OptString `json:"executionBundleDigest"`
+	// Pre-existing ServiceAccount for Job/PipelineRun (DD-WE-005 v2.0). Absent = K8s namespace default
+	// SA.
+	ServiceAccountName OptString         `json:"serviceAccountName"`
+	Labels             MandatoryLabels   `json:"labels"`
+	CustomLabels       OptCustomLabels   `json:"customLabels"`
+	DetectedLabels     OptDetectedLabels `json:"detectedLabels"`
 	// Workflow lifecycle status.
 	Status RemediationWorkflowStatus `json:"status"`
 	// When workflow was disabled.
@@ -19211,6 +19257,11 @@ func (s *RemediationWorkflow) GetExecutionBundle() OptString {
 // GetExecutionBundleDigest returns the value of ExecutionBundleDigest.
 func (s *RemediationWorkflow) GetExecutionBundleDigest() OptString {
 	return s.ExecutionBundleDigest
+}
+
+// GetServiceAccountName returns the value of ServiceAccountName.
+func (s *RemediationWorkflow) GetServiceAccountName() OptString {
+	return s.ServiceAccountName
 }
 
 // GetLabels returns the value of Labels.
@@ -19413,6 +19464,11 @@ func (s *RemediationWorkflow) SetExecutionBundleDigest(val OptString) {
 	s.ExecutionBundleDigest = val
 }
 
+// SetServiceAccountName sets the value of ServiceAccountName.
+func (s *RemediationWorkflow) SetServiceAccountName(val OptString) {
+	s.ServiceAccountName = val
+}
+
 // SetLabels sets the value of Labels.
 func (s *RemediationWorkflow) SetLabels(val MandatoryLabels) {
 	s.Labels = val
@@ -19550,11 +19606,11 @@ func (s *RemediationWorkflowParameters) init() RemediationWorkflowParameters {
 type RemediationWorkflowStatus string
 
 const (
-	RemediationWorkflowStatusActive     RemediationWorkflowStatus = "active"
-	RemediationWorkflowStatusDisabled   RemediationWorkflowStatus = "disabled"
-	RemediationWorkflowStatusDeprecated RemediationWorkflowStatus = "deprecated"
-	RemediationWorkflowStatusArchived   RemediationWorkflowStatus = "archived"
-	RemediationWorkflowStatusSuperseded RemediationWorkflowStatus = "superseded"
+	RemediationWorkflowStatusActive     RemediationWorkflowStatus = "Active"
+	RemediationWorkflowStatusDisabled   RemediationWorkflowStatus = "Disabled"
+	RemediationWorkflowStatusDeprecated RemediationWorkflowStatus = "Deprecated"
+	RemediationWorkflowStatusArchived   RemediationWorkflowStatus = "Archived"
+	RemediationWorkflowStatusSuperseded RemediationWorkflowStatus = "Superseded"
 )
 
 // AllValues returns all RemediationWorkflowStatus values.
@@ -19621,7 +19677,7 @@ type RemediationWorkflowWebhookAuditPayload struct {
 	Action RemediationWorkflowWebhookAuditPayloadAction `json:"action"`
 	// DataStorage catalog UUID (set after successful registration).
 	WorkflowID OptString `json:"workflow_id"`
-	// Catalog registration status (active, disabled, etc.).
+	// Catalog registration status (Active, Disabled, etc.).
 	CatalogStatus OptString `json:"catalog_status"`
 	// Reason for denial (only set when action=denied).
 	DenialReason OptString `json:"denial_reason"`
@@ -21131,9 +21187,9 @@ func (s *WorkflowCatalogCreatedPayloadLabels) init() WorkflowCatalogCreatedPaylo
 type WorkflowCatalogCreatedPayloadStatus string
 
 const (
-	WorkflowCatalogCreatedPayloadStatusActive   WorkflowCatalogCreatedPayloadStatus = "active"
-	WorkflowCatalogCreatedPayloadStatusDisabled WorkflowCatalogCreatedPayloadStatus = "disabled"
-	WorkflowCatalogCreatedPayloadStatusArchived WorkflowCatalogCreatedPayloadStatus = "archived"
+	WorkflowCatalogCreatedPayloadStatusActive   WorkflowCatalogCreatedPayloadStatus = "Active"
+	WorkflowCatalogCreatedPayloadStatusDisabled WorkflowCatalogCreatedPayloadStatus = "Disabled"
+	WorkflowCatalogCreatedPayloadStatusArchived WorkflowCatalogCreatedPayloadStatus = "Archived"
 )
 
 // AllValues returns all WorkflowCatalogCreatedPayloadStatus values.
@@ -21398,6 +21454,8 @@ type WorkflowDiscoveryEntry struct {
 	ExecutionBundle OptString `json:"executionBundle"`
 	// Execution engine (tekton, job).
 	ExecutionEngine OptWorkflowDiscoveryEntryExecutionEngine `json:"executionEngine"`
+	// Per-workflow ServiceAccount name (DD-WE-005 v2.0). Omitted if not set.
+	ServiceAccountName OptString `json:"serviceAccountName"`
 }
 
 // GetWorkflowId returns the value of WorkflowId.
@@ -21445,6 +21503,11 @@ func (s *WorkflowDiscoveryEntry) GetExecutionEngine() OptWorkflowDiscoveryEntryE
 	return s.ExecutionEngine
 }
 
+// GetServiceAccountName returns the value of ServiceAccountName.
+func (s *WorkflowDiscoveryEntry) GetServiceAccountName() OptString {
+	return s.ServiceAccountName
+}
+
 // SetWorkflowId sets the value of WorkflowId.
 func (s *WorkflowDiscoveryEntry) SetWorkflowId(val uuid.UUID) {
 	s.WorkflowId = val
@@ -21488,6 +21551,11 @@ func (s *WorkflowDiscoveryEntry) SetExecutionBundle(val OptString) {
 // SetExecutionEngine sets the value of ExecutionEngine.
 func (s *WorkflowDiscoveryEntry) SetExecutionEngine(val OptWorkflowDiscoveryEntryExecutionEngine) {
 	s.ExecutionEngine = val
+}
+
+// SetServiceAccountName sets the value of ServiceAccountName.
+func (s *WorkflowDiscoveryEntry) SetServiceAccountName(val OptString) {
+	s.ServiceAccountName = val
 }
 
 // Execution engine (tekton, job).
@@ -22564,10 +22632,10 @@ func (s *WorkflowSearchFiltersSeverity) UnmarshalText(data []byte) error {
 type WorkflowSearchFiltersStatusItem string
 
 const (
-	WorkflowSearchFiltersStatusItemActive     WorkflowSearchFiltersStatusItem = "active"
-	WorkflowSearchFiltersStatusItemDisabled   WorkflowSearchFiltersStatusItem = "disabled"
-	WorkflowSearchFiltersStatusItemDeprecated WorkflowSearchFiltersStatusItem = "deprecated"
-	WorkflowSearchFiltersStatusItemArchived   WorkflowSearchFiltersStatusItem = "archived"
+	WorkflowSearchFiltersStatusItemActive     WorkflowSearchFiltersStatusItem = "Active"
+	WorkflowSearchFiltersStatusItemDisabled   WorkflowSearchFiltersStatusItem = "Disabled"
+	WorkflowSearchFiltersStatusItemDeprecated WorkflowSearchFiltersStatusItem = "Deprecated"
+	WorkflowSearchFiltersStatusItemArchived   WorkflowSearchFiltersStatusItem = "Archived"
 )
 
 // AllValues returns all WorkflowSearchFiltersStatusItem values.
@@ -22661,10 +22729,10 @@ func (s *WorkflowUpdateRequest) SetDisabledReason(val OptString) {
 type WorkflowUpdateRequestStatus string
 
 const (
-	WorkflowUpdateRequestStatusActive     WorkflowUpdateRequestStatus = "active"
-	WorkflowUpdateRequestStatusDisabled   WorkflowUpdateRequestStatus = "disabled"
-	WorkflowUpdateRequestStatusDeprecated WorkflowUpdateRequestStatus = "deprecated"
-	WorkflowUpdateRequestStatusArchived   WorkflowUpdateRequestStatus = "archived"
+	WorkflowUpdateRequestStatusActive     WorkflowUpdateRequestStatus = "Active"
+	WorkflowUpdateRequestStatusDisabled   WorkflowUpdateRequestStatus = "Disabled"
+	WorkflowUpdateRequestStatusDeprecated WorkflowUpdateRequestStatus = "Deprecated"
+	WorkflowUpdateRequestStatusArchived   WorkflowUpdateRequestStatus = "Archived"
 )
 
 // AllValues returns all WorkflowUpdateRequestStatus values.

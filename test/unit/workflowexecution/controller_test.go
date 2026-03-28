@@ -110,7 +110,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			// Finalizer name per finalizers-lifecycle.md (v3.3)
 			Expect(workflowexecution.FinalizerName).To(Equal("workflowexecution.kubernaut.ai/workflowexecution-cleanup"))
 			Expect(workflowexecution.DefaultCooldownPeriod).To(Equal(5 * time.Minute))
-			Expect(workflowexecution.DefaultServiceAccountName).To(Equal("kubernaut-workflow-runner"))
 		})
 	})
 
@@ -456,7 +455,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Recorder:           recorder,
 				ExecutionNamespace: "kubernaut-workflows",
 				CooldownPeriod:     5 * time.Minute,
-				ServiceAccountName: "kubernaut-workflow-runner",
 			}
 		})
 
@@ -526,10 +524,11 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(paramMap).To(HaveKeyWithValue("DEPLOYMENT_NAME", "payment-api"))
 		})
 
-		It("should set ServiceAccountName in TaskRunTemplate", func() {
+		It("should leave SA empty when WFE has no ExecutionConfig (DD-WE-005 v2.0)", func() {
 			pr := reconciler.BuildPipelineRun(wfe)
 
-			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(Equal("kubernaut-workflow-runner"))
+			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty(),
+				"DD-WE-005: SA from WFE spec, empty when not set")
 		})
 
 		It("should handle empty parameters", func() {
@@ -542,36 +541,26 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(pr.Spec.Params[0].Value.StringVal).To(Equal(wfe.Spec.TargetResource))
 		})
 
-		// ========================================
-		// Day 9: P2 Edge Case - ServiceAccountName configuration
-		// Business Value: Configuration error detection (per Q5)
-		// Note: ServiceAccountName is on reconciler, not WFE spec
-		// ========================================
-		It("should use configured ServiceAccountName", func() {
-			// Given: Reconciler with custom ServiceAccountName
-			reconciler.ServiceAccountName = "custom-sa"
+		// DD-WE-005 v2.0 / Issue #501: SA at spec top level
+		It("should use SA from WFE Spec.ServiceAccountName", func() {
+			wfe.Spec.ServiceAccountName = "custom-sa"
 
-			// When: BuildPipelineRun is called
 			pr := reconciler.BuildPipelineRun(wfe)
 
-			// Then: Should use configured ServiceAccountName
 			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(Equal("custom-sa"))
 		})
 
-		It("should use DefaultServiceAccountName when ServiceAccountName is empty", func() {
-			// Given: Reconciler without ServiceAccountName (uses default constant)
+		It("should use empty SA when WFE spec has no ExecutionConfig (DD-WE-005 v2.0)", func() {
 			reconcilerNoSA := &workflowexecution.WorkflowExecutionReconciler{
 				Client:             fake.NewClientBuilder().WithScheme(scheme).Build(),
 				Scheme:             scheme,
 				ExecutionNamespace: "kubernaut-workflows",
-				ServiceAccountName: "", // Empty - should use default
 			}
 
-			// When: BuildPipelineRun is called
 			pr := reconcilerNoSA.BuildPipelineRun(wfe)
 
-			// Then: Should use DefaultServiceAccountName constant
-			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(Equal(workflowexecution.DefaultServiceAccountName))
+			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty(),
+				"DD-WE-005: No SA in WFE spec -> K8s assigns namespace default")
 		})
 	})
 
@@ -735,7 +724,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			summary := reconciler.BuildPipelineRunStatusSummary(ctx, pr)
 
-			Expect(summary).To(And(Not(BeNil()), HaveField("Status", Equal("Unknown"))))
+			Expect(summary).To(And(Not(BeNil()), HaveField("Status", Equal(corev1.ConditionUnknown))))
 		})
 
 		It("should return summary with task counts from ChildReferences", func() {
@@ -777,7 +766,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			summary := reconciler.BuildPipelineRunStatusSummary(ctx, pr)
 
-			Expect(summary).To(And(Not(BeNil()), HaveField("Status", Equal("True")), HaveField("Reason", Equal("Succeeded")), HaveField("Message", Equal("All tasks completed"))))
+			Expect(summary).To(And(Not(BeNil()), HaveField("Status", Equal(corev1.ConditionTrue)), HaveField("Reason", Equal("Succeeded")), HaveField("Message", Equal("All tasks completed"))))
 		})
 
 		It("should set CompletedTasks from ChildReferences with successful TaskRuns", func() {
@@ -999,12 +988,13 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			var updated workflowexecutionv1alpha1.WorkflowExecution
 			err = reconciler.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updated.Status.Duration).To(And(Not(BeEmpty()), MatchRegexp(`^\d+[hms]`)), "Duration must be a valid time string")
+			Expect(updated.Status.Duration).NotTo(BeNil(), "Duration must be set")
+			Expect(updated.Status.Duration.Duration).To(BeNumerically(">=", 0), "Duration must be non-negative")
 		})
 
 		It("UT-WE-ES-001: should persist ExecutionStatus when passed as summary", func() {
 			summary := &workflowexecutionv1alpha1.ExecutionStatusSummary{
-				Status:         "Succeeded",
+				Status:         corev1.ConditionTrue,
 				Message:        "All tasks completed",
 				TotalTasks:     3,
 				CompletedTasks: 3,
@@ -1017,7 +1007,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(updated.Status.ExecutionStatus).NotTo(BeNil(),
 				"ExecutionStatus must be persisted through AtomicStatusUpdate")
-			Expect(updated.Status.ExecutionStatus.Status).To(Equal("Succeeded"))
+			Expect(updated.Status.ExecutionStatus.Status).To(Equal(corev1.ConditionTrue))
 			Expect(updated.Status.ExecutionStatus.TotalTasks).To(Equal(3))
 		})
 
@@ -1154,7 +1144,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			var updated workflowexecutionv1alpha1.WorkflowExecution
 			err = reconciler.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updated.Status.Duration).To(MatchRegexp(`^\d+[hms]`), "Duration must be a valid time string")
+			Expect(updated.Status.Duration).NotTo(BeNil(), "Duration must be set")
+			Expect(updated.Status.Duration.Duration).To(BeNumerically(">=", 0), "Duration must be non-negative")
 		})
 
 		It("should generate NaturalLanguageSummary", func() {
@@ -1340,7 +1331,10 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			startTime := metav1.NewTime(time.Now().Add(-2 * time.Minute))
 			details := reconciler.ExtractFailureDetails(ctx, pr, &startTime)
 
-			Expect(details).To(And(Not(BeNil()), HaveField("ExecutionTimeBeforeFailure", And(Not(BeEmpty()), ContainSubstring("m")))))
+			Expect(details).To(And(Not(BeNil()), HaveField("ExecutionTimeBeforeFailure", SatisfyAll(
+				Not(BeNil()),
+				WithTransform(func(d *metav1.Duration) string { return d.Duration.String() }, ContainSubstring("m")),
+			))))
 		})
 
 		// ========================================
@@ -3217,7 +3211,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Phase:          workflowexecutionv1alpha1.PhaseFailed,
 						StartTime:      &startTime,
 						CompletionTime: &completionTime,
-						Duration:       "45s",
+						Duration:       &metav1.Duration{Duration: 45 * time.Second},
 						FailureDetails: &workflowexecutionv1alpha1.FailureDetails{
 							Reason:                 workflowexecutionv1alpha1.FailureReasonTaskFailed,
 							Message:                "Task restart-pod failed: exit code 1",
@@ -3319,7 +3313,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Phase:          workflowexecutionv1alpha1.PhaseCompleted,
 						StartTime:      &startTime,
 						CompletionTime: &completionTime,
-						Duration:       "1m0s",
+						Duration:       &metav1.Duration{Duration: 1 * time.Minute},
 					},
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
@@ -4445,7 +4439,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			details := &workflowexecutionv1alpha1.FailureDetails{
 				Reason:                     workflowexecutionv1alpha1.FailureReasonOOMKilled,
 				Message:                    "Container exceeded memory limit",
-				ExecutionTimeBeforeFailure: "2m30s",
+				ExecutionTimeBeforeFailure: &metav1.Duration{Duration: 2*time.Minute + 30*time.Second},
 				WasExecutionFailure:        true,
 			}
 
@@ -4678,7 +4672,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Scheme:                 scheme,
 				Recorder:               recorder,
 				ExecutionNamespace:     "kubernaut-workflows",
-				ServiceAccountName:     "kubernaut-workflow-runner",
 				CooldownPeriod:         10 * time.Second,
 				AuditStore:             auditStore,
 				Metrics:                testMetrics,
@@ -5167,7 +5160,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Client:             fakeClient,
 				Scheme:             scheme,
 				ExecutionNamespace: "kubernaut-workflows",
-				ServiceAccountName: "kubernaut-workflow-runner",
 			}
 		})
 

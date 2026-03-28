@@ -88,7 +88,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 					Severity: routing.SeverityCritical,
 					Subject:  fmt.Sprintf("Test Skip-Reason: PreviousExecutionFailed [%s]", uniqueSuffix),
 					Body:     "Workflow execution failed - cluster state unknown. Manual intervention required.",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						routing.AttrSkipReason:  routing.SkipReasonPreviousExecutionFailed,
 						routing.AttrEnvironment: routing.EnvironmentProduction,
 					},
@@ -111,14 +111,14 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 			// Issue #91: Verify routing data is in spec fields + metadata, not labels
 			Expect(created.Spec.Severity).To(Equal(routing.SeverityCritical),
 				"Severity should be in spec field")
-			Expect(created.Spec.Metadata).To(HaveKeyWithValue(
+			Expect(created.Spec.Extensions).To(HaveKeyWithValue(
 				routing.AttrSkipReason,
 				routing.SkipReasonPreviousExecutionFailed,
-			), "Skip-reason should be in spec.metadata")
-			Expect(created.Spec.Metadata).To(HaveKeyWithValue(
+			), "Skip-reason should be in spec.extensions")
+			Expect(created.Spec.Extensions).To(HaveKeyWithValue(
 				routing.AttrEnvironment,
 				routing.EnvironmentProduction,
-			), "Environment should be in spec.metadata")
+			), "Environment should be in spec.extensions")
 
 			// Wait for controller to process (should reach Sent phase)
 			err = waitForReconciliationComplete(ctx, k8sClient, notifName, testNamespace,
@@ -150,7 +150,8 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 						Priority: notificationv1alpha1.NotificationPriorityMedium,
 						Severity: severity,
 						Subject:  fmt.Sprintf("Skip Reason Test: %s [%s]", skipReason, uniqueSuffix),
-						Body:     fmt.Sprintf("Testing skip reason: %s", skipReason),Metadata: map[string]string{
+						Body:     fmt.Sprintf("Testing skip reason: %s", skipReason),
+						Extensions: map[string]string{
 							routing.AttrSkipReason: skipReason,
 						},
 					},
@@ -167,9 +168,9 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, created)
-					return created.Spec.Metadata[routing.AttrSkipReason]
+					return created.Spec.Extensions[routing.AttrSkipReason]
 				}, 5*time.Second, 500*time.Millisecond).Should(Equal(skipReason),
-					"Skip-reason should be in spec.metadata: %s", skipReason)
+					"Skip-reason should be in spec.extensions: %s", skipReason)
 
 				// Wait for reconciliation
 				err = waitForReconciliationComplete(ctx, k8sClient, notifName, testNamespace,
@@ -238,7 +239,8 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 						Name: "rr-test-12345",
 					},
 					Subject: fmt.Sprintf("Combined Labels Test [%s]", uniqueSuffix),
-					Body:    "Testing combined spec field routing in production environment",Metadata: map[string]string{
+					Body:    "Testing combined spec field routing in production environment",
+					Extensions: map[string]string{
 						routing.AttrSkipReason:  routing.SkipReasonPreviousExecutionFailed,
 						routing.AttrEnvironment: routing.EnvironmentProduction,
 					},
@@ -266,8 +268,8 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 			Expect(processed.Spec.Severity).To(Equal(routing.SeverityCritical))
 			Expect(processed.Spec.Type).To(Equal(notificationv1alpha1.NotificationTypeEscalation))
 			Expect(processed.Spec.RemediationRequestRef.Name).To(Equal("rr-test-12345"))
-			Expect(processed.Spec.Metadata[routing.AttrSkipReason]).To(Equal(routing.SkipReasonPreviousExecutionFailed))
-			Expect(processed.Spec.Metadata[routing.AttrEnvironment]).To(Equal(routing.EnvironmentProduction))
+			Expect(processed.Spec.Extensions[routing.AttrSkipReason]).To(Equal(routing.SkipReasonPreviousExecutionFailed))
+			Expect(processed.Spec.Extensions[routing.AttrEnvironment]).To(Equal(routing.EnvironmentProduction))
 
 			// Cleanup
 			err = deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
@@ -293,7 +295,8 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Severity: routing.SeverityMedium,
 					Subject:  fmt.Sprintf("No Skip-Reason Test [%s]", uniqueSuffix),
-					Body:     "Testing fallback routing without skip-reason",Metadata: map[string]string{
+					Body:     "Testing fallback routing without skip-reason",
+					Extensions: map[string]string{
 						routing.AttrEnvironment: routing.EnvironmentStaging,
 					},
 				},
@@ -315,8 +318,8 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 				Namespace: testNamespace,
 			}, processed)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(processed.Spec.Metadata).NotTo(HaveKey(routing.AttrSkipReason),
-				"Skip-reason should not be in spec.metadata for this test")
+			Expect(processed.Spec.Extensions).NotTo(HaveKey(routing.AttrSkipReason),
+				"Skip-reason should not be in spec.extensions for this test")
 
 			// Cleanup
 			err = deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
@@ -351,7 +354,8 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 						Name: "rr-domain-test",
 					},
 					Subject: fmt.Sprintf("Spec Routing Test [%s]", uniqueSuffix),
-					Body:    "Testing spec-field-based routing consistency",Metadata: map[string]string{
+					Body:    "Testing spec-field-based routing consistency",
+					Extensions: map[string]string{
 						routing.AttrSkipReason:  routing.SkipReasonExhaustedRetries,
 						routing.AttrEnvironment: routing.EnvironmentProduction,
 						routing.AttrNamespace:   "production",

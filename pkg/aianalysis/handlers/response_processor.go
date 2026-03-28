@@ -160,14 +160,15 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 		swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
 		if swMap != nil {
 			sw := &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
-				ActionType:      GetStringFromMap(swMap, "action_type"),
-				Version:         GetStringFromMap(swMap, "version"),
-				ExecutionBundle:  GetStringFromMap(swMap, "execution_bundle"),
+				WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
+				ActionType:            GetStringFromMap(swMap, "action_type"),
+				Version:               GetStringFromMap(swMap, "version"),
+				ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
 				ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
-				Confidence:      GetFloat64FromMap(swMap, "confidence"),
-				Rationale:       GetStringFromMap(swMap, "rationale"),
-				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
+				Confidence:            GetFloat64FromMap(swMap, "confidence"),
+				Rationale:             GetStringFromMap(swMap, "rationale"),
+				ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
+				ServiceAccountName:    GetStringFromMap(swMap, "service_account_name"),
 			}
 			// Map parameters if present (map[string]string)
 			if paramsRaw, ok := swMap["parameters"]; ok {
@@ -251,15 +252,16 @@ func (p *ResponseProcessor) populatePostRCAContext(analysis *aianalysisv1.AIAnal
 // strongly-typed DetectedLabels struct. Fields not present default to zero values.
 func extractDetectedLabels(m map[string]interface{}) *sharedtypes.DetectedLabels {
 	return &sharedtypes.DetectedLabels{
-		GitOpsManaged:    GetBoolFromMap(m, "gitOpsManaged"),
-		GitOpsTool:       GetStringFromMap(m, "gitOpsTool"),
-		PDBProtected:     GetBoolFromMap(m, "pdbProtected"),
-		HPAEnabled:       GetBoolFromMap(m, "hpaEnabled"),
-		Stateful:         GetBoolFromMap(m, "stateful"),
-		HelmManaged:      GetBoolFromMap(m, "helmManaged"),
-		NetworkIsolated:  GetBoolFromMap(m, "networkIsolated"),
-		ServiceMesh:      GetStringFromMap(m, "serviceMesh"),
-		FailedDetections: GetStringSliceFromMap(m, "failedDetections"),
+		GitOpsManaged:            GetBoolFromMap(m, "gitOpsManaged"),
+		GitOpsTool:               GetStringFromMap(m, "gitOpsTool"),
+		PDBProtected:             GetBoolFromMap(m, "pdbProtected"),
+		HPAEnabled:               GetBoolFromMap(m, "hpaEnabled"),
+		Stateful:                 GetBoolFromMap(m, "stateful"),
+		HelmManaged:              GetBoolFromMap(m, "helmManaged"),
+		NetworkIsolated:          GetBoolFromMap(m, "networkIsolated"),
+		ServiceMesh:              GetStringFromMap(m, "serviceMesh"),
+		ResourceQuotaConstrained: GetBoolFromMap(m, "resourceQuotaConstrained"),
+		FailedDetections:         GetStringSliceFromMap(m, "failedDetections"),
 	}
 }
 
@@ -283,7 +285,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 	analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
-	analysis.Status.Reason = "WorkflowResolutionFailed"
+	analysis.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 	analysis.Status.InvestigationID = resp.IncidentID
 
 	// BR-HAPI-197: Store human review flag and reason in CRD status
@@ -359,11 +361,12 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 		swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
 		if swMap != nil {
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
-				ExecutionBundle:  GetStringFromMap(swMap, "execution_bundle"),
-				Confidence:      GetFloat64FromMap(swMap, "confidence"),
-				Rationale:       GetStringFromMap(swMap, "rationale"),
-				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
+				WorkflowID:         GetStringFromMap(swMap, "workflow_id"),
+				ExecutionBundle:    GetStringFromMap(swMap, "execution_bundle"),
+				Confidence:         GetFloat64FromMap(swMap, "confidence"),
+				Rationale:          GetStringFromMap(swMap, "rationale"),
+				ExecutionEngine:    GetStringFromMap(swMap, "execution_engine"),
+				ServiceAccountName: GetStringFromMap(swMap, "service_account_name"),
 			}
 		}
 	}
@@ -391,7 +394,7 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 	analysis.Status.Phase = aianalysis.PhaseCompleted
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
-	analysis.Status.Reason = "WorkflowNotNeeded"
+	analysis.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
 	analysis.Status.SubReason = "ProblemResolved"
 	analysis.Status.InvestigationID = resp.IncidentID
 
@@ -436,7 +439,7 @@ func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context,
 	analysis.Status.Phase = aianalysis.PhaseCompleted
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
-	analysis.Status.Reason = "WorkflowNotNeeded"
+	analysis.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
 	analysis.Status.SubReason = "NotActionable"
 	analysis.Status.InvestigationID = resp.IncidentID
 
@@ -551,13 +554,14 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 		swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
 		if swMap != nil {
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
-				Version:         GetStringFromMap(swMap, "version"),
-				ExecutionBundle:  GetStringFromMap(swMap, "execution_bundle"),
+				WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
+				Version:               GetStringFromMap(swMap, "version"),
+				ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
 				ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
-				Confidence:      GetFloat64FromMap(swMap, "confidence"),
-				Rationale:       GetStringFromMap(swMap, "rationale"),
-				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
+				Confidence:            GetFloat64FromMap(swMap, "confidence"),
+				Rationale:             GetStringFromMap(swMap, "rationale"),
+				ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
+				ServiceAccountName:    GetStringFromMap(swMap, "service_account_name"),
 			}
 			// Map parameters if present
 			if paramsRaw, ok := swMap["parameters"]; ok {

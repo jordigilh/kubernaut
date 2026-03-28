@@ -103,7 +103,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 		correlationID string,
 		target string,
 		preHash string,
-		workflowType string,
+		actionType string,
 		ts time.Time,
 	) {
 		GinkgoHelper()
@@ -111,7 +111,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			map[string]interface{}{
 				"target_resource":            target,
 				"pre_remediation_spec_hash":  preHash,
-				"workflow_type":              workflowType,
+				"action_type":                actionType,
 				"signal_type":               "HighCPULoad",
 				"signal_fingerprint":         "fp-" + testID,
 				"outcome":                   "success",
@@ -217,8 +217,8 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			Expect(rows).To(HaveLen(2), "Should return exactly 2 RO events for our target")
 			Expect(rows[0].CorrelationID).To(Equal(cid1))
 			Expect(rows[1].CorrelationID).To(Equal(cid2))
-			Expect(rows[0].EventData["workflow_type"]).To(Equal("ScaleUp"))
-			Expect(rows[1].EventData["workflow_type"]).To(Equal("RestartPod"))
+			Expect(rows[0].EventData["action_type"]).To(Equal("ScaleUp"))
+			Expect(rows[1].EventData["action_type"]).To(Equal("RestartPod"))
 		})
 
 		It("IT-DS-016-002: QueryEffectivenessEventsBatch groups EM events by correlation_id", func() {
@@ -372,7 +372,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			Expect(entry.EffectivenessScore.Set).To(BeTrue(), "effectivenessScore must be set")
 			Expect(entry.EffectivenessScore.Value).To(BeNumerically(">", 0.0),
 				"Full assessment should have a positive weighted score")
-			Expect(entry.WorkflowType.Value).To(Equal("ScaleUp"))
+			Expect(entry.ActionType.Value).To(Equal("ScaleUp"))
 		})
 
 		It("IT-DS-016-006: Pipeline with reason=spec_drift produces assessmentReason=spec_drift and score=0.0", func() {

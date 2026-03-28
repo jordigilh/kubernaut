@@ -171,11 +171,13 @@ class GetNamespacedResourceContextTool(Tool):
                 "remediation_history": history,
             }
 
-            detected_infra = await self._detect_labels_if_needed(
+            detected_infra, quota_details = await self._detect_labels_if_needed(
                 kind, name, namespace, owner_chain
             )
             if detected_infra is not None:
                 result_data["detected_infrastructure"] = detected_infra
+            if quota_details is not None:
+                result_data["quota_details"] = quota_details
 
             logger.info({
                 "event": "resource_context_resolved",
@@ -219,21 +221,22 @@ class GetNamespacedResourceContextTool(Tool):
         Returns a detected_infrastructure dict (with labels + note) when active
         labels are found. Returns None when labels are all defaults or on error.
         """
+        detected_infra = None
         try:
             from src.detection.labels import LabelDetector
 
             k8s_context = await self._build_k8s_context(kind, name, namespace, owner_chain)
             detector = LabelDetector(self._k8s_client)
-            labels = await detector.detect_labels(k8s_context, owner_chain)
+            labels, quota_summary = await detector.detect_labels(k8s_context, owner_chain)
 
             if labels is None:
-                return None
+                return None, None
 
             if self._has_active_labels(labels):
                 display_labels = {
                     k: v for k, v in labels.items() if k != "failedDetections"
                 }
-                return {
+                detected_infra = {
                     "labels": display_labels,
                     "note": (
                         "Infrastructure characteristics detected for the RCA target. "
@@ -242,7 +245,7 @@ class GetNamespacedResourceContextTool(Tool):
                     ),
                 }
 
-            return None
+            return detected_infra, quota_summary
 
         except Exception as e:
             logger.warning({
@@ -250,7 +253,7 @@ class GetNamespacedResourceContextTool(Tool):
                 "resource": f"{kind}/{namespace}/{name}",
                 "error": str(e),
             })
-            return None
+            return None, None
 
     async def _build_k8s_context(
         self, kind: str, name: str, namespace: str, owner_chain: List[Dict[str, str]]

@@ -230,42 +230,6 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 			// - Raw: Original webhook payload
 		})
 
-		It("enables notification service to show STORM context for mass incident awareness", func() {
-			// BUSINESS SCENARIO: On-call engineer receives:
-			// "⚡ ALERT STORM: 50 pods crashing in production (related to deployment rollout)"
-			// vs 50 individual PagerDuty pages (alert fatigue)
-			// Required fields: isStorm, stormType, stormWindow, stormAlertCount
-
-			signal := &types.NormalizedSignal{
-				Fingerprint: "storm123abc456def789ghi012jkl34", // Must be >=16 chars
-				SignalName:   "PodCrashLooping",
-				Severity:    "critical",
-				Namespace:   "production",
-				Resource: types.ResourceIdentifier{
-					Kind:      "Deployment",
-					Name:      "api-deployment",
-					Namespace: "production",
-				},
-				FiringTime:   time.Now(),
-				ReceivedTime: time.Now(),
-				SourceType:   "alert",
-				Source:       "prometheus-adapter",
-				RawPayload:   json.RawMessage(`{}`),
-				// Storm metadata removed (DD-GATEWAY-015)
-			}
-
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
-
-			// BUSINESS OUTCOME: CRD created successfully (storm fields removed per DD-GATEWAY-015)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(rr.Name).ToNot(BeEmpty(), "CRD should be created successfully")
-			Expect(rr.Spec.SignalName).To(Equal("PodCrashLooping"), "Signal name should be set correctly")
-
-			// Business capability verified:
-			// PagerDuty: "⚡ ALERT STORM: 50 PodCrashLooping alerts in 1m (likely rollout issue)"
-			// Engineer response: Check recent deployments, not individual pods
-		})
-
 		It("enables notification service to provide deduplication context for recurring issues", func() {
 			// BUSINESS SCENARIO: On-call engineer sees:
 			// "Alert seen 5 times in last 10 minutes (recurring issue)"

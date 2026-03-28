@@ -112,9 +112,17 @@ func (s *LogDeliveryService) Deliver(ctx context.Context, notification *notifica
 		// Delivery configuration resolved from routing rules (#261)
 	}
 
-	// Add metadata if present
-	if len(notification.Spec.Metadata) > 0 {
-		logEntry["metadata"] = notification.Spec.Metadata
+	flatMeta := make(map[string]string)
+	if notification.Spec.Context != nil {
+		for k, v := range notification.Spec.Context.FlattenToMap() {
+			flatMeta[k] = v
+		}
+	}
+	for k, v := range notification.Spec.Extensions {
+		flatMeta[k] = v
+	}
+	if len(flatMeta) > 0 {
+		logEntry["metadata"] = flatMeta
 	}
 
 	// TDD REFACTOR: Add Kubernetes labels and annotations for searchability
@@ -141,7 +149,7 @@ func (s *LogDeliveryService) Deliver(ctx context.Context, notification *notifica
 		links := make([]map[string]string, len(notification.Spec.ActionLinks))
 		for i, link := range notification.Spec.ActionLinks {
 			links[i] = map[string]string{
-				"service": link.Service,
+				"service": string(link.Service),
 				"url":     link.URL,
 				"label":   link.Label,
 			}

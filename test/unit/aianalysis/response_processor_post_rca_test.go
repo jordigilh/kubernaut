@@ -193,6 +193,43 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 	})
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// UT-AA-366-001: ResourceQuotaConstrained + FailedDetections round-trip
+	// #366: Detect namespace ResourceQuota and surface to LLM
+	// ═══════════════════════════════════════════════════════════════════════
+
+	It("UT-AA-366-001: should round-trip ResourceQuotaConstrained and failedDetections from HAPI response", func() {
+		// GIVEN: An AIAnalysis in Investigating phase with no PostRCAContext
+		analysis = createAnalysisForPostRCA()
+		Expect(analysis.Status.PostRCAContext).To(BeNil(), "PostRCAContext must be nil initially")
+
+		// AND: A HAPI incident response with resourceQuotaConstrained=true and failedDetections including it
+		hapiResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
+			"gitOpsManaged":            jx.Raw(`false`),
+			"pdbProtected":             jx.Raw(`false`),
+			"hpaEnabled":               jx.Raw(`false`),
+			"stateful":                 jx.Raw(`false`),
+			"helmManaged":              jx.Raw(`false`),
+			"networkIsolated":          jx.Raw(`false`),
+			"serviceMesh":              jx.Raw(`""`),
+			"resourceQuotaConstrained": jx.Raw(`true`),
+			"failedDetections":         jx.Raw(`["resourceQuotaConstrained"]`),
+		})
+
+		// WHEN: Processing the incident response
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, hapiResp)
+
+		// THEN: PostRCAContext should be populated with the new field
+		Expect(err).ToNot(HaveOccurred())
+		Expect(analysis.Status.PostRCAContext).ToNot(BeNil(),
+			"PostRCAContext must be populated when detected_labels present")
+		dl := analysis.Status.PostRCAContext.DetectedLabels
+		Expect(dl.ResourceQuotaConstrained).To(BeTrue(),
+			"#366: ResourceQuotaConstrained must round-trip as true")
+		Expect(dl.FailedDetections).To(ContainElement("resourceQuotaConstrained"),
+			"#366: failedDetections must include resourceQuotaConstrained")
+	})
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// UT-AA-056-008: Malformed detected_labels handled gracefully
 	// ADR-056: When detected_labels is not a valid object, skip extraction, no panic
 	// ═══════════════════════════════════════════════════════════════════════

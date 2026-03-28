@@ -61,7 +61,7 @@ func promSuccessHandler() http.HandlerFunc {
 				"result":     []interface{}{},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 }
 
@@ -70,7 +70,7 @@ func promSuccessHandler() http.HandlerFunc {
 func amSuccessHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]interface{}{})
+		_ = json.NewEncoder(w).Encode([]interface{}{})
 	}
 }
 

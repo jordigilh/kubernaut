@@ -89,7 +89,7 @@ var _ = Describe("Inline Schema Workflow Registration (#299)", func() {
 			var resp map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &resp)).To(Succeed())
 			Expect(resp["workflowName"]).To(Equal("scale-memory-inline"))
-			Expect(resp["status"]).To(Equal("active"))
+			Expect(resp["status"]).To(Equal("Active"))
 			Expect(resp["schemaVersion"]).To(Equal("1.0"))
 		})
 	})

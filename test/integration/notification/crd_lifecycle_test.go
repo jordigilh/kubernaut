@@ -122,10 +122,14 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Subject:  "Test Full Notification",
 					Body:     "Full body content with all optional fields",
-					Metadata: map[string]string{
-						"remediationRequestName": "rr-123",
-						"cluster":                "prod-us-east-1",
-						"severity":               "critical",
+					Severity: "critical",
+					Context: &notificationv1alpha1.NotificationContext{
+						Lineage: &notificationv1alpha1.LineageContext{
+							RemediationRequest: "rr-123",
+						},
+					},
+					Extensions: map[string]string{
+						"cluster": "prod-us-east-1",
 					},
 					ActionLinks: []notificationv1alpha1.ActionLink{
 						{
@@ -167,18 +171,20 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 				"Labels should be preserved exactly as specified")
 			Expect(created.ObjectMeta.Annotations).To(HaveKeyWithValue("test-annotation", "full-spec"),
 				"Annotations should be preserved exactly as specified")
-			Expect(created.Spec.Metadata).To(HaveKeyWithValue("remediationRequestName", "rr-123"),
-				"Metadata should contain remediationRequestName")
+			Expect(created.Spec.Context).NotTo(BeNil())
+			Expect(created.Spec.Context.Lineage).NotTo(BeNil())
+			Expect(created.Spec.Context.Lineage.RemediationRequest).To(Equal("rr-123"),
+				"Context.lineage.remediationRequest should contain RR name")
 
 			// BEHAVIOR VALIDATION: Verify action links structure
 			Expect(created.Spec.ActionLinks).To(HaveLen(2), "Should have exactly 2 action links")
-			Expect(created.Spec.ActionLinks[0].Service).To(Equal("grafana"),
+			Expect(created.Spec.ActionLinks[0].Service).To(Equal(notificationv1alpha1.ActionLinkServiceGrafana),
 				"First action link should be for grafana service")
 			Expect(created.Spec.ActionLinks[0].URL).To(Equal("https://grafana.example.com/dashboard"),
 				"Grafana link should have correct URL")
 			Expect(created.Spec.ActionLinks[0].Label).To(Equal("View Dashboard"),
 				"Grafana link should have correct label")
-			Expect(created.Spec.ActionLinks[1].Service).To(Equal("prometheus"),
+			Expect(created.Spec.ActionLinks[1].Service).To(Equal(notificationv1alpha1.ActionLinkServicePrometheus),
 				"Second action link should be for prometheus service")
 
 			// CORRECTNESS VALIDATION: Verify retry policy configuration
@@ -243,7 +249,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 			// BEHAVIOR VALIDATION: Verify status reflects actual delivery outcome
 			Expect(notif.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhaseSent),
 				"Phase should be Sent after successful console delivery")
-			Expect(notif.Status.Reason).To(Equal("AllDeliveriesSucceeded"),
+			Expect(notif.Status.Reason).To(Equal(notificationv1alpha1.StatusReasonAllDeliveriesSucceeded),
 				"Reason should indicate all deliveries succeeded")
 			Expect(notif.Status.Message).To(ContainSubstring("Successfully delivered to 1 channel"),
 				"Message should confirm delivery count")
@@ -255,9 +261,9 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 				"Should have exactly 1 delivery attempt")
 			Expect(notif.Status.DeliveryAttempts).To(HaveLen(1),
 				"Should have 1 delivery attempt record")
-			Expect(notif.Status.DeliveryAttempts[0].Channel).To(Equal("console"),
+			Expect(notif.Status.DeliveryAttempts[0].Channel).To(Equal(notificationv1alpha1.DeliveryChannelName("console")),
 				"Delivery attempt should be for console channel")
-			Expect(notif.Status.DeliveryAttempts[0].Status).To(Equal("success"),
+			Expect(notif.Status.DeliveryAttempts[0].Status).To(Equal(notificationv1alpha1.DeliveryAttemptStatusSuccess),
 				"Delivery attempt should be marked as success")
 
 			// CORRECTNESS VALIDATION: CompletionTime is valid and recent
@@ -502,7 +508,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 						if err != nil {
 							return err
 						}
-						temp.Status.Reason = fmt.Sprintf("test-conflict-%d", i)
+						temp.Status.Reason = notificationv1alpha1.NotificationStatusReason(fmt.Sprintf("test-conflict-%d", i))
 						return k8sClient.Status().Update(ctx, temp)
 					}, 5*time.Second, 50*time.Millisecond).Should(Succeed(),
 						"Concurrent status update should succeed")
@@ -553,7 +559,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Deletion Test",
 					Body:     "Testing deletion during delivery",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-slack",
 					},
 				},

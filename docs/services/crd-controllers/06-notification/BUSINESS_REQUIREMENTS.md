@@ -467,7 +467,7 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 #### BR-NOT-065: Channel Routing Based on Spec Fields
 
-**Description**: The Notification Service MUST route notifications to appropriate channel(s) based on notification spec fields and `spec.metadata` (type, severity, environment, namespace, skip-reason) using configurable routing rules. CRD creators (e.g., RemediationOrchestrator) do NOT need to specify Recipients or Channels - routing rules determine these based on spec fields.
+**Description**: The Notification Service MUST route notifications to appropriate channel(s) based on notification spec fields, `spec.context` (via `FlattenToMap`), and `spec.extensions` (type, severity, environment, namespace, skip-reason) using configurable routing rules. CRD creators (e.g., RemediationOrchestrator) do NOT need to specify Recipients or Channels - routing rules determine these based on spec fields.
 
 **Priority**: P0 (CRITICAL)
 
@@ -475,7 +475,7 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 **Implementation** (Issue #91):
 - Routing based on spec fields: `spec.type`, `spec.severity`, `spec.phase`, `spec.reviewSource`, `spec.priority`
-- Routing based on `spec.metadata`: `environment`, `namespace`, `skip-reason`, `investigation-outcome`
+- Routing based on `spec.context` (via `FlattenToMap`) + `spec.extensions`: `environment`, `namespace`, `skip-reason`, `investigation-outcome`
 - Configurable routing rules in ConfigMap (simplified keys: `severity`, `type`, `skip-reason`, etc.)
 - Field selectors (`+kubebuilder:selectablefield`) replace label-based filtering
 - First matching rule wins (ordered evaluation)
@@ -487,13 +487,13 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 |---------------------------|------------------|---------|----------------|
 | `spec.type` | `type` | Notification type routing | `escalation`, `approval`, `completion`, `manual-review` |
 | `spec.severity` | `severity` | Severity-based routing | `critical`, `high`, `medium`, `low` |
-| `spec.metadata["environment"]` | `environment` | Environment-based routing | `production`, `staging`, `development`, `test` |
+| `spec.extensions["environment"]` | `environment` | Environment-based routing | `production`, `staging`, `development`, `test` |
 | `spec.priority` | `priority` | Priority-based routing | `critical`, `high`, `medium`, `low` |
-| `spec.metadata["namespace"]` | `namespace` | Namespace-based routing | Kubernetes namespace name |
+| `spec.extensions["namespace"]` | `namespace` | Namespace-based routing | Kubernetes namespace name |
 | `spec.phase` | `phase` | Phase that triggered notification | `signal-processing`, `ai-analysis`, `workflow-execution` |
 | `spec.reviewSource` | `review-source` | Manual review source | `WorkflowResolutionFailed`, `ExhaustedRetries` |
 | `spec.remediationRequestRef` | (correlation) | Parent remediation link | ObjectReference (ownerRef sufficient) |
-| `spec.metadata["skip-reason"]` | `skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` |
+| `spec.extensions["skip-reason"]` | `skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` |
 
 **Removed** (Issue #91): `kubernaut.ai/component` (ownerRef sufficient), `kubernaut.ai/remediation-request` (use `spec.remediationRequestRef`).
 
@@ -514,8 +514,8 @@ CRD creators (RemediationOrchestrator, WorkflowExecution) MUST set these spec fi
 |------------|-------------|--------|-----------|
 | `spec.type` | **MANDATORY** | CRD creator | Required for type-based routing |
 | `spec.severity` | **MANDATORY** | CRD creator | Required for severity-based routing |
-| `spec.metadata["environment"]` | **MANDATORY** | RemediationRequest | Required for environment-based routing |
-| `spec.metadata["skip-reason"]` | **CONDITIONAL** | WorkflowExecution (when skipped) | Required for skip-reason routing |
+| `spec.extensions["environment"]` | **MANDATORY** | RemediationRequest | Required for environment-based routing |
+| `spec.extensions["skip-reason"]` | **CONDITIONAL** | WorkflowExecution (when skipped) | Required for skip-reason routing |
 | `spec.remediationRequestRef` | **MANDATORY** | RemediationRequest | Required for correlation (or ownerRef) |
 
 **Cross-Team Enforcement**: Per DD-WE-004 Q8, RO confirmed they will set all routing spec fields explicitly.

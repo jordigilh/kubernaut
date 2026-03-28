@@ -71,6 +71,19 @@ const (
 	ActionEscalated    = "escalated"
 )
 
+func flattenSpecMetadata(notification *notificationv1alpha1.NotificationRequest) map[string]string {
+	result := make(map[string]string)
+	if notification.Spec.Context != nil {
+		for k, v := range notification.Spec.Context.FlattenToMap() {
+			result[k] = v
+		}
+	}
+	for k, v := range notification.Spec.Extensions {
+		result[k] = v
+	}
+	return result
+}
+
 // Manager provides helper functions for creating notification audit events
 // following ADR-034 unified audit table format.
 //
@@ -148,9 +161,9 @@ func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.Noti
 		Priority:       string(notification.Spec.Priority),
 		Type:           string(notification.Spec.Type),
 	}
-	// Set optional metadata if present
-	if notification.Spec.Metadata != nil {
-		payload.Metadata.SetTo(notification.Spec.Metadata)
+	flatMeta := flattenSpecMetadata(notification)
+	if len(flatMeta) > 0 {
+		payload.Metadata.SetTo(flatMeta)
 	}
 
 	// Create audit event following ADR-034 format (DD-AUDIT-002 V2.2: OpenAPI types)
@@ -215,9 +228,9 @@ func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.No
 		Priority:       string(notification.Spec.Priority),
 		ErrorType:      "transient", // Default to transient (retry possible)
 	}
-	// Set optional metadata if present
-	if notification.Spec.Metadata != nil {
-		payload.Metadata.SetTo(notification.Spec.Metadata)
+	flatMeta := flattenSpecMetadata(notification)
+	if len(flatMeta) > 0 {
+		payload.Metadata.SetTo(flatMeta)
 	}
 	// Set optional error message if present
 	if err != nil {
@@ -278,9 +291,9 @@ func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alp
 		Subject:        notification.Spec.Subject,
 		Priority:       string(notification.Spec.Priority),
 	}
-	// Set optional metadata if present
-	if notification.Spec.Metadata != nil {
-		payload.Metadata.SetTo(notification.Spec.Metadata)
+	flatMeta := flattenSpecMetadata(notification)
+	if len(flatMeta) > 0 {
+		payload.Metadata.SetTo(flatMeta)
 	}
 
 	// Create audit event (DD-AUDIT-002 V2.2: OpenAPI types)
@@ -338,9 +351,9 @@ func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1
 		Priority:       string(notification.Spec.Priority),
 		Reason:         fmt.Sprintf("Escalated due to %s priority", notification.Spec.Priority),
 	}
-	// Set optional metadata if present
-	if notification.Spec.Metadata != nil {
-		payload.Metadata.SetTo(notification.Spec.Metadata)
+	flatMeta := flattenSpecMetadata(notification)
+	if len(flatMeta) > 0 {
+		payload.Metadata.SetTo(flatMeta)
 	}
 
 	// Create audit event (DD-AUDIT-002 V2.2: OpenAPI types)

@@ -179,14 +179,12 @@ func (r *Reconciler) handleBlockedPhase(ctx context.Context, rr *remediationv1.R
 		// BR-ORCH-042: Record cooldown expiry (CurrentBlockedGauge decrement)
 		r.Metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
 
-		// Get block reason for the failure message
 		blockReason := "unknown"
 		if rr.Status.BlockReason != "" {
-			blockReason = rr.Status.BlockReason
+			blockReason = string(rr.Status.BlockReason)
 		}
 
-		// Transition to terminal Failed (skip blocking check to avoid infinite loop)
-		return r.transitionToFailedTerminal(ctx, rr, "blocked",
+		return r.transitionToFailedTerminal(ctx, rr, remediationv1.FailurePhaseBlocked,
 			fmt.Errorf("cooldown expired after blocking due to %s", blockReason))
 	}
 
@@ -202,7 +200,7 @@ func (r *Reconciler) handleBlockedPhase(ctx context.Context, rr *remediationv1.R
 // transitionToFailedTerminal is the terminal Failed transition that skips blocking check.
 // Used when transitioning from Blocked after cooldown expiry.
 // This prevents infinite loops: Failed -> Blocked -> Failed -> Blocked...
-func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase string, failureErr error) (ctrl.Result, error) {
+func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase remediationv1.FailurePhase, failureErr error) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 	startTime := rr.CreationTimestamp.Time
 

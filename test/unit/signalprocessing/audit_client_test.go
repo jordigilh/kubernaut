@@ -100,16 +100,16 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 				sp := createTestSignalProcessing("completed")
 				sp.Status.Phase = signalprocessingv1alpha1.PhaseCompleted
 				sp.Status.EnvironmentClassification = &signalprocessingv1alpha1.EnvironmentClassification{
-					Environment: "production",
+					Environment: signalprocessingv1alpha1.EnvironmentProduction,
 					Source:      "namespace-labels",
 				}
 				sp.Status.PriorityAssignment = &signalprocessingv1alpha1.PriorityAssignment{
-					Priority: "P0",
+					Priority: signalprocessingv1alpha1.PriorityP0,
 					Source:   "rego-policy",
 				}
 				sp.Status.BusinessClassification = &signalprocessingv1alpha1.BusinessClassification{
-					Criticality:    "high",
-					SLARequirement: "gold",
+					Criticality:    signalprocessingv1alpha1.CriticalityHigh,
+					SLARequirement: signalprocessingv1alpha1.SLARequirementGold,
 				}
 
 				auditClient.RecordSignalProcessed(ctx, sp)
@@ -161,16 +161,16 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 			It("AC-HP-04: should record classification with all decisions", func() {
 				sp := createTestSignalProcessing("classification-test")
 				sp.Status.EnvironmentClassification = &signalprocessingv1alpha1.EnvironmentClassification{
-					Environment: "staging",
+					Environment: signalprocessingv1alpha1.EnvironmentStaging,
 					Source:      "namespace-labels",
 				}
 				sp.Status.PriorityAssignment = &signalprocessingv1alpha1.PriorityAssignment{
-					Priority: "P2",
+					Priority: signalprocessingv1alpha1.PriorityP2,
 					Source:   "rego-policy",
 				}
 				sp.Status.BusinessClassification = &signalprocessingv1alpha1.BusinessClassification{
-					Criticality:    "medium",
-					SLARequirement: "silver",
+					Criticality:    signalprocessingv1alpha1.CriticalityMedium,
+					SLARequirement: signalprocessingv1alpha1.SLARequirementSilver,
 				}
 
 				auditClient.RecordClassificationDecision(ctx, sp, 125) // 125ms duration

@@ -226,6 +226,39 @@ class K8sResourceClient:
         """
         return await asyncio.to_thread(self._list_network_policies_sync, namespace)
 
+    def _list_resource_quotas_sync(
+        self, namespace: str
+    ) -> Tuple[List[Any], Optional[str]]:
+        """Synchronous LIST of ResourceQuotas in a namespace.
+
+        #366: Used by LabelDetector for resourceQuotaConstrained detection.
+        Returns (items, error_string). error_string is None on success.
+        """
+        self._ensure_initialized()
+        try:
+            result = self._core_v1.list_namespaced_resource_quota(
+                namespace=namespace
+            )
+            return result.items, None
+        except ApiException as e:
+            logger.warning("ResourceQuota list failed in %s: %s", namespace, e)
+            return [], str(e)
+        except Exception as e:
+            logger.error(
+                "Unexpected error listing ResourceQuotas in %s: %s", namespace, e
+            )
+            return [], str(e)
+
+    async def list_resource_quotas(
+        self, namespace: str
+    ) -> Tuple[List[Any], Optional[str]]:
+        """Async LIST of ResourceQuotas in a namespace.
+
+        #366: Used by LabelDetector for resourceQuotaConstrained detection.
+        Returns (items, error_string). error_string is None on success.
+        """
+        return await asyncio.to_thread(self._list_resource_quotas_sync, namespace)
+
     def _get_namespace_metadata_sync(
         self, name: str
     ) -> Optional[Dict[str, Any]]:

@@ -118,8 +118,8 @@ var _ = Describe("RequestBuilder", func() {
 			analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = &sharedtypes.BusinessClassification{
 				BusinessUnit:   "payments",
 				ServiceOwner:   "team-checkout",
-				Criticality:    "critical",
-				SLARequirement: "platinum",
+				Criticality:    sharedtypes.CriticalityCritical,
+				SLARequirement: sharedtypes.SLARequirementPlatinum,
 			}
 
 			req := builder.BuildIncidentRequest(analysis)
@@ -128,8 +128,8 @@ var _ = Describe("RequestBuilder", func() {
 			Expect(ok).To(BeTrue(), "BusinessClassification should be set")
 			Expect(bc.BusinessUnit.Or("")).To(Equal("payments"))
 			Expect(bc.ServiceOwner.Or("")).To(Equal("team-checkout"))
-			Expect(bc.Criticality.Or("")).To(Equal("critical"))
-			Expect(bc.SlaRequirement.Or("")).To(Equal("platinum"))
+			Expect(bc.Criticality.Or("")).To(Equal(string(sharedtypes.CriticalityCritical)))
+			Expect(bc.SlaRequirement.Or("")).To(Equal(string(sharedtypes.SLARequirementPlatinum)))
 		})
 
 		It("should not set BusinessClassification when nil in enrichment", func() {
@@ -143,14 +143,14 @@ var _ = Describe("RequestBuilder", func() {
 		It("should map partial BusinessClassification fields", func() {
 			analysis := helpers.NewAIAnalysis("ai-partial-bizclass", "default")
 			analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = &sharedtypes.BusinessClassification{
-				Criticality: "high",
+				Criticality: sharedtypes.CriticalityHigh,
 			}
 
 			req := builder.BuildIncidentRequest(analysis)
 
 			bc, ok := req.EnrichmentResults.Value.BusinessClassification.Get()
 			Expect(ok).To(BeTrue())
-			Expect(bc.Criticality.Or("")).To(Equal("high"))
+			Expect(bc.Criticality.Or("")).To(Equal(string(sharedtypes.CriticalityHigh)))
 			Expect(bc.BusinessUnit.IsSet()).To(BeFalse())
 			Expect(bc.ServiceOwner.IsSet()).To(BeFalse())
 			Expect(bc.SlaRequirement.IsSet()).To(BeFalse())

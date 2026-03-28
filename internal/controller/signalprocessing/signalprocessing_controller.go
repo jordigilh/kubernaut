@@ -780,8 +780,15 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 	if sp.Status.StartTime != nil {
 		duration = time.Since(sp.Status.StartTime.Time).Seconds()
 	}
+	var priorityStr, envStr string
+	if priorityAssignment != nil {
+		priorityStr = string(priorityAssignment.Priority)
+	}
+	if envClass != nil {
+		envStr = string(envClass.Environment)
+	}
 	processingMessage := fmt.Sprintf("Signal processed successfully in %.2fs: %s %s alert ready for remediation",
-		duration, priorityAssignment.Priority, envClass.Environment)
+		duration, priorityStr, envStr)
 
 	// ========================================
 	// DD-PERF-001: ATOMIC STATUS UPDATE
@@ -889,17 +896,15 @@ func (r *SignalProcessingReconciler) assignPriority(ctx context.Context, input e
 // BR-SP-080, BR-SP-081: Business Classification
 func (r *SignalProcessingReconciler) classifyBusiness(k8sCtx *signalprocessingv1alpha1.KubernetesContext, envClass *signalprocessingv1alpha1.EnvironmentClassification, logger logr.Logger) *signalprocessingv1alpha1.BusinessClassification {
 	result := &signalprocessingv1alpha1.BusinessClassification{
-		Criticality:    "medium",
-		SLARequirement: "bronze",
+		Criticality:    signalprocessingv1alpha1.CriticalityMedium,
+		SLARequirement: signalprocessingv1alpha1.SLARequirementBronze,
 	}
 
 	// Extract business unit from labels
 	if k8sCtx != nil && k8sCtx.Namespace != nil {
-		// Check for explicit business-unit label first
 		if bu, ok := k8sCtx.Namespace.Labels["kubernaut.ai/business-unit"]; ok {
 			result.BusinessUnit = bu
 		} else if team, ok := k8sCtx.Namespace.Labels["kubernaut.ai/team"]; ok {
-			// Fall back to team label as business unit (BR-SP-002)
 			result.BusinessUnit = team
 		}
 		if owner, ok := k8sCtx.Namespace.Labels["kubernaut.ai/service-owner"]; ok {
@@ -907,18 +912,17 @@ func (r *SignalProcessingReconciler) classifyBusiness(k8sCtx *signalprocessingv1
 		}
 	}
 
-	// Determine criticality based on environment
 	if envClass != nil {
 		switch envClass.Environment {
-		case "production", "prod":
-			result.Criticality = "high"
-			result.SLARequirement = "gold"
-		case "staging", "stage":
-			result.Criticality = "medium"
-			result.SLARequirement = "silver"
-		case "development", "dev":
-			result.Criticality = "low"
-			result.SLARequirement = "bronze"
+		case signalprocessingv1alpha1.EnvironmentProduction:
+			result.Criticality = signalprocessingv1alpha1.CriticalityHigh
+			result.SLARequirement = signalprocessingv1alpha1.SLARequirementGold
+		case signalprocessingv1alpha1.EnvironmentStaging:
+			result.Criticality = signalprocessingv1alpha1.CriticalityMedium
+			result.SLARequirement = signalprocessingv1alpha1.SLARequirementSilver
+		case signalprocessingv1alpha1.EnvironmentDevelopment:
+			result.Criticality = signalprocessingv1alpha1.CriticalityLow
+			result.SLARequirement = signalprocessingv1alpha1.SLARequirementBronze
 		}
 	}
 

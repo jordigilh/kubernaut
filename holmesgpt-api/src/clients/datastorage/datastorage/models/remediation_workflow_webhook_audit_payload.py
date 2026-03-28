@@ -34,7 +34,7 @@ class RemediationWorkflowWebhookAuditPayload(BaseModel):
     workflow_name: StrictStr = Field(description="Name of the RemediationWorkflow CRD (metadata.name)")
     action: StrictStr = Field(description="Admission action performed")
     workflow_id: Optional[StrictStr] = Field(default=None, description="DataStorage catalog UUID (set after successful registration)")
-    catalog_status: Optional[StrictStr] = Field(default=None, description="Catalog registration status (active, disabled, etc.)")
+    catalog_status: Optional[StrictStr] = Field(default=None, description="Catalog registration status (Active, Disabled, etc.)")
     denial_reason: Optional[StrictStr] = Field(default=None, description="Reason for denial (only set when action=denied)")
     __properties: ClassVar[List[str]] = ["event_type", "workflow_name", "action", "workflow_id", "catalog_status", "denial_reason"]
 

@@ -2029,36 +2029,6 @@ func (s *IncidentRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.IsStorm.Set {
-			e.FieldStart("is_storm")
-			s.IsStorm.Encode(e)
-		}
-	}
-	{
-		if s.StormSignalCount.Set {
-			e.FieldStart("storm_signal_count")
-			s.StormSignalCount.Encode(e)
-		}
-	}
-	{
-		if s.StormWindowMinutes.Set {
-			e.FieldStart("storm_window_minutes")
-			s.StormWindowMinutes.Encode(e)
-		}
-	}
-	{
-		if s.StormType.Set {
-			e.FieldStart("storm_type")
-			s.StormType.Encode(e)
-		}
-	}
-	{
-		if s.AffectedResources.Set {
-			e.FieldStart("affected_resources")
-			s.AffectedResources.Encode(e)
-		}
-	}
-	{
 		if s.FiringTime.Set {
 			e.FieldStart("firing_time")
 			s.FiringTime.Encode(e)
@@ -2102,7 +2072,7 @@ func (s *IncidentRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfIncidentRequest = [30]string{
+var jsonFieldsNameOfIncidentRequest = [25]string{
 	0:  "incident_id",
 	1:  "remediation_id",
 	2:  "signal_name",
@@ -2121,18 +2091,13 @@ var jsonFieldsNameOfIncidentRequest = [30]string{
 	15: "is_duplicate",
 	16: "occurrence_count",
 	17: "deduplication_window_minutes",
-	18: "is_storm",
-	19: "storm_signal_count",
-	20: "storm_window_minutes",
-	21: "storm_type",
-	22: "affected_resources",
-	23: "firing_time",
-	24: "received_time",
-	25: "first_seen",
-	26: "last_seen",
-	27: "signal_labels",
-	28: "enrichment_results",
-	29: "signal_mode",
+	18: "firing_time",
+	19: "received_time",
+	20: "first_seen",
+	21: "last_seen",
+	22: "signal_labels",
+	23: "enrichment_results",
+	24: "signal_mode",
 }
 
 // Decode decodes IncidentRequest from json.
@@ -2350,56 +2315,6 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"deduplication_window_minutes\"")
-			}
-		case "is_storm":
-			if err := func() error {
-				s.IsStorm.Reset()
-				if err := s.IsStorm.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"is_storm\"")
-			}
-		case "storm_signal_count":
-			if err := func() error {
-				s.StormSignalCount.Reset()
-				if err := s.StormSignalCount.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"storm_signal_count\"")
-			}
-		case "storm_window_minutes":
-			if err := func() error {
-				s.StormWindowMinutes.Reset()
-				if err := s.StormWindowMinutes.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"storm_window_minutes\"")
-			}
-		case "storm_type":
-			if err := func() error {
-				s.StormType.Reset()
-				if err := s.StormType.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"storm_type\"")
-			}
-		case "affected_resources":
-			if err := func() error {
-				s.AffectedResources.Reset()
-				if err := s.AffectedResources.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"affected_resources\"")
 			}
 		case "firing_time":
 			if err := func() error {
@@ -3767,69 +3682,6 @@ func (s OptNilString) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptNilString) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes []string as json.
-func (o OptNilStringArray) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	if o.Null {
-		e.Null()
-		return
-	}
-	e.ArrStart()
-	for _, elem := range o.Value {
-		e.Str(elem)
-	}
-	e.ArrEnd()
-}
-
-// Decode decodes []string from json.
-func (o *OptNilStringArray) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptNilStringArray to nil")
-	}
-	if d.Next() == jx.Null {
-		if err := d.Null(); err != nil {
-			return err
-		}
-
-		var v []string
-		o.Value = v
-		o.Set = true
-		o.Null = true
-		return nil
-	}
-	o.Set = true
-	o.Null = false
-	o.Value = make([]string, 0)
-	if err := d.Arr(func(d *jx.Decoder) error {
-		var elem string
-		v, err := d.Str()
-		elem = string(v)
-		if err != nil {
-			return err
-		}
-		o.Value = append(o.Value, elem)
-		return nil
-	}); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptNilStringArray) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptNilStringArray) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -128,26 +128,6 @@ class TestADR040SignalContext:
         # Check for deduplication indicators
         assert "duplicate" in prompt.lower() or "occurrence" in prompt.lower() or "5" in prompt
         # Hybrid format v3.1: Just check for deduplication facts (no previous remediation ref)
-    def test_prompt_includes_storm_detection_metadata(self):
-        """ADR-041: Storm detection from Gateway"""
-        request_data = {
-            "is_storm": True,
-            "storm_type": "rate",
-            "storm_window_minutes": 5,
-            "storm_signal_count": 47,
-            "affected_resources": [
-                "payment-service/pod/api-1",
-                "payment-service/pod/api-2",
-                "payment-service/pod/api-3"
-            ],
-            "error_message": "test"
-        }
-
-        prompt = _create_investigation_prompt(request_data)
-
-        # Check for storm indicators
-        assert "storm" in prompt.lower() or "47" in prompt or "alert" in prompt.lower()
-        assert "rate" in prompt.lower() or "5m" in prompt
 
     def test_prompt_with_minimal_required_fields(self):
         """ADR-041: Prompt works with only required fields"""
@@ -178,8 +158,6 @@ class TestADR040SignalContext:
             "risk_tolerance": "low",
             "is_duplicate": True,
             "occurrence_count": 3,
-            "is_storm": True,
-            "storm_alert_count": 25,
             "error_message": "test"
         }
 
@@ -436,35 +414,6 @@ class TestADR040EdgeCases:
         assert prompt is not None
         assert "9999" in prompt
 
-    def test_prompt_with_massive_storm_alert_count(self):
-        """Edge case: Massive storm (thousands of alerts)"""
-        request_data = {
-            "is_storm": True,
-            "storm_alert_count": 5000,
-            "storm_type": "rate",
-            "error_message": "test"
-        }
-
-        prompt = _create_investigation_prompt(request_data)
-
-        assert prompt is not None
-        assert "5000" in prompt or "storm" in prompt.lower()
-
-    def test_prompt_with_many_affected_resources(self):
-        """Edge case: Storm affecting many resources"""
-        affected = [f"namespace/pod/pod-{i}" for i in range(100)]
-        request_data = {
-            "is_storm": True,
-            "affected_resources": affected,
-            "error_message": "test"
-        }
-
-        prompt = _create_investigation_prompt(request_data)
-
-        assert prompt is not None
-        # Should handle large lists gracefully (may truncate)
-        assert "100" in prompt or "pod-" in prompt
-
     def test_prompt_with_special_characters_in_resource_names(self):
         """Edge case: Special characters in resource names"""
         request_data = {
@@ -547,21 +496,6 @@ class TestADR040EdgeCases:
 
             assert prompt is not None
             assert risk in prompt.lower()
-
-    def test_prompt_with_all_storm_types(self):
-        """Edge case: Test all storm types (rate, pattern)"""
-        for storm_type in ["rate", "pattern"]:
-            request_data = {
-                "is_storm": True,
-                "storm_type": storm_type,
-                "error_message": "test",
-                "error_message": "test"
-            }
-
-            prompt = _create_investigation_prompt(request_data)
-
-            assert prompt is not None
-            assert storm_type in prompt.lower()
 
     def test_prompt_with_signal_name_only(self):
         """Edge case: Request with only signal_name (should handle gracefully)"""

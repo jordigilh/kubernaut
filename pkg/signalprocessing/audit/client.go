@@ -133,7 +133,7 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 			payload.Criticality.SetTo(crit)
 		}
 		if sp.Status.BusinessClassification.SLARequirement != "" {
-			payload.SLARequirement.SetTo(sp.Status.BusinessClassification.SLARequirement)
+			payload.SLARequirement.SetTo(string(sp.Status.BusinessClassification.SLARequirement))
 		}
 	}
 
@@ -296,7 +296,7 @@ func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *sign
 			payload.Criticality.SetTo(crit)
 		}
 		if sp.Status.BusinessClassification.SLARequirement != "" {
-			payload.SLARequirement.SetTo(sp.Status.BusinessClassification.SLARequirement)
+			payload.SLARequirement.SetTo(string(sp.Status.BusinessClassification.SLARequirement))
 		}
 	}
 
@@ -359,7 +359,7 @@ func (c *AuditClient) RecordBusinessClassification(ctx context.Context, sp *sign
 		}
 	}
 	if sp.Status.BusinessClassification.SLARequirement != "" {
-		payload.SLARequirement.SetTo(sp.Status.BusinessClassification.SLARequirement)
+		payload.SLARequirement.SetTo(string(sp.Status.BusinessClassification.SLARequirement))
 	}
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)

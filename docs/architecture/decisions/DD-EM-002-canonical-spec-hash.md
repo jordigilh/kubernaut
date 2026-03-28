@@ -7,8 +7,9 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-13 | Architecture Team | Initial DD: canonical JSON + SHA-256 algorithm specification, guarantees, non-guarantees, testing requirements |
-| 1.2 | 2026-02-24 | Architecture Team | **Issue #188 (DD-EM-003)**: Updated RO consumer description to reference `resolveDualTargets` (renamed from `resolveEffectivenessTarget`). Hash is now explicitly computed from the `RemediationTarget` (the AI-resolved resource), not the single `TargetResource`. |
 | 1.1 | 2026-02-14 | Architecture Team | Added Spec Drift Guard: re-hash on each reconcile, spec_drift reason, DS score=0.0 short-circuit |
+| 1.2 | 2026-02-24 | Architecture Team | **Issue #188 (DD-EM-003)**: Updated RO consumer description to reference `resolveDualTargets` (renamed from `resolveEffectivenessTarget`). Hash is now explicitly computed from the `RemediationTarget` (the AI-resolved resource), not the single `TargetResource`. |
+| 1.3 | 2026-03-04 | Architecture Team | **Issue #396**: ConfigMap-aware composite hashing. Spec hash now incorporates referenced ConfigMap `.data` and `.binaryData` content. Added `ExtractConfigMapRefs`, `ConfigMapDataHash`, `CompositeSpecHash` utilities. Sentinel value for absent/forbidden ConfigMaps. RBAC update for configmaps. |
 
 ---
 
@@ -91,7 +92,9 @@ This ensures:
 ```
 pkg/shared/hash/
     canonical.go       -- CanonicalSpecHash, normalizeValue (exported + unexported)
-    canonical_test.go  -- (or test/unit/shared/hash/canonical_test.go per project convention)
+    configmap.go       -- ExtractConfigMapRefs, ConfigMapDataHash, CompositeSpecHash (v1.3, #396)
+    canonical_test.go  -- (test/unit/shared/hash/canonical_test.go per project convention)
+    configmap_test.go  -- (test/unit/shared/hash/configmap_test.go per project convention)
 ```
 
 Both the RO and EM import `pkg/shared/hash` to compute their respective hashes.
@@ -127,8 +130,8 @@ Both the RO and EM import `pkg/shared/hash` to compute their respective hashes.
 
 | Consumer | Usage | Phase |
 |----------|-------|-------|
-| **Remediation Orchestrator** | `CanonicalSpecHash(targetResource.spec)` before WFE creation, targeting the AI-resolved resource (`resolveDualTargets(rr, ai).Remediation` — DD-EM-003: `AffectedResource` when available, else `RR.Spec.TargetResource`). Hash stored on `RR.Status.PreRemediationSpecHash` and passed to `emitWorkflowCreatedAudit` as a parameter (no redundant API call). Emitted in `remediation.workflow_created` audit event as `pre_remediation_spec_hash`. | RO Analyzing phase |
-| **Effectiveness Monitor** | `CanonicalSpecHash(targetResource.spec)` after stabilization window. Compared against pre-hash from DS audit trail. Result emitted in `effectiveness.hash.computed` audit event. | EM assessment Step 4 |
+| **Remediation Orchestrator** | Computes `CanonicalSpecHash(spec)`, resolves ConfigMap content hashes via `resolveConfigMapHashes`, then produces composite hash via `CompositeSpecHash`. Targets the AI-resolved resource (`resolveDualTargets(rr, ai).Remediation` — DD-EM-003). Hash stored on `RR.Status.PreRemediationSpecHash` and emitted in `remediation.workflow_created` audit event. | RO Analyzing phase |
+| **Effectiveness Monitor** | Same composite hash pipeline after stabilization window. Compared against pre-hash from EA spec. Result emitted in `effectiveness.hash.computed` audit event. Also used in drift guard (Step 6.5) for ongoing spec integrity checks. | EM assessment Step 3-4, Step 6.5 |
 | **DataStorage** | Stores both hashes in audit events. Returns pre-hash to EM via `queryAuditEvents` API. May use `hash_match` boolean in effectiveness score computation. | Audit storage + query |
 
 ---
@@ -197,14 +200,16 @@ After Step 6 (Pending -> Assessing transition) and before Step 7 (component chec
 
 1. If `ea.Status.Components.HashComputed == true` and `PostRemediationSpecHash != ""`:
    a. Fetch the target resource's `.spec` via the K8s API (same as `getTargetSpec`)
-   b. Compute `currentHash = CanonicalSpecHash(spec)`
-   c. Store `currentHash` in `ea.Status.Components.CurrentSpecHash`
-   d. If `currentHash != PostRemediationSpecHash`:
+   b. Compute `specHash = CanonicalSpecHash(spec)`. If this fails, log and skip drift check.
+   c. Resolve ConfigMap content hashes via `resolveConfigMapHashes(ctx, spec, target)`
+   d. Compute `currentHash = CompositeSpecHash(specHash, configMapHashes)`. If this fails, log and skip.
+   e. Store `currentHash` in `ea.Status.Components.CurrentSpecHash`
+   f. If `currentHash != PostRemediationSpecHash`:
       - Set `SpecIntegrity` condition to `False` with reason `SpecDrifted` (per DD-CRD-002)
       - Complete the EA with `AssessmentReason = spec_drift`
       - Emit `effectiveness.assessment.completed` audit event with `reason: "spec_drift"`
       - **Do NOT assess metrics or alerts** — they would measure the wrong resource state
-   e. If hashes match: set `SpecIntegrity` condition to `True` with reason `SpecUnchanged`
+   g. If hashes match: set `SpecIntegrity` condition to `True` with reason `SpecUnchanged`
 
 ### Audit Event
 
@@ -229,6 +234,88 @@ When DS computes the weighted effectiveness score and encounters `assessment_sta
 ### Implications for HAPI Remediation History
 
 When the HAPI team builds remediation history context for the LLM, a `spec_drift` assessment with score 0.0 provides clear context: "this workflow was applied but the remediated state did not hold — the resource had to be modified again." This helps the AI avoid recommending the same failing workflow for the same target resource.
+
+---
+
+## ConfigMap-Aware Composite Hashing (v1.3 — Issue #396)
+
+### Problem
+
+The original `CanonicalSpecHash` hashes only the resource's `.spec`. However, many workloads reference ConfigMaps that affect runtime behavior (config files, environment variables). If a ConfigMap's content changes without modifying the Deployment's `.spec`, the hash remains unchanged and drift goes undetected.
+
+### Decision
+
+Extend the hashing pipeline to produce a **composite hash** that incorporates both the resource spec hash and the content hashes of all referenced ConfigMaps. The composite hash is a single `sha256:<hex>` digest.
+
+### Algorithm
+
+```
+CompositeSpecHash(specHash string, configMapHashes map[string]string) -> (sha256_hex_string, error)
+
+1. If configMapHashes is nil or empty, return specHash unchanged (identity property).
+2. Build a composite input string:
+   a. Start with "spec:<specHash>"
+   b. Sort configMapHashes keys alphabetically
+   c. Append "cm:<name>=<hash>" for each entry
+   d. Join all parts with newline separator
+3. Compute SHA-256 of the composite input string
+4. Return "sha256:<64-char-lowercase-hex>"
+```
+
+### Supporting Utilities
+
+| Function | Location | Purpose |
+|----------|----------|---------|
+| `ExtractConfigMapRefs(spec, kind)` | `pkg/shared/hash/configmap.go` | Extracts ConfigMap names from 5 pod spec paths: `volumes[].configMap.name`, `volumes[].projected.sources[].configMap.name`, `containers[].envFrom[].configMapRef.name`, `containers[].env[].valueFrom.configMapKeyRef.name`, and their `initContainers`/`ephemeralContainers` equivalents. Kind-aware: resolves CronJob's nested `spec.jobTemplate.spec.template.spec`. |
+| `ConfigMapDataHash(data, binaryData)` | `pkg/shared/hash/configmap.go` | Computes deterministic SHA-256 hash of a ConfigMap's `.data` and `.binaryData`. Binary values are base64-encoded before hashing. Keys are sorted alphabetically. |
+| `CompositeSpecHash(specHash, configMapHashes)` | `pkg/shared/hash/configmap.go` | Combines the base spec hash with per-ConfigMap content hashes into a single composite digest. |
+
+### ConfigMap Reference Paths
+
+The following pod spec paths are scanned for ConfigMap references:
+
+1. `spec.template.spec.volumes[].configMap.name`
+2. `spec.template.spec.volumes[].projected.sources[].configMap.name`
+3. `spec.template.spec.containers[].envFrom[].configMapRef.name`
+4. `spec.template.spec.containers[].env[].valueFrom.configMapKeyRef.name`
+5. `spec.template.spec.initContainers[]` — same envFrom/env paths as containers
+6. `spec.template.spec.ephemeralContainers[]` — same envFrom/env paths as containers
+
+For CronJob resources, the pod spec is located at `spec.jobTemplate.spec.template.spec`.
+
+### Sentinel Value for Absent ConfigMaps
+
+When a referenced ConfigMap cannot be fetched (404 Not Found or 403 Forbidden), a deterministic sentinel value is used instead of skipping the ConfigMap:
+
+```
+sentinelData = {"__sentinel__": "__absent:<configmap-name>__"}
+sentinelHash = ConfigMapDataHash(sentinelData, nil)
+```
+
+This ensures:
+- **Deterministic hashes**: The same absent ConfigMap always produces the same sentinel hash
+- **Drift detection**: Creating or deleting a ConfigMap is detected as a hash change
+- **Namespace isolation**: Each hash computation is scoped to a single namespace; the sentinel is name-dependent but namespace isolation is inherent from the call context
+
+### RBAC Requirements
+
+Both the RO and EM controllers require `get` permission on `configmaps` in target namespaces. This is configured via ClusterRole rules in the Helm charts:
+
+- `charts/kubernaut/templates/remediationorchestrator/remediationorchestrator.yaml`
+- `charts/kubernaut/templates/effectivenessmonitor/effectivenessmonitor.yaml`
+
+### Error Handling
+
+Both RO and EM use a **log-and-continue** strategy for ConfigMap fetch errors:
+- **404 Not Found / 403 Forbidden**: Use sentinel hash, log at debug level
+- **Other errors** (transient network, server errors): Log error, skip the ConfigMap
+- **Hash computation errors**: Log error, skip the ConfigMap
+
+This non-fatal approach prevents transient failures from blocking hash capture entirely.
+
+### Identity Property
+
+When a resource has no ConfigMap references (or all references are skipped due to errors), `CompositeSpecHash` returns the base spec hash unchanged. This preserves backward compatibility: resources without ConfigMap references produce the same hash as before v1.3.
 
 ---
 

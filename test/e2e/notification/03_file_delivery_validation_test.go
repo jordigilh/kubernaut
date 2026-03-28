@@ -76,7 +76,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 				Subject:  "E2E Test: Complete Message Validation",
 				Body:     "This is a comprehensive test message with multiple fields to validate complete delivery.",
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
-				Metadata: map[string]string{
+				Extensions: map[string]string{
 					"test-channel-set": "console-file",
 				},
 			},
@@ -166,7 +166,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 - email: user@example.com
 `,
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
-				Metadata: map[string]string{
+				Extensions: map[string]string{
 					"test-channel-set": "console-file",
 				},
 			},
@@ -249,7 +249,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 				Subject:  "Critical Alert: System Outage",
 				Body:     "Priority validation test for critical alerts",
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
-				Metadata: map[string]string{
+				Extensions: map[string]string{
 					"test-channel-set": "console-file",
 				},
 			},
@@ -349,7 +349,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 					Subject:  "Concurrent Test: " + name,
 					Body:     "Testing concurrent notification delivery",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-file",
 					},
 				},
@@ -425,7 +425,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 				Subject:  "Error Handling Test",
 				Body:     "Testing FileService error handling does not block delivery",
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
-				Metadata: map[string]string{
+				Extensions: map[string]string{
 					"test-channel-set": "console-file",
 				},
 			},

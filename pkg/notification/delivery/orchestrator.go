@@ -91,7 +91,7 @@ type Orchestrator struct {
 
 	// Dependencies
 	sanitizer     *sanitization.Sanitizer
-	metrics       notificationmetrics.Recorder
+	metrics       *notificationmetrics.Metrics
 	statusManager *notificationstatus.Manager
 	enricher      *enrichment.Enricher
 
@@ -118,7 +118,7 @@ type DeliveryResult struct {
 //	orchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackService)
 func NewOrchestrator(
 	sanitizer *sanitization.Sanitizer,
-	metrics notificationmetrics.Recorder,
+	metrics *notificationmetrics.Metrics,
 	statusManager *notificationstatus.Manager,
 	logger logr.Logger,
 ) *Orchestrator {
@@ -248,7 +248,7 @@ func (o *Orchestrator) DeliverToChannels(
 				// Treat as delivery failure - record attempt and continue
 				now := metav1.Now()
 				attempt := notificationv1alpha1.DeliveryAttempt{
-					Channel:         string(channel),
+					Channel:         notificationv1alpha1.DeliveryChannelName(channel),
 					Attempt:         attemptCount + 1,
 					Timestamp:       now,
 					Status:          "failed",
@@ -292,38 +292,38 @@ func (o *Orchestrator) DeliverToChannels(
 		now := metav1.Now()
 
 		attempt := notificationv1alpha1.DeliveryAttempt{
-			Channel:         string(channel),
+			Channel:         notificationv1alpha1.DeliveryChannelName(channel),
 			Attempt:         attemptCountAfterIncrement, // Use post-increment count for correct numbering
 			Timestamp:       now,
 			DurationSeconds: durationSeconds,
 		}
 
 		if deliveryErr != nil {
-			attempt.Status = "failed"
-			attempt.Error = deliveryErr.Error()
+		attempt.Status = notificationv1alpha1.DeliveryAttemptStatusFailed
+		attempt.Error = deliveryErr.Error()
 
-			// BR-NOT-055: Permanent Error Classification
-			isPermanent := !IsRetryableError(deliveryErr)
-			if isPermanent {
-				log.Error(deliveryErr, "Delivery failed with permanent error (will NOT retry)")
-				attempt.Error = fmt.Sprintf("permanent failure: %s", deliveryErr.Error())
-			} else {
-				log.Error(deliveryErr, "Delivery failed with retryable error")
-			}
-
-			// AUDIT: Failed delivery (ADR-032 §1: MANDATORY)
-			// Audit calls don't trigger reconciles, so they're safe to call immediately
-			if auditErr := auditMessageFailed(ctx, notification, string(channel), deliveryErr); auditErr != nil {
-				log.Error(auditErr, "CRITICAL: Failed to audit message.failed (ADR-032 §1)")
-				return nil, fmt.Errorf("audit failure (ADR-032 §1): %w", auditErr)
-			}
-
-			// Update metrics (DD-METRICS-001: Use injected metrics recorder)
-			o.metrics.RecordDeliveryAttempt(notification.Namespace, string(channel), "failed")
-			result.DeliveryResults[string(channel)] = deliveryErr
-			result.FailureCount++
+		// BR-NOT-055: Permanent Error Classification
+		isPermanent := !IsRetryableError(deliveryErr)
+		if isPermanent {
+			log.Error(deliveryErr, "Delivery failed with permanent error (will NOT retry)")
+			attempt.Error = fmt.Sprintf("permanent failure: %s", deliveryErr.Error())
 		} else {
-			attempt.Status = "success"
+			log.Error(deliveryErr, "Delivery failed with retryable error")
+		}
+
+		// AUDIT: Failed delivery (ADR-032 §1: MANDATORY)
+		// Audit calls don't trigger reconciles, so they're safe to call immediately
+		if auditErr := auditMessageFailed(ctx, notification, string(channel), deliveryErr); auditErr != nil {
+			log.Error(auditErr, "CRITICAL: Failed to audit message.failed (ADR-032 §1)")
+			return nil, fmt.Errorf("audit failure (ADR-032 §1): %w", auditErr)
+		}
+
+		// Update metrics (DD-METRICS-001: Use injected metrics recorder)
+		o.metrics.RecordDeliveryAttempt(notification.Namespace, string(channel), "failed")
+		result.DeliveryResults[string(channel)] = deliveryErr
+		result.FailureCount++
+	} else {
+		attempt.Status = notificationv1alpha1.DeliveryAttemptStatusSuccess
 			attempt.Error = ""
 
 			log.Info("Delivery successful", "channel", channel)
@@ -605,10 +605,10 @@ func (o *Orchestrator) RecordDeliveryAttempt(
 
 	// NT-BUG-002 Refinement: Prevent duplicate recording during rapid reconciliations
 	now := metav1.Now()
-	currentStatus := "success"
+	currentStatus := notificationv1alpha1.DeliveryAttemptStatusSuccess
 	currentError := ""
 	if deliveryErr != nil {
-		currentStatus = "failed"
+		currentStatus = notificationv1alpha1.DeliveryAttemptStatusFailed
 		currentError = deliveryErr.Error()
 	}
 
@@ -618,7 +618,7 @@ func (o *Orchestrator) RecordDeliveryAttempt(
 	// Find the most recent attempt for this channel
 	var mostRecentAttempt *notificationv1alpha1.DeliveryAttempt
 	for i := len(notification.Status.DeliveryAttempts) - 1; i >= 0; i-- {
-		if notification.Status.DeliveryAttempts[i].Channel == string(channel) {
+		if notification.Status.DeliveryAttempts[i].Channel == notificationv1alpha1.DeliveryChannelName(channel) {
 			mostRecentAttempt = &notification.Status.DeliveryAttempts[i]
 			break
 		}
@@ -641,13 +641,13 @@ func (o *Orchestrator) RecordDeliveryAttempt(
 	// Create delivery attempt record
 	// BR-NOT-051: Record attempt number for audit trail
 	attempt := notificationv1alpha1.DeliveryAttempt{
-		Channel:   string(channel),
+		Channel:   notificationv1alpha1.DeliveryChannelName(channel),
 		Attempt:   currentAttemptCount + 1, // 1-based attempt number
 		Timestamp: now,
 	}
 
 	if deliveryErr != nil {
-		attempt.Status = "failed"
+		attempt.Status = notificationv1alpha1.DeliveryAttemptStatusFailed
 		attempt.Error = deliveryErr.Error()
 		notification.Status.FailedDeliveries++
 
@@ -669,7 +669,7 @@ func (o *Orchestrator) RecordDeliveryAttempt(
 		// Metrics: Record failure
 		o.metrics.RecordDeliveryAttempt(notification.Namespace, string(channel), "failure")
 	} else {
-		attempt.Status = "success"
+		attempt.Status = notificationv1alpha1.DeliveryAttemptStatusSuccess
 		notification.Status.SuccessfulDeliveries++
 		log.Info("Delivery successful")
 

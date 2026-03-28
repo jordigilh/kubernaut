@@ -61,8 +61,8 @@ var _ = Describe("Executor Registry (BR-WE-014)", func() {
 			_ = batchv1.AddToScheme(scheme)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-			registry.Register("tekton", executor.NewTektonExecutor(fakeClient, ""))
-			registry.Register("job", executor.NewJobExecutor(fakeClient, ""))
+			registry.Register("tekton", executor.NewTektonExecutor(fakeClient))
+			registry.Register("job", executor.NewJobExecutor(fakeClient))
 
 			tektonExec, err := registry.Get("tekton")
 			Expect(err).ToNot(HaveOccurred())
@@ -78,8 +78,8 @@ var _ = Describe("Executor Registry (BR-WE-014)", func() {
 			_ = batchv1.AddToScheme(scheme)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-			registry.Register("tekton", executor.NewTektonExecutor(fakeClient, ""))
-			registry.Register("job", executor.NewJobExecutor(fakeClient, ""))
+			registry.Register("tekton", executor.NewTektonExecutor(fakeClient))
+			registry.Register("job", executor.NewJobExecutor(fakeClient))
 
 			engines := registry.Engines()
 			Expect(engines).To(HaveLen(2))
@@ -131,7 +131,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 	Context("Create", func() {
 		It("should create a Job with correct spec (UT-WE-014-020)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+			jobExec = executor.NewJobExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -153,14 +153,14 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 				},
 			}
 
-			name, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(name).To(HavePrefix("wfe-"))
+			Expect(result.ResourceName).To(HavePrefix("wfe-"))
 
 			// Verify the Job was created
 			var job batchv1.Job
 			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      name,
+				Name:      result.ResourceName,
 				Namespace: "kubernaut-workflows",
 			}, &job)
 			Expect(err).ToNot(HaveOccurred())
@@ -168,7 +168,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 			// Verify Job spec
 			Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
 			Expect(job.Spec.Template.Spec.Containers[0].Image).To(Equal("ghcr.io/kubernaut/workflows/restart:v1.0.0"))
-			Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal("test-sa"))
+			Expect(job.Spec.Template.Spec.ServiceAccountName).To(BeEmpty())
 			Expect(job.Spec.Template.Spec.RestartPolicy).To(Equal(corev1.RestartPolicyNever))
 
 			// Verify labels
@@ -194,7 +194,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 
 		It("should use default service account when not specified (UT-WE-014-021)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			jobExec = executor.NewJobExecutor(k8sClient, "")
+			jobExec = executor.NewJobExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -213,16 +213,16 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 				},
 			}
 
-			name, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var job batchv1.Job
 			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      name,
+				Name:      result.ResourceName,
 				Namespace: "kubernaut-workflows",
 			}, &job)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal(executor.DefaultServiceAccountName))
+			Expect(job.Spec.Template.Spec.ServiceAccountName).To(BeEmpty())
 		})
 	})
 
@@ -238,7 +238,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 				},
 			}
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
-			jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+			jobExec = executor.NewJobExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -269,7 +269,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 				},
 			}
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
-			jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+			jobExec = executor.NewJobExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -301,7 +301,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 				},
 			}
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
-			jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+			jobExec = executor.NewJobExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -317,7 +317,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 
 		It("should return error when ExecutionRef is nil (UT-WE-014-033)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+			jobExec = executor.NewJobExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -344,7 +344,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 				},
 			}
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
-			jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+			jobExec = executor.NewJobExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -369,7 +369,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 
 		It("should be idempotent when Job doesn't exist (UT-WE-014-041)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+			jobExec = executor.NewJobExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -388,7 +388,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 	Context("Engine identification", func() {
 		It("should return 'job' as engine (UT-WE-014-050)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			jobExec = executor.NewJobExecutor(k8sClient, "")
+			jobExec = executor.NewJobExecutor(k8sClient)
 			Expect(jobExec.Engine()).To(Equal("job"))
 		})
 	})
@@ -424,20 +424,20 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 	Context("Create", func() {
 		It("should create a PipelineRun with correct spec (UT-WE-014-060)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 
 			wfe := newTestWFE("test-wfe-tekton", "default", "default/deployment/my-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 				map[string]string{"NAMESPACE": "default"})
 
-			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(name).To(HavePrefix("wfe-"))
+			Expect(result.ResourceName).To(HavePrefix("wfe-"))
 
 			// Verify the PipelineRun was created
 			var pr tektonv1.PipelineRun
 			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      name,
+				Name:      result.ResourceName,
 				Namespace: "kubernaut-workflows",
 			}, &pr)
 			Expect(err).ToNot(HaveOccurred())
@@ -458,46 +458,46 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			Expect(foundBundle).To(BeTrue(), "bundle param should be present in resolver")
 
 			// Verify service account
-			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(Equal("test-sa"))
+			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty())
 
 			// Verify deterministic name matches ExecutionResourceName
 			expectedName := executor.ExecutionResourceName("default/deployment/my-app")
-			Expect(name).To(Equal(expectedName))
+			Expect(result.ResourceName).To(Equal(expectedName))
 		})
 
 		It("should use default service account when not specified (UT-WE-014-061)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 
 			wfe := newTestWFE("test-wfe-default-sa", "default", "default/deployment/another-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
-			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
 			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      name,
+				Name:      result.ResourceName,
 				Namespace: "kubernaut-workflows",
 			}, &pr)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(Equal(executor.DefaultServiceAccountName))
+			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty())
 		})
 
 		It("should convert parameters to Tekton params and inject TARGET_RESOURCE (UT-WE-014-062)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 
 			wfe := newTestWFE("test-wfe-params", "default", "default/deployment/param-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 				map[string]string{"NAMESPACE": "default", "REPLICAS": "3"})
 
-			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
 			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      name,
+				Name:      result.ResourceName,
 				Namespace: "kubernaut-workflows",
 			}, &pr)
 			Expect(err).ToNot(HaveOccurred())
@@ -518,17 +518,17 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 
 		It("should produce only TARGET_RESOURCE when parameters are empty (UT-WE-014-063)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 
 			wfe := newTestWFE("test-wfe-no-params", "default", "default/deployment/no-param-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
-			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
 			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      name,
+				Name:      result.ResourceName,
 				Namespace: "kubernaut-workflows",
 			}, &pr)
 			Expect(err).ToNot(HaveOccurred())
@@ -541,17 +541,17 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 
 		It("should set labels carrying WFE metadata for observability (UT-WE-014-064)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 
 			wfe := newTestWFE("test-wfe-labels", "prod-ns", "prod-ns/deployment/api-server",
 				"scale-up", "ghcr.io/kubernaut/workflows/scale:v2.0.0", nil)
 
-			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
 			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      name,
+				Name:      result.ResourceName,
 				Namespace: "kubernaut-workflows",
 			}, &pr)
 			Expect(err).ToNot(HaveOccurred())
@@ -568,7 +568,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 
 		It("should preserve AlreadyExists error for controller retry logic (UT-WE-014-065)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 
 			wfe := newTestWFE("test-wfe-dup", "default", "default/deployment/dup-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
@@ -596,7 +596,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 				corev1.ConditionTrue, "Succeeded", "Pipeline completed successfully", 2)
 
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(pr).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -618,7 +618,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 				corev1.ConditionFalse, "PipelineRunFailed", "Task 'validate' failed", 3)
 
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(pr).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -639,7 +639,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 				corev1.ConditionUnknown, "Running", "Tasks Completed: 1 (Incomplete)", 2)
 
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(pr).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -665,7 +665,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			}
 
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(pr).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -682,7 +682,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 
 		It("should return error when ExecutionRef is nil (UT-WE-014-074)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -725,7 +725,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			}
 
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(pr).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -736,7 +736,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			result, err := tektonExec.GetStatus(ctx, wfe, "kubernaut-workflows")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.Summary).To(And(Not(BeNil()), HaveField("TotalTasks", Equal(3))))
-			Expect(result.Summary.Status).To(Equal(string(corev1.ConditionTrue)))
+			Expect(result.Summary.Status).To(Equal(corev1.ConditionTrue))
 			Expect(result.Summary.Reason).To(Equal("Succeeded"))
 		})
 	})
@@ -757,7 +757,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 				},
 			}
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(pr).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -782,7 +782,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 
 		It("should be idempotent when PipelineRun doesn't exist (UT-WE-014-081)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -801,7 +801,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 	Context("Engine identification", func() {
 		It("should return 'tekton' as engine (UT-WE-014-082)", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			tektonExec = executor.NewTektonExecutor(k8sClient, "")
+			tektonExec = executor.NewTektonExecutor(k8sClient)
 			Expect(tektonExec.Engine()).To(Equal("tekton"))
 		})
 	})
@@ -826,17 +826,17 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 			scheme := runtime.NewScheme()
 			Expect(tektonv1.AddToScheme(scheme)).To(Succeed())
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			tektonExec := executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec := executor.NewTektonExecutor(k8sClient)
 
 			wfe := newTestWFE("test-wfe-convert", "default", "default/deployment/convert-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", params)
 
-			name, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
 			err = k8sClient.Get(context.Background(), client.ObjectKey{
-				Name:      name,
+				Name:      result.ResourceName,
 				Namespace: "kubernaut-workflows",
 			}, &pr)
 			Expect(err).ToNot(HaveOccurred())
@@ -859,18 +859,18 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 			scheme := runtime.NewScheme()
 			Expect(tektonv1.AddToScheme(scheme)).To(Succeed())
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			tektonExec := executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec := executor.NewTektonExecutor(k8sClient)
 
 			wfe := newTestWFE("test-wfe-empty-params", "default", "default/deployment/empty-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 				map[string]string{})
 
-			name, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
 			err = k8sClient.Get(context.Background(), client.ObjectKey{
-				Name:      name,
+				Name:      result.ResourceName,
 				Namespace: "kubernaut-workflows",
 			}, &pr)
 			Expect(err).ToNot(HaveOccurred())
@@ -887,17 +887,17 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 			scheme := runtime.NewScheme()
 			Expect(tektonv1.AddToScheme(scheme)).To(Succeed())
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			tektonExec := executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec := executor.NewTektonExecutor(k8sClient)
 
 			wfe := newTestWFE("test-wfe-label-sanitize", "default", "prod-ns/deployment/api-server",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
-			name, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
 			err = k8sClient.Get(context.Background(), client.ObjectKey{
-				Name:      name,
+				Name:      result.ResourceName,
 				Namespace: "kubernaut-workflows",
 			}, &pr)
 			Expect(err).ToNot(HaveOccurred())
@@ -911,19 +911,19 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 			scheme := runtime.NewScheme()
 			Expect(tektonv1.AddToScheme(scheme)).To(Succeed())
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			tektonExec := executor.NewTektonExecutor(k8sClient, "test-sa")
+			tektonExec := executor.NewTektonExecutor(k8sClient)
 
 			// Create a target resource that, when sanitized, exceeds 63 chars
 			longTarget := "very-long-namespace/deployment/very-long-deployment-name-that-exceeds-sixty-three-chars"
 			wfe := newTestWFE("test-wfe-label-truncate", "default", longTarget,
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
-			name, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows", executor.CreateOptions{})
+			result, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
 			err = k8sClient.Get(context.Background(), client.ObjectKey{
-				Name:      name,
+				Name:      result.ResourceName,
 				Namespace: "kubernaut-workflows",
 			}, &pr)
 			Expect(err).ToNot(HaveOccurred())
@@ -955,7 +955,7 @@ var _ = Describe("Job Executor Dependencies (DD-WE-006)", func() {
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-		jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+		jobExec = executor.NewJobExecutor(k8sClient)
 	})
 
 	It("UT-WE-006-020: should mount secrets as volumes on the Job", func() {
@@ -970,11 +970,11 @@ var _ = Describe("Job Executor Dependencies (DD-WE-006)", func() {
 			},
 		}
 
-		name, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		result, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", opts)
 		Expect(err).ToNot(HaveOccurred())
 
 		var job batchv1.Job
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
 
 		Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(
 			HaveField("Name", "secret-gitea-repo-creds"),
@@ -1000,11 +1000,11 @@ var _ = Describe("Job Executor Dependencies (DD-WE-006)", func() {
 			},
 		}
 
-		name, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		result, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", opts)
 		Expect(err).ToNot(HaveOccurred())
 
 		var job batchv1.Job
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
 
 		Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(
 			HaveField("Name", "configmap-remediation-config"),
@@ -1029,11 +1029,11 @@ var _ = Describe("Job Executor Dependencies (DD-WE-006)", func() {
 			},
 		}
 
-		name, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		result, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", opts)
 		Expect(err).ToNot(HaveOccurred())
 
 		var job batchv1.Job
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
 
 		Expect(job.Spec.Template.Spec.Volumes).To(HaveLen(2))
 		Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(
@@ -1061,11 +1061,11 @@ var _ = Describe("Job Executor Dependencies (DD-WE-006)", func() {
 		wfe := newTestWFE("test-wfe-nodeps", "default", "default/deployment/nodeps-app",
 			"restart", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
-		name, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+		result, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 		Expect(err).ToNot(HaveOccurred())
 
 		var job batchv1.Job
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
 
 		Expect(job.Spec.Template.Spec.Volumes).To(BeEmpty())
 		container := job.Spec.Template.Spec.Containers[0]
@@ -1088,7 +1088,7 @@ var _ = Describe("Tekton Executor Dependencies (DD-WE-006)", func() {
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-		tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+		tektonExec = executor.NewTektonExecutor(k8sClient)
 	})
 
 	It("UT-WE-006-024: should add secret workspace binding to PipelineRun", func() {
@@ -1103,11 +1103,11 @@ var _ = Describe("Tekton Executor Dependencies (DD-WE-006)", func() {
 			},
 		}
 
-		name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", opts)
 		Expect(err).ToNot(HaveOccurred())
 
 		var pr tektonv1.PipelineRun
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &pr)).To(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: "kubernaut-workflows"}, &pr)).To(Succeed())
 
 		Expect(pr.Spec.Workspaces).To(HaveLen(1))
 		Expect(pr.Spec.Workspaces[0].Name).To(Equal("secret-gitea-repo-creds"))
@@ -1126,11 +1126,11 @@ var _ = Describe("Tekton Executor Dependencies (DD-WE-006)", func() {
 			},
 		}
 
-		name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", opts)
 		Expect(err).ToNot(HaveOccurred())
 
 		var pr tektonv1.PipelineRun
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &pr)).To(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: "kubernaut-workflows"}, &pr)).To(Succeed())
 
 		Expect(pr.Spec.Workspaces).To(HaveLen(1))
 		Expect(pr.Spec.Workspaces[0].Name).To(Equal("configmap-remediation-config"))
@@ -1141,11 +1141,11 @@ var _ = Describe("Tekton Executor Dependencies (DD-WE-006)", func() {
 		wfe := newTestWFE("test-wfe-tekton-nodeps", "default", "default/deployment/nodeps-tekton",
 			"restart", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
-		name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+		result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 		Expect(err).ToNot(HaveOccurred())
 
 		var pr tektonv1.PipelineRun
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &pr)).To(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: "kubernaut-workflows"}, &pr)).To(Succeed())
 
 		Expect(pr.Spec.Workspaces).To(BeEmpty())
 	})
@@ -1161,11 +1161,11 @@ var _ = Describe("Tekton Executor Dependencies (DD-WE-006)", func() {
 			},
 		}
 
-		name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", opts)
 		Expect(err).ToNot(HaveOccurred())
 
 		var pr tektonv1.PipelineRun
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &pr)).To(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: "kubernaut-workflows"}, &pr)).To(Succeed())
 
 		Expect(pr.Spec.Workspaces).To(HaveLen(2))
 		Expect(pr.Spec.Workspaces).To(ContainElement(And(
@@ -1218,7 +1218,7 @@ var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
 			},
 		}
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
-		jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+		jobExec = executor.NewJobExecutor(k8sClient)
 
 		completed, err := jobExec.IsCompleted(ctx, "default/deployment/my-app", "kubernaut-workflows")
 		Expect(err).ToNot(HaveOccurred())
@@ -1237,7 +1237,7 @@ var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
 			},
 		}
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
-		jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+		jobExec = executor.NewJobExecutor(k8sClient)
 
 		completed, err := jobExec.IsCompleted(ctx, "default/deployment/running-app", "kubernaut-workflows")
 		Expect(err).ToNot(HaveOccurred())
@@ -1263,7 +1263,7 @@ var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
 			},
 		}
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
-		jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+		jobExec = executor.NewJobExecutor(k8sClient)
 
 		completed, err := jobExec.IsCompleted(ctx, "default/deployment/failed-app", "kubernaut-workflows")
 		Expect(err).ToNot(HaveOccurred())
@@ -1272,7 +1272,7 @@ var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
 
 	It("should return error when Job does not exist (UT-WE-374-004)", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-		jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+		jobExec = executor.NewJobExecutor(k8sClient)
 
 		completed, err := jobExec.IsCompleted(ctx, "default/deployment/vanished-app", "kubernaut-workflows")
 		Expect(err).To(HaveOccurred(), "Should return error when Job does not exist (race condition)")

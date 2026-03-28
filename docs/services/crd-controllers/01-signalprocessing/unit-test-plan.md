@@ -158,16 +158,11 @@ enrichService           0.0%  ← Needs fake client tests
 | BR-SP-111 | Transient error detection - context canceled | ✅ |
 | BR-SP-111 | Jitter anti-thundering herd | ✅ |
 
-### Test File: `business_classifier_test.go`
+### ~~Test File: `business_classifier_test.go`~~ REMOVED
 
-| BR/ID | Scenario | Status |
-|-------|----------|--------|
-| BR-SP-002 | Classify payment service correctly | ✅ |
-| BR-SP-002 | Classify API gateway via Rego | ✅ |
-| BR-SP-002 | Classify background job correctly | ✅ |
-| BR-SP-002 | Classify via team label | ✅ |
-| BR-SP-002 | Classify via namespace pattern | ✅ |
-| BR-SP-002 | Apply custom Rego business rules | ✅ |
+> **Note**: Business classification is now tested via `controller_reconciliation_test.go` and
+> `component_integration_test.go` (integration tier). The standalone business classifier was
+> consolidated into the controller per ADR-060. Pattern-match tier removed per Issue #177.
 
 ### Test File: `cache_test.go`
 

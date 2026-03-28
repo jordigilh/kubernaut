@@ -79,7 +79,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				eventData := map[string]interface{}{
 					"target_resource":            "prod/Deployment/my-app",
 					"pre_remediation_spec_hash":  "sha256:aabb1122",
-					"workflow_type":              "ScaleUp",
+					"action_type":              "ScaleUp",
 					"signal_type":               "HighCPULoad",
 					"signal_fingerprint":         "fp-123",
 				}
@@ -132,12 +132,12 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				eventData1, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "prod/Deployment/my-app",
 					"pre_remediation_spec_hash": "sha256:aabb1122",
-					"workflow_type":             "ScaleUp",
+					"action_type":             "ScaleUp",
 				})
 				eventData2, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "prod/Deployment/my-app",
 					"pre_remediation_spec_hash": "sha256:ccdd3344",
-					"workflow_type":             "RestartPod",
+					"action_type":             "RestartPod",
 				})
 
 				rows := sqlmock.NewRows([]string{
@@ -382,7 +382,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				eventData, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "prod/Deployment/my-app",
 					"pre_remediation_spec_hash": "sha256:aabb1122",
-					"workflow_type":             "ScaleUp",
+					"action_type":             "ScaleUp",
 				})
 
 				rows := sqlmock.NewRows([]string{
@@ -485,7 +485,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				eventData, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "prod/Deployment/my-app",
 					"pre_remediation_spec_hash": "sha256:aabb1122",
-					"workflow_type":             "ScaleUp",
+					"action_type":             "ScaleUp",
 				})
 
 				rows := sqlmock.NewRows([]string{

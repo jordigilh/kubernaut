@@ -138,10 +138,14 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 					BackoffMultiplier:     2,
 					MaxBackoffSeconds:     60,
 				},
-				Metadata: map[string]string{
-					"test-channel-set":       "slack-failure",
-					"remediationRequestName": correlationID,
-					"test-scenario":          "failed-delivery-audit",
+				Context: &notificationv1alpha1.NotificationContext{
+					Lineage: &notificationv1alpha1.LineageContext{
+						RemediationRequest: correlationID,
+					},
+				},
+				Extensions: map[string]string{
+					"test-channel-set": "slack-failure",
+					"test-scenario":    "failed-delivery-audit",
 				},
 			},
 		}
@@ -205,7 +209,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		}, nr)
 		Expect(err).ToNot(HaveOccurred(), "Should be able to get NR for field validation")
 		Expect(nr.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhaseFailed))
-		Expect(nr.Status.Reason).To(Equal("MaxRetriesExhausted"),
+		Expect(nr.Status.Reason).To(Equal(notificationv1alpha1.StatusReasonMaxRetriesExhausted),
 			"Reason should be MaxRetriesExhausted when retryable errors (503) exhaust MaxAttempts")
 		Expect(nr.Status.Message).To(Equal("All delivery attempts failed or exhausted retries"))
 
@@ -318,10 +322,10 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 			"FIELD MATCH: event_data should contain metadata")
 		metadata, ok := eventData["metadata"].(map[string]interface{})
 		Expect(ok).To(BeTrue(), "Metadata should be a map")
-		Expect(metadata).To(HaveKey("remediationRequestName"),
-			"FIELD MATCH: metadata should contain remediationRequestName")
-		Expect(metadata["remediationRequestName"]).To(Equal(correlationID),
-			"FIELD MATCH: metadata.remediationRequestName should match correlation_id")
+		Expect(metadata).To(HaveKey("remediationRequest"),
+			"FIELD MATCH: metadata should contain remediationRequest")
+		Expect(metadata["remediationRequest"]).To(Equal(correlationID),
+			"FIELD MATCH: metadata.remediationRequest should match correlation_id")
 
 		GinkgoWriter.Printf("✅ Field matching validation complete: All stored fields match audit helper output\n")
 
@@ -388,10 +392,14 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 					BackoffMultiplier:     2,
 					MaxBackoffSeconds:     60,
 				},
-				Metadata: map[string]string{
-					"test-channel-set":       "console-slack-failure",
-					"remediationRequestName": correlationID,
-					"test-scenario":          "partial-failure",
+				Context: &notificationv1alpha1.NotificationContext{
+					Lineage: &notificationv1alpha1.LineageContext{
+						RemediationRequest: correlationID,
+					},
+				},
+				Extensions: map[string]string{
+					"test-channel-set": "console-slack-failure",
+					"test-scenario":    "partial-failure",
 				},
 			},
 		}

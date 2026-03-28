@@ -45,7 +45,7 @@ func (e *Enricher) EnrichNotification(ctx context.Context, notification *notific
 		return notification
 	}
 
-	workflowID := extractWorkflowID(notification.Spec.Metadata)
+	workflowID := extractWorkflowID(notification.Spec.Context)
 	if workflowID == "" {
 		return notification
 	}
@@ -62,14 +62,17 @@ func (e *Enricher) EnrichNotification(ctx context.Context, notification *notific
 	return enriched
 }
 
-// extractWorkflowID reads the workflow UUID from notification metadata.
-// Checks "workflowId" (completion) first, then "selectedWorkflow" (approval).
-func extractWorkflowID(metadata map[string]string) string {
-	if id, ok := metadata["workflowId"]; ok && id != "" {
-		return id
+// extractWorkflowID reads the workflow UUID from the typed notification context.
+// Checks WorkflowID (completion) first, then SelectedWorkflow (approval).
+func extractWorkflowID(ctx *notificationv1alpha1.NotificationContext) string {
+	if ctx == nil || ctx.Workflow == nil {
+		return ""
 	}
-	if id, ok := metadata["selectedWorkflow"]; ok && id != "" {
-		return id
+	if ctx.Workflow.WorkflowID != "" {
+		return ctx.Workflow.WorkflowID
+	}
+	if ctx.Workflow.SelectedWorkflow != "" {
+		return ctx.Workflow.SelectedWorkflow
 	}
 	return ""
 }

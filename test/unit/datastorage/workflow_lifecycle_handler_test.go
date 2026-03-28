@@ -133,7 +133,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 				WorkflowName: "test-workflow",
 				Version:      "v1.0.0",
 				SchemaVersion: "1.0",
-				Status:       "disabled",
+				Status:       "Disabled",
 			}
 			mock := &mockWorkflowLifecycleRepo{
 				getByIDFn: func(_ context.Context, id string) (*models.RemediationWorkflow, error) {
@@ -144,9 +144,9 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 				},
 				updateStatusFn: func(_ context.Context, wfID, version, status, reason, updatedBy string) error {
 					Expect(wfID).To(Equal(testWorkflowID))
-					Expect(status).To(Equal("active"))
+					Expect(status).To(Equal("Active"))
 					Expect(reason).To(Equal("Re-enabling for production use"))
-					workflow.Status = "active"
+					workflow.Status = "Active"
 					return nil
 				},
 			}
@@ -159,7 +159,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 			Expect(rr.Code).To(Equal(http.StatusOK))
 			var resp models.RemediationWorkflow
 			Expect(json.NewDecoder(rr.Body).Decode(&resp)).To(Succeed())
-			Expect(resp.Status).To(Equal("active"))
+			Expect(resp.Status).To(Equal("Active"))
 			Expect(resp.WorkflowID).To(Equal(testWorkflowID))
 		})
 	})
@@ -219,7 +219,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 				WorkflowName: "test-workflow",
 				Version:      "v1.0.0",
 				SchemaVersion: "1.0",
-				Status:       "active",
+				Status:       "Active",
 			}
 			mock := &mockWorkflowLifecycleRepo{
 				getByIDFn: func(_ context.Context, id string) (*models.RemediationWorkflow, error) {
@@ -230,9 +230,9 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 				},
 				updateStatusFn: func(_ context.Context, wfID, version, status, reason, updatedBy string) error {
 					Expect(wfID).To(Equal(testWorkflowID))
-					Expect(status).To(Equal("deprecated"))
+					Expect(status).To(Equal("Deprecated"))
 					Expect(reason).To(Equal("Superseded by v2"))
-					workflow.Status = "deprecated"
+					workflow.Status = "Deprecated"
 					return nil
 				},
 			}
@@ -245,7 +245,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 			Expect(rr.Code).To(Equal(http.StatusOK))
 			var resp models.RemediationWorkflow
 			Expect(json.NewDecoder(rr.Body).Decode(&resp)).To(Succeed())
-			Expect(resp.Status).To(Equal("deprecated"))
+			Expect(resp.Status).To(Equal("Deprecated"))
 			Expect(resp.WorkflowID).To(Equal(testWorkflowID))
 		})
 	})

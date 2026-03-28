@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -47,6 +48,7 @@ import (
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
 	emmetrics "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/metrics"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/startup"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -200,24 +202,77 @@ func main() {
 		"dataStorageURL", cfg.DataStorage.URL,
 	)
 
+	// Issue #484: Create signal context early so the CA file watcher
+	// can respect graceful shutdown from the start.
+	ctx := ctrl.SetupSignalHandler()
+
 	// ========================================
-	// EXTERNAL CLIENT INITIALIZATION (BR-EM-002, BR-EM-003, Issue #452)
+	// EXTERNAL CLIENT INITIALIZATION (BR-EM-002, BR-EM-003, Issue #452, #484)
 	// ========================================
 	var promClient emclient.PrometheusQuerier
 	var amClient emclient.AlertManagerClient
 
-	// Build the HTTP client: TLS with custom CA if configured, plain otherwise.
 	var externalHTTPClient *http.Client
 	if cfg.External.TLSCaFile != "" {
-		var err error
-		externalHTTPClient, err = emclient.NewHTTPClientWithCA(cfg.External.TLSCaFile, cfg.External.ConnectionTimeout)
+		// Issue #484: On OCP, the service-ca operator injects the CA bundle
+		// asynchronously after the ConfigMap volume is mounted. Wait for the
+		// file to appear and contain valid PEM before proceeding.
+		const caRetryInterval = 2 * time.Second
+		const caRetryTimeout = 30 * time.Second
+		var caPEM []byte
+		retryDeadline := time.Now().Add(caRetryTimeout)
+		for {
+			data, readErr := os.ReadFile(cfg.External.TLSCaFile)
+			if readErr == nil && len(data) > 0 {
+				caPEM = data
+				break
+			}
+			if time.Now().After(retryDeadline) {
+				if readErr != nil {
+					setupLog.Error(readErr, "CA file not readable after timeout",
+						"caFile", cfg.External.TLSCaFile,
+						"timeout", caRetryTimeout)
+				} else {
+					setupLog.Error(fmt.Errorf("CA file %q exists but is empty (0 bytes)", cfg.External.TLSCaFile),
+						"CA file not populated after timeout",
+						"caFile", cfg.External.TLSCaFile,
+						"timeout", caRetryTimeout)
+				}
+				os.Exit(1)
+			}
+			setupLog.Info("Waiting for CA file to be populated",
+				"caFile", cfg.External.TLSCaFile,
+				"retryIn", caRetryInterval)
+			time.Sleep(caRetryInterval)
+		}
+
+		caReloader, err := emclient.NewCAReloader(caPEM)
 		if err != nil {
-			setupLog.Error(err, "Failed to create TLS HTTP client", "caFile", cfg.External.TLSCaFile)
+			setupLog.Error(err, "Failed to initialize CA reloader", "caFile", cfg.External.TLSCaFile)
 			os.Exit(1)
 		}
-		// Wrap with SA bearer token for OCP monitoring endpoints (Issue #452)
-		externalHTTPClient.Transport = auth.NewServiceAccountTransportWithBase(externalHTTPClient.Transport)
-		setupLog.Info("TLS HTTP client initialized with custom CA and bearer token",
+
+		caWatcher, err := hotreload.NewFileWatcher(
+			cfg.External.TLSCaFile,
+			caReloader.ReloadCallback,
+			ctrl.Log.WithName("ca-reloader"),
+		)
+		if err != nil {
+			setupLog.Error(err, "Failed to create CA file watcher", "caFile", cfg.External.TLSCaFile)
+			os.Exit(1)
+		}
+		if err := caWatcher.Start(ctx); err != nil {
+			setupLog.Error(err, "Failed to start CA file watcher", "caFile", cfg.External.TLSCaFile)
+			os.Exit(1)
+		}
+
+		// Wrap CAReloader (RoundTripper) with SA bearer token for OCP monitoring endpoints.
+		saTransport := auth.NewServiceAccountTransportWithBase(caReloader)
+		externalHTTPClient = &http.Client{
+			Transport: saTransport,
+			Timeout:   cfg.External.ConnectionTimeout,
+		}
+		setupLog.Info("TLS HTTP client initialized with CA hot-reload and bearer token",
 			"caFile", cfg.External.TLSCaFile,
 			"timeout", cfg.External.ConnectionTimeout,
 		)
@@ -286,6 +341,7 @@ func main() {
 	// ========================================
 	emReconciler := controller.NewReconciler(
 		mgr.GetClient(),
+		mgr.GetAPIReader(),
 		mgr.GetScheme(),
 		mgr.GetEventRecorderFor("effectivenessmonitor-controller"),
 		emMetrics,
@@ -298,11 +354,13 @@ func main() {
 			c.ValidityWindow = cfg.Assessment.ValidityWindow
 			c.PrometheusEnabled = cfg.External.PrometheusEnabled
 			c.AlertManagerEnabled = cfg.External.AlertManagerEnabled
+			c.PrometheusLookback = cfg.External.PrometheusLookback
+			c.RequeueAssessmentInProgress = cfg.External.ScrapeInterval
 			return c
 		}(),
 	)
 	emReconciler.SetRESTMapper(mgr.GetRESTMapper())
-	if err = emReconciler.SetupWithManager(mgr); err != nil {
+	if err = emReconciler.SetupWithManager(mgr, cfg.Assessment.MaxConcurrentReconciles); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "EffectivenessMonitor")
 		os.Exit(1)
 	}
@@ -318,8 +376,6 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-
-	ctx := ctrl.SetupSignalHandler()
 
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")

@@ -33,7 +33,6 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ============================================================================
@@ -81,11 +80,6 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -333,8 +327,10 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil(),
 				"BR-ORCH-036: ManualReview notification must reference the originating RR")
 			Expect(nr.Spec.RemediationRequestRef.Name).To(Equal(rrName))
-			Expect(nr.Spec.Metadata).To(HaveKeyWithValue("reason", "APIError"))
-			Expect(nr.Spec.Metadata).To(HaveKeyWithValue("subReason", "MaxRetriesExceeded"))
+			Expect(nr.Spec.Context).NotTo(BeNil())
+			Expect(nr.Spec.Context.Review).NotTo(BeNil())
+			Expect(nr.Spec.Context.Review.Reason).To(Equal("APIError"))
+			Expect(nr.Spec.Context.Review.SubReason).To(Equal("MaxRetriesExceeded"))
 
 			By("Waiting for RR status to transition to Failed with ManualReviewRequired")
 			rr := &remediationv1.RemediationRequest{}

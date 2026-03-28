@@ -85,9 +85,9 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 					Subject:  "E2E Test: Critical Priority Notification",
 					Body:     "CRITICAL: Testing priority-based routing with file audit trail",
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Metadata: map[string]string{
+					Severity: "critical",
+					Extensions: map[string]string{
 						"test-channel-set": "console-file",
-						"severity":         "critical",
 						"alert-name":       "CriticalSystemFailure",
 						"cluster":          "production",
 						"environment":      "prod",
@@ -138,7 +138,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 			// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
 			// CRITICAL: Use exact notification name to avoid matching other tests (e2e-priority-critical-2, etc.)
 			// BUG FIX: Pattern "notification-e2e-priority-critical-*.json" was matching files from Scenario 2
-			//          (e2e-priority-critical-2) which has NO Metadata, causing false positives
+			//          (e2e-priority-critical-2) which has no matching extensions, causing false positives
 			pattern := fmt.Sprintf("notification-%s-*.json", notification.Name)
 
 			Eventually(EventuallyCountFilesInPod(pattern),
@@ -160,7 +160,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 			// CRITICAL: Validate we read the CORRECT notification (not cross-test pollution)
 			// BUG FIX: Pattern "notification-e2e-priority-critical-*.json" also matches
 			//          "notification-e2e-priority-critical-2-*.json" (from Scenario 2)
-			//          causing test to read wrong file with NO Metadata
+			//          causing test to read wrong file without expected spec fields
 			Expect(savedNotification.Name).To(Equal(notification.Name),
 				"File must belong to current test notification '%s' (found: '%s') - cross-test pollution detected!",
 				notification.Name, savedNotification.Name)
@@ -169,8 +169,8 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 				"Priority field must be preserved in file audit (BR-NOT-052)")
 			// NOTE: Type field validation removed - priority routing tests focus on priority, not type
 			//       Type preservation is tested in other E2E tests (file delivery validation)
-			Expect(savedNotification.Spec.Metadata["severity"]).To(Equal("critical"),
-				"Metadata fields must be preserved in audit trail")
+			Expect(savedNotification.Spec.Severity).To(Equal("critical"),
+				"Severity must be preserved in audit trail")
 
 			logger.Info("✅ CRITICAL PRIORITY SUCCESS: Delivered immediately with file audit trail")
 		})
@@ -216,7 +216,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 						Subject:  "E2E Test: Priority Ordering - " + string(p.priority),
 						Body:     "Testing priority-based delivery ordering",
 						Priority: p.priority,
-						Metadata: map[string]string{
+						Extensions: map[string]string{
 							"test-channel-set": "console-file",
 						},
 					},
@@ -320,9 +320,9 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 					Subject:  "E2E Test: High Priority Multi-Channel",
 					Body:     "Testing high priority delivery to console, file, and log channels",
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
-					Metadata: map[string]string{
+					Severity: "high",
+					Extensions: map[string]string{
 						"test-channel-set": "console-file-log",
-						"severity":         "high",
 						"alert-name":       "HighPriorityAlert",
 						"cluster":          "staging",
 					},
@@ -384,8 +384,8 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityHigh),
 				"Priority must be preserved in file audit")
-			Expect(savedNotification.Spec.Metadata["severity"]).To(Equal("high"),
-				"Severity metadata must be preserved")
+			Expect(savedNotification.Spec.Severity).To(Equal("high"),
+				"Severity must be preserved")
 
 			By("Verifying delivery attempts recorded for all channels")
 			Expect(notification.Status.DeliveryAttempts).To(HaveLen(3),
@@ -393,8 +393,8 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 
 			channelsSeen := make(map[string]bool)
 			for _, attempt := range notification.Status.DeliveryAttempts {
-				channelsSeen[attempt.Channel] = true
-				Expect(attempt.Status).To(Equal("success"), "All attempts should succeed")
+				channelsSeen[string(attempt.Channel)] = true
+				Expect(attempt.Status).To(Equal(notificationv1alpha1.DeliveryAttemptStatusSuccess), "All attempts should succeed")
 			}
 
 			Expect(channelsSeen).To(HaveKey("console"), "Console channel should be in delivery attempts")

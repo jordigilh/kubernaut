@@ -23,7 +23,7 @@ limitations under the License.
 //   - Removed all HTTP client code
 //   - Uses gateway.NewServerWithK8sClient for shared K8s client
 //   - Calls ProcessSignal() directly instead of HTTP POST
-//   - Tracks response status at business logic level (StatusAccepted, StatusDeduplicated)
+//   - Tracks response status at business logic level (StatusCreated, StatusDeduplicated)
 //   - No Eventually() needed - shared client gives immediate CRD visibility
 //   - Removed health check (HTTP-specific)
 // ========================================
@@ -47,7 +47,7 @@ import (
 
 // Test 02: State-Based Deduplication (DD-GATEWAY-009)
 // Validates that duplicate signals are handled based on CRD lifecycle state:
-// - Same signal while CRD is processing → deduplicated (StatusAccepted/StatusDeduplicated)
+// - Same signal while CRD is processing → deduplicated (StatusDeduplicated)
 // - Different signals → create new CRDs
 //
 // Business Requirements:
@@ -103,12 +103,12 @@ var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, La
 		testLogger.Info("Test 02: Deduplication Behavior")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("")
-		testLogger.Info("Scenario: Send signals to trigger storm threshold, then verify deduplication")
-		testLogger.Info("Expected: Storm aggregation creates CRD, duplicates are deduplicated")
+		testLogger.Info("Scenario: Send multiple distinct-resource signals, then verify deduplication for a duplicate fingerprint")
+		testLogger.Info("Expected: CRDs created per distinct signals; duplicate fingerprint is deduplicated")
 		testLogger.Info("")
 
-		// Step 1: Send multiple signals with same signalname to trigger storm threshold
-		testLogger.Info("Step 1: Send 5 signals with same signalname to trigger storm threshold")
+		// Step 1: Send multiple signals with same alert name but different target resources
+		testLogger.Info("Step 1: Send 5 signals with same alert name (distinct target resources)")
 		signalName1 := fmt.Sprintf("DedupTest1-%s", uuid.New().String()[:8])
 
 		for i := 0; i < 5; i++ {
@@ -129,7 +129,7 @@ var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, La
 			Expect(err).ToNot(HaveOccurred())
 			testLogger.V(1).Info(fmt.Sprintf("  Signal %d: %s", i+1, response.Status))
 		}
-		testLogger.Info("  ✅ Sent 5 signals to trigger storm threshold")
+		testLogger.Info("  ✅ Sent 5 signals with distinct target resources")
 
 		// Step 2: Send duplicate signal (same fingerprint as one of the above)
 		testLogger.Info("")
@@ -153,14 +153,13 @@ var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, La
 		Expect(err).ToNot(HaveOccurred())
 
 		testLogger.Info(fmt.Sprintf("  Duplicate signal: %s", dupResponse.Status))
-		// Duplicate should be accepted or marked as duplicate
+		// Duplicate should be deduplicated or (if lifecycle allows) create path
 		Expect(dupResponse.Status).To(Or(
-			Equal(gateway.StatusAccepted),
 			Equal(gateway.StatusDeduplicated),
-			Equal(gateway.StatusCreated)), // May also be created if within storm window
+			Equal(gateway.StatusCreated)),
 			"Duplicate signal should be handled correctly")
 
-		// Step 3: Send different signal (different signalname) - also trigger threshold
+		// Step 3: Send different signal (different alert name)
 		testLogger.Info("")
 		testLogger.Info("Step 3: Send 5 signals with different signalname")
 		signalName2 := fmt.Sprintf("DedupTest2-%s", uuid.New().String()[:8])
@@ -205,7 +204,7 @@ var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, La
 		testLogger.Info(fmt.Sprintf("  Found %d CRDs", crdCount))
 
 		// We sent 11 signals total (5 + 1 duplicate + 5 different)
-		// With storm aggregation + deduplication, we should have 1-2 CRDs
+		// Distinct fingerprints yield multiple CRDs; deduplication limits duplicates
 		Expect(crdCount).To(BeNumerically(">=", 1),
 			"At least 1 CRD should be created")
 		Expect(crdCount).To(BeNumerically("<=", 11),

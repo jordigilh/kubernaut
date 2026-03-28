@@ -18,9 +18,10 @@ import re  # noqa: F401
 import json
 
 
-from typing import Any, ClassVar, Dict, List
+from typing import Any, ClassVar, Dict, List, Optional
 from pydantic import BaseModel, StrictStr, field_validator
 from pydantic import Field
+from typing_extensions import Annotated
 from datastorage.models.incident_response_data import IncidentResponseData
 try:
     from typing import Self
@@ -35,7 +36,9 @@ class AIAgentResponsePayload(BaseModel):
     event_id: StrictStr = Field(description="Unique event identifier")
     incident_id: StrictStr = Field(description="Incident correlation ID from request")
     response_data: IncidentResponseData
-    __properties: ClassVar[List[str]] = ["event_type", "event_id", "incident_id", "response_data"]
+    total_prompt_tokens: Optional[Annotated[int, Field(strict=True, ge=0)]] = Field(default=None, description="Total prompt tokens consumed across all LLM calls in this investigation session (#435)")
+    total_completion_tokens: Optional[Annotated[int, Field(strict=True, ge=0)]] = Field(default=None, description="Total completion tokens consumed across all LLM calls in this investigation session (#435)")
+    __properties: ClassVar[List[str]] = ["event_type", "event_id", "incident_id", "response_data", "total_prompt_tokens", "total_completion_tokens"]
 
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
@@ -99,7 +102,9 @@ class AIAgentResponsePayload(BaseModel):
             "event_type": obj.get("event_type"),
             "event_id": obj.get("event_id"),
             "incident_id": obj.get("incident_id"),
-            "response_data": IncidentResponseData.from_dict(obj.get("response_data")) if obj.get("response_data") is not None else None
+            "response_data": IncidentResponseData.from_dict(obj.get("response_data")) if obj.get("response_data") is not None else None,
+            "total_prompt_tokens": obj.get("total_prompt_tokens"),
+            "total_completion_tokens": obj.get("total_completion_tokens")
         })
         return _obj
 

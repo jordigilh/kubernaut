@@ -25,7 +25,7 @@ func (m *mockPolicyEvaluator) EvaluateEnvironment(ctx context.Context, input eva
 		return m.EvaluateEnvironmentFunc(ctx, input)
 	}
 	return &signalprocessingv1alpha1.EnvironmentClassification{
-		Environment:  "production",
+		Environment:  signalprocessingv1alpha1.EnvironmentProduction,
 		Source:       "mock",
 		ClassifiedAt: metav1.Now(),
 	}, nil
@@ -36,7 +36,7 @@ func (m *mockPolicyEvaluator) EvaluatePriority(ctx context.Context, input evalua
 		return m.EvaluatePriorityFunc(ctx, input)
 	}
 	return &signalprocessingv1alpha1.PriorityAssignment{
-		Priority:   "P1",
+		Priority:   signalprocessingv1alpha1.PriorityP1,
 		Source:     "mock",
 		AssignedAt: metav1.Now(),
 	}, nil

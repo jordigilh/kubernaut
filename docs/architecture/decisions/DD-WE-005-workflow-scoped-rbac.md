@@ -1,8 +1,8 @@
-# DD-WE-005: Workflow-Scoped RBAC via Schema-Declared Permissions
+# DD-WE-005: Per-Workflow ServiceAccount Reference
 
-**Version**: 1.1
-**Date**: 2026-02-23
-**Status**: ✅ APPROVED
+**Version**: 2.0
+**Date**: 2026-03-04
+**Status**: ✅ APPROVED (v2.0 supersedes v1.x schema-declared RBAC approach)
 **Author**: WorkflowExecution Team
 **Reviewers**: Platform Team, Gateway Team
 
@@ -27,9 +27,20 @@ During the `hpa-maxed` demo scenario, the workflow job needed `get` and `patch` 
 
 ## Decision
 
-**Workflow schemas declare their required RBAC rules. The WE controller provisions a short-lived, scoped ServiceAccount with exactly those permissions for each workflow execution.**
+**Workflow schemas reference an optional, pre-existing ServiceAccount. The WE controller uses that SA for the Job/PipelineRun. If no SA is specified, Kubernetes assigns the namespace's `default` SA.**
 
-This replaces the shared `kubernaut-workflow-runner` ClusterRole with per-execution RBAC derived from the workflow's own schema declaration.
+This replaces both the shared `kubernaut-workflow-runner` SA (v1.0) and the schema-declared RBAC provisioning approach (v1.x) with a simpler, user-managed SA reference that follows the standard Kubernetes pattern used by Tekton, Argo Workflows, Flux CD, and Knative.
+
+### Superseded Approach (v1.x): Schema-Declared RBAC
+
+v1.0-1.2 of this document proposed that workflow schemas declare RBAC rules (`spec.rbac.rules`) and the WE controller dynamically provisions per-execution SA + Role + RoleBinding. This was rejected because:
+
+- The WE controller required `escalate`/`bind` privileges, enlarging its threat vector
+- Per-execution RBAC lifecycle (create + cleanup 4 resources) added latency and complexity
+- Cross-namespace orphan cleanup required label-based sweeping
+- Schema deny-list validation was needed to prevent dangerous permissions
+
+The SA-reference approach eliminates all of these concerns. See issues #185, #186, #187 (closed, superseded by #481).
 
 ---
 
@@ -86,48 +97,67 @@ Per-execution SA (wfe-<hash>)
 
 ---
 
-### Scenario 3: Schema-Declared RBAC (Selected)
+### Scenario 3: Schema-Declared RBAC (Superseded by Scenario 4)
 
 The workflow schema includes an `rbac` section that explicitly declares the Kubernetes RBAC rules the workflow requires. The WE controller uses these rules to provision a scoped SA per execution.
 
+**Pros**:
+- Explicit RBAC declaration, auditable, precise for multi-resource workflows
+
+**Cons**:
+- WE controller requires `escalate`/`bind` privileges (enlarged threat vector)
+- Per-execution RBAC lifecycle adds latency and complexity (4 resources to create/cleanup)
+- Cross-namespace orphan cleanup required
+- Schema deny-list validation needed
+
+**Decision**: Superseded by Scenario 4
+
+---
+
+### Scenario 4: Per-Workflow ServiceAccount Reference (Selected)
+
+The workflow schema includes an optional `serviceAccountName` field in the `execution` section. Operators pre-create ServiceAccounts with appropriate RBAC in the execution namespace. The WE controller uses the referenced SA for the Job/PipelineRun without any RBAC management.
+
 ```yaml
-# spec.rbac in RemediationWorkflow CRD
 spec:
-  rbac:
-    rules:
-      - apiGroups: ["autoscaling"]
-        resources: ["horizontalpodautoscalers"]
-        verbs: ["get", "patch"]
+  execution:
+    engine: job
+    serviceAccountName: "hpa-workflow-sa"  # pre-created by operator
+    bundle: "ghcr.io/kubernaut-cicd/test-workflows/patch-hpa-job@sha256:..."
 ```
 
 ```
-Per-execution SA (wfe-<hash>)
-  ├── ClusterRoleBinding → built-in "view" (read-only cluster-wide)
-  └── RoleBinding → Role in target namespace
-      └── Rules from workflow schema declaration
+Operator pre-creates:
+  ├── ServiceAccount "hpa-workflow-sa" in kubernaut-workflows
+  ├── Role in target namespace (get, patch HPA)
+  └── RoleBinding binding SA → Role
+
+WFE execution:
+  └── Job runs as "hpa-workflow-sa" (from wfe.spec.executionConfig.serviceAccountName)
 ```
 
 **Pros**:
-- Explicit: workflow authors declare exactly what their workflow needs
-- Auditable: the RBAC declaration is stored in the workflow catalog alongside the schema, visible during review and approval
-- Precise: supports multi-resource workflows (e.g., patch HPA + read ConfigMap)
-- Immutable: RBAC rules are registered with the schema, not embedded in the container image where they could drift
-- Extensible: future policy engines can validate rules at registration time
+- WE controller requires zero RBAC management privileges (no `escalate`/`bind`)
+- Standard Kubernetes pattern (Tekton, Argo Workflows, Flux CD, Knative all use this)
+- Users manage their own security posture; platform does not dictate allowed permissions
+- No per-execution overhead (SA reused across executions of the same workflow)
+- No orphan sweep, deny-list validation, or SSAR preflight needed
+- Decouples SA provisioning from workflow registration
 
 **Cons**:
-- Requires schema extension and catalog storage update
-- Workflow authors must understand Kubernetes RBAC rules
-- Slightly more complex registration flow
+- Operators must create SAs separately (not automated by the platform)
+- No schema-level audit of intended permissions (trade-off for simplicity)
+- If SA is missing, Job creation fails at K8s level (clear error, but not caught at registration time)
 
 **Decision**: Selected
 
 ---
 
-## Implementation
+## Implementation (v2.0)
 
 ### Workflow Schema Extension
 
-Add an `rbac` field to the workflow schema spec:
+Add an optional `serviceAccountName` field to the `execution` section:
 
 ```yaml
 apiVersion: kubernaut.ai/v1alpha1
@@ -138,18 +168,13 @@ spec:
   version: "1.0.0"
   actionType: PatchHPA
 
-  rbac:
-    rules:
-      - apiGroups: ["autoscaling"]
-        resources: ["horizontalpodautoscalers"]
-        verbs: ["get", "patch"]
-
   labels:
     severity: [low, medium, high, critical]
     # ...
 
   execution:
     engine: job
+    serviceAccountName: "hpa-workflow-sa"  # pre-created by operator
     bundle: quay.io/kubernaut-cicd/test-workflows/patch-hpa-job@sha256:...
 
   parameters:
@@ -161,154 +186,87 @@ spec:
       required: true
 ```
 
-### Go Types
+### Behavior
 
-```go
-// WorkflowSchema has Version, Description, Maintainers as direct fields (issue #329).
-// WorkflowName is derived from CRD metadata.name by the parser.
-type WorkflowSchema struct {
-    WorkflowName   string                 `yaml:"-" json:"workflowName"`  // from CRD metadata.name
-    Version        string                 `yaml:"version" json:"version"`
-    Description    WorkflowDescription   `yaml:"description" json:"description"`
-    Maintainers    []WorkflowMaintainer   `yaml:"maintainers,omitempty" json:"maintainers,omitempty"`
-    ActionType     string                 `yaml:"actionType" json:"actionType"`
-    RBAC           *WorkflowRBAC          `yaml:"rbac,omitempty" json:"rbac,omitempty"`
-    Labels         WorkflowSchemaLabels   `yaml:"labels" json:"labels"`
-    // ... existing fields
-}
-
-// WorkflowRBAC declares the Kubernetes RBAC rules the workflow requires.
-type WorkflowRBAC struct {
-    Rules []WorkflowRBACRule `yaml:"rules" json:"rules" validate:"required,min=1,dive"`
-}
-
-// WorkflowRBACRule mirrors rbacv1.PolicyRule for workflow permission declarations.
-type WorkflowRBACRule struct {
-    APIGroups []string `yaml:"apiGroups" json:"apiGroups" validate:"required"`
-    Resources []string `yaml:"resources" json:"resources" validate:"required"`
-    Verbs     []string `yaml:"verbs" json:"verbs" validate:"required"`
-}
-```
-
-### Per-Execution RBAC Lifecycle
-
-```
-WFE Pending
-  │
-  ├─ 1. Parse RBAC rules from WorkflowExecution spec (propagated from catalog)
-  ├─ 2. Create SA "wfe-<hash>" in kubernaut-workflows
-  ├─ 3. Create ClusterRoleBinding → built-in "view" for SA
-  ├─ 4. Create Role in target namespace with declared rules
-  ├─ 5. Create RoleBinding in target namespace binding SA → Role
-  ├─ 6. Create Job/PipelineRun with SA = "wfe-<hash>"
-  │
-  │  ... workflow executes ...
-  │
-  ├─ 7. Job completes
-  ├─ 8. Cleanup: delete CRB, Role, RoleBinding (SA garbage-collected via Job OwnerRef)
-  │
-  └─ WFE Completed/Failed
-```
-
-### RBAC Resource Naming
-
-All per-execution RBAC resources use deterministic names derived from the WFE:
-
-| Resource | Name | Namespace | Cleanup |
-|----------|------|-----------|---------|
-| ServiceAccount | `wfe-<hash>` | `kubernaut-workflows` | OwnerRef to Job |
-| ClusterRoleBinding | `wfe-<hash>-reader` | cluster-scoped | Explicit delete in Cleanup() |
-| Role | `wfe-<hash>-writer` | target namespace | Explicit delete in Cleanup() |
-| RoleBinding | `wfe-<hash>-writer` | target namespace | Explicit delete in Cleanup() |
-
-All resources are labeled with `kubernaut.ai/workflow-execution: <wfe-name>` for orphan detection.
-
-### Cluster-Scoped Targets
-
-For cluster-scoped resources (e.g., `Node/worker-1`), the write permissions use a ClusterRole + ClusterRoleBinding instead of a namespaced Role:
-
-| Resource | Name | Cleanup |
-|----------|------|---------|
-| ClusterRole | `wfe-<hash>-writer` | Explicit delete in Cleanup() |
-| ClusterRoleBinding | `wfe-<hash>-writer` | Explicit delete in Cleanup() |
-
-### WE Controller Permissions
-
-The WE controller's own ClusterRole needs permissions to manage the per-execution RBAC:
-
-```yaml
-# Additional rules for the workflowexecution-controller ClusterRole
-- apiGroups: [""]
-  resources: ["serviceaccounts"]
-  verbs: ["create", "delete", "get"]
-- apiGroups: ["rbac.authorization.k8s.io"]
-  resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
-  verbs: ["create", "delete", "get", "bind", "escalate"]
-```
+- If `serviceAccountName` is specified: Job/PipelineRun runs as that SA
+- If `serviceAccountName` is absent: K8s assigns the namespace's `default` SA (standard K8s behavior)
+- **Ansible engine (Issue #501)**: When `serviceAccountName` is specified, the AnsibleExecutor uses the K8s TokenRequest API to obtain a short-lived bearer token scoped to that SA. The token is injected into AWX as an ephemeral credential. When absent, the controller's own in-cluster SA credentials are used (Issue #500 fallback). If the API server shortens the granted token TTL below the WFE execution timeout, a `TokenTTLInsufficient` condition is set on the WFE and a `TokenTTLShortened` K8s warning event is emitted.
+- WE controller has zero SA management responsibilities
+- The shared `kubernaut-workflow-runner` SA and its ClusterRole/ClusterRoleBinding are removed
 
 ### Data Flow: Schema Registration to Execution
 
 ```
-1. Workflow author writes schema with rbac.rules
-2. DataStorage stores RBAC rules in workflow catalog
-3. HAPI selects workflow → returns RBAC rules in SelectedWorkflow
-4. RO creates WFE CRD with rbacRules from SelectedWorkflow
-5. WE controller reads rbacRules from WFE spec
-6. WE controller provisions scoped SA + Role + RoleBinding
-7. Job/PipelineRun runs with scoped SA
-8. WE controller cleans up RBAC resources on completion
+1. Workflow author writes schema with execution.serviceAccountName (optional)
+2. DS parser extracts serviceAccountName; DS stores in service_account_name column
+3. HAPI selects workflow → DS response includes serviceAccountName
+4. HAPI validator extracts service_account_name → injects into selected_workflow
+5. AA response processor maps service_account_name → SelectedWorkflow.ServiceAccountName
+6. RO creator propagates ServiceAccountName → WFE.Spec.ServiceAccountName (top-level, engine-agnostic)
+7. WE executor reads Spec.ServiceAccountName:
+   - Job: sets PodSpec.ServiceAccountName
+   - Tekton: sets TaskRunTemplate.ServiceAccountName
+   - Ansible: calls TokenRequest API for a short-lived bearer token → injects into AWX as credential
+8. K8s runs Pod as specified SA (Job/Tekton), or AWX playbook authenticates with the per-workflow token (Ansible)
 ```
 
-### WFE CRD Extension
+### SA Lifecycle (Operator-Managed)
 
-```go
-type WorkflowExecutionSpec struct {
-    // ... existing fields
-
-    // RBACRules declares the Kubernetes RBAC rules for this execution.
-    // Propagated from the workflow schema's rbac.rules field.
-    // When empty, the execution falls back to the shared kubernaut-workflow-runner SA.
-    RBACRules []RBACRule `json:"rbacRules,omitempty"`
-}
-
-type RBACRule struct {
-    APIGroups []string `json:"apiGroups"`
-    Resources []string `json:"resources"`
-    Verbs     []string `json:"verbs"`
-}
-```
-
-### Backward Compatibility
-
-Workflows without `rbac` in their schema fall back to the existing shared `kubernaut-workflow-runner` SA. This allows incremental migration: existing workflows continue to work, new workflows opt in to scoped RBAC.
-
-### Future Enhancement: Instance-Level Scoping via `resourceNames` (Pending #184)
-
-Once issue #184 (propagate full GVK through the pipeline) is implemented, the WE controller
-can further narrow write permissions to the specific target resource instance using Kubernetes
-`resourceNames` field:
+Operators create SAs, Roles, and RoleBindings independently:
 
 ```yaml
-# Future: WE controller injects resourceNames for the target resource rule only
-- apiGroups: ["autoscaling"]
-  resources: ["horizontalpodautoscalers"]
-  resourceNames: ["api-frontend"]    # injected by WE from targetResource
-  verbs: ["get", "patch"]
+# ServiceAccount in execution namespace
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hpa-workflow-sa
+  namespace: kubernaut-workflows
 
-# Non-target rules remain namespace-scoped (no resourceNames)
-- apiGroups: [""]
-  resources: ["configmaps"]
-  verbs: ["get", "list"]
+# Role in target namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hpa-workflow-role
+  namespace: demo-hpa
+rules:
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "patch"]
+
+# RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hpa-workflow-binding
+  namespace: demo-hpa
+subjects:
+  - kind: ServiceAccount
+    name: hpa-workflow-sa
+    namespace: kubernaut-workflows
+roleRef:
+  kind: Role
+  name: hpa-workflow-role
+  apiGroup: rbac.authorization.k8s.io
 ```
 
-The matching logic requires both the API group and plural resource name from the WFE spec to
-identify which rule corresponds to the target resource. This avoids false-positive matches
-when multiple rules share the same resource name across different API groups.
+### WFE CRD (No Change Required)
 
-**This enhancement is deferred until #184 provides the full GVK in the WFE spec.** Without the
-API group, matching on resource name alone carries a small risk of misapplying `resourceNames`
-to the wrong rule. The current design (namespace-scoped Role without `resourceNames`) provides
-meaningful blast radius reduction while remaining safe.
+`ExecutionConfig.ServiceAccountName` already exists on the WFE CRD. This feature activates it:
+
+```go
+type ExecutionConfig struct {
+    Timeout            *metav1.Duration `json:"timeout,omitempty"`
+    ServiceAccountName string           `json:"serviceAccountName,omitempty"`
+}
+```
+
+### WE Controller Changes
+
+- Remove `DefaultServiceAccountName` constant (`kubernaut-workflow-runner`)
+- Remove `ServiceAccountName` field from reconciler struct
+- Executors read SA from `wfe.Spec.ExecutionConfig.ServiceAccountName` instead of struct field
+- If SA is empty, field is omitted from PodSpec/TaskRunTemplate (K8s assigns namespace default)
+- No `escalate`/`bind` permissions needed on the WE controller ClusterRole
 
 ---
 
@@ -316,14 +274,21 @@ meaningful blast radius reduction while remaining safe.
 
 | Component | Team | Change |
 |-----------|------|--------|
-| Workflow schema types | DataStorage | Add `RBAC` field to `WorkflowSchema` |
-| DataStorage API | DataStorage | Store and return RBAC rules with catalog entries |
-| HAPI workflow selection | HAPI | Pass RBAC rules through `SelectedWorkflow` response |
-| RO controller | RemediationOrchestrator | Propagate `rbacRules` from SelectedWorkflow to WFE spec |
-| WFE CRD | WorkflowExecution | Add `rbacRules` field |
-| WE controller | WorkflowExecution | Provision and clean up per-execution RBAC |
-| WE Helm chart | WorkflowExecution | Update controller ClusterRole, deprecate shared SA |
-| Workflow schemas | Workflow Authors | Add `rbac` section to existing schemas |
+| Workflow schema types | DataStorage | Add `ServiceAccountName` to `WorkflowExecution` struct |
+| DS parser | DataStorage | `ExtractServiceAccountName()` extraction function |
+| DS DB | DataStorage | `service_account_name TEXT` column in catalog |
+| DS API/OAS | DataStorage | `serviceAccountName` field in REST response |
+| HAPI validator | HAPI | Extract `service_account_name` from DS response |
+| HAPI result parser | HAPI | Inject `service_account_name` into `selected_workflow` |
+| AA response processor | AIAnalysis | Map to `SelectedWorkflow.ServiceAccountName` |
+| RO creator | RemediationOrchestrator | Propagate SA to `WFE.Spec.ExecutionConfig.ServiceAccountName` |
+| WFE CRD | WorkflowExecution | No change (field already exists) |
+| WE executors | WorkflowExecution | Read SA from WFE spec, remove hardcoded default |
+| WE controller | WorkflowExecution | Remove `ServiceAccountName` field, `DefaultServiceAccountName` |
+| WE config | WorkflowExecution | Remove `ServiceAccount` from config struct |
+| WE Helm chart | WorkflowExecution | Remove `kubernaut-workflow-runner` SA, ClusterRole, CRB |
+| RW CRD types | RemediationWorkflow | Add `ServiceAccountName` to execution section |
+| Demo workflows | Demo Team | Add `serviceAccountName` + operator SA manifests |
 
 ---
 
@@ -331,35 +296,35 @@ meaningful blast radius reduction while remaining safe.
 
 ### Positive
 
-1. **Least-privilege**: Each workflow execution runs with only the permissions it declares
-2. **Auditable**: RBAC requirements are part of the workflow schema, visible during review
-3. **No permission creep**: The shared ClusterRole does not grow as new resource types are added
-4. **Isolation**: Concurrent executions have independent, scoped permissions
-5. **Self-documenting**: The schema declares what the workflow does (parameters) and what it needs (RBAC)
+1. **Minimal threat vector**: WE controller requires zero RBAC management privileges (no `escalate`/`bind`)
+2. **Standard pattern**: Follows Tekton, Argo Workflows, Flux CD, and Knative SA assignment
+3. **User-managed security**: Operators control exactly what each workflow can do
+4. **No per-execution overhead**: SA is reused across executions of the same workflow
+5. **Simple implementation**: No RBACProvisioner, orphan sweep, deny-list, or SSAR preflight
+6. **Decoupled provisioning**: SA lifecycle is independent of workflow registration
 
 ### Negative
 
-1. **Per-execution overhead**: Creating and cleaning up 4 RBAC resources per execution adds latency (~200-500ms)
-   - Mitigation: Negligible compared to workflow execution time (typically 30s+)
-2. **Complexity**: WE controller manages RBAC lifecycle in addition to job lifecycle
-   - Mitigation: Encapsulated in a dedicated `RBACProvisioner` component
-3. **Cross-namespace cleanup**: Role and RoleBinding in target namespace cannot use OwnerReferences
-   - Mitigation: Explicit cleanup in `Cleanup()` + orphan detection via labels
+1. **Manual SA creation**: Operators must create SAs, Roles, and RoleBindings before workflow registration
+   - Mitigation: Documentation with copy-paste manifests per demo scenario
+2. **No registration-time validation**: Missing SA is caught at Job creation time, not registration
+   - Mitigation: K8s provides clear error; operators can test SA existence with `kubectl auth can-i`
+3. **No schema-level audit**: Permissions are not declared in the workflow schema
+   - Mitigation: Operators can use `kubectl describe rolebinding` to audit
 
 ### Neutral
 
-1. **Workflow authors**: Must declare RBAC rules, but this aligns with the existing Kubernetes permission model they already understand
-2. **Existing workflows**: Continue to work via backward-compatible fallback to shared SA
+1. **Existing workflows**: `kubernaut-workflow-runner` is removed; workflows without SA use K8s `default` SA
+2. **Ansible engine (Issue #501)**: `serviceAccountName` triggers a TokenRequest for per-workflow credentials; when absent, the controller SA is used as fallback (#500)
 
 ---
 
 ## Related Documents
 
-- [DD-WE-002: Dedicated Execution Namespace](./DD-WE-002-dedicated-execution-namespace.md) -- Establishes `kubernaut-workflows` namespace pattern (this DD extends it)
-- [DD-WE-003: Resource Lock Persistence](./DD-WE-003-resource-lock-persistence.md) -- Deterministic naming used for RBAC resources
-- [Issue #183: EM spec hash empty for HPA](https://github.com/jordigilh/kubernaut/issues/183) -- Triggered investigation into RBAC gaps
-- [Issue #184: Propagate full GVK through pipeline](https://github.com/jordigilh/kubernaut/issues/184) -- Prerequisite for `resourceNames` instance-level scoping
-- [Issue #186: Implement workflow-scoped RBAC](https://github.com/jordigilh/kubernaut/issues/186) -- Implementation tracking
+- [DD-WE-002: Dedicated Execution Namespace](./DD-WE-002-dedicated-execution-namespace.md) -- Establishes `kubernaut-workflows` namespace pattern (SA lives here)
+- [Issue #481: Per-workflow ServiceAccount reference](https://github.com/jordigilh/kubernaut/issues/481) -- Implementation tracking
+- [Issue #185, #186, #187](https://github.com/jordigilh/kubernaut/issues/185) -- Superseded RBAC stanza issues (closed)
+- [Test Plan](../../tests/481/TEST_PLAN.md) -- 23 test scenarios (16 unit + 7 integration)
 
 ---
 
@@ -370,3 +335,4 @@ meaningful blast radius reduction while remaining safe.
 | 2026-02-23 | 1.0 | Initial decision - schema-declared RBAC replacing shared SA |
 | 2026-03-02 | 1.1 | Added `schemaVersion: "1.1"` to RBAC schema examples (#255) |
 | 2026-03-11 | 1.2 | Updated schema structure per #329: metadata.name, spec.version, spec.description, spec.maintainers; removed WorkflowSchemaMetadata |
+| 2026-03-04 | 2.0 | **Major revision**: Replaced schema-declared RBAC (Scenario 3) with per-workflow SA reference (Scenario 4). Supersedes #185/#186/#187 in favor of #481. Removes all RBAC provisioning, orphan sweep, deny-list. WE controller no longer needs escalate/bind. |

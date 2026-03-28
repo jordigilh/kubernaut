@@ -26,6 +26,8 @@
 
 **All PipelineRuns execute in `kubernaut-workflows` namespace** (industry standard pattern).
 
+**DD-WE-005 v2.0**: Kubernaut does **not** create a shared runner ServiceAccount via Helm. Operators pre-create **per-workflow** ServiceAccounts (example name `my-workflow-sa`) and RBAC, then reference them from the workflow schema (`serviceAccountName`). If omitted, Kubernetes uses the namespace default ServiceAccount.
+
 ```yaml
 # 1. Create dedicated namespace for workflow execution
 apiVersion: v1
@@ -33,31 +35,28 @@ kind: Namespace
 metadata:
   name: kubernaut-workflows
 ---
-# 2. ServiceAccount for PipelineRun execution
+# 2. Example: ServiceAccount for one workflow (you choose names and rules)
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kubernaut-workflow-runner
+  name: my-workflow-sa
   namespace: kubernaut-workflows
 ---
-# 3. ClusterRole with cross-namespace remediation permissions
+# 3. Example ClusterRole — scope to what this workflow needs (least privilege)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kubernaut-workflow-runner
+  name: my-workflow-remediation
 rules:
-  # Remediation actions on workloads (all namespaces)
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets", "daemonsets"]
     verbs: ["get", "list", "patch", "update"]
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "delete"]
-  # Node operations (cluster-scoped)
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list", "patch", "cordon", "uncordon"]
-  # ConfigMaps/Secrets for workflow data
   - apiGroups: [""]
     resources: ["configmaps", "secrets"]
     verbs: ["get", "list"]
@@ -66,20 +65,20 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kubernaut-workflow-runner
+  name: my-workflow-sa-remediation
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: kubernaut-workflow-runner
+  name: my-workflow-remediation
 subjects:
 - kind: ServiceAccount
-  name: kubernaut-workflow-runner
+  name: my-workflow-sa
   namespace: kubernaut-workflows
 ```
 
 **Benefits**:
 - ✅ All remediation activity in one namespace (audit clarity)
-- ✅ Single ServiceAccount with cluster-wide permissions
+- ✅ Per-workflow ServiceAccounts and RBAC (no shared platform runner SA)
 - ✅ Easy PipelineRun cleanup and resource quota management
 - ✅ No pollution of application namespaces
 
@@ -330,6 +329,7 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 **Changelog**:
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.4 | 2026-03-21 | **DD-WE-005 v2.0**: README setup uses operator-managed `my-workflow-sa` + example bindings; removed Helm-provisioned shared runner SA. |
 | 4.3 | 2026-02-18 | **Issue #91**: Removed `kubernaut.ai/component` label from Namespace example (ownerRef sufficient for CRD ownership) |
 | 4.2 | 2025-12-06 | Added links to new user guides, troubleshooting, and runbook in centralized docs/ |
 | 4.1 | 2025-12-04 | **Implementation Complete** - Full controller implemented with tests |

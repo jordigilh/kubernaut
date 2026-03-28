@@ -31,23 +31,29 @@ import rego.v1
 # Returns: {"environment": string, "source": string}
 # Priority: namespace label > namespace name prefix > default
 
-default environment := {"environment": "unknown", "source": "default"}
+default environment := {"environment": "Unknown", "source": "default"}
 
-environment := {"environment": lower(env), "source": "namespace-labels"} if {
+# Normalize known tier names to PascalCase for output; pass through other label values (evaluator normalizes at boundary).
+environment := {"environment": env_out, "source": "namespace-labels"} if {
     env := input.namespace.labels["kubernaut.ai/environment"]
     env != ""
+    env_out := object.get(
+        {"production": "Production", "staging": "Staging", "development": "Development", "test": "Test", "unknown": "Unknown"},
+        lower(env),
+        env,
+    )
 }
-environment := {"environment": "production", "source": "namespace-labels"} if {
+environment := {"environment": "Production", "source": "namespace-labels"} if {
     not input.namespace.labels["kubernaut.ai/environment"]
-    input.namespace.labels["env"] == "production"
+    lower(input.namespace.labels["env"]) == "production"
 }
-environment := {"environment": "staging", "source": "namespace-labels"} if {
+environment := {"environment": "Staging", "source": "namespace-labels"} if {
     not input.namespace.labels["kubernaut.ai/environment"]
-    input.namespace.labels["env"] == "staging"
+    lower(input.namespace.labels["env"]) == "staging"
 }
-environment := {"environment": "development", "source": "namespace-labels"} if {
+environment := {"environment": "Development", "source": "namespace-labels"} if {
     not input.namespace.labels["kubernaut.ai/environment"]
-    input.namespace.labels["env"] == "development"
+    lower(input.namespace.labels["env"]) == "development"
 }
 
 # ========== Severity Determination (BR-SP-105) ==========
@@ -57,18 +63,18 @@ environment := {"environment": "development", "source": "namespace-labels"} if {
 
 default severity := "unknown"
 
-severity := "critical" if { input.signal.severity == "critical" }
-severity := "critical" if { input.signal.severity == "sev1" }
-severity := "critical" if { input.signal.severity == "p0" }
-severity := "high" if { input.signal.severity == "high" }
-severity := "high" if { input.signal.severity == "sev2" }
-severity := "high" if { input.signal.severity == "p2" }
-severity := "medium" if { input.signal.severity == "medium" }
-severity := "medium" if { input.signal.severity == "warning" }
-severity := "medium" if { input.signal.severity == "sev3" }
-severity := "low" if { input.signal.severity == "low" }
-severity := "low" if { input.signal.severity == "info" }
-severity := "low" if { input.signal.severity == "sev4" }
+severity := "critical" if { lower(input.signal.severity) == "critical" }
+severity := "critical" if { lower(input.signal.severity) == "sev1" }
+severity := "critical" if { lower(input.signal.severity) == "p0" }
+severity := "high" if { lower(input.signal.severity) == "high" }
+severity := "high" if { lower(input.signal.severity) == "sev2" }
+severity := "high" if { lower(input.signal.severity) == "p2" }
+severity := "medium" if { lower(input.signal.severity) == "medium" }
+severity := "medium" if { lower(input.signal.severity) == "warning" }
+severity := "medium" if { lower(input.signal.severity) == "sev3" }
+severity := "low" if { lower(input.signal.severity) == "low" }
+severity := "low" if { lower(input.signal.severity) == "info" }
+severity := "low" if { lower(input.signal.severity) == "sev4" }
 
 # ========== Priority Assignment (BR-SP-070) ==========
 # Returns: {"priority": string, "policy_name": string}
@@ -77,19 +83,19 @@ severity := "low" if { input.signal.severity == "sev4" }
 default priority := {"priority": "P3", "policy_name": "default"}
 
 priority := {"priority": "P0", "policy_name": "production-critical"} if {
-    environment.environment == "production"
+    environment.environment == "Production"
     severity == "critical"
 }
 priority := {"priority": "P1", "policy_name": "production-high"} if {
-    environment.environment == "production"
+    environment.environment == "Production"
     severity == "high"
 }
 priority := {"priority": "P1", "policy_name": "staging-critical"} if {
-    environment.environment == "staging"
+    environment.environment == "Staging"
     severity == "critical"
 }
 priority := {"priority": "P2", "policy_name": "staging-any"} if {
-    environment.environment == "staging"
+    environment.environment == "Staging"
     severity != "critical"
 }
 

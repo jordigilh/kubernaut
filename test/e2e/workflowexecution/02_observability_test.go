@@ -878,13 +878,13 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				"StartTime should be set for SLA calculation")
 			Expect(completedWFE.Status.CompletionTime).ToNot(BeNil(),
 				"CompletionTime should be set for SLA calculation")
-			Expect(completedWFE.Status.Duration).ToNot(BeEmpty(),
+			Expect(completedWFE.Status.Duration).ToNot(BeNil(),
 				"Duration should be set for metrics")
 
 			GinkgoWriter.Printf("✅ BR-WE-003: Status sync complete\n")
 			GinkgoWriter.Printf("   StartTime: %v\n", completedWFE.Status.StartTime.Time)
 			GinkgoWriter.Printf("   CompletionTime: %v\n", completedWFE.Status.CompletionTime.Time)
-			GinkgoWriter.Printf("   Duration: %s\n", completedWFE.Status.Duration)
+			GinkgoWriter.Printf("   Duration: %v\n", completedWFE.Status.Duration)
 		})
 	})
 })

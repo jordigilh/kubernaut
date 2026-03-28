@@ -69,7 +69,7 @@ var _ = Describe("GetControllerNamespace [ADR-057]", func() {
 		})
 
 		It("returns error when environment variable is set to empty string", func() {
-			os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "")
+			Expect(os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "")).To(Succeed())
 
 			_, err := scope.GetControllerNamespace()
 			Expect(err).To(HaveOccurred())

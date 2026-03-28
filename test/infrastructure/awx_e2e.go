@@ -130,7 +130,7 @@ func installAWXOperator(namespace, kubeconfigPath string, writer io.Writer) erro
 	if err != nil {
 		return fmt.Errorf("failed to create temp dir for kustomize: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	kustomization := fmt.Sprintf(`apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

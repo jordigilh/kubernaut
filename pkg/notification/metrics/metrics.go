@@ -172,6 +172,40 @@ func NewMetrics() *Metrics {
 	return m
 }
 
+// RecordDeliveryAttempt records a delivery attempt (success or failure).
+func (m *Metrics) RecordDeliveryAttempt(namespace, channel, status string) {
+	m.DeliveryAttemptsTotal.WithLabelValues(channel, status).Inc()
+}
+
+// RecordDeliveryDuration records the time taken for a delivery.
+func (m *Metrics) RecordDeliveryDuration(namespace, channel string, durationSeconds float64) {
+	m.DeliveryDuration.WithLabelValues(channel).Observe(durationSeconds)
+}
+
+// UpdatePhaseCount updates the count of notifications in a specific phase.
+func (m *Metrics) UpdatePhaseCount(namespace, phase string, count float64) {
+	m.ReconcilerActive.WithLabelValues(phase).Set(count)
+}
+
+// RecordDeliveryRetries records the number of retries for a notification.
+func (m *Metrics) RecordDeliveryRetries(namespace string, retries float64) {
+	for i := 0; i < int(retries); i++ {
+		m.DeliveryRetriesTotal.WithLabelValues("slack", "retry").Inc()
+	}
+}
+
+// RecordSlackRetry records a Slack API retry attempt.
+func (m *Metrics) RecordSlackRetry(namespace, reason string) {
+	m.DeliveryRetriesTotal.WithLabelValues("slack", reason).Inc()
+}
+
+// UpdateCircuitBreakerState updates the circuit breaker state metric for a channel.
+// States: 0=closed, 1=open, 2=half-open (gobreaker.State values).
+// Callers holding a gobreaker.State should pass int(state).
+func (m *Metrics) UpdateCircuitBreakerState(channel string, state int) {
+	m.ChannelCircuitBreakerState.WithLabelValues(channel).Set(float64(state))
+}
+
 // NewMetricsWithRegistry creates metrics with custom registry (for testing).
 // Tests should use this to avoid polluting the global registry.
 // Per DD-METRICS-001: Test isolation pattern.

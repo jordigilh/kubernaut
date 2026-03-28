@@ -17,6 +17,8 @@ limitations under the License.
 package audit
 
 import (
+	"strings"
+
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
@@ -77,7 +79,7 @@ func toSignalProcessingAuditPayloadNormalizedSeverity(value string) api.SignalPr
 }
 
 func toSignalProcessingAuditPayloadEnvironment(value string) api.SignalProcessingAuditPayloadEnvironment {
-	switch value {
+	switch strings.ToLower(value) {
 	case "production":
 		return api.SignalProcessingAuditPayloadEnvironmentProduction
 	case "staging":
@@ -145,7 +147,7 @@ func toSignalProcessingAuditPayloadSignalMode(value string) api.SignalProcessing
 }
 
 func toSignalProcessingAuditPayloadCriticality(value string) api.SignalProcessingAuditPayloadCriticality {
-	switch value {
+	switch strings.ToLower(value) {
 	case "critical":
 		return api.SignalProcessingAuditPayloadCriticalityCritical
 	case "high":

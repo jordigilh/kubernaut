@@ -102,7 +102,7 @@ var _ = Describe("UpdateRemediationRequestStatus", func() {
 		It("should update multiple status fields in single call", func() {
 			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.OverallPhase = remediationv1.PhaseSkipped
-				rr.Status.SkipReason = "ResourceBusy"
+				rr.Status.SkipReason = remediationv1.SkipReasonResourceBusy
 				rr.Status.DuplicateOf = "parent-rr"
 				rr.Status.Message = "Skipped due to resource lock"
 				return nil
@@ -110,7 +110,7 @@ var _ = Describe("UpdateRemediationRequestStatus", func() {
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseSkipped))
-			Expect(rr.Status.SkipReason).To(Equal("ResourceBusy"))
+			Expect(rr.Status.SkipReason).To(Equal(remediationv1.SkipReasonResourceBusy))
 			Expect(rr.Status.DuplicateOf).To(Equal("parent-rr"))
 			Expect(rr.Status.Message).To(Equal("Skipped due to resource lock"))
 		})

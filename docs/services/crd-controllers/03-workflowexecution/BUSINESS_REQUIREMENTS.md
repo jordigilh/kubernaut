@@ -347,7 +347,7 @@ Label `reason` for skip_total: `ResourceBusy`, `RecentlyRemediated`.
 - Integration: Rapid sequential WorkflowExecution creation
 - E2E: Storm scenario with duplicate signals
 
-**Related DDs**: DD-CONTRACT-001 v1.4 (Resource Locking), DD-GATEWAY-008 (Storm Aggregation)
+**Related DDs**: DD-CONTRACT-001 v1.4 (Resource Locking); DD-GATEWAY-008 (storm aggregation, **superseded** — removed per DD-GATEWAY-015)
 
 ---
 

@@ -88,47 +88,47 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			// Create RR that will be blocked
 			rr := createRemediationRequestWithFingerprint(ns, "rr-cooldown-expired", fingerprint)
 
-		// Wait for controller to fully process the RR (reach Processing phase)
-		// RC-11 pattern: Wait for Processing + ObservedGeneration to prevent race
-		// where controller overwrites our manually set Blocked phase
-		Eventually(func() bool {
-			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rr); err != nil {
-				return false
-			}
-			return rr.Status.OverallPhase == remediationv1.PhaseProcessing &&
-				rr.Status.ObservedGeneration == rr.Generation
-		}, timeout, interval).Should(BeTrue(),
-			"RR should reach Processing phase with ObservedGeneration matching Generation")
+			// Wait for controller to fully process the RR (reach Processing phase)
+			// RC-11 pattern: Wait for Processing + ObservedGeneration to prevent race
+			// where controller overwrites our manually set Blocked phase
+			Eventually(func() bool {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rr); err != nil {
+					return false
+				}
+				return rr.Status.OverallPhase == remediationv1.PhaseProcessing &&
+					rr.Status.ObservedGeneration == rr.Generation
+			}, timeout, interval).Should(BeTrue(),
+				"RR should reach Processing phase with ObservedGeneration matching Generation")
 
-		// Manually set RR to Blocked state with BlockedUntil in the PAST
-		// This simulates a cooldown that has already expired
-		pastTime := metav1.NewTime(time.Now().Add(-10 * time.Second))
-		Eventually(func() error {
-			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rr); err != nil {
-				return err
-			}
+			// Manually set RR to Blocked state with BlockedUntil in the PAST
+			// This simulates a cooldown that has already expired
+			pastTime := metav1.NewTime(time.Now().Add(-10 * time.Second))
+			Eventually(func() error {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rr); err != nil {
+					return err
+				}
 
-			rr.Status.OverallPhase = remediationv1.PhaseBlocked
-			rr.Status.BlockedUntil = &pastTime
-			rr.Status.BlockReason = string(remediationv1.BlockReasonConsecutiveFailures)
-			rr.Status.Message = "Blocked due to consecutive failures (test scenario)"
-			rr.Status.ObservedGeneration = rr.Generation
+				rr.Status.OverallPhase = remediationv1.PhaseBlocked
+				rr.Status.BlockedUntil = &pastTime
+				rr.Status.BlockReason = remediationv1.BlockReasonConsecutiveFailures
+				rr.Status.Message = "Blocked due to consecutive failures (test scenario)"
+				rr.Status.ObservedGeneration = rr.Generation
 
-			return k8sClient.Status().Update(ctx, rr)
-		}, timeout, interval).Should(Succeed())
+				return k8sClient.Status().Update(ctx, rr)
+			}, timeout, interval).Should(Succeed())
 
-		// Verify RR transitions from Blocked → Failed after controller detects expired cooldown
-		// BR-ORCH-042: Controller checks BlockedUntil on each reconcile
-		Eventually(func(g Gomega) {
-			g.Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rr)).To(Succeed())
-			g.Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
-		}, timeout, interval).Should(Succeed(),
-			"RR should transition to Failed when BlockedUntil is in the past")
+			// Verify RR transitions from Blocked → Failed after controller detects expired cooldown
+			// BR-ORCH-042: Controller checks BlockedUntil on each reconcile
+			Eventually(func(g Gomega) {
+				g.Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rr)).To(Succeed())
+				g.Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
+			}, timeout, interval).Should(Succeed(),
+				"RR should transition to Failed when BlockedUntil is in the past")
 
 			// Verify failure details indicate cooldown expiry
 			Expect(rr.Status.FailurePhase).To(And(
 				Not(BeNil()),
-				HaveValue(Equal("blocked")),
+				HaveValue(Equal(remediationv1.FailurePhaseBlocked)),
 			))
 			Expect(rr.Status.FailureReason).To(And(
 				Not(BeNil()),
@@ -204,7 +204,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			rr2Updated := &remediationv1.RemediationRequest{}
 			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ROControllerNamespace}, rr2Updated)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rr2Updated.Status.BlockReason).To(Equal("DuplicateInProgress"),
+			Expect(rr2Updated.Status.BlockReason).To(Equal(remediationv1.BlockReasonDuplicateInProgress),
 				"BlockReason should be DuplicateInProgress")
 			Expect(rr2Updated.Status.BlockMessage).To(ContainSubstring("Duplicate"),
 				"BlockMessage should mention duplicate")
@@ -236,83 +236,83 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			// Use a specific fingerprint for this test
 			fingerprint := "d1e2f3a4b5c6d1e2f3a4b5c6d1e2f3a4b5c6d1e2f3a4b5c6d1e2f3a4b5c6d1e2"
 
-		GinkgoWriter.Println("📋 Creating first RemediationRequest (RR1)...")
-		rr1 := createRemediationRequestWithFingerprint(ns, "rr-signal-complete-1", fingerprint)
+			GinkgoWriter.Println("📋 Creating first RemediationRequest (RR1)...")
+			rr1 := createRemediationRequestWithFingerprint(ns, "rr-signal-complete-1", fingerprint)
 
-		// Wait for RR1 to transition to Processing (RO creates child SP)
-		GinkgoWriter.Println("⏳ Waiting for RR1 to reach Processing phase...")
-		Eventually(func() string {
-			rr := &remediationv1.RemediationRequest{}
-			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ROControllerNamespace}, rr)
-			if err != nil {
-				return ""
+			// Wait for RR1 to transition to Processing (RO creates child SP)
+			GinkgoWriter.Println("⏳ Waiting for RR1 to reach Processing phase...")
+			Eventually(func() string {
+				rr := &remediationv1.RemediationRequest{}
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ROControllerNamespace}, rr)
+				if err != nil {
+					return ""
+				}
+				return string(rr.Status.OverallPhase)
+			}, timeout, interval).Should(Equal("Processing"), "RR1 should reach Processing phase")
+
+			// Phase 1 Pattern: Manually force RR to Completed by deleting child CRDs
+			// This simulates terminal phase without needing to complete full orchestration pipeline
+			// (no child controllers running - SP, AI, WE)
+
+			GinkgoWriter.Println("✅ Simulating RR1 completion by deleting child CRDs (Phase 1: manual control)...")
+
+			// Delete SignalProcessing CRD if it exists
+			spName := "sp-rr-signal-complete-1"
+			sp := &signalprocessingv1.SignalProcessing{}
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
+			if err == nil {
+				GinkgoWriter.Println("🗑️  Deleting SP CRD to unblock RR1...")
+				Expect(k8sClient.Delete(ctx, sp)).To(Succeed())
 			}
-			return string(rr.Status.OverallPhase)
-		}, timeout, interval).Should(Equal("Processing"), "RR1 should reach Processing phase")
 
-		// Phase 1 Pattern: Manually force RR to Completed by deleting child CRDs
-		// This simulates terminal phase without needing to complete full orchestration pipeline
-		// (no child controllers running - SP, AI, WE)
+			// Manually set RR1 to Completed (without child CRDs, RO won't override)
+			GinkgoWriter.Println("✅ Manually setting RR1 to Completed...")
+			Eventually(func() error {
+				rr := &remediationv1.RemediationRequest{}
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ROControllerNamespace}, rr)
+				if err != nil {
+					return err
+				}
+				rr.Status.OverallPhase = "Completed"
+				return k8sClient.Status().Update(ctx, rr)
+			}, timeout, interval).Should(Succeed(), "RR1 should be manually marked as Completed")
 
-		GinkgoWriter.Println("✅ Simulating RR1 completion by deleting child CRDs (Phase 1: manual control)...")
+			// FIX: Explicitly wait for RR1 to be fully completed with ObservedGeneration
+			// This ensures the controller has observed the completion before we create RR2
+			// Prevents cache lag from causing RR2 to see stale RR1 status
+			GinkgoWriter.Println("⏳ Waiting for RR1 completion to be observed by controller...")
+			Eventually(func() bool {
+				rr := &remediationv1.RemediationRequest{}
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ROControllerNamespace}, rr)
+				if err != nil {
+					return false
+				}
+				// Controller must have observed the completion (ObservedGeneration == Generation)
+				// AND status must be Completed
+				return rr.Status.OverallPhase == "Completed" &&
+					rr.Status.ObservedGeneration == rr.Generation
+			}, timeout, interval).Should(BeTrue(), "RR1 should be fully completed with ObservedGeneration == Generation")
 
-		// Delete SignalProcessing CRD if it exists
-		spName := "sp-rr-signal-complete-1"
-		sp := &signalprocessingv1.SignalProcessing{}
-		err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
-		if err == nil {
-			GinkgoWriter.Println("🗑️  Deleting SP CRD to unblock RR1...")
-			Expect(k8sClient.Delete(ctx, sp)).To(Succeed())
-		}
+			GinkgoWriter.Println("✅ RR1 completed and observed by controller")
 
-		// Manually set RR1 to Completed (without child CRDs, RO won't override)
-		GinkgoWriter.Println("✅ Manually setting RR1 to Completed...")
-		Eventually(func() error {
-			rr := &remediationv1.RemediationRequest{}
-			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ROControllerNamespace}, rr)
-			if err != nil {
-				return err
-			}
-			rr.Status.OverallPhase = "Completed"
-			return k8sClient.Status().Update(ctx, rr)
-		}, timeout, interval).Should(Succeed(), "RR1 should be manually marked as Completed")
+			// Create second RR with SAME fingerprint (should NOT be blocked now)
+			GinkgoWriter.Println("📋 Creating second RemediationRequest (RR2) with same fingerprint...")
+			rr2 := createRemediationRequestWithFingerprint(ns, "rr-signal-complete-2", fingerprint)
 
-		// FIX: Explicitly wait for RR1 to be fully completed with ObservedGeneration
-		// This ensures the controller has observed the completion before we create RR2
-		// Prevents cache lag from causing RR2 to see stale RR1 status
-		GinkgoWriter.Println("⏳ Waiting for RR1 completion to be observed by controller...")
-		Eventually(func() bool {
-			rr := &remediationv1.RemediationRequest{}
-			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ROControllerNamespace}, rr)
-			if err != nil {
-				return false
-			}
-			// Controller must have observed the completion (ObservedGeneration == Generation)
-			// AND status must be Completed
-			return rr.Status.OverallPhase == "Completed" &&
-				rr.Status.ObservedGeneration == rr.Generation
-		}, timeout, interval).Should(BeTrue(), "RR1 should be fully completed with ObservedGeneration == Generation")
-
-		GinkgoWriter.Println("✅ RR1 completed and observed by controller")
-
-		// Create second RR with SAME fingerprint (should NOT be blocked now)
-		GinkgoWriter.Println("📋 Creating second RemediationRequest (RR2) with same fingerprint...")
-		rr2 := createRemediationRequestWithFingerprint(ns, "rr-signal-complete-2", fingerprint)
-
-		// Verify RR2 is NOT blocked (should proceed to Pending/Processing)
-		// FIX: Increased timeout to 120s for parallel execution environment (12 processes)
-		// Parallel execution can be slower due to resource contention
-		GinkgoWriter.Println("⏳ Waiting for RR2 to proceed (not blocked)...")
-		Eventually(func() bool {
-			rr := &remediationv1.RemediationRequest{}
-			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ROControllerNamespace}, rr)
-			if err != nil {
-				return false
-			}
-			phase := string(rr.Status.OverallPhase)
-			// Should be Pending or Processing, NOT Blocked
-			return phase == "Pending" || phase == "Processing" || phase == "Analyzing"
-		}, 120*time.Second, interval).Should(BeTrue(), "RR2 should proceed (original RR is no longer active)")
+			// Verify RR2 is NOT blocked (should proceed to Pending/Processing)
+			// FIX: Increased timeout to 120s for parallel execution environment (12 processes)
+			// Parallel execution can be slower due to resource contention
+			GinkgoWriter.Println("⏳ Waiting for RR2 to proceed (not blocked)...")
+			Eventually(func() bool {
+				rr := &remediationv1.RemediationRequest{}
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ROControllerNamespace}, rr)
+				if err != nil {
+					return false
+				}
+				phase := string(rr.Status.OverallPhase)
+				// Should be Pending or Processing, NOT Blocked
+				return phase == "Pending" || phase == "Processing" || phase == "Analyzing"
+			}, 120*time.Second, interval).Should(BeTrue(), "RR2 should proceed (original RR is no longer active)")
 
 			GinkgoWriter.Println("✅ TEST PASSED: RR allowed after original completed")
 		})
@@ -423,7 +423,7 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
 			g.Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
-			g.Expect(rr.Status.BlockReason).To(Equal(string(remediationv1.BlockReasonRecentlyRemediated)))
+			g.Expect(rr.Status.BlockReason).To(Equal(remediationv1.BlockReasonRecentlyRemediated))
 		}, timeout, interval).Should(Succeed(),
 			"RR must be blocked as RecentlyRemediated when Kind casing matches WFE")
 

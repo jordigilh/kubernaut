@@ -57,6 +57,7 @@ class TestRemediationWorkflow(unittest.TestCase):
                 schema_digest = 'sha256:abc123...',
                 execution_bundle = 'ghcr.io/kubernaut/workflows/oomkill@sha256:abc123...',
                 execution_bundle_digest = 'sha256:abc123...',
+                service_account_name = 'hpa-workflow-sa',
                 labels = datastorage.models.mandatory_labels.MandatoryLabels(
                     severity = ["critical"], 
                     component = 'pod', 
@@ -72,8 +73,9 @@ class TestRemediationWorkflow(unittest.TestCase):
                     stateful = True, 
                     helm_managed = True, 
                     network_isolated = True, 
-                    service_mesh = 'istio', ),
-                status = 'active',
+                    service_mesh = 'istio', 
+                    resource_quota_constrained = True, ),
+                status = 'Active',
                 disabled_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
                 disabled_by = '',
                 disabled_reason = '',
@@ -114,7 +116,7 @@ class TestRemediationWorkflow(unittest.TestCase):
                     component = 'pod', 
                     environment = ["staging","production"], 
                     priority = 'P0', ),
-                status = 'active',
+                status = 'Active',
         )
         """
 

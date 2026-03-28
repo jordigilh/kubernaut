@@ -142,10 +142,10 @@ func (b *RequestBuilder) buildEnrichmentResults(enrichment sharedtypes.Enrichmen
 			clientBC.ServiceOwner.SetTo(bc.ServiceOwner)
 		}
 		if bc.Criticality != "" {
-			clientBC.Criticality.SetTo(bc.Criticality)
+			clientBC.Criticality.SetTo(string(bc.Criticality))
 		}
 		if bc.SLARequirement != "" {
-			clientBC.SlaRequirement.SetTo(bc.SLARequirement)
+			clientBC.SlaRequirement.SetTo(string(bc.SLARequirement))
 		}
 		result.BusinessClassification.SetTo(clientBC)
 	}

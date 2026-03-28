@@ -53,13 +53,6 @@ class TestIncidentRequest(unittest.TestCase):
                 is_duplicate = True,
                 occurrence_count = 56,
                 deduplication_window_minutes = 56,
-                is_storm = True,
-                storm_signal_count = 56,
-                storm_window_minutes = 56,
-                storm_type = '',
-                affected_resources = [
-                    ''
-                    ],
                 firing_time = '',
                 received_time = '',
                 first_seen = '',

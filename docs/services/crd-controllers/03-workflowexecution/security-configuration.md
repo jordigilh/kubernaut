@@ -1,20 +1,23 @@
 ## Security Configuration
 
-**Version**: 4.0
-**Last Updated**: 2025-12-03
+**Version**: 4.2
+**Last Updated**: 2026-03-21
 **CRD API Group**: `kubernaut.ai/v1alpha1`
-**Status**: ✅ Updated for Dedicated Execution Namespace (DD-WE-002)
+**Status**: ✅ Updated for Dedicated Execution Namespace (DD-WE-002) and per-workflow ServiceAccounts (DD-WE-005 v2.0)
 
 ---
 
 ## Changelog
+
+### Version 4.2 (2026-03-21)
+- ✅ **DD-WE-005 v2.0**: PipelineRun execution uses operator-managed **per-workflow** ServiceAccounts referenced from the workflow schema (`serviceAccountName`). Kubernaut no longer ships a platform-managed runner SA via Helm. If no SA is set, Kubernetes uses the execution namespace’s default ServiceAccount.
 
 ### Version 4.1 (2026-02-18)
 - ✅ **Issue #91**: Removed `kubernaut.ai/component` label from Namespace example; `kubernaut.ai/workflow-execution` KEPT on PipelineRun (external resource)
 
 ### Version 4.0 (2025-12-03)
 - ✅ **Added**: Dedicated execution namespace RBAC (DD-WE-002)
-- ✅ **Added**: kubernaut-workflow-runner ClusterRole for cross-namespace operations
+- ✅ **Added**: Example ClusterRole pattern for workflow execution SAs (cross-namespace remediation)
 - ✅ **Updated**: All PipelineRuns run in `kubernaut-workflows` namespace
 
 ### Version 3.1 (2025-12-02)
@@ -24,18 +27,20 @@
 
 ---
 
-## Two ServiceAccounts Required
+## ServiceAccounts
 
 | ServiceAccount | Namespace | Purpose | RBAC |
 |----------------|-----------|---------|------|
 | `workflowexecution-controller` | `kubernaut-system` | Controller operations | ClusterRole |
-| `kubernaut-workflow-runner` | `kubernaut-workflows` | PipelineRun execution | ClusterRole |
+| **Per-workflow** (example: `my-workflow-sa`) | `kubernaut-workflows` | PipelineRun execution (you create and bind) | ClusterRole or Role, as required by that workflow |
+
+**DD-WE-005 v2.0**: Operators **pre-create** one (or more) ServiceAccounts per workflow—or per class of workflows—with RBAC scoped to what those workflows need. The workflow catalog/schema sets `serviceAccountName` (propagated to `WorkflowExecution.spec.executionConfig.serviceAccountName`). If that field is empty, Tekton/Kubernetes uses the **default** ServiceAccount for `kubernaut-workflows`.
 
 ---
 
-## 1. PipelineRun Execution RBAC (DD-WE-002)
+## 1. PipelineRun Execution RBAC (DD-WE-002 + DD-WE-005 v2.0)
 
-**ServiceAccount for workflow execution with cross-namespace permissions**:
+**Example**: a dedicated SA for one workflow, with cross-namespace remediation permissions (adjust rules to least privilege per workflow):
 
 ```yaml
 # Dedicated namespace for all PipelineRuns
@@ -44,18 +49,18 @@ kind: Namespace
 metadata:
   name: kubernaut-workflows
 ---
-# ServiceAccount for PipelineRun execution
+# Operator-managed SA for a specific workflow (name is your choice)
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kubernaut-workflow-runner
+  name: my-workflow-sa
   namespace: kubernaut-workflows
 ---
-# ClusterRole with cross-namespace remediation permissions
+# ClusterRole with cross-namespace remediation permissions (example only)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kubernaut-workflow-runner
+  name: my-workflow-remediation
 rules:
   # Workload remediation (all namespaces)
   - apiGroups: ["apps"]
@@ -81,14 +86,14 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kubernaut-workflow-runner
+  name: my-workflow-sa-remediation
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: kubernaut-workflow-runner
+  name: my-workflow-remediation
 subjects:
 - kind: ServiceAccount
-  name: kubernaut-workflow-runner
+  name: my-workflow-sa
   namespace: kubernaut-workflows
 ```
 

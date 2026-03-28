@@ -31,7 +31,7 @@ import (
 )
 
 // ========================================
-// CONDITION TYPES (7 per BR-ORCH-043)
+// CONDITION TYPES (8 per BR-ORCH-043, Issue #546)
 // ========================================
 
 const (
@@ -58,6 +58,12 @@ const (
 
 	// ConditionNotificationDelivered indicates notification delivery outcome
 	ConditionNotificationDelivered = "NotificationDelivered"
+
+	// ConditionPreRemediationHashCaptured indicates whether the RO successfully
+	// captured the pre-remediation spec hash for effectiveness assessment (Issue #546).
+	// True when hash was captured; False when hash capture was degraded (e.g., RBAC Forbidden).
+	// The condition Message contains the degradation reason when False.
+	ConditionPreRemediationHashCaptured = "PreRemediationHashCaptured"
 )
 
 // ========================================
@@ -104,6 +110,12 @@ const (
 	ReasonDeliverySucceeded = "DeliverySucceeded"
 	ReasonDeliveryFailed   = "DeliveryFailed"
 	ReasonUserCancelled    = "UserCancelled"
+)
+
+// PreRemediationHashCaptured reasons (Issue #546)
+const (
+	ReasonHashCaptured      = "HashCaptured"
+	ReasonHashCaptureFailed = "HashCaptureFailed"
 )
 
 // ========================================
@@ -217,4 +229,17 @@ func SetNotificationDelivered(rr *remediationv1.RemediationRequest, succeeded bo
 		status = metav1.ConditionFalse
 	}
 	SetCondition(rr, ConditionNotificationDelivered, status, reason, message, m)
+}
+
+// SetPreRemediationHashCaptured sets the PreRemediationHashCaptured condition (Issue #546).
+// captured=true: hash was captured successfully.
+// captured=false: hash capture was degraded (message should contain the degradation reason).
+func SetPreRemediationHashCaptured(rr *remediationv1.RemediationRequest, captured bool, message string, m *rometrics.Metrics) {
+	status := metav1.ConditionTrue
+	reason := ReasonHashCaptured
+	if !captured {
+		status = metav1.ConditionFalse
+		reason = ReasonHashCaptureFailed
+	}
+	SetCondition(rr, ConditionPreRemediationHashCaptured, status, reason, message, m)
 }

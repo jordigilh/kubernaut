@@ -2,7 +2,7 @@
 
 **Status**: APPROVED
 **Decision Date**: 2026-02-12
-**Version**: 1.4
+**Version**: 1.5
 **Confidence**: 96%
 **Applies To**: HolmesGPT API (Python, authoritative implementation per ADR-056)
 
@@ -16,7 +16,8 @@
 | 1.1 | 2026-02-20 | Architecture Team | Update consumer guidance: detected labels are now both used as DS query filters AND surfaced to the LLM as read-only `cluster_context` in `list_available_actions` response. `failedDetections` fields excluded from both uses. See ADR-056 v1.3, DD-HAPI-017 v1.3. |
 | 1.2 | 2026-02-25 | Architecture Team | Add non-workload target context building (Issue #196). When the RCA target is a PodDisruptionBudget, `_build_k8s_context` resolves pod context from the PDB's selector. Node target deferred to Issue #203. New K8s client method: `list_pods_by_selector`. New conformance vectors: DL-HP-10, DL-EC-04. |
 | 1.3 | 2026-02-24 | Architecture Team | Add ArgoCD v3 annotation-based tracking support (Issue #218). ArgoCD v3.x defaults to `argocd.argoproj.io/tracking-id` annotation instead of v2's `argocd.argoproj.io/instance` label. Updated GitOps detection precedence table, input contract (`deploymentDetails.annotations`), and conformance vectors (DL-HP-11 through DL-HP-14). Removed stale reference to SP Go implementation (removed per ADR-056). |
-| 1.4 | 2026-03-24 | Architecture Team | **Issue #524**: Holmes tool rename — owner chain for namespaced targets is resolved by `get_namespaced_resource_context`; cluster-scoped targets use `get_cluster_resource_context` (same `resource_context` toolset). Updated references from legacy `get_resource_context`. |
+| 1.4 | 2026-03-04 | Architecture Team | Add Detection 8: ResourceQuota Constrained (Issue #366). New field `resourceQuotaConstrained` (bool). `detect_labels()` returns `Tuple[labels_dict, quota_summary]` (Option C). Quota summary contains `{resource}_hard` / `{resource}_used` raw K8s quantity strings. LimitRange deferred to follow-up. |
+| 1.5 | 2026-03-24 | Architecture Team | **Issue #524**: Holmes tool rename — owner chain for namespaced targets is resolved by `get_namespaced_resource_context`; cluster-scoped targets use `get_cluster_resource_context` (same `resource_context` toolset). Updated references from legacy `get_resource_context`. |
 
 ---
 
@@ -63,8 +64,9 @@ All implementations MUST produce a `DetectedLabels` object with the following fi
 | HelmManaged | bool | `helmManaged` | True if managed by Helm |
 | NetworkIsolated | bool | `networkIsolated` | True if any NetworkPolicy exists in namespace |
 | ServiceMesh | string | `serviceMesh` | `"istio"`, `"linkerd"`, or `""` |
+| ResourceQuotaConstrained | bool | `resourceQuotaConstrained` | True if any ResourceQuota exists in namespace (v1.4, #366) |
 
-Valid values for `FailedDetections` entries: `gitOpsManaged`, `pdbProtected`, `hpaEnabled`, `stateful`, `helmManaged`, `networkIsolated`, `serviceMesh`.
+Valid values for `FailedDetections` entries: `gitOpsManaged`, `gitOpsTool`, `pdbProtected`, `hpaEnabled`, `stateful`, `helmManaged`, `networkIsolated`, `serviceMesh`, `resourceQuotaConstrained`.
 
 ---
 
@@ -248,6 +250,27 @@ HAPI computes labels for the **RCA target resource** (not the signal source). Th
 
 **Note**: Istio is checked before Linkerd. If both annotations are present, Istio takes precedence.
 
+### Detection 8: ResourceQuota Constrained (v1.4, #366)
+
+**Fields set**: `resourceQuotaConstrained` (bool)
+
+**Input required**: `namespace` (from KubernetesContext)
+
+**K8s API call**: `CoreV1Api.list_namespaced_resource_quota(namespace=namespace)`
+
+**Return value**: `detect_labels()` returns `Tuple[Optional[Dict], Optional[Dict]]` where the second element is a quota summary dict or None.
+
+**Detection Logic**:
+
+1. Call `list_resource_quotas(namespace)` -> `(items, error_string)`
+2. If error: `resourceQuotaConstrained=false`, add `"resourceQuotaConstrained"` to `failedDetections`, quota summary = None, return
+3. If `len(items) == 0`: `resourceQuotaConstrained=false`, quota summary = None, return
+4. If `len(items) >= 1`: `resourceQuotaConstrained=true`, build quota summary from items
+
+**Quota summary structure**: For each resource type across all quota objects, emit `{resource}_hard` and `{resource}_used` keys with raw K8s quantity strings (e.g., `"4"`, `"8Gi"`, `"2500m"`). First-wins per resource key when multiple quotas define the same resource. No `_remaining` keys -- the LLM computes the difference from `_hard` and `_used`.
+
+**FailedDetections**: `"resourceQuotaConstrained"` added to the array when the API call fails (RBAC, timeout, network).
+
 ---
 
 ## FailedDetections Contract
@@ -264,7 +287,7 @@ This section defines the critical distinction between "resource absent" and "det
 
 ### Rules
 
-1. Only K8s API-based detections (PDB, HPA, NetworkPolicy) can produce FailedDetections entries
+1. Only K8s API-based detections (PDB, HPA, NetworkPolicy, ResourceQuota) can produce FailedDetections entries
 2. Annotation/label-based detections (GitOps, Stateful, Helm, ServiceMesh) NEVER produce FailedDetections entries because they use already-fetched metadata
 3. Consumers MUST check FailedDetections before trusting a `false` value. A `false` with the field in FailedDetections means "unknown," not "absent"
 4. A `true` value is always trustworthy regardless of FailedDetections (the query succeeded and found a match)
@@ -298,6 +321,7 @@ Detections MUST execute in this order. API-based detections are independent and 
 5. Helm detection (no API call)
 6. NetworkPolicy detection (API call)
 7. ServiceMesh detection (no API call)
+8. ResourceQuota detection (API call) -- v1.4, #366
 
 Detections 2, 3, and 6 are the only ones that make K8s API calls. They MUST NOT short-circuit on failure -- all detections MUST be attempted regardless of prior failures. This ensures maximum information collection even when some queries fail.
 
@@ -455,7 +479,7 @@ Per ADR-056, DetectedLabels computation was relocated from SP to HAPI. SP's orig
 
 ---
 
-**Document Version**: 1.4
+**Document Version**: 1.5
 **Last Updated**: March 24, 2026
 **Status**: APPROVED
 **Authority**: Authoritative detection specification for DetectedLabels (HAPI)
@@ -463,4 +487,4 @@ Per ADR-056, DetectedLabels computation was relocated from SP to HAPI. SP's orig
 
 **Confidence Gap (4%)**:
 - Python K8s client behavioral differences (~2%): The Kubernetes Python client (`kubernetes` package) has different error types and timeout behavior than Go's controller-runtime. Label selector matching utilities may differ. Mitigated by conformance test vectors.
-- RBAC configuration parity (~2%): HAPI's service account needs PDB, HPA, and NetworkPolicy RBAC. If RBAC is not granted, all API-based detections fail gracefully via FailedDetections. Mitigated by Helm chart RBAC templates.
+- RBAC configuration parity (~2%): HAPI's service account needs PDB, HPA, NetworkPolicy, and ResourceQuota RBAC. If RBAC is not granted, all API-based detections fail gracefully via FailedDetections. Mitigated by Helm chart RBAC templates.

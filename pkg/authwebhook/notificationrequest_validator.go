@@ -160,7 +160,7 @@ func ExtractDeliveryChannels(attempts []notificationv1.DeliveryAttempt) []string
 	seen := make(map[string]bool)
 	for _, da := range attempts {
 		if da.Channel != "" {
-			seen[da.Channel] = true
+			seen[string(da.Channel)] = true
 		}
 	}
 	channels := make([]string, 0, len(seen))

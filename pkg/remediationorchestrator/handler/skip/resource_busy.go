@@ -86,7 +86,7 @@ func (h *ResourceBusyHandler) Handle(
 	// This code path will not execute in V1.0 (WFE never created if should be skipped)
 	err := helpers.UpdateRemediationRequestStatus(ctx, h.ctx.Client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseSkipped
-		rr.Status.SkipReason = "ResourceBusy"
+		rr.Status.SkipReason = remediationv1.SkipReasonResourceBusy
 		// V1.0: SkipDetails removed, skip information now in RR.Status
 		// rr.Status.DuplicateOf would be set by RO routing logic before WFE creation
 

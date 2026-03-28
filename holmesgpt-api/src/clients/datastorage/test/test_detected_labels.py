@@ -44,7 +44,8 @@ class TestDetectedLabels(unittest.TestCase):
                 stateful = True,
                 helm_managed = True,
                 network_isolated = True,
-                service_mesh = 'istio'
+                service_mesh = 'istio',
+                resource_quota_constrained = True
             )
         else:
             return DetectedLabels(

@@ -135,7 +135,9 @@ tkn bundle push ghcr.io/kubernaut/test-workflows/failing:v1.0.0 \
 
 ```bash
 kubectl create namespace kubernaut-workflows
-kubectl create serviceaccount kubernaut-workflow-runner -n kubernaut-workflows
+# DD-WE-005 v2.0: Per-workflow SA is user-managed.
+# Create a SA with appropriate RBAC if your workflow requires it.
+# kubectl create serviceaccount my-workflow-sa -n kubernaut-workflows
 ```
 
 ### 2. Apply RBAC for Workflow Runner
@@ -145,10 +147,10 @@ cat <<EOF | kubectl apply -f -
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kubernaut-workflow-runner
+  name: my-workflow-runner
 subjects:
   - kind: ServiceAccount
-    name: kubernaut-workflow-runner
+    name: my-workflow-sa
     namespace: kubernaut-workflows
 roleRef:
   kind: ClusterRole
@@ -177,7 +179,7 @@ spec:
     MESSAGE: "Testing WorkflowExecution controller"
     DELAY_SECONDS: "5"
   executionConfig:
-    serviceAccountName: "kubernaut-workflow-runner"
+    serviceAccountName: "my-workflow-sa"
     timeoutMinutes: 10
 EOF
 ```
@@ -201,7 +203,7 @@ tkn pipelinerun logs -n kubernaut-workflows -f
 - [ ] `tkn` CLI installed
 - [ ] OCI bundles pushed (ttl.sh for local, ghcr.io for CI)
 - [ ] `kubernaut-workflows` namespace created
-- [ ] `kubernaut-workflow-runner` ServiceAccount with permissions
+- [ ] Per-workflow ServiceAccount with RBAC (DD-WE-005 v2.0, optional)
 - [ ] WorkflowExecution CRD installed
 - [ ] WorkflowExecution controller running
 

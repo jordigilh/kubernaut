@@ -125,7 +125,7 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 	}
 	// ADR-055: TargetInOwnerChain removed - remediationTarget is now in RCA
 	if analysis.Status.Reason != "" {
-		payload.Reason.SetTo(analysis.Status.Reason)
+		payload.Reason.SetTo(string(analysis.Status.Reason))
 	}
 	if analysis.Status.SubReason != "" {
 		payload.SubReason.SetTo(analysis.Status.SubReason)
@@ -639,7 +639,7 @@ func (c *AuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianal
 	}
 	// ADR-055: TargetInOwnerChain removed - remediationTarget is now in RCA
 	if analysis.Status.Reason != "" {
-		payload.Reason.SetTo(analysis.Status.Reason)
+		payload.Reason.SetTo(string(analysis.Status.Reason))
 	}
 	if analysis.Status.SubReason != "" {
 		payload.SubReason.SetTo(analysis.Status.SubReason)

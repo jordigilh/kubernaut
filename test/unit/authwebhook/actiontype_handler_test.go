@@ -29,6 +29,7 @@ import (
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	admissionv1 "k8s.io/api/admission/v1"
 	authv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -617,7 +618,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 
 			updated := &atv1alpha1.ActionType{}
 			Expect(fakeK8s.Get(ctx, client.ObjectKeyFromObject(at), updated)).To(Succeed())
-			Expect(updated.Status.CatalogStatus).To(Equal("active"))
+			Expect(updated.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive))
 			Expect(updated.Status.RegisteredBy).To(Equal(testUserEmail))
 			Expect(updated.Status.RegisteredAt).NotTo(BeNil())
 			Expect(updated.Status.PreviouslyExisted).To(BeFalse())

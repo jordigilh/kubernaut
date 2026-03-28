@@ -36,7 +36,7 @@ class RemediationHistoryEntry(BaseModel):
     remediation_uid: StrictStr = Field(description="RemediationRequest UID (correlation key)", alias="remediationUID")
     signal_fingerprint: Optional[StrictStr] = Field(default=None, description="Signal fingerprint that triggered the remediation", alias="signalFingerprint")
     signal_type: Optional[StrictStr] = Field(default=None, description="Type of signal (e.g. HighCPULoad, OOMKilled)", alias="signalType")
-    workflow_type: Optional[StrictStr] = Field(default=None, description="Workflow type applied (null if escalated to human review)", alias="workflowType")
+    action_type: Optional[StrictStr] = Field(default=None, description="Action type applied (null if escalated to human review)", alias="actionType")
     outcome: Optional[StrictStr] = Field(default=None, description="Remediation outcome (Success, Failed, Escalated)")
     effectiveness_score: Optional[Union[Annotated[float, Field(le=1, strict=True, ge=0)], Annotated[int, Field(le=1, strict=True, ge=0)]]] = Field(default=None, description="EM effectiveness score (0.0-1.0). Null if assessment not yet completed or remediation was escalated. ", alias="effectivenessScore")
     signal_resolved: Optional[StrictBool] = Field(default=None, description="Whether the originating signal was resolved after remediation", alias="signalResolved")
@@ -49,7 +49,7 @@ class RemediationHistoryEntry(BaseModel):
     completed_at: datetime = Field(description="When the remediation was completed", alias="completedAt")
     assessment_reason: Optional[StrictStr] = Field(default=None, description="Reason/status of the effectiveness assessment. Null if assessment not yet completed. When \"spec_drift\", the effectiveness score is unreliable (hard-overridden to 0.0) because the target resource spec was modified during the assessment window (DD-EM-002 v1.1). ", alias="assessmentReason")
     assessed_at: Optional[datetime] = Field(default=None, description="When the effectiveness assessment was completed", alias="assessedAt")
-    __properties: ClassVar[List[str]] = ["remediationUID", "signalFingerprint", "signalType", "workflowType", "outcome", "effectivenessScore", "signalResolved", "hashMatch", "preRemediationSpecHash", "postRemediationSpecHash", "healthChecks", "metricDeltas", "sideEffects", "completedAt", "assessmentReason", "assessedAt"]
+    __properties: ClassVar[List[str]] = ["remediationUID", "signalFingerprint", "signalType", "actionType", "outcome", "effectivenessScore", "signalResolved", "hashMatch", "preRemediationSpecHash", "postRemediationSpecHash", "healthChecks", "metricDeltas", "sideEffects", "completedAt", "assessmentReason", "assessedAt"]
 
     @field_validator('hash_match')
     def hash_match_validate_enum(cls, value):
@@ -114,10 +114,10 @@ class RemediationHistoryEntry(BaseModel):
         # override the default output from pydantic by calling `to_dict()` of metric_deltas
         if self.metric_deltas:
             _dict['metricDeltas'] = self.metric_deltas.to_dict()
-        # set to None if workflow_type (nullable) is None
+        # set to None if action_type (nullable) is None
         # and model_fields_set contains the field
-        if self.workflow_type is None and "workflow_type" in self.model_fields_set:
-            _dict['workflowType'] = None
+        if self.action_type is None and "action_type" in self.model_fields_set:
+            _dict['actionType'] = None
 
         # set to None if effectiveness_score (nullable) is None
         # and model_fields_set contains the field
@@ -149,7 +149,7 @@ class RemediationHistoryEntry(BaseModel):
             "remediationUID": obj.get("remediationUID"),
             "signalFingerprint": obj.get("signalFingerprint"),
             "signalType": obj.get("signalType"),
-            "workflowType": obj.get("workflowType"),
+            "actionType": obj.get("actionType"),
             "outcome": obj.get("outcome"),
             "effectivenessScore": obj.get("effectivenessScore"),
             "signalResolved": obj.get("signalResolved"),

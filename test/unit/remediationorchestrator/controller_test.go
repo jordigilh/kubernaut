@@ -64,21 +64,9 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 
 	Describe("Reconciler", func() {
 		Context("when creating a new Reconciler", func() {
-			It("should return a non-nil Reconciler", func() {
-				Expect(reconciler).ToNot(BeNil())
-			})
-		})
-
-		Context("when checking interface compliance", func() {
-			It("should implement controller-runtime Reconciler interface", func() {
-				// Compile-time interface satisfaction check
-				var _ reconcile.Reconciler = reconciler
-				Expect(reconciler).ToNot(BeNil())
-			})
-
-			It("should have SetupWithManager method for controller registration", func() {
-				// Verify method exists (compile-time check)
-				Expect(reconciler.SetupWithManager).ToNot(BeNil())
+			It("should satisfy the controller-runtime Reconciler interface", func() {
+				var r reconcile.Reconciler = reconciler
+				Expect(r).To(BeAssignableToTypeOf(reconciler))
 			})
 		})
 	})
@@ -205,7 +193,7 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 					},
 					Status: remediationv1.RemediationRequestStatus{
 						OverallPhase: remediationv1.PhaseSkipped,
-						SkipReason:   "ResourceBusy",
+						SkipReason:   remediationv1.SkipReasonResourceBusy,
 						DuplicateOf:  "original-rr",
 					},
 				}

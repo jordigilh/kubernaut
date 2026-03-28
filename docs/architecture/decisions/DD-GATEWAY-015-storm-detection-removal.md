@@ -1,7 +1,8 @@
 # DD-GATEWAY-015: Storm Detection Logic Removal
 
 **Date**: December 13, 2025
-**Status**: 📋 PLANNED for Implementation
+**Status**: ✅ IMPLEMENTED
+**Implemented in**: v1.2
 **Deciders**: Gateway Team, Architecture Team
 **Confidence**: 90%
 **Related**: DD-GATEWAY-011, DD-GATEWAY-012, DD-GATEWAY-008, DD-AIANALYSIS-004, DD-GATEWAY-014, BR-GATEWAY-008, BR-GATEWAY-009, BR-GATEWAY-010
@@ -130,7 +131,7 @@ pkg/gateway/config/testdata/valid-config.yaml
 docs/services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md
   - Mark BR-GATEWAY-008, BR-GATEWAY-009, BR-GATEWAY-010, BR-GATEWAY-070 as REMOVED
 
-docs/architecture/decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md
+docs/architecture/decisions/DD-GATEWAY-008-storm-aggregation-windows.md
   - Add SUPERSEDED notice pointing to DD-GATEWAY-015
 
 docs/architecture/decisions/DD-GATEWAY-012-redis-free-storm-detection.md
@@ -488,7 +489,7 @@ processing:
 #### Step 2: Add SUPERSEDED Notice to Design Decisions
 
 ```diff
-# docs/architecture/decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md
+# docs/architecture/decisions/DD-GATEWAY-008-storm-aggregation-windows.md
 +# DD-GATEWAY-008: Storm Aggregation First-Alert Handling
 +
 +**Status**: ❌ **SUPERSEDED** by DD-GATEWAY-015
@@ -815,7 +816,7 @@ git push
 
 - **DD-GATEWAY-011**: Shared Status Ownership - `occurrenceCount` is authoritative
 - **DD-GATEWAY-012**: Redis-free Storm Detection - Superseded by DD-GATEWAY-015
-- **DD-GATEWAY-008**: Storm Aggregation First-Alert Handling - Superseded by DD-GATEWAY-015
+- **DD-GATEWAY-008**: Storm Aggregation Windows — superseded by DD-GATEWAY-015 ([stub](DD-GATEWAY-008-storm-aggregation-windows.md))
 - **DD-AIANALYSIS-004**: Storm Context NOT Exposed to LLM - Confirms no downstream consumers
 - **DD-GATEWAY-014**: Service-Level Circuit Breaker Deferral - Storm ≠ circuit breaker
 - **BR-GATEWAY-008**: Storm Detection - Removed
@@ -835,8 +836,8 @@ git push
 
 ---
 
-**Decision Status**: 📋 PLANNED for Implementation
-**Implementation Effort**: 7-11 hours
+**Decision Status**: ✅ IMPLEMENTED (v1.2)
+**Implementation Effort**: 7-11 hours (completed)
 **Risk**: LOW - No downstream consumers, backward-compatible
 **Rollback**: Simple (git revert)
 

@@ -47,7 +47,7 @@ type WorkflowExecutionHandler struct {
 	client                client.Client
 	scheme                *runtime.Scheme
 	metrics               *metrics.Metrics
-	transitionToFailed    func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error)
+	transitionToFailed    func(context.Context, *remediationv1.RemediationRequest, remediationv1.FailurePhase, error) (ctrl.Result, error)
 	transitionToVerifying func(context.Context, *remediationv1.RemediationRequest, string) (ctrl.Result, error)
 }
 
@@ -66,7 +66,7 @@ func NewWorkflowExecutionHandler(
 	c client.Client,
 	s *runtime.Scheme,
 	m *metrics.Metrics,
-	ttf func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error),
+	ttf func(context.Context, *remediationv1.RemediationRequest, remediationv1.FailurePhase, error) (ctrl.Result, error),
 	ttv func(context.Context, *remediationv1.RemediationRequest, string) (ctrl.Result, error),
 ) *WorkflowExecutionHandler {
 	return &WorkflowExecutionHandler{
@@ -125,7 +125,7 @@ func (h *WorkflowExecutionHandler) HandleStatus(
 		// This handler focuses on phase transition logic only.
 
 		// Delegate to reconciler's transitionToFailed() for audit emission (DD-AUDIT-003)
-		return h.transitionToFailed(ctx, rr, "workflow_execution", fmt.Errorf("WorkflowExecution failed"))
+		return h.transitionToFailed(ctx, rr, remediationv1.FailurePhaseWorkflowExecution, fmt.Errorf("WorkflowExecution failed"))
 
 	case "":
 		// Empty phase means WE was just created but controller hasn't set phase yet

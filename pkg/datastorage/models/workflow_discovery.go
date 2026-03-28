@@ -67,14 +67,15 @@ type ActionTypeEntry struct {
 // matching (DD-HAPI-016) and the StructuredDescription for workflow comparison.
 // These fields remain on the full RemediationWorkflow model for operator dashboards.
 type WorkflowDiscoveryEntry struct {
-	WorkflowID      string                `json:"workflowId"`
-	WorkflowName    string                `json:"workflowName"`
-	Name            string                `json:"name"`
-	Description     StructuredDescription `json:"description"`
-	Version         string                `json:"version"`
-	SchemaImage     string                `json:"schemaImage,omitempty"`
-	ExecutionBundle string                `json:"executionBundle,omitempty"`
-	ExecutionEngine string                `json:"executionEngine,omitempty"`
+	WorkflowID         string                `json:"workflowId"`
+	WorkflowName       string                `json:"workflowName"`
+	Name               string                `json:"name"`
+	Description        StructuredDescription `json:"description"`
+	Version            string                `json:"version"`
+	SchemaImage        string                `json:"schemaImage,omitempty"`
+	ExecutionBundle    string                `json:"executionBundle,omitempty"`
+	ExecutionEngine    string                `json:"executionEngine,omitempty"`
+	ServiceAccountName string                `json:"serviceAccountName,omitempty"`
 }
 
 // PaginationMetadata represents pagination information for discovery responses

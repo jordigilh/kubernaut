@@ -10,7 +10,7 @@ Name | Type | Description | Notes
 **workflow_name** | **str** | Name of the RemediationWorkflow CRD (metadata.name) | 
 **action** | **str** | Admission action performed | 
 **workflow_id** | **str** | DataStorage catalog UUID (set after successful registration) | [optional] 
-**catalog_status** | **str** | Catalog registration status (active, disabled, etc.) | [optional] 
+**catalog_status** | **str** | Catalog registration status (Active, Disabled, etc.) | [optional] 
 **denial_reason** | **str** | Reason for denial (only set when action&#x3D;denied) | [optional] 
 
 ## Example

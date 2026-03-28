@@ -21,13 +21,13 @@ import (
 )
 
 // RoutingAttributesFromSpec builds a routing attributes map from a NotificationRequest's
-// spec fields and metadata, replacing the previous label-based approach.
+// spec fields, typed context (flattened), and extensions, replacing the previous label-based approach.
 //
 // Issue #91: Routing now uses immutable spec fields instead of mutable labels.
 //
 // Attribute sources:
 //   - Top-level spec fields: type, severity, phase, reviewSource, priority
-//   - spec.metadata entries: skip-reason, investigation-outcome, environment, etc.
+//   - spec.context.FlattenToMap() and spec.extensions: skip-reason, investigation-outcome, environment, etc.
 func RoutingAttributesFromSpec(notification *notificationv1alpha1.NotificationRequest) map[string]string {
 	attrs := make(map[string]string)
 	if notification == nil {
@@ -45,13 +45,20 @@ func RoutingAttributesFromSpec(notification *notificationv1alpha1.NotificationRe
 		attrs[AttrPhase] = spec.Phase
 	}
 	if spec.ReviewSource != "" {
-		attrs[AttrReviewSource] = spec.ReviewSource
+		attrs[AttrReviewSource] = string(spec.ReviewSource)
 	}
 	if spec.Priority != "" {
 		attrs[AttrPriority] = string(spec.Priority)
 	}
 
-	for k, v := range spec.Metadata {
+	if spec.Context != nil {
+		for k, v := range spec.Context.FlattenToMap() {
+			if _, exists := attrs[k]; !exists {
+				attrs[k] = v
+			}
+		}
+	}
+	for k, v := range spec.Extensions {
 		if _, exists := attrs[k]; !exists {
 			attrs[k] = v
 		}
@@ -66,7 +73,7 @@ func RoutingAttributesFromSpec(notification *notificationv1alpha1.NotificationRe
 // BR-NOT-065: Channel Routing Based on Spec Fields
 //
 // This function implements the spec-field-based routing logic:
-//  1. Extract routing attributes from spec fields + metadata
+//  1. Extract routing attributes from spec fields + context + extensions
 //  2. Match attributes against routing rules (first match wins)
 //  3. Return the channels configured for the matched receiver
 //

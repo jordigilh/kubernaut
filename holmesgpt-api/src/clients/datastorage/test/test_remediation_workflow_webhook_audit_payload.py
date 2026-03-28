@@ -40,7 +40,7 @@ class TestRemediationWorkflowWebhookAuditPayload(unittest.TestCase):
                 workflow_name = 'crashloop-rollback-v1',
                 action = 'create',
                 workflow_id = '550e8400-e29b-41d4-a716-446655440000',
-                catalog_status = 'active',
+                catalog_status = 'Active',
                 denial_reason = 'data storage registration failed'
             )
         else:

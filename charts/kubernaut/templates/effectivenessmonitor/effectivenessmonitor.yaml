@@ -78,7 +78,7 @@ rules:
     resources: ["remediationrequests"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
-    resources: ["pods", "nodes", "services", "persistentvolumeclaims"]
+    resources: ["pods", "nodes", "services", "persistentvolumeclaims", "configmaps"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
@@ -163,6 +163,34 @@ spec:
         {{- include "kubernaut.podSecurityContext" .Values.effectivenessmonitor | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.effectivenessmonitor | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.effectivenessmonitor "global" .Values.global) | nindent 6 }}
+      {{- if .Values.effectivenessmonitor.external.tlsCaFile }}
+      initContainers:
+        - name: wait-for-service-ca
+          image: {{ .Values.effectivenessmonitor.initImage | default "registry.access.redhat.com/ubi10/ubi-minimal:latest" }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Waiting for service-ca.crt to be populated..."
+              while [ ! -s /etc/ssl/em/service-ca.crt ]; do
+                echo "  service-ca.crt not yet populated, retrying in 2s..."
+                sleep 2
+              done
+              echo "service-ca.crt is available ($(wc -c < /etc/ssl/em/service-ca.crt) bytes)"
+          volumeMounts:
+            - name: service-ca
+              mountPath: /etc/ssl/em
+              readOnly: true
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.effectivenessmonitor | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+      {{- end }}
       containers:
         - name: controller
           image: {{ include "kubernaut.image" (dict "service" "effectivenessmonitor" "global" .Values.global "appVersion" .Chart.AppVersion) }}

@@ -36,7 +36,7 @@ import (
 // (not Spec, which is immutable after creation).
 //
 // OWNERSHIP (per DD-GATEWAY-011):
-// - Gateway OWNS: status.deduplication, status.stormAggregation
+// - Gateway OWNS: status.deduplication
 // - RO OWNS: status.overallPhase, status.*Ref, status.timestamps
 //
 // CONFLICT HANDLING:

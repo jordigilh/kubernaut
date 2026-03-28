@@ -1,7 +1,7 @@
 # WorkflowExecution Troubleshooting Guide
 
-**Version**: v1.0
-**Last Updated**: 2025-12-06
+**Version**: v1.1
+**Last Updated**: 2026-03-21
 **Service**: WorkflowExecution Controller
 **Related**: [Runbook](../../operations/runbooks/workflowexecution-runbook.md)
 
@@ -100,7 +100,7 @@ kubectl logs -l tekton.dev/pipelineRun=<pr-name> -n kubernaut-workflows --all-co
 | **Task stuck pulling image** | Check image exists, registry credentials, network connectivity |
 | **Task waiting for resources** | Check resource quotas in `kubernaut-workflows` namespace |
 | **Task execution timeout** | Workflow may have long-running operations. Check Pipeline timeout settings. |
-| **ServiceAccount missing** | Verify `kubernaut-workflow-runner` SA exists with correct permissions |
+| **ServiceAccount missing / wrong RBAC** | Verify the SA named in `spec.executionConfig.serviceAccountName` exists in `kubernaut-workflows` (DD-WE-005 v2.0); if empty, check the namespace **default** SA |
 | **OCI bundle resolution failed** | Check bundle URL, registry authentication |
 
 **Resolution**:
@@ -111,8 +111,9 @@ kubectl get taskrun -n kubernaut-workflows -l tekton.dev/pipelineRun=<pr-name> -
 # Check pod events
 kubectl get events -n kubernaut-workflows --field-selector involvedObject.kind=Pod
 
-# Check if SA exists
-kubectl get sa kubernaut-workflow-runner -n kubernaut-workflows
+# Resolve SA from WorkflowExecution (example: my-workflow-sa)
+SA=$(kubectl get wfe <name> -n <namespace> -o jsonpath='{.spec.executionConfig.serviceAccountName}')
+if [ -z "$SA" ]; then echo "Using namespace default SA (empty serviceAccountName)"; else kubectl get sa "$SA" -n kubernaut-workflows; fi
 ```
 
 ---
@@ -149,11 +150,11 @@ tkn bundle list <bundle-url>
 # Verify bundle exists
 crane manifest <bundle-url>
 
-# Check registry auth
-kubectl get sa kubernaut-workflow-runner -n kubernaut-workflows -o jsonpath='{.imagePullSecrets}'
+# Check registry auth on the PipelineRun SA (replace my-workflow-sa or use default)
+kubectl get sa my-workflow-sa -n kubernaut-workflows -o jsonpath='{.imagePullSecrets}'
 
 # Add registry secret if missing
-kubectl patch sa kubernaut-workflow-runner -n kubernaut-workflows \
+kubectl patch sa my-workflow-sa -n kubernaut-workflows \
   -p '{"imagePullSecrets": [{"name": "registry-credentials"}]}'
 ```
 
@@ -173,29 +174,29 @@ kubectl get wfe <name> -n <namespace> -o jsonpath='{.status.failureDetails.natur
 # Check TaskRun that failed
 kubectl describe taskrun <tr-name> -n kubernaut-workflows
 
-# Check ServiceAccount permissions
-kubectl auth can-i --list --as=system:serviceaccount:kubernaut-workflows:kubernaut-workflow-runner
+# Check ServiceAccount permissions (use the SA from spec.executionConfig.serviceAccountName, e.g. my-workflow-sa)
+kubectl auth can-i --list --as=system:serviceaccount:kubernaut-workflows:my-workflow-sa
 ```
 
 **Common Causes**:
 
 | Cause | Solution |
 |-------|----------|
-| **ClusterRole missing** | Apply `kubernaut-workflow-runner` ClusterRole |
-| **ClusterRoleBinding missing** | Apply ClusterRoleBinding to SA |
+| **ClusterRole / Role missing** | Create or apply Roles/ClusterRoles with required verbs for this workflow |
+| **Binding missing** | Bind the SA used by the PipelineRun (`spec.executionConfig.serviceAccountName` or default SA) |
 | **Target namespace not accessible** | Add namespace to RBAC rules |
-| **New resource type needed** | Extend ClusterRole with new permissions |
+| **New resource type needed** | Extend the workflow’s ClusterRole/Role with new permissions |
 
 **Resolution**:
 ```bash
-# Check current permissions
-kubectl get clusterrolebinding kubernaut-workflow-runner -o yaml
+# Identify SA from WorkflowExecution
+kubectl get wfe <name> -n <namespace> -o jsonpath='{.spec.executionConfig.serviceAccountName}{"\n"}'
 
-# Verify ClusterRole exists
-kubectl get clusterrole kubernaut-workflow-runner -o yaml
+# List bindings that reference that SA (adjust name)
+kubectl get clusterrolebinding,rolebinding -A -o yaml | grep -A2 "my-workflow-sa"
 
 # Test specific permission
-kubectl auth can-i patch deployments --as=system:serviceaccount:kubernaut-workflows:kubernaut-workflow-runner -n <target-namespace>
+kubectl auth can-i patch deployments --as=system:serviceaccount:kubernaut-workflows:my-workflow-sa -n <target-namespace>
 ```
 
 ---
@@ -358,6 +359,7 @@ sum by (reason) (rate(workflowexecution_skip_total[5m]))
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v1.1 | 2026-03-21 | **DD-WE-005 v2.0**: Troubleshooting uses per-workflow SA (`my-workflow-sa` examples) and `spec.executionConfig.serviceAccountName`; no shared `kubernaut-workflow-runner`. |
 | v1.0 | 2025-12-06 | Initial release with 7 common issues |
 
 

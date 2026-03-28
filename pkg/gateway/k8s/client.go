@@ -25,7 +25,7 @@ import (
 
 // ClientInterface defines operations for RemediationRequest CRD management
 //
-// TDD GREEN: This interface enables circuit breaker integration (DD-GATEWAY-015)
+// TDD GREEN: This interface enables circuit breaker integration (DD-GATEWAY-016)
 // Both Client and ClientWithCircuitBreaker implement this interface
 //
 // Methods:

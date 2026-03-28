@@ -2,7 +2,7 @@
 
 **Version**: 4.3
 **Last Updated**: 2026-03-04
-**Status**: ✅ Aligned with ADR-044, DD-CONTRACT-001 v1.4, ADR-043, DD-WE-004, Issue #518
+**Status**: ✅ Aligned with ADR-044, DD-CONTRACT-001 v1.4, ADR-043, DD-WE-004, Issue #518, DD-WE-005 v2.0
 
 **Full Schema**: See [docs/design/CRD/04_WORKFLOW_EXECUTION_CRD.md](../../design/CRD/04_WORKFLOW_EXECUTION_CRD.md)
 
@@ -20,6 +20,7 @@
 | **DD-WORKFLOW-003** | **Parameters** - UPPER_SNAKE_CASE keys for Tekton params |
 | **DD-WE-001** | **Resource Locking** - Prevents parallel/redundant workflows on same target |
 | **Issue #91** | **Metadata Migration** - `kubernaut.ai/*` labels removed from CRDs; use spec fields and field selectors |
+| **DD-WE-005 v2.0** | **Per-workflow ServiceAccount** - Operators pre-create SAs and RBAC; `executionConfig.serviceAccountName` references them; if empty, Kubernetes uses the execution namespace default SA |
 
 ### Metadata and Filtering (Issue #91)
 
@@ -111,7 +112,7 @@ type WorkflowExecutionSpec struct {
     Rationale string `json:"rationale,omitempty"`
 
     // ExecutionConfig contains minimal execution settings
-    ExecutionConfig ExecutionConfig `json:"executionConfig,omitempty"`
+    ExecutionConfig *ExecutionConfig `json:"executionConfig,omitempty"`
 }
 
 // WorkflowRef contains catalog-resolved workflow reference
@@ -137,8 +138,9 @@ type ExecutionConfig struct {
     // Default: use global timeout from RemediationRequest or 30m
     Timeout *metav1.Duration `json:"timeout,omitempty"`
 
-    // ServiceAccountName for the PipelineRun
-    // Default: "kubernaut-workflow-runner"
+    // ServiceAccountName for the PipelineRun TaskRunTemplate (Tekton).
+    // DD-WE-005 v2.0: Must name a pre-existing SA in the execution namespace (e.g. kubernaut-workflows).
+    // If empty, Kubernetes uses the namespace default ServiceAccount.
     ServiceAccountName string `json:"serviceAccountName,omitempty"`
 }
 
@@ -475,7 +477,7 @@ spec:
 
   executionConfig:
     timeout: "30m"
-    serviceAccountName: "kubernaut-workflow-runner"
+    serviceAccountName: "my-workflow-sa"
 
 status:
   phase: Completed
@@ -550,7 +552,7 @@ spec:
 
   executionConfig:
     timeout: "30m"
-    serviceAccountName: "kubernaut-workflow-runner"
+    serviceAccountName: "my-workflow-sa"
 
 status:
   phase: Failed
@@ -585,7 +587,7 @@ status:
     naturalLanguageSummary: |
       Task 'apply-memory-increase' (step 2 of 3) failed after 45s with Forbidden error.
       The workflow attempted to patch deployment 'payment-api' in namespace 'payment'
-      but the service account 'kubernaut-workflow-runner' lacks the required RBAC
+      but the service account 'my-workflow-sa' lacks the required RBAC
       permissions (patch deployments.apps). Exit code: 1.
       Recommendation: Grant patch permission to the service account or use an
       alternative workflow that doesn't require deployment modification.
@@ -645,7 +647,7 @@ spec:
 
   executionConfig:
     timeout: "30m"
-    serviceAccountName: "kubernaut-workflow-runner"
+    serviceAccountName: "my-workflow-sa"
 
 status:
   # v3.1: Skipped phase for resource locking
@@ -858,13 +860,13 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(
 
     // Determine timeout
     timeout := metav1.Duration{Duration: 30 * time.Minute}
-    if wfe.Spec.ExecutionConfig.Timeout != nil {
+    if wfe.Spec.ExecutionConfig != nil && wfe.Spec.ExecutionConfig.Timeout != nil {
         timeout = *wfe.Spec.ExecutionConfig.Timeout
     }
 
-    // Service account
-    serviceAccount := "kubernaut-workflow-runner"
-    if wfe.Spec.ExecutionConfig.ServiceAccountName != "" {
+    // DD-WE-005 v2.0: SA from spec only; empty string → Kubernetes default SA in execution namespace
+    serviceAccount := ""
+    if wfe.Spec.ExecutionConfig != nil && wfe.Spec.ExecutionConfig.ServiceAccountName != "" {
         serviceAccount = wfe.Spec.ExecutionConfig.ServiceAccountName
     }
 
@@ -1233,7 +1235,7 @@ func (r *WorkflowExecutionReconciler) checkResourceLock(
 | `workflowDefinition` | `workflowRef` | OCI bundle reference, not embedded definition |
 | `workflowDefinition.steps[]` | Removed | Steps live in Tekton Pipeline (ADR-044) |
 | `workflowDefinition.dependencies` | Removed | Tekton handles dependencies |
-| `executionStrategy` | `executionConfig` | Simplified to timeout + serviceAccount |
+| `executionStrategy` | `executionConfig` | Simplified to timeout + optional `serviceAccountName` (DD-WE-005 v2.0: per-workflow, catalog-driven) |
 | `stepStatuses[]` | Removed | Use PipelineRun.status directly |
 | `executionPlan` | Removed | Tekton determines execution plan |
 | `validationResults` | Removed | Validation in Tekton tasks |
@@ -1274,7 +1276,7 @@ func (r *WorkflowExecutionReconciler) checkResourceLock(
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 4.3 | 2026-03-04 | **Issue #518**: Added `executionEngine` to `WorkflowExecutionStatus`. Engine resolved at runtime by WE controller from DS catalog; immutable once set. Not on spec -- WFE spec describes *what* to execute, status holds *how*. Updated YAML examples to show `executionEngine` in status. |
+| 4.3 | 2026-03-04 | **Issue #518**: Added `executionEngine` to `WorkflowExecutionStatus`. Engine resolved at runtime by WE controller from DS catalog; immutable once set. **DD-WE-005 v2.0**: Document per-workflow `serviceAccountName`; controller reads SA from spec only. |
 | 4.2 | 2026-02-18 | **Issue #91**: Removed `kubernaut.ai/remediation-request` and `kubernaut.ai/workflow-id` labels from WorkflowExecution CRD examples. Added Metadata and Filtering section: field selectors replace label-based filtering; `kubernaut.ai/workflow-execution` KEPT on PipelineRun (external resource). |
 | 4.1 | 2025-12-06 | **Exponential Backoff (DD-WE-004)**: Added `ConsecutiveFailures` and `NextAllowedExecution` status fields. Added `SkipReasonExhaustedRetries` and `SkipReasonPreviousExecutionFailed` constants. Backoff applies only to pre-execution failures; execution failures block retries immediately. |
 | 3.1 | 2025-12-01 | **Resource Locking (V1.0 Safety)**: Added `targetResource` to spec. Added `Skipped` phase with `SkipDetails` struct. Prevents parallel workflows on same target (ResourceBusy). Prevents redundant sequential workflows with same workflow+target (RecentlyRemediated). Added `SkipDetails`, `ConflictingWorkflowRef`, `RecentRemediationRef` types. Added controller logic for `checkResourceLock()`. Aligned with DD-CONTRACT-001 v1.4. Audit trail for skipped executions. |

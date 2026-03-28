@@ -276,6 +276,11 @@ def parse_and_validate_investigation_result(
                     execution_bundle=selected_workflow.get("execution_bundle"),
                     parameters=selected_workflow.get("parameters", {})
                 )
+                # DD-WE-005 v2.0: Inject SA on both paths — it comes from the
+                # catalog, not the LLM, so it's valid regardless of other errors.
+                if validation_result.validated_service_account_name:
+                    selected_workflow["service_account_name"] = validation_result.validated_service_account_name
+
                 if validation_result.is_valid:
                     if validation_result.validated_execution_bundle:
                         selected_workflow["execution_bundle"] = validation_result.validated_execution_bundle
@@ -680,6 +685,11 @@ def parse_investigation_result(
                     execution_bundle=selected_workflow.get("execution_bundle"),
                     parameters=selected_workflow.get("parameters", {})
                 )
+                # DD-WE-005 v2.0: Inject SA on both paths — it comes from the
+                # catalog, not the LLM, so it's valid regardless of other errors.
+                if validation_result.validated_service_account_name:
+                    selected_workflow["service_account_name"] = validation_result.validated_service_account_name
+
                 if not validation_result.is_valid:
                     workflow_validation_failed = True
                     workflow_validation_errors = validation_result.errors
@@ -694,12 +704,12 @@ def parse_investigation_result(
                 else:
                     if validation_result.validated_execution_bundle:
                         selected_workflow["execution_bundle"] = validation_result.validated_execution_bundle
-                        logger.debug({
-                            "event": "workflow_validation_passed",
-                            "incident_id": request_data.get("incident_id", "unknown"),
-                            "workflow_id": selected_workflow.get("workflow_id"),
-                            "execution_bundle": validation_result.validated_execution_bundle
-                        })
+                    logger.debug({
+                        "event": "workflow_validation_passed",
+                        "incident_id": request_data.get("incident_id", "unknown"),
+                        "workflow_id": selected_workflow.get("workflow_id"),
+                        "execution_bundle": validation_result.validated_execution_bundle
+                    })
         except json.JSONDecodeError:
             rca = {"summary": "Failed to parse RCA", "severity": "unknown", "contributing_factors": []}
             selected_workflow = None

@@ -88,7 +88,7 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  fmt.Sprintf("In-Flight Shutdown Test %s", uniqueSuffix),
 					Body:     "Testing in-flight delivery completion during shutdown",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-default",
 					},
 				},

@@ -51,7 +51,8 @@ class TestWorkflowDiscoveryResponse(unittest.TestCase):
                         schema_version = '', 
                         schema_image = '', 
                         execution_bundle = '', 
-                        execution_engine = 'tekton', )
+                        execution_engine = 'tekton', 
+                        service_account_name = 'my-workflow-sa', )
                     ],
                 pagination = datastorage.models.pagination_metadata.PaginationMetadata(
                     total_count = 0, 
@@ -76,7 +77,8 @@ class TestWorkflowDiscoveryResponse(unittest.TestCase):
                         schema_version = '', 
                         schema_image = '', 
                         execution_bundle = '', 
-                        execution_engine = 'tekton', )
+                        execution_engine = 'tekton', 
+                        service_account_name = 'my-workflow-sa', )
                     ],
                 pagination = datastorage.models.pagination_metadata.PaginationMetadata(
                     total_count = 0, 

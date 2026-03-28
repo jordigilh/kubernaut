@@ -85,7 +85,7 @@ var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", f
 							Namespace: "default",
 						},
 					},
-					AnalysisTypes: []string{"investigation", "analysis"},
+					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause},
 				},
 			},
 			Status: aianalysisv1.AIAnalysisStatus{

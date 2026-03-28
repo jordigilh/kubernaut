@@ -308,9 +308,9 @@ These features are deferred to V2.0 based on production feedback:
 | Document | Relationship |
 |----------|--------------|
 | **DD-CONTRACT-001 v1.4** | Updated with resource locking contract |
-| **DD-GATEWAY-008** | Storm aggregation at Gateway level |
+| **DD-GATEWAY-008** | Storm aggregation (historical) — **removed** per **DD-GATEWAY-015**; no longer active at Gateway |
 | **DD-GATEWAY-009** | Fingerprint deduplication at Gateway level |
-| **DD-ORCHESTRATOR-001** | Storm/dedup context propagation |
+| **DD-ORCHESTRATOR-001** | Signal and deduplication context propagation to AIAnalysis |
 | **BR-WE-009** | Business requirement: Prevent parallel execution |
 | **BR-WE-010** | Business requirement: Cooldown |
 | **BR-WE-011** | Business requirement: Target resource identification |

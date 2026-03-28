@@ -97,9 +97,9 @@ def build_remediation_history_section(
     # Declining effectiveness trend detection (excludes spec_drift entries)
     if tier1_chain:
         declining = _detect_declining_effectiveness(tier1_chain)
-        for workflow_type in declining:
+        for action_type in declining:
             sections.append(
-                f"**WARNING: DECLINING EFFECTIVENESS for '{workflow_type}' workflow** -- "
+                f"**WARNING: DECLINING EFFECTIVENESS for '{action_type}' workflow** -- "
                 "Each successive application is less effective, suggesting the workflow "
                 "treats the symptom rather than the root cause. Consider a different approach."
             )
@@ -112,18 +112,18 @@ def build_remediation_history_section(
         escalation_threshold = REPEATED_REMEDIATION_ESCALATION_THRESHOLD
 
     recurring = _detect_completed_but_recurring(all_entries, threshold=escalation_threshold)
-    for workflow_type, count, signal_type in recurring:
-        if _all_zero_effectiveness(all_entries, workflow_type, signal_type):
+    for action_type, count, signal_type in recurring:
+        if _all_zero_effectiveness(all_entries, action_type, signal_type):
             # Issue #525: Mandatory escalation when all recurring entries have zero effectiveness
             sections.append(
-                f"**MANDATORY: You MUST NOT re-select '{workflow_type}' for signal "
+                f"**MANDATORY: You MUST NOT re-select '{action_type}' for signal "
                 f"'{signal_type}'.** This workflow has been applied {count} times with "
                 "zero effectiveness -- the signal continues to recur. Escalate to "
                 "`needs_human_review` or select a fundamentally different remediation approach."
             )
         else:
             sections.append(
-                f"**WARNING: REPEATED INEFFECTIVE REMEDIATION for '{workflow_type}'** -- "
+                f"**WARNING: REPEATED INEFFECTIVE REMEDIATION for '{action_type}'** -- "
                 f"Completed {count} times for signal '{signal_type}' but the issue continues "
                 "to recur. Escalate to `needs_human_review` or an alternative approach."
             )
@@ -169,7 +169,7 @@ def _format_tier1_entry(
     uid = entry.get("remediationUID", "unknown")
     completed = entry.get("completedAt", "unknown")
     outcome = entry.get("outcome", "unknown")
-    workflow = entry.get("workflowType", "unknown")
+    workflow = entry.get("actionType", "unknown")
     signal = entry.get("signalType", "")
     assessment_reason = entry.get("assessmentReason")
 
@@ -246,7 +246,7 @@ def _format_tier2_entry(entry: Dict[str, Any]) -> str:
     uid = entry.get("remediationUID", "unknown")
     completed = entry.get("completedAt", "unknown")
     outcome = entry.get("outcome", "unknown")
-    workflow = entry.get("workflowType", "unknown")
+    workflow = entry.get("actionType", "unknown")
     score = entry.get("effectivenessScore")
     hash_match = entry.get("hashMatch", "none")
     assessment_reason = entry.get("assessmentReason")
@@ -322,51 +322,51 @@ def _format_metric_deltas(md: Dict[str, Any]) -> str:
 
 
 def _detect_declining_effectiveness(chain: List[Dict[str, Any]]) -> List[str]:
-    """Detect workflow types with declining effectiveness scores.
+    """Detect action types with declining effectiveness scores.
 
-    Groups entries by workflowType and checks if scores are monotonically
-    decreasing for groups with >= 3 entries. Returns the workflow types
+    Groups entries by actionType and checks if scores are monotonically
+    decreasing for groups with >= 3 entries. Returns the action types
     exhibiting a declining trend.
 
     Args:
         chain: List of tier 1 remediation history entries.
 
     Returns:
-        List of workflow type names with declining effectiveness.
+        List of action type names with declining effectiveness.
     """
     from collections import defaultdict
 
-    # Group scores by workflow type, preserving order
+    # Group scores by action type, preserving order
     # DD-EM-002 v1.1: Exclude spec_drift entries -- their 0.0 scores would
     # create false declining trends since the score is unreliable.
-    workflow_scores: Dict[str, List[float]] = defaultdict(list)
+    action_scores: Dict[str, List[float]] = defaultdict(list)
     for entry in chain:
         if entry.get("assessmentReason") == "spec_drift":
             continue  # Skip unreliable spec_drift entries
-        wf_type = entry.get("workflowType")
+        action_type = entry.get("actionType")
         score = entry.get("effectivenessScore")
-        if wf_type and score is not None:
-            workflow_scores[wf_type].append(score)
+        if action_type and score is not None:
+            action_scores[action_type].append(score)
 
     declining: List[str] = []
-    for wf_type, scores in workflow_scores.items():
+    for action_type, scores in action_scores.items():
         if len(scores) >= 3:
             # Check if scores are strictly declining
             is_declining = all(
                 scores[i] > scores[i + 1] for i in range(len(scores) - 1)
             )
             if is_declining:
-                declining.append(wf_type)
+                declining.append(action_type)
 
     return declining
 
 
 def _all_zero_effectiveness(
     chain: List[Dict[str, Any]],
-    workflow_type: str,
+    action_type: str,
     signal_type: str,
 ) -> bool:
-    """Check if all completed recurring entries for a workflow+signal have zero effectiveness.
+    """Check if all completed recurring entries for an action type + signal have zero effectiveness.
 
     Issue #525: When all recurring entries have effectivenessScore == 0 (or None/missing)
     and signalResolved is not True, the escalation should be mandatory rather than advisory.
@@ -379,7 +379,7 @@ def _all_zero_effectiveness(
         outcome = entry.get("outcome", "")
         if outcome not in COMPLETED_OUTCOMES:
             continue
-        if entry.get("workflowType") != workflow_type or entry.get("signalType") != signal_type:
+        if entry.get("actionType") != action_type or entry.get("signalType") != signal_type:
             continue
         matched = True
         score = entry.get("effectivenessScore")
@@ -404,7 +404,7 @@ def _detect_completed_but_recurring(
         threshold: Minimum number of completed entries to trigger detection.
 
     Returns:
-        List of (workflow_type, count, signal_type) tuples for recurring patterns.
+        List of (action_type, count, signal_type) tuples for recurring patterns.
     """
     from collections import defaultdict
 
@@ -417,15 +417,15 @@ def _detect_completed_but_recurring(
         outcome = entry.get("outcome", "")
         if outcome not in COMPLETED_OUTCOMES:
             continue
-        wf_type = entry.get("workflowType", "")
+        action_type = entry.get("actionType", "")
         signal = entry.get("signalType", "")
-        if wf_type and signal:
-            counts[(wf_type, signal)] += 1
+        if action_type and signal:
+            counts[(action_type, signal)] += 1
 
     result = []
-    for (wf_type, signal), count in counts.items():
+    for (action_type, signal), count in counts.items():
         if count >= threshold:
-            result.append((wf_type, count, signal))
+            result.append((action_type, count, signal))
 
     return result
 

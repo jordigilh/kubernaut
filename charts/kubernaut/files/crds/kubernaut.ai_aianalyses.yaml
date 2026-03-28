@@ -76,9 +76,13 @@ spec:
                   Complete analysis request with structured context
                 properties:
                   analysisTypes:
-                    description: Analysis types to perform (e.g., "investigation",
-                      "root-cause", "workflow-selection")
+                    description: Analysis types to perform
                     items:
+                      description: AnalysisType represents a type of analysis to perform.
+                      enum:
+                      - Investigation
+                      - RootCause
+                      - WorkflowSelection
                       type: string
                     minItems: 1
                     type: array
@@ -109,15 +113,23 @@ spec:
                                   "payments", "platform")
                                 type: string
                               criticality:
-                                description: 'Business criticality level: critical,
-                                  high, medium, low'
+                                description: Business criticality level
+                                enum:
+                                - Critical
+                                - High
+                                - Medium
+                                - Low
                                 type: string
                               serviceOwner:
                                 description: Service owner team or individual
                                 type: string
                               slaRequirement:
-                                description: 'SLA requirement tier: platinum, gold,
-                                  silver, bronze'
+                                description: SLA requirement tier
+                                enum:
+                                - Platinum
+                                - Gold
+                                - Silver
+                                - Bronze
                                 type: string
                             type: object
                           kubernetesContext:
@@ -464,8 +476,12 @@ spec:
                       details (BR-AI-030)
                     properties:
                       decision:
-                        description: 'Decision: approved, manual_review_required,
-                          denied'
+                        description: Decision from policy evaluation
+                        enum:
+                        - Approved
+                        - ManualReviewRequired
+                        - Denied
+                        - DegradedMode
                         type: string
                       matchedRules:
                         description: Rules that matched
@@ -488,15 +504,16 @@ spec:
                       description: RecommendedAction describes a remediation action
                         with rationale
                       properties:
-                        action:
-                          description: Action type
-                          type: string
                         rationale:
                           description: Rationale explaining why this action is recommended
                           type: string
+                        workflowId:
+                          description: WorkflowId is the catalog workflow identifier
+                            for this recommendation
+                          type: string
                       required:
-                      - action
                       - rationale
+                      - workflowId
                       type: object
                     type: array
                   whyApprovalRequired:
@@ -718,17 +735,19 @@ spec:
                           Lists field names where detection QUERY failed (RBAC, timeout, network error).
                           If a field is in this array, its value should be ignored.
                           If empty/nil, all detections succeeded.
-                          Only accepts valid field names: gitOpsManaged, pdbProtected, hpaEnabled,
-                          stateful, helmManaged, networkIsolated, serviceMesh
+                          Only accepts valid field names: gitOpsManaged, gitOpsTool, pdbProtected, hpaEnabled,
+                          stateful, helmManaged, networkIsolated, serviceMesh, resourceQuotaConstrained
                         items:
                           enum:
                           - gitOpsManaged
+                          - gitOpsTool
                           - pdbProtected
                           - hpaEnabled
                           - stateful
                           - helmManaged
                           - networkIsolated
                           - serviceMesh
+                          - resourceQuotaConstrained
                           type: string
                         type: array
                       gitOpsManaged:
@@ -767,6 +786,13 @@ spec:
                           ========================================
                           True if PodDisruptionBudget exists for this workload
                         type: boolean
+                      resourceQuotaConstrained:
+                        description: |-
+                          ========================================
+                          RESOURCE CONSTRAINTS (#366, DD-HAPI-018 v1.4)
+                          ========================================
+                          True if any ResourceQuota exists in namespace
+                        type: boolean
                       serviceMesh:
                         description: Service mesh if detected (from sidecar or namespace
                           labels)
@@ -788,6 +814,7 @@ spec:
                     - hpaEnabled
                     - networkIsolated
                     - pdbProtected
+                    - resourceQuotaConstrained
                     - stateful
                     type: object
                   setAt:
@@ -802,8 +829,15 @@ spec:
                 - message: postRCAContext is immutable once setAt is populated (ADR-056)
                   rule: '!has(oldSelf.setAt) || self == oldSelf'
               reason:
-                description: Reason provides the umbrella failure category (e.g.,
-                  "WorkflowResolutionFailed")
+                description: Reason provides the umbrella failure or completion category.
+                enum:
+                - AnalysisCompleted
+                - WorkflowResolutionFailed
+                - WorkflowNotNeeded
+                - NoWorkflowSelected
+                - RegoEvaluationError
+                - TransientError
+                - APIError
                 type: string
               rootCause:
                 description: |-
@@ -910,6 +944,15 @@ spec:
                     type: object
                   rationale:
                     description: Rationale explaining why this workflow was selected
+                    type: string
+                  serviceAccountName:
+                    description: |-
+                      ServiceAccountName is the pre-existing ServiceAccount for the execution
+                      resource (Job, PipelineRun, or Ansible TokenRequest).
+                      DD-WE-005 v2.0: Operators pre-create SAs with appropriate RBAC in the
+                      execution namespace. If absent, K8s assigns the namespace's default SA
+                      (Job/Tekton) or the Ansible executor uses the controller's in-cluster
+                      credentials (#500 fallback).
                     type: string
                   version:
                     description: Workflow version

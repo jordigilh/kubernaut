@@ -66,7 +66,6 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	// Import RO controller
 	roconfig "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
@@ -672,11 +671,6 @@ func createRemediationRequest(targetNamespace, name string) *remediationv1.Remed
 			},
 			FiringTime:   now,
 			ReceivedTime: now,
-			Deduplication: sharedtypes.DeduplicationInfo{
-				FirstOccurrence: now,
-				LastOccurrence:  now,
-				OccurrenceCount: 1,
-			},
 		},
 	}
 	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -712,14 +706,14 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 		// Per SP Team Response (2025-12-10): ClassifiedAt is REQUIRED when struct is set
 		// V1.1 Note: Confidence field removed per DD-SP-001 V1.1 (redundant with source)
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
-			Environment:  "production",
+			Environment:  signalprocessingv1.EnvironmentProduction,
 			Source:       "test",
 			ClassifiedAt: now, // REQUIRED per SP CRD schema
 		}
 		// Per SP Team Response (2025-12-10): AssignedAt is REQUIRED when struct is set
 		// V1.1 Note: Confidence field removed per DD-SP-001 V1.1 (redundant with source)
 		sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
-			Priority:   "P1",
+			Priority:   signalprocessingv1.PriorityP1,
 			Source:     "test",
 			AssignedAt: now, // REQUIRED per SP CRD schema
 		}
@@ -750,12 +744,12 @@ func updateSPStatusProactive(namespace, name string, normalizedType, originalTyp
 	sp.Status.SourceSignalName = originalType
 	// Standard classification fields
 	sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
-		Environment:  "production",
+		Environment:  signalprocessingv1.EnvironmentProduction,
 		Source:       "test",
 		ClassifiedAt: now,
 	}
 	sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
-		Priority:   "P1",
+		Priority:   signalprocessingv1.PriorityP1,
 		Source:     "test",
 		AssignedAt: now,
 	}

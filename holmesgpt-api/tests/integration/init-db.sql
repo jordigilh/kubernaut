@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS remediation_workflow_catalog (
     -- ========================================
     parameters JSONB,
     execution_engine VARCHAR(50) NOT NULL DEFAULT 'tekton',
+    service_account_name TEXT,
 
     -- ========================================
     -- LIFECYCLE MANAGEMENT

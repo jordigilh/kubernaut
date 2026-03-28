@@ -41,7 +41,7 @@ class TestRemediationHistoryTier2(unittest.TestCase):
                     datastorage.models.remediation_history_summary.RemediationHistorySummary(
                         remediation_uid = 'rr-old-001', 
                         signal_type = 'HighCPULoad', 
-                        workflow_type = 'ScaleUp', 
+                        action_type = 'ScaleUp', 
                         outcome = 'Success', 
                         effectiveness_score = 0.4, 
                         signal_resolved = False, 
@@ -57,7 +57,7 @@ class TestRemediationHistoryTier2(unittest.TestCase):
                     datastorage.models.remediation_history_summary.RemediationHistorySummary(
                         remediation_uid = 'rr-old-001', 
                         signal_type = 'HighCPULoad', 
-                        workflow_type = 'ScaleUp', 
+                        action_type = 'ScaleUp', 
                         outcome = 'Success', 
                         effectiveness_score = 0.4, 
                         signal_resolved = False, 

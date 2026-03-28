@@ -19,7 +19,7 @@ This document consolidates three related business requirements for handling Work
 
 **Context**: Kubernaut implements multi-layer deduplication:
 - **Layer 1 (Gateway)**: Fingerprint deduplication - same fingerprint → update occurrence count
-- **Layer 2 (Gateway)**: Storm aggregation - threshold >5 → aggregate into 1 RR
+- **Layer 2 (Gateway)**: ~~Storm aggregation~~ — **removed** per [DD-GATEWAY-015](../architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md) (issue #448); DD-GATEWAY-008 is historical only
 - **Layer 3 (WE)**: Resource locking - different fingerprints, same target → Skipped phase
 
 These BRs handle **Layer 3** scenarios where WorkflowExecution returns `Skipped` phase.
@@ -305,7 +305,7 @@ spec:
 - [DD-WE-001: Resource Locking Safety](../architecture/decisions/DD-WE-001-resource-locking-safety.md)
 - [DD-WE-004: Exponential Backoff Cooldown](../architecture/decisions/DD-WE-004-exponential-backoff-cooldown.md)
 - [DD-GATEWAY-009: State-Based Deduplication](../architecture/decisions/DD-GATEWAY-009-state-based-deduplication.md)
-- [DD-GATEWAY-008: Storm Aggregation](../architecture/decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md)
+- [DD-GATEWAY-008: Storm Aggregation Windows](../architecture/decisions/DD-GATEWAY-008-storm-aggregation-windows.md)
 - [BR-WE-009/010/011: Resource Locking Safety](./BR-WE-009-011-resource-locking.md)
 - [NOTICE: WE Exponential Backoff](../handoff/NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md)
 

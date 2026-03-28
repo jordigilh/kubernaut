@@ -356,8 +356,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// BR-WE-014: Executor Registry (Strategy Pattern for Tekton + Job backends)
 	executorRegistry := weexecutor.NewRegistry()
-	executorRegistry.Register("tekton", weexecutor.NewTektonExecutor(k8sManager.GetClient(), "kubernaut-workflow-runner"))
-	executorRegistry.Register("job", weexecutor.NewJobExecutor(k8sManager.GetClient(), "kubernaut-workflow-runner"))
+	executorRegistry.Register("tekton", weexecutor.NewTektonExecutor(k8sManager.GetClient()))
+	executorRegistry.Register("job", weexecutor.NewJobExecutor(k8sManager.GetClient()))
 
 	// DD-WE-006: Create dependency validator using the envtest K8s client.
 	// The WorkflowQuerier is set per-test via testWorkflowQuerier (see dependency_resolution_integration_test.go).
@@ -369,7 +369,6 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		Scheme:                 k8sManager.GetScheme(),
 		Recorder:               k8sManager.GetEventRecorderFor("workflowexecution-controller"),
 		ExecutionNamespace:     WorkflowExecutionNS,
-		ServiceAccountName:     "kubernaut-workflow-runner",
 		CooldownPeriod:         10 * time.Second, // Short cooldown for integration tests (default 5min too long)
 		AuditStore:             auditStore,       // REAL audit store for integration tests
 		Metrics:                testMetrics,       // Test-isolated metrics (DD-METRICS-001)

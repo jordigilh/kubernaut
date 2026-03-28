@@ -5,6 +5,7 @@ package helpers
 
 import (
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -201,13 +202,12 @@ func NewCompletedSignalProcessing(name, namespace string) *signalprocessingv1.Si
 	// Set default environment classification (per V1.0 API)
 	now := metav1.Now()
 	sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
-		Environment:  "production",
+		Environment:  signalprocessingv1.EnvironmentProduction,
 		Source:       "namespace-labels",
 		ClassifiedAt: now,
 	}
-	// Set default priority assignment (per V1.0 API)
 	sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
-		Priority:   "P1",
+		Priority:   signalprocessingv1.PriorityP1,
 		Source:     "fallback-matrix",
 		AssignedAt: now,
 	}
@@ -250,7 +250,7 @@ func NewAIAnalysis(name, namespace string, opts ...AIAnalysisOpts) *aianalysisv1
 					Environment:      "production",
 					BusinessPriority: "P1",
 				},
-				AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+				AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
 			},
 		},
 	}
@@ -273,7 +273,7 @@ func NewAIAnalysis(name, namespace string, opts ...AIAnalysisOpts) *aianalysisv1
 // NewCompletedAIAnalysis creates an AIAnalysis in Completed phase with selected workflow.
 func NewCompletedAIAnalysis(name, namespace string) *aianalysisv1.AIAnalysis {
 	return NewAIAnalysis(name, namespace, AIAnalysisOpts{
-		Phase:            "Completed",
+		Phase:            aianalysisv1.PhaseCompleted,
 		ApprovalRequired: false,
 		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 			WorkflowID:      "pod-restart-workflow",
@@ -292,7 +292,7 @@ func NewCompletedAIAnalysis(name, namespace string) *aianalysisv1.AIAnalysis {
 // NewAIAnalysisRequiringApproval creates an AIAnalysis that requires human approval.
 func NewAIAnalysisRequiringApproval(name, namespace, approvalReason string) *aianalysisv1.AIAnalysis {
 	ai := NewAIAnalysis(name, namespace, AIAnalysisOpts{
-		Phase:            "Completed",
+		Phase:            aianalysisv1.PhaseCompleted,
 		ApprovalRequired: true,
 		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 			WorkflowID:      "deployment-rollback-workflow",
@@ -315,7 +315,7 @@ func NewAIAnalysisRequiringApproval(name, namespace, approvalReason string) *aia
 		WhyApprovalRequired:  approvalReason,
 		RecommendedActions: []aianalysisv1.RecommendedAction{
 			{
-				Action:    "deployment-rollback",
+				WorkflowId: "deployment-rollback",
 				Rationale: "Moderate confidence suggests human review",
 			},
 		},
@@ -384,7 +384,7 @@ func NewCompletedWorkflowExecution(name, namespace string) *workflowexecutionv1.
 	now := metav1.Now()
 	we.Status.StartTime = &now
 	we.Status.CompletionTime = &now
-	we.Status.Duration = "30s"
+	we.Status.Duration = &metav1.Duration{Duration: 30 * time.Second}
 	return we
 }
 
@@ -434,8 +434,8 @@ func NewNotificationRequest(name, namespace string, opts ...NotificationRequestO
 			Type:     notifType,
 			Priority: priority,
 			Subject:  "Test Notification",
-			Body:    "This is a test notification body.",
-			Metadata: map[string]string{
+			Body:     "This is a test notification body.",
+			Extensions: map[string]string{
 				"remediationRequestName": "test-rr",
 				"cluster":                "test-cluster",
 			},
@@ -458,8 +458,11 @@ func NewApprovalNotificationRequest(name, namespace, remediationRequestName stri
 	})
 	nr.Spec.Subject = fmt.Sprintf("Approval Required: %s", remediationRequestName)
 	nr.Spec.Body = "A remediation workflow requires human approval before execution."
-	nr.Spec.Metadata["remediationRequestName"] = remediationRequestName
-	nr.Spec.Metadata["notificationType"] = "approval_required"
+	if nr.Spec.Extensions == nil {
+		nr.Spec.Extensions = make(map[string]string)
+	}
+	nr.Spec.Extensions["remediationRequestName"] = remediationRequestName
+	nr.Spec.Extensions["notificationType"] = "approval_required"
 	return nr
 }
 

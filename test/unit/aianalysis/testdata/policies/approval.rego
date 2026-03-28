@@ -14,7 +14,7 @@ import rego.v1
 # =============================================================================
 
 is_production if {
-    input.environment == "production"
+    lower(input.environment) == "production"
 }
 
 is_high_severity if {

@@ -22,6 +22,7 @@ Name | Type | Description | Notes
 **schema_digest** | **str** | OCI schema image digest | [optional] 
 **execution_bundle** | **str** | OCI execution bundle reference (digest-pinned) | [optional] 
 **execution_bundle_digest** | **str** | OCI execution bundle digest | [optional] 
+**service_account_name** | **str** | Pre-existing ServiceAccount for Job/PipelineRun (DD-WE-005 v2.0). Absent &#x3D; K8s namespace default SA. | [optional] 
 **labels** | [**MandatoryLabels**](MandatoryLabels.md) |  | 
 **custom_labels** | **Dict[str, List[str]]** | Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format | [optional] 
 **detected_labels** | [**DetectedLabels**](DetectedLabels.md) |  | [optional] 

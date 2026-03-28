@@ -190,4 +190,37 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 			Expect(err).To(HaveOccurred())
 		})
 	})
+
+	// UT-EM-573-009: HasWorkflowCompleted (ADR-EM-001 section 5)
+	Describe("HasWorkflowCompleted (#573)", func() {
+		It("UT-EM-573-009: should return true when workflow.completed event exists", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				Expect(r.URL.Query().Get("event_type")).To(Equal("workflowexecution.workflow.completed"))
+				serveDSEnvelope(w, []map[string]interface{}{
+					{
+						"event_type":     "workflowexecution.workflow.completed",
+						"correlation_id": "rr-completed",
+					},
+				})
+			}))
+
+			querier := emclient.NewDataStorageHTTPQuerier(server.URL)
+			completed, err := querier.HasWorkflowCompleted(ctx, "rr-completed")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(completed).To(BeTrue(),
+				"UT-EM-573-009: should return true when completed event exists")
+		})
+
+		It("UT-EM-573-009: should return false when only started event exists", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				serveDSEnvelope(w, []map[string]interface{}{})
+			}))
+
+			querier := emclient.NewDataStorageHTTPQuerier(server.URL)
+			completed, err := querier.HasWorkflowCompleted(ctx, "rr-only-started")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(completed).To(BeFalse(),
+				"UT-EM-573-009: should return false when no completed event exists")
+		})
+	})
 })

@@ -39,7 +39,8 @@ class DetectedLabels(BaseModel):
     helm_managed: Optional[StrictBool] = Field(default=None, description="Resource is managed by Helm", alias="helmManaged")
     network_isolated: Optional[StrictBool] = Field(default=None, description="NetworkPolicy restricts traffic", alias="networkIsolated")
     service_mesh: Optional[StrictStr] = Field(default=None, description="Service mesh type: istio, linkerd, or * (wildcard = any mesh)", alias="serviceMesh")
-    __properties: ClassVar[List[str]] = ["failedDetections", "gitOpsManaged", "gitOpsTool", "pdbProtected", "hpaEnabled", "stateful", "helmManaged", "networkIsolated", "serviceMesh"]
+    resource_quota_constrained: Optional[StrictBool] = Field(default=None, description="ResourceQuota exists in namespace (#366)", alias="resourceQuotaConstrained")
+    __properties: ClassVar[List[str]] = ["failedDetections", "gitOpsManaged", "gitOpsTool", "pdbProtected", "hpaEnabled", "stateful", "helmManaged", "networkIsolated", "serviceMesh", "resourceQuotaConstrained"]
 
     @field_validator('failed_detections')
     def failed_detections_validate_enum(cls, value):
@@ -48,8 +49,8 @@ class DetectedLabels(BaseModel):
             return value
 
         for i in value:
-            if i not in ('gitOpsManaged', 'gitOpsTool', 'pdbProtected', 'hpaEnabled', 'stateful', 'helmManaged', 'networkIsolated', 'serviceMesh'):
-                raise ValueError("each list item must be one of ('gitOpsManaged', 'gitOpsTool', 'pdbProtected', 'hpaEnabled', 'stateful', 'helmManaged', 'networkIsolated', 'serviceMesh')")
+            if i not in ('gitOpsManaged', 'gitOpsTool', 'pdbProtected', 'hpaEnabled', 'stateful', 'helmManaged', 'networkIsolated', 'serviceMesh', 'resourceQuotaConstrained'):
+                raise ValueError("each list item must be one of ('gitOpsManaged', 'gitOpsTool', 'pdbProtected', 'hpaEnabled', 'stateful', 'helmManaged', 'networkIsolated', 'serviceMesh', 'resourceQuotaConstrained')")
         return value
 
     @field_validator('git_ops_tool')
@@ -129,7 +130,8 @@ class DetectedLabels(BaseModel):
             "stateful": obj.get("stateful"),
             "helmManaged": obj.get("helmManaged"),
             "networkIsolated": obj.get("networkIsolated"),
-            "serviceMesh": obj.get("serviceMesh")
+            "serviceMesh": obj.get("serviceMesh"),
+            "resourceQuotaConstrained": obj.get("resourceQuotaConstrained")
         })
         return _obj
 

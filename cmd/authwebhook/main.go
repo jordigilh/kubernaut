@@ -239,6 +239,22 @@ func main() {
 	webhookServer.Register("/validate-actiontype", &webhook.Admission{Handler: atHandler})
 	setupLog.Info("Registered ActionType webhook handler with DS client and audit store")
 
+	// Issue #548: Startup reconciler syncs existing CRDs with DataStorage on boot.
+	// Fail-closed: if DS is unreachable within the timeout, the manager won't start,
+	// blocking readiness probes and preventing stale state.
+	startupReconciler := &authwebhook.StartupReconciler{
+		K8sClient:    mgr.GetClient(),
+		DSWorkflow:   rwDSClient,
+		DSActionType: rwDSClient,
+		Logger:       ctrl.Log.WithName("startup-reconciler"),
+		Timeout:      cfg.DataStorage.Timeout,
+	}
+	if err := mgr.Add(startupReconciler); err != nil {
+		setupLog.Error(err, "unable to add startup reconciler")
+		os.Exit(1)
+	}
+	setupLog.Info("Registered startup reconciler (Issue #548: PVC-wipe resilience)")
+
 	// Register health check endpoints for liveness and readiness probes
 	// These are required by Kubernetes deployment health checks
 	// Uses standard healthz.Ping checker (same pattern as other controllers)

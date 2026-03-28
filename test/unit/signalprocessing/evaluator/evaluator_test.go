@@ -127,7 +127,7 @@ default labels := {}
 
 			result, err := eval.EvaluateEnvironment(ctx, evaluator.PolicyInput{})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Environment).To(Equal("always-prod"))
+			Expect(result.Environment).To(Equal(signalprocessingv1alpha1.Environment("always-prod")))
 		})
 	})
 
@@ -137,7 +137,7 @@ default labels := {}
 		})
 
 		DescribeTable("BR-SP-051: should classify environment from namespace labels",
-			func(labels map[string]string, expectedEnv, expectedSource string) {
+			func(labels map[string]string, expectedEnv signalprocessingv1alpha1.Environment, expectedSource string) {
 				input := evaluator.PolicyInput{
 					Namespace: types.NamespaceContext{
 						Name:   "test-ns",
@@ -149,10 +149,10 @@ default labels := {}
 				Expect(result.Environment).To(Equal(expectedEnv))
 				Expect(result.Source).To(Equal(expectedSource))
 			},
-			Entry("production namespace", map[string]string{"env": "production"}, "production", "namespace-labels"),
-			Entry("staging namespace", map[string]string{"env": "staging"}, "staging", "namespace-labels"),
-			Entry("development namespace", map[string]string{"env": "development"}, "development", "namespace-labels"),
-			Entry("unlabeled namespace (default)", map[string]string{}, "unknown", "default"),
+			Entry("production namespace", map[string]string{"env": "production"}, signalprocessingv1alpha1.EnvironmentProduction, "namespace-labels"),
+			Entry("staging namespace", map[string]string{"env": "staging"}, signalprocessingv1alpha1.EnvironmentStaging, "namespace-labels"),
+			Entry("development namespace", map[string]string{"env": "development"}, signalprocessingv1alpha1.EnvironmentDevelopment, "namespace-labels"),
+			Entry("unlabeled namespace (default)", map[string]string{}, signalprocessingv1alpha1.EnvironmentUnknown, "default"),
 		)
 
 		It("should fail when policy not loaded", func() {
@@ -207,7 +207,7 @@ default labels := {}
 			}
 			result, err := eval.EvaluatePriority(ctx, input)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Priority).To(Equal("P0"))
+			Expect(result.Priority).To(Equal(signalprocessingv1alpha1.PriorityP0))
 			Expect(result.PolicyName).To(Equal("production-critical"))
 		})
 
@@ -221,7 +221,7 @@ default labels := {}
 			}
 			result, err := eval.EvaluatePriority(ctx, input)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Priority).To(Equal("P1"))
+			Expect(result.Priority).To(Equal(signalprocessingv1alpha1.PriorityP1))
 			Expect(result.PolicyName).To(Equal("production-high"))
 		})
 
@@ -235,7 +235,7 @@ default labels := {}
 			}
 			result, err := eval.EvaluatePriority(ctx, input)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Priority).To(Equal("P2"))
+			Expect(result.Priority).To(Equal(signalprocessingv1alpha1.PriorityP2))
 		})
 
 		It("BR-SP-070: should assign P3 as default", func() {
@@ -248,7 +248,7 @@ default labels := {}
 			}
 			result, err := eval.EvaluatePriority(ctx, input)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Priority).To(Equal("P3"))
+			Expect(result.Priority).To(Equal(signalprocessingv1alpha1.PriorityP3))
 			Expect(result.PolicyName).To(Equal("default"))
 		})
 
@@ -354,7 +354,7 @@ default labels := {}
 
 			priority, err := eval.EvaluatePriority(ctx, input)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(priority.Priority).To(Equal("P0"))
+			Expect(priority.Priority).To(Equal(signalprocessingv1alpha1.PriorityP0))
 			Expect(priority.PolicyName).To(Equal("production-critical"))
 		})
 	})

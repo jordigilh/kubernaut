@@ -904,7 +904,70 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 		_, _ = fmt.Fprintf(output, "⚠️  Warning: Could not create quay.io pull secret in %s: %v\n", ExecutionNamespace, err)
 	}
 
+	// Create ServiceAccount + RBAC for Job pods that need cross-namespace
+	// resource access (e.g., oomkill-increase-memory-job patches Deployments).
+	// DD-WE-005 v2.0: Operators pre-create SAs; workflows reference them via
+	// execution.serviceAccountName. The mock LLM returns service_account_name
+	// in selected_workflow so the AA→RO→WFE chain propagates it to the Job pod.
+	if err := createWorkflowJobExecutorRBAC(kubeconfigPath, ExecutionNamespace, output); err != nil {
+		return fmt.Errorf("failed to create workflow-job-executor RBAC: %w", err)
+	}
+
 	_, _ = fmt.Fprintf(output, "✅ WorkflowExecution Controller deployed\n")
+	return nil
+}
+
+// createWorkflowJobExecutorRBAC creates a ServiceAccount, ClusterRole, and
+// ClusterRoleBinding so Job pods spawned by the WE controller can get/patch
+// workload resources (Deployments, StatefulSets, DaemonSets, Pods) in any
+// namespace. Used by oomkill-increase-memory-job's remediate.sh.
+func createWorkflowJobExecutorRBAC(kubeconfigPath, namespace string, output io.Writer) error {
+	_, _ = fmt.Fprintf(output, "  🔐 Creating workflow-job-executor SA + RBAC in %s...\n", namespace)
+
+	rbacYAML := fmt.Sprintf(`---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: workflow-job-executor
+  namespace: %[1]s
+  labels:
+    app: workflowexecution
+    component: job-executor
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: workflow-job-executor
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "patch"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: workflow-job-executor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: workflow-job-executor
+subjects:
+- kind: ServiceAccount
+  name: workflow-job-executor
+  namespace: %[1]s
+`, namespace)
+
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(rbacYAML)
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply workflow-job-executor RBAC: %w", err)
+	}
+	_, _ = fmt.Fprintf(output, "  ✅ workflow-job-executor SA + RBAC created\n")
 	return nil
 }
 
@@ -1054,18 +1117,7 @@ func createQuayPullSecret(kubeconfigPath, namespace string, output io.Writer) er
 	secretResolverCmd.Stderr = output
 	_ = secretResolverCmd.Run() // Ignore error if namespace doesn't exist
 
-	// Patch the service account to use the pull secret
-	patchCmd := exec.Command("kubectl", "patch", "serviceaccount", "kubernaut-workflow-runner",
-		"-n", namespace,
-		"--kubeconfig", kubeconfigPath,
-		"-p", `{"imagePullSecrets": [{"name": "quay-pull-secret"}]}`,
-	)
-	patchCmd.Stdout = output
-	patchCmd.Stderr = output
-	// Ignore error if service account doesn't exist yet
-	_ = patchCmd.Run()
-
-	// Also patch the default service account in execution namespace
+	// Patch the default service account in execution namespace (DD-WE-005 v2: no platform workflow-runner SA)
 	patchDefaultCmd := exec.Command("kubectl", "patch", "serviceaccount", "default",
 		"-n", namespace,
 		"--kubeconfig", kubeconfigPath,
@@ -1128,67 +1180,6 @@ kind: ServiceAccount
 metadata:
   name: workflowexecution-controller
   namespace: %[1]s
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: kubernaut-workflow-runner
-  namespace: %[2]s
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: kubernaut-workflow-runner
-rules:
-- apiGroups: ["apps"]
-  resources: ["deployments", "statefulsets", "daemonsets"]
-  verbs: ["get", "list", "patch"]
-- apiGroups: ["apps"]
-  resources: ["replicasets"]
-  verbs: ["get", "list"]
-- apiGroups: [""]
-  resources: ["pods"]
-  verbs: ["get", "list", "delete"]
-- apiGroups: [""]
-  resources: ["pods/eviction"]
-  verbs: ["create"]
-- apiGroups: [""]
-  resources: ["configmaps"]
-  verbs: ["get", "list"]
-- apiGroups: [""]
-  resources: ["nodes"]
-  verbs: ["get", "list", "patch", "update"]
-- apiGroups: ["policy"]
-  resources: ["poddisruptionbudgets"]
-  verbs: ["get", "list", "patch"]
-- apiGroups: ["autoscaling"]
-  resources: ["horizontalpodautoscalers"]
-  verbs: ["get", "list", "patch"]
-- apiGroups: ["argoproj.io"]
-  resources: ["applications"]
-  verbs: ["get", "list"]
-- apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["get", "list", "create", "delete", "patch"]
-- apiGroups: ["cert-manager.io"]
-  resources: ["certificates"]
-  verbs: ["get", "list"]
-- apiGroups: ["cert-manager.io"]
-  resources: ["clusterissuers"]
-  verbs: ["get", "list"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: kubernaut-workflow-runner
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: kubernaut-workflow-runner
-subjects:
-- kind: ServiceAccount
-  name: kubernaut-workflow-runner
-  namespace: %[2]s
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -1296,7 +1287,6 @@ data:
     execution:
       namespace: %[2]s
       cooldownPeriod: 1m
-      serviceAccount: kubernaut-workflow-runner
     datastorage:
       url: "http://data-storage-service.%[1]s:8080"
       timeout: 10s

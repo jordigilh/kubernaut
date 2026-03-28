@@ -257,7 +257,7 @@ var _ = Describe("BR-GATEWAY-004: Signal Fingerprinting", func() {
 			Expect(signal1.Fingerprint).NotTo(Equal(signal2.Fingerprint),
 				"Different resources must have different fingerprints so each gets remediated separately")
 
-			// Business capability: 10 pods failing → 10 CRDs created (or storm aggregation kicks in)
+			// Business capability: 10 pods failing → 10 CRDs created
 		})
 	})
 })

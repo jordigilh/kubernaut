@@ -12,14 +12,6 @@ func (s *IncidentRequest) setDefaults() {
 		val := int(0)
 		s.OccurrenceCount.SetTo(val)
 	}
-	{
-		val := bool(false)
-		s.IsStorm.SetTo(val)
-	}
-	{
-		val := int(0)
-		s.StormSignalCount.SetTo(val)
-	}
 }
 
 // setDefaults set default value of fields.

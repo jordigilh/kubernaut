@@ -90,7 +90,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 			if completed.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted {
 				By("E2E-WE-163-001: Verifying ExecutionStatus for success")
 				Expect(completed.Status.ExecutionStatus).NotTo(BeNil())
-				Expect(completed.Status.ExecutionStatus.Status).To(Equal("True"))
+				Expect(completed.Status.ExecutionStatus.Status).To(Equal(corev1.ConditionTrue))
 				Expect(completed.Status.ExecutionStatus.TotalTasks).To(BeNumerically(">=", 1))
 				Expect(completed.Status.ExecutionStatus.CompletedTasks).To(BeNumerically(">=", 1))
 				Expect(completed.Status.ExecutionStatus.Reason).To(Equal("Succeeded"))

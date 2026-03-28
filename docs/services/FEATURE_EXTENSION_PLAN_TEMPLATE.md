@@ -1158,8 +1158,8 @@ Overall Confidence = Σ(Component Confidence × Component Weight) / Σ(Component
 - [08-testing-anti-patterns.mdc](../../.cursor/rules/08-testing-anti-patterns.mdc) - Testing anti-patterns
 
 ### **Examples**
-- [DD-GATEWAY-008](./stateless/gateway-service/DD_GATEWAY_008_IMPLEMENTATION_PLAN.md) - Storm buffering (12 days)
-- [DD-GATEWAY-009](./stateless/gateway-service/DD_GATEWAY_009_IMPLEMENTATION_PLAN.md) - State-based deduplication (5 days)
+- [DD-GATEWAY-008](../architecture/decisions/DD-GATEWAY-008-storm-aggregation-windows.md) — historical storm aggregation (**superseded**; see [DD-GATEWAY-015](../architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md))
+- [DD-GATEWAY-009](../architecture/decisions/DD-GATEWAY-009-state-based-deduplication.md) — state-based (fingerprint) deduplication
 
 ---
 

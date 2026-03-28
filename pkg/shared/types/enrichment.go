@@ -55,6 +55,30 @@ type EnrichmentResults struct {
 	BusinessClassification *BusinessClassification `json:"businessClassification,omitempty"`
 }
 
+// Criticality represents the business criticality level of a service.
+// BR-SP-081: SLA Requirement Mapping — Dimension 3: Criticality.
+// +kubebuilder:validation:Enum=Critical;High;Medium;Low
+type Criticality string
+
+const (
+	CriticalityCritical Criticality = "Critical"
+	CriticalityHigh     Criticality = "High"
+	CriticalityMedium   Criticality = "Medium"
+	CriticalityLow      Criticality = "Low"
+)
+
+// SLARequirement represents the SLA tier assigned to a service.
+// BR-SP-081: SLA Requirement Mapping — Dimension 4: SLA Tier.
+// +kubebuilder:validation:Enum=Platinum;Gold;Silver;Bronze
+type SLARequirement string
+
+const (
+	SLARequirementPlatinum SLARequirement = "Platinum"
+	SLARequirementGold     SLARequirement = "Gold"
+	SLARequirementSilver   SLARequirement = "Silver"
+	SLARequirementBronze   SLARequirement = "Bronze"
+)
+
 // BusinessClassification contains business context derived from SP categorization.
 // BR-SP-002: Business Classification
 // BR-SP-080: Business Unit Detection
@@ -64,10 +88,10 @@ type BusinessClassification struct {
 	BusinessUnit string `json:"businessUnit,omitempty"`
 	// Service owner team or individual
 	ServiceOwner string `json:"serviceOwner,omitempty"`
-	// Business criticality level: critical, high, medium, low
-	Criticality string `json:"criticality,omitempty"`
-	// SLA requirement tier: platinum, gold, silver, bronze
-	SLARequirement string `json:"slaRequirement,omitempty"`
+	// Business criticality level
+	Criticality Criticality `json:"criticality,omitempty"`
+	// SLA requirement tier
+	SLARequirement SLARequirement `json:"slaRequirement,omitempty"`
 }
 
 // OwnerChainEntry represents a single entry in the K8s ownership chain.
@@ -111,9 +135,9 @@ type DetectedLabels struct {
 	// Lists field names where detection QUERY failed (RBAC, timeout, network error).
 	// If a field is in this array, its value should be ignored.
 	// If empty/nil, all detections succeeded.
-	// Only accepts valid field names: gitOpsManaged, pdbProtected, hpaEnabled,
-	// stateful, helmManaged, networkIsolated, serviceMesh
-	// +kubebuilder:validation:items:Enum={gitOpsManaged,pdbProtected,hpaEnabled,stateful,helmManaged,networkIsolated,serviceMesh}
+	// Only accepts valid field names: gitOpsManaged, gitOpsTool, pdbProtected, hpaEnabled,
+	// stateful, helmManaged, networkIsolated, serviceMesh, resourceQuotaConstrained
+	// +kubebuilder:validation:items:Enum={gitOpsManaged,gitOpsTool,pdbProtected,hpaEnabled,stateful,helmManaged,networkIsolated,serviceMesh,resourceQuotaConstrained}
 	FailedDetections []string `json:"failedDetections,omitempty"`
 
 	// ========================================
@@ -150,6 +174,12 @@ type DetectedLabels struct {
 	// Service mesh if detected (from sidecar or namespace labels)
 	// +kubebuilder:validation:Enum=istio;linkerd;""
 	ServiceMesh string `json:"serviceMesh,omitempty"`
+
+	// ========================================
+	// RESOURCE CONSTRAINTS (#366, DD-HAPI-018 v1.4)
+	// ========================================
+	// True if any ResourceQuota exists in namespace
+	ResourceQuotaConstrained bool `json:"resourceQuotaConstrained"`
 }
 
 // ========================================
@@ -296,3 +326,19 @@ type ConfigMapSummary struct {
 	Name string   `json:"name"`
 	Keys []string `json:"keys"` // ConfigMap key names (not full data)
 }
+
+// CatalogStatus represents the lifecycle state of a catalog resource
+// (RemediationWorkflow, ActionType). Shared enum ensures consistent
+// semantics across all catalog CRDs.
+// +kubebuilder:validation:Enum=Active;Invalid;Pending;Deprecated;Archived;Disabled;Superseded
+type CatalogStatus string
+
+const (
+	CatalogStatusActive     CatalogStatus = "Active"
+	CatalogStatusInvalid    CatalogStatus = "Invalid"
+	CatalogStatusPending    CatalogStatus = "Pending"
+	CatalogStatusDeprecated CatalogStatus = "Deprecated"
+	CatalogStatusArchived   CatalogStatus = "Archived"
+	CatalogStatusDisabled   CatalogStatus = "Disabled"
+	CatalogStatusSuperseded CatalogStatus = "Superseded"
+)

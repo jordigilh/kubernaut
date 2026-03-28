@@ -173,7 +173,7 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.1)", func() {
 							"outcome":                  "success",
 							"signal_type":              "alert",
 							"signal_fingerprint":       "fp-001",
-							"workflow_type":            "restart",
+							"action_type":            "restart",
 							"target_resource":          "default/Deployment/nginx",
 						},
 					},
@@ -242,8 +242,7 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.1)", func() {
 			Expect(entry["outcome"]).To(Equal("success"))
 			Expect(entry["signalType"]).To(Equal("alert"))
 
-			// Effectiveness score should be populated
-			Expect(entry["effectivenessScore"]).ToNot(BeNil())
+			Expect(entry["effectivenessScore"]).To(BeNumerically(">=", 0))
 
 			// Health checks should be present
 			hc := entry["healthChecks"].(map[string]interface{})
@@ -265,7 +264,7 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.1)", func() {
 							"outcome":                  "success",
 							"signal_type":              "alert",
 							"signal_fingerprint":       "fp-reg",
-							"workflow_type":            "restart",
+							"action_type":            "restart",
 							"target_resource":          "default/Deployment/nginx",
 						},
 					},
@@ -323,7 +322,7 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.1)", func() {
 							"pre_remediation_spec_hash": "sha256:abc123",
 							"outcome":                  "success",
 							"signal_type":              "alert",
-							"workflow_type":            "ScaleUp",
+							"action_type":            "ScaleUp",
 							"target_resource":          "default/Deployment/nginx",
 						},
 					},

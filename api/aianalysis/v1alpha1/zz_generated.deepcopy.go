@@ -233,7 +233,7 @@ func (in *AnalysisRequest) DeepCopyInto(out *AnalysisRequest) {
 	in.SignalContext.DeepCopyInto(&out.SignalContext)
 	if in.AnalysisTypes != nil {
 		in, out := &in.AnalysisTypes, &out.AnalysisTypes
-		*out = make([]string, len(*in))
+		*out = make([]AnalysisType, len(*in))
 		copy(*out, *in)
 	}
 }

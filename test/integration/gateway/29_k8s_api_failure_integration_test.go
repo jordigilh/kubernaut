@@ -273,7 +273,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 	// Phase 1 (COMPLETE):
 	// - ✅ BR-GATEWAY-093 updated in BUSINESS_REQUIREMENTS.md
 	// - ✅ BR_MAPPING.md updated
-	// - ✅ DD-GATEWAY-015 created (comprehensive design decision)
+	// - ✅ DD-GATEWAY-016 created (comprehensive design decision)
 	// - ✅ ClientWithCircuitBreaker implemented (pkg/gateway/k8s/client_with_circuit_breaker.go)
 	// - ✅ Circuit breaker metrics defined (pkg/gateway/metrics/metrics.go)
 	// - ✅ Shared circuitbreaker.Manager created (pkg/shared/circuitbreaker/manager.go)
@@ -289,14 +289,14 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 	// - ⏳ Add E2E tests for circuit breaker scenarios
 	// - ⏳ Performance testing under K8s API degradation
 	//
-	// Design Decision: DD-GATEWAY-015 (K8s API Circuit Breaker Implementation)
+	// Design Decision: DD-GATEWAY-016 (K8s API Circuit Breaker Implementation)
 	// ========================================
 
 	Context("BR-GATEWAY-093: Circuit Breaker for K8s API (TDD GREEN)", func() {
 		// TDD GREEN PHASE: Circuit breaker wired into Gateway server
 		// These tests validate circuit breaker behavior through CRDCreator integration
 		//
-		// Design Decision: DD-GATEWAY-015 (K8s API Circuit Breaker Implementation)
+		// Design Decision: DD-GATEWAY-016 (K8s API Circuit Breaker Implementation)
 		// Business Requirements: BR-GATEWAY-093-A/B/C
 
 		var (

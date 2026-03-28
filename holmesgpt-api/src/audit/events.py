@@ -201,13 +201,15 @@ def create_llm_response_event(
     has_analysis: bool,
     analysis_length: int,
     analysis_preview: str,
-    tool_call_count: int
+    tool_call_count: int,
+    tokens_used: Optional[int] = None,
 ) -> AuditEventRequest:
     """
     Create an LLM response audit event (ADR-034 compliant)
 
     Business Requirement: BR-AUDIT-005
     Design Decision: ADR-034 - Unified Audit Table Design
+    Issue: #435 - Wire LLM token usage into audit traces
 
     Args:
         incident_id: Incident identifier for correlation
@@ -216,6 +218,7 @@ def create_llm_response_event(
         analysis_length: Length of analysis text
         analysis_preview: First 500 chars of analysis
         tool_call_count: Number of tool calls made by LLM
+        tokens_used: Total tokens consumed across all LLM calls in session (#435)
 
     Returns:
         ADR-034 compliant audit event dictionary
@@ -228,7 +231,7 @@ def create_llm_response_event(
         has_analysis=has_analysis,
         analysis_length=analysis_length,
         analysis_preview=analysis_preview,
-        tokens_used=None,  # Can be extended if available from LLM response
+        tokens_used=tokens_used,
         tool_call_count=tool_call_count
     )
 
@@ -367,13 +370,16 @@ def create_validation_attempt_event(
 def create_aiagent_response_complete_event(
     incident_id: str,
     remediation_id: str,
-    response_data: Dict[str, Any]
+    response_data: Dict[str, Any],
+    total_prompt_tokens: Optional[int] = None,
+    total_completion_tokens: Optional[int] = None,
 ) -> AuditEventRequest:
     """
     Create AI Agent response completion audit event (ADR-034 compliant)
 
     Business Requirement: BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
     Design Decision: DD-AUDIT-005 (Hybrid Provider Data Capture)
+    Issue: #435 - Wire LLM token usage into audit traces
 
     This event captures the COMPLETE AI Agent API response (provider perspective)
     for SOC2 Type II compliance and RemediationRequest reconstruction.
@@ -388,6 +394,8 @@ def create_aiagent_response_complete_event(
         incident_id: Incident identifier for correlation
         remediation_id: Remediation request ID for audit correlation
         response_data: Complete IncidentResponse structure (all fields)
+        total_prompt_tokens: Accumulated prompt tokens across all LLM calls in session (#435)
+        total_completion_tokens: Accumulated completion tokens across all LLM calls in session (#435)
 
     Returns:
         ADR-034 compliant audit event dictionary
@@ -409,7 +417,9 @@ def create_aiagent_response_complete_event(
         event_type="aiagent.response.complete",  # Discriminator for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
-        response_data=response_data  # Full IncidentResponse
+        response_data=response_data,  # Full IncidentResponse
+        total_prompt_tokens=total_prompt_tokens,
+        total_completion_tokens=total_completion_tokens,
     )
 
     # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict

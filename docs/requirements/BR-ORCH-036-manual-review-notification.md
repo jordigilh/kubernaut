@@ -208,7 +208,7 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 | AC-036-02 | NotificationRequest created with `type=manual-review` for `PreviousExecutionFailed` | Unit |
 | AC-036-03 | NotificationRequest created with `type=manual-review` for `WasExecutionFailure=true` | Unit |
 | AC-036-04 | Priority is `critical` for WE failures | Unit |
-| AC-036-05 | `spec.metadata.failureSource=WorkflowExecution` set | Unit |
+| AC-036-05 | `spec.reviewSource=WorkflowExecution` set | Unit |
 
 ### AIAnalysis Source
 
@@ -222,8 +222,8 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 | AC-036-15 | NotificationRequest created for `LLMParsingError` | Unit |
 | AC-036-16 | NotificationRequest created for `InvestigationInconclusive` | Unit |
 | AC-036-17 | Priority mapped correctly per SubReason | Unit |
-| AC-036-18 | `spec.metadata.failureSource=AIAnalysis` set | Unit |
-| AC-036-19 | `spec.metadata.failureReason=WorkflowResolutionFailed` set | Unit |
+| AC-036-18 | `spec.reviewSource=AIAnalysis` set | Unit |
+| AC-036-19 | `spec.context.review.reason=WorkflowResolutionFailed` set | Unit |
 
 ### AIAnalysis Infrastructure Failures (v3.0)
 
@@ -233,7 +233,7 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 | AC-036-31 | NotificationRequest created for `APIError` / `TransientError` | Unit |
 | AC-036-32 | NotificationRequest created for `APIError` / `PermanentError` | Unit |
 | AC-036-33 | Priority is `high` for infrastructure failures | Unit |
-| AC-036-34 | `spec.metadata.failureSource=AIAnalysis` set | Unit |
+| AC-036-34 | `spec.reviewSource=AIAnalysis` set | Unit |
 | AC-036-35 | No failure transitions to RR `Failed` without a notification | Integration |
 
 ### AIAnalysis Missing AffectedResource (v4.0)
@@ -268,7 +268,7 @@ Scenario: Manual review notification for WE ExhaustedRetries
   Then NotificationRequest should be created with:
     | type | manual-review |
     | priority | critical |
-    | spec.metadata.failureSource | WorkflowExecution |
+    | spec.reviewSource | WorkflowExecution |
   And RemediationRequest "rr-1" should have requiresManualReview = true
 
 # AIAnalysis Failures
@@ -282,8 +282,8 @@ Scenario: Manual review notification for AIAnalysis WorkflowNotFound
   Then NotificationRequest should be created with:
     | type | manual-review |
     | priority | high |
-    | spec.metadata.failureSource | AIAnalysis |
-    | spec.metadata.failureReason | WorkflowResolutionFailed |
+    | spec.reviewSource | AIAnalysis |
+    | spec.context.review.reason | WorkflowResolutionFailed |
   And notification body should contain "Workflow 'restart-pod-v99' not found"
   And RemediationRequest "rr-1" should have requiresManualReview = true
 
@@ -322,7 +322,7 @@ Scenario: Escalation notification for AIAnalysis HAPI timeout (MaxRetriesExceede
   Then NotificationRequest should be created with:
     | type | manual-review |
     | priority | high |
-    | spec.metadata.failureSource | AIAnalysis |
+    | spec.reviewSource | AIAnalysis |
   And notification body should contain "APIError"
   And notification body should contain "MaxRetriesExceeded"
   And RemediationRequest "rr-1" should have requiresManualReview = true
@@ -350,8 +350,8 @@ Scenario: Manual review notification for AA completed but AffectedResource missi
   Then NotificationRequest should be created with:
     | type | manual-review |
     | priority | high |
-    | spec.metadata.failureSource | AIAnalysis |
-    | spec.metadata.failureReason | AffectedResourceMissing |
+    | spec.reviewSource | AIAnalysis |
+    | spec.context.review.reason | AffectedResourceMissing |
   And RemediationRequest "rr-1" should have requiresManualReview = true
   And RemediationRequest "rr-1" should have phase = Failed
 ```

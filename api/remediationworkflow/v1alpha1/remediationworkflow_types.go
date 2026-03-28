@@ -19,6 +19,8 @@ package v1alpha1
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // RemediationWorkflowSpec defines the desired state of RemediationWorkflow.
@@ -132,6 +134,15 @@ type RemediationWorkflowExecution struct {
 	// +optional
 	// +kubebuilder:pruning:PreserveUnknownFields
 	EngineConfig *apiextensionsv1.JSON `json:"engineConfig,omitempty"`
+
+	// ServiceAccountName is the pre-existing ServiceAccount for the execution
+	// resource (Job, PipelineRun, or Ansible TokenRequest).
+	// DD-WE-005 v2.0: Operators pre-create SAs with appropriate RBAC in the
+	// execution namespace. If absent, K8s assigns the namespace's default SA
+	// (Job/Tekton) or the Ansible executor uses the controller's in-cluster
+	// credentials (#500 fallback).
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 }
 
 // RemediationWorkflowDependencies declares infrastructure resources
@@ -177,9 +188,10 @@ type RemediationWorkflowStatus struct {
 	// +optional
 	WorkflowID string `json:"workflowId,omitempty"`
 
-	// CatalogStatus reflects the DS catalog state (active, disabled, deprecated, archived)
+	// CatalogStatus reflects the DS catalog lifecycle state.
 	// +optional
-	CatalogStatus string `json:"catalogStatus,omitempty"`
+	// +kubebuilder:validation:Enum=Active;Invalid;Pending;Deprecated;Archived;Disabled;Superseded
+	CatalogStatus sharedtypes.CatalogStatus `json:"catalogStatus,omitempty"`
 
 	// RegisteredBy is the identity of the registrant
 	// +optional

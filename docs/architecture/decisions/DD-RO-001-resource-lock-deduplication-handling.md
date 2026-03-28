@@ -28,9 +28,11 @@ Kubernaut implements deduplication at multiple layers:
 │  - Same fingerprint → Update occurrenceCount (no new RR)            │
 │  - Handles: 70-80% of duplicates                                    │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Layer 2: Gateway - Storm Aggregation (DD-GATEWAY-008)              │
-│  - Different fingerprints, threshold >5 → Aggregate into 1 RR      │
-│  - Handles: 15-25% of duplicates (storm scenarios)                  │
+│  Layer 2: [Removed] Storm aggregation (DD-GATEWAY-008)              │
+│  - Storm aggregation at the Gateway was **removed** per             │
+│    [DD-GATEWAY-015](DD-GATEWAY-015-storm-detection-removal.md)      │
+│    (issue #448). This layer is documented for historical context      │
+│    only; deduplication now relies on Layer 1 + Layer 3 below.        │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Layer 3: WE - Resource Locking (DD-WE-001)                         │
 │  - Different fingerprints, same target resource → Skipped phase     │
@@ -394,8 +396,8 @@ See: [BUSINESS_REQUIREMENTS.md](../../services/crd-controllers/05-remediationorc
 | Field | Description |
 |-------|-------------|
 | `spec.eventType` | `RemediationCompleted` |
-| `spec.metadata.duplicateCount` | Number of skipped duplicates |
-| `spec.metadata.duplicateRefs` | List of skipped RR names |
+| `spec.context.dedup.duplicateCount` | Number of skipped duplicates |
+| `spec.extensions["duplicateRefs"]` | List of skipped RR names |
 
 ---
 
@@ -405,8 +407,9 @@ See: [BUSINESS_REQUIREMENTS.md](../../services/crd-controllers/05-remediationorc
 |----------|--------------|
 | **DD-WE-001** | Resource locking that triggers Skipped phase |
 | **DD-GATEWAY-009** | Fingerprint deduplication (Layer 1) |
-| **DD-GATEWAY-008** | Storm aggregation (Layer 2) |
-| **DD-ORCHESTRATOR-001** | Storm/dedup data propagation to AIAnalysis |
+| **DD-GATEWAY-008** | Storm aggregation (Layer 2) — **removed** per **DD-GATEWAY-015** (historical; stub/superseded DD) |
+| **DD-GATEWAY-015** | Storm detection removal — current architecture (no Gateway storm layer) |
+| **DD-ORCHESTRATOR-001** | Signal and deduplication context propagation to AIAnalysis |
 
 ---
 

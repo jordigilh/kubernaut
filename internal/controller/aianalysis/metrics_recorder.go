@@ -46,7 +46,7 @@ import (
 func (r *AIAnalysisReconciler) recordPhaseMetrics(ctx context.Context, phase string, analysis *aianalysisv1.AIAnalysis, err error) {
 	// Track failures with reason and sub-reason
 	if analysis.Status.Phase == PhaseFailed {
-		reason := analysis.Status.Reason
+		reason := string(analysis.Status.Reason)
 		if reason == "" {
 			reason = "Unknown"
 		}

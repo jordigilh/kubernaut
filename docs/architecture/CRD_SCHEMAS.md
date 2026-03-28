@@ -874,49 +874,27 @@ type AIAnalysisSpec struct {
 
 ## 📊 AIAnalysisStatus
 
-```go
-// AIAnalysisStatus defines the observed state of AIAnalysis
-type AIAnalysisStatus struct {
-    // +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Recommending;Completed;Failed
-    Phase string `json:"phase"`
+> **Source of truth**: `api/aianalysis/v1alpha1/aianalysis_types.go`
+> This section is a summary; always defer to the Go types for the current schema.
 
-    Message string `json:"message,omitempty"`
-    Reason string `json:"reason,omitempty"`
-
-    StartedAt *metav1.Time `json:"startedAt,omitempty"`
-    CompletedAt *metav1.Time `json:"completedAt,omitempty"`
-
-    // Analysis Results
-    RootCause string `json:"rootCause,omitempty"`
-
-    // +kubebuilder:validation:Minimum=0.0
-    // +kubebuilder:validation:Maximum=1.0
-    Confidence float64 `json:"confidence,omitempty"`
-
-    RecommendedAction string `json:"recommendedAction,omitempty"`
-    RequiresApproval bool `json:"requiresApproval,omitempty"`
-
-    // LLM Metrics
-    // +kubebuilder:validation:MaxLength=253
-    InvestigationID string `json:"investigationId,omitempty"`
-
-    // NOTE: TokensUsed REMOVED (Dec 2025) - HAPI owns LLM cost observability
-    // Use InvestigationID to correlate with HAPI's holmesgpt_llm_token_usage_total metric
-
-    // +kubebuilder:validation:Minimum=0
-    InvestigationTime int64 `json:"investigationTime,omitempty"` // milliseconds
-
-    Conditions []metav1.Condition `json:"conditions,omitempty"`
-}
-```
-
-**Phase Transitions**:
+**Phase Transitions** (per reconciliation-phases.md v2.0):
 1. `Pending` → Initial state
-2. `Investigating` → Gathering context from RemediationProcessing
-3. `Analyzing` → LLM analysis in progress
-4. `Recommending` → Generating actionable recommendations
-5. `Completed` → Analysis finished, results available
-6. `Failed` → Analysis failed (with reason)
+2. `Investigating` → HolmesGPT-API call in progress
+3. `Analyzing` → Rego policy evaluation
+4. `Completed` → Analysis finished, results available
+5. `Failed` → Analysis failed (with reason)
+
+**Reason Enum** (`AIAnalysisReason` — covers all terminal states per K8s convention):
+
+| Value | Terminal Phase | Description |
+|-------|---------------|-------------|
+| `AnalysisCompleted` | Completed | Successful analysis with workflow selected |
+| `WorkflowNotNeeded` | Completed | Problem self-resolved or not actionable |
+| `WorkflowResolutionFailed` | Failed | Workflow validation/resolution failed (see SubReason) |
+| `NoWorkflowSelected` | Failed | Investigation completed but no workflow in status |
+| `RegoEvaluationError` | Failed | Rego policy evaluation failed |
+| `TransientError` | Failed | Temporary failure, retry recommended |
+| `APIError` | Failed | Permanent API/LLM error |
 
 ---
 

@@ -169,6 +169,62 @@ func (s *AIAgentResponsePayload) Validate() error {
 			Error: err,
 		})
 	}
+	if err := func() error {
+		if value, ok := s.TotalPromptTokens.Get(); ok {
+			if err := func() error {
+				if err := (validate.Int{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        false,
+					Max:           0,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    0,
+					Pattern:       nil,
+				}).Validate(int64(value)); err != nil {
+					return errors.Wrap(err, "int")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "total_prompt_tokens",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.TotalCompletionTokens.Get(); ok {
+			if err := func() error {
+				if err := (validate.Int{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        false,
+					Max:           0,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    0,
+					Pattern:       nil,
+				}).Validate(int64(value)); err != nil {
+					return errors.Wrap(err, "int")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "total_completion_tokens",
+			Error: err,
+		})
+	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -462,7 +518,7 @@ func (s ActionTypeCatalogReenabledPayloadEventType) Validate() error {
 
 func (s ActionTypeCatalogReenabledPayloadPreviousState) Validate() error {
 	switch s {
-	case "disabled":
+	case "Disabled":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -596,7 +652,7 @@ func (s *ActionTypeDisableResponse) Validate() error {
 
 func (s ActionTypeDisableResponseStatus) Validate() error {
 	switch s {
-	case "disabled":
+	case "Disabled":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -1806,6 +1862,8 @@ func (s DetectedLabelsFailedDetectionsItem) Validate() error {
 	case "networkIsolated":
 		return nil
 	case "serviceMesh":
+		return nil
+	case "resourceQuotaConstrained":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -3114,13 +3172,13 @@ func (s ListWorkflowsByActionTypeSeverity) Validate() error {
 
 func (s ListWorkflowsStatus) Validate() error {
 	switch s {
-	case "active":
+	case "Active":
 		return nil
-	case "disabled":
+	case "Disabled":
 		return nil
-	case "deprecated":
+	case "Deprecated":
 		return nil
-	case "archived":
+	case "Archived":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -5523,15 +5581,15 @@ func (s *RemediationWorkflow) Validate() error {
 
 func (s RemediationWorkflowStatus) Validate() error {
 	switch s {
-	case "active":
+	case "Active":
 		return nil
-	case "disabled":
+	case "Disabled":
 		return nil
-	case "deprecated":
+	case "Deprecated":
 		return nil
-	case "archived":
+	case "Archived":
 		return nil
-	case "superseded":
+	case "Superseded":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -6144,11 +6202,11 @@ func (s *WorkflowCatalogCreatedPayload) Validate() error {
 
 func (s WorkflowCatalogCreatedPayloadStatus) Validate() error {
 	switch s {
-	case "active":
+	case "Active":
 		return nil
-	case "disabled":
+	case "Disabled":
 		return nil
-	case "archived":
+	case "Archived":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -6726,13 +6784,13 @@ func (s WorkflowSearchFiltersSeverity) Validate() error {
 
 func (s WorkflowSearchFiltersStatusItem) Validate() error {
 	switch s {
-	case "active":
+	case "Active":
 		return nil
-	case "disabled":
+	case "Disabled":
 		return nil
-	case "deprecated":
+	case "Deprecated":
 		return nil
-	case "archived":
+	case "Archived":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -6771,13 +6829,13 @@ func (s *WorkflowUpdateRequest) Validate() error {
 
 func (s WorkflowUpdateRequestStatus) Validate() error {
 	switch s {
-	case "active":
+	case "Active":
 		return nil
-	case "disabled":
+	case "Disabled":
 		return nil
-	case "deprecated":
+	case "Deprecated":
 		return nil
-	case "archived":
+	case "Archived":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

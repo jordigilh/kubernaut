@@ -45,7 +45,7 @@ type AIAnalysisHandler struct {
 	scheme                 *runtime.Scheme
 	notificationCreator    *creator.NotificationCreator
 	Metrics                *metrics.Metrics
-	transitionToFailed     func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error)
+	transitionToFailed     func(context.Context, *remediationv1.RemediationRequest, remediationv1.FailurePhase, error) (ctrl.Result, error)
 	noActionRequiredDelay  time.Duration
 }
 
@@ -53,7 +53,7 @@ type AIAnalysisHandler struct {
 // noActionDelay controls how long after a NoActionRequired completion the Gateway
 // should suppress new RR creation for the same signal fingerprint (Issue #314).
 // Pass 0 to disable suppression.
-func NewAIAnalysisHandler(c client.Client, s *runtime.Scheme, nc *creator.NotificationCreator, m *metrics.Metrics, ttf func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error), noActionDelay time.Duration) *AIAnalysisHandler {
+func NewAIAnalysisHandler(c client.Client, s *runtime.Scheme, nc *creator.NotificationCreator, m *metrics.Metrics, ttf func(context.Context, *remediationv1.RemediationRequest, remediationv1.FailurePhase, error) (ctrl.Result, error), noActionDelay time.Duration) *AIAnalysisHandler {
 	return &AIAnalysisHandler{
 		client:                c,
 		scheme:                s,
@@ -286,7 +286,7 @@ func (h *AIAnalysisHandler) handleHumanReviewRequired(
 
 	// Build manual review context with BR-HAPI-197 fields
 	reviewCtx := &creator.ManualReviewContext{
-		Source:            creator.ManualReviewSourceAIAnalysis,
+		Source:            notificationv1.ReviewSourceAIAnalysis,
 		Reason:            "HumanReviewRequired", // BR-HAPI-197 reason
 		SubReason:         ai.Status.HumanReviewReason,
 		Message:           ai.Status.Message,
@@ -319,7 +319,7 @@ func (h *AIAnalysisHandler) handleManualReviewCompleted(
 
 	// Build manual review context with BR-HAPI-197 fields
 	reviewCtx := &creator.ManualReviewContext{
-		Source:            creator.ManualReviewSourceAIAnalysis,
+		Source:            notificationv1.ReviewSourceAIAnalysis,
 		Reason:            "HumanReviewRequired",
 		SubReason:         ai.Status.HumanReviewReason,
 		Message:           ai.Status.Message,
@@ -394,19 +394,16 @@ func (h *AIAnalysisHandler) handleWorkflowResolutionFailed(
 
 	logger.Info("AIAnalysis WorkflowResolutionFailed - creating manual review notification")
 
-	// Build manual review context
 	reviewCtx := &creator.ManualReviewContext{
-		Source:    creator.ManualReviewSourceAIAnalysis,
-		Reason:    ai.Status.Reason,
+		Source:    notificationv1.ReviewSourceAIAnalysis,
+		Reason:    string(ai.Status.Reason),
 		SubReason: ai.Status.SubReason,
 		Message:   ai.Status.Message,
 	}
 
-	// Populate root cause and warnings (common pattern)
 	h.populateManualReviewContext(reviewCtx, ai)
 
-	// Create notification and update RR status (common pattern)
-	return h.createManualReviewAndUpdateStatus(ctx, logger, rr, reviewCtx, ai.Status.Reason, ai.Status.SubReason)
+	return h.createManualReviewAndUpdateStatus(ctx, logger, rr, reviewCtx, string(ai.Status.Reason), ai.Status.SubReason)
 }
 
 // populateManualReviewContext adds root cause analysis and warnings to the review context.
@@ -469,7 +466,7 @@ func (h *AIAnalysisHandler) createManualReviewAndUpdateStatus(
 
 	// Transition to Failed phase with audit emission (BR-AUDIT-005, DD-AUDIT-003)
 	// Handler Consistency Refactoring (2026-01-22): Delegate to reconciler's transitionToFailed
-	return h.transitionToFailed(ctx, rr, "ai_analysis", fmt.Errorf("AIAnalysis failed: %s", reviewCtx.Message))
+	return h.transitionToFailed(ctx, rr, remediationv1.FailurePhaseAIAnalysis, fmt.Errorf("AIAnalysis failed: %s", reviewCtx.Message))
 }
 
 // propagateFailure propagates AIAnalysis failure to RemediationRequest.
@@ -495,18 +492,15 @@ func (h *AIAnalysisHandler) propagateFailure(
 	// BR-ORCH-036 v3.0: Build manual review context for infrastructure failures
 	// (APIError, Timeout, MaxRetriesExceeded, etc.)
 	reviewCtx := &creator.ManualReviewContext{
-		Source:    creator.ManualReviewSourceAIAnalysis,
-		Reason:    ai.Status.Reason,    // e.g., "APIError"
-		SubReason: ai.Status.SubReason, // e.g., "MaxRetriesExceeded", "TransientError"
+		Source:    notificationv1.ReviewSourceAIAnalysis,
+		Reason:    string(ai.Status.Reason),
+		SubReason: ai.Status.SubReason,
 		Message:   ai.Status.Message,
 	}
 
-	// Populate root cause and warnings if available (common pattern)
 	h.populateManualReviewContext(reviewCtx, ai)
 
-	// Create notification and update RR status, then transition to Failed
-	// Reuses the same pattern as handleWorkflowResolutionFailed and handleHumanReviewRequired
-	return h.createManualReviewAndUpdateStatus(ctx, logger, rr, reviewCtx, ai.Status.Reason, ai.Status.SubReason)
+	return h.createManualReviewAndUpdateStatus(ctx, logger, rr, reviewCtx, string(ai.Status.Reason), ai.Status.SubReason)
 }
 
 // HandleRemediationTargetMissing handles the defense-in-depth case where AIAnalysis completed
@@ -527,7 +521,7 @@ func (h *AIAnalysisHandler) HandleRemediationTargetMissing(
 	logger.Info("RemediationTarget missing on completed AIAnalysis - creating manual review notification (DD-HAPI-006 defense-in-depth)")
 
 	reviewCtx := &creator.ManualReviewContext{
-		Source:    creator.ManualReviewSourceAIAnalysis,
+		Source:    notificationv1.ReviewSourceAIAnalysis,
 		Reason:    "RemediationTargetMissing",
 		SubReason: "rca_resource_missing",
 		Message:   "AIAnalysis completed with a selected workflow but the RCA remediation target is missing or empty. This indicates the AI identified a remediation action but could not determine the specific Kubernetes resource to target.",

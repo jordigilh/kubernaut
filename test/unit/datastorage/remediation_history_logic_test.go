@@ -40,7 +40,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 	)
 
 	// makeROEvent creates a RawAuditRow simulating a remediation.workflow_created event.
-	makeROEvent := func(correlationID, preHash, outcome, signalType, signalFingerprint, workflowType string, ts time.Time) repository.RawAuditRow {
+	makeROEvent := func(correlationID, preHash, outcome, signalType, signalFingerprint, actionType string, ts time.Time) repository.RawAuditRow {
 		return repository.RawAuditRow{
 			EventType:      "remediation.workflow_created",
 			CorrelationID:  correlationID,
@@ -50,7 +50,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 				"outcome":                  outcome,
 				"signal_type":              signalType,
 				"signal_fingerprint":       signalFingerprint,
-				"workflow_type":            workflowType,
+				"action_type":              actionType,
 				"target_resource":          "default/Deployment/nginx",
 			},
 		}
@@ -168,7 +168,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 			Expect(entry.RemediationUID).To(Equal("rr-001"))
 			Expect(entry.SignalType.Value).To(Equal("alert"))
 			Expect(entry.SignalFingerprint.Value).To(Equal("fp-alert-001"))
-			Expect(entry.WorkflowType.Value).To(Equal("restart"))
+			Expect(entry.ActionType.Value).To(Equal("restart"))
 			Expect(entry.Outcome.Value).To(Equal("success"))
 			Expect(entry.PreRemediationSpecHash.Value).To(Equal("sha256:pre123"))
 			Expect(entry.CompletedAt).To(Equal(fixedTime))
@@ -358,7 +358,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 			s := summaries[0]
 			Expect(s.RemediationUID).To(Equal("rr-t2-001"))
 			Expect(s.SignalType.Value).To(Equal("alert"))
-			Expect(s.WorkflowType.Value).To(Equal("restart"))
+			Expect(s.ActionType.Value).To(Equal("restart"))
 			Expect(s.Outcome.Value).To(Equal("success"))
 			Expect(s.CompletedAt).To(Equal(fixedTime))
 

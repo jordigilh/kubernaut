@@ -2,7 +2,7 @@
 
 **Status**: ✅ APPROVED
 **Decision Date**: 2026-02-05
-**Version**: 1.1
+**Version**: 1.3
 **Confidence**: 95%
 **Applies To**: HolmesGPT API (HAPI), DataStorage Service (DS)
 
@@ -15,6 +15,7 @@
 | 1.0 | 2026-02-05 | Architecture Team | Initial design: two-tier query, three-way hash comparison, full remediation chain, DS business logic endpoint, prompt reasoning framework |
 | 1.1 | 2026-02-14 | Architecture Team | Updated DS internal logic to reflect EM's component-level audit event architecture (per ADR-EM-001 v1.3). DS now uses a two-step query (RO events by target_resource, then EM component events by correlation_id) and reuses exported scoring functions from effectiveness_handler.go. Health/metric/alert data sourced from typed ogen sub-objects (health_checks, metric_deltas, alert_resolution) on EM component events. signalResolved read from alert_resolution.alert_resolved. Coordinated via issue #82. |
 | 1.2 | 2026-02-12 | Architecture Team | DRIFT-DS-1: Corrected sort order to descending (most recent first) per implementation. DRIFT-HAPI-1: Added spec_drift Assessment Reason Handling section documenting INCONCLUSIVE semantics, declining effectiveness exclusion, causal chain detection, and LLM reasoning guidance. |
+| 1.3 | 2026-03-27 | Architecture Team | Remediation history API and examples: `workflowType` renamed to `actionType`; RO audit skeleton field `workflow_type` renamed to `action_type` (Issue #528, v1.2). |
 
 ---
 
@@ -180,7 +181,7 @@ GET /api/v1/remediation-history/context
                 "remediationUID": "rr-abc",
                 "signalFingerprint": "fp-123",
                 "signalName": "HighCPULoad",
-                "workflowType": "ScaleUp",
+                "actionType": "ScaleUp",
                 "outcome": "Success",
                 "effectivenessScore": 0.4,
                 "signalResolved": false,
@@ -213,7 +214,7 @@ GET /api/v1/remediation-history/context
                 "remediationUID": "rr-def",
                 "signalFingerprint": "fp-123",
                 "signalName": "HighCPULoad",
-                "workflowType": "ScaleUp",
+                "actionType": "ScaleUp",
                 "outcome": "Success",
                 "effectivenessScore": 0.3,
                 "signalResolved": false,
@@ -250,7 +251,7 @@ GET /api/v1/remediation-history/context
             {
                 "remediationUID": "rr-old-001",
                 "signalName": "HighCPULoad",
-                "workflowType": "ScaleUp",
+                "actionType": "ScaleUp",
                 "outcome": "Success",
                 "effectivenessScore": 0.4,
                 "signalResolved": false,
@@ -260,7 +261,7 @@ GET /api/v1/remediation-history/context
             {
                 "remediationUID": "rr-old-002",
                 "signalName": "HighCPULoad",
-                "workflowType": "RestartPod",
+                "actionType": "RestartPod",
                 "outcome": "Success",
                 "effectivenessScore": 0.2,
                 "signalResolved": false,
@@ -270,7 +271,7 @@ GET /api/v1/remediation-history/context
             {
                 "remediationUID": "rr-old-003",
                 "signalName": "HighCPULoad",
-                "workflowType": null,
+                "actionType": null,
                 "outcome": "Escalated",
                 "effectivenessScore": null,
                 "signalResolved": true,
@@ -286,7 +287,7 @@ GET /api/v1/remediation-history/context
 
 DS performs the following when serving this endpoint:
 
-1. **Query Tier 1 — RO events**: Query `remediation.workflow_created` audit events by `target_resource` (JSONB expression index `idx_audit_events_target_resource`) within the Tier 1 time window (default 24h). These events provide the remediation chain skeleton: `correlation_id` (RR name), `pre_remediation_spec_hash`, `workflow_type` (DD-WORKFLOW-016 action type, e.g., "ScaleReplicas"), `outcome`, `signal_name`, `signal_fingerprint`.
+1. **Query Tier 1 — RO events**: Query `remediation.workflow_created` audit events by `target_resource` (JSONB expression index `idx_audit_events_target_resource`) within the Tier 1 time window (default 24h). These events provide the remediation chain skeleton: `correlation_id` (RR name), `pre_remediation_spec_hash`, `action_type` (DD-WORKFLOW-016 action type, e.g., "ScaleReplicas"), `outcome`, `signal_name`, `signal_fingerprint`.
 2. **Query Tier 1 — EM component events**: For each RO event's `correlation_id`, batch-query EM component events (`event_category = 'effectiveness'`). The EM emits component-level audit events per ADR-EM-001 v1.3:
    - `effectiveness.health.assessed` — health score + typed `health_checks` sub-object (`pod_running`, `readiness_pass`, `restart_delta`, `crash_loops`, `oom_killed`, `pending_count`)
    - `effectiveness.alert.assessed` — alert score + typed `alert_resolution` sub-object (`alert_resolved`, `active_count`, `resolution_time_seconds`)

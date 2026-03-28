@@ -31,7 +31,6 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ============================================================================
@@ -96,11 +95,6 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -177,11 +171,6 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -257,11 +246,6 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -327,11 +311,6 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -428,11 +407,6 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -505,11 +479,6 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -587,11 +556,6 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())

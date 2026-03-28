@@ -216,4 +216,40 @@ var _ = Describe("EA Conditions Infrastructure (DD-CRD-002)", func() {
 	It("UT-EM-COND-011: should define AssessmentReasonSpecDrift in EA types", func() {
 		Expect(eav1.AssessmentReasonSpecDrift).To(Equal("spec_drift"))
 	})
+
+	// ========================================
+	// UT-EM-546-001: PostHashCaptured condition set to False when degraded
+	// ========================================
+	It("UT-EM-546-001: should set PostHashCaptured=False with degradation reason when spec fetch fails", func() {
+		conditions.SetCondition(ea,
+			conditions.ConditionPostHashCaptured,
+			metav1.ConditionFalse,
+			conditions.ReasonPostHashCaptureFailed,
+			"failed to fetch target resource Deployment/nginx: Forbidden",
+		)
+
+		cond := conditions.GetCondition(ea, conditions.ConditionPostHashCaptured)
+		Expect(cond).ToNot(BeNil(), "PostHashCaptured condition should exist")
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(cond.Reason).To(Equal("PostHashCaptureFailed"))
+		Expect(cond.Message).To(ContainSubstring("Forbidden"))
+		Expect(cond.LastTransitionTime.IsZero()).To(BeFalse(), "LastTransitionTime should be set")
+	})
+
+	// ========================================
+	// UT-EM-546-002: PostHashCaptured condition set to True on success
+	// ========================================
+	It("UT-EM-546-002: should set PostHashCaptured=True when spec fetch succeeds", func() {
+		conditions.SetCondition(ea,
+			conditions.ConditionPostHashCaptured,
+			metav1.ConditionTrue,
+			conditions.ReasonPostHashCaptured,
+			"Post-remediation spec hash captured",
+		)
+
+		cond := conditions.GetCondition(ea, conditions.ConditionPostHashCaptured)
+		Expect(cond).ToNot(BeNil(), "PostHashCaptured condition should exist")
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		Expect(cond.Reason).To(Equal("PostHashCaptured"))
+	})
 })

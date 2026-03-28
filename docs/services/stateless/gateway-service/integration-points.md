@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.5 | 2026-03-19 | Aligned Redis key table and CRD flow with deduplication-only behavior; removed obsolete aggregation example and superseded design doc link; simplified Redis outage notes. | - |
 > | v1.4 | 2026-02-18 | **Issue #91**: Removed `kubernaut.ai/signal-type` label from CRD example; use `spec.signalType`. `kubernaut.ai/severity` removed; use `spec.severity`. | - |
 > | v1.3 | 2025-12-03 | Updated DeduplicationInfo to use firstOccurrence/lastOccurrence | [RemediationRequest CRD](../../../../api/remediation/v1alpha1/remediationrequest_types.go) |
 > | v1.2 | 2025-12-03 | Added TargetResource and TargetType fields | [DD-GATEWAY-NON-K8S-SIGNALS](../../../architecture/decisions/DD-GATEWAY-NON-K8S-SIGNALS.md) |
@@ -120,9 +121,6 @@ redis:
 | Pattern | Purpose | TTL |
 |---------|---------|-----|
 | `alert:fingerprint:<hash>` | Deduplication metadata | 5 min |
-| `alert:storm:rate:<alertname>` | Rate-based storm detection | 1 min |
-| `alert:storm:pattern:<pattern>` | Pattern-based storm detection | 2 min |
-| `alert:buffer:<window_id>` | Storm aggregation buffer | 2 min |
 
 ### Deduplication Metadata Structure
 
@@ -197,34 +195,6 @@ status:
   phase: "Pending"  # Remediation Orchestrator updates this
 ```
 
-### Storm Alert CRD
-
-When storm detection triggers, the CRD includes aggregation metadata:
-
-```yaml
-apiVersion: remediation.kubernaut.io/v1alpha1
-kind: RemediationRequest
-metadata:
-  name: remediation-storm-xyz
-  namespace: kubernaut-system
-  labels:
-    kubernaut.ai/signal-name: PodOOMKilled
-    kubernaut.ai/storm: "true"
-spec:
-  isStorm: true
-  stormType: "rate"  # or "pattern"
-  stormAlertCount: 15
-  affectedResources:
-    - kind: Pod
-      name: web-app-789
-      namespace: prod-ns-1
-    - kind: Pod
-      name: api-456
-      namespace: prod-ns-2
-  totalAffectedResources: 15
-  # ... standard fields
-```
-
 ---
 
 ## Integration Flow Diagram
@@ -245,9 +215,6 @@ sequenceDiagram
 
     GW->>Redis: Check fingerprint
     Redis-->>GW: Not found (new)
-
-    GW->>Redis: Check storm rate
-    Redis-->>GW: Count < threshold
 
     GW->>K8S: Create RemediationRequest CRD
     K8S-->>GW: Created
@@ -272,8 +239,7 @@ sequenceDiagram
 
 When Redis is unavailable:
 1. **Deduplication**: Falls back to allowing all signals (duplicates may occur)
-2. **Storm Detection**: Disabled (individual CRDs created)
-3. **Metrics**: `gateway_redis_outage_total` counter incremented
+2. **Metrics**: `gateway_redis_outage_total` counter incremented
 
 ### Kubernetes API Errors
 
@@ -321,6 +287,5 @@ func (c *CRDCreator) checkDeduplication(ctx context.Context, fingerprint string)
 - [overview.md](./overview.md) - Service architecture overview
 - [deduplication.md](./deduplication.md) - Deduplication algorithm details
 - [api-specification.md](./api-specification.md) - OpenAPI specification
-- [DD-GATEWAY-008](../../../architecture/decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md) - Storm aggregation
 - [DD-GATEWAY-NON-K8S-SIGNALS](../../../architecture/decisions/DD-GATEWAY-NON-K8S-SIGNALS.md) - Non-K8s signal support
 

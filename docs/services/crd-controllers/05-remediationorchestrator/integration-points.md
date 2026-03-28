@@ -272,10 +272,10 @@ func (r *RemediationRequestReconciler) createWorkflowExecution(
             // Parameters: Pass-through from AIAnalysis
             Parameters: selectedWorkflow.Parameters,
 
-            // Execution Config
+            // Execution Config — DD-WE-005 v2.0: pass through SA from catalog (e.g. RemediationWorkflow.execution.serviceAccountName → selectedWorkflow.ServiceAccountName)
             ExecutionConfig: workflowexecutionv1.ExecutionConfig{
                 Timeout:            "20m",
-                ServiceAccountName: "kubernaut-workflow-runner",
+                ServiceAccountName: selectedWorkflow.ServiceAccountName, // e.g. "my-workflow-sa"; empty → namespace default SA on PipelineRun
             },
         },
     }

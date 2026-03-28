@@ -837,13 +837,27 @@ func (s *AIAgentResponsePayload) encodeFields(e *jx.Encoder) {
 		e.FieldStart("response_data")
 		s.ResponseData.Encode(e)
 	}
+	{
+		if s.TotalPromptTokens.Set {
+			e.FieldStart("total_prompt_tokens")
+			s.TotalPromptTokens.Encode(e)
+		}
+	}
+	{
+		if s.TotalCompletionTokens.Set {
+			e.FieldStart("total_completion_tokens")
+			s.TotalCompletionTokens.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfAIAgentResponsePayload = [4]string{
+var jsonFieldsNameOfAIAgentResponsePayload = [6]string{
 	0: "event_type",
 	1: "event_id",
 	2: "incident_id",
 	3: "response_data",
+	4: "total_prompt_tokens",
+	5: "total_completion_tokens",
 }
 
 // Decode decodes AIAgentResponsePayload from json.
@@ -898,6 +912,26 @@ func (s *AIAgentResponsePayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"response_data\"")
+			}
+		case "total_prompt_tokens":
+			if err := func() error {
+				s.TotalPromptTokens.Reset()
+				if err := s.TotalPromptTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_prompt_tokens\"")
+			}
+		case "total_completion_tokens":
+			if err := func() error {
+				s.TotalCompletionTokens.Reset()
+				if err := s.TotalCompletionTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_completion_tokens\"")
 			}
 		default:
 			return d.Skip()
@@ -6000,9 +6034,9 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
-				if s.WorkflowType.Set {
-					e.FieldStart("workflow_type")
-					s.WorkflowType.Encode(e)
+				if s.ActionType.Set {
+					e.FieldStart("action_type")
+					s.ActionType.Encode(e)
 				}
 			}
 			{
@@ -6987,6 +7021,18 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("response_data")
 				s.ResponseData.Encode(e)
+			}
+			{
+				if s.TotalPromptTokens.Set {
+					e.FieldStart("total_prompt_tokens")
+					s.TotalPromptTokens.Encode(e)
+				}
+			}
+			{
+				if s.TotalCompletionTokens.Set {
+					e.FieldStart("total_completion_tokens")
+					s.TotalCompletionTokens.Encode(e)
+				}
 			}
 		}
 	case AIAgentResponseFailedPayloadAuditEventEventData:
@@ -8997,9 +9043,9 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
-				if s.WorkflowType.Set {
-					e.FieldStart("workflow_type")
-					s.WorkflowType.Encode(e)
+				if s.ActionType.Set {
+					e.FieldStart("action_type")
+					s.ActionType.Encode(e)
 				}
 			}
 			{
@@ -9984,6 +10030,18 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("response_data")
 				s.ResponseData.Encode(e)
+			}
+			{
+				if s.TotalPromptTokens.Set {
+					e.FieldStart("total_prompt_tokens")
+					s.TotalPromptTokens.Encode(e)
+				}
+			}
+			{
+				if s.TotalCompletionTokens.Set {
+					e.FieldStart("total_completion_tokens")
+					s.TotalCompletionTokens.Encode(e)
+				}
 			}
 		}
 	case AIAgentResponseFailedPayloadAuditEventRequestEventData:
@@ -13863,9 +13921,15 @@ func (s *DetectedLabels) encodeFields(e *jx.Encoder) {
 			s.ServiceMesh.Encode(e)
 		}
 	}
+	{
+		if s.ResourceQuotaConstrained.Set {
+			e.FieldStart("resourceQuotaConstrained")
+			s.ResourceQuotaConstrained.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfDetectedLabels = [9]string{
+var jsonFieldsNameOfDetectedLabels = [10]string{
 	0: "failedDetections",
 	1: "gitOpsManaged",
 	2: "gitOpsTool",
@@ -13875,6 +13939,7 @@ var jsonFieldsNameOfDetectedLabels = [9]string{
 	6: "helmManaged",
 	7: "networkIsolated",
 	8: "serviceMesh",
+	9: "resourceQuotaConstrained",
 }
 
 // Decode decodes DetectedLabels from json.
@@ -13982,6 +14047,16 @@ func (s *DetectedLabels) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"serviceMesh\"")
 			}
+		case "resourceQuotaConstrained":
+			if err := func() error {
+				s.ResourceQuotaConstrained.Reset()
+				if err := s.ResourceQuotaConstrained.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"resourceQuotaConstrained\"")
+			}
 		default:
 			return d.Skip()
 		}
@@ -14038,6 +14113,8 @@ func (s *DetectedLabelsFailedDetectionsItem) Decode(d *jx.Decoder) error {
 		*s = DetectedLabelsFailedDetectionsItemNetworkIsolated
 	case DetectedLabelsFailedDetectionsItemServiceMesh:
 		*s = DetectedLabelsFailedDetectionsItemServiceMesh
+	case DetectedLabelsFailedDetectionsItemResourceQuotaConstrained:
+		*s = DetectedLabelsFailedDetectionsItemResourceQuotaConstrained
 	default:
 		*s = DetectedLabelsFailedDetectionsItem(v)
 	}
@@ -27573,9 +27650,9 @@ func (s *RemediationHistoryEntry) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.WorkflowType.Set {
-			e.FieldStart("workflowType")
-			s.WorkflowType.Encode(e)
+		if s.ActionType.Set {
+			e.FieldStart("actionType")
+			s.ActionType.Encode(e)
 		}
 	}
 	{
@@ -27658,7 +27735,7 @@ var jsonFieldsNameOfRemediationHistoryEntry = [16]string{
 	0:  "remediationUID",
 	1:  "signalFingerprint",
 	2:  "signalType",
-	3:  "workflowType",
+	3:  "actionType",
 	4:  "outcome",
 	5:  "effectivenessScore",
 	6:  "signalResolved",
@@ -27714,15 +27791,15 @@ func (s *RemediationHistoryEntry) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"signalType\"")
 			}
-		case "workflowType":
+		case "actionType":
 			if err := func() error {
-				s.WorkflowType.Reset()
-				if err := s.WorkflowType.Decode(d); err != nil {
+				s.ActionType.Reset()
+				if err := s.ActionType.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"workflowType\"")
+				return errors.Wrap(err, "decode field \"actionType\"")
 			}
 		case "outcome":
 			if err := func() error {
@@ -28022,9 +28099,9 @@ func (s *RemediationHistorySummary) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.WorkflowType.Set {
-			e.FieldStart("workflowType")
-			s.WorkflowType.Encode(e)
+		if s.ActionType.Set {
+			e.FieldStart("actionType")
+			s.ActionType.Encode(e)
 		}
 	}
 	{
@@ -28066,7 +28143,7 @@ func (s *RemediationHistorySummary) encodeFields(e *jx.Encoder) {
 var jsonFieldsNameOfRemediationHistorySummary = [9]string{
 	0: "remediationUID",
 	1: "signalType",
-	2: "workflowType",
+	2: "actionType",
 	3: "outcome",
 	4: "effectivenessScore",
 	5: "signalResolved",
@@ -28106,15 +28183,15 @@ func (s *RemediationHistorySummary) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"signalType\"")
 			}
-		case "workflowType":
+		case "actionType":
 			if err := func() error {
-				s.WorkflowType.Reset()
-				if err := s.WorkflowType.Decode(d); err != nil {
+				s.ActionType.Reset()
+				if err := s.ActionType.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"workflowType\"")
+				return errors.Wrap(err, "decode field \"actionType\"")
 			}
 		case "outcome":
 			if err := func() error {
@@ -28919,9 +28996,9 @@ func (s *RemediationOrchestratorAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.WorkflowType.Set {
-			e.FieldStart("workflow_type")
-			s.WorkflowType.Encode(e)
+		if s.ActionType.Set {
+			e.FieldStart("action_type")
+			s.ActionType.Encode(e)
 		}
 	}
 	{
@@ -28996,7 +29073,7 @@ var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [35]string{
 	24: "pre_remediation_spec_hash",
 	25: "target_resource",
 	26: "workflow_version",
-	27: "workflow_type",
+	27: "action_type",
 	28: "ea_name",
 	29: "hash_compute_delay",
 	30: "alert_check_delay",
@@ -29289,15 +29366,15 @@ func (s *RemediationOrchestratorAuditPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"workflow_version\"")
 			}
-		case "workflow_type":
+		case "action_type":
 			if err := func() error {
-				s.WorkflowType.Reset()
-				if err := s.WorkflowType.Decode(d); err != nil {
+				s.ActionType.Reset()
+				if err := s.ActionType.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"workflow_type\"")
+				return errors.Wrap(err, "decode field \"action_type\"")
 			}
 		case "ea_name":
 			if err := func() error {
@@ -29997,6 +30074,12 @@ func (s *RemediationWorkflow) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ServiceAccountName.Set {
+			e.FieldStart("serviceAccountName")
+			s.ServiceAccountName.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("labels")
 		s.Labels.Encode(e)
 	}
@@ -30132,7 +30215,7 @@ func (s *RemediationWorkflow) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfRemediationWorkflow = [40]string{
+var jsonFieldsNameOfRemediationWorkflow = [41]string{
 	0:  "workflowId",
 	1:  "workflowName",
 	2:  "actionType",
@@ -30150,29 +30233,30 @@ var jsonFieldsNameOfRemediationWorkflow = [40]string{
 	14: "schemaDigest",
 	15: "executionBundle",
 	16: "executionBundleDigest",
-	17: "labels",
-	18: "customLabels",
-	19: "detectedLabels",
-	20: "status",
-	21: "disabledAt",
-	22: "disabledBy",
-	23: "disabledReason",
-	24: "isLatestVersion",
-	25: "previousVersion",
-	26: "deprecationNotice",
-	27: "versionNotes",
-	28: "changeSummary",
-	29: "approvedBy",
-	30: "approvedAt",
-	31: "expectedSuccessRate",
-	32: "expectedDurationSeconds",
-	33: "actualSuccessRate",
-	34: "totalExecutions",
-	35: "successfulExecutions",
-	36: "createdAt",
-	37: "updatedAt",
-	38: "createdBy",
-	39: "updatedBy",
+	17: "serviceAccountName",
+	18: "labels",
+	19: "customLabels",
+	20: "detectedLabels",
+	21: "status",
+	22: "disabledAt",
+	23: "disabledBy",
+	24: "disabledReason",
+	25: "isLatestVersion",
+	26: "previousVersion",
+	27: "deprecationNotice",
+	28: "versionNotes",
+	29: "changeSummary",
+	30: "approvedBy",
+	31: "approvedAt",
+	32: "expectedSuccessRate",
+	33: "expectedDurationSeconds",
+	34: "actualSuccessRate",
+	35: "totalExecutions",
+	36: "successfulExecutions",
+	37: "createdAt",
+	38: "updatedAt",
+	39: "createdBy",
+	40: "updatedBy",
 }
 
 // Decode decodes RemediationWorkflow from json.
@@ -30180,7 +30264,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode RemediationWorkflow to nil")
 	}
-	var requiredBitSet [5]uint8
+	var requiredBitSet [6]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -30370,8 +30454,18 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"executionBundleDigest\"")
 			}
+		case "serviceAccountName":
+			if err := func() error {
+				s.ServiceAccountName.Reset()
+				if err := s.ServiceAccountName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"serviceAccountName\"")
+			}
 		case "labels":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				if err := s.Labels.Decode(d); err != nil {
 					return err
@@ -30401,7 +30495,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"detectedLabels\"")
 			}
 		case "status":
-			requiredBitSet[2] |= 1 << 4
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -30609,10 +30703,11 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [5]uint8{
+	for i, mask := range [6]uint8{
 		0b01111110,
 		0b00010110,
-		0b00010010,
+		0b00100100,
+		0b00000000,
 		0b00000000,
 		0b00000000,
 	} {
@@ -33714,9 +33809,15 @@ func (s *WorkflowDiscoveryEntry) encodeFields(e *jx.Encoder) {
 			s.ExecutionEngine.Encode(e)
 		}
 	}
+	{
+		if s.ServiceAccountName.Set {
+			e.FieldStart("serviceAccountName")
+			s.ServiceAccountName.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfWorkflowDiscoveryEntry = [9]string{
+var jsonFieldsNameOfWorkflowDiscoveryEntry = [10]string{
 	0: "workflowId",
 	1: "workflowName",
 	2: "name",
@@ -33726,6 +33827,7 @@ var jsonFieldsNameOfWorkflowDiscoveryEntry = [9]string{
 	6: "schemaImage",
 	7: "executionBundle",
 	8: "executionEngine",
+	9: "serviceAccountName",
 }
 
 // Decode decodes WorkflowDiscoveryEntry from json.
@@ -33834,6 +33936,16 @@ func (s *WorkflowDiscoveryEntry) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"executionEngine\"")
+			}
+		case "serviceAccountName":
+			if err := func() error {
+				s.ServiceAccountName.Reset()
+				if err := s.ServiceAccountName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"serviceAccountName\"")
 			}
 		default:
 			return d.Skip()

@@ -177,9 +177,9 @@ type ApprovalPolicyEvaluation struct {
 	// Rules that matched and triggered approval requirement
 	// +optional
 	MatchedRules []string `json:"matchedRules,omitempty"`
-	// Policy decision
+	// Policy decision (PascalCase per K8s enum convention, values from PolicyDecision type)
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=approved;manual_review_required;denied
+	// +kubebuilder:validation:Enum=Approved;ManualReviewRequired;Denied;DegradedMode
 	Decision string `json:"decision"`
 }
 

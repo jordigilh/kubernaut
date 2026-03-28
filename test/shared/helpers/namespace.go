@@ -259,6 +259,15 @@ func CreateTestNamespaceAndWait(k8sClient client.Client, prefix string, opts ...
 		return createdNs.Status.Phase == corev1.NamespaceActive
 	}, "60s", "500ms").Should(BeTrue(), fmt.Sprintf("Namespace %s should become Active", name))
 
+	// Wait for the default ServiceAccount to be provisioned by the SA controller.
+	// Namespace Active does not guarantee the SA exists yet — pod creation will be
+	// rejected with "serviceaccount default not found" if we proceed too early.
+	Eventually(func() error {
+		var sa corev1.ServiceAccount
+		return k8sClient.Get(nsCtx, client.ObjectKey{Namespace: name, Name: "default"}, &sa)
+	}, "30s", "250ms").Should(Succeed(),
+		fmt.Sprintf("default ServiceAccount should be created in namespace %s", name))
+
 	GinkgoWriter.Printf("Namespace ready: %s\n", name)
 	return name
 }

@@ -1,7 +1,7 @@
 # Kubernaut Configuration Standards
 
-**Version**: 1.0
-**Last Updated**: 2025-12-02
+**Version**: 1.1
+**Last Updated**: 2026-03-21
 **Status**: ✅ Authoritative Reference
 
 ---
@@ -189,8 +189,10 @@ tekton:
 resource_locking:
   cooldown_period: 5m               # Default: 5m
 
-workflow_runner:
-  service_account: "kubernaut-workflow-runner"  # Default
+# DD-WE-005 v2.0: PipelineRun/Job ServiceAccount is NOT configured here.
+# Operators pre-create per-workflow SAs and set serviceAccountName on the workflow schema
+# (RemediationWorkflow → catalog → WorkflowExecution.spec.executionConfig).
+# If unset, Kubernetes uses the execution namespace default ServiceAccount.
 
 verification:
   enabled: false                    # Default: false (v1.0)
@@ -421,7 +423,7 @@ func validateConfig(cfg *Config) error {
 
 ## Document Maintenance
 
-**Last Updated**: 2025-12-02
+**Last Updated**: 2026-03-21
 **Owner**: Platform Team
 
 Update this document when:

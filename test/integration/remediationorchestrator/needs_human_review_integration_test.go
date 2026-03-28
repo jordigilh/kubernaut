@@ -107,7 +107,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 				for i := range notificationList.Items {
 					nr := &notificationList.Items[i]
 					if (nr.Spec.RemediationRequestRef != nil && nr.Spec.RemediationRequestRef.Name == rrName) ||
-						(nr.Spec.Metadata != nil && nr.Spec.Metadata["remediationRequest"] == rrName) {
+						(nr.Spec.Context != nil && nr.Spec.Context.Lineage != nil && nr.Spec.Context.Lineage.RemediationRequest == rrName) {
 						notification = nr
 						return true
 					}
@@ -118,8 +118,11 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			// Validate NotificationRequest
 			Expect(notification.Name).To(Equal("nr-manual-review-" + rrName), "Notification name should follow pattern")
 			Expect(notification.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview), "Notification type should be manual-review")
-			Expect(notification.Spec.Metadata).To(HaveKeyWithValue("humanReviewReason", "workflow_not_found"), "Metadata should include humanReviewReason")
-			Expect(notification.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", rrName), "Metadata should include RR name")
+			Expect(notification.Spec.Context).NotTo(BeNil())
+			Expect(notification.Spec.Context.Review).NotTo(BeNil())
+			Expect(notification.Spec.Context.Review.HumanReviewReason).To(Equal("workflow_not_found"), "Context.review should include humanReviewReason")
+			Expect(notification.Spec.Context.Lineage).NotTo(BeNil())
+			Expect(notification.Spec.Context.Lineage.RemediationRequest).To(Equal(rrName), "Context.lineage should include RR name")
 
 			// Step 6: Validate RemediationRequest status was updated
 			// Issue #550: SelectedWorkflow=nil + NeedsHumanReview=true → PhaseCompleted (not PhaseFailed)
@@ -192,7 +195,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 				for i := range notificationList.Items {
 					nr := &notificationList.Items[i]
 					if (nr.Spec.RemediationRequestRef != nil && nr.Spec.RemediationRequestRef.Name == rrName) ||
-						(nr.Spec.Metadata != nil && nr.Spec.Metadata["remediationRequest"] == rrName) {
+						(nr.Spec.Context != nil && nr.Spec.Context.Lineage != nil && nr.Spec.Context.Lineage.RemediationRequest == rrName) {
 						return true
 					}
 				}
@@ -273,7 +276,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 				for i := range notificationList.Items {
 					nr := &notificationList.Items[i]
 					if (nr.Spec.RemediationRequestRef != nil && nr.Spec.RemediationRequestRef.Name == rrName) ||
-						(nr.Spec.Metadata != nil && nr.Spec.Metadata["remediationRequest"] == rrName) {
+						(nr.Spec.Context != nil && nr.Spec.Context.Lineage != nil && nr.Spec.Context.Lineage.RemediationRequest == rrName) {
 						notification = nr
 						return true
 					}
@@ -283,8 +286,11 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 
 			// Validate NotificationRequest has correct humanReviewReason
 			Expect(notification.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
-			Expect(notification.Spec.Metadata).To(HaveKeyWithValue("humanReviewReason", "rca_incomplete"))
-			Expect(notification.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", rrName))
+			Expect(notification.Spec.Context).NotTo(BeNil())
+			Expect(notification.Spec.Context.Review).NotTo(BeNil())
+			Expect(notification.Spec.Context.Review.HumanReviewReason).To(Equal("rca_incomplete"))
+			Expect(notification.Spec.Context.Lineage).NotTo(BeNil())
+			Expect(notification.Spec.Context.Lineage.RemediationRequest).To(Equal(rrName))
 
 			// Step 7: Validate RR status
 			// Issue #550: SelectedWorkflow=nil + NeedsHumanReview=true → PhaseCompleted (not PhaseFailed)
@@ -342,7 +348,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 				for i := range notificationList.Items {
 					nr := &notificationList.Items[i]
 					if (nr.Spec.RemediationRequestRef != nil && nr.Spec.RemediationRequestRef.Name == rrName) ||
-						(nr.Spec.Metadata != nil && nr.Spec.Metadata["remediationRequest"] == rrName) {
+						(nr.Spec.Context != nil && nr.Spec.Context.Lineage != nil && nr.Spec.Context.Lineage.RemediationRequest == rrName) {
 						notification = nr
 						return true
 					}
@@ -351,7 +357,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue(), "NotificationRequest should be created")
 
 			Expect(notification.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
-			Expect(notification.Spec.Metadata).To(HaveKeyWithValue("humanReviewReason", "no_matching_workflows"))
+			Expect(notification.Spec.Context.Review.HumanReviewReason).To(Equal("no_matching_workflows"))
 
 			// Validate RR transitions to PhaseCompleted (not PhaseFailed)
 			Eventually(func() remediationv1.RemediationPhase {
@@ -410,7 +416,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 				for i := range notificationList.Items {
 					nr := &notificationList.Items[i]
 					if (nr.Spec.RemediationRequestRef != nil && nr.Spec.RemediationRequestRef.Name == rrName) ||
-						(nr.Spec.Metadata != nil && nr.Spec.Metadata["remediationRequest"] == rrName) {
+						(nr.Spec.Context != nil && nr.Spec.Context.Lineage != nil && nr.Spec.Context.Lineage.RemediationRequest == rrName) {
 						return true
 					}
 				}

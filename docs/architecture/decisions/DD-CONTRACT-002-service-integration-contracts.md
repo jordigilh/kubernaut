@@ -332,7 +332,7 @@ spec:
   # OPTIONAL: Execution config
   executionConfig:
     timeout: duration         # Default: 30m
-    serviceAccountName: string # Default: kubernaut-workflow-runner
+    serviceAccountName: string # Per-workflow SA (DD-WE-005 v2.0); if absent, K8s namespace default
 ```
 
 ### Contract Guarantees

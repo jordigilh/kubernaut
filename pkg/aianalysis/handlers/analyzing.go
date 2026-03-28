@@ -104,7 +104,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		analysis.Status.Phase = aianalysis.PhaseFailed
 		analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 		analysis.Status.Message = "No workflow selected - investigation may have failed"
-		analysis.Status.Reason = "NoWorkflowSelected"
+		analysis.Status.Reason = aianalysisv1.ReasonNoWorkflowSelected
 
 		// BR-HAPI-197: Track failure metrics
 		h.metrics.RecordFailure("NoWorkflowSelected", "InvestigationFailed") // P2.3: Use convenience method
@@ -153,7 +153,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		analysis.Status.Phase = aianalysis.PhaseFailed
 		analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 		analysis.Status.Message = "Rego evaluation failed unexpectedly"
-		analysis.Status.Reason = "RegoEvaluationError"
+		analysis.Status.Reason = aianalysisv1.ReasonRegoEvaluationError
 
 	// BR-HAPI-197: Track failure metrics
 	h.metrics.RecordFailure("RegoEvaluationError", "PolicyEvaluationFailed") // P2.3: Use convenience method
@@ -249,6 +249,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	// Transition directly to Completed (per reconciliation-phases.md v2.0)
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseCompleted
+	analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
 	if analysis.Status.StartedAt != nil {
@@ -301,7 +302,7 @@ func (h *AnalyzingHandler) populateApprovalContext(analysis *aianalysisv1.AIAnal
 		// Populate RecommendedActions from SelectedWorkflow
 		ctx.RecommendedActions = []aianalysisv1.RecommendedAction{
 			{
-				Action:    analysis.Status.SelectedWorkflow.WorkflowID,
+				WorkflowId: analysis.Status.SelectedWorkflow.WorkflowID,
 				Rationale: analysis.Status.SelectedWorkflow.Rationale,
 			},
 		}
@@ -331,10 +332,10 @@ func (h *AnalyzingHandler) populateApprovalContext(analysis *aianalysisv1.AIAnal
 	// Populate PolicyEvaluation with Rego details
 	ctx.PolicyEvaluation = &aianalysisv1.PolicyEvaluation{
 		PolicyName: "aianalysis.approval",
-		Decision:   "manual_review_required",
+		Decision:   aianalysisv1.PolicyDecisionManualReviewRequired,
 	}
 	if result.Degraded {
-		ctx.PolicyEvaluation.Decision = "degraded_mode"
+		ctx.PolicyEvaluation.Decision = aianalysisv1.PolicyDecisionDegradedMode
 	}
 }
 
@@ -404,10 +405,10 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 			input.BusinessClassification["service_owner"] = bc.ServiceOwner
 		}
 		if bc.Criticality != "" {
-			input.BusinessClassification["criticality"] = bc.Criticality
+			input.BusinessClassification["criticality"] = string(bc.Criticality)
 		}
 		if bc.SLARequirement != "" {
-			input.BusinessClassification["sla_requirement"] = bc.SLARequirement
+			input.BusinessClassification["sla_requirement"] = string(bc.SLARequirement)
 		}
 	}
 
@@ -451,6 +452,7 @@ func (h *AnalyzingHandler) detectedLabelsToMap(dl *sharedtypes.DetectedLabels) m
 	labels["helm_managed"] = dl.HelmManaged
 	labels["network_isolated"] = dl.NetworkIsolated
 	labels["service_mesh"] = dl.ServiceMesh
+	labels["resource_quota_constrained"] = dl.ResourceQuotaConstrained
 
 	return labels
 }

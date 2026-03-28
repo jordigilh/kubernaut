@@ -54,14 +54,14 @@ func (r *Repository) Create(ctx context.Context, actionType string, description 
 	}
 
 	if existing != nil {
-		if existing.Status == "active" {
+		if existing.Status == "Active" {
 			return &CreateResult{ActionType: existing, Status: "exists", WasReenabled: false}, nil
 		}
 
 		// Re-enable: set status to active, clear disabled_at/disabled_by
 		_, err := r.db.ExecContext(ctx,
 			`UPDATE action_type_taxonomy
-			 SET status = 'active', disabled_at = NULL, disabled_by = NULL, description = $2
+			 SET status = 'Active', disabled_at = NULL, disabled_by = NULL, description = $2
 			 WHERE action_type = $1`,
 			actionType, descJSON,
 		)
@@ -78,7 +78,7 @@ func (r *Repository) Create(ctx context.Context, actionType string, description 
 	// Insert new
 	_, err = r.db.ExecContext(ctx,
 		`INSERT INTO action_type_taxonomy (action_type, description, status)
-		 VALUES ($1, $2, 'active')`,
+		 VALUES ($1, $2, 'Active')`,
 		actionType, descJSON,
 	)
 	if err != nil {
@@ -127,7 +127,7 @@ func (r *Repository) UpdateDescription(ctx context.Context, actionType string, n
 	if existing == nil {
 		return nil, fmt.Errorf("%w: %s", ErrActionTypeNotFound, actionType)
 	}
-	if existing.Status != "active" {
+	if existing.Status != "Active" {
 		return nil, fmt.Errorf("%w: %s", ErrActionTypeDisabled, actionType)
 	}
 
@@ -219,7 +219,7 @@ func (r *Repository) disableOnce(ctx context.Context, actionType string, disable
 		return nil, fmt.Errorf("check action type for disable: %w", err)
 	}
 
-	if existing.Status != "active" {
+	if existing.Status != "Active" {
 		if err := tx.Commit(); err != nil {
 			return nil, fmt.Errorf("commit (already disabled): %w", err)
 		}
@@ -228,7 +228,7 @@ func (r *Repository) disableOnce(ctx context.Context, actionType string, disable
 
 	rows, err := tx.QueryxContext(ctx,
 		`SELECT workflow_name FROM remediation_workflow_catalog
-		 WHERE action_type = $1 AND status = 'active'`,
+		 WHERE action_type = $1 AND status = 'Active'`,
 		actionType,
 	)
 	if err != nil {
@@ -262,8 +262,8 @@ func (r *Repository) disableOnce(ctx context.Context, actionType string, disable
 	now := time.Now().UTC()
 	_, err = tx.ExecContext(ctx,
 		`UPDATE action_type_taxonomy
-		 SET status = 'disabled', disabled_at = $2, disabled_by = $3
-		 WHERE action_type = $1 AND status = 'active'`,
+		 SET status = 'Disabled', disabled_at = $2, disabled_by = $3
+		 WHERE action_type = $1 AND status = 'Active'`,
 		actionType, now, disabledBy,
 	)
 	if err != nil {
@@ -315,7 +315,7 @@ func (r *Repository) forceDisableOnce(ctx context.Context, actionType string, di
 		return nil, fmt.Errorf("check action type for force-disable: %w", err)
 	}
 
-	if existing.Status != "active" {
+	if existing.Status != "Active" {
 		if err := tx.Commit(); err != nil {
 			return nil, fmt.Errorf("commit (already disabled): %w", err)
 		}
@@ -327,9 +327,9 @@ func (r *Repository) forceDisableOnce(ctx context.Context, actionType string, di
 		now := time.Now().UTC()
 		_, err = tx.ExecContext(ctx,
 			`UPDATE remediation_workflow_catalog
-			 SET status = 'disabled', disabled_at = $2, disabled_by = $3,
+			 SET status = 'Disabled', disabled_at = $2, disabled_by = $3,
 			     disabled_reason = 'orphan cleanup (#512)', status_reason = 'orphan cleanup (#512)'
-			 WHERE action_type = $1 AND status = 'active'
+			 WHERE action_type = $1 AND status = 'Active'
 			   AND workflow_name = ANY($4)`,
 			actionType, now, disabledBy, orphanedWorkflows,
 		)
@@ -341,7 +341,7 @@ func (r *Repository) forceDisableOnce(ctx context.Context, actionType string, di
 	// Check for remaining active workflows after orphan cleanup.
 	rows, err := tx.QueryxContext(ctx,
 		`SELECT workflow_name FROM remediation_workflow_catalog
-		 WHERE action_type = $1 AND status = 'active'`,
+		 WHERE action_type = $1 AND status = 'Active'`,
 		actionType,
 	)
 	if err != nil {
@@ -375,8 +375,8 @@ func (r *Repository) forceDisableOnce(ctx context.Context, actionType string, di
 	now := time.Now().UTC()
 	_, err = tx.ExecContext(ctx,
 		`UPDATE action_type_taxonomy
-		 SET status = 'disabled', disabled_at = $2, disabled_by = $3
-		 WHERE action_type = $1 AND status = 'active'`,
+		 SET status = 'Disabled', disabled_at = $2, disabled_by = $3
+		 WHERE action_type = $1 AND status = 'Active'`,
 		actionType, now, disabledBy,
 	)
 	if err != nil {
@@ -393,7 +393,7 @@ func (r *Repository) forceDisableOnce(ctx context.Context, actionType string, di
 func (r *Repository) CountActiveWorkflows(ctx context.Context, actionType string) (int, []string, error) {
 	rows, err := r.db.QueryxContext(ctx,
 		`SELECT workflow_name FROM remediation_workflow_catalog
-		 WHERE action_type = $1 AND status = 'active'`,
+		 WHERE action_type = $1 AND status = 'Active'`,
 		actionType,
 	)
 	if err != nil {
@@ -416,13 +416,13 @@ func (r *Repository) CountActiveWorkflows(ctx context.Context, actionType string
 	return len(names), names, nil
 }
 
-// ListActive returns all action types with status='active'.
+// ListActive returns all action types with status='Active'.
 // BR-WORKFLOW-007.5: Discovery filtering excludes disabled action types.
 func (r *Repository) ListActive(ctx context.Context) ([]models.ActionTypeTaxonomy, error) {
 	var types []models.ActionTypeTaxonomy
 	err := r.db.SelectContext(ctx, &types,
 		`SELECT action_type, description, status, disabled_at, disabled_by, created_at, updated_at
-		 FROM action_type_taxonomy WHERE status = 'active'
+		 FROM action_type_taxonomy WHERE status = 'Active'
 		 ORDER BY action_type`)
 	if err != nil {
 		return nil, fmt.Errorf("list active action types: %w", err)
@@ -436,7 +436,7 @@ func (r *Repository) ListActive(ctx context.Context) ([]models.ActionTypeTaxonom
 func (r *Repository) ActionTypeExists(ctx context.Context, actionType string) (bool, error) {
 	var exists bool
 	err := r.db.QueryRowContext(ctx,
-		"SELECT EXISTS(SELECT 1 FROM action_type_taxonomy WHERE action_type = $1 AND status = 'active')",
+		"SELECT EXISTS(SELECT 1 FROM action_type_taxonomy WHERE action_type = $1 AND status = 'Active')",
 		actionType,
 	).Scan(&exists)
 	if err != nil {

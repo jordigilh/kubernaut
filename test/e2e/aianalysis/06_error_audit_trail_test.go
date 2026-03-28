@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	aianalysisaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -52,27 +52,27 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 		It("should audit AI agent calls even when API returns HTTP 500", func() {
 			By("Creating AIAnalysis with signal type that might trigger HAPI error")
 			suffix := randomSuffix()
-			analysis := &aianalysisv1alpha1.AIAnalysis{
+			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-error-audit-hapi-" + suffix,
 					Namespace: controllerNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: "e2e-error-audit-hapi-" + suffix,
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-error-hapi-fingerprint",
 							Severity:         "critical",
 							SignalName:       "UnknownError", // Potentially problematic signal type
 							Environment:      "production",
 							BusinessPriority: "P0",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "failing-pod",
 								Namespace: "production",
 							},
 						},
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -117,27 +117,27 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 		It("should create audit trail even when AIAnalysis remains in retry loop", func() {
 			By("Creating AIAnalysis that may experience repeated errors")
 			suffix := randomSuffix()
-			analysis := &aianalysisv1alpha1.AIAnalysis{
+			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-error-retry-" + suffix,
 					Namespace: controllerNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: "e2e-error-retry-" + suffix,
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-error-retry-fp",
 							Severity:        "medium",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P1",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Deployment",
 								Name:      "unstable-service",
 								Namespace: controllerNamespace,
 							},
 						},
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -186,28 +186,28 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 		It("should audit errors during investigation phase", func() {
 			By("Creating AIAnalysis that will be processed by controller")
 			suffix := randomSuffix()
-			analysis := &aianalysisv1alpha1.AIAnalysis{
+			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-error-investigation-" + suffix,
 					Namespace: controllerNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: "e2e-error-investigation-" + suffix,
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-error-investigation-fp",
 							Severity:         "critical",
 							SignalName:       "OOMKilled",
 							Environment:      "production",
 							BusinessPriority: "P0",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "memory-hog",
 								Namespace: controllerNamespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -262,28 +262,28 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 		It("should maintain audit integrity across controller restarts", func() {
 			By("Creating AIAnalysis before simulated controller restart")
 			suffix := randomSuffix()
-			analysis := &aianalysisv1alpha1.AIAnalysis{
+			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-restart-audit-" + suffix,
 					Namespace: controllerNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: "e2e-restart-audit-" + suffix,
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-restart-fp",
 							Severity:        "medium",
 							SignalName:       "HighMemoryUsage",
 							Environment:      "staging",
 							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Deployment",
 								Name:      "backend-api",
 								Namespace: controllerNamespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}
@@ -338,27 +338,27 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 		It("should include complete metadata in all error audit events", func() {
 			By("Creating AIAnalysis that will generate audit events")
 			suffix := randomSuffix()
-			analysis := &aianalysisv1alpha1.AIAnalysis{
+			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-metadata-" + suffix,
 					Namespace: controllerNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: "e2e-metadata-" + suffix,
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-metadata-fp",
 							Severity:         "critical",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P0",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "critical-pod",
 								Namespace: controllerNamespace,
 							},
 						},
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}

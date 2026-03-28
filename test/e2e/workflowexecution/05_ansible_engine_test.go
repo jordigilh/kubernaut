@@ -207,14 +207,14 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 				"StartTime should be set for SLA calculation")
 			Expect(completedWFE.Status.CompletionTime).ToNot(BeNil(),
 				"CompletionTime should be set for SLA calculation")
-			Expect(completedWFE.Status.Duration).ToNot(BeEmpty(),
+			Expect(completedWFE.Status.Duration).ToNot(BeNil(),
 				"Duration should be set for metrics")
 
 			GinkgoWriter.Printf("E2E-WE-015-003 passed: AWX status sync verified\n")
 			GinkgoWriter.Printf("   ExecutionRef: %s\n", completedWFE.Status.ExecutionRef.Name)
 			GinkgoWriter.Printf("   StartTime: %v\n", completedWFE.Status.StartTime.Time)
 			GinkgoWriter.Printf("   CompletionTime: %v\n", completedWFE.Status.CompletionTime.Time)
-			GinkgoWriter.Printf("   Duration: %s\n", completedWFE.Status.Duration)
+			GinkgoWriter.Printf("   Duration: %v\n", completedWFE.Status.Duration)
 		})
 	})
 

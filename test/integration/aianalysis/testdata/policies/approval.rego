@@ -67,23 +67,23 @@ has_failed_detections if {
 }
 
 is_production if {
-    input.environment == "production"
+    lower(input.environment) == "production"
 }
 
 not_production if {
-    input.environment == "development"
+    lower(input.environment) == "development"
 }
 
 not_production if {
-    input.environment == "staging"
+    lower(input.environment) == "staging"
 }
 
 not_production if {
-    input.environment == "qa"
+    lower(input.environment) == "qa"
 }
 
 not_production if {
-    input.environment == "test"
+    lower(input.environment) == "test"
 }
 
 # Configurable confidence threshold (default 0.8)

@@ -45,6 +45,31 @@ func (m *mockWorkflowNameResolver) ResolveWorkflowName(_ context.Context, _ stri
 const testUUID = "53c7c5d3-ee13-42e5-a920-43f3df75ec6d"
 
 func buildTestNotification(body string, metadata map[string]string) *notificationv1alpha1.NotificationRequest {
+	nctx := &notificationv1alpha1.NotificationContext{}
+	if wfID := metadata["workflowId"]; wfID != "" {
+		if nctx.Workflow == nil {
+			nctx.Workflow = &notificationv1alpha1.WorkflowContext{}
+		}
+		nctx.Workflow.WorkflowID = wfID
+	}
+	if sw := metadata["selectedWorkflow"]; sw != "" {
+		if nctx.Workflow == nil {
+			nctx.Workflow = &notificationv1alpha1.WorkflowContext{}
+		}
+		nctx.Workflow.SelectedWorkflow = sw
+	}
+	if ee := metadata["executionEngine"]; ee != "" {
+		if nctx.Workflow == nil {
+			nctx.Workflow = &notificationv1alpha1.WorkflowContext{}
+		}
+		nctx.Workflow.ExecutionEngine = ee
+	}
+	if rr := metadata["remediationRequest"]; rr != "" {
+		nctx.Lineage = &notificationv1alpha1.LineageContext{RemediationRequest: rr}
+	}
+	if rc := metadata["rootCause"]; rc != "" {
+		nctx.Analysis = &notificationv1alpha1.AnalysisContext{RootCause: rc}
+	}
 	return &notificationv1alpha1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "nr-test",
@@ -52,9 +77,9 @@ func buildTestNotification(body string, metadata map[string]string) *notificatio
 			UID:       types.UID("test-uid"),
 		},
 		Spec: notificationv1alpha1.NotificationRequestSpec{
-			Subject:  "Remediation Completed: high-memory-alert",
-			Body:     body,
-			Metadata: metadata,
+			Subject: "Remediation Completed: high-memory-alert",
+			Body:    body,
+			Context: nctx,
 		},
 	}
 }
@@ -211,10 +236,9 @@ var _ = Describe("#553: Workflow Name Enrichment", func() {
 
 			result := e.EnrichNotification(context.Background(), nr)
 
-			Expect(result.Spec.Metadata).To(HaveLen(3))
-			Expect(result.Spec.Metadata["workflowId"]).To(Equal(testUUID))
-			Expect(result.Spec.Metadata["executionEngine"]).To(Equal("job"))
-			Expect(result.Spec.Metadata["rootCause"]).To(Equal("OOM"))
+			Expect(result.Spec.Context.Workflow.WorkflowID).To(Equal(testUUID))
+			Expect(result.Spec.Context.Workflow.ExecutionEngine).To(Equal("job"))
+			Expect(result.Spec.Context.Analysis.RootCause).To(Equal("OOM"))
 		})
 
 		It("UT-NOT-553-012: enrichment operates on a copy — original notification is not mutated", func() {

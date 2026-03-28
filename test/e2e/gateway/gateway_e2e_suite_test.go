@@ -294,7 +294,7 @@ var _ = SynchronizedAfterSuite(
 			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING")
 			logger.Info("To debug:")
 			logger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
-			logger.Info("  kubectl get namespaces | grep -E 'storm|rate|concurrent|crd|restart'")
+			logger.Info("  kubectl get namespaces | grep -E 'rate|concurrent|crd|restart'")
 			logger.Info("  kubectl get pods -n <namespace>")
 			logger.Info("  kubectl logs -n <namespace> deployment/gateway")
 			logger.Info("To cleanup manually:")

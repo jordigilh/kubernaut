@@ -1,7 +1,7 @@
 ## Controller Implementation
 
-**Version**: 4.4
-**Last Updated**: 2025-12-06
+**Version**: 4.5
+**Last Updated**: 2026-03-21
 **CRD API Group**: `kubernaut.ai/v1alpha1`
 **Status**: ✅ Updated for Tekton Architecture (ADR-044), Exponential Backoff (DD-WE-004)
 
@@ -10,6 +10,9 @@
 ---
 
 ## Changelog
+
+### Version 4.5 (2026-03-21)
+- ✅ **DD-WE-005 v2.0**: Document per-workflow `ExecutionConfig.serviceAccountName` for PipelineRun/TaskRun identity; no platform `kubernaut-workflow-runner` default in reconciler config.
 
 ### Version 4.4 (2025-12-06)
 - ✅ **Added**: Exponential backoff cooldown per DD-WE-004 v1.1 and BR-WE-012
@@ -102,7 +105,6 @@ type WorkflowExecutionReconciler struct {
     Recorder           record.EventRecorder
     CooldownPeriod     time.Duration  // DEPRECATED: Use BaseCooldownPeriod (DD-WE-004)
     ExecutionNamespace string         // "kubernaut-workflows" (DD-WE-002)
-    ServiceAccountName string         // "kubernaut-workflow-runner"
 
     // Exponential Backoff Configuration (DD-WE-004)
     BaseCooldownPeriod     time.Duration  // Default: 1 minute
@@ -297,10 +299,10 @@ func (r *WorkflowExecutionReconciler) BuildPipelineRun(
     // Convert parameters to Tekton format
     params := r.ConvertParameters(wfe.Spec.Parameters)
 
-    // Get service account name (use default if not set)
-    saName := r.ServiceAccountName
-    if saName == "" {
-        saName = DefaultServiceAccountName
+    // DD-WE-005 v2.0: Service account from WorkflowExecution spec only; empty → Kubernetes default SA in execution namespace
+    saName := ""
+    if wfe.Spec.ExecutionConfig != nil && wfe.Spec.ExecutionConfig.ServiceAccountName != "" {
+        saName = wfe.Spec.ExecutionConfig.ServiceAccountName
     }
 
     return &tektonv1.PipelineRun{

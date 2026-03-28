@@ -39,8 +39,8 @@ limitations under the License.
 // Business Requirements Coverage:
 // - BR-SP-001: K8s Context Enrichment, Degraded Mode
 // - BR-SP-002: Business Classification
-// - BR-SP-051: Namespace Label Environment Classification (high confidence)
-// - BR-SP-052: ConfigMap Fallback Classification
+// - BR-SP-051: Namespace Label Environment Classification
+// - BR-SP-052: Rego Policy Fallback Classification
 // - BR-SP-053: Default Environment Fallback
 // - BR-SP-070: Priority Assignment (P0/P1/P2/P3)
 // - BR-SP-100: Owner Chain Traversal (max depth 5)
@@ -107,12 +107,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
 			// BR-SP-051: Production namespace → production environment
-			Expect(final.Status.EnvironmentClassification.Environment).To(Equal("production"))
-			// Note: Confidence field removed per DD-SP-001 V1.1
+			Expect(final.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentProduction))
 
 			// BR-SP-070: Production + Critical → P0
-			Expect(final.Status.PriorityAssignment.Priority).To(Equal("P0"))
-			// Note: Confidence field removed per DD-SP-001 V1.1
+			Expect(final.Status.PriorityAssignment.Priority).To(Equal(signalprocessingv1alpha1.PriorityP0))
 		})
 
 		// Staging deployment → P2 priority assignment
@@ -151,10 +149,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
 			// Staging environment classification
-			Expect(final.Status.EnvironmentClassification.Environment).To(Equal("staging"))
+			Expect(final.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentStaging))
 
 			// Staging + Warning → P2 (per priority.rego in suite)
-			Expect(final.Status.PriorityAssignment.Priority).To(Equal("P2"))
+			Expect(final.Status.PriorityAssignment.Priority).To(Equal(signalprocessingv1alpha1.PriorityP2))
 		})
 
 		// Dev service → P3 priority assignment
@@ -189,12 +187,12 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.EnvironmentClassification.Environment).To(Equal("development"))
-			Expect(final.Status.PriorityAssignment.Priority).To(Equal("P3"))
+			Expect(final.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentDevelopment))
+			Expect(final.Status.PriorityAssignment.Priority).To(Equal(signalprocessingv1alpha1.PriorityP3))
 		})
 
 		// Environment classification from namespace label
-		It("BR-SP-051: should classify environment from namespace label with high confidence", func() {
+		It("BR-SP-051: should classify environment from namespace label", func() {
 			By("Creating namespace with explicit production label")
 			ns := createTestNamespaceWithLabels("custom", map[string]string{
 				"kubernaut.ai/environment": "production",
@@ -225,13 +223,12 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.EnvironmentClassification.Environment).To(Equal("production"))
+			Expect(final.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentProduction))
 			Expect(final.Status.EnvironmentClassification.Source).To(Equal("namespace-labels"))
-			// Note: Confidence field removed per DD-SP-001 V1.1
 		})
 
-		// ConfigMap fallback for environment classification
-		It("BR-SP-052: should classify environment from ConfigMap fallback", func() {
+		// Rego policy fallback for environment classification
+		It("BR-SP-052: should classify environment from Rego policy fallback", func() {
 			By("Creating namespace with 'staging' prefix (no label)")
 			ns := createTestNamespace("staging-app")
 			defer deleteTestNamespace(ns)
@@ -255,12 +252,12 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying ConfigMap-based classification")
+			By("Verifying Rego-based classification")
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.EnvironmentClassification.Environment).To(Equal("staging"))
-			Expect(final.Status.EnvironmentClassification.Source).To(Equal("configmap"))
+			Expect(final.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentStaging))
+			Expect(final.Status.EnvironmentClassification.Source).To(Equal("rego-inference"))
 		})
 
 		// Business unit classification from namespace labels
@@ -459,7 +456,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.EnvironmentClassification.Environment).To(Equal("unknown"))
+			Expect(final.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentUnknown))
 			Expect(final.Status.EnvironmentClassification.Source).To(Equal("default"))
 		})
 

@@ -45,7 +45,7 @@ Name | Type | Description | Notes
 **pre_remediation_spec_hash** | **str** | Canonical SHA-256 hash of the target resource&#39;s .spec BEFORE remediation. Retrieved from DataStorage audit trail (remediation.workflow_created event). Format: \&quot;sha256:&lt;hex&gt;\&quot;. Only present for effectiveness.hash.computed events.  | [optional] 
 **target_resource** | **str** | Target resource being remediated | 
 **workflow_version** | **str** | Workflow version | 
-**workflow_type** | **str** | Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery. Used by DS remediation history to populate workflowType on entries and summaries.  | [optional] 
+**action_type** | **str** |  | 
 **ea_name** | **str** | Name of the EffectivenessAssessment CRD | [optional] 
 **hash_compute_delay** | **str** | Duration-based hash compute delay from EA spec config (Issue #277). The EM computes hash_compute_after &#x3D; EA.creationTimestamp + hash_compute_delay. Present only for async-managed targets. Format: Go duration string. Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277  | [optional] 
 **alert_check_delay** | **str** | Duration-based alert check delay from EA spec config (Issue #277). Set by the RO for proactive signals where the triggering alert needs extra time to resolve after remediation. Format: Go duration string. Reference: BR-EM-009, BR-RO-103, Issue #277  | [optional] 
@@ -142,6 +142,8 @@ Name | Type | Description | Notes
 **event_id** | **str** | Unique event identifier | 
 **incident_id** | **str** | Incident correlation ID (remediation_id) | 
 **response_data** | [**IncidentResponseData**](IncidentResponseData.md) |  | 
+**total_prompt_tokens** | **int** | Total prompt tokens consumed across all LLM calls in this investigation session (#435) | [optional] 
+**total_completion_tokens** | **int** | Total completion tokens consumed across all LLM calls in this investigation session (#435) | [optional] 
 **duration_seconds** | **float** | Duration of the investigation before failure (seconds) | [optional] 
 **root_owner_kind** | **str** | Resolved root owner resource kind (e.g., Deployment, StatefulSet) | 
 **root_owner_name** | **str** | Resolved root owner resource name | 
@@ -201,7 +203,6 @@ Name | Type | Description | Notes
 **health_checks** | [**EffectivenessAssessmentAuditPayloadHealthChecks**](EffectivenessAssessmentAuditPayloadHealthChecks.md) |  | [optional] 
 **metric_deltas** | [**EffectivenessAssessmentAuditPayloadMetricDeltas**](EffectivenessAssessmentAuditPayloadMetricDeltas.md) |  | [optional] 
 **alert_resolution** | [**EffectivenessAssessmentAuditPayloadAlertResolution**](EffectivenessAssessmentAuditPayloadAlertResolution.md) |  | [optional] 
-**action_type** | **str** |  | 
 **registered_by** | **str** |  | 
 **was_reenabled** | **bool** |  | 
 **old_description** | [**ActionTypeDescriptionPayload**](ActionTypeDescriptionPayload.md) |  | 

@@ -120,7 +120,8 @@ CustomLabels = Dict[str, List[str]]
 # DD-WORKFLOW-001 v2.2: podSecurityLevel REMOVED (PSP deprecated, PSS is namespace-level)
 DETECTED_LABELS_FIELD_NAMES = {
     "gitOpsManaged", "gitOpsTool", "pdbProtected", "hpaEnabled",
-    "stateful", "helmManaged", "networkIsolated", "serviceMesh"
+    "stateful", "helmManaged", "networkIsolated", "serviceMesh",
+    "resourceQuotaConstrained",
 }
 
 
@@ -144,8 +145,8 @@ class DetectedLabels(BaseModel):
     failedDetections: List[str] = Field(
         default_factory=list,
         description="Field names where detection failed. Consumer should ignore values of these fields. "
-                    "Valid values: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, "
-                    "networkIsolated, serviceMesh"
+                    "Valid values: gitOpsManaged, gitOpsTool, pdbProtected, hpaEnabled, stateful, helmManaged, "
+                    "networkIsolated, serviceMesh, resourceQuotaConstrained"
     )
 
     # GitOps Management
@@ -164,6 +165,9 @@ class DetectedLabels(BaseModel):
     # DD-WORKFLOW-001 v2.2: podSecurityLevel REMOVED (PSP deprecated, PSS is namespace-level)
     networkIsolated: bool = Field(default=False, description="Whether NetworkPolicy restricts traffic")
     serviceMesh: str = Field(default="", description="Service mesh: 'istio', 'linkerd', ''")
+
+    # Resource Constraints (#366, DD-HAPI-018 v1.4)
+    resourceQuotaConstrained: bool = Field(default=False, description="Whether ResourceQuota exists in namespace")
 
     @field_validator('failedDetections')
     @classmethod
@@ -268,11 +272,6 @@ class IncidentRequest(BaseModel):
     is_duplicate: Optional[bool] = Field(False, description="Duplicate signal")
     occurrence_count: Optional[int] = Field(0, description="Occurrence count")
     deduplication_window_minutes: Optional[int] = Field(None, description="Dedup window")
-    is_storm: Optional[bool] = Field(False, description="Storm detected")
-    storm_signal_count: Optional[int] = Field(0, description="Storm signal count")
-    storm_window_minutes: Optional[int] = Field(None, description="Storm window")
-    storm_type: Optional[str] = Field(None, description="Storm type")
-    affected_resources: Optional[List[str]] = Field(default_factory=list, description="Affected resources")
     firing_time: Optional[str] = Field(None, description="Firing time")
     received_time: Optional[str] = Field(None, description="Received time")
     first_seen: Optional[str] = Field(None, description="First seen")

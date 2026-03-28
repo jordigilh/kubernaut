@@ -21,7 +21,6 @@ package audit
 // Gateway Service creates audit events for:
 // - Signal ingestion (Prometheus AlertManager, Kubernetes Events)
 // - Deduplication decisions
-// - Storm detection
 // - Environment classification
 // - Priority assignment
 //
@@ -36,9 +35,7 @@ type GatewayEventData struct {
 	Severity            string            `json:"severity,omitempty"`             // "critical", "warning", "info"
 	Priority            string            `json:"priority,omitempty"`             // "P0", "P1", "P2", "P3"
 	Environment         string            `json:"environment,omitempty"`          // "production", "staging", "dev"
-	DeduplicationStatus string            `json:"deduplication_status,omitempty"` // "new", "duplicate", "storm"
-	StormDetected       bool              `json:"storm_detected"`                 // Storm flag
-	StormID             string            `json:"storm_id,omitempty"`             // Storm identifier
+	DeduplicationStatus string            `json:"deduplication_status,omitempty"` // "new" or "duplicate"
 	Labels              map[string]string `json:"labels,omitempty"`               // Additional labels
 	SourcePayload       string            `json:"source_payload,omitempty"`       // Base64 original payload
 }
@@ -186,7 +183,6 @@ func (b *GatewayEventBuilder) WithEnvironment(environment string) *GatewayEventB
 // Valid values:
 // - "new": First occurrence of signal
 // - "duplicate": Signal is a duplicate
-// - "storm": Signal is part of a detected storm
 //
 // Example:
 //
@@ -195,22 +191,6 @@ func (b *GatewayEventBuilder) WithEnvironment(environment string) *GatewayEventB
 // Business Requirement: BR-STORAGE-033-006
 func (b *GatewayEventBuilder) WithDeduplicationStatus(status string) *GatewayEventBuilder {
 	b.gatewayData.DeduplicationStatus = status
-	return b
-}
-
-// WithStorm marks event as part of a storm.
-//
-// Parameters:
-// - stormID: Unique storm identifier (e.g., "storm-2025-11-18-001")
-//
-// Example:
-//
-//	builder.WithStorm("storm-2025-11-18-001")
-//
-// Business Requirement: BR-STORAGE-033-006
-func (b *GatewayEventBuilder) WithStorm(stormID string) *GatewayEventBuilder {
-	b.gatewayData.StormDetected = true
-	b.gatewayData.StormID = stormID
 	return b
 }
 

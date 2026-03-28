@@ -73,7 +73,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Error Propagation Test",
 					Body:     "Testing error visibility in status",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-slack",
 					},
 				},

@@ -59,3 +59,6 @@ valkey:
 hooks:
   tlsCerts:
     image: <mirror-registry>/openshift4/ose-cli-rhel9:v4.17
+
+effectivenessmonitor:
+  initImage: <mirror-registry>/ubi10/ubi-minimal:latest

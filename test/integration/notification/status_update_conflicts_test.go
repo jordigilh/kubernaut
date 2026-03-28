@@ -86,7 +86,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  fmt.Sprintf("Optimistic Lock Test %s", uniqueSuffix),
 					Body:     "Testing resourceVersion conflict handling",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-slack",
 					},
 				},
@@ -161,7 +161,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  fmt.Sprintf("Timestamp Test %s", uniqueSuffix),
 					Body:     "Testing timestamp ordering consistency",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-slack",
 					},
 				},
@@ -246,7 +246,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  fmt.Sprintf("Status Retry Test %s", uniqueSuffix),
 					Body:     "Testing status update retry on failure",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-default",
 					},
 				},
@@ -309,7 +309,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  fmt.Sprintf("Delete Race Test %s", uniqueSuffix),
 					Body:     "Testing status update during deletion",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-slack",
 					},
 				},
@@ -389,7 +389,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "slack-only",
 					},
 				},
@@ -474,7 +474,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "slack-only",
 					},
 				},

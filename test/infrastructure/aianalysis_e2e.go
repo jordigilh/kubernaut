@@ -1131,21 +1131,23 @@ data:
 
     default require_approval := false
 
-    require_approval if { input.environment == "production" }
-    require_approval if { input.environment == "production"; count(input.warnings) > 0 }
-    require_approval if { input.environment == "production"; count(input.failed_detections) > 0 }
+    is_production if { lower(input.environment) == "production" }
+
+    require_approval if { is_production }
+    require_approval if { is_production; count(input.warnings) > 0 }
+    require_approval if { is_production; count(input.failed_detections) > 0 }
 
     # Scored risk factors for reason generation (issue #98)
     risk_factors contains {"score": 70, "reason": "Data quality warnings in production environment"} if {
-        input.environment == "production"
+        is_production
         count(input.warnings) > 0
     }
     risk_factors contains {"score": 60, "reason": "Data quality issues detected in production environment"} if {
-        input.environment == "production"
+        is_production
         count(input.failed_detections) > 0
     }
     risk_factors contains {"score": 40, "reason": "Production environment requires manual approval"} if {
-        input.environment == "production"
+        is_production
     }
 
     all_scores contains f.score if { some f in risk_factors }

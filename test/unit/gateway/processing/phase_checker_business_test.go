@@ -228,7 +228,7 @@ var _ = Describe("Issue #195: Deduplication must search controller namespace, no
 //
 // BUSINESS VALUE:
 // - Operators see how many duplicate signals arrived
-// - Storm detection metrics based on occurrence count
+// - Operators see duplicate signal frequency from occurrence tracking
 // - Audit trail of signal frequency
 // ============================================================================
 

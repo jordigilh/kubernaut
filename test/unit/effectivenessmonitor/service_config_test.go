@@ -192,15 +192,13 @@ var _ = Describe("EffectivenessMonitor Service Config - Unit Tests", Label("conf
 		})
 
 		// ========================================
-		// TLS CA File Validation (Issue #452)
+		// TLS CA File Validation (Issue #452, updated by #484)
 		// ========================================
-		It("UT-EM-452-005: should reject config with non-existent tlsCaFile path", func() {
+		It("UT-EM-484-007: should accept config with non-existent tlsCaFile (startup retry handles availability)", func() {
 			cfg := config.DefaultConfig()
 			cfg.External.TLSCaFile = "/does/not/exist/ca.crt"
-			err := cfg.Validate()
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("tlsCaFile"))
-			Expect(err.Error()).To(ContainSubstring("/does/not/exist/ca.crt"))
+			Expect(cfg.Validate()).To(Succeed(),
+				"Issue #484: tlsCaFile is not validated at config time; the startup retry loop waits for it")
 		})
 
 		It("UT-EM-452-006: should accept config with empty tlsCaFile (Kind default)", func() {

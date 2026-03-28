@@ -103,7 +103,7 @@ var _ = Describe("Notification K8s Event Observability (DD-EVENT-001, BR-NT-095)
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "IT-NT-095-01: All Channels Succeed",
 					Body:     "Event trail validation - all succeed",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-slack",
 					},
 				},
@@ -167,7 +167,7 @@ var _ = Describe("Notification K8s Event Observability (DD-EVENT-001, BR-NT-095)
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-slack",
 					},
 				},
@@ -233,7 +233,7 @@ var _ = Describe("Notification K8s Event Observability (DD-EVENT-001, BR-NT-095)
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "slack-only",
 					},
 				},

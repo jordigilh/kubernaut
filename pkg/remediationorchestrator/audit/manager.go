@@ -687,7 +687,7 @@ type RemediationWorkflowCreatedData struct {
 
 // BuildRemediationWorkflowCreatedEvent builds an audit event capturing the
 // pre-remediation spec hash before workflow execution begins (DD-EM-002).
-// workflowType is the DD-WORKFLOW-016 action_type (e.g., "ScaleReplicas", "RestartPod").
+// actionType is the DD-WORKFLOW-016 action_type (e.g., "ScaleReplicas", "RestartPod").
 func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 	correlationID string,
 	namespace string,
@@ -696,7 +696,7 @@ func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 	targetResource string,
 	workflowID string,
 	workflowVersion string,
-	workflowType string,
+	actionType string,
 ) (*api.AuditEventRequest, error) {
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -721,8 +721,8 @@ func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 	if workflowVersion != "" {
 		payload.WorkflowVersion = api.OptString{Value: workflowVersion, Set: true}
 	}
-	if workflowType != "" {
-		payload.WorkflowType = api.OptString{Value: workflowType, Set: true}
+	if actionType != "" {
+		payload.ActionType = api.OptString{Value: actionType, Set: true}
 	}
 
 	event.EventData = api.NewAuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData(payload)
@@ -793,7 +793,8 @@ func (m *Manager) BuildEACreatedEvent(
 // OGEN-MIGRATION: Helper functions for type conversion
 // ========================================
 
-// toOptFailurePhase converts string to ogen enum type.
+// ToOptFailurePhase converts a FailurePhase string to the ogen DS audit enum type.
+// DS API supports 4 failure phases; Configuration and Blocked are CRD-only (no DS mapping).
 func ToOptFailurePhase(phase string) api.OptRemediationOrchestratorAuditPayloadFailurePhase {
 	if phase == "" {
 		return api.OptRemediationOrchestratorAuditPayloadFailurePhase{}
@@ -801,13 +802,13 @@ func ToOptFailurePhase(phase string) api.OptRemediationOrchestratorAuditPayloadF
 
 	var result api.OptRemediationOrchestratorAuditPayloadFailurePhase
 	switch phase {
-	case "SignalProcessing", "signal_processing": // Controller uses snake_case
+	case "SignalProcessing":
 		result.SetTo(api.RemediationOrchestratorAuditPayloadFailurePhaseSignalProcessing)
-	case "AIAnalysis", "ai_analysis": // Controller uses snake_case
+	case "AIAnalysis":
 		result.SetTo(api.RemediationOrchestratorAuditPayloadFailurePhaseAIAnalysis)
-	case "WorkflowExecution", "workflow_execution": // Controller uses snake_case
+	case "WorkflowExecution":
 		result.SetTo(api.RemediationOrchestratorAuditPayloadFailurePhaseWorkflowExecution)
-	case "Approval", "approval": // Controller uses snake_case
+	case "Approval":
 		result.SetTo(api.RemediationOrchestratorAuditPayloadFailurePhaseApproval)
 	}
 	return result

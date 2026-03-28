@@ -35,6 +35,7 @@ from typing import Any, Dict
 from litellm.integrations.custom_logger import CustomLogger
 
 from .instrumentation import HAMetrics
+from .token_accumulator import get_token_accumulator
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,15 @@ class KubernautLiteLLMCallback(CustomLogger):
             if usage is not None:
                 prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
                 completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+
+            acc = get_token_accumulator()
+            if acc is not None:
+                try:
+                    acc.add(prompt_tokens, completion_tokens)
+                except Exception:
+                    logger.warning("Token accumulator add() failed; audit tokens may be incomplete")
+            else:
+                logger.debug("No token accumulator in ContextVar; tokens not tracked for this call")
 
             self._metrics.record_llm_call(
                 provider=provider,

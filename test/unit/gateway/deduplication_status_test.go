@@ -29,7 +29,6 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ========================================
@@ -39,7 +38,7 @@ import (
 // ========================================
 //
 // These tests validate the status-based deduplication pattern where:
-// - Gateway OWNS status.deduplication and status.stormAggregation
+// - Gateway OWNS status.deduplication
 // - Spec is IMMUTABLE after creation
 // - Conflict retry pattern handles concurrent updates
 //
@@ -108,11 +107,6 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						Severity:          "warning",
 						SignalType:        "alert",
 						ReceivedTime:      now,
-						Deduplication: sharedtypes.DeduplicationInfo{
-							FirstOccurrence: now,
-							LastOccurrence:  now,
-							OccurrenceCount: 1,
-						},
 					},
 					Status: remediationv1alpha1.RemediationRequestStatus{
 						Deduplication: &remediationv1alpha1.DeduplicationStatus{
@@ -158,11 +152,6 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						Severity:          "warning",
 						SignalType:        "alert",
 						ReceivedTime:      now,
-						Deduplication: sharedtypes.DeduplicationInfo{
-							FirstOccurrence: now,
-							LastOccurrence:  now,
-							OccurrenceCount: 3,
-						},
 					},
 					Status: remediationv1alpha1.RemediationRequestStatus{
 						Deduplication: &remediationv1alpha1.DeduplicationStatus{
@@ -208,11 +197,6 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						Severity:          "info",
 						SignalType:        "alert",
 						ReceivedTime:      now,
-						Deduplication: sharedtypes.DeduplicationInfo{
-							FirstOccurrence: now,
-							LastOccurrence:  now,
-							OccurrenceCount: 1,
-						},
 					},
 					Status: remediationv1alpha1.RemediationRequestStatus{
 						// No Deduplication field set
@@ -238,52 +222,6 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 			})
 		})
 
-		Context("when spec immutability is enforced (BR-GATEWAY-181)", func() {
-			It("should NOT modify spec.deduplication during status update", func() {
-				// Setup: Create RR with spec.deduplication set
-				now := metav1.Now()
-				rr := &remediationv1alpha1.RemediationRequest{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-rr-immutable",
-						Namespace: "kubernaut-system",
-					},
-					Spec: remediationv1alpha1.RemediationRequestSpec{
-						SignalFingerprint: testFingerprint("immut"),
-						SignalName:        "TestAlert",
-						Severity:          "warning",
-						SignalType:        "alert",
-						ReceivedTime:      now,
-						Deduplication: sharedtypes.DeduplicationInfo{
-							FirstOccurrence: now,
-							LastOccurrence:  now,
-							OccurrenceCount: 1,
-						},
-					},
-				}
-				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-
-				// Capture original spec values AFTER create (to handle serialization precision)
-				createdRR := &remediationv1alpha1.RemediationRequest{}
-				Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())
-				originalSpecCount := createdRR.Spec.Deduplication.OccurrenceCount
-				originalFirstOccurrence := createdRR.Spec.Deduplication.FirstOccurrence
-
-				// BEHAVIOR: Update deduplication STATUS (not spec)
-				err := updater.UpdateDeduplicationStatus(ctx, createdRR)
-				Expect(err).ToNot(HaveOccurred())
-
-				// CORRECTNESS: Spec is unchanged
-				updatedRR := &remediationv1alpha1.RemediationRequest{}
-				Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR)).To(Succeed())
-
-				Expect(updatedRR.Spec.Deduplication.OccurrenceCount).To(Equal(originalSpecCount),
-					"spec.deduplication.occurrenceCount should NOT change")
-				Expect(updatedRR.Spec.Deduplication.FirstOccurrence).To(Equal(originalFirstOccurrence),
-					"spec.deduplication.firstOccurrence should NOT change")
-
-				// BUSINESS OUTCOME: Spec immutability enforced (BR-GATEWAY-181)
-			})
-		})
 	})
 
 	// ========================================
@@ -306,11 +244,6 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						Severity:          "warning",
 						SignalType:        "alert",
 						ReceivedTime:      now,
-						Deduplication: sharedtypes.DeduplicationInfo{
-							FirstOccurrence: now,
-							LastOccurrence:  now,
-							OccurrenceCount: 1,
-						},
 					},
 					Status: remediationv1alpha1.RemediationRequestStatus{
 						OverallPhase: "Pending",
@@ -345,11 +278,6 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						Severity:          "warning",
 						SignalType:        "alert",
 						ReceivedTime:      now,
-						Deduplication: sharedtypes.DeduplicationInfo{
-							FirstOccurrence: now,
-							LastOccurrence:  now,
-							OccurrenceCount: 1,
-						},
 					},
 					Status: remediationv1alpha1.RemediationRequestStatus{
 						OverallPhase: "Processing",
@@ -381,11 +309,6 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						Severity:          "warning",
 						SignalType:        "alert",
 						ReceivedTime:      now,
-						Deduplication: sharedtypes.DeduplicationInfo{
-							FirstOccurrence: now,
-							LastOccurrence:  now,
-							OccurrenceCount: 1,
-						},
 					},
 					Status: remediationv1alpha1.RemediationRequestStatus{
 						OverallPhase: "Completed",
@@ -420,11 +343,6 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						Severity:          "warning",
 						SignalType:        "alert",
 						ReceivedTime:      now,
-						Deduplication: sharedtypes.DeduplicationInfo{
-							FirstOccurrence: now,
-							LastOccurrence:  now,
-							OccurrenceCount: 1,
-						},
 					},
 					Status: remediationv1alpha1.RemediationRequestStatus{
 						OverallPhase: "Failed",
@@ -490,11 +408,6 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						Severity:          "warning",
 						SignalType:        "alert",
 						ReceivedTime:      now,
-						Deduplication: sharedtypes.DeduplicationInfo{
-							FirstOccurrence: now,
-							LastOccurrence:  now,
-							OccurrenceCount: 1,
-						},
 					},
 				}
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())

@@ -9,7 +9,7 @@ Name | Type | Description | Notes
 **remediation_uid** | **str** | RemediationRequest UID (correlation key) | 
 **signal_fingerprint** | **str** | Signal fingerprint that triggered the remediation | [optional] 
 **signal_type** | **str** | Type of signal (e.g. HighCPULoad, OOMKilled) | [optional] 
-**workflow_type** | **str** | Workflow type applied (null if escalated to human review) | [optional] 
+**action_type** | **str** | Action type applied (null if escalated to human review) | [optional] 
 **outcome** | **str** | Remediation outcome (Success, Failed, Escalated) | [optional] 
 **effectiveness_score** | **float** | EM effectiveness score (0.0-1.0). Null if assessment not yet completed or remediation was escalated.  | [optional] 
 **signal_resolved** | **bool** | Whether the originating signal was resolved after remediation | [optional] 

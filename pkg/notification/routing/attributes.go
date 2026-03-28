@@ -21,7 +21,7 @@ package routing
 // BR-NOT-065: Channel Routing Based on Spec Fields
 //
 // These keys correspond to spec field names (type, severity, phase, reviewSource,
-// priority) and spec.metadata keys (skip-reason, investigation-outcome, environment).
+// priority) and spec.context / spec.extensions keys (skip-reason, investigation-outcome, environment).
 // Used in routing config match entries and RoutingAttributesFromSpec().
 const (
 	// AttrType is the routing attribute key for notification type.
@@ -33,7 +33,7 @@ const (
 	AttrSeverity = "severity"
 
 	// AttrEnvironment is the routing attribute key for environment.
-	// Maps to spec.metadata["environment"]. Values: production, staging, development, test
+	// Maps to spec.extensions["environment"]. Values: production, staging, development, test
 	AttrEnvironment = "environment"
 
 	// AttrPhase is the routing attribute key for remediation phase.
@@ -49,16 +49,16 @@ const (
 	AttrPriority = "priority"
 
 	// AttrNamespace is the routing attribute key for namespace.
-	// Maps to spec.metadata["namespace"]. Value: Kubernetes namespace name
+	// Maps to spec.extensions["namespace"]. Value: Kubernetes namespace name
 	AttrNamespace = "namespace"
 
 	// AttrSkipReason is the routing attribute key for WFE skip reason.
-	// Maps to spec.metadata["skip-reason"].
+	// Maps to spec.extensions["skip-reason"].
 	// Values: PreviousExecutionFailed, ExhaustedRetries, ResourceBusy, RecentlyRemediated
 	AttrSkipReason = "skip-reason"
 
 	// AttrInvestigationOutcome is the routing attribute key for investigation outcome.
-	// Maps to spec.metadata["investigation-outcome"].
+	// Maps to spec.extensions["investigation-outcome"].
 	// Values: resolved, inconclusive, workflow_selected
 	AttrInvestigationOutcome = "investigation-outcome"
 )

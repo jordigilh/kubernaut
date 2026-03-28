@@ -62,7 +62,7 @@ func buildMinimalWorkflow(workflowName, actionType string, seq int) *models.Reme
 		ActionType:      actionType,
 		ExecutionEngine: models.ExecutionEngineJob,
 		Labels:          models.MandatoryLabels{Severity: []string{"critical"}, Component: "pod"},
-		Status:          "active",
+		Status:          "Active",
 		IsLatestVersion: true,
 		CreatedBy:       &createdBy,
 	}
@@ -129,7 +129,7 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 			fetched, err := atRepo.GetByName(ctx, name)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(fetched.ActionType).To(Equal(name))
-			Expect(fetched.Status).To(Equal("active"))
+			Expect(fetched.Status).To(Equal("Active"))
 
 			var storedDesc models.ActionTypeDescription
 			Expect(json.Unmarshal(fetched.Description, &storedDesc)).To(Succeed())
@@ -166,7 +166,7 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 
 			fetched, err := atRepo.GetByName(ctx, name)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(fetched.Status).To(Equal("disabled"))
+			Expect(fetched.Status).To(Equal("Disabled"))
 
 			// Third CREATE → "reenabled"
 			r3, err := atRepo.Create(ctx, name, desc, "admin@example.com")
@@ -177,7 +177,7 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 			// Verify status restored to active
 			reenabled, err := atRepo.GetByName(ctx, name)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(reenabled.Status).To(Equal("active"))
+			Expect(reenabled.Status).To(Equal("Active"))
 			Expect(reenabled.DisabledAt).To(BeNil(),
 				"disabled_at should be NULL after re-enable")
 			Expect(reenabled.DisabledBy).To(BeNil(),
@@ -212,12 +212,12 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 			// Verify action type still active
 			fetched, err := atRepo.GetByName(ctx, name)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(fetched.Status).To(Equal("active"))
+			Expect(fetched.Status).To(Equal("Active"))
 
 			// Disable workflow via repo, then AT disable should succeed (Issue #514)
 			created, err := workflowRepo.GetActiveByWorkflowName(ctx, wf.WorkflowName)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(workflowRepo.UpdateStatus(ctx, created.WorkflowID, created.Version, "disabled", "CRD deleted", "admin@example.com")).To(Succeed())
+			Expect(workflowRepo.UpdateStatus(ctx, created.WorkflowID, created.Version, "Disabled", "CRD deleted", "admin@example.com")).To(Succeed())
 
 			disResult2, err := atRepo.Disable(ctx, name, "admin@example.com")
 			Expect(err).ToNot(HaveOccurred())
@@ -379,7 +379,7 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 
 			fetched, err := atRepo.GetByName(ctx, name)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(fetched.Status).To(Equal("disabled"))
+			Expect(fetched.Status).To(Equal("Disabled"))
 			Expect(fetched.DisabledAt).ToNot(BeNil(),
 				"disabled_at should be set")
 			Expect(fetched.DisabledBy).To(HaveValue(Equal("operator@kubernaut.ai")),
@@ -440,7 +440,7 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 			// Verify the action type is disabled
 			fetched, err := atRepo.GetByName(ctx, name)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(fetched.Status).To(Equal("disabled"))
+			Expect(fetched.Status).To(Equal("Disabled"))
 		})
 
 		It("should deny when non-orphaned workflows remain", func() {
@@ -467,7 +467,7 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 			// Verify the action type is still active
 			fetched, err := atRepo.GetByName(ctx, name)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(fetched.Status).To(Equal("active"))
+			Expect(fetched.Status).To(Equal("Active"))
 		})
 	})
 
@@ -496,7 +496,7 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 			By("Disabling workflow via workflowRepo.UpdateStatus")
 			created, err := workflowRepo.GetActiveByWorkflowName(ctx, wf.WorkflowName)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(workflowRepo.UpdateStatus(ctx, created.WorkflowID, created.Version, "disabled", "CRD deleted", "admin@example.com")).To(Succeed())
+			Expect(workflowRepo.UpdateStatus(ctx, created.WorkflowID, created.Version, "Disabled", "CRD deleted", "admin@example.com")).To(Succeed())
 
 			By("Verifying AT disable now succeeds")
 			disResult, err = atRepo.Disable(ctx, name, "admin@example.com")

@@ -281,7 +281,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			// - Environment: production/staging/development
 			// - Priority: P0/P1/P2/P3
 			// - Business criticality, SLA requirements
-			// Each decision MUST be audited with confidence scores
+			// Each decision MUST be audited with source tracking
 
 			By("1. Creating staging namespace")
 			ns := createTestNamespaceWithLabels("audit-test-staging", map[string]string{

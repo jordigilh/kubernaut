@@ -406,7 +406,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [active, disabled, deprecated, archived]
+            enum: [Active, Disabled, Deprecated, Archived]
         - name: environment
           in: query
           schema:
@@ -2739,6 +2739,10 @@ components:
           type: string
           description: "Execution engine (tekton, job)"
           enum: [tekton, job]
+        serviceAccountName:
+          type: string
+          description: "Per-workflow ServiceAccount name (DD-WE-005 v2.0). Omitted if not set."
+          example: "my-workflow-sa"
         # DD-HAPI-017 v1.1: actualSuccessRate and totalExecutions REMOVED from
         # LLM-facing discovery response. These global aggregate metrics are
         # misleading for per-incident workflow selection — the conditions under
@@ -2861,7 +2865,7 @@ components:
           type: array
           items:
             type: string
-            enum: [active, disabled, deprecated, archived]
+            enum: [Active, Disabled, Deprecated, Archived]
           description: "Workflow lifecycle status filter"
 
     MandatoryLabels:
@@ -2918,7 +2922,7 @@ components:
           type: array
           items:
             type: string
-            enum: [gitOpsManaged, gitOpsTool, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh]
+            enum: [gitOpsManaged, gitOpsTool, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, resourceQuotaConstrained]
           description: "Fields where detection failed (RBAC, timeout, etc.) - consumer should ignore these fields"
           example: ["pdbProtected", "networkIsolated"]
         gitOpsManaged:
@@ -2949,6 +2953,9 @@ components:
           description: "Service mesh type: istio, linkerd, or * (wildcard = any mesh)"
           enum: [istio, linkerd, "*"]
           example: "istio"
+        resourceQuotaConstrained:
+          type: boolean
+          description: "ResourceQuota exists in namespace (#366)"
 
     WorkflowSearchResponse:
       type: object
@@ -2982,8 +2989,7 @@ components:
           type: string
           description: "Human-readable workflow name"
         description:
-          type: string
-          description: "Workflow description"
+          $ref: '#/components/schemas/StructuredDescription'
         schemaVersion:
           type: string
           description: "Schema format version (e.g., 1.0, 1.1). #255"
@@ -3001,6 +3007,14 @@ components:
         executionBundleDigest:
           type: string
           description: "OCI execution bundle digest"
+        executionEngine:
+          type: string
+          description: "Execution engine (tekton, job, ansible)"
+          enum: [tekton, job, ansible]
+        serviceAccountName:
+          type: string
+          description: "Per-workflow ServiceAccount name (DD-WE-005 v2.0). Omitted if not set."
+          example: "my-workflow-sa"
         confidence:
           type: number
           format: float
@@ -3145,6 +3159,10 @@ components:
           type: string
           description: "OCI execution bundle digest"
           example: "sha256:abc123..."
+        serviceAccountName:
+          type: string
+          description: "Pre-existing ServiceAccount for Job/PipelineRun (DD-WE-005 v2.0). Absent = K8s namespace default SA."
+          example: "hpa-workflow-sa"
         labels:
           $ref: '#/components/schemas/MandatoryLabels'
         customLabels:
@@ -3153,7 +3171,7 @@ components:
           $ref: '#/components/schemas/DetectedLabels'
         status:
           type: string
-          enum: [active, disabled, deprecated, archived, superseded]
+          enum: [Active, Disabled, Deprecated, Archived, Superseded]
           description: "Workflow lifecycle status"
         disabledAt:
           type: string
@@ -3247,7 +3265,7 @@ components:
       properties:
         status:
           type: string
-          enum: [active, disabled, deprecated, archived]
+          enum: [Active, Disabled, Deprecated, Archived]
           description: "Workflow status (mutable)"
         disabledBy:
           type: string
@@ -3678,12 +3696,12 @@ components:
           type: string
           description: Version of the selected workflow
           example: "1.0.0"
-        workflow_type:
+        action_type:
           type: string
           description: |
             Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
             Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery.
-            Used by DS remediation history to populate workflowType on entries and summaries.
+            Used by DS remediation history to populate actionType on entries and summaries.
           example: "ScaleReplicas"
 
         # EA creation fields (orchestrator.ea.created, Issue #277)
@@ -4262,8 +4280,8 @@ components:
           example: "550e8400-e29b-41d4-a716-446655440000"
         catalog_status:
           type: string
-          description: Catalog registration status (active, disabled, etc.)
-          example: "active"
+          description: Catalog registration status (Active, Disabled, etc.)
+          example: "Active"
         denial_reason:
           type: string
           description: Reason for denial (only set when action=denied)
@@ -4635,9 +4653,9 @@ components:
           example: "1.0"
         status:
           type: string
-          enum: [active, disabled, archived]
+          enum: [Active, Disabled, Archived]
           description: Workflow status
-          example: "active"
+          example: "Active"
         is_latest_version:
           type: boolean
           description: Whether this is the latest version
@@ -4679,7 +4697,7 @@ components:
         status:
           type: string
           description: Updated workflow status
-          example: "disabled"
+          example: "Disabled"
         disabled_by:
           type: string
           description: User who disabled the workflow (only for status=disabled)
@@ -5077,6 +5095,14 @@ components:
           example: "incident-payment-api-2025-12-17-abc123"
         response_data:
           $ref: '#/components/schemas/IncidentResponseData'
+        total_prompt_tokens:
+          type: integer
+          minimum: 0
+          description: Total prompt tokens consumed across all LLM calls in this investigation session (#435)
+        total_completion_tokens:
+          type: integer
+          minimum: 0
+          description: Total completion tokens consumed across all LLM calls in this investigation session (#435)
 
     AIAgentResponseFailedPayload:
       type: object
@@ -5542,10 +5568,10 @@ components:
           type: string
           description: Type of signal (e.g. HighCPULoad, OOMKilled)
           example: "HighCPULoad"
-        workflowType:
+        actionType:
           type: string
           nullable: true
-          description: Workflow type applied (null if escalated to human review)
+          description: Action type applied (null if escalated to human review)
           example: "ScaleUp"
         outcome:
           type: string
@@ -5640,10 +5666,10 @@ components:
           type: string
           description: Type of signal
           example: "HighCPULoad"
-        workflowType:
+        actionType:
           type: string
           nullable: true
-          description: Workflow type applied (null if escalated)
+          description: Action type applied (null if escalated)
           example: "ScaleUp"
         outcome:
           type: string
@@ -5889,7 +5915,7 @@ components:
         status:
           type: string
           enum:
-            - disabled
+            - Disabled
 
     ActionTypeDisableDeniedResponse:
       type: object
@@ -6027,7 +6053,7 @@ components:
           type: string
         previous_state:
           type: string
-          enum: ['disabled']
+          enum: ['Disabled']
         disabled_at:
           type: string
           format: date-time

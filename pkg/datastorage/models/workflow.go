@@ -104,6 +104,10 @@ type RemediationWorkflow struct {
 	// For tekton/job: NULL.
 	EngineConfig *json.RawMessage `json:"engineConfig,omitempty" db:"engine_config"`
 
+	// ServiceAccountName is the pre-existing ServiceAccount for Job/PipelineRun.
+	// DD-WE-005 v2.0: Operators create SAs in execution namespace. NULL when absent.
+	ServiceAccountName *string `json:"serviceAccountName,omitempty" db:"service_account_name"`
+
 	// ========================================
 	// LABELS (V1.0: STRUCTURED TYPES FOR TYPE SAFETY)
 	// ========================================
@@ -141,7 +145,7 @@ type RemediationWorkflow struct {
 	// ========================================
 	// LIFECYCLE MANAGEMENT
 	// ========================================
-	Status         string     `json:"status" db:"status" validate:"required,oneof=active disabled deprecated archived"`
+	Status         string     `json:"status" db:"status" validate:"required,oneof=Active Disabled Deprecated Archived"`
 	StatusReason   *string    `json:"statusReason,omitempty" db:"status_reason"` // Migration 022: Reason for status change
 	DisabledAt     *time.Time `json:"disabledAt,omitempty" db:"disabled_at"`
 	DisabledBy     *string    `json:"disabledBy,omitempty" db:"disabled_by" validate:"omitempty,max=255"`
@@ -373,6 +377,9 @@ type WorkflowSearchResult struct {
 	// EngineConfig holds engine-specific configuration as raw JSON (BR-WE-016)
 	EngineConfig *json.RawMessage `json:"engineConfig,omitempty"`
 
+	// ServiceAccountName is the per-workflow SA (DD-WE-005 v2.0). Omitted if not set.
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+
 	// ========================================
 	// V1.0: LABEL-ONLY SCORING COMPONENTS
 	// ========================================
@@ -441,22 +448,22 @@ type WorkflowSearchResult struct {
 
 // IsActive returns true if the workflow is active
 func (w *RemediationWorkflow) IsActive() bool {
-	return w.Status == "active"
+	return w.Status == "Active"
 }
 
 // IsDisabled returns true if the workflow is disabled
 func (w *RemediationWorkflow) IsDisabled() bool {
-	return w.Status == "disabled"
+	return w.Status == "Disabled"
 }
 
 // IsDeprecated returns true if the workflow is deprecated
 func (w *RemediationWorkflow) IsDeprecated() bool {
-	return w.Status == "deprecated"
+	return w.Status == "Deprecated"
 }
 
 // IsArchived returns true if the workflow is archived
 func (w *RemediationWorkflow) IsArchived() bool {
-	return w.Status == "archived"
+	return w.Status == "Archived"
 }
 
 // V1.0: Removed GetLabelsMap() and SetLabelsFromMap() methods

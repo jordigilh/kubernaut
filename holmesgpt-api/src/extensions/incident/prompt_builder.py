@@ -374,16 +374,11 @@ def create_incident_investigation_prompt(
     firing_time = request_data.get('firing_time', 'Unknown')
     received_time = request_data.get('received_time', 'Unknown')
 
-    # Deduplication and storm
+    # Deduplication context
     is_duplicate = request_data.get('is_duplicate', False)
     occurrence_count = request_data.get('occurrence_count', 0)
     first_seen = request_data.get('first_seen', 'Unknown')
     last_seen = request_data.get('last_seen', 'Unknown')
-    is_storm = request_data.get('is_storm', False)
-    storm_signal_count = request_data.get('storm_signal_count', 0)
-    storm_type = request_data.get('storm_type', 'Unknown')
-    storm_window_minutes = request_data.get('storm_window_minutes', 5)
-    affected_resources = request_data.get('affected_resources', [])
 
     # Cluster context
     cluster_name = request_data.get('cluster_name', 'unknown')
@@ -413,11 +408,6 @@ def create_incident_investigation_prompt(
     # Add deduplication fact if duplicate
     if is_duplicate and occurrence_count > 0:
         incident_summary += f" **This signal has been received {occurrence_count} times within a {request_data.get('deduplication_window_minutes', 5)}-minute window**."
-
-    # Add storm fact if storm detected
-    if is_storm:
-        resource_count = len(affected_resources) if affected_resources else "multiple"
-        incident_summary += f" **Alert storm detected**: {storm_signal_count} similar signals within {storm_window_minutes} minutes affecting {resource_count} resources."
 
     incident_summary += f"\n{error_message}"
 
@@ -485,24 +475,6 @@ that a **{signal_name}** event will occur for **{namespace}/{resource_kind}/{res
 **Note**: This indicates the same signal fingerprint was detected multiple times, suggesting a persistent or recurring issue.
 """
 
-    # Add Storm Detection Context if applicable
-    if is_storm:
-        prompt += f"""
-## Alert Storm Detection
-
-**Observable Fact**: Alert storm detected with {storm_signal_count} similar signals within {storm_window_minutes} minutes.
-
-**Storm Details**:
-- Storm Type: {storm_type}
-- Signal Count: {storm_signal_count}
-- Time Window: {storm_window_minutes} minutes
-- Affected Resources: {len(affected_resources) if affected_resources else 'Unknown'}
-"""
-        if affected_resources:
-            prompt += f"- Resource List: {', '.join(affected_resources[:5])}"
-            if len(affected_resources) > 5:
-                prompt += f" (and {len(affected_resources) - 5} more)"
-            prompt += "\n"
 
     # ADR-056: Cluster environment characteristics are now computed at runtime
     # by the get_namespaced_resource_context tool (LabelDetector) and injected into

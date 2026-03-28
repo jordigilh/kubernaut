@@ -35,7 +35,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	sharedK8s "github.com/jordigilh/kubernaut/pkg/shared/k8s"
-	// DD-GATEWAY-011: sharedtypes import removed (Spec.Deduplication no longer populated)
 )
 
 // RetryObserver is notified on each failed CRD creation retry attempt.
@@ -247,7 +246,7 @@ func getErrorTypeString(err error) string {
 // This method:
 // 1. Generates CRD name from fingerprint
 // 2. Populates metadata (labels, annotations)
-// 3. Populates spec (signal data, deduplication info, timestamps)
+// 3. Populates spec (signal data, timestamps)
 // 4. Creates CRD in Kubernetes
 // 5. Records success/failure metrics
 // 6. Logs creation event
@@ -272,10 +271,6 @@ func getErrorTypeString(err error) string {
 //	  signalLabels: {alertname: ..., namespace: ..., pod: ...}
 //	  signalAnnotations: {summary: ..., description: ...}
 //	  originalPayload: <base64-encoded-json>
-//	  deduplication:
-//	    firstSeen: <timestamp>
-//	    lastSeen: <timestamp>
-//	    occurrenceCount: 1
 //
 // Parameters:
 // - ctx: Context for cancellation and timeout
@@ -373,9 +368,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 			// Issue #96: string type preserves raw JSON text without base64 encoding
 			OriginalPayload: string(signal.RawPayload),
 
-			// DD-GATEWAY-011: Deduplication REMOVED from Spec (moved to Status)
-			// Gateway now owns status.deduplication (initialized by StatusUpdater)
-			// Spec.Deduplication kept in API for backwards compatibility but NOT populated
+			// DD-GATEWAY-011: Deduplication lives in Status (initialized by StatusUpdater)
 		},
 	}
 

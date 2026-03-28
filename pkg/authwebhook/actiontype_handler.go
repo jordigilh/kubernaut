@@ -104,7 +104,7 @@ func (h *ActionTypeHandler) handleCreate(ctx context.Context, req admission.Requ
 		"was_reenabled", result.WasReenabled,
 	)
 
-	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedCreate, at.Spec.Name, result.WasReenabled, "active")
+	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedCreate, at.Spec.Name, result.WasReenabled, "Active")
 
 	go h.updateCRDStatusCreate(req.Namespace, req.Name, authCtx.Username, result)
 
@@ -151,7 +151,7 @@ func (h *ActionTypeHandler) handleUpdate(ctx context.Context, req admission.Requ
 	}
 
 	logger.Info("ActionType description updated in DS", "action_type", newAT.Spec.Name)
-	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedUpdate, newAT.Spec.Name, false, "active")
+	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedUpdate, newAT.Spec.Name, false, "Active")
 
 	return admission.Allowed("action type description updated")
 }
@@ -193,7 +193,7 @@ func (h *ActionTypeHandler) handleDelete(ctx context.Context, req admission.Requ
 	}
 
 	logger.Info("ActionType disabled in DS", "action_type", at.Spec.Name)
-	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedDelete, at.Spec.Name, false, "disabled")
+	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedDelete, at.Spec.Name, false, "Disabled")
 	return admission.Allowed("action type disabled in catalog")
 }
 
@@ -280,7 +280,7 @@ func (h *ActionTypeHandler) updateCRDStatusCreate(namespace, name, registeredBy 
 
 	now := metav1.Now()
 	at.Status.Registered = true
-	at.Status.CatalogStatus = "active"
+	at.Status.CatalogStatus = sharedtypes.CatalogStatusActive
 	at.Status.RegisteredBy = registeredBy
 	at.Status.RegisteredAt = &now
 	at.Status.PreviouslyExisted = result.WasReenabled

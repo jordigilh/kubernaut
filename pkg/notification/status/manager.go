@@ -61,13 +61,13 @@ func (m *Manager) RecordDeliveryAttempt(ctx context.Context, notification *notif
 
 		for _, a := range notification.Status.DeliveryAttempts {
 			switch a.Status {
-			case "success":
-				successfulChannels[a.Channel] = true
-				delete(failedChannels, a.Channel) // Remove from failed if it later succeeds
-			case "failed":
+			case notificationv1alpha1.DeliveryAttemptStatusSuccess:
+				successfulChannels[string(a.Channel)] = true
+				delete(failedChannels, string(a.Channel)) // Remove from failed if it later succeeds
+			case notificationv1alpha1.DeliveryAttemptStatusFailed:
 				// Only count as failed if the channel never succeeded
-				if !successfulChannels[a.Channel] {
-					failedChannels[a.Channel] = true
+				if !successfulChannels[string(a.Channel)] {
+					failedChannels[string(a.Channel)] = true
 				}
 			}
 		}
@@ -125,7 +125,7 @@ func (m *Manager) AtomicStatusUpdate(
 			}
 
 			notification.Status.Phase = newPhase
-			notification.Status.Reason = reason
+			notification.Status.Reason = notificationv1alpha1.NotificationStatusReason(reason)
 			notification.Status.Message = message
 
 			// Issue #118 Gap 6+7: Set lifecycle timestamps on phase transitions
@@ -178,13 +178,13 @@ func (m *Manager) AtomicStatusUpdate(
 
 		for _, attempt := range notification.Status.DeliveryAttempts {
 			switch attempt.Status {
-			case "success":
-				successfulChannels[attempt.Channel] = true
-				delete(failedChannels, attempt.Channel) // Remove from failed if it later succeeds
-			case "failed":
+			case notificationv1alpha1.DeliveryAttemptStatusSuccess:
+				successfulChannels[string(attempt.Channel)] = true
+				delete(failedChannels, string(attempt.Channel)) // Remove from failed if it later succeeds
+			case notificationv1alpha1.DeliveryAttemptStatusFailed:
 				// Only count as failed if the channel never succeeded
-				if !successfulChannels[attempt.Channel] {
-					failedChannels[attempt.Channel] = true
+				if !successfulChannels[string(attempt.Channel)] {
+					failedChannels[string(attempt.Channel)] = true
 				}
 			}
 		}
@@ -231,7 +231,7 @@ func (m *Manager) UpdatePhase(ctx context.Context, notification *notificationv1a
 
 		// 4. Update phase fields
 		notification.Status.Phase = newPhase
-		notification.Status.Reason = reason
+		notification.Status.Reason = notificationv1alpha1.NotificationStatusReason(reason)
 		notification.Status.Message = message
 
 		// Issue #118 Gap 6+7: Set lifecycle timestamps on phase transitions

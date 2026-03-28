@@ -184,8 +184,8 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			Expect(envNames).To(HaveKeyWithValue("REMEDIATION_TYPE", "restart"))
 			Expect(envNames).To(HaveKeyWithValue("TIMEOUT", "300"))
 
-			By("Verifying service account")
-			Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal("kubernaut-workflow-runner"))
+			By("Verifying no platform default SA is injected when WFE has no ExecutionConfig SA (DD-WE-005 v2)")
+			Expect(job.Spec.Template.Spec.ServiceAccountName).To(BeEmpty())
 
 			By("Verifying backoff limit is 0 (no retries)")
 			Expect(*job.Spec.BackoffLimit).To(Equal(int32(0)), "BackoffLimit should be 0 for fail-fast behavior")

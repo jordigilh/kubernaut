@@ -569,6 +569,7 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
+        "initImage": { "type": "string", "default": "registry.access.redhat.com/ubi10/ubi-minimal:latest", "description": "Image for the wait-for-service-ca init container (Issue #484). Override for air-gapped environments." },
         "config": {
           "type": "object",
           "additionalProperties": false,

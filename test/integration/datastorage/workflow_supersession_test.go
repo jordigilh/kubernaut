@@ -91,17 +91,17 @@ var _ = Describe("Workflow Cross-Version Supersession (Issue #371, BR-WORKFLOW-0
 			// Step 3: Verify v1.0.0 is now superseded
 			Eventually(func() string {
 				return queryWorkflowStatus(wr1.WorkflowID)
-			}, 5*time.Second, 500*time.Millisecond).Should(Equal("superseded"),
+			}, 5*time.Second, 500*time.Millisecond).Should(Equal("Superseded"),
 				"v1.0.0 should be marked superseded after v1.0.1 registration")
 
 			// Step 4: Verify v1.0.1 is active
-			Expect(queryWorkflowStatus(wr2.WorkflowID)).To(Equal("active"),
+			Expect(queryWorkflowStatus(wr2.WorkflowID)).To(Equal("Active"),
 				"v1.0.1 should be active")
 
 			// Step 5: Verify exactly one active entry for this workflow name
 			var activeCount int
 			err = db.QueryRow(
-				"SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_name = $1 AND status = 'active'", testID,
+				"SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_name = $1 AND status = 'Active'", testID,
 			).Scan(&activeCount)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(activeCount).To(Equal(1),
@@ -154,7 +154,7 @@ var _ = Describe("Workflow Cross-Version Supersession (Issue #371, BR-WORKFLOW-0
 			Expect(wr1.StatusCode).To(Equal(http.StatusCreated))
 
 			// Step 2: Disable v1.0.0 (simulating CRD DELETE)
-			err := workflowRepo.UpdateStatus(ctx, wr1.WorkflowID, "1.0.0", "disabled", "CRD deleted", "test-user")
+			err := workflowRepo.UpdateStatus(ctx, wr1.WorkflowID, "1.0.0", "Disabled", "CRD deleted", "test-user")
 			Expect(err).ToNot(HaveOccurred())
 
 			// Step 3: Register v1.0.1 (new version after delete)
@@ -163,17 +163,17 @@ var _ = Describe("Workflow Cross-Version Supersession (Issue #371, BR-WORKFLOW-0
 				"New version after disable should be created (201), got %d", wr2.StatusCode)
 
 			// Step 4: Verify v1.0.0 remains disabled (not changed to superseded)
-			Expect(queryWorkflowStatus(wr1.WorkflowID)).To(Equal("disabled"),
+			Expect(queryWorkflowStatus(wr1.WorkflowID)).To(Equal("Disabled"),
 				"Disabled entry should remain disabled (DELETE semantics unchanged)")
 
 			// Step 5: Verify v1.0.1 is active
-			Expect(queryWorkflowStatus(wr2.WorkflowID)).To(Equal("active"),
+			Expect(queryWorkflowStatus(wr2.WorkflowID)).To(Equal("Active"),
 				"New entry should be active")
 
 			// Step 6: Verify exactly one active entry
 			var activeCount int
 			err = db.QueryRow(
-				"SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_name = $1 AND status = 'active'", testID,
+				"SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_name = $1 AND status = 'Active'", testID,
 			).Scan(&activeCount)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(activeCount).To(Equal(1),

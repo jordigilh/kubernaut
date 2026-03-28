@@ -20,16 +20,18 @@ These list methods provide the K8s API queries that LabelDetector needs:
   - list_pdbs(namespace) -> (list, error_str|None)
   - list_hpas(namespace) -> (list, error_str|None)
   - list_network_policies(namespace) -> (list, error_str|None)
+  - list_resource_quotas(namespace) -> (list, error_str|None) [#366]
 
 Business Requirements:
   - BR-SP-101: DetectedLabels Auto-Detection (K8s API access)
   - BR-SP-103: FailedDetections Tracking (error propagation)
 
-Test Matrix: 12 tests
+Test Matrix: 15 tests
   - PDB queries: 3 tests (UT-HAPI-056-022 to UT-HAPI-056-024)
   - HPA queries: 3 tests (UT-HAPI-056-025 to UT-HAPI-056-027)
   - NetworkPolicy queries: 3 tests (UT-HAPI-056-028 to UT-HAPI-056-030)
   - Namespace metadata: 3 tests (UT-HAPI-056-031 to UT-HAPI-056-033)
+  - ResourceQuota queries: 3 tests (UT-HAPI-366-001 to UT-HAPI-366-003)
 """
 
 import pytest
@@ -274,3 +276,60 @@ class TestGetNamespaceMetadata:
         result = await k8s.get_namespace_metadata("production")
 
         assert result is None
+
+
+class TestListResourceQuotas:
+    """UT-HAPI-366-001 through UT-HAPI-366-003: ResourceQuota list queries (#366)."""
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_366_001_list_resource_quotas_success(self):
+        """UT-HAPI-366-001: list_resource_quotas returns quota items when quotas exist in namespace."""
+        mock_core = MagicMock()
+        quota1 = MagicMock()
+        quota1.metadata.name = "compute-quota"
+        quota1.spec.hard = {"cpu": "4", "memory": "8Gi"}
+        quota1.status.hard = {"cpu": "4", "memory": "8Gi"}
+        quota1.status.used = {"cpu": "2500m", "memory": "6Gi"}
+        mock_core.list_namespaced_resource_quota.return_value = (
+            _make_list_response([quota1])
+        )
+
+        k8s = _make_client(core_v1=mock_core)
+        items, error = await k8s.list_resource_quotas("production")
+
+        assert error is None
+        assert len(items) == 1
+        assert items[0].metadata.name == "compute-quota"
+        assert items[0].spec.hard == {"cpu": "4", "memory": "8Gi"}
+        mock_core.list_namespaced_resource_quota.assert_called_once_with(
+            namespace="production"
+        )
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_366_002_list_resource_quotas_empty(self):
+        """UT-HAPI-366-002: list_resource_quotas returns empty list when no quotas exist."""
+        mock_core = MagicMock()
+        mock_core.list_namespaced_resource_quota.return_value = (
+            _make_list_response([])
+        )
+
+        k8s = _make_client(core_v1=mock_core)
+        items, error = await k8s.list_resource_quotas("default")
+
+        assert error is None
+        assert items == []
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_366_003_list_resource_quotas_api_exception(self):
+        """UT-HAPI-366-003: list_resource_quotas returns error string on K8s API failure."""
+        mock_core = MagicMock()
+        mock_core.list_namespaced_resource_quota.side_effect = ApiException(
+            status=403, reason="Forbidden"
+        )
+
+        k8s = _make_client(core_v1=mock_core)
+        items, error = await k8s.list_resource_quotas("production")
+
+        assert items == []
+        assert error is not None
+        assert "403" in error or "Forbidden" in error

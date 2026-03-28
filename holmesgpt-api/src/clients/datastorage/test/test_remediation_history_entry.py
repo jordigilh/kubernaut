@@ -39,7 +39,7 @@ class TestRemediationHistoryEntry(unittest.TestCase):
                 remediation_uid = 'rr-abc-123',
                 signal_fingerprint = 'fp-highcpu-123',
                 signal_type = 'HighCPULoad',
-                workflow_type = 'ScaleUp',
+                action_type = 'ScaleUp',
                 outcome = 'Success',
                 effectiveness_score = 0.4,
                 signal_resolved = False,

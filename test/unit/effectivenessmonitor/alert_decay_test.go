@@ -108,7 +108,8 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		cfg.ValidityWindow = 1 * time.Hour
 
 		r := controller.NewReconciler(
-			fakeClient, s,
+			fakeClient, fakeClient,
+			s,
 			record.NewFakeRecorder(100),
 			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 			nil,       // Prometheus client (disabled)
@@ -302,7 +303,8 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 			Build()
 
 		r := controller.NewReconciler(
-			fakeClient, s,
+			fakeClient, fakeClient,
+			s,
 			record.NewFakeRecorder(100),
 			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 			nil, firingAMClient(),

@@ -6,6 +6,11 @@
 **Author**: WorkflowExecution Team
 **Reviewers**: Platform Team
 
+> **Note**: The `kubernaut-workflow-runner` ServiceAccount described in this document has been
+> **removed** as of DD-WE-005 v2.0 (#481). Workflows now reference user-managed ServiceAccounts
+> via `spec.executionConfig.serviceAccountName`. The dedicated execution namespace decision
+> itself remains valid — only the SA provisioning model has changed.
+
 ---
 
 ## Context

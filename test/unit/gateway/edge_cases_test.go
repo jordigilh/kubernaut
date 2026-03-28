@@ -28,7 +28,6 @@ import (
 
 // BR-001: Prometheus AlertManager webhook ingestion
 // BR-008: Fingerprint generation
-// BR-016: Storm detection
 //
 // Business Outcome: Gateway handles extreme inputs gracefully without crashes
 //

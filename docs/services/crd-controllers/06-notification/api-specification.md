@@ -587,32 +587,32 @@ Status:
 
 ## 🏷️ Routing Spec Fields (BR-NOT-065, Issue #91)
 
-The Notification Service supports **spec-field-based routing** for notifications. Routing rules are the **sole authority** for channel resolution (#261). The service uses spec fields and `spec.metadata` to determine which channels to route to.
+The Notification Service supports **spec-field-based routing** for notifications. Routing rules are the **sole authority** for channel resolution (#261). The service uses spec fields, `spec.context` (via `FlattenToMap`), and `spec.extensions` to determine which channels to route to.
 
 **Issue #91**: `kubernaut.ai/*` metadata labels were migrated to immutable CRD spec fields. Routing config keys are simplified (e.g., `severity` not `kubernaut.ai/severity`). Field selectors (`+kubebuilder:selectablefield`) replace label-based filtering.
 
 ### **Supported Routing Attributes**
 
-Routing uses spec fields and `spec.metadata` keys. Config match keys use simplified names (no `kubernaut.ai/` prefix).
+Routing uses spec fields, `spec.context` (via `FlattenToMap`), and `spec.extensions` keys. Config match keys use simplified names (no `kubernaut.ai/` prefix).
 
 | Spec Field / Metadata Key | Config Match Key | Purpose | Values | Example |
 |---------------------------|------------------|---------|--------|---------|
 | `spec.type` | `type` | Notification type routing | `escalation`, `approval`, `completion`, `manual-review`, `status-update` | Route approvals to PagerDuty |
 | `spec.severity` | `severity` | Severity-based routing | `critical`, `high`, `medium`, `low` | Route critical to PagerDuty |
-| `spec.metadata["environment"]` | `environment` | Environment-based routing | `production`, `staging`, `development`, `test` | Route prod to oncall |
+| `spec.extensions["environment"]` | `environment` | Environment-based routing | `production`, `staging`, `development`, `test` | Route prod to oncall |
 | `spec.priority` | `priority` | Priority-based routing | `critical`, `high`, `medium`, `low` | Route P0 to all channels |
-| `spec.metadata["namespace"]` | `namespace` | Namespace-based routing | Any Kubernetes namespace | Route payment-ns to finance |
+| `spec.extensions["namespace"]` | `namespace` | Namespace-based routing | Any Kubernetes namespace | Route payment-ns to finance |
 | `spec.phase` | `phase` | Phase that triggered notification | `signal-processing`, `ai-analysis`, `workflow-execution`, etc. | Route by phase |
 | `spec.reviewSource` | `review-source` | Manual review source | `WorkflowResolutionFailed`, `ExhaustedRetries`, etc. | Route by review trigger |
 | `spec.remediationRequestRef` | (correlation) | Parent remediation link | ObjectReference | ownerRef/spec ref sufficient |
-| `spec.metadata["skip-reason"]` | `skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` | Route execution failures to PagerDuty |
-| `spec.metadata["investigation-outcome"]` | `investigation-outcome` | HolmesGPT outcome (BR-HAPI-200) | `resolved`, `inconclusive`, `workflow_selected` | Route inconclusive to ops for review |
+| `spec.extensions["skip-reason"]` | `skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` | Route execution failures to PagerDuty |
+| `spec.extensions["investigation-outcome"]` | `investigation-outcome` | HolmesGPT outcome (BR-HAPI-200) | `resolved`, `inconclusive`, `workflow_selected` | Route inconclusive to ops for review |
 
 **Removed** (Issue #91): `kubernaut.ai/component` (ownerRef sufficient), `kubernaut.ai/remediation-request` (use `spec.remediationRequestRef`).
 
 ### **Skip-Reason Routing (DD-WE-004 Integration)**
 
-The `spec.metadata["skip-reason"]` attribute enables fine-grained routing based on WorkflowExecution skip reasons:
+The `spec.extensions["skip-reason"]` attribute enables fine-grained routing based on WorkflowExecution skip reasons:
 
 | Skip Reason | Severity | Recommended Routing | Rationale |
 |-------------|----------|---------------------|-----------|
@@ -659,7 +659,7 @@ receivers:
 
 ### **Investigation-Outcome Routing (BR-HAPI-200)**
 
-The `spec.metadata["investigation-outcome"]` attribute enables routing based on HolmesGPT investigation results:
+The `spec.extensions["investigation-outcome"]` attribute enables routing based on HolmesGPT investigation results:
 
 | Investigation Outcome | Scenario | Recommended Routing | Rationale |
 |-----------------------|----------|---------------------|-----------|
@@ -707,17 +707,17 @@ receivers:
 ### **Go Constants** (`pkg/notification/routing/attributes.go`)
 
 ```go
-// Routing attribute keys (Issue #91: spec fields + spec.metadata)
+// Routing attribute keys (Issue #91: spec fields + spec.context + spec.extensions)
 const (
     AttrType                = "type"                 // spec.type
     AttrSeverity            = "severity"             // spec.severity
-    AttrEnvironment         = "environment"         // spec.metadata["environment"]
+    AttrEnvironment         = "environment"         // spec.extensions["environment"]
     AttrPhase               = "phase"                // spec.phase
     AttrReviewSource        = "review-source"        // spec.reviewSource
     AttrPriority            = "priority"             // spec.priority
-    AttrNamespace           = "namespace"            // spec.metadata["namespace"]
-    AttrSkipReason          = "skip-reason"          // spec.metadata["skip-reason"]
-    AttrInvestigationOutcome = "investigation-outcome" // spec.metadata["investigation-outcome"]
+    AttrNamespace           = "namespace"            // spec.extensions["namespace"]
+    AttrSkipReason          = "skip-reason"          // spec.extensions["skip-reason"]
+    AttrInvestigationOutcome = "investigation-outcome" // spec.extensions["investigation-outcome"]
 )
 
 // Skip reason values (DD-WE-004)
@@ -738,7 +738,7 @@ const (
 
 ### **Routing Resolution Priority**
 
-1. Resolve channels from routing rules based on spec fields and spec.metadata (#261: routing is sole authority)
+1. Resolve channels from routing rules based on spec fields, spec.context, and spec.extensions (#261: routing is sole authority)
 2. If no routing rules match → Use default receiver (console)
 
 ### **Field Selectors**

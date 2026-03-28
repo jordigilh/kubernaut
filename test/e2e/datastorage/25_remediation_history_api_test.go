@@ -118,13 +118,13 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 		Expect(err).ToNot(HaveOccurred(), "Failed to insert audit event: %s", eventType)
 	}
 
-	insertROEvent := func(correlationID, target, preHash, workflowType string, ts time.Time) {
+	insertROEvent := func(correlationID, target, preHash, actionType string, ts time.Time) {
 		GinkgoHelper()
 		insertAuditEvent("remediation.workflow_created", "remediation", correlationID,
 			map[string]interface{}{
 				"target_resource":           target,
 				"pre_remediation_spec_hash": preHash,
-				"workflow_type":             workflowType,
+				"action_type":               actionType,
 				"signal_type":              "HighCPULoad",
 				"signal_fingerprint":        "fp-e2e-" + testID,
 				"outcome":                  "success",

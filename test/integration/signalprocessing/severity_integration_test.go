@@ -531,14 +531,14 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 	})
 
 	// ========================================
-	// TEST SUITE 4: ConfigMap Hot-Reload Integration
+	// TEST SUITE 4: Rego Policy Hot-Reload Integration
 	// Business Context: Operators need live policy updates
 	// ========================================
 
-	Context("BR-SP-105: ConfigMap Hot-Reload Integration", func() {
+	Context("BR-SP-105: Rego Policy Hot-Reload Integration", func() {
 		It("should detect policy updates and reload severity determination logic", func() {
 			// BUSINESS CONTEXT:
-			// Operator updates Rego policy ConfigMap via kubectl or GitOps.
+			// Operator updates Rego policy via kubectl or GitOps.
 			// SignalProcessing already has hot-reload infrastructure for environment/priority/customlabels policies.
 			// Severity policy follows the same pattern: fsnotify detects file changes → reload policy.
 			//

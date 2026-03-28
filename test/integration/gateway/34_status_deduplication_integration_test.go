@@ -29,7 +29,6 @@ limitations under the License.
 //
 // Business Requirements:
 // - BR-GATEWAY-181: Duplicate tracking visible in RR status for RO decision-making
-// - BR-GATEWAY-182: Storm detection via occurrence count tracking
 //
 // BUSINESS VALUE:
 // When duplicate alerts arrive for an active incident, the Remediation Orchestrator
@@ -238,99 +237,6 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 
 			testLogger.Info("✅ SLA Report - Alert occurrence count",
 				"occurrences", crd.Status.Deduplication.OccurrenceCount)
-		})
-	})
-
-	Context("when same alert fires repeatedly (storm pattern) (BR-GATEWAY-182)", func() {
-		It("should track high occurrence count indicating storm behavior", func() {
-			// BR-GATEWAY-182: Storm Detection via Occurrence Count
-			//
-			// BUSINESS SCENARIO:
-			// A database pod is crash-looping, generating the SAME alert every 30 seconds.
-			// After 10 occurrences, this is clearly a storm pattern. The RO needs to:
-			// 1. See the high occurrence count to prioritize
-			// 2. Know this is a persistent issue (not transient)
-			// 3. Consider escalation or different remediation strategy
-
-			testLogger.Info("Step 1: First alert creates incident")
-			uniqueID := uuid.New().String()[:8]
-			signal := createNormalizedSignal(SignalBuilder{
-				AlertName:    "PersistentPodCrashLoop",
-				Namespace:    testNamespace,
-				ResourceName: fmt.Sprintf("database-primary-%s", uniqueID),
-				Kind:         "Pod",
-				Severity:     "critical",
-				Source:       "prometheus",
-				Labels: map[string]string{
-					"app":        "database",
-					"storm_test": uniqueID,
-				},
-			})
-
-			response1, err := gwServer.ProcessSignal(ctx, signal)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(response1.Status).To(Equal(gateway.StatusCreated))
-			crdName := response1.RemediationRequestName
-
-			testLogger.Info("Step 2: Set incident to Pending (remediation in progress)")
-			crd := &remediationv1alpha1.RemediationRequest{}
-			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: crdName}, crd)
-			Expect(err).ToNot(HaveOccurred())
-
-		crd.Status.OverallPhase = "Pending"
-		err = k8sClient.Status().Update(ctx, crd)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Wait for status update to propagate
-		Eventually(func() string {
-			var updated remediationv1alpha1.RemediationRequest
-			_ = k8sClient.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: crdName}, &updated)
-			return string(updated.Status.OverallPhase)
-		}, 10*time.Second, 500*time.Millisecond).Should(Equal("Pending"),
-			"Status update should propagate before deduplication check")
-
-		testLogger.Info("Step 3: Same alert fires 9 more times (storm pattern)")
-			for i := 2; i <= 10; i++ {
-			resp, err := gwServer.ProcessSignal(ctx, signal)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.Status).To(Equal(gateway.StatusDeduplicated),
-				fmt.Sprintf("Alert %d should be deduplicated (StatusDeduplicated)", i))
-				time.Sleep(10 * time.Millisecond) // Small delay between signals
-			}
-
-			testLogger.Info("Step 4: BUSINESS OUTCOME - RO sees high occurrence count (storm indicator)")
-			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: crdName}, crd)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(crd.Status.Deduplication).ToNot(BeNil(), "Deduplication status must be populated")
-			Expect(crd.Status.Deduplication.OccurrenceCount).To(BeNumerically(">=", 5),
-				"Status.deduplication must track storm pattern")
-			occurrenceCount := crd.Status.Deduplication.OccurrenceCount
-			Expect(occurrenceCount).To(BeNumerically(">=", 5),
-				"High occurrence count indicates storm pattern (BR-GATEWAY-182)")
-
-			testLogger.Info("Step 5: BUSINESS CONTEXT - RO can make informed prioritization decision")
-			GinkgoWriter.Printf("\n📊 STORM ANALYSIS for RO:\n")
-			GinkgoWriter.Printf("   Alert: %s\n", crd.Spec.SignalName)
-			GinkgoWriter.Printf("   Occurrences: %d\n", occurrenceCount)
-			GinkgoWriter.Printf("   First seen: %v\n", crd.Status.Deduplication.FirstSeenAt)
-			GinkgoWriter.Printf("   Last seen: %v\n", crd.Status.Deduplication.LastSeenAt)
-
-			if occurrenceCount >= 10 {
-				GinkgoWriter.Printf("   🔴 RECOMMENDATION: High-priority storm - consider escalation\n")
-			} else if occurrenceCount >= 5 {
-				GinkgoWriter.Printf("   🟡 RECOMMENDATION: Moderate storm - monitor closely\n")
-			}
-
-			// Verify business-meaningful assertions
-			Expect(occurrenceCount).To(BeNumerically(">=", 5),
-				"Storm pattern: 5+ occurrences indicates persistent issue")
-			Expect(crd.Status.Deduplication.LastSeenAt).ToNot(BeNil(),
-				"LastSeenAt required for SLA tracking")
-			Expect(crd.Status.Deduplication.LastSeenAt.IsZero()).To(BeFalse())
-
-			testLogger.Info("✅ Test 34 PASSED: Status-based deduplication tracking validated",
-				"occurrences", occurrenceCount)
 		})
 	})
 })

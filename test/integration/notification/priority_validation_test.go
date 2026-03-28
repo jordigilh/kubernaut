@@ -252,7 +252,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					Severity: "critical",
 					Subject:  "🚨 Production Outage - Payment API Down",
 					Body:     "Critical: Payment API unresponsive for 5+ minutes. Immediate action required.",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"environment": "production",
 					},
 				},

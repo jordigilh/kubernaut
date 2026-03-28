@@ -35,6 +35,7 @@ import (
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
+	deterministicuuid "github.com/jordigilh/kubernaut/pkg/datastorage/uuid"
 )
 
 // ========================================
@@ -275,6 +276,9 @@ func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.
 	repo := h.workflowIntegrityRepo
 	incomingHash := computeContentHash(workflow.Content)
 	workflow.ContentHash = incomingHash
+	// Issue #548: Derive workflow_id deterministically from content hash so that
+	// re-registering the same CRD content after a PVC wipe recovers the original ID.
+	workflow.WorkflowID = deterministicuuid.DeterministicUUID(incomingHash)
 
 	active, err := repo.GetActiveByNameAndVersion(ctx, workflow.WorkflowName, workflow.Version)
 	if err != nil {
@@ -292,7 +296,7 @@ func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.
 		}
 
 		reason := fmt.Sprintf("superseded: content hash changed from %s to %s", active.ContentHash, incomingHash)
-		if err := repo.UpdateStatus(ctx, active.WorkflowID, active.Version, "superseded", reason, ""); err != nil {
+		if err := repo.UpdateStatus(ctx, active.WorkflowID, active.Version, "Superseded", reason, ""); err != nil {
 			return nil, fmt.Errorf("supersede old workflow %s: %w", active.WorkflowID, err)
 		}
 
@@ -319,10 +323,10 @@ func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.
 
 	if disabled != nil {
 		if disabled.ContentHash == incomingHash {
-			if err := repo.UpdateStatus(ctx, disabled.WorkflowID, disabled.Version, "active", "re-enabled via CRD re-creation", ""); err != nil {
+			if err := repo.UpdateStatus(ctx, disabled.WorkflowID, disabled.Version, "Active", "re-enabled via CRD re-creation", ""); err != nil {
 				return nil, fmt.Errorf("re-enable workflow %s: %w", disabled.WorkflowID, err)
 			}
-			disabled.Status = "active"
+			disabled.Status = "Active"
 			disabled.DisabledAt = nil
 			disabled.DisabledBy = nil
 			disabled.DisabledReason = nil
@@ -361,7 +365,7 @@ func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.
 
 	if activeAnyVersion != nil {
 		reason := fmt.Sprintf("superseded: new version %s registered (was %s)", workflow.Version, activeAnyVersion.Version)
-		if err := repo.UpdateStatus(ctx, activeAnyVersion.WorkflowID, activeAnyVersion.Version, "superseded", reason, ""); err != nil {
+		if err := repo.UpdateStatus(ctx, activeAnyVersion.WorkflowID, activeAnyVersion.Version, "Superseded", reason, ""); err != nil {
 			return nil, fmt.Errorf("supersede old version %s: %w", activeAnyVersion.WorkflowID, err)
 		}
 
@@ -451,16 +455,16 @@ func (h *Handler) tryReEnableWorkflow(ctx context.Context, workflow *models.Reme
 		return nil, fmt.Errorf("workflow not found after conflict")
 	}
 
-	if existing.Status != "disabled" {
+	if existing.Status != "Disabled" {
 		return nil, fmt.Errorf("workflow is %s, not disabled", existing.Status)
 	}
 
 	reason := "re-enabled via CRD re-creation"
-	if err := repo.UpdateStatus(ctx, existing.WorkflowID, existing.Version, "active", reason, ""); err != nil {
+	if err := repo.UpdateStatus(ctx, existing.WorkflowID, existing.Version, "Active", reason, ""); err != nil {
 		return nil, fmt.Errorf("update status to active: %w", err)
 	}
 
-	existing.Status = "active"
+	existing.Status = "Active"
 	existing.DisabledAt = nil
 	existing.DisabledBy = nil
 	existing.DisabledReason = nil
@@ -522,7 +526,7 @@ func (h *Handler) buildWorkflowCommon(
 		Parameters:      &rawParams,
 		ExecutionEngine: execEngine,
 		ActionType:      parsedSchema.ActionType,
-		Status:          "active",
+		Status:          "Active",
 		IsLatestVersion: true,
 	}
 
@@ -534,6 +538,7 @@ func (h *Handler) buildWorkflowCommon(
 	}
 
 	workflow.EngineConfig = schemaParser.ExtractEngineConfig(parsedSchema)
+	workflow.ServiceAccountName = schemaParser.ExtractServiceAccountName(parsedSchema)
 
 	if err := json.Unmarshal(labelsJSON, &workflow.Labels); err != nil {
 		return nil, fmt.Errorf("unmarshal labels: %w", err)
@@ -823,7 +828,7 @@ func (h *Handler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 	// Apply mutable field updates
 	if updateReq.Status != nil {
 		workflow.Status = *updateReq.Status
-		if *updateReq.Status == "disabled" {
+		if *updateReq.Status == "Disabled" {
 			now := time.Now()
 			workflow.DisabledAt = &now
 			workflow.DisabledBy = updateReq.DisabledBy
@@ -852,7 +857,7 @@ func (h *Handler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 			updatedFields := api.WorkflowCatalogUpdatedFields{}
 			updatedFields.Status.SetTo(workflow.Status)
 
-			if updateReq.Status != nil && *updateReq.Status == "disabled" {
+			if updateReq.Status != nil && *updateReq.Status == "Disabled" {
 				if disabledBy := getStringValue(workflow.DisabledBy); disabledBy != "" {
 					updatedFields.DisabledBy.SetTo(disabledBy)
 				}
@@ -988,7 +993,7 @@ func (h *Handler) HandleEnableWorkflow(w http.ResponseWriter, r *http.Request) {
 		updatedBy = *req.UpdatedBy
 	}
 
-	if err := repo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "active", reason, updatedBy); err != nil {
+	if err := repo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "Active", reason, updatedBy); err != nil {
 		h.logger.Error(err, "Failed to enable workflow",
 			"workflow_id", workflowID,
 		)
@@ -998,7 +1003,7 @@ func (h *Handler) HandleEnableWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update workflow object for response
-	workflow.Status = "active"
+	workflow.Status = "Active"
 	workflow.DisabledAt = nil
 	workflow.DisabledBy = nil
 	workflow.DisabledReason = nil
@@ -1010,7 +1015,7 @@ func (h *Handler) HandleEnableWorkflow(w http.ResponseWriter, r *http.Request) {
 			defer cancel()
 
 			updatedFields := api.WorkflowCatalogUpdatedFields{}
-			updatedFields.Status.SetTo("active")
+			updatedFields.Status.SetTo("Active")
 
 			auditEvent, err := dsaudit.NewWorkflowUpdatedAuditEvent(workflow.WorkflowID, updatedFields)
 			if err != nil {
@@ -1105,7 +1110,7 @@ func (h *Handler) HandleDeprecateWorkflow(w http.ResponseWriter, r *http.Request
 		updatedBy = *req.UpdatedBy
 	}
 
-	if err := repo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "deprecated", reason, updatedBy); err != nil {
+	if err := repo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "Deprecated", reason, updatedBy); err != nil {
 		h.logger.Error(err, "Failed to deprecate workflow",
 			"workflow_id", workflowID,
 		)
@@ -1115,7 +1120,7 @@ func (h *Handler) HandleDeprecateWorkflow(w http.ResponseWriter, r *http.Request
 	}
 
 	// Update workflow object for response
-	workflow.Status = "deprecated"
+	workflow.Status = "Deprecated"
 
 	// BR-STORAGE-183: Audit workflow deprecate (business logic operation)
 	if h.auditStore != nil {
@@ -1124,7 +1129,7 @@ func (h *Handler) HandleDeprecateWorkflow(w http.ResponseWriter, r *http.Request
 			defer cancel()
 
 			updatedFields := api.WorkflowCatalogUpdatedFields{}
-			updatedFields.Status.SetTo("deprecated")
+			updatedFields.Status.SetTo("Deprecated")
 
 			auditEvent, err := dsaudit.NewWorkflowUpdatedAuditEvent(workflow.WorkflowID, updatedFields)
 			if err != nil {
@@ -1219,7 +1224,7 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 		updatedBy = *disableReq.UpdatedBy
 	}
 
-	if err := repo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "disabled", reason, updatedBy); err != nil {
+	if err := repo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "Disabled", reason, updatedBy); err != nil {
 		h.logger.Error(err, "Failed to disable workflow",
 			"workflow_id", workflowID,
 		)
@@ -1229,7 +1234,7 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Update workflow object for response
-	workflow.Status = "disabled"
+	workflow.Status = "Disabled"
 	now := time.Now()
 	workflow.DisabledAt = &now
 	workflow.DisabledBy = disableReq.UpdatedBy
@@ -1244,7 +1249,7 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 
 			// Build structured updated fields (OGEN-MIGRATION)
 			updatedFields := api.WorkflowCatalogUpdatedFields{}
-			updatedFields.Status.SetTo("disabled")
+			updatedFields.Status.SetTo("Disabled")
 			updatedFields.DisabledBy.SetTo(updatedBy)
 			updatedFields.DisabledReason.SetTo(reason)
 
@@ -1407,6 +1412,9 @@ func (h *Handler) HandleListWorkflowsByActionType(w http.ResponseWriter, r *http
 		}
 		if wf.ExecutionBundle != nil {
 			entry.ExecutionBundle = *wf.ExecutionBundle
+		}
+		if wf.ServiceAccountName != nil {
+			entry.ServiceAccountName = *wf.ServiceAccountName
 		}
 		discoveryEntries = append(discoveryEntries, entry)
 	}

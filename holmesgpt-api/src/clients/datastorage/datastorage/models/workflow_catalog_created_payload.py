@@ -45,8 +45,8 @@ class WorkflowCatalogCreatedPayload(BaseModel):
     @field_validator('status')
     def status_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('active', 'disabled', 'archived'):
-            raise ValueError("must be one of enum values ('active', 'disabled', 'archived')")
+        if value not in ('Active', 'Disabled', 'Archived'):
+            raise ValueError("must be one of enum values ('Active', 'Disabled', 'Archived')")
         return value
 
     model_config = {

@@ -81,7 +81,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "slack-only",
 					},
 				},
@@ -143,7 +143,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "HTTP 403 Test",
 					Body:     "Testing forbidden error",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "slack-only",
 					},
 				},
@@ -197,7 +197,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "HTTP 404 Test",
 					Body:     "Testing not found error",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "slack-only",
 					},
 				},
@@ -251,7 +251,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "HTTP 410 Test",
 					Body:     "Testing gone error",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "slack-only",
 					},
 				},
@@ -322,7 +322,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "slack-only",
 					},
 				},
@@ -375,7 +375,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 				}
 				failedCount := 0
 				for _, attempt := range refetchedNotif.Status.DeliveryAttempts {
-					if attempt.Status == "failed" {
+					if attempt.Status == notificationv1alpha1.DeliveryAttemptStatusFailed {
 						failedCount++
 					}
 				}
@@ -388,10 +388,10 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 			refetchedNotif := &notificationv1alpha1.NotificationRequest{}
 			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(refetchedNotif.Status.DeliveryAttempts[0].Status).To(Equal("failed"))
+			Expect(refetchedNotif.Status.DeliveryAttempts[0].Status).To(Equal(notificationv1alpha1.DeliveryAttemptStatusFailed))
 			Expect(refetchedNotif.Status.DeliveryAttempts[0].Error).To(ContainSubstring("502"),
 				"Error should indicate 502 Bad Gateway")
-			Expect(refetchedNotif.Status.DeliveryAttempts[1].Status).To(Equal("success"))
+			Expect(refetchedNotif.Status.DeliveryAttempts[1].Status).To(Equal(notificationv1alpha1.DeliveryAttemptStatusSuccess))
 
 			GinkgoWriter.Printf("✅ HTTP 502 retried successfully: %d attempts\n", notif.Status.TotalAttempts)
 

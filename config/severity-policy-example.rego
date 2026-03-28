@@ -21,62 +21,63 @@ package signalprocessing.severity
 # Unmapped severity values escalate to "critical" for safety
 
 # Standard normalized severity values (DD-SEVERITY-001 v1.1: aligned with HAPI/workflow catalog)
+# Uses lower() for case-insensitive matching of external monitoring severity values.
 determine_severity := "critical" if {
-	input.signal.severity == "critical"
+	lower(input.signal.severity) == "critical"
 }
 
 determine_severity := "high" if {
-	input.signal.severity == "high"
+	lower(input.signal.severity) == "high"
 }
 
 determine_severity := "medium" if {
-	input.signal.severity == "medium"
+	lower(input.signal.severity) == "medium"
 }
 
 determine_severity := "low" if {
-	input.signal.severity == "low"
+	lower(input.signal.severity) == "low"
 }
 
 determine_severity := "unknown" if {
-	input.signal.severity == "unknown"
+	lower(input.signal.severity) == "unknown"
 }
 
 # PagerDuty P0-P4 severity scheme
 determine_severity := "critical" if {
-	input.signal.severity == "P0"
+	lower(input.signal.severity) == "p0"
 }
 
 determine_severity := "critical" if {
-	input.signal.severity == "P1"
+	lower(input.signal.severity) == "p1"
 }
 
 determine_severity := "high" if {
-	input.signal.severity == "P2"
+	lower(input.signal.severity) == "p2"
 }
 
 determine_severity := "medium" if {
-	input.signal.severity == "P3"
+	lower(input.signal.severity) == "p3"
 }
 
 determine_severity := "low" if {
-	input.signal.severity == "P4"
+	lower(input.signal.severity) == "p4"
 }
 
 # Enterprise Sev1-4 severity scheme
 determine_severity := "critical" if {
-	input.signal.severity == "Sev1"
+	lower(input.signal.severity) == "sev1"
 }
 
 determine_severity := "high" if {
-	input.signal.severity == "Sev2"
+	lower(input.signal.severity) == "sev2"
 }
 
 determine_severity := "medium" if {
-	input.signal.severity == "Sev3"
+	lower(input.signal.severity) == "sev3"
 }
 
 determine_severity := "low" if {
-	input.signal.severity == "Sev4"
+	lower(input.signal.severity) == "sev4"
 }
 
 # CONSERVATIVE FALLBACK: Unmapped severities escalate to critical

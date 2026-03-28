@@ -23,9 +23,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -165,6 +169,7 @@ func ReadInClusterCredentials() (*InClusterCredentials, error) {
 type AnsibleExecutor struct {
 	AWXClient      AWXClient
 	K8sClient      client.Client
+	Clientset      kubernetes.Interface
 	OrganizationID int
 	Logger         logr.Logger
 
@@ -175,14 +180,16 @@ type AnsibleExecutor struct {
 
 // NewAnsibleExecutor creates a new AnsibleExecutor with the given AWX client.
 // k8sClient is used to read K8s Secrets (dependencies.secrets) and update WFE status.
+// clientset is used for TokenRequest API calls (Issue #501).
 // orgID is the AWX organization ID for ephemeral credential creation.
-func NewAnsibleExecutor(awxClient AWXClient, k8sClient client.Client, orgID int, logger logr.Logger) *AnsibleExecutor {
+func NewAnsibleExecutor(awxClient AWXClient, k8sClient client.Client, clientset kubernetes.Interface, orgID int, logger logr.Logger) *AnsibleExecutor {
 	if orgID <= 0 {
 		orgID = 1
 	}
 	return &AnsibleExecutor{
 		AWXClient:              awxClient,
 		K8sClient:              k8sClient,
+		Clientset:              clientset,
 		OrganizationID:         orgID,
 		Logger:                 logger.WithName("ansible-executor"),
 		InClusterCredentialsFn: ReadInClusterCredentials,
@@ -202,15 +209,15 @@ func (a *AnsibleExecutor) Create(
 	wfe *workflowexecutionv1alpha1.WorkflowExecution,
 	namespace string,
 	opts CreateOptions,
-) (string, error) {
+) (*CreateResult, error) {
 	cfg, err := a.parseEngineConfig(wfe)
 	if err != nil {
-		return "", fmt.Errorf("parse ansible engineConfig: %w", err)
+		return nil, fmt.Errorf("parse ansible engineConfig: %w", err)
 	}
 
 	templateID, err := a.resolveJobTemplate(ctx, cfg)
 	if err != nil {
-		return "", fmt.Errorf("resolve AWX job template: %w", err)
+		return nil, fmt.Errorf("resolve AWX job template: %w", err)
 	}
 
 	extraVars := BuildExtraVars(wfe.Spec.Parameters)
@@ -223,20 +230,28 @@ func (a *AnsibleExecutor) Create(
 	extraVars["RR_NAMESPACE"] = wfe.Spec.RemediationRequestRef.Namespace
 
 	if err := a.injectDependencyConfigMaps(ctx, opts.Dependencies, namespace, extraVars); err != nil {
-		return "", fmt.Errorf("inject dependency configmaps: %w", err)
+		return nil, fmt.Errorf("inject dependency configmaps: %w", err)
 	}
 
 	credentialIDs, err := a.injectDependencySecrets(ctx, opts.Dependencies, namespace, wfe.Name)
 	if err != nil {
-		return "", fmt.Errorf("inject dependency secrets: %w", err)
+		return nil, fmt.Errorf("inject dependency secrets: %w", err)
 	}
 
-	k8sCredID, k8sErr := a.injectK8sCredential(ctx, wfe.Name)
+	// Issue #501: injectK8sCredential now uses TokenRequest when
+	// Spec.ServiceAccountName is set, falling back to in-cluster creds.
+	var warnings []Warning
+	k8sCredID, k8sWarnings, k8sErr := a.injectK8sCredential(ctx, wfe, namespace)
 	if k8sErr != nil {
+		if wfe.Spec.ServiceAccountName != "" {
+			// Hard failure: operator explicitly requested per-workflow credentials.
+			return nil, fmt.Errorf("inject per-workflow K8s credential: %w", k8sErr)
+		}
 		a.Logger.Error(k8sErr, "Failed to inject K8s credential — playbooks using kubernetes.core will not authenticate",
 			"wfe", wfe.Name)
 	} else {
 		credentialIDs = append(credentialIDs, k8sCredID)
+		warnings = append(warnings, k8sWarnings...)
 	}
 
 	if len(credentialIDs) > 0 {
@@ -263,7 +278,7 @@ func (a *AnsibleExecutor) Create(
 		jobID, err = a.AWXClient.LaunchJobTemplate(ctx, templateID, extraVars)
 	}
 	if err != nil {
-		return "", fmt.Errorf("launch AWX job template %d: %w", templateID, err)
+		return nil, fmt.Errorf("launch AWX job template %d: %w", templateID, err)
 	}
 
 	if len(credentialIDs) > 0 {
@@ -273,7 +288,10 @@ func (a *AnsibleExecutor) Create(
 		}
 	}
 
-	return fmt.Sprintf("awx-job-%d", jobID), nil
+	return &CreateResult{
+		ResourceName: fmt.Sprintf("awx-job-%d", jobID),
+		Warnings:     warnings,
+	}, nil
 }
 
 // injectDependencySecrets reads K8s Secrets declared in dependencies, creates
@@ -486,15 +504,37 @@ func (i k8sCredentialInputs) toMap() map[string]string {
 // kubernetes.core modules can authenticate to the cluster API.
 // When the CA cert is empty (e.g. in dev clusters), the ssl_ca_cert input is
 // omitted so the kubeconfig template falls back to insecure-skip-tls-verify (#552).
-func (a *AnsibleExecutor) injectK8sCredential(ctx context.Context, wfeName string) (int, error) {
-	creds, err := a.InClusterCredentialsFn()
-	if err != nil {
-		return 0, fmt.Errorf("read in-cluster K8s credentials: %w", err)
+// injectK8sCredential obtains K8s API credentials and creates an ephemeral AWX
+// credential. Issue #501: When wfe.Spec.ServiceAccountName is set, a short-lived
+// token is obtained via the TokenRequest API scoped to that SA. When empty, the
+// controller's own in-cluster credentials are used (backward-compatible fallback
+// from Issue #500).
+func (a *AnsibleExecutor) injectK8sCredential(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	namespace string,
+) (int, []Warning, error) {
+	var creds *InClusterCredentials
+	var warnings []Warning
+
+	if wfe.Spec.ServiceAccountName != "" {
+		tokenCreds, tokenWarnings, err := a.requestTokenForSA(ctx, wfe, namespace)
+		if err != nil {
+			return 0, nil, fmt.Errorf("TokenRequest for SA %q in %q: %w", wfe.Spec.ServiceAccountName, namespace, err)
+		}
+		creds = tokenCreds
+		warnings = tokenWarnings
+	} else {
+		var err error
+		creds, err = a.InClusterCredentialsFn()
+		if err != nil {
+			return 0, nil, fmt.Errorf("read in-cluster K8s credentials: %w", err)
+		}
 	}
 
 	typeID, err := a.resolveK8sCredentialTypeID(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("resolve K8s credential type: %w", err)
+		return 0, nil, fmt.Errorf("resolve K8s credential type: %w", err)
 	}
 
 	k8sInputs := k8sCredentialInputs{
@@ -503,18 +543,101 @@ func (a *AnsibleExecutor) injectK8sCredential(ctx context.Context, wfeName strin
 		CACert:      creds.CACert,
 	}
 	if creds.CACert == "" {
-		a.Logger.Info("WARNING: Empty CA cert — playbook will use insecure TLS", "wfe", wfeName)
+		a.Logger.Info("WARNING: Empty CA cert — playbook will use insecure TLS", "wfe", wfe.Name)
 	}
 
-	credName := k8sCredentialPrefix + wfeName
+	credName := k8sCredentialPrefix + wfe.Name
 	credID, err := a.AWXClient.CreateCredential(ctx, credName, typeID, a.OrganizationID, k8sInputs.toMap())
 	if err != nil {
-		return 0, fmt.Errorf("create K8s credential %q: %w", credName, err)
+		return 0, nil, fmt.Errorf("create K8s credential %q: %w", credName, err)
 	}
 
 	a.Logger.Info("Created ephemeral K8s credential",
-		"credentialID", credID, "credentialType", typeID, "wfe", wfeName)
-	return credID, nil
+		"credentialID", credID, "credentialType", typeID, "wfe", wfe.Name,
+		"source", credSourceLabel(wfe.Spec.ServiceAccountName))
+	return credID, warnings, nil
+}
+
+const defaultTokenExpirationSeconds = 3600
+
+// requestTokenForSA uses the TokenRequest API to obtain a short-lived token for
+// the workflow's designated ServiceAccount. It also validates the granted TTL
+// against the WFE execution timeout and returns a warning if the API server
+// shortened it.
+func (a *AnsibleExecutor) requestTokenForSA(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	namespace string,
+) (*InClusterCredentials, []Warning, error) {
+	requestedExpSeconds := int64(defaultTokenExpirationSeconds)
+	var executionTimeout time.Duration
+	if wfe.Spec.ExecutionConfig != nil && wfe.Spec.ExecutionConfig.Timeout != nil {
+		executionTimeout = wfe.Spec.ExecutionConfig.Timeout.Duration
+		if secs := int64(executionTimeout.Seconds()); secs > requestedExpSeconds {
+			requestedExpSeconds = secs
+		}
+	}
+
+	treq := &authenticationv1.TokenRequest{
+		Spec: authenticationv1.TokenRequestSpec{
+			ExpirationSeconds: &requestedExpSeconds,
+		},
+	}
+
+	tokenResp, err := a.Clientset.CoreV1().ServiceAccounts(namespace).CreateToken(
+		ctx, wfe.Spec.ServiceAccountName, treq, metav1.CreateOptions{},
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create token for SA %q: %w", wfe.Spec.ServiceAccountName, err)
+	}
+
+	if tokenResp.Status.Token == "" {
+		return nil, nil, fmt.Errorf("TokenRequest returned empty token for SA %q/%q", namespace, wfe.Spec.ServiceAccountName)
+	}
+
+	// TTL validation: compare granted expiration against execution timeout
+	var warnings []Warning
+	if executionTimeout > 0 && tokenResp.Status.ExpirationTimestamp.Time.Before(time.Now().Add(executionTimeout)) {
+		grantedTTL := time.Until(tokenResp.Status.ExpirationTimestamp.Time).Truncate(time.Second)
+		msg := fmt.Sprintf("granted token TTL %s is shorter than execution timeout %s — playbook may receive 401 errors if it outlives the token",
+			grantedTTL, executionTimeout)
+		a.Logger.Info("WARNING: "+msg,
+			"wfe", wfe.Name, "sa", wfe.Spec.ServiceAccountName,
+			"grantedTTL", grantedTTL, "executionTimeout", executionTimeout)
+		warnings = append(warnings, Warning{
+			Type:    workflowexecutionv1alpha1.ConditionTokenTTLInsufficient,
+			Reason:  workflowexecutionv1alpha1.ReasonTokenTTLShortened,
+			Message: msg,
+		})
+	}
+
+	host, caCert := readAPIServerEndpoint()
+
+	return &InClusterCredentials{
+		Host:   host,
+		Token:  tokenResp.Status.Token,
+		CACert: caCert,
+	}, warnings, nil
+}
+
+func credSourceLabel(saName string) string {
+	if saName != "" {
+		return "TokenRequest(" + saName + ")"
+	}
+	return "in-cluster"
+}
+
+// readAPIServerEndpoint reads the K8s API server address and CA cert from the
+// standard in-cluster environment. These values are shared between TokenRequest
+// and in-cluster credential paths — only the bearer token differs.
+func readAPIServerEndpoint() (host, caCert string) {
+	h := os.Getenv("KUBERNETES_SERVICE_HOST")
+	p := os.Getenv("KUBERNETES_SERVICE_PORT")
+	if h != "" && p != "" {
+		host = fmt.Sprintf("https://%s:%s", h, p)
+	}
+	ca, _ := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+	return host, string(ca)
 }
 
 // storeCredentialIDs persists ephemeral AWX credential IDs in the WFE status
@@ -671,8 +794,18 @@ func MapAWXStatusToResult(status *AWXJobStatus) *ExecutionResult {
 		message = status.ResultStdout
 	}
 
+	var condStatus corev1.ConditionStatus
+	switch phase {
+	case workflowexecutionv1alpha1.PhaseCompleted:
+		condStatus = corev1.ConditionTrue
+	case workflowexecutionv1alpha1.PhaseFailed:
+		condStatus = corev1.ConditionFalse
+	default:
+		condStatus = corev1.ConditionUnknown
+	}
+
 	summary := &workflowexecutionv1alpha1.ExecutionStatusSummary{
-		Status:  phase,
+		Status:  condStatus,
 		Reason:  reason,
 		Message: message,
 	}

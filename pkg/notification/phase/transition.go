@@ -131,7 +131,7 @@ func DetermineTransition(
 	if totalChannels == 0 {
 		return &TransitionDecision{
 			NextPhase:          Failed,
-			Reason:             "NoChannelsResolved",
+			Reason:             string(notificationv1.StatusReasonNoChannelsResolved),
 			Message:            "No delivery channels resolved — cannot deliver notification",
 			IsTerminal:         true,
 			IsPermanentFailure: true,
@@ -143,7 +143,7 @@ func DetermineTransition(
 	// contains NEW attempts from the current loop that haven't been persisted yet.
 	totalSuccessful := notification.Status.SuccessfulDeliveries
 	for _, attempt := range result.DeliveryAttempts {
-		if attempt.Status == "success" {
+		if attempt.Status == notificationv1.DeliveryAttemptStatusSuccess {
 			totalSuccessful++
 		}
 	}
@@ -152,7 +152,7 @@ func DetermineTransition(
 	if totalSuccessful == totalChannels {
 		return &TransitionDecision{
 			NextPhase:  Sent,
-			Reason:     "AllDeliveriesSucceeded",
+			Reason:     string(notificationv1.StatusReasonAllDeliveriesSucceeded),
 			Message:    fmt.Sprintf("Successfully delivered to %d channel(s)", totalSuccessful),
 			IsTerminal: true,
 		}
@@ -174,7 +174,7 @@ func DetermineTransition(
 			// Case 2: Partial success, all retries exhausted → PartiallySent (terminal)
 			return &TransitionDecision{
 				NextPhase:  PartiallySent,
-				Reason:     "PartialDeliverySuccess",
+				Reason:     string(notificationv1.StatusReasonPartialDeliverySuccess),
 				Message:    fmt.Sprintf("Delivered to %d/%d channel(s), others failed", totalSuccessful, totalChannels),
 				IsTerminal: true,
 			}
@@ -192,7 +192,7 @@ func DetermineTransition(
 
 		reason := "MaxRetriesExhausted"
 		if allPermanentErrors {
-			reason = "AllDeliveriesFailed"
+			reason = string(notificationv1.StatusReasonAllDeliveriesFailed)
 		}
 
 		// Case 3: All retries exhausted with no successes → Failed (terminal, permanent)
@@ -220,7 +220,7 @@ func DetermineTransition(
 			// Case 4: NT-BUG-005/006: Partial success with retries remaining → Retrying
 			return &TransitionDecision{
 				NextPhase: Retrying,
-				Reason:    "PartialFailureRetrying",
+				Reason:    string(notificationv1.StatusReasonPartialFailureRetrying),
 				Message: fmt.Sprintf("Delivered to %d/%d channel(s), retrying failed channels",
 					totalSuccessful, totalChannels),
 				ShouldRequeue:         true,
@@ -231,7 +231,7 @@ func DetermineTransition(
 		// Case 5: All channels failed, retries remain → stay in current phase, requeue
 		return &TransitionDecision{
 			NextPhase:             notification.Status.Phase,
-			Reason:                "AllDeliveriesFailed",
+			Reason:                string(notificationv1.StatusReasonAllDeliveriesFailed),
 			Message:               "Delivery failed, will retry with backoff",
 			ShouldRequeue:         true,
 			PhaseUnchanged:        true,

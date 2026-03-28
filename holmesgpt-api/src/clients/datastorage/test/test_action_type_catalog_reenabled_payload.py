@@ -39,7 +39,7 @@ class TestActionTypeCatalogReenabledPayload(unittest.TestCase):
                 event_type = 'datastorage.actiontype.reenabled',
                 action_type = '',
                 reenabled_by = '',
-                previous_state = 'disabled',
+                previous_state = 'Disabled',
                 disabled_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
                 disabled_by = ''
             )
@@ -48,7 +48,7 @@ class TestActionTypeCatalogReenabledPayload(unittest.TestCase):
                 event_type = 'datastorage.actiontype.reenabled',
                 action_type = '',
                 reenabled_by = '',
-                previous_state = 'disabled',
+                previous_state = 'Disabled',
                 disabled_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
                 disabled_by = '',
         )

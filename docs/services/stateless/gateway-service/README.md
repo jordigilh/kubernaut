@@ -75,7 +75,7 @@ gateway-service/
 ├── 📈 metrics-slos.md                       - Prometheus metrics ✅ (228 lines)
 ├── 🧪 testing-strategy.md                   - Test patterns ✅ (803 lines)
 ├── 📁 implementation/                       - Implementation phase guides
-│   ├── plans/                               - DD-GATEWAY-008, 009, 010 plans
+│   ├── plans/                               - DD-GATEWAY-009, 011 plans
 │   ├── IMPLEMENTATION_PLAN_V2.28.md         - Current implementation plan
 │   └── 00-HANDOFF-SUMMARY.md                - Handoff summary
 ├── 🧪 e2e-testing/                          - E2E test documentation
@@ -250,10 +250,8 @@ make test-gateway
 | Decision | Purpose |
 |----------|---------|
 | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) | Categorization delegation to SignalProcessing |
-| DD-GATEWAY-008 | ❌ Superseded by DD-GATEWAY-015 (Storm detection removed) |
 | [DD-GATEWAY-009](../../../architecture/decisions/DD-GATEWAY-009-state-based-deduplication.md) | State-based deduplication |
 | [DD-GATEWAY-011](../../../architecture/decisions/DD-GATEWAY-011-shared-status-deduplication.md) | Status-based deduplication (Redis deprecated) |
-| [DD-GATEWAY-015](../../../architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md) | Storm detection removal |
 | [DD-GATEWAY-NON-K8S-SIGNALS](../../../architecture/decisions/DD-GATEWAY-NON-K8S-SIGNALS.md) | Non-Kubernetes signal support (V1.x/V2.0) |
 
 ---
@@ -296,7 +294,6 @@ make test-gateway
 - ✅ **RBAC Fix**: Added `remediationrequests/status` permissions
 - ✅ **Test Count Verification**: Confirmed 314 unit + 104 integration + 24 E2E
 - ✅ **E2E Infrastructure**: Full Kind cluster deployment with unique image tags
-- 📋 **Handoff Ready**: Storm field removal documented for RO team
 
 ### **v1.5** (2025-12-03)
 - ✅ **Documentation Standardization**: README restructured to match ADR-039 template
@@ -336,8 +333,6 @@ make test-gateway
 - ✅ **CRD Integration**: RemediationRequest creation validated
 
 **Status**: ✅ **READY FOR SEGMENTED E2E TESTING WITH RO TEAM**
-
-**Pending Handoff**: Storm detection fields in `RemediationRequest.spec` (DD-GATEWAY-015) - (internal development reference, removed in v1.0)
 
 ---
 

@@ -84,15 +84,15 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 				FailureCount: 1,
 				DeliveryAttempts: []notificationv1.DeliveryAttempt{
 					{
-						Channel:   "console",
+						Channel:   notificationv1.DeliveryChannelName("console"),
 						Timestamp: metav1.Now(),
-						Status:    "success",
+						Status:    notificationv1.DeliveryAttemptStatusSuccess,
 						Attempt:   1,
 					},
 					{
-						Channel:   "file",
+						Channel:   notificationv1.DeliveryChannelName("file"),
 						Timestamp: metav1.Now(),
-						Status:    "failed",
+						Status:    notificationv1.DeliveryAttemptStatusFailed,
 						Error:     "permission denied: read-only directory",
 						Attempt:   1,
 					},
@@ -133,7 +133,7 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 					"Console: SUCCESS (1 attempt)\n"+
 					"File: FAILED (1/5 attempts, 4 remaining)")
 
-			Expect(decision.Reason).To(Equal("PartialFailureRetrying"))
+			Expect(decision.Reason).To(Equal(string(notificationv1.StatusReasonPartialFailureRetrying)))
 			Expect(decision.ShouldRequeue).To(BeTrue(),
 				"Should schedule next retry")
 			Expect(decision.IsTerminal).To(BeFalse(),
@@ -168,11 +168,11 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 					// Console: 1 successful delivery (persisted)
 					// File: 4 failed deliveries persisted (5th attempt in current loop)
 					DeliveryAttempts: []notificationv1.DeliveryAttempt{
-						{Channel: "console", Status: "success", Attempt: 1},
-						{Channel: "file", Status: "failed", Error: "attempt 1: permission denied", Attempt: 1},
-						{Channel: "file", Status: "failed", Error: "attempt 2: permission denied", Attempt: 2},
-						{Channel: "file", Status: "failed", Error: "attempt 3: permission denied", Attempt: 3},
-						{Channel: "file", Status: "failed", Error: "attempt 4: permission denied", Attempt: 4},
+						{Channel: notificationv1.DeliveryChannelName("console"), Status: notificationv1.DeliveryAttemptStatusSuccess, Attempt: 1},
+						{Channel: notificationv1.DeliveryChannelName("file"), Status: notificationv1.DeliveryAttemptStatusFailed, Error: "attempt 1: permission denied", Attempt: 1},
+						{Channel: notificationv1.DeliveryChannelName("file"), Status: notificationv1.DeliveryAttemptStatusFailed, Error: "attempt 2: permission denied", Attempt: 2},
+						{Channel: notificationv1.DeliveryChannelName("file"), Status: notificationv1.DeliveryAttemptStatusFailed, Error: "attempt 3: permission denied", Attempt: 3},
+						{Channel: notificationv1.DeliveryChannelName("file"), Status: notificationv1.DeliveryAttemptStatusFailed, Error: "attempt 4: permission denied", Attempt: 4},
 					},
 					SuccessfulDeliveries: 1, // Console succeeded
 					FailedDeliveries:     1, // File channel failed (unique channel count, not attempt count)
@@ -187,8 +187,8 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 				FailureCount: 1,
 				DeliveryAttempts: []notificationv1.DeliveryAttempt{
 					{
-						Channel: "file",
-						Status:  "failed",
+						Channel: notificationv1.DeliveryChannelName("file"),
+						Status:  notificationv1.DeliveryAttemptStatusFailed,
 						Error:   "attempt 5: permission denied",
 						Attempt: 5,
 					},
@@ -264,8 +264,8 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 				},
 				FailureCount: 2,
 				DeliveryAttempts: []notificationv1.DeliveryAttempt{
-					{Channel: "console", Status: "failed", Error: "network timeout", Attempt: 1},
-					{Channel: "file", Status: "failed", Error: "permission denied", Attempt: 1},
+					{Channel: notificationv1.DeliveryChannelName("console"), Status: notificationv1.DeliveryAttemptStatusFailed, Error: "network timeout", Attempt: 1},
+					{Channel: notificationv1.DeliveryChannelName("file"), Status: notificationv1.DeliveryAttemptStatusFailed, Error: "permission denied", Attempt: 1},
 				},
 			}
 
@@ -299,7 +299,7 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 				"NextPhase should be the current phase (Sending)")
 			Expect(decision.ShouldRequeue).To(BeTrue(),
 				"Should requeue with backoff for retry")
-			Expect(decision.Reason).To(Equal("AllDeliveriesFailed"))
+			Expect(decision.Reason).To(Equal(string(notificationv1.StatusReasonAllDeliveriesFailed)))
 			Expect(decision.MaxFailedAttemptCount).To(Equal(1),
 				"Max failed attempt count should be 1 (both channels at 1 attempt)")
 		})
@@ -328,8 +328,8 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 				},
 				FailureCount: 0,
 				DeliveryAttempts: []notificationv1.DeliveryAttempt{
-					{Channel: "console", Status: "success", Attempt: 1},
-					{Channel: "file", Status: "success", Attempt: 1},
+					{Channel: notificationv1.DeliveryChannelName("console"), Status: notificationv1.DeliveryAttemptStatusSuccess, Attempt: 1},
+					{Channel: notificationv1.DeliveryChannelName("file"), Status: notificationv1.DeliveryAttemptStatusSuccess, Attempt: 1},
 				},
 			}
 
@@ -362,7 +362,7 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 				"Sent is a terminal phase")
 			Expect(decision.ShouldRequeue).To(BeFalse(),
 				"Should NOT requeue — terminal phase reached")
-			Expect(decision.Reason).To(Equal("AllDeliveriesSucceeded"))
+			Expect(decision.Reason).To(Equal(string(notificationv1.StatusReasonAllDeliveriesSucceeded)))
 		})
 
 		It("should transition to Failed (permanent) when all channels exhaust retries with no success", func() {
@@ -395,8 +395,8 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 				},
 				FailureCount: 2,
 				DeliveryAttempts: []notificationv1.DeliveryAttempt{
-					{Channel: "console", Status: "failed", Error: "network timeout", Attempt: 5},
-					{Channel: "file", Status: "failed", Error: "permission denied", Attempt: 5},
+					{Channel: notificationv1.DeliveryChannelName("console"), Status: notificationv1.DeliveryAttemptStatusFailed, Error: "network timeout", Attempt: 5},
+					{Channel: notificationv1.DeliveryChannelName("file"), Status: notificationv1.DeliveryAttemptStatusFailed, Error: "permission denied", Attempt: 5},
 				},
 			}
 
@@ -459,8 +459,8 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 				},
 				FailureCount: 2,
 				DeliveryAttempts: []notificationv1.DeliveryAttempt{
-					{Channel: "console", Status: "failed", Error: "[PERMANENT] invalid config", Attempt: 1},
-					{Channel: "file", Status: "failed", Error: "[PERMANENT] path not found", Attempt: 1},
+					{Channel: notificationv1.DeliveryChannelName("console"), Status: notificationv1.DeliveryAttemptStatusFailed, Error: "[PERMANENT] invalid config", Attempt: 1},
+					{Channel: notificationv1.DeliveryChannelName("file"), Status: notificationv1.DeliveryAttemptStatusFailed, Error: "[PERMANENT] path not found", Attempt: 1},
 				},
 			}
 
@@ -490,7 +490,7 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 			Expect(decision.NextPhase).To(Equal(notificationphase.Failed))
 			Expect(decision.IsTerminal).To(BeTrue())
 			Expect(decision.IsPermanentFailure).To(BeTrue())
-			Expect(decision.Reason).To(Equal("AllDeliveriesFailed"),
+			Expect(decision.Reason).To(Equal(string(notificationv1.StatusReasonAllDeliveriesFailed)),
 				"Should use AllDeliveriesFailed reason when all channels have permanent errors")
 		})
 	})

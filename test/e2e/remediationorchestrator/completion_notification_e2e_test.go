@@ -36,7 +36,6 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // E2E-RO-045-001: Completion Notification on Successful Remediation
@@ -89,11 +88,6 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
-				Deduplication: sharedtypes.DeduplicationInfo{
-					FirstOccurrence: now,
-					LastOccurrence:  now,
-					OccurrenceCount: 1,
-				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -125,12 +119,12 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 			sp.Status.SignalMode = "reactive"
 			sp.Status.SignalName = "OOMKilled"
 			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
-				Environment:  "production",
+				Environment:  signalprocessingv1.EnvironmentProduction,
 				Source:       "namespace-labels",
 				ClassifiedAt: metav1.Now(),
 			}
 			sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
-				Priority:   "P1",
+				Priority:   signalprocessingv1.PriorityP1,
 				Source:     "rego-policy",
 				AssignedAt: metav1.Now(),
 			}
@@ -159,7 +153,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 				return err
 			}
 			analysis.Status.Phase = aianalysisv1.PhaseCompleted
-			analysis.Status.Reason = "AnalysisCompleted"
+			analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 			analysis.Status.Message = "Workflow recommended: restart-pod-v1"
 			analysis.Status.RootCause = "Memory exhaustion due to unbounded cache growth"
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
@@ -284,10 +278,9 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		Expect(notification.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
 		Expect(notification.Spec.Severity).To(Equal("critical"))
 
-		By("12. Validating NotificationRequest metadata")
-		Expect(notification.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", rr.Name))
-		Expect(notification.Spec.Metadata).To(HaveKeyWithValue("workflowId", "restart-pod-v1"))
-		Expect(notification.Spec.Metadata).To(HaveKey("rootCause"))
+		By("12. Validating NotificationRequest context")
+		Expect(notification.Spec.Context.Lineage.RemediationRequest).To(Equal(rr.Name))
+		Expect(notification.Spec.Context.Workflow.WorkflowID).To(Equal("restart-pod-v1"))
 
 		By("13. Validating owner reference for cascade deletion (BR-ORCH-031)")
 		Expect(notification.OwnerReferences).To(HaveLen(1))

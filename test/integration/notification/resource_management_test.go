@@ -262,7 +262,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Priority: notificationv1alpha1.NotificationPriorityMedium,
 						Subject:  fmt.Sprintf("%s: Connection Test %d", testID, i),
 						Body:     "Testing HTTP connection reuse",
-						Metadata: map[string]string{
+						Extensions: map[string]string{
 							"test-channel-set": "console-slack",
 						},
 					},

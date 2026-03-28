@@ -37,12 +37,12 @@ class TestActionTypeDisableResponse(unittest.TestCase):
         if include_optional:
             return ActionTypeDisableResponse(
                 action_type = '',
-                status = 'disabled'
+                status = 'Disabled'
             )
         else:
             return ActionTypeDisableResponse(
                 action_type = '',
-                status = 'disabled',
+                status = 'Disabled',
         )
         """
 

@@ -266,8 +266,8 @@ func CorrelateTier1Chain(
 		if v, ok := ro.EventData["signal_fingerprint"].(string); ok {
 			entry.SignalFingerprint = api.OptString{Value: v, Set: true}
 		}
-		if v, ok := ro.EventData["workflow_type"].(string); ok {
-			entry.WorkflowType = api.OptNilString{Value: v, Set: true}
+		if v, ok := ro.EventData["action_type"].(string); ok {
+			entry.ActionType = api.OptNilString{Value: v, Set: true}
 		}
 		if v, ok := ro.EventData["outcome"].(string); ok {
 			entry.Outcome = api.OptString{Value: v, Set: true}
@@ -361,8 +361,8 @@ func BuildTier2Summaries(
 		if v, ok := ro.EventData["signal_type"].(string); ok {
 			summary.SignalType = api.OptString{Value: v, Set: true}
 		}
-		if v, ok := ro.EventData["workflow_type"].(string); ok {
-			summary.WorkflowType = api.OptNilString{Value: v, Set: true}
+		if v, ok := ro.EventData["action_type"].(string); ok {
+			summary.ActionType = api.OptNilString{Value: v, Set: true}
 		}
 		if v, ok := ro.EventData["outcome"].(string); ok {
 			summary.Outcome = api.OptString{Value: v, Set: true}

@@ -233,6 +233,13 @@ type WorkflowExecution struct {
 	// For tekton/job: OCI image SHA. For ansible: Git commit SHA.
 	BundleDigest string `yaml:"bundleDigest,omitempty" json:"bundleDigest,omitempty" validate:"omitempty"`
 
+	// ServiceAccountName is the pre-existing ServiceAccount for the Job/PipelineRun.
+	// DD-WE-005 v2.0: Operators pre-create SAs with appropriate RBAC in the
+	// execution namespace. If absent, K8s assigns the namespace's default SA.
+	// Ignored for ansible engine (AWX uses its own credential system).
+	// +optional
+	ServiceAccountName string `yaml:"serviceAccountName,omitempty" json:"serviceAccountName,omitempty"`
+
 	// EngineConfig holds engine-specific configuration as parsed YAML/JSON.
 	// BR-WE-016: Discriminator pattern — the Engine field determines the shape.
 	// Stored as interface{} for YAML compatibility; converted to json.RawMessage by the parser.

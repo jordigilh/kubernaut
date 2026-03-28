@@ -86,7 +86,7 @@ receivers:
 						Severity: "critical",
 						Subject:  "Approval Required",
 						Body:     "Test body",
-						Metadata: map[string]string{
+						Extensions: map[string]string{
 							"environment": "production",
 						},
 					},

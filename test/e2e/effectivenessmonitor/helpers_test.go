@@ -288,3 +288,44 @@ func seedWorkflowStartedEvent(correlationID string) {
 	}
 }
 
+// seedWorkflowCompletedEvent posts a workflowexecution.workflow.completed audit event
+// to DataStorage for the given correlation ID. This satisfies the EM's G4 scope
+// determination (#573) which checks DS for evidence that the workflow completed,
+// enabling the full assessment path (metrics + alerts + health + hash).
+//
+// In production the WE controller emits this event; in E2E EM tests (no WE controller)
+// the test must seed it explicitly when full assessment scope is required.
+func seedWorkflowCompletedEvent(correlationID string) {
+	GinkgoHelper()
+	event := &ogenclient.AuditEventRequest{
+		Version:        "1.0",
+		EventType:      "workflowexecution.workflow.completed",
+		EventTimestamp: time.Now().UTC(),
+		EventCategory:  ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
+		EventAction:    "completed",
+		EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+		CorrelationID:  correlationID,
+		EventData: ogenclient.NewAuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData(
+			ogenclient.WorkflowExecutionAuditPayload{
+				EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted,
+				WorkflowID:      "e2e-test-workflow",
+				WorkflowVersion: "v1.0.0",
+				TargetResource:  "Pod/target-pod",
+				Phase:           ogenclient.WorkflowExecutionAuditPayloadPhaseCompleted,
+				ContainerImage:  "registry.io/test/workflow:latest",
+				ExecutionName:   fmt.Sprintf("wfe-%s", correlationID),
+			},
+		),
+	}
+
+	resp, err := auditClient.CreateAuditEvent(ctx, event)
+	Expect(err).ToNot(HaveOccurred(), "Failed to seed workflowexecution.workflow.completed event for %s", correlationID)
+
+	switch resp.(type) {
+	case *ogenclient.AuditEventResponse:
+		GinkgoWriter.Printf("  Seeded workflow.completed event for correlationID=%s\n", correlationID)
+	default:
+		Fail(fmt.Sprintf("Unexpected DS response type %T when seeding audit event", resp))
+	}
+}
+

@@ -727,7 +727,7 @@ TTL: 5 minutes (fallback only)
 ## Related Decisions
 
 - **Builds On**: [BR-GATEWAY-011](../../services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md#br-gateway-011-deduplication) - Deduplication requirement
-- **Builds On**: [DD-GATEWAY-008](DD-GATEWAY-008-storm-aggregation-first-alert-handling.md) - Storm buffering (orthogonal concern)
+- **Builds On**: [DD-GATEWAY-008](DD-GATEWAY-008-storm-aggregation-windows.md) - Storm buffering (orthogonal concern; stub, superseded)
 - **Related**: [DD-GATEWAY-004](DD-GATEWAY-004-redis-memory-optimization.md) - Redis memory optimization
 
 ---
@@ -1037,7 +1037,7 @@ TTL: 5 minutes (fallback only)
 ## Related Decisions
 
 - **Builds On**: [BR-GATEWAY-011](../../services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md#br-gateway-011-deduplication) - Deduplication requirement
-- **Builds On**: [DD-GATEWAY-008](DD-GATEWAY-008-storm-aggregation-first-alert-handling.md) - Storm buffering (orthogonal concern)
+- **Builds On**: [DD-GATEWAY-008](DD-GATEWAY-008-storm-aggregation-windows.md) - Storm buffering (orthogonal concern; stub, superseded)
 - **Related**: [DD-GATEWAY-004](DD-GATEWAY-004-redis-memory-optimization.md) - Redis memory optimization
 
 ---
@@ -1338,7 +1338,7 @@ type InFlightCRDMetadata struct {
 ## Related Decisions
 
 - **Builds On**: [BR-GATEWAY-011](../../services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md#br-gateway-011-deduplication) - Deduplication requirement
-- **Builds On**: [DD-GATEWAY-008](DD-GATEWAY-008-storm-aggregation-first-alert-handling.md) - Storm buffering (orthogonal concern)
+- **Builds On**: [DD-GATEWAY-008](DD-GATEWAY-008-storm-aggregation-windows.md) - Storm buffering (orthogonal concern; stub, superseded)
 - **Related**: [DD-GATEWAY-004](DD-GATEWAY-004-redis-memory-optimization.md) - Redis memory optimization
 
 ---

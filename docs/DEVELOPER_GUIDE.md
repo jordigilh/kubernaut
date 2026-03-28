@@ -94,6 +94,141 @@ make test-tier-unit # Run unit tests to verify setup
 ```
 
 If you already cloned without `--recurse-submodules`, initialize the submodule separately:
+- ✅ **Production readiness checklist** (109-point assessment)
+
+**Timeline Overview**:
+| Phase | Days | Focus | Deliverables |
+|-------|------|-------|--------------|
+| **Foundation** | 1 | Types, interfaces, K8s client | Package structure, interfaces |
+| **Core Logic** | 2-6 | Business logic components | All components implemented |
+| **Integration** | 7 | Server, API, metrics | Complete service |
+| **Testing** | 8-10 | Integration + Unit tests | 70%+ coverage |
+| **Finalization** | 11-12 | E2E, docs, production readiness | Ready for deployment |
+
+### **Step 2: Follow APDC-TDD Methodology**
+
+**APDC Phases** (per feature/component):
+1. **Analysis** (5-15 min): Comprehensive context understanding
+2. **Plan** (10-20 min): Detailed implementation strategy
+3. **Do** (Variable): RED → GREEN → REFACTOR with integration
+4. **Check** (5-10 min): Comprehensive validation
+
+**Key Principle**: Write tests FIRST, then implementation.
+
+### **Step 3: Create Service Documentation**
+
+After implementation (Day 11-12), use:
+
+📘 **[SERVICE_DOCUMENTATION_GUIDE.md](services/SERVICE_DOCUMENTATION_GUIDE.md)**
+
+**Required Documents** (7 minimum):
+1. `overview.md` - Service purpose, CRD schema, architecture
+2. `security-configuration.md` - RBAC, NetworkPolicy, Secrets
+3. `observability-logging.md` - Structured logging, tracing
+4. `metrics-slos.md` - Prometheus metrics, SLI/SLO
+5. `testing-strategy.md` - Unit/Integration/E2E tests
+6. `finalizers-lifecycle.md` - Cleanup coordination (CRD controllers)
+7. `controller-implementation.md` - Reconciliation loop (CRD controllers)
+
+**Reference Services** (copy and adapt):
+- **Service 1 (Signal Processing)**: Data processing patterns
+- **Service 2 (AI Analysis)**: AI/ML integration patterns
+- **Service 3 (Workflow Execution)**: Multi-step orchestration
+- **Service 4 (Kubernetes Executor)**: Action execution patterns
+- **Service 5 (Remediation Orchestrator)**: Central orchestration
+
+---
+
+## 🔧 **Extending Existing Services**
+
+### **When to Extend vs. Create New**
+
+**Extend existing service** when:
+- ✅ Feature fits within service's bounded context
+- ✅ No new CRD required
+- ✅ Shares same data model and dependencies
+
+**Create new service** when:
+- ❌ Feature requires new CRD
+- ❌ Different scaling/deployment requirements
+- ❌ Distinct bounded context
+
+### **Feature Extension Process**
+
+📘 **[FEATURE_EXTENSION_PLAN_TEMPLATE.md](services/FEATURE_EXTENSION_PLAN_TEMPLATE.md)** ⭐ **USE THIS TEMPLATE**
+
+**What it provides**:
+- ✅ **Flexible timeline** (3-12 days based on complexity)
+- ✅ **APDC-TDD methodology** (Analysis → Plan → Do → Check)
+- ✅ **Day-by-day breakdown** with customizable phases
+- ✅ **Complete test examples** (Unit, Integration, E2E)
+- ✅ **Documentation timeline** (what gets created when)
+- ✅ **TDD Do's and Don'ts** (strict discipline)
+- ✅ **BR Coverage Matrix**
+- ✅ **Rollback Plan**
+
+**Timeline Guide**:
+| Feature Complexity | Duration | When to Use |
+|--------------------|----------|-------------|
+| **Simple** | 3-5 days | 1-2 files, minimal integration |
+| **Medium** | 5-8 days | 3-5 files, moderate integration |
+| **Complex** | 8-12 days | 5+ files, significant integration |
+
+**Reference Examples**:
+- **[DD-GATEWAY-008](architecture/decisions/DD-GATEWAY-008-storm-aggregation-windows.md)** — historical storm aggregation DD (**superseded**; removal in [DD-GATEWAY-015](architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md))
+- **[DD-GATEWAY-009](architecture/decisions/DD-GATEWAY-009-state-based-deduplication.md)** — state-based (fingerprint) deduplication at the Gateway
+
+**Key Differences from New Service**:
+- ✅ Shorter timeline (no foundation setup)
+- ✅ Focus on enhancing existing code (not creating new)
+- ✅ Regression testing emphasis
+- ✅ Integration impact assessment
+
+### **Documentation During Feature Extension**
+
+**📊 What Gets Created When**:
+
+```
+Day 1-[N] (Implementation):
+    ├── Code Documentation (inline GoDoc, BR references)
+    ├── Daily EOD Reports (progress checkpoints)
+    └── Configuration Comments (YAML inline docs)
+
+Days [N+1]-[N+M] (Testing):
+    ├── Test Documentation (test descriptions, BR mapping)
+    ├── Test Helper Documentation
+    └── Edge Case Documentation
+
+Day [N+M+1] (Documentation Day):
+    ├── Finalize Service Docs (update existing files)
+    │   ├── overview.md (add feature, update version)
+    │   ├── BUSINESS_REQUIREMENTS.md (add BRs, links)
+    │   ├── testing-strategy.md (add test examples)
+    │   └── metrics-slos.md (add new metrics)
+    │
+    └── Create Operational Docs (new files if needed)
+        ├── Runbook (if feature affects operations)
+        └── Migration Guide (if breaking changes)
+
+Day [N+M+P] (Production Readiness):
+    └── Handoff Summary (executive summary, lessons learned)
+```
+
+**Key Point**: Most documentation is created **DURING** implementation (inline), not at the end. The documentation day is for **finalizing** and **consolidating**.
+
+---
+
+## 🧪 **Testing**
+
+### **Testing Strategy**
+
+Kubernaut follows **defense-in-depth testing pyramid**:
+
+- **Unit Tests**: **70%+ coverage** - Business logic with external mocks only
+- **Integration Tests**: **>50% coverage** - Component interactions, real K8s API
+- **E2E Tests**: **<10% coverage** - Critical user journeys
+
+**Reference**: [03-testing-strategy.mdc](../.cursor/rules/03-testing-strategy.mdc)
 
 ```bash
 git submodule update --init --recursive

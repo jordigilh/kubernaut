@@ -105,7 +105,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Verify terminal state properties
 			Expect(notif.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhaseSent))
-			Expect(notif.Status.Reason).To(Equal("AllDeliveriesSucceeded"))
+			Expect(notif.Status.Reason).To(Equal(notificationv1alpha1.StatusReasonAllDeliveriesSucceeded))
 			Expect(notif.Status.SuccessfulDeliveries).To(Equal(1))
 			Expect(notif.Status.FailedDeliveries).To(Equal(0))
 			Expect(notif.Status.CompletionTime).ToNot(BeNil(), "Terminal phase must have CompletionTime")
@@ -142,7 +142,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60, // CRD validation requires ≥60
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "slack-only",
 					},
 				},
@@ -167,7 +167,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Verify terminal state properties
 			Expect(notif.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhaseFailed))
-			Expect(notif.Status.Reason).To(Equal("AllDeliveriesFailed"))
+			Expect(notif.Status.Reason).To(Equal(notificationv1alpha1.StatusReasonAllDeliveriesFailed))
 			Expect(notif.Status.SuccessfulDeliveries).To(Equal(0))
 			Expect(notif.Status.FailedDeliveries).To(BeNumerically(">", 0))
 			Expect(notif.Status.CompletionTime).ToNot(BeNil(), "Terminal phase must have CompletionTime")
@@ -205,7 +205,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60, // CRD validation requires ≥60
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-slack",
 					},
 				},
@@ -230,7 +230,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Verify terminal state properties
 			Expect(notif.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhasePartiallySent))
-			Expect(notif.Status.Reason).To(ContainSubstring("Partial"))
+			Expect(notif.Status.Reason).To(Equal(notificationv1alpha1.StatusReasonPartialDeliverySuccess))
 			Expect(notif.Status.SuccessfulDeliveries).To(Equal(1), "Console should succeed")
 			Expect(notif.Status.FailedDeliveries).To(Equal(1), "Slack should fail")
 			Expect(notif.Status.CompletionTime).ToNot(BeNil(), "Terminal phase must have CompletionTime")
@@ -262,7 +262,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Phase Transition Test - Intermediate",
 					Body:     "Testing Pending/Sending intermediate phases",
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-slack",
 					},
 				},
@@ -410,7 +410,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60, // CRD validation requires ≥60
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "slack-only",
 					},
 				},

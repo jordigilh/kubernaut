@@ -215,7 +215,7 @@ var _ = Describe("UT-AT-300-012: DSClientAdapter ActionType operations", Label("
 				w.WriteHeader(http.StatusOK)
 				resp := map[string]interface{}{
 					"actionType": "RestartPod",
-					"status":     "disabled",
+					"status":     "Disabled",
 				}
 				_ = json.NewEncoder(w).Encode(resp)
 			})

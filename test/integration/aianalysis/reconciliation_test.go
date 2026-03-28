@@ -25,7 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
@@ -43,36 +43,36 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 	// NOTE: Validating and Recommending phases were removed in v1.8/v1.10
 
 	Context("Complete reconciliation cycle - BR-AI-001", func() {
-		var analysis *aianalysisv1alpha1.AIAnalysis
+		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
 			rrName := helpers.UniqueTestName("test-remediation")
-			analysis = &aianalysisv1alpha1.AIAnalysis{
+			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      helpers.UniqueTestName("integration-test"),
 					Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 					},
 					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-001",
 							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod",
 								Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
 					},
 				},
 			}
@@ -141,36 +141,36 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 	})
 
 	Context("Error handling scenarios - BR-AI-009", func() {
-		var analysis *aianalysisv1alpha1.AIAnalysis
+		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
 			rrName := helpers.UniqueTestName("test-remediation")
-			analysis = &aianalysisv1alpha1.AIAnalysis{
+			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      helpers.UniqueTestName("error-retry"),
 					Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 					},
 					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-002",
 							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod",
 								Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"investigation"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
 			}

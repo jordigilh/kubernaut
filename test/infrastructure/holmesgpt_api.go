@@ -1425,7 +1425,7 @@ func createSDKConfigMap(kubeconfigPath, namespace, sdkToolsetsYAML string, write
 			return fmt.Errorf("failed to merge programmatic toolsets into SDK config: %w", err)
 		}
 		sourcePath = merged
-		defer os.Remove(merged)
+		defer func() { _ = os.Remove(merged) }()
 	}
 
 	if err := kubectlPipedApply(kubeconfigPath,
@@ -1487,11 +1487,11 @@ func mergeToolsetsIntoFile(configPath, sdkToolsetsYAML string, writer io.Writer)
 		return "", fmt.Errorf("creating temp file: %w", err)
 	}
 	if _, err := tmp.Write(merged); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("writing merged SDK config: %w", err)
 	}
-	tmp.Close()
+	_ = tmp.Close()
 
 	return tmp.Name(), nil
 }

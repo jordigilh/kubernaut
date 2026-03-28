@@ -1,4 +1,4 @@
-# DD-GATEWAY-015: Kubernetes API Circuit Breaker Implementation
+# DD-GATEWAY-016: Kubernetes API Circuit Breaker Implementation
 
 **Date**: January 3, 2026
 **Status**: ✅ IMPLEMENTED
@@ -143,7 +143,7 @@ if err != nil {
 
 **Complements DD-GATEWAY-014 Decision**:
 - ✅ DD-GATEWAY-014 deferred **service-level** circuit breaker (ingress protection)
-- ✅ DD-GATEWAY-015 implements **K8s API** circuit breaker (dependency protection)
+- ✅ DD-GATEWAY-016 implements **K8s API** circuit breaker (dependency protection)
 - ✅ No contradiction: Different scopes, different problems
 
 **Evidence Supporting K8s API Circuit Breaker**:
@@ -154,7 +154,7 @@ if err != nil {
 
 **Distinction from Service-Level Circuit Breaker**:
 
-| Aspect | Service-Level (DD-GATEWAY-014 - Deferred) | K8s API (DD-GATEWAY-015 - Implemented) |
+| Aspect | Service-Level (DD-GATEWAY-014 - Deferred) | K8s API (DD-GATEWAY-016 - Implemented) |
 |--------|-------------------------------------------|----------------------------------------|
 | **Scope** | Ingress load protection | Dependency protection |
 | **Trigger** | Gateway overload (high QPS, memory) | K8s API degradation (50% error rate) |
@@ -303,7 +303,7 @@ gateway_circuit_breaker_state{name="k8s-api"}
 **New Files**:
 1. `pkg/gateway/k8s/client_with_circuit_breaker.go` - Circuit breaker wrapper (197 lines)
 2. `pkg/shared/circuitbreaker/manager.go` - Multi-channel manager (shared with Notification)
-3. `docs/architecture/decisions/DD-GATEWAY-015-k8s-api-circuit-breaker.md` - This document
+3. `docs/architecture/decisions/DD-GATEWAY-016-k8s-api-circuit-breaker.md` - This document
 
 **Modified Files**:
 1. `pkg/gateway/server.go` - Circuit breaker initialization

@@ -25,7 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -55,33 +55,33 @@ var _ = Describe("E2E-AA-084-001: Proactive Signal Mode Investigation", Label("e
 			// This E2E test validates the full AA → HAPI → Mock LLM pipeline with
 			// proactive signal mode context flowing through all components.
 
-			analysis := &aianalysisv1alpha1.AIAnalysis{
+			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-proactive-oomkill-" + randomSuffix(),
 					Namespace: controllerNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-proactive-remediation",
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-proactive-rem-001",
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-proactive-fingerprint-001",
 							Severity:         "critical",
 							SignalName:       "OOMKilled",    // Normalized by SP from PredictedOOMKill
 							SignalMode:       "proactive",   // BR-AI-084: Proactive signal mode
 							Environment:      "production",
 							BusinessPriority: "P1",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Deployment",
 								Name:      "api-server",
 								Namespace: controllerNamespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
 					},
 				},
 			}
@@ -120,33 +120,33 @@ var _ = Describe("E2E-AA-084-001: Proactive Signal Mode Investigation", Label("e
 			// Existing reactive signals should continue working with standard RCA.
 			// signalMode=reactive (or empty) should produce normal investigation results.
 
-			analysis := &aianalysisv1alpha1.AIAnalysis{
+			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-reactive-oomkill-" + randomSuffix(),
 					Namespace: controllerNamespace,
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-reactive-remediation",
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-reactive-rem-001",
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-reactive-fingerprint-001",
 							Severity:         "critical",
 							SignalName:       "OOMKilled",
 							SignalMode:       "reactive",   // Explicit reactive mode
 							Environment:      "production",
 							BusinessPriority: "P1",
-							TargetResource: aianalysisv1alpha1.TargetResource{
+							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "worker-pod",
 								Namespace: controllerNamespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
 					},
 				},
 			}

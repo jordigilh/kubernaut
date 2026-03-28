@@ -230,7 +230,7 @@ var _ = Describe("IT-AT-300-006: ActionType Audit Events", Label("integration", 
 			Expect(data["event_type"]).To(Equal("datastorage.actiontype.reenabled"))
 			Expect(data["action_type"]).To(Equal("RestartPod"))
 			Expect(data["reenabled_by"]).To(Equal("admin@kubernaut.ai"))
-			Expect(data["previous_state"]).To(Equal("disabled"))
+			Expect(data["previous_state"]).To(Equal("Disabled"))
 			Expect(data["disabled_by"]).To(Equal("ops@kubernaut.ai"))
 		})
 	})

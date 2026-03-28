@@ -58,7 +58,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				func(phase, reason string, expected bool) {
 					ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 					ai.Status.Phase = phase
-					ai.Status.Reason = reason
+					ai.Status.Reason = aianalysisv1.AIAnalysisReason(reason)
 
 					Expect(handler.IsWorkflowResolutionFailed(ai)).To(Equal(expected))
 				},
@@ -125,28 +125,24 @@ var _ = Describe("AIAnalysisHandler", func() {
 			h                     *handler.AIAnalysisHandler
 			nc                    *creator.NotificationCreator
 			ctx                   context.Context
-			mockTransitionFailed  func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error)
+			mockTransitionFailed  func(context.Context, *remediationv1.RemediationRequest, remediationv1.FailurePhase, error) (ctrl.Result, error)
 			transitionFailedCalls int
 		)
 
 		BeforeEach(func() {
 			fakeClientBuilder = fake.NewClientBuilder().WithScheme(scheme)
 			ctx = context.Background()
-			// Default no-op callback for tests that don't trigger failure paths
 			transitionFailedCalls = 0
-			mockTransitionFailed = func(ctx context.Context, rr *remediationv1.RemediationRequest, phase string, reason error) (ctrl.Result, error) {
+			mockTransitionFailed = func(ctx context.Context, rr *remediationv1.RemediationRequest, phase remediationv1.FailurePhase, reason error) (ctrl.Result, error) {
 				transitionFailedCalls++
 				return ctrl.Result{}, nil
 			}
 		})
 
-		// createMockTransitionFailed creates a mock callback that persists status changes
-		// This must be called after the client is built to have access to the client instance
-		createMockTransitionFailed := func(c client.WithWatch) func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error) {
+		createMockTransitionFailed := func(c client.WithWatch) func(context.Context, *remediationv1.RemediationRequest, remediationv1.FailurePhase, error) (ctrl.Result, error) {
 			transitionFailedCalls = 0
-			return func(ctx context.Context, rr *remediationv1.RemediationRequest, phase string, reason error) (ctrl.Result, error) {
+			return func(ctx context.Context, rr *remediationv1.RemediationRequest, phase remediationv1.FailurePhase, reason error) (ctrl.Result, error) {
 				transitionFailedCalls++
-				// Simulate the transition by directly updating the phase and persisting to fake client
 				rr.Status.OverallPhase = remediationv1.PhaseFailed
 				failurePhase := phase
 				rr.Status.FailurePhase = &failurePhase
@@ -341,7 +337,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
 				Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
-				Expect(*updatedRR.Status.FailurePhase).To(Equal("ai_analysis"))
+				Expect(*updatedRR.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseAIAnalysis))
 				Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
 			})
 
@@ -367,7 +363,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				err = client.List(ctx, nrList)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(nrList.Items).To(HaveLen(1))
-				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("rootCauseAnalysis", "Pod crash loop detected"))
+				Expect(nrList.Items[0].Spec.Context.Review.RootCauseAnalysis).To(Equal("Pod crash loop detected"))
 			})
 
 			// populateManualReviewContext: RCA.Summary preferred over legacy RootCause
@@ -395,7 +391,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(nrList.Items).To(HaveLen(1))
 				Expect(nrList.Items[0].Spec.Body).To(ContainSubstring("RCA Summary: OOM kill - scale deployment"))
-				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("rootCauseAnalysis", "RCA Summary: OOM kill - scale deployment"))
+				Expect(nrList.Items[0].Spec.Context.Review.RootCauseAnalysis).To(Equal("RCA Summary: OOM kill - scale deployment"))
 			})
 
 			// populateManualReviewContext: Warnings population
@@ -504,7 +500,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
 				Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
-				Expect(*updatedRR.Status.FailurePhase).To(Equal("ai_analysis"))
+				Expect(*updatedRR.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseAIAnalysis))
 				Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
 			})
 
@@ -577,9 +573,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				err = client.List(ctx, nrList)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(nrList.Items).To(HaveLen(1))
-				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("source", "AIAnalysis"))
-				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("reason", "APIError"))
-				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("subReason", "MaxRetriesExceeded"))
+				Expect(nrList.Items[0].Spec.ReviewSource).To(Equal(notificationv1.ReviewSourceAIAnalysis))
+				Expect(nrList.Items[0].Spec.Context.Review.Reason).To(Equal("APIError"))
+				Expect(nrList.Items[0].Spec.Context.Review.SubReason).To(Equal("MaxRetriesExceeded"))
 			})
 		})
 
@@ -664,7 +660,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(nrList.Items).To(HaveLen(1))
 				// Verify it went through NeedsHumanReview handler (not WorkflowResolutionFailed)
-				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("humanReviewReason", "workflow_not_found"))
+				Expect(nrList.Items[0].Spec.Context.Review.HumanReviewReason).To(Equal("workflow_not_found"))
 			})
 
 			// UT-RO-197-004: RR status updated correctly when NeedsHumanReview=true
@@ -690,7 +686,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
 				Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
-				Expect(*updatedRR.Status.FailurePhase).To(Equal("ai_analysis"))
+				Expect(*updatedRR.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseAIAnalysis))
 				Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
 			})
 
@@ -761,8 +757,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				Expect(nrList.Items).To(HaveLen(1))
 
 				// Verify metadata contains humanReviewReason
-				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("humanReviewReason", "rca_incomplete"))
-				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("rootCauseAnalysis", "Pod crash loop detected"))
+				Expect(nrList.Items[0].Spec.Context.Review.HumanReviewReason).To(Equal("rca_incomplete"))
+				Expect(nrList.Items[0].Spec.Context.Review.RootCauseAnalysis).To(Equal("Pod crash loop detected"))
 			})
 		})
 
@@ -1013,8 +1009,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				err = client.List(ctx, nrList)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(nrList.Items).To(HaveLen(1))
-				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("humanReviewReason", "no_matching_workflows"))
-				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("rootCauseAnalysis", "Orphaned PVCs in namespace production"))
+			Expect(nrList.Items[0].Spec.Context.Review.HumanReviewReason).To(Equal("no_matching_workflows"))
+			Expect(nrList.Items[0].Spec.Context.Review.RootCauseAnalysis).To(Equal("Orphaned PVCs in namespace production"))
 			})
 
 			// UT-RO-550-011: NotificationRequestRefs tracking

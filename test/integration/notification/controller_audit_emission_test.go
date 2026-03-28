@@ -115,7 +115,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Subject:  "Audit Emission Test - Console Success",
 					Body:     "Testing controller emits audit on successful console delivery",
-					// No Metadata - let correlation ID fallback to notification.UID
+					// No Context/Extensions - let correlation ID fallback to notification.UID
 				},
 			}
 
@@ -192,7 +192,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					RemediationRequestRef: &corev1.ObjectReference{
 						Name: testID, // RR name is universal correlation ID
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-slack",
 					},
 				},
@@ -328,7 +328,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					RemediationRequestRef: &corev1.ObjectReference{
 						Name: testID, // RR name is universal correlation ID
 					},
-					Metadata: map[string]string{
+					Extensions: map[string]string{
 						"test-channel-set": "console-slack",
 					},
 				},
@@ -471,7 +471,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					BackoffMultiplier:     2,
 					MaxBackoffSeconds:     60,
 				},
-				Metadata: map[string]string{
+				Extensions: map[string]string{
 					"test-channel-set": "slack-only",
 				},
 				},

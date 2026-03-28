@@ -35,7 +35,7 @@ import (
 // - BR-GATEWAY-093-B: Prevent cascade failures during K8s API overload
 // - BR-GATEWAY-093-C: Observable metrics for circuit breaker state and operations
 //
-// Design Decision: DD-GATEWAY-015 (Kubernetes API Circuit Breaker Implementation)
+// Design Decision: DD-GATEWAY-016 (Kubernetes API Circuit Breaker Implementation)
 //
 // Circuit Breaker States:
 // - Closed: Normal operation, all requests allowed

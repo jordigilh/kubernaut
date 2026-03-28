@@ -36,7 +36,6 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // E2E-RO-EA-001: EffectivenessAssessment CRD Creation on Completed Remediation
@@ -88,11 +87,6 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
-				Deduplication: sharedtypes.DeduplicationInfo{
-					FirstOccurrence: now,
-					LastOccurrence:  now,
-					OccurrenceCount: 1,
-				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -120,12 +114,12 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		sp.Status.SignalMode = "reactive"
 		sp.Status.SignalName = sp.Spec.Signal.Name // Issue #166: Use signal name, not type ("alert")
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
-			Environment:  "production",
+			Environment:  signalprocessingv1.EnvironmentProduction,
 			Source:       "namespace-labels",
 			ClassifiedAt: metav1.Now(),
 		}
 		sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
-			Priority:   "P1",
+			Priority:   signalprocessingv1.PriorityP1,
 			Source:     "rego-policy",
 			AssignedAt: metav1.Now(),
 		}
@@ -149,15 +143,15 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 
 		By("5. Manually updating AIAnalysis status to Completed with SelectedWorkflow")
 		analysis.Status.Phase = aianalysisv1.PhaseCompleted
-		analysis.Status.Reason = "AnalysisCompleted"
+		analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 		analysis.Status.Message = "Workflow recommended: restart-deployment-v1"
 		analysis.Status.RootCause = "CPU throttling due to resource limits"
 		analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:     "restart-deployment-v1",
-			Version:        "1.0.0",
+			WorkflowID:      "restart-deployment-v1",
+			Version:         "1.0.0",
 			ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
-			Confidence:     0.92,
-			Rationale:      "High confidence match for CPU remediation",
+			Confidence:      0.92,
+			Rationale:       "High confidence match for CPU remediation",
 		}
 		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 		analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -333,11 +327,6 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -365,12 +354,12 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			sp.Status.SignalMode = "reactive"
 			sp.Status.SignalName = sp.Spec.Signal.Name // Issue #166: Use signal name, not type ("alert")
 			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
-				Environment:  "production",
+				Environment:  signalprocessingv1.EnvironmentProduction,
 				Source:       "namespace-labels",
 				ClassifiedAt: metav1.Now(),
 			}
 			sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
-				Priority:   "P1",
+				Priority:   signalprocessingv1.PriorityP1,
 				Source:     "rego-policy",
 				AssignedAt: metav1.Now(),
 			}
@@ -394,12 +383,12 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 
 			By("5. Manually updating AIAnalysis status to Completed with SelectedWorkflow")
 			analysis.Status.Phase = aianalysisv1.PhaseCompleted
-			analysis.Status.Reason = "AnalysisCompleted"
+			analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 			analysis.Status.Message = "Workflow recommended: restart-deployment-v1"
 			analysis.Status.RootCause = "CPU throttling due to resource limits"
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:      "restart-deployment-v1",
-				Version:        "1.0.0",
+				Version:         "1.0.0",
 				ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
 				Confidence:      0.92,
 				Rationale:       "High confidence match for CPU remediation",
@@ -437,14 +426,14 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			we.Status.Phase = workflowexecutionv1.PhaseFailed
 			we.Status.FailureReason = "Tekton PipelineRun failed"
 			we.Status.FailureDetails = &workflowexecutionv1.FailureDetails{
-				FailedTaskIndex:              0,
-				FailedTaskName:               "restart-deployment",
-				Reason:                       workflowexecutionv1.FailureReasonTaskFailed,
-				Message:                      "Container step failed with exit code 1",
-				FailedAt:                     metav1.Now(),
-				ExecutionTimeBeforeFailure:   "30s",
-				NaturalLanguageSummary:      "Workflow failed during deployment restart step",
-				WasExecutionFailure:         true,
+				FailedTaskIndex:            0,
+				FailedTaskName:             "restart-deployment",
+				Reason:                     workflowexecutionv1.FailureReasonTaskFailed,
+				Message:                    "Container step failed with exit code 1",
+				FailedAt:                   metav1.Now(),
+				ExecutionTimeBeforeFailure: &metav1.Duration{Duration: 30 * time.Second},
+				NaturalLanguageSummary:     "Workflow failed during deployment restart step",
+				WasExecutionFailure:        true,
 			}
 			Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
 
@@ -461,8 +450,8 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 
 			// E2E-RO-163-005: Failure post-mortem assertions
 			Expect(updatedRR.Status.FailurePhase).NotTo(BeNil())
-			Expect(*updatedRR.Status.FailurePhase).To(Equal("workflow_execution"),
-				"FailurePhase should be workflow_execution (lowercase snake_case)")
+			Expect(*updatedRR.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseWorkflowExecution),
+				"FailurePhase should be WorkflowExecution (BR-COMMON-001 PascalCase)")
 			Expect(updatedRR.Status.FailureReason).NotTo(BeNil())
 			Expect(*updatedRR.Status.FailureReason).NotTo(BeEmpty(),
 				"FailureReason should contain the WE failure reason")

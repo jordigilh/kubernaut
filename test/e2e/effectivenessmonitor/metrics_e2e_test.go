@@ -96,6 +96,8 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 
 		By("Seeding workflowexecution.execution.started event (no_execution guard)")
 		seedWorkflowStartedEvent(correlationID)
+		By("Seeding workflowexecution.workflow.completed event (full scope, #573 G4)")
+		seedWorkflowCompletedEvent(correlationID)
 
 		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.
 		createEA(testNS, name, correlationID,
@@ -164,6 +166,8 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 
 		By("Seeding workflowexecution.execution.started event (no_execution guard)")
 		seedWorkflowStartedEvent(correlationID)
+		By("Seeding workflowexecution.workflow.completed event (full scope, #573 G4)")
+		seedWorkflowCompletedEvent(correlationID)
 
 		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.
 		createEA(testNS, name, correlationID,

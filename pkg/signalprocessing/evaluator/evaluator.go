@@ -19,6 +19,7 @@ package evaluator
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -49,6 +50,16 @@ const (
 var (
 	reservedPrefixes = []string{"kubernaut.ai/", "system/"}
 	validPriorities  = map[string]bool{"P0": true, "P1": true, "P2": true, "P3": true}
+
+	// normalizeEnv maps Rego-output environment strings to PascalCase CRD enum values.
+	// BR-COMMON-001: All CRD enum values use PascalCase.
+	normalizeEnv = map[string]signalprocessingv1alpha1.Environment{
+		"production":  signalprocessingv1alpha1.EnvironmentProduction,
+		"staging":     signalprocessingv1alpha1.EnvironmentStaging,
+		"development": signalprocessingv1alpha1.EnvironmentDevelopment,
+		"test":        signalprocessingv1alpha1.EnvironmentTest,
+		"unknown":     signalprocessingv1alpha1.EnvironmentUnknown,
+	}
 )
 
 // Evaluator provides unified OPA Rego evaluation for all SignalProcessing
@@ -220,8 +231,13 @@ func (e *Evaluator) EvaluateEnvironment(ctx context.Context, input PolicyInput) 
 		source = "default"
 	}
 
+	normalized, ok := normalizeEnv[strings.ToLower(environment)]
+	if !ok {
+		normalized = signalprocessingv1alpha1.Environment(environment)
+	}
+
 	return &signalprocessingv1alpha1.EnvironmentClassification{
-		Environment:  environment,
+		Environment:  normalized,
 		Source:       source,
 		ClassifiedAt: metav1.Now(),
 	}, nil
@@ -301,7 +317,7 @@ func (e *Evaluator) EvaluatePriority(ctx context.Context, input PolicyInput) (*s
 	}
 
 	return &signalprocessingv1alpha1.PriorityAssignment{
-		Priority:   priority,
+		Priority:   signalprocessingv1alpha1.Priority(priority),
 		Source:     "rego-policy",
 		PolicyName: policyName,
 		AssignedAt: metav1.Now(),

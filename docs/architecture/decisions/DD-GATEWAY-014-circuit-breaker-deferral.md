@@ -498,7 +498,7 @@ IF ANY of:
   - Proxy rate limiting bypassed
 
 THEN: Implement circuit breaker per Phase 2 guidance (8-12h)
-      Create DD-GATEWAY-015 documenting circuit breaker implementation
+      Create DD-GATEWAY-016 documenting circuit breaker implementation
 ```
 
 ---

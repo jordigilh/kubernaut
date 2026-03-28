@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	prodaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	"github.com/jordigilh/kubernaut/test/shared/validators"
@@ -257,9 +258,9 @@ var _ = Describe("Audit Manager", func() {
 				{"Analyzing", "AwaitingApproval"},
 				{"Analyzing", "Executing"},
 				{"AwaitingApproval", "Executing"},
-			{"Executing", "Verifying"},
-			{"Verifying", "Completed"},
-		}
+				{"Executing", "Verifying"},
+				{"Verifying", "Completed"},
+			}
 
 			for _, t := range transitions {
 				event, err := manager.BuildPhaseTransitionEvent(
@@ -360,7 +361,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
-				"workflow_execution",
+				string(remediationv1.FailurePhaseWorkflowExecution),
 				apierrors.NewForbidden(gr, "rr-test-001", fmt.Errorf("RBAC permission denied")),
 				5000,
 			)
@@ -376,7 +377,7 @@ var _ = Describe("Audit Manager", func() {
 				ResourceID:    ptr.To("rr-test-001"),
 				EventDataFields: map[string]interface{}{
 					"outcome":       "Failed",
-					"failure_phase": "workflow_execution",
+					"failure_phase": string(remediationv1.FailurePhaseWorkflowExecution),
 				},
 			})
 
@@ -397,7 +398,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-789",
 				"production",
 				"rr-prod-002",
-				"signal_processing",
+				string(remediationv1.FailurePhaseSignalProcessing),
 				apierrors.NewTimeoutError("timeout while enriching alert", 30),
 				15000,
 			)
@@ -423,7 +424,7 @@ var _ = Describe("Audit Manager", func() {
 			// Validate values
 			Expect(errorDetails["component"]).To(Equal("remediationorchestrator"), "Should identify remediationorchestrator component")
 			Expect(errorDetails["code"]).To(MatchRegexp("^ERR_"), "Error code should start with ERR_")
-			Expect(errorDetails["message"]).To(ContainSubstring("signal_processing"), "Message should include failure phase")
+			Expect(errorDetails["message"]).To(ContainSubstring(string(remediationv1.FailurePhaseSignalProcessing)), "Message should include failure phase")
 			Expect(errorDetails["message"]).To(ContainSubstring("timeout"), "Message should include failure reason")
 			Expect(errorDetails["retry_possible"]).To(BeAssignableToTypeOf(false), "retry_possible should be boolean")
 
@@ -437,7 +438,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-456",
 				"production",
 				"rr-prod-001",
-				"signal_processing",
+				string(remediationv1.FailurePhaseSignalProcessing),
 				apierrors.NewTimeoutError("Enrichment timeout", 30),
 				10000,
 			)
@@ -453,7 +454,7 @@ var _ = Describe("Audit Manager", func() {
 				ResourceID:    ptr.To("rr-prod-001"),
 				EventDataFields: map[string]interface{}{
 					"outcome":       "Failed",
-					"failure_phase": "signal_processing",
+					"failure_phase": string(remediationv1.FailurePhaseSignalProcessing),
 				},
 			})
 
@@ -478,7 +479,7 @@ var _ = Describe("Audit Manager", func() {
 					"correlation-001",
 					"default",
 					"rr-test",
-					"configuration",
+					string(remediationv1.FailurePhaseConfiguration),
 					apierrors.NewInvalid(gk, "rr-test", nil),
 					1000,
 				)
@@ -500,7 +501,7 @@ var _ = Describe("Audit Manager", func() {
 					"correlation-002",
 					"default",
 					"rr-test",
-					"signal_processing",
+					string(remediationv1.FailurePhaseSignalProcessing),
 					apierrors.NewForbidden(gr, "sp-test", fmt.Errorf("RBAC denied")),
 					1000,
 				)
@@ -542,7 +543,7 @@ var _ = Describe("Audit Manager", func() {
 					"correlation-004",
 					"default",
 					"rr-test",
-					"workflow_execution",
+					string(remediationv1.FailurePhaseWorkflowExecution),
 					apierrors.NewNotFound(gr, "wfe-test"),
 					1000,
 				)
@@ -1010,32 +1011,32 @@ var _ = Describe("Audit Manager", func() {
 						return nil
 					},
 				},
-			{
-				name: "RoutingBlocked",
-				build: func() error {
-					blockData := &prodaudit.RoutingBlockedData{
-						BlockReason:  "CooldownActive",
-						BlockMessage: "Cooldown period active",
-						FromPhase:    "Pending",
-						ToPhase:      "Blocked",
-					}
-					_, err := manager.BuildRoutingBlockedEvent("corr", "ns", "rr", "Pending", blockData)
-					if err != nil {
-						return err
-					}
-					return nil
+				{
+					name: "RoutingBlocked",
+					build: func() error {
+						blockData := &prodaudit.RoutingBlockedData{
+							BlockReason:  "CooldownActive",
+							BlockMessage: "Cooldown period active",
+							FromPhase:    "Pending",
+							ToPhase:      "Blocked",
+						}
+						_, err := manager.BuildRoutingBlockedEvent("corr", "ns", "rr", "Pending", blockData)
+						if err != nil {
+							return err
+						}
+						return nil
+					},
 				},
-			},
-			{
-				name: "RemediationWorkflowCreated",
-				build: func() error {
-					_, err := manager.BuildRemediationWorkflowCreatedEvent("corr", "ns", "rr", "sha256:abc", "ns/Deploy/x", "wf", "1.0", "ScaleReplicas")
-					if err != nil {
-						return err
-					}
-					return nil
+				{
+					name: "RemediationWorkflowCreated",
+					build: func() error {
+						_, err := manager.BuildRemediationWorkflowCreatedEvent("corr", "ns", "rr", "sha256:abc", "ns/Deploy/x", "wf", "1.0", "ScaleReplicas")
+						if err != nil {
+							return err
+						}
+						return nil
+					},
 				},
-			},
 			}
 
 			for _, e := range events {

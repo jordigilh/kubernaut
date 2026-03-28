@@ -36,7 +36,7 @@ class TestWorkflowUpdateRequest(unittest.TestCase):
         model = WorkflowUpdateRequest()
         if include_optional:
             return WorkflowUpdateRequest(
-                status = 'active',
+                status = 'Active',
                 disabled_by = '',
                 disabled_reason = ''
             )

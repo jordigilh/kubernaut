@@ -168,6 +168,14 @@ type WorkflowExecutionSpec struct {
 	// +optional
 	Rationale string `json:"rationale,omitempty"`
 
+	// ServiceAccountName is the pre-existing ServiceAccount for the execution
+	// resource (Job, PipelineRun, or Ansible TokenRequest). DD-WE-005 v2.0:
+	// Operators pre-create SAs with appropriate RBAC in the execution namespace.
+	// If absent, K8s assigns the namespace's default SA (Job/Tekton) or the
+	// Ansible executor falls back to the controller's in-cluster credentials.
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+
 	// ExecutionConfig contains minimal execution settings
 	// +optional
 	ExecutionConfig *ExecutionConfig `json:"executionConfig,omitempty"`
@@ -197,18 +205,13 @@ type WorkflowRef struct {
 	EngineConfig *apiextensionsv1.JSON `json:"engineConfig,omitempty"`
 }
 
-// ExecutionConfig contains minimal execution settings
-// Note: Most execution logic is delegated to Tekton (ADR-044)
+// ExecutionConfig contains minimal execution settings.
+// Issue #501: ServiceAccountName moved to Spec.ServiceAccountName (engine-agnostic).
 type ExecutionConfig struct {
 	// Timeout for the entire workflow (Tekton PipelineRun timeout)
 	// Default: use global timeout from RemediationRequest or 30m
 	// +optional
 	Timeout *metav1.Duration `json:"timeout,omitempty"`
-
-	// ServiceAccountName for the PipelineRun
-	// Default: "kubernaut-workflow-runner"
-	// +optional
-	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 }
 
 // WorkflowExecution phase constants
@@ -221,6 +224,23 @@ const (
 	PhaseCompleted = "Completed"
 	// PhaseFailed indicates a permanent failure
 	PhaseFailed = "Failed"
+)
+
+// Issue #501: Condition and event constants for TokenRequest TTL validation.
+const (
+	// ConditionTokenTTLInsufficient is set when the K8s API server grants a
+	// shorter token TTL than the WFE execution timeout.
+	ConditionTokenTTLInsufficient = "TokenTTLInsufficient"
+
+	// ReasonTokenTTLShortened indicates the granted TTL was less than requested.
+	ReasonTokenTTLShortened = "TokenTTLShortened"
+
+	// ReasonTokenTTLSufficient indicates the granted TTL meets the timeout.
+	ReasonTokenTTLSufficient = "TokenTTLSufficient"
+
+	// EventTokenTTLShortened is the K8s event reason emitted when the API
+	// server shortens the token TTL below the execution timeout.
+	EventTokenTTLShortened = "TokenTTLShortened"
 )
 
 // WorkflowExecutionStatus defines the observed state
@@ -250,7 +270,7 @@ type WorkflowExecutionStatus struct {
 
 	// Duration of the execution
 	// +optional
-	Duration string `json:"duration,omitempty"`
+	Duration *metav1.Duration `json:"duration,omitempty"`
 
 	// ExecutionRef references the created execution resource (PipelineRun or Job)
 	// +optional
@@ -353,8 +373,8 @@ type FailureDetails struct {
 	FailedAt metav1.Time `json:"failedAt"`
 
 	// ExecutionTimeBeforeFailure is how long the workflow ran before failing
-	// Format: Go duration string (e.g., "2m30s")
-	ExecutionTimeBeforeFailure string `json:"executionTimeBeforeFailure"`
+	// +optional
+	ExecutionTimeBeforeFailure *metav1.Duration `json:"executionTimeBeforeFailure,omitempty"`
 
 	// ========================================
 	// NATURAL LANGUAGE SUMMARY
@@ -419,7 +439,7 @@ type BlockClearanceDetails struct {
 // Lightweight summary for both Tekton PipelineRun and K8s Job backends
 type ExecutionStatusSummary struct {
 	// Status of the execution resource (Unknown, True, False)
-	Status string `json:"status"`
+	Status corev1.ConditionStatus `json:"status"`
 
 	// Reason from the execution resource (e.g., "Succeeded", "Failed", "Running")
 	// +optional

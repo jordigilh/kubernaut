@@ -84,14 +84,14 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithObjects(scenario.initialObjects...).
-			WithStatusSubresource(
-				&remediationv1.RemediationRequest{},
-				&remediationv1.RemediationApprovalRequest{},
-				&signalprocessingv1.SignalProcessing{},
-				&aianalysisv1.AIAnalysis{},
-				&workflowexecutionv1.WorkflowExecution{},
-			).
-			Build()
+				WithStatusSubresource(
+					&remediationv1.RemediationRequest{},
+					&remediationv1.RemediationApprovalRequest{},
+					&signalprocessingv1.SignalProcessing{},
+					&aianalysisv1.AIAnalysis{},
+					&workflowexecutionv1.WorkflowExecution{},
+				).
+				Build()
 
 			// Create reconciler with test dependencies
 			// Use MockRoutingEngine to isolate orchestration logic testing from routing business logic
@@ -355,6 +355,13 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedChildren: map[string]bool{
 				"WE": true, // WorkflowExecution should be created
 			},
+			// UT-RR-387-002: RemediationTarget populated from AIAnalysis AffectedResource (direct path)
+			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
+				Expect(rr.Status.RemediationTarget).ToNot(BeNil(), "RemediationTarget should be set from AIAnalysis AffectedResource")
+				Expect(rr.Status.RemediationTarget.Kind).To(Equal("Deployment"))
+				Expect(rr.Status.RemediationTarget.Name).To(Equal("test-deployment"))
+				Expect(rr.Status.RemediationTarget.Namespace).To(Equal("default"))
+			},
 		}),
 
 		Entry("3.2: Analyzing→AwaitingApproval - Low Confidence (BR-ORCH-001)", ReconcileScenario{
@@ -540,6 +547,13 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:    remediationv1.PhaseExecuting,
 			expectedResult:   ctrl.Result{RequeueAfter: 5 * time.Second},
 			expectedChildren: map[string]bool{"WE": true},
+			// UT-RR-387-003: RemediationTarget populated from AIAnalysis AffectedResource (post-approval path)
+			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
+				Expect(rr.Status.RemediationTarget).ToNot(BeNil(), "RemediationTarget should be set from AIAnalysis AffectedResource")
+				Expect(rr.Status.RemediationTarget.Kind).To(Equal("Deployment"))
+				Expect(rr.Status.RemediationTarget.Name).To(Equal("test-deployment"))
+				Expect(rr.Status.RemediationTarget.Namespace).To(Equal("default"))
+			},
 		}),
 
 		Entry("5.2: AwaitingApproval→Failed - RAR Rejected (BR-ORCH-001)", ReconcileScenario{
@@ -625,7 +639,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedResult: ctrl.Result{},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
 				Expect(rr.Status.TimeoutTime).To(HaveValue(Not(BeZero())))
-				Expect(rr.Status.TimeoutPhase).To(HaveValue(Equal("Pending")))
+				Expect(rr.Status.TimeoutPhase).To(HaveValue(Equal(remediationv1.PhasePending)))
 			},
 		}),
 
@@ -653,7 +667,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:  remediationv1.PhaseTimedOut,
 			expectedResult: ctrl.Result{RequeueAfter: 30 * time.Second}, // RequeueResourceBusy after notification creation
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(*rr.Status.TimeoutPhase).To(Equal("Processing"))
+				Expect(*rr.Status.TimeoutPhase).To(Equal(remediationv1.PhaseProcessing))
 			},
 		}),
 

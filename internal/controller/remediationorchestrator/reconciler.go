@@ -425,7 +425,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Per test requirement: Negative timeouts should be rejected with ERR_INVALID_TIMEOUT_CONFIG
 	if err := r.validateTimeoutConfig(rr); err != nil {
 		logger.Error(err, "Invalid timeout configuration, transitioning to Failed")
-		return r.transitionToFailed(ctx, rr, "configuration", err)
+		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseConfiguration, err)
 	}
 
 	// ========================================
@@ -749,7 +749,7 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 	// First, check if we're in Processing but have no SP ref (corrupted state)
 	if rr.Status.SignalProcessingRef == nil {
 		logger.Error(nil, "Processing phase but no SignalProcessingRef - corrupted state")
-		return r.transitionToFailed(ctx, rr, "signal_processing", fmt.Errorf("SignalProcessing not found"))
+		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseSignalProcessing, fmt.Errorf("SignalProcessing not found"))
 	}
 
 	// Fetch SignalProcessing CRD via informer (cached client).
@@ -844,7 +844,7 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 			logger.Error(err, "Failed to update SignalProcessingComplete condition")
 			// Continue - condition update is best-effort
 		}
-		return r.transitionToFailed(ctx, rr, "signal_processing", fmt.Errorf("SignalProcessing failed"))
+		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseSignalProcessing, fmt.Errorf("SignalProcessing failed"))
 	}
 
 	// Delegate to SignalProcessingHandler for status-based transitions
@@ -986,10 +986,10 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 
 		// Post-AA routing checks: all checks including resource-level (issue #165).
 		// Target is the AI-identified RemediationTarget, NOT rr.Spec.TargetResource.
-		var workflowID, workflowType string
+		var workflowID, actionType string
 		if ai.Status.SelectedWorkflow != nil {
 			workflowID = ai.Status.SelectedWorkflow.WorkflowID
-			workflowType = ai.Status.SelectedWorkflow.ActionType
+			actionType = ai.Status.SelectedWorkflow.ActionType
 		}
 		ar := ai.Status.RootCauseAnalysis.RemediationTarget
 		targetResource := ar.Kind + "/" + ar.Name
@@ -1024,10 +1024,15 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			r.Recorder.Eventf(rr, corev1.EventTypeWarning, "HashCaptureDegraded",
 				"Pre-remediation hash unavailable for %s/%s: %s — effectiveness assessment will be degraded",
 				remTarget.Kind, remTarget.Name, degradedReason)
+			// Issue #546: Persist degradation as RR condition for notification visibility
+			remediationrequest.SetPreRemediationHashCaptured(rr, false, degradedReason, r.Metrics)
 		}
 		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
 			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.PreRemediationSpecHash = preHash
+				// Issue #546: Persist success as RR condition
+				remediationrequest.SetPreRemediationHashCaptured(rr, true,
+					fmt.Sprintf("Pre-remediation hash captured for %s/%s", remTarget.Kind, remTarget.Name), r.Metrics)
 				return nil
 			}); updateErr != nil {
 				logger.Error(updateErr, "Failed to persist pre-remediation hash on RR status (non-fatal)")
@@ -1038,7 +1043,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			}
 		}
 
-		blocked, err := r.routingEngine.CheckPostAnalysisConditions(ctx, rr, workflowID, targetResource, preHash, workflowType)
+		blocked, err := r.routingEngine.CheckPostAnalysisConditions(ctx, rr, workflowID, targetResource, preHash, actionType)
 		if err != nil {
 			logger.Error(err, "Failed to check routing conditions")
 			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
@@ -1098,6 +1103,15 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 					Version:               ai.Status.SelectedWorkflow.Version,
 					ExecutionBundle:        ai.Status.SelectedWorkflow.ExecutionBundle,
 					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
+				}
+			}
+			// Issue #387: Capture LLM-identified remediation target for operational triage (kubectl -o wide)
+			if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
+				ar := ai.Status.RootCauseAnalysis.RemediationTarget
+				rr.Status.RemediationTarget = &remediationv1.ResourceIdentifier{
+					Kind:      ar.Kind,
+					Name:      ar.Name,
+					Namespace: ar.Namespace,
 				}
 			}
 			remediationrequest.SetWorkflowExecutionReady(rr, true, fmt.Sprintf("WorkflowExecution CRD %s created successfully", weName), r.Metrics)
@@ -1241,10 +1255,15 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			r.Recorder.Eventf(rr, corev1.EventTypeWarning, "HashCaptureDegraded",
 				"Pre-remediation hash unavailable for %s/%s: %s — effectiveness assessment will be degraded",
 				remTarget.Kind, remTarget.Name, degradedReason)
+			// Issue #546: Persist degradation as RR condition for notification visibility
+			remediationrequest.SetPreRemediationHashCaptured(rr, false, degradedReason, r.Metrics)
 		}
 		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
 			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.PreRemediationSpecHash = preHash
+				// Issue #546: Persist success as RR condition
+				remediationrequest.SetPreRemediationHashCaptured(rr, true,
+					fmt.Sprintf("Pre-remediation hash captured for %s/%s", remTarget.Kind, remTarget.Name), r.Metrics)
 				return nil
 			}); updateErr != nil {
 				logger.Error(updateErr, "Failed to persist pre-remediation hash on RR status (non-fatal)")
@@ -1280,6 +1299,15 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 					Version:               ai.Status.SelectedWorkflow.Version,
 					ExecutionBundle:        ai.Status.SelectedWorkflow.ExecutionBundle,
 					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
+				}
+			}
+			// Issue #387: Capture LLM-identified remediation target for operational triage (kubectl -o wide)
+			if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
+				ar := ai.Status.RootCauseAnalysis.RemediationTarget
+				rr.Status.RemediationTarget = &remediationv1.ResourceIdentifier{
+					Kind:      ar.Kind,
+					Name:      ar.Name,
+					Namespace: ar.Namespace,
 				}
 			}
 			return nil
@@ -1329,7 +1357,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 		if rar.Status.DecisionMessage != "" {
 			reason = rar.Status.DecisionMessage
 		}
-		return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("%s", reason))
+		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, fmt.Errorf("%s", reason))
 
 	case remediationv1.ApprovalDecisionExpired:
 		logger.Info("Approval expired (timeout)")
@@ -1340,7 +1368,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 				"Approval request expired without a decision")
 		}
 
-		return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("approval request expired (timeout)"))
+		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, fmt.Errorf("approval request expired (timeout)"))
 
 	default:
 		// Still pending - check if deadline passed (V1.0 timeout handling)
@@ -1382,7 +1410,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			}); updateErr != nil {
 				logger.Error(updateErr, "Failed to update RAR status to Expired")
 			}
-			return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("approval request expired (timeout)"))
+			return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, fmt.Errorf("approval request expired (timeout)"))
 		}
 
 		// Still waiting for approval - update TimeRemaining for operator visibility (Bug Fix 4)
@@ -1412,14 +1440,14 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 	// First, check if we're in Executing but have no WE ref (corrupted state)
 	if rr.Status.WorkflowExecutionRef == nil {
 		logger.Error(nil, "Executing phase but no WorkflowExecutionRef - corrupted state")
-		return r.transitionToFailed(ctx, rr, "workflow_execution", fmt.Errorf("WorkflowExecution not found"))
+		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseWorkflowExecution, fmt.Errorf("WorkflowExecution not found"))
 	}
 
 	// Check if child is missing (AllChildrenHealthy=false)
 	if agg.WorkflowExecutionPhase == "" && !agg.AllChildrenHealthy {
 		logger.Error(nil, "WorkflowExecution CRD not found",
 			"workflowExecutionRef", rr.Status.WorkflowExecutionRef.Name)
-		return r.transitionToFailed(ctx, rr, "workflow_execution", fmt.Errorf("WorkflowExecution not found"))
+		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseWorkflowExecution, fmt.Errorf("WorkflowExecution not found"))
 	}
 
 	// Fetch WorkflowExecution CRD
@@ -1430,7 +1458,7 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 	}, we)
 	if err != nil {
 		logger.Error(err, "Failed to fetch WorkflowExecution CRD")
-		return r.transitionToFailed(ctx, rr, "workflow_execution", fmt.Errorf("WorkflowExecution not found: %w", err))
+		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseWorkflowExecution, fmt.Errorf("WorkflowExecution not found: %w", err))
 	}
 
 	// Set WorkflowExecutionComplete condition before delegating to handler
@@ -1508,7 +1536,7 @@ func (r *Reconciler) handleBlocked(
 	// Update RR status to Blocked phase (REFACTOR-RO-001: using retry helper)
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseBlocked
-		rr.Status.BlockReason = blocked.Reason
+		rr.Status.BlockReason = remediationv1.BlockReason(blocked.Reason)
 		rr.Status.BlockMessage = blocked.Message
 
 		// Set time-based block fields
@@ -1854,7 +1882,7 @@ const VerificationDeadlineBuffer = 30 * time.Second
 // BR-ORCH-042: Before transitioning to terminal Failed, checks if this failure
 // triggers consecutive failure blocking (≥3 consecutive failures for same fingerprint).
 // If blocking is triggered, transitions to non-terminal Blocked phase instead.
-func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase string, failureErr error) (ctrl.Result, error) {
+func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase remediationv1.FailurePhase, failureErr error) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
 	// F-6: Derive string reason from error for status fields and logging
@@ -1866,7 +1894,7 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	// BR-ORCH-042: Log consecutive failures for observability
 	// NOTE: This RR transitions to Failed (terminal state).
 	// FUTURE RRs with same fingerprint will be blocked in Pending phase (routing check).
-	if failurePhase != "blocked" {
+	if failurePhase != remediationv1.FailurePhaseBlocked {
 		// Count consecutive failures BEFORE this one (current failure not yet recorded)
 		consecutiveFailures := r.countConsecutiveFailures(ctx, rr.Spec.SignalFingerprint)
 
@@ -1973,12 +2001,9 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	// Record which phase timed out for troubleshooting
-	timeoutPhase := string(rr.Status.OverallPhase)
+	timeoutPhase := remediationv1.RemediationPhase(rr.Status.OverallPhase)
 	oldPhase := rr.Status.OverallPhase
 
-	// Update status to TimedOut (BR-ORCH-027)
-	// REFACTOR-RO-001: Using retry helper for optimistic concurrency
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseTimedOut
 		now := metav1.Now()
@@ -1998,19 +2023,19 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 	// Record metrics (BR-ORCH-044)
 	if r.Metrics != nil {
 		r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhase), string(remediationv1.PhaseTimedOut), rr.Namespace).Inc()
-		r.Metrics.TimeoutsTotal.WithLabelValues(rr.Namespace, timeoutPhase).Inc() // BR-ORCH-044: Track timeout occurrences
+		r.Metrics.TimeoutsTotal.WithLabelValues(rr.Namespace, string(timeoutPhase)).Inc()
 	}
 
 	// Per DD-AUDIT-003: Emit timeout event (lifecycle.completed with outcome=failure)
 	if rr.Status.StartTime != nil {
 		durationMs := time.Since(rr.Status.StartTime.Time).Milliseconds()
-		r.emitTimeoutAudit(ctx, rr, "global", timeoutPhase, durationMs)
+		r.emitTimeoutAudit(ctx, rr, "global", string(timeoutPhase), durationMs)
 	}
 
 	// DD-EVENT-001: Emit K8s event for global timeout (BR-ORCH-095)
 	if r.Recorder != nil {
 		r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonRemediationTimeout,
-			fmt.Sprintf("Global timeout exceeded during %s phase", timeoutPhase))
+			fmt.Sprintf("Global timeout exceeded during %s phase", string(timeoutPhase)))
 	}
 
 	logger.Info("Remediation timed out (global timeout exceeded)",
@@ -2051,18 +2076,13 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 
 The remediation was in %s phase when it timed out. Please investigate why the remediation did not complete within the expected timeframe.`,
 				rr.Spec.SignalName,
-				timeoutPhase,
+				string(timeoutPhase),
 				r.getEffectiveGlobalTimeout(rr).String(),
 				rr.Status.StartTime.Format(time.RFC3339),
 				rr.Status.TimeoutTime.Format(time.RFC3339),
-				timeoutPhase,
+				string(timeoutPhase),
 			),
-			Metadata: map[string]string{
-				"remediationRequest": rr.Name,
-				"timeoutPhase":       timeoutPhase,
-				"severity":           rr.Spec.Severity,
-				"targetResource":     fmt.Sprintf("%s/%s", rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name),
-			},
+			Context: buildTimeoutContext(rr.Name, string(timeoutPhase), "", rr.Spec.TargetResource),
 		},
 	}
 
@@ -2325,17 +2345,17 @@ func (r *Reconciler) emitWorkflowCreatedAudit(ctx context.Context, rr *remediati
 	targetResource := fmt.Sprintf("%s/%s/%s", remTarget.Namespace, remTarget.Kind, remTarget.Name)
 
 	// Extract workflow metadata from AIAnalysis status
-	var workflowID, workflowVersion, workflowType string
+	var workflowID, workflowVersion, actionType string
 	if ai.Status.SelectedWorkflow != nil {
 		workflowID = ai.Status.SelectedWorkflow.WorkflowID
 		workflowVersion = ai.Status.SelectedWorkflow.Version
-		workflowType = ai.Status.SelectedWorkflow.ActionType
+		actionType = ai.Status.SelectedWorkflow.ActionType
 	}
 
 	event, err := r.auditManager.BuildRemediationWorkflowCreatedEvent(
 		correlationID, rr.Namespace, rr.Name,
 		preHash, targetResource,
-		workflowID, workflowVersion, workflowType,
+		workflowID, workflowVersion, actionType,
 	)
 	if err != nil {
 		logger.Error(err, "Failed to build workflow_created audit event")
@@ -2579,7 +2599,7 @@ func (r *Reconciler) emitCompletionAudit(ctx context.Context, rr *remediationv1.
 // Per ADR-032 §1: Audit is MANDATORY for RemediationOrchestrator (P0 service).
 // This function assumes auditStore is non-nil, enforced by cmd/remediationorchestrator/main.go:128.
 // Per DD-AUDIT-003: orchestrator.lifecycle.failed (P1)
-func (r *Reconciler) emitFailureAudit(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase string, failureErr error, durationMs int64) {
+func (r *Reconciler) emitFailureAudit(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase remediationv1.FailurePhase, failureErr error, durationMs int64) {
 	logger := log.FromContext(ctx)
 
 	// Per ADR-032 §2: Audit is MANDATORY - controller crashes at startup if nil.
@@ -2604,7 +2624,7 @@ func (r *Reconciler) emitFailureAudit(ctx context.Context, rr *remediationv1.Rem
 		correlationID,
 		rr.Namespace,
 		rr.Name,
-		failurePhase,
+		string(failurePhase),
 		failureErr,
 		durationMs,
 	)
@@ -3042,8 +3062,7 @@ func (r *Reconciler) handlePhaseTimeout(ctx context.Context, rr *remediationv1.R
 		rr.Status.OverallPhase = remediationv1.PhaseTimedOut
 		rr.Status.Message = fmt.Sprintf("Phase %s exceeded timeout of %s", phase, timeout)
 		rr.Status.TimeoutTime = &metav1.Time{Time: time.Now()}
-		phaseStr := string(phase)
-		rr.Status.TimeoutPhase = &phaseStr
+		rr.Status.TimeoutPhase = &phase
 		rr.Status.CompletedAt = &metav1.Time{Time: time.Now()}
 		return nil
 	})
@@ -3123,7 +3142,27 @@ func (r *Reconciler) ensureNotificationsCreated(ctx context.Context, rr *remedia
 					executionEngine = we.Status.ExecutionEngine
 				}
 			}
-			notifName, notifErr := r.notificationCreator.CreateCompletionNotification(ctx, rr, ai, executionEngine)
+			// #318: Fetch EA for verification summary (graceful degradation: nil if unavailable)
+			var ea *eav1.EffectivenessAssessment
+			if rr.Status.EffectivenessAssessmentRef != nil {
+				eaObj := &eav1.EffectivenessAssessment{}
+				eaKey := client.ObjectKey{
+					Name:      rr.Status.EffectivenessAssessmentRef.Name,
+					Namespace: rr.Namespace,
+				}
+				if err := r.client.Get(ctx, eaKey, eaObj); err != nil {
+					if apierrors.IsNotFound(err) {
+						logger.Info("EA not found for verification summary, notification will show 'not available'",
+							"ea", eaKey.Name)
+					} else {
+						logger.Error(err, "Failed to fetch EA for verification summary, notification will show 'not available'",
+							"ea", eaKey.Name)
+					}
+				} else {
+					ea = eaObj
+				}
+			}
+			notifName, notifErr := r.notificationCreator.CreateCompletionNotification(ctx, rr, ai, executionEngine, ea)
 			if notifErr != nil {
 				logger.Error(notifErr, "Failed to create completion notification, will retry")
 			} else {
@@ -3184,6 +3223,26 @@ func (r *Reconciler) buildNotificationRef(ctx context.Context, name, namespace s
 // createPhaseTimeoutNotification creates a notification for phase timeout.
 // Non-blocking - logs errors but doesn't fail reconciliation.
 // Reference: BR-ORCH-028 (Per-phase timeout escalation)
+// buildTimeoutContext constructs the typed notification context for timeout notifications.
+// Shared by both global timeout and per-phase timeout notification creation.
+func buildTimeoutContext(rrName, timeoutPhase, phaseTimeout string, target remediationv1.ResourceIdentifier) *notificationv1.NotificationContext {
+	ctx := &notificationv1.NotificationContext{
+		Lineage: &notificationv1.LineageContext{
+			RemediationRequest: rrName,
+		},
+		Execution: &notificationv1.ExecutionContext{
+			TimeoutPhase: timeoutPhase,
+		},
+		Target: &notificationv1.TargetContext{
+			TargetResource: fmt.Sprintf("%s/%s", target.Kind, target.Name),
+		},
+	}
+	if phaseTimeout != "" {
+		ctx.Execution.PhaseTimeout = phaseTimeout
+	}
+	return ctx
+}
+
 func (r *Reconciler) createPhaseTimeoutNotification(ctx context.Context, rr *remediationv1.RemediationRequest, phase remediationv1.RemediationPhase, timeout time.Duration) {
 	logger := log.FromContext(ctx)
 
@@ -3233,13 +3292,7 @@ The %s phase did not complete within the expected timeframe. Please investigate 
 				safeFormatTime(rr.Status.TimeoutTime),
 				phase,
 			),
-			Metadata: map[string]string{
-				"remediationRequest": rr.Name,
-				"timeoutPhase":       string(phase),
-				"phaseTimeout":       timeout.String(),
-				"severity":           rr.Spec.Severity,
-				"targetResource":     fmt.Sprintf("%s/%s", rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name),
-			},
+			Context: buildTimeoutContext(rr.Name, string(phase), timeout.String(), rr.Spec.TargetResource),
 		},
 	}
 
@@ -3432,12 +3485,81 @@ func CapturePreRemediationHash(
 		return "", "", nil
 	}
 
-	// Compute canonical hash
-	hash, err := canonicalhash.CanonicalSpecHash(spec)
+	// Compute canonical spec hash
+	specHash, err := canonicalhash.CanonicalSpecHash(spec)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to compute canonical hash for %s/%s: %w", targetKind, targetName, err)
 	}
 
-	return hash, "", nil
+	// Resolve ConfigMap references and compute composite hash (#396, BR-EM-004)
+	configMapHashes := resolveConfigMapHashes(ctx, reader, spec, targetKind, targetNamespace)
+
+	compositeHash, err := canonicalhash.CompositeSpecHash(specHash, configMapHashes)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to compute composite hash for %s/%s: %w", targetKind, targetName, err)
+	}
+
+	if len(configMapHashes) > 0 {
+		logger.V(1).Info("Pre-remediation composite hash computed",
+			"kind", targetKind, "name", targetName,
+			"specHash", specHash, "configMapCount", len(configMapHashes),
+			"compositeHash", compositeHash)
+	}
+
+	return compositeHash, "", nil
+}
+
+// resolveConfigMapHashes extracts ConfigMap references from the resource spec,
+// fetches each ConfigMap's data, and returns a map of name -> content hash.
+// Missing/forbidden ConfigMaps produce a deterministic sentinel hash.
+// Transient errors are logged and the ConfigMap is skipped (non-fatal).
+func resolveConfigMapHashes(
+	ctx context.Context,
+	reader client.Reader,
+	spec map[string]interface{},
+	kind string,
+	namespace string,
+) map[string]string {
+	refs := canonicalhash.ExtractConfigMapRefs(spec, kind)
+	if len(refs) == 0 {
+		return nil
+	}
+
+	logger := log.FromContext(ctx)
+	configMapHashes := make(map[string]string, len(refs))
+
+	for _, cmName := range refs {
+		cm := &corev1.ConfigMap{}
+		key := client.ObjectKey{Name: cmName, Namespace: namespace}
+		if err := reader.Get(ctx, key, cm); err != nil {
+			// All fetch errors (404, 403, transient) use sentinel to ensure deterministic
+			// hash computation: the same set of ConfigMap names always contributes to the
+			// composite hash, preventing false-positive drift from intermittent failures.
+			sentinelData := map[string]string{"__sentinel__": fmt.Sprintf("__absent:%s__", cmName)}
+			sentinelHash, hashErr := canonicalhash.ConfigMapDataHash(sentinelData, nil)
+			if hashErr != nil {
+				logger.Error(hashErr, "Failed to compute sentinel hash for ConfigMap", "configMap", cmName)
+				continue
+			}
+			configMapHashes[cmName] = sentinelHash
+			if apierrors.IsNotFound(err) || apierrors.IsForbidden(err) {
+				logger.V(1).Info("ConfigMap not accessible, using sentinel hash",
+					"configMap", cmName, "namespace", namespace, "reason", err.Error())
+			} else {
+				logger.Error(err, "Transient ConfigMap fetch error, using sentinel hash",
+					"configMap", cmName, "namespace", namespace)
+			}
+			continue
+		}
+
+		cmHash, err := canonicalhash.ConfigMapDataHash(cm.Data, cm.BinaryData)
+		if err != nil {
+			logger.Error(err, "Failed to compute hash for ConfigMap, skipping", "configMap", cmName)
+			continue
+		}
+		configMapHashes[cmName] = cmHash
+	}
+
+	return configMapHashes
 }
 

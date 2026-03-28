@@ -147,7 +147,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 
 		// Send alerts rapidly (no delay between requests)
 		successCount := 0
-		stormCount := 0
+		dedupCount := 0 // HTTP 202 — duplicate / deduplicated signal
 		errorCount := 0
 
 		for i, payload := range alertPayloads {
@@ -186,8 +186,8 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 			case http.StatusCreated: // 201 - CRD created successfully
 				successCount++
 
-			case http.StatusAccepted: // 202 - Storm aggregation (expected for some alerts)
-				stormCount++
+			case http.StatusAccepted: // 202 — deduplicated signal (expected for some alerts)
+				dedupCount++
 
 			case http.StatusInternalServerError: // 500 - Unexpected error
 				errorCount++
@@ -201,7 +201,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		}
 
 		testLogger.Info("")
-		testLogger.Info(fmt.Sprintf("Burst complete: %d created, %d storm-aggregated, %d errors", successCount, stormCount, errorCount))
+		testLogger.Info(fmt.Sprintf("Burst complete: %d created, %d deduplicated (202), %d errors", successCount, dedupCount, errorCount))
 
 		// Step 2: Verify Gateway is still responsive after burst
 		testLogger.Info("")
@@ -213,7 +213,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		Expect(resp.StatusCode).To(Equal(http.StatusOK), "Gateway should still be healthy after burst")
 		testLogger.Info("  ✅ Gateway health check passed")
 
-		// Step 3: Verify CRDs were created (accounting for storm aggregation)
+		// Step 3: Verify CRDs were created (accounting for deduplication)
 		testLogger.Info("")
 		testLogger.Info("Step 3: Verify CRDs were created")
 
@@ -240,12 +240,11 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 			return nil
 		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Should be able to list CRDs")
 
-		// We expect at least some CRDs to be created (exact count depends on storm detection)
-		// With 50 alerts and pattern_threshold=3, we expect storm aggregation to kick in
+		// We expect at least some CRDs to be created (exact count depends on deduplication)
 		Expect(crdCount).To(BeNumerically(">", 0), "At least some CRDs should be created")
 		Expect(crdCount).To(BeNumerically("<=", alertCount), "CRD count should not exceed alert count")
 
-		testLogger.Info(fmt.Sprintf("  ✅ %d CRDs created (storm detection reduced from %d alerts)", crdCount, alertCount))
+		testLogger.Info(fmt.Sprintf("  ✅ %d CRDs created (from %d alerts)", crdCount, alertCount))
 
 		// Step 4: Verify no errors occurred
 		testLogger.Info("")
@@ -259,7 +258,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Verified:")
 		testLogger.Info(fmt.Sprintf("  ✅ Processed %d alerts in rapid burst", alertCount))
-		testLogger.Info(fmt.Sprintf("  ✅ Created %d CRDs (storm detection active)", crdCount))
+		testLogger.Info(fmt.Sprintf("  ✅ Created %d CRDs", crdCount))
 		testLogger.Info("  ✅ Gateway remained responsive throughout burst")
 		testLogger.Info("  ✅ No crashes or data loss")
 		testLogger.Info("  ✅ No HTTP 500 errors")

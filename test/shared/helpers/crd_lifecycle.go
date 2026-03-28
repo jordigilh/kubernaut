@@ -68,12 +68,12 @@ func SimulateSPCompletion(ctx context.Context, k8sClient client.Client, sp *sign
 		sp.Status.SignalMode = "reactive"
 		sp.Status.SignalName = sp.Spec.Signal.Name
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
-			Environment:  "production",
+			Environment:  signalprocessingv1.EnvironmentProduction,
 			Source:       "namespace-labels",
 			ClassifiedAt: metav1.Now(),
 		}
 		sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
-			Priority:   "P1",
+			Priority:   signalprocessingv1.PriorityP1,
 			Source:     "rego-policy",
 			AssignedAt: metav1.Now(),
 		}
@@ -150,7 +150,7 @@ func SimulateAICompletedWithWorkflow(ctx context.Context, k8sClient client.Clien
 			return err
 		}
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
-		ai.Status.Reason = "AnalysisCompleted"
+		ai.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 		ai.Status.Message = "Workflow recommended"
 		ai.Status.RootCause = "Root cause identified"
 		ai.Status.ApprovalRequired = opts.ApprovalRequired
@@ -186,7 +186,7 @@ func SimulateAIWorkflowNotNeeded(ctx context.Context, k8sClient client.Client, a
 			return err
 		}
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
-		ai.Status.Reason = "WorkflowNotNeeded"
+		ai.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
 		ai.Status.SubReason = "ProblemResolved"
 		ai.Status.Message = "Problem self-resolved: transient error no longer present"
 		return k8sClient.Status().Update(ctx, ai)
@@ -202,7 +202,7 @@ func SimulateAINeedsHumanReview(ctx context.Context, k8sClient client.Client, ai
 			return err
 		}
 		ai.Status.Phase = aianalysisv1.PhaseFailed
-		ai.Status.Reason = "WorkflowResolutionFailed"
+		ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 		ai.Status.NeedsHumanReview = true
 		ai.Status.HumanReviewReason = "rca_incomplete"
 		ai.Status.Message = "RCA analysis incomplete: missing remediationTarget field in incident data"

@@ -617,7 +617,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 						PolicyEvaluation: &aianalysisv1.PolicyEvaluation{
 							PolicyName:   "production-approval-policy",
 							MatchedRules: []string{"require_approval_for_production", "sensitive_namespace"},
-							Decision:     "manual_review_required",
+							Decision:     aianalysisv1.PolicyDecisionManualReviewRequired,
 						},
 					},
 				},
@@ -634,7 +634,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 				"BR-AI-059: PolicyEvaluation must be mapped from ApprovalContext")
 			Expect(rar.Spec.PolicyEvaluation.PolicyName).To(Equal("production-approval-policy"))
 			Expect(rar.Spec.PolicyEvaluation.MatchedRules).To(ConsistOf("require_approval_for_production", "sensitive_namespace"))
-			Expect(rar.Spec.PolicyEvaluation.Decision).To(Equal("manual_review_required"))
+			Expect(rar.Spec.PolicyEvaluation.Decision).To(Equal(string(aianalysisv1.PolicyDecisionManualReviewRequired)))
 		})
 
 		It("UT-RAR-307-004: should handle nil ApprovalContext gracefully", func() {
