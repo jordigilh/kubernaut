@@ -20,14 +20,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/kapi/config"
-	"github.com/jordigilh/kubernaut/pkg/kapi/llm/transport"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 )
 
 var _ = Describe("Credential Scrubbing — #417", func() {
 
-	// UT-KAPI-417-009: Credential scrubbing in logs
-	Describe("UT-KAPI-417-009: Sensitive header values redacted", func() {
+	// UT-KA-417-009: Credential scrubbing in logs
+	Describe("UT-KA-417-009: Sensitive header values redacted", func() {
 		It("should redact sensitive header value", func() {
 			result := transport.RedactHeaderValue("Bearer secret-key", true)
 			Expect(result).To(Equal("[REDACTED]"))
