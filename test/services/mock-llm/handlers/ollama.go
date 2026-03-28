@@ -33,6 +33,15 @@ func (h *handler) handleOllama(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check fault injection
+	if h.faultInjector != nil && h.faultInjector.IsActive() {
+		applyFaultDelay(h.faultInjector)
+		writeJSON(w, h.faultInjector.StatusCode(), map[string]string{
+			"error": h.faultInjector.Message(),
+		})
+		return
+	}
+
 	var reqData struct {
 		Model    string           `json:"model"`
 		Messages []openai.Message `json:"messages"`
