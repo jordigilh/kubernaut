@@ -22,6 +22,7 @@ holmesgpt-api/venv-*-test/
 /datastorage
 /gateway
 /kubernaut
+/mock-llm
 
 # Root directory markdown files (except README.md and CHANGELOG*.md)
 # Note: Leading slash ensures this only applies to root directory
@@ -174,14 +175,14 @@ TDD-*.md
 [A-Z][A-Z-]*-*-GUIDE.md
 [A-Z][A-Z-]*-*-REPORT.md
 [A-Z][A-Z-]*-*-FINAL*.md
-[A-Z][A-Z-]*-*-MIGRATION*.md
-[A-Z][A-Z-]*-*-FIX*.md
-[A-Z][A-Z-]*-*-BUG*.md
-[A-Z][A-Z-]*-*-RECOVERY*.md
-
 # EXCEPTIONS: Allow Design Decision documents (DD-*.md, ADR-*.md) in architecture/decisions
 !docs/architecture/decisions/DD-*.md
 !docs/architecture/decisions/ADR-*.md
+!docs/architecture/decisions/DD-*/**
+!docs/architecture/decisions/ADR-*/**
+
+# EXCEPTIONS: Allow Business Requirement documents (BR-*.md) in requirements
+!docs/requirements/BR-*/**
 
 # EXCEPTIONS: Allow archived design documents
 !docs/archived/

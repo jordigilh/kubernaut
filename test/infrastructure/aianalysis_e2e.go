@@ -117,8 +117,8 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		cfg := E2EImageConfig{
 			ServiceName:      "mock-llm",
 			ImageName:        "kubernaut/mock-llm",
-			DockerfilePath:   "test/services/mock-llm/Dockerfile",
-			BuildContextPath: filepath.Join(projectRoot, "test/services/mock-llm"),
+			DockerfilePath:   "test/services/mock-llm/go.Dockerfile",
+			BuildContextPath: projectRoot,
 			EnableCoverage:   false,
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
