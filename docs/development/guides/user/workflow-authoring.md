@@ -1,7 +1,7 @@
 # Workflow Authoring Guide
 
-**Version**: v1.1
-**Last Updated**: 2026-03-04
+**Version**: v1.2
+**Last Updated**: 2026-03-21
 **Audience**: Platform Engineers, SREs, DevOps Engineers
 **Prerequisites**: Familiarity with Tekton Pipelines, Kubernetes, OCI registries
 
@@ -160,6 +160,8 @@ spec:
   execution:
     engine: tekton
     bundle: "ghcr.io/your-org/kubernaut-workflows/restart-deployment:v1.0.0@sha256:abc123..."
+    # DD-WE-005 v2.0: pre-created SA in kubernaut-workflows with workflow-appropriate RBAC; omit to use namespace default SA
+    serviceAccountName: my-workflow-sa
   parameters:
     - name: namespace
       type: string
@@ -434,7 +436,7 @@ spec:
       value: "test-deployment"
     - name: dry-run
       value: "true"  # Always use dry-run for testing
-  serviceAccountName: kubernaut-workflow-runner
+  serviceAccountName: my-workflow-sa
 ```
 
 ```bash
@@ -452,7 +454,7 @@ tkn pipeline start restart-deployment \
   --param namespace=test-namespace \
   --param deployment-name=test-deployment \
   --param dry-run=true \
-  --serviceaccount kubernaut-workflow-runner \
+  --serviceaccount my-workflow-sa \
   --use-pipelinerun restart-deployment-test \
   --showlog
 ```
@@ -482,9 +484,11 @@ kubectl delete namespace workflow-test
 
 ## 🔒 Security Considerations
 
-### ServiceAccount Permissions
+### ServiceAccount Permissions (DD-WE-005 v2.0)
 
-Workflows run with `kubernaut-workflow-runner` ServiceAccount in `kubernaut-workflows` namespace. This ServiceAccount has cluster-wide permissions for:
+PipelineRuns run in the `kubernaut-workflows` execution namespace. You **create** a ServiceAccount (for example `my-workflow-sa`) there, grant RBAC (ClusterRole/Role + bindings) that matches what the workflow actually does, and set `execution.serviceAccountName` on the **RemediationWorkflow** so it flows into **WorkflowExecution** and the Tekton **PipelineRun**. If you omit `serviceAccountName`, Kubernetes uses the namespace **default** ServiceAccount (usually highly limited).
+
+Typical remediation workflows may need verbs such as:
 
 - Deployments, StatefulSets, DaemonSets: get, list, patch, update
 - Pods: get, list, delete
@@ -493,11 +497,9 @@ Workflows run with `kubernaut-workflow-runner` ServiceAccount in `kubernaut-work
 
 ### Least Privilege Principle
 
-If your workflow needs additional permissions:
-
-1. **DON'T** modify the default ServiceAccount
-2. **DO** request a custom ServiceAccount with specific permissions
-3. **DO** document required permissions in the workflow metadata
+1. **DO** use a dedicated SA per workflow (or per workflow family) with the smallest rule set that works
+2. **DO** document required permissions in the workflow metadata
+3. **DON'T** rely on broad shared cluster-admin–style bindings unless required
 
 ```yaml
 metadata:
@@ -719,6 +721,7 @@ spec:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v1.2 | 2026-03-21 | **DD-WE-005 v2.0**: Document per-workflow `serviceAccountName` on RemediationWorkflow; examples use `my-workflow-sa` instead of a platform-managed runner SA. |
 | v1.1 | 2026-03-04 | Added CRD-based registration (Step 3-4) via RemediationWorkflow CRD. Replaced "no registration needed" with explicit CRD creation instructions. Added links to ADR-058, BR-WORKFLOW-006, BR-WORKFLOW-004. |
 | v1.0 | 2025-12-06 | Initial release |
 

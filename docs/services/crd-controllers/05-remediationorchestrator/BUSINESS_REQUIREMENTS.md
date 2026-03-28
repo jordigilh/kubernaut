@@ -455,6 +455,27 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 ---
 
+### Category 6: Signal Context Forwarding
+
+#### BR-ORCH-047: Signal Description Pass-Through to AIAnalysis 🆕
+
+**Description**: RemediationOrchestrator MUST copy `rr.Spec.SignalDescription` into `AIAnalysis.Spec.SignalContext.SignalDescription` in `buildSignalContext()`, preserving the normalized signal description from Gateway through to the AI analysis pipeline.
+**Priority**: P0 (Critical - Required for AI investigation to receive signal context)
+**Status**: Pending
+**Implementation**: `pkg/remediationorchestrator/creator/aianalysis.go` (`buildSignalContext()`)
+**GitHub Issue**: [#462](https://github.com/jordigilh/kubernaut/issues/462)
+**Dependencies**: BR-GATEWAY-185 (provides SignalDescription on RR), #454-#459 (CRD refactors)
+
+**Acceptance Criteria**:
+- `buildSignalContext()` copies `SignalDescription` from RR to AIAnalysis `SignalContextInput`
+- Nil/empty `SignalDescription` handled gracefully (no panic, empty struct passed)
+- Same pass-through pattern as BR-ORCH-025 (workflow data)
+
+**Test Coverage**: Pending (see [TEST_PLAN_PART_A](../../../tests/462/TEST_PLAN_PART_A.md))
+**Related BRs**: BR-ORCH-025 (Workflow Data Pass-Through), BR-GATEWAY-185 (Signal Description Capture), BR-HAPI-213 (Signal Description in Prompt)
+
+---
+
 ## 📊 Test Coverage Summary
 
 ### Unit Tests
@@ -489,6 +510,7 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.6 | 2026-03-04 | Added BR-ORCH-047 (Signal Description Pass-Through to AIAnalysis) - forwards normalized SignalDescription from RR to AIAnalysis for AI investigation context |
 | 1.5 | 2026-02-12 | Added BR-ORCH-046 (Policy-Driven Operational Awareness Notification) - Rego-based notification at SP completion |
 | 1.4 | 2025-12-02 | Added BR-ORCH-001 (Approval Notification Creation) - formalized from existing usage; Deprecated BR-ORCH-015 to BR-ORCH-021 as implementation details |
 | 1.3 | 2025-12-01 | Added BR-ORCH-032/033/034 for resource lock deduplication handling (DD-RO-001) |
@@ -498,8 +520,8 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 ---
 
-**Document Version**: 1.5
-**Last Updated**: February 12, 2026
+**Document Version**: 1.6
+**Last Updated**: March 4, 2026
 **Maintained By**: Kubernaut Architecture Team
 **Status**: In Development
 

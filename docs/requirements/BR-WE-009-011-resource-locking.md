@@ -269,7 +269,7 @@ status:
 |----------|--------------|
 | **DD-WE-001** | Design decision that generated these BRs |
 | **DD-CONTRACT-001 v1.4** | Contract alignment with resource locking |
-| **DD-GATEWAY-008** | Storm aggregation at Gateway level |
+| **DD-GATEWAY-008** | Storm aggregation (historical) — **removed** per **DD-GATEWAY-015**; not active at Gateway |
 | **DD-GATEWAY-009** | Fingerprint deduplication at Gateway level |
 | **CRD Schema v3.1** | Schema changes for resource locking |
 

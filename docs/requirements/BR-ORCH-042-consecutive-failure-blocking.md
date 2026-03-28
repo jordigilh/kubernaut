@@ -379,7 +379,7 @@ Instead of modifying the consecutive failure counter, the system uses DataStorag
 Five conditions must ALL be met for an entry to participate in the forward chain:
 
 1. **Within ForwardChainWindow** (default 1h) -- tighter than the 4h IneffectiveTimeWindow
-2. **Same WorkflowType** (action type, DD-WORKFLOW-016 taxonomy) as the incoming RR
+2. **Same ActionType** (DD-WORKFLOW-016 taxonomy) as the incoming RR
 3. **SignalResolved == false** -- EA confirmed the remediation was ineffective
 4. **Hash link continuity** -- `entry[i].PostRemediationSpecHash == entry[i+1].PreRemediationSpecHash`
 5. **Causality link** -- last entry's `PostRemediationSpecHash == incoming RR's PreRemediationSpecHash`
@@ -461,7 +461,7 @@ routing:
 
 **EA guarantee**: The system does not accept new RRs for the same signal/target until the previous RR's effectiveness assessment completes. Therefore, `SignalResolved` is always populated when `countForwardChain` evaluates entries -- no null handling is needed.
 
-**WorkflowType source**: `AIAnalysis.Status.SelectedWorkflow.ActionType` (DD-WORKFLOW-016 taxonomy). Stored in DS as `RemediationHistoryEntry.WorkflowType`. See Issue #528 for the planned rename to `ActionType`.
+**ActionType source**: `AIAnalysis.Status.SelectedWorkflow.ActionType` (DD-WORKFLOW-016 taxonomy). Populates `RemediationHistoryEntry.actionType` in the DataStorage remediation history API (Issue #528, v1.2).
 
 **Acceptance Criteria**:
 
@@ -507,5 +507,5 @@ routing:
 | 1.2 | 2026-02-28 | Added BR-ORCH-042.5: Ineffective Remediation Chain Detection (Issue #214). Three-layer detection using DataStorage audit traces. |
 | 1.3 | 2026-03-02 | Added BR-ORCH-042.6: Documented Option C decision for completed-but-ineffective handling. Prompt engineering deferred to HAPI team. |
 | 1.4 | 2026-03-03 | Externalized routing config to YAML ConfigMap (ADR-030). Marked HAPI prompt engineering as implemented. Fixed latent zero-value bug for Issue #214 fields. |
-| 1.5 | 2026-03-04 | Added BR-ORCH-042.7: Forward hash chain detection (Issue #525). Five-condition Layer 1b with WorkflowType matching, EA failure check, 1h window, threshold=2. New config fields: `forwardChainThreshold`, `forwardChainWindow`. |
+| 1.5 | 2026-03-04 | Added BR-ORCH-042.7: Forward hash chain detection (Issue #525). Five-condition Layer 1b with ActionType matching, EA failure check, 1h window, threshold=2. New config fields: `forwardChainThreshold`, `forwardChainWindow`. |
 

@@ -216,7 +216,6 @@ paths:
                       priority: P0
                       environment: production
                       deduplication_status: new
-                      storm_detected: false
 
               aiAnalysisEvent:
                 summary: AI Analysis completed event
@@ -451,14 +450,7 @@ components:
           enum:
             - new
             - duplicate
-            - storm
           example: new
-        storm_detected:
-          type: boolean
-          example: false
-        storm_id:
-          type: string
-          example: storm-2025-11-18-001
         labels:
           type: object
           additionalProperties:

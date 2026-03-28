@@ -77,40 +77,26 @@ type EnvironmentClassification struct {
 
 ## Analysis: Is Confidence Redundant?
 
-### **Current Confidence Mapping**
+### **Confidence Mapping (Historical — REMOVED)**
 
-| Source | Confidence | Rationale |
-|--------|------------|-----------|
-| `namespace-labels` | 1.0 | Operator explicitly set label |
-| `configmap` | 0.8 | Pattern match (deterministic) |
-| `signal-labels` | 0.8 | From Prometheus alert |
-| `default` | 0.0 | No detection succeeded |
+Confidence scores were 100% derivable from `source` and have been removed per this decision.
 
-**Key Insight**: Confidence is **100% derivable from source**:
+| Source | Former Confidence | Status |
+|--------|-------------------|--------|
+| `namespace-labels` | 1.0 | Active |
+| `rego-inference` | 0.8 | Active (renamed from `configmap`) |
+| ~~`signal-labels`~~ | ~~0.8~~ | **REMOVED** (security risk) |
+| `default` | 0.0 | Active |
 
-```go
-// Confidence can be computed from source if ever needed
-func GetConfidence(source string) float64 {
-    switch source {
-    case "namespace-labels": return 1.0
-    case "configmap":        return 0.8
-    case "signal-labels":    return 0.8
-    case "default":          return 0.0
-    default:                 return 0.0
-    }
-}
-```
+### **What Source Tells Us (IMPLEMENTED)**
 
-### **What Source Already Tells Us**
-
-| Source | Meaning | Actionable? |
+| Source | Meaning | Trust Level |
 |--------|---------|-------------|
-| `namespace-labels` | Operator explicitly labeled | ✅ High trust |
-| `configmap` | Pattern matched from namespace name | ✅ Medium trust |
-| `signal-labels` | Extracted from alert | ✅ Medium trust |
-| `default` | Unknown/No detection | ⚠️ Low trust |
+| `namespace-labels` | Operator explicitly labeled via RBAC | ✅ High |
+| `rego-inference` | Rego policy pattern matching (deterministic) | ✅ Medium |
+| `default` | No detection succeeded | ⚠️ Low |
 
-**Conclusion**: The `source` field already provides **all the information** needed to understand classification quality.
+**Conclusion**: The `source` field provides **all the information** needed to understand classification quality. Confidence scores have been removed.
 
 ---
 
@@ -338,19 +324,19 @@ scores (0.0-1.0) for all categorization decisions.
 - [ ] Confidence 0.4: Default fallback
 ```
 
-### **Proposed Change**
+### **Implemented Change** ✅
 
 ```markdown
-### BR-SP-080: Classification Source Tracking (UPDATED)
+### BR-SP-080: Classification Source Tracking (IMPLEMENTED)
 
 **Description**: The SignalProcessing controller MUST track the source
 of all categorization decisions.
 
 **Acceptance Criteria**:
-- [ ] Source "namespace-labels": Explicit label match (highest trust)
-- [ ] Source "configmap": Pattern match (medium trust)
-- [ ] Source "signal-labels": From Prometheus alert (medium trust)
-- [ ] Source "default": No detection succeeded (lowest trust)
+- [x] Source "namespace-labels": Explicit label match (highest trust)
+- [x] Source "rego-inference": Rego policy pattern match (medium trust)
+- [x] Source "default": No detection succeeded (lowest trust)
+- [x] ~~Source "signal-labels"~~: REMOVED (security risk)
 
 **Rationale**: Source provides clear, actionable information about detection
 method without introducing arbitrary confidence scores for deterministic
@@ -421,30 +407,31 @@ It("should classify environment from namespace label", func() {
 
 - **BR-SP-080**: Confidence Scoring (current requirement)
 - **BR-SP-051**: Environment Classification (Primary) - namespace labels
-- **BR-SP-052**: Environment Classification (Fallback) - ConfigMap patterns
+- **BR-SP-052**: Environment Classification (Fallback) - Rego inference
 - **BR-SP-053**: Environment Classification (Default) - unknown fallback
 - **User Feedback**: 2025-12-14 - "as long as it's valid, it's just confidence 100%"
 
 ---
 
-## Status: Approved - Ready for Implementation
+## Status: IMPLEMENTED
 
 **Pre-Release Context**: No backwards compatibility concerns, no migration needed.
 
 **Implementation Steps**:
 1. ✅ Remove `Confidence float64` from CRD types
 2. ✅ Update controller classification logic
-3. ✅ Update Rego policies
+3. ✅ Update Rego policies (source renamed from `configmap` to `rego-inference`)
 4. ✅ Update audit events
-5. ✅ Fix 183 test references
+5. ✅ Fix test references
 6. ✅ Update BR-SP-080 documentation
 7. ✅ Regenerate CRD manifests
+8. ✅ Remove dead pattern-match test and vestigial references (Issue #177)
 
 **Approval**: User feedback confirms no value in confidence scores for deterministic classification.
 
 ---
 
-**Document Status**: ✅ APPROVED
-**Last Updated**: 2025-12-14
-**Implementation**: Ready to proceed immediately
+**Document Status**: ✅ IMPLEMENTED
+**Last Updated**: 2026-03-04
+**Implementation**: Complete (ADR-060 consolidation + Issue #177 cleanup)
 

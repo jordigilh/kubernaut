@@ -1,12 +1,16 @@
 ## Overview
 
-**Version**: 4.2
-**Last Updated**: 2025-12-03
-**Status**: ✅ Updated for Lock Persistence (DD-WE-003)
+**Version**: 4.3
+**Last Updated**: 2026-03-21
+**Status**: ✅ Updated for Lock Persistence (DD-WE-003) and per-workflow ServiceAccounts (DD-WE-005 v2.0)
 
 ---
 
 ## Changelog
+
+### Version 4.3 (2026-03-21)
+**Updates**:
+- ✅ **DD-WE-005 v2.0**: PipelineRun identity uses operator-pre-created **per-workflow** ServiceAccounts referenced from the workflow schema (`serviceAccountName` → `WorkflowExecution.spec.executionConfig`). No platform-managed `kubernaut-workflow-runner` SA. If unset, Kubernetes uses the execution namespace default SA.
 
 ### Version 4.2 (2025-12-03)
 **Updates**:
@@ -19,7 +23,7 @@
 **Updates**:
 - ✅ **Added**: Dedicated execution namespace pattern (DD-WE-002)
 - ✅ **Updated**: All PipelineRuns run in `kubernaut-workflows` namespace
-- ✅ **Updated**: ServiceAccount with ClusterRoleBinding for cross-namespace operations
+- ✅ **Updated**: Documented execution SA + ClusterRole pattern (superseded for naming/provisioning by DD-WE-005 v2.0—see v4.3 changelog)
 
 ### Version 4.0 (2025-12-02)
 **Updates**:
@@ -79,7 +83,7 @@ Orchestrates remediation workflows by creating Tekton PipelineRuns from OCI bund
 |------------|----------|--------|
 | **Tekton Pipelines** | Crash at startup | Core execution engine |
 | **ConfigMap** | Use defaults if missing | All values have sane defaults |
-| **ServiceAccount** | Fail execution (not crash) | Per-namespace, checked at runtime |
+| **Execution ServiceAccount** | Surface as run failure / RBAC errors | Must exist in execution namespace when set (DD-WE-005 v2.0); optional field |
 
 **Implementation**:
 ```go
@@ -124,20 +128,20 @@ func checkTektonAvailable(ctx context.Context, client client.Client) error {
 | WorkflowExecution CRD | `kubernaut-system` |
 | WE Controller | `kubernaut-system` |
 | PipelineRun | `kubernaut-workflows` |
-| ServiceAccount | `kubernaut-workflows` |
+| Workflow execution ServiceAccount(s) | `kubernaut-workflows` (operator-managed, per workflow) |
 
 **Benefits**:
 - All remediation activity in one namespace (audit clarity)
-- Single ServiceAccount with ClusterRoleBinding
+- Per-workflow ServiceAccounts and RBAC (DD-WE-005 v2.0) instead of one shared platform SA
 - Easy PipelineRun cleanup and resource quota management
 
-### ServiceAccount
-- **Name**: `kubernaut-workflow-runner`
-- **Namespace**: `kubernaut-workflows` (dedicated execution namespace)
-- **RBAC**: ClusterRole + ClusterRoleBinding for cross-namespace operations
-- **Failure**: If missing, execution fails with `ConfigurationError` reason
+### ServiceAccount (DD-WE-005 v2.0)
+- **Provisioning**: Operators **pre-create** ServiceAccounts (and Roles/ClusterRoles/Bindings) in `kubernaut-workflows` for each workflow—or workflow family—that needs Kubernetes API access.
+- **Reference**: Workflow catalog/schema sets `serviceAccountName`, carried into `WorkflowExecution.spec.executionConfig.serviceAccountName` on the created PipelineRun/TaskRuns.
+- **Default**: If `serviceAccountName` is empty, Kubernetes uses the **default** ServiceAccount for `kubernaut-workflows`.
+- **Failures**: Missing SA, wrong binding, or insufficient RBAC typically surface as Tekton/TaskRun errors (e.g. `Forbidden` in `failureDetails`).
 
-See: [DD-WE-002](../../../architecture/decisions/DD-WE-002-dedicated-execution-namespace.md)
+See: [DD-WE-002](../../../architecture/decisions/DD-WE-002-dedicated-execution-namespace.md) (execution namespace), [DD-WE-005](../../../architecture/decisions/DD-WE-005-workflow-scoped-rbac.md) v2.0 (per-workflow SA), [Security Configuration](./security-configuration.md).
 
 ### Notes
 - CRD controllers do not expose REST APIs
@@ -289,6 +293,7 @@ stateDiagram-v2
 | **Resource Locking** | Target-scoped, skip-not-queue | [DD-WE-001](../../../architecture/decisions/DD-WE-001-resource-locking-safety.md) |
 | **Execution Namespace** | Dedicated `kubernaut-workflows` | [DD-WE-002](../../../architecture/decisions/DD-WE-002-dedicated-execution-namespace.md) |
 | **Lock Persistence** | Deterministic PipelineRun name | [DD-WE-003](../../../architecture/decisions/DD-WE-003-resource-lock-persistence.md) |
+| **Execution SA** | Per-workflow ServiceAccount reference (schema → WE → PipelineRun) | [DD-WE-005](../../../architecture/decisions/DD-WE-005-workflow-scoped-rbac.md) v2.0 |
 | **API Group** | `kubernaut.ai` | [DD-CRD-001](../../../architecture/decisions/DD-CRD-001-api-group-domain-selection.md) |
 | **Contract Alignment** | Enhanced failure details | [DD-CONTRACT-001](../../../architecture/decisions/DD-CONTRACT-001-aianalysis-workflowexecution-alignment.md) |
 

@@ -1,14 +1,15 @@
 # Gateway Service - Business Requirements
 
-**Version**: v1.10
-**Last Updated**: 2026-03-06
+**Version**: v1.11
+**Last Updated**: 2026-03-04
 **Status**: ✅ APPROVED
 **Owner**: Gateway Team
-**Total BRs**: 78 identified BRs (BR-GATEWAY-001 through BR-GATEWAY-184)
+**Total BRs**: 79 identified BRs (BR-GATEWAY-001 through BR-GATEWAY-185)
 
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.11 | 2026-03-04 | **NEW BR-GATEWAY-185**: Normalized Signal Description Capture. Gateway MUST extract and normalize human-readable signal context (summary, description, runbook URL, dashboard URL) from all adapters into a structured `SignalDescription`. Replaces `SignalAnnotations map[string]string`. Cross-emitter design validated against 8 signal sources. | [Issue #462](https://github.com/jordigilh/kubernaut/issues/462), [DD-GATEWAY-017](../../../architecture/decisions/DD-GATEWAY-017-normalized-signal-description.md) |
 > | v1.10 | 2026-03-06 | **UPDATED BR-GATEWAY-004**: Three-tier owner resolution strategy. Tier 2 (#282): direct API fallback on cache miss. Tier 3 (#284): trust-but-verify when cache returns stale metadata without ownerReferences. Signals are only dropped when the resource is truly deleted; standalone resources (e.g., debug Pods) are accepted with resource-level fingerprints. | [Issue #282](https://github.com/jordigilh/kubernaut/issues/282), [Issue #284](https://github.com/jordigilh/kubernaut/issues/284) |
 > | v1.8 | 2026-02-23 | **NEW BR-GATEWAY-184**: Target Resource Extraction Priority. Gateway MUST check specific Kubernetes resource labels (HPA, PDB, PVC, Deployment, StatefulSet, etc.) before `pod` when extracting target resource from Prometheus alerts. Fixes kube-state-metrics misidentification. | [Issue #178](https://github.com/jordigilh/kubernaut/issues/178), [BR-GATEWAY-184](../../../../requirements/BR-GATEWAY-184-target-resource-extraction-priority.md) |
 > | v1.7 | 2026-01-29 | **NEW BR-GATEWAY-182, BR-GATEWAY-183**: ServiceAccount Authentication and SAR Authorization. Gateway MUST authenticate webhook requests using Kubernetes TokenReview and authorize using SubjectAccessReview for defense-in-depth security and SOC2 compliance. Supersedes DD-GATEWAY-006 (network-only security). | [DD-AUTH-014 V2.0](../../../architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md) |
@@ -885,3 +886,42 @@ roleRef:
 **Tests**: `test/unit/gateway/adapters/prometheus_adapter_test.go`
 **Full Specification**: [BR-GATEWAY-184](../../../../requirements/BR-GATEWAY-184-target-resource-extraction-priority.md)
 **GitHub Issue**: [#178](https://github.com/jordigilh/kubernaut/issues/178)
+
+---
+
+## 🔗 **Normalized Signal Description** (BR-GATEWAY-185)
+
+### **BR-GATEWAY-185: Normalized Signal Description Capture** 🆕
+**Description**: Gateway adapters MUST extract and normalize human-readable signal context from all signal sources into a structured `SignalDescription` format that is adapter-agnostic and forward-compatible with future signal sources. The existing `SignalAnnotations map[string]string` on RemediationRequest is replaced by the structured `SignalDescription` (no backward compatibility required -- no production release).
+**Priority**: P0 (Critical - Enables AI investigation to receive signal context for accurate root cause analysis)
+**Status**: Pending
+**Category**: Signal Normalization / Description Capture
+**Test Coverage**: Pending (see [TEST_PLAN_PART_A](../../tests/462/TEST_PLAN_PART_A.md))
+**Implementation**: `pkg/gateway/types/types.go` (`SignalDescription` struct), `pkg/gateway/adapters/prometheus_adapter.go`, `pkg/gateway/adapters/kubernetes_event_adapter.go`, `pkg/gateway/processing/crd_creator.go`, `api/remediation/v1alpha1/remediationrequest_types.go`
+**Design Authority**: [DD-GATEWAY-017](../../../architecture/decisions/DD-GATEWAY-017-normalized-signal-description.md) (cross-emitter analysis)
+**GitHub Issue**: [#462](https://github.com/jordigilh/kubernaut/issues/462)
+**Dependencies**: #454, #455, #456, #457, #458, #459 (all v1.2 CRD refactors must merge first)
+
+**SignalDescription struct** (5 fields validated against 8 signal sources):
+
+| Field | Type | Max Length | Present In |
+|-------|------|-----------|------------|
+| `Summary` | `string` | 256 | ALL emitters (Prometheus annotations.summary, K8s event.reason, Datadog title, PagerDuty payload.summary, Grafana title, Splunk entity_display_name) |
+| `Description` | `string` | 1024 | ALL emitters (Prometheus annotations.description, K8s event.message, Datadog text, PagerDuty payload.custom_details, Grafana message, Splunk state_message) |
+| `RunbookURL` | `string` | - | Prometheus, PagerDuty, OpenTelemetry, Grafana |
+| `DashboardURL` | `string` | - | Datadog, Grafana, PagerDuty, VictorOps, OpenTelemetry |
+| `Extra` | `map[string]string` | - | Catch-all for adapter-specific metadata (NOT forwarded to LLM prompt) |
+
+**Adapter mapping**:
+- **PrometheusAdapter**: `annotations["summary"]` -> `Summary`, `annotations["description"]` -> `Description`, `annotations["runbook_url"]` -> `RunbookURL`, `annotations["dashboard_url"]` -> `DashboardURL`
+- **KubernetesEventAdapter**: `event.reason` -> `Summary`, `event.message` -> `Description`
+- **Future adapters** (OpenTelemetry, Datadog, PagerDuty, Grafana OnCall, Splunk On-Call): Map to same semantic fields per DD-GATEWAY-017
+
+**Acceptance Criteria**:
+- Gateway adapters populate `SignalDescription` from source-specific formats
+- Only allowlisted annotation keys map to named fields; unknown keys go to `Extra`
+- CRD creator maps `SignalDescription` to `RR.Spec.SignalDescription`
+- Length truncation applied per `+kubebuilder:validation:MaxLength` markers
+- `SignalAnnotations` field removed from RR spec and `NormalizedSignal`
+
+**Related Requirements**: BR-GATEWAY-005 (Signal Metadata Extraction), BR-HAPI-213 (Signal Description in Prompt)

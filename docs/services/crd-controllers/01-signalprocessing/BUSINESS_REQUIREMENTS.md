@@ -79,7 +79,7 @@ This document defines all business requirements for the SignalProcessing CRD Con
 
 **Breaking Change**: Removed `OverallConfidence` field from `BusinessClassification` (pre-release, no backwards compatibility impact).
 
-**Test Coverage**: `business_classifier_test.go` (Unit)
+**Test Coverage**: `controller_reconciliation_test.go` (Integration), `component_integration_test.go` (Integration)
 
 **References**:
 - [DD-SP-001: Remove Classification Confidence Scores](../../../architecture/decisions/DD-SP-001-remove-classification-confidence-scores.md)
@@ -187,7 +187,7 @@ kubectl get rr <name> -o jsonpath='{.status.deduplication}' | jq
 - [ ] Check `kubernaut.ai/environment` label on namespace (ONLY this label)
 - [ ] Return environment value: `production`, `staging`, `development`, `test`
 - [ ] Case-insensitive matching
-- [ ] Confidence: 0.95 when label is present
+- [ ] Source: `"namespace-labels"` when label is present
 
 **Detection**:
 - `metadata.labels["kubernaut.ai/environment"]` (single authoritative source)
@@ -416,7 +416,7 @@ volumeMounts:
 - [ ] Dimension 4: SLA Tier (platinum, gold, silver, bronze)
 - [ ] All dimensions optional - use "unknown" if not determinable
 
-**Test Coverage**: `business_classifier_test.go` (Unit)
+**Test Coverage**: `controller_reconciliation_test.go` (Integration), `component_integration_test.go` (Integration)
 
 ---
 
@@ -445,7 +445,7 @@ volumeMounts:
   "correlation_id": "corr-456",
   "environment": "production",
   "priority": "P1",
-  "confidence": 0.95,
+  "source": "namespace-labels",
   "policy_version": "sha256:abc123",
   "duration_ms": 150
 }
@@ -858,7 +858,7 @@ default result := {"severity": "unknown", "source": "fallback"}
 | BR ID | Implementation Plan Section | Test File | Status |
 |-------|----------------------------|-----------|--------|
 | BR-SP-001 | Day 3: K8s Enricher | `enricher_test.go` | ✅ Planned |
-| BR-SP-002 | Day 6: Business Classifier | `business_classifier_test.go` | ✅ Planned |
+| BR-SP-002 | Day 6: Business Classifier | `controller_reconciliation_test.go` | ✅ Planned |
 | BR-SP-003 | Day 10: Reconciler | `reconciler_test.go` | ✅ Planned |
 | BR-SP-006 | Day 9: Rego Engine | `rego_engine_test.go` | ✅ Planned |
 | BR-SP-012 | Day 10: Reconciler | `reconciler_test.go` | ✅ Planned |
@@ -870,7 +870,7 @@ default result := {"severity": "unknown", "source": "fallback"}
 | BR-SP-072 | Day 5: Hot Reloader | `hot_reloader_test.go` | ✅ Planned |
 | **BR-SP-105** | **Severity Classifier** | **`severity_classifier_test.go`** | **⏳ NEW** |
 | BR-SP-080 | Day 6: Business Classifier | All classifier tests | ✅ Planned |
-| BR-SP-081 | Day 6: Business Classifier | `business_classifier_test.go` | ✅ Planned |
+| BR-SP-081 | Day 6: Business Classifier | `controller_reconciliation_test.go` | ✅ Planned |
 | BR-SP-090 | Day 11: Audit Client | `audit_client_test.go` | ✅ Planned |
 | BR-SP-100 | Day 7: OwnerChain | `ownerchain_builder_test.go` | ✅ Planned |
 | BR-SP-101 | Day 8: DetectedLabels | `label_detector_test.go` | ✅ Planned |

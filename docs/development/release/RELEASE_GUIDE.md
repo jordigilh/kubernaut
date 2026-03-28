@@ -211,8 +211,7 @@ See [Milestone Closure](#milestone-closure).
 
 ## Hotfix / Patch Release Workflow
 
-Use this workflow for critical fixes against a released version (e.g., v1.1.1
-fixing a bug in v1.1.0) while `main` has moved on to the next minor (v1.2).
+Use this workflow for critical fixes against a released version.
 
 ### Branching model
 
@@ -252,101 +251,29 @@ Key concepts:
 If `release/v1.1` does not already exist, create it from the GA tag:
 
 ```bash
-git fetch origin
-git checkout -b release/v1.1 v1.1.0
-git push -u origin release/v1.1
+git checkout main && git pull origin main
+git checkout -b fix/vX.Y.Z
 ```
 
-For subsequent patches (v1.1.2+), just check out the existing branch:
+### Step 2: Cherry-pick or implement the fix
 
-```bash
-git checkout release/v1.1 && git pull origin release/v1.1
-```
-
-### Step 2: Create a fix branch from the maintenance branch
-
-```bash
-git checkout -b fix/v1.1.1 release/v1.1
-```
-
-### Step 3: Apply the fix
-
-If the fix already exists on `main`, cherry-pick it:
+If the fix already exists on a feature branch:
 
 ```bash
 git cherry-pick <commit-sha>
 ```
 
-If it conflicts, resolve manually. If the fix does not exist yet, implement it
-directly on the fix branch following TDD.
+Otherwise, implement the fix directly on the hotfix branch following TDD.
 
-### Step 4: Bump Chart.yaml and CHANGELOG
+### Step 3: Bump Chart.yaml and CHANGELOG
 
-- `Chart.yaml`: set `version: 1.1.1` and `appVersion: "1.1.1"`
-- `CHANGELOG.md`: add a `## [1.1.1] - YYYY-MM-DD` section **above** the
-  `[1.1.0]` entry. Add the comparison link:
-  ```markdown
-  [1.1.1]: https://github.com/jordigilh/kubernaut/compare/v1.1.0...v1.1.1
-  ```
+Update `Chart.yaml` to the patch version. Add a CHANGELOG entry under a new
+`## [X.Y.Z]` section above the previous release.
 
-### Step 5: Push and open PR targeting the maintenance branch
+### Step 4: PR, merge, tag
 
-```bash
-git push -u origin fix/v1.1.1
-gh pr create --base release/v1.1 --title "fix: v1.1.1" --body "..."
-```
-
-> **Important**: the PR base is `release/v1.1`, not `main`.
-
-### Step 6: Merge the PR
-
-Wait for CI to pass, then merge. Record the merge commit SHA.
-
-### Step 7: Tag the merge commit on the maintenance branch
-
-```bash
-git checkout release/v1.1 && git pull origin release/v1.1
-MERGE_SHA=$(git log --oneline -1 --format='%H')
-git tag -a v1.1.1 "$MERGE_SHA" -m "v1.1.1"
-git push origin v1.1.1
-```
-
-This triggers the release workflow. Since `1.1.1` has no pre-release suffix, it is
-treated as a stable release and `:latest` tags will be updated.
-
-### Step 8: Monitor and verify
-
-```bash
-gh run list --workflow=release.yml --limit 1
-gh run watch
-```
-
-Follow the full [Verification Checklist](#verification-checklist), including
-`:latest` tags.
-
-### Step 9: Forward-port the fix to `main`
-
-This step ensures the next minor release (v1.2) also includes the hotfix:
-
-```bash
-git checkout main && git pull origin main
-git cherry-pick <fix-commit-sha>
-```
-
-If the cherry-pick conflicts (e.g., the code around the fix has changed on `main`),
-open a PR instead:
-
-```bash
-git checkout -b forward-port/v1.1.1 main
-git cherry-pick --no-commit <fix-commit-sha>
-# resolve conflicts
-git commit -m "fix: forward-port v1.1.1 hotfix to main"
-git push -u origin forward-port/v1.1.1
-gh pr create --title "fix: forward-port v1.1.1 to main" --body "..."
-```
-
-> **Do not skip this step.** Without forward-porting, the fix will be missing from
-> v1.2 and will regress when users upgrade.
+Follow the same PR → merge → tag flow as the [GA Release Workflow](#ga-release-workflow),
+substituting the patch version.
 
 ---
 
@@ -354,13 +281,11 @@ gh pr create --title "fix: forward-port v1.1.1 to main" --body "..."
 
 The release workflow (`.github/workflows/release.yml`) has 5 stages:
 
-```mermaid
-flowchart LR
-  Prepare --> BuildPush["Build & Push Images<br/>(24 parallel jobs)"]
-  BuildPush --> Manifests["Multi-Arch<br/>Manifests"]
-  BuildPush --> HelmPublish["Helm Publish"]
-  Manifests --> Release["GitHub<br/>Release"]
-  HelmPublish --> Release
+```
+┌──────────┐    ┌─────────────────────────┐    ┌──────────────┐    ┌──────────────┐    ┌─────────────┐
+│ Prepare  │───>│ Build & Push Images     │───>│ Multi-Arch   │───>│ Helm Publish │───>│ GitHub      │
+│          │    │ (24 parallel jobs)      │    │ Manifests    │    │              │    │ Release     │
+└──────────┘    └─────────────────────────┘    └──────────────┘    └──────────────┘    └─────────────┘
 ```
 
 ### Stage 0: Prepare

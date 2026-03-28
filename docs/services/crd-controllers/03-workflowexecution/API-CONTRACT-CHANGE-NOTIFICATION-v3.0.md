@@ -48,8 +48,8 @@ status:
     executionTimeBeforeFailure: "45s"
     naturalLanguageSummary: |
       Task 'apply-memory-increase' (step 2 of 3) failed after 45s with Forbidden error.
-      The service account 'kubernaut-workflow-runner' lacks required RBAC permissions.
-      Recommendation: Grant patch permission or use an alternative workflow.
+      The PipelineRun service account (e.g. 'my-workflow-sa' per DD-WE-005 v2.0) lacks required RBAC permissions.
+      Recommendation: Grant patch permission to that ServiceAccount or use an alternative workflow.
 ```
 
 ### Failure Reason Code Enumeration
@@ -355,7 +355,9 @@ Please analyze this failure and select an alternative workflow that avoids this 
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: December 1, 2025
+**Document Version**: 1.1
+**Last Updated**: March 21, 2026
 **Status**: 📬 Pending Team Acknowledgment
+
+**Note (DD-WE-005 v2.0)**: Failure summaries should refer to the **per-workflow** PipelineRun ServiceAccount (for example `my-workflow-sa` from `spec.executionConfig.serviceAccountName`), not a platform-managed shared runner SA.
 

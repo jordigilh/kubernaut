@@ -247,7 +247,7 @@ The DS endpoint changes required by this design are documented here for blast ra
   - `currentSpecHash == postRemediationSpecHash` → **Configuration unchanged** — the resource spec is the same as after the previous remediation
   - No match → **Spec has drifted** — the resource has been modified by other means since the last remediation
 
-- **Tier 1 (recent history)**: Detailed remediation chain for the same `targetResource` (kind, name, namespace) within a recent time window. Includes: `workflowType`, `outcome` (success/failure/partial), `effectivenessScore`, `signalResolved`, `healthChecks`, `metricDeltas`, `assessmentReason`, `preRemediationSpecHash`, `postRemediationSpecHash`.
+- **Tier 1 (recent history)**: Detailed remediation chain for the same `targetResource` (kind, name, namespace) within a recent time window. Includes: `actionType`, `outcome` (success/failure/partial), `effectivenessScore`, `signalResolved`, `healthChecks`, `metricDeltas`, `assessmentReason`, `preRemediationSpecHash`, `postRemediationSpecHash`.
 
 - **Tier 2 (wider history)**: Summary entries for the same `preRemediationSpecHash` across a broader time window, catching cases where the same configuration state has been seen before on different resource instances.
 

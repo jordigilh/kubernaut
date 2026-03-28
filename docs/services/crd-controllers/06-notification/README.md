@@ -754,12 +754,12 @@ err := r.Create(ctx, notification)
 
 1. **Spec-Field-Based Routing** (BR-NOT-065, BR-NOT-066) - ✅ **COMPLETE**:
    - Alertmanager-compatible routing configuration
-   - Spec-field-based channel selection (`spec.type`, `spec.severity`, `spec.metadata["skip-reason"]`)
+   - Spec-field-based channel selection (`spec.type`, `spec.severity`, `spec.extensions["skip-reason"]`)
    - ConfigMap hot-reload for routing rules
    - Multi-channel fanout
 
 2. **Skip-Reason Routing** (DD-WE-004) - ✅ **COMPLETE**:
-   - `spec.metadata["skip-reason"]` attribute routing
+   - `spec.extensions["skip-reason"]` attribute routing
    - `PreviousExecutionFailed` → PagerDuty (CRITICAL)
    - `ExhaustedRetries` → Slack #ops (HIGH)
    - `ResourceBusy`/`RecentlyRemediated` → Console (LOW)

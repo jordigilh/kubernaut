@@ -848,8 +848,8 @@ The `action_type` selected by the LLM in Step 1 (list_available_actions) is prop
 
 1. **HAPI response**: Included in `selected_workflow.action_type` (alongside `workflow_id`, `version`, etc.)
 2. **AIAnalysis CRD**: Stored in `status.selectedWorkflow.actionType` (DD-CONTRACT-002)
-3. **RO audit event**: Emitted as `workflow_type` in the `remediation.workflow_created` event (ADR-EM-001 Section 9.1)
-4. **DS remediation history**: Read from `event_data.workflow_type` to populate `RemediationHistoryEntry.workflowType`
+3. **RO audit event**: Emitted as `action_type` in the `remediation.workflow_created` event payload (OpenAPI `actionType` on `RemediationOrchestratorAuditPayload`; ADR-EM-001 Section 9.1)
+4. **DS remediation history**: Read from `event_data.action_type` to populate `RemediationHistoryEntry.actionType` in the remediation history API
 
 This end-to-end propagation enables the EM and DS to associate each remediation with its taxonomy action type without requiring a separate catalog lookup.
 

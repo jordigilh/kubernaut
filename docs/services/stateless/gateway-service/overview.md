@@ -10,7 +10,7 @@
 > | v1.3 | 2025-12-01 | DeduplicationInfo aligned with shared types (firstOccurrence/lastOccurrence) | [RemediationRequest CRD](../../../../api/remediation/v1alpha1/remediationrequest_types.go) |
 > | v1.2 | 2025-11-27 | Categorization delegated to SignalProcessing; Gateway sets placeholder values | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) |
 > | v1.8 | 2025-12-13 | **Storm Detection REMOVED**: Entire storm detection feature removed (redundant with deduplication). Status-based deduplication via DD-GATEWAY-011. | [DD-GATEWAY-015](../../../architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md) |
-> | v1.1 | 2025-11-19 | ❌ Superseded: Storm aggregation window (removed in v1.8) | [DD-GATEWAY-008](../../../architecture/decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md) |
+> | v1.1 | 2025-11-19 | ❌ Superseded: Storm aggregation window (removed in v1.8) | [DD-GATEWAY-008](../../../architecture/decisions/DD-GATEWAY-008-storm-aggregation-windows.md) |
 > | v1.0 | 2025-10-04 | Initial design specification | - |
 
 > **📋 Design Decision: DD-CATEGORIZATION-001 - Categorization Delegation**

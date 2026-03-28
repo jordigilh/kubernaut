@@ -1118,6 +1118,70 @@ The following 140 BRs are deferred to v2.0 and only needed if the service become
 
 ---
 
+## 🔬 **Signal Context & Investigation Quality** (BR-HAPI-213 to BR-HAPI-214)
+
+### BR-HAPI-213: Signal Description in Investigation Prompt 🆕
+**Status**: Pending
+**Priority**: P0 (Critical - Enables AI investigation to receive human-readable signal context)
+**Target Version**: V1.2
+**GitHub Issue**: [#462](https://github.com/jordigilh/kubernaut/issues/462)
+**Dependencies**: BR-GATEWAY-185 (provides SignalDescription), BR-ORCH-047 (passes through to AIAnalysis), #454-#459 (CRD refactors)
+
+**Description**: HAPI MUST receive `signal_description` in `IncidentRequest` and inject it into the investigation prompt with structural isolation (DATA markers) and content sanitization. This provides the LLM with human-readable signal context (summary, description, runbook URL, dashboard URL) for more accurate root cause analysis.
+
+**Security**: Annotation content is authored by alert rule writers (potentially any cluster user with rule-write access). Prompt injection is mitigated via:
+1. Structural isolation in prompt (`<signal_annotations>` DATA tags with explicit "not instructions" marker)
+2. Content sanitization (`annotation_sanitizer.py`): strip headings, backticks, length limits, injection pattern neutralization
+3. `Extra` map keys are NOT forwarded to the prompt (allowlist only)
+
+**Implementation**:
+- `holmesgpt-api/src/models/incident_models.py`: Add `signal_description` field to `IncidentRequest`
+- `holmesgpt-api/api/openapi.json`: Add `signal_description` object schema (nullable, optional)
+- `holmesgpt-api/src/extensions/incident/prompt_builder.py`: Add `## Signal Annotations` section with DATA isolation
+- `holmesgpt-api/src/sanitization/annotation_sanitizer.py` (new): Annotation-specific sanitization
+
+**Acceptance Criteria**:
+- `signal_description` accepted in `IncidentRequest` (optional, nullable for backward compatibility)
+- Signal Annotations section injected in prompt when `signal_description` is present
+- Structural DATA isolation markers present around annotation content
+- Content sanitized before injection (headings stripped, backticks neutralized, length truncated)
+- `Extra` map keys do NOT appear in prompt output
+- Absent `signal_description` produces no Signal Annotations section (backward compatible)
+
+**Test Coverage**: Pending (see [TEST_PLAN_PART_A](../../tests/462/TEST_PLAN_PART_A.md))
+**Related BRs**: BR-GATEWAY-185 (Signal Description Capture), BR-HAPI-211 (LLM Input Sanitization)
+
+---
+
+### BR-HAPI-214: Anti-Confirmation-Bias Investigation Guardrails 🆕
+**Status**: Pending
+**Priority**: P0 (Critical - Prevents premature LLM conclusions on benign/resolved signals)
+**Target Version**: V1.1.0-rc2 (cherry-pick to main)
+**GitHub Issue**: [#462](https://github.com/jordigilh/kubernaut/issues/462)
+**Dependencies**: NONE (prompt-only change, no CRD/type overlap)
+
+**Description**: The HAPI investigation prompt MUST include generic guardrails that prevent the LLM from prematurely concluding an alert is benign or resolved without thorough verification. Two guardrails:
+1. **Exhaustive verification mandate**: Before concluding NoActionRequired/resolved, the LLM MUST demonstrate it inspected ALL resources and data sources mentioned in signal description/annotations
+2. **Contradicting evidence search**: After forming a hypothesis, the LLM must explicitly search for evidence that contradicts it before finalizing its conclusion
+
+**Rationale**: Issue #462 observed the LLM concluding "not actionable" after partial investigation (e.g., checking one pod but not the PVC mentioned in the alert description). Generic guardrails force thorough verification without signal-type-specific rules.
+
+**Implementation**:
+- `holmesgpt-api/src/extensions/incident/prompt_builder.py`:
+  - New `## Investigation Guardrails` section between Phase 1 instructions (~line 497) and Phase 2 RCA (~line 499)
+  - Pre-conclusion gate in Outcome A (~line 619) and Outcome D (~line 692)
+
+**Acceptance Criteria**:
+- Guardrail section present in both reactive and proactive investigation prompts
+- Pre-conclusion gate text present in Outcome A (resolved) and Outcome D (not actionable)
+- Guardrail includes exhaustive verification mandate text
+- Guardrail includes contradicting evidence search text
+
+**Test Coverage**: Pending (see [TEST_PLAN_PART_B](../../tests/462/TEST_PLAN_PART_B.md))
+**Related BRs**: BR-HAPI-200 (Investigation Outcomes)
+
+---
+
 ## 🔗 Related Documentation
 
 - [IMPLEMENTATION_PLAN_V3.0.md](./implementation/IMPLEMENTATION_PLAN_V3.0.md) - Complete implementation plan
@@ -1130,12 +1194,13 @@ The following 140 BRs are deferred to v2.0 and only needed if the service become
 - [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md) - Graceful shutdown pattern
 - [BR-HAPI-199](../../../requirements/BR-HAPI-199-configmap-hot-reload.md) - Hot-reload business requirements
 - [BR-HAPI-211](../../../requirements/BR-HAPI-211-llm-input-sanitization.md) - LLM Input Sanitization 📋
+- [DD-GATEWAY-017](../../../architecture/decisions/DD-GATEWAY-017-normalized-signal-description.md) - Normalized Signal Description design
 
 ---
 
-**Document Version**: 1.4
-**Last Updated**: 2026-02-12
-**Changelog (v1.4)**: DRIFT-HAPI-2: Resolved BR number collision. BR-HAPI-016/017 reassigned to Remediation History Context and Three-Step Workflow Discovery (per codebase usage). Health Probes renumbered to BR-HAPI-018, Configuration Endpoint to BR-HAPI-019. Deferred Additional Health range updated to BR-HAPI-020 to 027.
+**Document Version**: 1.5
+**Last Updated**: 2026-03-04
+**Changelog (v1.5)**: Added BR-HAPI-213 (Signal Description in Investigation Prompt) and BR-HAPI-214 (Anti-Confirmation-Bias Investigation Guardrails) for Issue #462. BR-HAPI-213 requires signal_description in IncidentRequest with structural isolation and sanitization. BR-HAPI-214 adds generic guardrails to prevent premature LLM conclusions.
 **Maintained By**: Kubernaut Architecture Team
-**Status**: 📋 V1.0 In Progress (50 BRs implemented, 1 planned)
+**Status**: 📋 V1.0 In Progress (50 BRs implemented, 3 planned)
 

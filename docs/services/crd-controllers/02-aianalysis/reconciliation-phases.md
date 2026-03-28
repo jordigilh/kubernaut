@@ -272,11 +272,22 @@ decision = "AUTO_APPROVE" {
 
 **Timeout**: None (terminal)
 
+### Completion Reason Taxonomy
+
+Per K8s convention, `status.reason` covers all terminal states (success and failure).
+When analysis completes successfully with a workflow, `reason` is set to `AnalysisCompleted`:
+
+| Reason | Terminal Phase | Description |
+|--------|---------------|-------------|
+| `AnalysisCompleted` | Completed | Successful analysis with workflow selected |
+| `WorkflowNotNeeded` | Completed | Success — problem self-resolved or not actionable |
+
 ### Status After Completion
 
 ```yaml
 status:
   phase: "Completed"
+  reason: "AnalysisCompleted"
   completionTime: "2025-11-30T10:00:45Z"
 
   # Workflow recommendation (from HolmesGPT-API)
@@ -321,9 +332,10 @@ status:
 
 **Timeout**: None (terminal)
 
-### Failure Taxonomy (BR-HAPI-197)
+### Failure Reason Taxonomy (BR-HAPI-197)
 
-AIAnalysis uses a structured failure taxonomy with `reason` (umbrella category) and `subReason` (specific cause):
+AIAnalysis uses a structured taxonomy with `reason` (umbrella category) and `subReason` (specific cause).
+For the complete set of valid `reason` values see `AIAnalysisReason` in `api/aianalysis/v1alpha1/aianalysis_types.go`.
 
 | Reason (Umbrella) | SubReason | Description |
 |-------------------|-----------|-------------|
@@ -333,8 +345,10 @@ AIAnalysis uses a structured failure taxonomy with `reason` (umbrella category) 
 | `WorkflowResolutionFailed` | `NoMatchingWorkflows` | Catalog has no matching workflows |
 | `WorkflowResolutionFailed` | `LowConfidence` | AI confidence below 70% threshold |
 | `WorkflowResolutionFailed` | `LLMParsingError` | Cannot parse LLM response |
+| `NoWorkflowSelected` | — | Investigation completed but no workflow in status |
+| `RegoEvaluationError` | — | Rego policy evaluation failed unexpectedly |
 | `TransientError` | Various | Temporary failure, retry recommended |
-| `PermanentError` | Various | Unrecoverable failure |
+| `APIError` | Various | Permanent API/LLM error |
 
 ### Failed Status Example
 
