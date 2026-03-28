@@ -18,6 +18,7 @@ package handlers
 import (
 	"net/http"
 
+	mockmetrics "github.com/jordigilh/kubernaut/test/services/mock-llm/metrics"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/tracker"
 )
 
@@ -25,6 +26,7 @@ import (
 type verificationHandler struct {
 	tracker        *tracker.Tracker
 	headerRecorder *tracker.HeaderRecorder
+	metrics        *mockmetrics.Metrics
 }
 
 func (vh *verificationHandler) handleGetToolCalls(w http.ResponseWriter, _ *http.Request) {
@@ -59,6 +61,9 @@ func (vh *verificationHandler) handleReset(w http.ResponseWriter, r *http.Reques
 	vh.tracker.Reset()
 	if vh.headerRecorder != nil {
 		vh.headerRecorder.Reset()
+	}
+	if vh.metrics != nil {
+		vh.metrics.Reset()
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reset"})
 }

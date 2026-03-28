@@ -18,16 +18,20 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	openai "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/conversation"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/fault"
+	mockmetrics "github.com/jordigilh/kubernaut/test/services/mock-llm/metrics"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/response"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/tracker"
 )
 
 func (h *handler) handleOllama(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -57,7 +61,6 @@ func (h *handler) handleOllama(w http.ResponseWriter, r *http.Request) {
 		model = openai.DefaultModel
 	}
 
-	// Handle /api/generate which uses "prompt" instead of "messages"
 	messages := reqData.Messages
 	if len(messages) == 0 && reqData.Prompt != "" {
 		messages = []openai.Message{{Role: "user", Content: &reqData.Prompt}}
@@ -74,16 +77,20 @@ func (h *handler) handleOllama(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := h.registry.Detect(detCtx)
+	scenarioName := "default"
 	cfg := scenarios.MockScenarioConfig{
-		ScenarioName: "default", RootCause: "Unable to determine root cause", Severity: "medium",
+		ScenarioName: scenarioName, RootCause: "Unable to determine root cause", Severity: "medium",
 	}
 	if result != nil {
 		if s, ok := result.Scenario.(scenarios.ScenarioWithConfig); ok {
 			cfg = s.Config()
+			scenarioName = cfg.ScenarioName
 		}
+		h.recordScenarioMetric(scenarioName, result.Method)
 	}
 
 	writeJSON(w, http.StatusOK, response.BuildOllamaResponse(model, cfg))
+	h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
 }
 
 // handler holds dependencies for all HTTP handlers.
@@ -93,4 +100,26 @@ type handler struct {
 	tracker        *tracker.Tracker
 	headerRecorder *tracker.HeaderRecorder
 	faultInjector  *fault.Injector
+	metrics        *mockmetrics.Metrics
+}
+
+func (h *handler) recordRequestMetric(endpoint string, statusCode int, scenario string, duration float64) {
+	if h.metrics != nil {
+		h.metrics.RecordRequest(endpoint, statusCode, scenario, duration)
+	}
+}
+
+func (h *handler) recordScenarioMetric(scenario, method string) {
+	if h.metrics != nil {
+		h.metrics.RecordScenarioDetection(scenario, method)
+	}
+}
+
+func (h *handler) recordDAGTransitions(path []string) {
+	if h.metrics == nil || len(path) < 2 {
+		return
+	}
+	for i := 0; i < len(path)-1; i++ {
+		h.metrics.RecordDAGTransition(path[i], path[i+1])
+	}
 }

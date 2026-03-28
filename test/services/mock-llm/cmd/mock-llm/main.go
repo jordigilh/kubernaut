@@ -27,6 +27,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/handlers"
+	mockmetrics "github.com/jordigilh/kubernaut/test/services/mock-llm/metrics"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
 )
 
@@ -39,8 +40,9 @@ func main() {
 	}
 
 	registry := scenarios.DefaultRegistryWithOverrides(overrides)
+	m := mockmetrics.NewMetrics()
 
-	router := handlers.NewFullRouter(registry, cfg.ForceText, cfg.RecordHeaders, nil)
+	router := handlers.NewFullRouterWithMetrics(registry, cfg.ForceText, cfg.RecordHeaders, nil, m)
 
 	srv := &http.Server{
 		Handler:      router,

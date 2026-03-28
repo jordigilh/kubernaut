@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	openai "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/conversation"
@@ -27,22 +28,21 @@ import (
 )
 
 func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
 
-	// Record headers if configured
 	if h.headerRecorder != nil {
 		h.headerRecorder.RecordFrom(r)
 	}
 
-	// Track request
 	if h.tracker != nil {
 		h.tracker.IncrementRequestCount()
 	}
 
-	// Check fault injection
 	if h.faultInjector != nil && h.faultInjector.IsActive() {
 		applyFaultDelay(h.faultInjector)
 		writeJSON(w, h.faultInjector.StatusCode(),
@@ -64,7 +64,6 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	ctx := conversation.NewContext(req.Messages)
 	detCtx := buildDetectionContext(ctx)
 
-	// Check permanent error keyword before scenario detection
 	if isPermanentError(detCtx) {
 		writeJSON(w, http.StatusInternalServerError,
 			response.BuildErrorResponse("Mock permanent LLM error for testing"))
@@ -76,10 +75,10 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, response.BuildTextResponse(model, scenarios.MockScenarioConfig{
 			ScenarioName: "default", RootCause: "Unable to determine root cause", Severity: "medium",
 		}))
+		h.recordRequestMetric(r.URL.Path, http.StatusOK, "default", time.Since(start).Seconds())
 		return
 	}
 
-	// Track detected scenario
 	if h.tracker != nil {
 		h.tracker.RecordScenario(result.Scenario.Name())
 	}
@@ -90,14 +89,15 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := scenarioWithCfg.Config()
+	scenarioName := cfg.ScenarioName
+	h.recordScenarioMetric(scenarioName, result.Method)
 
-	// Force text mode
 	if h.forceText || len(req.Tools) == 0 {
 		writeJSON(w, http.StatusOK, response.BuildForceTextResponse(model, cfg, req.Tools))
+		h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
 		return
 	}
 
-	// DAG-based conversation routing (replaces legacy SelectMode step counting)
 	dag := conversation.SelectDAG(req.Tools)
 	execResult, err := dag.Execute(ctx)
 	if err != nil {
@@ -109,6 +109,7 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	if h.tracker != nil {
 		h.tracker.RecordDAGPath(execResult.Path)
 	}
+	h.recordDAGTransitions(execResult.Path)
 
 	hr := execResult.Result
 	switch hr.ResponseType {
@@ -118,6 +119,7 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, response.BuildTextResponse(model, cfg))
 	}
+	h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
 }
 
 func (h *handler) trackToolCall(name string) {
