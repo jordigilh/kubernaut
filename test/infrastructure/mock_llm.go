@@ -122,16 +122,14 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	_, _ = fmt.Fprintf(writer, "🔨 Building Mock LLM image locally: %s (--no-cache for fresh code)\n", baseImageName)
 	_, _ = fmt.Fprintf(writer, "   Will tag as: %s (DD-TEST-004 unique)\n", uniqueImageName)
 
-	// Build context is test/services/mock-llm/
 	projectRoot := getProjectRoot()
-	buildContext := fmt.Sprintf("%s/test/services/mock-llm", projectRoot)
 
 	// Build with --no-cache to ensure fresh code (addresses recurring cache issues)
 	buildCmd := exec.CommandContext(ctx, "podman", "build",
 		"--no-cache",
 		"-t", baseImageName,
-		"-f", fmt.Sprintf("%s/Dockerfile", buildContext),
-		buildContext,
+		"-f", fmt.Sprintf("%s/test/services/mock-llm/go.Dockerfile", projectRoot),
+		projectRoot,
 	)
 
 	output, err := buildCmd.CombinedOutput()
