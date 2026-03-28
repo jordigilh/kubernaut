@@ -44,6 +44,32 @@ Kubernaut bridges that gap. It uses an LLM to investigate the actual root cause 
 
 ---
 
+## Roadmap
+
+### v1.2 — Operational Resilience and Security Hardening (current)
+
+- **Per-workflow ServiceAccount** — Each remediation workflow runs under its own SA with least-privilege RBAC, replacing the shared default
+- **Short-lived token injection** — Ansible executor uses Kubernetes TokenRequest API with configurable TTL instead of long-lived secrets
+- **PVC-wipe resilience** — Deterministic workflow IDs and startup reconciliation recover the workflow catalog automatically after data loss
+- **Smarter effectiveness assessment** — Partial vs full assessment paths based on actual workflow completion, with configurable Prometheus lookback and concurrency
+- **CRD schema hardening** — Typed enums across all 9 CRDs with OpenAPI validation at admission time
+- **Hash-capture degradation visibility** — Explicit conditions and notification enrichment when spec hash capture fails
+
+See [CHANGELOG.md](CHANGELOG.md) for the complete list.
+
+### v1.3 — Go Unification and Enterprise Distribution (next)
+
+- **HAPI Go rewrite** — Full reimplementation of the HolmesGPT SDK and AI analysis service in Go, eliminating the Python runtime dependency
+- **Mock LLM Go rewrite** — DAG-based conversation engine with declarative YAML scenarios and fault injection for resilience testing
+- **Kubernaut Operator** — OLM-packaged operator for OperatorHub distribution on OpenShift and vanilla Kubernetes
+- **Inter-pod TLS** — Encrypted communication between all internal services
+- **Audit event retention** — Automated deletion of expired audit events
+- **Label-based notification routing** — Route notifications to signal and RCA target resource owners
+
+Track progress on the [v1.3 milestone](https://github.com/jordigilh/kubernaut/milestone/4).
+
+---
+
 ## Installation
 
 See the [Installation Guide](https://jordigilh.github.io/kubernaut-docs/latest/getting-started/installation/) for prerequisites, configuration, and deployment instructions.
