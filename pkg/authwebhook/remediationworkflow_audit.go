@@ -36,7 +36,7 @@ func (h *RemediationWorkflowHandler) emitAdmitAudit(ctx context.Context, req adm
 
 	event := buildAuditEnvelope(req, WebhookAuditOpts{
 		EventType:    eventType,
-		Category:     EventCategoryWebhook,
+		Category:     EventCategoryWorkflow,
 		Action:       "admitted",
 		Outcome:      api.AuditEventRequestEventOutcomeSuccess,
 		ResourceKind: "RemediationWorkflow",
@@ -73,7 +73,7 @@ func (h *RemediationWorkflowHandler) emitDeniedAudit(ctx context.Context, req ad
 
 	event := buildAuditEnvelope(req, WebhookAuditOpts{
 		EventType:    EventTypeRWAdmittedDenied,
-		Category:     EventCategoryWebhook,
+		Category:     EventCategoryWorkflow,
 		Action:       "denied",
 		Outcome:      api.AuditEventRequestEventOutcomeFailure,
 		ResourceKind: "RemediationWorkflow",

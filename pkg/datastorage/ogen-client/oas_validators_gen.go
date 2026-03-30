@@ -989,7 +989,7 @@ func (s AuditEventEventCategory) Validate() error {
 		return nil
 	case "orchestration":
 		return nil
-	case "webhook":
+	case "approval":
 		return nil
 	case "effectiveness":
 		return nil
@@ -1338,7 +1338,7 @@ func (s AuditEventRequestEventCategory) Validate() error {
 		return nil
 	case "orchestration":
 		return nil
-	case "webhook":
+	case "approval":
 		return nil
 	case "effectiveness":
 		return nil

@@ -29,8 +29,11 @@ const (
 
 // Event category constants per ADR-034 v1.8: event_category = business domain
 const (
-	EventCategoryWebhook    = "webhook"
-	EventCategoryActionType = "actiontype"
+	EventCategoryActionType       = "actiontype"
+	EventCategoryWorkflow         = "workflow"
+	EventCategoryWorkflowExec     = "workflowexecution"
+	EventCategoryApproval         = "approval"
+	EventCategoryNotification     = "notification"
 )
 
 // AuthContext holds authenticated user information extracted from admission requests.

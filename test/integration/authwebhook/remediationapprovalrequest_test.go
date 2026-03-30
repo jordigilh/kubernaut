@@ -306,38 +306,38 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 			events, err := queryAuditEvents(dsClient, parentRRName, nil)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Filter for webhook events
-			var webhookEvents []string
+			// Filter for approval events
+			var approvalEvents []string
 			for _, event := range events {
-				if string(event.EventCategory) == "webhook" {
-					webhookEvents = append(webhookEvents, event.EventType)
+				if string(event.EventCategory) == "approval" {
+					approvalEvents = append(approvalEvents, event.EventType)
 				}
 			}
 
-			Expect(webhookEvents).ToNot(BeEmpty(),
-				"COMPLIANCE FAILURE: No webhook audit event (DD-WEBHOOK-003)")
+			Expect(approvalEvents).ToNot(BeEmpty(),
+				"COMPLIANCE FAILURE: No approval audit event (DD-WEBHOOK-003)")
 
-			// BUSINESS VALIDATION: Webhook event captures authenticated user
-			var webhookEvent *remediationv1.RemediationApprovalRequest
+			// BUSINESS VALIDATION: Approval event captures authenticated user
+			var approvalEvent *remediationv1.RemediationApprovalRequest
 			for _, event := range events {
-				if string(event.EventCategory) == "webhook" {
+				if string(event.EventCategory) == "approval" {
 					// Validate event captures authenticated user
 					actorID, hasActorID := event.ActorID.Get()
 					Expect(hasActorID).To(BeTrue(),
-						"COMPLIANCE FAILURE: Webhook audit event missing actor_id")
+						"COMPLIANCE FAILURE: Approval audit event missing actor_id")
 					Expect(actorID).To(Equal(authenticatedUser),
-						"BUSINESS OUTCOME: Webhook audit event captures authenticated user")
+						"BUSINESS OUTCOME: Approval audit event captures authenticated user")
 
 					// Validate event action
 					Expect(event.EventAction).To(Equal("approval_decided"),
-						"BUSINESS OUTCOME: Webhook audit event captures decision action")
+						"BUSINESS OUTCOME: Approval audit event captures decision action")
 
-					webhookEvent = &remediationv1.RemediationApprovalRequest{}
+					approvalEvent = &remediationv1.RemediationApprovalRequest{}
 					break
 				}
 			}
 
-			Expect(webhookEvent).ToNot(BeNil(),
+			Expect(approvalEvent).ToNot(BeNil(),
 				"COMPLIANCE FAILURE: No webhook audit event found")
 
 			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")

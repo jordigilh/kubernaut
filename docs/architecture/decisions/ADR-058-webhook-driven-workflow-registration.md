@@ -218,7 +218,7 @@ Per DD-WEBHOOK-003, the handler emits complete audit events:
 | `remediationworkflow.admitted.delete` | DELETE admitted | success |
 | `remediationworkflow.admitted.denied` | CREATE denied (DS error, auth failure, unmarshal error) | failure |
 
-All events include: `event_category: "webhook"`, authenticated user, resource name, correlation ID (admission UID), and namespace.
+All events include: `event_category: "workflow"`, authenticated user, resource name, correlation ID (admission UID), and namespace.
 
 ---
 
