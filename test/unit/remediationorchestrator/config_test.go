@@ -70,6 +70,16 @@ var _ = Describe("RemediationOrchestrator Config - Unit Tests", Label("config", 
 			Expect(cfg.DataStorage.URL).To(Equal("http://data-storage-service:8080"))
 		})
 
+		It("UT-RO-590-009: should default NotifySelfResolved to false (#590)", func() {
+			cfg := config.DefaultConfig()
+
+			Expect(cfg.Notifications.NotifySelfResolved).To(BeFalse(),
+				"Correctness: DefaultConfig must not emit self-resolved notifications unless operator opts in")
+
+			Expect(cfg.Validate()).To(Succeed(),
+				"Behavior: DefaultConfig with Notifications defaults must still validate")
+		})
+
 		It("UT-RO-353-001: should default NoActionRequiredDelayHours to 24 (#353)", func() {
 			cfg := config.DefaultConfig()
 
@@ -114,6 +124,23 @@ var _ = Describe("RemediationOrchestrator Config - Unit Tests", Label("config", 
 				"Accuracy: other routing fields must retain their values after override")
 			Expect(cfg.Routing.IneffectiveChainThreshold).To(Equal(3),
 				"Accuracy: other routing fields must retain their values after override")
+		})
+
+		It("UT-RO-590-010: should load notifySelfResolved from YAML (#590)", func() {
+			path := filepath.Join("config", "testdata", "override-self-resolved.yaml")
+			cfg, err := config.LoadFromFile(path)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(cfg.Notifications.NotifySelfResolved).To(BeTrue(),
+				"Correctness: YAML notifySelfResolved: true must map to Go field")
+
+			Expect(cfg.Validate()).To(Succeed(),
+				"Behavior: config with notifications override must pass validation")
+
+			// Verify omitted field defaults to false
+			defaultCfg := config.DefaultConfig()
+			Expect(defaultCfg.Notifications.NotifySelfResolved).To(BeFalse(),
+				"Accuracy: omitted notifications field defaults to false (safe zero-value)")
 		})
 
 		It("should return defaults when path is empty", func() {
