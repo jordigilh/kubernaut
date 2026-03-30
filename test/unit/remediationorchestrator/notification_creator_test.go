@@ -1690,4 +1690,129 @@ var _ = Describe("NotificationCreator", func() {
 			})
 		})
 	})
+
+	// ========================================
+	// BR-ORCH-037 AC-037-08: Self-Resolved Notification (Issue #590)
+	// ========================================
+	Describe("CreateSelfResolvedNotification", func() {
+		var (
+			fakeClient *fake.ClientBuilder
+			nc         *creator.NotificationCreator
+			ctx        context.Context
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme)
+			ctx = context.Background()
+		})
+
+		Context("BR-ORCH-037 AC-037-08: Self-Resolved Notification Creation", func() {
+			It("UT-RO-590-001: should create NR with deterministic name nr-self-resolved-{rr.Name}", func() {
+				k8sClient := fakeClient.Build()
+				nc = creator.NewNotificationCreator(k8sClient, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Completed"
+				ai.Status.Reason = "WorkflowNotNeeded"
+				ai.Status.Message = "Problem self-resolved"
+
+				name, err := nc.CreateSelfResolvedNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name).To(Equal("nr-self-resolved-test-rr"))
+
+				nr := &notificationv1.NotificationRequest{}
+				err = k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			It("UT-RO-590-002: should set type=status-update, priority=low, correct severity and subject", func() {
+				k8sClient := fakeClient.Build()
+				nc = creator.NewNotificationCreator(k8sClient, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				rr.Spec.Severity = "warning"
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Completed"
+				ai.Status.Reason = "WorkflowNotNeeded"
+				ai.Status.Message = "Problem self-resolved"
+
+				name, err := nc.CreateSelfResolvedNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeStatusUpdate),
+					"Correctness: type must be status-update per BR-ORCH-037")
+				Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityLow),
+					"Correctness: priority must be low for informational notification")
+				Expect(nr.Spec.Severity).To(Equal("warning"),
+					"Accuracy: severity must match parent RR")
+				Expect(nr.Spec.Subject).To(ContainSubstring(rr.Spec.SignalName),
+					"Accuracy: subject must contain signal name")
+				Expect(nr.Spec.RemediationRequestRef).NotTo(BeNil(),
+					"Correctness: must reference parent RR")
+				Expect(nr.Spec.RemediationRequestRef.UID).To(Equal(rr.UID),
+					"Accuracy: RR ref UID must match parent")
+			})
+
+			It("UT-RO-590-003: should reuse existing NR on second call (idempotency)", func() {
+				k8sClient := fakeClient.Build()
+				nc = creator.NewNotificationCreator(k8sClient, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Completed"
+				ai.Status.Reason = "WorkflowNotNeeded"
+
+				name1, err := nc.CreateSelfResolvedNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				name2, err := nc.CreateSelfResolvedNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name2).To(Equal(name1),
+					"Behavior: second call must return the same NR name without error")
+
+				nrList := &notificationv1.NotificationRequestList{}
+				err = k8sClient.List(ctx, nrList, &client.ListOptions{Namespace: "default"})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1),
+					"Correctness: only 1 NR must exist, not 2")
+			})
+
+			It("UT-RO-590-004: should include signal, target, AI message, RCA, and audit tagline in body", func() {
+				k8sClient := fakeClient.Build()
+				nc = creator.NewNotificationCreator(k8sClient, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Completed"
+				ai.Status.Reason = "WorkflowNotNeeded"
+				ai.Status.Message = "Problem self-resolved. No remediation required."
+				ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					Summary: "Node memory pressure cleared after OOM killer freed processes",
+				}
+
+				name, err := nc.CreateSelfResolvedNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Body).To(ContainSubstring(rr.Spec.SignalName),
+					"Accuracy: body must contain signal name")
+				Expect(nr.Spec.Body).To(ContainSubstring(rr.Spec.TargetResource.Kind),
+					"Accuracy: body must contain target resource kind")
+				Expect(nr.Spec.Body).To(ContainSubstring("Problem self-resolved"),
+					"Accuracy: body must contain AI assessment message")
+				Expect(nr.Spec.Body).To(ContainSubstring("Node memory pressure cleared"),
+					"Accuracy: body must contain RCA summary")
+				Expect(nr.Spec.Body).To(ContainSubstring("audit purposes only"),
+					"Behavior: body must include audit tagline per BR-ORCH-037")
+			})
+		})
+	})
 })

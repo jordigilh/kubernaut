@@ -47,6 +47,7 @@ type AIAnalysisHandler struct {
 	Metrics                *metrics.Metrics
 	transitionToFailed     func(context.Context, *remediationv1.RemediationRequest, remediationv1.FailurePhase, error) (ctrl.Result, error)
 	noActionRequiredDelay  time.Duration
+	notifySelfResolved    bool
 }
 
 // NewAIAnalysisHandler creates a new AIAnalysisHandler.
@@ -62,6 +63,13 @@ func NewAIAnalysisHandler(c client.Client, s *runtime.Scheme, nc *creator.Notifi
 		transitionToFailed:    ttf,
 		noActionRequiredDelay: noActionDelay,
 	}
+}
+
+// SetNotifySelfResolved enables or disables self-resolved status-update notifications.
+// BR-ORCH-037 AC-037-08: When true, handleWorkflowNotNeeded creates an informational NR.
+// Called from cmd/remediationorchestrator/main.go via Reconciler.SetNotifySelfResolved.
+func (h *AIAnalysisHandler) SetNotifySelfResolved(enabled bool) {
+	h.notifySelfResolved = enabled
 }
 
 // buildNotificationRef fetches the NotificationRequest by name to obtain its UID
@@ -190,6 +198,23 @@ func (h *AIAnalysisHandler) handleWorkflowNotNeeded(
 	}
 	if h.Metrics != nil {
 		h.Metrics.NoActionNeededTotal.WithLabelValues(reason, rr.Namespace).Inc()
+	}
+
+	// BR-ORCH-037 AC-037-08: Optional informational notification when configured.
+	// Non-fatal: notification failure is logged but does not block handler completion.
+	if h.notifySelfResolved {
+		notifName, notifErr := h.notificationCreator.CreateSelfResolvedNotification(ctx, rr, ai)
+		if notifErr != nil {
+			logger.Error(notifErr, "Failed to create self-resolved notification (non-fatal)")
+		} else {
+			ref := h.buildNotificationRef(ctx, notifName, rr.Namespace)
+			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+				return nil
+			}); updateErr != nil {
+				logger.Error(updateErr, "Failed to update RR with self-resolved notification ref (non-fatal)")
+			}
+		}
 	}
 
 	logger.Info("Remediation completed - no action required",
