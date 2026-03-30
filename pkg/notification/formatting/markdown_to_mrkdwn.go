@@ -27,6 +27,12 @@ import (
 var (
 	// fencedCodeRe matches fenced code blocks: ```language\n...\n```
 	fencedCodeRe = regexp.MustCompile("(?s)```[a-zA-Z]*\n?.*?```")
+	// fencedLangTagRe strips language tags from fenced code block opening: ```yaml → ```
+	fencedLangTagRe = regexp.MustCompile("```[a-zA-Z]+")
+	// emptyFencedBlockRe matches empty fenced code blocks (opening + closing with only whitespace)
+	emptyFencedBlockRe = regexp.MustCompile("(?m)```\\s*```")
+	// unbalancedTripleBacktickRe matches lone ``` not part of a fenced block
+	unbalancedTripleBacktickRe = regexp.MustCompile("```")
 	// inlineCodeRe matches inline code: `...`
 	inlineCodeRe = regexp.MustCompile("`[^`]+`")
 	// blockquoteRe matches > at start of line (blockquote syntax)
@@ -130,10 +136,24 @@ func MarkdownToMrkdwn(input string) string {
 	// Phase 7: Convert headers (# Header → *Header*)
 	result = headerRe.ReplaceAllString(result, "*$1*")
 
-	// Phase 8: Restore protected code blocks
+	// Phase 8: Restore protected code blocks with Slack-compatible post-processing (Issue #588).
+	// Strip language tags (Slack mrkdwn doesn't support them) and remove empty blocks.
 	for i, block := range codeBlocks {
 		placeholder := fmt.Sprintf("\x00CODEBLOCK%d\x00", i)
-		result = strings.Replace(result, placeholder, block, 1)
+		cleaned := fencedLangTagRe.ReplaceAllString(block, "```")
+		cleaned = emptyFencedBlockRe.ReplaceAllString(cleaned, "")
+		result = strings.Replace(result, placeholder, cleaned, 1)
+	}
+
+	// Phase 9: Handle unbalanced triple backticks remaining after code block restoration.
+	// Count ``` occurrences — if odd, there's an unpaired fence. Escape them as literal text.
+	if strings.Count(result, "```")%2 != 0 {
+		result = unbalancedTripleBacktickRe.ReplaceAllString(result, "`\u200B`\u200B`")
+	}
+
+	// Phase 10: Clean up blank lines left by removed empty code blocks.
+	for strings.Contains(result, "\n\n\n") {
+		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
 	}
 
 	return result
