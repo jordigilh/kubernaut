@@ -19,6 +19,7 @@ package remediationorchestrator
 import (
 	"context"
 	"errors"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -850,6 +851,126 @@ var _ = Describe("NotificationCreator", func() {
 				Expect(nr.Spec.Context.Execution.RetryCount).To(Equal("3"))
 				Expect(nr.Spec.Context.Execution.MaxRetries).To(Equal("3"))
 				Expect(nr.Spec.Context.Execution.LastExitCode).To(Equal("137"))
+			})
+		})
+
+		// Issue #588: Sentinel RCA suppression and deduplication
+		Context("Issue #588: buildManualReviewBody — sentinel RCA and content deduplication", func() {
+			It("UT-RO-588-001: should omit sentinel 'Failed to parse RCA' from notification body", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:            notificationv1.ReviewSourceAIAnalysis,
+					Reason:            "WorkflowResolutionFailed",
+					SubReason:         "LLMParsingError",
+					Message:           "LLM failed to produce structured output after 3 attempts",
+					RootCauseAnalysis: "Failed to parse RCA",
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Body).ToNot(ContainSubstring("Failed to parse RCA"),
+					"Sentinel RCA value must not appear in notification body")
+				Expect(nr.Spec.Body).ToNot(ContainSubstring("**Root Cause Analysis**"),
+					"RCA section header must be omitted when RCA is a sentinel")
+			})
+
+			It("UT-RO-588-002: should omit sentinel 'No structured RCA found' from notification body", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:            notificationv1.ReviewSourceAIAnalysis,
+					Reason:            "WorkflowResolutionFailed",
+					SubReason:         "NoMatchingWorkflows",
+					RootCauseAnalysis: "No structured RCA found",
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Body).ToNot(ContainSubstring("No structured RCA found"),
+					"Sentinel RCA value must not appear in notification body")
+			})
+
+			It("UT-RO-588-003: should preserve legitimate RCA summary in notification body", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:            notificationv1.ReviewSourceAIAnalysis,
+					Reason:            "WorkflowResolutionFailed",
+					SubReason:         "LowConfidence",
+					RootCauseAnalysis: "Pod OOM due to memory leak in container ml-worker",
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Body).To(ContainSubstring("**Root Cause Analysis**"),
+					"RCA section header must be present for legitimate RCA")
+				Expect(nr.Spec.Body).To(ContainSubstring("Pod OOM due to memory leak in container ml-worker"),
+					"Legitimate RCA summary must appear in notification body")
+			})
+
+			It("UT-RO-588-004: Details and Warnings sections must not contain duplicate text", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:    notificationv1.ReviewSourceAIAnalysis,
+					Reason:    "WorkflowResolutionFailed",
+					SubReason: "ParameterValidationFailed",
+					Message:   "Confidence below threshold",
+					Warnings:  []string{"Low confidence score", "Missing resource limits"},
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Details section should contain the Message
+				Expect(nr.Spec.Body).To(ContainSubstring("**Details**"))
+				Expect(nr.Spec.Body).To(ContainSubstring("Confidence below threshold"))
+
+				// Warnings section should contain the warnings
+				Expect(nr.Spec.Body).To(ContainSubstring("**Warnings**"))
+				Expect(nr.Spec.Body).To(ContainSubstring("Low confidence score"))
+				Expect(nr.Spec.Body).To(ContainSubstring("Missing resource limits"))
+
+				// Warning text must NOT appear in the Details section
+				// Details section is between "**Details**:" and the next section
+				detailsIdx := strings.Index(nr.Spec.Body, "**Details**")
+				warningsIdx := strings.Index(nr.Spec.Body, "**Warnings**")
+				Expect(detailsIdx).To(BeNumerically(">=", 0))
+				Expect(warningsIdx).To(BeNumerically(">", detailsIdx))
+
+				detailsSection := nr.Spec.Body[detailsIdx:warningsIdx]
+				Expect(detailsSection).ToNot(ContainSubstring("Low confidence score"),
+					"Warning text must not appear in Details section")
+				Expect(detailsSection).ToNot(ContainSubstring("Missing resource limits"),
+					"Warning text must not appear in Details section")
 			})
 		})
 

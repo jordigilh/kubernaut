@@ -536,6 +536,24 @@ All duplicate signals have been handled by this remediation.`,
 // MANUAL REVIEW NOTIFICATIONS (BR-ORCH-036)
 // ========================================
 
+// rcaSentinels lists known sentinel values that HAPI's result_parser.py generates
+// when RCA extraction fails. These are not meaningful for operators and should be
+// omitted from notification bodies. Issue #588.
+var rcaSentinels = []string{
+	"Failed to parse RCA",
+	"No structured RCA found",
+}
+
+// isRCASentinel returns true if the given RCA summary is a known sentinel value
+// that should not be displayed to operators. Issue #588.
+func isRCASentinel(rca string) bool {
+	for _, sentinel := range rcaSentinels {
+		if rca == sentinel {
+			return true
+		}
+	}
+	return false
+}
 
 // ManualReviewContext provides context for manual review notifications.
 // Used by both AIAnalysis and WorkflowExecution failure scenarios.
@@ -752,7 +770,7 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 		body += fmt.Sprintf("\n\n**Details**:\n%s", ctx.Message)
 	}
 
-	if ctx.RootCauseAnalysis != "" {
+	if ctx.RootCauseAnalysis != "" && !isRCASentinel(ctx.RootCauseAnalysis) {
 		body += fmt.Sprintf("\n\n**Root Cause Analysis**:\n%s", ctx.RootCauseAnalysis)
 	}
 
