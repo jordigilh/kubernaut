@@ -183,6 +183,8 @@ remediationorchestrator:
       gitOpsSyncDelay: "3m"
       operatorReconcileDelay: "1m"
       proactiveAlertDelay: "5m"
+    notifications:
+      notifySelfResolved: false
 
 # -- WorkflowExecution controller
 workflowexecution:

@@ -34,6 +34,8 @@ data:
       gitOpsSyncDelay: {{ .Values.remediationorchestrator.config.asyncPropagation.gitOpsSyncDelay | default "3m" | quote }}
       operatorReconcileDelay: {{ .Values.remediationorchestrator.config.asyncPropagation.operatorReconcileDelay | default "1m" | quote }}
       proactiveAlertDelay: {{ .Values.remediationorchestrator.config.asyncPropagation.proactiveAlertDelay | default "5m" | quote }}
+    notifications:
+      notifySelfResolved: {{ .Values.remediationorchestrator.config.notifications.notifySelfResolved | default false }}
     routing:
       consecutiveFailureThreshold: {{ .Values.remediationorchestrator.config.routing.consecutiveFailureThreshold | default 3 }}
       consecutiveFailureCooldown: {{ .Values.remediationorchestrator.config.routing.consecutiveFailureCooldown | default "1h" | quote }}

@@ -446,6 +446,17 @@
                   "description": "Extra delay for proactive alert resolution"
                 }
               }
+            },
+            "notifications": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "notifySelfResolved": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Emit status-update notification when signal self-resolves (BR-ORCH-037 AC-037-08)"
+                }
+              }
             }
           }
         },

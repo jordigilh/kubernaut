@@ -305,6 +305,8 @@ func main() {
 	roReconciler.SetRESTMapper(mgr.GetRESTMapper())
 	// DD-EM-004 v2.0, Issue #253: Wire config-driven async propagation delays
 	roReconciler.SetAsyncPropagation(cfg.AsyncPropagation)
+	// BR-ORCH-037 AC-037-08, Issue #590: Wire self-resolved notification toggle
+	roReconciler.SetNotifySelfResolved(cfg.Notifications.NotifySelfResolved)
 	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)
