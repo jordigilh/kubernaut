@@ -42,7 +42,9 @@
 
 **APPROVED**: Use **Goose** (`github.com/pressly/goose/v3`) as the database migration management tool for the Data Storage Service.
 
-**Tooling**: Goose v3.26.0+
+**Tooling**:
+- **Production CLI** (`docker/db-migrate.Dockerfile`): Goose **v3.24.1** — SHA256-pinned binary for air-gap safety
+- **Test library** (`go.mod`): Goose **v3.27.0** — used by E2E/integration test infrastructure via `goose.NewProvider`
 
 **Scope**: All PostgreSQL schema changes for Data Storage Service
 
@@ -301,16 +303,79 @@ func (s *Server) validateSchemaVersion() error {
 
 ```
 migrations/
-├── 001_v1_schema.sql         # Complete v1 schema (squashed)
+├── 001_v1_schema.sql                    # v1.0 full baseline (squashed from v0)
+├── 002_add_service_account_name.sql     # v1.2 dev incremental (#481)
+├── 003_capitalize_catalog_status.sql    # v1.2 dev incremental (#483)
 ├── testdata/
-│   └── seed_test_data.sql    # Non-migration files go here
-└── v0-archived/              # Historical migrations (not applied)
+│   └── seed_test_data.sql              # Non-migration files go here
+├── v0-archived/                         # Pre-v1.0 historical migrations
+│   ├── 001_initial_schema.sql
+│   └── ...                             # 30+ files squashed into 001_v1_schema.sql
+└── v1.2-dev-archived/                   # Created at v1.2 release (Issue #581)
+    └── (populated during release squash step)
 ```
+
+**Archive Naming Convention**: `vX.Y-dev-archived/` — holds the original dev-cycle
+incrementals after they are squashed into a single delta file at release time.
+See [Release-Time Migration Discipline](#7-release-time-migration-discipline-issue-581).
 
 **Rules**:
 - ✅ Only migration files (`{version}_{description}.sql`) in `migrations/` root
 - ✅ Test data, seeds, and utilities go in `migrations/testdata/`
+- ✅ Archived dev incrementals go in `migrations/vX.Y-dev-archived/`
 - ❌ Do NOT put non-migration files in `migrations/` root (goose will try to parse them)
+- ❌ Do NOT delete archived files — they preserve the development history
+
+### **7. Release-Time Migration Discipline (Issue #581)**
+
+Kubernaut follows an **append-only numbered migration chain** with two release-time
+disciplines to keep the migration directory clean and manageable.
+
+#### **Minor Releases (X.Y.0 → X.Y+1.0)**
+
+During development, schema changes are added as incremental goose files
+(`002_add_foo.sql`, `003_alter_bar.sql`, etc.). At release time, dev-cycle
+incrementals are **squashed into a single delta file** per minor version:
+
+```
+migrations/
+  001_v1_schema.sql          # v1.0 full baseline
+  002_v1.2_schema.sql        # v1.0 → v1.2 delta (squashed from dev 002 + 003)
+  003_v1.3_schema.sql        # v1.2 → v1.3 delta (squashed)
+```
+
+Original incrementals are moved to an archive directory:
+`migrations/vX.Y-dev-archived/`
+
+**Squash procedure**: See [RELEASE_GUIDE.md § Database Migrations](../../development/release/RELEASE_GUIDE.md).
+
+#### **Major Releases (X.Y.0 → X+1.0.0)**
+
+All prior migration files are consolidated into a **single baseline file** for
+fresh installs:
+
+```
+migrations/
+  001_v1_schema.sql          # kept for upgrade path (goose skips if already applied)
+  002_v1.2_schema.sql        # kept for upgrade path
+  baseline_v2_schema.sql     # fresh-install-only: full consolidated schema at v2.0
+```
+
+The `db-migrate` Helm hook detects fresh vs. upgrade:
+- **Fresh install** (no `goose_db_version` table): apply baseline only
+- **Upgrade** (existing `goose_db_version`): apply only pending numbered migrations
+
+> **Note**: The baseline detection is scaffolded but not active until the first
+> major version that requires it. For minor releases, `goose up` handles both
+> fresh and upgrade paths correctly.
+
+#### **Key Rules**
+
+1. **Never modify an already-applied migration** — always add a new file
+2. **Squash at release time** — dev incrementals → single delta per minor
+3. **Baseline at major version** — consolidate everything for clean installs
+4. **Archive, don't delete** — old dev incrementals go to `vX.Y-dev-archived/`
+5. **Upgrade path preserved** — existing databases always follow the append-only chain
 
 ---
 
@@ -348,24 +413,19 @@ migrations/
 
 ## 📊 **Migration Version Management**
 
-### **Current Migration Status** (as of 2025-11-05):
+### **Current Migration Status** (as of v1.2):
 
-| Version | Migration | Status | Date | Purpose |
+| Version | Migration | Status | Release | Purpose |
 |---|---|---|---|---|
-| 001 | `initial_schema.sql` | ✅ Applied | 2024-10-15 | Base tables and schema |
-| 002 | `fix_partitioning.sql` | ✅ Applied | 2024-10-20 | Partition fixes |
-| 003 | `stored_procedures.sql` | ✅ Applied | 2024-10-22 | Database functions |
-| 004 | `add_effectiveness_assessment_due.sql` | ✅ Applied | 2024-10-25 | Effectiveness tracking |
-| 005 | `vector_schema.sql` | ✅ Applied | 2024-10-28 | pgvector support |
-| 006 | `effectiveness_assessment.sql` | ✅ Applied | 2024-11-01 | Assessment framework |
-| 007 | `add_context_column.sql` | ✅ Applied | 2024-11-01 | Context enrichment |
-| 008 | `context_api_compatibility.sql` | ✅ Applied | 2024-11-02 | API compatibility |
-| 009 | `update_vector_dimensions.sql` | ✅ Applied | 2024-11-02 | Vector dimension updates |
-| 010 | `audit_write_api_phase1.sql` | ✅ Applied | 2024-11-03 | Audit write API |
-| 011 | `rename_alert_to_signal.sql` | ✅ Applied | 2024-11-04 | Terminology migration |
-| **012** | **`adr033_multidimensional_tracking.sql`** | 🚀 **READY** | **2025-11-05** | **ADR-033 multi-dimensional success tracking** |
+| 001 | `v1_schema.sql` | ✅ Applied | v1.0 | Full v1.0 baseline (squashed from 31 v0 files) |
+| 002 | `add_service_account_name.sql` | ✅ Applied | v1.2 | DD-WE-005: Per-workflow ServiceAccount reference (#481) |
+| 003 | `capitalize_catalog_status.sql` | ✅ Applied | v1.2 | Align catalog status with PascalCase CRD convention (#483) |
 
-### **Next Migration**: Version 013 (TBD)
+> **Note**: Versions 001–031 from the original v0 development cycle were squashed into
+> `001_v1_schema.sql` at the v1.0 release. The originals are preserved in
+> `migrations/v0-archived/` for historical reference.
+
+### **Next Migration**: Version 004 (or 002 after v1.2 release squash)
 
 ---
 
@@ -421,7 +481,7 @@ migrations/
 
 ## 📌 **Summary**
 
-**Decision**: Use **Goose v3.26.0+** for database migration management
+**Decision**: Use **Goose v3** for database migration management
 
 **Key Benefits**:
 - ✅ Industry-standard tool for Go + PostgreSQL
