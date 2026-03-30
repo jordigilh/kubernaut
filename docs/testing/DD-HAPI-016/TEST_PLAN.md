@@ -86,7 +86,7 @@ integration and E2E tiers to reach >=80% per-tier coverage.
 
 | ID | Scenario | Business Outcome | Code Covered |
 |----|----------|------------------|--------------|
-| IT-DS-016-001 | Insert RO audit events for a target, query via `QueryROEventsByTarget`, verify rows filtered by `target_resource` JSONB field and `since` timestamp | DS retrieves correct remediation chain for a target resource | `repo.QueryROEventsByTarget` (~40 LOC) |
+| IT-DS-016-001 | Insert RO audit events with matching `pre_remediation_spec_hash`, query via `QueryROEventsBySpecHash`, verify rows filtered by spec hash and time window | DS retrieves correct remediation chain by spec hash (v1.4, Issue #586) | `repo.QueryROEventsBySpecHash` (~40 LOC) |
 | IT-DS-016-002 | Insert EM audit events for 3 correlation IDs, query via `QueryEffectivenessEventsBatch`, verify correct grouping by `correlation_id` | DS batches EM component events for scoring | `repo.QueryEffectivenessEventsBatch` (~50 LOC) |
 | IT-DS-016-003 | Insert RO events with `pre_remediation_spec_hash`, query via `QueryROEventsBySpecHash` with hash + time range, verify Tier 2 widening results | DS supports historical hash lookup for broader context | `repo.QueryROEventsBySpecHash` (~40 LOC) |
 
@@ -100,7 +100,7 @@ integration and E2E tiers to reach >=80% per-tier coverage.
 
 | ID | Scenario | Business Outcome | Code Covered |
 |----|----------|------------------|--------------|
-| IT-DS-016-005 | Insert RO + full EM events (reason=full), call `QueryROEventsByTarget` -> `QueryEffectivenessEventsBatch` -> `CorrelateTier1Chain`, verify `assessmentReason=full` and positive weighted score on entry struct | **LLM receives accurate effectiveness data from real DB** | Adapter + repo + correlation pipeline (~120 LOC) |
+| IT-DS-016-005 | Insert RO + full EM events (reason=full), call `QueryROEventsBySpecHash` -> `QueryEffectivenessEventsBatch` -> `CorrelateTier1Chain`, verify `assessmentReason=full` and positive weighted score on entry struct | **LLM receives accurate effectiveness data from real DB** (v1.4: Tier 1 by spec hash) | Adapter + repo + correlation pipeline (~120 LOC) |
 | IT-DS-016-006 | Same pipeline with EM events having `reason=spec_drift`, verify `assessmentReason=spec_drift` and `effectivenessScore=0.0` on entry struct | **LLM correctly informed that spec_drift != failure** | spec_drift code path (~15 LOC) |
 | IT-DS-016-007 | Insert events where `current_spec_hash` matches `pre_remediation_spec_hash`, call `CorrelateTier1Chain` + `DetectRegression`, verify `regressionDetected=true` and `hashMatch=preRemediation` | **LLM warned about configuration regression** | Regression detection path (~15 LOC) |
 | IT-DS-016-008 | Query for non-existent target via adapter, call `CorrelateTier1Chain`, verify empty entries and no regression | Empty history gracefully handled (no errors, no false positives) | Empty result path (~10 LOC) |

@@ -17,7 +17,7 @@ limitations under the License.
 // Package repository provides data access for the DataStorage service.
 //
 // BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-// DD-HAPI-016 v1.1: Two-step query pattern (RO events by target, EM events by correlation_id).
+// DD-HAPI-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586).
 package repository
 
 import (
@@ -47,10 +47,9 @@ type EffectivenessEventRow struct {
 }
 
 // RemediationHistoryRepository provides queries for remediation history context.
-// Supports the two-step query pattern defined in DD-HAPI-016 v1.1:
-//  1. Query RO events by target_resource (Tier 1)
+// DD-HAPI-016 v1.4: Both tiers query RO events by pre_remediation_spec_hash.
+//  1. Query RO events by spec hash (Tier 1: 24h window, Tier 2: 90d window)
 //  2. Batch query EM component events by correlation_id
-//  3. Query RO events by spec hash (Tier 2)
 type RemediationHistoryRepository struct {
 	db     *sql.DB
 	logger logr.Logger
@@ -66,7 +65,6 @@ func NewRemediationHistoryRepository(db *sql.DB, logger logr.Logger) *Remediatio
 
 // scanRawRows scans sql.Rows into a slice of RawAuditRow.
 // Each row must have columns: event_type, event_data (JSONB), event_timestamp, correlation_id.
-// Shared by QueryROEventsByTarget and QueryROEventsBySpecHash.
 func scanRawRows(rows *sql.Rows) ([]RawAuditRow, error) {
 	var results []RawAuditRow
 	for rows.Next() {
@@ -81,38 +79,6 @@ func scanRawRows(rows *sql.Rows) ([]RawAuditRow, error) {
 		results = append(results, row)
 	}
 	return results, rows.Err()
-}
-
-// QueryROEventsByTarget queries remediation.workflow_created audit events
-// for a specific target resource within the given time window.
-// Uses expression index idx_audit_events_target_resource for performance.
-//
-// DD-HAPI-016 v1.1 Step 1: Query Tier 1 — RO events.
-func (r *RemediationHistoryRepository) QueryROEventsByTarget(
-	ctx context.Context,
-	targetResource string,
-	since time.Time,
-) ([]RawAuditRow, error) {
-	query := `SELECT event_type, event_data, event_timestamp, correlation_id
-		FROM audit_events
-		WHERE event_data->>'target_resource' = $1
-		AND event_type = 'remediation.workflow_created'
-		AND event_timestamp >= $2
-		ORDER BY event_timestamp ASC, event_id ASC`
-
-	rows, err := r.db.QueryContext(ctx, query, targetResource, since)
-	if err != nil {
-		r.logger.Error(err, "Failed to query RO events by target",
-			"target_resource", targetResource, "since", since)
-		return nil, err
-	}
-	defer func() {
-		if cerr := rows.Close(); cerr != nil {
-			r.logger.Error(cerr, "Failed to close RO events query rows")
-		}
-	}()
-
-	return scanRawRows(rows)
 }
 
 // QueryEffectivenessEventsBatch queries EM component events for a batch of
@@ -172,10 +138,10 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 
 // QueryROEventsBySpecHash queries remediation.workflow_created audit events
 // matching a specific pre_remediation_spec_hash within a time window.
-// Used for Tier 2 regression detection.
+// Used for both Tier 1 (24h) and Tier 2 (90d) queries.
 // Uses expression index idx_audit_events_pre_remediation_spec_hash for performance.
 //
-// DD-HAPI-016 v1.1 Step 4: Query Tier 2 — historical hash lookup.
+// DD-HAPI-016 v1.4: Both tiers query by spec hash (#586).
 func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 	ctx context.Context,
 	specHash string,

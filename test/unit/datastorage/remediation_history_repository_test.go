@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package datastorage contains unit tests for the DataStorage service.
 // BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-// DD-HAPI-016 v1.1: Two-step query (RO events by target, EM events by correlation_id).
+// DD-HAPI-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586).
 package datastorage
 
 import (
@@ -57,143 +57,6 @@ var _ = Describe("RemediationHistoryRepository", func() {
 	AfterEach(func() {
 		Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
 		_ = mockDB.Close()
-	})
-
-	// =========================================================================
-	// UT-RH-001 to UT-RH-004: QueryROEventsByTarget
-	// BR-HAPI-016: Tier 1 query for remediation.workflow_created events
-	// =========================================================================
-	Describe("QueryROEventsByTarget", func() {
-		var (
-			targetResource string
-			since          time.Time
-		)
-
-		BeforeEach(func() {
-			targetResource = "prod/Deployment/my-app"
-			since = time.Now().Add(-24 * time.Hour)
-		})
-
-		Context("when matching RO events exist", func() {
-			It("UT-RH-001: should return RO events with event_data fields", func() {
-				eventData := map[string]interface{}{
-					"target_resource":            "prod/Deployment/my-app",
-					"pre_remediation_spec_hash":  "sha256:aabb1122",
-					"action_type":              "ScaleUp",
-					"signal_type":               "HighCPULoad",
-					"signal_fingerprint":         "fp-123",
-				}
-				eventDataJSON, err := json.Marshal(eventData)
-				Expect(err).ToNot(HaveOccurred())
-
-				rows := sqlmock.NewRows([]string{
-					"event_type", "event_data", "event_timestamp", "correlation_id",
-				}).AddRow(
-					"remediation.workflow_created",
-					eventDataJSON,
-					time.Now().Add(-6*time.Hour),
-					"rr-abc-123",
-				)
-
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM audit_events`).
-					WithArgs(targetResource, sqlmock.AnyArg()).
-					WillReturnRows(rows)
-
-				results, err := repo.QueryROEventsByTarget(ctx, targetResource, since)
-
-				Expect(err).ToNot(HaveOccurred())
-				Expect(results).To(HaveLen(1))
-				Expect(results[0].EventType).To(Equal("remediation.workflow_created"))
-				Expect(results[0].CorrelationID).To(Equal("rr-abc-123"))
-				Expect(results[0].EventData["target_resource"]).To(Equal("prod/Deployment/my-app"))
-				Expect(results[0].EventData["pre_remediation_spec_hash"]).To(Equal("sha256:aabb1122"))
-			})
-		})
-
-		Context("when no matching events exist", func() {
-			It("UT-RH-002: should return empty slice", func() {
-				rows := sqlmock.NewRows([]string{
-					"event_type", "event_data", "event_timestamp", "correlation_id",
-				})
-
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM audit_events`).
-					WithArgs(targetResource, sqlmock.AnyArg()).
-					WillReturnRows(rows)
-
-				results, err := repo.QueryROEventsByTarget(ctx, targetResource, since)
-
-				Expect(err).ToNot(HaveOccurred())
-				Expect(results).To(BeEmpty())
-			})
-		})
-
-		Context("when multiple RO events exist", func() {
-			It("UT-RH-003: should return all matching events ordered by timestamp", func() {
-				eventData1, _ := json.Marshal(map[string]interface{}{
-					"target_resource":           "prod/Deployment/my-app",
-					"pre_remediation_spec_hash": "sha256:aabb1122",
-					"action_type":             "ScaleUp",
-				})
-				eventData2, _ := json.Marshal(map[string]interface{}{
-					"target_resource":           "prod/Deployment/my-app",
-					"pre_remediation_spec_hash": "sha256:ccdd3344",
-					"action_type":             "RestartPod",
-				})
-
-				rows := sqlmock.NewRows([]string{
-					"event_type", "event_data", "event_timestamp", "correlation_id",
-				}).AddRow(
-					"remediation.workflow_created", eventData1,
-					time.Now().Add(-6*time.Hour), "rr-abc-123",
-				).AddRow(
-					"remediation.workflow_created", eventData2,
-					time.Now().Add(-2*time.Hour), "rr-def-456",
-				)
-
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM audit_events`).
-					WithArgs(targetResource, sqlmock.AnyArg()).
-					WillReturnRows(rows)
-
-				results, err := repo.QueryROEventsByTarget(ctx, targetResource, since)
-
-				Expect(err).ToNot(HaveOccurred())
-				Expect(results).To(HaveLen(2))
-				Expect(results[0].CorrelationID).To(Equal("rr-abc-123"))
-				Expect(results[1].CorrelationID).To(Equal("rr-def-456"))
-			})
-		})
-
-		// #211: ORDER BY must include event_id tiebreaker for deterministic ordering
-		Context("deterministic ordering (#211)", func() {
-			It("UT-DS-211-001: should order by event_timestamp ASC, event_id ASC", func() {
-				rows := sqlmock.NewRows([]string{
-					"event_type", "event_data", "event_timestamp", "correlation_id",
-				})
-
-				sqlMock.ExpectQuery(`ORDER BY event_timestamp ASC, event_id ASC`).
-					WithArgs(targetResource, sqlmock.AnyArg()).
-					WillReturnRows(rows)
-
-				results, err := repo.QueryROEventsByTarget(ctx, targetResource, since)
-
-				Expect(err).ToNot(HaveOccurred())
-				Expect(results).To(BeEmpty())
-			})
-		})
-
-		Context("when database returns an error", func() {
-			It("UT-RH-004: should propagate the error", func() {
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM audit_events`).
-					WithArgs(targetResource, sqlmock.AnyArg()).
-					WillReturnError(sql.ErrConnDone)
-
-				results, err := repo.QueryROEventsByTarget(ctx, targetResource, since)
-
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(sql.ErrConnDone))
-				Expect(results).To(BeNil())
-			})
-		})
 	})
 
 	// =========================================================================
@@ -362,7 +225,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 
 	// =========================================================================
 	// UT-RH-009 to UT-RH-012: QueryROEventsBySpecHash
-	// BR-HAPI-016: Tier 2 regression detection query
+	// BR-HAPI-016: Both Tier 1 and Tier 2 query by spec hash (DD-HAPI-016 v1.4, #586)
 	// =========================================================================
 	Describe("QueryROEventsBySpecHash", func() {
 		var (

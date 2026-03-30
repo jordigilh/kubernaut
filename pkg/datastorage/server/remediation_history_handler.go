@@ -17,11 +17,11 @@ limitations under the License.
 // HTTP handler for GET /api/v1/remediation-history/context.
 //
 // BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-// DD-HAPI-016 v1.1: Two-step query pattern with EM scoring infrastructure.
+// DD-HAPI-016 v1.4: Both tiers query by spec hash for causal chain integrity.
 //
 // This handler orchestrates the full remediation history query flow:
 //  1. Parse and validate required query parameters
-//  2. Query RO events by target resource (Tier 1)
+//  2. Query RO events by spec hash (Tier 1)
 //  3. Batch query EM component events by correlation_id
 //  4. Correlate into detailed Tier 1 entries
 //  5. Detect regression (preRemediation hash match)
@@ -126,12 +126,12 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 		"tier1_window", tier1Window.String(),
 		"tier2_window", tier2Window.String())
 
-	// Step 3: Query Tier 1 RO events by target resource (DD-HAPI-016 v1.1 Step 1)
+	// Step 3: Query Tier 1 RO events by spec hash (DD-HAPI-016 v1.4, Issue #586)
 	tier1Since := now.Add(-tier1Window)
-	roEvents, err := h.remediationHistoryRepo.QueryROEventsByTarget(ctx, targetResource, tier1Since)
+	roEvents, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, currentSpecHash, tier1Since, now)
 	if err != nil {
-		h.logger.Error(err, "Failed to query RO events",
-			"target_resource", targetResource, "since", tier1Since)
+		h.logger.Error(err, "Failed to query Tier 1 RO events",
+			"spec_hash", currentSpecHash, "since", tier1Since, "until", now)
 		response.WriteRFC7807Error(w, http.StatusInternalServerError,
 			"query-error", "Internal Server Error",
 			"Failed to query remediation history", h.logger)
