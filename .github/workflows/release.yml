@@ -2,14 +2,15 @@ name: Release
 
 # Triggered by version tag push (e.g., v1.0.0, v1.1.0-rc0)
 # Builds multi-arch images (amd64 + arm64) for all 12 services in parallel,
-# publishes Helm chart to OCI registry, and creates a GitHub Release.
+# runs Helm smoke tests against the amd64 images, publishes Helm chart to
+# OCI registry, and creates a GitHub Release gated on smoke test success.
 # Pre-release tags (-rc*, -alpha*, -beta*) create a pre-release and skip :latest tagging.
 #
 # Prerequisites:
 #   - Quay.io robot account with Creator role in kubernaut-ai org
 #   - GitHub Actions secrets: QUAY_ROBOT_USERNAME, QUAY_ROBOT_TOKEN
 #
-# Authority: Issue #257 (sub-issue of #80)
+# Authority: Issue #257 (sub-issue of #80), Issue #569
 # Business Requirement: BR-PLATFORM-RELEASE-001
 
 on:
@@ -57,26 +58,24 @@ jobs:
           fi
 
   # ========================================
-  # STAGE 1: BUILD & PUSH IMAGES (PARALLEL)
-  # 22 parallel jobs: 11 services × 2 architectures.
-  # Each job builds and pushes a single service image for a single arch.
+  # STAGE 1a: BUILD & PUSH amd64 IMAGES
+  # 12 parallel jobs: one per service, amd64 only.
+  # Helm smoke tests depend on this stage completing (Issue #569).
   #
-  # Services (11):
-  #   Go (9): gateway, signalprocessing, aianalysis, authwebhook,
-  #           remediationorchestrator, workflowexecution, notification,
-  #           datastorage, effectivenessmonitor
+  # Services (12):
+  #   Go (10): gateway, signalprocessing, aianalysis, authwebhook,
+  #            remediationorchestrator, workflowexecution, notification,
+  #            datastorage, effectivenessmonitor, db-migrate
   #   Python (1): holmesgpt-api
   #   Bash (1): must-gather
   #
   # Strategy:
   #   - Go services: CGO_ENABLED=0 cross-compile via GOARCH (native speed)
-  #     inside ubi10/go-toolset pulled for target platform (QEMU for arm64)
-  #   - Python/Bash: Full QEMU emulation for arm64 (slower, acceptable for releases)
   #   - Makefile image-build-% targets handle service-to-Dockerfile mapping
   # ========================================
 
-  build-image:
-    name: "${{ matrix.service }} (${{ matrix.arch }})"
+  build-amd64:
+    name: "${{ matrix.service }} (amd64)"
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -96,7 +95,82 @@ jobs:
           - holmesgpt-api
           - must-gather
           - db-migrate
-        arch: [amd64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Generate code
+        run: |
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make generate
+
+      - name: Login to Quay.io
+        run: |
+          podman login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
+                       -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
+                       quay.io
+
+      - name: Build image
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_ARCH: amd64
+          IMAGE_TARGET: production
+          CONTAINER_TOOL: podman
+          APP_VERSION: ${{ needs.prepare.outputs.version }}
+          GIT_COMMIT: ${{ github.sha }}
+          BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+        run: |
+          echo "Building ${{ matrix.service }} for amd64..."
+          make image-build-${{ matrix.service }}
+
+      - name: Push image
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+        run: |
+          IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${IMAGE_TAG}-amd64"
+          echo "Pushing ${IMAGE}..."
+          podman push "${IMAGE}"
+
+  # ========================================
+  # STAGE 1b: BUILD & PUSH arm64 IMAGES
+  # 12 parallel jobs: one per service, arm64 only.
+  # Runs in parallel with Stage 1a. Does NOT block smoke tests.
+  #
+  # Strategy:
+  #   - Go services: CGO_ENABLED=0 cross-compile via GOARCH (native speed)
+  #     inside ubi10/go-toolset pulled for target platform (QEMU for arm64)
+  #   - Python/Bash: Full QEMU emulation for arm64 (slower, acceptable for releases)
+  # ========================================
+
+  build-arm64:
+    name: "${{ matrix.service }} (arm64)"
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - gateway
+          - signalprocessing
+          - aianalysis
+          - authwebhook
+          - remediationorchestrator
+          - workflowexecution
+          - notification
+          - datastorage
+          - effectivenessmonitor
+          - holmesgpt-api
+          - must-gather
+          - db-migrate
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -115,7 +189,6 @@ jobs:
           make generate
 
       - name: Install QEMU for arm64 emulation
-        if: matrix.arch == 'arm64'
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user-static
@@ -134,35 +207,151 @@ jobs:
       - name: Build image
         env:
           IMAGE_TAG: ${{ needs.prepare.outputs.version }}
-          IMAGE_ARCH: ${{ matrix.arch }}
+          IMAGE_ARCH: arm64
           IMAGE_TARGET: production
           CONTAINER_TOOL: podman
           APP_VERSION: ${{ needs.prepare.outputs.version }}
           GIT_COMMIT: ${{ github.sha }}
           BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
         run: |
-          echo "Building ${{ matrix.service }} for ${{ matrix.arch }}..."
+          echo "Building ${{ matrix.service }} for arm64..."
           make image-build-${{ matrix.service }}
 
       - name: Push image
         env:
           IMAGE_TAG: ${{ needs.prepare.outputs.version }}
-          IMAGE_ARCH: ${{ matrix.arch }}
         run: |
-          IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${IMAGE_TAG}-${IMAGE_ARCH}"
+          IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${IMAGE_TAG}-arm64"
           echo "Pushing ${IMAGE}..."
           podman push "${IMAGE}"
 
   # ========================================
-  # STAGE 2: MULTI-ARCH MANIFESTS
-  # After all 22 build jobs complete, create manifest lists so a single
+  # STAGE 2: HELM SMOKE TESTS (Issue #569)
+  # Depends ONLY on build-amd64. Runs as soon as amd64 images are in Quay.
+  # arm64 builds continue in parallel and do NOT block this stage.
+  #
+  # Pulls amd64 images from Quay into a Kind cluster and runs the full
+  # smoke test suite. Gates the GitHub Release — a failing smoke test
+  # prevents the release from being published.
+  #
+  # Uses the same script and pattern as ci-pipeline.yml's helm-smoke-test
+  # job, adapted for Quay (public registry, no pull secret needed).
+  # ========================================
+
+  helm-smoke-test:
+    name: Helm Smoke Tests (Kind)
+    needs: [prepare, build-amd64]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KIND_EXPERIMENTAL_PROVIDER: podman
+      KIND_CLUSTER_NAME: helm-smoke-release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          podman --version
+
+      - name: Install Kind
+        run: |
+          KIND_VERSION="v0.30.0"
+          curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          helm version
+
+      - name: Create Kind cluster
+        run: |
+          kind create cluster --name "$KIND_CLUSTER_NAME" --wait 120s
+          kubectl cluster-info
+          kubectl get nodes -o wide
+
+      - name: Pull amd64 images from Quay and load into Kind
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+        run: |
+          for svc in gateway signalprocessing aianalysis authwebhook \
+                     remediationorchestrator workflowexecution notification \
+                     datastorage effectivenessmonitor holmesgpt-api \
+                     must-gather db-migrate; do
+            IMAGE="${IMAGE_REGISTRY}/${svc}:${IMAGE_TAG}-amd64"
+            echo "Pulling ${IMAGE}..."
+            podman pull "${IMAGE}"
+            echo "Loading into Kind..."
+            podman save "${IMAGE}" | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
+          done
+
+      - name: Sync demo content from kubernaut-demo-scenarios
+        run: make sync-demo-content
+
+      - name: Run smoke tests
+        run: |
+          scripts/helm-smoke-test.sh \
+            --platform kind \
+            --image-tag "${{ needs.prepare.outputs.version }}-amd64" \
+            --chart-path charts/kubernaut/
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== Pod status ==="
+          kubectl get pods -A --no-headers 2>/dev/null || true
+          echo "=== Events ==="
+          kubectl get events -n kubernaut-system --sort-by='.lastTimestamp' 2>/dev/null | tail -30 || true
+          echo "=== Describe failing pods ==="
+          kubectl get pods -n kubernaut-system --no-headers 2>/dev/null \
+            | grep -v Running \
+            | awk '{print $1}' \
+            | xargs -r -I {} kubectl describe pod {} -n kubernaut-system 2>/dev/null || true
+          echo "=== Kind logs ==="
+          kind export logs /tmp/kind-smoke-logs --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: helm-smoke-diagnostics-${{ github.run_id }}
+          path: /tmp/kind-smoke-logs/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Cleanup Kind cluster
+        if: always()
+        run: |
+          kind delete cluster --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
+
+      - name: Cleanup Podman
+        if: always()
+        run: |
+          podman system prune -a -f 2>/dev/null || true
+
+  # ========================================
+  # STAGE 3: MULTI-ARCH MANIFESTS
+  # After both arch builds complete, create manifest lists so a single
   # tag (e.g., 1.0.0) resolves to the correct arch automatically.
-  # Also tags every image as :latest.
+  # Also tags every image as :latest for GA releases.
   # ========================================
 
   create-manifests:
     name: Create Multi-Arch Manifests
-    needs: [prepare, build-image]
+    needs: [prepare, build-amd64, build-arm64]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -202,7 +391,7 @@ jobs:
           echo "All images tagged as latest"
 
   # ========================================
-  # STAGE 3: HELM CHART PUBLISH
+  # STAGE 4: HELM CHART PUBLISH
   # Packages the Helm chart with the release version and pushes
   # to the OCI registry at oci://quay.io/kubernaut-ai/charts
   #
@@ -212,7 +401,7 @@ jobs:
 
   helm-publish:
     name: Publish Helm Chart
-    needs: [prepare, build-image]
+    needs: [prepare, build-amd64, build-arm64]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -246,13 +435,14 @@ jobs:
           echo "Helm chart published: oci://quay.io/kubernaut-ai/charts/kubernaut:${VERSION}"
 
   # ========================================
-  # STAGE 4: GITHUB RELEASE
+  # STAGE 5: GITHUB RELEASE
   # Creates a GitHub Release with auto-generated release notes.
+  # Gated on smoke tests, manifests, AND Helm publish (Issue #569).
   # ========================================
 
   release:
     name: Create GitHub Release
-    needs: [prepare, create-manifests, helm-publish]
+    needs: [prepare, helm-smoke-test, create-manifests, helm-publish]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
