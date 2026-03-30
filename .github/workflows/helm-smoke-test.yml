@@ -1,14 +1,13 @@
 name: Helm Chart Smoke Tests
 
-# Standalone workflow for release tag validation and manual testing.
+# Standalone workflow for manual testing via workflow_dispatch.
+# Release tag smoke tests are handled by the helm-smoke-test job in release.yml (Issue #569).
 # PR validation is handled by the helm-smoke-test job in ci-pipeline.yml.
 #
 # Authority: docs/testing/342/TEST_PLAN.md
 # Script:    scripts/helm-smoke-test.sh
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       image_tag:
