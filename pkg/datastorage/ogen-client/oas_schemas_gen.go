@@ -2389,7 +2389,7 @@ type AuditEvent struct {
 	EventType string `json:"event_type"`
 	// ISO 8601 timestamp when the event occurred.
 	EventTimestamp time.Time `json:"event_timestamp"`
-	// Domain-level event category (ADR-034 v1.8).
+	// Domain-level event category (ADR-034 v1.8, Issue #306).
 	// Per convention: event_category identifies the business domain of the event.
 	// The emitter/service is captured in the event_type first segment.
 	// Values:
@@ -2401,7 +2401,7 @@ type AuditEvent struct {
 	// - workflow: Workflow catalog and discovery events
 	// - workflowexecution: Workflow execution lifecycle events
 	// - orchestration: Remediation orchestration lifecycle events
-	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
+	// - approval: Remediation approval request decision events
 	// - effectiveness: Effectiveness assessment and monitoring events
 	// - actiontype: ActionType taxonomy lifecycle events (Issue #300).
 	EventCategory AuditEventEventCategory `json:"event_category"`
@@ -2620,7 +2620,7 @@ func (s *AuditEvent) SetEventDate(val OptNilDate) {
 	s.EventDate = val
 }
 
-// Domain-level event category (ADR-034 v1.8).
+// Domain-level event category (ADR-034 v1.8, Issue #306).
 // Per convention: event_category identifies the business domain of the event.
 // The emitter/service is captured in the event_type first segment.
 // Values:
@@ -2632,7 +2632,7 @@ func (s *AuditEvent) SetEventDate(val OptNilDate) {
 // - workflow: Workflow catalog and discovery events
 // - workflowexecution: Workflow execution lifecycle events
 // - orchestration: Remediation orchestration lifecycle events
-// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
+// - approval: Remediation approval request decision events
 // - effectiveness: Effectiveness assessment and monitoring events
 // - actiontype: ActionType taxonomy lifecycle events (Issue #300).
 type AuditEventEventCategory string
@@ -2646,7 +2646,7 @@ const (
 	AuditEventEventCategoryWorkflow          AuditEventEventCategory = "workflow"
 	AuditEventEventCategoryWorkflowexecution AuditEventEventCategory = "workflowexecution"
 	AuditEventEventCategoryOrchestration     AuditEventEventCategory = "orchestration"
-	AuditEventEventCategoryWebhook           AuditEventEventCategory = "webhook"
+	AuditEventEventCategoryApproval          AuditEventEventCategory = "approval"
 	AuditEventEventCategoryEffectiveness     AuditEventEventCategory = "effectiveness"
 	AuditEventEventCategoryActiontype        AuditEventEventCategory = "actiontype"
 )
@@ -2662,7 +2662,7 @@ func (AuditEventEventCategory) AllValues() []AuditEventEventCategory {
 		AuditEventEventCategoryWorkflow,
 		AuditEventEventCategoryWorkflowexecution,
 		AuditEventEventCategoryOrchestration,
-		AuditEventEventCategoryWebhook,
+		AuditEventEventCategoryApproval,
 		AuditEventEventCategoryEffectiveness,
 		AuditEventEventCategoryActiontype,
 	}
@@ -2687,7 +2687,7 @@ func (s AuditEventEventCategory) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case AuditEventEventCategoryOrchestration:
 		return []byte(s), nil
-	case AuditEventEventCategoryWebhook:
+	case AuditEventEventCategoryApproval:
 		return []byte(s), nil
 	case AuditEventEventCategoryEffectiveness:
 		return []byte(s), nil
@@ -2725,8 +2725,8 @@ func (s *AuditEventEventCategory) UnmarshalText(data []byte) error {
 	case AuditEventEventCategoryOrchestration:
 		*s = AuditEventEventCategoryOrchestration
 		return nil
-	case AuditEventEventCategoryWebhook:
-		*s = AuditEventEventCategoryWebhook
+	case AuditEventEventCategoryApproval:
+		*s = AuditEventEventCategoryApproval
 		return nil
 	case AuditEventEventCategoryEffectiveness:
 		*s = AuditEventEventCategoryEffectiveness
@@ -4351,7 +4351,7 @@ type AuditEventRequest struct {
 	EventType string `json:"event_type"`
 	// ISO 8601 timestamp when the event occurred.
 	EventTimestamp time.Time `json:"event_timestamp"`
-	// Domain-level event category (ADR-034 v1.8).
+	// Domain-level event category (ADR-034 v1.8, Issue #306).
 	// Per convention: event_category identifies the business domain of the event.
 	// The emitter/service is captured in the event_type first segment.
 	// Values:
@@ -4363,7 +4363,7 @@ type AuditEventRequest struct {
 	// - workflow: Workflow catalog and discovery events
 	// - workflowexecution: Workflow execution lifecycle events
 	// - orchestration: Remediation orchestration lifecycle events
-	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
+	// - approval: Remediation approval request decision events
 	// - effectiveness: Effectiveness assessment and monitoring events
 	// - actiontype: ActionType taxonomy lifecycle events (Issue #300).
 	EventCategory AuditEventRequestEventCategory `json:"event_category"`
@@ -4559,7 +4559,7 @@ func (s *AuditEventRequest) SetEventData(val AuditEventRequestEventData) {
 	s.EventData = val
 }
 
-// Domain-level event category (ADR-034 v1.8).
+// Domain-level event category (ADR-034 v1.8, Issue #306).
 // Per convention: event_category identifies the business domain of the event.
 // The emitter/service is captured in the event_type first segment.
 // Values:
@@ -4571,7 +4571,7 @@ func (s *AuditEventRequest) SetEventData(val AuditEventRequestEventData) {
 // - workflow: Workflow catalog and discovery events
 // - workflowexecution: Workflow execution lifecycle events
 // - orchestration: Remediation orchestration lifecycle events
-// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
+// - approval: Remediation approval request decision events
 // - effectiveness: Effectiveness assessment and monitoring events
 // - actiontype: ActionType taxonomy lifecycle events (Issue #300).
 type AuditEventRequestEventCategory string
@@ -4585,7 +4585,7 @@ const (
 	AuditEventRequestEventCategoryWorkflow          AuditEventRequestEventCategory = "workflow"
 	AuditEventRequestEventCategoryWorkflowexecution AuditEventRequestEventCategory = "workflowexecution"
 	AuditEventRequestEventCategoryOrchestration     AuditEventRequestEventCategory = "orchestration"
-	AuditEventRequestEventCategoryWebhook           AuditEventRequestEventCategory = "webhook"
+	AuditEventRequestEventCategoryApproval          AuditEventRequestEventCategory = "approval"
 	AuditEventRequestEventCategoryEffectiveness     AuditEventRequestEventCategory = "effectiveness"
 	AuditEventRequestEventCategoryActiontype        AuditEventRequestEventCategory = "actiontype"
 )
@@ -4601,7 +4601,7 @@ func (AuditEventRequestEventCategory) AllValues() []AuditEventRequestEventCatego
 		AuditEventRequestEventCategoryWorkflow,
 		AuditEventRequestEventCategoryWorkflowexecution,
 		AuditEventRequestEventCategoryOrchestration,
-		AuditEventRequestEventCategoryWebhook,
+		AuditEventRequestEventCategoryApproval,
 		AuditEventRequestEventCategoryEffectiveness,
 		AuditEventRequestEventCategoryActiontype,
 	}
@@ -4626,7 +4626,7 @@ func (s AuditEventRequestEventCategory) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case AuditEventRequestEventCategoryOrchestration:
 		return []byte(s), nil
-	case AuditEventRequestEventCategoryWebhook:
+	case AuditEventRequestEventCategoryApproval:
 		return []byte(s), nil
 	case AuditEventRequestEventCategoryEffectiveness:
 		return []byte(s), nil
@@ -4664,8 +4664,8 @@ func (s *AuditEventRequestEventCategory) UnmarshalText(data []byte) error {
 	case AuditEventRequestEventCategoryOrchestration:
 		*s = AuditEventRequestEventCategoryOrchestration
 		return nil
-	case AuditEventRequestEventCategoryWebhook:
-		*s = AuditEventRequestEventCategoryWebhook
+	case AuditEventRequestEventCategoryApproval:
+		*s = AuditEventRequestEventCategoryApproval
 		return nil
 	case AuditEventRequestEventCategoryEffectiveness:
 		*s = AuditEventRequestEventCategoryEffectiveness

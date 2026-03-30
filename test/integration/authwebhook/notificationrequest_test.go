@@ -120,9 +120,9 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 			By("Validating event metadata (DD-TESTING-001 Pattern 6)")
 			event := events[0]
-			validateEventMetadata(event, "webhook")
+			validateEventMetadata(event, "notification")
 
-			By("Validating structured columns (per DD-WEBHOOK-003 + ADR-034 v1.4)")
+			By("Validating structured columns (per DD-WEBHOOK-003 + ADR-034 v1.8)")
 			Expect(event.ActorID.IsSet()).To(BeTrue(), "ActorID should be set")
 			Expect(event.ActorID.Value).To(Equal("admin"),
 				"actor_id column should contain authenticated operator")
@@ -276,9 +276,9 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 			By("Validating event metadata (DD-TESTING-001)")
 			event := events[0]
-			validateEventMetadata(event, "webhook")
+			validateEventMetadata(event, "notification")
 
-			By("Validating structured columns (per DD-WEBHOOK-003 + ADR-034 v1.4)")
+			By("Validating structured columns (per DD-WEBHOOK-003 + ADR-034 v1.8)")
 			// Per DD-WEBHOOK-003: Attribution fields in structured columns, NOT event_data
 			Expect(event.ActorID.IsSet()).To(BeTrue(), "ActorID should be set")
 			Expect(event.ActorID.Value).To(Equal("admin"),

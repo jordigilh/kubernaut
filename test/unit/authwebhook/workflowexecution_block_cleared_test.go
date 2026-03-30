@@ -164,10 +164,10 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Cleared Audit Trail", func(
 					Expect(event.EventType).To(Equal(authwebhook.EventTypeBlockCleared))
 				},
 			),
-			Entry("event_category = webhook (ADR-034 v1.7)",
+			Entry("event_category = workflowexecution (ADR-034 v1.8, #306)",
 				"event_category",
 				func(event *ogenclient.AuditEventRequest) {
-					Expect(event.EventCategory).To(Equal(ogenclient.AuditEventRequestEventCategoryWebhook))
+					Expect(event.EventCategory).To(Equal(ogenclient.AuditEventRequestEventCategoryWorkflowexecution))
 				},
 			),
 			Entry("event_action = block_cleared",
