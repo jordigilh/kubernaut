@@ -53,7 +53,7 @@ import (
 // - Create RAR via RO controller (no mocks)
 // - Approve RAR via AuthWebhook (authenticated user)
 // - Validate TWO audit events exist:
-//   1. Webhook event (event_category="webhook")
+//   1. Webhook event (event_category="approval")
 //   2. RO approval event (event_category="orchestration")
 // - Validate complete audit trail (WHO, WHAT, WHEN, WHY)
 //

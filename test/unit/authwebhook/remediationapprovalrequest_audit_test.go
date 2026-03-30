@@ -46,7 +46,7 @@ import (
 // Scope: AuthWebhook's responsibility in RAR audit trail:
 //   1. Extract authenticated user from admission request
 //   2. Populate status.DecidedBy field (user attribution)
-//   3. Emit webhook audit event (event_category = "webhook")
+//   3. Emit webhook audit event (event_category = "approval")
 //   4. Prevent identity forgery (idempotency on DecidedBy)
 
 // MockAuditStore implements audit.AuditStore for testing webhook audit emission
