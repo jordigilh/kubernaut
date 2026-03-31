@@ -26,9 +26,10 @@ import (
 // Compiled once at package init for performance (avoids recompilation per call).
 var (
 	// fencedCodeRe matches fenced code blocks: ```language\n...\n```
-	fencedCodeRe = regexp.MustCompile("(?s)```[a-zA-Z]*\n?.*?```")
+	// Language tag allows letters, digits, hyphens, and plus signs (json5, c++, protobuf3).
+	fencedCodeRe = regexp.MustCompile("(?s)```[a-zA-Z0-9+\\-]*\\s*\n?.*?```")
 	// fencedLangTagRe strips language tags from fenced code block opening: ```yaml → ```
-	fencedLangTagRe = regexp.MustCompile("```[a-zA-Z]+")
+	fencedLangTagRe = regexp.MustCompile("```[a-zA-Z0-9+\\-]+")
 	// emptyFencedBlockRe matches empty fenced code blocks (opening + closing with only whitespace)
 	emptyFencedBlockRe = regexp.MustCompile("(?m)```\\s*```")
 	// unbalancedTripleBacktickRe matches lone ``` not part of a fenced block
@@ -146,9 +147,13 @@ func MarkdownToMrkdwn(input string) string {
 	}
 
 	// Phase 9: Handle unbalanced triple backticks remaining after code block restoration.
-	// Count ``` occurrences — if odd, there's an unpaired fence. Escape them as literal text.
+	// Count ``` occurrences — if odd, there's an unpaired fence. Escape only the last
+	// (orphan) occurrence to avoid corrupting valid fenced blocks.
 	if strings.Count(result, "```")%2 != 0 {
-		result = unbalancedTripleBacktickRe.ReplaceAllString(result, "`\u200B`\u200B`")
+		lastIdx := strings.LastIndex(result, "```")
+		if lastIdx >= 0 {
+			result = result[:lastIdx] + "`\u200B`\u200B`" + result[lastIdx+3:]
+		}
 	}
 
 	// Phase 10: Clean up blank lines left by removed empty code blocks.
