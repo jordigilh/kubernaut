@@ -546,9 +546,11 @@ var rcaSentinels = []string{
 
 // isRCASentinel returns true if the given RCA summary is a known sentinel value
 // that should not be displayed to operators. Issue #588.
+// Case-insensitive with whitespace trimming for resilience against HAPI formatting changes.
 func isRCASentinel(rca string) bool {
+	trimmed := strings.TrimSpace(rca)
 	for _, sentinel := range rcaSentinels {
-		if rca == sentinel {
+		if strings.EqualFold(trimmed, sentinel) {
 			return true
 		}
 	}
@@ -918,7 +920,7 @@ func (c *NotificationCreator) buildSelfResolvedBody(
 		body += fmt.Sprintf("\n\n**AI Assessment**:\n%s", ai.Status.Message)
 	}
 
-	if rootCause != "" {
+	if rootCause != "" && !isRCASentinel(rootCause) {
 		body += fmt.Sprintf("\n\n**Root Cause Analysis**:\n%s", rootCause)
 	}
 

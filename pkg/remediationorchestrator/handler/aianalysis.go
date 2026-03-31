@@ -68,6 +68,8 @@ func NewAIAnalysisHandler(c client.Client, s *runtime.Scheme, nc *creator.Notifi
 // SetNotifySelfResolved enables or disables self-resolved status-update notifications.
 // BR-ORCH-037 AC-037-08: When true, handleWorkflowNotNeeded creates an informational NR.
 // Called from cmd/remediationorchestrator/main.go via Reconciler.SetNotifySelfResolved.
+//
+// CONCURRENCY: Must be called before mgr.Start(); not safe for concurrent use with reconcile loops.
 func (h *AIAnalysisHandler) SetNotifySelfResolved(enabled bool) {
 	h.notifySelfResolved = enabled
 }
@@ -207,13 +209,18 @@ func (h *AIAnalysisHandler) handleWorkflowNotNeeded(
 		if notifErr != nil {
 			logger.Error(notifErr, "Failed to create self-resolved notification (non-fatal)")
 		} else {
-			ref := h.buildNotificationRef(ctx, notifName, rr.Namespace)
-			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
-				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
-				return nil
-			}); updateErr != nil {
-				logger.Error(updateErr, "Failed to update RR with self-resolved notification ref (non-fatal)")
+		ref := h.buildNotificationRef(ctx, notifName, rr.Namespace)
+		if updateErr := helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
+			for _, existing := range rr.Status.NotificationRequestRefs {
+				if existing.Name == ref.Name && existing.Namespace == ref.Namespace {
+					return nil
+				}
 			}
+			rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+			return nil
+		}); updateErr != nil {
+			logger.Error(updateErr, "Failed to update RR with self-resolved notification ref (non-fatal)")
+		}
 		}
 	}
 
