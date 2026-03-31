@@ -757,8 +757,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
-	// Step 10: Requeue for remaining components
-	return ctrl.Result{RequeueAfter: r.Config.RequeueAssessmentInProgress}, nil
+	// Step 10: Requeue for remaining components.
+	// Cap at remaining validity time so the expiry check (Step 4) fires on time
+	// instead of up to one full interval late (BR-EM-007, Issue #591).
+	requeue := r.Config.RequeueAssessmentInProgress
+	if ea.Status.ValidityDeadline != nil {
+		remaining := r.validityChecker.TimeUntilExpired(ea.Status.ValidityDeadline.Time)
+		if remaining > 0 && remaining < requeue {
+			requeue = remaining
+		}
+	}
+	return ctrl.Result{RequeueAfter: requeue}, nil
 }
 
 // SetupWithManager registers the controller with the manager.
