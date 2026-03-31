@@ -3397,6 +3397,12 @@ func (r *Reconciler) SetAsyncPropagation(cfg roconfig.AsyncPropagationConfig) {
 	r.asyncPropagation = cfg
 }
 
+// SetNotifySelfResolved enables or disables the self-resolved status-update notification.
+// BR-ORCH-037 AC-037-08, Issue #590: Called from cmd/remediationorchestrator/main.go.
+func (r *Reconciler) SetNotifySelfResolved(enabled bool) {
+	r.aiAnalysisHandler.SetNotifySelfResolved(enabled)
+}
+
 // resolveDualTargets resolves both signal and remediation targets for the EA (DD-EM-003).
 //
 // Signal target: Always from RR.Spec.TargetResource (the resource that triggered the alert).

@@ -15,11 +15,12 @@ procedures.
 3. [Release Candidate (RC) Workflow](#release-candidate-rc-workflow)
 4. [GA Release Workflow](#ga-release-workflow)
 5. [Hotfix / Patch Release Workflow](#hotfix--patch-release-workflow)
-6. [Release Pipeline Stages](#release-pipeline-stages)
-7. [Verification Checklist](#verification-checklist)
-8. [Milestone Closure](#milestone-closure)
-9. [Recovery Procedures](#recovery-procedures)
-10. [Appendix: Services and Build Details](#appendix-services-and-build-details)
+6. [Database Migrations](#database-migrations)
+7. [Release Pipeline Stages](#release-pipeline-stages)
+8. [Verification Checklist](#verification-checklist)
+9. [Milestone Closure](#milestone-closure)
+10. [Recovery Procedures](#recovery-procedures)
+11. [Appendix: Services and Build Details](#appendix-services-and-build-details)
 
 ---
 
@@ -277,6 +278,99 @@ substituting the patch version.
 
 ---
 
+## Database Migrations
+
+Kubernaut uses [Goose](https://github.com/pressly/goose) for database migrations
+(DD-012). The Helm `post-install`/`post-upgrade` hook runs `goose up` to apply
+pending migrations. This section documents the release-time steps that keep the
+migration chain clean.
+
+### Minor Release: Squash Dev Incrementals
+
+During development, schema changes are added as numbered goose files in
+`migrations/` (e.g., `002_add_foo.sql`, `003_alter_bar.sql`). At release time,
+squash them into a single delta file.
+
+**Procedure** (performed on the release branch before tagging):
+
+1. **Identify dev incrementals** — all migration files added since the last release
+   baseline. For example, if `001_v1_schema.sql` was the v1.0 baseline:
+   ```bash
+   ls migrations/  # identify 002_*, 003_*, etc.
+   ```
+
+2. **Create the squashed delta file** — combine the Up sections of all dev
+   incrementals into a single file named `002_vX.Y_schema.sql`:
+   ```bash
+   # Example for v1.2:
+   # Combine 002 + 003 into a single 002_v1.2_schema.sql
+   # Ensure -- +goose Up / -- +goose Down sections are correct
+   ```
+   The Up section should contain all DDL from the dev incrementals in order.
+   The Down section should reverse them in reverse order.
+
+3. **Archive the originals**:
+   ```bash
+   mkdir -p migrations/vX.Y-dev-archived
+   mv migrations/002_add_service_account_name.sql migrations/vX.Y-dev-archived/
+   mv migrations/003_capitalize_catalog_status.sql migrations/vX.Y-dev-archived/
+   ```
+
+4. **Validate the chain**:
+   ```bash
+   # Against a fresh database:
+   goose -dir migrations postgres "$GOOSE_DBSTRING" up
+   goose -dir migrations postgres "$GOOSE_DBSTRING" status
+
+   # Against an existing database (upgrade path):
+   # goose will skip already-applied versions and apply only the new squashed file
+   ```
+
+5. **Commit** the squashed file and archive in the release PR.
+
+**Why squash?** Fresh installs apply fewer files. The `migrations/` root stays
+compact. The archived originals preserve development history.
+
+**Safety**: Existing databases that applied the original dev incrementals
+individually will not re-apply the squashed file — goose skips already-applied
+version numbers regardless of file content changes. The upgrade path is safe.
+
+### Major Release: Create Baseline (Future)
+
+At a major version boundary (e.g., v1.x → v2.0), consolidate all migrations into
+a single baseline file for fresh installs:
+
+```
+migrations/
+  001_v1_schema.sql          # kept for v1.x → v2.0 upgrade path
+  002_v1.2_schema.sql        # kept for upgrade path
+  baseline_v2_schema.sql     # fresh-install-only: full schema at v2.0
+```
+
+The Helm migration hook will detect fresh vs. upgrade by checking for the
+`goose_db_version` table:
+- **Fresh install**: apply baseline only (no version tracking needed)
+- **Upgrade**: apply only pending numbered migrations via `goose up`
+
+> This detection logic is scaffolded in the migration job template but not active
+> until the first major release that introduces a baseline file.
+
+### Key Rules
+
+1. **Never modify an already-applied migration** — always add a new file
+2. **Squash at release time** — dev incrementals become a single delta per minor
+3. **Baseline at major version** — consolidate for fresh installs
+4. **Archive, don't delete** — originals go to `migrations/vX.Y-dev-archived/`
+5. **Validate both paths** — test fresh install and upgrade before tagging
+
+### Reference
+
+- Design decision: [DD-012](../../architecture/decisions/DD-012-goose-database-migration-management.md)
+- Migration files: [`migrations/`](../../../migrations/)
+- Helm hook: [`charts/kubernaut/templates/hooks/migration-job.yaml`](../../../charts/kubernaut/templates/hooks/migration-job.yaml)
+
+---
+
 ## Release Pipeline Stages
 
 The release workflow (`.github/workflows/release.yml`) has 5 stages:
@@ -509,7 +603,7 @@ multi-arch manifests (amd64 + arm64).
 | 9 | effectivenessmonitor | Go | `docker/effectivenessmonitor-controller.Dockerfile` |
 | 10 | holmesgpt-api | Python | `holmesgpt-api/Dockerfile` |
 | 11 | must-gather | Bash | `cmd/must-gather/Dockerfile` |
-| 12 | db-migrate | Go | `docker/db-migrate.Dockerfile` |
+| 12 | db-migrate | Shell (goose CLI) | `docker/db-migrate.Dockerfile` |
 
 `mock-llm` is **not** released — it is a test-only artifact.
 

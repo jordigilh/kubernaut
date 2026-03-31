@@ -536,6 +536,26 @@ All duplicate signals have been handled by this remediation.`,
 // MANUAL REVIEW NOTIFICATIONS (BR-ORCH-036)
 // ========================================
 
+// rcaSentinels lists known sentinel values that HAPI's result_parser.py generates
+// when RCA extraction fails. These are not meaningful for operators and should be
+// omitted from notification bodies. Issue #588.
+var rcaSentinels = []string{
+	"Failed to parse RCA",
+	"No structured RCA found",
+}
+
+// isRCASentinel returns true if the given RCA summary is a known sentinel value
+// that should not be displayed to operators. Issue #588.
+// Case-insensitive with whitespace trimming for resilience against HAPI formatting changes.
+func isRCASentinel(rca string) bool {
+	trimmed := strings.TrimSpace(rca)
+	for _, sentinel := range rcaSentinels {
+		if strings.EqualFold(trimmed, sentinel) {
+			return true
+		}
+	}
+	return false
+}
 
 // ManualReviewContext provides context for manual review notifications.
 // Used by both AIAnalysis and WorkflowExecution failure scenarios.
@@ -752,7 +772,7 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 		body += fmt.Sprintf("\n\n**Details**:\n%s", ctx.Message)
 	}
 
-	if ctx.RootCauseAnalysis != "" {
+	if ctx.RootCauseAnalysis != "" && !isRCASentinel(ctx.RootCauseAnalysis) {
 		body += fmt.Sprintf("\n\n**Root Cause Analysis**:\n%s", ctx.RootCauseAnalysis)
 	}
 
@@ -787,6 +807,124 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 2. Manually apply the remediation
 3. Mark as resolved if no action is needed`
 
+	return body
+}
+
+// ========================================
+// BR-ORCH-037 AC-037-08: SELF-RESOLVED NOTIFICATION (Issue #590)
+// ========================================
+
+// CreateSelfResolvedNotification creates a status-update NotificationRequest when a signal
+// self-resolves and the operator has opted in via notifications.notifySelfResolved.
+// This is informational only — priority is always low, and channels are resolved by
+// routing rules (BR-NOT-065), not by the RO.
+// Reference: BR-ORCH-037 AC-037-08, BR-ORCH-031 (cascade deletion), BR-ORCH-035 (ref tracking)
+func (c *NotificationCreator) CreateSelfResolvedNotification(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	ai *aianalysisv1.AIAnalysis,
+) (string, error) {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"namespace", rr.Namespace,
+		"aiAnalysis", ai.Name,
+	)
+
+	name := fmt.Sprintf("nr-self-resolved-%s", rr.Name)
+
+	existing := &notificationv1.NotificationRequest{}
+	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
+	if err == nil {
+		logger.Info("Self-resolved notification already exists, reusing", "name", name)
+		return name, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return "", fmt.Errorf("failed to check existing NotificationRequest: %w", err)
+	}
+
+	rootCause := ai.Status.RootCause
+	if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.Summary != "" {
+		rootCause = ai.Status.RootCauseAnalysis.Summary
+	}
+
+	nr := &notificationv1.NotificationRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: rr.Namespace,
+		},
+		Spec: notificationv1.NotificationRequestSpec{
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
+			Type:     notificationv1.NotificationTypeStatusUpdate,
+			Priority: notificationv1.NotificationPriorityLow,
+			Severity: rr.Spec.Severity,
+			Subject:  fmt.Sprintf("ℹ️ Auto-Resolved: %s", rr.Spec.SignalName),
+			Body:     c.buildSelfResolvedBody(rr, ai, rootCause, resolveNotificationTargetResource(rr, ai)),
+			Context: &notificationv1.NotificationContext{
+				Lineage: &notificationv1.LineageContext{
+					RemediationRequest: rr.Name,
+					AIAnalysis:         ai.Name,
+				},
+				Analysis: &notificationv1.AnalysisContext{
+					RootCause: rootCause,
+					Outcome:   "NoActionRequired",
+				},
+			},
+		},
+	}
+
+	if rr.UID == "" {
+		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
+	}
+
+	if err := controllerutil.SetControllerReference(rr, nr, c.scheme); err != nil {
+		logger.Error(err, "Failed to set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	if err := c.client.Create(ctx, nr); err != nil {
+		logger.Error(err, "Failed to create self-resolved NotificationRequest")
+		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
+	}
+
+	logger.Info("Created self-resolved NotificationRequest", "name", name)
+	return name, nil
+}
+
+// buildSelfResolvedBody builds the informational notification body for self-resolved signals.
+func (c *NotificationCreator) buildSelfResolvedBody(
+	rr *remediationv1.RemediationRequest,
+	ai *aianalysisv1.AIAnalysis,
+	rootCause string,
+	target remediationv1.ResourceIdentifier,
+) string {
+	body := fmt.Sprintf(`Signal was investigated but no remediation was needed.
+
+**Signal**: %s
+**Severity**: %s
+
+**Affected Resource**:
+%s`,
+		rr.Spec.SignalName,
+		rr.Spec.Severity,
+		formatTargetResource(target),
+	)
+
+	if ai.Status.Message != "" {
+		body += fmt.Sprintf("\n\n**AI Assessment**:\n%s", ai.Status.Message)
+	}
+
+	if rootCause != "" && !isRCASentinel(rootCause) {
+		body += fmt.Sprintf("\n\n**Root Cause Analysis**:\n%s", rootCause)
+	}
+
+	body += "\n\nNo action was taken. This notification is for audit purposes only."
 	return body
 }
 

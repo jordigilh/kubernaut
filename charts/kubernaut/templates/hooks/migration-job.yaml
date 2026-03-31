@@ -90,6 +90,18 @@ spec:
 
               GOOSE_DBSTRING="host=$PGHOST user=$PGUSER password=$PGPASSWORD dbname=$PGDATABASE sslmode=disable"
 
+              # Issue #581: Fresh-vs-upgrade detection for future major-version baselines.
+              # For minor releases, `goose up` handles both paths (fresh applies all;
+              # upgrade applies only pending). Uncomment when a baseline file exists.
+              #
+              # if ! psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -tAc \
+              #     "SELECT 1 FROM goose_db_version LIMIT 1" 2>/dev/null; then
+              #   echo "==> Fresh install detected — applying baseline"
+              #   psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -f /migrations/baseline_v2_schema.sql
+              #   echo "==> Baseline applied, skipping numbered chain"
+              #   exit 0
+              # fi
+
               echo "==> Applying SQL migrations with goose (DD-012)"
               goose -dir /migrations postgres "$GOOSE_DBSTRING" up
 

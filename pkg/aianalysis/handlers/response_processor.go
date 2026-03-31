@@ -345,15 +345,10 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 		}
 	}
 
-	// Build message: validation attempts + warnings
-	if len(messageParts) > 0 {
-		analysis.Status.Message = strings.Join(messageParts, "; ")
-		if len(resp.Warnings) > 0 {
-			analysis.Status.Message += "; " + strings.Join(resp.Warnings, "; ")
-		}
-	} else {
-		analysis.Status.Message = strings.Join(resp.Warnings, "; ")
-	}
+	// Issue #588: Message contains only validation attempt errors.
+	// Warnings are stored separately in Status.Warnings to prevent duplication
+	// when buildManualReviewBody renders both Details and Warnings sections.
+	analysis.Status.Message = strings.Join(messageParts, "; ")
 	analysis.Status.Warnings = resp.Warnings
 
 	// Preserve partial response if available

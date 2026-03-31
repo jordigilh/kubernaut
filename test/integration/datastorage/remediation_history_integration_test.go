@@ -20,7 +20,7 @@ limitations under the License.
 //   - BR-HAPI-016: Remediation history context for LLM prompt enrichment
 //
 // Design Decisions:
-//   - DD-HAPI-016 v1.1: Two-step query pattern (RO events by target, EM events by correlation_id)
+//   - DD-HAPI-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586)
 //   - DD-EM-002 v1.1: spec_drift assessment reason
 //
 // Test Plan: docs/testing/DD-HAPI-016/TEST_PLAN.md (IT-DS-016-001 through IT-DS-016-009)
@@ -198,23 +198,24 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 	// ============================================================================
 
 	Describe("Repository Layer", func() {
-		It("IT-DS-016-001: QueryROEventsByTarget returns RO events filtered by target and since", func() {
-			// Arrange: insert 2 RO events for our target + 1 for a different target
+		It("IT-DS-016-001: QueryROEventsBySpecHash returns RO events filtered by pre_remediation_spec_hash and time window", func() {
+			// Arrange: insert 2 RO events with matching hash + 1 with a different hash
 			now := time.Now().UTC()
+			matchHash := "sha256:match_" + testID
 			cid1 := fmt.Sprintf("corr-ro-1-%s", testID)
 			cid2 := fmt.Sprintf("corr-ro-2-%s", testID)
 			cidOther := fmt.Sprintf("corr-ro-other-%s", testID)
 
-			insertROEvent(cid1, targetResource, "sha256:hash1", "ScaleUp", now.Add(-2*time.Hour))
-			insertROEvent(cid2, targetResource, "sha256:hash2", "RestartPod", now.Add(-1*time.Hour))
-			insertROEvent(cidOther, "other/Deployment/other", "sha256:hashX", "ScaleUp", now.Add(-1*time.Hour))
+			insertROEvent(cid1, targetResource, matchHash, "ScaleUp", now.Add(-2*time.Hour))
+			insertROEvent(cid2, targetResource, matchHash, "RestartPod", now.Add(-1*time.Hour))
+			insertROEvent(cidOther, targetResource, "sha256:different_hash", "ScaleUp", now.Add(-1*time.Hour))
 
-			// Act: query with 3-hour lookback
-			rows, err := rhRepo.QueryROEventsByTarget(testCtx, targetResource, now.Add(-3*time.Hour))
+			// Act: query by spec hash with 3-hour lookback
+			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, matchHash, now.Add(-3*time.Hour), now)
 
 			// Assert
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rows).To(HaveLen(2), "Should return exactly 2 RO events for our target")
+			Expect(rows).To(HaveLen(2), "Should return exactly 2 RO events matching the spec hash")
 			Expect(rows[0].CorrelationID).To(Equal(cid1))
 			Expect(rows[1].CorrelationID).To(Equal(cid2))
 			Expect(rows[0].EventData["action_type"]).To(Equal("ScaleUp"))
@@ -323,15 +324,16 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 
 		// queryAndCorrelate reproduces the handler's orchestration pipeline
 		// using direct business logic calls (no HTTP):
-		//   1. QueryROEventsByTarget
+		//   1. QueryROEventsBySpecHash (DD-HAPI-016 v1.4: both tiers use spec hash)
 		//   2. QueryEffectivenessEventsBatch (batch by correlation_id)
 		//   3. CorrelateTier1Chain (correlation + scoring)
 		//   4. DetectRegression (hash match analysis)
 		queryAndCorrelate := func(target, specHash string, since time.Time) ([]api.RemediationHistoryEntry, bool) {
 			GinkgoHelper()
+			_ = target // retained for call-site readability; Tier 1 now queries by spec hash
 
-			// Step 1: Query RO events by target
-			roEvents, err := adapter.QueryROEventsByTarget(testCtx, target, since)
+			// Step 1: Query RO events by spec hash (#586)
+			roEvents, err := adapter.QueryROEventsBySpecHash(testCtx, specHash, since, time.Now().UTC())
 			Expect(err).ToNot(HaveOccurred())
 
 			// Step 2: Batch query EM events

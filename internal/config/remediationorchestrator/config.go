@@ -57,6 +57,10 @@ type Config struct {
 	// The RO uses these values to compute HashComputeDelay when creating EA CRDs (#277).
 	// DD-EM-004 v2.0, BR-RO-103.3, BR-RO-103.4, Issue #253
 	AsyncPropagation AsyncPropagationConfig `yaml:"asyncPropagation"`
+
+	// Notifications configures optional notification behavior for the RO.
+	// BR-ORCH-037 AC-037-08: Self-resolved notification toggle.
+	Notifications NotificationsConfig `yaml:"notifications"`
 }
 
 // TimeoutsConfig holds timeout configuration for remediation workflow phases.
@@ -203,6 +207,16 @@ func (a *AsyncPropagationConfig) ComputePropagationDelay(isGitOps, isCRD bool) t
 		total += a.OperatorReconcileDelay
 	}
 	return total
+}
+
+// NotificationsConfig controls optional notification behavior for the RO.
+// BR-ORCH-037 AC-037-08/09: Self-resolved signal notification.
+// Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase.
+type NotificationsConfig struct {
+	// NotifySelfResolved controls whether handleWorkflowNotNeeded emits
+	// a status-update NotificationRequest when a signal self-resolves.
+	// Default: false (AC-037-09 — no notification unless explicitly opted in).
+	NotifySelfResolved bool `yaml:"notifySelfResolved"`
 }
 
 // DefaultConfig returns safe defaults for the RemediationOrchestrator.

@@ -16,6 +16,7 @@
 | 1.1 | 2026-02-14 | Architecture Team | Updated DS internal logic to reflect EM's component-level audit event architecture (per ADR-EM-001 v1.3). DS now uses a two-step query (RO events by target_resource, then EM component events by correlation_id) and reuses exported scoring functions from effectiveness_handler.go. Health/metric/alert data sourced from typed ogen sub-objects (health_checks, metric_deltas, alert_resolution) on EM component events. signalResolved read from alert_resolution.alert_resolved. Coordinated via issue #82. |
 | 1.2 | 2026-02-12 | Architecture Team | DRIFT-DS-1: Corrected sort order to descending (most recent first) per implementation. DRIFT-HAPI-1: Added spec_drift Assessment Reason Handling section documenting INCONCLUSIVE semantics, declining effectiveness exclusion, causal chain detection, and LLM reasoning guidance. |
 | 1.3 | 2026-03-27 | Architecture Team | Remediation history API and examples: `workflowType` renamed to `actionType`; RO audit skeleton field `workflow_type` renamed to `action_type` (Issue #528, v1.2). |
+| 1.4 | 2026-03-28 | Architecture Team | Issue #586: Corrected Tier 1 query key from `target_resource` to `pre_remediation_spec_hash`. Both tiers now query by spec hash to preserve causal chain integrity for LLM reasoning. Removed `QueryROEventsByTarget` dead code. |
 
 ---
 
@@ -287,7 +288,7 @@ GET /api/v1/remediation-history/context
 
 DS performs the following when serving this endpoint:
 
-1. **Query Tier 1 — RO events**: Query `remediation.workflow_created` audit events by `target_resource` (JSONB expression index `idx_audit_events_target_resource`) within the Tier 1 time window (default 24h). These events provide the remediation chain skeleton: `correlation_id` (RR name), `pre_remediation_spec_hash`, `action_type` (DD-WORKFLOW-016 action type, e.g., "ScaleReplicas"), `outcome`, `signal_name`, `signal_fingerprint`.
+1. **Query Tier 1 — RO events**: Query `remediation.workflow_created` audit events by `pre_remediation_spec_hash` matching `currentSpecHash` (JSONB expression index `idx_audit_events_pre_remediation_spec_hash`) within the Tier 1 time window (default 24h). These events provide the remediation chain skeleton: `correlation_id` (RR name), `pre_remediation_spec_hash`, `action_type` (DD-WORKFLOW-016 action type, e.g., "ScaleReplicas"), `outcome`, `signal_name`, `signal_fingerprint`. Querying by spec hash (not target resource) ensures the LLM only receives history from the same configuration, preserving causal chain integrity (Issue #586).
 2. **Query Tier 1 — EM component events**: For each RO event's `correlation_id`, batch-query EM component events (`event_category = 'effectiveness'`). The EM emits component-level audit events per ADR-EM-001 v1.3:
    - `effectiveness.health.assessed` — health score + typed `health_checks` sub-object (`pod_running`, `readiness_pass`, `restart_delta`, `crash_loops`, `oom_killed`, `pending_count`)
    - `effectiveness.alert.assessed` — alert score + typed `alert_resolution` sub-object (`alert_resolved`, `active_count`, `resolution_time_seconds`)
@@ -300,7 +301,7 @@ DS performs the following when serving this endpoint:
 6. **Regression detection**: Set `regressionDetected: true` if any record's `preRemediationSpecHash` matches `currentSpecHash` — the target resource has been reverted to a configuration that previously caused issues.
 7. **Order by completedAt descending**: Both Tier 1 and Tier 2 chains are ordered by `completedAt` descending (most recent first). *V1.0 implementation sorts most-recent-first to prioritize recent effectiveness data for LLM context window optimization.*
 
-DS maintains expression indexes on `pre_remediation_spec_hash`, `target_resource` within the audit table for query performance (migration 027).
+DS uses expression index `idx_audit_events_pre_remediation_spec_hash` for both Tier 1 and Tier 2 query performance (migration 027). The `idx_audit_events_target_resource` index exists but is no longer used by the remediation history endpoint (v1.4, Issue #586).
 
 ---
 
@@ -309,7 +310,7 @@ DS maintains expression indexes on `pre_remediation_spec_hash`, `target_resource
 ### Tier 1: Recent History (24h, Detailed)
 
 - **Purpose**: Full effectiveness data for recent remediations on the same target
-- **Query key**: Target resource (GVK + name + namespace) + 24h window
+- **Query key**: `pre_remediation_spec_hash` matching `currentSpecHash` + 24h window (v1.4, Issue #586)
 - **Additional filter**: Signal fingerprint (for exact recurrence detection)
 - **Returns**: Full remediation chain with all fields — effectiveness scores, metric deltas, health checks, dual hashes
 - **Prompt framing**: Strong signal — "these remediations were attempted recently"
@@ -325,8 +326,8 @@ DS maintains expression indexes on `pre_remediation_spec_hash`, `target_resource
 ### Fallthrough Logic
 
 1. HAPI calls DS with target resource + current spec hash
-2. DS runs Tier 1 query → if results found, return them
-3. DS runs Tier 2 query → if `preRemediationSpecHash` match found beyond 24h, return that chain
+2. DS runs Tier 1 query (by `pre_remediation_spec_hash`, 24h window) → correlates with EM events, detects regression
+3. If regression detected: DS runs Tier 2 query (by `pre_remediation_spec_hash`, 90d window) → builds summary chain
 4. If no matches in either tier → return empty response (fresh investigation, no history context injected into prompt)
 
 ---

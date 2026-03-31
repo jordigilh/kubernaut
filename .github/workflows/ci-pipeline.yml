@@ -566,7 +566,7 @@ jobs:
           sudo apt-get install -y podman
       - name: Setup envtest (K8s test binaries)
         run: |
-          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.23
           echo "KUBEBUILDER_ASSETS=$($(go env GOPATH)/bin/setup-envtest use -p path)" >> $GITHUB_ENV
       - name: Run ${{ matrix.service }} integration tests
         run: |

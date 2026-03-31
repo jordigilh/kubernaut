@@ -135,9 +135,48 @@ var _ = Describe("BR-NOT-083: Markdown to Slack mrkdwn Converter", func() {
 				Expect(formatting.MarkdownToMrkdwn(input)).To(Equal(expected))
 			})
 
-			It("should preserve fenced code blocks with language tag (UT-NOT-048-071)", func() {
+			It("should strip language tag from fenced code blocks for Slack compatibility (UT-NOT-048-071)", func() {
 				input := "```yaml\nkey: value\n```"
-				Expect(formatting.MarkdownToMrkdwn(input)).To(Equal(input))
+				expected := "```\nkey: value\n```"
+				Expect(formatting.MarkdownToMrkdwn(input)).To(Equal(expected))
+			})
+		})
+
+		// Issue #588: Fenced code block edge cases for Slack rendering
+		Context("Issue #588: fenced code block Slack compatibility", func() {
+			It("UT-NOT-588-001: unbalanced triple backticks from HAPI errors render without empty code blocks", func() {
+				input := "LLM did not produce structured JSON output. Expected ```json code block or # section_header format."
+				result := formatting.MarkdownToMrkdwn(input)
+
+				Expect(result).ToNot(ContainSubstring("```json"))
+				Expect(result).ToNot(ContainSubstring("```\n```"))
+				Expect(result).To(ContainSubstring("LLM did not produce structured JSON output"))
+			})
+
+			It("UT-NOT-588-002: language tags are stripped from fenced code blocks", func() {
+				input := "```json\n{\"key\": \"value\"}\n```"
+				expected := "```\n{\"key\": \"value\"}\n```"
+				Expect(formatting.MarkdownToMrkdwn(input)).To(Equal(expected))
+			})
+
+			It("UT-NOT-588-003: empty fenced code blocks are removed from output", func() {
+				input := "Before\n```\n```\nAfter"
+				result := formatting.MarkdownToMrkdwn(input)
+
+				Expect(result).ToNot(ContainSubstring("```"))
+				Expect(result).To(ContainSubstring("Before"))
+				Expect(result).To(ContainSubstring("After"))
+			})
+
+			It("UT-NOT-588-004: mixed content with code blocks and formatting converts correctly", func() {
+				input := "**Error**: See `kubectl logs`:\n```go\nfmt.Println(\"hello\")\n```\nCheck [docs](https://k8s.io)."
+				result := formatting.MarkdownToMrkdwn(input)
+
+				Expect(result).To(ContainSubstring("*Error*"))
+				Expect(result).To(ContainSubstring("`kubectl logs`"))
+				Expect(result).To(ContainSubstring("```\nfmt.Println(\"hello\")\n```"))
+				Expect(result).ToNot(ContainSubstring("```go"))
+				Expect(result).To(ContainSubstring("<https://k8s.io|docs>"))
 			})
 		})
 

@@ -550,7 +550,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			logger.V(1).Info("Hash computation deferred for async-managed target",
 				"hashComputeDelay", ea.Spec.Config.HashComputeDelay.Duration,
 				"remaining", deferral.RequeueAfter)
-			return ctrl.Result{RequeueAfter: deferral.RequeueAfter}, nil
+			return ctrl.Result{RequeueAfter: r.capRequeueAtDeadline(ea, deferral.RequeueAfter)}, nil
 		}
 		result := r.assessHash(ctx, ea)
 		ea.Status.Components.HashComputed = result.Component.Assessed
@@ -715,9 +715,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
 			}
 		}
+		capped := r.capRequeueAtDeadline(ea, alertDeferred.RequeueAfter)
 		logger.Info("All components except alert done; precise requeue for alert deferral (#277)",
-			"requeueAfter", alertDeferred.RequeueAfter)
-		return ctrl.Result{RequeueAfter: alertDeferred.RequeueAfter}, nil
+			"requeueAfter", capped)
+		return ctrl.Result{RequeueAfter: capped}, nil
 	}
 
 	// Step 8: Check if all components are done and prepare completion fields in-memory.
@@ -757,8 +758,21 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
-	// Step 10: Requeue for remaining components
-	return ctrl.Result{RequeueAfter: r.Config.RequeueAssessmentInProgress}, nil
+	// Step 10: Requeue for remaining components (BR-EM-007, Issue #591).
+	return ctrl.Result{RequeueAfter: r.capRequeueAtDeadline(ea, r.Config.RequeueAssessmentInProgress)}, nil
+}
+
+// capRequeueAtDeadline ensures the requeue interval does not overshoot the
+// ValidityDeadline. Returns the original interval if no deadline is set or
+// the deadline is further away (BR-EM-007, Issue #591).
+func (r *Reconciler) capRequeueAtDeadline(ea *eav1.EffectivenessAssessment, interval time.Duration) time.Duration {
+	if ea.Status.ValidityDeadline != nil {
+		remaining := r.validityChecker.TimeUntilExpired(ea.Status.ValidityDeadline.Time)
+		if remaining > 0 && remaining < interval {
+			return remaining
+		}
+	}
+	return interval
 }
 
 // SetupWithManager registers the controller with the manager.

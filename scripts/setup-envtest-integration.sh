@@ -39,7 +39,7 @@ setup_envtest() {
     # Install setup-envtest if not available
     if ! command -v setup-envtest &> /dev/null; then
         log_info "Installing setup-envtest..."
-        go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+        go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.23
     fi
 
     # Create bin directory

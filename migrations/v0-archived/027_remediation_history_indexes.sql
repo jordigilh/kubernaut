@@ -11,8 +11,8 @@
 -- RATIONALE:
 -- The remediation history endpoint (GET /api/v1/remediation-history/context)
 -- queries audit events by:
--- 1. target_resource (stored in event_data JSONB) for Tier 1 chain
--- 2. pre_remediation_spec_hash (stored in event_data JSONB) for Tier 2 regression
+-- 1. pre_remediation_spec_hash (stored in event_data JSONB) for both Tier 1 and Tier 2 (v1.4, Issue #586)
+-- 2. target_resource index retained for potential future use but no longer used by the remediation history endpoint
 --
 -- While a GIN index exists on event_data (idx_audit_events_event_data_gin),
 -- expression (B-tree) indexes are more efficient for exact-match lookups on

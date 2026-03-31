@@ -18,6 +18,7 @@ package remediationorchestrator
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -27,6 +28,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
@@ -258,6 +260,137 @@ var _ = Describe("AIAnalysisHandler", func() {
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
 				Expect(updatedRR.Status.Outcome).To(Equal("NoActionRequired"))
 				Expect(updatedRR.Status.NextAllowedExecution).To(BeNil(), "NextAllowedExecution should be nil when delay is zero")
+			})
+
+			// Issue #590: Self-resolved notification tests (BR-ORCH-037 AC-037-08/09)
+			It("UT-RO-590-005: should append NR ref to RR status when notifySelfResolved is true (#590)", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				k8sClient := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(k8sClient, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(k8sClient, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+				h.SetNotifySelfResolved(true)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Completed"
+				ai.Status.Reason = "WorkflowNotNeeded"
+				ai.Status.Message = "Problem self-resolved"
+
+				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(updatedRR.Status.NotificationRequestRefs).To(HaveLen(1),
+					"Behavior: NR ref must be tracked in RR status (BR-ORCH-035)")
+				Expect(updatedRR.Status.NotificationRequestRefs[0].Name).To(Equal("nr-self-resolved-test-rr"),
+					"Correctness: NR ref name must follow deterministic pattern")
+				Expect(updatedRR.Status.NotificationRequestRefs[0].Kind).To(Equal("NotificationRequest"))
+			})
+
+			It("UT-RO-590-006: should complete RR normally when notification creation fails (#590)", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				k8sClient := fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(rr).WithStatusSubresource(rr).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+							if _, ok := obj.(*notificationv1.NotificationRequest); ok {
+								return errors.New("simulated NR create failure")
+							}
+							return c.Create(ctx, obj, opts...)
+						},
+					}).Build()
+				nc = creator.NewNotificationCreator(k8sClient, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(k8sClient, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+				h.SetNotifySelfResolved(true)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Completed"
+				ai.Status.Reason = "WorkflowNotNeeded"
+				ai.Status.Message = "Problem self-resolved"
+
+				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred(),
+					"Behavior: notification failure must NOT propagate as handler error")
+				Expect(result.RequeueAfter).To(BeZero())
+
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
+					"Correctness: RR must still reach Completed despite notification failure")
+				Expect(updatedRR.Status.Outcome).To(Equal("NoActionRequired"))
+				Expect(updatedRR.Status.CompletedAt.Time).To(BeTemporally("~", time.Now(), 5*time.Second),
+					"Correctness: CompletedAt must be set to approximately now")
+				Expect(updatedRR.Status.NotificationRequestRefs).To(BeEmpty(),
+					"Accuracy: no NR ref since creation failed")
+			})
+
+			It("UT-RO-590-007: should NOT create notification when notifySelfResolved is false (default) (#590)", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				k8sClient := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(k8sClient, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(k8sClient, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+				// SetNotifySelfResolved NOT called — defaults to false
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Completed"
+				ai.Status.Reason = "WorkflowNotNeeded"
+				ai.Status.Message = "Problem self-resolved"
+
+				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				nrList := &notificationv1.NotificationRequestList{}
+				err = k8sClient.List(ctx, nrList, &client.ListOptions{Namespace: "default"})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(BeEmpty(),
+					"Behavior: no NotificationRequest must be created when notifySelfResolved is false (AC-037-09)")
+
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedRR.Status.NotificationRequestRefs).To(BeEmpty())
+			})
+
+			It("UT-RO-590-008: should preserve all existing handler outcomes when notification is enabled (#590)", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				reg := prometheus.NewRegistry()
+				m := rometrics.NewMetricsWithRegistry(reg)
+				k8sClient := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(k8sClient, scheme, m)
+				h = handler.NewAIAnalysisHandler(k8sClient, scheme, nc, m, mockTransitionFailed, 24*time.Hour)
+				h.SetNotifySelfResolved(true)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Completed"
+				ai.Status.Reason = "WorkflowNotNeeded"
+				ai.Status.SubReason = "ProblemResolved"
+				ai.Status.Message = "Issue self-resolved"
+
+				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
+					"Correctness: RR phase must be Completed")
+				Expect(updatedRR.Status.Outcome).To(Equal("NoActionRequired"),
+					"Correctness: RR outcome must be NoActionRequired")
+				Expect(updatedRR.Status.CompletedAt).ToNot(BeNil(),
+					"Correctness: CompletedAt must be set")
+				Expect(updatedRR.Status.Message).To(Equal("Issue self-resolved"),
+					"Accuracy: RR message must match AI message")
+
+				metric := testutil.ToFloat64(m.NoActionNeededTotal.WithLabelValues("ProblemResolved", "default"))
+				Expect(metric).To(Equal(float64(1)),
+					"Behavior: NoActionNeededTotal metric must be incremented")
 			})
 		})
 

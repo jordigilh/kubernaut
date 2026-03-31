@@ -19,7 +19,7 @@ limitations under the License.
 // (repository package) to EffectivenessEvent (server package).
 //
 // BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-// DD-HAPI-016 v1.1: Two-step query pattern with EM scoring infrastructure.
+// DD-HAPI-016 v1.4: Both tiers query by spec hash for causal chain integrity.
 package server
 
 import (
@@ -41,10 +41,6 @@ type remediationHistoryRepoAdapter struct {
 // NewRemediationHistoryRepoAdapter creates a new adapter wrapping the given repository.
 func NewRemediationHistoryRepoAdapter(repo *repository.RemediationHistoryRepository) RemediationHistoryQuerier {
 	return &remediationHistoryRepoAdapter{repo: repo}
-}
-
-func (a *remediationHistoryRepoAdapter) QueryROEventsByTarget(ctx context.Context, targetResource string, since time.Time) ([]repository.RawAuditRow, error) {
-	return a.repo.QueryROEventsByTarget(ctx, targetResource, since)
 }
 
 func (a *remediationHistoryRepoAdapter) QueryEffectivenessEventsBatch(ctx context.Context, correlationIDs []string) (map[string][]*EffectivenessEvent, error) {
