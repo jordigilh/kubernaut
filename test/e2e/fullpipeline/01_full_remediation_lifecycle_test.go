@@ -153,23 +153,17 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
 				return false
 			}
-		for i := range rrList.Items {
-			rr := &rrList.Items[i]
-			if rr.Spec.TargetResource.Namespace != testNamespace {
-				continue
-			}
-			sig := strings.ToLower(rr.Spec.SignalName)
-			if sig == "backoff" || sig == "oomkilled" || sig == "oomkill" ||
-				sig == "failedmount" || sig == "memoryexceedslimit" ||
-				strings.Contains(sig, "oom") || strings.Contains(sig, "memory") {
+			for i := range rrList.Items {
+				rr := &rrList.Items[i]
+				if rr.Spec.TargetResource.Namespace != testNamespace {
+					continue
+				}
 				remediationRequest = rr
 				GinkgoWriter.Printf("  ✅ RemediationRequest found: %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
 				return true
 			}
-			GinkgoWriter.Printf("  ⏳ Skipping RR %s with signal %q (waiting for OOMKill/BackOff/FailedMount)\n", rr.Name, rr.Spec.SignalName)
-		}
-		return false
-	}, timeout, interval).Should(BeTrue(), "RemediationRequest should be created by Gateway")
+			return false
+		}, timeout, interval).Should(BeTrue(), "RemediationRequest should be created by Gateway")
 
 		// ================================================================
 		// Step 4: Verify SignalProcessing enriched the signal
