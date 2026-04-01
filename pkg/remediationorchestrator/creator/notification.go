@@ -981,6 +981,16 @@ func BuildVerificationSummary(ea *eav1.EffectivenessAssessment, rr *remediationv
 		Summary:  entry.summary,
 	}
 
+	// Issue #596: "full" means all components were assessed, not that all passed.
+	// When any component bullet is emitted (score < 1.0), replace the affirmative
+	// "passed" message with a qualified "completed" message to avoid contradiction.
+	if reason == eav1.AssessmentReasonFull && bullets != "" {
+		qualified := "Verification completed: all checks were performed, but some indicate the remediation was not fully effective."
+		summary = qualified + "\n" + bullets
+		ctx.Outcome = "completed"
+		ctx.Summary = qualified
+	}
+
 	// Issue #546: Check for hash-capture degradation
 	degradedReasons := collectHashDegradationReasons(rr, ea)
 	if len(degradedReasons) > 0 {
