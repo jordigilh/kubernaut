@@ -37,7 +37,21 @@
 
 ## 📝 **Changelog**
 
-### Version 2.8 (2026-03-02) **← CURRENT**
+### Version 2.9 (2026-03-04) **← CURRENT**
+Case-insensitive JSONB array matching for all mandatory label filters (Issue #595)
+
+**Changes**:
+- **severity**: `labels->'severity' ? $N` replaced with `EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'severity') elem WHERE LOWER(elem) = LOWER($N))`
+- **environment**: Same pattern applied
+- **priority (array branch)**: Same pattern applied in CASE WHEN array branch
+- **priority (scalar branch)**: `LOWER()` applied for consistency
+- **Wildcard `'*'`**: Unchanged — `labels->'severity' ? '*'` retained alongside EXISTS
+
+**Rationale**: Signal Processing produces PascalCase environment values (`Production`, `Staging`) while the DS validation webhook stores lowercase in workflow labels (`["production"]`). The JSONB `?` operator is case-sensitive, causing valid workflows to be silently filtered out. DataStorage is the authority for label matching — consumers should not normalize case.
+
+**Bug Report**: Issue #595, discovered during v1.2.0-rc1 scenario testing (demo-scenarios#267).
+
+### Version 2.8 (2026-03-02)
 Restore `"*"` wildcard for severity (consistency with environment/priority)
 
 **Changes**:
@@ -103,6 +117,8 @@ WHERE labels->>'environment' IN ('staging', 'production')
 -- After (v2.5): Workflow declares multiple environments, search single (CORRECT)
 WHERE labels->'environment' ? 'production' OR labels->'environment' ? '*'
 ```
+
+> **v2.9 Note**: The `?` operator shown above was replaced with case-insensitive `EXISTS/jsonb_array_elements_text/LOWER` matching in v2.9 (Issue #595). See v2.9 changelog.
 
 **Use Cases**:
 - **Workflow Creation**: DevOps creates workflow: `environment: ["staging", "production"]`
@@ -1088,7 +1104,7 @@ The `search_workflow_catalog` tool includes `rca_resource` for validation:
 
 **For MCP Workflow Search** (DD-LLM-001, DD-WORKFLOW-016):
 1. **Primary Key (v2.6)**: `action_type` is the required primary filter (replaces `signal_type` per DD-WORKFLOW-016)
-2. **Mandatory Label Filtering**: `severity` (array containment `?` with wildcard), `environment` (array containment with wildcard), `priority` (wildcard) used as SQL WHERE filters
+2. **Mandatory Label Filtering (v2.9)**: `severity` (case-insensitive array matching via `EXISTS/LOWER` with wildcard), `environment` (case-insensitive array matching with wildcard), `priority` (case-insensitive for both array and scalar branches, with wildcard) used as SQL WHERE filters. All JSONB array containment uses `EXISTS (SELECT 1 FROM jsonb_array_elements_text(...) WHERE LOWER(elem) = LOWER($N))` instead of the `?` operator (Issue #595)
 3. **Component Filtering**: `component` used as SQL WHERE filter with wildcard support
 4. **Signal Type (v2.6)**: Optional metadata on workflow entries, NOT used as primary search filter
 5. **Wildcard Support (Mandatory Labels)**: `severity`, `environment`, `priority` support `'*'` (matches any value)
