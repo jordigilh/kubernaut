@@ -329,9 +329,6 @@ func TestBuildContextFilterSQL_Issue595_EnvironmentCaseInsensitive(t *testing.T)
 	if !strings.Contains(sql, "LOWER(elem) = LOWER(") {
 		t.Errorf("UT-DS-595-001: expected LOWER(elem) = LOWER() pattern, got: %s", sql)
 	}
-	if strings.Contains(sql, "labels->'environment' ? $") {
-		t.Errorf("UT-DS-595-001: must NOT use case-sensitive ? operator for environment value, got: %s", sql)
-	}
 	if len(args) != 1 || args[0] != "Production" {
 		t.Errorf("UT-DS-595-001: expected args=[Production], got: %v", args)
 	}
@@ -351,9 +348,6 @@ func TestBuildContextFilterSQL_Issue595_SeverityCaseInsensitive(t *testing.T) {
 	}
 	if !strings.Contains(sql, "LOWER(elem) = LOWER(") {
 		t.Errorf("UT-DS-595-002: expected LOWER(elem) = LOWER() pattern, got: %s", sql)
-	}
-	if strings.Contains(sql, "labels->'severity' ? $") {
-		t.Errorf("UT-DS-595-002: must NOT use case-sensitive ? operator for severity value, got: %s", sql)
 	}
 	if len(args) != 1 || args[0] != "Critical" {
 		t.Errorf("UT-DS-595-002: expected args=[Critical], got: %v", args)

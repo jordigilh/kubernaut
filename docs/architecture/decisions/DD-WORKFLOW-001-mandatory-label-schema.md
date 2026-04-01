@@ -37,7 +37,7 @@
 
 ## 📝 **Changelog**
 
-### Version 2.9 (2026-03-04) **← CURRENT**
+### Version 2.9 (2026-04-01) **← CURRENT**
 Case-insensitive JSONB array matching for all mandatory label filters (Issue #595)
 
 **Changes**:

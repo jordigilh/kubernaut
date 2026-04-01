@@ -12,8 +12,9 @@
 
 ## Changelog
 
-### Version 1.3 (2026-03-04)
-- **Issue #595**: All mandatory label SQL filters updated to case-insensitive matching. JSONB array containment (`?` operator) replaced with `EXISTS/jsonb_array_elements_text/LOWER` for severity and environment. Priority array branch uses same pattern; priority scalar branch and component use `LOWER()`. Wildcard `'*'` matching unchanged.
+### Version 1.3 (2026-04-01)
+- **Issue #595**: Severity, environment, and priority array branch SQL filters updated to case-insensitive matching. JSONB `?` operator replaced with `EXISTS/jsonb_array_elements_text/LOWER`. Priority scalar branch now uses `LOWER()` for consistency. Wildcard `'*'` matching unchanged.
+- **Documentation correction**: SQL blocks updated to show `LOWER()` on component filter, aligning documentation with existing code (component was already case-insensitive since DD-WORKFLOW-016 v2.1; the SQL examples in this document were stale).
 
 ### Version 1.2 (2026-03-08)
 - **Issue #292**: Workflow schema now uses CRD envelope format (`apiVersion`/`kind`/`metadata`/`spec`). `actionType` remains at `spec.actionType`.
