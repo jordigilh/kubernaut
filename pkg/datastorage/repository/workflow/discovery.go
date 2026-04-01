@@ -274,10 +274,11 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 	argIdx := 1
 
 	// Mandatory label filters (JSONB queries on labels column)
-	// Severity is always JSONB array (e.g. ["critical","high"]), use ? operator
+	// DD-WORKFLOW-001 v2.9: Case-insensitive array matching via EXISTS/jsonb_array_elements_text/LOWER (Issue #595)
 	// DD-WORKFLOW-001 v2.8: severity supports "*" wildcard (like environment/priority)
 	if filters.Severity != "" {
-		conditions = append(conditions, fmt.Sprintf("(labels->'severity' ? $%d OR labels->'severity' ? '*')", argIdx))
+		conditions = append(conditions, fmt.Sprintf(
+			"(EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'severity') elem WHERE LOWER(elem) = LOWER($%d)) OR labels->'severity' ? '*')", argIdx))
 		args = append(args, filters.Severity)
 		argIdx++
 	}
@@ -293,8 +294,9 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 	}
 
 	if filters.Environment != "" {
-		// DD-WORKFLOW-001 v2.5: environment is JSONB array, use ? operator; supports "*" wildcard per OpenAPI spec
-		conditions = append(conditions, fmt.Sprintf("(labels->'environment' ? $%d OR labels->'environment' ? '*')", argIdx))
+		// DD-WORKFLOW-001 v2.9: Case-insensitive array matching (Issue #595); supports "*" wildcard per OpenAPI spec
+		conditions = append(conditions, fmt.Sprintf(
+			"(EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'environment') elem WHERE LOWER(elem) = LOWER($%d)) OR labels->'environment' ? '*')", argIdx))
 		args = append(args, filters.Environment)
 		argIdx++
 	}
@@ -302,10 +304,11 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 	if filters.Priority != "" {
 		// DD-WORKFLOW-016 v2.1: Handle both scalar and array JSONB values
 		// Issue #464: array branch must also check wildcard '*' element
+		// Issue #595: array branch uses case-insensitive matching via EXISTS/LOWER
 		conditions = append(conditions, fmt.Sprintf(`(
 			CASE WHEN jsonb_typeof(labels->'priority') = 'array'
-				THEN labels->'priority' ? $%d OR labels->'priority' ? '*'
-				ELSE labels->>'priority' = $%d OR labels->>'priority' = '*'
+				THEN EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'priority') elem WHERE LOWER(elem) = LOWER($%d)) OR labels->'priority' ? '*'
+				ELSE LOWER(labels->>'priority') = LOWER($%d) OR labels->>'priority' = '*'
 			END
 		)`, argIdx, argIdx))
 		args = append(args, filters.Priority)
