@@ -458,4 +458,95 @@ var _ = Describe("Verification Summary Builder (#318)", func() {
 			Expect(flat["verificationDegradedReason"]).To(ContainSubstring("Pre-remediation hash"))
 		})
 	})
+
+	// ========================================================================
+	// Issue #596: Context-aware verification summary
+	// ========================================================================
+
+	Context("UT-RO-596-001: Full assessment with failing components produces qualified message", func() {
+		It("should return completed outcome with qualified message when reason=full but components fail", func() {
+			ea := &eav1.EffectivenessAssessment{
+				Status: eav1.EffectivenessAssessmentStatus{
+					Phase:            eav1.PhaseCompleted,
+					AssessmentReason: eav1.AssessmentReasonFull,
+					Components: eav1.EAComponents{
+						HealthAssessed:  true,
+						HealthScore:     float64Ptr(1.0),
+						AlertAssessed:   true,
+						AlertScore:      float64Ptr(0.0),
+						MetricsAssessed: true,
+						MetricsScore:    float64Ptr(0.5),
+						HashComputed:    true,
+					},
+				},
+			}
+			summary, vCtx := creator.BuildVerificationSummary(ea, nil)
+
+			Expect(summary).To(ContainSubstring("all checks were performed, but some indicate the remediation was not fully effective"))
+			Expect(summary).NotTo(ContainSubstring("Verification passed"))
+			Expect(summary).To(ContainSubstring("Related alerts: still firing"))
+			Expect(summary).To(ContainSubstring("Metrics: anomaly persists"))
+			Expect(vCtx.Outcome).To(Equal("completed"))
+			Expect(vCtx.Reason).To(Equal("full"))
+			Expect(vCtx.Summary).To(ContainSubstring("all checks were performed"))
+			Expect(vCtx.Summary).NotTo(ContainSubstring("Verification passed"))
+		})
+	})
+
+	Context("UT-RO-596-003: Disabled components (nil scores) with full assessment produce passed", func() {
+		It("should return passed outcome when components are assessed but scores are nil (disabled)", func() {
+			ea := &eav1.EffectivenessAssessment{
+				Status: eav1.EffectivenessAssessmentStatus{
+					Phase:            eav1.PhaseCompleted,
+					AssessmentReason: eav1.AssessmentReasonFull,
+					Components: eav1.EAComponents{
+						HealthAssessed:          true,
+						HealthScore:             float64Ptr(1.0),
+						AlertAssessed:           true,
+						MetricsAssessed:         true,
+						HashComputed:            true,
+						PostRemediationSpecHash: "sha256:abc",
+						CurrentSpecHash:         "sha256:abc",
+					},
+				},
+			}
+			summary, vCtx := creator.BuildVerificationSummary(ea, nil)
+
+			Expect(summary).To(ContainSubstring("Verification passed"))
+			Expect(vCtx.Outcome).To(Equal("passed"))
+			bullets := creator.BuildComponentBullets(ea)
+			Expect(bullets).To(BeEmpty())
+		})
+	})
+
+	Context("UT-RO-596-004: Exact crashloop demo reproduction", func() {
+		It("should produce qualified message with alert and metrics bullets for crashloop scenario", func() {
+			ea := &eav1.EffectivenessAssessment{
+				Status: eav1.EffectivenessAssessmentStatus{
+					Phase:            eav1.PhaseCompleted,
+					AssessmentReason: eav1.AssessmentReasonFull,
+					Components: eav1.EAComponents{
+						HealthAssessed:          true,
+						HealthScore:             float64Ptr(1.0),
+						AlertAssessed:           true,
+						AlertScore:              float64Ptr(0.0),
+						MetricsAssessed:         true,
+						MetricsScore:            float64Ptr(0.0),
+						HashComputed:            true,
+						PostRemediationSpecHash: "sha256:abc",
+						CurrentSpecHash:         "sha256:abc",
+					},
+				},
+			}
+			summary, vCtx := creator.BuildVerificationSummary(ea, nil)
+
+			Expect(summary).To(ContainSubstring("all checks were performed, but some indicate the remediation was not fully effective"))
+			Expect(summary).NotTo(ContainSubstring("Verification passed"))
+			Expect(summary).To(ContainSubstring("Related alerts: still firing"))
+			Expect(summary).To(ContainSubstring("Metrics: anomaly persists"))
+			Expect(summary).NotTo(ContainSubstring("Pod health"))
+			Expect(vCtx.Outcome).To(Equal("completed"))
+			Expect(vCtx.Reason).To(Equal("full"))
+		})
+	})
 })

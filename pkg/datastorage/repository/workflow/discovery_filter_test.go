@@ -300,3 +300,156 @@ func TestBuildContextFilterSQL_Issue464_AllMandatoryWildcards(t *testing.T) {
 		}
 	}
 }
+
+// ========================================
+// UNIT TESTS: Issue #595 — Case-Insensitive Mandatory Label Matching
+// ========================================
+// Authority: DD-WORKFLOW-001 v2.9 (case-insensitive JSONB array matching)
+// Bug report: Issue #595 (discovery filters are case-sensitive; SP produces
+// PascalCase environment, DS stores lowercase in workflow labels)
+//
+// These tests validate that buildContextFilterSQL generates SQL using
+// EXISTS/jsonb_array_elements_text/LOWER instead of the case-sensitive
+// JSONB ? operator for severity, environment, and priority array branches.
+// ========================================
+
+func TestBuildContextFilterSQL_Issue595_EnvironmentCaseInsensitive(t *testing.T) {
+	// UT-DS-595-001: Environment filter SQL must use case-insensitive
+	// JSONB array matching via EXISTS/jsonb_array_elements_text/LOWER
+	// instead of the case-sensitive ? operator.
+	filters := &models.WorkflowDiscoveryFilters{
+		Environment: "Production",
+	}
+
+	sql, args := buildContextFilterSQL(filters)
+
+	if !strings.Contains(sql, "jsonb_array_elements_text(labels->'environment')") {
+		t.Errorf("UT-DS-595-001: expected jsonb_array_elements_text for environment, got: %s", sql)
+	}
+	if !strings.Contains(sql, "LOWER(elem) = LOWER(") {
+		t.Errorf("UT-DS-595-001: expected LOWER(elem) = LOWER() pattern, got: %s", sql)
+	}
+	if len(args) != 1 || args[0] != "Production" {
+		t.Errorf("UT-DS-595-001: expected args=[Production], got: %v", args)
+	}
+}
+
+func TestBuildContextFilterSQL_Issue595_SeverityCaseInsensitive(t *testing.T) {
+	// UT-DS-595-002: Severity filter SQL must use case-insensitive
+	// JSONB array matching via EXISTS/jsonb_array_elements_text/LOWER.
+	filters := &models.WorkflowDiscoveryFilters{
+		Severity: "Critical",
+	}
+
+	sql, args := buildContextFilterSQL(filters)
+
+	if !strings.Contains(sql, "jsonb_array_elements_text(labels->'severity')") {
+		t.Errorf("UT-DS-595-002: expected jsonb_array_elements_text for severity, got: %s", sql)
+	}
+	if !strings.Contains(sql, "LOWER(elem) = LOWER(") {
+		t.Errorf("UT-DS-595-002: expected LOWER(elem) = LOWER() pattern, got: %s", sql)
+	}
+	if len(args) != 1 || args[0] != "Critical" {
+		t.Errorf("UT-DS-595-002: expected args=[Critical], got: %v", args)
+	}
+}
+
+func TestBuildContextFilterSQL_Issue595_PriorityArrayCaseInsensitive(t *testing.T) {
+	// UT-DS-595-003: Priority CASE WHEN array branch (THEN) must use
+	// case-insensitive matching via jsonb_array_elements_text/LOWER.
+	filters := &models.WorkflowDiscoveryFilters{
+		Priority: "p1",
+	}
+
+	sql, _ := buildContextFilterSQL(filters)
+
+	thenIdx := strings.Index(sql, "THEN")
+	elseIdx := strings.Index(sql, "ELSE")
+	if thenIdx == -1 || elseIdx == -1 {
+		t.Fatalf("UT-DS-595-003: expected CASE/THEN/ELSE structure, got: %s", sql)
+	}
+	arrayBranch := sql[thenIdx:elseIdx]
+	if !strings.Contains(arrayBranch, "jsonb_array_elements_text(labels->'priority')") {
+		t.Errorf("UT-DS-595-003: array branch must use jsonb_array_elements_text, got: %s", arrayBranch)
+	}
+	if !strings.Contains(arrayBranch, "LOWER(elem) = LOWER(") {
+		t.Errorf("UT-DS-595-003: array branch must use LOWER() for case-insensitive match, got: %s", arrayBranch)
+	}
+}
+
+func TestBuildContextFilterSQL_Issue595_CombinedCaseInsensitive(t *testing.T) {
+	// UT-DS-595-004: All 4 mandatory filters provided with mixed-case values.
+	// Severity, environment, and priority array branch must all use
+	// case-insensitive pattern; component uses existing LOWER; 4 args preserved.
+	filters := &models.WorkflowDiscoveryFilters{
+		Severity:    "Critical",
+		Component:   "Deployment",
+		Environment: "Staging",
+		Priority:    "p1",
+	}
+
+	sql, args := buildContextFilterSQL(filters)
+
+	if !strings.Contains(sql, "jsonb_array_elements_text(labels->'severity')") {
+		t.Errorf("UT-DS-595-004: expected case-insensitive severity pattern, got: %s", sql)
+	}
+	if !strings.Contains(sql, "jsonb_array_elements_text(labels->'environment')") {
+		t.Errorf("UT-DS-595-004: expected case-insensitive environment pattern, got: %s", sql)
+	}
+	if !strings.Contains(sql, "LOWER(labels->>'component')") {
+		t.Errorf("UT-DS-595-004: expected case-insensitive component (existing LOWER), got: %s", sql)
+	}
+	thenIdx := strings.Index(sql, "THEN")
+	elseIdx := strings.Index(sql, "ELSE")
+	if thenIdx != -1 && elseIdx != -1 {
+		arrayBranch := sql[thenIdx:elseIdx]
+		if !strings.Contains(arrayBranch, "jsonb_array_elements_text(labels->'priority')") {
+			t.Errorf("UT-DS-595-004: priority array branch must use jsonb_array_elements_text, got: %s", arrayBranch)
+		}
+	}
+	if len(args) != 4 {
+		t.Errorf("UT-DS-595-004: expected 4 args, got: %d", len(args))
+	}
+}
+
+func TestBuildContextFilterSQL_Issue595_WildcardPreservation(t *testing.T) {
+	// UT-DS-595-005: Wildcard fallback (? '*') must still be present
+	// alongside the new EXISTS/LOWER pattern for severity and environment.
+	filters := &models.WorkflowDiscoveryFilters{
+		Severity:    "critical",
+		Environment: "production",
+	}
+
+	sql, _ := buildContextFilterSQL(filters)
+
+	if !strings.Contains(sql, "labels->'severity' ? '*'") {
+		t.Errorf("UT-DS-595-005: severity wildcard fallback missing, got: %s", sql)
+	}
+	if !strings.Contains(sql, "labels->'environment' ? '*'") {
+		t.Errorf("UT-DS-595-005: environment wildcard fallback missing, got: %s", sql)
+	}
+}
+
+func TestBuildContextFilterSQL_Issue595_PriorityScalarBranchPreserved(t *testing.T) {
+	// UT-DS-595-006: Priority scalar ELSE branch must still use the
+	// labels->>'priority' extraction (scalar path), not jsonb_array_elements_text.
+	filters := &models.WorkflowDiscoveryFilters{
+		Priority: "P0",
+	}
+
+	sql, _ := buildContextFilterSQL(filters)
+
+	thenIdx := strings.Index(sql, "THEN")
+	elseIdx := strings.Index(sql, "ELSE")
+	endIdx := strings.Index(sql, "END")
+	if thenIdx == -1 || elseIdx == -1 || endIdx == -1 {
+		t.Fatalf("UT-DS-595-006: expected CASE/THEN/ELSE/END structure, got: %s", sql)
+	}
+	scalarBranch := sql[elseIdx:endIdx]
+	if !strings.Contains(scalarBranch, "LOWER(labels->>'priority')") {
+		t.Errorf("UT-DS-595-006: scalar branch must use LOWER(labels->>'priority') for case-insensitive matching, got: %s", scalarBranch)
+	}
+	if strings.Contains(scalarBranch, "jsonb_array_elements_text") {
+		t.Errorf("UT-DS-595-006: scalar branch must NOT use jsonb_array_elements_text, got: %s", scalarBranch)
+	}
+}

@@ -318,7 +318,8 @@ type TargetContext struct {
 type VerificationContext struct {
 	// Assessed indicates whether verification was performed at all.
 	Assessed bool `json:"assessed"`
-	// Outcome is the high-level result: "passed", "partial", "inconclusive", "unavailable".
+	// Outcome is the high-level result: "passed", "completed", "partial", "inconclusive", "unavailable".
+	// "completed" indicates all components were assessed but some scores < 1.0 (Issue #596).
 	// +optional
 	Outcome string `json:"outcome,omitempty"`
 	// Reason maps to EffectivenessAssessment.Status.AssessmentReason.

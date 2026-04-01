@@ -1870,7 +1870,7 @@ _Appears in:_
 | Field| Type| Description|
 | ---| ---| ---|
 | `assessed`| _boolean_| Assessed indicates whether verification was performed at all.|
-| `outcome`| _string_| Outcome is the high-level result: "passed", "partial", "inconclusive", "unavailable".|
+| `outcome`| _string_| Outcome is the high-level result: "passed", "completed", "partial", "inconclusive", "unavailable".<br />"completed" indicates all components were assessed but some scores < 1.0 .|
 | `reason`| _string_| Reason maps to EffectivenessAssessment.Status.AssessmentReason.|
 | `summary`| _string_| Summary is the operator-facing human-readable message.|
 | `degraded`| _boolean_| Degraded indicates that the EA was unable to reliably compare pre- and<br />post-remediation state because hash capture failed .<br />Routing rules can match on this to escalate degraded notifications.|

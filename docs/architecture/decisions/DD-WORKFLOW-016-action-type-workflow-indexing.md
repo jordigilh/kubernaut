@@ -12,6 +12,10 @@
 
 ## Changelog
 
+### Version 1.3 (2026-04-01)
+- **Issue #595**: Severity, environment, and priority array branch SQL filters updated to case-insensitive matching. JSONB `?` operator replaced with `EXISTS/jsonb_array_elements_text/LOWER`. Priority scalar branch now uses `LOWER()` for consistency. Wildcard `'*'` matching unchanged.
+- **Documentation correction**: SQL blocks updated to show `LOWER()` on component filter, aligning documentation with existing code (component was already case-insensitive since DD-WORKFLOW-016 v2.1; the SQL examples in this document were stale).
+
 ### Version 1.2 (2026-03-08)
 - **Issue #292**: Workflow schema now uses CRD envelope format (`apiVersion`/`kind`/`metadata`/`spec`). `actionType` remains at `spec.actionType`.
 - **Issue #299**: Workflow registration is now via `RemediationWorkflow` CRD applied with `kubectl apply`. The AuthWebhook forwards inline schema to the DS internal API for catalog indexing. OCI-based registration removed.
@@ -490,6 +494,7 @@ GET /api/v1/workflows/actions?severity=critical&component=deployment&environment
 
 ```sql
 -- Count query (for total_count in pagination response -- counts distinct action types)
+-- v1.3: Case-insensitive label matching via EXISTS/LOWER (Issue #595)
 SELECT COUNT(*) AS total_count
 FROM (
     SELECT t.action_type
@@ -497,10 +502,10 @@ FROM (
     INNER JOIN remediation_workflow_catalog w ON w.action_type = t.action_type
     WHERE w.status = 'active'
       AND w.is_latest_version = true
-      AND w.labels->'severity' ? $1
-      AND (w.labels->>'component' = $2 OR w.labels->>'component' = '*')
-      AND (w.labels->'environment' ? $3 OR w.labels->'environment' ? '*')
-      AND (w.labels->>'priority' = $4 OR w.labels->>'priority' = '*')
+      AND (EXISTS (SELECT 1 FROM jsonb_array_elements_text(w.labels->'severity') elem WHERE LOWER(elem) = LOWER($1)) OR w.labels->'severity' ? '*')
+      AND (LOWER(w.labels->>'component') = LOWER($2) OR w.labels->>'component' = '*')
+      AND (EXISTS (SELECT 1 FROM jsonb_array_elements_text(w.labels->'environment') elem WHERE LOWER(elem) = LOWER($3)) OR w.labels->'environment' ? '*')
+      AND (LOWER(w.labels->>'priority') = LOWER($4) OR w.labels->>'priority' = '*')
       AND (w.custom_labels @> $5 OR $5 IS NULL)
     GROUP BY t.action_type
 ) AS action_count;
@@ -515,10 +520,11 @@ INNER JOIN remediation_workflow_catalog w ON w.action_type = t.action_type
 WHERE w.status = 'active'
   AND w.is_latest_version = true
   -- Context filters (same filters applied to all three endpoints)
-  AND w.labels->'severity' ? $1
-  AND (w.labels->>'component' = $2 OR w.labels->>'component' = '*')
-  AND (w.labels->'environment' ? $3 OR w.labels->'environment' ? '*')
-  AND (w.labels->>'priority' = $4 OR w.labels->>'priority' = '*')
+  -- v1.3: Case-insensitive label matching via EXISTS/LOWER (Issue #595)
+  AND (EXISTS (SELECT 1 FROM jsonb_array_elements_text(w.labels->'severity') elem WHERE LOWER(elem) = LOWER($1)) OR w.labels->'severity' ? '*')
+  AND (LOWER(w.labels->>'component') = LOWER($2) OR w.labels->>'component' = '*')
+  AND (EXISTS (SELECT 1 FROM jsonb_array_elements_text(w.labels->'environment') elem WHERE LOWER(elem) = LOWER($3)) OR w.labels->'environment' ? '*')
+  AND (LOWER(w.labels->>'priority') = LOWER($4) OR w.labels->>'priority' = '*')
   AND (w.custom_labels @> $5 OR $5 IS NULL)
 GROUP BY t.action_type, t.description
 ORDER BY t.action_type
@@ -628,15 +634,16 @@ IMPORTANT: Review ALL workflows above before selecting. Do not select the first 
 
 ```sql
 -- Count query
+-- v1.3: Case-insensitive label matching via EXISTS/LOWER (Issue #595)
 SELECT COUNT(*) AS total_count
 FROM remediation_workflow_catalog
 WHERE action_type = $1
   AND status = 'active'
   AND is_latest_version = true
-  AND labels->'severity' ? $2
-  AND (labels->>'component' = $3 OR labels->>'component' = '*')
-  AND (labels->'environment' ? $4 OR labels->'environment' ? '*')
-  AND (labels->>'priority' = $5 OR labels->>'priority' = '*')
+  AND (EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'severity') elem WHERE LOWER(elem) = LOWER($2)) OR labels->'severity' ? '*')
+  AND (LOWER(labels->>'component') = LOWER($3) OR labels->>'component' = '*')
+  AND (EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'environment') elem WHERE LOWER(elem) = LOWER($4)) OR labels->'environment' ? '*')
+  AND (LOWER(labels->>'priority') = LOWER($5) OR labels->>'priority' = '*')
   AND (custom_labels @> $6 OR $6 IS NULL);
 
 -- Data query (paginated)
@@ -649,10 +656,11 @@ WHERE action_type = $1    -- Selected action type from Step 1
   AND status = 'active'
   AND is_latest_version = true
   -- Same context filters as list_available_actions
-  AND labels->'severity' ? $2
-  AND (labels->>'component' = $3 OR labels->>'component' = '*')
-  AND (labels->'environment' ? $4 OR labels->'environment' ? '*')
-  AND (labels->>'priority' = $5 OR labels->>'priority' = '*')
+  -- v1.3: Case-insensitive label matching via EXISTS/LOWER (Issue #595)
+  AND (EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'severity') elem WHERE LOWER(elem) = LOWER($2)) OR labels->'severity' ? '*')
+  AND (LOWER(labels->>'component') = LOWER($3) OR labels->>'component' = '*')
+  AND (EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'environment') elem WHERE LOWER(elem) = LOWER($4)) OR labels->'environment' ? '*')
+  AND (LOWER(labels->>'priority') = LOWER($5) OR labels->>'priority' = '*')
   AND (custom_labels @> $6 OR $6 IS NULL)
 ORDER BY final_score DESC, workflow_id ASC  -- Best matches first, deterministic tiebreaker
 LIMIT $7 OFFSET $8;                        -- Default: LIMIT 10 OFFSET 0
@@ -729,10 +737,11 @@ WHERE workflow_id = $1    -- Exact match by ID (selected from list_available_act
   AND is_latest_version = true
   -- Security: same context filters as list_available_actions
   -- Prevents LLM from using a workflow outside the allowed signal context
-  AND labels->'severity' ? $2
-  AND (labels->>'component' = $3 OR labels->>'component' = '*')
-  AND (labels->'environment' ? $4 OR labels->'environment' ? '*')
-  AND (labels->>'priority' = $5 OR labels->>'priority' = '*')
+  -- v1.3: Case-insensitive label matching via EXISTS/LOWER (Issue #595)
+  AND (EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'severity') elem WHERE LOWER(elem) = LOWER($2)) OR labels->'severity' ? '*')
+  AND (LOWER(labels->>'component') = LOWER($3) OR labels->>'component' = '*')
+  AND (EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'environment') elem WHERE LOWER(elem) = LOWER($4)) OR labels->'environment' ? '*')
+  AND (LOWER(labels->>'priority') = LOWER($5) OR labels->>'priority' = '*')
   AND (custom_labels @> $6 OR $6 IS NULL);
 ```
 
