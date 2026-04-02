@@ -1,0 +1,204 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package prometheus_test
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/prometheus"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
+)
+
+var _ = Describe("Kubernaut Agent Prometheus Tools Integration — #433", func() {
+
+	Describe("Query tools via shared MockPrometheus (IT-025, IT-026)", func() {
+		var (
+			mockProm *infrastructure.MockPrometheus
+			reg      *registry.Registry
+		)
+
+		BeforeEach(func() {
+			now := float64(time.Now().Unix())
+			mockProm = infrastructure.NewMockPrometheus(infrastructure.MockPrometheusConfig{
+				Ready:   true,
+				Healthy: true,
+				QueryResponse: infrastructure.NewPromVectorResponse(
+					map[string]string{"__name__": "up", "job": "kubelet"},
+					1.0, now,
+				),
+				QueryRangeResponse: infrastructure.NewPromMatrixResponse(
+					map[string]string{"__name__": "up", "job": "kubelet"},
+					[][]interface{}{{now - 60, "1"}, {now, "1"}},
+				),
+			})
+
+			client, err := prometheus.NewClient(prometheus.ClientConfig{
+				URL: mockProm.URL(), Timeout: 5 * time.Second, SizeLimit: 30000,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			reg = registry.New()
+			for _, t := range prometheus.NewAllTools(client) {
+				reg.Register(t)
+			}
+		})
+
+		AfterEach(func() { mockProm.Close() })
+
+		It("IT-KA-433-025: execute_prometheus_instant_query returns PromQL query result", func() {
+			result, err := reg.Execute(context.Background(), "execute_prometheus_instant_query",
+				json.RawMessage(`{"query":"up{job=\"kubelet\"}"}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("up"))
+		})
+
+		It("IT-KA-433-026: execute_prometheus_range_query returns time-series data", func() {
+			result, err := reg.Execute(context.Background(), "execute_prometheus_range_query",
+				json.RawMessage(`{"query":"up","start":"2024-02-27T00:00:00Z","end":"2024-02-27T01:00:00Z","step":"60s"}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeEmpty())
+		})
+	})
+
+	Describe("Label and metadata tools via httptest (IT-027..030)", func() {
+		var (
+			server *httptest.Server
+			reg    *registry.Registry
+		)
+
+		BeforeEach(func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/api/v1/label/__name__/values":
+					fmt.Fprint(w, `{"status":"success","data":["up","container_memory_usage_bytes","node_cpu_seconds_total"]}`)
+				case "/api/v1/labels":
+					fmt.Fprint(w, `{"status":"success","data":["__name__","instance","job","namespace","pod"]}`)
+				case "/api/v1/metadata":
+					fmt.Fprint(w, `{"status":"success","data":{"up":[{"type":"gauge","help":"Health check metric","unit":""}]}}`)
+				default:
+					fmt.Fprintf(w, `{"status":"success","data":["value-a","value-b"]}`)
+				}
+			}))
+
+			client, err := prometheus.NewClient(prometheus.ClientConfig{
+				URL: server.URL, Timeout: 5 * time.Second, SizeLimit: 30000,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			reg = registry.New()
+			for _, t := range prometheus.NewAllTools(client) {
+				reg.Register(t)
+			}
+		})
+
+		AfterEach(func() { server.Close() })
+
+		It("IT-KA-433-027: get_metric_names returns available metric names", func() {
+			result, err := reg.Execute(context.Background(), "get_metric_names", json.RawMessage(`{}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("up"))
+			Expect(result).To(ContainSubstring("container_memory_usage_bytes"))
+		})
+
+		It("IT-KA-433-028: get_label_values returns label values for metric", func() {
+			result, err := reg.Execute(context.Background(), "get_label_values",
+				json.RawMessage(`{"label":"namespace"}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeEmpty())
+		})
+
+		It("IT-KA-433-029: get_all_labels returns all label names", func() {
+			result, err := reg.Execute(context.Background(), "get_all_labels", json.RawMessage(`{}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("__name__"))
+			Expect(result).To(ContainSubstring("namespace"))
+		})
+
+		It("IT-KA-433-030: get_metric_metadata returns metric help/type info", func() {
+			result, err := reg.Execute(context.Background(), "get_metric_metadata", json.RawMessage(`{}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("gauge"))
+			Expect(result).To(ContainSubstring("Health check metric"))
+		})
+	})
+
+	Describe("IT-KA-433-031: Prometheus client respects timeout configuration", func() {
+		It("should fail when server takes longer than configured timeout", func() {
+			slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				time.Sleep(2 * time.Second)
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
+			}))
+			defer slowServer.Close()
+
+			client, err := prometheus.NewClient(prometheus.ClientConfig{
+				URL: slowServer.URL, Timeout: 100 * time.Millisecond, SizeLimit: 30000,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			reg := registry.New()
+			for _, t := range prometheus.NewAllTools(client) {
+				reg.Register(t)
+			}
+
+			_, err = reg.Execute(context.Background(), "execute_prometheus_instant_query",
+				json.RawMessage(`{"query":"up"}`))
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Describe("IT-KA-433-032: Prometheus client sends provider-specific auth headers", func() {
+		It("should include custom auth headers in requests", func() {
+			var receivedHeaders http.Header
+			headerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				receivedHeaders = r.Header.Clone()
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
+			}))
+			defer headerServer.Close()
+
+			client, err := prometheus.NewClient(prometheus.ClientConfig{
+				URL:     headerServer.URL,
+				Headers: map[string]string{"X-Custom-Auth": "provider-token-123"},
+				Timeout: 5 * time.Second, SizeLimit: 30000,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			reg := registry.New()
+			for _, t := range prometheus.NewAllTools(client) {
+				reg.Register(t)
+			}
+
+			_, err = reg.Execute(context.Background(), "execute_prometheus_instant_query",
+				json.RawMessage(`{"query":"up"}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(receivedHeaders).NotTo(BeNil())
+			Expect(receivedHeaders.Get("X-Custom-Auth")).To(Equal("provider-token-123"))
+		})
+	})
+})

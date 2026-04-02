@@ -139,11 +139,13 @@ spec:
                 description: Policy evaluation results if Rego policy triggered approval
                 properties:
                   decision:
-                    description: Policy decision
+                    description: Policy decision (PascalCase per K8s enum convention,
+                      values from PolicyDecision type)
                     enum:
-                    - approved
-                    - manual_review_required
-                    - denied
+                    - Approved
+                    - ManualReviewRequired
+                    - Denied
+                    - DegradedMode
                     type: string
                   matchedRules:
                     description: Rules that matched and triggered approval requirement

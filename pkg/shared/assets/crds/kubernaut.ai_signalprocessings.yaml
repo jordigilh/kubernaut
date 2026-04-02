@@ -226,14 +226,23 @@ spec:
                       "platform")
                     type: string
                   criticality:
-                    description: 'Business criticality level: critical, high, medium,
-                      low'
+                    description: Business criticality level
+                    enum:
+                    - Critical
+                    - High
+                    - Medium
+                    - Low
                     type: string
                   serviceOwner:
                     description: Service owner team or individual
                     type: string
                   slaRequirement:
-                    description: 'SLA requirement tier: platinum, gold, silver, bronze'
+                    description: SLA requirement tier
+                    enum:
+                    - Platinum
+                    - Gold
+                    - Silver
+                    - Bronze
                     type: string
                 type: object
               completionTime:
@@ -311,12 +320,19 @@ spec:
                     format: date-time
                     type: string
                   environment:
-                    description: 'Environment: production, staging, development, test'
+                    description: |-
+                      Environment represents a canonical deployment environment.
+                      DD-WORKFLOW-001 v2.2: 4 canonical environments + Unknown fallback.
+                    enum:
+                    - Production
+                    - Staging
+                    - Development
+                    - Test
+                    - Unknown
                     type: string
                   source:
-                    description: |-
-                      Source of classification: namespace-labels, rego-inference, default
-                      Valid sources per BR-SP-080 V2.0 (signal-labels removed for security)
+                    description: 'Source of classification: namespace-labels, rego-inference,
+                      default'
                     type: string
                 required:
                 - classifiedAt
@@ -454,7 +470,6 @@ spec:
                 description: |-
                   PriorityAssignment from DD-CATEGORIZATION-001.
                   BR-SP-070-072: Priority Assignment (Updated per BR-SP-080 V2.0)
-                  DD-SP-001 V1.1: Removed Confidence field (redundant with source)
                 properties:
                   assignedAt:
                     description: When assignment was performed
@@ -464,12 +479,24 @@ spec:
                     description: Which Rego rule matched (if applicable)
                     type: string
                   priority:
-                    description: 'Priority level: P0, P1, P2, P3'
+                    allOf:
+                    - enum:
+                      - P0
+                      - P1
+                      - P2
+                      - P3
+                    - enum:
+                      - P0
+                      - P1
+                      - P2
+                      - P3
+                    description: |-
+                      Priority represents an operational priority level.
+                      BR-SP-070-072: Priority Assignment.
                     type: string
                   source:
-                    description: |-
-                      Source of assignment: rego-policy, severity-fallback, default
-                      Per BR-SP-071: severity-fallback used when Rego fails (severity-only fallback)
+                    description: 'Source of assignment: rego-policy, severity-fallback,
+                      default'
                     type: string
                 required:
                 - assignedAt

@@ -2,10 +2,10 @@
 
 **Status**: ✅ Approved
 **Decision Date**: 2026-03-04
-**Version**: 1.0
+**Version**: 1.1
 **Confidence**: 85%
-**Deciders**: Architecture Team, HAPI Team
-**Applies To**: HolmesGPT-API (HAPI)
+**Deciders**: Architecture Team, Kubernaut Agent Team
+**Applies To**: Kubernaut Agent
 
 **Related Business Requirements**:
 - [BR-HAPI-433-002: Kubernetes Toolset](../../../requirements/BR-HAPI-433-go-language-migration/BR-HAPI-433-002-kubernetes-toolset.md)
@@ -17,6 +17,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.1 | 2026-03-04 | Architecture Team | Added MCP Tool Provider skeleton (Option C), renamed HAPI-Custom Tools to Kubernaut Agent Custom Tools |
 | 1.0 | 2026-03-04 | Architecture Team | Initial design: Go bindings for all toolsets, no shell execution |
 
 ---
@@ -154,7 +155,7 @@ type PrometheusClient struct {
 
 **Response size handling**: When response exceeds `sizeLimit`, return a truncated summary with a `topk()` suggestion for the LLM to narrow its query — same behavior as current Python implementation.
 
-### HAPI-Custom Tools
+### Kubernaut Agent Custom Tools
 
 | Tool | Implementation |
 |---|---|
@@ -199,6 +200,33 @@ func (s *Summarizer) MaybeSummarize(ctx context.Context, toolName string, result
     // "Summarize the following {toolName} output, preserving key details for incident investigation:"
 }
 ```
+
+### MCP Tool Provider (v1.3 Skeleton, v1.4 Transport)
+
+Kubernaut Agent supports future MCP (Model Context Protocol) tool extensibility. In v1.3, the architecture is wired but the transport is stubbed:
+
+```go
+// pkg/kubernautagent/tools/mcp/provider.go
+type MCPToolProvider interface {
+    DiscoverTools(ctx context.Context) ([]tools.Tool, error)
+    Close() error
+}
+```
+
+```go
+// pkg/kubernautagent/tools/mcp/config.go
+type MCPServerConfig struct {
+    Name      string `yaml:"name"`
+    URL       string `yaml:"url"`
+    Transport string `yaml:"transport"` // "sse" | "stdio"
+}
+```
+
+**Registry integration** (`pkg/kubernautagent/tools/mcp/registry_integration.go`): Iterates configured `mcp_servers`, calls `DiscoverTools` on each provider, and registers returned tools in the main `tools.Registry`. Each MCP-discovered tool is wrapped as a standard `tools.Tool`.
+
+**v1.3 stub** (`pkg/kubernautagent/tools/mcp/stub.go`): Logs a warning ("MCP servers configured but transport not implemented until v1.4") and returns an empty tool list. This ensures the config parsing and registration wiring are tested without premature transport complexity.
+
+**v1.4 evolution**: Replace stub with real `MCPClient` (e.g., `mark3labs/mcp-go`) implementing SSE transport. The `MCPToolProvider` interface and registry integration remain unchanged.
 
 ---
 
@@ -248,5 +276,5 @@ func (s *Summarizer) MaybeSummarize(ctx context.Context, toolName string, result
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Last Updated**: 2026-03-04

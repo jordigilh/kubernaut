@@ -78,27 +78,12 @@ spec:
               executionConfig:
                 description: ExecutionConfig contains minimal execution settings
                 properties:
-                  serviceAccountName:
-                    description: |-
-                      ServiceAccountName for the PipelineRun
-                      Default: "kubernaut-workflow-runner"
-                    type: string
                   timeout:
                     description: |-
                       Timeout for the entire workflow (Tekton PipelineRun timeout)
                       Default: use global timeout from RemediationRequest or 30m
                     type: string
                 type: object
-              executionEngine:
-                default: tekton
-                description: |-
-                  ExecutionEngine specifies the backend engine for workflow execution.
-                  "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job; "ansible" runs an AWX job.
-                enum:
-                - tekton
-                - job
-                - ansible
-                type: string
               parameters:
                 additionalProperties:
                   type: string
@@ -153,6 +138,14 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              serviceAccountName:
+                description: |-
+                  ServiceAccountName is the pre-existing ServiceAccount for the execution
+                  resource (Job, PipelineRun, or Ansible TokenRequest). DD-WE-005 v2.0:
+                  Operators pre-create SAs with appropriate RBAC in the execution namespace.
+                  If absent, K8s assigns the namespace's default SA (Job/Tekton) or the
+                  Ansible executor falls back to the controller's in-cluster credentials.
+                type: string
               targetResource:
                 description: |-
                   TargetResource identifies the K8s resource being remediated
@@ -192,7 +185,6 @@ spec:
                 - workflowId
                 type: object
             required:
-            - executionEngine
             - remediationRequestRef
             - targetResource
             - workflowRef
@@ -318,6 +310,13 @@ spec:
                 items:
                   type: integer
                 type: array
+              executionEngine:
+                description: |-
+                  ExecutionEngine is the backend engine resolved from the DS workflow catalog
+                  at runtime by the WE controller. Set once during Pending phase via
+                  WorkflowQuerier.GetWorkflowExecutionEngine; immutable thereafter.
+                  Values: "tekton", "job", "ansible".
+                type: string
               executionRef:
                 description: ExecutionRef references the created execution resource
                   (PipelineRun or Job)
@@ -363,9 +362,8 @@ spec:
                   Populated when Phase=Failed
                 properties:
                   executionTimeBeforeFailure:
-                    description: |-
-                      ExecutionTimeBeforeFailure is how long the workflow ran before failing
-                      Format: Go duration string (e.g., "2m30s")
+                    description: ExecutionTimeBeforeFailure is how long the workflow
+                      ran before failing
                     type: string
                   exitCode:
                     description: |-
@@ -424,7 +422,6 @@ spec:
                                 Pre-execution failures (false) get exponential backoff
                     type: boolean
                 required:
-                - executionTimeBeforeFailure
                 - failedAt
                 - failedTaskIndex
                 - failedTaskName

@@ -4,8 +4,8 @@
 **Decision Date**: 2026-03-04
 **Version**: 1.0
 **Confidence**: 90%
-**Deciders**: Architecture Team, HAPI Team
-**Applies To**: HolmesGPT-API (HAPI)
+**Deciders**: Architecture Team, Kubernaut Agent Team
+**Applies To**: Kubernaut Agent
 
 **Related Business Requirements**:
 - [BR-HAPI-433-001: Framework Evaluation](../../../requirements/BR-HAPI-433-go-language-migration/BR-HAPI-433-001-framework-evaluation.md)
@@ -140,12 +140,12 @@ The HAPI Go rewrite (BR-HAPI-433) requires a Go LLM framework to replace HolmesG
 ### Framework Isolation Pattern
 
 ```go
-// pkg/hapi/llm/client.go — Kubernaut-owned interface
+// pkg/kubernautagent/llm/client.go — Kubernaut-owned interface
 type Client interface {
     Chat(ctx context.Context, req ChatRequest) (ChatResponse, error)
 }
 
-// pkg/hapi/llm/langchaingo.go — Framework adapter (~60 LOC)
+// pkg/kubernautagent/llm/langchaingo.go — Framework adapter (~60 LOC)
 type LangChainGoClient struct {
     model llms.Model
 }

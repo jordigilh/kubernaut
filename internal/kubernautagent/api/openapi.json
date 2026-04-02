@@ -1,0 +1,1207 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "HolmesGPT API Service",
+    "description": "Minimal internal service wrapper around HolmesGPT SDK",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/incident/analyze": {
+      "post": {
+        "tags": [
+          "Incident Analysis"
+        ],
+        "summary": "Incident Analyze Endpoint",
+        "description": "Submit incident analysis request (async session-based pattern).\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis endpoint)\nBusiness Requirement: BR-AA-HAPI-064.1 (Async submit returns session ID)\nDesign Decision: DD-AUTH-006 (User attribution for LLM cost tracking)\n\nCalled by: AIAnalysis Controller via SubmitInvestigation()\n\nReturns HTTP 202 Accepted with {\"session_id\": \"<uuid>\"}.\nThe investigation runs as a background task. Poll via GET /incident/session/{id}.",
+        "operationId": "incident_analyze_endpoint_api_v1_incident_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncidentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed - Invalid or missing Bearer token.\n\n**Source**: HAPI middleware (DD-AUTH-014)\n\n**Cause**: No Authorization header, invalid token, expired token, or malformed token.\n\n**Authority**: DD-AUTH-014 (Middleware-Based SAR Authentication)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "detail": {
+                      "type": "string",
+                      "title": "Detail"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    },
+                    "request_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "title": "Request Id"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "detail",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "HTTPError",
+                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nBusiness Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
+                  "example": {
+                    "detail": "Missing required field: 'namespace'",
+                    "instance": "/api/v1/incident/analyze",
+                    "request_id": "abc-123-def-456",
+                    "status": 400,
+                    "title": "Bad Request",
+                    "type": "https://kubernaut.ai/problems/validation-error"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.\n\n**Source**: HAPI middleware (DD-AUTH-014)\n\n**Cause**: ServiceAccount lacks required SAR permissions.\n\n**Resolution**: Grant ServiceAccount the holmesgpt-api-client ClusterRole.\n\n**Authority**: DD-AUTH-014 (Middleware-Based SAR Authentication)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "detail": {
+                      "type": "string",
+                      "title": "Detail"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    },
+                    "request_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "title": "Request Id"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "detail",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "HTTPError",
+                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nBusiness Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
+                  "example": {
+                    "detail": "Missing required field: 'namespace'",
+                    "instance": "/api/v1/incident/analyze",
+                    "request_id": "abc-123-def-456",
+                    "status": 400,
+                    "title": "Bad Request",
+                    "type": "https://kubernaut.ai/problems/validation-error"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Invalid request parameters or validation failure.\n\n**Source**: HAPI middleware (RFC 7807)\n\n**Cause**: Pydantic validation error, missing required fields, invalid field values.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "detail": {
+                      "type": "string",
+                      "title": "Detail"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    },
+                    "request_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "title": "Request Id"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "detail",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "HTTPError",
+                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nBusiness Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
+                  "example": {
+                    "detail": "Missing required field: 'namespace'",
+                    "instance": "/api/v1/incident/analyze",
+                    "request_id": "abc-123-def-456",
+                    "status": 400,
+                    "title": "Bad Request",
+                    "type": "https://kubernaut.ai/problems/validation-error"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity - Request validation failed.\n\n**Source**: HAPI middleware (RFC 7807)\n\n**Cause**: Pydantic validation error.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "detail": {
+                      "type": "string",
+                      "title": "Detail"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    },
+                    "request_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "title": "Request Id"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "detail",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "HTTPError",
+                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nBusiness Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
+                  "example": {
+                    "detail": "Missing required field: 'namespace'",
+                    "instance": "/api/v1/incident/analyze",
+                    "request_id": "abc-123-def-456",
+                    "status": 400,
+                    "title": "Bad Request",
+                    "type": "https://kubernaut.ai/problems/validation-error"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error - Unexpected failure in HolmesGPT API service.\n\n**Source**: HAPI application\n\n**Causes**: LLM provider API failure, database error, unhandled exception.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "detail": {
+                      "type": "string",
+                      "title": "Detail"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    },
+                    "request_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "title": "Request Id"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "detail",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "HTTPError",
+                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nBusiness Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
+                  "example": {
+                    "detail": "Missing required field: 'namespace'",
+                    "instance": "/api/v1/incident/analyze",
+                    "request_id": "abc-123-def-456",
+                    "status": 400,
+                    "title": "Bad Request",
+                    "type": "https://kubernaut.ai/problems/validation-error"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/incident/session/{session_id}": {
+      "get": {
+        "tags": [
+          "Incident Analysis"
+        ],
+        "summary": "Incident Session Status Endpoint",
+        "description": "Poll session status. BR-AA-HAPI-064.2.",
+        "operationId": "incident_session_status_endpoint_api_v1_incident_session__session_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found (HAPI may have restarted)"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/incident/session/{session_id}/result": {
+      "get": {
+        "tags": [
+          "Incident Analysis"
+        ],
+        "summary": "Incident Session Result Endpoint",
+        "description": "Retrieve completed investigation result. BR-AA-HAPI-064.3.",
+        "operationId": "incident_session_result_endpoint_api_v1_incident_session__session_id__result_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "409": {
+            "description": "Session not yet completed"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health Check",
+        "description": "Liveness probe endpoint\n\nBusiness Requirement: BR-HAPI-126 (Health check endpoint)",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Readiness Check",
+        "description": "Readiness probe endpoint\n\nBusiness Requirements:\n- BR-HAPI-127 (Readiness check endpoint)\n- BR-HAPI-201 (Graceful shutdown with DD-007 pattern)\n\nTDD GREEN Phase: Check shutdown flag first\nREFACTOR phase: Real dependency health checks",
+        "operationId": "readiness_check_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Get Config",
+        "description": "Get service configuration (sanitized)\n\nBusiness Requirement: BR-HAPI-128 (Configuration endpoint)",
+        "operationId": "get_config_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AlternativeWorkflow": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "title": "Workflow Id",
+            "description": "Workflow identifier"
+          },
+          "execution_bundle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Bundle",
+            "description": "OCI execution bundle reference"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "description": "Confidence score for this alternative"
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale",
+            "description": "Why this alternative was considered but not selected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id",
+          "confidence",
+          "rationale"
+        ],
+        "title": "AlternativeWorkflow",
+        "description": "Alternative workflow recommendation for operator context.\n\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nIMPORTANT: Alternatives are for CONTEXT, not EXECUTION.\nPer APPROVAL_REJECTION_BEHAVIOR_DETAILED.md:\n- \u2705 Purpose: Help operator make an informed decision\n- \u2705 Content: Pros/cons of alternative approaches\n- \u274c NOT: A fallback queue for automatic execution\n\nOnly `selected_workflow` is executed. Alternatives provide:\n- Audit trail of what options were considered\n- Context for operator approval decisions\n- Transparency into AI reasoning"
+      },
+      "BusinessClassification": {
+        "properties": {
+          "businessUnit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Businessunit",
+            "description": "Business unit owning the service (e.g., 'payments', 'platform')"
+          },
+          "serviceOwner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serviceowner",
+            "description": "Service owner team or individual"
+          },
+          "criticality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Criticality",
+            "description": "Business criticality: critical, high, medium, low"
+          },
+          "slaRequirement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slarequirement",
+            "description": "SLA tier: platinum, gold, silver, bronze"
+          }
+        },
+        "type": "object",
+        "title": "BusinessClassification",
+        "description": "Business context from SignalProcessing categorization phase.\n\nBR-SP-002: Business Classification\nBR-SP-080: Business Unit Detection\nBR-SP-081: SLA Requirement Mapping\n\nUsed for:\n1. Workflow filtering - select workflows matching business context\n2. Rego approval policies - criticality/SLA-based gating\n3. LLM context - business impact understanding"
+      },
+      "EnrichmentResults": {
+        "properties": {
+          "kubernetesContext": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kubernetescontext",
+            "description": "Kubernetes resource context"
+          },
+          "customLabels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customlabels",
+            "description": "Custom labels from SignalProcessing (subdomain \u2192 values). Auto-appended to workflow search per DD-HAPI-001."
+          },
+          "businessClassification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BusinessClassification"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Business classification from SP categorization (BR-SP-002). Used for workflow filtering and Rego approval policies."
+          }
+        },
+        "type": "object",
+        "title": "EnrichmentResults",
+        "description": "Enrichment results from SignalProcessing.\n\nContains Kubernetes context, custom labels, and business classification\nused for workflow filtering and LLM context.\n\nADR-056: detectedLabels removed -- now computed by HAPI post-RCA via LabelDetector.\nADR-055: ownerChain removed -- resolved by HAPI via get_resource_context tool.\n\nDesign Decision: DD-HAPI-001\n\nCustom Labels (DD-HAPI-001):\n- Format: map[string][]string (subdomain \u2192 list of values)\n- Keys are subdomains (e.g., \"constraint\", \"team\")\n- Values are lists of strings (boolean keys or \"key=value\" pairs)\n- Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]}\n- Auto-appended to MCP workflow search (invisible to LLM)"
+      },
+      "HTTPError": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "status": {
+            "type": "integer",
+            "title": "Status"
+          },
+          "instance": {
+            "type": "string",
+            "title": "Instance"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "title",
+          "detail",
+          "status",
+          "instance"
+        ],
+        "title": "HTTPError",
+        "description": "RFC 7807 Problem Details for HTTP APIs\n\nBusiness Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
+        "example": {
+          "detail": "Missing required field: 'namespace'",
+          "instance": "/api/v1/incident/analyze",
+          "request_id": "abc-123-def-456",
+          "status": 400,
+          "title": "Bad Request",
+          "type": "https://kubernaut.ai/problems/validation-error"
+        }
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HumanReviewReason": {
+        "type": "string",
+        "enum": [
+          "workflow_not_found",
+          "image_mismatch",
+          "parameter_validation_failed",
+          "no_matching_workflows",
+          "low_confidence",
+          "llm_parsing_error",
+          "investigation_inconclusive",
+          "rca_incomplete"
+        ],
+        "title": "HumanReviewReason",
+        "description": "Structured reason for needs_human_review=true.\n\nBusiness Requirements: BR-HAPI-197, BR-HAPI-200, BR-496\nDesign Decision: DD-HAPI-002 v1.2, DD-HAPI-006 v1.3\n\nAIAnalysis uses this for reliable subReason mapping instead of parsing warnings."
+      },
+      "IncidentRequest": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id",
+            "description": "Unique incident identifier"
+          },
+          "remediation_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Remediation Id",
+            "description": "Remediation request ID for audit correlation (e.g., 'req-2025-11-27-abc123'). MANDATORY per DD-WORKFLOW-002 v2.2. This ID is for CORRELATION/AUDIT ONLY - do NOT use for RCA analysis or workflow matching."
+          },
+          "signal_name": {
+            "type": "string",
+            "title": "Signal Name",
+            "description": "Canonical signal name (e.g., OOMKilled, CrashLoopBackOff)"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity",
+            "description": "Signal severity (BR-SEVERITY-001: critical, high, medium, low, unknown)"
+          },
+          "signal_source": {
+            "type": "string",
+            "title": "Signal Source",
+            "description": "Monitoring system"
+          },
+          "resource_namespace": {
+            "type": "string",
+            "title": "Resource Namespace",
+            "description": "Kubernetes namespace"
+          },
+          "resource_kind": {
+            "type": "string",
+            "title": "Resource Kind",
+            "description": "Kubernetes resource kind"
+          },
+          "resource_name": {
+            "type": "string",
+            "title": "Resource Name",
+            "description": "Resource name"
+          },
+          "error_message": {
+            "type": "string",
+            "title": "Error Message",
+            "description": "Error message"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Additional description"
+          },
+          "environment": {
+            "type": "string",
+            "title": "Environment",
+            "description": "Deployment environment"
+          },
+          "priority": {
+            "type": "string",
+            "title": "Priority",
+            "description": "Business priority"
+          },
+          "risk_tolerance": {
+            "type": "string",
+            "title": "Risk Tolerance",
+            "description": "Risk tolerance"
+          },
+          "business_category": {
+            "type": "string",
+            "title": "Business Category",
+            "description": "Business category"
+          },
+          "cluster_name": {
+            "type": "string",
+            "title": "Cluster Name",
+            "description": "Kubernetes cluster name"
+          },
+          "is_duplicate": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Duplicate",
+            "description": "Duplicate signal",
+            "default": false
+          },
+          "occurrence_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurrence Count",
+            "description": "Occurrence count",
+            "default": 0
+          },
+          "deduplication_window_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deduplication Window Minutes",
+            "description": "Dedup window"
+          },
+          "firing_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Firing Time",
+            "description": "Firing time"
+          },
+          "received_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received Time",
+            "description": "Received time"
+          },
+          "first_seen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Seen",
+            "description": "First seen"
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen",
+            "description": "Last seen"
+          },
+          "signal_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal Labels",
+            "description": "Signal labels"
+          },
+          "enrichment_results": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnrichmentResults"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Enriched context from SignalProcessing"
+          },
+          "signal_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Signal mode: 'reactive' or 'proactive'. Controls prompt strategy (ADR-054)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "remediation_id",
+          "signal_name",
+          "severity",
+          "signal_source",
+          "resource_namespace",
+          "resource_kind",
+          "resource_name",
+          "error_message",
+          "environment",
+          "priority",
+          "risk_tolerance",
+          "business_category",
+          "cluster_name"
+        ],
+        "title": "IncidentRequest",
+        "description": "Request model for initial incident analysis endpoint\n\nBusiness Requirements:\n- BR-HAPI-002: Incident analysis request schema\n- BR-AUDIT-001: Unified audit trail (remediation_id)\n\nDesign Decision: DD-WORKFLOW-002 v2.2\n- remediation_id is MANDATORY for audit trail correlation\n- remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching\n\nDesign Decision: DD-HAPI-001\n- enrichment_results contains DetectedLabels for workflow filtering"
+      },
+      "IncidentResponse": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id",
+            "description": "Incident identifier from request"
+          },
+          "analysis": {
+            "type": "string",
+            "title": "Analysis",
+            "description": "Natural language analysis from LLM"
+          },
+          "root_cause_analysis": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Root Cause Analysis",
+            "description": "Structured RCA with summary, severity, contributing_factors"
+          },
+          "selected_workflow": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Workflow",
+            "description": "Selected workflow with workflow_id, execution_bundle, confidence, parameters"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "description": "Overall confidence in analysis"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "ISO timestamp of analysis completion"
+          },
+          "needs_human_review": {
+            "type": "boolean",
+            "title": "Needs Human Review",
+            "description": "True when AI analysis could not produce a reliable result. Reasons include: workflow validation failures after retries, LLM parsing errors, no suitable workflow found, or other AI reliability issues. When true, AIAnalysis should NOT create WorkflowExecution - requires human intervention. Check 'human_review_reason' for structured reason or 'warnings' for details.",
+            "default": false
+          },
+          "human_review_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HumanReviewReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Structured reason when needs_human_review=true. Use this for reliable subReason mapping instead of parsing warnings. Values: workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error"
+          },
+          "is_actionable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Actionable",
+            "description": "LLM's assessment of whether the alert warrants action. False when the alert is benign and no remediation is needed. None when the LLM did not explicitly assess actionability. Maps to AIAnalysis.Status.Actionability."
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "description": "Non-fatal warnings (e.g., OwnerChain validation issues, low confidence)"
+          },
+          "alternative_workflows": {
+            "items": {
+              "$ref": "#/components/schemas/AlternativeWorkflow"
+            },
+            "type": "array",
+            "title": "Alternative Workflows",
+            "description": "Other workflows considered but not selected. For operator context and audit trail only - NOT for automatic fallback execution. Helps operators understand AI reasoning."
+          },
+          "validation_attempts_history": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationAttempt"
+            },
+            "type": "array",
+            "title": "Validation Attempts History",
+            "description": "History of all validation attempts during LLM self-correction. Each attempt records workflow_id, validation result, and any errors. Empty if validation passed on first attempt or no workflow was selected."
+          },
+          "detected_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected Labels",
+            "description": "Cluster characteristics detected at runtime by HAPI (ADR-056). Includes: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, failedDetections."
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "analysis",
+          "root_cause_analysis",
+          "confidence",
+          "timestamp"
+        ],
+        "title": "IncidentResponse",
+        "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis response schema)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\nDesign Decision: ADR-055 (LLM-Driven Context Enrichment)\n\nFields added per AIAnalysis team requests:\n- warnings: Non-fatal warnings for transparency (Dec 2, 2025)\n- alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY\n- needs_human_review: AI could not produce reliable result (Dec 6, 2025)\n\nADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input."
+      },
+      "Severity": {
+        "type": "string",
+        "enum": [
+          "critical",
+          "high",
+          "medium",
+          "low",
+          "unknown"
+        ],
+        "title": "Severity",
+        "description": "Canonical severity levels for Kubernaut.\n\nBusiness Requirement: BR-SEVERITY-001 (Standardized Severity Levels)\nDesign Decision: DD-SEVERITY-001 v1.1 (Severity Determination Refactoring)\n\nThese are the ONLY valid severity values across all internal components\n(CRDs, LLM prompts, workflow catalog labels, metrics, audit events).\n\nLevels (most to least severe):\n- critical: Immediate remediation required (>50% users affected)\n- high: Urgent remediation needed (10-50% users affected)\n- medium: Remediation recommended (<10% users affected)\n- low: Remediation optional (no user impact)\n- unknown: Human triage required (investigation inconclusive)"
+      },
+      "SignalMode": {
+        "type": "string",
+        "enum": [
+          "reactive",
+          "proactive"
+        ],
+        "title": "SignalMode",
+        "description": "Signal processing mode for investigation strategy selection.\n\nArchitecture Decision: ADR-054 (Proactive Signal Mode Classification)\nBusiness Requirement: BR-AI-084 (Proactive signal mode prompt strategy)\n\n- reactive: Incident has occurred, perform RCA (root cause analysis)\n- proactive: Incident is anticipated, perform proactive prevention strategy"
+      },
+      "ValidationAttempt": {
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Attempt",
+            "description": "Attempt number (1-indexed)"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id",
+            "description": "Workflow ID being validated (if any)"
+          },
+          "is_valid": {
+            "type": "boolean",
+            "title": "Is Valid",
+            "description": "Whether validation passed"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors",
+            "description": "Validation errors (empty if valid)"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "ISO timestamp of validation attempt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attempt",
+          "is_valid",
+          "timestamp"
+        ],
+        "title": "ValidationAttempt",
+        "description": "Record of a single validation attempt during LLM self-correction.\n\nBusiness Requirement: BR-HAPI-197 (needs_human_review field)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\n\nUsed for:\n1. Operator notification - natural language description of why validation failed\n2. Audit trail - complete history of all validation attempts\n3. Debugging - understand LLM behavior when workflows fail"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "oauthProxyAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "**OAuth-proxy Authentication Flow (DD-AUTH-006)**\n\nThis API is protected by an `oauth-proxy` sidecar running alongside the HolmesGPT API service in Kubernetes. All incoming requests to HAPI are intercepted by the `oauth-proxy` before reaching the actual HAPI application.\n\n**1. Client Authentication**: Clients must authenticate with a valid Kubernetes ServiceAccount token via `Authorization: Bearer <token>` header.\n\n**2. OAuth-proxy Validation**: Validates the JWT token against the Kubernetes API server's `TokenReview` endpoint.\n\n**3. Subject Access Review (SAR)**: Checks if the authenticated ServiceAccount has the necessary RBAC permissions.\n\n**4. User Identity Injection**: Injects authenticated user identity into `X-Auth-Request-User` header for LLM cost tracking and audit.\n\n**Authority**: DD-AUTH-006 (HAPI oauth-proxy integration)"
+      }
+    }
+  }
+}

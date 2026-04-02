@@ -1,0 +1,226 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/go-faster/jx"
+
+	hapiclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+)
+
+// Handler implements the ogen-generated Handler interface for the 3 business
+// endpoints. Operational endpoints (/health, /ready, /config, /metrics) are
+// served directly by the HTTP mux in cmd/kubernautagent/main.go.
+type Handler struct {
+	hapiclient.UnimplementedHandler
+
+	sessions     *session.Manager
+	investigator *investigator.Investigator
+	logger       *slog.Logger
+}
+
+var _ hapiclient.Handler = (*Handler)(nil)
+
+// NewHandler creates a Kubernaut Agent ogen handler.
+func NewHandler(sessions *session.Manager, inv *investigator.Investigator, logger *slog.Logger) *Handler {
+	return &Handler{
+		sessions:     sessions,
+		investigator: inv,
+		logger:       logger,
+	}
+}
+
+// IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost implements POST /api/v1/incident/analyze.
+// Returns HTTP 202 with {"session_id": "<uuid>"}.
+func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
+	ctx context.Context, req *hapiclient.IncidentRequest,
+) (hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes, error) {
+	if h.investigator == nil {
+		h.logger.Error("investigator not configured")
+		resp := hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError{
+			Detail: "investigator not configured",
+		}
+		return &resp, nil
+	}
+
+	signal := mapIncidentRequestToSignal(req)
+	h.logger.Info("investigation submitted",
+		"incident_id", req.IncidentID,
+		"signal", signal.Name,
+		"namespace", signal.Namespace,
+	)
+
+	metadata := map[string]string{
+		"incident_id": req.IncidentID,
+	}
+	sessionID, err := h.sessions.StartInvestigation(ctx, func(bgCtx context.Context) (interface{}, error) {
+		return h.investigator.Investigate(bgCtx, signal)
+	}, metadata)
+	if err != nil {
+		h.logger.Error("failed to start investigation", "error", err)
+		resp := hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError{
+			Detail: "failed to start investigation: " + err.Error(),
+		}
+		return &resp, nil
+	}
+
+	body, _ := json.Marshal(map[string]string{"session_id": sessionID})
+	raw := hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON(body)
+	return &raw, nil
+}
+
+// IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet implements GET /api/v1/incident/session/{session_id}.
+func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
+	_ context.Context,
+	params hapiclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams,
+) (hapiclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, error) {
+	sess, err := h.sessions.GetSession(params.SessionID)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			return &hapiclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound{}, nil
+		}
+		h.logger.Error("session lookup failed", "session_id", params.SessionID, "error", err)
+		return nil, fmt.Errorf("session lookup: %w", err)
+	}
+
+	status := mapSessionStatusToAPI(sess.Status)
+	body, _ := json.Marshal(map[string]string{
+		"session_id": sess.ID,
+		"status":     status,
+	})
+	raw := hapiclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON(body)
+	return &raw, nil
+}
+
+// IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet implements
+// GET /api/v1/incident/session/{session_id}/result.
+func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(
+	_ context.Context,
+	params hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams,
+) (hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes, error) {
+	sess, err := h.sessions.GetSession(params.SessionID)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			return &hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound{}, nil
+		}
+		h.logger.Error("session lookup failed", "session_id", params.SessionID, "error", err)
+		return nil, fmt.Errorf("session lookup: %w", err)
+	}
+
+	if sess.Status != session.StatusCompleted {
+		return &hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{}, nil
+	}
+
+	result, ok := sess.Result.(*katypes.InvestigationResult)
+	if !ok {
+		h.logger.Error("unexpected result type in session", "session_id", sess.ID)
+		return &hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{}, nil
+	}
+
+	var incidentID string
+	if sess.Metadata != nil {
+		incidentID = sess.Metadata["incident_id"]
+	}
+
+	resp := mapInvestigationResultToResponse(result, incidentID)
+	return resp, nil
+}
+
+func mapIncidentRequestToSignal(req *hapiclient.IncidentRequest) katypes.SignalContext {
+	sc := katypes.SignalContext{
+		Name:             req.SignalName,
+		Namespace:        req.ResourceNamespace,
+		Severity:         string(req.Severity),
+		Message:          req.ErrorMessage,
+		ResourceKind:     req.ResourceKind,
+		ResourceName:     req.ResourceName,
+		ClusterName:      req.ClusterName,
+		Environment:      req.Environment,
+		Priority:         req.Priority,
+		RiskTolerance:    req.RiskTolerance,
+		SignalSource:     req.SignalSource,
+		BusinessCategory: req.BusinessCategory,
+	}
+	if v, ok := req.Description.Get(); ok {
+		sc.Description = v
+	}
+	return sc
+}
+
+func mapSessionStatusToAPI(s session.Status) string {
+	switch s {
+	case session.StatusPending:
+		return "pending"
+	case session.StatusRunning:
+		return "investigating"
+	case session.StatusCompleted:
+		return "completed"
+	case session.StatusFailed:
+		return "failed"
+	default:
+		return "unknown"
+	}
+}
+
+func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID string) *hapiclient.IncidentResponse {
+	resp := &hapiclient.IncidentResponse{
+		IncidentID: incidentID,
+		Analysis:   r.RCASummary,
+		Confidence: r.Confidence,
+		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+	}
+
+	rca := hapiclient.IncidentResponseRootCauseAnalysis{}
+	if r.RCASummary != "" {
+		summaryRaw, _ := json.Marshal(r.RCASummary)
+		rca["summary"] = jx.Raw(summaryRaw)
+	}
+	resp.RootCauseAnalysis = rca
+
+	if r.HumanReviewNeeded {
+		resp.NeedsHumanReview.SetTo(true)
+		resp.HumanReviewReason.SetTo(hapiclient.HumanReviewReason(r.Reason))
+	} else {
+		resp.NeedsHumanReview.SetTo(false)
+	}
+
+	if r.WorkflowID != "" {
+		sw := hapiclient.IncidentResponseSelectedWorkflow{}
+		wfIDRaw, _ := json.Marshal(r.WorkflowID)
+		sw["workflow_id"] = jx.Raw(wfIDRaw)
+		if len(r.Parameters) > 0 {
+			paramsRaw, _ := json.Marshal(r.Parameters)
+			sw["parameters"] = jx.Raw(paramsRaw)
+		}
+		confRaw, _ := json.Marshal(r.Confidence)
+		sw["confidence"] = jx.Raw(confRaw)
+		resp.SelectedWorkflow.SetTo(sw)
+	}
+
+	return resp
+}

@@ -2,10 +2,10 @@
 
 **Status**: ✅ Approved
 **Decision Date**: 2026-03-04
-**Version**: 1.0
+**Version**: 1.1
 **Confidence**: 88%
-**Deciders**: Architecture Team, HAPI Team
-**Applies To**: HolmesGPT-API (HAPI)
+**Deciders**: Architecture Team, Kubernaut Agent Team
+**Applies To**: Kubernaut Agent
 
 **Related Business Requirements**:
 - [BR-HAPI-433: Go Language Migration](../../../requirements/BR-HAPI-433-go-language-migration/BR-HAPI-433-go-language-migration.md)
@@ -21,6 +21,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.1 | 2026-03-04 | Architecture Team | Renamed package layout from hapi to kubernautagent, added audit and MCP skeleton sections |
 | 1.0 | 2026-03-04 | Architecture Team | Initial design: Kubernaut-owned interface architecture, component layout, framework isolation pattern |
 
 ---
@@ -89,7 +90,7 @@ All business logic is Kubernaut-owned. The LLM framework is isolated behind a si
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                       HAPI (Go)                                  │
+│                  Kubernaut Agent (Go)                            │
 │                                                                  │
 │  ┌─────────────────┐  ┌──────────────────────────────────────┐  │
 │  │ HTTP Server      │  │ Kubernaut-Owned Core                 │  │
@@ -137,10 +138,10 @@ All business logic is Kubernaut-owned. The LLM framework is isolated behind a si
 ### Package Layout
 
 ```
-cmd/hapi/
+cmd/kubernautagent/
 ├── main.go                    # Wiring: HTTP server, config, DI
 
-internal/hapi/
+internal/kubernautagent/
 ├── server/
 │   ├── server.go              # HTTP server setup (chi router)
 │   ├── handlers.go            # /analyze, /session/{id}, /result, /health, /metrics
@@ -159,9 +160,9 @@ internal/hapi/
 │   ├── parser.go              # LLM result parsing and validation (I5)
 │   └── validator.go           # Workflow ID allowlist, parameter bounds, self-correction
 └── config/
-    └── config.go              # HAPI-specific config (extends shared ConfigManager)
+    └── config.go              # Kubernaut Agent config (extends shared ConfigManager)
 
-pkg/hapi/
+pkg/kubernautagent/
 ├── llm/
 │   ├── client.go              # llm.Client interface (Kubernaut-owned)
 │   ├── types.go               # ChatRequest, ChatResponse, Message, ToolCall
@@ -196,7 +197,7 @@ pkg/hapi/
 ### Core Interfaces
 
 ```go
-// pkg/hapi/llm/client.go
+// pkg/kubernautagent/llm/client.go
 type Client interface {
     Chat(ctx context.Context, req ChatRequest) (ChatResponse, error)
 }
@@ -215,7 +216,7 @@ type ChatResponse struct {
 ```
 
 ```go
-// pkg/hapi/tools/tool.go
+// pkg/kubernautagent/tools/tool.go
 type Tool interface {
     Name() string
     Description() string
@@ -230,7 +231,7 @@ type ToolResult struct {
 ```
 
 ```go
-// internal/hapi/investigator/investigator.go
+// internal/kubernautagent/investigator/investigator.go
 type Investigator struct {
     llmClient    llm.Client
     toolRegistry *tools.Registry
@@ -251,6 +252,38 @@ func (inv *Investigator) Investigate(ctx context.Context, req IncidentRequest) (
     // 3. On max-turn exhaustion: flag for human review
 }
 ```
+
+### Audit Integration (ADR-038)
+
+Kubernaut Agent uses the shared `pkg/audit.BufferedAuditStore` for fire-and-forget audit event emission, consistent with all other Go services.
+
+**Initialization** (`cmd/kubernautagent/main.go`):
+- `audit.NewOpenAPIClientAdapter(dsClient)`
+- `audit.NewBufferedStore(adapter, auditConfig, "kubernautagent", ...)`
+- `store.Close()` on graceful shutdown
+
+**Emission pattern**: Non-blocking, best-effort — investigation never blocks on audit delivery:
+
+```go
+func storeAuditBestEffort(ctx context.Context, store audit.AuditStore, event *api.AuditEventRequest, logger logr.Logger) {
+    if err := store.StoreAudit(ctx, event); err != nil {
+        logger.Error(err, "Audit event storage failed (non-blocking)")
+    }
+}
+```
+
+**Event types** (`event_category = "aiagent"`):
+
+| event_type | Emit point |
+|---|---|
+| `aiagent.llm.request` | Before each `llm.Client.Chat()` call |
+| `aiagent.llm.response` | After each `llm.Client.Chat()` return |
+| `aiagent.llm.tool_call` | Per tool execution in the investigator loop |
+| `aiagent.workflow.validation_attempt` | Each self-correction iteration |
+| `aiagent.response.complete` | Successful `InvestigationResult` |
+| `aiagent.response.failed` | Investigation failure / max-turn exhaustion |
+| `aiagent.enrichment.completed` | After non-LLM enrichment succeeds |
+| `aiagent.enrichment.failed` | After non-LLM enrichment fails |
 
 ---
 
@@ -279,9 +312,9 @@ func (inv *Investigator) Investigate(ctx context.Context, req IncidentRequest) (
 | Requirement | Status | Notes |
 |---|---|---|
 | BR-HAPI-433 | ✅ | Core architecture for Go rewrite |
-| BR-HAPI-211 | ✅ | Credential scrubbing in `pkg/hapi/sanitization/credential.go` |
-| BR-HAPI-197 | ✅ | Human review flag preserved in `internal/hapi/result/validator.go` |
-| DD-HAPI-017 | ✅ | Three-step workflow discovery preserved in `pkg/hapi/tools/workflow/` |
+| BR-HAPI-211 | ✅ | Credential scrubbing in `pkg/kubernautagent/sanitization/credential.go` |
+| BR-HAPI-197 | ✅ | Human review flag preserved in `internal/kubernautagent/result/validator.go` |
+| DD-HAPI-017 | ✅ | Three-step workflow discovery preserved in `pkg/kubernautagent/tools/workflow/` |
 
 ---
 
@@ -305,5 +338,5 @@ func (inv *Investigator) Investigate(ctx context.Context, req IncidentRequest) (
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Last Updated**: 2026-03-04

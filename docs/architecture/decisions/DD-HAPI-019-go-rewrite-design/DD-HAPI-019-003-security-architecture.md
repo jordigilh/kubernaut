@@ -2,10 +2,10 @@
 
 **Status**: ✅ Approved
 **Decision Date**: 2026-03-04
-**Version**: 1.0
+**Version**: 1.1
 **Confidence**: 82%
-**Deciders**: Architecture Team, HAPI Team, Security Team
-**Applies To**: HolmesGPT-API (HAPI)
+**Deciders**: Architecture Team, Kubernaut Agent Team, Security Team
+**Applies To**: Kubernaut Agent
 
 **Related Business Requirements**:
 - [BR-HAPI-433-004: Security Requirements](../../../requirements/BR-HAPI-433-go-language-migration/BR-HAPI-433-004-security-requirements.md)
@@ -17,7 +17,8 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| 1.0 | 2026-03-04 | Architecture Team | Initial design: layered defense for prompt injection in HAPI tool pipeline |
+| 1.1 | 2026-03-04 | Architecture Team | Renamed service references from HAPI to Kubernaut Agent, updated all file paths to kubernautagent |
+| 1.0 | 2026-03-04 | Architecture Team | Initial design: layered defense for prompt injection in Kubernaut Agent tool pipeline |
 
 ---
 
@@ -122,7 +123,7 @@ Design a defense-in-depth security architecture for the Go rewrite that protects
 
 #### I1: Tool-Output Content Sanitization
 
-**Implementation**: `pkg/hapi/sanitization/injection.go`
+**Implementation**: `pkg/kubernautagent/sanitization/injection.go`
 
 ```go
 type InjectionSanitizer struct {
@@ -153,13 +154,13 @@ func (s *InjectionSanitizer) Sanitize(toolName string, content string) (string, 
 
 #### G4: Credential Scrubbing
 
-**Implementation**: `pkg/hapi/sanitization/credential.go`
+**Implementation**: `pkg/kubernautagent/sanitization/credential.go`
 
 Reimplements all 17 BR-HAPI-211 / DD-005 pattern categories in Go. Same regex patterns, same ordering (broad container patterns first, then specific).
 
 #### I3: API Role Separation
 
-**Implementation**: In `pkg/hapi/llm/types.go` — tool results are always wrapped as:
+**Implementation**: In `pkg/kubernautagent/llm/types.go` — tool results are always wrapped as:
 
 ```go
 Message{
@@ -173,7 +174,7 @@ No content-level XML/markdown delimiters are used. The LLM provider's API enforc
 
 #### I4: Per-Phase Tool Scoping
 
-**Implementation**: `internal/hapi/investigator/phases.go`
+**Implementation**: `internal/kubernautagent/investigator/phases.go`
 
 ```go
 type Phase int
@@ -206,7 +207,7 @@ Phase transitions are controlled by the investigator loop based on conversation 
 
 #### I5: Output Validation Hardening
 
-**Implementation**: `internal/hapi/result/validator.go`
+**Implementation**: `internal/kubernautagent/result/validator.go`
 
 | Validation | Description |
 |---|---|
@@ -217,7 +218,7 @@ Phase transitions are controlled by the investigator loop based on conversation 
 
 #### I7: Behavioral Anomaly Detection
 
-**Implementation**: `internal/hapi/investigator/anomaly.go`
+**Implementation**: `internal/kubernautagent/investigator/anomaly.go`
 
 ```go
 type AnomalyDetector struct {
@@ -287,7 +288,7 @@ The v1.3 architecture is designed to make CaMeL integration straightforward:
 2. **Integration tests**: Full investigation with injected payloads in container logs and Prometheus labels
 3. **False-positive tests**: Legitimate tool output (real kubectl/Prometheus responses) must pass through unmodified
 4. **Anomaly detection tests**: Verify abort behavior at threshold boundaries
-5. **Pen testing**: Manual injection attempts against mock-llm-connected HAPI
+5. **Pen testing**: Manual injection attempts against mock-llm-connected Kubernaut Agent
 
 ---
 
@@ -299,5 +300,5 @@ The v1.3 architecture is designed to make CaMeL integration straightforward:
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Last Updated**: 2026-03-04

@@ -804,6 +804,21 @@ test-e2e-holmesgpt-api: ginkgo ensure-coverage-dirs generate-holmesgpt-client ##
 	@echo ""
 	@echo "✅ All HAPI E2E tests completed"
 
+.PHONY: test-e2e-kubernautagent
+test-e2e-kubernautagent: ginkgo ensure-coverage-dirs generate-holmesgpt-client ## Run Kubernaut Agent E2E tests (Kind cluster, ~10 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Kubernaut Agent E2E Tests (#433 — API Contract Parity)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Validates: Same OpenAPI contract as retired Python HAPI"
+	@echo "🔧 Test Framework: Ginkgo/Gomega (Go BDD)"
+	@echo "📦 Dockerfile: docker/kubernautagent.Dockerfile (ADR-027 UBI10)"
+	@echo "⏱️  Expected Duration: ~10 minutes"
+	@echo ""
+	@echo "🧪 Running KA E2E tests (test/e2e/kubernautagent/)..."
+	@cd test/e2e/kubernautagent && $(GINKGO) -v --timeout=15m ./...
+	@echo ""
+	@echo "✅ All Kubernaut Agent E2E tests completed"
+
 .PHONY: test-all-holmesgpt-api
 test-all-holmesgpt-api: test-unit-holmesgpt-api test-integration-holmesgpt-api test-e2e-holmesgpt-api ## Run all holmesgpt-api test tiers (Unit + Integration + E2E)
 	@echo "════════════════════════════════════════════════════════════════════════"
