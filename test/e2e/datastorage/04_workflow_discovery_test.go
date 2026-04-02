@@ -61,25 +61,8 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 		var discoveryWorkflowID string
 
 		BeforeEach(func() {
-			// DD-WORKFLOW-017: Register workflow inline (pullspec replaced by inline YAML)
-			// The stub content is minimal; discovery E2E tests use workflow fixtures.
-			createReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
-			createReq.Source.SetTo("e2e-test")
-
-			resp, err := DSClient.CreateWorkflow(testCtx, createReq)
-			Expect(err).ToNot(HaveOccurred())
-
-			var workflow *dsgen.RemediationWorkflow
-			switch v := resp.(type) {
-			case *dsgen.CreateWorkflowCreated:
-				workflow = (*dsgen.RemediationWorkflow)(v)
-			case *dsgen.CreateWorkflowOK:
-				workflow = (*dsgen.RemediationWorkflow)(v)
-			default:
-				Fail(fmt.Sprintf("Expected CreateWorkflowCreated or CreateWorkflowOK, got: %T", resp))
-			}
-			discoveryWorkflowID = workflow.WorkflowId.Value.String()
-			logger.Info("✅ Discovery test workflow created", "uuid", discoveryWorkflowID)
+			discoveryWorkflowID, _ = ensureWorkflowRegistered(testCtx, DSClient, e2eTestWorkflowStubContent, "e2e-stub")
+			logger.Info("✅ Discovery test workflow ready", "uuid", discoveryWorkflowID)
 		})
 
 		It("E2E-DS-017-001-001: should complete three-step discovery flow", func() {

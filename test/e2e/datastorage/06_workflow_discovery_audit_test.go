@@ -24,7 +24,6 @@ import (
 	"github.com/google/uuid"
 	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/ogenx"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -57,38 +56,7 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 		testID := uuid.New().String()[:8]
 		remediationID = fmt.Sprintf("rem-audit-e2e-%s", testID)
 
-		createReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
-		createReq.Source.SetTo("e2e-test")
-
-		resp, err := DSClient.CreateWorkflow(testCtx, createReq)
-		Expect(err).ToNot(HaveOccurred())
-
-		switch r := resp.(type) {
-		case *dsgen.CreateWorkflowCreated:
-			wf := (*dsgen.RemediationWorkflow)(r)
-			auditWorkflowID = wf.WorkflowId.Value.String()
-			auditWorkflowUUID = wf.WorkflowId.Value
-		case *dsgen.CreateWorkflowOK:
-			wf := (*dsgen.RemediationWorkflow)(r)
-			auditWorkflowID = wf.WorkflowId.Value.String()
-			auditWorkflowUUID = wf.WorkflowId.Value
-		case *dsgen.CreateWorkflowConflict:
-			// DD-WORKFLOW-002 v3.0: Workflow already exists (409 Conflict).
-			// Query by name to retrieve existing UUID (idempotent test setup).
-			listResp, listErr := DSClient.ListWorkflows(testCtx, dsgen.ListWorkflowsParams{
-				WorkflowName: dsgen.NewOptString("e2e-stub"),
-				Limit:        dsgen.NewOptInt(1),
-			})
-			listErr = ogenx.ToError(listResp, listErr)
-			Expect(listErr).ToNot(HaveOccurred(), "ListWorkflows should succeed for existing workflow")
-			listResult, listOk := listResp.(*dsgen.WorkflowListResponse)
-			Expect(listOk).To(BeTrue(), "Expected WorkflowListResponse, got %T", listResp)
-			Expect(listResult.Workflows).ToNot(BeEmpty(), "Workflow exists (409) but query returned no results")
-			auditWorkflowID = listResult.Workflows[0].WorkflowId.Value.String()
-			auditWorkflowUUID = listResult.Workflows[0].WorkflowId.Value
-		default:
-			Fail(fmt.Sprintf("Unexpected CreateWorkflow response type: %T", resp))
-		}
+		auditWorkflowID, auditWorkflowUUID = ensureWorkflowRegistered(testCtx, DSClient, e2eTestWorkflowStubContent, "e2e-stub")
 
 		logger.Info("✅ Audit test workflow ready", "uuid", auditWorkflowID, "remediation_id", remediationID)
 	})
