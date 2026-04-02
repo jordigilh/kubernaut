@@ -52,6 +52,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
+	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	westatus "github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
@@ -62,24 +63,24 @@ import (
 )
 
 // configurableWorkflowQuerier is a test WorkflowQuerier whose return value
-// can be set per-test by assigning Deps (DD-WE-006 integration tests).
-// When Deps is nil, GetWorkflowDependencies returns nil (no dependencies).
+// can be set per-test. F6: All catalog artifacts returned from a single call.
 // Engine defaults to "tekton" via testWorkflowQuerier initialization; createUniqueJobWFE sets "job".
 type configurableWorkflowQuerier struct {
-	Deps   *models.WorkflowDependencies
-	Engine string
+	Deps         *models.WorkflowDependencies
+	ParamNames   map[string]bool
+	Engine       string
+	WorkflowName string
+	EngineConfig json.RawMessage
 }
 
-func (q *configurableWorkflowQuerier) GetWorkflowDependencies(_ context.Context, _ string) (*models.WorkflowDependencies, error) {
-	return q.Deps, nil
-}
-
-func (q *configurableWorkflowQuerier) GetWorkflowEngineConfig(_ context.Context, _ string) (json.RawMessage, error) {
-	return nil, nil
-}
-
-func (q *configurableWorkflowQuerier) GetWorkflowExecutionEngine(_ context.Context, _ string) (string, string, error) {
-	return q.Engine, "", nil
+func (q *configurableWorkflowQuerier) GetWorkflowSchemaMetadata(_ context.Context, _ string) (*weclient.SchemaMetadata, error) {
+	return &weclient.SchemaMetadata{
+		Engine:                 q.Engine,
+		WorkflowName:           q.WorkflowName,
+		EngineConfig:           q.EngineConfig,
+		Dependencies:           q.Deps,
+		DeclaredParameterNames: q.ParamNames,
+	}, nil
 }
 
 // WorkflowExecution Integration Test Suite

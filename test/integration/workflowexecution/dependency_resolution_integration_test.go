@@ -35,7 +35,7 @@ import (
 // Pattern: Real envtest K8s API + real DependencyValidator
 // + configurable testWorkflowQuerier + real executor
 //
-// These tests verify the full reconciler→resolveDependencies→executor
+// These tests verify the full reconciler→resolveSchemaMetadata→executor
 // pipeline with real K8s objects (Secrets, ConfigMaps) in envtest.
 // ========================================
 

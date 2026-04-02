@@ -18,6 +18,7 @@ package workflowexecution
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -40,19 +41,6 @@ func (m *mockWorkflowCatalogClient) GetWorkflowByID(_ context.Context, _ ogencli
 	return m.response, m.err
 }
 
-// buildTestSchema builds a minimal valid workflow schema YAML with optional
-// dependencies. Uses the builder pattern to avoid brittle string concatenation.
-func buildTestSchema(deps *models.WorkflowDependencies) string {
-	crd := testutil.NewTestWorkflowCRD("test-workflow", "CertificateRenewal", "job")
-	crd.Spec.Labels.Component = "deployment"
-	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-	crd.Spec.Parameters = []models.WorkflowParameter{
-		{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Target namespace for certificate renewal"},
-	}
-	crd.Spec.Dependencies = deps
-	return testutil.MarshalWorkflowCRD(crd)
-}
-
 var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 	var ctx context.Context
 
@@ -60,108 +48,188 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 		ctx = context.Background()
 	})
 
-	Context("GetWorkflowDependencies", func() {
-		It("UT-WE-006-001: should extract secret dependencies from workflow content", func() {
-			content := buildTestSchema(&models.WorkflowDependencies{
-				Secrets: []models.ResourceDependency{{Name: "gitea-repo-creds"}},
-			})
+	Context("GetWorkflowSchemaMetadata", func() {
+		It("UT-WE-243-030: should return deps, param names, engine and workflowName from valid schema", func() {
+			content := buildTestSchemaWithParams(
+				&models.WorkflowDependencies{
+					Secrets: []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+				},
+				[]models.WorkflowParameter{
+					{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
+					{Name: "REPLICAS", Type: "integer", Required: false, Description: "Replica count"},
+				},
+			)
 			mock := &mockWorkflowCatalogClient{
-				response: &ogenclient.RemediationWorkflow{Content: content},
+				response: &ogenclient.RemediationWorkflow{
+					Content:         content,
+					ExecutionEngine: "job",
+					WorkflowName:    "crashloop-config-fix-v1",
+				},
 			}
 			querier := weclient.NewOgenWorkflowQuerier(mock)
 
-			deps, err := querier.GetWorkflowDependencies(ctx, uuid.New().String())
+			meta, err := querier.GetWorkflowSchemaMetadata(ctx, uuid.New().String())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(deps.Secrets).To(HaveLen(1))
-			Expect(deps.Secrets[0].Name).To(Equal("gitea-repo-creds"))
-			Expect(deps.ConfigMaps).To(BeEmpty())
+			Expect(meta.Engine).To(Equal("job"))
+			Expect(meta.WorkflowName).To(Equal("crashloop-config-fix-v1"))
+			Expect(meta.Dependencies.Secrets).To(HaveLen(1))
+			Expect(meta.Dependencies.Secrets[0].Name).To(Equal("gitea-repo-creds"))
+			Expect(meta.DeclaredParameterNames).To(HaveLen(2))
+			Expect(meta.DeclaredParameterNames).To(HaveKey("TARGET_NAMESPACE"))
+			Expect(meta.DeclaredParameterNames).To(HaveKey("REPLICAS"))
 		})
 
-		It("UT-WE-006-002: should extract both secrets and configMaps", func() {
-			content := buildTestSchema(&models.WorkflowDependencies{
-				Secrets:    []models.ResourceDependency{{Name: "gitea-repo-creds"}},
-				ConfigMaps: []models.ResourceDependency{{Name: "remediation-config"}},
-			})
+		It("UT-WE-243-031: should return nil when content is empty but still populate engine fields", func() {
 			mock := &mockWorkflowCatalogClient{
-				response: &ogenclient.RemediationWorkflow{Content: content},
+				response: &ogenclient.RemediationWorkflow{
+					Content:         "",
+					ExecutionEngine: "tekton",
+					WorkflowName:    "empty-schema-wf",
+				},
 			}
 			querier := weclient.NewOgenWorkflowQuerier(mock)
 
-			deps, err := querier.GetWorkflowDependencies(ctx, uuid.New().String())
+			meta, err := querier.GetWorkflowSchemaMetadata(ctx, uuid.New().String())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(deps.Secrets).To(HaveLen(1))
-			Expect(deps.Secrets[0].Name).To(Equal("gitea-repo-creds"))
-			Expect(deps.ConfigMaps).To(HaveLen(1))
-			Expect(deps.ConfigMaps[0].Name).To(Equal("remediation-config"))
+			Expect(meta.Engine).To(Equal("tekton"))
+			Expect(meta.WorkflowName).To(Equal("empty-schema-wf"))
+			Expect(meta).To(HaveField("Dependencies", BeNil()))
+			Expect(meta).To(HaveField("DeclaredParameterNames", BeNil()))
+			Expect(meta).To(HaveField("EngineConfig", BeNil()))
 		})
 
-		It("UT-WE-006-003: should return nil when workflow has no dependencies", func() {
-			content := buildTestSchema(nil)
-			mock := &mockWorkflowCatalogClient{
-				response: &ogenclient.RemediationWorkflow{Content: content},
-			}
-			querier := weclient.NewOgenWorkflowQuerier(mock)
-
-			deps, err := querier.GetWorkflowDependencies(ctx, uuid.New().String())
-			Expect(err).ToNot(HaveOccurred())
-			Expect(deps).To(BeNil())
-		})
-
-		It("UT-WE-006-004: should return error for invalid UUID", func() {
-			querier := weclient.NewOgenWorkflowQuerier(&mockWorkflowCatalogClient{})
-
-			_, err := querier.GetWorkflowDependencies(ctx, "not-a-uuid")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("invalid workflow ID"))
-		})
-
-		It("UT-WE-006-005: should return error when workflow not found (404)", func() {
-			mock := &mockWorkflowCatalogClient{
-				response: &ogenclient.GetWorkflowByIDNotFound{},
-			}
-			querier := weclient.NewOgenWorkflowQuerier(mock)
-
-			_, err := querier.GetWorkflowDependencies(ctx, uuid.New().String())
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not found"))
-		})
-
-		It("UT-WE-006-006: should return error when DS query fails", func() {
-			mock := &mockWorkflowCatalogClient{
-				err: fmt.Errorf("connection refused"),
-			}
-			querier := weclient.NewOgenWorkflowQuerier(mock)
-
-			_, err := querier.GetWorkflowDependencies(ctx, uuid.New().String())
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("DS query failed"))
-		})
-
-		It("UT-WE-006-007: should return nil when content is empty", func() {
-			mock := &mockWorkflowCatalogClient{
-				response: &ogenclient.RemediationWorkflow{Content: ""},
-			}
-			querier := weclient.NewOgenWorkflowQuerier(mock)
-
-			deps, err := querier.GetWorkflowDependencies(ctx, uuid.New().String())
-			Expect(err).ToNot(HaveOccurred())
-			Expect(deps).To(BeNil())
-		})
-
-		It("UT-WE-006-008: should return parse error for malformed YAML content", func() {
+		It("UT-WE-243-032: should return error with workflow ID context for malformed YAML", func() {
+			workflowID := uuid.New().String()
 			mock := &mockWorkflowCatalogClient{
 				response: &ogenclient.RemediationWorkflow{Content: "{{invalid yaml: [broken"},
 			}
 			querier := weclient.NewOgenWorkflowQuerier(mock)
 
-			_, err := querier.GetWorkflowDependencies(ctx, uuid.New().String())
-			Expect(err).To(HaveOccurred(),
-				"malformed YAML from DS should produce an error, not a panic")
-			Expect(err.Error()).To(SatisfyAny(
-				ContainSubstring("parse"),
-				ContainSubstring("yaml"),
-				ContainSubstring("unmarshal"),
-			))
+			_, err := querier.GetWorkflowSchemaMetadata(ctx, workflowID)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(workflowID),
+				"Error should include workflow ID for operator debugging")
+		})
+
+		It("UT-WE-243-033: should return nil deps but non-nil param names when schema has no deps", func() {
+			content := buildTestSchemaWithParams(
+				nil,
+				[]models.WorkflowParameter{
+					{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target ns"},
+				},
+			)
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{Content: content},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			meta, err := querier.GetWorkflowSchemaMetadata(ctx, uuid.New().String())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(meta).To(HaveField("Dependencies", BeNil()))
+			Expect(meta.DeclaredParameterNames).To(HaveLen(1))
+			Expect(meta.DeclaredParameterNames).To(HaveKey("NAMESPACE"))
+		})
+
+		It("UT-WE-243-034: should return error for invalid UUID", func() {
+			querier := weclient.NewOgenWorkflowQuerier(&mockWorkflowCatalogClient{})
+
+			_, err := querier.GetWorkflowSchemaMetadata(ctx, "not-a-uuid")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid workflow ID"))
+		})
+
+		It("UT-F6-001: should extract engineConfig as JSON from schema with ansible engine", func() {
+			content := buildTestSchemaWithEngineConfig("ansible",
+				map[string]interface{}{
+					"playbookPath":    "playbooks/restart.yml",
+					"jobTemplateName": "restart-pod",
+				},
+			)
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{
+					Content:         content,
+					ExecutionEngine: "ansible",
+					WorkflowName:    "ansible-restart-wf",
+				},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			meta, err := querier.GetWorkflowSchemaMetadata(ctx, uuid.New().String())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(meta.Engine).To(Equal("ansible"))
+			Expect(meta.WorkflowName).To(Equal("ansible-restart-wf"))
+
+			var cfg map[string]interface{}
+			Expect(json.Unmarshal(meta.EngineConfig, &cfg)).To(Succeed(),
+				"EngineConfig should be valid JSON with ansible configuration")
+			Expect(cfg).To(HaveKeyWithValue("playbookPath", "playbooks/restart.yml"))
+			Expect(cfg).To(HaveKeyWithValue("jobTemplateName", "restart-pod"))
+		})
+
+		It("UT-F6-002: should return nil engineConfig when schema has no engineConfig section", func() {
+			content := buildTestSchemaWithParams(nil,
+				[]models.WorkflowParameter{
+					{Name: "NAMESPACE", Type: "string", Required: true, Description: "ns"},
+				},
+			)
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{
+					Content:         content,
+					ExecutionEngine: "job",
+					WorkflowName:    "no-ec-wf",
+				},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			meta, err := querier.GetWorkflowSchemaMetadata(ctx, uuid.New().String())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(meta).To(HaveField("EngineConfig", BeNil()))
+		})
+
+		It("UT-F6-003: should return error when workflow not found (404)", func() {
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.GetWorkflowByIDNotFound{},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			_, err := querier.GetWorkflowSchemaMetadata(ctx, uuid.New().String())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+
+		It("UT-F6-004: should return error when DS query fails", func() {
+			mock := &mockWorkflowCatalogClient{
+				err: fmt.Errorf("connection refused"),
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			_, err := querier.GetWorkflowSchemaMetadata(ctx, uuid.New().String())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("DS query failed"))
 		})
 	})
 })
+
+// buildTestSchemaWithParams builds a minimal valid workflow schema YAML with
+// configurable dependencies and parameters.
+func buildTestSchemaWithParams(deps *models.WorkflowDependencies, params []models.WorkflowParameter) string {
+	crd := testutil.NewTestWorkflowCRD("test-workflow", "CertificateRenewal", "job")
+	crd.Spec.Labels.Component = "deployment"
+	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	crd.Spec.Parameters = params
+	crd.Spec.Dependencies = deps
+	return testutil.MarshalWorkflowCRD(crd)
+}
+
+// buildTestSchemaWithEngineConfig builds a workflow schema YAML with an
+// engineConfig section for the specified engine.
+func buildTestSchemaWithEngineConfig(engine string, engineConfig map[string]interface{}) string {
+	crd := testutil.NewTestWorkflowCRD("test-workflow", "CertificateRenewal", engine)
+	crd.Spec.Labels.Component = "deployment"
+	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	crd.Spec.Execution.EngineConfig = engineConfig
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target ns"},
+	}
+	return testutil.MarshalWorkflowCRD(crd)
+}
