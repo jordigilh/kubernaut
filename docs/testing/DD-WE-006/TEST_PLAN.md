@@ -57,7 +57,7 @@
 Authority: `03-testing-strategy.mdc` -- Per-Tier Testable Code Coverage.
 
 - **Unit**: >=80% of **unit-testable** code (pure logic: schema parsing, validators, dependency builders, querier)
-- **Integration**: >=80% of **integration-testable** code (I/O: HTTP handler validation step, controller `resolveDependencies`, K8s client wiring)
+- **Integration**: >=80% of **integration-testable** code (I/O: HTTP handler validation step, controller `resolveSchemaMetadata`, K8s client wiring)
 - **E2E**: >=80% of full service code (when applicable)
 
 ### 2-Tier Minimum
@@ -84,7 +84,7 @@ Tests validate **business outcomes** -- behavior, correctness, and data accuracy
 | `pkg/workflowexecution/executor/executor.go` | `CreateOptions` struct | ~10 |
 | `pkg/workflowexecution/executor/job.go` | `buildDependencyVolumes`, `SecretMountBasePath`, `ConfigMapMountBasePath` | ~55 |
 | `pkg/workflowexecution/executor/tekton.go` | `buildDependencyWorkspaces` | ~35 |
-| `pkg/workflowexecution/client/workflow_querier.go` | `WorkflowQuerier` interface, `OgenWorkflowQuerier`, `GetWorkflowDependencies` | ~118 |
+| `pkg/workflowexecution/client/workflow_querier.go` | `WorkflowQuerier` interface, `OgenWorkflowQuerier`, `GetWorkflowSchemaMetadata` | ~118 |
 
 **Total unit-testable**: ~367 lines
 
@@ -94,7 +94,7 @@ Tests validate **business outcomes** -- behavior, correctness, and data accuracy
 |------|-------------------|-----------------|
 | `pkg/datastorage/server/workflow_handlers.go` | Step 5d: `ExtractDependencies` + `ValidateDependencies` in `HandleCreateWorkflow` | ~20 |
 | `pkg/datastorage/server/handler.go` | `dependencyValidator` field, `WithDependencyValidator` option wiring | ~14 |
-| `internal/controller/workflowexecution/workflowexecution_controller.go` | `resolveDependencies` method, `WorkflowQuerier`/`DependencyValidator` field wiring | ~52 |
+| `internal/controller/workflowexecution/workflowexecution_controller.go` | `resolveSchemaMetadata` method, `WorkflowQuerier`/`DependencyValidator` field wiring | ~52 |
 | `cmd/datastorage/main.go` | `NewK8sDependencyValidator` + `WithDependencyValidator` startup wiring | ~15 |
 | `cmd/workflowexecution/main.go` | `NewOgenWorkflowQuerierFromConfig` + `NewK8sDependencyValidator` startup wiring | ~25 |
 
@@ -324,7 +324,7 @@ No tiers are skipped. All three tiers are covered.
 **File**: `test/unit/workflowexecution/workflow_querier_test.go`
 
 **Given**: A mock DS client that returns a `RemediationWorkflow` with `Content: "{{invalid yaml"`
-**When**: `GetWorkflowDependencies` is called
+**When**: `GetWorkflowSchemaMetadata` is called
 **Then**: An error is returned indicating a parse/YAML failure (not a panic or nil)
 
 **Acceptance Criteria**:

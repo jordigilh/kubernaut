@@ -132,8 +132,8 @@ type WorkflowExecutionStatus struct {
 
     // ExecutionEngine is the backend engine resolved from the DS workflow catalog
     // at runtime by the WE controller. Set once during Pending phase via
-    // WorkflowQuerier.GetWorkflowExecutionEngine; immutable thereafter.
-    // Values: "tekton", "job", "ansible".
+    // WorkflowQuerier.GetWorkflowSchemaMetadata (F6: single consolidated DS call);
+    // immutable thereafter. Values: "tekton", "job", "ansible".
     // +optional
     ExecutionEngine string `json:"executionEngine,omitempty"`
 }
@@ -595,7 +595,7 @@ Minimal implementation to pass each test tier, then refactor.
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 3.0 | 2026-03-04 | **Issue #518**: `executionEngine` moved from WFE spec to status. WE controller resolves engine at runtime from DS catalog via `WorkflowQuerier.GetWorkflowExecutionEngine`; persists in `status.executionEngine` (immutable once set). RO no longer sets engine on WFE -- pure dispatcher. No silent "tekton" default; WFE fails with ConfigurationError if DS has no engine. Updated TR-1, TR-5, TR-6, success criteria, acceptance scenarios. |
+| 3.0 | 2026-03-04 | **Issue #518**: `executionEngine` moved from WFE spec to status. WE controller resolves engine at runtime from DS catalog via `WorkflowQuerier.GetWorkflowSchemaMetadata` (F6: single consolidated DS call); persists in `status.executionEngine` (immutable once set). RO no longer sets engine on WFE -- pure dispatcher. No silent "tekton" default; WFE fails with ConfigurationError if DS has no engine. Updated TR-1, TR-5, TR-6, success criteria, acceptance scenarios. |
 | 2.0 | 2026-02-05 | **Major update**: Added prerequisite refactoring section (PR-1..6): normalize condition types, CRD status fields, metrics to engine-agnostic names; documented execution_engine propagation chain gap (G1: AIAnalysis → RO → WFE); updated resource locking to check both PipelineRun and Job (G4); added OpenAPI schema update (PR-4); added ExecutionEngineJob constant (PR-5); ADR-043 update for "job" engine (PR-6); expanded dependencies table with cross-service requirements |
 | 1.3 | 2026-02-05 | Audit trail: `execution_engine` required in ALL lifecycle events (selection, started, completed, failed), not just completion |
 | 1.2 | 2026-02-05 | Deliverables reordered to TDD methodology: Documentation (specs) -> Testing (RED) -> Implementation (GREEN + REFACTOR), phased by unit/integration/E2E tiers |
