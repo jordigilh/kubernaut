@@ -63,31 +63,27 @@ import (
 )
 
 // configurableWorkflowQuerier is a test WorkflowQuerier whose return value
-// can be set per-test by assigning Deps (DD-WE-006 integration tests).
-// When Deps is nil, GetWorkflowDependencies returns nil (no dependencies).
+// can be set per-test. F6: All catalog artifacts returned from a single call.
 // Engine defaults to "tekton" via testWorkflowQuerier initialization; createUniqueJobWFE sets "job".
 type configurableWorkflowQuerier struct {
 	Deps               *models.WorkflowDependencies
+	ParamNames         map[string]bool
 	Engine             string
+	WorkflowName       string
 	Bundle             string
 	BundleDigest       string
 	ServiceAccountName string
+	EngineConfig       json.RawMessage
 }
 
-func (q *configurableWorkflowQuerier) GetWorkflowDependencies(_ context.Context, _ string) (*models.WorkflowDependencies, error) {
-	return q.Deps, nil
-}
-
-func (q *configurableWorkflowQuerier) GetWorkflowEngineConfig(_ context.Context, _ string) (json.RawMessage, error) {
-	return nil, nil
-}
-
-func (q *configurableWorkflowQuerier) GetWorkflowExecutionEngine(_ context.Context, _ string) (string, string, error) {
-	return q.Engine, "", nil
-}
-
-func (q *configurableWorkflowQuerier) GetWorkflowExecutionBundle(_ context.Context, _ string) (string, string, error) {
-	return q.Bundle, q.BundleDigest, nil
+func (q *configurableWorkflowQuerier) GetWorkflowSchemaMetadata(_ context.Context, _ string) (*weclient.SchemaMetadata, error) {
+	return &weclient.SchemaMetadata{
+		Engine:                 q.Engine,
+		WorkflowName:           q.WorkflowName,
+		EngineConfig:           q.EngineConfig,
+		Dependencies:           q.Deps,
+		DeclaredParameterNames: q.ParamNames,
+	}, nil
 }
 
 func (q *configurableWorkflowQuerier) ResolveWorkflowCatalogMetadata(_ context.Context, _ string) (*weclient.WorkflowCatalogMetadata, error) {
@@ -98,6 +94,22 @@ func (q *configurableWorkflowQuerier) ResolveWorkflowCatalogMetadata(_ context.C
 		ServiceAccountName:    q.ServiceAccountName,
 		Dependencies:          q.Deps,
 	}, nil
+}
+
+func (q *configurableWorkflowQuerier) GetWorkflowDependencies(_ context.Context, _ string) (*models.WorkflowDependencies, error) {
+	return q.Deps, nil
+}
+
+func (q *configurableWorkflowQuerier) GetWorkflowEngineConfig(_ context.Context, _ string) (json.RawMessage, error) {
+	return q.EngineConfig, nil
+}
+
+func (q *configurableWorkflowQuerier) GetWorkflowExecutionEngine(_ context.Context, _ string) (string, string, error) {
+	return q.Engine, q.WorkflowName, nil
+}
+
+func (q *configurableWorkflowQuerier) GetWorkflowExecutionBundle(_ context.Context, _ string) (string, string, error) {
+	return q.Bundle, q.BundleDigest, nil
 }
 
 // WorkflowExecution Integration Test Suite
