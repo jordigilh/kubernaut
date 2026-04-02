@@ -188,38 +188,43 @@ type WorkflowExecutionReconciler struct {
 	DependencyValidator dsvalidation.DependencyValidator
 }
 
-// resolveDependencies fetches schema-declared dependencies from DS and validates
-// them against the execution namespace. Returns empty CreateOptions when no
-// querier is configured, or when the workflow has no dependencies.
-// Returns a hard error only when validation explicitly fails (missing Secret/ConfigMap).
-// DS fetch failures are treated as non-fatal (graceful degradation).
-func (r *WorkflowExecutionReconciler) resolveDependencies(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (weexecutor.CreateOptions, error) {
+// resolveSchemaMetadata fetches all workflow catalog artifacts from DS in a
+// single call (F6: consolidation of 3 DS round-trips into 1).
+// Returns nil metadata (not an error) when no querier is configured or when
+// the DS call fails — graceful degradation preserves execution without
+// filtering, engine config, or dependency validation.
+// Returns a hard error only when dependency validation explicitly fails.
+func (r *WorkflowExecutionReconciler) resolveSchemaMetadata(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.SchemaMetadata, weexecutor.CreateOptions, error) {
 	opts := weexecutor.CreateOptions{}
 	if r.WorkflowQuerier == nil {
-		return opts, nil
+		return nil, opts, nil
 	}
 
 	logger := log.FromContext(ctx)
-	deps, err := r.WorkflowQuerier.GetWorkflowDependencies(ctx, wfe.Spec.WorkflowRef.WorkflowID)
+	meta, err := r.WorkflowQuerier.GetWorkflowSchemaMetadata(ctx, wfe.Spec.WorkflowRef.WorkflowID)
 	if err != nil {
-		logger.Error(err, "Failed to fetch workflow dependencies from DS (non-fatal, continuing without deps)",
+		logger.Error(err, "Failed to fetch workflow schema metadata from DS (non-fatal, continuing without filtering)",
 			"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-		return opts, nil
+		if r.Metrics != nil {
+			r.Metrics.SchemaFetchFailures.Inc()
+		}
+		return nil, opts, nil
 	}
-	if deps == nil {
-		return opts, nil
+	if meta == nil {
+		return nil, opts, nil
 	}
 
-	if r.DependencyValidator != nil {
-		if valErr := r.DependencyValidator.ValidateDependencies(ctx, r.ExecutionNamespace, deps); valErr != nil {
+	if meta.Dependencies != nil && r.DependencyValidator != nil {
+		if valErr := r.DependencyValidator.ValidateDependencies(ctx, r.ExecutionNamespace, meta.Dependencies); valErr != nil {
 			logger.Error(valErr, "Workflow dependency validation failed",
 				"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-			return opts, valErr
+			return meta, opts, valErr
 		}
 	}
 
-	opts.Dependencies = deps
-	return opts, nil
+	opts.Dependencies = meta.Dependencies
+	opts.DeclaredParameterNames = meta.DeclaredParameterNames
+	return meta, opts, nil
 }
 
 // ========================================
@@ -364,10 +369,27 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		fmt.Sprintf("Workflow spec validated: %s (target: %s)", wfe.Spec.WorkflowRef.WorkflowID, wfe.Spec.TargetResource))
 
 	// ========================================
-	// Step 1.2: Resolve execution engine from DS catalog (Issue #518)
+	// Step 1.2: Resolve all workflow catalog metadata from DS in a single call (F6)
+	// Engine (#518), engineConfig (DD-WORKFLOW-017), dependencies (DD-WE-006),
+	// and declared parameter names (#243) are fetched together.
 	// ========================================
-	engine, engineErr := r.resolveExecutionEngine(ctx, wfe)
-	if engineErr != nil {
+	schemaMeta, createOpts, schemaErr := r.resolveSchemaMetadata(ctx, wfe)
+	if schemaErr != nil {
+		markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", schemaErr.Error())
+		return ctrl.Result{}, markErr
+	}
+
+	// Resolve execution engine from schema metadata (Issue #518)
+	if schemaMeta != nil && schemaMeta.Engine != "" {
+		wfe.Status.ExecutionEngine = schemaMeta.Engine
+	}
+	engine := wfe.Status.ExecutionEngine
+	if engine == "" {
+		engineErr := fmt.Errorf("no engine defined in remediation workflow %s", wfe.Spec.WorkflowRef.WorkflowID)
+		if schemaMeta != nil && schemaMeta.WorkflowName != "" {
+			engineErr = fmt.Errorf("no engine defined in remediation workflow %s - %s",
+				schemaMeta.WorkflowName, wfe.Spec.WorkflowRef.WorkflowID)
+		}
 		logger.Error(engineErr, "Execution engine resolution failed")
 		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
 			fmt.Sprintf("Execution engine resolution failed: %v", engineErr))
@@ -377,6 +399,14 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		return ctrl.Result{}, nil
 	}
 	logger.Info("Resolved execution engine from catalog", "engine", engine, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+
+	// DD-WORKFLOW-017: Resolve engineConfig from metadata when not present on the WFE spec.
+	if wfe.Spec.WorkflowRef.EngineConfig == nil && schemaMeta != nil && schemaMeta.EngineConfig != nil {
+		logger.Info("Resolved engineConfig from DS catalog",
+			"workflowID", wfe.Spec.WorkflowRef.WorkflowID,
+			"engine", engine)
+		wfe.Spec.WorkflowRef.EngineConfig = &apiextensionsv1.JSON{Raw: schemaMeta.EngineConfig}
+	}
 
 	// ========================================
 	// Step 1.5: Check if cooldown is active for target resource (BR-WE-009)
@@ -468,28 +498,6 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		"resource", resourceName,
 		"namespace", r.ExecutionNamespace,
 	)
-
-	// DD-WE-006: Fetch workflow dependencies from DS and validate before execution.
-	createOpts, depErr := r.resolveDependencies(ctx, wfe)
-	if depErr != nil {
-		markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", depErr.Error())
-		return ctrl.Result{}, markErr
-	}
-
-	// DD-WORKFLOW-017: Resolve engineConfig from DS catalog when not present on the WFE spec.
-	// Execution details like engineConfig come from the workflow catalog entry, not the HAPI pipeline.
-	if wfe.Spec.WorkflowRef.EngineConfig == nil && wfe.Spec.WorkflowRef.WorkflowID != "" && r.WorkflowQuerier != nil {
-		ecRaw, ecErr := r.WorkflowQuerier.GetWorkflowEngineConfig(ctx, wfe.Spec.WorkflowRef.WorkflowID)
-		if ecErr != nil {
-			logger.Error(ecErr, "Failed to resolve engineConfig from DS (non-fatal)",
-				"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-		} else if ecRaw != nil {
-			logger.Info("Resolved engineConfig from DS catalog",
-				"workflowID", wfe.Spec.WorkflowRef.WorkflowID,
-				"engine", wfe.Status.ExecutionEngine)
-			wfe.Spec.WorkflowRef.EngineConfig = &apiextensionsv1.JSON{Raw: ecRaw}
-		}
-	}
 
 	createResult, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
 	if createErr != nil {
@@ -1719,39 +1727,15 @@ func (r *WorkflowExecutionReconciler) updateStatus(
 // Issue #518: Runtime Execution Engine Resolution
 // ========================================
 
-// resolveExecutionEngine ensures wfe.Status.ExecutionEngine is populated.
-// On the first call (Pending phase), it queries the DS catalog via WorkflowQuerier.
-// On subsequent calls (Running/Terminal/Delete), it returns the already-persisted value.
-// Returns the engine string or an error if resolution fails.
-func (r *WorkflowExecutionReconciler) resolveExecutionEngine(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, error) {
+// resolveExecutionEngine returns the cached execution engine from the WFE status.
+// In non-Pending phases the engine was already resolved during Pending and persisted
+// to wfe.Status.ExecutionEngine. Returns an error only if the engine is missing,
+// which indicates a programming error (Pending handler should have set it).
+func (r *WorkflowExecutionReconciler) resolveExecutionEngine(_ context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, error) {
 	if wfe.Status.ExecutionEngine != "" {
 		return wfe.Status.ExecutionEngine, nil
 	}
-
-	if r.WorkflowQuerier == nil {
-		return "", fmt.Errorf("DataStorage workflow querier not available — cannot resolve execution engine for workflow %s", wfe.Spec.WorkflowRef.WorkflowID)
-	}
-
-	workflowID := wfe.Spec.WorkflowRef.WorkflowID
-	if workflowID == "" {
-		return "", fmt.Errorf("workflowRef.workflowId is empty — cannot resolve execution engine")
-	}
-
-	engine, workflowName, err := r.WorkflowQuerier.GetWorkflowExecutionEngine(ctx, workflowID)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve execution engine from DS for workflow %s: %w", workflowID, err)
-	}
-
-	if engine == "" {
-		label := workflowID
-		if workflowName != "" {
-			label = fmt.Sprintf("%s - %s", workflowName, workflowID)
-		}
-		return "", fmt.Errorf("no engine defined in remediation workflow %s", label)
-	}
-
-	wfe.Status.ExecutionEngine = engine
-	return engine, nil
+	return "", fmt.Errorf("execution engine not resolved for WFE %s/%s — expected to be set during Pending phase", wfe.Namespace, wfe.Name)
 }
 
 // ========================================

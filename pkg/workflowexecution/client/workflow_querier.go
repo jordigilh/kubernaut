@@ -35,21 +35,41 @@ import (
 // WorkflowQuerier retrieves workflow metadata from the Data Storage catalog.
 // DD-WE-006: WFE queries DS on demand using the workflow ID.
 type WorkflowQuerier interface {
-	GetWorkflowDependencies(ctx context.Context, workflowID string) (*models.WorkflowDependencies, error)
-	// GetWorkflowEngineConfig retrieves the engine_config for a workflow from the catalog.
-	// DD-WORKFLOW-017: Execution details (engine, engineConfig) come from the workflow catalog entry.
-	// Returns nil when the workflow has no engineConfig.
-	GetWorkflowEngineConfig(ctx context.Context, workflowID string) (json.RawMessage, error)
-	// GetWorkflowExecutionEngine retrieves the execution engine and workflow name
-	// from the DS catalog. Issue #518: the WE controller resolves the engine at
-	// runtime rather than reading it from the WFE spec.
-	GetWorkflowExecutionEngine(ctx context.Context, workflowID string) (engine string, workflowName string, err error)
+	// GetWorkflowSchemaMetadata fetches the workflow from DS and returns all
+	// schema artifacts (engine, engineConfig, dependencies, declared parameters)
+	// from a single GetWorkflowByID call. F6: Consolidates 3 separate DS calls
+	// into one to reduce latency and DS load during reconciliation.
+	GetWorkflowSchemaMetadata(ctx context.Context, workflowID string) (*SchemaMetadata, error)
 }
 
 // WorkflowCatalogClient is a narrow interface satisfied by the ogen-generated
 // *ogenclient.Client. Defined here for testability (mock injection).
 type WorkflowCatalogClient interface {
 	GetWorkflowByID(ctx context.Context, params ogenclient.GetWorkflowByIDParams) (ogenclient.GetWorkflowByIDRes, error)
+}
+
+// SchemaMetadata bundles all workflow catalog artifacts needed by the WE
+// reconciler from a single DS GetWorkflowByID call. F6: Consolidates engine,
+// engineConfig, dependencies, and declared parameter names to eliminate
+// redundant DS round-trips during reconciliation.
+type SchemaMetadata struct {
+	// Engine is the execution engine from the DS catalog entry (e.g. "tekton", "job", "ansible").
+	// Issue #518: resolved at runtime, not from the WFE spec.
+	Engine string
+	// WorkflowName is the human-readable workflow name from the DS catalog entry.
+	WorkflowName string
+	// EngineConfig is the raw JSON engine-specific configuration extracted from
+	// the schema's execution.engineConfig section. nil when absent.
+	// DD-WORKFLOW-017: execution details come from the workflow catalog entry.
+	EngineConfig json.RawMessage
+	// Dependencies are the infrastructure resources (Secrets, ConfigMaps) declared
+	// in the workflow schema. DD-WE-006.
+	Dependencies *models.WorkflowDependencies
+	// DeclaredParameterNames is the set of parameter names declared in the
+	// workflow schema. #243: defense-in-depth parameter filtering.
+	//   nil   → no schema content, no filtering (backward compatible)
+	//   empty → schema exists but declares no params, strip all
+	DeclaredParameterNames map[string]bool
 }
 
 // OgenWorkflowQuerier implements WorkflowQuerier using the ogen-generated DS client.
@@ -91,10 +111,15 @@ func NewOgenWorkflowQuerierFromConfig(baseURL string, timeout time.Duration) (*O
 	return &OgenWorkflowQuerier{client: ogenClient}, nil
 }
 
-// GetWorkflowDependencies fetches the workflow from DS by ID and extracts
-// schema-declared dependencies from the Content field (raw YAML).
-// Returns nil if the workflow has no dependencies declared.
-func (q *OgenWorkflowQuerier) GetWorkflowDependencies(ctx context.Context, workflowID string) (*models.WorkflowDependencies, error) {
+// GetWorkflowSchemaMetadata fetches the workflow from DS and returns all
+// schema artifacts from a single GetWorkflowByID call. F6: Consolidates
+// engine resolution (#518), engineConfig (DD-WORKFLOW-017), dependencies
+// (DD-WE-006), and parameter names (#243) into one round-trip.
+//
+// Engine and WorkflowName are always populated from the DS response.
+// Schema-derived fields (Dependencies, DeclaredParameterNames, EngineConfig)
+// are only populated when the workflow has non-empty Content.
+func (q *OgenWorkflowQuerier) GetWorkflowSchemaMetadata(ctx context.Context, workflowID string) (*SchemaMetadata, error) {
 	uid, err := uuid.Parse(workflowID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid workflow ID %q: %w", workflowID, err)
@@ -112,8 +137,13 @@ func (q *OgenWorkflowQuerier) GetWorkflowDependencies(ctx context.Context, workf
 		return nil, fmt.Errorf("workflow %s not found in catalog", workflowID)
 	}
 
+	meta := &SchemaMetadata{
+		Engine:       wf.ExecutionEngine,
+		WorkflowName: wf.WorkflowName,
+	}
+
 	if wf.Content == "" {
-		return nil, nil
+		return meta, nil
 	}
 
 	parser := schema.NewParser()
@@ -122,67 +152,18 @@ func (q *OgenWorkflowQuerier) GetWorkflowDependencies(ctx context.Context, workf
 		return nil, fmt.Errorf("failed to parse workflow schema for %s: %w", workflowID, err)
 	}
 
-	return parser.ExtractDependencies(parsed), nil
-}
+	meta.Dependencies = parser.ExtractDependencies(parsed)
 
-// GetWorkflowEngineConfig retrieves the engine_config from the DS catalog.
-// DD-WORKFLOW-017: The WE controller resolves execution details from the catalog.
-// Returns nil when the workflow has no engineConfig section.
-func (q *OgenWorkflowQuerier) GetWorkflowEngineConfig(ctx context.Context, workflowID string) (json.RawMessage, error) {
-	uid, err := uuid.Parse(workflowID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid workflow ID %q: %w", workflowID, err)
+	if rawEC := parser.ExtractEngineConfig(parsed); rawEC != nil {
+		meta.EngineConfig = *rawEC
 	}
 
-	res, err := q.client.GetWorkflowByID(ctx, ogenclient.GetWorkflowByIDParams{
-		WorkflowID: uid,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("DS query failed for workflow %s: %w", workflowID, err)
+	if len(parsed.Parameters) > 0 {
+		meta.DeclaredParameterNames = make(map[string]bool, len(parsed.Parameters))
+		for _, p := range parsed.Parameters {
+			meta.DeclaredParameterNames[p.Name] = true
+		}
 	}
 
-	wf, ok := res.(*ogenclient.RemediationWorkflow)
-	if !ok {
-		return nil, fmt.Errorf("workflow %s not found in catalog", workflowID)
-	}
-
-	if wf.Content == "" {
-		return nil, nil
-	}
-
-	parser := schema.NewParser()
-	parsed, err := parser.Parse(wf.Content)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse workflow schema for %s: %w", workflowID, err)
-	}
-
-	rawMsg := parser.ExtractEngineConfig(parsed)
-	if rawMsg == nil {
-		return nil, nil
-	}
-	return *rawMsg, nil
-}
-
-// GetWorkflowExecutionEngine retrieves the execution engine and workflow name
-// from the DS catalog entry. Issue #518: the WE controller resolves the engine
-// at runtime rather than reading it from the (now-removed) WFE spec field.
-func (q *OgenWorkflowQuerier) GetWorkflowExecutionEngine(ctx context.Context, workflowID string) (string, string, error) {
-	uid, err := uuid.Parse(workflowID)
-	if err != nil {
-		return "", "", fmt.Errorf("invalid workflow ID %q: %w", workflowID, err)
-	}
-
-	res, err := q.client.GetWorkflowByID(ctx, ogenclient.GetWorkflowByIDParams{
-		WorkflowID: uid,
-	})
-	if err != nil {
-		return "", "", fmt.Errorf("DS query failed for workflow %s: %w", workflowID, err)
-	}
-
-	wf, ok := res.(*ogenclient.RemediationWorkflow)
-	if !ok {
-		return "", "", fmt.Errorf("workflow %s not found in catalog", workflowID)
-	}
-
-	return wf.ExecutionEngine, wf.WorkflowName, nil
+	return meta, nil
 }

@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"knative.dev/pkg/apis"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -59,7 +60,7 @@ func (t *TektonExecutor) Engine() string {
 // DD-WE-003: Deterministic name for atomic locking
 // DD-WE-006: opts.Dependencies are added as workspace bindings.
 func (t *TektonExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) (*CreateResult, error) {
-	pr := t.buildPipelineRun(wfe, namespace, opts.Dependencies)
+	pr := t.buildPipelineRun(ctx, wfe, namespace, opts)
 
 	if err := t.Client.Create(ctx, pr); err != nil {
 		return nil, err // Preserve original error for IsAlreadyExists checks
@@ -154,15 +155,18 @@ func (t *TektonExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1al
 
 // buildPipelineRun creates a PipelineRun with bundle resolver.
 // DD-WE-006: deps are added as workspace bindings when non-nil.
-func (t *TektonExecutor) buildPipelineRun(wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, deps *models.WorkflowDependencies) *tektonv1.PipelineRun {
-	params := convertParameters(wfe.Spec.Parameters)
+// #243: Parameters are filtered against DeclaredParameterNames before conversion.
+func (t *TektonExecutor) buildPipelineRun(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) *tektonv1.PipelineRun {
+	logger := log.FromContext(ctx).WithValues("wfe", wfe.Name, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+	filteredParams := FilterDeclaredParameters(wfe.Spec.Parameters, opts.DeclaredParameterNames, logger)
+	params := convertParameters(filteredParams)
 
 	params = append(params, tektonv1.Param{
 		Name:  "TARGET_RESOURCE",
 		Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.TargetResource},
 	})
 
-	workspaces := buildDependencyWorkspaces(deps)
+	workspaces := buildDependencyWorkspaces(opts.Dependencies)
 
 	return &tektonv1.PipelineRun{
 		ObjectMeta: metav1.ObjectMeta{

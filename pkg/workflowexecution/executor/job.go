@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -62,7 +63,7 @@ func (j *JobExecutor) Engine() string {
 // injected as environment variables. DD-WE-006: opts.Dependencies are mounted
 // as volumes at /run/kubernaut/secrets/<name> and /run/kubernaut/configmaps/<name>.
 func (j *JobExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) (*CreateResult, error) {
-	job := j.buildJob(wfe, namespace, opts.Dependencies)
+	job := j.buildJob(ctx, wfe, namespace, opts)
 
 	if err := j.Client.Create(ctx, job); err != nil {
 		return nil, err // Preserve original error for IsAlreadyExists checks
@@ -187,9 +188,12 @@ func (j *JobExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha
 // buildJob creates a Kubernetes Job from the WFE spec.
 // Parameters are injected as environment variables.
 // DD-WE-006: deps are mounted as volumes when non-nil.
-func (j *JobExecutor) buildJob(wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, deps *models.WorkflowDependencies) *batchv1.Job {
-	envVars := j.buildEnvVars(wfe)
-	volumes, mounts := buildDependencyVolumes(deps)
+// #243: Parameters are filtered against DeclaredParameterNames before injection.
+func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) *batchv1.Job {
+	logger := log.FromContext(ctx).WithValues("wfe", wfe.Name, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+	params := FilterDeclaredParameters(wfe.Spec.Parameters, opts.DeclaredParameterNames, logger)
+	envVars := buildEnvVars(wfe.Spec.TargetResource, params)
+	volumes, mounts := buildDependencyVolumes(opts.Dependencies)
 
 	jobName := ExecutionResourceName(wfe.Spec.TargetResource)
 
@@ -286,15 +290,16 @@ func buildDependencyVolumes(deps *models.WorkflowDependencies) ([]corev1.Volume,
 
 // buildEnvVars converts workflow parameters to container environment variables.
 // Also adds TARGET_RESOURCE for consistency with Tekton pipelines.
-func (j *JobExecutor) buildEnvVars(wfe *workflowexecutionv1alpha1.WorkflowExecution) []corev1.EnvVar {
+// #243: Accepts pre-filtered params (filtering is done in buildJob).
+func buildEnvVars(targetResource string, params map[string]string) []corev1.EnvVar {
 	envVars := []corev1.EnvVar{
 		{
 			Name:  "TARGET_RESOURCE",
-			Value: wfe.Spec.TargetResource,
+			Value: targetResource,
 		},
 	}
 
-	for key, value := range wfe.Spec.Parameters {
+	for key, value := range params {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  key,
 			Value: value,
