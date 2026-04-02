@@ -35,6 +35,14 @@ import (
 // DD-WE-006: Dependencies are passed here, queried from DS by the reconciler.
 type CreateOptions struct {
 	Dependencies *models.WorkflowDependencies
+
+	// DeclaredParameterNames is the set of parameter names declared in the
+	// workflow schema (from DS catalog). Used by executors to strip undeclared
+	// parameters before injecting them into execution resources.
+	// #243: Defense-in-depth parameter filtering.
+	//   nil   → no schema available, no filtering (backward compatible)
+	//   empty → schema exists but declares no params, strip all
+	DeclaredParameterNames map[string]bool
 }
 
 // Warning represents a non-fatal issue detected during execution resource

@@ -59,6 +59,11 @@ const (
 	// MetricNameExecutionDuration is the name of the execution duration histogram metric
 	MetricNameExecutionDuration = "workflowexecution_reconciler_duration_seconds"
 
+	// MetricNameSchemaFetchFailures tracks DS schema metadata fetch failures.
+	// F2: Defense-in-depth observability — monitors when graceful degradation
+	// silently disables parameter filtering due to DS unavailability.
+	MetricNameSchemaFetchFailures = "workflowexecution_schema_fetch_failures_total"
+
 	// Label values for outcome dimension
 	// LabelOutcomeCompleted indicates successful workflow completion
 	LabelOutcomeCompleted = "Completed"
@@ -79,6 +84,10 @@ type Metrics struct {
 	// Labels: outcome (Completed, Failed)
 	// Business value: SLO P95 latency tracking
 	ExecutionDuration *prometheus.HistogramVec
+
+	// SchemaFetchFailures counts DS schema metadata fetch failures (F2).
+	// A non-zero rate indicates parameter filtering is degraded.
+	SchemaFetchFailures prometheus.Counter
 }
 
 // NewMetrics creates and registers WorkflowExecution metrics with controller-runtime registry.
@@ -112,13 +121,18 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"outcome"},
 		),
+		SchemaFetchFailures: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name: MetricNameSchemaFetchFailures,
+				Help: "Total DS schema metadata fetch failures — non-zero rate means parameter filtering is degraded (F2)",
+			},
+		),
 	}
 
-	// Auto-register with controller-runtime's global registry
-	// This makes metrics available at :8080/metrics endpoint in production
 	ctrlmetrics.Registry.MustRegister(
 		m.ExecutionTotal,
 		m.ExecutionDuration,
+		m.SchemaFetchFailures,
 	)
 
 	return m
@@ -153,12 +167,18 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			},
 			[]string{"outcome"},
 		),
+		SchemaFetchFailures: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name: MetricNameSchemaFetchFailures,
+				Help: "Total DS schema metadata fetch failures — non-zero rate means parameter filtering is degraded (F2)",
+			},
+		),
 	}
 
-	// Register with provided test registry
 	registry.MustRegister(
 		m.ExecutionTotal,
 		m.ExecutionDuration,
+		m.SchemaFetchFailures,
 	)
 
 	return m
@@ -170,6 +190,7 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 func (m *Metrics) Register(reg prometheus.Registerer) {
 	reg.MustRegister(m.ExecutionTotal)
 	reg.MustRegister(m.ExecutionDuration)
+	reg.MustRegister(m.SchemaFetchFailures)
 }
 
 // ========================================
