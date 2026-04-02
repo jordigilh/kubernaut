@@ -23,21 +23,14 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 )
 
-// OwnerChainEntry represents a single entry in a Kubernetes owner chain.
-type OwnerChainEntry struct {
-	Kind      string `json:"kind"`
-	Name      string `json:"name"`
-	Namespace string `json:"namespace,omitempty"`
-}
-
 // K8sClient abstracts Kubernetes API access for enrichment.
 type K8sClient interface {
-	GetOwnerChain(ctx context.Context, kind, name, namespace string) ([]OwnerChainEntry, error)
+	GetOwnerChain(ctx context.Context, kind, name, namespace string) ([]string, error)
 }
 
 // DataStorageClient abstracts DataStorage API access for enrichment.
 type DataStorageClient interface {
-	GetRemediationHistory(ctx context.Context, kind, name, namespace, specHash string) ([]RemediationHistoryEntry, error)
+	GetRemediationHistory(ctx context.Context, name, namespace string) ([]RemediationHistoryEntry, error)
 }
 
 // RemediationHistoryEntry is a single remediation history record.
@@ -47,29 +40,13 @@ type RemediationHistoryEntry struct {
 	Timestamp  string `json:"timestamp"`
 }
 
-// DetectedLabels holds the structured label detection results matching HAPI's LabelDetector output.
-type DetectedLabels struct {
-	FailedDetections         []string `json:"failedDetections"`
-	GitOpsManaged            bool     `json:"gitOpsManaged"`
-	GitOpsTool               string   `json:"gitOpsTool"`
-	PDBProtected             bool     `json:"pdbProtected"`
-	HPAEnabled               bool     `json:"hpaEnabled"`
-	Stateful                 bool     `json:"stateful"`
-	HelmManaged              bool     `json:"helmManaged"`
-	NetworkIsolated          bool     `json:"networkIsolated"`
-	ServiceMesh              string   `json:"serviceMesh"`
-	ResourceQuotaConstrained bool     `json:"resourceQuotaConstrained"`
-}
-
 // EnrichmentResult is the combined enrichment data.
 type EnrichmentResult struct {
-	OwnerChain         []OwnerChainEntry         `json:"owner_chain"`
-	DetectedLabels     *DetectedLabels           `json:"detected_labels,omitempty"`
-	QuotaDetails       map[string]string         `json:"quota_details,omitempty"`
-	RemediationHistory []RemediationHistoryEntry  `json:"remediation_history"`
+	OwnerChain         []string                  `json:"owner_chain"`
+	RemediationHistory []RemediationHistoryEntry `json:"remediation_history"`
 }
 
-// Enricher resolves owner chain, labels, and remediation history.
+// Enricher resolves owner chain and remediation history.
 type Enricher struct {
 	k8s        K8sClient
 	ds         DataStorageClient
@@ -88,9 +65,8 @@ func NewEnricher(k8s K8sClient, ds DataStorageClient, auditStore audit.AuditStor
 }
 
 // Enrich resolves enrichment data for the given resource.
-// Implements partial failure: each sub-call is best-effort. Returns an
-// EnrichmentResult even if individual calls fail.
-func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash string) (*EnrichmentResult, error) {
+// Implements partial failure: each sub-call is best-effort.
+func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace string) (*EnrichmentResult, error) {
 	result := &EnrichmentResult{}
 
 	var ownerErr, histErr error
@@ -106,7 +82,7 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash s
 		result.OwnerChain = chain
 	}
 
-	history, err := e.ds.GetRemediationHistory(ctx, kind, name, namespace, specHash)
+	history, err := e.ds.GetRemediationHistory(ctx, name, namespace)
 	if err != nil {
 		histErr = err
 		e.logger.Warn("enrichment: remediation history fetch failed",

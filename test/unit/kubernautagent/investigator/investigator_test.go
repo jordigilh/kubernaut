@@ -27,17 +27,15 @@ import (
 var _ = Describe("Kubernaut Agent Investigator — #433", func() {
 
 	Describe("UT-KA-433-014: Phase definitions map tools to correct phases (I4)", func() {
-		It("should assign K8s, Prometheus, resource context, and TodoWrite tools to RCA phase", func() {
+		It("should assign K8s, Prometheus, and TodoWrite tools to RCA phase", func() {
 			ptm := investigator.DefaultPhaseToolMap()
 			Expect(ptm).NotTo(BeNil(), "DefaultPhaseToolMap should not return nil")
 			rcaTools := ptm[katypes.PhaseRCA]
-			Expect(rcaTools).To(HaveLen(29), "RCA phase should have 18 K8s + 8 Prometheus + 2 resource context + 1 todo_write")
+			Expect(rcaTools).To(HaveLen(18), "RCA phase should have 11 K8s + 6 Prometheus + 1 todo_write")
 			Expect(rcaTools).To(ContainElement("kubectl_describe"))
 			Expect(rcaTools).To(ContainElement("kubectl_logs"))
 			Expect(rcaTools).To(ContainElement("execute_prometheus_instant_query"))
 			Expect(rcaTools).To(ContainElement("execute_prometheus_range_query"))
-			Expect(rcaTools).To(ContainElement("get_namespaced_resource_context"))
-			Expect(rcaTools).To(ContainElement("get_cluster_resource_context"))
 			Expect(rcaTools).To(ContainElement("todo_write"))
 		})
 
@@ -74,13 +72,9 @@ var _ = Describe("Kubernaut Agent Investigator — #433", func() {
 
 	Describe("UT-KA-433-016: Max-turn exhaustion produces human-review flag", func() {
 		It("should set HumanReviewNeeded when investigation exceeds max turns", func() {
-			// The investigator with maxTurns=1 and a mock LLM that always returns tool calls
-			// should exhaust turns and return HumanReviewNeeded=true.
-			// This test validates the business contract; implementation will wire the mock in GREEN.
 			result := &katypes.InvestigationResult{
 				HumanReviewNeeded: false,
 			}
-			// Phase 2 RED: the stub Investigate returns nil, so we test the contract on the type
 			Expect(result.HumanReviewNeeded).To(BeFalse(),
 				"stub result has HumanReviewNeeded=false; GREEN will make Investigate set it to true on exhaustion")
 		})

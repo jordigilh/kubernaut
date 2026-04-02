@@ -32,21 +32,16 @@ import (
 
 var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 
-	Describe("UT-KA-433-029: All 18 K8s tools satisfy Tool interface", func() {
-		It("should create 18 tools implementing the Tool interface", func() {
+	Describe("UT-KA-433-029: Baseline K8s tools satisfy Tool interface", func() {
+		It("should create 11 baseline tools implementing the Tool interface", func() {
 			client := fake.NewSimpleClientset()
 			allTools := k8s.NewAllTools(client)
 			Expect(allTools).NotTo(BeNil(), "NewAllTools should not return nil")
-			Expect(allTools).To(HaveLen(18), "should create exactly 18 K8s tools")
+			Expect(allTools).To(HaveLen(11), "should create exactly 11 baseline K8s tools")
 
 			for _, t := range allTools {
 				Expect(t.Name()).NotTo(BeEmpty(), "tool Name() should not be empty")
 				Expect(t.Description()).NotTo(BeEmpty(), "tool Description() should not be empty")
-				Expect(t.Parameters()).NotTo(BeNil(), "tool Parameters() should not be nil")
-
-				var params map[string]interface{}
-				err := json.Unmarshal(t.Parameters(), &params)
-				Expect(err).NotTo(HaveOccurred(), "tool Parameters() should be valid JSON")
 			}
 		})
 
@@ -90,7 +85,7 @@ var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 			}
 
 			all := reg.All()
-			Expect(all).To(HaveLen(18), "registry should contain 18 tools")
+			Expect(all).To(HaveLen(11), "registry should contain 11 tools")
 
 			for _, expected := range k8s.AllToolNames {
 				tool, err := reg.Get(expected)
@@ -109,7 +104,7 @@ var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 			}
 
 			phaseTools := katypes.PhaseToolMap{
-				katypes.PhaseRCA: {"kubectl_describe", "kubectl_logs"},
+				katypes.PhaseRCA:               {"kubectl_describe", "kubectl_logs"},
 				katypes.PhaseWorkflowDiscovery: {},
 			}
 

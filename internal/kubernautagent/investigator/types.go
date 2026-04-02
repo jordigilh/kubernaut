@@ -23,35 +23,22 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/prometheus"
 )
 
-// Resource context tools belong in RCA phase (matching HAPI behavior).
-var resourceContextTools = []string{
-	"get_namespaced_resource_context",
-	"get_cluster_resource_context",
-}
-
-// Workflow discovery tools belong in WorkflowDiscovery phase.
-var workflowDiscoveryTools = []string{
-	"list_available_actions",
-	"list_workflows",
-	"get_workflow",
-}
-
 // DefaultPhaseToolMap returns the production phase-to-tool mapping.
-// PhaseRCA: K8s + Prometheus + resource context tools.
-// PhaseWorkflowDiscovery: workflow discovery tools.
 // TodoWrite is available in all phases (matching HAPI CoreInvestigationToolset behavior).
 func DefaultPhaseToolMap() katypes.PhaseToolMap {
 	todo := investigation.ToolName
 
-	rca := make([]string, 0, len(k8s.AllToolNames)+len(prometheus.AllToolNames)+len(resourceContextTools)+1)
+	rca := make([]string, 0, len(k8s.AllToolNames)+len(prometheus.AllToolNames)+1)
 	rca = append(rca, k8s.AllToolNames...)
 	rca = append(rca, prometheus.AllToolNames...)
-	rca = append(rca, resourceContextTools...)
 	rca = append(rca, todo)
 
-	wd := make([]string, 0, len(workflowDiscoveryTools)+1)
-	wd = append(wd, workflowDiscoveryTools...)
-	wd = append(wd, todo)
+	wd := []string{
+		"list_available_actions",
+		"list_workflows",
+		"get_workflow",
+		todo,
+	}
 
 	return katypes.PhaseToolMap{
 		katypes.PhaseRCA:               rca,

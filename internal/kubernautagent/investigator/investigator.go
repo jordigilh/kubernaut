@@ -18,7 +18,6 @@ package investigator
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -28,7 +27,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
 
 // Investigator orchestrates the two-invocation architecture:
@@ -39,7 +37,6 @@ type Investigator struct {
 	builder      *prompt.Builder
 	resultParser *parser.ResultParser
 	enricher     *enrichment.Enricher
-	registry     *registry.Registry
 	auditStore   audit.AuditStore
 	logger       *slog.Logger
 	maxTurns     int
@@ -48,14 +45,13 @@ type Investigator struct {
 
 // New creates an Investigator with the given dependencies.
 func New(client llm.Client, builder *prompt.Builder, resultParser *parser.ResultParser,
-	enricher *enrichment.Enricher, reg *registry.Registry, auditStore audit.AuditStore, logger *slog.Logger,
+	enricher *enrichment.Enricher, auditStore audit.AuditStore, logger *slog.Logger,
 	maxTurns int, phaseTools katypes.PhaseToolMap) *Investigator {
 	return &Investigator{
 		client:       client,
 		builder:      builder,
 		resultParser: resultParser,
 		enricher:     enricher,
-		registry:     reg,
 		auditStore:   auditStore,
 		logger:       logger,
 		maxTurns:     maxTurns,
@@ -99,7 +95,7 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, signal katypes.S
 	if kind == "" {
 		kind = "Pod"
 	}
-	result, err := inv.enricher.Enrich(ctx, kind, signal.Name, signal.Namespace, "")
+	result, err := inv.enricher.Enrich(ctx, kind, signal.Name, signal.Namespace)
 	if err != nil {
 		inv.logger.Warn("enrichment failed", slog.String("error", err.Error()))
 		return nil
@@ -117,9 +113,8 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: fmt.Sprintf("Investigate: %s %s in %s — %s", signal.Severity, signal.Name, signal.Namespace, signal.Message)},
 	}
-	tools := inv.toolDefinitionsForPhase(katypes.PhaseRCA)
 
-	content, exhausted, err := inv.runLLMLoop(ctx, messages, tools, "rca")
+	content, exhausted, err := inv.runLLMLoop(ctx, messages, "rca")
 	if err != nil {
 		return nil, err
 	}
@@ -151,9 +146,8 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: fmt.Sprintf("RCA findings: %s\n\nSelect the appropriate remediation workflow.", rcaSummary)},
 	}
-	tools := inv.toolDefinitionsForPhase(katypes.PhaseWorkflowDiscovery)
 
-	content, exhausted, err := inv.runLLMLoop(ctx, messages, tools, "workflow_selection")
+	content, exhausted, err := inv.runLLMLoop(ctx, messages, "workflow_selection")
 	if err != nil {
 		return nil, err
 	}
@@ -180,16 +174,14 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	return result, nil
 }
 
-// runLLMLoop executes the multi-turn LLM conversation loop, handling tool
-// calls until the LLM returns a final text response or max turns are exhausted.
-// Returns (content, exhausted, error).
-func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, tools []llm.ToolDefinition, phase string) (string, bool, error) {
+// runLLMLoop executes the multi-turn LLM conversation loop with stub tool
+// execution. Real tool execution will be wired via Registry in Task 1.6.
+func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase string) (string, bool, error) {
 	for turn := 0; turn < inv.maxTurns; turn++ {
 		audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeLLMRequest, ""), inv.logger)
 
 		resp, err := inv.client.Chat(ctx, llm.ChatRequest{
 			Messages: messages,
-			Tools:    tools,
 		})
 		if err != nil {
 			audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeResponseFailed, ""), inv.logger)
@@ -202,21 +194,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeLLMToolCall, ""), inv.logger)
 			messages = append(messages, resp.Message)
 			for _, tc := range resp.ToolCalls {
-				var toolResult string
-				if inv.registry != nil {
-					result, execErr := inv.registry.Execute(ctx, tc.Name, json.RawMessage(tc.Arguments))
-					if execErr != nil {
-						inv.logger.Warn("tool execution failed",
-							slog.String("tool", tc.Name),
-							slog.String("error", execErr.Error()),
-						)
-						toolResult = fmt.Sprintf(`{"error":"%s"}`, execErr.Error())
-					} else {
-						toolResult = result
-					}
-				} else {
-					toolResult = fmt.Sprintf(`{"error":"no registry configured for tool %s"}`, tc.Name)
-				}
+				toolResult := fmt.Sprintf(`{"error":"no registry configured for tool %s"}`, tc.Name)
 				messages = append(messages, llm.Message{
 					Role:       "tool",
 					Content:    toolResult,
@@ -231,22 +209,6 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 	}
 
 	return "", true, nil
-}
-
-func (inv *Investigator) toolDefinitionsForPhase(phase katypes.Phase) []llm.ToolDefinition {
-	if inv.registry == nil {
-		return nil
-	}
-	phaseTools := inv.registry.ToolsForPhase(phase, inv.phaseTools)
-	defs := make([]llm.ToolDefinition, 0, len(phaseTools))
-	for _, t := range phaseTools {
-		defs = append(defs, llm.ToolDefinition{
-			Name:        t.Name(),
-			Description: t.Description(),
-			Parameters:  t.Parameters(),
-		})
-	}
-	return defs
 }
 
 func signalToPrompt(s katypes.SignalContext) prompt.SignalData {
@@ -272,29 +234,7 @@ func toPromptEnrichment(data *enrichment.EnrichmentResult) *prompt.EnrichmentDat
 		return nil
 	}
 	pe := &prompt.EnrichmentData{
-		QuotaDetails: data.QuotaDetails,
-	}
-
-	for _, entry := range data.OwnerChain {
-		if entry.Namespace != "" {
-			pe.OwnerChain = append(pe.OwnerChain, entry.Kind+"/"+entry.Name+"("+entry.Namespace+")")
-		} else {
-			pe.OwnerChain = append(pe.OwnerChain, entry.Kind+"/"+entry.Name)
-		}
-	}
-
-	if data.DetectedLabels != nil {
-		pe.DetectedLabels = map[string]string{
-			"gitOpsManaged":            fmt.Sprintf("%t", data.DetectedLabels.GitOpsManaged),
-			"gitOpsTool":               data.DetectedLabels.GitOpsTool,
-			"pdbProtected":             fmt.Sprintf("%t", data.DetectedLabels.PDBProtected),
-			"hpaEnabled":               fmt.Sprintf("%t", data.DetectedLabels.HPAEnabled),
-			"stateful":                 fmt.Sprintf("%t", data.DetectedLabels.Stateful),
-			"helmManaged":              fmt.Sprintf("%t", data.DetectedLabels.HelmManaged),
-			"networkIsolated":          fmt.Sprintf("%t", data.DetectedLabels.NetworkIsolated),
-			"serviceMesh":              data.DetectedLabels.ServiceMesh,
-			"resourceQuotaConstrained": fmt.Sprintf("%t", data.DetectedLabels.ResourceQuotaConstrained),
-		}
+		OwnerChain: data.OwnerChain,
 	}
 
 	for _, h := range data.RemediationHistory {

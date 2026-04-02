@@ -24,30 +24,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
-
-// fakeK8sClient provides owner chain resolution for resource context tools.
-type fakeK8sClient struct{}
-
-func (f *fakeK8sClient) GetOwnerChain(_ context.Context, kind, name, ns string) ([]enrichment.OwnerChainEntry, error) {
-	return []enrichment.OwnerChainEntry{
-		{Kind: kind, Name: name, Namespace: ns},
-		{Kind: "ReplicaSet", Name: "api-server-abc", Namespace: ns},
-		{Kind: "Deployment", Name: "api-server", Namespace: ns},
-	}, nil
-}
-
-// fakeEnrichDS provides remediation history for resource context tools.
-type fakeEnrichDS struct{}
-
-func (f *fakeEnrichDS) GetRemediationHistory(_ context.Context, _, _, _, _ string) ([]enrichment.RemediationHistoryEntry, error) {
-	return []enrichment.RemediationHistoryEntry{
-		{WorkflowID: "oom-recovery", Outcome: "success", Timestamp: "2026-02-15T10:00:00Z"},
-	}, nil
-}
 
 var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 
@@ -56,12 +35,10 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 	BeforeEach(func() {
 		Expect(ogenClient).NotTo(BeNil(), "ogen client must be initialized by SynchronizedBeforeSuite")
 
-		k8s := &fakeK8sClient{}
-		dsEnrich := &fakeEnrichDS{}
 		reg = registry.New()
 
-		allTools := custom.NewAllTools(ogenClient, k8s, dsEnrich)
-		Expect(allTools).To(HaveLen(5), "should create 5 custom tools")
+		allTools := custom.NewAllTools(ogenClient)
+		Expect(allTools).To(HaveLen(3), "should create 3 custom tools")
 		for _, t := range allTools {
 			reg.Register(t)
 		}
@@ -70,10 +47,9 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 	Describe("IT-KA-433-033: list_available_actions queries real DataStorage API", func() {
 		It("should return action types from the real DataStorage", func() {
 			result, err := reg.Execute(context.Background(), "list_available_actions",
-				json.RawMessage(`{"severity":"critical","component":"deployment","environment":"production","priority":"P0"}`))
+				json.RawMessage(`{}`))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeEmpty())
-			// DS bootstrap seeds standard action types — validate at least one comes back
 			Expect(result).To(ContainSubstring("actionTypes"))
 		})
 	})
@@ -100,18 +76,8 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 			Expect(wfUUID).NotTo(BeEmpty())
 
 			result, err := reg.Execute(context.Background(), "get_workflow",
-				json.RawMessage(fmt.Sprintf(`{"id":"%s"}`, wfUUID)))
+				json.RawMessage(fmt.Sprintf(`{"workflow_id":"%s"}`, wfUUID)))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(ContainSubstring("oom-recovery"))
-		})
-	})
-
-	Describe("IT-KA-433-036: get_namespaced_resource_context combines K8s owner chain + DS remediation history", func() {
-		It("should return combined root owner and remediation history", func() {
-			result, err := reg.Execute(context.Background(), "get_namespaced_resource_context",
-				json.RawMessage(`{"kind":"Pod","name":"api-server-abc-xyz","namespace":"production"}`))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(ContainSubstring("Deployment"))
 			Expect(result).To(ContainSubstring("oom-recovery"))
 		})
 	})

@@ -36,11 +36,6 @@ import (
 
 	hapiclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/investigation"
-	k8stools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
-	promtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/prometheus"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
@@ -98,53 +93,9 @@ func main() {
 	auditStore := audit.NopAuditStore{}
 	phaseTools := investigator.DefaultPhaseToolMap()
 
-	// Build tool registry with all available tools.
-	reg := registry.New()
-
-	// llm_summarize post-processing for large-output tools (DD-HAPI-019-002)
-	llmSummarizer := summarizer.New(llmClient, 30000)
-
-	// K8s tools (requires in-cluster config)
-	kubeConfig, kubeErr := ctrl.GetConfig()
-	if kubeErr == nil {
-		k8sClientset, clientErr := kubernetes.NewForConfig(kubeConfig)
-		if clientErr == nil {
-			for _, t := range k8stools.NewAllTools(k8sClientset) {
-				reg.Register(summarizer.Wrap(t, llmSummarizer))
-			}
-			slogger.Info("registered K8s tools", "count", len(k8stools.AllToolNames))
-		} else {
-			slogger.Warn("K8s clientset creation failed, K8s tools unavailable", "error", clientErr)
-		}
-	} else {
-		slogger.Warn("K8s config not available, K8s tools unavailable", "error", kubeErr)
-	}
-
-	// Prometheus tools
-	if cfg.Tools.Prometheus.URL != "" {
-		promClient, promErr := promtools.NewClient(promtools.ClientConfig{
-			URL:       cfg.Tools.Prometheus.URL,
-			Timeout:   cfg.Tools.Prometheus.Timeout,
-			SizeLimit: cfg.Tools.Prometheus.SizeLimit,
-		})
-		if promErr == nil {
-			for _, t := range promtools.NewAllTools(promClient) {
-				reg.Register(t)
-			}
-			slogger.Info("registered Prometheus tools", "count", len(promtools.AllToolNames))
-		} else {
-			slogger.Warn("Prometheus client creation failed, Prometheus tools unavailable", "error", promErr)
-		}
-	}
-
-	// TodoWrite — available in all investigation phases
-	reg.Register(investigation.NewTodoWriteTool())
-	slogger.Info("registered TodoWrite tool")
-
 	inv := investigator.New(
 		llmClient, promptBuilder, resultParser,
 		nil, // enricher — requires DataStorage adapter; wired in Phase 1B
-		reg,
 		auditStore, slogger,
 		cfg.Investigator.MaxTurns, phaseTools,
 	)
@@ -162,13 +113,11 @@ func main() {
 
 	r := chi.NewRouter()
 
-	// Public endpoints (no auth) — same pattern as Gateway/DataStorage
 	r.Get("/health", healthHandler)
 	r.Get("/ready", readyHandler)
 	r.Get("/config", configHandler(cfg))
 	r.Handle("/metrics", promhttp.Handler())
 
-	// DD-AUTH-014: Business endpoints with auth middleware
 	r.Route("/api/v1", func(r chi.Router) {
 		authMw := newAuthMiddleware(cfg, logrLogger)
 		if authMw != nil {
@@ -238,7 +187,6 @@ func configHandler(cfg *kaconfig.Config) http.HandlerFunc {
 }
 
 // detectNamespace reads the pod's namespace from the mounted ServiceAccount.
-// Falls back to "kubernaut-system" when running outside a cluster.
 func detectNamespace() string {
 	data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 	if err == nil && len(data) > 0 {
@@ -248,7 +196,6 @@ func detectNamespace() string {
 }
 
 // newAuthMiddleware creates the DD-AUTH-014 auth middleware using in-cluster K8s config.
-// Returns nil when running outside a cluster (local dev, unit tests).
 func newAuthMiddleware(_ *kaconfig.Config, logger logr.Logger) *auth.Middleware {
 	kubeConfig, err := ctrl.GetConfig()
 	if err != nil {
