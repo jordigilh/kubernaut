@@ -306,7 +306,8 @@ spec:
                 description: |-
                   ExecutionEngine is the backend engine resolved from the DS workflow catalog
                   at runtime by the WE controller. Set once during Pending phase via
-                  WorkflowQuerier.GetWorkflowExecutionEngine; immutable thereafter.
+                  WorkflowQuerier.GetWorkflowSchemaMetadata (F6: single consolidated DS call);
+                  immutable thereafter.
                   Values: "tekton", "job", "ansible".
                 type: string
               executionRef:

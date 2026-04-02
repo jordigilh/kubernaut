@@ -213,8 +213,8 @@ type WorkflowExecutionStatus struct {
 
     // ExecutionEngine is the backend engine resolved from the DS workflow catalog
     // at runtime by the WE controller. Set once during Pending phase via
-    // WorkflowQuerier.GetWorkflowExecutionEngine; immutable thereafter.
-    // Values: "tekton", "job", "ansible".
+    // WorkflowQuerier.GetWorkflowSchemaMetadata (F6: single consolidated DS call);
+    // immutable thereafter. Values: "tekton", "job", "ansible".
     // Issue #518: Moved from spec to status -- WE resolves at runtime, not set by RO.
     // +optional
     ExecutionEngine string `json:"executionEngine,omitempty"`
