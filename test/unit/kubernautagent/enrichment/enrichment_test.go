@@ -27,20 +27,10 @@ import (
 
 var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 
-	Describe("UT-KA-433-028: EnrichmentResult serializes owner chain + labels + history", func() {
-		It("should round-trip serialize all enrichment fields", func() {
+	Describe("UT-KA-433-028: EnrichmentResult serializes owner chain + history", func() {
+		It("should round-trip serialize baseline enrichment fields", func() {
 			original := enrichment.EnrichmentResult{
-				OwnerChain: []enrichment.OwnerChainEntry{
-					{Kind: "Deployment", Name: "api-server", Namespace: "default"},
-					{Kind: "ReplicaSet", Name: "api-server-abc123", Namespace: "default"},
-					{Kind: "Pod", Name: "api-server-abc123-xyz", Namespace: "default"},
-				},
-				DetectedLabels: &enrichment.DetectedLabels{
-					GitOpsManaged: true,
-					GitOpsTool:    "argocd",
-					PDBProtected:  true,
-				},
-				QuotaDetails: map[string]string{"cpu_hard": "4", "memory_hard": "8Gi"},
+				OwnerChain: []string{"Deployment/api-server", "ReplicaSet/api-server-abc123"},
 				RemediationHistory: []enrichment.RemediationHistoryEntry{
 					{WorkflowID: "oom-increase-memory", Outcome: "success", Timestamp: "2026-03-01T10:00:00Z"},
 					{WorkflowID: "restart-pod", Outcome: "failure", Timestamp: "2026-02-28T15:30:00Z"},
@@ -54,13 +44,8 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 			err = json.Unmarshal(data, &restored)
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(restored.OwnerChain).To(HaveLen(3))
-			Expect(restored.OwnerChain[0].Kind).To(Equal("Deployment"))
-			Expect(restored.OwnerChain[0].Name).To(Equal("api-server"))
-			Expect(restored.DetectedLabels).NotTo(BeNil())
-			Expect(restored.DetectedLabels.GitOpsManaged).To(BeTrue())
-			Expect(restored.DetectedLabels.GitOpsTool).To(Equal("argocd"))
-			Expect(restored.QuotaDetails).To(HaveKeyWithValue("cpu_hard", "4"))
+			Expect(restored.OwnerChain).To(HaveLen(2))
+			Expect(restored.OwnerChain[0]).To(Equal("Deployment/api-server"))
 			Expect(restored.RemediationHistory).To(HaveLen(2))
 			Expect(restored.RemediationHistory[0].WorkflowID).To(Equal("oom-increase-memory"))
 			Expect(restored.RemediationHistory[1].Outcome).To(Equal("failure"))

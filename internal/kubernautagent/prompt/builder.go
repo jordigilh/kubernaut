@@ -49,7 +49,6 @@ type SignalData struct {
 type EnrichmentData struct {
 	OwnerChain         []string
 	DetectedLabels     map[string]string
-	QuotaDetails       map[string]string
 	RemediationHistory []RemediationHistoryEntry
 }
 

@@ -22,23 +22,18 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/itchyny/gojq"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
-	"sigs.k8s.io/yaml"
 )
 
-// AllToolNames lists the 19 K8s tool names matching HAPI v1.2 surface.
+// AllToolNames lists the baseline K8s tool names.
 var AllToolNames = []string{
 	"kubectl_describe",
 	"kubectl_get_by_name",
 	"kubectl_get_by_kind_in_namespace",
-	"kubectl_get_by_kind_in_cluster",
-	"kubectl_find_resource",
-	"kubectl_get_yaml",
 	"kubectl_events",
 	"kubectl_logs",
 	"kubectl_previous_logs",
@@ -47,22 +42,14 @@ var AllToolNames = []string{
 	"kubectl_container_previous_logs",
 	"kubectl_previous_logs_all_containers",
 	"kubectl_logs_grep",
-	"kubectl_logs_all_containers_grep",
-	"kubectl_get_memory_requests",
-	"kubectl_get_deployment_memory_requests",
-	"kubernetes_jq_query",
-	"kubernetes_count",
 }
 
-// NewAllTools creates all 19 K8s tools backed by the given client.
+// NewAllTools creates the baseline K8s tools backed by the given client.
 func NewAllTools(client kubernetes.Interface) []tools.Tool {
 	return []tools.Tool{
 		newDescribe(client),
 		newGetByName(client),
 		newGetByKindInNamespace(client),
-		newGetByKindInCluster(client),
-		newFindResource(client),
-		newGetYAML(client),
 		newEvents(client),
 		newLogs(client, false, false),
 		newPreviousLogs(client),
@@ -71,11 +58,6 @@ func NewAllTools(client kubernetes.Interface) []tools.Tool {
 		newContainerPreviousLogs(client),
 		newPreviousLogsAllContainers(client),
 		newLogsGrep(client),
-		newLogsAllContainersGrep(client),
-		newGetMemoryRequests(client),
-		newGetDeploymentMemoryRequests(client),
-		newJQQuery(client),
-		newCount(client),
 	}
 }
 
@@ -95,15 +77,9 @@ type logArgs struct {
 }
 
 var (
-	objParams         = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"name":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","name","namespace"]}`)
-	listParams        = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","namespace"]}`)
-	clusterListParams = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind"}},"required":["kind"]}`)
-	findParams        = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"},"label_selector":{"type":"string","description":"Label selector (e.g. app=nginx)"}},"required":["kind","namespace","label_selector"]}`)
-	logParams         = json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"namespace":{"type":"string"},"container":{"type":"string"},"tailLines":{"type":"integer"},"limitBytes":{"type":"integer"},"pattern":{"type":"string"}},"required":["name","namespace"]}`)
-	memParams         = json.RawMessage(`{"type":"object","properties":{"name":{"type":"string","description":"Pod name"},"namespace":{"type":"string"}},"required":["name","namespace"]}`)
-	depMemParams      = json.RawMessage(`{"type":"object","properties":{"name":{"type":"string","description":"Deployment name"},"namespace":{"type":"string"}},"required":["name","namespace"]}`)
-	jqParams          = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"},"jq_expression":{"type":"string","description":"jq expression to apply to the resource list"}},"required":["kind","namespace","jq_expression"]}`)
-	countParams       = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"},"jq_filter":{"type":"string","description":"Optional jq filter to apply before counting"}},"required":["kind","namespace"]}`)
+	objParams  = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"name":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","name","namespace"]}`)
+	listParams = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","namespace"]}`)
+	logParams  = json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"namespace":{"type":"string"},"container":{"type":"string"},"tailLines":{"type":"integer"},"limitBytes":{"type":"integer"},"pattern":{"type":"string"}},"required":["name","namespace"]}`)
 )
 
 // resourceTool is a shared base for tools that get/describe a single K8s resource.
@@ -178,255 +154,6 @@ func newEvents(c kubernetes.Interface) *resourceTool {
 	}
 }
 
-func newGetByKindInCluster(c kubernetes.Interface) *resourceTool {
-	return &resourceTool{
-		client: c, toolName: "kubectl_get_by_kind_in_cluster",
-		desc: "List Kubernetes resources of a kind across all namespaces", params: clusterListParams,
-		fetchFunc: func(ctx context.Context, cl kubernetes.Interface, a resourceArgs) (interface{}, error) {
-			return listResources(ctx, cl, a.Kind, "")
-		},
-	}
-}
-
-func newFindResource(c kubernetes.Interface) tools.Tool {
-	return &findResourceTool{client: c}
-}
-
-type findResourceTool struct {
-	client kubernetes.Interface
-}
-
-func (t *findResourceTool) Name() string               { return "kubectl_find_resource" }
-func (t *findResourceTool) Description() string         { return "Find Kubernetes resources by label selector" }
-func (t *findResourceTool) Parameters() json.RawMessage { return findParams }
-
-func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
-	var a struct {
-		Kind          string `json:"kind"`
-		Namespace     string `json:"namespace"`
-		LabelSelector string `json:"label_selector"`
-	}
-	if err := json.Unmarshal(args, &a); err != nil {
-		return "", fmt.Errorf("parsing args: %w", err)
-	}
-	result, err := listResourcesWithSelector(ctx, t.client, a.Kind, a.Namespace, a.LabelSelector)
-	if err != nil {
-		return "", err
-	}
-	data, _ := json.Marshal(result)
-	return string(data), nil
-}
-
-func newGetYAML(c kubernetes.Interface) tools.Tool {
-	return &getYAMLTool{client: c}
-}
-
-type getYAMLTool struct {
-	client kubernetes.Interface
-}
-
-func (t *getYAMLTool) Name() string               { return "kubectl_get_yaml" }
-func (t *getYAMLTool) Description() string         { return "Get a Kubernetes resource as YAML" }
-func (t *getYAMLTool) Parameters() json.RawMessage { return objParams }
-
-func (t *getYAMLTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
-	var a resourceArgs
-	if err := json.Unmarshal(args, &a); err != nil {
-		return "", fmt.Errorf("parsing args: %w", err)
-	}
-	obj, err := getResource(ctx, t.client, a.Kind, a.Name, a.Namespace)
-	if err != nil {
-		return "", err
-	}
-	jsonData, _ := json.Marshal(obj)
-	yamlData, err := yaml.JSONToYAML(jsonData)
-	if err != nil {
-		return "", fmt.Errorf("converting to YAML: %w", err)
-	}
-	return string(yamlData), nil
-}
-
-func newGetMemoryRequests(c kubernetes.Interface) tools.Tool {
-	return &memoryRequestsTool{client: c, toolName: "kubectl_get_memory_requests", desc: "Get memory requests and limits for a pod's containers", params: memParams}
-}
-
-func newGetDeploymentMemoryRequests(c kubernetes.Interface) tools.Tool {
-	return &memoryRequestsTool{client: c, toolName: "kubectl_get_deployment_memory_requests", desc: "Get memory requests and limits for all pods in a deployment", params: depMemParams, deployment: true}
-}
-
-type memoryRequestsTool struct {
-	client     kubernetes.Interface
-	toolName   string
-	desc       string
-	params     json.RawMessage
-	deployment bool
-}
-
-func (t *memoryRequestsTool) Name() string               { return t.toolName }
-func (t *memoryRequestsTool) Description() string         { return t.desc }
-func (t *memoryRequestsTool) Parameters() json.RawMessage { return t.params }
-
-func (t *memoryRequestsTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
-	var a struct {
-		Name      string `json:"name"`
-		Namespace string `json:"namespace"`
-	}
-	if err := json.Unmarshal(args, &a); err != nil {
-		return "", fmt.Errorf("parsing args: %w", err)
-	}
-
-	if t.deployment {
-		return t.deploymentMemory(ctx, a.Name, a.Namespace)
-	}
-	return t.podMemory(ctx, a.Name, a.Namespace)
-}
-
-func (t *memoryRequestsTool) podMemory(ctx context.Context, name, namespace string) (string, error) {
-	pod, err := t.client.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return "", fmt.Errorf("getting pod: %w", err)
-	}
-	return containerMemoryJSON(pod.Spec.Containers), nil
-}
-
-func (t *memoryRequestsTool) deploymentMemory(ctx context.Context, name, namespace string) (string, error) {
-	dep, err := t.client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return "", fmt.Errorf("getting deployment: %w", err)
-	}
-	selector, err := metav1.LabelSelectorAsSelector(dep.Spec.Selector)
-	if err != nil {
-		return "", fmt.Errorf("building selector: %w", err)
-	}
-	pods, err := t.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector.String()})
-	if err != nil {
-		return "", fmt.Errorf("listing pods: %w", err)
-	}
-	type podMem struct {
-		Pod        string                    `json:"pod"`
-		Containers []containerMemoryEntry    `json:"containers"`
-	}
-	var result []podMem
-	for i := range pods.Items {
-		p := pods.Items[i]
-		var entries []containerMemoryEntry
-		for _, c := range p.Spec.Containers {
-			entries = append(entries, containerMemoryEntry{
-				Container:     c.Name,
-				MemoryRequest: c.Resources.Requests.Memory().String(),
-				MemoryLimit:   c.Resources.Limits.Memory().String(),
-			})
-		}
-		result = append(result, podMem{Pod: p.Name, Containers: entries})
-	}
-	data, _ := json.Marshal(result)
-	return string(data), nil
-}
-
-type containerMemoryEntry struct {
-	Container     string `json:"container"`
-	MemoryRequest string `json:"memory_request"`
-	MemoryLimit   string `json:"memory_limit"`
-}
-
-func containerMemoryJSON(containers []corev1.Container) string {
-	var entries []containerMemoryEntry
-	for _, c := range containers {
-		entries = append(entries, containerMemoryEntry{
-			Container:     c.Name,
-			MemoryRequest: c.Resources.Requests.Memory().String(),
-			MemoryLimit:   c.Resources.Limits.Memory().String(),
-		})
-	}
-	data, _ := json.Marshal(entries)
-	return string(data)
-}
-
-func newJQQuery(c kubernetes.Interface) tools.Tool {
-	return &jqTool{client: c, toolName: "kubernetes_jq_query",
-		desc: "Apply a jq expression to a Kubernetes resource list", params: jqParams}
-}
-
-func newCount(c kubernetes.Interface) tools.Tool {
-	return &jqTool{client: c, toolName: "kubernetes_count",
-		desc: "Count Kubernetes resources matching kind in namespace, optionally filtered by jq", params: countParams, countMode: true}
-}
-
-type jqTool struct {
-	client    kubernetes.Interface
-	toolName  string
-	desc      string
-	params    json.RawMessage
-	countMode bool
-}
-
-func (t *jqTool) Name() string               { return t.toolName }
-func (t *jqTool) Description() string         { return t.desc }
-func (t *jqTool) Parameters() json.RawMessage { return t.params }
-
-func (t *jqTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
-	var a struct {
-		Kind         string `json:"kind"`
-		Namespace    string `json:"namespace"`
-		JQExpression string `json:"jq_expression"`
-		JQFilter     string `json:"jq_filter"`
-	}
-	if err := json.Unmarshal(args, &a); err != nil {
-		return "", fmt.Errorf("parsing args: %w", err)
-	}
-
-	list, err := listResources(ctx, t.client, a.Kind, a.Namespace)
-	if err != nil {
-		return "", err
-	}
-
-	jsonData, _ := json.Marshal(list)
-	var input interface{}
-	_ = json.Unmarshal(jsonData, &input)
-
-	if t.countMode {
-		expr := a.JQFilter
-		if expr == "" {
-			expr = ".items | length"
-		} else {
-			expr = fmt.Sprintf("[.items[] | select(%s)] | length", expr)
-		}
-		return runJQ(expr, input)
-	}
-
-	if a.JQExpression == "" {
-		return string(jsonData), nil
-	}
-	return runJQ(a.JQExpression, input)
-}
-
-func runJQ(expression string, input interface{}) (string, error) {
-	query, err := gojq.Parse(expression)
-	if err != nil {
-		return "", fmt.Errorf("parsing jq expression %q: %w", expression, err)
-	}
-	iter := query.Run(input)
-
-	var results []interface{}
-	for {
-		v, ok := iter.Next()
-		if !ok {
-			break
-		}
-		if err, isErr := v.(error); isErr {
-			return "", fmt.Errorf("jq execution: %w", err)
-		}
-		results = append(results, v)
-	}
-
-	if len(results) == 1 {
-		data, _ := json.Marshal(results[0])
-		return string(data), nil
-	}
-	data, _ := json.Marshal(results)
-	return string(data), nil
-}
-
 // --- log tools ---
 
 type logTool struct {
@@ -458,9 +185,6 @@ func newPreviousLogsAllContainers(c kubernetes.Interface) *logTool {
 }
 func newLogsGrep(c kubernetes.Interface) *logTool {
 	return &logTool{client: c, toolName: "kubectl_logs_grep", desc: "Get logs filtered by grep pattern", grep: true}
-}
-func newLogsAllContainersGrep(c kubernetes.Interface) *logTool {
-	return &logTool{client: c, toolName: "kubectl_logs_all_containers_grep", desc: "Get grep-filtered logs from all containers", allConts: true, grep: true}
 }
 
 func (t *logTool) Name() string               { return t.toolName }
@@ -549,12 +273,6 @@ func getResource(ctx context.Context, client kubernetes.Interface, kind, name, n
 		return client.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	case "deployments":
 		return client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
-	case "replicasets":
-		return client.AppsV1().ReplicaSets(namespace).Get(ctx, name, metav1.GetOptions{})
-	case "statefulsets":
-		return client.AppsV1().StatefulSets(namespace).Get(ctx, name, metav1.GetOptions{})
-	case "daemonsets":
-		return client.AppsV1().DaemonSets(namespace).Get(ctx, name, metav1.GetOptions{})
 	case "services":
 		return client.CoreV1().Services(namespace).Get(ctx, name, metav1.GetOptions{})
 	case "configmaps":
@@ -567,39 +285,19 @@ func getResource(ctx context.Context, client kubernetes.Interface, kind, name, n
 		return client.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
 	case "nodes":
 		return client.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
-	case "jobs":
-		return client.BatchV1().Jobs(namespace).Get(ctx, name, metav1.GetOptions{})
-	case "cronjobs":
-		return client.BatchV1().CronJobs(namespace).Get(ctx, name, metav1.GetOptions{})
-	case "poddisruptionbudgets":
-		return client.PolicyV1().PodDisruptionBudgets(namespace).Get(ctx, name, metav1.GetOptions{})
-	case "horizontalpodautoscalers":
-		return client.AutoscalingV2().HorizontalPodAutoscalers(namespace).Get(ctx, name, metav1.GetOptions{})
-	case "networkpolicies":
-		return client.NetworkingV1().NetworkPolicies(namespace).Get(ctx, name, metav1.GetOptions{})
 	default:
 		return nil, fmt.Errorf("unsupported kind: %s", kind)
 	}
 }
 
 func listResources(ctx context.Context, client kubernetes.Interface, kind, namespace string) (interface{}, error) {
-	return listResourcesWithSelector(ctx, client, kind, namespace, "")
-}
-
-func listResourcesWithSelector(ctx context.Context, client kubernetes.Interface, kind, namespace, labelSelector string) (interface{}, error) {
-	opts := metav1.ListOptions{LabelSelector: labelSelector}
+	opts := metav1.ListOptions{}
 	gvr := kindToGVR(kind)
 	switch gvr.Resource {
 	case "pods":
 		return client.CoreV1().Pods(namespace).List(ctx, opts)
 	case "deployments":
 		return client.AppsV1().Deployments(namespace).List(ctx, opts)
-	case "replicasets":
-		return client.AppsV1().ReplicaSets(namespace).List(ctx, opts)
-	case "statefulsets":
-		return client.AppsV1().StatefulSets(namespace).List(ctx, opts)
-	case "daemonsets":
-		return client.AppsV1().DaemonSets(namespace).List(ctx, opts)
 	case "services":
 		return client.CoreV1().Services(namespace).List(ctx, opts)
 	case "configmaps":
@@ -612,16 +310,6 @@ func listResourcesWithSelector(ctx context.Context, client kubernetes.Interface,
 		return client.CoreV1().Namespaces().List(ctx, opts)
 	case "nodes":
 		return client.CoreV1().Nodes().List(ctx, opts)
-	case "jobs":
-		return client.BatchV1().Jobs(namespace).List(ctx, opts)
-	case "cronjobs":
-		return client.BatchV1().CronJobs(namespace).List(ctx, opts)
-	case "poddisruptionbudgets":
-		return client.PolicyV1().PodDisruptionBudgets(namespace).List(ctx, opts)
-	case "horizontalpodautoscalers":
-		return client.AutoscalingV2().HorizontalPodAutoscalers(namespace).List(ctx, opts)
-	case "networkpolicies":
-		return client.NetworkingV1().NetworkPolicies(namespace).List(ctx, opts)
 	default:
 		return nil, fmt.Errorf("unsupported kind for list: %s", kind)
 	}
@@ -633,12 +321,6 @@ func kindToGVR(kind string) schema.GroupVersionResource {
 		return schema.GroupVersionResource{Resource: "pods"}
 	case "deployment":
 		return schema.GroupVersionResource{Group: "apps", Resource: "deployments"}
-	case "replicaset":
-		return schema.GroupVersionResource{Group: "apps", Resource: "replicasets"}
-	case "statefulset":
-		return schema.GroupVersionResource{Group: "apps", Resource: "statefulsets"}
-	case "daemonset":
-		return schema.GroupVersionResource{Group: "apps", Resource: "daemonsets"}
 	case "service":
 		return schema.GroupVersionResource{Resource: "services"}
 	case "configmap":
@@ -651,16 +333,6 @@ func kindToGVR(kind string) schema.GroupVersionResource {
 		return schema.GroupVersionResource{Resource: "namespaces"}
 	case "node":
 		return schema.GroupVersionResource{Resource: "nodes"}
-	case "job":
-		return schema.GroupVersionResource{Group: "batch", Resource: "jobs"}
-	case "cronjob":
-		return schema.GroupVersionResource{Group: "batch", Resource: "cronjobs"}
-	case "poddisruptionbudget", "pdb":
-		return schema.GroupVersionResource{Group: "policy", Resource: "poddisruptionbudgets"}
-	case "horizontalpodautoscaler", "hpa":
-		return schema.GroupVersionResource{Group: "autoscaling", Resource: "horizontalpodautoscalers"}
-	case "networkpolicy":
-		return schema.GroupVersionResource{Group: "networking.k8s.io", Resource: "networkpolicies"}
 	default:
 		return schema.GroupVersionResource{Resource: strings.ToLower(kind) + "s"}
 	}
