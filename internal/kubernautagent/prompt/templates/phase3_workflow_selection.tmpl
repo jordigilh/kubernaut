@@ -1,0 +1,86 @@
+{{- /* Phase 3: Workflow Selection Prompt (Issue #537 / BR-HAPI-263)
+     Source: holmesgpt-api/src/extensions/incident/prompt_builder.py create_phase3_workflow_prompt
+     Two-invocation architecture: Phase 3 creates a new LLM session with NO memory of Phase 1.
+     RCA and enrichment context are injected separately by the caller.
+*/ -}}
+# Workflow Selection Request
+
+## Incident Context
+
+A **{{ .Severity }} {{ .SignalName }}** event {{ if eq .SignalMode "proactive" }}is predicted{{ else }}occurred{{ end }} for **{{ .Namespace }}/{{ .ResourceKind }}/{{ .ResourceName }}** in cluster **{{ .ClusterName }}**.
+
+**Technical Details**:
+- Signal Name: {{ .SignalName }}
+- Severity: {{ .Severity }}
+- Signal Mode: {{ .SignalMode }}
+- Resource: {{ .Namespace }}/{{ .ResourceKind }}/{{ .ResourceName }}
+
+**Business Impact Assessment**:
+- **Priority**: {{ .PriorityDescription }}
+- **Environment**: {{ .Environment }}
+- **Risk Tolerance**: {{ .RiskDescription }}
+{{ if eq .SignalMode "proactive" }}
+**Proactive Mode**: This is a proactive signal — the incident is predicted but has NOT yet occurred. Select a preventive workflow appropriate for anticipated {{ .SignalName }} events.
+{{ end }}
+## Your Task
+
+You are in the **Workflow Selection** phase. A root cause analysis (RCA) and
+enrichment context are provided below. Your job is to select the most
+appropriate remediation workflow from the catalog using the three-step
+discovery protocol.
+
+**DO NOT re-investigate the incident.** The investigation is complete. Focus
+exclusively on workflow discovery and selection based on the RCA findings and
+enrichment context provided.
+
+## Workflow Discovery Protocol (Three-Step — MANDATORY)
+
+**Step 1**: Call `list_available_actions` to discover available remediation action types.
+Review all returned action types and their descriptions. Choose the action type that
+best matches the RCA findings.
+
+**Action Type Selection Rules** (apply BEFORE calling Step 2):
+- If `cluster_context` shows `gitOpsManaged=true`, MUST prefer git-based action types.
+- If the RCA reveals an error rate spike correlating with a recent deployment revision change, prefer ProactiveRollback.
+- Cross-reference each action type's `when_to_use` and `when_not_to_use` guidance against the RCA findings.
+
+**Step 2**: Call `list_workflows` with `action_type` set to your chosen action type.
+**CRITICAL**: If `pagination.hasMore` is true, call again with increased `offset` to review ALL workflows.
+
+**Step 3**: Call `get_workflow` with the `workflow_id` of your selected workflow to retrieve its full parameter schema.
+
+## Special Investigation Outcomes (BR-HAPI-200)
+
+### Outcome A: Problem Self-Resolved
+Set `selected_workflow` to None, `investigation_outcome` to "resolved" (confidence >= 0.7).
+
+### Outcome B: Investigation Inconclusive
+Set `selected_workflow` to None, `investigation_outcome` to "inconclusive" (confidence < 0.5).
+
+### Outcome C: No Automated Remediation Available
+Set `selected_workflow` to None. Do NOT include `investigation_outcome`.
+
+### Outcome D: Alert Not Actionable
+Set `selected_workflow` to None, include `actionable: false`.
+
+## Expected Response Format
+
+**CRITICAL**: Use section header format. Each field on its own line with a `#` header:
+
+# root_cause_analysis
+{"summary": "Brief summary from Phase 1 RCA", "severity": "critical|high|medium|low|unknown", "contributing_factors": [...], "remediationTarget": {"kind": "...", "name": "...", "namespace": "..."}}
+
+# confidence
+0.95
+
+# selected_workflow
+{"workflow_id": "...", "confidence": 0.95, "rationale": "...", "parameters": {"PARAM_NAME": "value"}}
+
+# alternative_workflows
+[{"workflow_id": "...", "confidence": 0.75, "rationale": "..."}]
+
+**IMPORTANT**:
+- Select ONE workflow per incident as `selected_workflow`
+- Include up to 2-3 `alternative_workflows` (for audit/context only)
+- Each field must have its own `# field_name` header
+- Populate ALL required parameters from the workflow schema

@@ -1,9 +1,24 @@
 # HolmesGPT REST API Wrapper - Architecture Design
 
+> **⛔ DEPRECATED (v1.3)**: This Python service has been retired and replaced by the
+> **Kubernaut Agent** (Go) — see [GitHub Issue #433](https://github.com/jordigilh/kubernaut/issues/433).
+>
+> **Kubernaut Agent** architecture summary:
+> - **Language**: Go 1.25+ (native binary, LangChainGo for LLM)
+> - **HTTP Router**: `go-chi/chi/v5` (per [DD-HTTP-001](decisions/DD-HTTP-001-http-router-strategy.md))
+> - **Auth/AuthZ**: `pkg/shared/auth` middleware (DD-AUTH-014: TokenReview + SAR on `/api/v1/*`)
+> - **API Contract**: Same OpenAPI spec as HAPI (`internal/kubernautagent/api/openapi.json`)
+> - **Container**: UBI10 multi-stage (ADR-027/028): `go-toolset` builder → `scratch` (prod) / `ubi-minimal` (dev)
+> - **Source**: `cmd/kubernautagent/main.go`, `internal/kubernautagent/`
+> - **Toolset**: 21 tools via `client-go` (K8s), `prometheus/client_golang` (Prometheus), `ogen` DS client (custom)
+> - **Security**: I1 injection stripping, G4 credential scrubbing, I7 anomaly detection
+>
+> This document is retained for historical reference only.
+
 **Document Version**: 1.0
 **Date**: January 2025
-**Status**: Architecture Design Specification
-**Implementation**: Ready for Development
+**Status**: ⛔ Retired in v1.3 (replaced by Kubernaut Agent #433)
+**Implementation**: ~~Ready for Development~~ → Superseded
 
 ---
 
@@ -12,7 +27,7 @@
 ### 1.1 Architecture Overview
 The HolmesGPT REST API Wrapper is a standalone Python-based microservice that provides HTTP endpoints for HolmesGPT investigation capabilities. It replaces the current CLI sidecar approach with a proper REST API server, enabling programmatic access to AI-powered Kubernetes troubleshooting.
 
-### 1.2 Key Architectural Decisions
+### 1.2 Key Architectural Decisions (Historical — Python HAPI)
 - **Language**: Python 3.11+ (HolmesGPT SDK compatibility)
 - **Framework**: FastAPI (async performance, OpenAPI generation)
 - **Container**: upstream community UBI10 images (enterprise compliance)

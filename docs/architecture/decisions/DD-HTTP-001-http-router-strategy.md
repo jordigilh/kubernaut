@@ -2,7 +2,7 @@
 
 ## Status
 **✅ APPROVED** (2025-11-22)
-**Last Reviewed**: 2025-11-22
+**Last Reviewed**: 2026-03-04 (updated for Kubernaut Agent #433, HAPI retirement)
 **Confidence**: 95%
 
 ---
@@ -129,6 +129,7 @@ mux.HandleFunc("/incidents/", func(w http.ResponseWriter, r *http.Request) {
 **Examples:**
 - Data Storage Service (20+ REST endpoints)
 - Gateway Service (8+ webhook endpoints planned)
+- Kubernaut Agent Service (REST API, replaces Python HAPI — #433)
 - Future REST API or webhook API services
 
 ##### Use `http.NewServeMux()` (stdlib) When:
@@ -141,18 +142,22 @@ mux.HandleFunc("/incidents/", func(w http.ResponseWriter, r *http.Request) {
 - Toolset Service (CRD controller)
 - Notification Service (CRD controller)
 
-#### Python Services
+#### Python Services (Legacy)
 
-##### Use `FastAPI` (Python Best Practice)
-- ✅ All Python REST API services
+> **Note**: As of v1.3, there are no active Python REST API services.
+> HolmesGPT API (Python/FastAPI) has been retired and replaced by the
+> Kubernaut Agent (Go/chi) — see GitHub Issue #433.
+
+##### Use `FastAPI` (Python Best Practice — if applicable)
+- ✅ Python REST API services (none active in v1.3+)
 - ✅ Automatic OpenAPI generation
 - ✅ Built-in validation and serialization
 - ✅ Async support
 - ✅ Industry standard for Python APIs
 
 **Examples:**
-- HolmesGPT API Service (REST API)
-- Future Python microservices (e.g., Embedding Service)
+- ~~HolmesGPT API Service~~ (retired in v1.3, replaced by Kubernaut Agent)
+- Future Python microservices (if any)
 
 ---
 
@@ -319,7 +324,7 @@ func (s *Server) wrapWithMiddleware(handler http.Handler) http.Handler {
 
 ### Neutral
 
-- 🔄 **Existing services unchanged** - Gateway/Toolset keep stdlib, Data Storage keeps chi
+- 🔄 **v1.3 alignment**: Data Storage, Kubernaut Agent, and Gateway all use chi; CRD controllers use stdlib
 - 🔄 **Future services** follow documented rules
 
 ---
@@ -331,12 +336,13 @@ func (s *Server) wrapWithMiddleware(handler http.Handler) http.Handler {
 | Service | Type | Language | Router | Status |
 |---------|------|----------|--------|--------|
 | Data Storage | REST API | Go | `chi` | ✅ Correct |
-| HolmesGPT API | REST API | Python | `FastAPI` | ✅ Correct |
-| Gateway | Webhook API | Go | `http.NewServeMux()` | ⚠️ Should migrate to `chi` |
+| HolmesGPT API | REST API | Python | `FastAPI` | ⛔ Retired in v1.3 (replaced by Kubernaut Agent) |
+| Kubernaut Agent | REST API | Go | `chi` | ✅ Correct (#433) |
+| Gateway | Webhook API | Go | `chi` | ✅ Migrated |
 | Toolset | CRD Controller | Go | `http.NewServeMux()` | ✅ Correct |
 | Notification | CRD Controller | Go | `http.NewServeMux()` | ✅ Correct |
 
-**Result**: Gateway needs migration to `chi` for webhook API pattern consistency
+**Result**: All REST/Webhook API services use `chi`. CRD controllers use stdlib.
 
 ---
 
@@ -372,11 +378,10 @@ func (s *Server) wrapWithMiddleware(handler http.Handler) http.Handler {
 
 ```
 What language is the service?
-├─ Python → Use FastAPI (Python best practice)
-│  └─ Examples: HolmesGPT API, Embedding Service
+├─ Python → Use FastAPI (no active Python services in v1.3+)
 └─ Go → What type of service?
    ├─ REST API (5+ endpoints) → Use chi
-   │  └─ Examples: Data Storage
+   │  └─ Examples: Data Storage, Kubernaut Agent
    ├─ Webhook API (5+ endpoints) → Use chi
    │  └─ Examples: Gateway
    └─ CRD Controller (health/metrics only) → Use http.NewServeMux()

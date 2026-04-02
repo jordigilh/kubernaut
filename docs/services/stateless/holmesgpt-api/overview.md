@@ -1,9 +1,21 @@
 # HolmesGPT API Service - Overview
 
+> **⛔ DEPRECATED (v1.3)**: This Python service has been retired and replaced by the
+> **Kubernaut Agent** (Go) — see [GitHub Issue #433](https://github.com/jordigilh/kubernaut/issues/433).
+>
+> The Go replacement uses:
+> - **Language**: Go (native, no Python runtime)
+> - **HTTP Router**: `go-chi/chi/v5` (per [DD-HTTP-001](../../architecture/decisions/DD-HTTP-001-http-router-strategy.md))
+> - **Auth**: `pkg/shared/auth` middleware (DD-AUTH-014: TokenReview + SAR)
+> - **API Contract**: Same OpenAPI spec (`internal/kubernautagent/api/openapi.json`)
+> - **Source**: `cmd/kubernautagent/`, `internal/kubernautagent/`
+>
+> This document is retained for historical reference only.
+
 **Version**: v1.1
 **Last Updated**: October 16, 2025
-**Status**: ✅ Complete (Restructured from monolithic + Self-Documenting JSON)
-**Service Type**: Stateless HTTP Service (Python REST API)
+**Status**: ⛔ Retired in v1.3 (replaced by Kubernaut Agent #433)
+**Service Type**: ~~Stateless HTTP Service (Python REST API)~~ → Kubernaut Agent (Go REST API)
 **Port**: 8080 (REST API + Health), 9090 (Metrics)
 **Prompt Format**: Self-Documenting JSON (DD-HOLMESGPT-009)
 

@@ -100,12 +100,162 @@ spec:
                 description: Notification body content
                 minLength: 1
                 type: string
-              metadata:
+              context:
+                description: |-
+                  Context provides typed, structured notification context replacing the
+                  former unstructured Metadata map. Each sub-struct is optional (nil means
+                  not applicable for this notification type).
+                properties:
+                  analysis:
+                    description: Analysis captures AI analysis results (approval/completion
+                      notifications).
+                    properties:
+                      approvalReason:
+                        description: ApprovalReason explains why approval was required.
+                        type: string
+                      outcome:
+                        description: Outcome is the remediation outcome (e.g., "Success",
+                          "Failed").
+                        type: string
+                      rootCause:
+                        description: RootCause is the AI-determined root cause summary.
+                        type: string
+                    type: object
+                  dedup:
+                    description: Dedup captures deduplication context (bulk duplicate
+                      notifications).
+                    properties:
+                      duplicateCount:
+                        description: DuplicateCount is the number of duplicate signals.
+                        type: string
+                    type: object
+                  execution:
+                    description: Execution captures execution and retry context (manual-review
+                      WE source, timeout notifications).
+                    properties:
+                      lastExitCode:
+                        description: LastExitCode is the last exit code from the workflow
+                          execution.
+                        type: string
+                      maxRetries:
+                        description: MaxRetries is the maximum number of retries allowed.
+                        type: string
+                      phaseTimeout:
+                        description: PhaseTimeout is the duration string for the phase
+                          timeout.
+                        type: string
+                      previousExecution:
+                        description: PreviousExecution is the name of the previous
+                          WorkflowExecution.
+                        type: string
+                      retryCount:
+                        description: RetryCount is the number of retries attempted.
+                        type: string
+                      timeoutPhase:
+                        description: TimeoutPhase is the phase that timed out.
+                        type: string
+                    type: object
+                  lineage:
+                    description: Lineage tracks parent resource references for audit
+                      correlation.
+                    properties:
+                      aiAnalysis:
+                        description: AIAnalysis is the name of the parent AIAnalysis.
+                        type: string
+                      remediationRequest:
+                        description: RemediationRequest is the name of the parent
+                          RemediationRequest.
+                        type: string
+                    type: object
+                  review:
+                    description: Review captures manual review context (manual-review
+                      notifications).
+                    properties:
+                      humanReviewReason:
+                        description: HumanReviewReason from HAPI when needs_human_review=true
+                          (BR-HAPI-197).
+                        type: string
+                      reason:
+                        description: Reason is the high-level failure reason (e.g.,
+                          "WorkflowResolutionFailed").
+                        type: string
+                      rootCauseAnalysis:
+                        description: RootCauseAnalysis from AIAnalysis if available.
+                        type: string
+                      subReason:
+                        description: SubReason provides granular detail (e.g., "WorkflowNotFound").
+                        type: string
+                    type: object
+                  target:
+                    description: Target captures target resource context (timeout
+                      notifications).
+                    properties:
+                      targetResource:
+                        description: TargetResource in "Kind/Name" format.
+                        type: string
+                    type: object
+                  verification:
+                    description: |-
+                      Verification captures EA verification results (completion notifications, #318).
+                      Enables routing rules to match on verification outcome (e.g., inconclusive -> escalation).
+                    properties:
+                      assessed:
+                        description: Assessed indicates whether verification was performed
+                          at all.
+                        type: boolean
+                      degraded:
+                        description: |-
+                          Degraded indicates that the EA was unable to reliably compare pre- and
+                          post-remediation state because hash capture failed (Issue #546).
+                          Routing rules can match on this to escalate degraded notifications.
+                        type: boolean
+                      degradedReason:
+                        description: |-
+                          DegradedReason describes why the EA is degraded (e.g., RBAC Forbidden for
+                          the target CRD). Empty when Degraded is false.
+                        type: string
+                      outcome:
+                        description: 'Outcome is the high-level result: "passed",
+                          "partial", "inconclusive", "unavailable".'
+                        type: string
+                      reason:
+                        description: Reason maps to EffectivenessAssessment.Status.AssessmentReason.
+                        type: string
+                      summary:
+                        description: Summary is the operator-facing human-readable
+                          message.
+                        type: string
+                    required:
+                    - assessed
+                    type: object
+                  workflow:
+                    description: Workflow captures selected workflow details (approval/completion
+                      notifications).
+                    properties:
+                      confidence:
+                        description: Confidence is the AI confidence score (as string,
+                          e.g. "0.95").
+                        type: string
+                      executionEngine:
+                        description: ExecutionEngine is the engine used to execute
+                          the workflow.
+                        type: string
+                      selectedWorkflow:
+                        description: SelectedWorkflow is the ID of the workflow selected
+                          by AI.
+                        type: string
+                      workflowId:
+                        description: WorkflowID is the ID of the executed workflow.
+                        type: string
+                    type: object
+                type: object
+              extensions:
                 additionalProperties:
                   type: string
                 description: |-
-                  Metadata for context (key-value pairs)
-                  Examples: remediationRequestName, cluster, namespace, alertName
+                  Extensions holds arbitrary key-value pairs for routing and custom data
+                  that don't fit the typed Context schema (e.g., test routing overrides,
+                  vendor-specific tags). Routing rules can match on these keys.
                 type: object
               phase:
                 description: |-
@@ -205,6 +355,9 @@ spec:
                 description: |-
                   ReviewSource indicates what triggered manual review (for manual-review notifications)
                   Issue #91: promoted from mutable label to immutable spec field
+                enum:
+                - AIAnalysis
+                - WorkflowExecution
                 type: string
               severity:
                 description: |-
@@ -321,6 +474,11 @@ spec:
                     status:
                       description: Status of this attempt (success, failed, timeout,
                         invalid)
+                      enum:
+                      - success
+                      - failed
+                      - timeout
+                      - invalid
                       type: string
                     timestamp:
                       description: Timestamp of this attempt
