@@ -18,11 +18,11 @@ is_production if {
 }
 
 is_high_severity if {
-    input.severity == "critical"
+    lower(input.severity) == "critical"
 }
 
 is_high_severity if {
-    input.severity == "P0"
+    lower(input.severity) == "p0"
 }
 
 # ADR-055: Check if remediation_target is present
