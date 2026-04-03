@@ -132,6 +132,10 @@ type Reconciler struct {
 	// nil = locking disabled (single-replica deployments).
 	lockManager *locking.DistributedLockManager
 
+	// #265: CRD retention TTL — how long terminal RRs persist before cleanup.
+	// Default: 24h. Configurable via SetRetentionPeriod or YAML config.
+	retentionPeriod time.Duration
+
 	// ========================================
 	// STATUS MANAGER (DD-PERF-001)
 	// 📋 Design Decision: DD-PERF-001 | ✅ Atomic Status Updates Pattern
@@ -247,8 +251,9 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 		routingEngine:       routingEngine, // Use provided or default routing engine
 		Metrics:             m,
 		Recorder:            recorder,
-		StatusManager:       statusManager, // DD-PERF-001: Atomic status updates
-		apiReader:           apiReader,     // DD-EM-002: Uncached reader for pre-remediation hash
+		StatusManager:       statusManager,       // DD-PERF-001: Atomic status updates
+		apiReader:           apiReader,            // DD-EM-002: Uncached reader for pre-remediation hash
+		retentionPeriod:     24 * time.Hour,       // #265: Default CRD TTL
 	}
 
 	// ADR-EM-001: Wire optional EA creator (variadic for backward compatibility)
@@ -272,6 +277,14 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	r.weHandler = handler.NewWorkflowExecutionHandler(c, s, m, r.transitionToFailed, r.transitionToVerifying)
 
 	return r
+}
+
+// SetRetentionPeriod configures how long terminal RemediationRequest CRDs persist
+// before automatic cleanup. Default: 24h. Issue #265.
+func (r *Reconciler) SetRetentionPeriod(d time.Duration) {
+	if d > 0 {
+		r.retentionPeriod = d
+	}
 }
 
 // SetDSClient wires the DataStorage history querier into the routing engine.
@@ -570,12 +583,43 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
-	// Terminal-phase housekeeping (Issue #88: process owned-resource completion events)
-	// Terminal RRs still need to track NotificationRequest delivery status and
-	// (future) EffectivenessAssessment completion. Without this block, owned-resource
-	// events arriving after RR reaches terminal state are silently dropped.
+	// Terminal-phase housekeeping (Issue #88, #265)
+	// Handles: TTL enforcement (stamp RetentionExpiryTime, delete expired CRDs),
+	// Ready safety net, notification tracking, effectiveness assessment tracking.
 	if phase.IsTerminal(phase.Phase(rr.Status.OverallPhase)) {
 		logger.V(1).Info("Terminal-phase housekeeping", "phase", rr.Status.OverallPhase)
+
+		// #265: TTL enforcement — delete expired CRDs or stamp expiry for future cleanup.
+		// Expired CRDs are deleted immediately (before housekeeping).
+		// Non-expired terminal RRs proceed through housekeeping, then requeue at expiry.
+		if rr.Status.RetentionExpiryTime != nil && time.Now().After(rr.Status.RetentionExpiryTime.Time) {
+			r.emitRetentionCleanupAudit(ctx, rr)
+			if err := r.client.Delete(ctx, rr); err != nil {
+				if !apierrors.IsNotFound(err) {
+					logger.Error(err, "Failed to delete expired RemediationRequest")
+					return ctrl.Result{}, err
+				}
+			}
+			logger.Info("Deleted expired RemediationRequest (#265)",
+				"retentionExpiryTime", rr.Status.RetentionExpiryTime.Time.Format(time.RFC3339))
+			return ctrl.Result{}, nil
+		}
+
+		// Stamp expiry on first terminal reconcile (non-blocking — housekeeping continues)
+		retentionRequeue := r.retentionPeriod
+		if rr.Status.RetentionExpiryTime == nil {
+			expiry := metav1.NewTime(time.Now().Add(r.retentionPeriod))
+			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.RetentionExpiryTime = &expiry
+				return nil
+			}); err != nil {
+				logger.Error(err, "Failed to set RetentionExpiryTime")
+			} else {
+				logger.Info("RetentionExpiryTime set (#265)", "expiry", expiry.Time.Format(time.RFC3339))
+			}
+		} else {
+			retentionRequeue = time.Until(rr.Status.RetentionExpiryTime.Time)
+		}
 
 		// Issue #79 Phase 7c: Safety net for terminal RRs without Ready condition (e.g., externally cancelled)
 		readyCondition := remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
@@ -613,7 +657,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// BR-ORCH-044: Track routing decision - no action needed
 		r.Metrics.NoActionNeededTotal.WithLabelValues(rr.Namespace, string(rr.Status.OverallPhase)).Inc()
 
-		return ctrl.Result{}, nil
+		// #265: Requeue for TTL cleanup at expiry time
+		return ctrl.Result{RequeueAfter: retentionRequeue}, nil
 	}
 
 	// Check for global timeout (BR-ORCH-027)
@@ -2075,6 +2120,8 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 		rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track final generation
 		rr.Status.FailurePhase = &failurePhase
 		rr.Status.FailureReason = &failureReason
+		now := metav1.Now()
+		rr.Status.CompletedAt = &now // #265 F3: CompletedAt on all terminal transitions
 
 		// BR-ORCH-043: Set Ready condition (terminal failure)
 		remediationrequest.SetReady(rr, false, remediationrequest.ReasonRemediationFailed, "Remediation failed", r.Metrics)
@@ -2149,6 +2196,7 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 		now := metav1.Now()
 		rr.Status.TimeoutTime = &now
 		rr.Status.TimeoutPhase = &timeoutPhase
+		rr.Status.CompletedAt = &now // #265 F3: CompletedAt on all terminal transitions
 
 		// BR-ORCH-043: Set Ready condition (terminal timeout)
 		remediationrequest.SetReady(rr, false, remediationrequest.ReasonRemediationTimedOut, "Remediation timed out", r.Metrics)
@@ -2954,6 +3002,44 @@ func (r *Reconciler) resolveWorkflowName(ctx context.Context, workflowID string)
 		}
 	}
 	return workflowID
+}
+
+// emitRetentionCleanupAudit emits an audit event before deleting an expired RR (#265).
+// Ensures the audit trail is complete before CRD removal — PostgreSQL is the long-term store.
+// Non-blocking: failures are logged but do not prevent deletion.
+func (r *Reconciler) emitRetentionCleanupAudit(ctx context.Context, rr *remediationv1.RemediationRequest) {
+	logger := log.FromContext(ctx)
+
+	if r.auditStore == nil {
+		return
+	}
+
+	correlationID := rr.Name
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, roaudit.EventTypeLifecycleCompleted)
+	audit.SetEventCategory(event, roaudit.CategoryOrchestration)
+	audit.SetEventAction(event, "retention_cleanup")
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "service", roaudit.ServiceName)
+	audit.SetResource(event, "RemediationRequest", rr.Name)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, rr.Namespace)
+
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted,
+		RrName:    rr.Name,
+		Namespace: rr.Namespace,
+	}
+	if rr.Status.RetentionExpiryTime != nil {
+		payload.DurationMs.SetTo(time.Since(rr.Status.RetentionExpiryTime.Time).Milliseconds())
+	}
+
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData(payload)
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store retention cleanup audit event")
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.
