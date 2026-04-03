@@ -110,8 +110,11 @@ func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint s
 	for _, rr := range rrList.Items {
 		switch rr.Status.OverallPhase {
 		case phase.Failed:
-			// Failed RR - increment counter
-			// Note: BR-ORCH-042 specifically says "Failed RRs" - TimedOut not counted
+			// Issue #190: Skip inherited/deduplicated failures — they don't represent
+			// actual remediation attempts and should not count toward blocking.
+			if rr.Status.FailurePhase != nil && *rr.Status.FailurePhase == remediationv1.FailurePhaseDeduplicated {
+				continue
+			}
 			consecutiveFailures++
 
 		case phase.Completed:

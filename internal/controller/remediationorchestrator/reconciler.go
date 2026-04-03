@@ -1506,6 +1506,12 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseWorkflowExecution, fmt.Errorf("WorkflowExecution not found: %w", err))
 	}
 
+	// Issue #190 C3: If DeduplicatedByWE is set, short-circuit normal handler
+	// and propagate the original WFE's result directly.
+	if rr.Status.DeduplicatedByWE != "" {
+		return r.handleDedupResultPropagation(ctx, rr)
+	}
+
 	// Set WorkflowExecutionComplete condition before delegating to handler
 	// DD-PERF-001: Atomic status updates with conditions
 	switch we.Status.Phase {
@@ -1534,6 +1540,135 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 	// Delegate to WorkflowExecutionHandler for status-based transitions
 	// Handler Consistency Refactoring (2026-01-22): Extract status handling logic
 	return r.weHandler.HandleStatus(ctx, rr, we)
+}
+
+// handleDedupResultPropagation fetches the original WFE referenced by DeduplicatedByWE
+// and propagates its terminal result to the RR, skipping the normal handler path.
+//
+// Issue #190 C3/C4: When a WFE is deduplicated, the RR waits for the original WFE to finish
+// and inherits its outcome (Completed or Failed) without going through Verifying.
+func (r *Reconciler) handleDedupResultPropagation(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"originalWFE", rr.Status.DeduplicatedByWE,
+	)
+
+	originalWFE := &workflowexecutionv1.WorkflowExecution{}
+	err := r.client.Get(ctx, client.ObjectKey{
+		Name:      rr.Status.DeduplicatedByWE,
+		Namespace: rr.Namespace,
+	}, originalWFE)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Error(nil, "Original WFE deleted (dangling DeduplicatedByWE reference)")
+			return r.transitionToInheritedFailed(ctx, rr,
+				fmt.Errorf("original WorkflowExecution %q deleted before completion", rr.Status.DeduplicatedByWE))
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to fetch original WFE %q: %w", rr.Status.DeduplicatedByWE, err)
+	}
+
+	switch originalWFE.Status.Phase {
+	case workflowexecutionv1.PhaseCompleted:
+		return r.transitionToInheritedCompleted(ctx, rr)
+	case workflowexecutionv1.PhaseFailed:
+		return r.transitionToInheritedFailed(ctx, rr,
+			fmt.Errorf("original WorkflowExecution %q failed: %s", originalWFE.Name, originalWFE.Status.FailureReason))
+	default:
+		logger.Info("Original WFE still in progress, requeuing",
+			"phase", originalWFE.Status.Phase)
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+}
+
+// transitionToInheritedCompleted transitions the RR to Completed with outcome "InheritedCompleted".
+// Used when the original WFE (that caused the deduplication) completes successfully.
+// Skips Verifying because the deduplicated WFE never actually executed a remediation action.
+func (r *Reconciler) transitionToInheritedCompleted(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+
+	oldPhase := rr.Status.OverallPhase
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+		now := metav1.Now()
+		rr.Status.OverallPhase = phase.Completed
+		rr.Status.Outcome = "InheritedCompleted"
+		rr.Status.CompletedAt = &now
+		rr.Status.ObservedGeneration = rr.Generation
+		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Inherited completion from original WFE", r.Metrics)
+		return nil
+	})
+	if err != nil {
+		logger.Error(err, "Failed to transition to inherited Completed")
+		return ctrl.Result{}, fmt.Errorf("failed to transition to inherited Completed: %w", err)
+	}
+
+	if oldPhase != phase.Completed {
+		if r.Metrics != nil {
+			r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhase), string(phase.Completed), rr.Namespace).Inc()
+		}
+		if r.Recorder != nil {
+			r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonInheritedCompleted,
+				fmt.Sprintf("Remediation inherited Completed from original WorkflowExecution %s", rr.Status.DeduplicatedByWE))
+		}
+
+		// ADR-032 §1: Mandatory audit for all lifecycle terminal transitions
+		if rr.Status.StartTime != nil {
+			r.emitCompletionAudit(ctx, rr, "InheritedCompleted", time.Since(rr.Status.StartTime.Time).Milliseconds())
+		}
+
+		// BR-ORCH-045: Completion notifications (Outcome is set above)
+		r.ensureNotificationsCreated(ctx, rr)
+	}
+
+	logger.Info("RR inherited Completed from original WFE",
+		"originalWFE", rr.Status.DeduplicatedByWE, "outcome", "InheritedCompleted")
+	return ctrl.Result{}, nil
+}
+
+// transitionToInheritedFailed transitions the RR to Failed with FailurePhaseDeduplicated.
+// Used when the original WFE fails or is deleted (dangling reference).
+// Does NOT increment ConsecutiveFailureCount — inherited failures are excluded from blocking (Phase 5).
+func (r *Reconciler) transitionToInheritedFailed(ctx context.Context, rr *remediationv1.RemediationRequest, failureErr error) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+
+	failureReason := ""
+	if failureErr != nil {
+		failureReason = failureErr.Error()
+	}
+
+	oldPhase := rr.Status.OverallPhase
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+		now := metav1.Now()
+		failPhase := remediationv1.FailurePhaseDeduplicated
+		rr.Status.OverallPhase = phase.Failed
+		rr.Status.FailurePhase = &failPhase
+		rr.Status.FailureReason = &failureReason
+		rr.Status.CompletedAt = &now
+		rr.Status.ObservedGeneration = rr.Generation
+		remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Inherited failure from original WFE", r.Metrics)
+		return nil
+	})
+	if err != nil {
+		logger.Error(err, "Failed to transition to inherited Failed")
+		return ctrl.Result{}, fmt.Errorf("failed to transition to inherited Failed: %w", err)
+	}
+
+	if oldPhase != phase.Failed {
+		if r.Metrics != nil {
+			r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhase), string(phase.Failed), rr.Namespace).Inc()
+		}
+		if r.Recorder != nil {
+			r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonInheritedFailed,
+				fmt.Sprintf("Remediation inherited Failed from original WorkflowExecution %s: %s", rr.Status.DeduplicatedByWE, failureReason))
+		}
+
+		// ADR-032 §1: Mandatory audit for all lifecycle terminal transitions
+		durationMs := time.Since(rr.CreationTimestamp.Time).Milliseconds()
+		r.emitFailureAudit(ctx, rr, remediationv1.FailurePhaseDeduplicated, failureErr, durationMs)
+	}
+
+	logger.Info("RR inherited Failed from original WFE",
+		"originalWFE", rr.Status.DeduplicatedByWE, "reason", failureReason)
+	return ctrl.Result{}, nil
 }
 
 // handleBlocked updates RR status when routing is blocked and requeues appropriately.
