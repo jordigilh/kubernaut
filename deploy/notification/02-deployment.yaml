@@ -43,12 +43,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            - name: SLACK_WEBHOOK_URL
-              valueFrom:
-                secretKeyRef:
-                  name: notification-slack-webhook
-                  key: webhook-url
-                  optional: true
+            - name: ROUTING_CONFIG_PATH
+              value: "/etc/notification-routing/routing.yaml"
           ports:
             - name: metrics
               containerPort: 8080
@@ -75,6 +71,10 @@ spec:
             requests:
               cpu: 100m
               memory: 64Mi
+          volumeMounts:
+            - name: routing-config
+              mountPath: /etc/notification-routing
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
@@ -82,6 +82,10 @@ spec:
             capabilities:
               drop:
                 - ALL
+      volumes:
+        - name: routing-config
+          configMap:
+            name: notification-routing-config
       terminationGracePeriodSeconds: 10
       securityContext:
         # fsGroup removed - let OpenShift assign from SCC range

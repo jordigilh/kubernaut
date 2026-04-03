@@ -233,9 +233,8 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 	_, _ = fmt.Fprintf(writer, "   ✅ mock-slack deployed (http://mock-slack:8080)\n")
 
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Notification resources via inline YAML template...\n")
-	slackURL := resolveSlackWebhookURL(writer)
 	enableCoverage := os.Getenv("E2E_COVERAGE") == "true"
-	manifest := notificationControllerManifest(namespace, notificationImageName, slackURL, enableCoverage)
+	manifest := notificationControllerManifest(namespace, notificationImageName, enableCoverage)
 
 	cmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath, "-n", namespace, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
@@ -519,33 +518,12 @@ spec:
 	return cmd.Run()
 }
 
-// resolveSlackWebhookURL resolves the Slack webhook URL from environment or config file.
-func resolveSlackWebhookURL(writer io.Writer) string {
-	slackURL := os.Getenv("SLACK_WEBHOOK_URL")
-	if slackURL != "" {
-		_, _ = fmt.Fprintf(writer, "   Slack webhook URL loaded from SLACK_WEBHOOK_URL env var\n")
-		return slackURL
-	}
-	homeDir, _ := os.UserHomeDir()
-	if homeDir != "" {
-		slackFilePath := filepath.Join(homeDir, ".kubernaut", "notification", "slack-webhook.url")
-		if data, readErr := os.ReadFile(slackFilePath); readErr == nil {
-			url := strings.TrimSpace(string(data))
-			if url != "" {
-				_, _ = fmt.Fprintf(writer, "   Slack webhook URL loaded from %s\n", slackFilePath)
-				return url
-			}
-		}
-	}
-	return "http://mock-slack:8080/webhook"
-}
-
 // notificationControllerManifest generates the full Notification controller multi-document
 // YAML manifest as an inline template. This consolidates what was previously 4 separate
 // static YAML files (RBAC, ConfigMap, Service, Deployment) into a single atomic apply.
 //
 // Standardization: same pattern as AA, SP, RO, EM, WE, HAPI, Gateway.
-func notificationControllerManifest(namespace, imageName, slackWebhookURL string, enableCoverage bool) string {
+func notificationControllerManifest(namespace, imageName string, enableCoverage bool) string {
 	pullPolicy := GetImagePullPolicy()
 
 	coverageEnvYAML := ""
@@ -598,9 +576,6 @@ rules:
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]
-- apiGroups: [""]
-  resources: ["configmaps", "secrets"]
-  verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -784,14 +759,14 @@ spec:
         env:
         - name: CONFIG_PATH
           value: "/etc/notification/config.yaml"
+        - name: ROUTING_CONFIG_PATH
+          value: "/etc/notification-routing/routing.yaml"
         - name: KUBERNAUT_CONTROLLER_NAMESPACE
           value: "%s"
         - name: POD_NAMESPACE
           valueFrom:
             fieldRef:
-              fieldPath: metadata.namespace
-        - name: SLACK_WEBHOOK_URL
-          value: "%s"%s
+              fieldPath: metadata.namespace%s
         args:
         - "-config"
         - "$(CONFIG_PATH)"
@@ -827,6 +802,9 @@ spec:
         - name: config
           mountPath: /etc/notification
           readOnly: true
+        - name: routing-config
+          mountPath: /etc/notification-routing
+          readOnly: true
         - name: slack-credentials
           mountPath: /etc/notification/credentials
           readOnly: true
@@ -836,13 +814,16 @@ spec:
       - name: config
         configMap:
           name: notification-controller-config
+      - name: routing-config
+        configMap:
+          name: notification-routing-config
       - name: slack-credentials
         secret:
           secretName: slack-credentials
       - name: notification-output
         emptyDir: {}%s
       terminationGracePeriodSeconds: 10%s
-`, namespace, namespace, imageName, pullPolicy, namespace, slackWebhookURL, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML, coverageSecurityContextYAML)
+`, namespace, namespace, imageName, pullPolicy, namespace, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML, coverageSecurityContextYAML)
 }
 
 // DeployNotificationDataStorageServices deploys DataStorage with OAuth2-Proxy for Notification E2E.
