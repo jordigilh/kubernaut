@@ -298,6 +298,56 @@ V1.0 WITH Fix (Correct):
 
 ---
 
+## Issue #190: Execution-Time Dedup (Skipped/Deduplicated Phase)
+
+When a WFE encounters a resource collision at execution time (Job or PipelineRun `AlreadyExists` from another WFE), the WFE is classified as `Failed` with `FailureReason=Deduplicated` and `DeduplicatedBy=<originalWFE>`.
+
+### RO Handler Branching
+
+The `WorkflowExecutionHandler.HandleStatus` detects this reason and, instead of calling `transitionToFailed`, sets `DeduplicatedByWE` on the RR status and requeues.
+
+### Result Propagation (C3/C4)
+
+On subsequent reconciles, `handleExecutingPhase` short-circuits when `DeduplicatedByWE` is set:
+- Fetches the original WFE by name
+- If **Completed** → `transitionToInheritedCompleted` (Outcome=`InheritedCompleted`, skips Verifying)
+- If **Failed** → `transitionToInheritedFailed` (FailurePhase=`Deduplicated`)
+- If **Deleted** → `transitionToInheritedFailed` (dangling reference)
+- If **Running** → requeue after 10s
+
+### Consecutive Failure Exclusion
+
+`transitionToInheritedFailed` does NOT increment `ConsecutiveFailureCount` or set exponential backoff. Additionally, `countConsecutiveFailures` in `blocking.go` skips RRs where `FailurePhase=Deduplicated`. This ensures inherited failures do not contribute to BR-ORCH-042 blocking.
+
+### K8s Events
+
+Inherited transitions emit `InheritedCompleted` (Normal) or `InheritedFailed` (Warning) events with the original WFE name for operator visibility.
+
+### Audit Trail (ADR-032 §1)
+
+All inherited terminal transitions emit DataStorage audit events for SOC 2 compliance:
+
+- **`transitionToInheritedCompleted`** → `orchestrator.lifecycle.completed` with `outcome="InheritedCompleted"` and duration from `rr.Status.StartTime`. Emitted only when the phase actually changed (idempotency guard: `oldPhase != Completed`).
+- **`transitionToInheritedFailed`** → `orchestrator.lifecycle.failed` with `failurePhase=Deduplicated` and the propagated `failureErr` (contains original WFE name for traceability). Emitted only when the phase actually changed (idempotency guard: `oldPhase != Failed`).
+
+Both audit events use `rr.Name` as the correlation ID per DD-AUDIT-CORRELATION-002.
+
+### Completion Notifications (BR-ORCH-045)
+
+`transitionToInheritedCompleted` calls `ensureNotificationsCreated(ctx, rr)` after setting `Outcome="InheritedCompleted"`. This creates:
+- A **completion `NotificationRequest`** with the inherited outcome in its body/metadata
+- A **bulk-duplicate `NotificationRequest`** if applicable (same idempotent, deterministic-name pattern as standard completions)
+
+`transitionToInheritedFailed` does **NOT** create notifications — consistent with `transitionToFailed`, which also omits notifications on failure paths (Issue #240: EA/notifications only on success).
+
+### Metrics
+
+Both inherited transitions record `PhaseTransitionsTotal` with appropriate labels (`from_phase`, `to_phase`, `namespace`). No additional dedicated metrics are required — the `PhaseTransitionsTotal` counter captures inherited transitions distinctly via the `from_phase=Executing` label combined with the `to_phase` value.
+
+`transitionToInheritedFailed` intentionally does **NOT** increment `ConsecutiveFailureCount` or set `NextAllowedExecution` (exponential backoff). This is enforced both in the transition function and in `countConsecutiveFailures` (skip filter on `FailurePhase=Deduplicated`).
+
+---
+
 ## 📚 **References**
 
 - **DD-RO-002**: Centralized Routing Responsibility (parent decision)
@@ -306,6 +356,7 @@ V1.0 WITH Fix (Correct):
 - **BR-ORCH-042**: Consecutive failure blocking
 - **BR-ORCH-032**: Resource lock handling
 - **DD-WE-001**: Resource locking safety (5-minute cooldown)
+- **DD-WE-003**: Resource lock persistence (Issue #190 dedup classification)
 - **DD-WE-004**: Exponential backoff cooldown
 
 ---

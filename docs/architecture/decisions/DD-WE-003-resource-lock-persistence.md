@@ -1,9 +1,9 @@
 # DD-WE-003: Resource Lock Persistence via Deterministic Naming
 
 **Status**: Approved
-**Version**: 1.1
+**Version**: 1.3
 **Date**: 2025-12-01
-**Updated**: 2026-03-14
+**Updated**: 2026-03-04
 **Confidence**: 95%
 **Author**: Kubernaut Architecture Team
 
@@ -70,7 +70,8 @@ Jobs set `ttlSecondsAfterFinished: 600` (10 minutes) as a secondary cleanup mech
 
 When `AlreadyExists` is returned during Job creation, the controller checks the state of the existing Job:
 
-- **Running Job**: The lock is valid. The WFE is marked as failed with "target resource locked". This preserves BR-WE-009 (prevent parallel execution).
+- **Running Job (from another WFE)**: The lock is valid. The WFE is marked as `Failed` with `FailureReason=Deduplicated` and `DeduplicatedBy=<originalWFE>` (Issue #190) via `MarkFailedAsDeduplicated`, which uses `markFailedInternal` to ensure a `workflow.failed` audit event is emitted (ADR-032 compliance). The RO sets `DeduplicatedByWE` on the RR and polls the original WFE to inherit its outcome (Completed or Failed) without going through Verifying. Inherited transitions emit `orchestrator.lifecycle.completed` or `orchestrator.lifecycle.failed` audit events respectively (DD-RO-002-ADDENDUM). Inherited failures use `FailurePhaseDeduplicated` and do not count toward consecutive failure blocking.
+- **Running Job (our own)**: The controller treats this as a valid re-entry and transitions to Running (no collision).
 - **Completed/Failed Job**: The lock is stale. The controller deletes the completed Job and retries creation. This handles cases where ReconcileTerminal hasn't run yet (cooldown), TTL hasn't fired, or the Job was orphaned.
 
 #### Background GC Requeue (Issue #383)
@@ -123,3 +124,4 @@ This ensures sequential remediation cycles are not blocked by stale completed Jo
 | 1.0 | 2025-12-01 | Initial design: deterministic naming as atomic lock |
 | 1.1 | 2026-03-14 | Added pre-execution cleanup of completed Jobs (Issue #374) |
 | 1.2 | 2026-03-04 | Fixed background GC race with requeue-on-pending (Issue #383) |
+| 1.3 | 2026-03-04 | Added execution-time dedup classification via MarkFailedAsDeduplicated, DeduplicatedBy field, and audit trail for inherited RO transitions (Issue #190) |
