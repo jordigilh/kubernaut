@@ -317,6 +317,8 @@ func main() {
 	}
 	setupLog.Info("Cluster identity discovered", "name", clusterIdentity.Name, "uuid", clusterIdentity.UUID)
 	roReconciler.SetClusterIdentity(clusterIdentity.Name, clusterIdentity.UUID)
+	// #265: Wire CRD retention period for TTL enforcement
+	roReconciler.SetRetentionPeriod(cfg.Retention.Period)
 	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)

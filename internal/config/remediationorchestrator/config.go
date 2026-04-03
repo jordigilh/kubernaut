@@ -61,6 +61,17 @@ type Config struct {
 	// Notifications configures optional notification behavior for the RO.
 	// BR-ORCH-037 AC-037-08: Self-resolved notification toggle.
 	Notifications NotificationsConfig `yaml:"notifications"`
+
+	// Retention configures CRD lifecycle cleanup (#265).
+	Retention RetentionConfig `yaml:"retention"`
+}
+
+// RetentionConfig controls how long terminal RemediationRequest CRDs persist
+// before automatic cleanup. Issue #265: CRD TTL enforcement.
+type RetentionConfig struct {
+	// Period is the duration after reaching a terminal phase before the CRD is deleted.
+	// Default: 24h. Must be > 0.
+	Period time.Duration `yaml:"period"`
 }
 
 // TimeoutsConfig holds timeout configuration for remediation workflow phases.
@@ -245,6 +256,9 @@ func DefaultConfig() *Config {
 			OperatorReconcileDelay: 1 * time.Minute,
 			ProactiveAlertDelay:    5 * time.Minute,
 		},
+		Retention: RetentionConfig{
+			Period: 24 * time.Hour,
+		},
 		Routing: RoutingConfig{
 			ConsecutiveFailureThreshold:  3,
 			ConsecutiveFailureCooldown:   1 * time.Hour,
@@ -385,6 +399,11 @@ func (c *Config) Validate() error {
 	}
 	if c.Routing.NoActionRequiredDelayHours < 0 {
 		return fmt.Errorf("routing.noActionRequiredDelayHours must be >= 0 (0 = opt-out), got %d", c.Routing.NoActionRequiredDelayHours)
+	}
+
+	// #265: Validate retention period
+	if c.Retention.Period <= 0 {
+		return fmt.Errorf("retention.period must be positive, got %v", c.Retention.Period)
 	}
 
 	return nil
