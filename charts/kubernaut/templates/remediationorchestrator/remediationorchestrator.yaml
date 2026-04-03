@@ -49,6 +49,8 @@ data:
       ineffectiveChainThreshold: {{ .Values.remediationorchestrator.config.routing.ineffectiveChainThreshold | default 3 }}
       recurrenceCountThreshold: {{ .Values.remediationorchestrator.config.routing.recurrenceCountThreshold | default 5 }}
       ineffectiveTimeWindow: {{ .Values.remediationorchestrator.config.routing.ineffectiveTimeWindow | default "4h" | quote }}
+    retention:
+      period: {{ .Values.remediationorchestrator.config.retention.period | default "24h" | quote }}
 ---
 apiVersion: v1
 kind: ServiceAccount
