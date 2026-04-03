@@ -163,4 +163,122 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 				"HumanReviewNeeded should be true after all correction attempts fail")
 		})
 	})
+
+	// ========================================
+	// ISSUE #607: ACTIONABLE=FALSE CONFIDENCE FLOOR + SIGNAL SYNTHESIS
+	// Go Kubernaut Agent must parse `actionable: false` from LLM JSON,
+	// synthesize the warning string, set IsActionable, and apply
+	// confidence floor of 0.8 for defense-in-depth.
+	// ========================================
+	Describe("KA Parser — Not-Actionable Signal Synthesis (#607)", func() {
+
+		Describe("UT-KA-607-001: Parser applies confidence floor when actionable=false without confidence", func() {
+			It("should set confidence to 0.8 when LLM omits confidence for not-actionable", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "Orphaned PVCs from completed batch jobs",
+					"actionable": false
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.Confidence).To(BeNumerically(">=", 0.8),
+					"#607: Confidence floor of 0.8 must apply when actionable=false and confidence omitted")
+			})
+		})
+
+		Describe("UT-KA-607-002: Parser applies confidence floor when actionable=false with low confidence", func() {
+			It("should override low confidence to 0.8", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "Old config artifacts in namespace",
+					"actionable": false,
+					"confidence": 0.3
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.Confidence).To(BeNumerically(">=", 0.8),
+					"#607: Confidence floor overrides low LLM confidence for actionable=false")
+			})
+		})
+
+		Describe("UT-KA-607-003: Parser synthesizes warning and sets IsActionable=false", func() {
+			It("should produce the standard warning and set IsActionable pointer to false", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "Orphaned PVCs not impacting workloads",
+					"actionable": false,
+					"confidence": 0.9
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+
+				Expect(result.IsActionable).NotTo(BeNil(),
+					"#607: IsActionable must be set when LLM provides actionable field")
+				Expect(*result.IsActionable).To(BeFalse(),
+					"#607: IsActionable must be false")
+				Expect(result.Warnings).To(ContainElement(ContainSubstring("Alert not actionable")),
+					"#607: Standard warning string must be synthesized")
+			})
+		})
+
+		Describe("UT-KA-607-004: Parser does NOT apply floor for actionable=true or absent", func() {
+			It("should preserve original confidence when actionable is true", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "OOMKilled due to memory pressure",
+					"workflow_id": "oom-increase-memory",
+					"actionable": true,
+					"confidence": 0.3
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.Confidence).To(BeNumerically("~", 0.3, 0.01),
+					"#607: Floor must NOT apply when actionable=true")
+			})
+
+			It("should preserve original confidence when actionable is absent", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "Network partition detected",
+					"confidence": 0.4
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.Confidence).To(BeNumerically("~", 0.4, 0.01),
+					"#607: Floor must NOT apply when actionable is absent")
+			})
+		})
+
+		Describe("UT-KA-607-005: InvestigationResult carries IsActionable and Warnings for response mapping", func() {
+			It("should populate IsActionable=false and Warnings when actionable=false", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "Stale config objects from previous deployment",
+					"actionable": false,
+					"confidence": 0.85
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+
+				Expect(result.IsActionable).NotTo(BeNil())
+				Expect(*result.IsActionable).To(BeFalse())
+				Expect(result.Warnings).NotTo(BeEmpty(),
+					"#607: Warnings must be populated for response mapping to set IncidentResponse.Warnings")
+			})
+
+			It("should NOT populate IsActionable or Warnings when actionable is absent", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "Normal investigation",
+					"workflow_id": "restart-pod",
+					"confidence": 0.9
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.IsActionable).To(BeNil(),
+					"IsActionable should be nil when LLM doesn't provide actionable field")
+				Expect(result.Warnings).To(BeEmpty())
+			})
+		})
+	})
 })

@@ -39,6 +39,8 @@ type InvestigationResult struct {
 	Confidence        float64                `json:"confidence"`
 	HumanReviewNeeded bool                   `json:"human_review_needed"`
 	Reason            string                 `json:"reason,omitempty"`
+	IsActionable      *bool                  `json:"is_actionable,omitempty"`
+	Warnings          []string               `json:"warnings,omitempty"`
 }
 
 // RemediationTarget identifies the K8s resource to remediate.

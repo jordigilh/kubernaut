@@ -222,5 +222,12 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 		resp.SelectedWorkflow.SetTo(sw)
 	}
 
+	if r.IsActionable != nil {
+		resp.IsActionable.SetTo(*r.IsActionable)
+	}
+	if len(r.Warnings) > 0 {
+		resp.Warnings = r.Warnings
+	}
+
 	return resp
 }

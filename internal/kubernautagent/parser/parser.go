@@ -46,6 +46,9 @@ func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, erro
 
 	var result katypes.InvestigationResult
 	if err := json.Unmarshal([]byte(jsonStr), &result); err == nil && (result.RCASummary != "" || result.WorkflowID != "") {
+		var flat flatLLMFields
+		_ = json.Unmarshal([]byte(jsonStr), &flat)
+		applyActionableSignals(&result, flat.Actionable)
 		return &result, nil
 	}
 
@@ -79,10 +82,14 @@ func extractJSON(content string) string {
 	return ""
 }
 
+const notActionableWarning = "Alert not actionable — no remediation warranted"
+const confidenceFloor = 0.8
+
 // llmResponse is the nested JSON structure that LLMs typically produce.
 type llmResponse struct {
-	RCA      *llmRCA      `json:"root_cause_analysis"`
-	Workflow *llmWorkflow `json:"selected_workflow"`
+	RCA        *llmRCA      `json:"root_cause_analysis"`
+	Workflow   *llmWorkflow `json:"selected_workflow"`
+	Actionable *bool        `json:"actionable,omitempty"`
 }
 
 type llmRCA struct {
@@ -92,6 +99,12 @@ type llmRCA struct {
 type llmWorkflow struct {
 	WorkflowID string  `json:"workflow_id"`
 	Confidence float64 `json:"confidence"`
+}
+
+// flatLLMFields captures top-level fields that may appear alongside the flat
+// InvestigationResult format (rca_summary, workflow_id, confidence, actionable).
+type flatLLMFields struct {
+	Actionable *bool `json:"actionable,omitempty"`
 }
 
 // parseLLMFormat parses the nested LLM response format and converts
@@ -111,9 +124,30 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 		result.Confidence = resp.Workflow.Confidence
 	}
 
+	applyActionableSignals(result, resp.Actionable)
+
 	if result.RCASummary == "" && result.WorkflowID == "" {
 		return nil, fmt.Errorf("no recognized fields in LLM JSON response")
 	}
 
 	return result, nil
+}
+
+// applyActionableSignals processes the LLM's actionable field:
+// - When actionable=false: sets IsActionable, synthesizes warning, applies confidence floor
+// - When actionable=true or absent: no changes
+// #607: Defense-in-depth — mirrors Python HAPI result_parser.py behavior.
+func applyActionableSignals(result *katypes.InvestigationResult, actionable *bool) {
+	if actionable == nil {
+		return
+	}
+	if *actionable {
+		return
+	}
+	falseVal := false
+	result.IsActionable = &falseVal
+	result.Warnings = append(result.Warnings, notActionableWarning)
+	if result.Confidence < confidenceFloor {
+		result.Confidence = confidenceFloor
+	}
 }
