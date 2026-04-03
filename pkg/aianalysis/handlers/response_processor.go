@@ -112,10 +112,11 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 		return p.handleProblemResolvedFromIncident(ctx, analysis, resp)
 	}
 
-	// #607: Alert not actionable — confidence gate removed.
-	// actionable=false is an explicit LLM determination (like needs_human_review=true)
-	// and should not be gated by a quality threshold. HAPI only emits both the warning
-	// signal AND is_actionable=false when the LLM explicitly sets actionable: false.
+	// #388 + #607 Outcome D: Alert not actionable — benign condition, no remediation warranted.
+	// When the agent signals actionable=false (via warning + is_actionable field), this is an
+	// authoritative LLM determination — same trust pattern as needs_human_review (line 94).
+	// #607: Removed confidence >= 0.7 gate. The LLM's explicit actionable=false is trusted
+	// regardless of confidence. The agent applies a confidence floor of 0.8 as defense-in-depth.
 	isNotActionable := hasNotActionableSignal(resp.Warnings)
 	isActionablePtr := GetOptNilBoolValue(resp.IsActionable)
 	if !hasSelectedWorkflow && isNotActionable && isActionablePtr != nil && !*isActionablePtr {

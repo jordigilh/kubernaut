@@ -494,8 +494,8 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("invalid-workflow"))
 				// RCA preserved
 				Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil(), "RCA should be preserved")
-				// Issue #588: Warnings are stored separately, not in Message
-				Expect(analysis.Status.Warnings).To(ContainElement(ContainSubstring("Parameter validation failed")))
+				// Message contains warnings
+				Expect(analysis.Status.Message).To(ContainSubstring("Parameter validation failed"))
 			})
 
 			// BR-HAPI-197.6: MUST NOT proceed to Analyzing
@@ -595,9 +595,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.ValidationAttemptsHistory).To(BeEmpty(), "No history when HAPI doesn't provide it")
-				// Issue #588: Warnings stored separately, Message only has validation attempt errors
-				Expect(analysis.Status.Message).To(BeEmpty(), "No validation attempts means empty message")
-				Expect(analysis.Status.Warnings).To(ContainElement("Confidence too low"), "Warnings should be stored separately")
+				Expect(analysis.Status.Message).To(Equal("Confidence too low"), "Should use warnings for message")
 			})
 
 			// DD-HAPI-002 v1.4: Handle malformed timestamp gracefully
@@ -1187,23 +1185,23 @@ var _ = Describe("InvestigatingHandler", func() {
 	})
 
 	// ========================================
-	// ISSUE #607: NOT-ACTIONABLE CONFIDENCE GATE BUG
-	// When the LLM returns actionable=false but omits/low confidence,
-	// the AA processor incorrectly falls through to terminal failure
-	// instead of routing to handleNotActionableFromIncident.
+	// ISSUE #607: NOT-ACTIONABLE WITH LOW/ZERO CONFIDENCE
+	// The confidence gate on the actionable=false path must be removed.
+	// When the LLM signals actionable=false, it is authoritative regardless
+	// of confidence (same pattern as needs_human_review on line 94).
 	// ========================================
 	Describe("InvestigatingHandler.NotActionableConfidenceGate (#607)", func() {
-		// UT-AA-607-001: Not-actionable with low confidence (0.4) routes to Completed
-		Context("UT-AA-607-001: not-actionable with low confidence routes correctly", func() {
+
+		Context("UT-AA-607-001: not-actionable with low confidence routes to Completed/NotActionable", func() {
 			BeforeEach(func() {
 				rcaMap := mocks.BuildMockRCA(
-					"Orphaned PVCs from completed batch jobs — benign condition",
+					"Orphaned PVCs from completed batch jobs — not impacting any workload",
 					"low",
 					[]string{"Completed batch job artifacts"},
 				)
 				mockClient.Response = &hgptclient.IncidentResponse{
 					IncidentID:        "mock-incident-607-001",
-					Analysis:          "PVCs are orphaned but not impacting workloads.",
+					Analysis:          "These PVCs are leftover from completed batch jobs.",
 					RootCauseAnalysis: rcaMap,
 					Confidence:        0.4,
 					Timestamp:         "2026-03-04T10:00:00Z",
@@ -1221,7 +1219,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
-					"#607: actionable=false is authoritative — confidence should not gate it")
+					"#607: actionable=false is authoritative — confidence must not gate it")
 				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
 				Expect(analysis.Status.SubReason).To(Equal("NotActionable"))
 				Expect(analysis.Status.Actionability).To(Equal(aianalysis.ActionabilityNotActionable))
@@ -1229,17 +1227,16 @@ var _ = Describe("InvestigatingHandler", func() {
 			})
 		})
 
-		// UT-AA-607-002: Not-actionable with zero confidence (LLM omitted field) — exact #607 scenario
 		Context("UT-AA-607-002: not-actionable with zero confidence (omitted) routes correctly", func() {
 			BeforeEach(func() {
 				rcaMap := mocks.BuildMockRCA(
-					"5 orphaned PVCs from completed batch jobs",
+					"Orphaned PVCs from completed batch jobs",
 					"low",
 					[]string{"Completed batch job artifacts"},
 				)
 				mockClient.Response = &hgptclient.IncidentResponse{
 					IncidentID:        "mock-incident-607-002",
-					Analysis:          "Orphaned PVCs detected. No impact on running workloads.",
+					Analysis:          "Stale resources with no impact.",
 					RootCauseAnalysis: rcaMap,
 					Confidence:        0.0,
 					Timestamp:         "2026-03-04T10:00:00Z",
@@ -1257,99 +1254,85 @@ var _ = Describe("InvestigatingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
-					"#607: Zero confidence must not block actionable=false determination")
-				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
-				Expect(analysis.Status.SubReason).To(Equal("NotActionable"))
+					"#607: Zero confidence must not block the not-actionable determination")
+				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded),
+					"#607: Must be WorkflowNotNeeded, not WorkflowResolutionFailed")
 				Expect(analysis.Status.NeedsHumanReview).To(BeFalse())
 			})
 		})
 
-		// UT-AA-607-003: Partial signal (warning only, is_actionable NOT set) must NOT route to NotActionable
-		Context("UT-AA-607-003: partial signal without is_actionable falls through to terminal failure", func() {
+		Context("UT-AA-607-003: partial signal (warning only) does NOT route to NotActionable", func() {
 			BeforeEach(func() {
-				rcaMap := mocks.BuildMockRCA(
-					"Orphaned PVCs detected",
-					"low",
-					[]string{"Completed batch job artifacts"},
-				)
 				mockClient.Response = &hgptclient.IncidentResponse{
-					IncidentID:        "mock-incident-607-003",
-					Analysis:          "PVCs are orphaned.",
-					RootCauseAnalysis: rcaMap,
-					Confidence:        0.0,
-					Timestamp:         "2026-03-04T10:00:00Z",
-					Warnings:          []string{"Alert not actionable — no remediation warranted"},
+					IncidentID: "mock-incident-607-003",
+					Analysis:   "Some analysis",
+					Confidence: 0.0,
+					Timestamp:  "2026-03-04T10:00:00Z",
+					Warnings:   []string{"Alert not actionable — no remediation warranted"},
 				}
 				mockClient.Response.NeedsHumanReview.SetTo(false)
-				// IsActionable deliberately NOT set — zero-value OptNilBool
 				mockClient.Err = nil
 			})
 
-			It("should fail because dual-field check requires both warning AND is_actionable=false", func() {
+			It("should fall through to terminal failure when is_actionable is missing", func() {
 				analysis := createTestAnalysis()
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
-					"#607: Warning alone is insufficient — is_actionable must be explicitly false")
+					"#607: Warning alone without is_actionable=false must NOT route to NotActionable")
 				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed))
 				Expect(analysis.Status.NeedsHumanReview).To(BeTrue())
 			})
 		})
 
-		// UT-AA-607-004: Resolved path still requires confidence >= 0.7 (regression guard)
-		Context("UT-AA-607-004: resolved path with low confidence still fails", func() {
+		Context("UT-AA-607-004: resolved path still requires confidence >= 0.7", func() {
 			BeforeEach(func() {
 				mockClient.Response = &hgptclient.IncidentResponse{
-					IncidentID:        "mock-incident-607-004",
-					Analysis:          "The issue resolved itself.",
-					RootCauseAnalysis: mocks.BuildMockRCA("Transient issue", "low", nil),
-					Confidence:        0.4,
-					Timestamp:         "2026-03-04T10:00:00Z",
-					Warnings:          []string{"Problem self-resolved - no remediation required"},
+					IncidentID: "mock-incident-607-004",
+					Analysis:   "Problem appears to have self-resolved.",
+					Confidence: 0.4,
+					Timestamp:  "2026-03-04T10:00:00Z",
+					Warnings:   []string{"Problem self-resolved - no remediation required"},
 				}
 				mockClient.Response.NeedsHumanReview.SetTo(false)
 				mockClient.Err = nil
 			})
 
-			It("should fail because resolved path retains confidence >= 0.7 gate", func() {
+			It("should NOT route to resolved when confidence is below 0.7", func() {
 				analysis := createTestAnalysis()
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
-					"#607: Resolved path must still require confidence >= 0.7")
-				Expect(analysis.Status.Reason).ToNot(Equal(aianalysisv1.ReasonWorkflowNotNeeded),
-					"Should NOT route to WorkflowNotNeeded with low confidence on resolved path")
+					"#607 regression: Resolved path must still require confidence >= 0.7")
+				Expect(analysis.Status.Reason).NotTo(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
 			})
 		})
 
-		// UT-AA-607-005: Terminal failure path fires normally (no signals, low confidence)
-		Context("UT-AA-607-005: terminal failure with no signals and low confidence", func() {
+		Context("UT-AA-607-005: terminal failure path fires normally", func() {
 			BeforeEach(func() {
 				mockClient.Response = &hgptclient.IncidentResponse{
-					IncidentID:        "mock-incident-607-005",
-					Analysis:          "Unable to determine root cause.",
-					RootCauseAnalysis: mocks.BuildMockRCA("Unknown", "unknown", nil),
-					Confidence:        0.3,
-					Timestamp:         "2026-03-04T10:00:00Z",
-					Warnings:          []string{},
+					IncidentID: "mock-incident-607-005",
+					Analysis:   "Unable to determine root cause.",
+					Confidence: 0.3,
+					Timestamp:  "2026-03-04T10:00:00Z",
+					Warnings:   []string{},
 				}
 				mockClient.Response.NeedsHumanReview.SetTo(false)
-				// IsActionable deliberately NOT set
 				mockClient.Err = nil
 			})
 
-			It("should fail with WorkflowResolutionFailed and need human review", func() {
+			It("should route to Failed/WorkflowResolutionFailed with human review", func() {
 				analysis := createTestAnalysis()
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
-					"#607: Ambiguous LLM responses must still escalate to human review")
+					"#607 regression: Terminal failure path must be unaffected")
 				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed))
 				Expect(analysis.Status.NeedsHumanReview).To(BeTrue())
 			})
