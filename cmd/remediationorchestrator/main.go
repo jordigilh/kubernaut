@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 	"time"
@@ -40,6 +41,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/version"
+	clusterid "github.com/jordigilh/kubernaut/pkg/shared/cluster"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	config "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
@@ -307,6 +309,14 @@ func main() {
 	roReconciler.SetAsyncPropagation(cfg.AsyncPropagation)
 	// BR-ORCH-037 AC-037-08, Issue #590: Wire self-resolved notification toggle
 	roReconciler.SetNotifySelfResolved(cfg.Notifications.NotifySelfResolved)
+	// Issue #615: Discover cluster identity for notification context
+	clusterIdentity, clusterErr := clusterid.DiscoverIdentity(context.Background(), mgr.GetAPIReader())
+	if clusterErr != nil {
+		setupLog.Error(clusterErr, "Failed to discover cluster identity, notifications will omit cluster info")
+		clusterIdentity = &clusterid.Identity{}
+	}
+	setupLog.Info("Cluster identity discovered", "name", clusterIdentity.Name, "uuid", clusterIdentity.UUID)
+	roReconciler.SetClusterIdentity(clusterIdentity.Name, clusterIdentity.UUID)
 	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)

@@ -71,9 +71,11 @@ func resolveNotificationTargetResource(rr *remediationv1.RemediationRequest, ai 
 // NotificationCreator creates NotificationRequest CRDs for the Remediation Orchestrator.
 // Reference: BR-ORCH-001 (approval notification), BR-ORCH-034 (bulk duplicate), BR-ORCH-036 (manual review), BR-ORCH-045 (completion)
 type NotificationCreator struct {
-	client  client.Client
-	scheme  *runtime.Scheme
-	metrics *metrics.Metrics
+	client      client.Client
+	scheme      *runtime.Scheme
+	metrics     *metrics.Metrics
+	clusterName string
+	clusterUUID string
 }
 
 // NewNotificationCreator creates a new NotificationCreator.
@@ -89,6 +91,28 @@ func NewNotificationCreator(c client.Client, s *runtime.Scheme, m *metrics.Metri
 		scheme:  s,
 		metrics: m,
 	}
+}
+
+// SetClusterIdentity sets the cluster name and UUID for inclusion in notification bodies.
+// Issue #615: Setter injection avoids modifying the NewNotificationCreator constructor signature.
+func (c *NotificationCreator) SetClusterIdentity(name, uuid string) {
+	c.clusterName = name
+	c.clusterUUID = uuid
+}
+
+// FormatClusterLine returns a formatted cluster identification line for notification bodies.
+// Returns empty string when both name and uuid are empty (graceful degradation).
+func FormatClusterLine(clusterName, clusterUUID string) string {
+	if clusterName == "" && clusterUUID == "" {
+		return ""
+	}
+	if clusterUUID == "" {
+		return fmt.Sprintf("**Cluster**: %s\n\n", clusterName)
+	}
+	if clusterName == "" {
+		return fmt.Sprintf("**Cluster**: (%s)\n\n", clusterUUID)
+	}
+	return fmt.Sprintf("**Cluster**: %s (%s)\n\n", clusterName, clusterUUID)
 }
 
 // CreateApprovalNotification creates a NotificationRequest for approval (BR-ORCH-001).
@@ -258,7 +282,7 @@ func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationReq
 	}
 
 	body += "\n\nPlease review and approve/reject the remediation."
-	return body
+	return FormatClusterLine(c.clusterName, c.clusterUUID) + body
 }
 
 // CreateCompletionNotification creates a NotificationRequest for successful remediation completion (BR-ORCH-045).
@@ -425,7 +449,7 @@ func (c *NotificationCreator) buildCompletionBody(
 	}
 
 	body += "\n\nThis incident was automatically detected and remediated by Kubernaut."
-	return body
+	return FormatClusterLine(c.clusterName, c.clusterUUID) + body
 }
 
 // CreateBulkDuplicateNotification creates a NotificationRequest for bulk duplicates (BR-ORCH-034).
@@ -514,7 +538,7 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 
 // buildBulkDuplicateBody builds the bulk duplicate notification body.
 func (c *NotificationCreator) buildBulkDuplicateBody(rr *remediationv1.RemediationRequest) string {
-	return fmt.Sprintf(`Remediation completed successfully.
+	return FormatClusterLine(c.clusterName, c.clusterUUID) + fmt.Sprintf(`Remediation completed successfully.
 
 **Signal**: %s
 **Result**: %s
@@ -807,7 +831,7 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 2. Manually apply the remediation
 3. Mark as resolved if no action is needed`
 
-	return body
+	return FormatClusterLine(c.clusterName, c.clusterUUID) + body
 }
 
 // ========================================
@@ -925,7 +949,7 @@ func (c *NotificationCreator) buildSelfResolvedBody(
 	}
 
 	body += "\n\nNo action was taken. This notification is for audit purposes only."
-	return body
+	return FormatClusterLine(c.clusterName, c.clusterUUID) + body
 }
 
 // ========================================
