@@ -336,6 +336,8 @@ func main() {
 		setupLog.Info("Distributed lock manager configured", "holderID", podName, "namespace", controllerNS)
 	}
 
+	// #265: Wire CRD retention period for TTL enforcement
+	roReconciler.SetRetentionPeriod(cfg.Retention.Period)
 	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)

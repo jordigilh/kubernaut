@@ -1,5 +1,5 @@
-# Valid RemediationOrchestrator configuration for unit tests.
-# ADR-030: Service Configuration Management
+# Override retention.period for unit test UT-RO-265-012
+# Issue #265: Configurable CRD retention period
 controller:
   metricsAddr: ":9090"
   healthProbeAddr: ":8081"
@@ -26,4 +26,4 @@ effectivenessAssessment:
   stabilizationWindow: 5m
 
 retention:
-  period: 24h
+  period: 48h
