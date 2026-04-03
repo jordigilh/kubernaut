@@ -1403,24 +1403,28 @@ The problem has self-resolved. No remediation workflow is needed.
         elif scenario.actionable is False:
             # #607: Not-actionable scenario — actionable=false in section-header format
             # so HAPI's Pattern 2B parser extracts it and sets is_actionable=False.
+            # Values use Python-style literals (None/False) because Pattern 2B's
+            # selected_workflow regex matches {…}|None (not null), and .capitalize()
+            # on actionable produces "False"; mixing JSON false with Python False
+            # creates a dict that neither json.loads nor ast.literal_eval can parse.
             content = f"""Based on the enrichment context and investigation:
 
 The alert is not actionable. The condition is benign and does not require remediation.
 
 # selected_workflow
-null
+None
 
 # actionable
-false
+False
 
 # confidence
 {scenario.confidence}
 
 # needs_human_review
-false
+False
 
 # human_review_reason
-null
+None
 """
         elif not scenario.workflow_id:
             analysis_json = {
@@ -1686,19 +1690,19 @@ The alert is not actionable. The condition is benign and does not require remedi
 {json.dumps(analysis_json["root_cause_analysis"])}
 
 # selected_workflow
-null
+None
 
 # actionable
-false
+False
 
 # confidence
 {scenario.confidence}
 
 # needs_human_review
-false
+False
 
 # human_review_reason
-null
+None
 """
         # Handle no workflow found case
         elif not scenario.workflow_id:

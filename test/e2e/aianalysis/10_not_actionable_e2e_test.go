@@ -51,7 +51,7 @@ var _ = Describe("E2E-AA-607: Not-Actionable Confidence Gate", Label("e2e", "not
 		interval = 500 * time.Millisecond
 	)
 
-	Context("Orphaned PVC alert — not actionable with zero confidence (#607)", func() {
+	Context("Orphaned PVC alert — not actionable (#607)", func() {
 		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
@@ -91,7 +91,7 @@ var _ = Describe("E2E-AA-607: Not-Actionable Confidence Gate", Label("e2e", "not
 			}
 		})
 
-		It("should complete as WorkflowNotNeeded/NotActionable despite zero confidence - E2E-AA-607-001", func() {
+		It("should complete as WorkflowNotNeeded/NotActionable - E2E-AA-607-001", func() {
 			defer func() {
 				_ = k8sClient.Delete(ctx, analysis)
 			}()
