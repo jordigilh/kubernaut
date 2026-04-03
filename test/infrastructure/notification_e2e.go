@@ -234,7 +234,7 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Notification resources via inline YAML template...\n")
 	enableCoverage := os.Getenv("E2E_COVERAGE") == "true"
-	manifest := notificationControllerManifest(namespace, notificationImageName, enableCoverage)
+	manifest := notificationControllerManifest(namespace, notificationImageName, "", enableCoverage)
 
 	cmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath, "-n", namespace, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)

@@ -26,7 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
+	workflowexecution "github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 )
 
 // ========================================
@@ -71,6 +71,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 				return err
 			}, 15*time.Second, 500*time.Millisecond).Should(Succeed())
 
+			Expect(initialPR.Name).To(Not(BeZero()), "PipelineRun must have been created with a name")
 			initialPRName := initialPR.Name
 
 			By("Simulating concurrent reconcile attempts (race condition)")
@@ -88,8 +89,10 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 
 					// Each goroutine tries to create a PipelineRun with the same deterministic name
 					// This simulates concurrent reconcile loops attempting creation
-					tektonExec := weexecutor.NewTektonExecutor(k8sClient)
-					_, err := tektonExec.Create(ctx, wfe, WorkflowExecutionNS, weexecutor.CreateOptions{})
+					pr := reconciler.BuildPipelineRun(wfe)
+
+					// Attempt creation (should fail with AlreadyExists for all but one)
+					err := k8sClient.Create(ctx, pr)
 					errors[index] = err
 				}(i)
 			}
@@ -133,6 +136,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 
 			finalWFE, err := getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).ToNot(HaveOccurred())
+			Expect(finalWFE.Status.ExecutionRef).To(Not(BeZero()), "ExecutionRef must be set after PipelineRun creation")
 			Expect(finalWFE.Status.ExecutionRef.Name).To(Equal(initialPRName))
 
 			GinkgoWriter.Printf("✅ BR-WE-002: Concurrent reconcile handled gracefully - only 1 PipelineRun created\n")
@@ -148,10 +152,14 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 
 			By("Manually creating PipelineRun BEFORE WFE reconciliation")
 			// This simulates external creation (operator, CI/CD, or race with another controller)
-			tektonExec := weexecutor.NewTektonExecutor(k8sClient)
-			createRes, err := tektonExec.Create(ctx, wfe, WorkflowExecutionNS, weexecutor.CreateOptions{})
-			Expect(err).ToNot(HaveOccurred())
-			externalPRName := createRes.ResourceName
+			pr := reconciler.BuildPipelineRun(wfe)
+
+			// Add labels to identify this as "our" PipelineRun
+			pr.Labels["kubernaut.ai/workflow-execution"] = wfe.Name
+			pr.Labels["kubernaut.ai/source-namespace"] = wfe.Namespace
+
+			Expect(k8sClient.Create(ctx, pr)).To(Succeed())
+			externalPRName := pr.Name
 
 			By("Now creating the WorkflowExecution (after PipelineRun exists)")
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -167,11 +175,14 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying WFE references the externally-created PipelineRun")
+			Expect(finalWFE.Status.ExecutionRef).To(Not(BeZero()), "ExecutionRef must be set")
 			Expect(finalWFE.Status.ExecutionRef.Name).To(Equal(externalPRName),
 				"WFE should reference the pre-existing PipelineRun")
 
 			By("Verifying ExecutionCreated condition is set")
+			Expect(len(finalWFE.Status.Conditions)).To(BeNumerically(">", 0), "Conditions must be populated")
 			createdCondition := findCondition(finalWFE.Status.Conditions, "ExecutionCreated")
+			Expect(createdCondition).To(Not(BeZero()), "ExecutionCreated condition must exist")
 			Expect(createdCondition.Status).To(Equal(metav1.ConditionTrue))
 			Expect(createdCondition.Reason).To(Equal("ExecutionCreated"))
 
@@ -179,29 +190,26 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 		})
 
 		// ========================================
-		// Test 3: Non-Owned PipelineRun Conflict
+		// IT-WE-190-001: Tekton PipelineRun Collision → Deduplicated
+		// Issue #190: Collision from another WFE classified as Deduplicated
 		// ========================================
-		It("should fail WFE when PipelineRun is owned by another WorkflowExecution", func() {
+		It("IT-WE-190-001: should classify PipelineRun collision as Deduplicated with DeduplicatedBy", func() {
 			By("Creating first WorkflowExecution")
 			targetResource := "test-namespace/deployment/conflict-test"
 			wfe1 := createUniqueWFE("conflict-wfe1", targetResource)
 			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
 
 			By("Waiting for first WFE to create PipelineRun")
-			var pr1 *tektonv1.PipelineRun
 			Eventually(func() error {
-				var err error
-				pr1, err = waitForPipelineRunCreation(wfe1.Name, wfe1.Namespace, 10*time.Second)
+				_, err := waitForPipelineRunCreation(wfe1.Name, wfe1.Namespace, 10*time.Second)
 				return err
 			}, 15*time.Second, 500*time.Millisecond).Should(Succeed())
-
-			pr1Name := pr1.Name
 
 			By("Creating second WorkflowExecution for SAME target resource")
 			wfe2 := createUniqueWFE("conflict-wfe2", targetResource)
 			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
 
-			By("Verifying second WFE detects conflict and fails gracefully")
+			By("Verifying second WFE is marked Failed/Deduplicated")
 			Eventually(func() string {
 				updated, _ := getWFE(wfe2.Name, wfe2.Namespace)
 				return string(updated.Status.Phase)
@@ -211,15 +219,14 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			finalWFE2, err := getWFE(wfe2.Name, wfe2.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying failure details indicate race condition")
-			Expect(finalWFE2.Status.FailureDetails.Reason).To(Equal("Unknown"), // V1.0: Uses "Unknown" for execution race conditions
-				"Failure reason should indicate execution-time issue")
-			Expect(finalWFE2.Status.FailureDetails.Message).To(ContainSubstring("Race condition"),
-				"Failure message should mention race condition")
-			Expect(finalWFE2.Status.FailureDetails.Message).To(ContainSubstring(pr1Name),
-				"Failure message should reference conflicting PipelineRun")
+			By("Verifying failure details classify as Deduplicated (Issue #190)")
+			Expect(finalWFE2.Status.FailureDetails).To(Not(BeZero()), "FailureDetails must be populated for dedup classification")
+			Expect(finalWFE2.Status.FailureDetails.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonDeduplicated),
+				"Collision from another WFE must be classified as Deduplicated")
 			Expect(finalWFE2.Status.FailureDetails.WasExecutionFailure).To(BeFalse(),
 				"Pre-execution failure (no execution occurred)")
+			Expect(finalWFE2.Status.DeduplicatedBy).To(Equal(wfe1.Name),
+				"DeduplicatedBy must reference the first WFE that owns the PipelineRun")
 
 			By("Verifying first WFE remains unaffected")
 			wfe1Final, err := getWFE(wfe1.Name, wfe1.Namespace)
@@ -227,7 +234,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			Expect(wfe1Final.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseRunning),
 				"First WFE should continue running unaffected")
 
-			GinkgoWriter.Printf("✅ BR-WE-002: Non-owned PipelineRun conflict detected and handled\n")
+			GinkgoWriter.Printf("✅ IT-WE-190-001: PipelineRun collision classified as Deduplicated\n")
 		})
 	})
 
@@ -240,10 +247,12 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			targetResource := "test-namespace/deployment/deterministic-test"
 
 			wfe1 := createUniqueWFE("deterministic-wfe1", targetResource)
-			pr1Name := weexecutor.ExecutionResourceName(wfe1.Spec.TargetResource)
+			pr1 := reconciler.BuildPipelineRun(wfe1)
+			pr1Name := pr1.Name
 
 			wfe2 := createUniqueWFE("deterministic-wfe2", targetResource)
-			pr2Name := weexecutor.ExecutionResourceName(wfe2.Spec.TargetResource)
+			pr2 := reconciler.BuildPipelineRun(wfe2)
+			pr2Name := pr2.Name
 
 			By("Verifying both WFEs generate identical PipelineRun names")
 			Expect(pr1Name).To(Equal(pr2Name),
@@ -253,10 +262,10 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			Expect(pr1Name).To(HavePrefix("wfe-"),
 				"PipelineRun name should follow wfe-* pattern (WorkflowExecution prefix)")
 
-			By("Verifying name is deterministic via ExecutionResourceName()")
-			expectedName := weexecutor.ExecutionResourceName(targetResource)
+			By("Verifying name is deterministic via PipelineRunName()")
+			expectedName := workflowexecution.PipelineRunName(targetResource)
 			Expect(pr1Name).To(Equal(expectedName),
-				"ExecutionResourceName should match for same target resource")
+				"BuildPipelineRun should use PipelineRunName() for deterministic naming")
 
 			GinkgoWriter.Printf("✅ BR-WE-002: PipelineRun name determinism validated - %s\n", pr1Name)
 		})
