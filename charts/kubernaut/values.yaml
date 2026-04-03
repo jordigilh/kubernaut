@@ -185,6 +185,8 @@ remediationorchestrator:
       proactiveAlertDelay: "5m"
     notifications:
       notifySelfResolved: false
+    retention:
+      period: "24h"  # Issue #265: CRD retention TTL before automatic cleanup
 
 # -- WorkflowExecution controller
 workflowexecution:
