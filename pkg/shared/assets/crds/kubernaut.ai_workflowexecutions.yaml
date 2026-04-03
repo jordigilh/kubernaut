@@ -299,6 +299,13 @@ spec:
                   - type
                   type: object
                 type: array
+              deduplicatedBy:
+                description: |-
+                  DeduplicatedBy stores the name of the original WorkflowExecution that owns
+                  the conflicting execution resource. Set atomically inside AtomicStatusUpdate
+                  when FailureDetails.Reason == Deduplicated (Issue #190, M5 constraint).
+                  Immutable after initial assignment.
+                type: string
               duration:
                 description: Duration of the execution
                 type: string
@@ -314,7 +321,7 @@ spec:
                 description: |-
                   ExecutionEngine is the backend engine resolved from the DS workflow catalog
                   at runtime by the WE controller. Set once during Pending phase via
-                  WorkflowQuerier.GetWorkflowExecutionEngine; immutable thereafter.
+                  WorkflowQuerier.GetWorkflowSchemaMetadata; immutable thereafter.
                   Values: "tekton", "job", "ansible".
                 type: string
               executionRef:
@@ -412,6 +419,7 @@ spec:
                     - TaskFailed
                     - UnsupportedEngine
                     - Unknown
+                    - Deduplicated
                     type: string
                   wasExecutionFailure:
                     description: |-

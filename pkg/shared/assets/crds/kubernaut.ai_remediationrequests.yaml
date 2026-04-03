@@ -453,6 +453,14 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              deduplicatedByWE:
+                description: |-
+                  DeduplicatedByWE stores the name of the original WorkflowExecution whose
+                  outcome this RR is waiting to inherit (Issue #190). Set when the RR's own
+                  WFE was marked Failed/Deduplicated. Used as a field index key for the
+                  cross-WE watch to trigger reconciliation when the original WFE completes.
+                  Immutable after initial assignment.
+                type: string
               deduplication:
                 description: |-
                   Deduplication tracks signal occurrence for this remediation.
@@ -604,6 +612,7 @@ spec:
                   - Approval
                   - WorkflowExecution
                   - Blocked
+                  - Deduplicated
                 - enum:
                   - Configuration
                   - SignalProcessing
@@ -611,6 +620,7 @@ spec:
                   - Approval
                   - WorkflowExecution
                   - Blocked
+                  - Deduplicated
                 description: |-
                   FailurePhase indicates which orchestration phase failed.
                   Only set when OverallPhase = Failed.
