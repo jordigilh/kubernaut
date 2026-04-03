@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -88,8 +89,8 @@ func (h *RecentlyRemediatedHandler) Handle(
 	err := helpers.UpdateRemediationRequestStatus(ctx, h.ctx.Client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseSkipped
 		rr.Status.SkipReason = remediationv1.SkipReasonRecentlyRemediated
-		// V1.0: SkipDetails removed, skip information now in RR.Status
-		// rr.Status.DuplicateOf would be set by RO routing logic before WFE creation
+		now := metav1.Now()
+		rr.Status.CompletedAt = &now
 
 		// BR-ORCH-043: Set Ready condition (terminal skip - recently remediated)
 		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Skipped: recently remediated", h.ctx.Metrics)
