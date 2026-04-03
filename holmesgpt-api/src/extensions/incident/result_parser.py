@@ -445,7 +445,21 @@ def parse_and_validate_investigation_result(
         "count": len(validation_attempts_from_llm) if validation_attempts_from_llm else 0,
         "type": type(validation_attempts_from_llm).__name__ if validation_attempts_from_llm else "None"
     })
-    
+
+    # #607: Defense-in-depth confidence floor for actionable=false.
+    # When the LLM explicitly determines an alert is not actionable,
+    # a low/missing confidence is contradictory. Floor to 0.8 so
+    # downstream consumers always have a well-formed value.
+    if not is_actionable and confidence < 0.8:
+        logger.info({
+            "event": "confidence_floor_applied",
+            "incident_id": incident_id,
+            "confidence_original": confidence,
+            "confidence_floored": 0.8,
+            "message": "#607: Applying confidence floor for actionable=false determination"
+        })
+        confidence = 0.8
+
     result = {
         "incident_id": incident_id,
         "analysis": analysis,
@@ -819,6 +833,17 @@ def parse_investigation_result(
             human_review_reason = "image_mismatch"
         else:
             human_review_reason = "parameter_validation_failed"
+
+    # #607: Defense-in-depth confidence floor for actionable=false (deprecated parser).
+    if not is_actionable and confidence < 0.8:
+        logger.info({
+            "event": "confidence_floor_applied",
+            "incident_id": incident_id,
+            "confidence_original": confidence,
+            "confidence_floored": 0.8,
+            "message": "#607: Applying confidence floor for actionable=false determination"
+        })
+        confidence = 0.8
 
     result = {
         "incident_id": incident_id,

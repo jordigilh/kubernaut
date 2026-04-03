@@ -112,13 +112,13 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 		return p.handleProblemResolvedFromIncident(ctx, analysis, resp)
 	}
 
-	// #388 Outcome D: Alert not actionable — benign condition, no remediation warranted.
-	// Same confidence threshold (0.7) as resolved. When HAPI signals actionable=false
-	// (via warning + is_actionable field), bypass the substantive-RCA escalation (#208)
-	// because the RCA documents a benign condition for audit, not an active problem.
+	// #607: Alert not actionable — confidence gate removed.
+	// actionable=false is an explicit LLM determination (like needs_human_review=true)
+	// and should not be gated by a quality threshold. HAPI only emits both the warning
+	// signal AND is_actionable=false when the LLM explicitly sets actionable: false.
 	isNotActionable := hasNotActionableSignal(resp.Warnings)
 	isActionablePtr := GetOptNilBoolValue(resp.IsActionable)
-	if !hasSelectedWorkflow && resp.Confidence >= 0.7 && isNotActionable && isActionablePtr != nil && !*isActionablePtr {
+	if !hasSelectedWorkflow && isNotActionable && isActionablePtr != nil && !*isActionablePtr {
 		return p.handleNotActionableFromIncident(ctx, analysis, resp)
 	}
 
