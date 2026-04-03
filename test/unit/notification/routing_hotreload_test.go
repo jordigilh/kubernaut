@@ -17,14 +17,9 @@ limitations under the License.
 package notification
 
 import (
-	"context"
-	"os"
-
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/notification/routing"
@@ -43,11 +38,11 @@ func init() {
 //
 // Business Requirement:
 // The Notification Service MUST reload routing configuration without restart
-// when the ConfigMap changes, enabling dynamic routing updates without service
-// disruption.
+// when the routing file changes (#244: FileWatcher-based), enabling dynamic
+// routing updates without service disruption.
 //
 // Acceptance Criteria:
-// - ConfigMap changes detected within 30 seconds
+// - File changes detected via fsnotify within seconds
 // - Routing table updated without restart
 // - In-flight notifications not affected
 // - Config reload logged with before/after diff
@@ -55,64 +50,6 @@ func init() {
 // =============================================================================
 
 var _ = Describe("BR-NOT-067: Routing Configuration Hot-Reload", func() {
-
-	Context("ConfigMap Watcher", func() {
-
-		It("should detect ConfigMap create event", func() {
-			// BR-NOT-067: ConfigMap changes detected within 30 seconds
-			// Create a ConfigMap with routing configuration
-			configMap := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      routing.DefaultConfigMapName,
-					Namespace: routing.DefaultConfigMapNamespace,
-				},
-				Data: map[string]string{
-					routing.DefaultConfigMapKey: `
-route:
-  receiver: default-console
-receivers:
-  - name: default-console
-    consoleConfigs:
-      - enabled: true
-`,
-				},
-			}
-
-			// Verify the watcher extracts routing config from ConfigMap
-			Expect(configMap.Data[routing.DefaultConfigMapKey]).NotTo(BeEmpty())
-		})
-
-		It("should detect ConfigMap update event", func() {
-			// BR-NOT-067: ConfigMap changes detected within 30 seconds
-			// Update should trigger config reload
-
-			oldConfig := `
-route:
-  receiver: default-console
-receivers:
-  - name: default-console
-    consoleConfigs:
-      - enabled: true
-`
-			newConfig := `
-route:
-  receiver: slack-ops
-  routes:
-    - match:
-        severity: critical
-      receiver: pagerduty-oncall
-receivers:
-  - name: slack-ops
-    slackConfigs:
-      - channel: "#ops"
-  - name: pagerduty-oncall
-    pagerdutyConfigs:
-      - serviceKey: test-key
-`
-			// Verify old and new configs are different
-			Expect(oldConfig).NotTo(Equal(newConfig))
-		})
-	})
 
 	Context("Routing Table Update", func() {
 
@@ -274,131 +211,19 @@ receivers:
 		})
 	})
 
-	Context("ConfigMap Handler Integration", func() {
-
-		It("should handle ConfigMap with correct name and namespace", func() {
-			// BR-NOT-067: Only react to the routing ConfigMap
-			configMap := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      routing.DefaultConfigMapName,
-					Namespace: routing.GetConfigMapNamespace(),
-				},
-			}
-
-			Expect(configMap.Name).To(Equal("notification-routing-config"))
-			Expect(routing.IsRoutingConfigMap(configMap.Name, configMap.Namespace)).To(BeTrue())
-		})
-
-		It("should ignore ConfigMaps with different name", func() {
-			Expect(routing.IsRoutingConfigMap("some-other-config", routing.GetConfigMapNamespace())).To(BeFalse())
-		})
-
-		It("should ignore ConfigMaps with different namespace", func() {
-			Expect(routing.IsRoutingConfigMap(routing.DefaultConfigMapName, "some-other-namespace")).To(BeFalse())
-		})
-	})
-
-	Context("Configurable Namespace (#207)", func() {
-
-		It("should use POD_NAMESPACE env var when set", func() {
-			// #207: Routing ConfigMap namespace must match the pod's namespace
-			original := os.Getenv("POD_NAMESPACE")
-			defer func() { _ = os.Setenv("POD_NAMESPACE", original) }()
-
-			Expect(os.Setenv("POD_NAMESPACE", "kubernaut-system")).To(Succeed())
-			Expect(routing.GetConfigMapNamespace()).To(Equal("kubernaut-system"))
-		})
-
-		It("should fall back to DefaultConfigMapNamespace when POD_NAMESPACE is not set", func() {
-			original := os.Getenv("POD_NAMESPACE")
-			defer func() { _ = os.Setenv("POD_NAMESPACE", original) }()
-
-			Expect(os.Unsetenv("POD_NAMESPACE")).To(Succeed())
-			Expect(routing.GetConfigMapNamespace()).To(Equal(routing.DefaultConfigMapNamespace))
-		})
-
-		It("should use POD_NAMESPACE in IsRoutingConfigMap matching", func() {
-			original := os.Getenv("POD_NAMESPACE")
-			defer func() { _ = os.Setenv("POD_NAMESPACE", original) }()
-
-			Expect(os.Setenv("POD_NAMESPACE", "kubernaut-system")).To(Succeed())
-			Expect(routing.IsRoutingConfigMap("notification-routing-config", "kubernaut-system")).To(BeTrue())
-			Expect(routing.IsRoutingConfigMap("notification-routing-config", "kubernaut-notifications")).To(BeFalse())
-		})
-	})
-
 	Context("Reload Timing", func() {
 
 		It("should reload within 30 second SLA", func() {
-			// BR-NOT-067: ConfigMap changes detected within 30 seconds
-			// This is a documentation test - actual timing depends on controller-runtime
-			// The watch mechanism should trigger reload immediately upon ConfigMap event
+			// BR-NOT-067: File changes detected via fsnotify
+			// #244: FileWatcher uses fsnotify which delivers events near-instantly.
+			// The 30-second SLA accounts for Kubernetes projected volume propagation.
 
-			// Verify default resync period is set appropriately
-			// Note: controller-runtime watches have near-instant event delivery
-			// The 30-second SLA accounts for potential Kubernetes API latency
 			expectedSLA := 30 // seconds
 			Expect(expectedSLA).To(BeNumerically(">=", 1))
 		})
 	})
 })
 
-// =============================================================================
-// Integration Test: Controller ConfigMap Watch
-// =============================================================================
-
-var _ = Describe("BR-NOT-067: Controller ConfigMap Watch Integration", func() {
-
-	Context("SetupWithManager ConfigMap Watch", func() {
-
-		It("should watch ConfigMaps in routing namespace", func() {
-			// BR-NOT-067: Controller should watch ConfigMap for changes
-			// #207: Namespace is dynamic (from POD_NAMESPACE env var)
-
-			expectedConfigMapName := routing.DefaultConfigMapName
-			expectedNamespace := routing.GetConfigMapNamespace()
-
-			Expect(expectedConfigMapName).To(Equal("notification-routing-config"))
-			Expect(expectedNamespace).NotTo(BeEmpty())
-		})
-	})
-
-	Context("Reconciler Routing Config", func() {
-
-		It("should use routing config for channel resolution", func() {
-			// BR-NOT-065 + BR-NOT-067: Routing config affects channel resolution
-			// When routing config is updated via hot-reload, new notifications
-			// should use the updated routing rules
-
-			ctx := context.Background()
-
-			// Create a test router
-			router := routing.NewRouter(testLogger)
-			err := router.LoadConfig([]byte(`
-route:
-  routes:
-    - match:
-        skip-reason: PreviousExecutionFailed
-      receiver: pagerduty-critical
-  receiver: default-console
-receivers:
-  - name: default-console
-    consoleConfigs:
-      - enabled: true
-  - name: pagerduty-critical
-    pagerdutyConfigs:
-      - serviceKey: test
-`))
-			Expect(err).NotTo(HaveOccurred())
-
-			// Verify routing resolution
-			attrs := map[string]string{
-				routing.AttrSkipReason: routing.SkipReasonPreviousExecutionFailed,
-			}
-			receiver := router.FindReceiver(attrs)
-			Expect(receiver.Name).To(Equal("pagerduty-critical"))
-
-			_ = ctx // Context used in actual controller
-		})
-	})
-})
+// #244: Controller ConfigMap Watch Integration tests removed — ConfigMap informer
+// replaced by FileWatcher. Routing resolution tests covered in routing_config_test.go
+// and routing_reload_test.go.
