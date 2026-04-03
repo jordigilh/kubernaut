@@ -54,14 +54,10 @@ var _ = Describe("Kubernaut Agent I4 Phase Scoping Integration — #433", func()
 		reg = registry.New()
 		ptm = investigator.DefaultPhaseToolMap()
 
-		rcaTools := ptm[katypes.PhaseRCA]
-		wdTools := ptm[katypes.PhaseWorkflowDiscovery]
-
-		for _, name := range rcaTools {
-			reg.Register(&fakeTool{name: name})
-		}
-		for _, name := range wdTools {
-			reg.Register(&fakeTool{name: name})
+		for _, phase := range []katypes.Phase{katypes.PhaseRCA, katypes.PhaseWorkflowDiscovery, katypes.PhaseValidation} {
+			for _, name := range ptm[phase] {
+				reg.Register(&fakeTool{name: name})
+			}
 		}
 	})
 
@@ -94,16 +90,20 @@ var _ = Describe("Kubernaut Agent I4 Phase Scoping Integration — #433", func()
 			Expect(wdToolNames).NotTo(ContainElement("kubectl_describe"))
 			Expect(wdToolNames).NotTo(ContainElement("kubectl_logs"))
 
+			By("Resource context tools should NOT be in WorkflowDiscovery phase (they are in RCA)")
+			Expect(wdToolNames).NotTo(ContainElement("get_namespaced_resource_context"))
+			Expect(wdToolNames).NotTo(ContainElement("get_cluster_resource_context"))
+
 			By("Custom tools SHOULD be available during WorkflowDiscovery phase")
 			Expect(wdToolNames).To(ContainElement("list_workflows"))
 			Expect(wdToolNames).To(ContainElement("get_workflow"))
 			Expect(wdToolNames).To(ContainElement("list_available_actions"))
-			Expect(wdToolNames).To(ContainElement("get_resource_context"))
 		})
 
-		It("should return no tools during the Validation phase", func() {
+		It("should return only TodoWrite during the Validation phase", func() {
 			valTools := reg.ToolsForPhase(katypes.PhaseValidation, ptm)
-			Expect(valTools).To(BeEmpty(), "Validation phase should have no tools")
+			Expect(valTools).To(HaveLen(1), "Validation phase should have TodoWrite only")
+			Expect(valTools[0].Name()).To(Equal("todo_write"))
 		})
 	})
 
@@ -128,15 +128,15 @@ var _ = Describe("Kubernaut Agent I4 Phase Scoping Integration — #433", func()
 			}
 		})
 
-		It("should enforce that RCA has 17 tools and WorkflowDiscovery has 4 tools", func() {
+		It("should enforce that RCA has 33 tools, WorkflowDiscovery has 4, Validation has 1", func() {
 			rcaTools := reg.ToolsForPhase(katypes.PhaseRCA, ptm)
-			Expect(rcaTools).To(HaveLen(17), "RCA should have 11 K8s + 6 Prometheus = 17 tools")
+			Expect(rcaTools).To(HaveLen(33), "RCA should have 19 K8s + 2 metrics + 1 fetch_pod_logs + 8 Prometheus + 2 resource context + 1 TodoWrite = 33 tools")
 
 			wdTools := reg.ToolsForPhase(katypes.PhaseWorkflowDiscovery, ptm)
-			Expect(wdTools).To(HaveLen(4), "WorkflowDiscovery should have 4 custom tools")
+			Expect(wdTools).To(HaveLen(4), "WorkflowDiscovery should have 3 workflow + 1 TodoWrite = 4 tools")
 
 			valTools := reg.ToolsForPhase(katypes.PhaseValidation, ptm)
-			Expect(valTools).To(HaveLen(0), "Validation should have 0 tools")
+			Expect(valTools).To(HaveLen(1), "Validation should have 1 TodoWrite tool")
 		})
 	})
 })

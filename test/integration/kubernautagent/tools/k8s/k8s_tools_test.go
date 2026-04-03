@@ -25,10 +25,15 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
-	corev1 "k8s.io/api/core/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
 func int32Ptr(i int32) *int32 { return &i }
@@ -36,12 +41,11 @@ func int32Ptr(i int32) *int32 { return &i }
 var _ = Describe("Kubernaut Agent K8s Tools Integration — #433", func() {
 
 	var (
-		client  *fake.Clientset
-		reg     *registry.Registry
+		reg *registry.Registry
 	)
 
 	BeforeEach(func() {
-		client = fake.NewSimpleClientset(
+		objects := []runtime.Object{
 			&appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "api-server",
@@ -91,16 +95,38 @@ var _ = Describe("Kubernaut Agent K8s Tools Integration — #433", func() {
 				},
 			},
 			&corev1.Event{
-				ObjectMeta:    metav1.ObjectMeta{Name: "event-1", Namespace: "production"},
+				ObjectMeta:     metav1.ObjectMeta{Name: "event-1", Namespace: "production"},
 				InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "api-server-abc-xyz", Namespace: "production"},
-				Reason:        "OOMKilled",
-				Message:       "Container api exceeded memory limit",
-				Type:          "Warning",
+				Reason:         "OOMKilled",
+				Message:        "Container api exceeded memory limit",
+				Type:           "Warning",
 			},
-		)
+		}
+
+		typedClient := fake.NewSimpleClientset(objects...)
+
+		scheme := runtime.NewScheme()
+		_ = corev1.AddToScheme(scheme)
+		_ = appsv1.AddToScheme(scheme)
+		dynClient := dynamicfake.NewSimpleDynamicClient(scheme, objects...)
+
+		mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+			{Group: "", Version: "v1"},
+			{Group: "apps", Version: "v1"},
+		})
+		mapper.Add(schema.GroupVersionKind{Version: "v1", Kind: "Pod"}, meta.RESTScopeNamespace)
+		mapper.Add(schema.GroupVersionKind{Version: "v1", Kind: "Event"}, meta.RESTScopeNamespace)
+		mapper.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, meta.RESTScopeNamespace)
+
+		kindIndex := map[string]schema.GroupKind{
+			"pod":        {Kind: "Pod"},
+			"event":      {Kind: "Event"},
+			"deployment": {Group: "apps", Kind: "Deployment"},
+		}
+		resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex)
 
 		reg = registry.New()
-		allTools := k8s.NewAllTools(client)
+		allTools := k8s.NewAllTools(typedClient, resolver)
 		Expect(allTools).NotTo(BeNil(), "NewAllTools should not return nil")
 		for _, t := range allTools {
 			reg.Register(t)

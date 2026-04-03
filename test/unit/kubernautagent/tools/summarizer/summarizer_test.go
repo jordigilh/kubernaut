@@ -2,6 +2,7 @@ package summarizer_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -23,6 +24,16 @@ func (f *fakeLLM) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse
 		Message: llm.Message{Role: "assistant", Content: f.response},
 	}, nil
 }
+
+type stubTool struct {
+	name   string
+	output string
+}
+
+func (s *stubTool) Name() string                                                    { return s.name }
+func (s *stubTool) Description() string                                             { return "stub desc" }
+func (s *stubTool) Parameters() json.RawMessage                                     { return json.RawMessage(`{}`) }
+func (s *stubTool) Execute(_ context.Context, _ json.RawMessage) (string, error)    { return s.output, nil }
 
 var _ = Describe("Kubernaut Agent Summarizer Unit — #433", func() {
 
@@ -74,6 +85,43 @@ var _ = Describe("Kubernaut Agent Summarizer Unit — #433", func() {
 			prompt := fake.calls[0].Messages[0].Content
 			Expect(prompt).To(ContainSubstring("kubectl_logs"),
 				"summarization prompt should mention the tool that produced the output")
+		})
+	})
+
+	Describe("UT-KA-433-540: Wrap passes through short output unchanged", func() {
+		It("should return original output when below threshold", func() {
+			fake := &fakeLLM{response: "should not be called"}
+			s := summarizer.New(fake, 1000)
+			wrapped := s.Wrap(&stubTool{name: "kubectl_describe", output: "short"})
+			result, err := wrapped.Execute(context.Background(), nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal("short"))
+			Expect(fake.calls).To(BeEmpty())
+		})
+	})
+
+	Describe("UT-KA-433-541: Wrap invokes LLM for long output", func() {
+		It("should summarize output exceeding threshold", func() {
+			fake := &fakeLLM{response: "condensed"}
+			s := summarizer.New(fake, 50)
+			longOutput := strings.Repeat("verbose ", 20)
+			wrapped := s.Wrap(&stubTool{name: "kubectl_describe", output: longOutput})
+			result, err := wrapped.Execute(context.Background(), nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal("condensed"))
+			Expect(fake.calls).To(HaveLen(1))
+		})
+	})
+
+	Describe("UT-KA-433-542: Wrap preserves tool metadata", func() {
+		It("should delegate Name, Description, Parameters to inner tool", func() {
+			fake := &fakeLLM{response: "x"}
+			s := summarizer.New(fake, 100)
+			inner := &stubTool{name: "kubectl_describe", output: "data"}
+			wrapped := s.Wrap(inner)
+			Expect(wrapped.Name()).To(Equal("kubectl_describe"))
+			Expect(wrapped.Description()).To(Equal(inner.Description()))
+			Expect(wrapped.Parameters()).To(Equal(inner.Parameters()))
 		})
 	})
 })

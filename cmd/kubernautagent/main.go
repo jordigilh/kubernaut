@@ -31,7 +31,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery/cached/memory"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/restmapper"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	hapiclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
@@ -45,6 +49,12 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/investigation"
+	k8stools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
+	logtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/logs"
+	promtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/prometheus"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
 func main() {
@@ -93,11 +103,14 @@ func main() {
 	auditStore := audit.NopAuditStore{}
 	phaseTools := investigator.DefaultPhaseToolMap()
 
+	reg := buildToolRegistry(cfg, slogger)
+
 	inv := investigator.New(
 		llmClient, promptBuilder, resultParser,
-		nil, // enricher — requires DataStorage adapter; wired in Phase 1B
+		nil, // enricher — requires DataStorage adapter; wired when adapters are ready
 		auditStore, slogger,
 		cfg.Investigator.MaxTurns, phaseTools,
+		reg,
 	)
 
 	store := session.NewStore(cfg.Session.TTL)
@@ -193,6 +206,83 @@ func detectNamespace() string {
 		return string(data)
 	}
 	return "kubernaut-system"
+}
+
+// buildToolRegistry creates and populates the tool registry with all available tool sets.
+func buildToolRegistry(cfg *kaconfig.Config, logger *slog.Logger) *registry.Registry {
+	reg := registry.New()
+
+	if err := registerK8sTools(reg, logger); err != nil {
+		logger.Warn("K8s tools registration failed", "error", err)
+	}
+
+	if cfg.Tools.Prometheus.URL != "" {
+		promClient, promErr := promtools.NewClient(promtools.ClientConfig{
+			URL:       cfg.Tools.Prometheus.URL,
+			Timeout:   cfg.Tools.Prometheus.Timeout,
+			SizeLimit: cfg.Tools.Prometheus.SizeLimit,
+		})
+		if promErr != nil {
+			logger.Error("failed to create Prometheus client", "error", promErr)
+		} else {
+			for _, t := range promtools.NewAllTools(promClient) {
+				reg.Register(t)
+			}
+			logger.Info("registered Prometheus tools", "count", len(promtools.AllToolNames))
+		}
+	}
+
+	reg.Register(investigation.NewTodoWriteTool())
+	logger.Info("registered TodoWrite tool")
+
+	logger.Info("tool registry ready", "total_tools", len(reg.All()))
+	return reg
+}
+
+func registerK8sTools(reg *registry.Registry, logger *slog.Logger) error {
+	kubeConfig, err := ctrl.GetConfig()
+	if err != nil {
+		return fmt.Errorf("K8s config not available: %w", err)
+	}
+
+	k8sClient, err := kubernetes.NewForConfig(kubeConfig)
+	if err != nil {
+		return fmt.Errorf("creating K8s client: %w", err)
+	}
+
+	dynClient, err := dynamic.NewForConfig(kubeConfig)
+	if err != nil {
+		return fmt.Errorf("creating dynamic client: %w", err)
+	}
+
+	cachedDisc := memory.NewMemCacheClient(k8sClient.Discovery())
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(cachedDisc)
+	kindIndex, err := k8stools.BuildKindIndex(k8sClient.Discovery())
+	if err != nil {
+		logger.Warn("failed to build kind index, using empty index", "error", err)
+		kindIndex = make(map[string]schema.GroupKind)
+	}
+	resolver := k8stools.NewDynamicResolver(dynClient, mapper, kindIndex)
+
+	for _, t := range k8stools.NewAllTools(k8sClient, resolver) {
+		reg.Register(t)
+	}
+	logger.Info("registered K8s tools", "count", len(k8stools.AllToolNames))
+
+	reg.Register(logtools.NewFetchPodLogsTool(k8sClient))
+	logger.Info("registered fetch_pod_logs tool")
+
+	mc, mcErr := metricsclient.NewForConfig(kubeConfig)
+	if mcErr != nil {
+		logger.Error("failed to create metrics client, metrics tools will not be registered", "error", mcErr)
+	} else {
+		for _, t := range k8stools.NewMetricsTools(k8stools.NewMetricsClient(mc)) {
+			reg.Register(t)
+		}
+		logger.Info("registered metrics tools", "count", len(k8stools.MetricsToolNames))
+	}
+
+	return nil
 }
 
 // newAuthMiddleware creates the DD-AUTH-014 auth middleware using in-cluster K8s config.

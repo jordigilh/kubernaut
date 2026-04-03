@@ -57,7 +57,7 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 	Describe("IT-KA-433-034: list_workflows searches real DataStorage with criteria", func() {
 		It("should return seeded workflows from real DataStorage", func() {
 			result, err := reg.Execute(context.Background(), "list_workflows",
-				json.RawMessage(`{}`))
+				json.RawMessage(`{"action_type":"IncreaseMemory"}`))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeEmpty())
 			Expect(result).To(ContainSubstring("workflows"))

@@ -20,17 +20,27 @@ import (
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/investigation"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/logs"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/prometheus"
 )
 
+var resourceContextTools = []string{
+	"get_namespaced_resource_context",
+	"get_cluster_resource_context",
+}
+
 // DefaultPhaseToolMap returns the production phase-to-tool mapping.
 // TodoWrite is available in all phases (matching HAPI CoreInvestigationToolset behavior).
+// Resource context tools are in PhaseRCA (matching HAPI Phase 1).
 func DefaultPhaseToolMap() katypes.PhaseToolMap {
 	todo := investigation.ToolName
 
-	rca := make([]string, 0, len(k8s.AllToolNames)+len(prometheus.AllToolNames)+1)
+	rca := make([]string, 0, len(k8s.AllToolNames)+len(k8s.MetricsToolNames)+1+len(prometheus.AllToolNames)+len(resourceContextTools)+1)
 	rca = append(rca, k8s.AllToolNames...)
+	rca = append(rca, k8s.MetricsToolNames...)
+	rca = append(rca, logs.ToolName)
 	rca = append(rca, prometheus.AllToolNames...)
+	rca = append(rca, resourceContextTools...)
 	rca = append(rca, todo)
 
 	wd := []string{
