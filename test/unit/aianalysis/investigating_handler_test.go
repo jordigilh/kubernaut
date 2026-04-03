@@ -30,7 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	hgptclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -336,7 +336,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			var auditSpy *auditClientSpy
 
 			BeforeEach(func() {
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 				// Use audit spy to capture failure events for Gap #7 validation
 				auditSpy = &auditClientSpy{}
 				testMetrics := metrics.NewMetrics()
@@ -744,7 +744,7 @@ var _ = Describe("InvestigatingHandler", func() {
 						"low",
 						[]string{"Transient condition", "Auto-recovery"},
 					)
-					mockClient.Response = &hgptclient.IncidentResponse{
+					mockClient.Response = &agentclient.IncidentResponse{
 						IncidentID:        "mock-incident-001",
 						Analysis:          "Investigated OOMKilled signal. Pod recovered automatically.",
 						RootCauseAnalysis: rcaMap,
@@ -785,7 +785,7 @@ var _ = Describe("InvestigatingHandler", func() {
 						"high",
 						[]string{"Insufficient memory limits", "Traffic spike"},
 					)
-					mockClient.Response = &hgptclient.IncidentResponse{
+					mockClient.Response = &agentclient.IncidentResponse{
 						IncidentID:        "mock-incident-001",
 						Analysis:          "Identified persistent OOM condition requiring intervention.",
 						RootCauseAnalysis: rcaMap,
@@ -817,7 +817,7 @@ var _ = Describe("InvestigatingHandler", func() {
 						"low",
 						[]string{"Temporary memory spike", "Transient condition"},
 					)
-					mockClient.Response = &hgptclient.IncidentResponse{
+					mockClient.Response = &agentclient.IncidentResponse{
 						IncidentID:        "mock-incident-001",
 						Analysis:          "Memory pressure resolved after automatic restart.",
 						RootCauseAnalysis: rcaMap,
@@ -950,7 +950,7 @@ var _ = Describe("InvestigatingHandler", func() {
 		Context("Error Classification - BR-AI-009 & BR-AI-010", func() {
 			It("should classify 503 Service Unavailable as transient and retry", func() {
 				analysis := createTestAnalysis()
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -962,7 +962,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 			It("should classify 429 Too Many Requests as transient and retry", func() {
 				analysis := createTestAnalysis()
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 429, Message: "Too Many Requests"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 429, Message: "Too Many Requests"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -973,7 +973,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 			It("should classify 500 Internal Server Error as transient and retry", func() {
 				analysis := createTestAnalysis()
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 500, Message: "Internal Server Error"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 500, Message: "Internal Server Error"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -991,17 +991,17 @@ var _ = Describe("InvestigatingHandler", func() {
 			It("should increase backoff duration with each retry attempt", func() {
 				By("First attempt")
 				analysis := createTestAnalysis()
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 				result1, _ := handler.Handle(ctx, analysis)
 				backoff1 := result1.RequeueAfter
 
 				By("Second attempt")
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 				result2, _ := handler.Handle(ctx, analysis)
 				backoff2 := result2.RequeueAfter
 
 				By("Third attempt")
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 				result3, _ := handler.Handle(ctx, analysis)
 				backoff3 := result3.RequeueAfter
 
@@ -1041,7 +1041,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				analysis.Status.ConsecutiveFailures = 0
 
 				// Using transient error (503) to trigger retry path
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -1058,7 +1058,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				analysis := createTestAnalysis()
 				// ConsecutiveFailures defaults to 0
 
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -1074,7 +1074,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				analysis := createTestAnalysis()
 				analysis.Status.ConsecutiveFailures = 2
 
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -1102,7 +1102,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					"low",
 					[]string{"Completed batch job artifacts"},
 				)
-				mockClient.Response = &hgptclient.IncidentResponse{
+				mockClient.Response = &agentclient.IncidentResponse{
 					IncidentID:        "mock-incident-388-001",
 					Analysis:          "These PVCs are leftover from completed batch jobs. They consume storage but do not affect any running workload. No remediation is needed.",
 					RootCauseAnalysis: rcaMap,
@@ -1153,7 +1153,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					"low",
 					[]string{"Completed batch job artifacts", "No PVC cleanup policy configured"},
 				)
-				mockClient.Response = &hgptclient.IncidentResponse{
+				mockClient.Response = &agentclient.IncidentResponse{
 					IncidentID:        "mock-incident-388-002",
 					Analysis:          "Found 12 orphaned PVCs. While they use storage, they don't impact running workloads.",
 					RootCauseAnalysis: rcaMap,
@@ -1199,7 +1199,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					"low",
 					[]string{"Completed batch job artifacts"},
 				)
-				mockClient.Response = &hgptclient.IncidentResponse{
+				mockClient.Response = &agentclient.IncidentResponse{
 					IncidentID:        "mock-incident-607-001",
 					Analysis:          "These PVCs are leftover from completed batch jobs.",
 					RootCauseAnalysis: rcaMap,
@@ -1234,7 +1234,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					"low",
 					[]string{"Completed batch job artifacts"},
 				)
-				mockClient.Response = &hgptclient.IncidentResponse{
+				mockClient.Response = &agentclient.IncidentResponse{
 					IncidentID:        "mock-incident-607-002",
 					Analysis:          "Stale resources with no impact.",
 					RootCauseAnalysis: rcaMap,
@@ -1263,7 +1263,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 		Context("UT-AA-607-003: partial signal (warning only) does NOT route to NotActionable", func() {
 			BeforeEach(func() {
-				mockClient.Response = &hgptclient.IncidentResponse{
+				mockClient.Response = &agentclient.IncidentResponse{
 					IncidentID: "mock-incident-607-003",
 					Analysis:   "Some analysis",
 					Confidence: 0.0,
@@ -1289,7 +1289,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 		Context("UT-AA-607-004: resolved path still requires confidence >= 0.7", func() {
 			BeforeEach(func() {
-				mockClient.Response = &hgptclient.IncidentResponse{
+				mockClient.Response = &agentclient.IncidentResponse{
 					IncidentID: "mock-incident-607-004",
 					Analysis:   "Problem appears to have self-resolved.",
 					Confidence: 0.4,
@@ -1314,7 +1314,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 		Context("UT-AA-607-005: terminal failure path fires normally", func() {
 			BeforeEach(func() {
-				mockClient.Response = &hgptclient.IncidentResponse{
+				mockClient.Response = &agentclient.IncidentResponse{
 					IncidentID: "mock-incident-607-005",
 					Analysis:   "Unable to determine root cause.",
 					Confidence: 0.3,

@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	hapiclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )

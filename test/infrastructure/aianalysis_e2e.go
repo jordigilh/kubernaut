@@ -64,7 +64,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// - No manual tag generation
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
 	_, _ = fmt.Fprintln(writer, "  ├── Data Storage (1-2 min)")
-	_, _ = fmt.Fprintln(writer, "  ├── HolmesGPT-API (2-3 min)")
+	_, _ = fmt.Fprintln(writer, "  ├── Kubernaut Agent (1-2 min)")
 	_, _ = fmt.Fprintln(writer, "  ├── Mock LLM (1-2 min)")
 	_, _ = fmt.Fprintln(writer, "  └── AIAnalysis controller (3-4 min)")
 
@@ -90,14 +90,14 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "holmesgpt-api",
-			ImageName:        "kubernaut/holmesgpt-api",
-			DockerfilePath:   "holmesgpt-api/Dockerfile",
+			ServiceName:      "kubernautagent",
+			ImageName:        "kubernaut/kubernautagent",
+			DockerfilePath:   "docker/kubernautagent.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   false, // HAPI does not support coverage
+			EnableCoverage:   false,
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
-		buildResults <- imageBuildResult{"holmesgpt-api", imageName, err}
+		buildResults <- imageBuildResult{"kubernautagent", imageName, err}
 	}()
 
 	go func() {
@@ -389,7 +389,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 7c: Deploying remaining services in parallel...")
 	_, _ = fmt.Fprintln(writer, "  ├── Mock LLM service (with ConfigMap)")
-	_, _ = fmt.Fprintln(writer, "  ├── HolmesGPT-API")
+	_, _ = fmt.Fprintln(writer, "  ├── Kubernaut Agent")
 	_, _ = fmt.Fprintln(writer, "  └── AIAnalysis controller")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Kubernetes will handle dependencies via readiness probes")
 
@@ -400,28 +400,25 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	deployResults := make(chan deployResult, 3)
 
-	// Deploy Mock LLM service (HAPI dependency)
-	// NOTE: Images already loaded in Phase 5-6, skip image loading in deployment
 	go func() {
 		err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], workflowUUIDs, writer)
 		deployResults <- deployResult{"Mock LLM", err}
 	}()
 
-	// Deploy HAPI (AIAnalysis dependency)
-	// NOTE: Images already loaded in Phase 5-6, skip image loading in deployment
 	go func() {
-		err := deployHolmesGPTAPIManifestOnly(kubeconfigPath, builtImages["holmesgpt-api"], writer)
-		deployResults <- deployResult{"HolmesGPT-API", err}
+		if rbacErr := deployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); rbacErr != nil {
+			deployResults <- deployResult{"Kubernaut Agent", rbacErr}
+			return
+		}
+		err := deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], writer)
+		deployResults <- deployResult{"Kubernaut Agent", err}
 	}()
 
-	// Deploy AIAnalysis controller (service under test)
-	// NOTE: Images already loaded in Phase 5-6, skip image loading in deployment
 	go func() {
 		err := deployAIAnalysisControllerManifestOnly(kubeconfigPath, builtImages["aianalysis"], writer)
 		deployResults <- deployResult{"AIAnalysis", err}
 	}()
 
-	// Collect deployment results (kubectl apply results)
 	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for manifest applications...")
 	for i := 0; i < 3; i++ {
 		result := <-deployResults
@@ -436,8 +433,8 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// Per DD-TEST-002: Coverage-instrumented binaries take longer to start (2-5 min vs 30s)
 	// Kubernetes reconciles dependencies:
 	// - DataStorage waits for PostgreSQL + Redis (retry logic + readiness probe)
-	// - HolmesGPT-API waits for PostgreSQL (retry logic + readiness probe)
-	// - AIAnalysis waits for HAPI + DataStorage (retry logic + readiness probe)
+	// - Kubernaut Agent waits for Mock LLM (retry logic + readiness probe)
+	// - AIAnalysis waits for Agent + DataStorage (retry logic + readiness probe)
 	// This single wait point validates the entire dependency chain
 	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
 	if err := waitForAllServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
@@ -745,8 +742,8 @@ data:
       healthProbeAddr: ":8081"
       leaderElection: false
       leaderElectionId: "aianalysis.kubernaut.ai"
-    holmesgpt:
-      url: "http://holmesgpt-api:8080"
+    agent:
+      url: "http://kubernaut-agent:8080"
       timeout: "60s"
       sessionPollInterval: "2s"
     datastorage:
@@ -796,28 +793,27 @@ subjects:
   name: aianalysis-controller
   namespace: kubernaut-system
 ---
-# ClusterRole: HolmesGPT API Client Access (DD-AUTH-014 middleware)
+# ClusterRole: Kubernaut Agent Client Access (DD-AUTH-014 middleware)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: holmesgpt-api-client
+  name: kubernaut-agent-client
 rules:
 - apiGroups: [""]
   resources: ["services"]
-  resourceNames: ["holmesgpt-api"]
-  verbs: ["create", "get"]  # BR-AA-HAPI-064: 'create' for POST (submit), 'get' for GET (session poll/result)
+  resourceNames: ["kubernaut-agent"]
+  verbs: ["create", "get"]
 ---
-# RoleBinding: Grant AIAnalysis controller access to HolmesGPT API
-# Required for DD-AUTH-014 middleware SubjectAccessReview check
+# RoleBinding: Grant AIAnalysis controller access to Kubernaut Agent
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: aianalysis-controller-holmesgpt-access
+  name: aianalysis-controller-agent-access
   namespace: kubernaut-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: holmesgpt-api-client
+  name: kubernaut-agent-client
 subjects:
 - kind: ServiceAccount
   name: aianalysis-controller
@@ -972,63 +968,16 @@ func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath stri
 	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "DataStorage pod should become ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
 
-	// Wait for HolmesGPT-API pod to be ready
-	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for HolmesGPT-API pod to be ready...\n")
-
-	// Track polling attempts for debugging
-	pollCount := 0
-	maxPolls := int((2 * time.Minute) / (5 * time.Second)) // 24 polls expected
-
+	// Wait for Kubernaut Agent pod to be ready
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Kubernaut Agent pod to be ready...\n")
 	Eventually(func() bool {
-		pollCount++
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=holmesgpt-api",
+			LabelSelector: "app=kubernaut-agent",
 		})
-		if err != nil {
-			_, _ = fmt.Fprintf(writer, "      [Poll %d/%d] Error listing HAPI pods: %v\n", pollCount, maxPolls, err)
+		if err != nil || len(pods.Items) == 0 {
 			return false
 		}
-		if len(pods.Items) == 0 {
-			_, _ = fmt.Fprintf(writer, "      [Poll %d/%d] No HAPI pods found\n", pollCount, maxPolls)
-			return false
-		}
-
-		// Debug: Show pod status every 4 polls (~20 seconds)
 		for _, pod := range pods.Items {
-			if pollCount%4 == 0 {
-				_, _ = fmt.Fprintf(writer, "      [Poll %d/%d] HAPI pod '%s': Phase=%s, Ready=",
-					pollCount, maxPolls, pod.Name, pod.Status.Phase)
-				isReady := false
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady {
-						_, _ = fmt.Fprintf(writer, "%s", condition.Status)
-						if condition.Status != corev1.ConditionTrue {
-							_, _ = fmt.Fprintf(writer, " (Reason: %s, Message: %s)", condition.Reason, condition.Message)
-						}
-						isReady = condition.Status == corev1.ConditionTrue
-						break
-					}
-				}
-				if !isReady {
-					// Show container statuses for debugging
-					for _, containerStatus := range pod.Status.ContainerStatuses {
-						if !containerStatus.Ready {
-							_, _ = fmt.Fprintf(writer, "\n         Container '%s': Ready=%t, RestartCount=%d",
-								containerStatus.Name, containerStatus.Ready, containerStatus.RestartCount)
-							if containerStatus.State.Waiting != nil {
-								_, _ = fmt.Fprintf(writer, ", Waiting: %s (%s)",
-									containerStatus.State.Waiting.Reason, containerStatus.State.Waiting.Message)
-							}
-							if containerStatus.State.Terminated != nil {
-								_, _ = fmt.Fprintf(writer, ", Terminated: ExitCode=%d, Reason=%s",
-									containerStatus.State.Terminated.ExitCode, containerStatus.State.Terminated.Reason)
-							}
-						}
-					}
-				}
-				_, _ = fmt.Fprintf(writer, "\n")
-			}
-
 			if pod.Status.Phase == corev1.PodRunning {
 				for _, condition := range pod.Status.Conditions {
 					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
@@ -1038,8 +987,8 @@ func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath stri
 			}
 		}
 		return false
-	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "HolmesGPT-API pod should become ready")
-	_, _ = fmt.Fprintf(writer, "   ✅ HolmesGPT-API ready\n")
+	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "Kubernaut Agent pod should become ready")
+	_, _ = fmt.Fprintf(writer, "   ✅ Kubernaut Agent ready\n")
 
 	// Wait for AIAnalysis controller pod to be ready
 	// Note: Coverage-instrumented binaries may take longer to start

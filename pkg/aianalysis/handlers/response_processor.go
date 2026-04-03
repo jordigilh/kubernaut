@@ -37,7 +37,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -66,7 +66,7 @@ func NewResponseProcessor(log logr.Logger, m *metrics.Metrics, auditClient Audit
 // ProcessIncidentResponse processes the IncidentResponse from generated client
 // BR-AI-009: Reset failure counter on successful API call
 // BR-HAPI-197: Check needs_human_review before proceeding
-func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	// BR-AI-009: Reset failure counter on successful API call
 	analysis.Status.ConsecutiveFailures = 0
 
@@ -268,7 +268,7 @@ func extractDetectedLabels(m map[string]interface{}) *sharedtypes.DetectedLabels
 
 // handleWorkflowResolutionFailureFromIncident handles workflow resolution failure from IncidentResponse
 // BR-HAPI-197: Workflow resolution failed, human must intervene
-func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	hasSelectedWorkflow := resp.SelectedWorkflow.Set && !resp.SelectedWorkflow.Null
 	humanReviewReason := ""
 	if resp.HumanReviewReason.Set && !resp.HumanReviewReason.Null {
@@ -384,7 +384,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 
 // handleProblemResolvedFromIncident handles problem self-resolved from IncidentResponse
 // BR-HAPI-200: Problem confirmed resolved, no workflow needed
-func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	p.log.Info("Problem confirmed resolved, no workflow needed",
 		"confidence", resp.Confidence,
 		"warnings", resp.Warnings,
@@ -435,7 +435,7 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 // #388: Alert is benign — condition may be present but is harmless (e.g., orphaned PVCs).
 // Routes to Completed/WorkflowNotNeeded/NotActionable, analogous to handleProblemResolvedFromIncident
 // but semantically distinct: resolved = problem went away, not-actionable = problem is harmless.
-func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	p.log.Info("Alert not actionable, no workflow needed",
 		"confidence", resp.Confidence,
 		"warnings", resp.Warnings,
@@ -483,7 +483,7 @@ func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context,
 
 // handleNoWorkflowTerminalFailure handles terminal failure when no workflow selected with low confidence
 // Issue #29: BR-AI-050 - AIAnalysis must detect terminal failure per BR-HAPI-197 AC-4
-func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	p.log.Info("No workflow selected, terminal failure",
 		"confidence", resp.Confidence,
 		"warnings", resp.Warnings,
@@ -536,7 +536,7 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 
 // handleLowConfidenceFailure handles workflow selection with confidence below threshold
 // Issue #28: BR-HAPI-197 AC-4 - AIAnalysis applies confidence threshold (not HAPI)
-func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	const confidenceThreshold = 0.7 // V1.0: global 70% default
 
 	p.log.Info("Low confidence workflow, requires human review",
@@ -717,7 +717,7 @@ func hasNotActionableSignal(warnings []string) bool {
 // with contributing factors, indicating a real problem was identified.
 // #208: When no workflow is selected but a real problem exists, the system should
 // escalate to human review rather than silently completing as "NoActionRequired."
-func hasSubstantiveRCA(rca client.IncidentResponseRootCauseAnalysis) bool {
+func hasSubstantiveRCA(rca agentclient.IncidentResponseRootCauseAnalysis) bool {
 	if len(rca) == 0 {
 		return false
 	}

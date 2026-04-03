@@ -26,14 +26,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // BR-AI-006: HolmesGPT-API client integration
 var _ = Describe("HolmesGPTClient", func() {
 	var (
 		mockServer *httptest.Server
-		hgClient   *client.HolmesGPTClient
+		hgClient   *agentclient.KubernautAgentClient
 		ctx        context.Context
 	)
 
@@ -88,14 +88,14 @@ var _ = Describe("HolmesGPTClient", func() {
 				}))
 
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{
 					BaseURL: mockServer.URL,
 				})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should return valid response", func() {
-				resp, err := hgClient.Investigate(ctx, &client.IncidentRequest{
+				resp, err := hgClient.Investigate(ctx, &agentclient.IncidentRequest{
 					IncidentID:        "test-incident-001",
 					RemediationID:     "test-rem-001",
 					SignalName:        "OOMKilled",
@@ -119,15 +119,15 @@ var _ = Describe("HolmesGPTClient", func() {
 					w.WriteHeader(http.StatusServiceUnavailable)
 				}))
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should return transient error", func() {
-				_, err := hgClient.Investigate(ctx, &client.IncidentRequest{})
+				_, err := hgClient.Investigate(ctx, &agentclient.IncidentRequest{})
 
 				Expect(err).To(HaveOccurred())
-				var apiErr *client.APIError
+				var apiErr *agentclient.APIError
 				Expect(errors.As(err, &apiErr)).To(BeTrue())
 			})
 		})
@@ -139,15 +139,15 @@ var _ = Describe("HolmesGPTClient", func() {
 					w.WriteHeader(http.StatusInternalServerError)
 				}))
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should return transient error", func() {
-				_, err := hgClient.Investigate(ctx, &client.IncidentRequest{})
+				_, err := hgClient.Investigate(ctx, &agentclient.IncidentRequest{})
 
 				Expect(err).To(HaveOccurred())
-				var apiErr *client.APIError
+				var apiErr *agentclient.APIError
 				Expect(errors.As(err, &apiErr)).To(BeTrue())
 			})
 		})
@@ -159,15 +159,15 @@ var _ = Describe("HolmesGPTClient", func() {
 					w.WriteHeader(http.StatusUnauthorized)
 				}))
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should return permanent error", func() {
-				_, err := hgClient.Investigate(ctx, &client.IncidentRequest{})
+				_, err := hgClient.Investigate(ctx, &agentclient.IncidentRequest{})
 
 				Expect(err).To(HaveOccurred())
-				var apiErr *client.APIError
+				var apiErr *agentclient.APIError
 				Expect(errors.As(err, &apiErr)).To(BeTrue())
 			})
 		})
@@ -179,15 +179,15 @@ var _ = Describe("HolmesGPTClient", func() {
 					w.WriteHeader(http.StatusBadRequest)
 				}))
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should return permanent error", func() {
-				_, err := hgClient.Investigate(ctx, &client.IncidentRequest{})
+				_, err := hgClient.Investigate(ctx, &agentclient.IncidentRequest{})
 
 				Expect(err).To(HaveOccurred())
-				var apiErr *client.APIError
+				var apiErr *agentclient.APIError
 				Expect(errors.As(err, &apiErr)).To(BeTrue())
 			})
 		})
@@ -212,12 +212,12 @@ var _ = Describe("HolmesGPTClient", func() {
 					}
 				}))
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should return APIError with session failure details", func() {
-				_, err := hgClient.Investigate(ctx, &client.IncidentRequest{
+				_, err := hgClient.Investigate(ctx, &agentclient.IncidentRequest{
 					IncidentID:        "test-fail-session",
 					RemediationID:     "test-rem-fail",
 					SignalName:        "OOMKilled",
@@ -228,7 +228,7 @@ var _ = Describe("HolmesGPTClient", func() {
 				})
 
 				Expect(err).To(HaveOccurred())
-				var apiErr *client.APIError
+				var apiErr *agentclient.APIError
 				Expect(errors.As(err, &apiErr)).To(BeTrue())
 				Expect(apiErr.StatusCode).To(Equal(500))
 				Expect(apiErr.Message).To(ContainSubstring("LLM provider unavailable"))
@@ -256,7 +256,7 @@ var _ = Describe("HolmesGPTClient", func() {
 					}
 				}))
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -267,7 +267,7 @@ var _ = Describe("HolmesGPTClient", func() {
 					cancel()
 				}()
 
-				_, err := hgClient.Investigate(cancelCtx, &client.IncidentRequest{
+				_, err := hgClient.Investigate(cancelCtx, &agentclient.IncidentRequest{
 					IncidentID:        "test-stuck-session",
 					RemediationID:     "test-rem-stuck",
 					SignalName:        "OOMKilled",
@@ -278,7 +278,7 @@ var _ = Describe("HolmesGPTClient", func() {
 				})
 
 				Expect(err).To(HaveOccurred())
-				var apiErr *client.APIError
+				var apiErr *agentclient.APIError
 				Expect(errors.As(err, &apiErr)).To(BeTrue())
 				Expect(apiErr.Message).To(ContainSubstring("context cancelled"))
 			})
@@ -291,15 +291,15 @@ var _ = Describe("HolmesGPTClient", func() {
 					w.WriteHeader(http.StatusTooManyRequests)
 				}))
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should return transient error", func() {
-				_, err := hgClient.Investigate(ctx, &client.IncidentRequest{})
+				_, err := hgClient.Investigate(ctx, &agentclient.IncidentRequest{})
 
 				Expect(err).To(HaveOccurred())
-				var apiErr *client.APIError
+				var apiErr *agentclient.APIError
 				Expect(errors.As(err, &apiErr)).To(BeTrue())
 			})
 		})

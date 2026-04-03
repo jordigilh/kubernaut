@@ -90,3 +90,52 @@ func BuildHAPIImage(ctx context.Context, serviceName string, writer io.Writer) (
 	_, _ = fmt.Fprintf(writer, "   ✅ HAPI image built: %s\n", localImageName)
 	return localImageName, nil
 }
+
+// BuildKubernautAgentImage builds the Go Kubernaut Agent image for integration tests.
+// Uses the same tag generation and caching pattern as BuildHAPIImage.
+func BuildKubernautAgentImage(ctx context.Context, serviceName string, writer io.Writer) (string, error) {
+	projectRoot := getProjectRoot()
+
+	imageTag := generateInfrastructureImageTag("kubernautagent", serviceName)
+	localImageName := fmt.Sprintf("localhost/kubernautagent:%s", imageTag)
+
+	registry := os.Getenv("IMAGE_REGISTRY")
+	tag := os.Getenv("IMAGE_TAG")
+	_, _ = fmt.Fprintf(writer, "   🔍 Environment check: IMAGE_REGISTRY=%q IMAGE_TAG=%q\n", registry, tag)
+
+	registryImage, pulled, err := tryPullFromRegistry(ctx, "kubernautagent", localImageName, writer)
+	if err != nil {
+		return "", fmt.Errorf("failed during registry pull attempt: %w", err)
+	}
+	if pulled {
+		return registryImage, nil
+	}
+
+	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", localImageName)
+	if checkCmd.Run() == nil {
+		_, _ = fmt.Fprintf(writer, "   ✅ KA image already exists: %s\n", localImageName)
+		return localImageName, nil
+	}
+
+	_, _ = fmt.Fprintf(writer, "   🔨 Building KA image (tag: %s)...\n", imageTag)
+	buildCmd := exec.CommandContext(ctx, "podman", "build",
+		"-t", localImageName,
+		"--force-rm=false",
+		"-f", filepath.Join(projectRoot, "docker", "kubernautagent.Dockerfile"),
+		projectRoot,
+	)
+	buildCmd.Stdout = writer
+	buildCmd.Stderr = writer
+
+	if err := buildCmd.Run(); err != nil {
+		checkAgain := exec.Command("podman", "image", "exists", localImageName)
+		if checkAgain.Run() == nil {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", localImageName)
+			return localImageName, nil
+		}
+		return "", fmt.Errorf("failed to build KA image: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ✅ KA image built: %s\n", localImageName)
+	return localImageName, nil
+}

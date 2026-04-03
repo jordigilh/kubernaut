@@ -14,21 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package client provides the HolmesGPT-API client
-package client
+// Package agentclient provides the Kubernaut Agent OpenAPI client.
+package agentclient
 
-// Generate HolmesGPT-API client from OpenAPI spec
-//
 // To regenerate the client:
 //   1. Ensure ogen is installed: go install github.com/ogen-go/ogen/cmd/ogen@latest
-//   2. Run: go generate ./pkg/holmesgpt/client/
-//   3. Or run: make generate-holmesgpt-client
+//   2. Run: go generate ./pkg/agentclient/
 //
-// The OpenAPI spec is located at: holmesgpt-api/api/openapi.json
+// The OpenAPI spec is located at: api/openapi.json
 //
 // Note: Makefile sets PATH to include $(LOCALBIN) before running go generate
-// This directive tries bin/ogen (from Makefile), then $GOPATH/bin/ogen, then system ogen
-//go:generate sh -c "ogen --target . --package client --clean ../../../holmesgpt-api/api/openapi.json 2>/dev/null || $(go env GOPATH)/bin/ogen --target . --package client --clean ../../../holmesgpt-api/api/openapi.json"
+//go:generate sh -c "ogen --target . --package agentclient --clean ../../../api/openapi.json 2>/dev/null || $(go env GOPATH)/bin/ogen --target . --package agentclient --clean ../../../api/openapi.json"
 
 
 

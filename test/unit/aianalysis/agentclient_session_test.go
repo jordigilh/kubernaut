@@ -26,7 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // BR-AA-HAPI-064: Session-based async pull communication unit tests for HolmesGPTClient.
@@ -34,7 +34,7 @@ import (
 var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 	var (
 		mockServer *httptest.Server
-		hgClient   *client.HolmesGPTClient
+		hgClient   *agentclient.KubernautAgentClient
 		ctx        context.Context
 	)
 
@@ -72,12 +72,12 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 				}))
 
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should return session ID", func() {
-				sessionID, err := hgClient.SubmitInvestigation(ctx, &client.IncidentRequest{
+				sessionID, err := hgClient.SubmitInvestigation(ctx, &agentclient.IncidentRequest{
 					IncidentID:        "test-incident-001",
 					RemediationID:     "test-rem-001",
 					SignalName:        "OOMKilled",
@@ -98,18 +98,18 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 					w.WriteHeader(http.StatusServiceUnavailable)
 				}))
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should return APIError", func() {
-				_, err := hgClient.SubmitInvestigation(ctx, &client.IncidentRequest{
+				_, err := hgClient.SubmitInvestigation(ctx, &agentclient.IncidentRequest{
 					IncidentID:    "test-incident-001",
 					RemediationID: "test-rem-001",
 				})
 
 				Expect(err).To(HaveOccurred())
-				var apiErr *client.APIError
+				var apiErr *agentclient.APIError
 				Expect(errors.As(err, &apiErr)).To(BeTrue())
 			})
 		})
@@ -121,18 +121,18 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 					w.WriteHeader(http.StatusUnauthorized)
 				}))
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should return APIError", func() {
-				_, err := hgClient.SubmitInvestigation(ctx, &client.IncidentRequest{
+				_, err := hgClient.SubmitInvestigation(ctx, &agentclient.IncidentRequest{
 					IncidentID:    "test-incident-001",
 					RemediationID: "test-rem-001",
 				})
 
 				Expect(err).To(HaveOccurred())
-				var apiErr *client.APIError
+				var apiErr *agentclient.APIError
 				Expect(errors.As(err, &apiErr)).To(BeTrue())
 			})
 		})
@@ -156,7 +156,7 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 				}))
 
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -179,7 +179,7 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 				}))
 
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -202,7 +202,7 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 				}))
 
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -210,7 +210,7 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 				_, err := hgClient.PollSession(ctx, "sess-lost")
 
 				Expect(err).To(HaveOccurred())
-				var apiErr *client.APIError
+				var apiErr *agentclient.APIError
 				Expect(errors.As(err, &apiErr)).To(BeTrue())
 				Expect(apiErr.StatusCode).To(Equal(http.StatusNotFound))
 			})
@@ -246,7 +246,7 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 				}))
 
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -271,7 +271,7 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 				}))
 
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -279,7 +279,7 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 				_, err := hgClient.GetSessionResult(ctx, "sess-result-pending")
 
 				Expect(err).To(HaveOccurred())
-				var apiErr *client.APIError
+				var apiErr *agentclient.APIError
 				Expect(errors.As(err, &apiErr)).To(BeTrue())
 				Expect(apiErr.StatusCode).To(Equal(http.StatusConflict))
 			})
@@ -293,7 +293,7 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 				}))
 
 				var err error
-				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -301,7 +301,7 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 				_, err := hgClient.GetSessionResult(ctx, "sess-gone")
 
 				Expect(err).To(HaveOccurred())
-				var apiErr *client.APIError
+				var apiErr *agentclient.APIError
 				Expect(errors.As(err, &apiErr)).To(BeTrue())
 				Expect(apiErr.StatusCode).To(Equal(http.StatusNotFound))
 			})

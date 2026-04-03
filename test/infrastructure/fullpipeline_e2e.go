@@ -40,7 +40,7 @@ import (
 // Deploys ALL Kubernaut services in a single Kind cluster to test the complete
 // remediation lifecycle end-to-end:
 //
-//   Event → Gateway → RO → SP → AA → HAPI(MockLLM) → WE(Job) → Notification → EA → EM
+//   Event → Gateway → RO → SP → AA → KA(MockLLM) → WE(Job) → Notification → EA → EM
 //
 // Services deployed (13):
 //   1. PostgreSQL + Redis (infrastructure)
@@ -64,7 +64,7 @@ import (
 // Port Allocation (DD-TEST-001 v2.7):
 //   Gateway:     NodePort 30080 (event-exporter webhook delivery)
 //   DataStorage: NodePort 30081 (workflow seeding + audit queries)
-//   Mock LLM:    ClusterIP only (internal, accessed by HAPI)
+//   Mock LLM:    ClusterIP only (internal, accessed by Kubernaut Agent)
 //
 // Image Build Strategy:
 //   CI/CD mode (IMAGE_REGISTRY+IMAGE_TAG set): Skip build+load, Kind pulls on-demand
@@ -76,7 +76,7 @@ import (
 
 // skipMockLLM returns true when the SKIP_MOCK_LLM environment variable is set
 // to any non-empty value. When true, the Mock LLM service is NOT built, deployed,
-// or checked for readiness. Use this for local development where HAPI connects
+// or checked for readiness. Use this for local development where Kubernaut Agent connects
 // to a real LLM (e.g., Vertex AI). CI/CD pipelines leave this unset so Mock LLM
 // provides a fully self-contained test environment.
 func skipMockLLM() bool {
@@ -103,7 +103,7 @@ var fullPipelineImageConfigs = []E2EImageConfig{
 	{ServiceName: "notification", ImageName: "kubernaut/notification", DockerfilePath: "docker/notification-controller.Dockerfile"},
 	{ServiceName: "datastorage", ImageName: "kubernaut/datastorage", DockerfilePath: "docker/data-storage.Dockerfile"},
 	{ServiceName: "authwebhook", ImageName: "authwebhook", DockerfilePath: "docker/authwebhook.Dockerfile"},
-	{ServiceName: "holmesgpt-api", ImageName: "kubernaut/holmesgpt-api", DockerfilePath: "holmesgpt-api/Dockerfile"},
+	{ServiceName: "kubernautagent", ImageName: "kubernaut/kubernautagent", DockerfilePath: "docker/kubernautagent.Dockerfile"},
 	{ServiceName: "mock-llm", ImageName: "kubernaut/mock-llm", DockerfilePath: "test/services/mock-llm/Dockerfile", BuildContextPath: "test/services/mock-llm"},
 	{ServiceName: "effectivenessmonitor", ImageName: "kubernaut/effectivenessmonitor", DockerfilePath: "docker/effectivenessmonitor-controller.Dockerfile"},
 }
@@ -127,7 +127,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 Full Pipeline E2E Infrastructure (Issue #39)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "  Pipeline: Event → Gateway → RO → SP → AA → HAPI → WE(Job) → Notification")
+	_, _ = fmt.Fprintln(writer, "  Pipeline: Event → Gateway → RO → SP → AA → KA → WE(Job) → Notification")
 	_, _ = fmt.Fprintln(writer, "  Strategy: Build (3 parallel) → Cluster → Load → Deploy → Seed → Verify")
 	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-001 v2.7: Gateway :30080, DataStorage :30081")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -248,7 +248,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		"remediationorchestrator-controller",
 		"authwebhook",
 		"workflowexecution-controller",
-		"holmesgpt-api-sa",
+		"kubernaut-agent-sa",
 		"effectivenessmonitor-controller", // ADR-EM-001: EM needs DataStorage audit access
 	}
 	for _, sa := range auditServices {
@@ -327,7 +327,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	//
 	// After DataStorage is ready, deploy everything that only depends on DS
 	// in parallel (Wave A). Then deploy services that depend on Wave A outputs
-	// (Wave B: HAPI → MockLLM, EM → Prometheus+AM, event-exporter → Gateway).
+	// (Wave B: KA → MockLLM, EM → Prometheus+AM, event-exporter → Gateway).
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🚀 PHASE 7: Parallel service deployment (Wave A + Wave B)...")
 	phase7Start := time.Now()
@@ -355,20 +355,20 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		name string
 		err  error
 	}
-	// Wave A: 5 controllers + Gateway + HAPI RBAC + MockLLM + Prometheus + AlertManager = up to 11
-	// Wave B: HAPI + EM + event-exporter = 3
+	// Wave A: 5 controllers + Gateway + KA RBAC + MockLLM + Prometheus + AlertManager = up to 11
+	// Wave B: KA + EM + event-exporter = 3
 	// Total capacity = 14 (generous upper bound)
 	allResults := make(chan waveResult, 16)
 
 	// ── Wave A: Deploy in parallel (no inter-dependency beyond DataStorage) ──
 	_, _ = fmt.Fprintln(writer, "  Wave A: deploying services in parallel...")
 
-	// A1: HAPI RBAC (prerequisite for HAPI, fast kubectl apply)
+	// A1: Kubernaut Agent RBAC (prerequisite for KA, fast kubectl apply)
 	go func() {
-		allResults <- waveResult{"HAPI-RBAC", deployHAPIServiceRBAC(ctx, namespace, kubeconfigPath, writer)}
+		allResults <- waveResult{"KA-RBAC", deployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer)}
 	}()
 
-	// A2: Mock LLM (HAPI depends on this)
+	// A2: Mock LLM (Kubernaut Agent depends on this)
 	go func() {
 		defer close(mockLLMReady)
 		if skipMockLLM() {
@@ -442,32 +442,11 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 
 	// ── Wave B: Deploy after specific Wave A dependencies are ready ──
 
-	// B1: HAPI — wait for Mock LLM (or external LLM if SKIP_MOCK_LLM is set)
-	// Issue #390: Inject prometheus/metrics toolset into SDK ConfigMap.
-	// Prometheus is deployed in Wave A and guaranteed ready before this point.
-	// Issue #393: Callers build LLM settings; deployHAPIOnly is LLM-agnostic.
+	// B1: Kubernaut Agent — wait for Mock LLM
 	go func() {
 		<-mockLLMReady
-		prometheusToolsets := `    toolsets:
-      prometheus/metrics:
-        enabled: true
-        config:
-          prometheus_url: "http://prometheus-svc:9090"
-`
-		var llmSettings hapiLLMDeploymentSettings
-		if skipMockLLM() {
-			var buildErr error
-			llmSettings, buildErr = buildExternalLLMSettings(kubeconfigPath, namespace, prometheusToolsets, writer)
-			if buildErr != nil {
-				allResults <- waveResult{"HAPI", fmt.Errorf("failed to configure external LLM: %w", buildErr)}
-				return
-			}
-		} else {
-			llmSettings = buildMockLLMSettings(namespace, prometheusToolsets)
-		}
-		err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, builtImages["holmesgpt-api"], writer,
-			HAPIDeployOpts{LLMSettings: llmSettings})
-		allResults <- waveResult{"HAPI", err}
+		err := deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], writer)
+		allResults <- waveResult{"KubernautAgent", err}
 	}()
 
 	// B2: EM controller — wait for Prometheus + AlertManager
@@ -485,8 +464,8 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}()
 
 	// ── Collect all results ──
-	// Wave A: HAPI-RBAC + MockLLM + Prom+AM(1) + 5 controllers + Gateway = 9
-	// Wave B: HAPI + EM + event-exporter = 3
+	// Wave A: KA-RBAC + MockLLM + Prom+AM(1) + 5 controllers + Gateway = 9
+	// Wave B: KubernautAgent + EM + event-exporter = 3
 	expectedResults := 12
 	var deployErrors []error
 	for i := 0; i < expectedResults; i++ {
@@ -575,8 +554,8 @@ func buildFullPipelineImages(writer io.Writer) (map[string]string, error) {
 		}
 		wg.Add(1)
 		cfg := baseCfg // capture loop variable
-		// HAPI doesn't support Go coverage instrumentation (Python service)
-		if cfg.ServiceName != "holmesgpt-api" && cfg.ServiceName != "mock-llm" {
+		// Mock LLM doesn't need Go coverage instrumentation
+		if cfg.ServiceName != "mock-llm" {
 			cfg.EnableCoverage = enableCoverage
 		}
 
@@ -1048,7 +1027,7 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 	// List of deployments that must be ready
 	deployments := []string{
 		"datastorage",
-		"holmesgpt-api",
+		"kubernaut-agent",
 		"gateway",
 		"event-exporter",
 		"mock-slack",   // Accepts Slack webhook POSTs so notifications reach terminal phase

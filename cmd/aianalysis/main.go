@@ -50,7 +50,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	aistatus "github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
-	client "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 var (
@@ -134,22 +134,20 @@ func main() {
 	}
 
 	// ========================================
-	// BR-AI-007: Wire HolmesGPT-API client for Investigating phase
+	// BR-AI-007: Wire Kubernaut Agent client for Investigating phase
 	// DD-HAPI-003: Using generated OpenAPI client for type safety and contract compliance
 	// ========================================
 	// BR-AA-HAPI-064: HTTP client timeout for session submit/poll/result calls.
-	// With asyncio.to_thread on the HAPI side, 202 responses are instant,
-	// but a generous timeout guards against network latency edge cases.
-	setupLog.Info("Creating HolmesGPT-API client (generated)",
-		"url", cfg.HolmesGPT.URL,
-		"timeout", cfg.HolmesGPT.Timeout,
-		"sessionPollInterval", cfg.HolmesGPT.SessionPollInterval)
-	holmesGPTClient, err := client.NewHolmesGPTClient(client.Config{
-		BaseURL: cfg.HolmesGPT.URL,
-		Timeout: cfg.HolmesGPT.Timeout,
+	setupLog.Info("Creating Kubernaut Agent client",
+		"url", cfg.Agent.URL,
+		"timeout", cfg.Agent.Timeout,
+		"sessionPollInterval", cfg.Agent.SessionPollInterval)
+	agentClient, err := agentclient.NewKubernautAgentClient(agentclient.Config{
+		BaseURL: cfg.Agent.URL,
+		Timeout: cfg.Agent.Timeout,
 	})
 	if err != nil {
-		setupLog.Error(err, "failed to create HolmesGPT-API client")
+		setupLog.Error(err, "failed to create Kubernaut Agent client")
 		os.Exit(1)
 	}
 
@@ -231,10 +229,10 @@ func main() {
 	// ========================================
 	controllerLog := ctrl.Log.WithName("controllers").WithName("AIAnalysis")
 	eventRecorder := mgr.GetEventRecorderFor("aianalysis-controller")
-	investigatingHandler := handlers.NewInvestigatingHandler(holmesGPTClient, controllerLog, aianalysisMetrics, auditClient,
+	investigatingHandler := handlers.NewInvestigatingHandler(agentClient, controllerLog, aianalysisMetrics, auditClient,
 		handlers.WithRecorder(eventRecorder),                              // DD-EVENT-001: Session lifecycle events
 		handlers.WithSessionMode(),                                        // BR-AA-HAPI-064: Async submit/poll/result flow
-		handlers.WithSessionPollInterval(cfg.HolmesGPT.SessionPollInterval)) // BR-AA-HAPI-064.8: From config
+		handlers.WithSessionPollInterval(cfg.Agent.SessionPollInterval)) // BR-AA-HAPI-064.8: From config
 	analyzingHandler := handlers.NewAnalyzingHandler(regoEvaluator, controllerLog, aianalysisMetrics, auditClient).
 		WithConfidenceThreshold(cfg.Rego.ConfidenceThreshold) // #225: operator-configurable threshold
 

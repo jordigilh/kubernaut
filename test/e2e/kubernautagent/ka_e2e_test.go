@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // Kubernaut Agent E2E Tests — #433
@@ -33,7 +33,7 @@ import (
 //
 // These tests validate API contract parity between the Go Kubernaut Agent
 // and the retired Python HAPI service. The same ogen-generated client is
-// used (pkg/holmesgpt/client) to ensure wire-level compatibility.
+// used (pkg/agentclient) to ensure wire-level compatibility.
 
 var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e", "ka", "parity"), func() {
 

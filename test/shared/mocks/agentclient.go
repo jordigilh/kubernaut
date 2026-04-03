@@ -23,7 +23,7 @@ import (
 	"sync"
 
 	"github.com/go-faster/jx"
-	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // MockHolmesGPTClient is a mock implementation of HolmesGPTClientInterface for unit tests.
@@ -32,16 +32,16 @@ import (
 // BR-AA-HAPI-064: Extended with async session methods
 type MockHolmesGPTClient struct {
 	// InvestigateFunc allows tests to customize the Investigate behavior
-	InvestigateFunc func(ctx context.Context, req *client.IncidentRequest) (*client.IncidentResponse, error)
+	InvestigateFunc func(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error)
 
 	// CallCount tracks how many times Investigate was called
 	CallCount int
 
 	// LastRequest stores the last request passed to Investigate
-	LastRequest *client.IncidentRequest
+	LastRequest *agentclient.IncidentRequest
 
 	// Response is the default response to return (if InvestigateFunc is nil)
-	Response *client.IncidentResponse
+	Response *agentclient.IncidentResponse
 
 	// Err is the default error to return
 	Err error
@@ -51,13 +51,13 @@ type MockHolmesGPTClient struct {
 	// ========================================
 
 	// SubmitInvestigationFunc allows tests to customize SubmitInvestigation behavior
-	SubmitInvestigationFunc func(ctx context.Context, req *client.IncidentRequest) (string, error)
+	SubmitInvestigationFunc func(ctx context.Context, req *agentclient.IncidentRequest) (string, error)
 
 	// PollSessionFunc allows tests to customize PollSession behavior
-	PollSessionFunc func(ctx context.Context, sessionID string) (*client.SessionStatus, error)
+	PollSessionFunc func(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error)
 
 	// GetSessionResultFunc allows tests to customize GetSessionResult behavior
-	GetSessionResultFunc func(ctx context.Context, sessionID string) (*client.IncidentResponse, error)
+	GetSessionResultFunc func(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error)
 
 	// SubmitCallCount tracks how many times SubmitInvestigation was called
 	SubmitCallCount int
@@ -72,7 +72,7 @@ type MockHolmesGPTClient struct {
 	DefaultSessionID string
 
 	// DefaultSessionStatus is returned by PollSession when no func is set
-	DefaultSessionStatus *client.SessionStatus
+	DefaultSessionStatus *agentclient.SessionStatus
 
 	// SubmitErr is the error returned by SubmitInvestigation
 	SubmitErr error
@@ -90,7 +90,7 @@ type MockHolmesGPTClient struct {
 // NewMockHolmesGPTClient creates a new mock HolmesGPT client with default success behavior.
 func NewMockHolmesGPTClient() *MockHolmesGPTClient {
 	return &MockHolmesGPTClient{
-		Response: &client.IncidentResponse{
+		Response: &agentclient.IncidentResponse{
 			IncidentID: "mock-incident-001",
 			Analysis:   "Mock analysis: No issues detected",
 			Confidence: 0.8,
@@ -101,7 +101,7 @@ func NewMockHolmesGPTClient() *MockHolmesGPTClient {
 }
 
 // Investigate implements HolmesGPTClientInterface.
-func (m *MockHolmesGPTClient) Investigate(ctx context.Context, req *client.IncidentRequest) (*client.IncidentResponse, error) {
+func (m *MockHolmesGPTClient) Investigate(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error) {
 	m.CallCount++
 	m.LastRequest = req
 
@@ -113,7 +113,7 @@ func (m *MockHolmesGPTClient) Investigate(ctx context.Context, req *client.Incid
 }
 
 // WithResponse configures the mock to return a specific response.
-func (m *MockHolmesGPTClient) WithResponse(resp *client.IncidentResponse) *MockHolmesGPTClient {
+func (m *MockHolmesGPTClient) WithResponse(resp *agentclient.IncidentResponse) *MockHolmesGPTClient {
 	m.Response = resp
 	m.Err = nil
 	return m
@@ -128,7 +128,7 @@ func (m *MockHolmesGPTClient) WithError(err error) *MockHolmesGPTClient {
 
 // WithSuccessResponse configures the mock to return a successful investigation response.
 func (m *MockHolmesGPTClient) WithSuccessResponse(analysis string, confidence float64, warnings []string) *MockHolmesGPTClient {
-	m.Response = &client.IncidentResponse{
+	m.Response = &agentclient.IncidentResponse{
 		IncidentID: "mock-incident-001",
 		Analysis:   analysis,
 		Confidence: confidence,
@@ -178,18 +178,18 @@ func (m *MockHolmesGPTClient) WithFullResponse(
 	}
 
 	// Build AlternativeWorkflows as []client.AlternativeWorkflow
-	var alternatives []client.AlternativeWorkflow
+	var alternatives []agentclient.AlternativeWorkflow
 	if includeAlternatives && workflowID != "" {
-		alt := client.AlternativeWorkflow{
+		alt := agentclient.AlternativeWorkflow{
 			WorkflowID:     "wf-scale-deployment",
 			Confidence:     0.75,
 			Rationale:      "Consider scaling deployment for resource pressure",
-			ExecutionBundle: client.NewOptNilString("kubernaut.io/workflows/scale:v1.0.0"),
+			ExecutionBundle: agentclient.NewOptNilString("kubernaut.io/workflows/scale:v1.0.0"),
 		}
 		alternatives = append(alternatives, alt)
 	}
 
-	m.Response = &client.IncidentResponse{
+	m.Response = &agentclient.IncidentResponse{
 		IncidentID:           "mock-incident-001",
 		Analysis:             analysis,
 		RootCauseAnalysis:    rcaMap,
@@ -212,7 +212,7 @@ func (m *MockHolmesGPTClient) WithFullResponse(
 // ========================================
 
 // SubmitInvestigation implements HolmesGPTClientInterface for async submit.
-func (m *MockHolmesGPTClient) SubmitInvestigation(ctx context.Context, req *client.IncidentRequest) (string, error) {
+func (m *MockHolmesGPTClient) SubmitInvestigation(ctx context.Context, req *agentclient.IncidentRequest) (string, error) {
 	m.mu.Lock()
 	m.SubmitCallCount++
 	m.LastRequest = req
@@ -234,7 +234,7 @@ func (m *MockHolmesGPTClient) SubmitInvestigation(ctx context.Context, req *clie
 }
 
 // PollSession implements HolmesGPTClientInterface for session polling.
-func (m *MockHolmesGPTClient) PollSession(ctx context.Context, sessionID string) (*client.SessionStatus, error) {
+func (m *MockHolmesGPTClient) PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
 	m.mu.Lock()
 	m.PollCallCount++
 	m.mu.Unlock()
@@ -251,11 +251,11 @@ func (m *MockHolmesGPTClient) PollSession(ctx context.Context, sessionID string)
 		return m.DefaultSessionStatus, nil
 	}
 
-	return &client.SessionStatus{Status: "completed"}, nil
+	return &agentclient.SessionStatus{Status: "completed"}, nil
 }
 
 // GetSessionResult implements HolmesGPTClientInterface for result retrieval.
-func (m *MockHolmesGPTClient) GetSessionResult(ctx context.Context, sessionID string) (*client.IncidentResponse, error) {
+func (m *MockHolmesGPTClient) GetSessionResult(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error) {
 	m.mu.Lock()
 	m.GetResultCallCount++
 	m.mu.Unlock()
@@ -290,7 +290,7 @@ func (m *MockHolmesGPTClient) WithSessionSubmitError(err error) *MockHolmesGPTCl
 
 // WithSessionPollStatus configures the mock to return a specific session status on poll.
 func (m *MockHolmesGPTClient) WithSessionPollStatus(status string) *MockHolmesGPTClient {
-	m.DefaultSessionStatus = &client.SessionStatus{Status: status}
+	m.DefaultSessionStatus = &agentclient.SessionStatus{Status: status}
 	m.PollErr = nil
 	return m
 }
@@ -312,15 +312,15 @@ func (m *MockHolmesGPTClient) WithSessionResultError(err error) *MockHolmesGPTCl
 func (m *MockHolmesGPTClient) WithSessionPollSequence(statuses []string) *MockHolmesGPTClient {
 	callIndex := 0
 	mu := &sync.Mutex{}
-	m.PollSessionFunc = func(ctx context.Context, sessionID string) (*client.SessionStatus, error) {
+	m.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		if callIndex >= len(statuses) {
-			return &client.SessionStatus{Status: statuses[len(statuses)-1]}, nil
+			return &agentclient.SessionStatus{Status: statuses[len(statuses)-1]}, nil
 		}
 		status := statuses[callIndex]
 		callIndex++
-		return &client.SessionStatus{Status: status}, nil
+		return &agentclient.SessionStatus{Status: status}, nil
 	}
 	return m
 }
@@ -330,14 +330,14 @@ func (m *MockHolmesGPTClient) WithSessionPollSequence(statuses []string) *MockHo
 func (m *MockHolmesGPTClient) WithSessionPollFailThenRecover(failCount int, sessionLostErr error) *MockHolmesGPTClient {
 	callIndex := 0
 	mu := &sync.Mutex{}
-	m.PollSessionFunc = func(ctx context.Context, sessionID string) (*client.SessionStatus, error) {
+	m.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		callIndex++
 		if callIndex <= failCount {
 			return nil, sessionLostErr
 		}
-		return &client.SessionStatus{Status: "completed"}, nil
+		return &agentclient.SessionStatus{Status: "completed"}, nil
 	}
 	return m
 }
@@ -373,7 +373,7 @@ func (m *MockHolmesGPTClient) AssertNotCalled() error {
 
 // WithHumanReviewRequired configures the mock to return needs_human_review=true
 func (m *MockHolmesGPTClient) WithHumanReviewRequired(warnings []string) *MockHolmesGPTClient {
-	m.Response = &client.IncidentResponse{
+	m.Response = &agentclient.IncidentResponse{
 		IncidentID: "mock-incident-001",
 		Analysis:   "Mock analysis: Human review required",
 		Confidence: 0.5,
@@ -387,7 +387,7 @@ func (m *MockHolmesGPTClient) WithHumanReviewRequired(warnings []string) *MockHo
 
 // WithHumanReviewReasonEnum configures the mock to return needs_human_review=true with reason enum.
 func (m *MockHolmesGPTClient) WithHumanReviewReasonEnum(reason string, warnings []string) *MockHolmesGPTClient {
-	m.Response = &client.IncidentResponse{
+	m.Response = &agentclient.IncidentResponse{
 		IncidentID: "mock-incident-001",
 		Analysis:   "Mock analysis: Human review required",
 		Confidence: 0.5,
@@ -395,7 +395,7 @@ func (m *MockHolmesGPTClient) WithHumanReviewReasonEnum(reason string, warnings 
 		Warnings:   warnings,
 	}
 	m.Response.NeedsHumanReview.SetTo(true)
-	m.Response.HumanReviewReason.SetTo(client.HumanReviewReason(reason))
+	m.Response.HumanReviewReason.SetTo(agentclient.HumanReviewReason(reason))
 	m.Err = nil
 	return m
 }
@@ -407,7 +407,7 @@ func (m *MockHolmesGPTClient) WithHumanReviewReasonEnum(reason string, warnings 
 // WithProblemResolved configures the mock to return a "problem resolved" response.
 // BR-HAPI-200 Outcome A: needs_human_review=false, selected_workflow=null, confidence >= 0.7
 func (m *MockHolmesGPTClient) WithProblemResolved(confidence float64, warnings []string, analysis string) *MockHolmesGPTClient {
-	m.Response = &client.IncidentResponse{
+	m.Response = &agentclient.IncidentResponse{
 		IncidentID: "mock-incident-001",
 		Analysis:   analysis,
 		Confidence: confidence,
@@ -424,7 +424,7 @@ func (m *MockHolmesGPTClient) WithProblemResolved(confidence float64, warnings [
 // #388 Outcome D: actionable=false, needs_human_review=false, selected_workflow=null, confidence >= 0.7
 func (m *MockHolmesGPTClient) WithNotActionable(confidence float64, rcaSummary string, rcaSeverity string, contributingFactors []string) *MockHolmesGPTClient {
 	rcaMap := BuildMockRCA(rcaSummary, rcaSeverity, contributingFactors)
-	m.Response = &client.IncidentResponse{
+	m.Response = &agentclient.IncidentResponse{
 		IncidentID:        "mock-incident-001",
 		Analysis:          rcaSummary,
 		RootCauseAnalysis: rcaMap,
@@ -451,7 +451,7 @@ func (m *MockHolmesGPTClient) WithProblemResolvedAndRCA(confidence float64, warn
 	cfBytes, _ := json.Marshal(contributingFactors)
 	rcaMap["contributing_factors"] = jx.Raw(cfBytes)
 
-	m.Response = &client.IncidentResponse{
+	m.Response = &agentclient.IncidentResponse{
 		IncidentID:        "mock-incident-001",
 		Analysis:          analysis,
 		RootCauseAnalysis: rcaMap,
@@ -479,7 +479,7 @@ func (m *MockHolmesGPTClient) WithHumanReviewRequiredWithPartialResponse(
 	// Build partial workflow
 	swMap := BuildMockSelectedWorkflow(workflowID, containerImage, 0.5, "")
 
-	m.Response = &client.IncidentResponse{
+	m.Response = &agentclient.IncidentResponse{
 		IncidentID:        "mock-incident-001",
 		Analysis:          "Mock analysis: Human review required",
 		RootCauseAnalysis: rcaMap,
@@ -488,7 +488,7 @@ func (m *MockHolmesGPTClient) WithHumanReviewRequiredWithPartialResponse(
 		Warnings:          warnings,
 	}
 	m.Response.NeedsHumanReview.SetTo(true)
-	m.Response.HumanReviewReason.SetTo(client.HumanReviewReason(reason))
+	m.Response.HumanReviewReason.SetTo(agentclient.HumanReviewReason(reason))
 	if len(swMap) > 0 {
 		m.Response.SelectedWorkflow.SetTo(swMap)
 	}
@@ -504,9 +504,9 @@ func (m *MockHolmesGPTClient) WithHumanReviewAndHistory(
 	validationAttempts []map[string]interface{},
 ) *MockHolmesGPTClient {
 	// Convert validation attempts to client.ValidationAttempt structs
-	var history []client.ValidationAttempt
+	var history []agentclient.ValidationAttempt
 	for _, attempt := range validationAttempts {
-		va := client.ValidationAttempt{
+		va := agentclient.ValidationAttempt{
 			Attempt:   int(attempt["attempt"].(int)),
 			IsValid:   attempt["is_valid"].(bool),
 			Timestamp: attempt["timestamp"].(string),
@@ -514,7 +514,7 @@ func (m *MockHolmesGPTClient) WithHumanReviewAndHistory(
 
 		// Handle optional workflow_id
 		if wfID, ok := attempt["workflow_id"].(string); ok && wfID != "" {
-			va.WorkflowID = client.NewOptNilString(wfID)
+			va.WorkflowID = agentclient.NewOptNilString(wfID)
 		}
 
 		// Handle errors array
@@ -525,7 +525,7 @@ func (m *MockHolmesGPTClient) WithHumanReviewAndHistory(
 		history = append(history, va)
 	}
 
-	m.Response = &client.IncidentResponse{
+	m.Response = &agentclient.IncidentResponse{
 		IncidentID:                "mock-incident-001",
 		Analysis:                  "Mock analysis: Human review required after LLM self-correction",
 		Confidence:                0.5,
@@ -534,7 +534,7 @@ func (m *MockHolmesGPTClient) WithHumanReviewAndHistory(
 		ValidationAttemptsHistory: history,
 	}
 	m.Response.NeedsHumanReview.SetTo(true)
-	m.Response.HumanReviewReason.SetTo(client.HumanReviewReason(reason))
+	m.Response.HumanReviewReason.SetTo(agentclient.HumanReviewReason(reason))
 
 	m.Err = nil
 	return m

@@ -32,7 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	hgptclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -338,8 +338,8 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-120 * time.Second)},
 				}
 
-				mockClient.PollSessionFunc = func(ctx context.Context, sessionID string) (*hgptclient.SessionStatus, error) {
-					return &hgptclient.SessionStatus{
+				mockClient.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
+					return &agentclient.SessionStatus{
 						Status: "failed",
 						Error:  "LLM provider error: rate limit exceeded",
 					}, nil
@@ -401,7 +401,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				}
 
 				// PollSession returns 404 (session lost)
-				mockClient.WithSessionPollError(&hgptclient.APIError{StatusCode: 404, Message: "Session not found"})
+				mockClient.WithSessionPollError(&agentclient.APIError{StatusCode: 404, Message: "Session not found"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -443,7 +443,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-2 * time.Minute)},
 				}
 
-				mockClient.WithSessionPollError(&hgptclient.APIError{StatusCode: 404, Message: "Session not found"})
+				mockClient.WithSessionPollError(&agentclient.APIError{StatusCode: 404, Message: "Session not found"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -466,7 +466,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
 				}
 
-				mockClient.WithSessionPollError(&hgptclient.APIError{StatusCode: 404, Message: "Session not found"})
+				mockClient.WithSessionPollError(&agentclient.APIError{StatusCode: 404, Message: "Session not found"})
 
 				_, err := handler.Handle(ctx, analysis)
 
@@ -508,7 +508,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 			It("should stay Investigating and retry with backoff", func() {
 				analysis := createSessionTestAnalysis()
 
-				mockClient.WithSessionSubmitError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithSessionSubmitError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -524,7 +524,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 			It("should fail immediately with PermanentError", func() {
 				analysis := createSessionTestAnalysis()
 
-				mockClient.WithSessionSubmitError(&hgptclient.APIError{StatusCode: 401, Message: "Unauthorized"})
+				mockClient.WithSessionSubmitError(&agentclient.APIError{StatusCode: 401, Message: "Unauthorized"})
 
 				_, err := handler.Handle(ctx, analysis)
 
@@ -546,7 +546,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 
 				// Poll says completed, but result returns 409
 				mockClient.WithSessionPollStatus("completed")
-				mockClient.WithSessionResultError(&hgptclient.APIError{StatusCode: 409, Message: "Conflict: result not ready"})
+				mockClient.WithSessionResultError(&agentclient.APIError{StatusCode: 409, Message: "Conflict: result not ready"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -568,7 +568,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		// UT-AA-064-014: Async client constructor sets 30s timeout
 		Context("UT-AA-064-014: Async client sets 30s timeout (not 10m workaround)", func() {
 			It("should configure 30s HTTP timeout for short-lived async calls", func() {
-				cfg := hgptclient.Config{
+				cfg := agentclient.Config{
 					BaseURL: "http://localhost:8080",
 					Timeout: 30 * time.Second,
 				}
