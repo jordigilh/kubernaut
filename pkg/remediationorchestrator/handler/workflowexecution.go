@@ -118,13 +118,21 @@ func (h *WorkflowExecutionHandler) HandleStatus(
 		return h.transitionToVerifying(ctx, rr, "Remediated") // CRD enum: Remediated, NoActionRequired, ManualReviewRequired
 
 	case workflowexecutionv1.PhaseFailed:
+		// Issue #190: Branch on Deduplicated — do NOT terminate the RR.
+		// Instead, record the original WFE for cross-WE result inheritance.
+		if we.Status.FailureDetails != nil &&
+			we.Status.FailureDetails.Reason == workflowexecutionv1.FailureReasonDeduplicated {
+			logger.Info("WorkflowExecution failed as Deduplicated, setting DeduplicatedByWE",
+				"originalWFE", we.Status.DeduplicatedBy)
+
+			rr.Status.DeduplicatedByWE = we.Status.DeduplicatedBy
+			if err := h.client.Status().Update(ctx, rr); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to set DeduplicatedByWE: %w", err)
+			}
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
+
 		logger.Info("WorkflowExecution failed, transitioning to Failed")
-
-		// Note: WorkflowExecutionComplete condition (false) is set by the reconciler
-		// via DD-PERF-001 atomic status update before calling transitionToFailed.
-		// This handler focuses on phase transition logic only.
-
-		// Delegate to reconciler's transitionToFailed() for audit emission (DD-AUDIT-003)
 		return h.transitionToFailed(ctx, rr, remediationv1.FailurePhaseWorkflowExecution, fmt.Errorf("WorkflowExecution failed"))
 
 	case "":
