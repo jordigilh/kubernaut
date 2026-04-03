@@ -183,6 +183,16 @@ const (
 	// Type: Warning
 	// Priority: P2
 	EventReasonConsecutiveFailureBlocked = "ConsecutiveFailureBlocked"
+
+	// EventReasonInheritedCompleted is emitted when a deduplicated RR inherits
+	// Completed from the original WorkflowExecution (Issue #190).
+	// Type: Normal
+	EventReasonInheritedCompleted = "InheritedCompleted"
+
+	// EventReasonInheritedFailed is emitted when a deduplicated RR inherits
+	// Failed from the original WorkflowExecution or when the reference is dangling (Issue #190).
+	// Type: Warning
+	EventReasonInheritedFailed = "InheritedFailed"
 )
 
 // ============================================================

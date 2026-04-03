@@ -151,7 +151,7 @@ const (
 
 // FailurePhase represents the orchestration phase where a failure occurred.
 // BR-COMMON-001: PascalCase for CRD phase values.
-// +kubebuilder:validation:Enum=Configuration;SignalProcessing;AIAnalysis;Approval;WorkflowExecution;Blocked
+// +kubebuilder:validation:Enum=Configuration;SignalProcessing;AIAnalysis;Approval;WorkflowExecution;Blocked;Deduplicated
 type FailurePhase string
 
 const (
@@ -161,6 +161,10 @@ const (
 	FailurePhaseApproval          FailurePhase = "Approval"
 	FailurePhaseWorkflowExecution FailurePhase = "WorkflowExecution"
 	FailurePhaseBlocked           FailurePhase = "Blocked"
+	// FailurePhaseDeduplicated indicates an RR that inherited a failure from a
+	// deduplicated WorkflowExecution collision (Issue #190). Excluded from
+	// consecutive failure counting per BR-ORCH-042.
+	FailurePhaseDeduplicated FailurePhase = "Deduplicated"
 )
 
 // BlockReason represents the reason why a RemediationRequest is blocked (non-terminal).
@@ -547,6 +551,14 @@ type RemediationRequestStatus struct {
 	// Only populated on parent RRs that have duplicates
 	DuplicateRefs []string `json:"duplicateRefs,omitempty"`
 
+	// DeduplicatedByWE stores the name of the original WorkflowExecution whose
+	// outcome this RR is waiting to inherit (Issue #190). Set when the RR's own
+	// WFE was marked Failed/Deduplicated. Used as a field index key for the
+	// cross-WE watch to trigger reconciliation when the original WFE completes.
+	// Immutable after initial assignment.
+	// +optional
+	DeduplicatedByWE string `json:"deduplicatedByWE,omitempty"`
+
 	// ========================================
 	// BLOCKED PHASE TRACKING (DD-RO-002 Blocked Phase Semantics)
 	// V1.0 Update: Unified blocking for all temporary wait states
@@ -614,7 +626,7 @@ type RemediationRequestStatus struct {
 	// FailurePhase indicates which orchestration phase failed.
 	// Only set when OverallPhase = Failed.
 	// +optional
-	// +kubebuilder:validation:Enum=Configuration;SignalProcessing;AIAnalysis;Approval;WorkflowExecution;Blocked
+	// +kubebuilder:validation:Enum=Configuration;SignalProcessing;AIAnalysis;Approval;WorkflowExecution;Blocked;Deduplicated
 	FailurePhase *FailurePhase `json:"failurePhase,omitempty"`
 
 	// FailureReason provides a human-readable reason for the failure

@@ -746,7 +746,7 @@ _Appears in:_
 - [RemediationRequestStatus](#remediationrequeststatus)
 
 _Validation:_
-- Enum: [Configuration SignalProcessing AIAnalysis Approval WorkflowExecution Blocked]
+- Enum: [Configuration SignalProcessing AIAnalysis Approval WorkflowExecution Blocked Deduplicated]
 
 | Value| Description|
 | ---| ---|
@@ -756,6 +756,7 @@ _Validation:_
 | `Approval`||
 | `WorkflowExecution`||
 | `Blocked`||
+| `Deduplicated`| FailurePhaseDeduplicated indicates an RR that inherited a failure from a<br />deduplicated WorkflowExecution collision . Excluded from<br />consecutive failure counting per .|
 
 
 ### InvestigationSession
@@ -1318,6 +1319,7 @@ _Appears in:_
 | `duplicateOf`| _string_| DuplicateOf references the parent RemediationRequest that this is a duplicate of<br />V1.0: Set when OverallPhase = "Blocked" with BlockReason = "DuplicateInProgress"<br />Old behavior: Set when OverallPhase = "Skipped" due to resource lock deduplication|
 | `duplicateCount`| _integer_| DuplicateCount tracks the number of duplicate remediations that were skipped<br />because this RR's workflow was already executing (resource lock)<br />Only populated on parent RRs that have duplicates|
 | `duplicateRefs`| _string array_| DuplicateRefs lists the names of RemediationRequests that were skipped<br />because they targeted the same resource as this RR<br />Only populated on parent RRs that have duplicates|
+| `deduplicatedByWE`| _string_| DeduplicatedByWE stores the name of the original WorkflowExecution whose<br />outcome this RR is waiting to inherit . Set when the RR's own<br />WFE was marked Failed/Deduplicated. Used as a field index key for the<br />cross-WE watch to trigger reconciliation when the original WFE completes.<br />Immutable after initial assignment.|
 | `blockReason`| _[BlockReason](#blockreason)_| BlockReason indicates why this remediation is blocked (non-terminal)<br />Valid values:<br />- "ConsecutiveFailures": Max consecutive failures reached, in cooldown <br />- "ResourceBusy": Another workflow is using the target resource<br />- "RecentlyRemediated": Target recently remediated, cooldown active <br />- "ExponentialBackoff": Pre-execution failures, backoff window active <br />- "DuplicateInProgress": Duplicate of an active remediation<br />Only set when OverallPhase = "Blocked"|
 | `blockMessage`| _string_| BlockMessage provides human-readable details about why remediation is blocked<br />Examples:<br />- "Another workflow is running on target deployment/my-app: wfe-abc123"<br />- "Recently remediated. Cooldown: 3m15s remaining"<br />- "Backoff active. Next retry: 2025-12-15T10:30:00Z"<br />- "Duplicate of active remediation rr-original-abc123"<br />- "3 consecutive failures. Cooldown expires: 2025-12-15T11:00:00Z"<br />Only set when OverallPhase = "Blocked"|
 | `blockedUntil`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| BlockedUntil indicates when blocking expires (time-based blocks)<br />Set for: ConsecutiveFailures, RecentlyRemediated, ExponentialBackoff<br />Nil for: ResourceBusy, DuplicateInProgress (event-based, cleared when condition resolves)<br />After this time passes, RR will retry or transition to Failed (for ConsecutiveFailures)|
@@ -1962,6 +1964,7 @@ _Appears in:_
 | `ephemeralCredentialIDs`| _integer array_| EphemeralCredentialIDs stores AWX credential IDs created by the ansible<br />executor for cleanup after execution . Written via the status<br />subresource to avoid violating spec immutability .|
 | `executionEngine`| _string_| ExecutionEngine is the backend engine resolved from the DS workflow catalog<br />at runtime by the WE controller. Set once during Pending phase via<br />WorkflowQuerier.GetWorkflowSchemaMetadata; immutable thereafter.<br />Values: "tekton", "job", "ansible".|
 | `serviceAccountName`| _string_| ServiceAccountName is the pre-existing ServiceAccount resolved from the<br />DS workflow catalog at runtime by the WE controller .<br />Set once during Pending phase via ResolveWorkflowCatalogMetadata; immutable<br />thereafter. If empty, K8s assigns the namespace's default SA (Job/Tekton)<br />or the Ansible executor falls back to the controller's in-cluster credentials.|
+| `deduplicatedBy`| _string_| DeduplicatedBy stores the name of the original WorkflowExecution that owns<br />the conflicting execution resource. Set atomically inside AtomicStatusUpdate<br />when FailureDetails.Reason == Deduplicated (, M5 constraint).<br />Immutable after initial assignment.|
 | `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions provide detailed status information|
 
 

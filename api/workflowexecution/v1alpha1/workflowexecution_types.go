@@ -327,6 +327,13 @@ type WorkflowExecutionStatus struct {
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
+	// DeduplicatedBy stores the name of the original WorkflowExecution that owns
+	// the conflicting execution resource. Set atomically inside AtomicStatusUpdate
+	// when FailureDetails.Reason == Deduplicated (Issue #190, M5 constraint).
+	// Immutable after initial assignment.
+	// +optional
+	DeduplicatedBy string `json:"deduplicatedBy,omitempty"`
+
 	// Conditions provide detailed status information
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -358,7 +365,7 @@ type FailureDetails struct {
 
 	// Reason is a Kubernetes-style reason code
 	// Used for deterministic failure classification by RO
-	// +kubebuilder:validation:Enum=OOMKilled;DeadlineExceeded;Forbidden;ResourceExhausted;ConfigurationError;ImagePullBackOff;TaskFailed;UnsupportedEngine;Unknown
+	// +kubebuilder:validation:Enum=OOMKilled;DeadlineExceeded;Forbidden;ResourceExhausted;ConfigurationError;ImagePullBackOff;TaskFailed;UnsupportedEngine;Unknown;Deduplicated
 	Reason string `json:"reason"`
 
 	// Message is human-readable error message (for logging/UI/notifications)
@@ -503,6 +510,11 @@ const (
 
 	// FailureReasonUnknown for unclassified failures
 	FailureReasonUnknown = "Unknown"
+
+	// FailureReasonDeduplicated indicates an execution-time resource collision
+	// where another WorkflowExecution already owns the target execution resource.
+	// Issue #190: Enables result inheritance instead of blind re-run.
+	FailureReasonDeduplicated = "Deduplicated"
 )
 
 // ========================================
