@@ -73,6 +73,7 @@ The test plan covers six functional areas:
 
 ### 2.2 Cross-References
 
+- [TP-433-WIR-v1.0](./TP-433-WIR-v1.0.md) — Wiring and adapter integration test plan (33 scenarios)
 - [Testing Strategy](../../../.cursor/rules/03-testing-strategy.mdc)
 - [Testing Guidelines](../../development/business-requirements/TESTING_GUIDELINES.md)
 - Issue #433: Kubernaut Agent Go rewrite
@@ -137,6 +138,7 @@ The test plan covers six functional areas:
 - **TLS transport** (#493): Orthogonal; encrypts transport, does not affect investigation logic
 - **MCP transport** (v1.4): v1.3 includes only the skeleton; real SSE/stdio transport deferred
 - **CaMeL dual-LLM** (v1.4): Architectural defense layer deferred to next release
+- **AWS SigV4 Prometheus auth** (v1.4): AWS AMP SigV4 signing deferred; Azure/Vertex providers covered in Phase 7
 
 ### 4.3 Design Decisions
 
@@ -230,7 +232,7 @@ Full service (`cmd/kubernautagent/main.go` + all packages) deployed in Kind clus
 | Business Requirement | Unit Tests | Integration Tests | E2E Tests |
 |---------------------|-----------|------------------|-----------|
 | BR-HAPI-433 (parent) | UT-KA-433-001..003, 006..009 | IT-KA-433-001..004, 010..012 | E2E-KA-433-001..009 |
-| BR-HAPI-433-001 (Framework) | UT-KA-433-004 | IT-KA-433-005..009 | E2E-KA-433-001..002 |
+| BR-HAPI-433-001 (Framework) | UT-KA-433-004, 200..204 | IT-KA-433-005..009, 050 | E2E-KA-433-001..002 |
 | BR-HAPI-433-002 (K8s Toolset) | UT-KA-433-029..032 | IT-KA-433-014..024 | E2E-KA-433-001..002 |
 | BR-HAPI-433-003 (Prometheus) | UT-KA-433-033..034, 194..196 | IT-KA-433-025..032, 040..042 | E2E-KA-433-001..002 |
 | BR-HAPI-433-004 (Security) | UT-KA-433-014, 023..027, 035..059 | IT-KA-433-006, 038..039 | E2E-KA-433-001..002 |
@@ -243,7 +245,7 @@ Full service (`cmd/kubernautagent/main.go` + all packages) deployed in Kind clus
 
 ## 8. Test Scenarios
 
-### 8.1 Tier 1: Unit Tests (59 scenarios)
+### 8.1 Tier 1: Unit Tests (64 scenarios)
 
 #### Phase 1 — Core Engine (13 UT)
 
@@ -332,7 +334,17 @@ Full service (`cmd/kubernautagent/main.go` + all packages) deployed in Kind clus
 | UT-KA-433-058 | I7: Below-threshold calls proceed normally (no false positives) | BR-HAPI-433-004 (I7) |
 | UT-KA-433-059 | I7: Configurable thresholds from config | BR-HAPI-433-004 (I7) |
 
-### 8.2 Tier 2: Integration Tests (39 scenarios)
+#### Phase 7 — LLM Provider Extension: Azure/Vertex (5 UT)
+
+| ID | Business Outcome Under Test | BR |
+|----|----------------------------|-----|
+| UT-KA-433-200 | `New("azure", ...)` creates LangChainGo adapter without error using `openai.WithAPIType(APITypeAzure)` | BR-HAPI-433-001 |
+| UT-KA-433-201 | `New("vertex", ...)` creates LangChainGo adapter without error using Vertex AI client | BR-HAPI-433-001 |
+| UT-KA-433-202 | Azure adapter uses configured `APIVersion` in LangChainGo client options | BR-HAPI-433-001 |
+| UT-KA-433-203 | Vertex adapter uses configured `GCPProjectID` and `GCPRegion` | BR-HAPI-433-001 |
+| UT-KA-433-204 | `New("unknown_provider", ...)` returns descriptive error matching "unsupported LLM provider" (regression guard) | BR-HAPI-433-001 |
+
+### 8.2 Tier 2: Integration Tests (40 scenarios)
 
 #### Phase 1 — Core Engine (4 IT)
 
@@ -400,6 +412,12 @@ Full service (`cmd/kubernautagent/main.go` + all packages) deployed in Kind clus
 |----|----------------------------|-----|
 | IT-KA-433-038 | Off-phase tool call rejected with error returned as tool message to LLM | BR-HAPI-433-004 (I4) |
 | IT-KA-433-039 | Phase transition correctly updates available tool set mid-investigation | BR-HAPI-433-004 (I4) |
+
+#### Phase 7 — LLM Provider Extension: Azure (1 IT)
+
+| ID | Business Outcome Under Test | BR |
+|----|----------------------------|-----|
+| IT-KA-433-050 | Azure adapter `Chat` sends request to configured endpoint via `httptest.Server` (verifies API routing with APIType=Azure) | BR-HAPI-433-001 |
 
 ### 8.3 Tier 3: E2E Tests (8 scenarios)
 
@@ -476,5 +494,7 @@ Five checkpoints are integrated into the TDD implementation plan. Each is a hard
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Last Updated**: 2026-03-04
+**Change Log**:
+- v1.1: Added Phase 7 (LLM Provider Extension: Azure/Vertex) — 5 UT + 1 IT. Added TP-433-WIR cross-reference. Documented SigV4 deferral to v1.4. Updated scenario counts (64 UT, 40 IT, 8 E2E = 112 total).
