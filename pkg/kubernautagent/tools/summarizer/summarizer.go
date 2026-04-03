@@ -18,9 +18,11 @@ package summarizer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 )
 
 // Summarizer uses a secondary LLM call to shorten tool output that exceeds
@@ -64,4 +66,31 @@ func (s *Summarizer) MaybeSummarize(ctx context.Context, toolName string, result
 	}
 
 	return resp.Message.Content, nil
+}
+
+// Wrap returns a tool that delegates to inner but applies MaybeSummarize
+// to the output before returning it to the LLM.
+func (s *Summarizer) Wrap(inner tools.Tool) tools.Tool {
+	return &wrappedTool{inner: inner, summarizer: s}
+}
+
+type wrappedTool struct {
+	inner      tools.Tool
+	summarizer *Summarizer
+}
+
+func (w *wrappedTool) Name() string               { return w.inner.Name() }
+func (w *wrappedTool) Description() string         { return w.inner.Description() }
+func (w *wrappedTool) Parameters() json.RawMessage { return w.inner.Parameters() }
+
+func (w *wrappedTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
+	result, err := w.inner.Execute(ctx, args)
+	if err != nil {
+		return "", err
+	}
+	summarized, sErr := w.summarizer.MaybeSummarize(ctx, w.inner.Name(), result)
+	if sErr != nil {
+		return result, nil
+	}
+	return summarized, nil
 }

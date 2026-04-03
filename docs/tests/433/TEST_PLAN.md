@@ -232,7 +232,7 @@ Full service (`cmd/kubernautagent/main.go` + all packages) deployed in Kind clus
 | BR-HAPI-433 (parent) | UT-KA-433-001..003, 006..009 | IT-KA-433-001..004, 010..012 | E2E-KA-433-001..009 |
 | BR-HAPI-433-001 (Framework) | UT-KA-433-004 | IT-KA-433-005..009 | E2E-KA-433-001..002 |
 | BR-HAPI-433-002 (K8s Toolset) | UT-KA-433-029..032 | IT-KA-433-014..024 | E2E-KA-433-001..002 |
-| BR-HAPI-433-003 (Prometheus) | UT-KA-433-033..034 | IT-KA-433-025..032 | E2E-KA-433-001..002 |
+| BR-HAPI-433-003 (Prometheus) | UT-KA-433-033..034, 194..196 | IT-KA-433-025..032, 040..042 | E2E-KA-433-001..002 |
 | BR-HAPI-433-004 (Security) | UT-KA-433-014, 023..027, 035..059 | IT-KA-433-006, 038..039 | E2E-KA-433-001..002 |
 | BR-HAPI-197 (Human Review) | UT-KA-433-016, 027 | IT-KA-433-008 | — |
 | BR-HAPI-211 (Credential Scrub) | UT-KA-433-048..053 | — | — |
@@ -292,12 +292,15 @@ Full service (`cmd/kubernautagent/main.go` + all packages) deployed in Kind clus
 | UT-KA-433-031 | Registry ToolsForPhase returns correct tool subset per phase | BR-HAPI-433-004 (I4) |
 | UT-KA-433-032 | Registry rejects execution of unregistered tool name | BR-HAPI-433-004 (I4) |
 
-#### Phase 4 — Prometheus + Custom Tools (6 UT)
+#### Phase 4 — Prometheus + Custom Tools (9 UT)
 
 | ID | Business Outcome Under Test | BR |
 |----|----------------------------|-----|
 | UT-KA-433-033 | Prometheus client config parses URL, headers, timeout, size limit | BR-HAPI-433-003 |
 | UT-KA-433-034 | Response exceeding size limit (30000 chars) is truncated with topk() hint | BR-HAPI-433-003 |
+| UT-KA-433-194 | `get_series` rejects empty `match` with descriptive error | BR-HAPI-433-003 |
+| UT-KA-433-195 | `ClientConfig` defaults `MetadataLimit=100` and `MetadataTimeWindowHrs=1` when zero | BR-HAPI-433-003 |
+| UT-KA-433-196 | `get_series` schema declares `start` and `end` as optional properties with `match` required | BR-HAPI-433-003 |
 | UT-KA-433-035 | Sanitization pipeline executes G4 before I1 in correct order | BR-HAPI-433-004 |
 | UT-KA-433-036 | Pipeline triggers llm_summarize when output exceeds threshold | BR-HAPI-433-002 |
 | UT-KA-433-037 | Below-threshold tool output passes through summarizer unchanged | BR-HAPI-433-002 |
@@ -370,7 +373,7 @@ Full service (`cmd/kubernautagent/main.go` + all packages) deployed in Kind clus
 | IT-KA-433-023 | kubectl_previous_logs_all_containers retrieves previous from all containers | BR-HAPI-433-002 |
 | IT-KA-433-024 | kubectl_logs_grep filters log lines matching pattern | BR-HAPI-433-002 |
 
-#### Phase 4 — Prometheus + Custom Tools (13 IT)
+#### Phase 4 — Prometheus + Custom Tools (16 IT)
 
 | ID | Business Outcome Under Test | BR |
 |----|----------------------------|-----|
@@ -382,6 +385,9 @@ Full service (`cmd/kubernautagent/main.go` + all packages) deployed in Kind clus
 | IT-KA-433-030 | get_metric_metadata returns metric help/type info | BR-HAPI-433-003 |
 | IT-KA-433-031 | Prometheus client respects timeout configuration | BR-HAPI-433-003 |
 | IT-KA-433-032 | Prometheus client sends provider-specific auth headers | BR-HAPI-433-003 |
+| IT-KA-433-040 | `get_series` sends `match[]`, `limit`, `start`, `end` to `/api/v1/series` | BR-HAPI-433-003 |
+| IT-KA-433-041 | `get_series` defaults `start` to 1h ago and `end` to now when not provided | BR-HAPI-433-003 |
+| IT-KA-433-042 | `get_series` injects `_truncated` hint when response contains exactly `MetadataLimit` series | BR-HAPI-433-003 |
 | IT-KA-433-033 | list_available_actions queries DataStorage API | BR-HAPI-433 (DD-HAPI-017) |
 | IT-KA-433-034 | list_workflows searches DataStorage with criteria | BR-HAPI-433 (DD-HAPI-017) |
 | IT-KA-433-035 | get_workflow retrieves specific workflow definition | BR-HAPI-433 (DD-HAPI-017) |
@@ -395,7 +401,7 @@ Full service (`cmd/kubernautagent/main.go` + all packages) deployed in Kind clus
 | IT-KA-433-038 | Off-phase tool call rejected with error returned as tool message to LLM | BR-HAPI-433-004 (I4) |
 | IT-KA-433-039 | Phase transition correctly updates available tool set mid-investigation | BR-HAPI-433-004 (I4) |
 
-### 8.3 Tier 3: E2E Tests (9 scenarios)
+### 8.3 Tier 3: E2E Tests (8 scenarios)
 
 | ID | Business Outcome Under Test | BR |
 |----|----------------------------|-----|
@@ -406,8 +412,9 @@ Full service (`cmd/kubernautagent/main.go` + all packages) deployed in Kind clus
 | E2E-KA-433-005 | GET /result returns completed investigation JSON matching API contract | BR-HAPI-433 (FR-07) |
 | E2E-KA-433-006 | GET /health returns 200 within 5s of container start | BR-HAPI-433 (NFR) |
 | E2E-KA-433-007 | GET /metrics exposes Prometheus metrics (go runtime + request counters) | BR-HAPI-433 (NFR) |
-| E2E-KA-433-008 | Container image size <= 80MB | BR-HAPI-433 (NFR) |
 | E2E-KA-433-009 | Trivy scan reports 0 Python-inherited CVEs | BR-HAPI-433 (NFR) |
+
+> **Removed**: E2E-KA-433-008 (container image size <= 80MB) — NFR validated in CI build pipeline, not a functional E2E test.
 
 ---
 

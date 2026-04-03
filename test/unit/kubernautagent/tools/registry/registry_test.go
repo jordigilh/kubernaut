@@ -30,14 +30,21 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
+type nopResolver struct{}
+
+func (n *nopResolver) Get(_ context.Context, _, _, _ string) (interface{}, error) { return nil, nil }
+func (n *nopResolver) List(_ context.Context, _, _ string) (interface{}, error)   { return nil, nil }
+
+var _ k8s.ResourceResolver = (*nopResolver)(nil)
+
 var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 
 	Describe("UT-KA-433-029: Baseline K8s tools satisfy Tool interface", func() {
-		It("should create 11 baseline tools implementing the Tool interface", func() {
+		It("should create 18 baseline tools implementing the Tool interface", func() {
 			client := fake.NewSimpleClientset()
-			allTools := k8s.NewAllTools(client)
+			allTools := k8s.NewAllTools(client, &nopResolver{})
 			Expect(allTools).NotTo(BeNil(), "NewAllTools should not return nil")
-			Expect(allTools).To(HaveLen(11), "should create exactly 11 baseline K8s tools")
+			Expect(allTools).To(HaveLen(19), "should create exactly 19 baseline K8s tools")
 
 			for _, t := range allTools {
 				Expect(t.Name()).NotTo(BeEmpty(), "tool Name() should not be empty")
@@ -47,7 +54,7 @@ var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 
 		It("should have unique names across all tools", func() {
 			client := fake.NewSimpleClientset()
-			allTools := k8s.NewAllTools(client)
+			allTools := k8s.NewAllTools(client, &nopResolver{})
 			Expect(allTools).NotTo(BeNil())
 
 			names := make(map[string]bool)
@@ -59,7 +66,7 @@ var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 
 		It("should match the canonical tool name list", func() {
 			client := fake.NewSimpleClientset()
-			allTools := k8s.NewAllTools(client)
+			allTools := k8s.NewAllTools(client, &nopResolver{})
 			Expect(allTools).NotTo(BeNil())
 
 			actualNames := make([]string, len(allTools))
@@ -77,7 +84,7 @@ var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 		It("should register and resolve each tool by name", func() {
 			reg := registry.New()
 			client := fake.NewSimpleClientset()
-			allTools := k8s.NewAllTools(client)
+			allTools := k8s.NewAllTools(client, &nopResolver{})
 			Expect(allTools).NotTo(BeNil())
 
 			for _, t := range allTools {
@@ -85,7 +92,7 @@ var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 			}
 
 			all := reg.All()
-			Expect(all).To(HaveLen(11), "registry should contain 11 tools")
+			Expect(all).To(HaveLen(19), "registry should contain 19 tools")
 
 			for _, expected := range k8s.AllToolNames {
 				tool, err := reg.Get(expected)
@@ -99,7 +106,7 @@ var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 		It("should return only RCA-phase tools for PhaseRCA", func() {
 			reg := registry.New()
 			client := fake.NewSimpleClientset()
-			for _, t := range k8s.NewAllTools(client) {
+			for _, t := range k8s.NewAllTools(client, &nopResolver{}) {
 				reg.Register(t)
 			}
 

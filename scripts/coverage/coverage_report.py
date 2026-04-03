@@ -85,6 +85,16 @@ GO_SERVICE_CONFIG = {
         "unit_exclude": r"/(audit|status)/",
         "int_include": r"/(audit|status)/",
     },
+    "kubernautagent": {
+        "pkg_pattern": "/pkg/kubernautagent/",
+        # KA uses internal/kubernautagent/ (not internal/controller/).
+        # internal_pattern is treated like pkg_pattern for filtering
+        # (subject to exclude/include), unlike controller_pattern which
+        # is always included for integration tests.
+        "internal_pattern": "/internal/kubernautagent/",
+        "unit_exclude": r"/(enrichment/enricher\.go:|investigator/investigator\.go:|server/handler\.go:|session/manager\.go:|tools/k8s/tools\.go:|tools/prometheus/client\.go:|tools/mcp/provider\.go:|llm/client\.go:)",
+        "int_include": r"/(enrichment/enricher\.go:|investigator/investigator\.go:|server/handler\.go:|session/manager\.go:|tools/k8s/tools\.go:|tools/prometheus/client\.go:|tools/mcp/provider\.go:|llm/client\.go:)",
+    },
     "effectivenessmonitor": {
         "pkg_pattern": "/pkg/effectivenessmonitor/",
         "controller_pattern": "/internal/controller/effectivenessmonitor/",
@@ -186,12 +196,15 @@ def calculate_coverage(entries: list[CoverageEntry]) -> str:
 
 
 def _matches_service_pkg(
-    key: str, pkg_pattern: str, controller_pattern: Optional[str] = None
+    key: str, pkg_pattern: str, controller_pattern: Optional[str] = None,
+    internal_pattern: Optional[str] = None,
 ) -> bool:
-    """Check if a coverage entry key matches the service's package or controller patterns."""
+    """Check if a coverage entry key matches the service's package, controller, or internal patterns."""
     if pkg_pattern in key:
         return True
     if controller_pattern and controller_pattern in key:
+        return True
+    if internal_pattern and internal_pattern in key:
         return True
     return False
 
@@ -200,17 +213,24 @@ def filter_go_entries(
     entries: list[CoverageEntry],
     pkg_pattern: str,
     controller_pattern: Optional[str] = None,
+    internal_pattern: Optional[str] = None,
     exclude_pattern: Optional[str] = None,
     include_pattern: Optional[str] = None,
 ) -> list[CoverageEntry]:
     """Filter Go coverage entries by package and inclusion/exclusion patterns.
 
-    For unit tests: only pkg_pattern entries are considered (controller code
-    requires k8s API and cannot be unit-tested).
+    For unit tests: pkg_pattern and internal_pattern entries are considered,
+    subject to exclude/include filtering. Controller code requires k8s API
+    and cannot be unit-tested.
 
-    For integration/E2E: both pkg_pattern and controller_pattern entries are
-    included. The exclude/include filters apply to pkg entries; controller
-    entries are always included (all controller code is integration-testable).
+    For integration/E2E: pkg_pattern, internal_pattern, and controller_pattern
+    entries are included. The exclude/include filters apply to pkg and internal
+    entries; controller entries are always included (all controller code is
+    integration-testable).
+
+    internal_pattern is for services like kubernautagent where internal code
+    lives at internal/<service>/ instead of internal/controller/<service>/ and
+    contains both unit-testable and integration-testable code.
     """
     filtered = []
     for e in entries:
@@ -219,9 +239,10 @@ def filter_go_entries(
             continue
 
         is_pkg = pkg_pattern in e.key
+        is_internal = internal_pattern is not None and internal_pattern in e.key
         is_controller = controller_pattern is not None and controller_pattern in e.key
 
-        if not is_pkg and not is_controller:
+        if not is_pkg and not is_internal and not is_controller:
             continue
 
         # Controller entries: always include (no exclude/include filtering)
@@ -229,7 +250,7 @@ def filter_go_entries(
             filtered.append(e)
             continue
 
-        # Package entries: apply exclude/include patterns
+        # Package and internal entries: apply exclude/include patterns
         if exclude_pattern and re.search(exclude_pattern, e.key):
             continue
         if include_pattern and not re.search(include_pattern, e.key):
@@ -297,25 +318,28 @@ def calc_go_service_tier(service: str, tier: str) -> str:
 
     pkg_pattern = config["pkg_pattern"]
     controller_pattern = config.get("controller_pattern")
+    internal_pattern = config.get("internal_pattern")
 
     if tier == "unit":
-        # Unit tests: only pkg code — controllers need k8s API
+        # Unit tests: pkg + internal code (subject to exclude), controllers excluded
         filtered = filter_go_entries(
-            entries, pkg_pattern, exclude_pattern=config["unit_exclude"]
+            entries, pkg_pattern, internal_pattern=internal_pattern,
+            exclude_pattern=config["unit_exclude"],
         )
         return calculate_coverage(filtered)
     elif tier == "integration":
-        # Integration tests: pkg integration code + ALL controller code
+        # Integration tests: pkg + internal integration code + ALL controller code
         filtered = filter_go_entries(
             entries, pkg_pattern, controller_pattern=controller_pattern,
-            include_pattern=config["int_include"]
+            internal_pattern=internal_pattern,
+            include_pattern=config["int_include"],
         )
         return calculate_coverage(filtered)
     elif tier == "e2e":
-        # E2E uses full service coverage (pkg + controller, no sub-tier filtering)
+        # E2E uses full service coverage (pkg + controller + internal, no sub-tier filtering)
         filtered = [
             e for e in entries
-            if _matches_service_pkg(e.key, pkg_pattern, controller_pattern)
+            if _matches_service_pkg(e.key, pkg_pattern, controller_pattern, internal_pattern)
             and not is_generated_code(e.key)
         ]
         return calculate_coverage(filtered)
@@ -337,6 +361,8 @@ def calc_go_service_all_tiers(service: str) -> str:
     pkg_pattern = config["pkg_pattern"]
     controller_pattern = config.get("controller_pattern")
 
+    internal_pattern = config.get("internal_pattern")
+
     # Collect entries from all available tiers
     all_entries = []
     has_real_data = False
@@ -346,10 +372,10 @@ def calc_go_service_all_tiers(service: str) -> str:
         entries = parse_go_coverage_file(covfile)
         if entries:
             has_real_data = True
-            # Filter to service's package + controller and exclude generated code
+            # Filter to service's package + controller + internal and exclude generated code
             filtered = [
                 e for e in entries
-                if _matches_service_pkg(e.key, pkg_pattern, controller_pattern)
+                if _matches_service_pkg(e.key, pkg_pattern, controller_pattern, internal_pattern)
                 and not is_generated_code(e.key)
             ]
             all_entries.append(filtered)

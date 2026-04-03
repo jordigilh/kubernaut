@@ -27,20 +27,26 @@ import (
 
 const defaultSizeLimit = 30000
 const defaultTimeout = 30 * time.Second
+const defaultMetadataLimit = 100
+const defaultMetadataTimeWindowHrs = 1
 
 // ClientConfig holds Prometheus client settings.
 type ClientConfig struct {
-	URL       string            `yaml:"url"`
-	Headers   map[string]string `yaml:"headers"`
-	Timeout   time.Duration     `yaml:"timeout"`
-	SizeLimit int               `yaml:"size_limit"`
+	URL                   string            `yaml:"url"`
+	Headers               map[string]string `yaml:"headers"`
+	Timeout               time.Duration     `yaml:"timeout"`
+	SizeLimit             int               `yaml:"size_limit"`
+	MetadataLimit         int               `yaml:"metadata_limit"`
+	MetadataTimeWindowHrs int               `yaml:"metadata_time_window_hrs"`
 }
 
 // DefaultClientConfig returns production defaults.
 func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
-		Timeout:   defaultTimeout,
-		SizeLimit: defaultSizeLimit,
+		Timeout:               defaultTimeout,
+		SizeLimit:             defaultSizeLimit,
+		MetadataLimit:         defaultMetadataLimit,
+		MetadataTimeWindowHrs: defaultMetadataTimeWindowHrs,
 	}
 }
 
@@ -58,12 +64,23 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = defaultTimeout
 	}
+	if cfg.MetadataLimit <= 0 {
+		cfg.MetadataLimit = defaultMetadataLimit
+	}
+	if cfg.MetadataTimeWindowHrs <= 0 {
+		cfg.MetadataTimeWindowHrs = defaultMetadataTimeWindowHrs
+	}
 	return &Client{
 		config: cfg,
 		httpClient: &http.Client{
 			Timeout: cfg.Timeout,
 		},
 	}, nil
+}
+
+// Config returns the client's configuration.
+func (c *Client) Config() ClientConfig {
+	return c.config
 }
 
 // doGet performs an HTTP GET to the given Prometheus API path with query params.

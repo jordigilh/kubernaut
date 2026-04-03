@@ -26,11 +26,46 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 )
 
-// AllToolNames lists the 3 custom tool names for DataStorage interaction.
+var listAvailableActionsSchema = json.RawMessage(`{
+	"type": "object",
+	"properties": {},
+	"additionalProperties": false
+}`)
+
+var listWorkflowsSchemaJSON = json.RawMessage(`{
+	"type": "object",
+	"properties": {
+		"action_type": {"type": "string", "description": "The action type to filter workflows by"},
+		"offset":      {"type": "integer", "description": "Pagination offset"},
+		"limit":       {"type": "integer", "description": "Maximum number of results to return"}
+	},
+	"required": ["action_type"]
+}`)
+
+var getWorkflowSchemaJSON = json.RawMessage(`{
+	"type": "object",
+	"properties": {
+		"workflow_id": {"type": "string", "description": "UUID of the workflow to retrieve"}
+	},
+	"required": ["workflow_id"]
+}`)
+
+// ListAvailableActionsSchema returns the JSON schema for list_available_actions.
+func ListAvailableActionsSchema() json.RawMessage { return listAvailableActionsSchema }
+
+// ListWorkflowsSchema returns the JSON schema for list_workflows.
+func ListWorkflowsSchema() json.RawMessage { return listWorkflowsSchemaJSON }
+
+// GetWorkflowSchema returns the JSON schema for get_workflow.
+func GetWorkflowSchema() json.RawMessage { return getWorkflowSchemaJSON }
+
+// AllToolNames lists the 5 custom tool names for DataStorage interaction and resource context.
 var AllToolNames = []string{
 	"list_available_actions",
 	"list_workflows",
 	"get_workflow",
+	"get_namespaced_resource_context",
+	"get_cluster_resource_context",
 }
 
 // NewAllTools creates the 3 custom tools using the ogen-generated DS client.
@@ -48,7 +83,7 @@ type listActionsTool struct{ ds *ogenclient.Client }
 
 func (t *listActionsTool) Name() string               { return "list_available_actions" }
 func (t *listActionsTool) Description() string         { return "List available remediation action types from DataStorage" }
-func (t *listActionsTool) Parameters() json.RawMessage { return nil }
+func (t *listActionsTool) Parameters() json.RawMessage { return listAvailableActionsSchema }
 
 func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	res, err := t.ds.ListAvailableActions(ctx, ogenclient.ListAvailableActionsParams{
@@ -71,7 +106,7 @@ type listWorkflowsTool struct{ ds *ogenclient.Client }
 
 func (t *listWorkflowsTool) Name() string               { return "list_workflows" }
 func (t *listWorkflowsTool) Description() string         { return "Search for workflows by action type in DataStorage" }
-func (t *listWorkflowsTool) Parameters() json.RawMessage { return nil }
+func (t *listWorkflowsTool) Parameters() json.RawMessage { return listWorkflowsSchemaJSON }
 
 func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
@@ -104,7 +139,7 @@ type getWorkflowTool struct{ ds *ogenclient.Client }
 
 func (t *getWorkflowTool) Name() string               { return "get_workflow" }
 func (t *getWorkflowTool) Description() string         { return "Get a specific workflow definition by ID" }
-func (t *getWorkflowTool) Parameters() json.RawMessage { return nil }
+func (t *getWorkflowTool) Parameters() json.RawMessage { return getWorkflowSchemaJSON }
 
 func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {

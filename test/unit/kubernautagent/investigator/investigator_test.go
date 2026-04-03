@@ -27,16 +27,27 @@ import (
 var _ = Describe("Kubernaut Agent Investigator — #433", func() {
 
 	Describe("UT-KA-433-014: Phase definitions map tools to correct phases (I4)", func() {
-		It("should assign K8s, Prometheus, and TodoWrite tools to RCA phase", func() {
+		It("should assign K8s, Prometheus, resource context, and TodoWrite tools to RCA phase", func() {
 			ptm := investigator.DefaultPhaseToolMap()
 			Expect(ptm).NotTo(BeNil(), "DefaultPhaseToolMap should not return nil")
 			rcaTools := ptm[katypes.PhaseRCA]
-			Expect(rcaTools).To(HaveLen(18), "RCA phase should have 11 K8s + 6 Prometheus + 1 todo_write")
+			Expect(rcaTools).To(HaveLen(33), "RCA phase should have 19 K8s + 2 metrics + 1 fetch_pod_logs + 8 Prometheus + 2 resource context + 1 todo_write")
 			Expect(rcaTools).To(ContainElement("kubectl_describe"))
 			Expect(rcaTools).To(ContainElement("kubectl_logs"))
 			Expect(rcaTools).To(ContainElement("execute_prometheus_instant_query"))
 			Expect(rcaTools).To(ContainElement("execute_prometheus_range_query"))
+			Expect(rcaTools).To(ContainElement("get_namespaced_resource_context"))
+			Expect(rcaTools).To(ContainElement("get_cluster_resource_context"))
 			Expect(rcaTools).To(ContainElement("todo_write"))
+			Expect(rcaTools).To(ContainElement("kubectl_get_by_kind_in_cluster"))
+			Expect(rcaTools).To(ContainElement("kubectl_find_resource"))
+			Expect(rcaTools).To(ContainElement("kubectl_get_yaml"))
+			Expect(rcaTools).To(ContainElement("kubectl_memory_requests_all_namespaces"))
+			Expect(rcaTools).To(ContainElement("kubernetes_jq_query"))
+			Expect(rcaTools).To(ContainElement("kubernetes_count"))
+			Expect(rcaTools).To(ContainElement("kubectl_top_pods"))
+			Expect(rcaTools).To(ContainElement("kubectl_top_nodes"))
+			Expect(rcaTools).To(ContainElement("fetch_pod_logs"))
 		})
 
 		It("should assign workflow discovery tools and TodoWrite to WorkflowDiscovery phase", func() {
@@ -54,6 +65,13 @@ var _ = Describe("Kubernaut Agent Investigator — #433", func() {
 			valTools := ptm[katypes.PhaseValidation]
 			Expect(valTools).To(HaveLen(1))
 			Expect(valTools).To(ContainElement("todo_write"))
+		})
+
+		It("should NOT have resource context tools in WorkflowDiscovery phase", func() {
+			ptm := investigator.DefaultPhaseToolMap()
+			wdTools := ptm[katypes.PhaseWorkflowDiscovery]
+			Expect(wdTools).NotTo(ContainElement("get_namespaced_resource_context"))
+			Expect(wdTools).NotTo(ContainElement("get_cluster_resource_context"))
 		})
 	})
 

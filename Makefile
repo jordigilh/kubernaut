@@ -277,6 +277,19 @@ test-unit-%: ginkgo ensure-coverage-dirs ## Run unit tests for specified service
 		go tool cover -func=coverage_unit_$*.out | grep total || echo "No coverage data"; \
 	fi
 
+# Kubernaut Agent unit tests: internal code lives at internal/kubernautagent/ (not internal/controller/)
+.PHONY: test-unit-kubernautagent
+test-unit-kubernautagent: ginkgo ensure-coverage-dirs ## Run kubernaut agent unit tests (coverpkg: pkg + internal/kubernautagent)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 kubernautagent - Unit Tests ($(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/unit/kubernautagent/...
+	@if [ -f coverage_unit_kubernautagent.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_unit_kubernautagent.out"; \
+		go tool cover -func=coverage_unit_kubernautagent.out | grep total || echo "No coverage data"; \
+	fi
+
 # Gateway unit tests: no internal/controller/gateway/ exists, use pkg-only coverpkg
 .PHONY: test-unit-gateway
 test-unit-gateway: ginkgo ensure-coverage-dirs ## Run gateway unit tests (coverpkg: pkg/gateway only)
@@ -331,6 +344,20 @@ test-integration-%: generate ginkgo setup-envtest ensure-coverage-dirs ## Run in
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_integration_$*.out"; \
 		go tool cover -func=coverage_integration_$*.out | grep total || echo "No coverage data"; \
+	fi
+
+# Kubernaut Agent integration tests: internal code lives at internal/kubernautagent/ (not internal/controller/)
+.PHONY: test-integration-kubernautagent
+test-integration-kubernautagent: generate ginkgo setup-envtest ensure-coverage-dirs ## Run kubernaut agent integration tests (coverpkg: pkg + internal/kubernautagent)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 kubernautagent - Integration Tests ($(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_kubernautagent.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/integration/kubernautagent/...
+	@if [ -f coverage_integration_kubernautagent.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_integration_kubernautagent.out"; \
+		go tool cover -func=coverage_integration_kubernautagent.out | grep total || echo "No coverage data"; \
 	fi
 
 # DataStorage integration tests: exclude generated code from coverage
