@@ -112,10 +112,9 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 					},
 				})
 
-				// Then: Should skip reconciliation (no processing)
+				// Then: Should not modify phase. #265: terminal phases now return RequeueAfter for TTL cleanup.
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.RequeueAfter).To(BeZero(), "Terminal phases should not requeue")
-				Expect(result.RequeueAfter).To(BeZero(), "Terminal phases should not schedule requeue")
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Terminal phases requeue for TTL cleanup (#265)")
 
 				// Verify: Phase remains Completed (not modified)
 				updatedRR := &remediationv1.RemediationRequest{}
@@ -163,9 +162,9 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 					},
 				})
 
-				// Then: Should skip reconciliation
+				// Then: Should not modify phase. #265: terminal phases now return RequeueAfter for TTL cleanup.
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.RequeueAfter).To(BeZero())
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 
 				// Verify: Phase remains Failed
 				updatedRR := &remediationv1.RemediationRequest{}
@@ -213,9 +212,9 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 					},
 				})
 
-				// Then: Should skip reconciliation (terminal phase)
+				// Then: Should not modify phase. #265: terminal phases now return RequeueAfter for TTL cleanup.
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.RequeueAfter).To(BeZero())
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 
 				// Verify: Phase remains Skipped, DuplicateOf preserved
 				updatedRR := &remediationv1.RemediationRequest{}

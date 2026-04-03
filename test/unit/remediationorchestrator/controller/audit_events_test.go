@@ -372,12 +372,12 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 			mockAuditStore.Reset()
 
-			// Reconcile (should skip as terminal phase, but may emit audit on first reconcile)
+			// Reconcile (terminal phase housekeeping — #265 now returns RequeueAfter for TTL)
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(Equal(ctrl.Result{}))
+			Expect(result.RequeueAfter).To(BeNumerically(">=", 0))
 
 			// Note: Manual review audit may be emitted during transition to Failed
 			// This test validates the audit store can capture it

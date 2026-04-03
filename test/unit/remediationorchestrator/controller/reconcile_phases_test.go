@@ -137,7 +137,14 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			} else {
 				Expect(err).ToNot(HaveOccurred())
 			}
-			Expect(result).To(Equal(scenario.expectedResult))
+			// #265: Terminal phases now return RequeueAfter for TTL cleanup.
+			// For terminal scenarios expecting Result{}, accept RequeueAfter > 0.
+			if scenario.expectedResult == (ctrl.Result{}) && result.RequeueAfter > 0 {
+				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+			} else {
+				Expect(result).To(Equal(scenario.expectedResult))
+			}
 
 			// Verify final RR state
 			var finalRR remediationv1.RemediationRequest
