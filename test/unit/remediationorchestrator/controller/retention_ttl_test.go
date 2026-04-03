@@ -163,6 +163,42 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 				"Behavior: RetentionExpiryTime must be set on terminal TimedOut RR")
 		})
 
+		It("UT-RO-265-014: should set RetentionExpiryTime on Cancelled RR", func() {
+			rr := newRemediationRequest("test-rr-cancelled", "default", remediationv1.PhaseCancelled)
+			rr.Status.ObservedGeneration = rr.Generation
+			now := metav1.Now()
+			rr.Status.CompletedAt = &now
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(rr).
+				WithStatusSubresource(&remediationv1.RemediationRequest{}).
+				Build()
+
+			reconciler := prodcontroller.NewReconciler(
+				fakeClient, fakeClient, scheme, nil,
+				record.NewFakeRecorder(20),
+				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				&MockRoutingEngine{},
+			)
+
+			result, err := reconciler.Reconcile(ctx, ctrl.Request{
+				NamespacedName: types.NamespacedName{Name: "test-rr-cancelled", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			updated := &remediationv1.RemediationRequest{}
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-cancelled", Namespace: "default"}, updated)).To(Succeed())
+
+			Expect(updated.Status.RetentionExpiryTime).NotTo(BeNil(),
+				"Behavior: RetentionExpiryTime must be set on terminal Cancelled RR")
+			Expect(updated.Status.RetentionExpiryTime.Time).To(BeTemporally("~", time.Now().Add(24*time.Hour), 5*time.Second),
+				"Accuracy: expiry should be ~24h from now (default retention period)")
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0),
+				"Behavior: must requeue for cleanup after TTL")
+		})
+
 		It("UT-RO-265-004: should NOT set RetentionExpiryTime on non-terminal Pending RR", func() {
 			rr := newRemediationRequest("test-rr-pending", "default", remediationv1.PhasePending)
 			rr.Status.ObservedGeneration = rr.Generation
