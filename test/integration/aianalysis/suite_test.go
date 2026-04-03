@@ -23,13 +23,13 @@ limitations under the License.
 // - BR-AI-003: Rego policy evaluation
 //
 // Test Strategy: Two integration test categories:
-// 1. **Envtest-only tests** (this file): Use mock HAPI for fast controller testing
-// 2. **Real service tests**: Use real HAPI (auto-started)
+// 1. **Envtest-only tests** (this file): Use mock agent client for fast controller testing
+// 2. **Real service tests**: Use real Kubernaut Agent (auto-started)
 //
 // Defense-in-Depth (per 03-testing-strategy.mdc):
-// - Unit tests (70%+): Mock K8s client + mock HAPI
-// - Integration tests (>50%): Real K8s API (envtest) + mock/real HAPI
-// - E2E tests (10-15%): Real K8s API (KIND) + real HAPI
+// - Unit tests (70%+): Mock K8s client + mock agent
+// - Integration tests (>50%): Real K8s API (envtest) + mock/real Kubernaut Agent
+// - E2E tests (10-15%): Real K8s API (KIND) + real Kubernaut Agent
 //
 // DD-TEST-010: Multi-Controller Architecture (Controller-Per-Process Pattern)
 // Infrastructure (AUTO-STARTED in Phase 1, process 1 only):
@@ -84,7 +84,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	hgclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
@@ -106,8 +106,8 @@ var (
 	// DD-AUTH-014: ServiceAccount token for creating authenticated clients
 	serviceAccountToken string
 
-	// Per-process HAPI client (each process gets its own)
-	realHGClient *hgclient.HolmesGPTClient
+	// Per-process agent client (each process gets its own)
+	realAgentClient *agentclient.KubernautAgentClient
 
 	// Per-process Rego evaluator
 	realRegoEvaluator *rego.Evaluator
@@ -225,39 +225,37 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	Expect(err).ToNot(HaveOccurred())
 	GinkgoWriter.Println("✅ ServiceAccount + RBAC created for AIAnalysis → DataStorage")
 
-	// DD-AUTH-014: Grant AIAnalysis controller SA permission to call HAPI
-	// In production: holmesgpt-api-client ClusterRole grants `get` verb on holmesgpt-api resource
-	// In integration: Create similar RBAC for envtest
-	By("Granting AIAnalysis controller SA permission to call HAPI")
+	// DD-AUTH-014: Grant AIAnalysis controller SA permission to call Kubernaut Agent
+	By("Granting AIAnalysis controller SA permission to call Kubernaut Agent")
 	k8sClient, err := client.New(sharedCfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 
-	hapiClientRole := &rbacv1.ClusterRole{
+	agentClientRole := &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "holmesgpt-api-client",
+			Name: "kubernaut-agent-client",
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups:     []string{""},
 				Resources:     []string{"services"},
-				ResourceNames: []string{"holmesgpt-api"}, // Must match HAPI middleware config (main.py)
-				Verbs:         []string{"create", "get"},  // BR-AA-HAPI-064: "create" for POST, "get" for session poll/result
+				ResourceNames: []string{"kubernaut-agent"},
+				Verbs:         []string{"create", "get"},
 			},
 		},
 	}
-	err = k8sClient.Create(context.Background(), hapiClientRole)
+	err = k8sClient.Create(context.Background(), agentClientRole)
 	if !apierrors.IsAlreadyExists(err) {
 		Expect(err).ToNot(HaveOccurred())
 	}
 
-	hapiClientBinding := &rbacv1.ClusterRoleBinding{
+	agentClientBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "aianalysis-holmesgpt-api-client",
+			Name: "aianalysis-kubernaut-agent-client",
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "ClusterRole",
-			Name:     "holmesgpt-api-client",
+			Name:     "kubernaut-agent-client",
 		},
 		Subjects: []rbacv1.Subject{
 			{
@@ -267,99 +265,92 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 			},
 		},
 	}
-	err = k8sClient.Create(context.Background(), hapiClientBinding)
+	err = k8sClient.Create(context.Background(), agentClientBinding)
 	if !apierrors.IsAlreadyExists(err) {
 		Expect(err).ToNot(HaveOccurred())
 	}
-	GinkgoWriter.Println("✅ AIAnalysis controller granted HAPI access permissions")
+	GinkgoWriter.Println("✅ AIAnalysis controller granted Kubernaut Agent access permissions")
 
 	// DD-AUTH-014: Create ServiceAccount for HAPI service (for TokenReview/SAR validation)
 	// HAPI is an HTTP server (like DataStorage) that validates incoming Bearer tokens
 	// Platform-specific: Linux uses host network, macOS uses bridge network
-	By("Creating ServiceAccount for HAPI service with TokenReview/SAR permissions")
-	useHostNetworkForHAPI := runtime.GOOS == "linux"
-	hapiServiceAuthConfig, err := infrastructure.CreateServiceAccountForHTTPService(
+	By("Creating ServiceAccount for Kubernaut Agent service with TokenReview/SAR permissions")
+	useHostNetworkForKA := runtime.GOOS == "linux"
+	kaServiceAuthConfig, err := infrastructure.CreateServiceAccountForHTTPService(
 		sharedCfg,
-		"holmesgpt-service",
+		"kubernaut-agent-service",
 		"default",
-		useHostNetworkForHAPI, // Linux: host network (127.0.0.1), macOS: bridge network (host.containers.internal)
+		useHostNetworkForKA,
 		GinkgoWriter,
 	)
 	Expect(err).ToNot(HaveOccurred())
-	GinkgoWriter.Println("✅ ServiceAccount + RBAC created for HAPI → envtest (TokenReview/SAR)")
+	GinkgoWriter.Println("✅ ServiceAccount + RBAC created for KA → envtest (TokenReview/SAR)")
 
-	// DD-AUTH-014: Grant HAPI ServiceAccount permission to write audit events to DataStorage
-	// HAPI needs BOTH:
-	//   1. TokenReview/SAR permissions (to validate incoming requests) - ✅ Already has
-	//   2. DataStorage client permissions (to write audit events) - Add now
-	By("Granting HAPI ServiceAccount permission to write audit events to DataStorage")
-	hapiDSClientBinding := &rbacv1.ClusterRoleBinding{
+	// DD-AUTH-014: Grant KA ServiceAccount permission to write audit events to DataStorage
+	By("Granting KA ServiceAccount permission to write audit events to DataStorage")
+	kaDSClientBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "holmesgpt-service-datastorage-client",
+			Name: "kubernaut-agent-service-datastorage-client",
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "ClusterRole",
-			Name:     "data-storage-client", // Reuse existing ClusterRole (created by CreateIntegrationServiceAccountWithDataStorageAccess)
+			Name:     "data-storage-client",
 		},
 		Subjects: []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
-				Name:      "holmesgpt-service",
+				Name:      "kubernaut-agent-service",
 				Namespace: "default",
 			},
 		},
 	}
-	err = k8sClient.Create(context.Background(), hapiDSClientBinding)
+	err = k8sClient.Create(context.Background(), kaDSClientBinding)
 	if !apierrors.IsAlreadyExists(err) {
 		Expect(err).ToNot(HaveOccurred())
 	}
-	GinkgoWriter.Println("✅ HAPI ServiceAccount granted DataStorage write permissions")
+	GinkgoWriter.Println("✅ KA ServiceAccount granted DataStorage write permissions")
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// OPTIMIZATION: Build images in parallel (saves ~100 seconds)
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	By("Building DataStorage, Mock LLM, and HAPI images in parallel")
+	By("Building DataStorage, Mock LLM, and Kubernaut Agent images in parallel")
 	var (
 		dsImageName      string
 		mockLLMImageName string
-		hapiImageName    string
+		kaImageName      string
 		dsErr            error
 		mockErr          error
-		hapiErr          error
+		kaErr            error
 		wg               sync.WaitGroup
 	)
 
 	wg.Add(3)
 
-	// Goroutine 1: Build DataStorage image (~60s)
 	go func() {
 		defer wg.Done()
-		defer GinkgoRecover() // Ensure Ginkgo failures are captured
+		defer GinkgoRecover()
 		dsImageName, dsErr = infrastructure.BuildDataStorageImage(specCtx, "aianalysis", GinkgoWriter)
 	}()
 
-	// Goroutine 2: Build Mock LLM image (~40s)
 	go func() {
 		defer wg.Done()
-		defer GinkgoRecover() // Ensure Ginkgo failures are captured
+		defer GinkgoRecover()
 		mockLLMImageName, mockErr = infrastructure.BuildMockLLMImage(specCtx, "aianalysis", GinkgoWriter)
 	}()
 
-	// Goroutine 3: Build HAPI image (~100s)
 	go func() {
 		defer wg.Done()
-		defer GinkgoRecover() // Ensure Ginkgo failures are captured
-		hapiImageName, hapiErr = infrastructure.BuildHAPIImage(specCtx, "aianalysis", GinkgoWriter)
+		defer GinkgoRecover()
+		kaImageName, kaErr = infrastructure.BuildKubernautAgentImage(specCtx, "aianalysis", GinkgoWriter)
 	}()
 
-	wg.Wait() // Wait for all three builds to complete
+	wg.Wait()
 
-	// Check for errors after parallel builds
 	Expect(dsErr).ToNot(HaveOccurred(), "DataStorage image must build successfully")
 	Expect(mockErr).ToNot(HaveOccurred(), "Mock LLM image must build successfully")
-	Expect(hapiErr).ToNot(HaveOccurred(), "HAPI image must build successfully")
-	GinkgoWriter.Printf("✅ All three images built in parallel: DS=%s, MockLLM=%s, HAPI=%s\n", dsImageName, mockLLMImageName, hapiImageName)
+	Expect(kaErr).ToNot(HaveOccurred(), "KA image must build successfully")
+	GinkgoWriter.Printf("✅ All three images built in parallel: DS=%s, MockLLM=%s, KA=%s\n", dsImageName, mockLLMImageName, kaImageName)
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// SEQUENTIAL DEPLOYMENT: Start DataStorage, seed workflows, start Mock LLM
@@ -429,77 +420,87 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 
 	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
 
-	By("Starting HolmesGPT-API HTTP service (using pre-built image)")
-	// AA integration tests use OpenAPI HAPI client (HTTP-based)
-	// DD-TEST-001 v2.3: HAPI port 18120, Mock LLM port 18141
-	// OPTIMIZATION: Use pre-built image from parallel build (no BuildContext/BuildDockerfile)
-	hapiConfigDir, err := filepath.Abs("hapi-config")
-	Expect(err).ToNot(HaveOccurred(), "Failed to get absolute path for hapi-config")
+	By("Starting Kubernaut Agent HTTP service (using pre-built image)")
 
-	// DD-AUTH-014: Create ServiceAccount secrets directory structure for HAPI container
-	// HAPI's ServiceAccountAuthPoolManager expects token at /var/run/secrets/kubernetes.io/serviceaccount/token
-	// CRITICAL: Use HAPI's own ServiceAccount token (hapiServiceAuthConfig.Token), NOT the client token!
-	// This token identifies HAPI service when calling DataStorage
-	hapiSATokenDir = filepath.Join(os.TempDir(), fmt.Sprintf("aianalysis-hapi-sa-secrets-%d", time.Now().UnixNano()))
+	// DD-AUTH-014: Create ServiceAccount secrets directory for KA container
+	hapiSATokenDir = filepath.Join(os.TempDir(), fmt.Sprintf("aianalysis-ka-sa-secrets-%d", time.Now().UnixNano()))
 	err = os.MkdirAll(hapiSATokenDir, 0755)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create HAPI ServiceAccount secrets directory")
-	hapiSATokenFilePath := filepath.Join(hapiSATokenDir, "token")
-	err = os.WriteFile(hapiSATokenFilePath, []byte(hapiServiceAuthConfig.Token), 0644)
-	Expect(err).ToNot(HaveOccurred(), "Failed to write HAPI ServiceAccount token to file")
-	GinkgoWriter.Printf("✅ HAPI ServiceAccount token written to: %s (for DataStorage auth)\n", hapiSATokenFilePath)
+	Expect(err).ToNot(HaveOccurred(), "Failed to create KA ServiceAccount secrets directory")
+	kaTokenFilePath := filepath.Join(hapiSATokenDir, "token")
+	err = os.WriteFile(kaTokenFilePath, []byte(kaServiceAuthConfig.Token), 0644)
+	Expect(err).ToNot(HaveOccurred(), "Failed to write KA ServiceAccount token to file")
+	GinkgoWriter.Printf("✅ KA ServiceAccount token written to: %s\n", kaTokenFilePath)
 
-	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
+	// Create KA config file for the container
+	kaConfigDir := filepath.Join(os.TempDir(), fmt.Sprintf("aianalysis-ka-config-%d", time.Now().UnixNano()))
+	err = os.MkdirAll(kaConfigDir, 0755)
+	Expect(err).ToNot(HaveOccurred())
 
-	// DD-AUTH-014: Platform-specific network configuration for HAPI
-	// Linux CI: Use host network (can reach envtest on 127.0.0.1 directly)
-	// macOS Dev: Use bridge network with host.containers.internal rewriting
 	useHostNetwork := runtime.GOOS == "linux"
+	var llmEndpoint, dsURL string
+	if useHostNetwork {
+		llmEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mockLLMConfig.Port)
+		dsURL = "http://127.0.0.1:18095"
+	} else {
+		llmEndpoint = infrastructure.GetMockLLMContainerEndpoint(mockLLMConfig)
+		dsURL = "http://host.containers.internal:18095"
+	}
 
-	hapiConfig := infrastructure.GenericContainerConfig{
-		Name:  "aianalysis_hapi_test",
-		Image: hapiImageName, // Use pre-built image from parallel build
+	kaConfigContent := fmt.Sprintf(`llm:
+  provider: "openai"
+  model: "mock-model"
+  endpoint: "%s"
+  api_key: "mock-api-key-for-integration-tests"
+data_storage:
+  url: "%s"
+logging:
+  level: "debug"
+server:
+  port: 18120
+audit:
+  flush_interval_seconds: 0.1
+  buffer_size: 10000
+  batch_size: 50
+auth:
+  resource_name: "kubernaut-agent"
+`, llmEndpoint, dsURL)
+	kaConfigPath := filepath.Join(kaConfigDir, "config.yaml")
+	err = os.WriteFile(kaConfigPath, []byte(kaConfigContent), 0644)
+	Expect(err).ToNot(HaveOccurred())
+
+	kaContainerConfig := infrastructure.GenericContainerConfig{
+		Name:  "aianalysis_ka_test",
+		Image: kaImageName,
 		Env: map[string]string{
-			"LLM_MODEL":      "mock-model",
-			"LLM_PROVIDER":   "openai",                             // Required by litellm
-			"OPENAI_API_KEY": "mock-api-key-for-integration-tests", // Required by litellm even for mock endpoints
-			"API_PORT":       "18120",                              // HAPI uses API_PORT, not PORT (see entrypoint.sh)
-			"LOG_LEVEL":      "DEBUG",
-			"KUBECONFIG":     "/tmp/kubeconfig", // DD-AUTH-014: Real K8s auth with envtest (file-based kubeconfig)
-			"POD_NAMESPACE":  "default",         // Required for K8s client
+			"KUBECONFIG":    "/tmp/kubeconfig",
+			"POD_NAMESPACE": "default",
 		},
+		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml"},
 		Volumes: map[string]string{
-			hapiConfigDir:                        "/etc/holmesgpt:ro",                                // Mount HAPI config directory
-			hapiServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro",                               // DD-AUTH-014: Mount envtest kubeconfig (real auth!)
-			hapiSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro", // DD-AUTH-014: Mount HAPI ServiceAccount secrets (HAPI's own token for DataStorage auth)
+			kaConfigDir:                          "/etc/kubernautagent:ro",
+			kaServiceAuthConfig.KubeconfigPath:   "/tmp/kubeconfig:ro",
+			hapiSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
 		},
-		// BuildContext and BuildDockerfile removed - image already built in parallel
 		HealthCheck: &infrastructure.HealthCheckConfig{
 			URL:     "http://127.0.0.1:18120/health",
-			Timeout: 120 * time.Second, // Reduced: only startup time (no build), ~20-30s expected
+			Timeout: 120 * time.Second,
 		},
 	}
 
 	if useHostNetwork {
-		// Linux CI: Host network mode (can reach localhost directly)
-		hapiConfig.Network = "host"
-		hapiConfig.Env["LLM_ENDPOINT"] = fmt.Sprintf("http://127.0.0.1:%d", mockLLMConfig.Port) // Mock LLM also on host network (AIAnalysis port: 18141)
-		hapiConfig.Env["DATA_STORAGE_URL"] = "http://127.0.0.1:18095"
-		GinkgoWriter.Printf("   🌐 HAPI using host network (Linux CI) - localhost access enabled\n")
+		kaContainerConfig.Network = "host"
+		GinkgoWriter.Printf("   🌐 KA using host network (Linux CI)\n")
 	} else {
-		// macOS Dev: Bridge network with host.containers.internal
-		hapiConfig.Network = "aianalysis_test_network"
-		hapiConfig.Ports = map[int]int{18120: 18120}                                               // container:host (both use 18120 now)
-		hapiConfig.Env["LLM_ENDPOINT"] = infrastructure.GetMockLLMContainerEndpoint(mockLLMConfig) // http://mock-llm-aianalysis:8080 (container-to-container)
-		hapiConfig.Env["DATA_STORAGE_URL"] = "http://host.containers.internal:18095"
-		hapiConfig.ExtraHosts = []string{
-			"host.containers.internal:host-gateway", // macOS: Explicit host resolution (redundant but harmless)
+		kaContainerConfig.Network = "aianalysis_test_network"
+		kaContainerConfig.Ports = map[int]int{18120: 18120}
+		kaContainerConfig.ExtraHosts = []string{
+			"host.containers.internal:host-gateway",
 		}
-		GinkgoWriter.Printf("   🌐 HAPI using bridge network (macOS) - host.containers.internal routing enabled\n")
+		GinkgoWriter.Printf("   🌐 KA using bridge network (macOS)\n")
 	}
-	hapiContainer, err = infrastructure.StartGenericContainer(hapiConfig, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "HAPI container must start successfully")
-	GinkgoWriter.Printf("✅ HolmesGPT-API started at http://127.0.0.1:18120 (container: %s)\n", hapiContainer.ID)
-	GinkgoWriter.Printf("   Using Mock LLM at %s\n", infrastructure.GetMockLLMEndpoint(mockLLMConfig))
+	hapiContainer, err = infrastructure.StartGenericContainer(kaContainerConfig, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "KA container must start successfully")
+	GinkgoWriter.Printf("✅ Kubernaut Agent started at http://127.0.0.1:18120 (container: %s)\n", hapiContainer.ID)
 
 	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
 
@@ -640,15 +641,15 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Create audit client for handlers
 	auditClient := aiaudit.NewAuditClient(auditStore, auditLogger)
 
-	By(fmt.Sprintf("[Process %d] Setting up per-process HAPI client with authentication", processNum))
+	By(fmt.Sprintf("[Process %d] Setting up per-process agent client with authentication", processNum))
 	// DD-AUTH-014: HAPI middleware requires Bearer token (real K8s auth via envtest)
 	// Use ServiceAccount transport (HAPI will mock-validate the token)
 	hapiAuthTransport := testauth.NewServiceAccountTransport(token)
-	realHGClient, err = hgclient.NewHolmesGPTClientWithTransport(hgclient.Config{
+	realAgentClient, err = agentclient.NewKubernautAgentClientWithTransport(agentclient.Config{
 		BaseURL: "http://localhost:18120",
 		Timeout: 30 * time.Second,
 	}, hapiAuthTransport)
-	Expect(err).ToNot(HaveOccurred(), "failed to create real HAPI client")
+	Expect(err).ToNot(HaveOccurred(), "failed to create real agent client")
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process Rego evaluator", processNum))
 	// Test-owned policy fixture decoupled from production config.
@@ -665,9 +666,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	Expect(err).NotTo(HaveOccurred(), "Production policy should load successfully in integration tests")
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process controller with handlers", processNum))
-	// Create handlers with REAL HAPI client, metrics, and REAL audit client
+	// Create handlers with REAL agent client, metrics, and REAL audit client
 	eventRecorder := k8sManager.GetEventRecorderFor("aianalysis-controller")
-	investigatingHandler := handlers.NewInvestigatingHandler(realHGClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient,
+	investigatingHandler := handlers.NewInvestigatingHandler(realAgentClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient,
 		handlers.WithRecorder(eventRecorder),                  // DD-EVENT-001: Session lifecycle events
 		handlers.WithSessionMode(),                            // BR-AA-HAPI-064: Async submit/poll/result flow
 		handlers.WithSessionPollInterval(2*time.Second))       // Fast polling for tests (production default: 15s)
@@ -766,7 +767,7 @@ var _ = SynchronizedAfterSuite(func() {
 			dsInfra.PostgresContainer,
 			dsInfra.RedisContainer,
 			"mock-llm-aianalysis",  // Mock LLM service
-			"aianalysis_hapi_test", // HolmesGPT-API service
+			"aianalysis_ka_test", // Kubernaut Agent service
 		}, GinkgoWriter)
 	}
 
@@ -776,22 +777,22 @@ var _ = SynchronizedAfterSuite(func() {
 	if preserveContainers {
 		GinkgoWriter.Println("⚠️  Tests may have failed - preserving containers for debugging")
 		GinkgoWriter.Println("📋 To inspect container logs:")
-		GinkgoWriter.Println("   podman logs aianalysis_hapi_test")
+		GinkgoWriter.Println("   podman logs aianalysis_ka_test")
 		GinkgoWriter.Println("   podman logs aianalysis_datastorage_test")
 		GinkgoWriter.Println("   podman logs aianalysis_postgres_test")
 		GinkgoWriter.Println("   podman logs aianalysis_redis_test")
 		GinkgoWriter.Println("📋 To manually clean up:")
-		GinkgoWriter.Println("   podman stop aianalysis_hapi_test aianalysis_datastorage_test aianalysis_redis_test aianalysis_postgres_test")
-		GinkgoWriter.Println("   podman rm aianalysis_hapi_test aianalysis_datastorage_test aianalysis_redis_test aianalysis_postgres_test")
+		GinkgoWriter.Println("   podman stop aianalysis_ka_test aianalysis_datastorage_test aianalysis_redis_test aianalysis_postgres_test")
+		GinkgoWriter.Println("   podman rm aianalysis_ka_test aianalysis_datastorage_test aianalysis_redis_test aianalysis_postgres_test")
 		GinkgoWriter.Println("   podman network rm aianalysis_test_network")
 	} else {
 		// FIX: Ginkgo API Compliance - DeferCleanup cannot be used in SynchronizedBeforeSuite first function
 		// All cleanup must happen here in SynchronizedAfterSuite second function (process 1 only)
 		// Cleanup in reverse order of setup
 
-		// 1. Stop HAPI container (capture logs first for debugging)
+		// 1. Stop KA container (capture logs first for debugging)
 		if hapiContainer != nil {
-			GinkgoWriter.Println("\n📋 Capturing HAPI container logs before cleanup:")
+			GinkgoWriter.Println("\n📋 Capturing KA container logs before cleanup:")
 			logsCmd := exec.Command("podman", "logs", "--tail", "100", hapiContainer.Name)
 			logsCmd.Stdout = GinkgoWriter
 			logsCmd.Stderr = GinkgoWriter
@@ -799,7 +800,7 @@ var _ = SynchronizedAfterSuite(func() {
 			GinkgoWriter.Println("")
 
 			if err := infrastructure.StopGenericContainer(hapiContainer, GinkgoWriter); err != nil {
-				GinkgoWriter.Printf("⚠️  Failed to stop HAPI container: %v\n", err)
+				GinkgoWriter.Printf("⚠️  Failed to stop KA container: %v\n", err)
 			}
 		}
 
@@ -817,7 +818,7 @@ var _ = SynchronizedAfterSuite(func() {
 			_ = os.Remove(mockLLMConfigPath)
 		}
 
-		// 4. Remove HAPI ServiceAccount token directory
+		// 4. Remove KA ServiceAccount token directory
 		if hapiSATokenDir != "" {
 			_ = os.RemoveAll(hapiSATokenDir)
 		}

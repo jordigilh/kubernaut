@@ -26,7 +26,7 @@ import (
 
 	"github.com/go-faster/jx"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"

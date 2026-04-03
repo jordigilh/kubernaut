@@ -53,9 +53,9 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 			cfg := config.DefaultConfig()
 			Expect(cfg.Controller.MetricsAddr).To(Equal(":9090"))
 			Expect(cfg.Controller.HealthProbeAddr).To(Equal(":8081"))
-			Expect(cfg.HolmesGPT.URL).To(Equal("http://holmesgpt-api:8080"))
-			Expect(cfg.HolmesGPT.Timeout).To(Equal(180 * time.Second))
-			Expect(cfg.HolmesGPT.SessionPollInterval).To(Equal(15 * time.Second))
+			Expect(cfg.Agent.URL).To(Equal("http://kubernaut-agent:8080"))
+			Expect(cfg.Agent.Timeout).To(Equal(180 * time.Second))
+			Expect(cfg.Agent.SessionPollInterval).To(Equal(15 * time.Second))
 			Expect(cfg.DataStorage.URL).To(Equal("http://data-storage-service:8080"))
 			Expect(cfg.Rego.PolicyPath).To(Equal("/etc/aianalysis/policies/approval.rego"))
 		})
@@ -77,7 +77,7 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cfg).NotTo(BeNil())
 			Expect(cfg.Validate()).To(Succeed())
-			Expect(cfg.HolmesGPT.URL).To(Equal("http://holmesgpt-api:8080"))
+			Expect(cfg.Agent.URL).To(Equal("http://kubernaut-agent:8080"))
 		})
 
 		It("should return defaults when path is empty", func() {
@@ -90,7 +90,7 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 		It("should return defaults gracefully when file does not exist", func() {
 			cfg, err := config.LoadFromFile("/nonexistent/path/config.yaml")
 			Expect(cfg).NotTo(BeNil())
-			Expect(cfg.HolmesGPT.URL).To(Equal("http://holmesgpt-api:8080"))
+			Expect(cfg.Agent.URL).To(Equal("http://kubernaut-agent:8080"))
 			_ = err
 		})
 
@@ -121,27 +121,27 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 			Expect(cfg.Validate()).To(MatchError(ContainSubstring("healthProbeAddr")))
 		})
 
-		It("BR-AI-007: should reject empty HolmesGPT URL", func() {
+		It("BR-AI-007: should reject empty agent URL", func() {
 			cfg := config.DefaultConfig()
-			cfg.HolmesGPT.URL = ""
-			Expect(cfg.Validate()).To(MatchError(ContainSubstring("holmesgpt.url")))
+			cfg.Agent.URL = ""
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("agent.url")))
 		})
 
-		It("should reject zero HolmesGPT timeout", func() {
+		It("should reject zero agent timeout", func() {
 			cfg := config.DefaultConfig()
-			cfg.HolmesGPT.Timeout = 0
-			Expect(cfg.Validate()).To(MatchError(ContainSubstring("holmesgpt.timeout")))
+			cfg.Agent.Timeout = 0
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("agent.timeout")))
 		})
 
 		It("BR-AA-HAPI-064: should reject session poll interval below 1s", func() {
 			cfg := config.DefaultConfig()
-			cfg.HolmesGPT.SessionPollInterval = 0
+			cfg.Agent.SessionPollInterval = 0
 			Expect(cfg.Validate()).To(MatchError(ContainSubstring("sessionPollInterval")))
 		})
 
 		It("BR-AA-HAPI-064: should reject session poll interval above 5m", func() {
 			cfg := config.DefaultConfig()
-			cfg.HolmesGPT.SessionPollInterval = 10 * time.Minute
+			cfg.Agent.SessionPollInterval = 10 * time.Minute
 			Expect(cfg.Validate()).To(MatchError(ContainSubstring("sessionPollInterval")))
 		})
 

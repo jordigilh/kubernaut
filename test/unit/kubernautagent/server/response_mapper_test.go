@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"

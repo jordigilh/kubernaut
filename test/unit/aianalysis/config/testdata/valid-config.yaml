@@ -6,8 +6,8 @@ controller:
   leaderElection: false
   leaderElectionId: "aianalysis.kubernaut.ai"
 
-holmesgpt:
-  url: "http://holmesgpt-api:8080"
+agent:
+  url: "http://kubernaut-agent:8080"
   timeout: 180s
   sessionPollInterval: 15s
 

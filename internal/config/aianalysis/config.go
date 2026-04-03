@@ -37,8 +37,8 @@ type Config struct {
 	// Controller runtime configuration (DD-005)
 	Controller sharedconfig.ControllerConfig `yaml:"controller"`
 
-	// HolmesGPT-API connectivity and session polling (BR-AI-007, BR-AA-HAPI-064)
-	HolmesGPT HolmesGPTConfig `yaml:"holmesgpt"`
+	// Kubernaut Agent connectivity and session polling (BR-AI-007)
+	Agent AgentConfig `yaml:"agent"`
 
 	// DataStorage connectivity (ADR-030: audit trail + workflow catalog)
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
@@ -47,13 +47,13 @@ type Config struct {
 	Rego RegoConfig `yaml:"rego"`
 }
 
-// HolmesGPTConfig defines HolmesGPT-API connectivity and session behavior.
+// AgentConfig defines Kubernaut Agent connectivity and session behavior.
 // Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase
-type HolmesGPTConfig struct {
-	// URL is the HolmesGPT-API base URL (REQUIRED).
+type AgentConfig struct {
+	// URL is the Kubernaut Agent base URL (REQUIRED).
 	URL string `yaml:"url"`
 
-	// Timeout is the HTTP client timeout for HolmesGPT-API calls.
+	// Timeout is the HTTP client timeout for Kubernaut Agent calls.
 	Timeout time.Duration `yaml:"timeout"`
 
 	// SessionPollInterval is the constant interval between session status polls.
@@ -91,8 +91,8 @@ func DefaultConfig() *Config {
 			LeaderElection:   false,
 			LeaderElectionID: "aianalysis.kubernaut.ai",
 		},
-		HolmesGPT: HolmesGPTConfig{
-			URL:                 "http://holmesgpt-api:8080",
+		Agent: AgentConfig{
+			URL:                 "http://kubernaut-agent:8080",
 			Timeout:             180 * time.Second,
 			SessionPollInterval: 15 * time.Second,
 		},
@@ -139,18 +139,18 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("controller.healthProbeAddr is required")
 	}
 
-	// Validate HolmesGPT config
-	if c.HolmesGPT.URL == "" {
-		return fmt.Errorf("holmesgpt.url is required")
+	// Validate Agent config
+	if c.Agent.URL == "" {
+		return fmt.Errorf("agent.url is required")
 	}
-	if c.HolmesGPT.Timeout <= 0 {
-		return fmt.Errorf("holmesgpt.timeout must be positive, got %v", c.HolmesGPT.Timeout)
+	if c.Agent.Timeout <= 0 {
+		return fmt.Errorf("agent.timeout must be positive, got %v", c.Agent.Timeout)
 	}
-	if c.HolmesGPT.SessionPollInterval < 1*time.Second {
-		return fmt.Errorf("holmesgpt.sessionPollInterval must be at least 1s, got %v", c.HolmesGPT.SessionPollInterval)
+	if c.Agent.SessionPollInterval < 1*time.Second {
+		return fmt.Errorf("agent.sessionPollInterval must be at least 1s, got %v", c.Agent.SessionPollInterval)
 	}
-	if c.HolmesGPT.SessionPollInterval > 5*time.Minute {
-		return fmt.Errorf("holmesgpt.sessionPollInterval must not exceed 5m, got %v", c.HolmesGPT.SessionPollInterval)
+	if c.Agent.SessionPollInterval > 5*time.Minute {
+		return fmt.Errorf("agent.sessionPollInterval must not exceed 5m, got %v", c.Agent.SessionPollInterval)
 	}
 
 	// Validate DataStorage config (ADR-030)

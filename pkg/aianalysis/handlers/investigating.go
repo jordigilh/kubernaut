@@ -34,7 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
-	hgptclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // P2.2 Refactoring: Constants moved to constants.go
@@ -444,7 +444,7 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 // Updates PollCount and LastPolled in the CRD status for observability.
 // The aiAnalysisUpdatePredicate filters PollCount/LastPolled-only status writes
 // so they don't trigger re-reconciles. Only RequeueAfter controls the next poll.
-func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *hgptclient.SessionStatus) (ctrl.Result, error) {
+func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatus) (ctrl.Result, error) {
 	session := analysis.Status.InvestigationSession
 
 	// Update poll tracking fields for observability
@@ -509,7 +509,7 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 
 // handleSessionPollFailed handles poll results where investigation has failed on HAPI side.
 // BR-AA-HAPI-064: Surface HAPI-side failure to operators via CRD status
-func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *hgptclient.SessionStatus) (ctrl.Result, error) {
+func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatus) (ctrl.Result, error) {
 	h.log.Info("HAPI session failed",
 		"sessionID", analysis.Status.InvestigationSession.ID,
 		"error", status.Error,
@@ -542,7 +542,7 @@ func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, anal
 // BR-AA-HAPI-064.5: 404 triggers session regeneration, not standard retry
 func (h *InvestigatingHandler) handleSessionPollError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
 	// Check for 404 (session lost) - triggers regeneration logic
-	var apiErr *hgptclient.APIError
+	var apiErr *agentclient.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
 		return h.handleSessionLost(ctx, analysis)
 	}
@@ -620,7 +620,7 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 // BR-AA-HAPI-064: 409 Conflict treated as transient (re-poll gracefully at standard interval)
 func (h *InvestigatingHandler) handleSessionGetResultError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
 	// Check for 409 Conflict - treat as transient, re-poll at standard interval
-	var apiErr *hgptclient.APIError
+	var apiErr *agentclient.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode == 409 {
 		h.log.Info("GetSessionResult returned 409 Conflict, treating as transient",
 			"sessionID", analysis.Status.InvestigationSession.ID,

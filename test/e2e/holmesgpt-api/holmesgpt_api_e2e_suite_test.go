@@ -30,7 +30,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
@@ -90,7 +90,7 @@ var (
 	hapiClient *hapiclient.Client
 
 	// Shared HAPI session client (BR-AA-HAPI-064: async submit/poll/result wrapper)
-	sessionClient *hapiclient.HolmesGPTClient
+	sessionClient *hapiclient.KubernautAgentClient
 
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
@@ -223,7 +223,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("✅ Authenticated HAPI client initialized")
 
 		// BR-AA-HAPI-064: Create session-aware client for async submit/poll/result tests
-		sessionClient, err = hapiclient.NewHolmesGPTClientWithTransport(
+		sessionClient, err = hapiclient.NewKubernautAgentClientWithTransport(
 			hapiclient.Config{BaseURL: hapiURL},
 			testauth.NewServiceAccountTransport(saToken),
 		)
@@ -269,7 +269,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated HAPI client")
 
 		// BR-AA-HAPI-064: Create session-aware client for async submit/poll/result tests
-		sessionClient, err = hapiclient.NewHolmesGPTClientWithTransport(
+		sessionClient, err = hapiclient.NewKubernautAgentClientWithTransport(
 			hapiclient.Config{BaseURL: hapiURL},
 			testauth.NewServiceAccountTransport(saToken),
 		)

@@ -30,7 +30,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
@@ -38,7 +38,7 @@ import (
 // Kubernaut Agent E2E Test Suite (#433)
 //
 // Validates API contract parity with the retired Python HAPI service.
-// Uses the same ogen-generated client (pkg/holmesgpt/client) since KA
+// Uses the same ogen-generated client (pkg/agentclient) since KA
 // implements the same OpenAPI Handler interface.
 //
 // Infrastructure: Kind cluster + DataStorage + Mock LLM + Kubernaut Agent (Go)
@@ -68,7 +68,7 @@ var (
 	hapiClient *hapiclient.Client
 
 	// sessionClient is the session-aware wrapper (submit/poll/result)
-	sessionClient *hapiclient.HolmesGPTClient
+	sessionClient *hapiclient.KubernautAgentClient
 
 	anyTestFailed  bool
 	setupSucceeded bool
@@ -146,7 +146,7 @@ var _ = SynchronizedBeforeSuite(
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated client")
 
-		sessionClient, err = hapiclient.NewHolmesGPTClientWithTransport(
+		sessionClient, err = hapiclient.NewKubernautAgentClientWithTransport(
 			hapiclient.Config{BaseURL: kaURL},
 			testauth.NewServiceAccountTransport(saToken),
 		)
@@ -179,7 +179,7 @@ var _ = SynchronizedBeforeSuite(
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated client")
 
-		sessionClient, err = hapiclient.NewHolmesGPTClientWithTransport(
+		sessionClient, err = hapiclient.NewKubernautAgentClientWithTransport(
 			hapiclient.Config{BaseURL: kaURL},
 			testauth.NewServiceAccountTransport(saToken),
 		)

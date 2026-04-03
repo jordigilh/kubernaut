@@ -62,13 +62,14 @@ import (
 //	hapiContainer, err := infrastructure.StartGenericContainer(hapiConfig, writer)
 type GenericContainerConfig struct {
 	// Container Configuration
-	Name       string            // Container name (e.g., "aianalysis_hapi_test")
-	Image      string            // Container image (e.g., "robusta-dev/holmesgpt:latest")
+	Name       string            // Container name (e.g., "aianalysis_ka_test")
+	Image      string            // Container image
 	Network    string            // Network to attach to (e.g., "aianalysis_test_network")
 	Ports      map[int]int       // Port mappings: container_port -> host_port
 	Env        map[string]string // Environment variables
 	Volumes    map[string]string // Volume mounts: host_path -> container_path
 	ExtraHosts []string          // Extra host entries (e.g., "host.containers.internal:host-gateway")
+	Cmd        []string          // Command arguments appended after the image name
 
 	// Build Configuration (optional, if image needs to be built)
 	BuildContext    string            // Build context directory (e.g., project root)
@@ -207,6 +208,9 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 
 	// Add image
 	args = append(args, cfg.Image)
+
+	// Add command arguments (after image)
+	args = append(args, cfg.Cmd...)
 
 	// Start container
 	_, _ = fmt.Fprintf(writer, "   🐳 Starting container with image: %s\n", cfg.Image)

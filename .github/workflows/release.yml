@@ -62,11 +62,11 @@ jobs:
   # 12 parallel jobs: one per service, amd64 only.
   # Helm smoke tests depend on this stage completing (Issue #569).
   #
-  # Services (12):
-  #   Go (10): gateway, signalprocessing, aianalysis, authwebhook,
-  #            remediationorchestrator, workflowexecution, notification,
-  #            datastorage, effectivenessmonitor, db-migrate
-  #   Python (1): holmesgpt-api
+  # Services (11):
+  #   Go (9): gateway, signalprocessing, aianalysis, authwebhook,
+  #           remediationorchestrator, workflowexecution, notification,
+  #           datastorage, effectivenessmonitor
+  #   Agent (1): kubernautagent
   #   Bash (1): must-gather
   #
   # Strategy:
@@ -168,7 +168,7 @@ jobs:
           - notification
           - datastorage
           - effectivenessmonitor
-          - holmesgpt-api
+          - kubernautagent
           - must-gather
           - db-migrate
     steps:
@@ -379,7 +379,7 @@ jobs:
         run: |
           for svc in datastorage gateway aianalysis authwebhook notification \
                      remediationorchestrator signalprocessing workflowexecution \
-                     effectivenessmonitor holmesgpt-api must-gather db-migrate; do
+                     effectivenessmonitor kubernautagent must-gather db-migrate; do
             echo "  Tagging $svc:latest..."
             podman manifest rm ${IMAGE_REGISTRY}/$svc:latest 2>/dev/null || true
             podman manifest create ${IMAGE_REGISTRY}/$svc:latest \

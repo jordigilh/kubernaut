@@ -407,10 +407,10 @@ jobs:
           - service: effectivenessmonitor
             dockerfile: docker/effectivenessmonitor-controller.Dockerfile
             image_name: effectivenessmonitor  # Operator SDK convention: image name without -controller suffix
-          # Python Services (1)
-          - service: holmesgpt-api
-            dockerfile: holmesgpt-api/Dockerfile.e2e
-            image_name: holmesgpt-api
+          # Kubernaut Agent (Go, replaces Python HAPI)
+          - service: kubernautagent
+            dockerfile: docker/kubernautagent.Dockerfile
+            image_name: kubernautagent
           # Infrastructure (1)
           - service: db-migrate
             dockerfile: docker/db-migrate.Dockerfile

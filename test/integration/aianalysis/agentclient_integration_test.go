@@ -25,7 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	. "github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
-	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
@@ -34,7 +34,7 @@ import (
 // REFACTORED: Per 03-testing-strategy.mdc Mock Policy (Feb 2, 2026)
 // - Integration tests use REAL HAPI service (business logic, not external API)
 // - HAPI runs with Mock LLM enabled (external API properly mocked)
-// - DD-AUTH-014: Uses authenticated realHGClient from suite setup
+// - DD-AUTH-014: Uses authenticated realAgentClient from suite setup
 //
 // Testing Strategy (per TESTING_GUIDELINES.md):
 // - Mock Strategy: ZERO MOCKS for business logic (line 102)
@@ -60,9 +60,9 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 	)
 
 	BeforeEach(func() {
-		// DD-AUTH-014: Use shared realHGClient from suite setup (has authentication)
+		// DD-AUTH-014: Use shared realAgentClient from suite setup (has authentication)
 		// DO NOT create new client here - it would lack Bearer token
-		// The suite_test.go creates realHGClient with ServiceAccountTransport(token)
+		// The suite_test.go creates realAgentClient with ServiceAccountTransport(token)
 		testCtx, cancelFunc = context.WithTimeout(context.Background(), 90*time.Second)
 	})
 
@@ -74,7 +74,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 		It("should return valid analysis response", func() {
 			// Real HAPI call with Mock LLM backend
 			// Mock LLM will return deterministic response based on signal type
-			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
 				IncidentID:        "test-crashloop-001",
 				RemediationID:     "req-test-001",
 				SignalName:        "CrashLoopBackOff",
@@ -100,7 +100,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 
 		It("should return valid response without targetInOwnerChain (ADR-055) - BR-AI-007", func() {
 			// Real HAPI call - response determined by Mock LLM
-			_, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+			_, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
 				IncidentID:        "test-memory-001",
 				RemediationID:     "req-test-002",
 				SignalName:        "MemoryPressure",
@@ -124,7 +124,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 
 		It("should return selected workflow - BR-AI-016", func() {
 			// Real HAPI call - Mock LLM returns workflow based on OOMKilled signal type
-			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
 				IncidentID:        "test-oom-001",
 				RemediationID:     "req-test-003",
 				SignalName:        "OOMKilled",
@@ -156,7 +156,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 
 		It("should include alternative workflows for production - BR-AI-016", func() {
 			// Real HAPI call - Mock LLM may include alternatives for production
-			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
 				IncidentID:        "test-prod-001",
 				RemediationID:     "req-test-004",
 				SignalName:        "CrashLoopBackOff",
@@ -184,7 +184,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 	Context("Human Review Flag - BR-HAPI-197", func() {
 		It("should handle needs_human_review=true with reason enum", func() {
 			// Real HAPI call - Unknown signal type may trigger human review
-			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
 				IncidentID:        "test-hr-001",
 				RemediationID:     "req-hr-001",
 				SignalName:        "Unknown",
@@ -258,7 +258,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 
 			for _, tc := range testCases {
 				By(fmt.Sprintf("Testing %s", tc.description))
-				resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+				resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
 					IncidentID:        "test-hr-" + tc.signalType,
 					RemediationID:     "req-hr-" + tc.signalType,
 					SignalName:        tc.signalType,
@@ -298,7 +298,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			// REFACTORED: Now using Mock LLM MOCK_PROBLEM_RESOLVED scenario
 			// Mock LLM returns investigation_outcome="resolved" with no workflow
 			// See server.py lines 948-980 for scenario definition
-			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
 				IncidentID:        "test-resolved-001",
 				RemediationID:     "req-resolved-001",
 				SignalName:        "MOCK_PROBLEM_RESOLVED", // Mock LLM scenario trigger
@@ -332,7 +332,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 
 		// #301: Contradiction case — HAPI parser should override needs_human_review to false
 		It("should override contradictory needs_human_review=true when investigation_outcome=resolved (#301)", func() {
-			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
 				IncidentID:        "test-resolved-contradiction-001",
 				RemediationID:     "req-resolved-contradiction-001",
 				SignalName:        "MOCK_PROBLEM_RESOLVED_CONTRADICTION",
@@ -367,7 +367,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			// ADDED: Explicit test for MOCK_MAX_RETRIES_EXHAUSTED scenario
 			// Mock LLM simulates LLM returning unparseable responses, triggering retry exhaustion
 			// See server.py lines 1011-1042 for scenario definition
-			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
 				IncidentID:        "test-max-retries-001",
 				RemediationID:     "req-max-retries-001",
 				SignalName:        "MOCK_MAX_RETRIES_EXHAUSTED", // Mock LLM scenario trigger
@@ -401,7 +401,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 	Context("Investigation Inconclusive - BR-HAPI-200 Outcome B", func() {
 		It("should handle investigation_inconclusive scenario", func() {
 			// Real HAPI call - NetworkFailure with unclear pattern may trigger inconclusive
-			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
 				IncidentID:        "test-inconclusive-001",
 				RemediationID:     "req-inconclusive-001",
 				SignalName:        "NetworkFailure",
@@ -431,7 +431,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 	Context("Validation History - DD-HAPI-002", func() {
 		It("should return validation attempts history when present", func() {
 			// Real HAPI call - validation history populated by HAPI's retry logic
-			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
 				IncidentID:        "test-validation-001",
 				RemediationID:     "req-validation-001",
 				SignalName:        "DatabaseTimeout",
@@ -460,7 +460,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			// Create client with very short timeout to test timeout handling
 			// DD-AUTH-014: Must use authenticated transport
 			hapiAuthTransport := testauth.NewServiceAccountTransport(serviceAccountToken)
-			shortClient, err := client.NewHolmesGPTClientWithTransport(client.Config{
+			shortClient, err := agentclient.NewKubernautAgentClientWithTransport(agentclient.Config{
 				BaseURL: "http://localhost:18120",
 				Timeout: 1 * time.Nanosecond, // Effectively instant timeout
 			}, hapiAuthTransport)
@@ -472,7 +472,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 
 			time.Sleep(2 * time.Millisecond) // ✅ APPROVED EXCEPTION: ensure nanosecond-timeout context expires
 
-			_, err = shortClient.Investigate(shortCtx, &client.IncidentRequest{
+			_, err = shortClient.Investigate(shortCtx, &agentclient.IncidentRequest{
 				IncidentID:        "test-timeout-001",
 				RemediationID:     "req-timeout-001",
 				SignalName:        "Test",
@@ -505,7 +505,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 		It("should handle validation errors (400) - BR-AI-009", func() {
 			// Real HAPI call with missing required field - should return 400
 			// DD-WORKFLOW-002: remediation_id is required
-			_, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+			_, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
 				IncidentID:        "test-validation-error",
 				RemediationID:     "", // EMPTY - violates DD-WORKFLOW-002
 				SignalName:        "Test",
@@ -524,7 +524,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 
 			Expect(err).To(HaveOccurred())
 			// HAPI returns 400 or 422 for validation errors (FastAPI/Pydantic)
-			apiErr, ok := err.(*client.APIError)
+			apiErr, ok := err.(*agentclient.APIError)
 			if ok {
 				Expect(apiErr.StatusCode).To(Or(Equal(400), Equal(422)),
 					"Should return 400 or 422 for validation error")

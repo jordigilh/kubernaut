@@ -14,32 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package client provides the HolmesGPT-API client wrapper.
+// Package agentclient provides the Kubernaut Agent OpenAPI client wrapper.
 //
-// ========================================
-// HAPI OpenAPI Client Wrapper (DD-HAPI-003)
-// 📋 Design Decision: DD-HAPI-003 | ✅ Approved Design | Confidence: 95%
-// See: docs/architecture/decisions/DD-HAPI-003-mandatory-openapi-client-usage.md
-// ========================================
-//
+// DD-HAPI-003: Mandatory OpenAPI Client Usage
 // This wrapper provides a business-friendly API around the auto-generated
 // OpenAPI client (oas_client_gen.go).
 //
-// WHY DD-HAPI-003 (Generated OpenAPI Client)?
-// - ✅ Compile-time type safety: Invalid requests caught at build time
-// - ✅ Contract compliance: Guaranteed to match HAPI OpenAPI specification
-// - ✅ Auto-regeneration: `go generate` updates client when HAPI spec changes
-// - ✅ Fixes E2E test failures: Proper request formatting resolves HTTP 500 errors
-// - ✅ Consistent with Data Storage: Same pattern across all OpenAPI services
-//
-// ⚠️ FORBIDDEN: Manual HTTP clients for HAPI endpoints
-//
-//	Validation: scripts/validate-openapi-client-usage.sh
-//
-// ========================================
-//
 // BR-AI-006: API call construction and response handling.
-package client
+package agentclient
 
 import (
 	"context"
@@ -55,28 +37,21 @@ import (
 // CLIENT CONFIGURATION
 // ========================================
 
-// Config for HolmesGPT-API client
+// Config for Kubernaut Agent client
 type Config struct {
 	BaseURL string
 	Timeout time.Duration
 }
 
-// ========================================
-// CLIENT WRAPPER (DD-HAPI-003)
-// ========================================
-
-// HolmesGPTClient wraps the auto-generated OpenAPI client with a business-friendly API.
-//
-// Design Decision: DD-HAPI-003 - Mandatory OpenAPI Client Usage
-// All methods delegate to the generated client (oas_client_gen.go) for type safety,
-// OTel tracing, and contract compliance with HAPI's OpenAPI specification.
-type HolmesGPTClient struct {
+// KubernautAgentClient wraps the auto-generated OpenAPI client with a business-friendly API.
+// DD-HAPI-003: All methods delegate to the generated client (oas_client_gen.go).
+type KubernautAgentClient struct {
 	client *Client // Generated OpenAPI client from oas_client_gen.go
 }
 
-// newClientWithHTTP is the shared constructor that builds a HolmesGPTClient
+// newClientWithHTTP is the shared constructor that builds a KubernautAgentClient
 // from an already-configured *http.Client. Both public constructors delegate here.
-func newClientWithHTTP(cfg Config, httpClient *http.Client) (*HolmesGPTClient, error) {
+func newClientWithHTTP(cfg Config, httpClient *http.Client) (*KubernautAgentClient, error) {
 	generatedClient, err := NewClient(
 		cfg.BaseURL,
 		WithClient(httpClient),
@@ -85,7 +60,7 @@ func newClientWithHTTP(cfg Config, httpClient *http.Client) (*HolmesGPTClient, e
 		return nil, fmt.Errorf("failed to create OpenAPI client: %w", err)
 	}
 
-	return &HolmesGPTClient{
+	return &KubernautAgentClient{
 		client: generatedClient,
 	}, nil
 }
@@ -98,13 +73,13 @@ func defaultTimeout(cfg Config) time.Duration {
 	return 60 * time.Second
 }
 
-// NewHolmesGPTClient creates a new HAPI client using the generated OpenAPI client.
+// NewKubernautAgentClient creates a new HAPI client using the generated OpenAPI client.
 //
 // DD-HAPI-003: Uses generated client for compile-time type safety and contract compliance.
 // DD-AUTH-006: Uses ServiceAccount authentication by default (production/E2E).
 //
 // For integration tests with custom authentication, use NewHolmesGPTClientWithTransport.
-func NewHolmesGPTClient(cfg Config) (*HolmesGPTClient, error) {
+func NewKubernautAgentClient(cfg Config) (*KubernautAgentClient, error) {
 	// DD-AUTH-006: Use ServiceAccount authentication for production/E2E
 	// OAuth-proxy validates this token and injects X-Auth-Request-User header
 	transport := auth.NewServiceAccountTransportWithBase(http.DefaultTransport)
@@ -115,23 +90,9 @@ func NewHolmesGPTClient(cfg Config) (*HolmesGPTClient, error) {
 	})
 }
 
-// NewHolmesGPTClientWithTransport creates a new HAPI client with a custom HTTP transport.
-//
+// NewKubernautAgentClientWithTransport creates a new agent client with a custom HTTP transport.
 // DD-AUTH-006: Integration test pattern for mock authentication.
-// This allows tests to inject testutil.MockUserTransport to bypass oauth-proxy.
-//
-// Example (Integration Tests):
-//
-//	mockTransport := testutil.NewMockUserTransport("test-service@integration.test", http.DefaultTransport)
-//	client, err := client.NewHolmesGPTClientWithTransport(cfg, mockTransport)
-//
-// Example (E2E Tests with Static Token):
-//
-//	staticTokenTransport := testutil.NewStaticTokenTransport("sa-token-here", http.DefaultTransport)
-//	client, err := client.NewHolmesGPTClientWithTransport(cfg, staticTokenTransport)
-//
-// For production/E2E with real ServiceAccount tokens, use NewHolmesGPTClient (default).
-func NewHolmesGPTClientWithTransport(cfg Config, transport http.RoundTripper) (*HolmesGPTClient, error) {
+func NewKubernautAgentClientWithTransport(cfg Config, transport http.RoundTripper) (*KubernautAgentClient, error) {
 	return newClientWithHTTP(cfg, &http.Client{
 		Timeout:   defaultTimeout(cfg),
 		Transport: transport,
@@ -142,7 +103,7 @@ func NewHolmesGPTClientWithTransport(cfg Config, transport http.RoundTripper) (*
 // BUSINESS API METHODS
 // ========================================
 
-// Investigate calls the HolmesGPT-API incident analyze endpoint.
+// Investigate calls the incident analyze endpoint.
 //
 // BR-AI-006: POST /api/v1/incident/analyze
 // DD-HAPI-003: Uses generated OpenAPI client for type safety and contract compliance.
@@ -158,7 +119,7 @@ func NewHolmesGPTClientWithTransport(cfg Config, transport http.RoundTripper) (*
 // Returns:
 //   - *IncidentResponse: Successful response with AI analysis
 //   - *APIError: HTTP error (4xx, 5xx)
-func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest) (*IncidentResponse, error) {
+func (c *KubernautAgentClient) Investigate(ctx context.Context, req *IncidentRequest) (*IncidentResponse, error) {
 	// BR-AA-HAPI-064: HAPI endpoints are async-only (202 Accepted).
 	// This sync wrapper internally does submit -> poll -> get result,
 	// providing backward-compatible API for callers that don't need
@@ -182,7 +143,7 @@ func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest)
 // The poll interval is 1s, bounded by the ctx deadline.
 //
 // BR-AA-HAPI-064: Internal helper for sync-over-async wrapping.
-func (c *HolmesGPTClient) awaitSession(ctx context.Context, sessionID string) error {
+func (c *KubernautAgentClient) awaitSession(ctx context.Context, sessionID string) error {
 	for {
 		status, err := c.PollSession(ctx, sessionID)
 		if err != nil {
@@ -195,7 +156,7 @@ func (c *HolmesGPTClient) awaitSession(ctx context.Context, sessionID string) er
 		case "failed":
 			return &APIError{
 				StatusCode: http.StatusInternalServerError,
-				Message:    fmt.Sprintf("HAPI session failed: %s", status.Error),
+				Message:    fmt.Sprintf("agent session failed: %s", status.Error),
 			}
 		default:
 			// "pending" or "investigating" -- wait and retry
@@ -216,7 +177,7 @@ func (c *HolmesGPTClient) awaitSession(ctx context.Context, sessionID string) er
 // SESSION TYPES (BR-AA-HAPI-064)
 // ========================================
 
-// SessionStatus represents the status of a HAPI investigation session.
+// SessionStatus represents the status of an investigation session.
 // Returned by PollSession when querying session progress.
 type SessionStatus struct {
 	// Status of the session: "pending", "investigating", "completed", "failed"
@@ -235,7 +196,7 @@ type SessionStatus struct {
 // SubmitInvestigation submits an incident investigation request and returns a session ID.
 // BR-AA-HAPI-064.1: POST /api/v1/incident/analyze returns 202 with session_id
 // DD-HAPI-003: Delegates to generated client for OTel tracing and type-safe dispatch.
-func (c *HolmesGPTClient) SubmitInvestigation(ctx context.Context, req *IncidentRequest) (string, error) {
+func (c *KubernautAgentClient) SubmitInvestigation(ctx context.Context, req *IncidentRequest) (string, error) {
 	res, err := c.client.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
 	if err != nil {
 		return "", &APIError{StatusCode: 0, Message: fmt.Sprintf("submit investigation failed: %v", err)}
@@ -272,7 +233,7 @@ func (c *HolmesGPTClient) SubmitInvestigation(ctx context.Context, req *Incident
 // PollSession polls the status of an investigation session.
 // BR-AA-HAPI-064.2: GET /api/v1/incident/session/{id}
 // Returns *APIError{StatusCode: 404} when session not found (BR-AA-HAPI-064.5 regeneration trigger).
-func (c *HolmesGPTClient) PollSession(ctx context.Context, sessionID string) (*SessionStatus, error) {
+func (c *KubernautAgentClient) PollSession(ctx context.Context, sessionID string) (*SessionStatus, error) {
 	res, err := c.client.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx,
 		IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams{SessionID: sessionID})
 	if err != nil {
@@ -297,7 +258,7 @@ func (c *HolmesGPTClient) PollSession(ctx context.Context, sessionID string) (*S
 
 // GetSessionResult retrieves the result of a completed incident investigation session.
 // BR-AA-HAPI-064.3: GET /api/v1/incident/session/{id}/result
-func (c *HolmesGPTClient) GetSessionResult(ctx context.Context, sessionID string) (*IncidentResponse, error) {
+func (c *KubernautAgentClient) GetSessionResult(ctx context.Context, sessionID string) (*IncidentResponse, error) {
 	res, err := c.client.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(ctx,
 		IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{SessionID: sessionID})
 	if err != nil {
@@ -322,9 +283,7 @@ func (c *HolmesGPTClient) GetSessionResult(ctx context.Context, sessionID string
 // ERROR TYPES
 // ========================================
 
-// APIError represents an HTTP error from HolmesGPT-API.
-//
-// This error type wraps both network errors (no status code) and HTTP errors (4xx, 5xx).
+// APIError represents an HTTP error from the Kubernaut Agent.
 type APIError struct {
 	StatusCode int    // HTTP status code (0 for network errors)
 	Message    string // Human-readable error message
@@ -333,7 +292,7 @@ type APIError struct {
 // Error implements the error interface.
 func (e *APIError) Error() string {
 	if e.StatusCode == 0 {
-		return fmt.Sprintf("HolmesGPT-API network error: %s", e.Message)
+		return fmt.Sprintf("agent network error: %s", e.Message)
 	}
-	return fmt.Sprintf("HolmesGPT-API error (HTTP %d): %s", e.StatusCode, e.Message)
+	return fmt.Sprintf("agent error (HTTP %d): %s", e.StatusCode, e.Message)
 }
