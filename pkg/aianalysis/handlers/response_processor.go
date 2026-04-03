@@ -285,6 +285,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 	analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
+	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 	analysis.Status.InvestigationID = resp.IncidentID
 
@@ -374,6 +375,9 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 	}
 
 	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("workflow resolution failed: %s", humanReviewReason))
+	aianalysis.SetAnalysisComplete(analysis, false, fmt.Sprintf("workflow resolution failed: %s", humanReviewReason))
+	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "Workflow resolution failed, requires human review")
+	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No resolved workflow, approval not applicable")
 	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
@@ -389,6 +393,7 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 	analysis.Status.Phase = aianalysis.PhaseCompleted
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
+	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
 	analysis.Status.SubReason = "ProblemResolved"
 	analysis.Status.InvestigationID = resp.IncidentID
@@ -413,6 +418,11 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 		}
 	}
 
+	aianalysis.SetInvestigationComplete(analysis, true, "Investigation completed: problem self-resolved")
+	aianalysis.SetAnalysisComplete(analysis, true, "Analysis completed: no workflow needed, problem resolved")
+	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonNoWorkflowNeeded, "Problem self-resolved, no workflow needed")
+	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No workflow selected, approval not applicable")
+
 	// BR-HAPI-200: Record analysis completion audit event
 	// This is a successful completion even though no workflow was selected
 	p.auditClient.RecordAnalysisComplete(ctx, analysis)
@@ -434,6 +444,7 @@ func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context,
 	analysis.Status.Phase = aianalysis.PhaseCompleted
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
+	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
 	analysis.Status.SubReason = "NotActionable"
 	analysis.Status.InvestigationID = resp.IncidentID
@@ -459,6 +470,11 @@ func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context,
 		}
 	}
 
+	aianalysis.SetInvestigationComplete(analysis, true, "Investigation completed: alert not actionable")
+	aianalysis.SetAnalysisComplete(analysis, true, "Analysis completed: no workflow needed, alert not actionable")
+	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonNoWorkflowNeeded, "Alert not actionable, no workflow needed")
+	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No workflow selected, approval not applicable")
+
 	p.auditClient.RecordAnalysisComplete(ctx, analysis)
 
 	return ctrl.Result{}, nil
@@ -477,6 +493,7 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
+	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysis.ReasonWorkflowResolutionFailed
 	analysis.Status.SubReason = "NoMatchingWorkflows" // Maps to CRD SubReason enum
 	analysis.Status.InvestigationID = resp.IncidentID
@@ -510,6 +527,9 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	p.metrics.RecordFailure("WorkflowResolutionFailed", "NoMatchingWorkflows")
 
 	aianalysis.SetInvestigationComplete(analysis, false, "no workflow selected: no matching workflows found")
+	aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected for remediation")
+	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "No matching workflows found")
+	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No workflow selected, approval not applicable")
 	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
@@ -529,6 +549,7 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 	analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
+	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysis.ReasonWorkflowResolutionFailed
 	analysis.Status.SubReason = "LowConfidence" // Maps to CRD SubReason enum
 	analysis.Status.InvestigationID = resp.IncidentID
@@ -603,7 +624,18 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 	p.metrics.RecordFailure("WorkflowResolutionFailed", "LowConfidence")
 
 	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("low confidence: %.2f below threshold %.2f", resp.Confidence, confidenceThreshold))
+	aianalysis.SetAnalysisComplete(analysis, false, fmt.Sprintf("Workflow confidence %.2f below threshold %.2f", resp.Confidence, confidenceThreshold))
+	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, fmt.Sprintf("Workflow confidence %.2f below threshold", resp.Confidence))
+	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "Workflow not approved due to low confidence")
 	return ctrl.Result{}, nil // Terminal - no requeue
+}
+
+// setTotalAnalysisTime calculates and sets TotalAnalysisTime from StartedAt.
+// Safe to call when StartedAt is nil (no-op).
+func setTotalAnalysisTime(analysis *aianalysisv1.AIAnalysis, now metav1.Time) {
+	if analysis.Status.StartedAt != nil {
+		analysis.Status.TotalAnalysisTime = int64(now.Sub(analysis.Status.StartedAt.Time).Seconds())
+	}
 }
 
 // mapEnumToSubReason maps HAPI HumanReviewReason enum to CRD SubReason
