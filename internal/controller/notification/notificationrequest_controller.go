@@ -28,12 +28,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -63,6 +60,7 @@ type NotificationRequestReconciler struct {
 	// BR-NOT-104: Per-receiver credential resolution for Slack delivery
 	CredentialResolver    *credentials.Resolver
 	registeredSlackKeys   []string
+	slackKeysMu          sync.Mutex // #244: Protects registeredSlackKeys during concurrent routing reloads
 	SlackTimeout         time.Duration // NT-1: HTTP timeout for Slack webhook (wired from config)
 
 	// ========================================
@@ -113,7 +111,7 @@ type NotificationRequestReconciler struct {
 
 	// BR-NOT-065: Channel Routing Based on Spec Fields
 	// BR-NOT-067: Routing Configuration Hot-Reload
-	// Thread-safe router with hot-reload support from ConfigMap
+	// Thread-safe router with hot-reload support via FileWatcher (#244)
 	// See: DD-WE-004 (skip-reason routing)
 	Router *routing.Router
 
@@ -173,7 +171,6 @@ type NotificationRequestReconciler struct {
 //+kubebuilder:rbac:groups=kubernaut.ai,resources=notificationrequests,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=kubernaut.ai,resources=notificationrequests/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=kubernaut.ai,resources=notificationrequests/finalizers,verbs=update
-//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -727,7 +724,8 @@ func countSuccessfulAttempts(attempts []notificationv1alpha1.DeliveryAttempt) in
 }
 
 // SetupWithManager sets up the controller with the Manager.
-// BR-NOT-067: Watches ConfigMap for routing configuration hot-reload
+// #244: Routing config hot-reload is now handled by FileWatcher (wired in main.go),
+// not by a ConfigMap informer in the controller.
 //
 // Optional opts parameter allows configuring controller behavior:
 //   - MaxConcurrentReconciles: Number of concurrent workers (default: 1)
@@ -738,31 +736,13 @@ func countSuccessfulAttempts(attempts []notificationv1alpha1.DeliveryAttempt) in
 //	    MaxConcurrentReconciles: 5,  // 5 workers for 100 concurrent notifications
 //	})
 func (r *NotificationRequestReconciler) SetupWithManager(mgr ctrl.Manager, opts ...controller.Options) error {
-	// Initialize router with default config if not provided
 	if r.Router == nil {
 		r.Router = routing.NewRouter(ctrl.Log.WithName("routing"))
 	}
 
-	// Load initial routing config from ConfigMap (if exists)
-	if err := r.loadRoutingConfigFromCluster(context.Background()); err != nil {
-		// Non-fatal: use default config if ConfigMap doesn't exist
-		ctrl.Log.Info("Using default routing config", "error", err)
-	}
-
-	// Build controller with optional configuration
 	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
-		For(&notificationv1alpha1.NotificationRequest{}).
-		// BR-NOT-067: Watch ConfigMaps for routing configuration hot-reload
-		Watches(
-			&corev1.ConfigMap{},
-			handler.EnqueueRequestsFromMapFunc(r.handleConfigMapChange),
-			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
-				// Only watch the routing ConfigMap
-				return routing.IsRoutingConfigMap(obj.GetName(), obj.GetNamespace())
-			})),
-		)
+		For(&notificationv1alpha1.NotificationRequest{})
 
-	// Apply options if provided
 	if len(opts) > 0 {
 		ctrlBuilder = ctrlBuilder.WithOptions(opts[0])
 	}

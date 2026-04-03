@@ -25,7 +25,6 @@ import (
 
 	"github.com/go-logr/zapr"
 	zaplog "go.uber.org/zap"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -52,6 +51,7 @@ import (
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	"github.com/sony/gobreaker"
 	//+kubebuilder:scaffold:imports
@@ -187,17 +187,12 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	// ADR-030: Use configuration values for controller manager
-	// ConfigMaps scoped to namespace for routing config hot-reload (#259)
+	// #244: ConfigMap cache removed — routing config now loaded via FileWatcher
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Cache: cache.Options{
 			ByObject: map[client.Object]cache.ByObject{
 				&notificationv1alpha1.NotificationRequest{}: {
-					Namespaces: map[string]cache.Config{
-						controllerNS: {},
-					},
-				},
-				&corev1.ConfigMap{}: {
 					Namespaces: map[string]cache.Config{
 						controllerNS: {},
 					},
@@ -402,18 +397,9 @@ func main() {
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), fileService)
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), logService)
 
-	// Issue #118 Gap 11: Legacy env-var fallback for plain "slack" channel registration.
-	// When SLACK_WEBHOOK_URL is set (e.g. in E2E with mock-slack), register a basic
-	// SlackDeliveryService so NotificationRequests with channel "slack" can be delivered.
-	// Per-receiver Slack (BR-NOT-104) still takes precedence when routing config is loaded.
+	// #244: Per-receiver Slack channels are registered dynamically by
+	// ReloadRoutingFromContent (triggered by FileWatcher).
 	startupChannels := []string{"console", "file", "log"}
-	if slackURL := os.Getenv("SLACK_WEBHOOK_URL"); slackURL != "" {
-		slackService := delivery.NewSlackDeliveryService(slackURL, cfg.Delivery.Slack.Timeout)
-		deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackService)
-		startupChannels = append(startupChannels, "slack")
-		logger.Info("Registered legacy Slack channel from SLACK_WEBHOOK_URL env var")
-	}
-
 	logger.Info("Delivery Orchestrator initialized with registration pattern (DD-NOT-007)")
 	logger.Info("Registered startup channels (per-receiver Slack registered on routing config load)",
 		"channels", startupChannels)
@@ -441,7 +427,7 @@ func main() {
 	logger.Info("Notification enricher initialized (#553: workflow name resolution)")
 
 	// Setup controller with delivery services + sanitization + audit + metrics + EventRecorder + statusManager + deliveryOrchestrator + circuitBreaker
-	if err = (&notification.NotificationRequestReconciler{
+	reconciler := &notification.NotificationRequestReconciler{
 		Client:               mgr.GetClient(),
 		APIReader:            mgr.GetAPIReader(),                                 // DD-STATUS-001: Cache-bypassed reader
 		Scheme:               mgr.GetScheme(),
@@ -457,7 +443,8 @@ func main() {
 		AuditStore:           auditStore,                                         // ADR-032: Audit store
 		AuditManager:         auditManager,                                       // Direct audit manager (no wrapper)
 		StatusManager:        statusManager,                                      // Pattern 2: Status Manager (P1)
-	}).SetupWithManager(mgr); err != nil {
+	}
+	if err = reconciler.SetupWithManager(mgr); err != nil {
 		logger.Error(err, "Unable to create controller", "controller", "NotificationRequest")
 		os.Exit(1)
 	}
@@ -477,7 +464,7 @@ func main() {
 	// Setup signal handler for graceful shutdown
 	ctx := ctrl.SetupSignalHandler()
 
-	// BR-NOT-104-002: Start credential hot-reload watcher before manager starts
+	// BR-NOT-104-002: Start credential hot-reload watcher before routing watcher
 	if credResolver != nil {
 		if err := credResolver.StartWatching(ctx); err != nil {
 			logger.Error(err, "Failed to start credential watcher (hot-reload disabled)")
@@ -489,6 +476,30 @@ func main() {
 				logger.Error(err, "Failed to close credential resolver")
 			}
 		}()
+	}
+
+	// #244: FileWatcher for routing config hot-reload (replaces ConfigMap informer)
+	// Startup order: credResolver.StartWatching → routingWatcher.Start → mgr.Start
+	routingConfigPath := "/etc/notification-routing/routing.yaml"
+	if envPath := os.Getenv("ROUTING_CONFIG_PATH"); envPath != "" {
+		routingConfigPath = envPath
+	}
+	routingWatcher, err := hotreload.NewFileWatcher(
+		routingConfigPath,
+		func(newContent string) error {
+			return reconciler.ReloadRoutingFromContent(newContent)
+		},
+		ctrl.Log.WithName("routing-watcher"),
+	)
+	if err != nil {
+		logger.Error(err, "Failed to create routing file watcher")
+		os.Exit(1)
+	}
+	if err := routingWatcher.Start(ctx); err != nil {
+		logger.Info("Routing file watcher failed to start (using default config)", "error", err)
+	} else {
+		logger.Info("Routing file watcher started (#244)", "path", routingConfigPath)
+		defer routingWatcher.Stop()
 	}
 
 	if err := mgr.Start(ctx); err != nil {

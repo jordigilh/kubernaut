@@ -18,42 +18,11 @@ package routing
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 
 	"github.com/go-logr/logr"
 )
-
-// =============================================================================
-// BR-NOT-067: Routing Configuration Hot-Reload
-// =============================================================================
-//
-// ConfigMap Name and Namespace Constants
-// These define where the routing configuration ConfigMap is expected.
-//
-// =============================================================================
-
-const (
-	// DefaultConfigMapName is the name of the ConfigMap containing routing config.
-	DefaultConfigMapName = "notification-routing-config"
-
-	// DefaultConfigMapNamespace is the fallback namespace when POD_NAMESPACE is not set.
-	DefaultConfigMapNamespace = "kubernaut-notifications"
-
-	// DefaultConfigMapKey is the key within the ConfigMap containing the YAML config.
-	DefaultConfigMapKey = "routing.yaml"
-)
-
-// GetConfigMapNamespace returns the namespace where the routing ConfigMap is expected.
-// Reads from POD_NAMESPACE env var (set via Kubernetes downward API), falling back
-// to DefaultConfigMapNamespace for backward compatibility with standalone deployments.
-func GetConfigMapNamespace() string {
-	if ns := os.Getenv("POD_NAMESPACE"); ns != "" {
-		return ns
-	}
-	return DefaultConfigMapNamespace
-}
 
 // Router provides thread-safe routing configuration management with hot-reload support.
 // BR-NOT-067: Hot-reload routing configuration without service restart.
@@ -239,23 +208,3 @@ func defaultConsoleReceiver() *Receiver {
 	}
 }
 
-// =============================================================================
-// ConfigMap Handler Helper Functions
-// =============================================================================
-
-// IsRoutingConfigMap checks if the given ConfigMap matches the routing config criteria.
-// BR-NOT-067: Only react to the routing ConfigMap
-// #207: Uses GetConfigMapNamespace() for dynamic namespace resolution.
-func IsRoutingConfigMap(name, namespace string) bool {
-	return name == DefaultConfigMapName && namespace == GetConfigMapNamespace()
-}
-
-// ExtractRoutingConfig extracts the routing YAML from a ConfigMap's data.
-// Returns the YAML bytes and true if found, or nil and false if not present.
-func ExtractRoutingConfig(data map[string]string) ([]byte, bool) {
-	yaml, ok := data[DefaultConfigMapKey]
-	if !ok || yaml == "" {
-		return nil, false
-	}
-	return []byte(yaml), true
-}

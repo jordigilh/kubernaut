@@ -31,13 +31,13 @@ limitations under the License.
 //
 // RESPONSIBILITIES:
 // - Channel resolution from routing rules (BR-NOT-065)
-// - ConfigMap watch and hot-reload (BR-NOT-067)
+// - FileWatcher-based routing hot-reload (BR-NOT-067, #244)
 // - Routing condition formatting (BR-NOT-069)
 // - Receiver-to-channel mapping
 //
 // BR REFERENCES:
 // - BR-NOT-065: Use routing rules to determine channels
-// - BR-NOT-067: Hot-reload routing configuration from ConfigMap
+// - BR-NOT-067: Hot-reload routing configuration via FileWatcher (#244)
 // - BR-NOT-069: Routing condition visibility
 // ========================================
 
@@ -48,12 +48,7 @@ import (
 	"fmt"
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	kubernautnotif "github.com/jordigilh/kubernaut/pkg/notification"
@@ -166,111 +161,58 @@ func (r *NotificationRequestReconciler) receiverToChannels(receiver *routing.Rec
 }
 
 // ========================================
-// CONFIGMAP WATCH & HOT-RELOAD
+// FILE-BASED HOT-RELOAD (#244)
 // ========================================
 
-// handleConfigMapChange handles changes to the routing ConfigMap.
-// It reloads the routing configuration when the ConfigMap is created, updated, or deleted.
-func (r *NotificationRequestReconciler) handleConfigMapChange(ctx context.Context, obj client.Object) []reconcile.Request {
-	logger := log.FromContext(ctx)
-
-	// Verify this is the routing ConfigMap
-	if !routing.IsRoutingConfigMap(obj.GetName(), obj.GetNamespace()) {
-		return nil
+// collectSlackCredentialRefs returns all non-empty credentialRef values from Slack configs.
+func collectSlackCredentialRefs(config *routing.Config) []string {
+	var refs []string
+	for _, recv := range config.Receivers {
+		for _, sc := range recv.SlackConfigs {
+			if sc.CredentialRef != "" {
+				refs = append(refs, sc.CredentialRef)
+			}
+		}
 	}
-
-	logger.Info("Routing ConfigMap changed, reloading configuration",
-		"name", obj.GetName(),
-		"namespace", obj.GetNamespace(),
-	)
-
-	// Reload routing configuration
-	if err := r.loadRoutingConfigFromCluster(ctx); err != nil {
-		logger.Error(err, "Failed to reload routing configuration, keeping previous config")
-	}
-
-	// Return empty - we don't need to reconcile any specific NotificationRequest
-	// The new config will be used for future notifications
-	return nil
+	return refs
 }
 
-// loadRoutingConfigFromCluster loads routing configuration from the cluster ConfigMap.
-// BR-NOT-067: ConfigMap changes detected within 30 seconds
-func (r *NotificationRequestReconciler) loadRoutingConfigFromCluster(ctx context.Context) error {
-	logger := log.FromContext(ctx)
+// ReloadRoutingFromContent reloads routing configuration from raw YAML content.
+// #244: Replaces loadRoutingConfigFromCluster for FileWatcher-based hot-reload.
+// BR-NOT-067: Routing table updated without restart.
+// BR-NOT-104: Per-receiver Slack delivery services rebuilt on reload.
+func (r *NotificationRequestReconciler) ReloadRoutingFromContent(content string) error {
+	r.slackKeysMu.Lock()
+	defer r.slackKeysMu.Unlock()
 
-	// Fetch the routing ConfigMap
-	configMap := &corev1.ConfigMap{}
-	key := types.NamespacedName{
-		Name:      routing.DefaultConfigMapName,
-		Namespace: routing.GetConfigMapNamespace(),
-	}
-
-	if err := r.Get(ctx, key, configMap); err != nil {
-		if errors.IsNotFound(err) {
-			logger.Info("Routing ConfigMap not found, using default configuration",
-				"name", key.Name,
-				"namespace", key.Namespace,
-			)
-			// Use default config (already set in NewRouter)
-			return nil
-		}
-		return fmt.Errorf("failed to get routing ConfigMap: %w", err)
-	}
-
-	// Extract routing YAML from ConfigMap
-	yamlData, ok := routing.ExtractRoutingConfig(configMap.Data)
-	if !ok {
-		logger.Info("Routing ConfigMap found but missing routing.yaml key, using default configuration",
-			"name", key.Name,
-			"namespace", key.Namespace,
-		)
+	yamlData := []byte(content)
+	if len(yamlData) == 0 {
 		return nil
 	}
 
-	// Parse and validate structure first (before loading into router)
 	newConfig, err := routing.ParseConfig(yamlData)
 	if err != nil {
 		return fmt.Errorf("failed to parse routing configuration: %w", err)
 	}
 
-	// BR-NOT-104: Validate credential refs before accepting the new config
 	if err := newConfig.ValidateCredentialRefs(); err != nil {
-		logger.Error(err, "New routing config has empty credentialRef, keeping previous config")
 		return fmt.Errorf("credential validation failed, keeping previous config: %w", err)
 	}
 
-	// BR-NOT-104-003: Verify all credentialRefs resolve to actual files on disk
 	if r.CredentialResolver != nil {
-		var allRefs []string
-		for _, recv := range newConfig.Receivers {
-			for _, sc := range recv.SlackConfigs {
-				if sc.CredentialRef != "" {
-					allRefs = append(allRefs, sc.CredentialRef)
-				}
-			}
-		}
-		if len(allRefs) > 0 {
+		if allRefs := collectSlackCredentialRefs(newConfig); len(allRefs) > 0 {
 			if err := r.CredentialResolver.ValidateRefs(allRefs); err != nil {
-				logger.Error(err, "Credential files missing for routing config, keeping previous config")
 				return fmt.Errorf("credential file validation failed, keeping previous config: %w", err)
 			}
 		}
 	}
 
-	// BR-NOT-067: Routing table updated without restart
 	if err := r.Router.LoadConfig(yamlData); err != nil {
 		return fmt.Errorf("failed to load routing configuration: %w", err)
 	}
 
-	// BR-NOT-104: Rebuild per-receiver Slack delivery services
+	ctx := context.Background()
 	r.rebuildSlackDeliveryServices(ctx, newConfig)
-
-	logger.Info("Routing configuration loaded successfully from ConfigMap",
-		"name", key.Name,
-		"namespace", key.Namespace,
-		"summary", r.Router.GetConfigSummary(),
-	)
 
 	return nil
 }
