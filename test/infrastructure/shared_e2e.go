@@ -50,7 +50,7 @@ func createHAPIKindCluster(clusterName, kubeconfigPath string, writer io.Writer)
 	opts := KindClusterOptions{
 		ClusterName:               clusterName,
 		KubeconfigPath:            kubeconfigPath,
-		ConfigPath:                "test/infrastructure/kind-holmesgpt-api-config.yaml",
+		ConfigPath:                "test/infrastructure/kind-kubernautagent-config.yaml",
 		WaitTimeout:               "5m",
 		DeleteExisting:            true,
 		ReuseExisting:             false,

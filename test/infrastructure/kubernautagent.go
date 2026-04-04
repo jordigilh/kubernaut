@@ -186,7 +186,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to create KA E2E client RBAC: %w", err)
 	}
 
-	e2eSAName := "holmesgpt-api-e2e-sa"
+	e2eSAName := "kubernaut-agent-e2e-sa"
 	saToken, err := GetServiceAccountToken(ctx, namespace, e2eSAName, kubeconfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to get SA token: %w", err)
@@ -262,7 +262,7 @@ roleRef:
   name: kubernaut-agent-e2e-client-access
 subjects:
   - kind: ServiceAccount
-    name: holmesgpt-api-e2e-sa
+    name: kubernaut-agent-e2e-sa
     namespace: %s
 `, namespace, namespace, namespace)
 

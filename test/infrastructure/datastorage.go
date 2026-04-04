@@ -250,7 +250,7 @@ func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName strin
 //   - testsFailed: If true, exports logs before deletion (must-gather style)
 //   - writer: Output writer for logging
 //   - namespace: Optional namespace override for must-gather (default: "kubernaut-system").
-//     Services that deploy pods in a custom namespace (e.g., HAPI in "holmesgpt-api-e2e")
+//     Services that deploy pods in a custom namespace (e.g., KA in "kubernaut-agent-e2e")
 //     must pass the actual namespace so MustGatherPodLogs can find the pods.
 //
 // Log Export Behavior (when testsFailed=true):
@@ -261,7 +261,7 @@ func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName strin
 // Example:
 //
 //	err := DeleteCluster("gateway-e2e", "gateway", anyTestFailed, GinkgoWriter)
-//	err := DeleteCluster("holmesgpt-api-e2e", "holmesgpt-api", anyTestFailed, GinkgoWriter, "holmesgpt-api-e2e")
+//	err := DeleteCluster("kubernaut-agent-e2e", "kubernaut-agent", anyTestFailed, GinkgoWriter, "kubernaut-agent-e2e")
 func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.Writer, namespace ...string) error {
 	// ═══════════════════════════════════════════════════════════════════════
 	// FIX: Preserve cluster in CI/CD when tests fail (for must-gather)
