@@ -20376,6 +20376,8 @@ func (s *NotificationAuditChannel) Decode(d *jx.Decoder) error {
 		*s = NotificationAuditChannelSlack
 	case NotificationAuditChannelPagerduty:
 		*s = NotificationAuditChannelPagerduty
+	case NotificationAuditChannelTeams:
+		*s = NotificationAuditChannelTeams
 	case NotificationAuditChannelWebhook:
 		*s = NotificationAuditChannelWebhook
 	default:
@@ -21291,6 +21293,8 @@ func (s *NotificationAuditResponseChannel) Decode(d *jx.Decoder) error {
 		*s = NotificationAuditResponseChannelSlack
 	case NotificationAuditResponseChannelPagerduty:
 		*s = NotificationAuditResponseChannelPagerduty
+	case NotificationAuditResponseChannelTeams:
+		*s = NotificationAuditResponseChannelTeams
 	case NotificationAuditResponseChannelWebhook:
 		*s = NotificationAuditResponseChannelWebhook
 	default:

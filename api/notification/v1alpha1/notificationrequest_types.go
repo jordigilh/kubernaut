@@ -54,18 +54,19 @@ const (
 	NotificationPriorityLow      NotificationPriority = "Low"
 )
 
-// +kubebuilder:validation:Enum=email;slack;teams;sms;webhook;console;file;log
+// +kubebuilder:validation:Enum=email;slack;teams;pagerduty;sms;webhook;console;file;log
 type Channel string
 
 const (
-	ChannelEmail   Channel = "email"
-	ChannelSlack   Channel = "slack"
-	ChannelTeams   Channel = "teams"
-	ChannelSMS     Channel = "sms"
-	ChannelWebhook Channel = "webhook"
-	ChannelConsole Channel = "console"
-	ChannelFile    Channel = "file" // File-based delivery for audit trails and compliance
-	ChannelLog     Channel = "log"  // Structured JSON logs to stdout for observability
+	ChannelEmail     Channel = "email"
+	ChannelSlack     Channel = "slack"
+	ChannelTeams     Channel = "teams"
+	ChannelPagerDuty Channel = "pagerduty"
+	ChannelSMS       Channel = "sms"
+	ChannelWebhook   Channel = "webhook"
+	ChannelConsole   Channel = "console"
+	ChannelFile      Channel = "file" // File-based delivery for audit trails and compliance
+	ChannelLog       Channel = "log"  // Structured JSON logs to stdout for observability
 )
 
 // +kubebuilder:validation:Enum=Pending;Sending;Retrying;Sent;PartiallySent;Failed

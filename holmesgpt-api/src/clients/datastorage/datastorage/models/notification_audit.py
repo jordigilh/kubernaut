@@ -46,8 +46,8 @@ class NotificationAudit(BaseModel):
     @field_validator('channel')
     def channel_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('email', 'slack', 'pagerduty', 'webhook'):
-            raise ValueError("must be one of enum values ('email', 'slack', 'pagerduty', 'webhook')")
+        if value not in ('email', 'slack', 'pagerduty', 'teams', 'webhook'):
+            raise ValueError("must be one of enum values ('email', 'slack', 'pagerduty', 'teams', 'webhook')")
         return value
 
     @field_validator('status')

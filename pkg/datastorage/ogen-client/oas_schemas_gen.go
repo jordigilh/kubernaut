@@ -11124,6 +11124,7 @@ const (
 	NotificationAuditChannelEmail     NotificationAuditChannel = "email"
 	NotificationAuditChannelSlack     NotificationAuditChannel = "slack"
 	NotificationAuditChannelPagerduty NotificationAuditChannel = "pagerduty"
+	NotificationAuditChannelTeams     NotificationAuditChannel = "teams"
 	NotificationAuditChannelWebhook   NotificationAuditChannel = "webhook"
 )
 
@@ -11133,6 +11134,7 @@ func (NotificationAuditChannel) AllValues() []NotificationAuditChannel {
 		NotificationAuditChannelEmail,
 		NotificationAuditChannelSlack,
 		NotificationAuditChannelPagerduty,
+		NotificationAuditChannelTeams,
 		NotificationAuditChannelWebhook,
 	}
 }
@@ -11145,6 +11147,8 @@ func (s NotificationAuditChannel) MarshalText() ([]byte, error) {
 	case NotificationAuditChannelSlack:
 		return []byte(s), nil
 	case NotificationAuditChannelPagerduty:
+		return []byte(s), nil
+	case NotificationAuditChannelTeams:
 		return []byte(s), nil
 	case NotificationAuditChannelWebhook:
 		return []byte(s), nil
@@ -11164,6 +11168,9 @@ func (s *NotificationAuditChannel) UnmarshalText(data []byte) error {
 		return nil
 	case NotificationAuditChannelPagerduty:
 		*s = NotificationAuditChannelPagerduty
+		return nil
+	case NotificationAuditChannelTeams:
+		*s = NotificationAuditChannelTeams
 		return nil
 	case NotificationAuditChannelWebhook:
 		*s = NotificationAuditChannelWebhook
@@ -11849,6 +11856,7 @@ const (
 	NotificationAuditResponseChannelEmail     NotificationAuditResponseChannel = "email"
 	NotificationAuditResponseChannelSlack     NotificationAuditResponseChannel = "slack"
 	NotificationAuditResponseChannelPagerduty NotificationAuditResponseChannel = "pagerduty"
+	NotificationAuditResponseChannelTeams     NotificationAuditResponseChannel = "teams"
 	NotificationAuditResponseChannelWebhook   NotificationAuditResponseChannel = "webhook"
 )
 
@@ -11858,6 +11866,7 @@ func (NotificationAuditResponseChannel) AllValues() []NotificationAuditResponseC
 		NotificationAuditResponseChannelEmail,
 		NotificationAuditResponseChannelSlack,
 		NotificationAuditResponseChannelPagerduty,
+		NotificationAuditResponseChannelTeams,
 		NotificationAuditResponseChannelWebhook,
 	}
 }
@@ -11870,6 +11879,8 @@ func (s NotificationAuditResponseChannel) MarshalText() ([]byte, error) {
 	case NotificationAuditResponseChannelSlack:
 		return []byte(s), nil
 	case NotificationAuditResponseChannelPagerduty:
+		return []byte(s), nil
+	case NotificationAuditResponseChannelTeams:
 		return []byte(s), nil
 	case NotificationAuditResponseChannelWebhook:
 		return []byte(s), nil
@@ -11889,6 +11900,9 @@ func (s *NotificationAuditResponseChannel) UnmarshalText(data []byte) error {
 		return nil
 	case NotificationAuditResponseChannelPagerduty:
 		*s = NotificationAuditResponseChannelPagerduty
+		return nil
+	case NotificationAuditResponseChannelTeams:
+		*s = NotificationAuditResponseChannelTeams
 		return nil
 	case NotificationAuditResponseChannelWebhook:
 		*s = NotificationAuditResponseChannelWebhook

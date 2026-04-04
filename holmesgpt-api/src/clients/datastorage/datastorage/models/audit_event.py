@@ -35,7 +35,7 @@ class AuditEvent(BaseModel):
     version: Annotated[str, Field(min_length=1, strict=True, max_length=20)] = Field(description="Schema version (e.g., \"1.0\")")
     event_type: Annotated[str, Field(min_length=1, strict=True, max_length=100)] = Field(description="Event type identifier (e.g., gateway.signal.received)")
     event_timestamp: datetime = Field(description="ISO 8601 timestamp when the event occurred")
-    event_category: Annotated[str, Field(min_length=1, strict=True, max_length=50)] = Field(description="Domain-level event category (ADR-034 v1.8). Per convention: event_category identifies the business domain of the event. The emitter/service is captured in the event_type first segment. Values: - gateway: Gateway signal and CRD lifecycle events - notification: Notification delivery and escalation events - analysis: AI analysis, agent calls, and rego evaluation events - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent - signalprocessing: Signal Processing Service - workflow: Workflow catalog and discovery events - workflowexecution: Workflow execution lifecycle events - orchestration: Remediation orchestration lifecycle events - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution) - effectiveness: Effectiveness assessment and monitoring events - actiontype: ActionType taxonomy lifecycle events (Issue #300) ")
+    event_category: Annotated[str, Field(min_length=1, strict=True, max_length=50)] = Field(description="Domain-level event category (ADR-034 v1.8, Issue #306). Per convention: event_category identifies the business domain of the event. The emitter/service is captured in the event_type first segment. Values: - gateway: Gateway signal and CRD lifecycle events - notification: Notification delivery and escalation events - analysis: AI analysis, agent calls, and rego evaluation events - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent - signalprocessing: Signal Processing Service - workflow: Workflow catalog and discovery events - workflowexecution: Workflow execution lifecycle events - orchestration: Remediation orchestration lifecycle events - approval: Remediation approval request decision events - effectiveness: Effectiveness assessment and monitoring events - actiontype: ActionType taxonomy lifecycle events (Issue #300) ")
     event_action: Annotated[str, Field(min_length=1, strict=True, max_length=50)] = Field(description="Action performed (ADR-034)")
     event_outcome: StrictStr = Field(description="Result of the event")
     actor_type: Optional[StrictStr] = None
@@ -56,8 +56,8 @@ class AuditEvent(BaseModel):
     @field_validator('event_category')
     def event_category_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('gateway', 'notification', 'analysis', 'aiagent', 'signalprocessing', 'workflow', 'workflowexecution', 'orchestration', 'webhook', 'effectiveness', 'actiontype'):
-            raise ValueError("must be one of enum values ('gateway', 'notification', 'analysis', 'aiagent', 'signalprocessing', 'workflow', 'workflowexecution', 'orchestration', 'webhook', 'effectiveness', 'actiontype')")
+        if value not in ('gateway', 'notification', 'analysis', 'aiagent', 'signalprocessing', 'workflow', 'workflowexecution', 'orchestration', 'approval', 'effectiveness', 'actiontype'):
+            raise ValueError("must be one of enum values ('gateway', 'notification', 'analysis', 'aiagent', 'signalprocessing', 'workflow', 'workflowexecution', 'orchestration', 'approval', 'effectiveness', 'actiontype')")
         return value
 
     @field_validator('event_outcome')

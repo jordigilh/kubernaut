@@ -3618,6 +3618,8 @@ func (s NotificationAuditChannel) Validate() error {
 		return nil
 	case "pagerduty":
 		return nil
+	case "teams":
+		return nil
 	case "webhook":
 		return nil
 	default:
@@ -4051,6 +4053,8 @@ func (s NotificationAuditResponseChannel) Validate() error {
 	case "slack":
 		return nil
 	case "pagerduty":
+		return nil
+	case "teams":
 		return nil
 	case "webhook":
 		return nil

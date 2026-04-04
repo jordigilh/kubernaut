@@ -2092,6 +2092,7 @@ components:
             - email
             - slack
             - pagerduty
+            - teams
             - webhook
           description: |
             Notification delivery channel.
