@@ -62,11 +62,10 @@ jobs:
   # 12 parallel jobs: one per service, amd64 only.
   # Helm smoke tests depend on this stage completing (Issue #569).
   #
-  # Services (11):
-  #   Go (9): gateway, signalprocessing, aianalysis, authwebhook,
-  #           remediationorchestrator, workflowexecution, notification,
-  #           datastorage, effectivenessmonitor
-  #   Agent (1): kubernautagent
+  # Services (12):
+  #   Go (11): gateway, signalprocessing, aianalysis, authwebhook,
+  #            remediationorchestrator, workflowexecution, notification,
+  #            datastorage, effectivenessmonitor, db-migrate, kubernautagent
   #   Bash (1): must-gather
   #
   # Strategy:
@@ -92,7 +91,7 @@ jobs:
           - notification
           - datastorage
           - effectivenessmonitor
-          - holmesgpt-api
+          - kubernautagent
           - must-gather
           - db-migrate
     steps:
@@ -289,7 +288,7 @@ jobs:
         run: |
           for svc in gateway signalprocessing aianalysis authwebhook \
                      remediationorchestrator workflowexecution notification \
-                     datastorage effectivenessmonitor holmesgpt-api \
+                     datastorage effectivenessmonitor kubernautagent \
                      must-gather db-migrate; do
             IMAGE="${IMAGE_REGISTRY}/${svc}:${IMAGE_TAG}-amd64"
             echo "Pulling ${IMAGE}..."

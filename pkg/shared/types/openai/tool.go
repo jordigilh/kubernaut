@@ -42,7 +42,7 @@ type ToolDefinition struct {
 }
 
 // Tool name constants shared between Mock LLM and Kubernaut Agent.
-// These must match the Python Mock LLM string values exactly.
+// These must match the Go Mock LLM string values exactly.
 const (
 	ToolSearchWorkflowCatalog        = "search_workflow_catalog"
 	ToolListAvailableActions         = "list_available_actions"

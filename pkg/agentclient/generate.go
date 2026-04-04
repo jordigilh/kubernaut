@@ -21,10 +21,10 @@ package agentclient
 //   1. Ensure ogen is installed: go install github.com/ogen-go/ogen/cmd/ogen@latest
 //   2. Run: go generate ./pkg/agentclient/
 //
-// The OpenAPI spec is located at: api/openapi.json
+// The OpenAPI spec is located at: internal/kubernautagent/api/openapi.json
 //
 // Note: Makefile sets PATH to include $(LOCALBIN) before running go generate
-//go:generate sh -c "ogen --target . --package agentclient --clean ../../../api/openapi.json 2>/dev/null || $(go env GOPATH)/bin/ogen --target . --package agentclient --clean ../../../api/openapi.json"
+//go:generate sh -c "ogen --target . --package agentclient --clean ../../internal/kubernautagent/api/openapi.json 2>/dev/null || $(go env GOPATH)/bin/ogen --target . --package agentclient --clean ../../internal/kubernautagent/api/openapi.json"
 
 
 

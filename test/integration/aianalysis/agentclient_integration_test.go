@@ -48,7 +48,7 @@ import (
 //   - PostgreSQL (:15438)
 //   - Redis (:16384)
 //   - DataStorage API (:18095)
-//   - Mock LLM Service (:18141) - Standalone Python app (mocks OpenAI)
+//   - Mock LLM Service (:18141) - Standalone Go service (mocks OpenAI)
 //   - HolmesGPT API (:18120) - Real business logic
 
 // SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.

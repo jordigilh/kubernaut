@@ -57,7 +57,7 @@ type TestWorkflow struct {
 //     (tests use staging by default, but some use production)
 func GetAIAnalysisTestWorkflows() []TestWorkflow {
 	// BR-HAPI-191: SchemaParameters MUST match Mock LLM scenario parameters
-	// Mock LLM scenarios defined in test/services/mock-llm/src/server.py
+	// Mock LLM scenarios defined in test/services/mock-llm/scenarios/
 	// HAPI validates LLM response parameters against workflow schema from DataStorage
 	// If parameters don't match, HAPI returns parameter_validation_failed BEFORE confidence check
 	// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
@@ -229,10 +229,11 @@ func WriteMockLLMConfigFile(configPath string, workflowUUIDs map[string]string, 
 	_, _ = fmt.Fprintf(output, "\n📝 Writing Mock LLM configuration file: %s\n", configPath)
 
 	// Build YAML content with deterministic key order
+	// Format must match config.Overrides: map[string]ScenarioOverride{workflow_id: "..."}
 	var yamlContent strings.Builder
 	yamlContent.WriteString("scenarios:\n")
 	for _, key := range infrastructure.SortedWorkflowUUIDKeys(workflowUUIDs) {
-		yamlContent.WriteString(fmt.Sprintf("  %s: %s\n", key, workflowUUIDs[key]))
+		yamlContent.WriteString(fmt.Sprintf("  %s:\n    workflow_id: %s\n", key, workflowUUIDs[key]))
 	}
 
 	// Write to file

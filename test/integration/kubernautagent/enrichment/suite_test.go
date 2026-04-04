@@ -59,12 +59,13 @@ const (
 )
 
 var (
-	dsInfra    *infrastructure.DSBootstrapInfra
-	ogenClient *ogenclient.Client
-	seedDB     *sql.DB
-	enricher   *enrichment.Enricher
-	auditStore *audit.DSAuditStore
+	dsInfra     *infrastructure.DSBootstrapInfra
+	ogenClient  *ogenclient.Client
+	seedDB      *sql.DB
+	enricher    *enrichment.Enricher
+	auditStore  *audit.DSAuditStore
 	suiteLogger *slog.Logger
+	k8sAdapter  enrichment.K8sClient
 )
 
 var _ = SynchronizedBeforeSuite(
@@ -141,7 +142,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "API group resources should be discoverable")
 
 		discoveryMapper := restmapper.NewDiscoveryRESTMapper(groupResources)
-		k8sAdapter := enrichment.NewK8sAdapter(dynClient, discoveryMapper)
+		k8sAdapter = enrichment.NewK8sAdapter(dynClient, discoveryMapper)
 		enricher = enrichment.NewEnricher(k8sAdapter, dsAdapter, auditStore, suiteLogger)
 
 		connStr := fmt.Sprintf("host=127.0.0.1 port=%d user=slm_user password=test_password dbname=action_history sslmode=disable", enrPostgresPort)

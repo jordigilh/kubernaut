@@ -106,7 +106,7 @@ GO_SERVICE_CONFIG = {
     },
 }
 
-# Python holmesgpt-api: module patterns for unit vs integration
+# Python kubernautagent: module patterns for unit vs integration
 PYTHON_UNIT_PATTERNS = [
     r"src/(models|validation|sanitization|toolsets|config)/",
     r"src/audit/buffered_store\.py",
@@ -406,7 +406,7 @@ def calc_go_service_all_tiers(service: str) -> str:
 
 
 # ============================================================================
-# Python (holmesgpt-api) coverage calculation
+# Python (kubernautagent) coverage calculation
 # ============================================================================
 
 @dataclass
@@ -507,10 +507,10 @@ def parse_python_coverage_file(filepath: str) -> list[PythonModuleCoverage]:
                     continue
 
                 # Normalize path: E2E coverage.py reports use
-                # "holmesgpt-api/src/..." while unit/integration pytest
+                # "kubernautagent/src/..." while unit/integration pytest
                 # reports use "src/...". Normalize to "src/" prefix.
-                if name.startswith("holmesgpt-api/"):
-                    name = name[len("holmesgpt-api/"):]
+                if name.startswith("kubernautagent/"):
+                    name = name[len("kubernautagent/"):]
 
                 # Only include Python source modules
                 if not name.startswith("src/"):
@@ -648,11 +648,11 @@ def get_python_total_from_file(filepath: str) -> Optional[str]:
 
 
 def calc_python_service() -> ServiceCoverage:
-    """Calculate all coverage tiers for holmesgpt-api (Python service)."""
-    svc = ServiceCoverage(name="holmesgpt-api", language="python")
+    """Calculate all coverage tiers for kubernautagent (Python service)."""
+    svc = ServiceCoverage(name="kubernautagent", language="python")
 
     # Unit coverage
-    unit_file = "coverage_unit_holmesgpt-api.txt"
+    unit_file = "coverage_unit_kubernautagent.txt"
     unit_modules = parse_python_coverage_file(unit_file)
     if unit_modules:
         filtered = filter_python_modules(unit_modules, PYTHON_UNIT_PATTERNS)
@@ -663,7 +663,7 @@ def calc_python_service() -> ServiceCoverage:
         svc.unit = total if total else "-"
 
     # Integration coverage
-    int_file = "coverage_integration_holmesgpt-api_python.txt"
+    int_file = "coverage_integration_kubernautagent_python.txt"
     int_modules = parse_python_coverage_file(int_file)
     if int_modules:
         filtered = filter_python_modules(int_modules, PYTHON_INTEGRATION_PATTERNS)
@@ -675,7 +675,7 @@ def calc_python_service() -> ServiceCoverage:
     # E2E coverage (Python coverage.py - DD-TEST-007)
     # The E2E test collects Python service coverage via coverage.py inside the container.
     # The report is in standard `coverage report` text format (same as unit/integration).
-    e2e_file = "coverage_e2e_holmesgpt-api_python.txt"
+    e2e_file = "coverage_e2e_kubernautagent_python.txt"
     e2e_modules = parse_python_coverage_file(e2e_file)
     if e2e_modules:
         svc.e2e = calc_python_coverage(e2e_modules)
@@ -686,7 +686,7 @@ def calc_python_service() -> ServiceCoverage:
             svc.e2e = total
         else:
             # Legacy fallback: check .pct file
-            pct = read_pct_file("coverage_e2e_holmesgpt-api.pct")
+            pct = read_pct_file("coverage_e2e_kubernautagent.pct")
             svc.e2e = pct if pct else "-"
 
     # All Tiers: line-level merge across all tier files.
@@ -742,7 +742,7 @@ def generate_all_service_coverage(filter_service: Optional[str] = None) -> list[
     results = []
 
     # Python service
-    if not filter_service or filter_service == "holmesgpt-api":
+    if not filter_service or filter_service == "kubernautagent":
         results.append(calc_python_service())
 
     # Go services

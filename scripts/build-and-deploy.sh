@@ -166,17 +166,17 @@ build_and_load_images() {
     kind load docker-image localhost/kubernaut/ai-service:latest --name="${CLUSTER_NAME}"
 
     # Build HolmesGPT API image
-    log_info "Building HolmesGPT API image..."
-    if docker build -t localhost/kubernaut/holmesgpt-api:latest -f docker/holmesgpt-api/Dockerfile .; then
-        log_success "HolmesGPT API image built"
+    log_info "Building Kubernaut Agent image..."
+    if docker build -t localhost/kubernaut/kubernautagent:latest -f docker/kubernautagent.Dockerfile .; then
+        log_success "Kubernaut Agent image built"
     else
         log_error "Failed to build HolmesGPT API image"
         exit 1
     fi
 
     # Load HolmesGPT API image to Kind
-    log_info "Loading HolmesGPT API image to Kind cluster..."
-    kind load docker-image localhost/kubernaut/holmesgpt-api:latest --name="${CLUSTER_NAME}"
+    log_info "Loading Kubernaut Agent image to Kind cluster..."
+    kind load docker-image localhost/kubernaut/kubernautagent:latest --name="${CLUSTER_NAME}"
 
     log_success "All container images built and loaded to Kind cluster"
 }
@@ -243,7 +243,7 @@ update_manifest_images() {
     kubectl patch deployment ai-service -n ${NAMESPACE} -p '{"spec":{"template":{"spec":{"containers":[{"name":"ai-service","image":"localhost/kubernaut/ai-service:latest"}]}}}}'
 
     # Update holmesgpt image
-    kubectl patch deployment holmesgpt -n ${NAMESPACE} -p '{"spec":{"template":{"spec":{"containers":[{"name":"holmesgpt","image":"localhost/kubernaut/holmesgpt-api:latest"}]}}}}'
+    kubectl patch deployment kubernaut-agent -n ${NAMESPACE} -p '{"spec":{"template":{"spec":{"containers":[{"name":"kubernaut-agent","image":"localhost/kubernaut/kubernautagent:latest"}]}}}}'
 
     log_success "Manifest images updated to use Kind internal registry"
 }
@@ -310,7 +310,7 @@ show_usage_info() {
     echo "📋 Kubernaut Services Deployed:"
     echo "  • Gateway Service:    Ready (localhost/kubernaut/gateway-service:latest)"
     echo "  • AI Service:         Ready (localhost/kubernaut/ai-service:latest)"
-    echo "  • HolmesGPT API:      Ready (localhost/kubernaut/holmesgpt-api:latest)"
+    echo "  • Kubernaut Agent:     Ready (localhost/kubernaut/kubernautagent:latest)"
     echo ""
     echo "🔧 Management Commands:"
     echo "  • Check status:       kubectl get pods -n ${NAMESPACE}"
