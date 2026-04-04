@@ -2,9 +2,9 @@
 
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 
-**Test Plan Identifier**: TP-592-v1.0
-**Feature**: Conversational interaction mode for the Kubernaut Agent, scoped to RemediationApprovalRequest (RAR) review, with Slack bot and kubectl plugin clients
-**Version**: 1.0
+**Test Plan Identifier**: TP-592-v2.0
+**Feature**: Conversational API backend for the Kubernaut Agent, scoped to RemediationApprovalRequest (RAR) review (backend only — Slack bot #633 and kubectl plugin #634 deferred to v1.5)
+**Version**: 2.0
 **Created**: 2026-03-04
 **Author**: AI Assistant
 **Status**: Draft
@@ -16,9 +16,9 @@
 
 ### 1.1 Purpose
 
-This test plan validates the conversational RAR feature introduced by Issue #592. The feature adds a conversation API to the Kubernaut Agent that allows operators to question the KA about a pending approval decision. Conversations are seeded from the investigation audit trail so the LLM "remembers" the full investigation.
+This test plan validates the conversational RAR backend API introduced by Issue #592. The feature adds a conversation API to the Kubernaut Agent that allows operators to question the KA about a pending approval decision. Conversations are seeded from the investigation audit trail so the LLM "remembers" the full investigation.
 
-Two client interfaces are validated: a Slack bot (thread replies) and a kubectl plugin (`kubectl kubernaut chat`).
+**Scope change (v2.0)**: Client interfaces (Slack bot → #633/v1.5, kubectl plugin → #634/v1.5) are deferred. The OCP Console Plugin (#632) is the v1.4 client. Override CRD types and webhook validation are in #594; this plan covers only the conversation-mode override advisory.
 
 ### 1.2 Objectives
 
@@ -28,9 +28,10 @@ Two client interfaces are validated: a Slack bot (thread replies) and a kubectl 
 4. **SSE streaming**: Real-time token streaming with reconnection support.
 5. **Session model**: Shared session per RAR, multiple participants, identity tracked per turn.
 6. **Rate limiting**: Per-user (10/min) and per-session (30 turns) limits.
-7. **Override capability** (Phase 1b): Advisory workflow/parameter overrides with validation.
+7. **Override advisory** (Phase 1b): Conversation-mode override suggestions with catalog validation. CRD types and webhook are in #594.
 8. **Conversation lifecycle**: Session transitions to read-only on RAR approval/rejection.
 9. **Shadow agent integration** (#601): Conversation-mode tool outputs audited.
+10. **OCP Console Plugin client** (#632): The primary v1.4 client — consumes the conversation API.
 
 ### 1.3 Success Metrics
 
@@ -95,14 +96,12 @@ Two client interfaces are validated: a Slack bot (thread replies) and a kubectl 
 - **Override advisory** (`internal/kubernautagent/conversation/override.go`): Validate against catalog/schema
 - **Lifecycle management**: Detect RAR state changes, transition to read-only
 
-**Client interfaces (limited scope)**:
-- **kubectl plugin** (`cmd/kubectl-kubernaut/`): SSE client, endpoint discovery, auth
-- **Slack bot** (`internal/kubernautagent/slack/`): Socket Mode, thread mapping, OAuth link
-
 ### 4.2 Features Not to be Tested
 
-- **Full Slack OAuth flow on OCP**: Requires real OCP OAuth server — E2E/manual test only
-- **kubectl plugin distribution** (krew): Build/release pipeline concern
+- **Slack bot** (#633, v1.5): Deferred — OCP Console Plugin is the v1.4 client
+- **kubectl plugin** (#634, v1.5): Deferred — universal fallback client
+- **Override CRD types and webhook validation** (#594): Separate issue, separate test plan
+- **OCP Console Plugin UI** (#632): Separate issue — consumes this API
 - **Session persistence in DataStorage** (v1.5): In-memory only for v1.4
 - **Cross-channel bridge** (v1.5): No redirect from PD/Teams to Slack
 
@@ -201,8 +200,7 @@ Two client interfaces are validated: a Slack bot (thread replies) and a kubectl 
 
 ### Tier Skip Rationale
 
-- **E2E**: Requires KA + DataStorage + MockLLM + Slack bot in Kind. Deferred to post-KA-stabilization.
-- **Slack bot E2E on OCP**: Requires real OCP OAuth. Manual test only.
+- **E2E**: Requires KA + DataStorage + MockLLM in Kind. Deferred to post-KA-stabilization.
 
 ---
 
@@ -232,16 +230,14 @@ Two client interfaces are validated: a Slack bot (thread replies) and a kubectl 
 | DataStorage audit events | Code | Available | Audit chain fetch | N/A |
 | KA CI/CD stability | Testing | In progress | E2E blocked | Unit + Integration |
 | #601 (shadow agent) | Code | Planned | Conversation tool output auditing | Can be added post-implementation |
+| #594 (RAR overrides) | Code | Planned | Override CRD types for override advisory | Override advisory is advisory-only; CRD types are in #594 |
 
 ### 11.2 Execution Order
 
 1. **Phase 1a.1**: Audit reconstruction + session management (core)
 2. **Phase 1a.2**: TLS + SSE + auth middleware
 3. **Phase 1a.3**: Rate limiting + guardrails + audit trail
-4. **Phase 1a.4**: kubectl plugin (client)
-5. **Phase 1a.5**: Slack bot (client)
-6. **Phase 1b.1**: Override capability
-7. **Phase 1b.2**: Lifecycle management
+4. **Phase 1b.1**: Override advisory + lifecycle management
 
 ---
 
@@ -260,3 +256,4 @@ ginkgo -v --focus="UT-CS-592" ./test/unit/kubernautagent/conversation/...
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-04 | Initial test plan |
+| 2.0 | 2026-03-04 | Scope reduction: remove Slack bot (#633/v1.5) and kubectl plugin (#634/v1.5). Add #594 dependency for override CRD types. OCP Console Plugin (#632) is the v1.4 client. |

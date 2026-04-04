@@ -13,8 +13,10 @@ This plan implements a conversational API for the Kubernaut Agent, scoped to RAR
 
 ### Phasing
 
-- **Phase 1a** (MVP): Read-only conversation — audit reconstruction, session management, TLS + SSE, auth, guardrails, rate limiting, audit trail, Slack bot, kubectl plugin (~13-15 days)
-- **Phase 1b** (Override): Advisory workflow/parameter overrides + lifecycle management (~5-6 days)
+- **Phase 1a** (MVP): Read-only conversation — audit reconstruction, session management, TLS + SSE, auth, guardrails, rate limiting, audit trail (~8-10 days)
+- **Phase 1b** (Override + Lifecycle): Advisory workflow/parameter overrides + lifecycle management (~2-3 days)
+
+**Scope change (v2.0)**: Slack bot → #633/v1.5, kubectl plugin → #634/v1.5. OCP Console Plugin (#632) is the v1.4 client. Override CRD types and webhook validation are in #594; this plan covers only the conversation-mode override advisory.
 
 ### New packages
 
@@ -22,8 +24,6 @@ This plan implements a conversational API for the Kubernaut Agent, scoped to RAR
 |---------|---------|
 | `internal/kubernautagent/conversation/` | Conversation handler, session, audit reconstruction, auth, rate limit, SSE |
 | `internal/kubernautagent/conversation/override/` | Override advisory logic |
-| `internal/kubernautagent/slack/` | Slack bot Socket Mode + OAuth link |
-| `cmd/kubectl-kubernaut/` | kubectl plugin |
 
 ---
 
@@ -212,52 +212,9 @@ Middleware chain: TLS → Auth → Rate Limit → Handler
 
 ---
 
-## Phase 5: TDD RED + GREEN — kubectl Plugin (Phase 1a.4)
+## Phase 5: TDD RED + GREEN — Override + Lifecycle (Phase 1b)
 
-### Phase 5.1: kubectl plugin
-
-**File**: `cmd/kubectl-kubernaut/main.go`
-
-- Uses `client-go` for kubeconfig auth
-- `TokenRequest` for cert-based auth (Kind kubeadmin)
-- ConfigMap-based endpoint discovery + `--endpoint` flag fallback
-- SSE client with markdown rendering (glamour)
-- `--new` flag to force fresh session
-- Commands: `kubectl kubernaut chat rar/{name} -n {namespace}`
-
-### Phase 5.2: Tests
-
-Unit tests for:
-- Endpoint discovery logic
-- Token acquisition (mock kubeconfig scenarios)
-- SSE event parsing
-
----
-
-## Phase 6: TDD RED + GREEN — Slack Bot (Phase 1a.5)
-
-### Phase 6.1: Slack bot
-
-**File**: `internal/kubernautagent/slack/bot.go`
-
-- Socket Mode listener (no public URL)
-- Thread-to-RAR mapping via stored notification `ts`
-- OAuth link flow for first-time authentication
-- Encrypted token storage in DataStorage
-- Multi-participant thread handling
-
-### Phase 6.2: Tests
-
-Unit tests for:
-- Thread-to-RAR mapping
-- Token storage/retrieval
-- Message routing
-
----
-
-## Phase 7: TDD RED + GREEN — Override + Lifecycle (Phase 1b)
-
-### Phase 7.1: Override advisory tests (RED then GREEN)
+### Phase 5.1: Override advisory tests (RED then GREEN)
 
 | Test ID | Assertion |
 |---------|-----------|
@@ -270,7 +227,7 @@ Unit tests for:
 - Generate kubectl patch command
 - Reject if session is read-only
 
-### Phase 7.2: Lifecycle management tests (RED then GREEN)
+### Phase 5.2: Lifecycle management tests (RED then GREEN)
 
 | Test ID | Assertion |
 |---------|-----------|
@@ -280,15 +237,14 @@ Unit tests for:
 **Implementation**: `internal/kubernautagent/conversation/lifecycle.go`
 - Watch RAR status changes (informer)
 - Transition session state on approval/rejection/expiry
-- Post notification to Slack thread on state change
 
-### Phase 7.3: Integration test
+### Phase 5.3: Integration test
 
 | Test ID | Assertion |
 |---------|-----------|
 | IT-CS-592-007 | RAR CR status change → session transition → subsequent message → 409 |
 
-### Phase 7 Checkpoint
+### Phase 5 Checkpoint
 
 - [ ] All 22 unit + 5 integration tests pass
 - [ ] Override advisory works
@@ -296,9 +252,9 @@ Unit tests for:
 
 ---
 
-## Phase 8: TDD REFACTOR — Code Quality
+## Phase 6: TDD REFACTOR — Code Quality
 
-### Phase 8.1: Error handling consistency
+### Phase 6.1: Error handling consistency
 
 Ensure all error paths return proper HTTP status codes with descriptive messages:
 - 401 for auth failures
@@ -308,18 +264,18 @@ Ensure all error paths return proper HTTP status codes with descriptive messages
 - 429 for rate limit exceeded
 - 500 for internal errors (with no sensitive info leaked)
 
-### Phase 8.2: Structured logging
+### Phase 6.2: Structured logging
 
 Add structured logging to all conversation components with `correlation_id`, `session_id`, `user_identity`.
 
-### Phase 8.3: Metrics
+### Phase 6.3: Metrics
 
 - `kubernaut_conversation_sessions_active` (gauge)
 - `kubernaut_conversation_turns_total` (counter, labels: user, session)
 - `kubernaut_conversation_response_duration_seconds` (histogram)
 - `kubernaut_conversation_rate_limited_total` (counter)
 
-### Phase 8.4: Helm configuration
+### Phase 6.4: Helm configuration
 
 ```yaml
 kubernautAgent:
@@ -335,7 +291,7 @@ kubernautAgent:
     tokenBudget: 128000
 ```
 
-### Phase 8 Checkpoint
+### Phase 6 Checkpoint
 
 - [ ] All tests pass
 - [ ] Structured logging in place
@@ -344,9 +300,9 @@ kubernautAgent:
 
 ---
 
-## Phase 9: Due Diligence & Commit
+## Phase 7: Due Diligence & Commit
 
-### Phase 9.1: Comprehensive audit
+### Phase 7.1: Comprehensive audit
 
 - [ ] TLS enforced on all conversation endpoints
 - [ ] Auth enforced: no endpoint accessible without valid token + SAR
@@ -356,10 +312,10 @@ kubernautAgent:
 - [ ] Session TTL: no memory leaks
 - [ ] Audit trail: every turn recorded with identity
 - [ ] Lifecycle: read-only transition on RAR approval
-- [ ] Override: advisory only, does not mutate RAR CR
+- [ ] Override: advisory only, does not mutate RAR CR (mutation is #594 webhook path)
 - [ ] No sensitive data in error responses
 
-### Phase 9.2: Commit in logical groups
+### Phase 7.2: Commit in logical groups
 
 | Commit # | Scope |
 |----------|-------|
@@ -372,11 +328,9 @@ kubernautAgent:
 | 7 | `feat(#592): per-user and per-session rate limiting` |
 | 8 | `feat(#592): conversation HTTP handler and route registration` |
 | 9 | `feat(#592): conversation audit trail with identity tracking` |
-| 10 | `feat(#592): kubectl kubernaut chat plugin with SSE client` |
-| 11 | `feat(#592): Slack bot with Socket Mode and thread-to-RAR mapping` |
-| 12 | `feat(#592): override advisory logic with catalog validation` |
-| 13 | `feat(#592): conversation lifecycle management (RAR state transitions)` |
-| 14 | `refactor(#592): structured logging, metrics, and Helm configuration` |
+| 10 | `feat(#592): override advisory logic with catalog validation` |
+| 11 | `feat(#592): conversation lifecycle management (RAR state transitions)` |
+| 12 | `refactor(#592): structured logging, metrics, and Helm configuration` |
 
 ---
 
@@ -388,12 +342,10 @@ kubernautAgent:
 | Phase 2 (GREEN — core) | 2.5 days |
 | Phase 3 (Auth + SSE + Rate) | 2.5 days |
 | Phase 4 (Handler + Integration) | 1.5 days |
-| Phase 5 (kubectl plugin) | 2 days |
-| Phase 6 (Slack bot) | 2.5 days |
-| Phase 7 (Override + Lifecycle) | 2 days |
-| Phase 8 (REFACTOR) | 1.5 days |
-| Phase 9 (Due Diligence) | 1 day |
-| **Total** | **17 days** |
+| Phase 5 (Override + Lifecycle) | 2 days |
+| Phase 6 (REFACTOR) | 1.5 days |
+| Phase 7 (Due Diligence) | 1 day |
+| **Total** | **12 days** |
 
 ---
 
@@ -402,3 +354,4 @@ kubernautAgent:
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-04 | Initial implementation plan |
+| 2.0 | 2026-03-04 | Scope reduction: remove Slack bot (#633/v1.5) and kubectl plugin (#634/v1.5). Reconcile override with #594. Effort reduced from 17d to 12d. |
