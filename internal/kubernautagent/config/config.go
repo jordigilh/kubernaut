@@ -37,13 +37,18 @@ type Config struct {
 	Tools         ToolsConfig         `yaml:"tools"`
 	Sanitization  SanitizationConfig  `yaml:"sanitization"`
 	Anomaly       AnomalyConfig       `yaml:"anomaly"`
+	Summarizer    SummarizerConfig    `yaml:"summarizer"`
 }
 
 type LLMConfig struct {
-	Provider string `yaml:"provider"`
-	Endpoint string `yaml:"endpoint"`
-	Model    string `yaml:"model"`
-	APIKey   string `yaml:"api_key"`
+	Provider        string `yaml:"provider"`
+	Endpoint        string `yaml:"endpoint"`
+	Model           string `yaml:"model"`
+	APIKey          string `yaml:"api_key"`
+	AzureAPIVersion string `yaml:"azure_api_version"`
+	VertexProject   string `yaml:"vertex_project"`
+	VertexLocation  string `yaml:"vertex_location"`
+	BedrockRegion   string `yaml:"bedrock_region"`
 }
 
 type DataStorageConfig struct {
@@ -93,6 +98,10 @@ type SanitizationConfig struct {
 	CredentialScrubEnabled    bool `yaml:"credential_scrub_enabled"`
 }
 
+type SummarizerConfig struct {
+	Threshold int `yaml:"threshold"`
+}
+
 type AnomalyConfig struct {
 	MaxToolCallsPerTool int `yaml:"max_tool_calls_per_tool"`
 	MaxTotalToolCalls   int `yaml:"max_total_tool_calls"`
@@ -110,8 +119,13 @@ func Load(data []byte) (*Config, error) {
 
 // Validate checks required fields and value constraints.
 func (c *Config) Validate() error {
-	if c.LLM.Endpoint == "" {
-		return fmt.Errorf("llm.endpoint is required")
+	switch c.LLM.Provider {
+	case "bedrock", "huggingface", "anthropic":
+		// endpoint is optional for these providers
+	default:
+		if c.LLM.Endpoint == "" {
+			return fmt.Errorf("llm.endpoint is required for provider %q", c.LLM.Provider)
+		}
 	}
 	if c.LLM.Model == "" {
 		return fmt.Errorf("llm.model is required")
@@ -138,6 +152,9 @@ func DefaultConfig() *Config {
 		Sanitization: SanitizationConfig{
 			InjectionPatternsEnabled: true,
 			CredentialScrubEnabled:   true,
+		},
+		Summarizer: SummarizerConfig{
+			Threshold: 8000,
 		},
 	}
 }

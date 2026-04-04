@@ -21,12 +21,49 @@ import (
 	"encoding/json"
 	"fmt"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/tmc/langchaingo/llms"
+	"github.com/tmc/langchaingo/llms/anthropic"
+	"github.com/tmc/langchaingo/llms/bedrock"
+	"github.com/tmc/langchaingo/llms/googleai"
+	"github.com/tmc/langchaingo/llms/googleai/vertex"
+	"github.com/tmc/langchaingo/llms/huggingface"
+	"github.com/tmc/langchaingo/llms/mistral"
 	"github.com/tmc/langchaingo/llms/ollama"
 	"github.com/tmc/langchaingo/llms/openai"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
+
+// Option configures provider-specific settings for the LangChainGo adapter.
+type Option func(*options)
+
+type options struct {
+	azureAPIVersion string
+	vertexProject   string
+	vertexLocation  string
+	bedrockRegion   string
+}
+
+// WithAzureAPIVersion sets the Azure OpenAI API version (required for "azure" provider).
+func WithAzureAPIVersion(v string) Option {
+	return func(o *options) { o.azureAPIVersion = v }
+}
+
+// WithVertexProject sets the GCP project (required for "vertex" provider).
+func WithVertexProject(p string) Option {
+	return func(o *options) { o.vertexProject = p }
+}
+
+// WithVertexLocation sets the GCP location (defaults to "us-central1" if empty).
+func WithVertexLocation(l string) Option {
+	return func(o *options) { o.vertexLocation = l }
+}
+
+func WithBedrockRegion(r string) Option {
+	return func(o *options) { o.bedrockRegion = r }
+}
 
 // Adapter implements llm.Client by delegating to LangChainGo.
 // Authority: DD-HAPI-019-001 — Framework Isolation Pattern
@@ -35,16 +72,20 @@ type Adapter struct {
 }
 
 // New creates a new LangChainGo adapter for the given provider.
-// Supported providers: "openai", "ollama".
-func New(provider, endpoint, model, apiKey string) (*Adapter, error) {
-	m, err := newModel(provider, endpoint, model, apiKey)
+// Supported providers: "openai", "ollama", "azure", "vertex", "anthropic", "bedrock", "huggingface", "mistral".
+func New(provider, endpoint, model, apiKey string, opts ...Option) (*Adapter, error) {
+	o := &options{vertexLocation: "us-central1"}
+	for _, fn := range opts {
+		fn(o)
+	}
+	m, err := newModel(provider, endpoint, model, apiKey, o)
 	if err != nil {
 		return nil, fmt.Errorf("langchaingo: %w", err)
 	}
 	return &Adapter{model: m}, nil
 }
 
-func newModel(provider, endpoint, model, apiKey string) (llms.Model, error) {
+func newModel(provider, endpoint, model, apiKey string, o *options) (llms.Model, error) {
 	switch provider {
 	case "openai":
 		return openai.New(
@@ -57,6 +98,52 @@ func newModel(provider, endpoint, model, apiKey string) (llms.Model, error) {
 			ollama.WithServerURL(endpoint),
 			ollama.WithModel(model),
 		)
+	case "azure":
+		if o.azureAPIVersion == "" {
+			return nil, fmt.Errorf("azure provider requires api_version (use WithAzureAPIVersion)")
+		}
+		return openai.New(
+			openai.WithAPIType(openai.APITypeAzure),
+			openai.WithBaseURL(endpoint),
+			openai.WithModel(model),
+			openai.WithToken(apiKey),
+			openai.WithAPIVersion(o.azureAPIVersion),
+		)
+	case "vertex":
+		if o.vertexProject == "" {
+			return nil, fmt.Errorf("vertex provider requires project (use WithVertexProject)")
+		}
+		return vertex.New(context.Background(),
+			googleai.WithCloudProject(o.vertexProject),
+			googleai.WithCloudLocation(o.vertexLocation),
+			googleai.WithDefaultModel(model),
+		)
+	case "anthropic":
+		aopts := []anthropic.Option{anthropic.WithModel(model), anthropic.WithToken(apiKey)}
+		if endpoint != "" {
+			aopts = append(aopts, anthropic.WithBaseURL(endpoint))
+		}
+		return anthropic.New(aopts...)
+	case "bedrock":
+		bopts := []bedrock.Option{bedrock.WithModel(model)}
+		if o.bedrockRegion != "" {
+			awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
+				awsconfig.WithRegion(o.bedrockRegion),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("bedrock: loading AWS config for region %q: %w", o.bedrockRegion, err)
+			}
+			bopts = append(bopts, bedrock.WithClient(bedrockruntime.NewFromConfig(awsCfg)))
+		}
+		return bedrock.New(bopts...)
+	case "huggingface":
+		return huggingface.New(huggingface.WithToken(apiKey), huggingface.WithModel(model))
+	case "mistral":
+		mopts := []mistral.Option{mistral.WithAPIKey(apiKey), mistral.WithModel(model)}
+		if endpoint != "" {
+			mopts = append(mopts, mistral.WithEndpoint(endpoint))
+		}
+		return mistral.New(mopts...)
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %q", provider)
 	}
