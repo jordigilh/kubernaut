@@ -46,6 +46,7 @@ from .prompt_builder import (
     build_cluster_context_section,
     build_mcp_filter_instructions,
     build_validation_error_feedback,
+    PHASE1_SECTIONS,
     PHASE3_SECTIONS,
 )
 from .result_parser import (
@@ -84,6 +85,7 @@ __all__ = [
     # Prompt building (public API)
     "create_incident_investigation_prompt",
     "create_phase3_workflow_prompt",
+    "PHASE1_SECTIONS",
     "PHASE3_SECTIONS",
     "build_cluster_context_section",
     "build_mcp_filter_instructions",
