@@ -32,7 +32,16 @@ discovery protocol.
 **DO NOT re-investigate the incident.** The investigation is complete. Focus
 exclusively on workflow discovery and selection based on the RCA findings and
 enrichment context provided.
+{{ if .RCASummary }}
+## Root Cause Analysis Summary
 
+{{ .RCASummary }}
+{{ end }}
+{{ if .EnrichmentContext }}
+## Enrichment Context
+
+{{ .EnrichmentContext }}
+{{ end }}
 ## Workflow Discovery Protocol (Three-Step — MANDATORY)
 
 **Step 1**: Call `list_available_actions` to discover available remediation action types.
