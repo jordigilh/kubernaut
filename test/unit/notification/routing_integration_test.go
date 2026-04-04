@@ -56,13 +56,13 @@ receivers:
       - channel: '#kubernaut-alerts'
   - name: pagerduty-critical
     pagerdutyConfigs:
-      - serviceKey: critical-key
+      - credentialRef: pd-critical-key
   - name: slack-approvals
     slackConfigs:
       - channel: '#approvals'
   - name: pagerduty-oncall
     pagerdutyConfigs:
-      - serviceKey: oncall-key
+      - credentialRef: pd-oncall-key
   - name: slack-ops
     slackConfigs:
       - channel: '#ops'

@@ -157,7 +157,7 @@ receivers:
       - channel: "#ops"
   - name: pagerduty
     pagerdutyConfigs:
-      - serviceKey: test
+      - credentialRef: pd-test
 `))
 			Expect(err).NotTo(HaveOccurred())
 

@@ -66,7 +66,7 @@ receivers:
       - channel: '#alerts'
   - name: pagerduty-oncall
     pagerdutyConfigs:
-      - serviceKey: test-key
+      - credentialRef: pd-oncall-key
   - name: slack-ops
     slackConfigs:
       - channel: '#ops'
@@ -200,7 +200,7 @@ receivers:
       - channel: '#alerts'
   - name: pagerduty-critical
     pagerdutyConfigs:
-      - serviceKey: critical-key
+      - credentialRef: pd-critical-key
   - name: slack-approvals
     slackConfigs:
       - channel: '#approvals'
@@ -209,7 +209,7 @@ receivers:
       - channel: '#ops'
   - name: pagerduty-oncall
     pagerdutyConfigs:
-      - serviceKey: oncall-key
+      - credentialRef: pd-oncall-key
 `
 			var err error
 			config, err = routing.ParseConfig([]byte(configYAML))
@@ -303,7 +303,7 @@ receivers:
       - channel: '#alerts'
   - name: pagerduty-oncall
     pagerdutyConfigs:
-      - serviceKey: test-key
+      - credentialRef: pd-test-key
   - name: email-team
     emailConfigs:
       - to: 'team@example.com'
@@ -332,7 +332,7 @@ receivers:
 		It("should resolve receiver with pagerduty config", func() {
 			receiver := config.GetReceiver("pagerduty-oncall")
 			Expect(receiver.PagerDutyConfigs).To(HaveLen(1))
-			Expect(receiver.PagerDutyConfigs[0].ServiceKey).To(Equal("test-key"))
+			Expect(receiver.PagerDutyConfigs[0].CredentialRef).To(Equal("pd-test-key"))
 		})
 
 		It("should resolve receiver with email config", func() {
@@ -360,7 +360,7 @@ receivers:
 			receiver := &routing.Receiver{
 				Name: "pagerduty-test",
 				PagerDutyConfigs: []routing.PagerDutyConfig{
-					{ServiceKey: "key"},
+					{CredentialRef: "pd-key"},
 				},
 			}
 
@@ -472,7 +472,7 @@ route:
 receivers:
   - name: pagerduty-critical
     pagerdutyConfigs:
-      - serviceKey: test-critical-key
+      - credentialRef: pd-test-critical-key
   - name: slack-ops
     slackConfigs:
       - channel: '#kubernaut-ops'
@@ -531,7 +531,7 @@ route:
 receivers:
   - name: pagerduty-immediate
     pagerdutyConfigs:
-      - serviceKey: immediate-key
+      - credentialRef: pd-immediate-key
   - name: slack-escalation
     slackConfigs:
       - channel: '#escalation'
