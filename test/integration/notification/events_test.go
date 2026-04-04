@@ -48,9 +48,11 @@ import (
 
 // listEventsForObject returns corev1.Events for the given object name in the namespace,
 // sorted by FirstTimestamp for deterministic ordering.
-func listEventsForObject(ctx context.Context, c client.Client, objectName, namespace string) []corev1.Event {
+func listEventsForObject(ctx context.Context, r client.Reader, objectName, namespace string) ([]corev1.Event, error) {
 	eventList := &corev1.EventList{}
-	_ = c.List(ctx, eventList, client.InNamespace(namespace))
+	if err := r.List(ctx, eventList, client.InNamespace(namespace)); err != nil {
+		return nil, err
+	}
 	var filtered []corev1.Event
 	for _, evt := range eventList.Items {
 		if evt.InvolvedObject.Name == objectName {
@@ -60,7 +62,7 @@ func listEventsForObject(ctx context.Context, c client.Client, objectName, names
 	sort.Slice(filtered, func(i, j int) bool {
 		return filtered[i].FirstTimestamp.Before(&filtered[j].FirstTimestamp)
 	})
-	return filtered
+	return filtered, nil
 }
 
 func containsEventReason(reasons []string, reason string) bool {
@@ -112,33 +114,23 @@ var _ = Describe("Notification K8s Event Observability (DD-EVENT-001, BR-NT-095)
 			err := k8sClient.Create(ctx, notif)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Waiting for Phase=Sent")
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+			By("Waiting for Phase=Sent and expected K8s events")
+			apiReader := k8sManager.GetAPIReader()
+			Eventually(func(g Gomega) {
+				g.Expect(apiReader.Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
-				}, notif)
-				if err != nil {
-					return ""
-				}
-				return notif.Status.Phase
-			}, 15*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
-				"All channels should deliver successfully")
+				}, notif)).To(Succeed())
+				g.Expect(notif.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhaseSent),
+					"All channels should deliver successfully")
 
-			By("Listing events and asserting ReconcileStarted, PhaseTransition, NotificationSent")
-			var evts []corev1.Event
-			Eventually(func() bool {
-				evts = listEventsForObject(ctx, k8sClient, notifName, testNamespace)
+				evts, err := listEventsForObject(ctx, apiReader, notifName, testNamespace)
+				g.Expect(err).NotTo(HaveOccurred())
 				reasons := eventReasons(evts)
-				return containsEventReason(reasons, events.EventReasonReconcileStarted) &&
-					containsEventReason(reasons, events.EventReasonPhaseTransition) &&
-					containsEventReason(reasons, events.EventReasonNotificationSent)
-			}, 5*time.Second, 500*time.Millisecond).Should(BeTrue())
-
-			reasons := eventReasons(evts)
-			Expect(containsEventReason(reasons, events.EventReasonReconcileStarted)).To(BeTrue())
-			Expect(containsEventReason(reasons, events.EventReasonPhaseTransition)).To(BeTrue())
-			Expect(containsEventReason(reasons, events.EventReasonNotificationSent)).To(BeTrue())
+				g.Expect(containsEventReason(reasons, events.EventReasonReconcileStarted)).To(BeTrue())
+				g.Expect(containsEventReason(reasons, events.EventReasonPhaseTransition)).To(BeTrue())
+				g.Expect(containsEventReason(reasons, events.EventReasonNotificationSent)).To(BeTrue())
+			}, 15*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			err = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			Expect(err).NotTo(HaveOccurred())
@@ -176,35 +168,24 @@ var _ = Describe("Notification K8s Event Observability (DD-EVENT-001, BR-NT-095)
 			err := k8sClient.Create(ctx, notif)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Waiting for Phase=PartiallySent")
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+			By("Waiting for Phase=PartiallySent and expected K8s events")
+			apiReader := k8sManager.GetAPIReader()
+			Eventually(func(g Gomega) {
+				g.Expect(apiReader.Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
-				}, notif)
-				if err != nil {
-					return ""
-				}
-				return notif.Status.Phase
-			}, 25*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
-				"Console succeeds, Slack fails after retry exhaustion")
+				}, notif)).To(Succeed())
+				g.Expect(notif.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
+					"Console succeeds, Slack fails after retry exhaustion")
 
-			By("Listing events and asserting ReconcileStarted, PhaseTransition, NotificationRetrying, NotificationPartiallySent")
-			var evts []corev1.Event
-			Eventually(func() bool {
-				evts = listEventsForObject(ctx, k8sClient, notifName, testNamespace)
+				evts, err := listEventsForObject(ctx, apiReader, notifName, testNamespace)
+				g.Expect(err).NotTo(HaveOccurred())
 				reasons := eventReasons(evts)
-				return containsEventReason(reasons, events.EventReasonReconcileStarted) &&
-					containsEventReason(reasons, events.EventReasonPhaseTransition) &&
-					containsEventReason(reasons, events.EventReasonNotificationRetrying) &&
-					containsEventReason(reasons, events.EventReasonNotificationPartiallySent)
-			}, 5*time.Second, 500*time.Millisecond).Should(BeTrue())
-
-			reasons := eventReasons(evts)
-			Expect(containsEventReason(reasons, events.EventReasonReconcileStarted)).To(BeTrue())
-			Expect(containsEventReason(reasons, events.EventReasonPhaseTransition)).To(BeTrue())
-			Expect(containsEventReason(reasons, events.EventReasonNotificationRetrying)).To(BeTrue())
-			Expect(containsEventReason(reasons, events.EventReasonNotificationPartiallySent)).To(BeTrue())
+				g.Expect(containsEventReason(reasons, events.EventReasonReconcileStarted)).To(BeTrue())
+				g.Expect(containsEventReason(reasons, events.EventReasonPhaseTransition)).To(BeTrue())
+				g.Expect(containsEventReason(reasons, events.EventReasonNotificationRetrying)).To(BeTrue())
+				g.Expect(containsEventReason(reasons, events.EventReasonNotificationPartiallySent)).To(BeTrue())
+			}, 25*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			err = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			Expect(err).NotTo(HaveOccurred())
@@ -242,33 +223,23 @@ var _ = Describe("Notification K8s Event Observability (DD-EVENT-001, BR-NT-095)
 			err := k8sClient.Create(ctx, notif)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Waiting for Phase=Failed")
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+			By("Waiting for Phase=Failed and expected K8s events")
+			apiReader := k8sManager.GetAPIReader()
+			Eventually(func(g Gomega) {
+				g.Expect(apiReader.Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
-				}, notif)
-				if err != nil {
-					return ""
-				}
-				return notif.Status.Phase
-			}, 15*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseFailed),
-				"All channels should fail permanently without retries")
+				}, notif)).To(Succeed())
+				g.Expect(notif.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhaseFailed),
+					"All channels should fail permanently without retries")
 
-			By("Listing events and asserting ReconcileStarted, PhaseTransition, NotificationFailed")
-			var evts []corev1.Event
-			Eventually(func() bool {
-				evts = listEventsForObject(ctx, k8sClient, notifName, testNamespace)
+				evts, err := listEventsForObject(ctx, apiReader, notifName, testNamespace)
+				g.Expect(err).NotTo(HaveOccurred())
 				reasons := eventReasons(evts)
-				return containsEventReason(reasons, events.EventReasonReconcileStarted) &&
-					containsEventReason(reasons, events.EventReasonPhaseTransition) &&
-					containsEventReason(reasons, events.EventReasonNotificationFailed)
-			}, 5*time.Second, 500*time.Millisecond).Should(BeTrue())
-
-			reasons := eventReasons(evts)
-			Expect(containsEventReason(reasons, events.EventReasonReconcileStarted)).To(BeTrue())
-			Expect(containsEventReason(reasons, events.EventReasonPhaseTransition)).To(BeTrue())
-			Expect(containsEventReason(reasons, events.EventReasonNotificationFailed)).To(BeTrue())
+				g.Expect(containsEventReason(reasons, events.EventReasonReconcileStarted)).To(BeTrue())
+				g.Expect(containsEventReason(reasons, events.EventReasonPhaseTransition)).To(BeTrue())
+				g.Expect(containsEventReason(reasons, events.EventReasonNotificationFailed)).To(BeTrue())
+			}, 15*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			err = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			Expect(err).NotTo(HaveOccurred())
