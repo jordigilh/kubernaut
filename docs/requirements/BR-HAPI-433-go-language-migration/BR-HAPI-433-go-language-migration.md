@@ -53,7 +53,7 @@ Rewrite HAPI as a native Go service with **no feature regression** in v1.3, elim
 5. ✅ Feature parity with current HAPI for core investigation flows
 6. ✅ Same REST API contract — no consumer changes required (RemediationOrchestrator, Gateway)
 7. ✅ Kubernetes and Prometheus toolsets reimplemented with Go bindings
-8. ✅ Multi-provider LLM support (OpenAI, Azure OpenAI, Vertex AI, Ollama)
+8. ✅ Multi-provider LLM support (OpenAI, Ollama, Azure OpenAI, Vertex AI, Anthropic, AWS Bedrock, Hugging Face, Mistral)
 
 ---
 
@@ -112,9 +112,12 @@ Rewrite HAPI as a native Go service with **no feature regression** in v1.3, elim
 **Requirement**: HAPI SHALL support multiple LLM providers via LangChainGo, abstracted behind a Kubernaut-owned `llm.Client` interface.
 
 **Acceptance Criteria**:
-- ✅ OpenAI, Azure OpenAI, Google Vertex AI, Ollama supported
-- ✅ Provider selection via configuration (no code changes)
-- ✅ Framework-specific code isolated to a single adapter file (~60 LOC)
+- ✅ OpenAI, Ollama, Azure OpenAI, Google Vertex AI, Anthropic, AWS Bedrock, Hugging Face, Mistral supported (all 8 implemented in v1.3)
+- ✅ Provider selection via configuration (`llm.provider` field, no code changes)
+- ✅ Azure requires `azure_api_version`; Vertex requires `vertex_project`; Bedrock uses AWS SDK credential chain (optional `bedrock_region` override)
+- ✅ Framework-specific code isolated to a single adapter file (~120 LOC)
+- ✅ Air-gapped/on-prem: Ollama + OpenAI-compatible endpoints documented. LangChainGo `local` provider rejected (subprocess execution violates security requirements).
+- ⏳ AWS SigV4 signing for Prometheus deferred to v1.4 (see FR-HAPI-433-04)
 
 ### **FR-HAPI-433-03: Kubernetes Toolset (Go Bindings)**
 
@@ -136,7 +139,7 @@ Rewrite HAPI as a native Go service with **no feature regression** in v1.3, elim
 **Acceptance Criteria**:
 - ✅ 6 tools (Tier 1 + Tier 2) implemented via Go net/http
 - ✅ `list_prometheus_rules` dropped (redundant — signal pipeline already synthesizes alert context; injection risk from rule annotations)
-- ✅ AWS AMP (SigV4) support via aws-sdk-go-v2
+- ⏳ AWS AMP (SigV4) support deferred to v1.4 (dependency on aws-sdk-go-v2 not yet integrated)
 
 ### **FR-HAPI-433-05: HAPI-Custom Toolsets (Port to Go)**
 
@@ -256,6 +259,7 @@ Rewrite HAPI as a native Go service with **no feature regression** in v1.3, elim
 - Multi-LLM support (audit/guardrail LLM)
 - MCP extensibility for custom tools
 - Eino framework re-evaluation for multi-agent scenarios
+- AWS AMP SigV4 signing for Prometheus toolset
 
 ---
 
@@ -324,6 +328,10 @@ Rewrite HAPI as a native Go service with **no feature regression** in v1.3, elim
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-03-04
+**Document Version**: 1.2
+**Last Updated**: 2026-04-03
 **Status**: ✅ Approved
+
+**Change Log**:
+- v1.2 (2026-04-03): Updated FR-HAPI-433-02 to reflect 8 implemented providers (OpenAI, Ollama, Azure, Vertex, Anthropic, Bedrock, Hugging Face, Mistral). Updated adapter LOC estimate (~120 LOC). Added air-gapped/on-prem guidance. Documented rejection of LangChainGo `local` provider.
+- v1.1 (2026-04-03): Updated FR-HAPI-433-02 to reflect 4 implemented providers (OpenAI, Azure, Vertex, Ollama). Documented SigV4 deferral to v1.4 in FR-HAPI-433-04. Updated adapter LOC estimate (~80 LOC). Added SigV4 to Phase 4 scope.

@@ -344,6 +344,29 @@ Full service (`cmd/kubernautagent/main.go` + all packages) deployed in Kind clus
 | UT-KA-433-203 | Vertex adapter uses configured `GCPProjectID` and `GCPRegion` | BR-HAPI-433-001 |
 | UT-KA-433-204 | `New("unknown_provider", ...)` returns descriptive error matching "unsupported LLM provider" (regression guard) | BR-HAPI-433-001 |
 
+#### Phase 7b — LLM Provider Extension: Anthropic, Bedrock, Hugging Face, Mistral (5 UT + 2 IT)
+
+| ID | Business Outcome Under Test | BR |
+|----|----------------------------|-----|
+| UT-KA-433-209 | `New("anthropic", ...)` creates adapter satisfying `llm.Client` with token and model | BR-HAPI-433-001 |
+| UT-KA-433-210 | `New("bedrock", ...)` creates adapter satisfying `llm.Client` using AWS default credential chain | BR-HAPI-433-001 |
+| UT-KA-433-211 | `New("huggingface", ...)` creates adapter satisfying `llm.Client` with token and model | BR-HAPI-433-001 |
+| UT-KA-433-212 | `New("mistral", ...)` creates adapter satisfying `llm.Client` with API key, model, and optional endpoint | BR-HAPI-433-001 |
+| UT-KA-433-213 | Bedrock adapter uses explicit region when `WithBedrockRegion` option is provided | BR-HAPI-433-001 |
+
+**Behavioral assurance rationale**: All providers share the same `Chat()` → `toMessages()` → `GenerateContent()` → `fromContentResponse()` code path validated by IT-KA-433-050 (Azure `httptest.Server` round-trip) and the existing OpenAI `Chat()` integration tests. Per-provider unit tests verify the framework-specific `newModel()` construction path, which is the only code that differs between providers. The compile-time `var _ llm.Client = (*Adapter)(nil)` check guarantees interface satisfaction for all providers.
+
+For Anthropic and Mistral, which accept custom endpoint configuration, Chat round-trip tests via `httptest.Server` are added to the integration tier:
+
+| ID | Business Outcome Under Test | BR |
+|----|----------------------------|-----|
+| IT-KA-433-051 | Anthropic adapter `Chat()` sends request to configured endpoint via `httptest.Server` | BR-HAPI-433-001 |
+| IT-KA-433-052 | Mistral adapter `Chat()` sends request to configured endpoint via `httptest.Server` | BR-HAPI-433-001 |
+
+**Providers not testable via httptest**: Bedrock (uses AWS SDK client, not plain HTTP) and HuggingFace (fixed HF Inference API endpoint, not overridable). Behavioral assurance for these providers comes from the shared `Chat()` code path and construction-time validation.
+
+**Air-gapped / on-prem note**: The `local` LangChainGo provider was evaluated and rejected because it uses subprocess execution (`WithBin`), which violates the BR-HAPI-433 security requirement of zero shell/subprocess calls. For air-gapped environments, use `provider: "ollama"` (serves any GGUF model locally) or `provider: "openai"` with a custom endpoint pointing at any OpenAI-compatible inference server (vLLM, TGI, llama.cpp, RamaLama, LocalAI).
+
 ### 8.2 Tier 2: Integration Tests (40 scenarios)
 
 #### Phase 1 — Core Engine (4 IT)
@@ -494,7 +517,9 @@ Five checkpoints are integrated into the TDD implementation plan. Each is a hard
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: 2026-03-04
+**Document Version**: 1.3
+**Last Updated**: 2026-04-03
 **Change Log**:
-- v1.1: Added Phase 7 (LLM Provider Extension: Azure/Vertex) — 5 UT + 1 IT. Added TP-433-WIR cross-reference. Documented SigV4 deferral to v1.4. Updated scenario counts (64 UT, 40 IT, 8 E2E = 112 total).
+- v1.3 (2026-04-03): Added Phase 7b (Anthropic, Bedrock, Hugging Face, Mistral) — 5 UT + 2 IT. Documented `local` provider rejection (security). Added air-gapped guidance. Updated scenario counts (69 UT, 42 IT, 8 E2E = 119 total).
+- v1.2 (2026-04-03): Phase 7 LLM providers (Azure/Vertex) implemented and verified — 4 UT pass. TP-433-WIR fully executed (22 scenarios pass). Investigator constructor refactored to Config struct pattern. Updated audit store adapter status. SigV4 remains deferred to v1.4.
+- v1.1 (2026-03-04): Added Phase 7 (LLM Provider Extension: Azure/Vertex) — 5 UT + 1 IT. Added TP-433-WIR cross-reference. Documented SigV4 deferral to v1.4. Updated scenario counts (64 UT, 40 IT, 8 E2E = 112 total).
