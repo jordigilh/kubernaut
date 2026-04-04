@@ -57,11 +57,13 @@ type NotificationRequestReconciler struct {
 	ConsoleService *delivery.ConsoleDeliveryService
 	FileService    *delivery.FileDeliveryService // E2E testing only (DD-NOT-002)
 
-	// BR-NOT-104: Per-receiver credential resolution for Slack delivery
-	CredentialResolver    *credentials.Resolver
-	registeredSlackKeys   []string
-	slackKeysMu          sync.Mutex // #244: Protects registeredSlackKeys during concurrent routing reloads
-	SlackTimeout         time.Duration // NT-1: HTTP timeout for Slack webhook (wired from config)
+	// BR-NOT-104: Per-receiver credential resolution for delivery channels
+	CredentialResolver       *credentials.Resolver
+	registeredSlackKeys      []string
+	registeredPagerDutyKeys  []string // #60: Per-receiver PagerDuty delivery keys
+	registeredTeamsKeys      []string // #593: Per-receiver Teams delivery keys
+	deliveryKeysMu           sync.Mutex // #244: Protects registered*Keys during concurrent routing reloads
+	SlackTimeout             time.Duration // NT-1: HTTP timeout for Slack webhook (wired from config)
 
 	// ========================================
 	// DELIVERY ORCHESTRATOR (Pattern 3 - P0)
