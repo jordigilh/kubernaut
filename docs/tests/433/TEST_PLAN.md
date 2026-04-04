@@ -74,6 +74,8 @@ The test plan covers six functional areas:
 ### 2.2 Cross-References
 
 - [TP-433-WIR-v1.0](./TP-433-WIR-v1.0.md) — Wiring and adapter integration test plan (33 scenarios)
+- [TP-433-PARITY-v1.0](./TP-433-PARITY.md) — HAPI-KA integration test parity gap closure (26 scenarios)
+- [TP-433-ADV-v1.0](./TP-433-ADV.md) — HAPI-KA adversarial parity gap closure (80 scenarios: 53 UT + 11 IT + 16 E2E)
 - [Testing Strategy](../../../.cursor/rules/03-testing-strategy.mdc)
 - [Testing Guidelines](../../development/business-requirements/TESTING_GUIDELINES.md)
 - Issue #433: Kubernaut Agent Go rewrite
