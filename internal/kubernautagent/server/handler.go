@@ -171,6 +171,9 @@ func mapIncidentRequestToSignal(req *hapiclient.IncidentRequest) katypes.SignalC
 	if v, ok := req.Description.Get(); ok {
 		sc.Description = v
 	}
+	if v, ok := req.SignalMode.Get(); ok {
+		sc.SignalMode = strings.ToLower(string(v))
+	}
 	return sc
 }
 
@@ -202,11 +205,20 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 		summaryRaw, _ := json.Marshal(r.RCASummary)
 		rca["summary"] = jx.Raw(summaryRaw)
 	}
+	if r.RemediationTarget.Kind != "" {
+		targetRaw, _ := json.Marshal(r.RemediationTarget)
+		rca["remediation_target"] = jx.Raw(targetRaw)
+	}
 	resp.RootCauseAnalysis = rca
 
 	if r.HumanReviewNeeded {
 		resp.NeedsHumanReview.SetTo(true)
-		resp.HumanReviewReason.SetTo(mapHumanReviewReason(r.Reason))
+		// GAP-015: Prefer structured HumanReviewReason; fall back to legacy Reason
+		reason := r.HumanReviewReason
+		if reason == "" {
+			reason = r.Reason
+		}
+		resp.HumanReviewReason.SetTo(mapHumanReviewReason(reason))
 	} else {
 		resp.NeedsHumanReview.SetTo(false)
 	}
@@ -221,6 +233,11 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 		}
 		confRaw, _ := json.Marshal(r.Confidence)
 		sw["confidence"] = jx.Raw(confRaw)
+		// GAP-009: Include execution_bundle in selected_workflow per OpenAPI schema
+		if r.ExecutionBundle != "" {
+			ebRaw, _ := json.Marshal(r.ExecutionBundle)
+			sw["execution_bundle"] = jx.Raw(ebRaw)
+		}
 		resp.SelectedWorkflow.SetTo(sw)
 	}
 
@@ -231,6 +248,15 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 		resp.Warnings = r.Warnings
 	}
 
+	if len(r.DetectedLabels) > 0 {
+		dl := make(hapiclient.IncidentResponseDetectedLabels, len(r.DetectedLabels))
+		for k, v := range r.DetectedLabels {
+			raw, _ := json.Marshal(v)
+			dl[k] = jx.Raw(raw)
+		}
+		resp.DetectedLabels.SetTo(dl)
+	}
+
 	return resp
 }
 
@@ -238,6 +264,27 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 // HumanReviewReason enum values. The Python HAPI used determine_human_review_reason()
 // for this; the Go KA must do the same to satisfy the OpenAPI schema contract.
 func mapHumanReviewReason(reason string) hapiclient.HumanReviewReason {
+	// Direct enum value match (from parser outcome routing)
+	switch reason {
+	case "rca_incomplete":
+		return hapiclient.HumanReviewReasonRcaIncomplete
+	case "investigation_inconclusive":
+		return hapiclient.HumanReviewReasonInvestigationInconclusive
+	case "workflow_not_found":
+		return hapiclient.HumanReviewReasonWorkflowNotFound
+	case "no_matching_workflows":
+		return hapiclient.HumanReviewReasonNoMatchingWorkflows
+	case "image_mismatch":
+		return hapiclient.HumanReviewReasonImageMismatch
+	case "parameter_validation_failed":
+		return hapiclient.HumanReviewReasonParameterValidationFailed
+	case "low_confidence":
+		return hapiclient.HumanReviewReasonLowConfidence
+	case "llm_parsing_error":
+		return hapiclient.HumanReviewReasonLlmParsingError
+	}
+
+	// Substring match (legacy Reason field from investigator)
 	switch {
 	case strings.Contains(reason, "exhausted during RCA"):
 		return hapiclient.HumanReviewReasonRcaIncomplete
