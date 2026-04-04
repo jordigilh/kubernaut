@@ -126,6 +126,11 @@ type PagerDutyConfig struct {
 	// that contains the PagerDuty routing key (Events API v2). Required.
 	CredentialRef string `yaml:"credentialRef" json:"credentialRef"`
 
+	// URL overrides the PagerDuty Events API endpoint. When empty (default),
+	// the production endpoint (https://events.pagerduty.com/v2/enqueue) is used.
+	// Primarily for E2E testing with a mock endpoint.
+	URL string `yaml:"url,omitempty" json:"url,omitempty"`
+
 	// Severity is the PagerDuty severity (critical, error, warning, info)
 	Severity string `yaml:"severity,omitempty" json:"severity,omitempty"`
 }
