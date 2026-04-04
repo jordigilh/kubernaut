@@ -16,7 +16,7 @@ Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Na
      --from-literal=OPENAI_API_KEY=sk-... \
      -n {{ .Release.Namespace }}
 
-   Then restart KA to pick it up:
+   Then restart the Kubernaut Agent to pick it up:
 
    kubectl rollout restart deployment/kubernaut-agent -n {{ .Release.Namespace }}
 
@@ -75,7 +75,7 @@ You must manually add it to your SDK configuration:
         prometheus_ssl_ca_file: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
 {{- end }}
 
-Without this, KA's LLM cannot query cluster metrics during investigations.
+Without this, the Kubernaut Agent's LLM cannot query cluster metrics during investigations.
 
 {{- end }}
 === Monitoring ===
