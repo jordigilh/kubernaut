@@ -349,3 +349,75 @@ Usage: {{ include "kubernaut.containerSecurityContext" .Values.gateway | nindent
 {{- $override := .containerSecurityContext | default dict -}}
 {{- toYaml (merge $override $defaults) }}
 {{- end }}
+
+{{/* ===== NetworkPolicy Helpers (Issue #285) ===== */}}
+
+{{/*
+DNS egress rule: allow UDP+TCP 53 to kube-system.
+Usage: {{ include "kubernaut.np.dnsEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.dnsEgress" -}}
+- ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+  to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+{{- end }}
+
+{{/*
+K8s API server egress rule: allow TCP 443 to configured CIDR.
+Usage: {{ include "kubernaut.np.apiServerEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.apiServerEgress" -}}
+{{- if .Values.networkPolicies.apiServerCIDR }}
+- ports:
+    - port: 443
+      protocol: TCP
+  to:
+    - ipBlock:
+        cidr: {{ .Values.networkPolicies.apiServerCIDR }}
+{{- end }}
+{{- end }}
+
+{{/*
+Common egress rules included in every NetworkPolicy: DNS + API server.
+Usage: {{ include "kubernaut.np.commonEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.commonEgress" -}}
+{{- include "kubernaut.np.dnsEgress" . }}
+{{- include "kubernaut.np.apiServerEgress" . }}
+{{- end }}
+
+{{/*
+DataStorage egress rule: allow TCP 8080 to datastorage pods.
+Usage: {{ include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.datastorageEgress" -}}
+- ports:
+    - port: 8080
+      protocol: TCP
+  to:
+    - podSelector:
+        matchLabels:
+          app: datastorage
+{{- end }}
+
+{{/*
+Metrics scraping ingress rule: allow Prometheus scrape from monitoring namespace.
+Usage: {{ include "kubernaut.np.metricsIngress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.metricsIngress" -}}
+{{- if .Values.networkPolicies.monitoring.namespace }}
+- ports:
+    - port: 9090
+      protocol: TCP
+  from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ .Values.networkPolicies.monitoring.namespace }}
+{{- end }}
+{{- end }}

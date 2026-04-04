@@ -457,6 +457,18 @@
                   "description": "Emit status-update notification when signal self-resolves (BR-ORCH-037 AC-037-08)"
                 }
               }
+            },
+            "retention": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "CRD retention TTL configuration (Issue #265)",
+              "properties": {
+                "period": {
+                  "type": "string",
+                  "default": "24h",
+                  "description": "Duration before terminal RemediationRequests are cleaned up"
+                }
+              }
             }
           }
         },
@@ -819,6 +831,175 @@
         },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
         "tolerations": { "$ref": "#/definitions/tolerations" }
+      }
+    },
+    "networkPolicies": {
+      "type": "object",
+      "description": "NetworkPolicy configuration for all Kubernaut services (Issue #285)",
+      "additionalProperties": false,
+      "definitions": {
+        "serviceToggle": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        }
+      },
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable default-deny NetworkPolicies for all services"
+        },
+        "apiServerCIDR": {
+          "type": "string",
+          "default": "",
+          "description": "K8s API server CIDR (e.g., 10.96.0.1/32)"
+        },
+        "monitoring": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "default": "",
+              "description": "Namespace where Prometheus scrapes from"
+            },
+            "prometheusPort": {
+              "type": "integer",
+              "default": 9090,
+              "description": "Prometheus port (9090 vanilla, 9091 OCP)"
+            },
+            "alertManagerPort": {
+              "type": "integer",
+              "default": 9093,
+              "description": "AlertManager port (9093 vanilla, 9094 OCP)"
+            }
+          }
+        },
+        "externalWebhooks": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cidr": {
+              "type": "string",
+              "default": "0.0.0.0/0",
+              "description": "CIDR for external webhook endpoints (Slack, PagerDuty, Teams)"
+            },
+            "port": {
+              "type": "integer",
+              "default": 443,
+              "description": "Port for external webhook endpoints"
+            }
+          }
+        },
+        "externalLLM": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cidr": {
+              "type": "string",
+              "default": "0.0.0.0/0",
+              "description": "CIDR for LLM provider API endpoints"
+            },
+            "port": {
+              "type": "integer",
+              "default": 443,
+              "description": "Port for LLM provider API"
+            }
+          }
+        },
+        "gateway": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "ingressNamespaces": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": [],
+              "description": "Namespaces allowed to send ingress to Gateway (e.g., monitoring for AlertManager)"
+            }
+          }
+        },
+        "datastorage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "aianalysis": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "holmesgptApi": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "signalprocessing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "remediationorchestrator": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "workflowexecution": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "notification": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "effectivenessmonitor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "authwebhook": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "postgresql": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "valkey": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        }
       }
     }
   }

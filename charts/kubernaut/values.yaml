@@ -406,3 +406,43 @@ hooks:
     # Shared kubectl image for all hook Jobs (TLS cert gen, CRD upgrade).
     # Both hooks need kubectl — a single pinned image avoids duplication.
     image: docker.io/bitnami/kubectl:latest@sha256:6e2cdb22d6ab7264ea198c717f555e30536b54029d26c8781b9f25f78951b564
+
+# -- NetworkPolicies: default-deny with explicit allow rules (Issue #285)
+networkPolicies:
+  enabled: true
+  apiServerCIDR: ""
+  monitoring:
+    namespace: ""
+    prometheusPort: 9090
+    alertManagerPort: 9093
+  externalWebhooks:
+    cidr: "0.0.0.0/0"
+    port: 443
+  externalLLM:
+    cidr: "0.0.0.0/0"
+    port: 443
+  gateway:
+    enabled: true
+    ingressNamespaces: []
+  datastorage:
+    enabled: true
+  aianalysis:
+    enabled: true
+  holmesgptApi:
+    enabled: true
+  signalprocessing:
+    enabled: true
+  remediationorchestrator:
+    enabled: true
+  workflowexecution:
+    enabled: true
+  notification:
+    enabled: true
+  effectivenessmonitor:
+    enabled: true
+  authwebhook:
+    enabled: true
+  postgresql:
+    enabled: true
+  valkey:
+    enabled: true

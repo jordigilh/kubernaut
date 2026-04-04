@@ -46,6 +46,11 @@ kubernautAgent:
     url: "https://prometheus-k8s.openshift-monitoring.svc:9091"
     ocpMonitoringRbac: true
 
+networkPolicies:
+  monitoring:
+    prometheusPort: 9091
+    alertManagerPort: 9094
+
 # TLS defaults to hook (self-signed). To use cert-manager instead, uncomment
 # and set issuerRef.name to your ClusterIssuer (requires cert-manager installed):
 #
