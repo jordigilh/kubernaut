@@ -56,6 +56,7 @@ type SignalContext struct {
 	Namespace        string `json:"namespace"`
 	Severity         string `json:"severity"`
 	Message          string `json:"message"`
+	IncidentID       string `json:"incident_id,omitempty"`
 	ResourceKind     string `json:"resource_kind,omitempty"`
 	ResourceName     string `json:"resource_name,omitempty"`
 	ClusterName      string `json:"cluster_name,omitempty"`

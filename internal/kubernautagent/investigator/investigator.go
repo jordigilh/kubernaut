@@ -30,7 +30,38 @@ import (
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/sanitization"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
 )
+
+const maxSelfCorrectionAttempts = 3
+
+// Pipeline groups the optional tool-output processing stages that the
+// Investigator applies inside executeTool and runWorkflowSelection.
+// All fields may be nil; nil fields are skipped.
+type Pipeline struct {
+	Sanitizer       *sanitization.Pipeline
+	AnomalyDetector *AnomalyDetector
+	Validator       *parser.Validator
+	Summarizer      *summarizer.Summarizer
+}
+
+// Config holds all dependencies for constructing an Investigator.
+// Using a struct instead of positional parameters makes the constructor
+// stable and self-documenting. Optional fields (Registry, Pipeline)
+// default to their zero values when omitted.
+type Config struct {
+	Client       llm.Client
+	Builder      *prompt.Builder
+	ResultParser *parser.ResultParser
+	Enricher     *enrichment.Enricher
+	AuditStore   audit.AuditStore
+	Logger       *slog.Logger
+	MaxTurns     int
+	PhaseTools   katypes.PhaseToolMap
+	Registry     *registry.Registry
+	Pipeline     Pipeline
+}
 
 // Investigator orchestrates the two-invocation architecture:
 // Invocation 1 (RCA): system prompt + tool calls -> RCA summary
@@ -45,23 +76,24 @@ type Investigator struct {
 	maxTurns     int
 	phaseTools   katypes.PhaseToolMap
 	registry     *registry.Registry
+	pipeline     Pipeline
 }
 
-// New creates an Investigator with the given dependencies.
-// The registry parameter may be nil (stub tool execution will be used).
-func New(client llm.Client, builder *prompt.Builder, resultParser *parser.ResultParser,
-	enricher *enrichment.Enricher, auditStore audit.AuditStore, logger *slog.Logger,
-	maxTurns int, phaseTools katypes.PhaseToolMap, reg *registry.Registry) *Investigator {
+// New creates an Investigator from the given configuration.
+// Config.Registry may be nil (tool execution will be skipped).
+// Config.Pipeline fields default to nil (their features are skipped).
+func New(cfg Config) *Investigator {
 	return &Investigator{
-		client:       client,
-		builder:      builder,
-		resultParser: resultParser,
-		enricher:     enricher,
-		auditStore:   auditStore,
-		logger:       logger,
-		maxTurns:     maxTurns,
-		phaseTools:   phaseTools,
-		registry:     reg,
+		client:       cfg.Client,
+		builder:      cfg.Builder,
+		resultParser: cfg.ResultParser,
+		enricher:     cfg.Enricher,
+		auditStore:   cfg.AuditStore,
+		logger:       cfg.Logger,
+		maxTurns:     cfg.MaxTurns,
+		phaseTools:   cfg.PhaseTools,
+		registry:     cfg.Registry,
+		pipeline:     cfg.Pipeline,
 	}
 }
 
@@ -101,7 +133,7 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, signal katypes.S
 	if kind == "" {
 		kind = "Pod"
 	}
-	result, err := inv.enricher.Enrich(ctx, kind, signal.Name, signal.Namespace, "")
+	result, err := inv.enricher.Enrich(ctx, kind, signal.Name, signal.Namespace, "", signal.IncidentID)
 	if err != nil {
 		inv.logger.Warn("enrichment failed", slog.String("error", err.Error()))
 		return nil
@@ -177,6 +209,33 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	}
 
 	audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeValidationAttempt, ""), inv.logger)
+
+	if inv.pipeline.Validator != nil {
+		correctionFn := func(r *katypes.InvestigationResult, validationErr error) (*katypes.InvestigationResult, error) {
+			correctionMsg := fmt.Sprintf("Validation failed: %s. Please select a valid workflow.", validationErr)
+			messages = append(messages, llm.Message{Role: "assistant", Content: content})
+			messages = append(messages, llm.Message{Role: "user", Content: correctionMsg})
+
+			correctedContent, corrExhausted, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery)
+			if corrErr != nil {
+				return nil, corrErr
+			}
+			if corrExhausted {
+				r.HumanReviewNeeded = true
+				r.Reason = "self-correction exhausted LLM turns"
+				return r, nil
+			}
+			content = correctedContent
+			return inv.resultParser.Parse(correctedContent)
+		}
+
+		corrected, corrErr := inv.pipeline.Validator.SelfCorrect(result, maxSelfCorrectionAttempts, correctionFn)
+		if corrErr != nil {
+			return nil, fmt.Errorf("validation self-correction failed: %w", corrErr)
+		}
+		return corrected, nil
+	}
+
 	return result, nil
 }
 
@@ -211,6 +270,9 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 					ToolName:   tc.Name,
 				})
 			}
+			if inv.pipeline.AnomalyDetector != nil && inv.pipeline.AnomalyDetector.TotalExceeded() {
+				return "", true, nil
+			}
 			continue
 		}
 
@@ -240,14 +302,55 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 	if inv.registry == nil {
 		return toolErrorJSON("no registry configured for tool " + name)
 	}
+
+	if inv.pipeline.AnomalyDetector != nil {
+		if ar := inv.pipeline.AnomalyDetector.CheckToolCall(name, args); !ar.Allowed {
+			inv.logger.Warn("anomaly detector rejected tool call",
+				slog.String("tool", name),
+				slog.String("reason", ar.Reason),
+			)
+			return toolErrorJSON(ar.Reason)
+		}
+	}
+
 	result, err := inv.registry.Execute(ctx, name, args)
 	if err != nil {
 		inv.logger.Warn("tool execution failed",
 			slog.String("tool", name),
 			slog.String("error", err.Error()),
 		)
+		if inv.pipeline.AnomalyDetector != nil {
+			if ar := inv.pipeline.AnomalyDetector.RecordFailure(name, args); !ar.Allowed {
+				return toolErrorJSON(ar.Reason)
+			}
+		}
 		return toolErrorJSON(err.Error())
 	}
+
+	if inv.pipeline.Sanitizer != nil {
+		sanitized, sanitizeErr := inv.pipeline.Sanitizer.Run(ctx, result)
+		if sanitizeErr != nil {
+			inv.logger.Warn("sanitization failed, returning raw output",
+				slog.String("tool", name),
+				slog.String("error", sanitizeErr.Error()),
+			)
+		} else {
+			result = sanitized
+		}
+	}
+
+	if inv.pipeline.Summarizer != nil {
+		summarized, sumErr := inv.pipeline.Summarizer.MaybeSummarize(ctx, name, result)
+		if sumErr != nil {
+			inv.logger.Warn("summarization failed, returning unsummarized output",
+				slog.String("tool", name),
+				slog.String("error", sumErr.Error()),
+			)
+		} else {
+			result = summarized
+		}
+	}
+
 	return result
 }
 
@@ -292,12 +395,6 @@ func toPromptEnrichment(data *enrichment.EnrichmentResult) *prompt.EnrichmentDat
 		}
 	}
 
-	for _, h := range data.RemediationHistory {
-		pe.RemediationHistory = append(pe.RemediationHistory, prompt.RemediationHistoryEntry{
-			WorkflowID: h.WorkflowID,
-			Outcome:    h.Outcome,
-			Timestamp:  h.Timestamp,
-		})
-	}
+	pe.HistoryResult = data.RemediationHistory
 	return pe
 }

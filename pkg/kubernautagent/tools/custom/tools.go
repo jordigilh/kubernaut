@@ -22,8 +22,10 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
 
 var listAvailableActionsSchema = json.RawMessage(`{
@@ -75,6 +77,17 @@ func NewAllTools(ds *ogenclient.Client) []tools.Tool {
 		&listWorkflowsTool{ds: ds},
 		&getWorkflowTool{ds: ds},
 	}
+}
+
+// RegisterAll registers all 5 custom tools (3 DS workflow tools + 2 resource context tools)
+// into the given registry. Pass nil for any dependency to create tools that will fail at
+// execution time rather than registration time.
+func RegisterAll(reg *registry.Registry, dsOgenClient *ogenclient.Client, dsClient enrichment.DataStorageClient, k8sClient enrichment.K8sClient) {
+	for _, t := range NewAllTools(dsOgenClient) {
+		reg.Register(t)
+	}
+	reg.Register(NewNamespacedResourceContextTool(dsClient, k8sClient))
+	reg.Register(NewClusterResourceContextTool(dsClient))
 }
 
 // --- list_available_actions ---

@@ -51,13 +51,13 @@ type rootOwnerResponse struct {
 }
 
 type namespacedResponse struct {
-	RootOwner          rootOwnerResponse                   `json:"root_owner"`
-	RemediationHistory []enrichment.RemediationHistoryEntry `json:"remediation_history"`
+	RootOwner          rootOwnerResponse              `json:"root_owner"`
+	RemediationHistory *enrichment.RemediationHistoryResult `json:"remediation_history"`
 }
 
 type clusterResponse struct {
-	RootOwner          rootOwnerResponse                   `json:"root_owner"`
-	RemediationHistory []enrichment.RemediationHistoryEntry `json:"remediation_history"`
+	RootOwner          rootOwnerResponse              `json:"root_owner"`
+	RemediationHistory *enrichment.RemediationHistoryResult `json:"remediation_history"`
 }
 
 // --- get_namespaced_resource_context ---
@@ -102,14 +102,14 @@ func (t *namespacedResourceContextTool) Execute(ctx context.Context, args json.R
 		}
 	}
 
-	history, _ := t.ds.GetRemediationHistory(ctx, rootOwner.Kind, rootOwner.Name, rootOwner.Namespace, "")
-	if history == nil {
-		history = []enrichment.RemediationHistoryEntry{}
+	histResult, _ := t.ds.GetRemediationHistory(ctx, rootOwner.Kind, rootOwner.Name, rootOwner.Namespace, "")
+	if histResult == nil {
+		histResult = &enrichment.RemediationHistoryResult{}
 	}
 
 	resp := namespacedResponse{
 		RootOwner:          rootOwner,
-		RemediationHistory: history,
+		RemediationHistory: histResult,
 	}
 	data, err := json.Marshal(resp)
 	if err != nil {
@@ -142,9 +142,9 @@ func (t *clusterResourceContextTool) Execute(ctx context.Context, args json.RawM
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	history, _ := t.ds.GetRemediationHistory(ctx, params.Kind, params.Name, "", "")
-	if history == nil {
-		history = []enrichment.RemediationHistoryEntry{}
+	histResult, _ := t.ds.GetRemediationHistory(ctx, params.Kind, params.Name, "", "")
+	if histResult == nil {
+		histResult = &enrichment.RemediationHistoryResult{}
 	}
 
 	resp := clusterResponse{
@@ -152,7 +152,7 @@ func (t *clusterResourceContextTool) Execute(ctx context.Context, args json.RawM
 			Kind: params.Kind,
 			Name: params.Name,
 		},
-		RemediationHistory: history,
+		RemediationHistory: histResult,
 	}
 	data, err := json.Marshal(resp)
 	if err != nil {

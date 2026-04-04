@@ -75,12 +75,16 @@ func (f *fakeK8sClient) GetOwnerChain(_ context.Context, _, _, _ string) ([]enri
 	return f.ownerChain, f.err
 }
 
+func (f *fakeK8sClient) GetSpecHash(_ context.Context, _, _, _ string) (string, error) {
+	return "", nil
+}
+
 type fakeDataStorageClient struct {
-	history []enrichment.RemediationHistoryEntry
+	history *enrichment.RemediationHistoryResult
 	err     error
 }
 
-func (f *fakeDataStorageClient) GetRemediationHistory(_ context.Context, _, _, _, _ string) ([]enrichment.RemediationHistoryEntry, error) {
+func (f *fakeDataStorageClient) GetRemediationHistory(_ context.Context, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
 	return f.history, f.err
 }
 
@@ -120,8 +124,10 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			},
 		}
 		dsClient := &fakeDataStorageClient{
-			history: []enrichment.RemediationHistoryEntry{
-				{WorkflowID: "oom-increase-memory", Outcome: "success", Timestamp: "2026-03-01T10:00:00Z"},
+			history: &enrichment.RemediationHistoryResult{
+				Tier1: []enrichment.Tier1Entry{
+					{RemediationUID: "oom-increase-memory", Outcome: "success"},
+				},
 			},
 		}
 		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
@@ -134,7 +140,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit exceeded"}`}},
 				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}}`}},
 			}
-			inv := investigator.New(mockClient, builder, rp, enricher, auditStore, logger, 15, phaseTools, nil)
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name:      "api-server-abc",
 				Namespace: "production",
@@ -154,7 +160,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"issue found"}`}},
 				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart-pod","confidence":0.8}`}},
 			}
-			inv := investigator.New(mockClient, builder, rp, enricher, auditStore, logger, 15, phaseTools, nil)
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "pod-abc", Namespace: "default", Severity: "warning", Message: "CrashLoopBackOff",
 			})
@@ -169,7 +175,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"memory leak in api-server container"}`}},
 				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.88}`}},
 			}
-			inv := investigator.New(mockClient, builder, rp, enricher, auditStore, logger, 15, phaseTools, nil)
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server-abc", Namespace: "production", Severity: "critical", Message: "OOMKilled",
 			})
@@ -190,7 +196,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 					{ID: "tc_1", Name: "kubectl_describe", Arguments: `{"kind":"Pod","name":"api","namespace":"default"}`},
 				}}},
 			}
-			inv := investigator.New(mockClient, builder, rp, enricher, auditStore, logger, 1, phaseTools, nil)
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 1, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "critical", Message: "OOMKilled",
 			})
@@ -215,7 +221,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"generic-restart","confidence":0.7}`}},
 			}
 
-			inv := investigator.New(mockClient, builder, rp, enricher, auditStore, logger, 15, phaseTools, reg)
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
 			})
@@ -245,7 +251,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.5}`}},
 			}
 
-			inv := investigator.New(mockClient, builder, rp, enricher, auditStore, logger, 15, phaseTools, reg)
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "critical", Message: "OOMKilled",
 			})
@@ -270,7 +276,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
 			}
 
-			inv := investigator.New(mockClient, builder, rp, enricher, auditStore, logger, 15, phaseTools, reg)
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
 			})
@@ -298,7 +304,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
 			}
 
-			inv := investigator.New(mockClient, builder, rp, enricher, auditStore, logger, 15, phaseTools, reg)
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
 			})
@@ -317,13 +323,59 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		})
 	})
 
+	Describe("IT-KA-433W-005: Investigator with enricher includes owner chain in RCA system prompt", func() {
+		It("should include owner chain and remediation history strings in the RCA system prompt", func() {
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Memory pressure detected"}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9}`}},
+			}
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name:      "api-server-abc",
+				Namespace: "production",
+				Severity:  "critical",
+				Message:   "OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(mockClient.calls).To(HaveLen(2))
+
+			rcaCall := mockClient.calls[0]
+			systemPrompt := rcaCall.Messages[0].Content
+			Expect(systemPrompt).To(ContainSubstring("Deployment/api-server"),
+				"RCA system prompt should contain owner chain entries")
+			Expect(systemPrompt).To(ContainSubstring("oom-increase-memory"),
+				"RCA system prompt should contain remediation history workflow ID")
+		})
+	})
+
+	Describe("IT-KA-433W-006: Investigator with nil enricher degrades gracefully", func() {
+		It("should produce investigation result without enrichment data and without panic", func() {
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Issue found"}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+			}
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: nil, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "test-pod", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.WorkflowID).To(Equal("restart"))
+
+			rcaCall := mockClient.calls[0]
+			systemPrompt := rcaCall.Messages[0].Content
+			Expect(systemPrompt).NotTo(ContainSubstring("Owner Chain"),
+				"system prompt should not contain enrichment sections when enricher is nil")
+		})
+	})
+
 	Describe("IT-KA-433-009: Investigation emits audit events", func() {
 		It("should emit audit events at correct investigation points", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"found issue"}`}},
 				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.85}`}},
 			}
-			inv := investigator.New(mockClient, builder, rp, enricher, auditStore, logger, 15, phaseTools, nil)
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "production", Severity: "critical", Message: "OOMKilled",
 			})
