@@ -100,6 +100,16 @@ func (c *NotificationCreator) SetClusterIdentity(name, uuid string) {
 	c.clusterUUID = uuid
 }
 
+// FormatRemediationLine returns a formatted remediation identification line for notification bodies.
+// Returns empty string when name is empty (graceful degradation).
+// Issue #626: Enables operators to trace notifications back to specific CRD pipeline chain.
+func FormatRemediationLine(rrName string) string {
+	if rrName == "" {
+		return ""
+	}
+	return fmt.Sprintf("**Remediation**: %s\n\n", rrName)
+}
+
 // FormatClusterLine returns a formatted cluster identification line for notification bodies.
 // Returns empty string when both name and uuid are empty (graceful degradation).
 func FormatClusterLine(clusterName, clusterUUID string) string {
@@ -277,12 +287,13 @@ func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationReq
 		approvalReason,
 	)
 
+	body += "\n\nPlease review and approve/reject the remediation."
+
 	if ai.Status.SelectedWorkflow.Rationale != "" {
 		body += fmt.Sprintf("\n\n**Selection Rationale**:\n%s", ai.Status.SelectedWorkflow.Rationale)
 	}
 
-	body += "\n\nPlease review and approve/reject the remediation."
-	return FormatClusterLine(c.clusterName, c.clusterUUID) + body
+	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) + body
 }
 
 // CreateCompletionNotification creates a NotificationRequest for successful remediation completion (BR-ORCH-045).
@@ -419,6 +430,8 @@ func (c *NotificationCreator) buildCompletionBody(
 
 	body := fmt.Sprintf(`Remediation Completed Successfully
 
+**Outcome**: %s
+
 **Signal**: %s
 **Severity**: %s
 
@@ -429,15 +442,14 @@ func (c *NotificationCreator) buildCompletionBody(
 %s
 
 **Workflow Executed**: %s
-**Execution Engine**: %s
-**Outcome**: %s`,
+**Execution Engine**: %s`,
+		rr.Status.Outcome,
 		rr.Spec.SignalName,
 		rr.Spec.Severity,
 		formatTargetResource(target),
 		rootCause,
 		workflowLabel,
 		executionEngine,
-		rr.Status.Outcome,
 	)
 
 	if rationale != "" {
@@ -449,7 +461,7 @@ func (c *NotificationCreator) buildCompletionBody(
 	}
 
 	body += "\n\nThis incident was automatically detected and remediated by Kubernaut."
-	return FormatClusterLine(c.clusterName, c.clusterUUID) + body
+	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) + body
 }
 
 // CreateBulkDuplicateNotification creates a NotificationRequest for bulk duplicates (BR-ORCH-034).
@@ -538,7 +550,7 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 
 // buildBulkDuplicateBody builds the bulk duplicate notification body.
 func (c *NotificationCreator) buildBulkDuplicateBody(rr *remediationv1.RemediationRequest) string {
-	return FormatClusterLine(c.clusterName, c.clusterUUID) + fmt.Sprintf(`Remediation completed successfully.
+	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) + fmt.Sprintf(`Remediation completed successfully.
 
 **Signal**: %s
 **Result**: %s
@@ -779,6 +791,15 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 
 ---
 
+**Action Required**: Please investigate this remediation failure and take appropriate action.
+
+**Options**:
+1. Fix the underlying issue and re-trigger the signal
+2. Manually apply the remediation
+3. Mark as resolved if no action is needed
+
+---
+
 **Failure Source**: %s
 **Reason**: %s`,
 		rr.Spec.SignalName,
@@ -807,7 +828,6 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 		}
 	}
 
-	// Add WorkflowExecution-specific context
 	if ctx.Source == notificationv1.ReviewSourceWorkflowExecution {
 		if ctx.RetryCount > 0 || ctx.MaxRetries > 0 {
 			body += fmt.Sprintf("\n\n**Retry Information**:\n- Retries attempted: %d/%d", ctx.RetryCount, ctx.MaxRetries)
@@ -820,18 +840,7 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 		}
 	}
 
-	body += `
-
----
-
-**Action Required**: Please investigate this remediation failure and take appropriate action.
-
-**Options**:
-1. Fix the underlying issue and re-trigger the signal
-2. Manually apply the remediation
-3. Mark as resolved if no action is needed`
-
-	return FormatClusterLine(c.clusterName, c.clusterUUID) + body
+	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) + body
 }
 
 // ========================================
@@ -949,7 +958,51 @@ func (c *NotificationCreator) buildSelfResolvedBody(
 	}
 
 	body += "\n\nNo action was taken. This notification is for audit purposes only."
-	return FormatClusterLine(c.clusterName, c.clusterUUID) + body
+	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) + body
+}
+
+// ========================================
+// #621: TIMEOUT BODY BUILDERS
+// Extracted from reconciler.go inline body construction.
+// Shared cluster line + RR name prefix for all timeout notifications.
+// ========================================
+
+// BuildGlobalTimeoutBody constructs the notification body for global timeout events.
+// Issue #621: Prepends cluster line and RR name for operator traceability.
+func (c *NotificationCreator) BuildGlobalTimeoutBody(
+	signalName, rrName, timeoutPhase, timeoutDuration, startTime, timeoutTime string,
+) string {
+	body := fmt.Sprintf(`Remediation request has exceeded the global timeout and requires manual intervention.
+
+**Signal**: %s
+**Timeout Phase**: %s
+**Timeout Duration**: %s
+**Started**: %s
+**Timed Out**: %s
+
+The remediation was in %s phase when it timed out. Please investigate why the remediation did not complete within the expected timeframe.`,
+		signalName, timeoutPhase, timeoutDuration, startTime, timeoutTime, timeoutPhase,
+	)
+	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rrName) + body
+}
+
+// BuildPhaseTimeoutBody constructs the notification body for per-phase timeout events.
+// Issue #621: Prepends cluster line and RR name for operator traceability.
+func (c *NotificationCreator) BuildPhaseTimeoutBody(
+	signalName, rrName, phase, phaseTimeout, startTime, timeoutTime string,
+) string {
+	body := fmt.Sprintf(`Remediation phase has exceeded timeout and requires investigation.
+
+**Signal**: %s
+**Phase**: %s
+**Phase Timeout**: %s
+**Started**: %s
+**Timed Out**: %s
+
+The %s phase did not complete within the expected timeframe. Please investigate why this phase is taking longer than expected.`,
+		signalName, phase, phaseTimeout, startTime, timeoutTime, phase,
+	)
+	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rrName) + body
 }
 
 // ========================================

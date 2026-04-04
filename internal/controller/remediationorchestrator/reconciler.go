@@ -2066,21 +2066,13 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 			Priority: notificationv1.NotificationPriorityCritical,
 			Severity: rr.Spec.Severity,
 			Subject:  fmt.Sprintf("Remediation Timeout: %s", rr.Spec.SignalName),
-			Body: fmt.Sprintf(`Remediation request has exceeded the global timeout and requires manual intervention.
-
-**Signal**: %s
-**Timeout Phase**: %s
-**Timeout Duration**: %s
-**Started**: %v
-**Timed Out**: %v
-
-The remediation was in %s phase when it timed out. Please investigate why the remediation did not complete within the expected timeframe.`,
+			Body: r.notificationCreator.BuildGlobalTimeoutBody(
 				rr.Spec.SignalName,
+				rr.Name,
 				string(timeoutPhase),
 				r.getEffectiveGlobalTimeout(rr).String(),
 				rr.Status.StartTime.Format(time.RFC3339),
 				rr.Status.TimeoutTime.Format(time.RFC3339),
-				string(timeoutPhase),
 			),
 			Context: buildTimeoutContext(rr.Name, string(timeoutPhase), "", rr.Spec.TargetResource),
 		},
@@ -3276,21 +3268,13 @@ func (r *Reconciler) createPhaseTimeoutNotification(ctx context.Context, rr *rem
 			Severity: rr.Spec.Severity,
 			Phase:    string(phase),
 			Subject:  fmt.Sprintf("Phase Timeout: %s - %s", phase, rr.Spec.SignalName),
-			Body: fmt.Sprintf(`Remediation phase has exceeded timeout and requires investigation.
-
-**Signal**: %s
-**Phase**: %s
-**Phase Timeout**: %s
-**Started**: %v
-**Timed Out**: %v
-
-The %s phase did not complete within the expected timeframe. Please investigate why this phase is taking longer than expected.`,
+			Body: r.notificationCreator.BuildPhaseTimeoutBody(
 				rr.Spec.SignalName,
-				phase,
+				rr.Name,
+				string(phase),
 				timeout.String(),
 				safeFormatTime(rr.Status.StartTime),
 				safeFormatTime(rr.Status.TimeoutTime),
-				phase,
 			),
 			Context: buildTimeoutContext(rr.Name, string(phase), timeout.String(), rr.Spec.TargetResource),
 		},
