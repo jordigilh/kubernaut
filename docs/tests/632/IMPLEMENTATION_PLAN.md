@@ -11,6 +11,24 @@
 
 This plan implements an OpenShift Console Plugin that embeds Kubernaut into the operator console with a dashboard overview and a conversational RAR decision-making interface. The plugin is a React SPA using the `@openshift-console/dynamic-plugin-sdk`, served by a lightweight nginx pod, and registered via a `ConsolePlugin` CR.
 
+### Design Decision: Standalone Plugin (not Lightspeed)
+
+**Decision**: Build a standalone Kubernaut console plugin. Coexists with OpenShift Lightspeed — each serves a different purpose.
+
+Lightspeed is a general-purpose, stateless, read-only OCP/K8s assistant. Kubernaut needs RAR-scoped conversations with audit-seeded investigation context, actionable controls (approve/reject/override), a remediation dashboard, and persistent audit trail. Integrating with Lightspeed would mean fighting its architecture.
+
+| Concern | Lightspeed | Kubernaut Plugin |
+|---------|-----------|-----------------|
+| Conversation scope | General OCP questions | Specific RAR + investigation audit trail |
+| LLM context | Starts fresh | Audit chain reconstruction from #592 API |
+| Actions | Read-only | Approve, reject, override (CRD patches) |
+| Dashboard | None | RR/RAR/WE/EA metrics |
+| Backend | Lightspeed service (Python) | KA conversation API (#592, Go) |
+
+**Reference implementation**: [`openshift/lightspeed-console`](https://github.com/openshift/lightspeed-console) (Apache 2.0) used as read-only reference for OCP Dynamic Plugin SDK patterns — plugin scaffolding, `ConsolePlugin` CR registration, SSE consumption in React, console proxy configuration. No code dependency, no runtime integration, no shared components. Estimated 2-3 days saved on initial SDK ramp-up (reflected in Phase 1 estimate).
+
+**Chat backend**: KA conversation API (#592, Option A) — KA already has the LLM client, K8s toolset, audit context. The console proxies chat requests via `ConsolePlugin.spec.proxy`.
+
 ### Architecture
 
 ```
@@ -103,7 +121,9 @@ plugin/
 
 ---
 
-## Phase 1: Plugin Scaffolding + Build Pipeline (Days 1-2)
+## Phase 1: Plugin Scaffolding + Build Pipeline (Day 1)
+
+**SDK ramp-up accelerated** by [`openshift/lightspeed-console`](https://github.com/openshift/lightspeed-console) reference patterns for: plugin webpack config, `ConsolePlugin` CR, SSE consumption, console proxy setup.
 
 ### Phase 1.1: Project setup
 
@@ -114,7 +134,7 @@ plugin/
   - `webpack`, `ts-loader`, `@openshift-console/plugin-webpack`
   - `jest`, `@testing-library/react`, `cypress`
 - `tsconfig.json` with strict mode
-- `webpack.config.ts` with module federation (`@openshift-console/plugin-webpack`)
+- `webpack.config.ts` with module federation (`@openshift-console/plugin-webpack`) — reference Lightspeed's webpack config for SDK-specific patterns
 - `console-extensions.json` declaring:
   - `console.page/route` for `/kubernaut/dashboard` and `/kubernaut/rar/:name`
   - `console.navigation/section` for "Kubernaut"
@@ -443,22 +463,22 @@ Create stories for all major components:
 
 | Phase | Effort |
 |-------|--------|
-| Phase 1 (Scaffolding + Build) | 2 days |
+| Phase 1 (Scaffolding + Build) | 1 day (accelerated by Lightspeed SDK reference) |
 | Phase 2 (Dashboard) | 2.5 days |
 | Phase 3 (RAR Detail) | 2 days |
-| Phase 4 (Chat Interface) | 3 days |
+| Phase 4 (Chat Interface) | 2 days (SSE patterns from Lightspeed reference) |
 | Phase 5 (Action Controls) | 3 days |
 | Phase 6 (Notification) | 0.5 day |
 | Phase 7 (Integration + Visual) | 2.5 days |
 | Phase 8 (REFACTOR) | 1.5 days |
 | Phase 9 (Due Diligence) | 1 day |
-| **Total** | **18 days** |
+| **Total** | **16 days** (reduced from 18d — Lightspeed reference saves ~2d) |
 
 ---
 
 ## Open Questions (from #632)
 
-1. **Chat backend**: Option A (KA endpoint) vs Option B (dedicated service). This plan assumes Option A — KA gets a `/api/v1/chat` endpoint, proxied via `ConsolePlugin.spec.proxy`.
+1. ~~**Chat backend**: Option A (KA endpoint) vs Option B (dedicated service).~~ **RESOLVED**: Option A — KA conversation API (#592). Confirmed in design decision comment.
 2. **Chat session persistence**: Should chat history be persisted (audit trail) or ephemeral? This plan assumes ephemeral per #592 scope.
 3. **Notification triggers**: This plan covers pending RAR badge only. WE failures, EA low-effectiveness could be added later.
 4. **Plugin naming**: This plan uses `kubernaut-console-plugin`.
@@ -470,3 +490,4 @@ Create stories for all major components:
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-04 | Initial implementation plan |
+| 1.1 | 2026-03-04 | Add Lightspeed design decision (standalone plugin, coexistence). Reference `lightspeed-console` for SDK patterns. Resolve chat backend as Option A (KA). Effort reduced from 18d to 16d. |
