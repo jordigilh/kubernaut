@@ -48,15 +48,25 @@ func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, erro
 	if err := json.Unmarshal([]byte(jsonStr), &result); err == nil && (result.RCASummary != "" || result.WorkflowID != "") {
 		var flat flatLLMFields
 		_ = json.Unmarshal([]byte(jsonStr), &flat)
-		applyActionableSignals(&result, flat.Actionable)
+		applyFlatFields(&result, flat)
+		mergeNestedRemediationTarget(&result, jsonStr)
+		applyOutcomeRouting(&result)
 		return &result, nil
 	}
 
-	return parseLLMFormat(jsonStr)
+	parsed, err := parseLLMFormat(jsonStr)
+	if err != nil {
+		return nil, err
+	}
+	applyOutcomeRouting(parsed)
+	return parsed, nil
 }
 
-// extractJSON finds JSON content, first trying to extract from a markdown
-// code block, then falling back to the raw string.
+// extractJSON finds JSON content using a priority chain:
+// 1. Fenced ```json ... ``` code blocks
+// 2. Fenced ``` ... ``` code blocks containing JSON
+// 3. Raw string starting with {
+// 4. Balanced brace extraction (GAP-003: handles JSON embedded in prose)
 func extractJSON(content string) string {
 	if idx := strings.Index(content, "```json"); idx != -1 {
 		start := idx + len("```json")
@@ -79,6 +89,49 @@ func extractJSON(content string) string {
 	if len(trimmed) > 0 && trimmed[0] == '{' {
 		return trimmed
 	}
+	return extractBalancedJSON(content)
+}
+
+// extractBalancedJSON finds the first complete JSON object in content
+// by counting balanced braces. Handles JSON embedded in prose text,
+// mirroring HAPI's json_utils.py balanced extraction.
+func extractBalancedJSON(content string) string {
+	start := strings.IndexByte(content, '{')
+	if start == -1 {
+		return ""
+	}
+
+	depth := 0
+	inString := false
+	escaped := false
+
+	for i := start; i < len(content); i++ {
+		ch := content[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if ch == '\\' && inString {
+			escaped = true
+			continue
+		}
+		if ch == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		switch ch {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return content[start : i+1]
+			}
+		}
+	}
 	return ""
 }
 
@@ -87,24 +140,46 @@ const confidenceFloor = 0.8
 
 // llmResponse is the nested JSON structure that LLMs typically produce.
 type llmResponse struct {
-	RCA        *llmRCA      `json:"root_cause_analysis"`
-	Workflow   *llmWorkflow `json:"selected_workflow"`
-	Actionable *bool        `json:"actionable,omitempty"`
+	RCA                  *llmRCA      `json:"root_cause_analysis"`
+	Workflow             *llmWorkflow `json:"selected_workflow"`
+	Actionable           *bool        `json:"actionable,omitempty"`
+	InvestigationOutcome string       `json:"investigation_outcome,omitempty"`
+	NeedsHumanReview     *bool        `json:"needs_human_review,omitempty"`
+	HumanReviewReason    string       `json:"human_review_reason,omitempty"`
 }
 
 type llmRCA struct {
-	Summary string `json:"summary"`
+	Summary              string        `json:"summary"`
+	RemediationTarget    *llmRemTarget `json:"remediation_target,omitempty"`
+	RemediationTargetAlt *llmRemTarget `json:"remediationTarget,omitempty"`
+}
+
+func (r *llmRCA) resolvedTarget() *llmRemTarget {
+	if r.RemediationTarget != nil {
+		return r.RemediationTarget
+	}
+	return r.RemediationTargetAlt
+}
+
+type llmRemTarget struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
 }
 
 type llmWorkflow struct {
-	WorkflowID string  `json:"workflow_id"`
-	Confidence float64 `json:"confidence"`
+	WorkflowID      string  `json:"workflow_id"`
+	ExecutionBundle string  `json:"execution_bundle,omitempty"`
+	Confidence      float64 `json:"confidence"`
 }
 
 // flatLLMFields captures top-level fields that may appear alongside the flat
-// InvestigationResult format (rca_summary, workflow_id, confidence, actionable).
+// InvestigationResult format (rca_summary, workflow_id, confidence, etc.).
 type flatLLMFields struct {
-	Actionable *bool `json:"actionable,omitempty"`
+	Actionable           *bool  `json:"actionable,omitempty"`
+	InvestigationOutcome string `json:"investigation_outcome,omitempty"`
+	NeedsHumanReview     *bool  `json:"needs_human_review,omitempty"`
+	HumanReviewReason    string `json:"human_review_reason,omitempty"`
 }
 
 // parseLLMFormat parses the nested LLM response format and converts
@@ -118,13 +193,26 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 	result := &katypes.InvestigationResult{}
 	if resp.RCA != nil {
 		result.RCASummary = resp.RCA.Summary
+		if t := resp.RCA.resolvedTarget(); t != nil {
+			result.RemediationTarget = katypes.RemediationTarget{
+				Kind:      t.Kind,
+				Name:      t.Name,
+				Namespace: t.Namespace,
+			}
+		}
 	}
 	if resp.Workflow != nil {
 		result.WorkflowID = resp.Workflow.WorkflowID
+		result.ExecutionBundle = resp.Workflow.ExecutionBundle
 		result.Confidence = resp.Workflow.Confidence
 	}
 
-	applyActionableSignals(result, resp.Actionable)
+	applyFlatFields(result, flatLLMFields{
+		Actionable:           resp.Actionable,
+		InvestigationOutcome: resp.InvestigationOutcome,
+		NeedsHumanReview:     resp.NeedsHumanReview,
+		HumanReviewReason:    resp.HumanReviewReason,
+	})
 
 	if result.RCASummary == "" && result.WorkflowID == "" {
 		return nil, fmt.Errorf("no recognized fields in LLM JSON response")
@@ -133,21 +221,79 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 	return result, nil
 }
 
-// applyActionableSignals processes the LLM's actionable field:
-// - When actionable=false: sets IsActionable, synthesizes warning, applies confidence floor
-// - When actionable=true or absent: no changes
-// #607: Defense-in-depth — mirrors Python HAPI result_parser.py behavior.
-func applyActionableSignals(result *katypes.InvestigationResult, actionable *bool) {
-	if actionable == nil {
+// mergeNestedRemediationTarget checks for a nested root_cause_analysis.remediation_target
+// (or camelCase remediationTarget) when the flat parse path succeeded but
+// RemediationTarget is still empty. This handles hybrid JSON where the LLM
+// returns flat rca_summary/workflow_id alongside a nested RCA object.
+func mergeNestedRemediationTarget(result *katypes.InvestigationResult, jsonStr string) {
+	if result.RemediationTarget.Kind != "" {
 		return
 	}
-	if *actionable {
+	var resp llmResponse
+	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil || resp.RCA == nil {
 		return
 	}
-	falseVal := false
-	result.IsActionable = &falseVal
-	result.Warnings = append(result.Warnings, notActionableWarning)
-	if result.Confidence < confidenceFloor {
-		result.Confidence = confidenceFloor
+	if t := resp.RCA.resolvedTarget(); t != nil {
+		result.RemediationTarget = katypes.RemediationTarget{
+			Kind:      t.Kind,
+			Name:      t.Name,
+			Namespace: t.Namespace,
+		}
+	}
+}
+
+// applyFlatFields applies LLM-provided flat fields to the result:
+// - actionable: sets IsActionable, synthesizes warning, applies confidence floor
+// - investigation_outcome: maps to outcome routing fields
+// - needs_human_review / human_review_reason: propagates directly
+func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
+	if flat.Actionable != nil && !*flat.Actionable {
+		falseVal := false
+		result.IsActionable = &falseVal
+		result.Warnings = append(result.Warnings, notActionableWarning)
+		if result.Confidence < confidenceFloor {
+			result.Confidence = confidenceFloor
+		}
+	}
+
+	if flat.InvestigationOutcome != "" {
+		applyInvestigationOutcome(result, flat.InvestigationOutcome)
+	}
+
+	if flat.NeedsHumanReview != nil && *flat.NeedsHumanReview {
+		result.HumanReviewNeeded = true
+		if flat.HumanReviewReason != "" {
+			result.HumanReviewReason = flat.HumanReviewReason
+		}
+	}
+}
+
+// applyInvestigationOutcome maps HAPI-style investigation_outcome values
+// to is_actionable/needs_human_review/human_review_reason fields.
+func applyInvestigationOutcome(result *katypes.InvestigationResult, outcome string) {
+	switch outcome {
+	case "problem_resolved", "predictive_no_action":
+		falseVal := false
+		result.IsActionable = &falseVal
+	case "inconclusive":
+		result.HumanReviewNeeded = true
+		if result.HumanReviewReason == "" {
+			result.HumanReviewReason = "investigation_inconclusive"
+		}
+	case "actionable":
+		trueVal := true
+		result.IsActionable = &trueVal
+	}
+}
+
+// applyOutcomeRouting derives is_actionable from other fields when the LLM
+// did not provide it explicitly. This mirrors HAPI's determine_investigation_outcome().
+func applyOutcomeRouting(result *katypes.InvestigationResult) {
+	if result.IsActionable != nil {
+		return
+	}
+	if result.WorkflowID != "" {
+		trueVal := true
+		result.IsActionable = &trueVal
 	}
 }
