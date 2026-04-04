@@ -304,7 +304,7 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 		chain := tier1["chain"].([]interface{})
 		Expect(chain).To(HaveLen(3), "All 3 entries should be returned")
 
-		// Verify each entry has the correct assessmentReason (ordered by completedAt DESC — most recent first)
+		// Verify each entry has the correct assessmentReason (ordered by completedAt ASC per OpenAPI spec)
 		reasons := make([]string, 3)
 		for i, e := range chain {
 			entry := e.(map[string]interface{})
@@ -312,8 +312,8 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 				reasons[i] = r.(string)
 			}
 		}
-		Expect(reasons).To(Equal([]string{"partial", "spec_drift", "full"}),
-			"Assessment reasons should be in descending timestamp order (most recent first)")
+		Expect(reasons).To(Equal([]string{"full", "spec_drift", "partial"}),
+			"Assessment reasons should be in ascending timestamp order (oldest first, per OpenAPI spec)")
 	})
 
 	It("E2E-DS-016-005: Invalid tier1Window returns 400 Bad Request", func() {
