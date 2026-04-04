@@ -42,8 +42,6 @@ receivers:
 `
 				config, err := routing.ParseConfig([]byte(configYAML))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(config).ToNot(BeNil())
-				Expect(config.Route).ToNot(BeNil())
 				Expect(config.Route.Receiver).To(Equal("default-receiver"))
 				Expect(config.Receivers).To(HaveLen(1))
 				Expect(config.Receivers[0].Name).To(Equal("default-receiver"))
@@ -68,7 +66,7 @@ receivers:
       - channel: '#alerts'
   - name: pagerduty-oncall
     pagerdutyConfigs:
-      - serviceKey: test-key
+      - credentialRef: pd-oncall-key
   - name: slack-ops
     slackConfigs:
       - channel: '#ops'
@@ -113,7 +111,7 @@ receivers:
 				config, err := routing.ParseConfig([]byte(configYAML))
 				Expect(err).ToNot(HaveOccurred())
 				receiver := config.GetReceiver("multi-channel")
-				Expect(receiver).ToNot(BeNil())
+				Expect(receiver.Name).To(Equal("multi-channel"))
 				Expect(receiver.SlackConfigs).To(HaveLen(1))
 				Expect(receiver.EmailConfigs).To(HaveLen(1))
 				Expect(receiver.WebhookConfigs).To(HaveLen(1))
@@ -202,7 +200,7 @@ receivers:
       - channel: '#alerts'
   - name: pagerduty-critical
     pagerdutyConfigs:
-      - serviceKey: critical-key
+      - credentialRef: pd-critical-key
   - name: slack-approvals
     slackConfigs:
       - channel: '#approvals'
@@ -211,7 +209,7 @@ receivers:
       - channel: '#ops'
   - name: pagerduty-oncall
     pagerdutyConfigs:
-      - serviceKey: oncall-key
+      - credentialRef: pd-oncall-key
 `
 			var err error
 			config, err = routing.ParseConfig([]byte(configYAML))
@@ -305,7 +303,7 @@ receivers:
       - channel: '#alerts'
   - name: pagerduty-oncall
     pagerdutyConfigs:
-      - serviceKey: test-key
+      - credentialRef: pd-test-key
   - name: email-team
     emailConfigs:
       - to: 'team@example.com'
@@ -317,7 +315,6 @@ receivers:
 
 		It("should resolve existing receiver by name", func() {
 			receiver := config.GetReceiver("default")
-			Expect(receiver).ToNot(BeNil())
 			Expect(receiver.Name).To(Equal("default"))
 		})
 
@@ -335,7 +332,7 @@ receivers:
 		It("should resolve receiver with pagerduty config", func() {
 			receiver := config.GetReceiver("pagerduty-oncall")
 			Expect(receiver.PagerDutyConfigs).To(HaveLen(1))
-			Expect(receiver.PagerDutyConfigs[0].ServiceKey).To(Equal("test-key"))
+			Expect(receiver.PagerDutyConfigs[0].CredentialRef).To(Equal("pd-test-key"))
 		})
 
 		It("should resolve receiver with email config", func() {
@@ -363,7 +360,7 @@ receivers:
 			receiver := &routing.Receiver{
 				Name: "pagerduty-test",
 				PagerDutyConfigs: []routing.PagerDutyConfig{
-					{ServiceKey: "key"},
+					{CredentialRef: "pd-key"},
 				},
 			}
 
@@ -416,8 +413,6 @@ receivers:
 
 		It("should provide sensible defaults when loading from empty ConfigMap", func() {
 			config := routing.DefaultConfig()
-			Expect(config).ToNot(BeNil())
-			Expect(config.Route).ToNot(BeNil())
 			Expect(config.Route.Receiver).To(Equal("console-fallback"))
 			Expect(config.Receivers).To(HaveLen(1))
 			Expect(config.Receivers[0].Name).To(Equal("console-fallback"))
@@ -477,7 +472,7 @@ route:
 receivers:
   - name: pagerduty-critical
     pagerdutyConfigs:
-      - serviceKey: test-critical-key
+      - credentialRef: pd-test-critical-key
   - name: slack-ops
     slackConfigs:
       - channel: '#kubernaut-ops'
@@ -536,7 +531,7 @@ route:
 receivers:
   - name: pagerduty-immediate
     pagerdutyConfigs:
-      - serviceKey: immediate-key
+      - credentialRef: pd-immediate-key
   - name: slack-escalation
     slackConfigs:
       - channel: '#escalation'

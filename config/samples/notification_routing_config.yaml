@@ -173,7 +173,7 @@ receivers:
   # ===================================================================
   - name: pagerduty-oncall-critical
     pagerdutyConfigs:
-      - serviceKey: ${PAGERDUTY_CRITICAL_SERVICE_KEY}
+      - credentialRef: pagerduty-routing-key
         severity: critical
 
   # ===================================================================

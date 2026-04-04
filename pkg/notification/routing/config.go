@@ -76,6 +76,9 @@ type Receiver struct {
 	// PagerDutyConfigs is the list of PagerDuty configurations
 	PagerDutyConfigs []PagerDutyConfig `yaml:"pagerdutyConfigs,omitempty" json:"pagerdutyConfigs,omitempty"`
 
+	// TeamsConfigs is the list of Microsoft Teams configurations (#593)
+	TeamsConfigs []TeamsConfig `yaml:"teamsConfigs,omitempty" json:"teamsConfigs,omitempty"`
+
 	// EmailConfigs is the list of email configurations
 	EmailConfigs []EmailConfig `yaml:"emailConfigs,omitempty" json:"emailConfigs,omitempty"`
 
@@ -111,15 +114,24 @@ type SlackConfig struct {
 }
 
 // PagerDutyConfig represents PagerDuty configuration.
+// BR-NOT-104: CredentialRef is the sole mechanism for specifying the routing key.
+// The referenced file in the projected volume must contain the PagerDuty Events API v2 routing key.
 type PagerDutyConfig struct {
-	// ServiceKey is the PagerDuty service integration key
-	ServiceKey string `yaml:"serviceKey" json:"serviceKey"`
-
-	// RoutingKey is an alternative routing key (v2 API)
-	RoutingKey string `yaml:"routingKey,omitempty" json:"routingKey,omitempty"`
+	// CredentialRef is the name of the credential file in the projected volume
+	// that contains the PagerDuty routing key (Events API v2). Required.
+	CredentialRef string `yaml:"credentialRef" json:"credentialRef"`
 
 	// Severity is the PagerDuty severity (critical, error, warning, info)
 	Severity string `yaml:"severity,omitempty" json:"severity,omitempty"`
+}
+
+// TeamsConfig represents Microsoft Teams configuration.
+// BR-NOT-104: CredentialRef is the sole mechanism for specifying the webhook URL.
+// The referenced file in the projected volume must contain the Power Automate Workflows webhook URL.
+type TeamsConfig struct {
+	// CredentialRef is the name of the credential file in the projected volume
+	// that contains the Teams incoming webhook URL. Required.
+	CredentialRef string `yaml:"credentialRef" json:"credentialRef"`
 }
 
 // EmailConfig represents email configuration.
@@ -236,16 +248,27 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// ValidateCredentialRefs validates that all SlackConfigs have a non-empty credentialRef.
+// ValidateCredentialRefs validates that all credential-bound configs have a non-empty credentialRef.
 // BR-NOT-104-004: Called during rebuildDeliveryServices, not during general Validate().
 // This separation of concerns keeps routing validation focused on structure,
 // while credential validation happens where credentials are actually resolved.
+// Covers: SlackConfigs (#244), PagerDutyConfigs (#60), TeamsConfigs (#593).
 func (c *Config) ValidateCredentialRefs() error {
 	var missing []string
 	for _, r := range c.Receivers {
 		for i, sc := range r.SlackConfigs {
 			if sc.CredentialRef == "" {
 				missing = append(missing, fmt.Sprintf("receiver %q slackConfigs[%d]", r.Name, i))
+			}
+		}
+		for i, pc := range r.PagerDutyConfigs {
+			if pc.CredentialRef == "" {
+				missing = append(missing, fmt.Sprintf("receiver %q pagerdutyConfigs[%d]", r.Name, i))
+			}
+		}
+		for i, tc := range r.TeamsConfigs {
+			if tc.CredentialRef == "" {
+				missing = append(missing, fmt.Sprintf("receiver %q teamsConfigs[%d]", r.Name, i))
 			}
 		}
 	}
@@ -334,6 +357,9 @@ func (r *Receiver) GetChannels() []string {
 	if len(r.PagerDutyConfigs) > 0 {
 		channels = append(channels, "pagerduty")
 	}
+	if len(r.TeamsConfigs) > 0 {
+		channels = append(channels, "teams")
+	}
 	if len(r.EmailConfigs) > 0 {
 		channels = append(channels, "email")
 	}
@@ -354,8 +380,8 @@ func (r *Receiver) GetChannels() []string {
 }
 
 // QualifiedChannels returns channel names qualified with the receiver name for
-// channels that support per-receiver credentials (e.g., "slack:sre-critical").
-// Non-credential channels (console, email, webhook, pagerduty) use unqualified names.
+// channels that support per-receiver credentials (e.g., "slack:sre-critical", "pagerduty:oncall").
+// Non-credential channels (console, email, webhook) use unqualified names.
 // BR-NOT-104-004: Per-receiver delivery binding via receiver-qualified orchestrator keys.
 func (r *Receiver) QualifiedChannels() []string {
 	var channels []string
@@ -371,8 +397,27 @@ func (r *Receiver) QualifiedChannels() []string {
 			channels = append(channels, "slack")
 		}
 	}
-	if len(r.PagerDutyConfigs) > 0 {
-		channels = append(channels, "pagerduty")
+	for i, pc := range r.PagerDutyConfigs {
+		if pc.CredentialRef != "" {
+			if len(r.PagerDutyConfigs) > 1 {
+				channels = append(channels, fmt.Sprintf("pagerduty:%s:%d", r.Name, i))
+			} else {
+				channels = append(channels, fmt.Sprintf("pagerduty:%s", r.Name))
+			}
+		} else {
+			channels = append(channels, "pagerduty")
+		}
+	}
+	for i, tc := range r.TeamsConfigs {
+		if tc.CredentialRef != "" {
+			if len(r.TeamsConfigs) > 1 {
+				channels = append(channels, fmt.Sprintf("teams:%s:%d", r.Name, i))
+			} else {
+				channels = append(channels, fmt.Sprintf("teams:%s", r.Name))
+			}
+		} else {
+			channels = append(channels, "teams")
+		}
 	}
 	if len(r.EmailConfigs) > 0 {
 		channels = append(channels, "email")
