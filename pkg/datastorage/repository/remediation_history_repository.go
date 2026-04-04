@@ -144,6 +144,12 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 // no DISTINCT is needed because each event_id appears at most once regardless
 // of which OR branch matched.
 //
+// The EM subquery is intentionally time-unbounded: effectiveness assessments
+// may arrive after the RO event's tier boundary (e.g., RO in tier 2, EM in tier 1).
+// Constraining the subquery to the same window causes false negatives at tier
+// boundaries (F1 due diligence finding). The idx_audit_events_post_remediation_spec_hash
+// partial index limits scan scope despite the lack of time constraint.
+//
 // Issue #616: Original query only matched pre_remediation_spec_hash, missing
 // cases where the current resource state matches a previous remediation's
 // post-remediation state (the normal successful-remediation cycle).
@@ -170,8 +176,6 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 				SELECT correlation_id FROM audit_events
 				WHERE event_category = 'effectiveness'
 				AND event_data->>'post_remediation_spec_hash' = $1
-				AND event_timestamp >= $2
-				AND event_timestamp < $3
 			)
 		)
 		ORDER BY event_timestamp ASC, event_id ASC`

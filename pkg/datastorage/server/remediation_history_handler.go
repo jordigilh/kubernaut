@@ -30,6 +30,7 @@ limitations under the License.
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -113,6 +114,13 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 			return
 		}
 		tier2Window = parsed
+	}
+
+	// Validate window durations
+	if detail, ok := validateWindows(tier1Window, tier2Window); !ok {
+		response.WriteRFC7807Error(w, http.StatusBadRequest,
+			"invalid-parameter", "Invalid Parameter", detail, h.logger)
+		return
 	}
 
 	// Build target resource string: "{namespace}/{kind}/{name}"
@@ -219,10 +227,32 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 		},
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(resp); err != nil {
 		h.logger.Error(err, "Failed to encode remediation history response",
 			"target_resource", targetResource)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError,
+			"encoding-error", "Internal Server Error",
+			"Failed to serialize remediation history response", h.logger)
+		return
 	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes())
+}
+
+// validateWindows checks that tier1Window and tier2Window are positive and that
+// tier2Window is strictly greater than tier1Window. Returns the error detail
+// string and false if validation fails.
+func validateWindows(tier1, tier2 time.Duration) (string, bool) {
+	if tier1 <= 0 {
+		return "tier1Window must be a positive duration", false
+	}
+	if tier2 <= 0 {
+		return "tier2Window must be a positive duration", false
+	}
+	if tier2 <= tier1 {
+		return "tier2Window must be greater than tier1Window", false
+	}
+	return "", true
 }

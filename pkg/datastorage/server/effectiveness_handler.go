@@ -114,6 +114,10 @@ func ComputeWeightedScore(c *EffectivenessComponents) *float64 {
 // BuildEffectivenessResponse constructs the response from audit events.
 // This is pure logic (no I/O) - extracts component scores from event payloads
 // and applies the DD-017 v2.1 weighted scoring formula.
+//
+// When multiple events of the same type exist, the last one (by event_timestamp
+// ASC order from the query) wins. This is a deliberate design choice: later
+// assessments supersede earlier ones.
 func BuildEffectivenessResponse(correlationID string, events []*EffectivenessEvent) *EffectivenessScoreResponse {
 	resp := &EffectivenessScoreResponse{
 		CorrelationID:    correlationID,
@@ -294,8 +298,7 @@ func (s *Server) handleGetEffectivenessScore(w http.ResponseWriter, r *http.Requ
 // as a deterministic tiebreaker. Without it, same-timestamp events return in
 // non-deterministic order, causing flaky tests and wrong assessment status.
 func (s *Server) queryEffectivenessEvents(_ /* ctx */ interface{}, correlationID string) ([]*EffectivenessEvent, error) {
-	// Query audit events from the database
-	query := `SELECT event_data FROM audit_events
+	query := `SELECT event_type, event_data FROM audit_events
 		WHERE correlation_id = $1
 		AND event_category = 'effectiveness'
 		ORDER BY event_timestamp ASC, event_id ASC`
@@ -312,8 +315,9 @@ func (s *Server) queryEffectivenessEvents(_ /* ctx */ interface{}, correlationID
 
 	var events []*EffectivenessEvent
 	for rows.Next() {
+		var eventType string
 		var eventDataJSON []byte
-		if err := rows.Scan(&eventDataJSON); err != nil {
+		if err := rows.Scan(&eventType, &eventDataJSON); err != nil {
 			return nil, err
 		}
 		var eventData map[string]interface{}
@@ -321,6 +325,7 @@ func (s *Server) queryEffectivenessEvents(_ /* ctx */ interface{}, correlationID
 			s.logger.Error(err, "Failed to unmarshal event data")
 			continue
 		}
+		eventData["event_type"] = eventType
 		events = append(events, &EffectivenessEvent{EventData: eventData})
 	}
 
