@@ -100,6 +100,12 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				"Behavior: Outcome must be InheritedCompleted for audit provenance")
 			Expect(updated.Status.CompletedAt).NotTo(BeNil(),
 				"Behavior: CompletedAt must be set for terminal transition")
+			Expect(updated.Status.BlockReason).To(BeEmpty(),
+				"Behavior: BlockReason must be cleared after RR-level inheritance (#614 F2)")
+			Expect(updated.Status.BlockMessage).To(BeEmpty(),
+				"Behavior: BlockMessage must be cleared after RR-level inheritance (#614 F2)")
+			Expect(updated.Status.DuplicateOf).To(BeEmpty(),
+				"Behavior: DuplicateOf must be cleared after RR-level inheritance (#614 F2)")
 		})
 
 		It("UT-RO-614-002: original RR Failed → duplicate inherits Failed with FailurePhaseDeduplicated", func() {
@@ -142,6 +148,12 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				"Behavior: FailureReason must contain reference to original RR")
 			Expect(*updated.Status.FailureReason).To(ContainSubstring("original-rr-002"),
 				"Behavior: FailureReason must mention original RR name for traceability")
+			Expect(updated.Status.BlockReason).To(BeEmpty(),
+				"Behavior: BlockReason must be cleared after RR-level inheritance (#614 F2)")
+			Expect(updated.Status.BlockMessage).To(BeEmpty(),
+				"Behavior: BlockMessage must be cleared after RR-level inheritance (#614 F2)")
+			Expect(updated.Status.DuplicateOf).To(BeEmpty(),
+				"Behavior: DuplicateOf must be cleared after RR-level inheritance (#614 F2)")
 		})
 	})
 
@@ -176,6 +188,12 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			Expect(updated.Status.FailurePhase).NotTo(BeNil())
 			Expect(*updated.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
 				"Behavior: FailurePhase must be Deduplicated for deleted original")
+			Expect(updated.Status.BlockReason).To(BeEmpty(),
+				"Behavior: BlockReason must be cleared after RR-level inheritance (#614 F2)")
+			Expect(updated.Status.BlockMessage).To(BeEmpty(),
+				"Behavior: BlockMessage must be cleared after RR-level inheritance (#614 F2)")
+			Expect(updated.Status.DuplicateOf).To(BeEmpty(),
+				"Behavior: DuplicateOf must be cleared after RR-level inheritance (#614 F2)")
 			Expect(updated.Status.FailureReason).NotTo(BeNil())
 			Expect(*updated.Status.FailureReason).To(ContainSubstring("deleted-original-003"),
 				"Behavior: FailureReason must reference the deleted original RR")

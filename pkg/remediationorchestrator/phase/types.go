@@ -99,6 +99,8 @@ var ValidTransitions = map[Phase][]Phase{
 	// Blocked is NON-terminal: transitions to Failed (terminal) or back to Analyzing/Pending
 	// via clearEventBasedBlock (e.g., UnmanagedResource re-scope). (BR-ORCH-042)
 	Blocked: {Failed, Analyzing, Pending},
+	// NOTE: Blocked -> Completed/Failed also occurs via transitionToInherited* (#614 outcome
+	// inheritance), which bypasses CanTransition and writes status directly.
 	// Terminal states - no transitions allowed
 	Completed: {},
 	Failed:    {Blocked}, // Failed can transition to Blocked when consecutive failure threshold reached (BR-ORCH-042)

@@ -1595,6 +1595,11 @@ func (r *Reconciler) transitionToInheritedCompleted(ctx context.Context, rr *rem
 		rr.Status.Outcome = "InheritedCompleted"
 		rr.Status.CompletedAt = &now
 		rr.Status.ObservedGeneration = rr.Generation
+		if sourceKind == "RemediationRequest" {
+			rr.Status.BlockReason = ""
+			rr.Status.BlockMessage = ""
+			rr.Status.DuplicateOf = ""
+		}
 		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady,
 			fmt.Sprintf("Inherited completion from original %s", sourceKind), r.Metrics)
 		return nil
@@ -1650,6 +1655,11 @@ func (r *Reconciler) transitionToInheritedFailed(ctx context.Context, rr *remedi
 		rr.Status.FailureReason = &failureReason
 		rr.Status.CompletedAt = &now
 		rr.Status.ObservedGeneration = rr.Generation
+		if sourceKind == "RemediationRequest" {
+			rr.Status.BlockReason = ""
+			rr.Status.BlockMessage = ""
+			rr.Status.DuplicateOf = ""
+		}
 		remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady,
 			fmt.Sprintf("Inherited failure from original %s", sourceKind), r.Metrics)
 		return nil
