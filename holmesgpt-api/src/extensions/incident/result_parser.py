@@ -71,6 +71,34 @@ def _parse_remediation_target(rca_data: Dict[str, Any]) -> Optional[Dict[str, st
     return result
 
 
+def ensure_incident_response_shape(
+    result: Dict[str, Any],
+    incident_id: str = "unknown",
+    analysis: str = "No analysis available",
+) -> Dict[str, Any]:
+    """Backfill missing required IncidentResponseData fields with safe defaults.
+
+    Issue #624: Early-exit result dicts from llm_integration.py lack required
+    fields (incident_id, analysis, confidence, timestamp). This normalizer
+    ensures all required fields exist before audit event creation.
+
+    The normalized dict uses snake_case field names which Pydantic v2 accepts
+    via ``populate_by_name: True`` on the IncidentResponseData model.
+    """
+    normalized = dict(result)
+    normalized.setdefault("incident_id", incident_id)
+    normalized.setdefault("analysis", analysis)
+    normalized.setdefault("confidence", 0.0)
+    normalized.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+    normalized.setdefault("needs_human_review", False)
+    normalized.setdefault("root_cause_analysis", {
+        "summary": "No root cause analysis available",
+        "severity": "unknown",
+        "contributing_factors": [],
+    })
+    return normalized
+
+
 def parse_and_validate_investigation_result(
     investigation: InvestigationResult,
     request_data: Dict[str, Any],
@@ -136,21 +164,46 @@ def parse_and_validate_investigation_result(
 
     # Pattern 2B: Legacy - Python dict format with section headers (HolmesGPT SDK format)
     # Format: "# root_cause_analysis\n{'summary': '...', ...}\n\n# selected_workflow\n{'workflow_id': '...', ...}"
+    # Issue #624: Uses balanced brace extraction for nested JSON objects
     if not json_match and ('# selected_workflow' in analysis or '# root_cause_analysis' in analysis):
         import ast
+        from .json_utils import extract_balanced_json
         parts = {}
 
-        # Extract root_cause_analysis
-        rca_match = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis, re.DOTALL)
-        if rca_match:
-            parts['root_cause_analysis'] = rca_match.group(1)
-            logger.debug(f"Pattern 2B: Extracted RCA: {parts['root_cause_analysis'][:100]}...")
+        # Extract root_cause_analysis using balanced brace extraction (Issue #624)
+        rca_header = re.search(r'# root_cause_analysis\s*\n\s*', analysis)
+        if rca_header:
+            brace_pos = analysis.find('{', rca_header.end())
+            if brace_pos != -1:
+                balanced = extract_balanced_json(analysis, brace_pos)
+                if balanced:
+                    parts['root_cause_analysis'] = balanced
+                    logger.debug(f"Pattern 2B: Extracted RCA (balanced): {balanced[:100]}...")
+                else:
+                    rca_fallback = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis, re.DOTALL)
+                    if rca_fallback:
+                        parts['root_cause_analysis'] = rca_fallback.group(1)
+                        logger.debug(f"Pattern 2B: Extracted RCA (regex fallback): {parts['root_cause_analysis'][:100]}...")
 
-        # Extract selected_workflow
-        wf_match = re.search(r'# selected_workflow\s*\n\s*(\{.*?\}|None)\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
-        if wf_match:
-            parts['selected_workflow'] = wf_match.group(1)
-            logger.debug(f"Pattern 2B: Extracted workflow: {parts['selected_workflow'][:100]}...")
+        # Extract selected_workflow using balanced brace extraction (Issue #624)
+        wf_header = re.search(r'# selected_workflow\s*\n\s*', analysis)
+        if wf_header:
+            remainder = analysis[wf_header.end():].strip()
+            if remainder.startswith("None"):
+                parts['selected_workflow'] = "None"
+                logger.debug("Pattern 2B: Extracted workflow: None")
+            else:
+                brace_pos = analysis.find('{', wf_header.end())
+                if brace_pos != -1:
+                    balanced = extract_balanced_json(analysis, brace_pos)
+                    if balanced:
+                        parts['selected_workflow'] = balanced
+                        logger.debug(f"Pattern 2B: Extracted workflow (balanced): {balanced[:100]}...")
+                    else:
+                        wf_fallback = re.search(r'# selected_workflow\s*\n\s*(\{.*?\})\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+                        if wf_fallback:
+                            parts['selected_workflow'] = wf_fallback.group(1)
+                            logger.debug(f"Pattern 2B: Extracted workflow (regex fallback): {parts['selected_workflow'][:100]}...")
 
         # BR-HAPI-200: Extract investigation_outcome (for problem_resolved case)
         outcome_match = re.search(r'# investigation_outcome\s*\n\s*["\']?(.*?)["\']?\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
@@ -584,40 +637,52 @@ def parse_investigation_result(
             logger.info("Pattern 2A: Successfully extracted complete JSON dict")
 
     # Pattern 2B: Legacy - Python dict format with section headers (HolmesGPT SDK format)
-    # Format: "# root_cause_analysis\n{'summary': '...', ...}\n\n# selected_workflow\n{'workflow_id': '...', ...}"
+    # Issue #624: Uses balanced brace extraction for nested JSON objects
     if not json_match and ('# selected_workflow' in analysis or '# root_cause_analysis' in analysis):
         import ast
+        from .json_utils import extract_balanced_json
         parts = {}
 
-        # Extract root_cause_analysis
-        rca_match = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis, re.DOTALL)
-        if rca_match:
-            parts['root_cause_analysis'] = rca_match.group(1)
-            logger.debug(f"Pattern 2B: Extracted RCA: {parts['root_cause_analysis'][:100]}...")
+        rca_header = re.search(r'# root_cause_analysis\s*\n\s*', analysis)
+        if rca_header:
+            brace_pos = analysis.find('{', rca_header.end())
+            if brace_pos != -1:
+                balanced = extract_balanced_json(analysis, brace_pos)
+                if balanced:
+                    parts['root_cause_analysis'] = balanced
+                    logger.debug(f"Pattern 2B: Extracted RCA (balanced): {balanced[:100]}...")
+                else:
+                    rca_fallback = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis, re.DOTALL)
+                    if rca_fallback:
+                        parts['root_cause_analysis'] = rca_fallback.group(1)
 
-        # Extract selected_workflow
-        wf_match = re.search(r'# selected_workflow\s*\n\s*(\{.*?\}|None)\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
-        if wf_match:
-            parts['selected_workflow'] = wf_match.group(1)
-            logger.debug(f"Pattern 2B: Extracted workflow: {parts['selected_workflow'][:100]}...")
+        wf_header = re.search(r'# selected_workflow\s*\n\s*', analysis)
+        if wf_header:
+            remainder = analysis[wf_header.end():].strip()
+            if remainder.startswith("None"):
+                parts['selected_workflow'] = "None"
+            else:
+                brace_pos = analysis.find('{', wf_header.end())
+                if brace_pos != -1:
+                    balanced = extract_balanced_json(analysis, brace_pos)
+                    if balanced:
+                        parts['selected_workflow'] = balanced
+                    else:
+                        wf_fallback = re.search(r'# selected_workflow\s*\n\s*(\{.*?\})\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+                        if wf_fallback:
+                            parts['selected_workflow'] = wf_fallback.group(1)
 
-        # BR-HAPI-200: Extract investigation_outcome (for problem_resolved case)
         outcome_match = re.search(r'# investigation_outcome\s*\n\s*["\']?(.*?)["\']?\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
         if outcome_match:
             parts['investigation_outcome'] = f'"{outcome_match.group(1).strip()}"'
-            logger.debug(f"Pattern 2B: Extracted investigation_outcome: {parts['investigation_outcome']}")
 
-        # #388: Extract actionable field (for not_actionable case)
         actionable_match = re.search(r'# actionable\s*\n\s*(True|False|true|false)\s*(?:\n#|$|\n\n)', analysis, re.IGNORECASE)
         if actionable_match:
             parts['actionable'] = actionable_match.group(1).capitalize()
-            logger.debug(f"Pattern 2B: Extracted actionable: {parts['actionable']}")
 
-        # BR-HAPI-200: Extract confidence (for problem_resolved case)
         conf_match = re.search(r'# confidence\s*\n\s*([\d.]+)\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
         if conf_match:
             parts['confidence'] = conf_match.group(1)
-            logger.debug(f"Pattern 2B: Extracted confidence: {parts['confidence']}")
 
         if parts:
             # Combine into a single dict string

@@ -117,34 +117,11 @@ def _build_enrichment_context(enrichment_result: Optional["EnrichmentResult"]) -
 def _extract_balanced_json(text: str, start: int) -> Optional[str]:
     """Extract a balanced JSON object starting at position start.
 
-    Uses brace counting with string-literal awareness to handle nested
-    objects like ``{"remediationTarget": {"kind": "Deployment"}}``.
+    Delegates to shared json_utils module (Issue #624).
+    Kept as private wrapper for backward compatibility within this module.
     """
-    if start >= len(text) or text[start] != '{':
-        return None
-    depth = 0
-    in_string = False
-    escape_next = False
-    for i in range(start, len(text)):
-        ch = text[i]
-        if escape_next:
-            escape_next = False
-            continue
-        if ch == '\\' and in_string:
-            escape_next = True
-            continue
-        if ch == '"':
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-        if ch == '{':
-            depth += 1
-        elif ch == '}':
-            depth -= 1
-            if depth == 0:
-                return text[start:i + 1]
-    return None
+    from .json_utils import extract_balanced_json
+    return extract_balanced_json(text, start)
 
 
 def _extract_phase1_json(analysis_text: str) -> Dict[str, Any]:

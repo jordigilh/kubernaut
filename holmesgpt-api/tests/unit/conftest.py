@@ -49,6 +49,30 @@ def pytest_configure(config):
         if mod_name not in sys.modules:
             sys.modules[mod_name] = MagicMock()
 
+    # Mock Holmes SDK when not installed (local dev without full dependency chain).
+    # CI environments have the SDK installed via requirements.txt.
+    try:
+        import holmes  # noqa: F401
+    except ModuleNotFoundError:
+        mock_holmes = MagicMock()
+        mock_holmes.core = MagicMock()
+        mock_holmes.core.models = MagicMock()
+        mock_investigation = type("InvestigationResult", (), {"analysis": ""})
+        mock_holmes.core.models.InvestigationResult = mock_investigation
+        mock_holmes.config = MagicMock()
+        for mod_name in [
+            "holmes",
+            "holmes.core",
+            "holmes.core.models",
+            "holmes.config",
+            "holmes.core.tool_calling_llm",
+            "holmes.core.investigation",
+            "holmes.plugins",
+            "holmes.plugins.toolsets",
+        ]:
+            if mod_name not in sys.modules:
+                sys.modules[mod_name] = mock_holmes if mod_name == "holmes" else MagicMock()
+
     _config_content = """
 data_storage:
   url: "http://127.0.0.1:18098"
