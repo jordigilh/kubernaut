@@ -99,20 +99,38 @@ func New(cfg Config) *Investigator {
 
 // Investigate runs the two-invocation investigation and returns the result.
 func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
-	enrichData := inv.resolveEnrichment(ctx, signal)
+	signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
+	enrichData := inv.resolveEnrichment(ctx, signalKind, signalName, signalNS, signal.IncidentID)
 	promptEnrichment := toPromptEnrichment(enrichData)
+	tokens := &TokenAccumulator{}
 
-	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment)
+	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, tokens)
 	if err != nil {
 		return nil, fmt.Errorf("RCA invocation: %w", err)
 	}
 
 	if rcaResult.HumanReviewNeeded {
-		audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeResponseComplete, ""), inv.logger)
+		attachDetectedLabels(rcaResult, enrichData)
+		completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, "")
+		for k, v := range tokens.AuditData() {
+			completeEvent.Data[k] = v
+		}
+		audit.StoreBestEffort(ctx, inv.auditStore, completeEvent, inv.logger)
 		return rcaResult, nil
 	}
 
-	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, promptEnrichment)
+	// GAP-001 / ADR-056: Re-enrich using RCA-identified remediation target if different.
+	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
+	if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
+		inv.logger.Info("re-enriching with RCA remediation target",
+			"signal", signalKind+"/"+signalName,
+			"rca_target", postRCAKind+"/"+postRCAName,
+		)
+		enrichData = inv.resolveEnrichment(ctx, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
+		promptEnrichment = toPromptEnrichment(enrichData)
+	}
+
+	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, promptEnrichment, tokens)
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
 	}
@@ -121,19 +139,36 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		workflowResult.RCASummary = rcaResult.RCASummary
 	}
 
-	audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeResponseComplete, ""), inv.logger)
+	attachDetectedLabels(workflowResult, enrichData)
+	completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, "")
+	for k, v := range tokens.AuditData() {
+		completeEvent.Data[k] = v
+	}
+	audit.StoreBestEffort(ctx, inv.auditStore, completeEvent, inv.logger)
 	return workflowResult, nil
 }
 
-func (inv *Investigator) resolveEnrichment(ctx context.Context, signal katypes.SignalContext) *enrichment.EnrichmentResult {
-	if inv.enricher == nil {
-		return nil
+// ResolveEnrichmentTarget determines the K8s resource to enrich.
+// Per GAP-001 / ADR-056: after RCA, the parser may identify a different
+// remediation target than the signal resource (e.g., signal=Pod but RCA
+// identifies Deployment as root cause). This function prefers the RCA target
+// and falls back to the signal resource.
+func ResolveEnrichmentTarget(signal katypes.SignalContext, rcaResult *katypes.InvestigationResult) (kind, name, namespace string) {
+	if rcaResult != nil && rcaResult.RemediationTarget.Kind != "" {
+		return rcaResult.RemediationTarget.Kind, rcaResult.RemediationTarget.Name, rcaResult.RemediationTarget.Namespace
 	}
-	kind := signal.ResourceKind
+	kind = signal.ResourceKind
 	if kind == "" {
 		kind = "Pod"
 	}
-	result, err := inv.enricher.Enrich(ctx, kind, signal.Name, signal.Namespace, "", signal.IncidentID)
+	return kind, signal.Name, signal.Namespace
+}
+
+func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, namespace, incidentID string) *enrichment.EnrichmentResult {
+	if inv.enricher == nil {
+		return nil
+	}
+	result, err := inv.enricher.Enrich(ctx, kind, name, namespace, "", incidentID)
 	if err != nil {
 		inv.logger.Warn("enrichment failed", slog.String("error", err.Error()))
 		return nil
@@ -141,7 +176,7 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, signal katypes.S
 	return result
 }
 
-func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData) (*katypes.InvestigationResult, error) {
+func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator) (*katypes.InvestigationResult, error) {
 	systemPrompt, err := inv.builder.RenderInvestigation(signalToPrompt(signal), enrichData)
 	if err != nil {
 		return nil, fmt.Errorf("rendering investigation prompt: %w", err)
@@ -152,7 +187,7 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 		{Role: "user", Content: fmt.Sprintf("Investigate: %s %s in %s — %s", signal.Severity, signal.Name, signal.Namespace, signal.Message)},
 	}
 
-	content, exhausted, err := inv.runLLMLoop(ctx, messages, katypes.PhaseRCA)
+	content, exhausted, err := inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, tokens)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +209,7 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	return result, nil
 }
 
-func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData) (*katypes.InvestigationResult, error) {
+func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator) (*katypes.InvestigationResult, error) {
 	systemPrompt, err := inv.builder.RenderWorkflowSelection(signalToPrompt(signal), rcaSummary, enrichData)
 	if err != nil {
 		return nil, fmt.Errorf("rendering workflow selection prompt: %w", err)
@@ -185,7 +220,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		{Role: "user", Content: fmt.Sprintf("RCA findings: %s\n\nSelect the appropriate remediation workflow.", rcaSummary)},
 	}
 
-	content, exhausted, err := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery)
+	content, exhausted, err := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +251,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			messages = append(messages, llm.Message{Role: "assistant", Content: content})
 			messages = append(messages, llm.Message{Role: "user", Content: correctionMsg})
 
-			correctedContent, corrExhausted, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery)
+			correctedContent, corrExhausted, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens)
 			if corrErr != nil {
 				return nil, corrErr
 			}
@@ -241,7 +276,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 
 // runLLMLoop executes the multi-turn LLM conversation loop with tool
 // execution routed through the registry.
-func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase) (string, bool, error) {
+func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, tokens *TokenAccumulator) (string, bool, error) {
 	toolDefs := inv.toolDefinitionsForPhase(phase)
 
 	for turn := 0; turn < inv.maxTurns; turn++ {
@@ -250,13 +285,22 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		resp, err := inv.client.Chat(ctx, llm.ChatRequest{
 			Messages: messages,
 			Tools:    toolDefs,
+			Options:  llm.ChatOptions{JSONMode: true},
 		})
 		if err != nil {
 			audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeResponseFailed, ""), inv.logger)
 			return "", false, fmt.Errorf("%s LLM call turn %d: %w", phase, turn, err)
 		}
 
-		audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeLLMResponse, ""), inv.logger)
+		if tokens != nil {
+			tokens.Add(resp.Usage)
+		}
+
+		respEvent := audit.NewEvent(audit.EventTypeLLMResponse, "")
+		respEvent.Data["prompt_tokens"] = resp.Usage.PromptTokens
+		respEvent.Data["completion_tokens"] = resp.Usage.CompletionTokens
+		respEvent.Data["total_tokens"] = resp.Usage.TotalTokens
+		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.logger)
 
 		if len(resp.ToolCalls) > 0 {
 			audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeLLMToolCall, ""), inv.logger)
@@ -378,6 +422,7 @@ func signalToPrompt(s katypes.SignalContext) prompt.SignalData {
 		SignalSource:     s.SignalSource,
 		BusinessCategory: s.BusinessCategory,
 		Description:      s.Description,
+		SignalMode:       s.SignalMode,
 	}
 }
 
@@ -395,6 +440,70 @@ func toPromptEnrichment(data *enrichment.EnrichmentResult) *prompt.EnrichmentDat
 		}
 	}
 
+	if data.DetectedLabels != nil {
+		pe.DetectedLabels = detectedLabelsToPromptMap(data.DetectedLabels)
+	}
+
 	pe.HistoryResult = data.RemediationHistory
 	return pe
+}
+
+func detectedLabelsToPromptMap(dl *enrichment.DetectedLabels) map[string]string {
+	m := make(map[string]string)
+	if dl.GitOpsManaged {
+		m["gitOpsManaged"] = "true"
+		if dl.GitOpsTool != "" {
+			m["gitOpsTool"] = dl.GitOpsTool
+		}
+	}
+	if dl.HPAEnabled {
+		m["hpaEnabled"] = "true"
+	}
+	if dl.PDBProtected {
+		m["pdbProtected"] = "true"
+	}
+	if dl.Stateful {
+		m["stateful"] = "true"
+	}
+	if dl.HelmManaged {
+		m["helmManaged"] = "true"
+	}
+	if dl.NetworkIsolated {
+		m["networkIsolated"] = "true"
+	}
+	if dl.ServiceMesh != "" {
+		m["serviceMesh"] = dl.ServiceMesh
+	}
+	if dl.ResourceQuotaConstrained {
+		m["resourceQuotaConstrained"] = "true"
+	}
+	return m
+}
+
+func detectedLabelsToResult(dl *enrichment.DetectedLabels) map[string]interface{} {
+	m := make(map[string]interface{})
+	m["gitOpsManaged"] = dl.GitOpsManaged
+	if dl.GitOpsTool != "" {
+		m["gitOpsTool"] = dl.GitOpsTool
+	}
+	m["hpaEnabled"] = dl.HPAEnabled
+	m["pdbProtected"] = dl.PDBProtected
+	m["stateful"] = dl.Stateful
+	m["helmManaged"] = dl.HelmManaged
+	m["networkIsolated"] = dl.NetworkIsolated
+	if dl.ServiceMesh != "" {
+		m["serviceMesh"] = dl.ServiceMesh
+	}
+	m["resourceQuotaConstrained"] = dl.ResourceQuotaConstrained
+	if len(dl.FailedDetections) > 0 {
+		m["failedDetections"] = dl.FailedDetections
+	}
+	return m
+}
+
+func attachDetectedLabels(result *katypes.InvestigationResult, enrichData *enrichment.EnrichmentResult) {
+	if result == nil || enrichData == nil || enrichData.DetectedLabels == nil {
+		return
+	}
+	result.DetectedLabels = detectedLabelsToResult(enrichData.DetectedLabels)
 }
