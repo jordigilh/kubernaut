@@ -62,7 +62,7 @@ func newTestReconciler(credResolver *credentials.Resolver) (*notification.Notifi
 		Router:               router,
 		DeliveryOrchestrator: orchestrator,
 		CredentialResolver:   credResolver,
-		SlackTimeout:         5 * time.Second,
+		DeliveryTimeout:         5 * time.Second,
 	}, orchestrator
 }
 
