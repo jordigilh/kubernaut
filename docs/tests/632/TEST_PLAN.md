@@ -47,12 +47,14 @@ This test plan validates the OCP Console Plugin introduced by Issue #632. The pl
 - Issue #592: Conversational RAR API backend (this plugin is the v1.4 client)
 - Issue #594: RAR operator overrides (override UI elements depend on these types)
 - OCP Console Plugin SDK: `@openshift-console/dynamic-plugin-sdk`
+- Design Decision: Standalone plugin (not Lightspeed integration) — see #632 comments
 
 ### 2.2 Cross-References
 
 - [Testing Strategy](../../../.cursor/rules/03-testing-strategy.mdc)
 - [Testing Guidelines](../../development/business-requirements/TESTING_GUIDELINES.md)
 - OCP Console Plugin documentation
+- [`openshift/lightspeed-console`](https://github.com/openshift/lightspeed-console) — SDK reference patterns (read-only, no code dependency)
 
 ---
 
@@ -282,3 +284,4 @@ cd plugin && npm run storybook
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-04 | Initial test plan |
+| 1.1 | 2026-03-04 | Add Lightspeed design decision reference; standalone plugin confirmed |
