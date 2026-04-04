@@ -327,6 +327,37 @@ For Vertex AI, Azure, or advanced setups (toolsets, MCP servers), use `sdkConfig
 | `tls.mode` | `hook` (self-signed), `cert-manager` (production), or `manual` | `hook` |
 | `tls.certManager.issuerRef.name` | Issuer name (required when mode=cert-manager) | `""` |
 
+### NetworkPolicies
+
+| Parameter | Description | Default |
+|---|---|---|
+| `networkPolicies.enabled` | Enable default-deny NetworkPolicies for all services | `true` |
+| `networkPolicies.apiServerCIDR` | K8s API server CIDR (e.g., `10.96.0.1/32`) | `""` |
+| `networkPolicies.monitoring.namespace` | Namespace for Prometheus metrics scraping ingress | `""` |
+| `networkPolicies.monitoring.prometheusPort` | Prometheus port (9090 vanilla, 9091 OCP) | `9090` |
+| `networkPolicies.monitoring.alertManagerPort` | AlertManager port (9093 vanilla, 9094 OCP) | `9093` |
+| `networkPolicies.externalWebhooks.cidr` | CIDR for Slack/PagerDuty/Teams webhook egress | `0.0.0.0/0` |
+| `networkPolicies.externalLLM.cidr` | CIDR for LLM provider API egress | `0.0.0.0/0` |
+| `networkPolicies.<service>.enabled` | Per-service toggle (gateway, datastorage, etc.) | `true` |
+
+When enabled, each service gets a NetworkPolicy with:
+- **Default-deny** posture (both Ingress and Egress)
+- **DNS egress** (UDP/TCP 53 to kube-system)
+- **K8s API server egress** (TCP 443 to configured CIDR)
+- **Service-specific rules** matching the inter-service traffic matrix
+
+Example:
+
+```bash
+helm install kubernaut charts/kubernaut \
+  --set networkPolicies.enabled=true \
+  --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
+  --set networkPolicies.monitoring.namespace=monitoring \
+  --set "networkPolicies.gateway.ingressNamespaces[0]=monitoring"
+```
+
+On OpenShift, the `values-ocp.yaml` overlay sets monitoring ports to 9091/9094.
+
 ### Common Controller Parameters
 
 All controllers accept: `replicas`, `resources`, `pdb.{enabled,minAvailable,maxUnavailable}`, `podSecurityContext`, `containerSecurityContext`, `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`.
