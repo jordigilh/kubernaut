@@ -166,6 +166,53 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 		})
 	})
 
+	Describe("UT-RO-621-001..003: Timeout body builders include cluster line", func() {
+		It("UT-RO-621-001: Global timeout body includes cluster line when identity is set", func() {
+			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+			nc.SetClusterIdentity("ocp-prod", "uuid-123")
+
+			body := nc.BuildGlobalTimeoutBody("TestSignal", "test-rr", "AIAnalysis", "30m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:30:00Z")
+			Expect(body).To(HavePrefix("**Cluster**: ocp-prod (uuid-123)\n\n"))
+		})
+
+		It("UT-RO-621-002: Phase timeout body includes cluster line when identity is set", func() {
+			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+			nc.SetClusterIdentity("ocp-prod", "uuid-123")
+
+			body := nc.BuildPhaseTimeoutBody("TestSignal", "test-rr", "WorkflowExecution", "10m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:10:00Z")
+			Expect(body).To(HavePrefix("**Cluster**: ocp-prod (uuid-123)\n\n"))
+		})
+
+		It("UT-RO-621-003: Timeout body omits cluster line when identity is empty", func() {
+			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			body := nc.BuildGlobalTimeoutBody("TestSignal", "test-rr", "AIAnalysis", "30m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:30:00Z")
+			Expect(strings.HasPrefix(body, "**Cluster**:")).To(BeFalse(),
+				"Timeout body should not start with cluster line when identity is empty")
+		})
+	})
+
+	Describe("UT-RO-626-008/009: Timeout body builders include RR name", func() {
+		It("UT-RO-626-008: Global timeout body contains RR name", func() {
+			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			body := nc.BuildGlobalTimeoutBody("TestSignal", "my-rr-name", "AIAnalysis", "30m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:30:00Z")
+			Expect(body).To(ContainSubstring("**Remediation**: my-rr-name"))
+		})
+
+		It("UT-RO-626-009: Phase timeout body contains RR name", func() {
+			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			body := nc.BuildPhaseTimeoutBody("TestSignal", "my-rr-name", "WorkflowExecution", "10m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:10:00Z")
+			Expect(body).To(ContainSubstring("**Remediation**: my-rr-name"))
+		})
+	})
+
 	Describe("UT-RO-615-010: Body builders omit cluster line when SetClusterIdentity is NOT called", func() {
 		It("UT-RO-615-010: All body builders omit cluster line by default", func() {
 			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
