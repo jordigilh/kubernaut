@@ -341,9 +341,10 @@ func (r *Reconciler) recheckResourceBusyBlock(ctx context.Context, rr *remediati
 
 // recheckDuplicateBlock handles Blocked RRs with BlockReason=DuplicateInProgress.
 // Uses apiReader to check if the original RR has reached a terminal phase.
-// If cleared, resets the RR to Pending so the full pipeline can re-run.
+// Issue #614: Instead of clearing to Pending and re-running the pipeline, inherits
+// the original RR's outcome (Completed → InheritedCompleted, Failed/other → InheritedFailed).
 //
-// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
+// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics), Issue #614
 func (r *Reconciler) recheckDuplicateBlock(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
@@ -359,18 +360,40 @@ func (r *Reconciler) recheckDuplicateBlock(ctx context.Context, rr *remediationv
 	}, originalRR)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			logger.Info("Original RR no longer exists, clearing DuplicateInProgress block",
+			logger.Info("Original RR deleted, inheriting failure",
 				"duplicateOf", rr.Status.DuplicateOf)
-			return r.clearEventBasedBlock(ctx, rr, phase.Pending)
+			result, inheritErr := r.transitionToInheritedFailed(ctx, rr,
+				fmt.Errorf("original RemediationRequest %q deleted before completion", rr.Status.DuplicateOf),
+				rr.Status.DuplicateOf, "RemediationRequest")
+			if inheritErr == nil {
+				r.Metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
+			}
+			return result, inheritErr
 		}
 		logger.Error(err, "Failed to check original RR status")
 		return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
 	}
 
 	if IsTerminalPhase(originalRR.Status.OverallPhase) {
-		logger.Info("Original RR reached terminal phase, clearing DuplicateInProgress block",
-			"duplicateOf", originalRR.Name, "originalPhase", originalRR.Status.OverallPhase)
-		return r.clearEventBasedBlock(ctx, rr, phase.Pending)
+		var result ctrl.Result
+		var inheritErr error
+
+		switch originalRR.Status.OverallPhase {
+		case phase.Completed:
+			logger.Info("Original RR completed, inheriting outcome",
+				"duplicateOf", originalRR.Name)
+			result, inheritErr = r.transitionToInheritedCompleted(ctx, rr, rr.Status.DuplicateOf, "RemediationRequest")
+		default:
+			logger.Info("Original RR failed, inheriting failure",
+				"duplicateOf", originalRR.Name, "originalPhase", originalRR.Status.OverallPhase)
+			result, inheritErr = r.transitionToInheritedFailed(ctx, rr,
+				fmt.Errorf("original RemediationRequest %q reached %s", originalRR.Name, originalRR.Status.OverallPhase),
+				rr.Status.DuplicateOf, "RemediationRequest")
+		}
+		if inheritErr == nil {
+			r.Metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
+		}
+		return result, inheritErr
 	}
 
 	logger.V(1).Info("Original RR still active, requeueing",
