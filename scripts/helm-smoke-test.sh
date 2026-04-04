@@ -559,6 +559,43 @@ run_verify_003() {
     "ST-CHART-VERIFY-003: DataStorage health endpoint"
 }
 
+run_verify_np() {
+  local desc_base="ST-CHART-VERIFY-NP"
+  local ns="${1:-$NAMESPACE}"
+  local np_installed
+  np_installed=$(kubectl get networkpolicies -n "$ns" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+
+  if [[ "$np_installed" -ge 10 ]]; then
+    tap_ok "${desc_base}-001: ${np_installed} NetworkPolicies deployed in cluster"
+  else
+    tap_not_ok "${desc_base}-001: NetworkPolicies deployed" \
+      "Expected >= 10, found ${np_installed}"
+    return 1
+  fi
+
+  # Spot-check: AuthWebhook ingress on port 9443 (F-2)
+  local aw_port
+  aw_port=$(kubectl get networkpolicy -n "$ns" -l app=authwebhook \
+    -o jsonpath='{.items[0].spec.ingress[0].ports[0].port}' 2>/dev/null || echo "")
+  if [[ "$aw_port" == "9443" ]]; then
+    tap_ok "${desc_base}-002: AuthWebhook ingress port is 9443 (pod port, not service port)"
+  else
+    tap_not_ok "${desc_base}-002: AuthWebhook ingress port" \
+      "Expected 9443, got ${aw_port}"
+  fi
+
+  # Spot-check: Notification dual-label selector (F-1)
+  local nt_labels
+  nt_labels=$(kubectl get networkpolicy -n "$ns" -l app=notification-controller \
+    -o jsonpath='{.items[0].spec.podSelector.matchLabels}' 2>/dev/null || echo "")
+  if echo "$nt_labels" | grep -q "controller-manager"; then
+    tap_ok "${desc_base}-003: Notification podSelector includes control-plane label (F-1)"
+  else
+    tap_not_ok "${desc_base}-003: Notification dual-label selector" \
+      "Missing control-plane: controller-manager in ${nt_labels}"
+  fi
+}
+
 run_tls_patch() {
   local desc="ST-CHART-TLS-PATCH: Patch webhooks with CA bundle (manual mode)"
   local ca_b64
@@ -1099,6 +1136,100 @@ SDKEOF
   else
     tap_not_ok "ST-HOOK-TPL-005: demoContent disabled" \
       "Demo content still rendered when demoContent.enabled=false"
+  fi
+
+  echo "# --- Template Tests: NetworkPolicy (Issue #285) ---"
+
+  # ST-NP-001: Default renders 12 NetworkPolicies (enabled by default)
+  output=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    --set networkPolicies.apiServerCIDR=10.96.0.1/32 2>&1)
+  local np_count
+  np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
+  if [[ "$np_count" -eq 12 ]]; then
+    tap_ok "ST-NP-001: default renders 12 NetworkPolicies (enabled by default)"
+  else
+    tap_not_ok "ST-NP-001: default should render 12 NetworkPolicies" \
+      "Found ${np_count}"
+  fi
+
+  # ST-NP-002: Disabling renders zero policies
+  output=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    --set networkPolicies.enabled=false 2>&1)
+  np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
+  if [[ "$np_count" -eq 0 ]]; then
+    tap_ok "ST-NP-002: networkPolicies.enabled=false renders zero NetworkPolicies"
+  else
+    tap_not_ok "ST-NP-002: expected zero NetworkPolicies when disabled" \
+      "Found ${np_count}"
+  fi
+
+  # ST-NP-003: Every policy includes DNS egress (port 53)
+  local np_without_dns=0
+  while IFS= read -r policy_name; do
+    local policy_yaml
+    policy_yaml=$(echo "$output" | python3 -c "
+import sys, yaml
+docs = list(yaml.safe_load_all(sys.stdin))
+for d in docs:
+    if d and d.get('kind') == 'NetworkPolicy' and d.get('metadata',{}).get('name') == '$policy_name':
+        egress = d.get('spec',{}).get('egress',[])
+        has_dns = any(
+            any(p.get('port') == 53 for p in r.get('ports',[]))
+            for r in egress
+        )
+        if not has_dns:
+            print('MISSING')
+        break
+" 2>/dev/null <<< "$output")
+    if [[ "$policy_yaml" == "MISSING" ]]; then
+      np_without_dns=$((np_without_dns + 1))
+    fi
+  done < <(echo "$output" | grep -A1 "kind: NetworkPolicy" | grep "name:" | awk '{print $2}')
+  if [[ "$np_without_dns" -eq 0 ]]; then
+    tap_ok "ST-NP-003: all 12 NetworkPolicies include DNS egress (port 53)"
+  else
+    tap_not_ok "ST-NP-003: DNS egress in all policies" \
+      "${np_without_dns} policies missing DNS egress"
+  fi
+
+  # ST-NP-004: Per-service disable skips that policy
+  output=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    --set networkPolicies.enabled=true \
+    --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
+    --set networkPolicies.notification.enabled=false 2>&1)
+  if ! echo "$output" | grep -q "notification"; then
+    tap_ok "ST-NP-004: notification.enabled=false skips Notification NetworkPolicy"
+  else
+    tap_not_ok "ST-NP-004: per-service disable" \
+      "Notification NetworkPolicy still rendered when disabled"
+  fi
+
+  # ST-NP-005: PostgreSQL/Valkey conditional on their enabled flags (F-7)
+  output=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    --set networkPolicies.enabled=true \
+    --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
+    --set postgresql.enabled=false \
+    --set valkey.enabled=false 2>&1)
+  np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
+  if [[ "$np_count" -eq 10 ]]; then
+    tap_ok "ST-NP-005: postgresql/valkey disabled = 10 NetworkPolicies (no PG/VK)"
+  else
+    tap_not_ok "ST-NP-005: infra conditional rendering" \
+      "Expected 10 policies without PG/VK, got ${np_count}"
+  fi
+
+  # ST-NP-006: helm lint passes with NetworkPolicies enabled
+  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) \
+    --set networkPolicies.enabled=true \
+    --set networkPolicies.apiServerCIDR=10.96.0.1/32 >/dev/null 2>&1; then
+    tap_ok "ST-NP-006: helm lint passes with networkPolicies.enabled=true"
+  else
+    tap_not_ok "ST-NP-006: helm lint with NetworkPolicies" \
+      "helm lint failed"
   fi
 
   echo "# --- Template Tests: GCP Conditional Fields ---"
