@@ -45,7 +45,7 @@ import (
 // - Mock LLM is configured to return specific scenarios via signal keywords
 // - Focus: Routing logic from HAPI response → RO decision → CRD creation
 //
-// Mock LLM Scenario Triggers (test/services/mock-llm/src/server.py):
+// Mock LLM Scenario Triggers (test/services/mock-llm/scenarios/):
 // - "mock_rca_incomplete" → needs_human_review=true, reason="rca_incomplete"
 // - "mock_low_confidence" → needs_human_review=true, reason="low_confidence"
 // - "oomkilled" → needs_human_review=false (normal workflow selection)

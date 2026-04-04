@@ -52,7 +52,7 @@ func workflowIDToImageName(workflowID string) string {
 // NOT sent to the API; they serve as human-readable documentation and as key
 // components for workflowUUIDs map lookups (key format: "workflowID:environment").
 type TestWorkflow struct {
-	WorkflowID      string // Must match Mock LLM workflow_id or Python fixture workflow_name
+	WorkflowID      string // Must match Mock LLM workflow_id in scenarios registry
 	Name            string
 	Description     string
 	ActionType      string // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "ScaleReplicas", "RestartPod")
