@@ -2,7 +2,7 @@
 
 **Status**: ✅ Approved
 **Decision Date**: 2026-03-04
-**Version**: 1.0
+**Version**: 1.2
 **Confidence**: 90%
 **Deciders**: Architecture Team, Kubernaut Agent Team
 **Applies To**: Kubernaut Agent
@@ -16,6 +16,8 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.2 | 2026-04-03 | Architecture Team | 8 providers implemented in v1.3 (added Anthropic, Bedrock, Hugging Face, Mistral). Adapter LOC ~120. Air-gapped guidance. |
+| 1.1 | 2026-04-03 | Architecture Team | 4 providers implemented (Azure, Vertex functional options). Adapter LOC ~80. |
 | 1.0 | 2026-03-04 | Architecture Team | Initial decision: LangChainGo selected after evaluating kagent, Eino, openai-go |
 
 ---
@@ -135,7 +137,7 @@ The HAPI Go rewrite (BR-HAPI-433) requires a Go LLM framework to replace HolmesG
 1. **Leanest viable option**: LangChainGo provides multi-provider support with a smaller dependency footprint than Eino. Raw openai-go would require us to build provider adapters.
 2. **Native Vertex AI**: Important for GCP customers. Eino lacks this.
 3. **English-first ecosystem**: Team productivity over Chinese-primary docs.
-4. **Kubernaut-owned interface absorbs risk**: The ~60 LOC adapter means LangChainGo breaking changes are trivial to fix. If LangChainGo becomes unmaintained, swapping to Eino or raw openai-go is a small change.
+4. **Kubernaut-owned interface absorbs risk**: The ~80 LOC adapter means LangChainGo breaking changes are trivial to fix. If LangChainGo becomes unmaintained, swapping to Eino or raw openai-go is a small change.
 
 ### Framework Isolation Pattern
 
@@ -168,8 +170,8 @@ This pattern means:
 
 ### Positive Consequences
 
-1. Multi-provider LLM support out of the box (OpenAI, Azure, Vertex AI, Ollama, Bedrock, Anthropic)
-2. ~60 LOC adapter — minimal coupling to framework
+1. Multi-provider LLM support out of the box (OpenAI, Ollama, Azure, Vertex AI, Anthropic, Bedrock, Hugging Face, Mistral — all 8 implemented in v1.3)
+2. ~120 LOC adapter with functional options pattern — minimal coupling to framework
 3. Active community with English docs
 4. Binary size impact ~15-20MB (lean)
 
@@ -187,7 +189,7 @@ This pattern means:
 1. PoC validated against mock-llm (full investigation flow)
 2. Provider switching tested (OpenAI-compatible endpoint)
 3. Tool calling round-trip verified (LLM → tool → result → LLM)
-4. Adapter LOC measured (~60 lines — confirmed lean)
+4. Adapter LOC measured (~120 lines — confirmed lean, includes functional options for Azure, Vertex, Bedrock, Anthropic, Mistral)
 
 ---
 
@@ -200,5 +202,9 @@ This pattern means:
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-03-04
+**Document Version**: 1.2
+**Last Updated**: 2026-04-03
+
+**Change Log**:
+- v1.2 (2026-04-03): Updated adapter LOC (~80 → ~120) to reflect 8 providers with functional options. Updated provider list to show all 8 providers implemented in v1.3. Added air-gapped/on-prem guidance note.
+- v1.1 (2026-04-03): Updated adapter LOC (~60 → ~80) to reflect Azure/Vertex functional options. Updated provider list to show 4 providers implemented in v1.3.
