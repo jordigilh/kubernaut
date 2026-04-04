@@ -1,10 +1,29 @@
 # DD-HAPI-002: Workflow Response Validation Architecture
 
 **Date**: December 1, 2025
-**Status**: ✅ APPROVED (Updated v1.4)
+**Status**: ✅ APPROVED (Updated v1.5)
 **Deciders**: Architecture Team, Workflow Engine Team, HolmesGPT-API Team
-**Version**: 1.4
-**Related**: DD-WORKFLOW-002, DD-HAPI-001, BR-HAPI-191, BR-AI-023, DD-WE-006, GitHub Issue #241, GitHub Issue #529
+**Version**: 1.5
+**Related**: DD-WORKFLOW-002, DD-HAPI-001, BR-HAPI-191, BR-AI-023, DD-WE-006, GitHub Issue #241, GitHub Issue #529, BR-HAPI-433
+
+---
+
+## ⚠️ v1.5 UPDATE (March 4, 2026 — BR-HAPI-433 / TP-433-ADV GAP-007)
+
+**Change**: KA (Go) enforces **fail-closed startup** for workflow validation.
+
+**Problem**: When the `Pipeline.Validator` is nil (e.g., DataStorage unreachable at startup), the self-correction loop in `investigator.runWorkflowSelection()` is silently skipped. Since KA is the **sole validator** (v1.1+), this allows hallucinated workflow IDs and unvalidated parameters to flow directly to the Workflow Engine and Tekton execution.
+
+**New Behavior**:
+| Condition | Startup Behavior |
+|-----------|-----------------|
+| **DataStorage configured, ListWorkflows succeeds** | Validator created, KA starts normally |
+| **DataStorage configured, ListWorkflows fails** | **KA refuses to start** (fail-closed) |
+| **DataStorage not configured** (dev/local mode) | Validator nil, KA starts with validation disabled |
+
+**Rationale**: The Workflow Engine performs NO validation (v1.1) and trusts KA completely. A silent validator bypass creates an unacceptable security gap (hallucinated parameters, undeclared credential injection per Issue #241). Failing at startup is recoverable via K8s restart policy; failing at runtime with unchecked workflows is not.
+
+**Implementation**: `cmd/kubernautagent/main.go` — `buildWorkflowValidator()` returns `error` when DS is configured but catalog is unreachable.
 
 ---
 
@@ -649,6 +668,7 @@ See: `docs/requirements/BR-HAPI-191-workflow-parameter-validation.md`
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5 | 2026-03-04 | **OPERATIONAL**: KA (Go) enforces fail-closed startup (BR-HAPI-433, TP-433-ADV GAP-007). When DataStorage is configured, workflow validator MUST be created successfully or KA refuses to start. Prevents silent self-correction bypass that allows hallucinated workflows to reach Tekton. Dev mode (no DS) unaffected. |
 | 1.4 | 2026-03-25 | **ARCHITECTURE**: Issue #529 three-phase RCA. Single self-correction loop split into Phase 1 (RCA + `affectedResource` validation) and Phase 3 (workflow validation with enriched context). Phase 2 is HAPI-side enrichment (owner resolution, labels, history) with exponential backoff retries. Conversation continuity (BR-HAPI-263) threads messages across phases. Workflow validation (Steps 1–3b) unchanged but moves to Phase 3. |
 | 1.3 | 2026-03-02 | **SECURITY**: Added Step 3b — undeclared parameter stripping (GitHub Issue #241). LLM-hallucinated params (e.g., GIT_PASSWORD) are silently removed before reaching execution. No-schema workflows have all params stripped. |
 | 1.2 | 2025-12-05 | **EXPANDED**: Added workflow existence and container image validation. Changed from tool-based to automatic validation. Added comprehensive implementation design. |

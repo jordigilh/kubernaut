@@ -120,8 +120,15 @@ func main() {
 	anomalyDetector := buildAnomalyDetector(cfg, slogger)
 	sum := buildSummarizer(llmClient, cfg, slogger)
 
+	instrumentedLLM := llm.NewInstrumentedClient(llmClient)
+	validator, validatorErr := buildWorkflowValidator(ds, slogger)
+	if validatorErr != nil {
+		slogger.Error("workflow validator required but unavailable (DD-HAPI-002: KA is sole validator)", "error", validatorErr)
+		os.Exit(1)
+	}
+
 	inv := investigator.New(investigator.Config{
-		Client:       llmClient,
+		Client:       instrumentedLLM,
 		Builder:      promptBuilder,
 		ResultParser: resultParser,
 		Enricher:     enricher,
@@ -133,6 +140,7 @@ func main() {
 		Pipeline: investigator.Pipeline{
 			Sanitizer:       sanitizer,
 			AnomalyDetector: anomalyDetector,
+			Validator:       validator,
 			Summarizer:      sum,
 		},
 	})
@@ -436,6 +444,43 @@ func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger *slog.Logg
 			reg.Register(t)
 		}
 		logger.Info("registered metrics tools", "count", len(k8stools.MetricsToolNames))
+	}
+}
+
+// buildWorkflowValidator creates a parser.Validator from the DataStorage workflow catalog.
+//
+// Per DD-HAPI-002 (v1.1+), KA is the SOLE VALIDATOR for workflow selections.
+// The Workflow Engine performs NO validation and trusts KA completely.
+// Therefore, when DataStorage is configured, the validator MUST be created
+// successfully or KA refuses to start (fail-closed). Without a validator,
+// the self-correction loop in investigator.runWorkflowSelection is skipped,
+// allowing hallucinated workflow IDs to flow unchecked to Tekton execution.
+//
+// Returns (nil, nil) when DS is not configured (dev/local mode).
+// Returns (nil, error) when DS is configured but workflows cannot be fetched.
+func buildWorkflowValidator(ds *dsClients, logger *slog.Logger) (*parser.Validator, error) {
+	if ds == nil {
+		logger.Info("workflow validator disabled (no DataStorage — dev mode)")
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	resp, err := ds.ogenClient.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch workflow catalog from DataStorage: %w", err)
+	}
+
+	switch v := resp.(type) {
+	case *ogenclient.WorkflowListResponse:
+		ids := make([]string, 0, len(v.Workflows))
+		for _, w := range v.Workflows {
+			ids = append(ids, w.WorkflowName)
+		}
+		logger.Info("workflow validator enabled (DD-HAPI-002: sole validator)", "allowed_workflows", len(ids))
+		return parser.NewValidator(ids), nil
+	default:
+		return nil, fmt.Errorf("unexpected ListWorkflows response type %T", resp)
 	}
 }
 
