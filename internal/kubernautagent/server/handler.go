@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/go-faster/jx"
@@ -205,7 +206,7 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 
 	if r.HumanReviewNeeded {
 		resp.NeedsHumanReview.SetTo(true)
-		resp.HumanReviewReason.SetTo(hapiclient.HumanReviewReason(r.Reason))
+		resp.HumanReviewReason.SetTo(mapHumanReviewReason(r.Reason))
 	} else {
 		resp.NeedsHumanReview.SetTo(false)
 	}
@@ -231,4 +232,30 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 	}
 
 	return resp
+}
+
+// mapHumanReviewReason maps free-form investigator reason strings to valid
+// HumanReviewReason enum values. The Python HAPI used determine_human_review_reason()
+// for this; the Go KA must do the same to satisfy the OpenAPI schema contract.
+func mapHumanReviewReason(reason string) hapiclient.HumanReviewReason {
+	switch {
+	case strings.Contains(reason, "exhausted during RCA"):
+		return hapiclient.HumanReviewReasonRcaIncomplete
+	case strings.Contains(reason, "exhausted during workflow selection"):
+		return hapiclient.HumanReviewReasonInvestigationInconclusive
+	case strings.Contains(reason, "not found") && strings.Contains(reason, "catalog"):
+		return hapiclient.HumanReviewReasonWorkflowNotFound
+	case strings.Contains(reason, "no matching"):
+		return hapiclient.HumanReviewReasonNoMatchingWorkflows
+	case strings.Contains(reason, "mismatch") || strings.Contains(reason, "image"):
+		return hapiclient.HumanReviewReasonImageMismatch
+	case strings.Contains(reason, "parameter") || strings.Contains(reason, "validation"):
+		return hapiclient.HumanReviewReasonParameterValidationFailed
+	case strings.Contains(reason, "confidence"):
+		return hapiclient.HumanReviewReasonLowConfidence
+	case strings.Contains(reason, "parse") || strings.Contains(reason, "parsing"):
+		return hapiclient.HumanReviewReasonLlmParsingError
+	default:
+		return hapiclient.HumanReviewReasonInvestigationInconclusive
+	}
 }
