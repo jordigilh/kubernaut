@@ -54,6 +54,7 @@ Rewrite HAPI as a native Go service with **no feature regression** in v1.3, elim
 6. ✅ Same REST API contract — no consumer changes required (RemediationOrchestrator, Gateway)
 7. ✅ Kubernetes and Prometheus toolsets reimplemented with Go bindings
 8. ✅ Multi-provider LLM support (OpenAI, Ollama, Azure OpenAI, Vertex AI, Anthropic, AWS Bedrock, Hugging Face, Mistral)
+9. ✅ Fail-closed startup when DataStorage is configured but workflow validator cannot be created (DD-HAPI-002 v1.5, TP-433-ADV GAP-007)
 
 ---
 
