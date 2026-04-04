@@ -21,6 +21,7 @@ import (
 	"embed"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -45,6 +46,7 @@ type SignalData struct {
 	SignalSource     string
 	BusinessCategory string
 	Description      string
+	SignalMode       string
 }
 
 // EnrichmentData contains enrichment context injected into the prompt.
@@ -147,7 +149,7 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentD
 		Description:         withDefault(sanitized.Description, sanitized.Message),
 		FiringTime:          "N/A",
 		ReceivedTime:        "N/A",
-		SignalMode:          "reactive",
+		SignalMode:          withDefault(sanitized.SignalMode, "reactive"),
 		Priority:            sanitized.Priority,
 		BusinessCategory:    sanitized.BusinessCategory,
 		RiskTolerance:       sanitized.RiskTolerance,
@@ -158,11 +160,7 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentD
 			data.OwnerChain = strings.Join(enrichData.OwnerChain, " → ")
 		}
 		if len(enrichData.DetectedLabels) > 0 {
-			var labels []string
-			for k, v := range enrichData.DetectedLabels {
-				labels = append(labels, fmt.Sprintf("%s=%s", k, v))
-			}
-			data.DetectedLabels = strings.Join(labels, ", ")
+			data.DetectedLabels = sortedLabelString(enrichData.DetectedLabels)
 		}
 
 		var sections []string
@@ -202,7 +200,7 @@ func (b *Builder) RenderWorkflowSelection(signal SignalData, rcaSummary string, 
 		ResourceKind:        withDefault(sanitized.ResourceKind, "Pod"),
 		ResourceName:        withDefault(sanitized.ResourceName, "unknown"),
 		ClusterName:         withDefault(sanitized.ClusterName, "default"),
-		SignalMode:          "reactive",
+		SignalMode:          withDefault(sanitized.SignalMode, "reactive"),
 		PriorityDescription: withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
 		Environment:         withDefault(sanitized.Environment, "default"),
 		RiskDescription:     withDefault(sanitized.RiskTolerance, inferRisk(sanitized.Severity)),
@@ -214,17 +212,16 @@ func (b *Builder) RenderWorkflowSelection(signal SignalData, rcaSummary string, 
 		if len(enrichData.OwnerChain) > 0 {
 			parts = append(parts, "Owner chain: "+strings.Join(enrichData.OwnerChain, " → "))
 		}
-		if enrichData.HistoryResult != nil {
-			t1Count := len(enrichData.HistoryResult.Tier1)
-			t2Count := len(enrichData.HistoryResult.Tier2)
-			if t1Count+t2Count > 0 {
-				parts = append(parts, fmt.Sprintf("Remediation history: %d recent + %d historical entries", t1Count, t2Count))
-			}
-			if enrichData.HistoryResult.RegressionDetected {
-				parts = append(parts, "WARNING: Configuration regression detected")
-			}
+		if len(enrichData.DetectedLabels) > 0 {
+			parts = append(parts, "Detected labels: "+sortedLabelString(enrichData.DetectedLabels))
 		}
-		data.EnrichmentContext = strings.Join(parts, "\n")
+		// GAP-012: Phase 3 gets full remediation history (not abbreviated counts)
+		// so LLM can make informed workflow selection based on past outcomes.
+		if enrichData.HistoryResult != nil && (len(enrichData.HistoryResult.Tier1) > 0 || len(enrichData.HistoryResult.Tier2) > 0) {
+			parts = append(parts, BuildRemediationHistorySection(
+				enrichData.HistoryResult, RepeatedRemediationEscalationThreshold))
+		}
+		data.EnrichmentContext = strings.Join(parts, "\n\n")
 	}
 
 	var buf bytes.Buffer
@@ -232,6 +229,19 @@ func (b *Builder) RenderWorkflowSelection(signal SignalData, rcaSummary string, 
 		return "", fmt.Errorf("rendering workflow selection template: %w", err)
 	}
 	return buf.String(), nil
+}
+
+func sortedLabelString(m map[string]string) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%s", k, m[k]))
+	}
+	return strings.Join(parts, ", ")
 }
 
 var injectionPatterns = regexp.MustCompile(
@@ -260,6 +270,7 @@ func sanitizeSignal(signal SignalData) SignalData {
 		SignalSource:     sanitizeField(signal.SignalSource),
 		BusinessCategory: sanitizeField(signal.BusinessCategory),
 		Description:      sanitizeField(signal.Description),
+		SignalMode:       sanitizeField(signal.SignalMode),
 	}
 }
 
