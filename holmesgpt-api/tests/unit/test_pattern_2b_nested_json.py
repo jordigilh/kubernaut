@@ -76,6 +76,43 @@ class TestPattern2BNestedJSON:
         assert params["target"].get("name") == "web-app", \
             f"Nested target.name should be 'web-app', got: {params['target'].get('name')}"
 
+    def test_ut_hapi_624_008_null_selected_workflow_not_captured(self):
+        """UT-HAPI-624-008: Pattern 2B treats JSON 'null' as no workflow (same as Python 'None').
+
+        Regression: json.dumps(None) produces 'null', but Pattern 2B only checked
+        for 'None'. The balanced brace extractor then picked up '{' from a later
+        section (e.g. validation_attempts_history), producing a garbage workflow.
+        """
+        import json
+        rca = '{"summary": "LLM parsing failed", "severity": "unknown", "contributing_factors": []}'
+        lines = [
+            "Based on the enrichment context and workflow catalog:",
+            "",
+            "# root_cause_analysis",
+            rca,
+            "",
+            "# selected_workflow",
+            json.dumps(None),  # produces "null"
+            "",
+            "# needs_human_review",
+            "true",
+            "",
+            "# human_review_reason",
+            '"llm_parsing_error"',
+            "",
+            "# validation_attempts_history",
+            json.dumps([{"attempt": 1, "workflow_id": None, "is_valid": False, "errors": ["Invalid JSON"]}]),
+        ]
+        analysis = "\n".join(lines)
+        result = _parse(analysis)
+
+        assert result.get("selected_workflow") is None, \
+            f"selected_workflow should be None for JSON null, got: {result.get('selected_workflow')}"
+        assert result.get("needs_human_review") is True, \
+            "needs_human_review should be True"
+        assert result.get("human_review_reason") == "llm_parsing_error", \
+            f"human_review_reason should be 'llm_parsing_error', got: {result.get('human_review_reason')}"
+
     def test_ut_hapi_624_003_unbalanced_braces_graceful(self):
         """UT-HAPI-624-003: Unbalanced braces return empty/fallback RCA, not crash."""
         broken_rca = '{"summary": "incomplete object", "nested": {"broken": '
