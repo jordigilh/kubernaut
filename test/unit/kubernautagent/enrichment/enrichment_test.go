@@ -96,7 +96,7 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 	Describe("UT-KA-433-131: DetectedLabels struct matches HAPI LabelDetector output", func() {
 		It("should round-trip serialize all 10 DetectedLabels fields", func() {
 			labels := enrichment.DetectedLabels{
-				FailedDetections:         []string{"hpa_check"},
+				FailedDetections:         []string{"hpaEnabled"},
 				GitOpsManaged:            true,
 				GitOpsTool:               "argocd",
 				PDBProtected:             true,
@@ -122,7 +122,7 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 			Expect(restored.NetworkIsolated).To(BeFalse())
 			Expect(restored.ServiceMesh).To(Equal("istio"))
 			Expect(restored.ResourceQuotaConstrained).To(BeTrue())
-			Expect(restored.FailedDetections).To(ConsistOf("hpa_check"))
+			Expect(restored.FailedDetections).To(ConsistOf("hpaEnabled"))
 		})
 
 		It("should default boolean fields to false and string fields to empty", func() {

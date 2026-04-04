@@ -129,10 +129,11 @@ type EnrichmentResult struct {
 
 // Enricher resolves owner chain, labels, and remediation history.
 type Enricher struct {
-	k8s        K8sClient
-	ds         DataStorageClient
-	auditStore audit.AuditStore
-	logger     *slog.Logger
+	k8s           K8sClient
+	ds            DataStorageClient
+	auditStore    audit.AuditStore
+	logger        *slog.Logger
+	labelDetector *LabelDetector
 }
 
 // NewEnricher creates an enricher with the given clients.
@@ -143,6 +144,12 @@ func NewEnricher(k8s K8sClient, ds DataStorageClient, auditStore audit.AuditStor
 		auditStore: auditStore,
 		logger:     logger,
 	}
+}
+
+// WithLabelDetector attaches a LabelDetector to run during Enrich().
+func (e *Enricher) WithLabelDetector(ld *LabelDetector) *Enricher {
+	e.labelDetector = ld
+	return e
 }
 
 // Enrich resolves enrichment data for the given resource.
@@ -174,6 +181,19 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 		)
 	} else {
 		result.OwnerChain = chain
+	}
+
+	if e.labelDetector != nil {
+		labels, labelErr := e.labelDetector.DetectLabels(ctx, kind, name, namespace, result.OwnerChain)
+		if labelErr != nil {
+			e.logger.Warn("enrichment: label detection failed",
+				slog.String("resource", namespace+"/"+kind+"/"+name),
+				slog.String("error", labelErr.Error()),
+			)
+		}
+		if labels != nil {
+			result.DetectedLabels = labels
+		}
 	}
 
 	histResult, err := e.ds.GetRemediationHistory(ctx, kind, name, namespace, specHash)

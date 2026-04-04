@@ -34,6 +34,22 @@ The HAPI Go rewrite (BR-HAPI-433) requires a Go LLM framework to replace HolmesG
 - Must support structured output (JSON mode)
 - Dependency footprint matters (security motivation)
 
+### Mandatory LLM Provider Requirement: JSON Mode
+
+KA always sets `JSONMode: true` on every LLM request. This is a **mandatory operational requirement**, not optional. Any LLM provider integrated with KA **must** support JSON structured output (the OpenAI `/chat/completions` `response_format: { "type": "json_object" }` equivalent). Providers that cannot guarantee valid JSON responses are incompatible with KA.
+
+**Rationale**: KA's result parser (`internal/kubernautagent/parser/`) expects well-formed JSON from every LLM response. Without JSON mode, models may wrap output in markdown code fences, add prose preambles, or produce malformed JSON — all of which cause parse failures and degrade investigation reliability. Enabling JSON mode as a defense-in-depth measure eliminates an entire class of parser errors.
+
+**Affected providers** (all must support JSON mode):
+- OpenAI: ✅ (`response_format`)
+- Azure OpenAI: ✅ (`response_format`)
+- Vertex AI (Gemini): ✅ (`response_mime_type: "application/json"`)
+- Anthropic: ✅ (via `tool_choice` or system prompt)
+- Ollama: ✅ (`format: "json"`)
+- Bedrock: ✅ (model-dependent, validated per-model)
+- Hugging Face TGI: ✅ (`grammar` parameter)
+- Mistral: ✅ (`response_format`)
+
 ---
 
 ## Decision Drivers
