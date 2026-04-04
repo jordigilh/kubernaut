@@ -137,4 +137,20 @@ llm:
 			Expect(err.Error()).To(ContainSubstring("llm.model"))
 		})
 	})
+
+	Describe("UT-KA-433W-010: DefaultConfig applies summarizer threshold", func() {
+		It("should set Summarizer.Threshold to 8000", func() {
+			cfg := config.DefaultConfig()
+			Expect(cfg.Summarizer.Threshold).To(Equal(8000))
+		})
+	})
+
+	Describe("UT-KA-433W-011: DefaultConfig applies anomaly thresholds", func() {
+		It("should set MaxToolCallsPerTool=5, MaxTotalToolCalls=30, MaxRepeatedFailures=3", func() {
+			cfg := config.DefaultConfig()
+			Expect(cfg.Anomaly.MaxToolCallsPerTool).To(Equal(5))
+			Expect(cfg.Anomaly.MaxTotalToolCalls).To(Equal(30))
+			Expect(cfg.Anomaly.MaxRepeatedFailures).To(Equal(3))
+		})
+	})
 })

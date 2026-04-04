@@ -39,21 +39,29 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/investigation"
 	k8stools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
 	logtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/logs"
 	promtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/sanitization"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/client-go/rest"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
@@ -87,7 +95,8 @@ func main() {
 
 	slogger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
 
-	llmClient, err := langchaingo.New(cfg.LLM.Provider, cfg.LLM.Endpoint, cfg.LLM.Model, cfg.LLM.APIKey)
+	llmClient, err := langchaingo.New(cfg.LLM.Provider, cfg.LLM.Endpoint, cfg.LLM.Model, cfg.LLM.APIKey,
+		buildLLMProviderOptions(cfg)...)
 	if err != nil {
 		slogger.Error("failed to create LLM client", "provider", cfg.LLM.Provider, "error", err)
 		os.Exit(1)
@@ -100,18 +109,33 @@ func main() {
 	}
 
 	resultParser := parser.NewResultParser()
-	auditStore := audit.NopAuditStore{}
 	phaseTools := investigator.DefaultPhaseToolMap()
 
-	reg := buildToolRegistry(cfg, slogger)
+	k8sInfra := initK8sInfra(slogger)
+	ds := initDSClients(cfg, k8sInfra, slogger)
+	auditStore := buildAuditStore(cfg, ds, slogger)
+	reg := buildToolRegistry(cfg, slogger, k8sInfra, ds)
+	enricher := buildEnricher(ds, auditStore, slogger)
+	sanitizer := buildSanitizationPipeline(cfg, slogger)
+	anomalyDetector := buildAnomalyDetector(cfg, slogger)
+	sum := buildSummarizer(llmClient, cfg, slogger)
 
-	inv := investigator.New(
-		llmClient, promptBuilder, resultParser,
-		nil, // enricher — requires DataStorage adapter; wired when adapters are ready
-		auditStore, slogger,
-		cfg.Investigator.MaxTurns, phaseTools,
-		reg,
-	)
+	inv := investigator.New(investigator.Config{
+		Client:       llmClient,
+		Builder:      promptBuilder,
+		ResultParser: resultParser,
+		Enricher:     enricher,
+		AuditStore:   auditStore,
+		Logger:       slogger,
+		MaxTurns:     cfg.Investigator.MaxTurns,
+		PhaseTools:   phaseTools,
+		Registry:     reg,
+		Pipeline: investigator.Pipeline{
+			Sanitizer:       sanitizer,
+			AnomalyDetector: anomalyDetector,
+			Summarizer:      sum,
+		},
+	})
 
 	store := session.NewStore(cfg.Session.TTL)
 	mgr := session.NewManager(store, slogger)
@@ -208,12 +232,156 @@ func detectNamespace() string {
 	return "kubernaut-system"
 }
 
+// k8sInfra holds shared Kubernetes clients created once and reused by
+// the tool registry, enricher, and custom tools.
+type k8sInfra struct {
+	kubeConfig *rest.Config
+	clientset  *kubernetes.Clientset
+	dynClient  dynamic.Interface
+	mapper     meta.RESTMapper
+}
+
+// initK8sInfra creates the shared Kubernetes clients. Returns nil when
+// running outside a cluster (e.g. local development).
+func initK8sInfra(logger *slog.Logger) *k8sInfra {
+	kubeConfig, err := ctrl.GetConfig()
+	if err != nil {
+		logger.Warn("K8s config not available, K8s tools and enricher disabled", "error", err)
+		return nil
+	}
+	k8sClient, err := kubernetes.NewForConfig(kubeConfig)
+	if err != nil {
+		logger.Error("failed to create K8s clientset", "error", err)
+		return nil
+	}
+	dynClient, err := dynamic.NewForConfig(kubeConfig)
+	if err != nil {
+		logger.Error("failed to create dynamic client", "error", err)
+		return nil
+	}
+	cachedDisc := memory.NewMemCacheClient(k8sClient.Discovery())
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(cachedDisc)
+	return &k8sInfra{kubeConfig: kubeConfig, clientset: k8sClient, dynClient: dynClient, mapper: mapper}
+}
+
+// dsClients holds DataStorage client instances created once and shared
+// between the enricher and the custom tool registry.
+type dsClients struct {
+	ogenClient *ogenclient.Client
+	dsAdapter  *enrichment.DSAdapter
+	k8sAdapter *enrichment.K8sAdapter
+}
+
+// initDSClients creates the DataStorage adapter clients. Returns nil when
+// DataStorage URL is empty or K8s infrastructure is unavailable.
+func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger *slog.Logger) *dsClients {
+	if cfg.DataStorage.URL == "" {
+		logger.Info("DataStorage URL not configured, DS adapters disabled")
+		return nil
+	}
+	if infra == nil {
+		logger.Warn("K8s infrastructure unavailable, DS adapters disabled")
+		return nil
+	}
+	ogenClient, err := ogenclient.NewClient(cfg.DataStorage.URL)
+	if err != nil {
+		logger.Error("failed to create DataStorage ogen client", "url", cfg.DataStorage.URL, "error", err)
+		return nil
+	}
+	logger.Info("DataStorage clients initialized", "url", cfg.DataStorage.URL)
+	return &dsClients{
+		ogenClient: ogenClient,
+		dsAdapter:  enrichment.NewDSAdapter(ogenClient),
+		k8sAdapter: enrichment.NewK8sAdapter(infra.dynClient, infra.mapper),
+	}
+}
+
+// buildEnricher creates the enrichment.Enricher when DS clients are available.
+func buildEnricher(ds *dsClients, auditStore audit.AuditStore, logger *slog.Logger) *enrichment.Enricher {
+	if ds == nil {
+		return nil
+	}
+	return enrichment.NewEnricher(ds.k8sAdapter, ds.dsAdapter, auditStore, logger)
+}
+
+// buildSanitizationPipeline creates the G4 + I1 sanitization pipeline
+// per DD-HAPI-019-003. Returns nil when both stages are disabled.
+func buildSanitizationPipeline(cfg *kaconfig.Config, logger *slog.Logger) *sanitization.Pipeline {
+	var stages []sanitization.Stage
+	if cfg.Sanitization.CredentialScrubEnabled {
+		stages = append(stages, sanitization.NewCredentialSanitizer())
+	}
+	if cfg.Sanitization.InjectionPatternsEnabled {
+		stages = append(stages, sanitization.NewInjectionSanitizer(nil))
+	}
+	if len(stages) == 0 {
+		logger.Info("sanitization pipeline disabled")
+		return nil
+	}
+	logger.Info("sanitization pipeline enabled", "stages", len(stages))
+	return sanitization.NewPipeline(stages...)
+}
+
+// buildLLMProviderOptions returns provider-specific LangChainGo options based on config.
+func buildLLMProviderOptions(cfg *kaconfig.Config) []langchaingo.Option {
+	var opts []langchaingo.Option
+	if cfg.LLM.AzureAPIVersion != "" {
+		opts = append(opts, langchaingo.WithAzureAPIVersion(cfg.LLM.AzureAPIVersion))
+	}
+	if cfg.LLM.VertexProject != "" {
+		opts = append(opts, langchaingo.WithVertexProject(cfg.LLM.VertexProject))
+	}
+	if cfg.LLM.VertexLocation != "" {
+		opts = append(opts, langchaingo.WithVertexLocation(cfg.LLM.VertexLocation))
+	}
+	if cfg.LLM.BedrockRegion != "" {
+		opts = append(opts, langchaingo.WithBedrockRegion(cfg.LLM.BedrockRegion))
+	}
+	return opts
+}
+
+// buildAuditStore creates a DSAuditStore when audit is enabled and DS is available,
+// falling back to NopAuditStore otherwise.
+func buildAuditStore(cfg *kaconfig.Config, ds *dsClients, logger *slog.Logger) audit.AuditStore {
+	if cfg.Audit.Enabled && ds != nil {
+		logger.Info("audit store enabled (DataStorage-backed)")
+		return audit.NewDSAuditStore(ds.ogenClient)
+	}
+	logger.Info("audit store disabled (nop)")
+	return audit.NopAuditStore{}
+}
+
+// buildSummarizer creates a tool output summarizer when the threshold is positive.
+func buildSummarizer(llmClient llm.Client, cfg *kaconfig.Config, logger *slog.Logger) *summarizer.Summarizer {
+	if cfg.Summarizer.Threshold <= 0 {
+		logger.Info("summarizer disabled (threshold <= 0)")
+		return nil
+	}
+	logger.Info("summarizer enabled", "threshold", cfg.Summarizer.Threshold)
+	return summarizer.New(llmClient, cfg.Summarizer.Threshold)
+}
+
+// buildAnomalyDetector creates the I7 anomaly detector from config thresholds.
+func buildAnomalyDetector(cfg *kaconfig.Config, logger *slog.Logger) *investigator.AnomalyDetector {
+	ac := investigator.AnomalyConfig{
+		MaxToolCallsPerTool: cfg.Anomaly.MaxToolCallsPerTool,
+		MaxTotalToolCalls:   cfg.Anomaly.MaxTotalToolCalls,
+		MaxRepeatedFailures: cfg.Anomaly.MaxRepeatedFailures,
+	}
+	logger.Info("anomaly detector enabled",
+		"maxToolCallsPerTool", ac.MaxToolCallsPerTool,
+		"maxTotalToolCalls", ac.MaxTotalToolCalls,
+		"maxRepeatedFailures", ac.MaxRepeatedFailures,
+	)
+	return investigator.NewAnomalyDetector(ac, nil)
+}
+
 // buildToolRegistry creates and populates the tool registry with all available tool sets.
-func buildToolRegistry(cfg *kaconfig.Config, logger *slog.Logger) *registry.Registry {
+func buildToolRegistry(cfg *kaconfig.Config, logger *slog.Logger, infra *k8sInfra, ds *dsClients) *registry.Registry {
 	reg := registry.New()
 
-	if err := registerK8sTools(reg, logger); err != nil {
-		logger.Warn("K8s tools registration failed", "error", err)
+	if infra != nil {
+		registerK8sTools(reg, infra, logger)
 	}
 
 	if cfg.Tools.Prometheus.URL != "" {
@@ -232,6 +400,11 @@ func buildToolRegistry(cfg *kaconfig.Config, logger *slog.Logger) *registry.Regi
 		}
 	}
 
+	if ds != nil {
+		custom.RegisterAll(reg, ds.ogenClient, ds.dsAdapter, ds.k8sAdapter)
+		logger.Info("registered custom tools", "count", len(custom.AllToolNames))
+	}
+
 	reg.Register(investigation.NewTodoWriteTool())
 	logger.Info("registered TodoWrite tool")
 
@@ -239,40 +412,23 @@ func buildToolRegistry(cfg *kaconfig.Config, logger *slog.Logger) *registry.Regi
 	return reg
 }
 
-func registerK8sTools(reg *registry.Registry, logger *slog.Logger) error {
-	kubeConfig, err := ctrl.GetConfig()
-	if err != nil {
-		return fmt.Errorf("K8s config not available: %w", err)
-	}
-
-	k8sClient, err := kubernetes.NewForConfig(kubeConfig)
-	if err != nil {
-		return fmt.Errorf("creating K8s client: %w", err)
-	}
-
-	dynClient, err := dynamic.NewForConfig(kubeConfig)
-	if err != nil {
-		return fmt.Errorf("creating dynamic client: %w", err)
-	}
-
-	cachedDisc := memory.NewMemCacheClient(k8sClient.Discovery())
-	mapper := restmapper.NewDeferredDiscoveryRESTMapper(cachedDisc)
-	kindIndex, err := k8stools.BuildKindIndex(k8sClient.Discovery())
+func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger *slog.Logger) {
+	kindIndex, err := k8stools.BuildKindIndex(infra.clientset.Discovery())
 	if err != nil {
 		logger.Warn("failed to build kind index, using empty index", "error", err)
 		kindIndex = make(map[string]schema.GroupKind)
 	}
-	resolver := k8stools.NewDynamicResolver(dynClient, mapper, kindIndex)
+	resolver := k8stools.NewDynamicResolver(infra.dynClient, infra.mapper, kindIndex)
 
-	for _, t := range k8stools.NewAllTools(k8sClient, resolver) {
+	for _, t := range k8stools.NewAllTools(infra.clientset, resolver) {
 		reg.Register(t)
 	}
 	logger.Info("registered K8s tools", "count", len(k8stools.AllToolNames))
 
-	reg.Register(logtools.NewFetchPodLogsTool(k8sClient))
+	reg.Register(logtools.NewFetchPodLogsTool(infra.clientset))
 	logger.Info("registered fetch_pod_logs tool")
 
-	mc, mcErr := metricsclient.NewForConfig(kubeConfig)
+	mc, mcErr := metricsclient.NewForConfig(infra.kubeConfig)
 	if mcErr != nil {
 		logger.Error("failed to create metrics client, metrics tools will not be registered", "error", mcErr)
 	} else {
@@ -281,8 +437,6 @@ func registerK8sTools(reg *registry.Registry, logger *slog.Logger) error {
 		}
 		logger.Info("registered metrics tools", "count", len(k8stools.MetricsToolNames))
 	}
-
-	return nil
 }
 
 // newAuthMiddleware creates the DD-AUTH-014 auth middleware using in-cluster K8s config.

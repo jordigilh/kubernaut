@@ -51,6 +51,73 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 			Expect(err.Error()).To(ContainSubstring("unsupported"))
 			Expect(adapter).To(BeNil())
 		})
+
+		It("UT-KA-433-200: should create an adapter for the azure provider", func() {
+			adapter, err := langchaingo.New("azure", "https://my-resource.openai.azure.com", "gpt-4", "az-key", // pre-commit:allow-sensitive (test fixture)
+				langchaingo.WithAzureAPIVersion("2024-02-15-preview"),
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(adapter).NotTo(BeNil())
+		})
+
+		It("UT-KA-433-201: azure provider without API version should fail", func() {
+			adapter, err := langchaingo.New("azure", "https://my-resource.openai.azure.com", "gpt-4", "az-key") // pre-commit:allow-sensitive (test fixture)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("api_version"))
+			Expect(adapter).To(BeNil())
+		})
+
+		It("UT-KA-433-202: should create an adapter for the vertex provider", func() {
+			adapter, err := langchaingo.New("vertex", "", "gemini-1.5-pro", "",
+				langchaingo.WithVertexProject("my-project"),
+				langchaingo.WithVertexLocation("us-central1"),
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(adapter).NotTo(BeNil())
+		})
+
+		It("UT-KA-433-203: vertex provider without project should fail", func() {
+			adapter, err := langchaingo.New("vertex", "", "gemini-1.5-pro", "")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("project"))
+			Expect(adapter).To(BeNil())
+		})
+
+		It("UT-KA-433-209: should create an adapter for the anthropic provider", func() {
+			adapter, err := langchaingo.New("anthropic", "", "claude-sonnet-4-20250514", "sk-ant-test")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(adapter).NotTo(BeNil())
+			var _ llm.Client = adapter
+		})
+
+		It("UT-KA-433-210: should create an adapter for the bedrock provider", func() {
+			adapter, err := langchaingo.New("bedrock", "", "anthropic.claude-3-sonnet-20240229-v1:0", "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(adapter).NotTo(BeNil())
+			var _ llm.Client = adapter
+		})
+
+		It("UT-KA-433-211: should create an adapter for the huggingface provider", func() {
+			adapter, err := langchaingo.New("huggingface", "", "HuggingFaceH4/zephyr-7b-beta", "hf-test-token")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(adapter).NotTo(BeNil())
+			var _ llm.Client = adapter
+		})
+
+		It("UT-KA-433-212: should create an adapter for the mistral provider", func() {
+			adapter, err := langchaingo.New("mistral", "", "mistral-large-latest", "mistral-test-key")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(adapter).NotTo(BeNil())
+			var _ llm.Client = adapter
+		})
+
+		It("UT-KA-433-213: bedrock adapter uses explicit region when WithBedrockRegion is provided", func() {
+			adapter, err := langchaingo.New("bedrock", "", "anthropic.claude-3-sonnet-20240229-v1:0", "",
+				langchaingo.WithBedrockRegion("eu-west-1"),
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(adapter).NotTo(BeNil())
+		})
 	})
 
 	Describe("Chat() text-only response", func() {
@@ -286,6 +353,126 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 			Expect(json.Unmarshal(receivedBody, &sent)).To(Succeed())
 			Expect(sent.Messages).To(HaveLen(4))
 			Expect(sent.Messages[3].Role).To(Equal("tool"))
+		})
+	})
+
+	Describe("UT-KA-433-051: Anthropic adapter Chat() via mock HTTP server", func() {
+		var (
+			server  *httptest.Server
+			adapter llm.Client
+		)
+
+		BeforeEach(func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				Expect(r.Method).To(Equal(http.MethodPost))
+				Expect(r.URL.Path).To(Equal("/messages"))
+				Expect(r.Header.Get("x-api-key")).To(Equal("sk-ant-test"))
+				Expect(r.Header.Get("Content-Type")).To(Equal("application/json"))
+
+				resp := map[string]interface{}{
+					"id":    "msg_test_001",
+					"type":  "message",
+					"role":  "assistant",
+					"model": "claude-sonnet-4-20250514",
+					"content": []map[string]interface{}{
+						{
+							"type": "text",
+							"text": "The pod is OOMKilled due to memory limits.",
+						},
+					},
+					"stop_reason": "end_turn",
+					"usage": map[string]interface{}{
+						"input_tokens":  120,
+						"output_tokens": 45,
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			}))
+
+			var err error
+			adapter, err = langchaingo.New("anthropic", server.URL, "claude-sonnet-4-20250514", "sk-ant-test")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(adapter).NotTo(BeNil())
+		})
+
+		AfterEach(func() {
+			server.Close()
+		})
+
+		It("should route Chat() to the configured Anthropic endpoint and return content", func() {
+			req := llm.ChatRequest{
+				Messages: []llm.Message{
+					{Role: "user", Content: "Why is the pod crashing?"},
+				},
+			}
+
+			resp, err := adapter.Chat(context.Background(), req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.Message.Role).To(Equal("assistant"))
+			Expect(resp.Message.Content).To(ContainSubstring("OOMKilled"))
+		})
+	})
+
+	Describe("UT-KA-433-052: Mistral adapter Chat() via mock HTTP server", func() {
+		var (
+			server  *httptest.Server
+			adapter llm.Client
+		)
+
+		BeforeEach(func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				Expect(r.Method).To(Equal(http.MethodPost))
+				Expect(r.URL.Path).To(Equal("/v1/chat/completions"))
+				Expect(r.Header.Get("Authorization")).To(Equal("Bearer mistral-test-key"))
+				Expect(r.Header.Get("Content-Type")).To(Equal("application/json"))
+
+				resp := map[string]interface{}{
+					"id":      "chatcmpl-mistral-001",
+					"object":  "chat.completion",
+					"created": 1700000000,
+					"model":   "mistral-large-latest",
+					"choices": []map[string]interface{}{
+						{
+							"index": 0,
+							"message": map[string]interface{}{
+								"role":    "assistant",
+								"content": "The deployment has insufficient replicas for the load.",
+							},
+							"finish_reason": "stop",
+						},
+					},
+					"usage": map[string]interface{}{
+						"prompt_tokens":     80,
+						"completion_tokens": 35,
+						"total_tokens":      115,
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			}))
+
+			var err error
+			adapter, err = langchaingo.New("mistral", server.URL, "mistral-large-latest", "mistral-test-key")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(adapter).NotTo(BeNil())
+		})
+
+		AfterEach(func() {
+			server.Close()
+		})
+
+		It("should route Chat() to the configured Mistral endpoint and return content", func() {
+			req := llm.ChatRequest{
+				Messages: []llm.Message{
+					{Role: "user", Content: "Why is the deployment degraded?"},
+				},
+			}
+
+			resp, err := adapter.Chat(context.Background(), req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.Message.Role).To(Equal("assistant"))
+			Expect(resp.Message.Content).To(ContainSubstring("insufficient replicas"))
 		})
 	})
 
