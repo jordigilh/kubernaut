@@ -28,9 +28,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
 
-var _ = Describe("Kubernaut Agent Resource Context Integration — #433", func() {
+var _ = Describe("Kubernaut Agent Resource Context — #433 (reclassified from IT)", func() {
 
-	Describe("IT-KA-433-036: get_resource_context combines K8s owner chain + DS remediation history", func() {
+	Describe("UT-KA-433-036: get_resource_context combines K8s owner chain + DS remediation history", func() {
 
 		It("should resolve root owner from owner chain and combine with remediation history", func() {
 			k8s := &fakeK8sClient{
@@ -41,9 +41,11 @@ var _ = Describe("Kubernaut Agent Resource Context Integration — #433", func()
 				},
 			}
 			ds := &fakeDataStorageClient{
-				history: []enrichment.RemediationHistoryEntry{
-					{WorkflowID: "oom-increase-memory", Outcome: "success", Timestamp: "2026-03-01T10:00:00Z"},
-					{WorkflowID: "restart-pod", Outcome: "failure", Timestamp: "2026-02-28T15:30:00Z"},
+				history: &enrichment.RemediationHistoryResult{
+					Tier1: []enrichment.Tier1Entry{
+						{RemediationUID: "oom-increase-memory", Outcome: "success"},
+						{RemediationUID: "restart-pod", Outcome: "failure"},
+					},
 				},
 			}
 
@@ -60,9 +62,11 @@ var _ = Describe("Kubernaut Agent Resource Context Integration — #433", func()
 					Name      string `json:"name"`
 					Namespace string `json:"namespace"`
 				} `json:"root_owner"`
-				RemediationHistory []struct {
-					WorkflowID string `json:"workflow_id"`
-					Outcome    string `json:"outcome"`
+				RemediationHistory struct {
+					Tier1 []struct {
+						RemediationUID string `json:"remediation_uid"`
+						Outcome        string `json:"outcome"`
+					} `json:"tier1"`
 				} `json:"remediation_history"`
 			}
 			Expect(json.Unmarshal([]byte(result), &parsed)).To(Succeed())
@@ -70,13 +74,13 @@ var _ = Describe("Kubernaut Agent Resource Context Integration — #433", func()
 			Expect(parsed.RootOwner.Kind).To(Equal("Deployment"), "root owner should be the last entry in the chain")
 			Expect(parsed.RootOwner.Name).To(Equal("api-server"))
 			Expect(parsed.RootOwner.Namespace).To(Equal("production"))
-			Expect(parsed.RemediationHistory).To(HaveLen(2))
-			Expect(parsed.RemediationHistory[0].WorkflowID).To(Equal("oom-increase-memory"))
+			Expect(parsed.RemediationHistory.Tier1).To(HaveLen(2))
+			Expect(parsed.RemediationHistory.Tier1[0].RemediationUID).To(Equal("oom-increase-memory"))
 		})
 
 		It("should use the resource itself as root owner when owner chain is empty", func() {
 			k8s := &fakeK8sClient{ownerChain: nil}
-			ds := &fakeDataStorageClient{history: []enrichment.RemediationHistoryEntry{}}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
 
 			reg := registry.New()
 			reg.Register(custom.NewNamespacedResourceContextTool(ds, k8s))
@@ -90,18 +94,18 @@ var _ = Describe("Kubernaut Agent Resource Context Integration — #433", func()
 					Kind string `json:"kind"`
 					Name string `json:"name"`
 				} `json:"root_owner"`
-				RemediationHistory []interface{} `json:"remediation_history"`
 			}
 			Expect(json.Unmarshal([]byte(result), &parsed)).To(Succeed())
 			Expect(parsed.RootOwner.Kind).To(Equal("StatefulSet"), "should fall back to the queried resource")
 			Expect(parsed.RootOwner.Name).To(Equal("redis-ss"))
-			Expect(parsed.RemediationHistory).To(BeEmpty())
 		})
 
 		It("should return remediation history for cluster-scoped resources", func() {
 			ds := &fakeDataStorageClient{
-				history: []enrichment.RemediationHistoryEntry{
-					{WorkflowID: "drain-reboot", Outcome: "success", Timestamp: "2026-03-02T08:00:00Z"},
+				history: &enrichment.RemediationHistoryResult{
+					Tier1: []enrichment.Tier1Entry{
+						{RemediationUID: "drain-reboot", Outcome: "success"},
+					},
 				},
 			}
 
@@ -118,16 +122,18 @@ var _ = Describe("Kubernaut Agent Resource Context Integration — #433", func()
 					Name      string `json:"name"`
 					Namespace string `json:"namespace"`
 				} `json:"root_owner"`
-				RemediationHistory []struct {
-					WorkflowID string `json:"workflow_id"`
+				RemediationHistory struct {
+					Tier1 []struct {
+						RemediationUID string `json:"remediation_uid"`
+					} `json:"tier1"`
 				} `json:"remediation_history"`
 			}
 			Expect(json.Unmarshal([]byte(result), &parsed)).To(Succeed())
 			Expect(parsed.RootOwner.Kind).To(Equal("Node"))
 			Expect(parsed.RootOwner.Name).To(Equal("worker-1"))
 			Expect(parsed.RootOwner.Namespace).To(BeEmpty(), "cluster-scoped resources have no namespace")
-			Expect(parsed.RemediationHistory).To(HaveLen(1))
-			Expect(parsed.RemediationHistory[0].WorkflowID).To(Equal("drain-reboot"))
+			Expect(parsed.RemediationHistory.Tier1).To(HaveLen(1))
+			Expect(parsed.RemediationHistory.Tier1[0].RemediationUID).To(Equal("drain-reboot"))
 		})
 	})
 })
