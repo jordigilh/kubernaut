@@ -47,7 +47,8 @@ type EffectivenessEventRow struct {
 }
 
 // RemediationHistoryRepository provides queries for remediation history context.
-// DD-HAPI-016 v1.4: Both tiers query RO events by pre_remediation_spec_hash.
+// DD-HAPI-016 v1.4, Issue #616: Both tiers query RO events by spec hash, matching
+// BOTH pre_remediation_spec_hash (direct) and post_remediation_spec_hash (via EM correlation).
 //  1. Query RO events by spec hash (Tier 1: 24h window, Tier 2: 90d window)
 //  2. Batch query EM component events by correlation_id
 type RemediationHistoryRepository struct {
@@ -137,9 +138,19 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 }
 
 // QueryROEventsBySpecHash queries remediation.workflow_created audit events
-// matching a specific pre_remediation_spec_hash within a time window.
-// Used for both Tier 1 (24h) and Tier 2 (90d) queries.
-// Uses expression index idx_audit_events_pre_remediation_spec_hash for performance.
+// matching a specific spec hash within a time window. The hash is matched
+// against BOTH pre_remediation_spec_hash (direct) and post_remediation_spec_hash
+// (via EM correlation_id subquery). An OR combines both paths in a single scan;
+// no DISTINCT is needed because each event_id appears at most once regardless
+// of which OR branch matched.
+//
+// Issue #616: Original query only matched pre_remediation_spec_hash, missing
+// cases where the current resource state matches a previous remediation's
+// post-remediation state (the normal successful-remediation cycle).
+//
+// Uses expression indexes:
+//   - idx_audit_events_pre_remediation_spec_hash (existing)
+//   - idx_audit_events_post_remediation_spec_hash (migration 004)
 //
 // DD-HAPI-016 v1.4: Both tiers query by spec hash (#586).
 func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
@@ -150,10 +161,19 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 ) ([]RawAuditRow, error) {
 	query := `SELECT event_type, event_data, event_timestamp, correlation_id
 		FROM audit_events
-		WHERE event_data->>'pre_remediation_spec_hash' = $1
-		AND event_type = 'remediation.workflow_created'
+		WHERE event_type = 'remediation.workflow_created'
 		AND event_timestamp >= $2
 		AND event_timestamp < $3
+		AND (
+			event_data->>'pre_remediation_spec_hash' = $1
+			OR correlation_id IN (
+				SELECT correlation_id FROM audit_events
+				WHERE event_category = 'effectiveness'
+				AND event_data->>'post_remediation_spec_hash' = $1
+				AND event_timestamp >= $2
+				AND event_timestamp < $3
+			)
+		)
 		ORDER BY event_timestamp ASC, event_id ASC`
 
 	rows, err := r.db.QueryContext(ctx, query, specHash, since, until)
@@ -168,5 +188,15 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 		}
 	}()
 
-	return scanRawRows(rows)
+	results, err := scanRawRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	r.logger.V(1).Info("QueryROEventsBySpecHash completed",
+		"spec_hash", specHash,
+		"result_count", len(results),
+		"window", until.Sub(since).String())
+
+	return results, nil
 }

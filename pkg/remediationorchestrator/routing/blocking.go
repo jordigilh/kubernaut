@@ -989,6 +989,7 @@ func (r *RoutingEngine) CheckIneffectiveRemediationChain(
 	)
 
 	if r.dsClient == nil {
+		logger.V(1).Info("dsClient is nil, skipping ineffective chain detection")
 		return nil
 	}
 
@@ -997,6 +998,9 @@ func (r *RoutingEngine) CheckIneffectiveRemediationChain(
 		logger.Error(err, "DataStorage query failed for ineffective chain detection (fail-open)")
 		return nil
 	}
+
+	logger.V(1).Info("Ineffective chain detection: DS query completed",
+		"entryCount", len(entries))
 
 	if len(entries) == 0 {
 		return nil
