@@ -266,7 +266,7 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 					"#607: Warnings must be populated for response mapping to set IncidentResponse.Warnings")
 			})
 
-			It("should NOT populate IsActionable or Warnings when actionable is absent", func() {
+			It("should derive IsActionable=true when workflow_id is present and actionable is absent (GAP-002)", func() {
 				p := parser.NewResultParser()
 				result, err := p.Parse(`{
 					"rca_summary": "Normal investigation",
@@ -275,10 +275,110 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 				}`)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result).NotTo(BeNil())
-				Expect(result.IsActionable).To(BeNil(),
-					"IsActionable should be nil when LLM doesn't provide actionable field")
+				Expect(result.IsActionable).NotTo(BeNil(),
+					"GAP-002: outcome routing derives is_actionable from workflow_id presence")
+				Expect(*result.IsActionable).To(BeTrue())
 				Expect(result.Warnings).To(BeEmpty())
 			})
+		})
+	})
+
+	Describe("UT-KA-433-RCA-001: Parser extracts remediation_target from nested root_cause_analysis", func() {
+		It("should extract remediation_target kind/name/namespace from root_cause_analysis", func() {
+			p := parser.NewResultParser()
+			content := `{
+				"root_cause_analysis": {
+					"summary": "OOMKilled due to memory leak in web-deploy",
+					"remediation_target": {
+						"kind": "Deployment",
+						"name": "web-deploy",
+						"namespace": "production"
+					}
+				},
+				"selected_workflow": {
+					"workflow_id": "oom-recovery",
+					"confidence": 0.92
+				}
+			}`
+			result, err := p.Parse(content)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"))
+			Expect(result.RemediationTarget.Name).To(Equal("web-deploy"))
+			Expect(result.RemediationTarget.Namespace).To(Equal("production"))
+		})
+	})
+
+	Describe("UT-KA-433-RCA-003: Hybrid JSON — flat rca_summary + nested remediation_target", func() {
+		It("should extract remediation_target from nested RCA when flat path wins", func() {
+			p := parser.NewResultParser()
+			content := `{
+				"rca_summary": "OOMKilled due to memory leak",
+				"workflow_id": "oom-recovery",
+				"confidence": 0.92,
+				"root_cause_analysis": {
+					"summary": "OOMKilled due to memory leak in web-deploy",
+					"remediation_target": {
+						"kind": "Deployment",
+						"name": "web-deploy",
+						"namespace": "production"
+					}
+				}
+			}`
+			result, err := p.Parse(content)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RCASummary).To(Equal("OOMKilled due to memory leak"))
+			Expect(result.WorkflowID).To(Equal("oom-recovery"))
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"))
+			Expect(result.RemediationTarget.Name).To(Equal("web-deploy"))
+			Expect(result.RemediationTarget.Namespace).To(Equal("production"))
+		})
+	})
+
+	Describe("UT-KA-433-RCA-004: camelCase remediationTarget accepted", func() {
+		It("should extract remediationTarget (camelCase) from nested RCA", func() {
+			p := parser.NewResultParser()
+			content := `{
+				"root_cause_analysis": {
+					"summary": "CrashLoopBackOff due to config error",
+					"remediationTarget": {
+						"kind": "Deployment",
+						"name": "api-server",
+						"namespace": "staging"
+					}
+				},
+				"selected_workflow": {
+					"workflow_id": "rollback-deployment",
+					"confidence": 0.88
+				}
+			}`
+			result, err := p.Parse(content)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"))
+			Expect(result.RemediationTarget.Name).To(Equal("api-server"))
+			Expect(result.RemediationTarget.Namespace).To(Equal("staging"))
+		})
+	})
+
+	Describe("UT-KA-433-RCA-002: Parser handles missing remediation_target gracefully", func() {
+		It("should produce empty RemediationTarget when not present in LLM JSON", func() {
+			p := parser.NewResultParser()
+			content := `{
+				"root_cause_analysis": {
+					"summary": "Transient network issue"
+				},
+				"selected_workflow": {
+					"workflow_id": "no-op",
+					"confidence": 0.85
+				}
+			}`
+			result, err := p.Parse(content)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RemediationTarget.Kind).To(BeEmpty())
+			Expect(result.RemediationTarget.Name).To(BeEmpty())
 		})
 	})
 })
