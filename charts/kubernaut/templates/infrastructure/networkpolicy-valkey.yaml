@@ -1,0 +1,27 @@
+{{- if and .Values.networkPolicies.enabled .Values.networkPolicies.valkey.enabled .Values.valkey.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-valkey
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: valkey
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: valkey
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: 6379
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              app: datastorage
+  egress:
+    {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
+{{- end }}

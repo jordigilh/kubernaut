@@ -1,0 +1,66 @@
+{{- if and .Values.networkPolicies.enabled .Values.networkPolicies.datastorage.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-datastorage
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: datastorage
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: datastorage
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: 8080
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+        - podSelector:
+            matchLabels:
+              app: aianalysis-controller
+        - podSelector:
+            matchLabels:
+              app: holmesgpt-api
+        - podSelector:
+            matchLabels:
+              app: signalprocessing-controller
+        - podSelector:
+            matchLabels:
+              app: remediationorchestrator-controller
+        - podSelector:
+            matchLabels:
+              app: workflowexecution-controller
+        - podSelector:
+            matchLabels:
+              app: notification-controller
+        - podSelector:
+            matchLabels:
+              app: effectivenessmonitor-controller
+        - podSelector:
+            matchLabels:
+              app: authwebhook
+    {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
+  egress:
+    {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
+    - ports:
+        - port: 5432
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+    - ports:
+        - port: 6379
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              app: valkey
+{{- end }}

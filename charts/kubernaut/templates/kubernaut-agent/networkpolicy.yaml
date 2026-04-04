@@ -1,0 +1,37 @@
+{{- if and .Values.networkPolicies.enabled .Values.networkPolicies.holmesgptApi.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-holmesgpt-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: holmesgpt-api
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: holmesgpt-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: 8080
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              app: aianalysis-controller
+    {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
+  egress:
+    {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
+    {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+    {{- if .Values.networkPolicies.externalLLM.cidr }}
+    - ports:
+        - port: {{ .Values.networkPolicies.externalLLM.port | default 443 }}
+          protocol: TCP
+      to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicies.externalLLM.cidr }}
+    {{- end }}
+{{- end }}
