@@ -906,6 +906,35 @@ For cluster-scoped resources (e.g. Node, PersistentVolume, Namespace, ClusterRol
     return prompt
 
 
+# Issue #624 / BR-HAPI-200: Custom sections for Phase 1 RCA.
+# These keys match the fields that Phase 1 result processing reads from
+# investigation_result.sections (llm_integration.py:675-707).  Passing them
+# as `sections` to InvestigateRequest enables the SDK's structured JSON
+# output, eliminating the retry loops caused by heuristic markdown parsing
+# failures on models like Sonnet 4.6.
+PHASE1_SECTIONS: Dict[str, str] = {
+    "root_cause_analysis": (
+        'JSON object with "summary", "severity", "contributing_factors", '
+        'and "remediationTarget" ({kind, name, namespace} for namespaced '
+        "resources; {kind, name} without namespace for cluster-scoped "
+        "resources like Node, PersistentVolume, or ClusterRole)."
+    ),
+    "confidence": (
+        "A decimal number between 0.0 and 1.0 representing your confidence "
+        "in the root cause analysis."
+    ),
+    "investigation_outcome": (
+        '"resolved" if the problem self-resolved and the resource is currently healthy, '
+        '"inconclusive" if the root cause could not be determined. '
+        "Set to null if the problem is still active and a remediation is needed."
+    ),
+    "can_recover": (
+        "Boolean: true if the system can recover automatically with remediation, "
+        "false if manual intervention is required. Set to null if unknown."
+    ),
+}
+
+
 # Issue #537 / BR-HAPI-263: Custom sections for Phase 3 workflow selection.
 # These align with what the HAPI result parser (result_parser.py Pattern 2B)
 # extracts via section headers.  Passing them as `sections` to

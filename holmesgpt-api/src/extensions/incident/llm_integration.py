@@ -514,7 +514,7 @@ async def analyze_incident(
     try:
         # BR-HAPI-211: Sanitize prompt BEFORE sending to LLM to prevent credential leakage
         from src.sanitization import sanitize_for_llm
-        from src.extensions.incident.prompt_builder import create_phase3_workflow_prompt, PHASE3_SECTIONS
+        from src.extensions.incident.prompt_builder import create_phase3_workflow_prompt, PHASE1_SECTIONS, PHASE3_SECTIONS
         base_prompt = sanitize_for_llm(create_incident_investigation_prompt(request_data))
         phase3_base_prompt = sanitize_for_llm(create_phase3_workflow_prompt(request_data))
 
@@ -652,6 +652,7 @@ async def analyze_incident(
                         "attempt": attempt + 1,
                         "phase": 1,
                     },
+                    sections=PHASE1_SECTIONS,
                     source_instance_id="holmesgpt-api"
                 )
 
@@ -686,12 +687,30 @@ async def analyze_incident(
                 # BR-HAPI-200: Capture top-level Phase 1 fields that the
                 # parser must propagate into the final response (e.g.,
                 # investigation_outcome, can_recover, confidence).
+                #
+                # With PHASE1_SECTIONS (#624), these fields are available from
+                # phase1_result.sections (structured JSON).  Fall back to parsed
+                # JSON and then regex extraction from markdown for robustness.
                 phase1_top_level = {}
                 _phase1_propagate_keys = ("investigation_outcome", "can_recover", "confidence")
+                _sections = (phase1_result.sections
+                             if phase1_result and getattr(phase1_result, "sections", None)
+                             else {})
+
                 for _k in _phase1_propagate_keys:
-                    if _k in phase1_json:
+                    # Prefer SDK sections (structured output)
+                    if _k in _sections:
+                        _val = _sections[_k]
+                        if _val is not None:
+                            try:
+                                phase1_top_level[_k] = json.loads(_val) if isinstance(_val, str) else _val
+                            except (json.JSONDecodeError, ValueError):
+                                phase1_top_level[_k] = _val
+                    # Fall back to parsed JSON blob
+                    if _k not in phase1_top_level and _k in phase1_json:
                         phase1_top_level[_k] = phase1_json[_k]
-                # Also parse from section headers (# investigation_outcome\n"resolved")
+
+                # Last resort: regex extraction from markdown section headers
                 if phase1_raw:
                     import re as _re
                     for _field in _phase1_propagate_keys:
