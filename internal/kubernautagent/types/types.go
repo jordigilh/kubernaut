@@ -31,16 +31,42 @@ const (
 type PhaseToolMap map[Phase][]string
 
 // InvestigationResult holds the final output of an investigation.
+// Fields align with the OpenAPI IncidentResponse schema in api/openapi.json.
 type InvestigationResult struct {
+	// Core RCA output
 	RCASummary        string                 `json:"rca_summary"`
 	WorkflowID        string                 `json:"workflow_id,omitempty"`
 	RemediationTarget RemediationTarget      `json:"remediation_target,omitempty"`
 	Parameters        map[string]interface{} `json:"parameters,omitempty"`
 	Confidence        float64                `json:"confidence"`
-	HumanReviewNeeded bool                   `json:"human_review_needed"`
-	Reason            string                 `json:"reason,omitempty"`
-	IsActionable      *bool                  `json:"is_actionable,omitempty"`
-	Warnings          []string               `json:"warnings,omitempty"`
+
+	// Workflow selection (GAP-009: OpenAPI selected_workflow includes execution_bundle)
+	ExecutionBundle string `json:"execution_bundle,omitempty"`
+
+	// Human review fields (GAP-013: HumanReviewReason for OpenAPI enum mapping)
+	HumanReviewNeeded bool   `json:"human_review_needed"`
+	HumanReviewReason string `json:"human_review_reason,omitempty"`
+	Reason            string `json:"reason,omitempty"`
+
+	// Outcome routing (is_actionable already existed, GAP-002 population in P3)
+	IsActionable *bool `json:"is_actionable,omitempty"`
+
+	// Observability
+	Warnings       []string               `json:"warnings,omitempty"`
+	DetectedLabels map[string]interface{} `json:"detected_labels,omitempty"`
+
+	// Alternative workflows for operator context (GAP-009: OpenAPI AlternativeWorkflow schema)
+	AlternativeWorkflows []AlternativeWorkflow `json:"alternative_workflows,omitempty"`
+}
+
+// AlternativeWorkflow represents a workflow considered but not selected.
+// Matches the OpenAPI AlternativeWorkflow schema (ADR-045 v1.2).
+// Alternatives are for CONTEXT and AUDIT only, not for automatic fallback execution.
+type AlternativeWorkflow struct {
+	WorkflowID      string  `json:"workflow_id"`
+	ExecutionBundle string  `json:"execution_bundle,omitempty"`
+	Confidence      float64 `json:"confidence"`
+	Rationale       string  `json:"rationale"`
 }
 
 // RemediationTarget identifies the K8s resource to remediate.
@@ -51,14 +77,23 @@ type RemediationTarget struct {
 }
 
 // SignalContext holds the input signal data for an investigation.
+// Fields align with the OpenAPI IncidentRequest schema in api/openapi.json.
 type SignalContext struct {
-	Name             string `json:"name"`
-	Namespace        string `json:"namespace"`
-	Severity         string `json:"severity"`
-	Message          string `json:"message"`
-	IncidentID       string `json:"incident_id,omitempty"`
-	ResourceKind     string `json:"resource_kind,omitempty"`
-	ResourceName     string `json:"resource_name,omitempty"`
+	// Required fields
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	Severity  string `json:"severity"`
+	Message   string `json:"message"`
+
+	// Identifiers (GAP-008: RemediationID for audit correlation per DD-WORKFLOW-002)
+	IncidentID    string `json:"incident_id,omitempty"`
+	RemediationID string `json:"remediation_id,omitempty"`
+
+	// Resource targeting
+	ResourceKind string `json:"resource_kind,omitempty"`
+	ResourceName string `json:"resource_name,omitempty"`
+
+	// Environment context
 	ClusterName      string `json:"cluster_name,omitempty"`
 	Environment      string `json:"environment,omitempty"`
 	Priority         string `json:"priority,omitempty"`
@@ -66,4 +101,11 @@ type SignalContext struct {
 	SignalSource     string `json:"signal_source,omitempty"`
 	BusinessCategory string `json:"business_category,omitempty"`
 	Description      string `json:"description,omitempty"`
+	SignalMode       string `json:"signal_mode,omitempty"`
+
+	// Timestamps and dedup (GAP-014: from IncidentRequest OpenAPI schema)
+	FiringTime      string `json:"firing_time,omitempty"`
+	ReceivedTime    string `json:"received_time,omitempty"`
+	IsDuplicate     *bool  `json:"is_duplicate,omitempty"`
+	OccurrenceCount *int   `json:"occurrence_count,omitempty"`
 }
