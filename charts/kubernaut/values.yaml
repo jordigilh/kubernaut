@@ -254,7 +254,10 @@ effectivenessmonitor:
   config:
     assessment:
       stabilizationWindow: "30s"
-      validityWindow: "120s"
+      # Issue #625: Must exceed the longest Prometheus alert `for` duration
+      # to avoid premature "anomaly persists" on metrics component.
+      # Cert scenarios use `for: 3m` (180s); GitOps adds ~120s recovery.
+      validityWindow: "300s"
   external:
     # To enable monitoring integration, install kube-prometheus-stack and set both to true.
     prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
