@@ -175,30 +175,36 @@ func (r *NotificationRequestReconciler) calculateBackoffWithPolicy(notification 
 // CIRCUIT BREAKER HELPERS
 // ========================================
 
-// isSlackCircuitBreakerOpen checks if the Slack circuit breaker is open
-// v3.1 Enhancement (Category B): Circuit breaker for graceful degradation
+// isCircuitBreakerOpen checks if the circuit breaker for the given channel type is open.
 // BR-NOT-055: Graceful Degradation (prevent cascading failures)
-func (r *NotificationRequestReconciler) isSlackCircuitBreakerOpen() bool {
+func (r *NotificationRequestReconciler) isCircuitBreakerOpen(breakerName string) bool {
 	if r.CircuitBreaker == nil {
-		return false // No circuit breaker configured, allow all requests
+		return false
 	}
-	return !r.CircuitBreaker.AllowRequest("slack")
+	return !r.CircuitBreaker.AllowRequest(breakerName)
+}
+
+// channelBreakerName extracts the breaker name from a receiver-qualified channel key.
+// "slack:oncall" -> "slack", "pagerduty:critical:0" -> "pagerduty", "console" -> "console"
+func channelBreakerName(channel string) string {
+	if idx := strings.Index(channel, ":"); idx > 0 {
+		return channel[:idx]
+	}
+	return channel
 }
 
 // checkBeforeDelivery is called by the orchestrator before each channel delivery.
-// DD-EVENT-001 v1.1: For Slack, checks circuit breaker; if open, emits CircuitBreakerOpen and returns error.
-// Returns nil if delivery should proceed.
+// DD-EVENT-001 v1.1: Checks circuit breaker for the channel type; if open, emits
+// CircuitBreakerOpen event and returns error. Returns nil if delivery should proceed.
 func (r *NotificationRequestReconciler) checkBeforeDelivery(notification *notificationv1alpha1.NotificationRequest, channel string) error {
-	if channel != "slack" {
+	breakerName := channelBreakerName(channel)
+	if !r.isCircuitBreakerOpen(breakerName) {
 		return nil
 	}
-	if !r.isSlackCircuitBreakerOpen() {
-		return nil
-	}
-	err := fmt.Errorf("slack circuit breaker is open (too many failures, preventing cascading failures)")
+	err := fmt.Errorf("%s circuit breaker is open (too many failures, preventing cascading failures)", breakerName)
 	if r.Recorder != nil {
 		r.Recorder.Event(notification, corev1.EventTypeWarning, events.EventReasonCircuitBreakerOpen,
-			fmt.Sprintf("Slack channel circuit breaker is open: %s", err.Error()))
+			fmt.Sprintf("%s channel circuit breaker is open: %s", breakerName, err.Error()))
 	}
 	return err
 }

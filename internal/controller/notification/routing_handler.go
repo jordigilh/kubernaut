@@ -279,11 +279,11 @@ func (r *NotificationRequestReconciler) rebuildSlackDeliveryServices(ctx context
 			if len(receiver.SlackConfigs) > 1 {
 				channelKey = fmt.Sprintf("slack:%s:%d", receiver.Name, i)
 			}
-			slackService := delivery.NewSlackDeliveryService(webhookURL, r.SlackTimeout)
+			slackService := delivery.NewSlackDeliveryService(webhookURL, r.DeliveryTimeout)
 
 			if r.CircuitBreaker != nil {
-				cbSlack := delivery.NewCircuitBreakerSlackService(slackService, r.CircuitBreaker)
-				r.DeliveryOrchestrator.RegisterChannel(channelKey, cbSlack)
+				cbService := delivery.NewCircuitBreakerService(slackService, r.CircuitBreaker, "slack")
+				r.DeliveryOrchestrator.RegisterChannel(channelKey, cbService)
 			} else {
 				r.DeliveryOrchestrator.RegisterChannel(channelKey, slackService)
 			}
@@ -329,12 +329,19 @@ func (r *NotificationRequestReconciler) rebuildPagerDutyDeliveryServices(ctx con
 				channelKey = fmt.Sprintf("pagerduty:%s:%d", receiver.Name, i)
 			}
 
-			pdService := delivery.NewPagerDutyDeliveryService(
-				delivery.PagerDutyEventsAPIURL,
+			endpointURL := delivery.PagerDutyEventsAPIURL
+			if pc.URL != "" {
+				endpointURL = pc.URL
+			}
+			var pdChannel delivery.Service = delivery.NewPagerDutyDeliveryService(
+				endpointURL,
 				routingKey,
-				r.SlackTimeout,
+				r.DeliveryTimeout,
 			)
-			r.DeliveryOrchestrator.RegisterChannel(channelKey, pdService)
+			if r.CircuitBreaker != nil {
+				pdChannel = delivery.NewCircuitBreakerService(pdChannel, r.CircuitBreaker, "pagerduty")
+			}
+			r.DeliveryOrchestrator.RegisterChannel(channelKey, pdChannel)
 
 			newKeys = append(newKeys, channelKey)
 			logger.Info("Registered per-receiver PagerDuty delivery",
@@ -377,11 +384,14 @@ func (r *NotificationRequestReconciler) rebuildTeamsDeliveryServices(ctx context
 				channelKey = fmt.Sprintf("teams:%s:%d", receiver.Name, i)
 			}
 
-			teamsService := delivery.NewTeamsDeliveryService(
+			var teamsChannel delivery.Service = delivery.NewTeamsDeliveryService(
 				webhookURL,
-				r.SlackTimeout, // Reuse HTTP timeout configuration
+				r.DeliveryTimeout,
 			)
-			r.DeliveryOrchestrator.RegisterChannel(channelKey, teamsService)
+			if r.CircuitBreaker != nil {
+				teamsChannel = delivery.NewCircuitBreakerService(teamsChannel, r.CircuitBreaker, "teams")
+			}
+			r.DeliveryOrchestrator.RegisterChannel(channelKey, teamsChannel)
 
 			newKeys = append(newKeys, channelKey)
 			logger.Info("Registered per-receiver Teams delivery",
