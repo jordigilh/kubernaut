@@ -492,7 +492,7 @@ auth:
 		GinkgoWriter.Printf("   🌐 KA using host network (Linux CI)\n")
 	} else {
 		kaContainerConfig.Network = "aianalysis_test_network"
-		kaContainerConfig.Ports = map[int]int{18120: 18120}
+		kaContainerConfig.Ports = map[int]int{8080: 18120}
 		kaContainerConfig.ExtraHosts = []string{
 			"host.containers.internal:host-gateway",
 		}
