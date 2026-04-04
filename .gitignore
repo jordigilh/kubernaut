@@ -22,6 +22,7 @@ holmesgpt-api/venv-*-test/
 /datastorage
 /gateway
 /kubernaut
+/kubernautagent
 /mock-llm
 
 # Root directory markdown files (except README.md and CHANGELOG*.md)
