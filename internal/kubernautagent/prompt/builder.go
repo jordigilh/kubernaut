@@ -23,6 +23,8 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 )
 
 //go:embed templates/*.tmpl
@@ -47,17 +49,12 @@ type SignalData struct {
 
 // EnrichmentData contains enrichment context injected into the prompt.
 type EnrichmentData struct {
-	OwnerChain         []string
-	DetectedLabels     map[string]string
-	RemediationHistory []RemediationHistoryEntry
+	OwnerChain      []string
+	DetectedLabels  map[string]string
+	HistoryResult   *enrichment.RemediationHistoryResult
+	HistoryRendered string
 }
 
-// RemediationHistoryEntry is a single past remediation record.
-type RemediationHistoryEntry struct {
-	WorkflowID string
-	Outcome    string
-	Timestamp  string
-}
 
 // investigationTemplateData maps to fields expected by incident_investigation.tmpl.
 type investigationTemplateData struct {
@@ -131,7 +128,7 @@ func NewBuilder() (*Builder, error) {
 }
 
 // RenderInvestigation renders the Phase 1 investigation prompt.
-func (b *Builder) RenderInvestigation(signal SignalData, enrichment *EnrichmentData) (string, error) {
+func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentData) (string, error) {
 	sanitized := sanitizeSignal(signal)
 
 	data := investigationTemplateData{
@@ -156,23 +153,16 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichment *EnrichmentD
 		RiskTolerance:       sanitized.RiskTolerance,
 	}
 
-	if enrichment != nil {
-		if len(enrichment.OwnerChain) > 0 {
-			data.OwnerChain = strings.Join(enrichment.OwnerChain, " → ")
+	if enrichData != nil {
+		if len(enrichData.OwnerChain) > 0 {
+			data.OwnerChain = strings.Join(enrichData.OwnerChain, " → ")
 		}
-		if len(enrichment.DetectedLabels) > 0 {
+		if len(enrichData.DetectedLabels) > 0 {
 			var labels []string
-			for k, v := range enrichment.DetectedLabels {
+			for k, v := range enrichData.DetectedLabels {
 				labels = append(labels, fmt.Sprintf("%s=%s", k, v))
 			}
 			data.DetectedLabels = strings.Join(labels, ", ")
-		}
-		if len(enrichment.RemediationHistory) > 0 {
-			var entries []string
-			for _, h := range enrichment.RemediationHistory {
-				entries = append(entries, fmt.Sprintf("- %s: %s (%s)", h.WorkflowID, h.Outcome, h.Timestamp))
-			}
-			data.RemediationHistory = strings.Join(entries, "\n")
 		}
 
 		var sections []string
@@ -182,9 +172,14 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichment *EnrichmentD
 		if data.DetectedLabels != "" {
 			sections = append(sections, "**Detected Labels**: "+data.DetectedLabels)
 		}
-		if data.RemediationHistory != "" {
-			sections = append(sections, "**Past Remediations**:\n"+data.RemediationHistory)
+
+		if enrichData.HistoryResult != nil && (len(enrichData.HistoryResult.Tier1) > 0 || len(enrichData.HistoryResult.Tier2) > 0) {
+			sections = append(sections, BuildRemediationHistorySection(
+				enrichData.HistoryResult, RepeatedRemediationEscalationThreshold))
+		} else if enrichData.HistoryRendered != "" {
+			sections = append(sections, enrichData.HistoryRendered)
 		}
+
 		if len(sections) > 0 {
 			data.RemediationHistorySection = strings.Join(sections, "\n\n")
 		}
@@ -198,7 +193,7 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichment *EnrichmentD
 }
 
 // RenderWorkflowSelection renders the Phase 3 workflow selection prompt.
-func (b *Builder) RenderWorkflowSelection(signal SignalData, rcaSummary string, enrichment *EnrichmentData) (string, error) {
+func (b *Builder) RenderWorkflowSelection(signal SignalData, rcaSummary string, enrichData *EnrichmentData) (string, error) {
 	sanitized := sanitizeSignal(signal)
 	data := workflowTemplateData{
 		Severity:            withDefault(sanitized.Severity, "critical"),
@@ -214,14 +209,19 @@ func (b *Builder) RenderWorkflowSelection(signal SignalData, rcaSummary string, 
 		RCASummary:          rcaSummary,
 	}
 
-	if enrichment != nil {
+	if enrichData != nil {
 		var parts []string
-		if len(enrichment.OwnerChain) > 0 {
-			parts = append(parts, "Owner chain: "+strings.Join(enrichment.OwnerChain, " → "))
+		if len(enrichData.OwnerChain) > 0 {
+			parts = append(parts, "Owner chain: "+strings.Join(enrichData.OwnerChain, " → "))
 		}
-		if len(enrichment.RemediationHistory) > 0 {
-			for _, h := range enrichment.RemediationHistory {
-				parts = append(parts, fmt.Sprintf("Previous: %s (%s)", h.WorkflowID, h.Outcome))
+		if enrichData.HistoryResult != nil {
+			t1Count := len(enrichData.HistoryResult.Tier1)
+			t2Count := len(enrichData.HistoryResult.Tier2)
+			if t1Count+t2Count > 0 {
+				parts = append(parts, fmt.Sprintf("Remediation history: %d recent + %d historical entries", t1Count, t2Count))
+			}
+			if enrichData.HistoryResult.RegressionDetected {
+				parts = append(parts, "WARNING: Configuration regression detected")
 			}
 		}
 		data.EnrichmentContext = strings.Join(parts, "\n")

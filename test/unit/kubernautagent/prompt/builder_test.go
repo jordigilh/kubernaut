@@ -18,10 +18,12 @@ package prompt_test
 
 import (
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 )
 
@@ -57,8 +59,12 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 			enrichData := &prompt.EnrichmentData{
 				OwnerChain:     []string{"Deployment/api-server", "ReplicaSet/api-server-abc123"},
 				DetectedLabels: map[string]string{"app": "api-server", "tier": "backend"},
-				RemediationHistory: []prompt.RemediationHistoryEntry{
-					{WorkflowID: "oom-increase-memory", Outcome: "success", Timestamp: "2026-03-01T10:00:00Z"},
+				HistoryResult: &enrichment.RemediationHistoryResult{
+					TargetResource: "production/Pod/api-server-abc",
+					Tier1: []enrichment.Tier1Entry{
+						{RemediationUID: "oom-increase-memory", ActionType: "increase_memory", Outcome: "success", CompletedAt: time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)},
+					},
+					Tier1Window: "24h",
 				},
 			}
 			rendered, err := builder.RenderInvestigation(prompt.SignalData{
@@ -70,6 +76,7 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).To(ContainSubstring("Deployment/api-server"))
 			Expect(rendered).To(ContainSubstring("oom-increase-memory"))
+			Expect(rendered).To(ContainSubstring("REMEDIATION HISTORY"))
 		})
 	})
 
