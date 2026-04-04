@@ -118,12 +118,12 @@ var _ = Describe("Issue #616: CorrelateTier1Chain Post-Hash Matching (Regression
 
 		Expect(entries).To(HaveLen(2))
 
-		// Sorted descending by completedAt: rr-post (laterTime) first
-		Expect(entries[0].RemediationUID).To(Equal("rr-post"))
-		Expect(entries[0].HashMatch.Value).To(Equal(api.RemediationHistoryEntryHashMatchPostRemediation))
+		// Sorted ascending by completedAt per OpenAPI spec: rr-pre (fixedTime) first
+		Expect(entries[0].RemediationUID).To(Equal("rr-pre"))
+		Expect(entries[0].HashMatch.Value).To(Equal(api.RemediationHistoryEntryHashMatchPreRemediation))
 
-		Expect(entries[1].RemediationUID).To(Equal("rr-pre"))
-		Expect(entries[1].HashMatch.Value).To(Equal(api.RemediationHistoryEntryHashMatchPreRemediation))
+		Expect(entries[1].RemediationUID).To(Equal("rr-post"))
+		Expect(entries[1].HashMatch.Value).To(Equal(api.RemediationHistoryEntryHashMatchPostRemediation))
 	})
 
 	It("UT-DS-616-004: should produce hashMatch=none when neither pre nor post hash matches", func() {

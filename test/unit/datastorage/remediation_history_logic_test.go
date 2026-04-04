@@ -225,13 +225,13 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 			Expect(entry.MetricDeltas.Set).To(BeFalse())
 			Expect(entry.PostRemediationSpecHash.Set).To(BeFalse())
 
-			// hashMatch: no postHash available -> compare with preHash only
-			// current=sha256:current, pre=sha256:pre789 -> none
+			// hashMatch: preHash != currentSpecHash AND no EM data (postHash="")
+			// -> inferred postRemediation (F2: event was found via post-hash SQL path)
 			Expect(entry.HashMatch.Set).To(BeTrue())
-			Expect(entry.HashMatch.Value).To(Equal(api.RemediationHistoryEntryHashMatchNone))
+			Expect(entry.HashMatch.Value).To(Equal(api.RemediationHistoryEntryHashMatchPostRemediation))
 		})
 
-		It("UT-RH-LOGIC-007: should sort multiple entries by completedAt descending", func() {
+		It("UT-RH-LOGIC-007: should sort multiple entries by completedAt ascending (OpenAPI spec)", func() {
 			roEvents := []repository.RawAuditRow{
 				makeROEvent("rr-older", "sha256:pre1", "success", "alert", "fp-1", "restart", fixedTime),
 				makeROEvent("rr-newer", "sha256:pre2", "failed", "alert", "fp-2", "scale", laterTime),
@@ -241,9 +241,9 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 			entries := server.CorrelateTier1Chain(roEvents, emEvents, "sha256:current")
 
 			Expect(entries).To(HaveLen(2))
-			// Descending order: newer first
-			Expect(entries[0].RemediationUID).To(Equal("rr-newer"))
-			Expect(entries[1].RemediationUID).To(Equal("rr-older"))
+			// Ascending order per OpenAPI spec: older first
+			Expect(entries[0].RemediationUID).To(Equal("rr-older"))
+			Expect(entries[1].RemediationUID).To(Equal("rr-newer"))
 		})
 
 		It("UT-RH-LOGIC-008: should handle partially populated EM data (nil sub-fields)", func() {
@@ -379,7 +379,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 			Expect(summaries).To(BeEmpty())
 		})
 
-		It("UT-RH-LOGIC-013: should sort summaries by completedAt descending", func() {
+		It("UT-RH-LOGIC-013: should sort summaries by completedAt ascending (OpenAPI spec)", func() {
 			roEvents := []repository.RawAuditRow{
 				makeROEvent("rr-t2-old", "sha256:pre1", "success", "alert", "fp-1", "restart", fixedTime),
 				makeROEvent("rr-t2-new", "sha256:pre2", "failed", "alert", "fp-2", "scale", laterTime),
@@ -389,8 +389,9 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 			summaries := server.BuildTier2Summaries(roEvents, emEvents, "sha256:current")
 
 			Expect(summaries).To(HaveLen(2))
-			Expect(summaries[0].RemediationUID).To(Equal("rr-t2-new"))
-			Expect(summaries[1].RemediationUID).To(Equal("rr-t2-old"))
+			// Ascending order per OpenAPI spec: older first
+			Expect(summaries[0].RemediationUID).To(Equal("rr-t2-old"))
+			Expect(summaries[1].RemediationUID).To(Equal("rr-t2-new"))
 		})
 	})
 
@@ -628,6 +629,62 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 		It("UT-RH-LOGIC-016: should return false for empty entries", func() {
 			Expect(server.DetectRegression(nil)).To(BeFalse())
 			Expect(server.DetectRegression([]api.RemediationHistoryEntry{})).To(BeFalse())
+		})
+	})
+
+	// ========================================
+	// DS Due Diligence: F2 — postRemediation inference when EM data missing
+	// When an RO event was returned by the post-hash SQL path but EM data
+	// has not materialized, the correlation should infer postRemediation
+	// rather than returning none.
+	// ========================================
+	Describe("F2: postRemediation inference when EM data missing", Label("unit", "due-diligence", "F2"), func() {
+
+		It("UT-DS-F2-001: CorrelateTier1Chain should infer hashMatch=postRemediation when preHash != currentSpecHash and no EM data", func() {
+			roEvents := []repository.RawAuditRow{
+				makeROEvent("rr-f2-001", "sha256:other", "success", "alert", "fp-f2", "restart", fixedTime),
+			}
+			emEvents := map[string][]*server.EffectivenessEvent{}
+
+			entries := server.CorrelateTier1Chain(roEvents, emEvents, "sha256:target")
+
+			Expect(entries).To(HaveLen(1))
+			Expect(entries[0].HashMatch.Set).To(BeTrue())
+			Expect(entries[0].HashMatch.Value).To(Equal(api.RemediationHistoryEntryHashMatchPostRemediation))
+		})
+
+		It("UT-DS-F2-002: BuildTier2Summaries should infer hashMatch=postRemediation when preHash != currentSpecHash and no EM data", func() {
+			roEvents := []repository.RawAuditRow{
+				makeROEvent("rr-f2-002", "sha256:other", "success", "alert", "fp-f2", "restart", fixedTime),
+			}
+			emEvents := map[string][]*server.EffectivenessEvent{}
+
+			summaries := server.BuildTier2Summaries(roEvents, emEvents, "sha256:target")
+
+			Expect(summaries).To(HaveLen(1))
+			Expect(summaries[0].HashMatch.Set).To(BeTrue())
+			Expect(summaries[0].HashMatch.Value).To(Equal(api.RemediationHistorySummaryHashMatchPostRemediation))
+		})
+	})
+
+	// ========================================
+	// DS Due Diligence: F9 — SideEffects must be non-nil empty slice
+	// JSON serialization of nil []string produces null, but the OpenAPI
+	// spec requires an empty array [].
+	// ========================================
+	Describe("F9: SideEffects empty slice initialization", Label("unit", "due-diligence", "F9"), func() {
+
+		It("UT-DS-F9-001: CorrelateTier1Chain should initialize SideEffects to empty slice (not nil)", func() {
+			roEvents := []repository.RawAuditRow{
+				makeROEvent("rr-f9-001", "sha256:pre", "success", "alert", "fp-f9", "restart", fixedTime),
+			}
+			emEvents := map[string][]*server.EffectivenessEvent{}
+
+			entries := server.CorrelateTier1Chain(roEvents, emEvents, "sha256:current")
+
+			Expect(entries).To(HaveLen(1))
+			Expect(entries[0].SideEffects).ToNot(BeNil(), "SideEffects must be non-nil for JSON [] serialization")
+			Expect(entries[0].SideEffects).To(BeEmpty())
 		})
 	})
 })
