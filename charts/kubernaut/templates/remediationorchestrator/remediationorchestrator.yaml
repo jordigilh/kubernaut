@@ -124,6 +124,10 @@ rules:
   - apiGroups: ["networking.istio.io"]
     resources: ["virtualservices", "destinationrules", "gateways", "serviceentries"]
     verbs: ["get", "list"]
+  # ── Issue #615: Cluster identity discovery for notification context ────
+  - apiGroups: ["config.openshift.io"]
+    resources: ["infrastructures"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

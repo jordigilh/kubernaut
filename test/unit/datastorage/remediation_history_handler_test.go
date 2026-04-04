@@ -405,4 +405,61 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.4)", func() {
 			Expect(problem["title"]).To(Equal("Internal Server Error"))
 		})
 	})
+
+	// ========================================
+	// F4: Window Duration Validation
+	// DS Due Diligence: negative, zero, and inverted windows must return 400.
+	// ========================================
+	Describe("F4: Window Duration Validation", Label("unit", "due-diligence", "F4"), func() {
+
+		It("UT-DS-F4-001: should return 400 for negative tier1Window", func() {
+			req := httptest.NewRequest("GET", baseURL+"&tier1Window=-1h", nil)
+			handler.HandleGetRemediationHistoryContext(rec, req)
+
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+			var body map[string]interface{}
+			Expect(json.Unmarshal(rec.Body.Bytes(), &body)).To(Succeed())
+			Expect(body["type"]).To(ContainSubstring("invalid-parameter"))
+		})
+
+		It("UT-DS-F4-002: should return 400 for zero tier1Window", func() {
+			req := httptest.NewRequest("GET", baseURL+"&tier1Window=0s", nil)
+			handler.HandleGetRemediationHistoryContext(rec, req)
+
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		})
+
+		It("UT-DS-F4-003: should return 400 when tier2Window <= tier1Window (inverted)", func() {
+			req := httptest.NewRequest("GET", baseURL+"&tier1Window=48h&tier2Window=24h", nil)
+			handler.HandleGetRemediationHistoryContext(rec, req)
+
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+			var body map[string]interface{}
+			Expect(json.Unmarshal(rec.Body.Bytes(), &body)).To(Succeed())
+			Expect(body["type"]).To(ContainSubstring("invalid-parameter"))
+		})
+	})
+
+	// ========================================
+	// F5: JSON Response Buffering
+	// DS Due Diligence: response is buffered before writing HTTP status.
+	// ========================================
+	Describe("F5: JSON Response Buffering", Label("unit", "due-diligence", "F5"), func() {
+
+		It("UT-DS-F5-001: should return complete, valid JSON with Content-Type header", func() {
+			req := httptest.NewRequest("GET", baseURL, nil)
+			handler.HandleGetRemediationHistoryContext(rec, req)
+
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Header().Get("Content-Type")).To(Equal("application/json"))
+
+			var body map[string]interface{}
+			Expect(json.Unmarshal(rec.Body.Bytes(), &body)).To(Succeed(),
+				"Response body must be valid JSON")
+			Expect(body).To(HaveKey("targetResource"))
+			Expect(body).To(HaveKey("tier1"))
+			Expect(body).To(HaveKey("tier2"))
+			Expect(body).To(HaveKey("regressionDetected"))
+		})
+	})
 })

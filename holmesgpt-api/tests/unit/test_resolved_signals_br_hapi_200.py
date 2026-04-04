@@ -471,3 +471,141 @@ class TestActionableFieldParserPattern2B:
 
         assert result.get("is_actionable") is not False, \
             "Pattern 2B: Missing actionable field must not produce is_actionable=False"
+
+
+class TestNotActionableConfidenceFloor:
+    """UT-HAPI-607-001 to 004: Confidence floor for actionable=false responses.
+
+    When the LLM explicitly determines an alert is not actionable but omits
+    or provides a low confidence value, the parser must floor confidence to 0.8
+    so downstream consumers (AA controller) receive a well-formed value.
+    """
+
+    def _build_json_no_confidence(self, actionable):
+        """Build JSON LLM output with `actionable` but NO `confidence` key."""
+        lines = [
+            "Investigation of orphaned PVC alert.",
+            "",
+            "```json",
+        ]
+        json_obj = {
+            "root_cause_analysis": {
+                "summary": "Orphaned PVCs from completed batch jobs",
+                "severity": "low",
+                "contributing_factors": ["Completed batch job artifacts"],
+            },
+            "selected_workflow": None,
+        }
+        if actionable is not None:
+            json_obj["actionable"] = actionable
+        lines.append(json.dumps(json_obj, indent=2))
+        lines.append("```")
+        return "\n".join(lines)
+
+    def _build_section_header_no_confidence(self, actionable):
+        """Build section-header LLM output with `# actionable` but NO `# confidence`."""
+        lines = [
+            "Investigation of orphaned PVC alert.",
+            "",
+            "# root_cause_analysis",
+            '{"summary": "Orphaned PVCs from completed batch jobs", "severity": "low", "contributing_factors": ["Completed batch job artifacts"]}',
+            "",
+            "# selected_workflow",
+            "None",
+        ]
+        if actionable is not None:
+            lines.extend(["", "# actionable", str(actionable)])
+        return "\n".join(lines)
+
+    def _parse(self, analysis_text, incident_id="test-incident-607"):
+        from unittest.mock import MagicMock
+        from src.extensions.incident.result_parser import parse_and_validate_investigation_result
+
+        investigation = MagicMock()
+        investigation.analysis = analysis_text
+        request_data = {
+            "incident_id": incident_id,
+            "signal_name": "KubePersistentVolumeClaimOrphaned",
+            "severity": "low",
+        }
+        result, _validation = parse_and_validate_investigation_result(
+            investigation, request_data
+        )
+        return result
+
+    def test_json_no_confidence_actionable_false_floors_to_080(self):
+        """
+        UT-HAPI-607-001: JSON with actionable=false but no confidence key.
+        Parser must floor confidence to >= 0.8.
+        """
+        analysis = self._build_json_no_confidence(actionable=False)
+        result = self._parse(analysis)
+
+        assert result["confidence"] >= 0.8, \
+            f"#607: actionable=false with missing confidence must be floored to 0.8, got {result['confidence']}"
+
+    def test_json_low_confidence_actionable_false_floors_to_080(self):
+        """
+        UT-HAPI-607-002: JSON with actionable=false and confidence=0.3.
+        Parser must floor confidence to >= 0.8.
+        """
+        lines = [
+            "Investigation of orphaned PVC alert.",
+            "",
+            "```json",
+        ]
+        json_obj = {
+            "root_cause_analysis": {
+                "summary": "Orphaned PVCs from completed batch jobs",
+                "severity": "low",
+                "contributing_factors": ["Completed batch job artifacts"],
+            },
+            "selected_workflow": None,
+            "actionable": False,
+            "confidence": 0.3,
+        }
+        lines.append(json.dumps(json_obj, indent=2))
+        lines.append("```")
+        analysis = "\n".join(lines)
+        result = self._parse(analysis)
+
+        assert result["confidence"] >= 0.8, \
+            f"#607: actionable=false with low confidence must be floored to 0.8, got {result['confidence']}"
+
+    def test_section_header_no_confidence_actionable_false_floors_to_080(self):
+        """
+        UT-HAPI-607-003: Section-header with `# actionable\\nfalse` but no
+        `# confidence`. Parser must floor confidence to >= 0.8.
+        """
+        analysis = self._build_section_header_no_confidence(actionable=False)
+        result = self._parse(analysis)
+
+        assert result["confidence"] >= 0.8, \
+            f"#607: Section-header actionable=false with missing confidence must be floored to 0.8, got {result['confidence']}"
+
+    def test_json_no_actionable_field_confidence_unchanged(self):
+        """
+        UT-HAPI-607-004: JSON without `actionable` field and confidence=0.3.
+        Confidence floor must NOT apply — value preserved as-is.
+        """
+        lines = [
+            "Investigation of orphaned PVC alert.",
+            "",
+            "```json",
+        ]
+        json_obj = {
+            "root_cause_analysis": {
+                "summary": "Orphaned PVCs from completed batch jobs",
+                "severity": "low",
+                "contributing_factors": ["Completed batch job artifacts"],
+            },
+            "selected_workflow": None,
+            "confidence": 0.3,
+        }
+        lines.append(json.dumps(json_obj, indent=2))
+        lines.append("```")
+        analysis = "\n".join(lines)
+        result = self._parse(analysis)
+
+        assert result["confidence"] == 0.3, \
+            f"#607: Confidence floor must NOT apply when actionable is not set, got {result['confidence']}"

@@ -23,8 +23,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/ogenx"
 	"github.com/jordigilh/kubernaut/test/testutil"
 	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // Ginkgo/Gomega convention
 	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // Ginkgo/Gomega convention
@@ -101,6 +103,47 @@ func generateWorkflowContent(workflowName, version string) string {
 		PopulatedFields: []string{"hpaEnabled", "gitOpsTool"},
 	}
 	return testutil.MarshalWorkflowCRD(crd)
+}
+
+// ensureWorkflowRegistered creates a workflow or retrieves the existing one.
+// Handles all CreateWorkflow response types including the parallel race 500
+// (deterministic UUID PK collision when multiple Ginkgo processes register the
+// same content concurrently). On 409 Conflict or 500, falls back to querying
+// the workflow by name via ListWorkflows.
+func ensureWorkflowRegistered(ctx context.Context, client *dsgen.Client, content, workflowName string) (string, uuid.UUID) {
+	createReq := &dsgen.CreateWorkflowInlineRequest{Content: content}
+	createReq.Source.SetTo("e2e-test")
+
+	resp, err := client.CreateWorkflow(ctx, createReq)
+	Expect(err).ToNot(HaveOccurred(), "CreateWorkflow HTTP call should succeed")
+
+	switch r := resp.(type) {
+	case *dsgen.CreateWorkflowCreated:
+		wf := (*dsgen.RemediationWorkflow)(r)
+		return wf.WorkflowId.Value.String(), wf.WorkflowId.Value
+	case *dsgen.CreateWorkflowOK:
+		wf := (*dsgen.RemediationWorkflow)(r)
+		return wf.WorkflowId.Value.String(), wf.WorkflowId.Value
+	case *dsgen.CreateWorkflowConflict,
+		*dsgen.CreateWorkflowInternalServerError:
+		// 409: different content for same name+version (conflict)
+		// 500: parallel PK race — another process won the INSERT
+		// Both cases: the workflow exists in the DB, query it by name.
+		listResp, listErr := client.ListWorkflows(ctx, dsgen.ListWorkflowsParams{
+			WorkflowName: dsgen.NewOptString(workflowName),
+			Limit:        dsgen.NewOptInt(1),
+		})
+		listErr = ogenx.ToError(listResp, listErr)
+		Expect(listErr).ToNot(HaveOccurred(), "ListWorkflows should succeed for existing workflow")
+		listResult, ok := listResp.(*dsgen.WorkflowListResponse)
+		Expect(ok).To(BeTrue(), "Expected WorkflowListResponse, got %T", listResp)
+		Expect(listResult.Workflows).ToNot(BeEmpty(),
+			"Workflow '%s' returned %T but query found no results", workflowName, resp)
+		return listResult.Workflows[0].WorkflowId.Value.String(), listResult.Workflows[0].WorkflowId.Value
+	default:
+		Fail(fmt.Sprintf("Unexpected CreateWorkflow response type: %T", resp))
+		return "", uuid.Nil
+	}
 }
 
 // postAuditEventBatch posts multiple audit events using the ogen client and returns the event IDs

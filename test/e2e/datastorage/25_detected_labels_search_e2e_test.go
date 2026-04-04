@@ -62,45 +62,8 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		DeferCleanup(testCancel)
 
-		createReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
-		createReq.Source.SetTo("e2e-test")
-
-		resp, err := DSClient.CreateWorkflow(testCtx, createReq)
-		Expect(err).ToNot(HaveOccurred())
-
-		switch v := resp.(type) {
-		case *dsgen.CreateWorkflowCreated:
-			registeredWorkflowID = (*dsgen.RemediationWorkflow)(v).WorkflowId.Value.String()
-		case *dsgen.CreateWorkflowOK:
-			registeredWorkflowID = (*dsgen.RemediationWorkflow)(v).WorkflowId.Value.String()
-			logger.Info("Workflow registered for detectedLabels E2E",
-				"uuid", registeredWorkflowID)
-		case *dsgen.CreateWorkflowConflict:
-			// Workflow already exists (parallel test or re-run). Fetch it by listing.
-			logger.Info("Workflow already exists (409), fetching by list")
-			listResp, listErr := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
-				ActionType:  "ScaleReplicas",
-				Severity:    dsgen.ListWorkflowsByActionTypeSeverityCritical,
-				Component:   "pod",
-				Environment: "production",
-				Priority:    dsgen.ListWorkflowsByActionTypePriorityP0,
-				Limit:       dsgen.NewOptInt(100),
-			})
-			Expect(listErr).ToNot(HaveOccurred())
-			workflows, ok := listResp.(*dsgen.WorkflowDiscoveryResponse)
-			Expect(ok).To(BeTrue())
-			for _, wf := range workflows.Workflows {
-				if wf.WorkflowName == "e2e-stub" {
-					registeredWorkflowID = wf.WorkflowId.String()
-					break
-				}
-			}
-			Expect(registeredWorkflowID).ToNot(BeEmpty(),
-				"should find existing e2e-stub workflow")
-			logger.Info("Found existing workflow", "uuid", registeredWorkflowID)
-		default:
-			Fail(fmt.Sprintf("Unexpected CreateWorkflow response type: %T", resp))
-		}
+		registeredWorkflowID, _ = ensureWorkflowRegistered(testCtx, DSClient, e2eTestWorkflowStubContent, "e2e-stub")
+		logger.Info("✅ DetectedLabels test workflow ready", "uuid", registeredWorkflowID)
 	})
 
 	It("E2E-DS-043-001: registration response includes parsed detectedLabels from OCI schema", func() {

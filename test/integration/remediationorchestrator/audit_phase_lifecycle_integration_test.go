@@ -246,6 +246,24 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 
 			// Complete AIAnalysis to trigger phase transition to Analyzing
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
+			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+				WorkflowID:      "test-workflow",
+				Version:         "1.0.0",
+				ExecutionBundle: "test-image:latest",
+			}
+			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution.
+			// Use a unique target name to avoid ResourceBusy conflicts with other tests
+			// that share the same ROControllerNamespace (e.g., IT-AUDIT-COMPLETION-001).
+			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary:    "Test root cause",
+				Severity:   "medium",
+				SignalType: "alert",
+				RemediationTarget: &aianalysisv1.RemediationTarget{
+					Kind:      "Pod",
+					Name:      "test-pod-phase-002",
+					Namespace: ROControllerNamespace,
+				},
+			}
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
 			// Wait for RR to transition to Analyzing phase

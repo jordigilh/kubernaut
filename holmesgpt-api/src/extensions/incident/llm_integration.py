@@ -817,7 +817,7 @@ async def analyze_incident(
                         query_remediation_history,
                     )
                     _history_api = create_remediation_history_api(
-                        app_config.to_dict() if app_config else None,
+                        app_config if app_config else None,
                     )
                     if _history_api is not None:
                         async def _fetch_history(

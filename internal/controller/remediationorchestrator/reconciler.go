@@ -3403,6 +3403,12 @@ func (r *Reconciler) SetNotifySelfResolved(enabled bool) {
 	r.aiAnalysisHandler.SetNotifySelfResolved(enabled)
 }
 
+// SetClusterIdentity configures the cluster name and UUID for inclusion in notification bodies.
+// Issue #615: Called from cmd/remediationorchestrator/main.go after DiscoverIdentity.
+func (r *Reconciler) SetClusterIdentity(name, uuid string) {
+	r.notificationCreator.SetClusterIdentity(name, uuid)
+}
+
 // resolveDualTargets resolves both signal and remediation targets for the EA (DD-EM-003).
 //
 // Signal target: Always from RR.Spec.TargetResource (the resource that triggered the alert).

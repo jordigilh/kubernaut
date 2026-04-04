@@ -59,7 +59,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the complete list.
 
 ### v1.3 — Go Unification and Enterprise Distribution (next)
 
-- **HAPI Go rewrite** — Full reimplementation of the HolmesGPT SDK and AI analysis service in Go, eliminating the Python runtime dependency
+- **HAPI Go rewrite** — Full reimplementation of the HolmesGPT-API service in Go, eliminating the Python runtime dependency
 - **Mock LLM Go rewrite** — DAG-based conversation engine with declarative YAML scenarios and fault injection for resilience testing
 - **Kubernaut Operator** — OLM-packaged operator for OperatorHub distribution on OpenShift and vanilla Kubernetes
 - **Inter-pod TLS** — Encrypted communication between all internal services

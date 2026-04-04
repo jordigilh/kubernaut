@@ -241,7 +241,10 @@ func correlateEMEvents(correlationID string, emEvts []*EffectivenessEvent) emCor
 //  2. EM events provide effectiveness scoring and typed sub-objects (health_checks, metric_deltas, alert_resolution)
 //  3. Correlation by correlation_id, score computed via ComputeWeightedScore (DD-017 v2.1)
 //
-// Returns entries sorted by completedAt descending (most recent first).
+// When multiple EM events of the same type exist for a correlation_id, the last
+// event by insertion order is used (last-event-wins design).
+//
+// Returns entries sorted by completedAt ascending per OpenAPI spec (oldest first).
 func CorrelateTier1Chain(
 	roEvents []repository.RawAuditRow,
 	emEvents map[string][]*EffectivenessEvent,
@@ -315,16 +318,24 @@ func CorrelateTier1Chain(
 			}
 		}
 
-		// Compute hash match (three-way comparison)
+		// Compute hash match (three-way comparison).
+		// F2 inference: if preHash does not match currentSpecHash and no EM postHash
+		// data exists, the event was returned via the post-hash SQL subquery path.
+		// Infer postRemediation to reflect the established link.
 		hashMatch := ComputeHashMatch(currentSpecHash, preHash, postHash)
+		if hashMatch == api.RemediationHistoryEntryHashMatchNone && preHash != currentSpecHash && postHash == "" {
+			hashMatch = api.RemediationHistoryEntryHashMatchPostRemediation
+		}
 		entry.HashMatch = api.OptRemediationHistoryEntryHashMatch{Value: hashMatch, Set: true}
+
+		entry.SideEffects = []string{}
 
 		entries = append(entries, entry)
 	}
 
-	// Sort by completedAt descending (most recent first)
+	// Sort by completedAt ascending per OpenAPI spec (oldest first).
 	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].CompletedAt.After(entries[j].CompletedAt)
+		return entries[i].CompletedAt.Before(entries[j].CompletedAt)
 	})
 
 	return entries
@@ -339,7 +350,7 @@ func CorrelateTier1Chain(
 //
 // DD-HAPI-016 v1.1 Step 4: historical hash lookup for regression detection.
 //
-// Returns summaries sorted by completedAt descending (most recent first).
+// Returns summaries sorted by completedAt ascending per OpenAPI spec (oldest first).
 func BuildTier2Summaries(
 	roEvents []repository.RawAuditRow,
 	emEvents map[string][]*EffectivenessEvent,
@@ -388,16 +399,21 @@ func BuildTier2Summaries(
 			}
 		}
 
-		// Compute hash match (using summary-specific type)
+		// Compute hash match (using summary-specific type).
+		// F2 inference: same logic as CorrelateTier1Chain — infer postRemediation
+		// when preHash != currentSpecHash and no EM postHash data exists.
 		hashMatch := ComputeHashMatch(currentSpecHash, preHash, postHash)
+		if hashMatch == api.RemediationHistoryEntryHashMatchNone && preHash != currentSpecHash && postHash == "" {
+			hashMatch = api.RemediationHistoryEntryHashMatchPostRemediation
+		}
 		summary.HashMatch = toSummaryHashMatch(hashMatch)
 
 		summaries = append(summaries, summary)
 	}
 
-	// Sort by completedAt descending (most recent first)
+	// Sort by completedAt ascending per OpenAPI spec (oldest first).
 	sort.Slice(summaries, func(i, j int) bool {
-		return summaries[i].CompletedAt.After(summaries[j].CompletedAt)
+		return summaries[i].CompletedAt.Before(summaries[j].CompletedAt)
 	})
 
 	return summaries

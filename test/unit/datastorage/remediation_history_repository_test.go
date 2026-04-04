@@ -255,7 +255,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 					time.Now().Add(-21*24*time.Hour), "rr-old-001",
 				)
 
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM audit_events`).
+				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
 					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
@@ -274,7 +274,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 					"event_type", "event_data", "event_timestamp", "correlation_id",
 				})
 
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM audit_events`).
+				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
 					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
@@ -287,7 +287,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 
 		Context("when database returns an error", func() {
 			It("UT-RH-011: should propagate the error", func() {
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM audit_events`).
+				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
 					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnError(sql.ErrConnDone)
 
@@ -301,7 +301,6 @@ var _ = Describe("RemediationHistoryRepository", func() {
 
 		Context("when row scanning fails", func() {
 			It("UT-RH-012: should return error on malformed event_data", func() {
-				// Return a row with invalid JSON for event_data
 				rows := sqlmock.NewRows([]string{
 					"event_type", "event_data", "event_timestamp", "correlation_id",
 				}).AddRow(
@@ -311,7 +310,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 					"rr-bad-001",
 				)
 
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM audit_events`).
+				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
 					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 

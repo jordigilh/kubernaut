@@ -435,9 +435,9 @@ func (s *BufferedAuditStore) backgroundWriter() {
 			batchSizeBeforeFlush := len(batch)
 			bufferUtilizationBeforeFlush := len(s.buffer)
 
-			// DEBUG: Log every ticker fire (RO Team issue - detecting 50-90s delays)
-			// AA Team fix: Log batch_size BEFORE flush to avoid misleading "0" values
-			s.logger.Info("⏰ Timer tick received",
+			// V(1): Reduced from Info to avoid log noise in production (Issue #616).
+			// Enable with -v=1 when diagnosing flush timing delays.
+			s.logger.V(1).Info("⏰ Timer tick received",
 				"tick_number", tickCount,
 				"batch_size_before_flush", batchSizeBeforeFlush,
 				"buffer_utilization", bufferUtilizationBeforeFlush,

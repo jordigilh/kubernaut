@@ -154,13 +154,15 @@ def audit_llm_response_and_tools(
     # Audit individual tool calls if any
     if investigation_result and hasattr(investigation_result, 'tool_calls') and investigation_result.tool_calls:
         for idx, tool_call in enumerate(investigation_result.tool_calls):
+            tc_result = getattr(tool_call, 'result', None)
+            tc_args = (getattr(tc_result, 'params', None) or {}) if tc_result else {}
             audit_store.store_audit(create_tool_call_event(
                 incident_id=incident_id,
                 remediation_id=remediation_id,
                 tool_call_index=idx,
-                tool_name=getattr(tool_call, 'name', 'unknown'),
-                tool_arguments=getattr(tool_call, 'arguments', {}),
-                tool_result=getattr(tool_call, 'result', None),
+                tool_name=getattr(tool_call, 'tool_name', 'unknown'),
+                tool_arguments=tc_args,
+                tool_result=tc_result,
             ))
 
 

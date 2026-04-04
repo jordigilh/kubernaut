@@ -308,32 +308,9 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 			logger.Info("🧪 Test 4: Workflow catalog operations capture X-Auth-Request-User header")
 
 			// DD-WORKFLOW-017: Register workflow inline for SAR validation
-			workflowReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
-			workflowReq.Source.SetTo("e2e-test")
-
-			// Create workflow (requires "create" permission)
-			resp, err := authorizedClient.CreateWorkflow(testCtx, workflowReq)
-			Expect(err).ToNot(HaveOccurred(), "Authorized ServiceAccount should be able to create workflows")
-
-			// Type assert to get the actual workflow response (201 Created or 200 OK)
-			var workflow *dsgen.RemediationWorkflow
-			switch v := resp.(type) {
-			case *dsgen.CreateWorkflowCreated:
-				workflow = (*dsgen.RemediationWorkflow)(v)
-			case *dsgen.CreateWorkflowOK:
-				workflow = (*dsgen.RemediationWorkflow)(v)
-			default:
-				logger.Error(fmt.Errorf("unexpected response type"), "Type assertion failed",
-					"expected", "*dsgen.CreateWorkflowCreated or *dsgen.CreateWorkflowOK",
-					"actual", fmt.Sprintf("%T", resp))
-				Fail(fmt.Sprintf("Response should be CreateWorkflowCreated or CreateWorkflowOK, got: %T", resp))
-			}
-			Expect(workflow.WorkflowId.IsSet()).To(BeTrue(), "WorkflowID should be set by DataStorage")
-			Expect(workflow.WorkflowName).ToNot(BeEmpty(), "WorkflowName should be extracted from OCI schema")
-
-			// DataStorage generates workflow_id (PostgreSQL UUID), not client-provided
-			generatedWorkflowID := workflow.WorkflowId.Value
-			logger.Info("✅ Workflow created successfully", "workflowID", generatedWorkflowID)
+			// Uses authorizedClient to validate RBAC "create" permission
+			_, generatedWorkflowID := ensureWorkflowRegistered(testCtx, authorizedClient, e2eTestWorkflowStubContent, "e2e-stub")
+			logger.Info("✅ Workflow ready for SAR validation", "workflowID", generatedWorkflowID)
 
 			// Verify audit event was created with user attribution
 			logger.Info("📋 Verifying audit event captured user attribution...")

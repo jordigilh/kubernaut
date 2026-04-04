@@ -236,6 +236,9 @@ charts/kubernaut/files/demo-content/action-types/*.yaml
 charts/kubernaut/files/demo-content/workflows/*.yaml
 charts/kubernaut/files/defaults/*.rego
 charts/kubernaut/files/defaults/*.yaml
+# Issue #604: Helm chart default policies are NOT synced — they're our own defaults
+!charts/kubernaut/files/defaults/approval.rego
+!charts/kubernaut/files/defaults/signalprocessing-policy.rego
 
 # Auto-generated OpenAPI spec copies (via go:generate)
 # DD-API-002: These are auto-generated from api/openapi/*.yaml

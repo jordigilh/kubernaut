@@ -103,6 +103,7 @@ class MockScenario:
     service_account_name: str = ""  # DD-WE-005 v2.0: Pre-created SA for Job/PipelineRun RBAC
     contributing_factors: List[str] = field(default_factory=list)  # #301: RCA contributing factors
     needs_human_review_override: Optional[bool] = None  # #301: Force needs_human_review in response
+    actionable: Optional[bool] = None  # #607: Explicit actionable signal (False = not actionable)
 
 
 # Pre-defined scenarios for common test cases
@@ -336,6 +337,24 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
             "CA_SECRET_NAME": "demo-ca-key-pair",
         },
         execution_engine="job",
+    ),
+    # ========================================
+    # Issue #607: Not-Actionable Alert (Outcome D) — Orphaned PVC
+    # ========================================
+    "not_actionable_orphaned_pvc": MockScenario(
+        name="not_actionable_orphaned_pvc",
+        signal_name="MOCK_NOT_ACTIONABLE",
+        severity="low",
+        workflow_id="",
+        workflow_title="",
+        confidence=0.85,
+        root_cause="Orphaned PVCs from completed batch jobs — not impacting any running workload. No remediation is needed.",
+        rca_resource_kind="PersistentVolumeClaim",
+        rca_resource_namespace="production",
+        rca_resource_name="batch-job-pvc-expired",
+        parameters={},
+        contributing_factors=["Completed batch job artifacts", "No PVC cleanup policy configured"],
+        actionable=False,
     ),
 }
 
@@ -778,6 +797,10 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         if "mock_max_retries_exhausted" in search_text or "mock max retries exhausted" in search_text:
             logger.info("✅ SCENARIO DETECTED: MAX_RETRIES_EXHAUSTED (mock keyword match)")
             return MOCK_SCENARIOS.get("max_retries_exhausted", DEFAULT_SCENARIO)
+        # #607: Not-actionable alert (orphaned PVC / benign condition)
+        if "mock_not_actionable" in search_text or "mock not actionable" in search_text:
+            logger.info("✅ SCENARIO DETECTED: NOT_ACTIONABLE_ORPHANED_PVC (mock keyword match)")
+            return MOCK_SCENARIOS.get("not_actionable_orphaned_pvc", DEFAULT_SCENARIO)
 
         # Check for test signal (graceful shutdown tests)
         if "testsignal" in content or "test signal" in content:
@@ -1377,6 +1400,32 @@ The problem has self-resolved. No remediation workflow is needed.
 # human_review_reason
 {json.dumps(analysis_json.get("human_review_reason"))}
 """
+        elif scenario.actionable is False:
+            # #607: Not-actionable scenario — actionable=false in section-header format
+            # so HAPI's Pattern 2B parser extracts it and sets is_actionable=False.
+            # Values use Python-style literals (None/False) because Pattern 2B's
+            # selected_workflow regex matches {…}|None (not null), and .capitalize()
+            # on actionable produces "False"; mixing JSON false with Python False
+            # creates a dict that neither json.loads nor ast.literal_eval can parse.
+            content = f"""Based on the enrichment context and investigation:
+
+The alert is not actionable. The condition is benign and does not require remediation.
+
+# selected_workflow
+None
+
+# actionable
+False
+
+# confidence
+{scenario.confidence}
+
+# needs_human_review
+False
+
+# human_review_reason
+None
+"""
         elif not scenario.workflow_id:
             analysis_json = {
                 "selected_workflow": None,
@@ -1629,6 +1678,31 @@ false
 
 # human_review_reason
 null
+"""
+        # #607: Not-actionable scenario (legacy flow)
+        elif scenario.actionable is False:
+            analysis_json["selected_workflow"] = None
+            content = f"""Based on my investigation of the {scenario.signal_name} signal:
+
+The alert is not actionable. The condition is benign and does not require remediation.
+
+# root_cause_analysis
+{json.dumps(analysis_json["root_cause_analysis"])}
+
+# selected_workflow
+None
+
+# actionable
+False
+
+# confidence
+{scenario.confidence}
+
+# needs_human_review
+False
+
+# human_review_reason
+None
 """
         # Handle no workflow found case
         elif not scenario.workflow_id:
