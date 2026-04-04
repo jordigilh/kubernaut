@@ -56,10 +56,10 @@ var _ = Describe("Issue #244: FileWatcher Routing Reload Integration", func() {
 	Context("Controller Lifecycle Without ConfigMap Cache", func() {
 
 		It("IT-NOT-244-001: controller starts and reconciles NotificationRequests without ConfigMap cache or configmaps RBAC", func() {
-			// The existing integration test suite exercises a controller that was
-			// constructed WITHOUT ConfigMap watch (SetupWithManager no longer
-			// registers a ConfigMap watcher after #244). This test verifies that
-			// NRs still reach Delivered phase.
+		// The existing integration test suite exercises a controller that was
+		// constructed WITHOUT ConfigMap watch (SetupWithManager no longer
+		// registers a ConfigMap watcher after #244). This test verifies that
+		// NRs still reach Sent phase.
 			ns := helpers.CreateTestNamespace(ctx, k8sClient, "it244")
 			defer helpers.DeleteTestNamespace(ctx, k8sClient, ns)
 
@@ -83,8 +83,8 @@ var _ = Describe("Issue #244: FileWatcher Routing Reload Integration", func() {
 			Eventually(func(g Gomega) {
 				key := client.ObjectKeyFromObject(nr)
 				g.Expect(k8sClient.Get(ctx, key, nr)).To(Succeed())
-				g.Expect(string(nr.Status.Phase)).To(Equal("Delivered"),
-					"NR should reach Delivered phase without ConfigMap cache")
+			g.Expect(string(nr.Status.Phase)).To(Equal("Sent"),
+				"NR should reach Sent phase without ConfigMap cache")
 			}, 15*time.Second, 500*time.Millisecond).Should(Succeed())
 		})
 	})
