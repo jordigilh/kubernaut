@@ -112,7 +112,7 @@ var _ = Describe("Issue #244: FileWatcher Routing Reload Integration", func() {
 				Router:               router,
 				DeliveryOrchestrator: orchestrator,
 				CredentialResolver:   credResolver,
-				SlackTimeout:         5 * time.Second,
+				DeliveryTimeout:         5 * time.Second,
 			}
 
 			initialConfig := `
@@ -200,7 +200,7 @@ receivers:
 				Router:               router,
 				DeliveryOrchestrator: orchestrator,
 				CredentialResolver:   credResolver,
-				SlackTimeout:         5 * time.Second,
+				DeliveryTimeout:         5 * time.Second,
 			}
 
 			routingYAML := `
@@ -251,7 +251,7 @@ receivers:
 				Router:               router,
 				DeliveryOrchestrator: orchestrator,
 				CredentialResolver:   credResolver,
-				SlackTimeout:         5 * time.Second,
+				DeliveryTimeout:         5 * time.Second,
 			}
 
 			watcher, err := hotreload.NewFileWatcher(

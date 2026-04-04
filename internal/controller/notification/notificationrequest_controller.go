@@ -63,7 +63,7 @@ type NotificationRequestReconciler struct {
 	registeredPagerDutyKeys  []string // #60: Per-receiver PagerDuty delivery keys
 	registeredTeamsKeys      []string // #593: Per-receiver Teams delivery keys
 	deliveryKeysMu           sync.Mutex // #244: Protects registered*Keys during concurrent routing reloads
-	SlackTimeout             time.Duration // NT-1: HTTP timeout for Slack webhook (wired from config)
+	DeliveryTimeout          time.Duration // HTTP timeout for webhook-based delivery channels (Slack, PagerDuty, Teams)
 
 	// ========================================
 	// DELIVERY ORCHESTRATOR (Pattern 3 - P0)

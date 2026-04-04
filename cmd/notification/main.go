@@ -342,7 +342,7 @@ func main() {
 
 	// ========================================
 	// Circuit Breaker for Graceful Degradation (BR-NOT-055)
-	// DD-EVENT-001 v1.1: Must be created before Slack registration (CircuitBreakerSlackService)
+	// DD-EVENT-001 v1.1: Must be created before channel registration (CircuitBreakerService)
 	// ========================================
 	// Initialize circuit breaker with github.com/sony/gobreaker
 	// Provides per-channel isolation (Slack, console, webhooks)
@@ -435,7 +435,7 @@ func main() {
 		FileService:          fileService,          // DD-NOT-006: File delivery
 		DeliveryOrchestrator: deliveryOrchestrator, // Pattern 3: Delivery Orchestrator (P0)
 		CredentialResolver:   credResolver,         // BR-NOT-104: Per-receiver credential resolution
-		SlackTimeout:         cfg.Delivery.Slack.Timeout,                        // NT-1: Wired for per-receiver Slack creation
+		DeliveryTimeout:      cfg.Delivery.Slack.Timeout,                        // HTTP timeout for webhook delivery channels
 		Sanitizer:            sanitizer,
 		CircuitBreaker:       circuitBreakerManager,                              // BR-NOT-055: Circuit breaker with gobreaker
 		Metrics:              metricsRecorder,                                    // DD-METRICS-001: Injected metrics
