@@ -21,7 +21,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 
 **Problem Statement**: Port 8080 collision between Gateway service and Data Storage integration tests, plus potential conflicts with external PostgreSQL on port 15432.
 
-**Recent Issue (2025-12-25)**: HAPI (HolmesGPT API) integration tests incorrectly used port 18094, which is officially allocated to SignalProcessing per v1.4 of this document, causing test infrastructure failures.
+**Recent Issue (2025-12-25)**: KA (Kubernaut Agent, formerly HolmesGPT API) integration tests incorrectly used port 18094, which is officially allocated to SignalProcessing per v1.4 of this document, causing test infrastructure failures.
 
 ---
 
@@ -37,7 +37,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **Data Storage** | 8081 | 18090-18099 | 28090-28099 | 18090-28099 |
 | **Effectiveness Monitor** | 8082 | 18100-18109 | 28100-28109 | 18100-28109 |
 | **Workflow Engine** | 8083 | 18110-18119 | 28110-28119 | 18110-28119 |
-| **HolmesGPT API** | 8084 | 18120-18129 | 28120-28129 | 18120-28129 |
+| **Kubernaut Agent** | 8084 | 18120-18129 | 28120-28129 | 18120-28129 |
 | **Dynamic Toolset** | 8085 | 18130-18139 | 28130-28139 | 18130-28139 |
 | **Mock LLM Service** | N/A | 18140-18149 | ClusterIP only | 18140-18149 |
 | **PostgreSQL** | 5432 | 15433-15442 | 25433-25442 | 15433-25442 |
@@ -71,12 +71,12 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **WE → AWX** | 30095 | 30095 | — | — | — | — | `test/infrastructure/kind-workflowexecution-config.yaml` (BR-WE-015 ansible engine) |
 | **Notification** | 8086 | 30086 | 9186 | 30186 | — | — | `test/infrastructure/kind-notification-config.yaml` |
 | **Toolset** | 8087 | 30087 | 9187 | 30187 | — | — | `test/infrastructure/kind-toolset-config.yaml` |
-| **HolmesGPT API** | 8088 | 30088 | 9188 | 30188 | — | — | `holmesgpt-api/tests/infrastructure/kind-holmesgpt-config.yaml` |
+| **Kubernaut Agent** | 8088 | 30088 | 9188 | 30188 | — | — | `test/infrastructure/kind-kubernautagent-config.yaml` |
 | **Effectiveness Monitor** | 8089 | 30089 | 9189 | 30189 | — | — | `test/infrastructure/kind-effectivenessmonitor-config.yaml` |
 | **Full Pipeline E2E** | — | — | — | — | — | — | `test/infrastructure/kind-fullpipeline-config.yaml` |
 | &nbsp;&nbsp;→ Gateway | 30080 | 30080 | — | — | — | — | (Gateway ingress for event-exporter webhook) |
 | &nbsp;&nbsp;→ Data Storage | 30081 | 30081 | — | — | — | — | (DataStorage for workflow catalog seeding) |
-| &nbsp;&nbsp;→ Mock LLM | — | ClusterIP | — | — | — | — | (Internal only - accessed by HAPI) |
+| &nbsp;&nbsp;→ Mock LLM | — | ClusterIP | — | — | — | — | (Internal only - accessed by KA) |
 | &nbsp;&nbsp;→ Prometheus | 9190 | 30190 | — | — | — | — | (EM metric comparison - remote write receiver) |
 | &nbsp;&nbsp;→ AlertManager | 9193 | 30193 | — | — | — | — | (EM alert resolution queries) |
 | &nbsp;&nbsp;→ AuthWebhook | — | 30099 | — | — | — | — | (Webhook admission endpoint - `test/e2e/authwebhook/kind-config.yaml`) |
@@ -97,58 +97,39 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 
 ## Detailed Port Assignments
 
-### **HolmesGPT API (HAPI) - Python Service**
+### **Kubernaut Agent (KA) - Go Service**
 
-#### **Integration Tests** (`holmesgpt-api/tests/integration/`)
+#### **Integration Tests** (`test/integration/kubernautagent/`)
 
-**Updated**: 2025-12-25 (migrated from 18094 to 18098 to resolve conflict with SignalProcessing)
+**Updated**: 2026-03-04 (renamed HAPI → KA; Go rewrite replaces Python service per BR-HAPI-433)
 
 ```yaml
-PostgreSQL:
-  Host Port: 15439
-  Container Port: 5432
-  Connection: 127.0.0.1:15439
-  Purpose: Shared with Notification (separate test infrastructure)
-
-Redis:
-  Host Port: 16387
-  Container Port: 6379
-  Connection: 127.0.0.1:16387
-  Purpose: Shared with Notification/WE (separate test infrastructure)
-
-HAPI Service:
+KA Service:
   Host Port: 18120
   Container Port: 8080
   Connection: http://127.0.0.1:18120
-  Purpose: HolmesGPT API service (incident/recovery endpoints)
+  Purpose: Kubernaut Agent service (incident/recovery endpoints)
 
 Data Storage (Dependency):
-  Host Port: 18098  # CHANGED from 18094 (SignalProcessing conflict)
+  Host Port: 18098
   Container Port: 8080
   Connection: http://127.0.0.1:18098
   Purpose: Workflow catalog, audit trail
 ```
 
 **Configuration Files**:
-- `holmesgpt-api/tests/integration/conftest.py` - Port constants
-- `holmesgpt-api/tests/integration/docker-compose.workflow-catalog.yml` - Container orchestration
-- `holmesgpt-api/tests/integration/data-storage-integration.yaml` - Data Storage config
-- `holmesgpt-api/tests/integration/setup_workflow_catalog_integration.sh` - Infrastructure setup
+- `test/integration/kubernautagent/suite_test.go` - Port constants
+- `test/infrastructure/ka_bootstrap.go` - Image building
 
-**Infrastructure**: Podman-compose for Data Storage + PostgreSQL + Redis
-**Pattern**: `pytest` with fixtures for service URLs
+**Infrastructure**: Programmatic podman commands (Go-native)
+**Pattern**: Ginkgo `SynchronizedBeforeSuite` with service-specific ports
 
-**Port Conflict Resolution (2025-12-25)**:
-- **Previous (WRONG)**: Port 18094 (belonged to SignalProcessing per DD-TEST-001 v1.4)
-- **Current (CORRECT)**: Port 18098 (next available in sequence after WE's 18097)
-- **Authority**: SignalProcessing team triage document (SP_PORT_TRIAGE_AND_AGGREGATED_COVERAGE_DEC_25_2025.md)
-
-#### **E2E Tests** (`test/e2e/aianalysis/hapi/`)
+#### **E2E Tests** (`test/e2e/kubernautagent/`)
 
 **Status**: Infrastructure pending (separate implementation session)
 
 ```yaml
-HAPI (in Kind):
+KA (in Kind):
   Host Port: 8088
   NodePort: 30088
   Connection: http://127.0.0.1:8088
@@ -168,11 +149,11 @@ Data Storage (Dependency):
 **Created**: 2026-01-11 (Mock LLM Migration - MOCK_LLM_MIGRATION_PLAN.md v1.3.0)
 
 ```yaml
-HAPI Integration Tests:
+KA Integration Tests:
   Host Port: 18140
   Container Port: 8080
   Connection: http://127.0.0.1:18140
-  Purpose: Mock OpenAI-compatible LLM for HAPI integration tests
+  Purpose: Mock OpenAI-compatible LLM for KA integration tests
 
 AIAnalysis Integration Tests:
   Host Port: 18141
@@ -183,7 +164,7 @@ AIAnalysis Integration Tests:
 
 **Configuration Files**:
 - `test/infrastructure/mock_llm.go` - Programmatic container lifecycle management
-- `test/integration/holmesgptapi/suite_test.go` - HAPI integration suite (port 18140)
+- `test/integration/kubernautagent/suite_test.go` - KA integration suite (port 18140)
 - `test/integration/aianalysis/suite_test.go` - AIAnalysis integration suite (port 18141)
 - `test/services/mock-llm/` - Standalone Mock LLM service source
 
@@ -191,11 +172,11 @@ AIAnalysis Integration Tests:
 **Pattern**: Ginkgo `SynchronizedBeforeSuite` with service-specific ports
 
 **Port Allocation Rationale**:
-- **18140 (HAPI)**: First port in Mock LLM range (18140-18149)
+- **18140 (KA)**: First port in Mock LLM range (18140-18149)
 - **18141 (AIAnalysis)**: Second port in range - prevents collision during parallel execution
 - **Per-Service Isolation**: Each integration test suite gets unique Mock LLM instance
 
-**Service Purpose**: Provides deterministic OpenAI-compatible mock LLM responses for testing without real LLM calls. Replaces embedded mock logic in HolmesGPT-API business code (900 lines removed).
+**Service Purpose**: Provides deterministic OpenAI-compatible mock LLM responses for testing without real LLM calls. Replaces embedded mock logic formerly in HolmesGPT-API business code.
 
 #### **E2E Tests** (`test/e2e/*/`)
 
@@ -203,11 +184,11 @@ AIAnalysis Integration Tests:
 
 ```yaml
 Mock LLM (in Kind):
-  Namespace: kubernaut-system (shared with HAPI, DataStorage, etc.)
+  Namespace: kubernaut-system (shared with KA, DataStorage, etc.)
   Service Type: ClusterIP (internal only)
   Internal URL: http://mock-llm:8080 (simplified DNS - same namespace)
-  Purpose: Shared Mock LLM for all E2E tests (HAPI, AIAnalysis, etc.)
-  Access Pattern: HAPI/AIAnalysis pods → Mock LLM (ClusterIP, same namespace)
+  Purpose: Shared Mock LLM for all E2E tests (KA, AIAnalysis, etc.)
+  Access Pattern: KA/AIAnalysis pods → Mock LLM (ClusterIP, same namespace)
 
 Note: No NodePort needed - Mock LLM accessed only by services inside Kind cluster
 ```
@@ -215,7 +196,7 @@ Note: No NodePort needed - Mock LLM accessed only by services inside Kind cluste
 **Kind Config**: `deploy/mock-llm/` (deployment manifests)
 **Infrastructure**: Kind cluster with ClusterIP service in `kubernaut-system` (no external access)
 **Pattern**: Shared Mock LLM instance accessed via simplified Kubernetes DNS (same namespace)
-**Access**: Test runner → HAPI (NodePort 30088) → Mock LLM (`http://mock-llm:8080`)
+**Access**: Test runner → KA (NodePort 30088) → Mock LLM (`http://mock-llm:8080`)
 **DNS Benefit**: Kubernetes automatically resolves `mock-llm` to `mock-llm.kubernaut-system.svc.cluster.local` within namespace
 
 ---
@@ -262,7 +243,7 @@ Data Storage (Dependency):
 
 **Port Allocation Rationale**:
 - **PostgreSQL 15442**: Last available port in 15433-15442 range (no conflicts)
-- **Redis 16386**: Available port between 16385 (Notification) and 16387 (HAPI)
+- **Redis 16386**: Available port between 16385 (Notification) and 16387 (KA)
 - **Data Storage 18099**: Last available port in standard dependency range 18090-18099
 
 **Service Type**: Kubernetes admission webhook (no HTTP API - only webhook endpoints)
@@ -697,7 +678,7 @@ extraPortMappings:
 | **WorkflowExecution** | 8085 | 30085 | 9185 | 30185 |
 | **Notification** | 8086 | 30086 | 9186 | 30186 |
 | **Toolset** | 8087 | 30087 | 9187 | 30187 |
-| **HolmesGPT API** | 8088 | 30088 | 9188 | 30188 |
+| **Kubernaut Agent** | 8088 | 30088 | 9188 | 30188 |
 | **Effectiveness Monitor** | 8089 | 30089 | 9189 | 30189 |
 
 **Pattern**:
@@ -710,7 +691,7 @@ extraPortMappings:
 |------------|-----------|----------|---------|
 | AWX API | 30095 | 30095 | AWX web API for ansible workflow execution E2E tests |
 
-**HolmesGPT API Dependencies** (in dedicated Kind cluster):
+**Kubernaut Agent Dependencies** (in dedicated Kind cluster):
 | Dependency | Host Port | NodePort | Purpose |
 |------------|-----------|----------|---------|
 | PostgreSQL | 5488 | 30488 | Workflow catalog storage (V1.0 label-only) |
@@ -856,7 +837,7 @@ var _ = SynchronizedBeforeSuite(
 | **AIAnalysis (CRD)** | 15438 | 16384 | N/A | Data Storage: 18095 |
 | **Notification (CRD)** | 15440 | 16385 | N/A | Data Storage: 18096 |
 | **WorkflowExecution (CRD)** | 15441 | 16388 | N/A | Data Storage: 18097 |
-| **HolmesGPT API (Python)** | 15439 | 16387 | 18120 | Data Storage: 18098 |
+| **Kubernaut Agent (Go)** | 15439 | 16387 | 18120 | Data Storage: 18098 |
 | **Auth Webhook (Admission)** | 15442 | 16386 | N/A | Data Storage: 18099 |
 
 ✅ **No Conflicts** - All services can run integration tests in parallel
