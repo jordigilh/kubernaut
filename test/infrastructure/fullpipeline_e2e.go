@@ -104,7 +104,7 @@ var fullPipelineImageConfigs = []E2EImageConfig{
 	{ServiceName: "datastorage", ImageName: "kubernaut/datastorage", DockerfilePath: "docker/data-storage.Dockerfile"},
 	{ServiceName: "authwebhook", ImageName: "authwebhook", DockerfilePath: "docker/authwebhook.Dockerfile"},
 	{ServiceName: "kubernautagent", ImageName: "kubernaut/kubernautagent", DockerfilePath: "docker/kubernautagent.Dockerfile"},
-	{ServiceName: "mock-llm", ImageName: "kubernaut/mock-llm", DockerfilePath: "test/services/mock-llm/Dockerfile", BuildContextPath: "test/services/mock-llm"},
+	{ServiceName: "mock-llm", ImageName: "kubernaut/mock-llm", DockerfilePath: "test/services/mock-llm/go.Dockerfile", BuildContextPath: ""},
 	{ServiceName: "effectivenessmonitor", ImageName: "kubernaut/effectivenessmonitor", DockerfilePath: "docker/effectivenessmonitor-controller.Dockerfile"},
 }
 

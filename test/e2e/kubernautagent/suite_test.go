@@ -132,7 +132,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("✅ Kubernaut Agent E2E infrastructure ready")
 
 		// DD-AUTH-014: Authenticate with ServiceAccount
-		saToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "holmesgpt-api-e2e-sa", kubeconfigPath)
+		saToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "kubernaut-agent-e2e-sa", kubeconfigPath)
 		if err != nil {
 			Fail(fmt.Sprintf("Failed to get ServiceAccount token: %v", err))
 		}
@@ -167,7 +167,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 		projectRoot = filepath.Join(cwd, "../../..")
 
-		saToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "holmesgpt-api-e2e-sa", kubeconfigPath)
+		saToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "kubernaut-agent-e2e-sa", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to get ServiceAccount token")
 
 		hapiClient, err = hapiclient.NewClient(
