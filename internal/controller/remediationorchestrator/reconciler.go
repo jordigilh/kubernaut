@@ -1673,17 +1673,19 @@ func (r *Reconciler) handleDedupResultPropagation(ctx context.Context, rr *remed
 		if apierrors.IsNotFound(err) {
 			logger.Error(nil, "Original WFE deleted (dangling DeduplicatedByWE reference)")
 			return r.transitionToInheritedFailed(ctx, rr,
-				fmt.Errorf("original WorkflowExecution %q deleted before completion", rr.Status.DeduplicatedByWE))
+				fmt.Errorf("original WorkflowExecution %q deleted before completion", rr.Status.DeduplicatedByWE),
+				rr.Status.DeduplicatedByWE, "WorkflowExecution")
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to fetch original WFE %q: %w", rr.Status.DeduplicatedByWE, err)
 	}
 
 	switch originalWFE.Status.Phase {
 	case workflowexecutionv1.PhaseCompleted:
-		return r.transitionToInheritedCompleted(ctx, rr)
+		return r.transitionToInheritedCompleted(ctx, rr, rr.Status.DeduplicatedByWE, "WorkflowExecution")
 	case workflowexecutionv1.PhaseFailed:
 		return r.transitionToInheritedFailed(ctx, rr,
-			fmt.Errorf("original WorkflowExecution %q failed: %s", originalWFE.Name, originalWFE.Status.FailureReason))
+			fmt.Errorf("original WorkflowExecution %q failed: %s", originalWFE.Name, originalWFE.Status.FailureReason),
+			rr.Status.DeduplicatedByWE, "WorkflowExecution")
 	default:
 		logger.Info("Original WFE still in progress, requeuing",
 			"phase", originalWFE.Status.Phase)
@@ -1692,9 +1694,9 @@ func (r *Reconciler) handleDedupResultPropagation(ctx context.Context, rr *remed
 }
 
 // transitionToInheritedCompleted transitions the RR to Completed with outcome "InheritedCompleted".
-// Used when the original WFE (that caused the deduplication) completes successfully.
-// Skips Verifying because the deduplicated WFE never actually executed a remediation action.
-func (r *Reconciler) transitionToInheritedCompleted(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
+// Used when an original resource (WFE or RR) that caused deduplication completes successfully.
+// sourceRef identifies the original resource name; sourceKind is "WorkflowExecution" or "RemediationRequest".
+func (r *Reconciler) transitionToInheritedCompleted(ctx context.Context, rr *remediationv1.RemediationRequest, sourceRef, sourceKind string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
 	oldPhase := rr.Status.OverallPhase
@@ -1704,7 +1706,8 @@ func (r *Reconciler) transitionToInheritedCompleted(ctx context.Context, rr *rem
 		rr.Status.Outcome = "InheritedCompleted"
 		rr.Status.CompletedAt = &now
 		rr.Status.ObservedGeneration = rr.Generation
-		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Inherited completion from original WFE", r.Metrics)
+		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady,
+			fmt.Sprintf("Inherited completion from original %s", sourceKind), r.Metrics)
 		return nil
 	})
 	if err != nil {
@@ -1718,27 +1721,30 @@ func (r *Reconciler) transitionToInheritedCompleted(ctx context.Context, rr *rem
 		}
 		if r.Recorder != nil {
 			r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonInheritedCompleted,
-				fmt.Sprintf("Remediation inherited Completed from original WorkflowExecution %s", rr.Status.DeduplicatedByWE))
+				fmt.Sprintf("Remediation inherited Completed from original %s %s", sourceKind, sourceRef))
 		}
 
-		// ADR-032 §1: Mandatory audit for all lifecycle terminal transitions
 		if rr.Status.StartTime != nil {
 			r.emitCompletionAudit(ctx, rr, "InheritedCompleted", time.Since(rr.Status.StartTime.Time).Milliseconds())
 		}
 
-		// BR-ORCH-045: Completion notifications (Outcome is set above)
-		r.ensureNotificationsCreated(ctx, rr)
+		// F-3: Only create notifications for WFE-level inheritance — DuplicateInProgress
+		// RRs never reached AIAnalysis phase, so ensureNotificationsCreated would fail.
+		if sourceKind == "WorkflowExecution" {
+			r.ensureNotificationsCreated(ctx, rr)
+		}
 	}
 
-	logger.Info("RR inherited Completed from original WFE",
-		"originalWFE", rr.Status.DeduplicatedByWE, "outcome", "InheritedCompleted")
+	logger.Info("RR inherited Completed",
+		"inheritedFrom", sourceRef, "sourceKind", sourceKind, "outcome", "InheritedCompleted")
 	return ctrl.Result{}, nil
 }
 
 // transitionToInheritedFailed transitions the RR to Failed with FailurePhaseDeduplicated.
-// Used when the original WFE fails or is deleted (dangling reference).
-// Does NOT increment ConsecutiveFailureCount — inherited failures are excluded from blocking (Phase 5).
-func (r *Reconciler) transitionToInheritedFailed(ctx context.Context, rr *remediationv1.RemediationRequest, failureErr error) (ctrl.Result, error) {
+// Used when the original resource (WFE or RR) fails or is deleted (dangling reference).
+// Does NOT increment ConsecutiveFailureCount — inherited failures are excluded from blocking.
+// sourceRef identifies the original resource name; sourceKind is "WorkflowExecution" or "RemediationRequest".
+func (r *Reconciler) transitionToInheritedFailed(ctx context.Context, rr *remediationv1.RemediationRequest, failureErr error, sourceRef, sourceKind string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
 	failureReason := ""
@@ -1755,7 +1761,8 @@ func (r *Reconciler) transitionToInheritedFailed(ctx context.Context, rr *remedi
 		rr.Status.FailureReason = &failureReason
 		rr.Status.CompletedAt = &now
 		rr.Status.ObservedGeneration = rr.Generation
-		remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Inherited failure from original WFE", r.Metrics)
+		remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady,
+			fmt.Sprintf("Inherited failure from original %s", sourceKind), r.Metrics)
 		return nil
 	})
 	if err != nil {
@@ -1769,16 +1776,15 @@ func (r *Reconciler) transitionToInheritedFailed(ctx context.Context, rr *remedi
 		}
 		if r.Recorder != nil {
 			r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonInheritedFailed,
-				fmt.Sprintf("Remediation inherited Failed from original WorkflowExecution %s: %s", rr.Status.DeduplicatedByWE, failureReason))
+				fmt.Sprintf("Remediation inherited Failed from original %s %s: %s", sourceKind, sourceRef, failureReason))
 		}
 
-		// ADR-032 §1: Mandatory audit for all lifecycle terminal transitions
 		durationMs := time.Since(rr.CreationTimestamp.Time).Milliseconds()
 		r.emitFailureAudit(ctx, rr, remediationv1.FailurePhaseDeduplicated, failureErr, durationMs)
 	}
 
-	logger.Info("RR inherited Failed from original WFE",
-		"originalWFE", rr.Status.DeduplicatedByWE, "reason", failureReason)
+	logger.Info("RR inherited Failed",
+		"inheritedFrom", sourceRef, "sourceKind", sourceKind, "reason", failureReason)
 	return ctrl.Result{}, nil
 }
 
