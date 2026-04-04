@@ -272,8 +272,8 @@ effectivenessmonitor:
       memory: 256Mi
       cpu: 500m
 
-# -- HolmesGPT API (LLM integration service)
-holmesgptApi:
+# -- Kubernaut Agent (Go LLM investigation service, replaces Python HAPI)
+kubernautAgent:
   replicas: 1
   pdb:
     enabled: false
@@ -292,38 +292,27 @@ holmesgptApi:
     # K8s Secret reference for LLM API credentials (not part of SDK ConfigMap).
     credentialsSecretName: llm-credentials
     # -- Quickstart: set provider + model to auto-generate a minimal SDK config.
-    # Supported providers for quickstart: openai, anthropic (any provider needing only an API key env var).
-    # For Vertex AI, Azure, or advanced setups (toolsets, MCP), use sdkConfigContent or existingSdkConfigMap.
+    # Supported providers: openai, anthropic, bedrock, mistral, vertex, local.
     provider: ""   # e.g., "openai", "anthropic"
     model: ""      # e.g., "gpt-4o", "claude-sonnet-4-20250514"
   # -- Raw SDK config YAML content. When set, used verbatim in the
-  # holmesgpt-sdk-config ConfigMap. Takes priority over llm.provider/model.
-  # Usage: helm install --set-file holmesgptApi.sdkConfigContent=my-sdk-config.yaml
+  # kubernaut-agent-sdk-config ConfigMap. Takes priority over llm.provider/model.
+  # Usage: helm install --set-file kubernautAgent.sdkConfigContent=my-sdk-config.yaml
   sdkConfigContent: ""
   # -- Use a pre-existing ConfigMap for SDK config instead of chart-generated.
-  # When set, the chart does NOT create holmesgpt-sdk-config and mounts
-  # this ConfigMap at /etc/holmesgpt/sdk/ instead.
+  # When set, the chart does NOT create kubernaut-agent-sdk-config and mounts
+  # this ConfigMap at /etc/kubernaut-agent/sdk/ instead.
   # Takes priority over sdkConfigContent and llm.provider/model.
   existingSdkConfigMap: ""
   # -- Prometheus integration for LLM investigation context.
-  # When enabled with llm.provider/model (quickstart), auto-configures the
-  # prometheus/metrics toolset in the SDK config.
-  # When using sdkConfigContent or existingSdkConfigMap, you must manually add
-  # the prometheus/metrics toolset to your SDK config (see NOTES.txt after install).
-  # On OCP, also injects the service-serving CA and monitoring RBAC.
   prometheus:
     enabled: false
     url: ""
     ocpMonitoringRbac: false
-    # -- TLS CA trust for HTTPS connections to Prometheus/Thanos.
-    # On OCP with ocpMonitoringRbac=true, TLS is implied and the chart
-    # auto-creates a ConfigMap with the service-serving CA (no config needed).
-    # On vanilla K8s, set tls.enabled=true and tls.caConfigMapName to a
-    # ConfigMap you manage that contains the CA PEM certificate.
     tls:
       enabled: false
-      caConfigMapName: ""          # your ConfigMap name (leave empty on OCP)
-      caConfigMapKey: "service-ca.crt"  # key inside the ConfigMap holding the PEM
+      caConfigMapName: ""
+      caConfigMapKey: "service-ca.crt"
 
 # -- AuthWebhook admission controller
 authwebhook:

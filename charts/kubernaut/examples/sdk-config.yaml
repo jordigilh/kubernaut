@@ -1,15 +1,15 @@
-# HolmesGPT SDK Configuration
+# Kubernaut Agent SDK Configuration
 #
 # Provide this to the chart via:
 #   helm install kubernaut charts/kubernaut/ \
-#     --set-file holmesgptApi.sdkConfigContent=charts/kubernaut/examples/sdk-config.yaml
+#     --set-file kubernautAgent.sdkConfigContent=charts/kubernaut/examples/sdk-config.yaml
 #
 # Or pre-create a ConfigMap and reference it:
-#   kubectl create configmap holmesgpt-sdk-config --from-file=sdk-config.yaml=sdk-config.yaml
-#   helm install kubernaut charts/kubernaut/ --set holmesgptApi.existingSdkConfigMap=holmesgpt-sdk-config
+#   kubectl create configmap kubernaut-agent-sdk-config --from-file=sdk-config.yaml=sdk-config.yaml
+#   helm install kubernaut charts/kubernaut/ --set kubernautAgent.existingSdkConfigMap=kubernaut-agent-sdk-config
 
 # -- LLM provider configuration (required)
-# Credentials are sourced from the K8s Secret referenced by holmesgptApi.llm.credentialsSecretName
+# Credentials are sourced from the K8s Secret referenced by kubernautAgent.llm.credentialsSecretName
 # Provider names must use the litellm canonical form (e.g., "vertex_ai" not "vertexai").
 # See: https://docs.litellm.ai/docs/providers
 llm:

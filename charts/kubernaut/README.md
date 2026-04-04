@@ -59,8 +59,8 @@ kubectl create secret generic llm-credentials \
 # 5. Install
 helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
-  --set holmesgptApi.llm.provider=openai \
-  --set holmesgptApi.llm.model=gpt-4o
+  --set kubernautAgent.llm.provider=openai \
+  --set kubernautAgent.llm.model=gpt-4o
 ```
 
 This deploys the full platform with:
@@ -88,8 +88,8 @@ kubectl create secret generic slack-webhook \
 # Install with Slack enabled
 helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
-  --set holmesgptApi.llm.provider=openai \
-  --set holmesgptApi.llm.model=gpt-4o \
+  --set kubernautAgent.llm.provider=openai \
+  --set kubernautAgent.llm.model=gpt-4o \
   --set notification.slack.secretName=slack-webhook \
   --set notification.slack.channel="#ops-alerts"
 ```
@@ -101,8 +101,8 @@ Install [kube-prometheus-stack](https://github.com/prometheus-community/helm-cha
 ```bash
 helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
-  --set holmesgptApi.llm.provider=openai \
-  --set holmesgptApi.llm.model=gpt-4o \
+  --set kubernautAgent.llm.provider=openai \
+  --set kubernautAgent.llm.model=gpt-4o \
   --set effectivenessmonitor.external.prometheusEnabled=true \
   --set effectivenessmonitor.external.alertManagerEnabled=true \
   --set gateway.auth.signalSources[0].name=alertmanager \
@@ -157,7 +157,7 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --set postgresql.auth.existingSecret=pg-credentials \
   --set valkey.existingSecret=vk-credentials \
   --set demoContent.enabled=false \
-  --set-file holmesgptApi.sdkConfigContent=my-sdk-config.yaml \
+  --set-file kubernautAgent.sdkConfigContent=my-sdk-config.yaml \
   --set-file signalprocessing.policy=my-policy.rego \
   --set-file aianalysis.policies.content=my-approval.rego
 ```
@@ -203,8 +203,8 @@ valkey:
 helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   -n kubernaut-system \
   -f charts/kubernaut/values-ocp.yaml \
-  --set holmesgptApi.llm.provider=openai \
-  --set holmesgptApi.llm.model=gpt-4o
+  --set kubernautAgent.llm.provider=openai \
+  --set kubernautAgent.llm.model=gpt-4o
 ```
 
 The OCP overlay switches PostgreSQL and Valkey to Red Hat RHEL10 catalog images and replaces `bitnami/kubectl` with `ose-cli` for hook jobs. No ImageStream prerequisites -- pods pull directly from `registry.redhat.io` using the cluster's global pull secret.
@@ -236,16 +236,16 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 
 | Parameter | Description | Default |
 |---|---|---|
-| `holmesgptApi.llm.credentialsSecretName` | Secret with LLM API keys (e.g., `OPENAI_API_KEY`) | `llm-credentials` |
-| `holmesgptApi.llm.provider` | LLM provider for quickstart (`openai`, `anthropic`) | `""` |
-| `holmesgptApi.llm.model` | LLM model for quickstart (`gpt-4o`, `claude-sonnet-4-20250514`) | `""` |
-| `holmesgptApi.sdkConfigContent` | Full SDK config YAML (via `--set-file`; overrides provider/model) | `""` |
-| `holmesgptApi.existingSdkConfigMap` | Pre-existing ConfigMap for SDK config (highest priority) | `""` |
-| `holmesgptApi.prometheus.enabled` | Enable Prometheus toolset in auto-generated SDK config | `false` |
-| `holmesgptApi.prometheus.url` | Prometheus/Thanos URL | `""` |
-| `holmesgptApi.prometheus.ocpMonitoringRbac` | Create RBAC for OCP monitoring stack | `false` |
-| `holmesgptApi.prometheus.tls.enabled` | Enable TLS CA trust for Prometheus connections | `false` |
-| `holmesgptApi.prometheus.tls.caConfigMapName` | ConfigMap with CA PEM (leave empty on OCP) | `""` |
+| `kubernautAgent.llm.credentialsSecretName` | Secret with LLM API keys (e.g., `OPENAI_API_KEY`) | `llm-credentials` |
+| `kubernautAgent.llm.provider` | LLM provider for quickstart (`openai`, `anthropic`) | `""` |
+| `kubernautAgent.llm.model` | LLM model for quickstart (`gpt-4o`, `claude-sonnet-4-20250514`) | `""` |
+| `kubernautAgent.sdkConfigContent` | Full SDK config YAML (via `--set-file`; overrides provider/model) | `""` |
+| `kubernautAgent.existingSdkConfigMap` | Pre-existing ConfigMap for SDK config (highest priority) | `""` |
+| `kubernautAgent.prometheus.enabled` | Enable Prometheus toolset in auto-generated SDK config | `false` |
+| `kubernautAgent.prometheus.url` | Prometheus/Thanos URL | `""` |
+| `kubernautAgent.prometheus.ocpMonitoringRbac` | Create RBAC for OCP monitoring stack | `false` |
+| `kubernautAgent.prometheus.tls.enabled` | Enable TLS CA trust for Prometheus connections | `false` |
+| `kubernautAgent.prometheus.tls.caConfigMapName` | ConfigMap with CA PEM (leave empty on OCP) | `""` |
 
 **SDK config precedence**: `existingSdkConfigMap` > `sdkConfigContent` > `llm.provider`+`llm.model` > fail.
 
@@ -340,16 +340,16 @@ The chart OCI artifact is fully self-contained (policies, demo content, credenti
 helm install kubernaut oci://harbor.corp/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --set global.image.registry=harbor.corp \
-  --set holmesgptApi.llm.provider=openai \
-  --set holmesgptApi.llm.model=gpt-4o
+  --set kubernautAgent.llm.provider=openai \
+  --set kubernautAgent.llm.model=gpt-4o
 
 # Flat registry (quay.io, Docker Hub, OCP internal)
 helm install kubernaut oci://quay.io/myorg/charts/kubernaut \
   --namespace kubernaut-system \
   --set global.image.registry=quay.io/myorg \
   --set global.image.separator=- \
-  --set holmesgptApi.llm.provider=openai \
-  --set holmesgptApi.llm.model=gpt-4o
+  --set kubernautAgent.llm.provider=openai \
+  --set kubernautAgent.llm.model=gpt-4o
 ```
 
 See the [Disconnected Install Guide](https://jordigilh.github.io/kubernaut-docs/operations/disconnected-install/) for image mirroring and OCP IDMS instructions.
@@ -374,7 +374,7 @@ helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
 > manager. Subsequent `helm upgrade` will fail with a server-side apply conflict.
 >
 > Instead, use Helm values at install/upgrade time:
-> - **Prometheus toolset**: `--set holmesgptApi.prometheus.enabled=true --set holmesgptApi.prometheus.url=<url>`
+> - **Prometheus toolset**: `--set kubernautAgent.prometheus.enabled=true --set kubernautAgent.prometheus.url=<url>`
 > - **Ansible/AAP engine**: `--set workflowexecution.config.ansible.apiURL=<url>`
 >
 > If you already have conflicting ConfigMaps, delete them before upgrading — Helm
