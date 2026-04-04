@@ -105,6 +105,12 @@ func (d *AnomalyDetector) RecordFailure(name string, args json.RawMessage) Anoma
 	return AnomalyResult{Allowed: true}
 }
 
+// TotalExceeded returns true when the total tool call count has exceeded the configured limit.
+// Used by runLLMLoop to abort early.
+func (d *AnomalyDetector) TotalExceeded() bool {
+	return d.totalCallCount > d.config.MaxTotalToolCalls
+}
+
 func (d *AnomalyDetector) checkSuspiciousArgs(name string, args json.RawMessage) AnomalyResult {
 	if len(d.suspiciousPatterns) == 0 || len(args) == 0 {
 		return AnomalyResult{Allowed: true}

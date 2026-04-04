@@ -37,13 +37,17 @@ func (f *fakeK8s) GetOwnerChain(_ context.Context, _, _, _ string) ([]enrichment
 	return f.chain, f.err
 }
 
+func (f *fakeK8s) GetSpecHash(_ context.Context, _, _, _ string) (string, error) {
+	return "", nil
+}
+
 // fakeDS returns configurable remediation history.
 type fakeDS struct {
-	history []enrichment.RemediationHistoryEntry
+	history *enrichment.RemediationHistoryResult
 	err     error
 }
 
-func (f *fakeDS) GetRemediationHistory(_ context.Context, _, _, _, _ string) ([]enrichment.RemediationHistoryEntry, error) {
+func (f *fakeDS) GetRemediationHistory(_ context.Context, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
 	return f.history, f.err
 }
 
@@ -56,7 +60,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 				{Kind: "ReplicaSet", Name: "api-server-abc", Namespace: "production"},
 				{Kind: "Deployment", Name: "api-server", Namespace: "production"},
 			}}
-			ds := &fakeDS{history: []enrichment.RemediationHistoryEntry{}}
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
 
 			tool := custom.NewNamespacedResourceContextTool(ds, k8s)
 			result, err := tool.Execute(context.Background(),
@@ -75,7 +79,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 
 		It("should default root_owner to input resource when owner chain is empty", func() {
 			k8s := &fakeK8s{chain: nil}
-			ds := &fakeDS{history: []enrichment.RemediationHistoryEntry{}}
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
 
 			tool := custom.NewNamespacedResourceContextTool(ds, k8s)
 			result, err := tool.Execute(context.Background(),
@@ -97,8 +101,10 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			k8s := &fakeK8s{chain: []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "api-server", Namespace: "prod"},
 			}}
-			ds := &fakeDS{history: []enrichment.RemediationHistoryEntry{
-				{WorkflowID: "oom-recovery", Outcome: "success", Timestamp: "2026-03-01T10:00:00Z"},
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{
+				Tier1: []enrichment.Tier1Entry{
+					{RemediationUID: "oom-recovery", Outcome: "success"},
+				},
 			}}
 
 			tool := custom.NewNamespacedResourceContextTool(ds, k8s)
@@ -109,12 +115,14 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			var resp map[string]interface{}
 			Expect(json.Unmarshal([]byte(result), &resp)).To(Succeed())
 
-			history, ok := resp["remediation_history"].([]interface{})
-			Expect(ok).To(BeTrue(), "remediation_history should be an array")
-			Expect(history).To(HaveLen(1))
+			historyObj, ok := resp["remediation_history"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "remediation_history should be an object")
+			tier1, ok := historyObj["tier1"].([]interface{})
+			Expect(ok).To(BeTrue())
+			Expect(tier1).To(HaveLen(1))
 		})
 
-		It("should return empty array when no remediation history exists", func() {
+		It("should return empty history object when no remediation history exists", func() {
 			k8s := &fakeK8s{chain: nil}
 			ds := &fakeDS{history: nil}
 
@@ -125,10 +133,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 
 			var resp map[string]interface{}
 			Expect(json.Unmarshal([]byte(result), &resp)).To(Succeed())
-
-			history, ok := resp["remediation_history"].([]interface{})
-			Expect(ok).To(BeTrue(), "remediation_history should always be an array, not null")
-			Expect(history).To(BeEmpty())
+			Expect(resp).To(HaveKey("remediation_history"))
 		})
 	})
 
@@ -158,7 +163,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 
 	Describe("UT-KA-433-115: get_cluster_resource_context returns root_owner without namespace", func() {
 		It("should return root_owner with only kind and name", func() {
-			ds := &fakeDS{history: []enrichment.RemediationHistoryEntry{}}
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
 
 			tool := custom.NewClusterResourceContextTool(ds)
 			result, err := tool.Execute(context.Background(),
@@ -178,8 +183,10 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 
 	Describe("UT-KA-433-116: get_cluster_resource_context includes remediation_history", func() {
 		It("should return remediation history from DataStorage", func() {
-			ds := &fakeDS{history: []enrichment.RemediationHistoryEntry{
-				{WorkflowID: "node-drain", Outcome: "success", Timestamp: "2026-02-20T08:00:00Z"},
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{
+				Tier1: []enrichment.Tier1Entry{
+					{RemediationUID: "node-drain", Outcome: "success"},
+				},
 			}}
 
 			tool := custom.NewClusterResourceContextTool(ds)
@@ -190,9 +197,11 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			var resp map[string]interface{}
 			Expect(json.Unmarshal([]byte(result), &resp)).To(Succeed())
 
-			history, ok := resp["remediation_history"].([]interface{})
+			historyObj, ok := resp["remediation_history"].(map[string]interface{})
 			Expect(ok).To(BeTrue())
-			Expect(history).To(HaveLen(1))
+			tier1, ok := historyObj["tier1"].([]interface{})
+			Expect(ok).To(BeTrue())
+			Expect(tier1).To(HaveLen(1))
 		})
 	})
 

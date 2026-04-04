@@ -157,6 +157,7 @@ func mapIncidentRequestToSignal(req *hapiclient.IncidentRequest) katypes.SignalC
 		Namespace:        req.ResourceNamespace,
 		Severity:         string(req.Severity),
 		Message:          req.ErrorMessage,
+		IncidentID:       req.IncidentID,
 		ResourceKind:     req.ResourceKind,
 		ResourceName:     req.ResourceName,
 		ClusterName:      req.ClusterName,
