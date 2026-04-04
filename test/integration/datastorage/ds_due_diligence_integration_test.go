@@ -91,12 +91,14 @@ var _ = Describe("DS Due Diligence: F1 — EM Subquery Timestamp Constraint", La
 	It("IT-DS-F1-001: QueryROEventsBySpecHash returns RO event when EM hash event is OUTSIDE the query time window", func() {
 		now := time.Now().UTC()
 		cid := fmt.Sprintf("corr-f1-001-%s", testID)
+		preHash := "sha256:pre-f1-" + testID
+		postHash := "sha256:post-f1-" + testID
 
 		// RO event at T-25h: within tier 2 window [T-90d, T-24h]
 		insertAuditEvent("remediation.workflow_created", "remediation", cid,
 			map[string]interface{}{
 				"target_resource":           targetResource,
-				"pre_remediation_spec_hash": "sha256:aaa",
+				"pre_remediation_spec_hash": preHash,
 				"action_type":              "RestartPod",
 				"signal_type":              "HighCPULoad",
 				"signal_fingerprint":       "fp-" + testID,
@@ -109,8 +111,8 @@ var _ = Describe("DS Due Diligence: F1 — EM Subquery Timestamp Constraint", La
 		// but still has the postHash that should link to the RO event
 		insertAuditEvent("effectiveness.hash.computed", "effectiveness", cid,
 			map[string]interface{}{
-				"pre_remediation_spec_hash":  "sha256:aaa",
-				"post_remediation_spec_hash": "sha256:bbb",
+				"pre_remediation_spec_hash":  preHash,
+				"post_remediation_spec_hash": postHash,
 				"hash_match":                false,
 			},
 			now.Add(-23*time.Hour),
@@ -124,7 +126,7 @@ var _ = Describe("DS Due Diligence: F1 — EM Subquery Timestamp Constraint", La
 		tier2Since := now.Add(-90 * 24 * time.Hour)
 		tier2Until := now.Add(-24 * time.Hour)
 
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, "sha256:bbb", tier2Since, tier2Until)
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, postHash, tier2Since, tier2Until)
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(1),

@@ -141,31 +141,34 @@ var _ = Describe("Issue #616: QueryROEventsBySpecHash Post-Hash Matching", Label
 	It("IT-DS-616-001: QueryROEventsBySpecHash returns RO event when currentSpecHash matches post_remediation_spec_hash via EM correlation", func() {
 		now := time.Now().UTC()
 		cid := fmt.Sprintf("corr-616-001-%s", testID)
+		preHash := "sha256:pre-001-" + testID
+		postHash := "sha256:post-001-" + testID
 
-		// RO event with pre_hash=A (does NOT match query hash)
-		insertROEvent(cid, targetResource, "sha256:aaa", "RestartPod", now.Add(-2*time.Hour))
+		// RO event with pre_hash (does NOT match query hash)
+		insertROEvent(cid, targetResource, preHash, "RestartPod", now.Add(-2*time.Hour))
 
-		// EM hash event with post_hash=B (DOES match query hash) for same correlation_id
-		insertEMHashEvent(cid, "sha256:aaa", "sha256:bbb", now.Add(-1*time.Hour))
+		// EM hash event with post_hash (DOES match query hash) for same correlation_id
+		insertEMHashEvent(cid, preHash, postHash, now.Add(-1*time.Hour))
 
-		// Query with currentSpecHash=B: should find the RO event via post-hash subquery
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, "sha256:bbb", now.Add(-3*time.Hour), now)
+		// Query with currentSpecHash=postHash: should find the RO event via post-hash subquery
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, postHash, now.Add(-3*time.Hour), now)
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(1), "Should return 1 RO event found via post-hash EM correlation")
 		Expect(rows[0].CorrelationID).To(Equal(cid))
-		Expect(rows[0].EventData["pre_remediation_spec_hash"]).To(Equal("sha256:aaa"))
+		Expect(rows[0].EventData["pre_remediation_spec_hash"]).To(Equal(preHash))
 	})
 
 	It("IT-DS-616-002: QueryROEventsBySpecHash still returns RO events for pre-hash match (existing behavior)", func() {
 		now := time.Now().UTC()
 		cid := fmt.Sprintf("corr-616-002-%s", testID)
+		preHash := "sha256:pre-002-" + testID
 
-		// RO event with pre_hash=A (matches query hash)
-		insertROEvent(cid, targetResource, "sha256:aaa", "RestartPod", now.Add(-2*time.Hour))
+		// RO event with pre_hash (matches query hash)
+		insertROEvent(cid, targetResource, preHash, "RestartPod", now.Add(-2*time.Hour))
 
-		// Query with currentSpecHash=A: should find via pre-hash match
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, "sha256:aaa", now.Add(-3*time.Hour), now)
+		// Query with currentSpecHash=preHash: should find via pre-hash match
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, preHash, now.Add(-3*time.Hour), now)
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(1), "Should return 1 RO event matching pre-hash")
@@ -176,18 +179,20 @@ var _ = Describe("Issue #616: QueryROEventsBySpecHash Post-Hash Matching", Label
 		now := time.Now().UTC()
 		cidPre := fmt.Sprintf("corr-616-003-pre-%s", testID)
 		cidPost := fmt.Sprintf("corr-616-003-post-%s", testID)
+		targetHash := "sha256:target-003-" + testID
+		otherHash := "sha256:other-003-" + testID
 
-		// RO event 1: pre_hash=TARGET (direct match)
-		insertROEvent(cidPre, targetResource, "sha256:target", "RestartPod", now.Add(-3*time.Hour))
+		// RO event 1: pre_hash=targetHash (direct match)
+		insertROEvent(cidPre, targetResource, targetHash, "RestartPod", now.Add(-3*time.Hour))
 
-		// RO event 2: pre_hash=OTHER (no direct match)
-		insertROEvent(cidPost, targetResource, "sha256:other", "ScaleUp", now.Add(-2*time.Hour))
+		// RO event 2: pre_hash=otherHash (no direct match)
+		insertROEvent(cidPost, targetResource, otherHash, "ScaleUp", now.Add(-2*time.Hour))
 
-		// EM hash event for cidPost: post_hash=TARGET (should link this RO event to the query)
-		insertEMHashEvent(cidPost, "sha256:other", "sha256:target", now.Add(-1*time.Hour))
+		// EM hash event for cidPost: post_hash=targetHash (should link this RO event to the query)
+		insertEMHashEvent(cidPost, otherHash, targetHash, now.Add(-1*time.Hour))
 
-		// Query with currentSpecHash=TARGET: should find both RO events
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, "sha256:target", now.Add(-4*time.Hour), now)
+		// Query with currentSpecHash=targetHash: should find both RO events
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetHash, now.Add(-4*time.Hour), now)
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(2), "Should return 2 RO events: one from pre-hash, one from post-hash path")
@@ -199,15 +204,17 @@ var _ = Describe("Issue #616: QueryROEventsBySpecHash Post-Hash Matching", Label
 	It("IT-DS-616-004: Full handler flow returns non-empty tier1.chain for post-hash scenario", func() {
 		now := time.Now().UTC()
 		cid := fmt.Sprintf("corr-616-004-%s", testID)
+		preHash := "sha256:pre-004-" + testID
+		postHash := "sha256:post-004-" + testID
 
-		// RO event with pre_hash=A
-		insertROEvent(cid, targetResource, "sha256:aaa", "RestartPod", now.Add(-2*time.Hour))
+		// RO event with pre_hash
+		insertROEvent(cid, targetResource, preHash, "RestartPod", now.Add(-2*time.Hour))
 
-		// Full EM events with post_hash=B for same correlation_id
-		insertFullEMEvents(cid, "sha256:aaa", "sha256:bbb", now.Add(-1*time.Hour))
+		// Full EM events with post_hash for same correlation_id
+		insertFullEMEvents(cid, preHash, postHash, now.Add(-1*time.Hour))
 
 		// Query RO events by post-hash
-		roRows, err := rhRepo.QueryROEventsBySpecHash(testCtx, "sha256:bbb", now.Add(-3*time.Hour), now)
+		roRows, err := rhRepo.QueryROEventsBySpecHash(testCtx, postHash, now.Add(-3*time.Hour), now)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(roRows).ToNot(BeEmpty(), "Should find RO events via post-hash")
 
@@ -232,7 +239,7 @@ var _ = Describe("Issue #616: QueryROEventsBySpecHash Post-Hash Matching", Label
 		}
 
 		// Correlate
-		entries := server.CorrelateTier1Chain(roRows, emEvents, "sha256:bbb")
+		entries := server.CorrelateTier1Chain(roRows, emEvents, postHash)
 
 		Expect(entries).ToNot(BeEmpty(), "tier1.chain should be non-empty for post-hash scenario")
 		Expect(entries[0].RemediationUID).To(Equal(cid))
