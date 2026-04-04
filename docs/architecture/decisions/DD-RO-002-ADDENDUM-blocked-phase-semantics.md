@@ -348,6 +348,49 @@ Both inherited transitions record `PhaseTransitionsTotal` with appropriate label
 
 ---
 
+## Issue #614: RO-level DuplicateInProgress Outcome Inheritance
+
+Issue #190 addressed WE-level deduplication (execution-time resource collisions). Issue #614 extends this to **RO-level deduplication**: when the routing engine blocks an RR as `DuplicateInProgress` (same signal fingerprint, another RR active), the duplicate should inherit the original RR's outcome instead of re-running the entire pipeline.
+
+### Prior Behavior (pre-#614)
+
+When `recheckDuplicateBlock` detected that the original RR reached a terminal phase, it called `clearEventBasedBlock(ctx, rr, phase.Pending)` to reset the duplicate to `Pending` and re-run the full SP → AI → Approval → WE pipeline.
+
+### New Behavior (#614)
+
+`recheckDuplicateBlock` now inherits the original RR's outcome directly:
+
+- **Original Completed** → `transitionToInheritedCompleted(ctx, rr, rr.Status.DuplicateOf, "RemediationRequest")` — sets `Outcome="InheritedCompleted"`, `CompletedAt`
+- **Original Failed/TimedOut/Cancelled/Skipped** → `transitionToInheritedFailed(ctx, rr, err, rr.Status.DuplicateOf, "RemediationRequest")` — sets `FailurePhase=Deduplicated`, `FailureReason` with original RR name
+- **Original Deleted** → `transitionToInheritedFailed` (dangling reference)
+- **Original Still Active** → requeue after `config.RequeueResourceBusy`
+- **Empty `DuplicateOf`** → `clearEventBasedBlock` to `Pending` (safety fallback, unchanged)
+
+### Generalized Transition Methods (Phase 1 Refactor)
+
+The `transitionToInheritedCompleted` and `transitionToInheritedFailed` methods were generalized to accept `sourceRef` and `sourceKind` parameters, making them reusable for both WE-level (#190) and RR-level (#614) inheritance:
+
+```go
+func (r *Reconciler) transitionToInheritedCompleted(ctx, rr, sourceRef, sourceKind string) (ctrl.Result, error)
+func (r *Reconciler) transitionToInheritedFailed(ctx, rr, failureErr, sourceRef, sourceKind string) (ctrl.Result, error)
+```
+
+### Observability
+
+- **K8s Events**: `InheritedCompleted`/`InheritedFailed` events include `sourceKind=RemediationRequest` and the original RR name
+- **Audit Events**: Standard `orchestrator.lifecycle.completed`/`failed` audit events (ADR-032 §1) are emitted
+- **Metrics**: `CurrentBlockedGauge` decrements after successful transition (F-6: gauge decrement occurs *after* the status update to prevent metric drift on failure); `PhaseTransitionsTotal` records `Blocked→Completed` or `Blocked→Failed`
+
+### Notification Guard (F-3)
+
+`ensureNotificationsCreated` is only called for `sourceKind == "WorkflowExecution"` inheritance. DuplicateInProgress RRs never reached the `AIAnalysis` phase, so no AIAnalysis CRD exists and notification creation would fail with a misleading error log.
+
+### Consecutive Failure Exclusion
+
+Inherited failures from RR-level dedup set `FailurePhase=Deduplicated`, which is excluded by `countConsecutiveFailures` in `blocking.go` (same mechanism as #190).
+
+---
+
 ## 📚 **References**
 
 - **DD-RO-002**: Centralized Routing Responsibility (parent decision)
