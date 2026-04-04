@@ -215,8 +215,9 @@ spec:
                           the target CRD). Empty when Degraded is false.
                         type: string
                       outcome:
-                        description: 'Outcome is the high-level result: "passed",
-                          "partial", "inconclusive", "unavailable".'
+                        description: |-
+                          Outcome is the high-level result: "passed", "completed", "partial", "inconclusive", "unavailable".
+                          "completed" indicates all components were assessed but some scores < 1.0 (Issue #596).
                         type: string
                       reason:
                         description: Reason maps to EffectivenessAssessment.Status.AssessmentReason.
