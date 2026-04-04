@@ -7,7 +7,7 @@ on:
   workflow_call:
     inputs:
       service:
-        description: 'Service name (e.g., datastorage, holmesgpt, gateway)'
+        description: 'Service name (e.g., datastorage, kubernautagent, gateway)'
         required: true
         type: string
       timeout:
@@ -63,19 +63,6 @@ jobs:
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
           kind version
-
-      - name: Set up Python
-        if: inputs.service == 'holmesgpt'
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-
-      - name: Install Python dependencies
-        if: inputs.service == 'holmesgpt'
-        working-directory: holmesgpt-api
-        run: |
-          pip install -r requirements.txt
-          pip install -r requirements-test.txt
 
       # ========================================
       # Run Tests

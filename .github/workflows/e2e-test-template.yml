@@ -120,7 +120,6 @@ jobs:
           path: |
             /tmp/kind-logs-*
             /tmp/${{ inputs.service }}-e2e-logs-*
-            /tmp/holmesgpt-api-e2e-logs-*
           retention-days: 14
           if-no-files-found: warn
 

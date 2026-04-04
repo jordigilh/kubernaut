@@ -140,7 +140,7 @@ awk -f merge_go_coverage.awk \
 
 **Usage**:
 ```bash
-awk -f calculate_python_unit_testable.awk coverage_unit_holmesgpt-api.txt
+awk -f calculate_python_unit_testable.awk coverage_unit_kubernautagent.txt
 ```
 
 **Output**: `76.0%`
@@ -153,7 +153,7 @@ awk -f calculate_python_unit_testable.awk coverage_unit_holmesgpt-api.txt
 
 **Usage**:
 ```bash
-awk -f calculate_python_integration_testable.awk coverage_integration_holmesgpt-api_python.txt
+awk -f calculate_python_integration_testable.awk coverage_integration_kubernautagent_python.txt
 ```
 
 **Output**: `43.5%`

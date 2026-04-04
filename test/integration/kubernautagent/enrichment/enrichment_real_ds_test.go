@@ -141,18 +141,12 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			By("Seeding 2 RO events + EM events in PostgreSQL")
 			insertROEvent(corrID1, target, "sha256:pre1", "IncreaseMemory", now)
 			insertEMEvents(corrID1, "full", 0.85, "sha256:pre1", "sha256:post1", now)
-			insertROEvent(corrID2, target, "sha256:pre2", "RestartPod", now.Add(30*time.Minute))
-			insertEMEvents(corrID2, "full", 0.90, "sha256:pre2", "sha256:post2", now.Add(30*time.Minute))
+			insertROEvent(corrID2, target, "sha256:pre1", "RestartPod", now.Add(30*time.Minute))
+			insertEMEvents(corrID2, "full", 0.90, "sha256:pre1", "sha256:post2", now.Add(30*time.Minute))
 
 			By("Calling enricher with real infrastructure")
 			result, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "sha256:pre1", "incident-enr001-"+testID)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.OwnerChain).To(HaveLen(2),
-				"Pod -> ReplicaSet -> Deployment yields 2-entry chain (proves result non-nil)")
-
-			By("Asserting remediation history from real DS")
-			Expect(result.RemediationHistory.Tier1).To(HaveLen(2),
-				"should return 2 remediation history Tier1 entries from real DS")
 
 			By("Asserting owner chain from real K8s (envtest)")
 			Expect(result.OwnerChain).To(HaveLen(2),
@@ -161,6 +155,72 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			Expect(result.OwnerChain[0].Name).To(Equal("web-rs-abc"))
 			Expect(result.OwnerChain[1].Kind).To(Equal("Deployment"))
 			Expect(result.OwnerChain[1].Name).To(Equal("web-deploy"))
+
+			By("Asserting remediation history from real DS")
+			Expect(result.RemediationHistory).To(And(
+				Not(BeNil()),
+				HaveField("Tier1", HaveLen(2)),
+			), "should return non-nil remediation history with 2 Tier1 entries from real DS")
+
+			By("Asserting Tier1 entry field values (sorted most-recent first)")
+			recent := result.RemediationHistory.Tier1[0]
+			Expect(recent.RemediationUID).To(Equal(corrID2))
+			Expect(recent.SignalType).To(Equal("HighCPULoad"))
+			Expect(recent.ActionType).To(Equal("RestartPod"))
+			Expect(recent.Outcome).To(Equal("success"))
+			Expect(recent.HashMatch).To(Equal("preRemediation"))
+			Expect(recent.PreRemediationSpecHash).To(Equal("sha256:pre1"))
+			Expect(recent.AssessmentReason).To(Equal("full"))
+
+			older := result.RemediationHistory.Tier1[1]
+			Expect(older.RemediationUID).To(Equal(corrID1))
+			Expect(older.ActionType).To(Equal("IncreaseMemory"))
+
+			By("Asserting regression detection (currentSpecHash matches preHash)")
+			Expect(result.RemediationHistory.RegressionDetected).To(BeTrue(),
+				"currentSpecHash == pre_remediation_spec_hash → regression detected")
+		})
+	})
+
+	// ============================================================================
+	// IT-KA-433-ENR-002: specHash auto-computation from real K8s
+	// ============================================================================
+	Describe("IT-KA-433-ENR-002: specHash auto-computation from real K8s", func() {
+		It("should auto-compute specHash via K8s and complete enrichment without error", func() {
+			incidentID := "incident-enr002-" + testID
+
+			By("Calling enricher with empty specHash for known K8s resource")
+			result, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "", incidentID)
+			Expect(err).ToNot(HaveOccurred(),
+				"enricher should handle specHash auto-computation gracefully")
+
+			By("Asserting owner chain is still resolved")
+			Expect(result.OwnerChain).To(HaveLen(2),
+				"Pod -> ReplicaSet -> Deployment chain resolves regardless of specHash source")
+
+			By("Asserting remediation history result is non-nil (DS query was attempted with auto-computed hash)")
+			Expect(result.RemediationHistory).ToNot(BeNil(),
+				"DS query should succeed even with auto-computed specHash")
+			Expect(result.RemediationHistory.Tier1).To(BeEmpty(),
+				"no seeded data matches the auto-computed hash")
+
+			By("Verifying audit event records enrichment.completed")
+			Eventually(func(g Gomega) {
+				var eventDataRaw []byte
+				err := seedDB.QueryRowContext(testCtx,
+					`SELECT event_data FROM audit_events
+					 WHERE event_type = 'aiagent.enrichment.completed'
+					 AND event_data->>'incident_id' = $1
+					 ORDER BY event_timestamp DESC LIMIT 1`,
+					incidentID,
+				).Scan(&eventDataRaw)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				var eventData map[string]interface{}
+				g.Expect(json.Unmarshal(eventDataRaw, &eventData)).To(Succeed())
+				g.Expect(eventData["remediation_history_fetched"]).To(BeTrue())
+				g.Expect(eventData["owner_chain_length"]).To(BeEquivalentTo(2))
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 		})
 	})
 
@@ -322,6 +382,169 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 				g.Expect(eventData["remediation_history_fetched"]).To(BeTrue(),
 					"history fetch succeeded even though result is empty")
 			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
+		})
+	})
+
+	// ============================================================================
+	// IT-KA-433-ENR-007: Partial failure — DS fails, K8s succeeds
+	// ============================================================================
+	Describe("IT-KA-433-ENR-007: Partial failure — DS fails, K8s succeeds", func() {
+		It("should return owner chain but nil history, with enrichment.completed audit containing history_error", func() {
+			incidentID := "incident-enr007-" + testID
+
+			By("Building enricher with real K8s + broken DS + real audit store")
+			brokenDS := &errorDSClient{err: errors.New("DS connection refused")}
+			partialEnricher := enrichment.NewEnricher(k8sAdapter, brokenDS, auditStore,
+				slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+
+			By("Calling enricher")
+			result, err := partialEnricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "sha256:test7", incidentID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.OwnerChain).To(HaveLen(2),
+				"K8s succeeded so owner chain should be populated")
+			Expect(result.OwnerChain[0].Kind).To(Equal("ReplicaSet"))
+			Expect(result.OwnerChain[1].Kind).To(Equal("Deployment"))
+			Expect(result.RemediationHistory).To(BeNil(),
+				"DS failed so remediation history should be nil")
+
+			By("Verifying audit event is enrichment.completed (not failed) with history_fetched=false")
+			Eventually(func(g Gomega) {
+				var eventDataRaw []byte
+				err := seedDB.QueryRowContext(testCtx,
+					`SELECT event_data FROM audit_events
+					 WHERE event_type = 'aiagent.enrichment.completed'
+					 AND event_data->>'incident_id' = $1
+					 ORDER BY event_timestamp DESC LIMIT 1`,
+					incidentID,
+				).Scan(&eventDataRaw)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				var eventData map[string]interface{}
+				g.Expect(json.Unmarshal(eventDataRaw, &eventData)).To(Succeed())
+				g.Expect(eventData["owner_chain_length"]).To(BeEquivalentTo(2))
+				g.Expect(eventData["remediation_history_fetched"]).To(BeFalse(),
+					"DS failed so history_fetched should be false")
+				g.Expect(eventData["root_owner_kind"]).To(Equal("Deployment"))
+				g.Expect(eventData["root_owner_name"]).To(Equal("web-deploy"))
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
+		})
+	})
+
+	// ============================================================================
+	// IT-KA-433-ENR-008: Tier1 field fidelity — HealthChecks + MetricDeltas
+	// ============================================================================
+	Describe("IT-KA-433-ENR-008: Tier1 field fidelity — HealthChecks + MetricDeltas propagation", func() {
+		It("should propagate HealthChecks and MetricDeltas from EM events through DS to enrichment domain", func() {
+			target := fmt.Sprintf("it-enrichment/Pod/web-pod-1")
+			corrID := fmt.Sprintf("ro-enr008-%s", testID)
+			now := time.Now().Add(-1 * time.Hour)
+
+			By("Seeding RO event")
+			insertROEvent(corrID, target, "sha256:pre8", "IncreaseMemory", now)
+
+			By("Seeding EM events with nested health_checks and metric_deltas structures")
+			insertAuditEvent("effectiveness.health.assessed", "effectiveness", corrID,
+				map[string]interface{}{
+					"assessed": true,
+					"score":    0.85,
+					"health_checks": map[string]interface{}{
+						"pod_running":    true,
+						"readiness_pass": true,
+						"restart_delta":  float64(0),
+						"crash_loops":    false,
+						"oom_killed":     false,
+					},
+				}, now.Add(1*time.Minute))
+
+			insertAuditEvent("effectiveness.alert.assessed", "effectiveness", corrID,
+				map[string]interface{}{
+					"assessed": true,
+					"score":    0.9,
+					"alert_resolution": map[string]interface{}{
+						"alert_resolved": true,
+					},
+				}, now.Add(2*time.Minute))
+
+			insertAuditEvent("effectiveness.metrics.assessed", "effectiveness", corrID,
+				map[string]interface{}{
+					"assessed": true,
+					"score":    0.8,
+					"metric_deltas": map[string]interface{}{
+						"cpu_before":    0.85,
+						"cpu_after":     0.45,
+						"memory_before": 512.0,
+						"memory_after":  256.0,
+					},
+				}, now.Add(3*time.Minute))
+
+			insertAuditEvent("effectiveness.hash.computed", "effectiveness", corrID,
+				map[string]interface{}{
+					"pre_remediation_spec_hash":  "sha256:pre8",
+					"post_remediation_spec_hash": "sha256:post8",
+				}, now.Add(4*time.Minute))
+
+			insertAuditEvent("effectiveness.assessment.completed", "effectiveness", corrID,
+				map[string]interface{}{"reason": "full", "score": 0.855},
+				now.Add(5*time.Minute))
+
+			By("Calling enricher")
+			result, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "sha256:pre8", "incident-enr008-"+testID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RemediationHistory.Tier1).To(HaveLen(1))
+
+			entry := result.RemediationHistory.Tier1[0]
+
+			By("Asserting HealthChecks propagation")
+			Expect(entry.HealthChecks).ToNot(BeNil(), "HealthChecks should be populated from health.assessed EM event")
+			Expect(*entry.HealthChecks.PodRunning).To(BeTrue())
+			Expect(*entry.HealthChecks.ReadinessPass).To(BeTrue())
+			Expect(*entry.HealthChecks.CrashLoops).To(BeFalse())
+			Expect(*entry.HealthChecks.OomKilled).To(BeFalse())
+
+			By("Asserting MetricDeltas propagation")
+			Expect(entry.MetricDeltas).ToNot(BeNil(), "MetricDeltas should be populated from metrics.assessed EM event")
+			Expect(*entry.MetricDeltas.CpuBefore).To(BeNumerically("~", 0.85, 0.001))
+			Expect(*entry.MetricDeltas.CpuAfter).To(BeNumerically("~", 0.45, 0.001))
+			Expect(*entry.MetricDeltas.MemoryBefore).To(BeNumerically("~", 512.0, 0.1))
+			Expect(*entry.MetricDeltas.MemoryAfter).To(BeNumerically("~", 256.0, 0.1))
+
+			By("Asserting SignalResolved propagation from alert.assessed")
+			Expect(entry.SignalResolved).To(HaveValue(BeTrue()))
+
+			By("Asserting hash fields")
+			Expect(entry.PreRemediationSpecHash).To(Equal("sha256:pre8"))
+			Expect(entry.PostRemediationSpecHash).To(Equal("sha256:post8"))
+		})
+	})
+
+	// ============================================================================
+	// IT-KA-433-ENR-009: No regression when currentSpecHash matches postRemediation
+	// ============================================================================
+	Describe("IT-KA-433-ENR-009: No regression when currentSpecHash matches postRemediation hash", func() {
+		It("should return regressionDetected=false when queried with post-remediation hash", func() {
+			target := fmt.Sprintf("it-enrichment/Pod/web-pod-1")
+			corrID := fmt.Sprintf("ro-enr009-%s", testID)
+			now := time.Now().Add(-1 * time.Hour)
+
+			By("Seeding RO event with preHash=sha256:old9")
+			insertROEvent(corrID, target, "sha256:old9", "RestartPod", now)
+			insertEMEvents(corrID, "full", 0.90, "sha256:old9", "sha256:current9", now)
+
+			By("Calling enricher with currentSpecHash=sha256:old9 (matches preHash → regression)")
+			result1, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "sha256:old9", "incident-enr009a-"+testID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result1.RemediationHistory.Tier1).To(HaveLen(1))
+			Expect(result1.RemediationHistory.RegressionDetected).To(BeTrue(),
+				"currentSpecHash == preHash → regression detected")
+			Expect(result1.RemediationHistory.Tier1[0].HashMatch).To(Equal("preRemediation"))
+
+			By("Calling enricher with currentSpecHash=sha256:novel (matches nothing → no results, no regression)")
+			result2, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "sha256:novel", "incident-enr009b-"+testID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result2.RemediationHistory.Tier1).To(BeEmpty(),
+				"no RO events match sha256:novel as preHash")
+			Expect(result2.RemediationHistory.RegressionDetected).To(BeFalse(),
+				"no matching entries → no regression")
 		})
 	})
 })
