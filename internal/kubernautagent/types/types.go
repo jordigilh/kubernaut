@@ -35,6 +35,7 @@ type PhaseToolMap map[Phase][]string
 type InvestigationResult struct {
 	// Core RCA output
 	RCASummary        string                 `json:"rca_summary"`
+	Severity          string                 `json:"severity,omitempty"`
 	WorkflowID        string                 `json:"workflow_id,omitempty"`
 	RemediationTarget RemediationTarget      `json:"remediation_target,omitempty"`
 	Parameters        map[string]interface{} `json:"parameters,omitempty"`

@@ -110,6 +110,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	}
 
 	if rcaResult.HumanReviewNeeded {
+		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, enrichData)
 		completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, "")
 		for k, v := range tokens.AuditData() {
@@ -145,6 +146,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		workflowResult.RCASummary = rcaResult.RCASummary
 	}
 
+	backfillSeverity(workflowResult, signal)
 	attachDetectedLabels(workflowResult, enrichData)
 	completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, "")
 	for k, v := range tokens.AuditData() {
@@ -152,6 +154,20 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	}
 	audit.StoreBestEffort(ctx, inv.auditStore, completeEvent, inv.logger)
 	return workflowResult, nil
+}
+
+// backfillSeverity ensures InvestigationResult.Severity is never empty.
+// If the LLM didn't provide severity, fall back to the signal's severity.
+// If still empty, use "unknown" to satisfy the CRD enum validation.
+func backfillSeverity(result *katypes.InvestigationResult, signal katypes.SignalContext) {
+	if result.Severity != "" {
+		return
+	}
+	if signal.Severity != "" {
+		result.Severity = signal.Severity
+		return
+	}
+	result.Severity = "unknown"
 }
 
 // ResolveEnrichmentTarget determines the K8s resource to enrich.

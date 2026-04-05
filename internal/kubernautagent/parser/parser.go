@@ -158,6 +158,7 @@ const confidenceFloor = 0.8
 type llmResponse struct {
 	RCA                  *llmRCA      `json:"root_cause_analysis"`
 	Workflow             *llmWorkflow `json:"selected_workflow"`
+	Severity             string       `json:"severity,omitempty"`
 	Actionable           *bool        `json:"actionable,omitempty"`
 	InvestigationOutcome string       `json:"investigation_outcome,omitempty"`
 	NeedsHumanReview     *bool        `json:"needs_human_review,omitempty"`
@@ -166,6 +167,7 @@ type llmResponse struct {
 
 type llmRCA struct {
 	Summary              string        `json:"summary"`
+	Severity             string        `json:"severity,omitempty"`
 	RemediationTarget    *llmRemTarget `json:"remediation_target,omitempty"`
 	RemediationTargetAlt *llmRemTarget `json:"remediationTarget,omitempty"`
 }
@@ -192,6 +194,7 @@ type llmWorkflow struct {
 // flatLLMFields captures top-level fields that may appear alongside the flat
 // InvestigationResult format (rca_summary, workflow_id, confidence, etc.).
 type flatLLMFields struct {
+	Severity             string `json:"severity,omitempty"`
 	Actionable           *bool  `json:"actionable,omitempty"`
 	InvestigationOutcome string `json:"investigation_outcome,omitempty"`
 	NeedsHumanReview     *bool  `json:"needs_human_review,omitempty"`
@@ -209,6 +212,7 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 	result := &katypes.InvestigationResult{}
 	if resp.RCA != nil {
 		result.RCASummary = resp.RCA.Summary
+		result.Severity = resp.RCA.Severity
 		if t := resp.RCA.resolvedTarget(); t != nil {
 			result.RemediationTarget = katypes.RemediationTarget{
 				Kind:      t.Kind,
@@ -217,6 +221,10 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 			}
 		}
 	}
+	// Top-level severity takes precedence over nested (allows Mock LLM to set both)
+	if resp.Severity != "" {
+		result.Severity = resp.Severity
+	}
 	if resp.Workflow != nil {
 		result.WorkflowID = resp.Workflow.WorkflowID
 		result.ExecutionBundle = resp.Workflow.ExecutionBundle
@@ -224,6 +232,7 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 	}
 
 	applyFlatFields(result, flatLLMFields{
+		Severity:             resp.Severity,
 		Actionable:           resp.Actionable,
 		InvestigationOutcome: resp.InvestigationOutcome,
 		NeedsHumanReview:     resp.NeedsHumanReview,
@@ -263,6 +272,10 @@ func mergeNestedRemediationTarget(result *katypes.InvestigationResult, jsonStr s
 // - investigation_outcome: maps to outcome routing fields
 // - needs_human_review / human_review_reason: propagates directly
 func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
+	if flat.Severity != "" && result.Severity == "" {
+		result.Severity = flat.Severity
+	}
+
 	if flat.Actionable != nil && !*flat.Actionable {
 		falseVal := false
 		result.IsActionable = &falseVal
