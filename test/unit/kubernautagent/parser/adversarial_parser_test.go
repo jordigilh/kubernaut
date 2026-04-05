@@ -344,4 +344,57 @@ End of analysis.`
 				"H6: workflow_id should still be preserved")
 		})
 	})
+
+	Describe("CI-1058-SEV: Severity extraction for AA CRD compliance", func() {
+		It("should extract top-level severity from flat response", func() {
+			input := `{"rca_summary": "OOM detected", "severity": "critical", "confidence": 0.9}`
+			result, err := p.Parse(input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Severity).To(Equal("critical"))
+		})
+
+		It("should extract nested severity from root_cause_analysis", func() {
+			input := `{"root_cause_analysis": {"summary": "OOM", "severity": "high"}, "confidence": 0.8}`
+			result, err := p.Parse(input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Severity).To(Equal("high"))
+		})
+
+		It("should prefer top-level severity over nested when both present", func() {
+			input := `{
+				"root_cause_analysis": {"summary": "OOM", "severity": "low"},
+				"severity": "critical",
+				"confidence": 0.9
+			}`
+			result, err := p.Parse(input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Severity).To(Equal("critical"),
+				"top-level severity should take precedence")
+		})
+
+		It("should handle Mock LLM response format with both paths", func() {
+			input := `{
+				"root_cause_analysis": {
+					"summary": "Container exceeded memory limits",
+					"severity": "critical",
+					"contributing_factors": ["traffic_spike"]
+				},
+				"severity": "critical",
+				"confidence": 0.95,
+				"investigation_outcome": "actionable",
+				"actionable": true,
+				"selected_workflow": {
+					"workflow_id": "oomkill-increase-memory-v1",
+					"confidence": 0.95,
+					"execution_engine": "job"
+				}
+			}`
+			result, err := p.Parse(input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Severity).To(Equal("critical"))
+			Expect(result.IsActionable).NotTo(BeNil())
+			Expect(*result.IsActionable).To(BeTrue())
+			Expect(result.WorkflowID).To(Equal("oomkill-increase-memory-v1"))
+		})
+	})
 })

@@ -219,6 +219,10 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 		summaryRaw, _ := json.Marshal(r.RCASummary)
 		rca["summary"] = jx.Raw(summaryRaw)
 	}
+	if r.Severity != "" {
+		sevRaw, _ := json.Marshal(r.Severity)
+		rca["severity"] = jx.Raw(sevRaw)
+	}
 	if r.RemediationTarget.Kind != "" {
 		targetRaw, _ := json.Marshal(r.RemediationTarget)
 		rca["remediation_target"] = jx.Raw(targetRaw)
