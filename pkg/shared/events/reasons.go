@@ -193,6 +193,11 @@ const (
 	// Failed from the original WorkflowExecution or when the reference is dangling (Issue #190).
 	// Type: Warning
 	EventReasonInheritedFailed = "InheritedFailed"
+
+	// EventReasonOperatorOverride is emitted when an operator overrides the
+	// AI-recommended workflow and/or parameters via RAR approval (Issue #594).
+	// Type: Normal
+	EventReasonOperatorOverride = "OperatorOverride"
 )
 
 // ============================================================

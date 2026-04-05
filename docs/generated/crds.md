@@ -1189,6 +1189,7 @@ _Appears in:_
 | `decidedBy`| _string_| Who made the decision (username or "system" for timeout)|
 | `decidedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| When the decision was made|
 | `decisionMessage`| _string_| Optional message from the decision maker|
+| `workflowOverride`| _[WorkflowOverride](#workflowoverride)_| Operator workflow/parameter override (#594, ).<br />Only valid when Decision is Approved. Webhook validates the referenced RW.|
 | `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions represent the latest available observations<br />Standard condition types:<br />- "Approved" - Decision is Approved<br />- "Rejected" - Decision is Rejected<br />- "Expired" - Decision timed out|
 | `createdAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| Time when the approval request was created|
 | `timeRemaining`| _string_| Time remaining until expiration (human-readable, e.g., "5m30s")<br />Updated by controller periodically|
@@ -1966,6 +1967,23 @@ _Appears in:_
 | `serviceAccountName`| _string_| ServiceAccountName is the pre-existing ServiceAccount resolved from the<br />DS workflow catalog at runtime by the WE controller .<br />Set once during Pending phase via ResolveWorkflowCatalogMetadata; immutable<br />thereafter. If empty, K8s assigns the namespace's default SA (Job/Tekton)<br />or the Ansible executor falls back to the controller's in-cluster credentials.|
 | `deduplicatedBy`| _string_| DeduplicatedBy stores the name of the original WorkflowExecution that owns<br />the conflicting execution resource. Set atomically inside AtomicStatusUpdate<br />when FailureDetails.Reason == Deduplicated (, M5 constraint).<br />Immutable after initial assignment.|
 | `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions provide detailed status information|
+
+
+### WorkflowOverride
+
+
+WorkflowOverride allows operators to override the AI-recommended workflow
+and/or parameters when approving a RemediationApprovalRequest .
+The RO resolves the final spec from either this override or the AIA default.
+
+_Appears in:_
+- [RemediationApprovalRequestStatus](#remediationapprovalrequeststatus)
+
+| Field| Type| Description|
+| ---| ---| ---|
+| `workflowName`| _string_| Name of a RemediationWorkflow CRD to use instead of the AI-recommended one.<br />If set, the webhook validates the RW exists and has CatalogStatus=Active.|
+| `parameters`| _object (keys:string, values:string)_| Override parameters for the workflow execution.<br />If non-nil (including empty map), replaces the AI-recommended parameters.<br />If nil, the AI-recommended parameters are preserved.|
+| `rationale`| _string_| Rationale for the override decision (audit trail).|
 
 
 ### WorkflowRef
