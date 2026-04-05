@@ -485,6 +485,7 @@ type TestMetric struct {
 	Labels    map[string]string // Label set for the metric
 	Value     float64           // Metric value
 	Timestamp time.Time         // Timestamp for the sample
+	IsCounter bool              // When true, emit as OTLP Sum (cumulative monotonic) for rate() compatibility
 }
 
 // TestAlert represents an alert for injection into AlertManager.
@@ -636,8 +637,9 @@ func HasActiveAlerts(amURL string) bool {
 // This implementation uses the OTLP/HTTP JSON protocol, requiring only net/http and
 // encoding/json from the Go standard library (no external dependencies).
 //
-// Metrics are injected as OTLP Gauge data points. For test purposes, all metrics are
-// treated as gauges since the EM only reads instantaneous values via PromQL.
+// Metrics are injected as OTLP Gauge by default. When TestMetric.IsCounter is true,
+// the metric is emitted as an OTLP Sum (cumulative, monotonic) so Prometheus stores it
+// as a counter type, enabling correct rate() and increase() evaluation.
 //
 // Parameters:
 //   - promURL: Prometheus base URL (e.g., "http://127.0.0.1:9190")
@@ -647,9 +649,11 @@ func InjectMetrics(promURL string, metrics []TestMetric) error {
 		return nil
 	}
 
-	// Group metrics by name so each unique metric name becomes one OTLP Metric
-	// with multiple data points (if the same metric has different label sets).
-	metricsByName := make(map[string][]otlpDataPoint)
+	type metricGroup struct {
+		dataPoints []otlpDataPoint
+		isCounter  bool
+	}
+	groups := make(map[string]*metricGroup)
 	for _, m := range metrics {
 		attrs := make([]otlpAttribute, 0, len(m.Labels))
 		for k, v := range m.Labels {
@@ -667,15 +671,27 @@ func InjectMetrics(promURL string, metrics []TestMetric) error {
 			TimeUnixNano: fmt.Sprintf("%d", ts.UnixNano()),
 			Attributes:   attrs,
 		}
-		metricsByName[m.Name] = append(metricsByName[m.Name], dp)
+		g, ok := groups[m.Name]
+		if !ok {
+			g = &metricGroup{isCounter: m.IsCounter}
+			groups[m.Name] = g
+		}
+		g.dataPoints = append(g.dataPoints, dp)
 	}
 
-	otlpMetrics := make([]otlpMetric, 0, len(metricsByName))
-	for name, dps := range metricsByName {
-		otlpMetrics = append(otlpMetrics, otlpMetric{
-			Name:  name,
-			Gauge: &otlpGauge{DataPoints: dps},
-		})
+	otlpMetrics := make([]otlpMetric, 0, len(groups))
+	for name, g := range groups {
+		om := otlpMetric{Name: name}
+		if g.isCounter {
+			om.Sum = &otlpSum{
+				DataPoints:             g.dataPoints,
+				AggregationTemporality: 2, // AGGREGATION_TEMPORALITY_CUMULATIVE
+				IsMonotonic:            true,
+			}
+		} else {
+			om.Gauge = &otlpGauge{DataPoints: g.dataPoints}
+		}
+		otlpMetrics = append(otlpMetrics, om)
 	}
 
 	payload := otlpExportMetricsRequest{
@@ -746,8 +762,15 @@ type otlpScope struct {
 }
 
 type otlpMetric struct {
-	Name  string     `json:"name"`
+	Name  string   `json:"name"`
 	Gauge *otlpGauge `json:"gauge,omitempty"`
+	Sum   *otlpSum   `json:"sum,omitempty"`
+}
+
+type otlpSum struct {
+	DataPoints             []otlpDataPoint `json:"dataPoints"`
+	AggregationTemporality int             `json:"aggregationTemporality"`
+	IsMonotonic            bool            `json:"isMonotonic"`
 }
 
 type otlpGauge struct {

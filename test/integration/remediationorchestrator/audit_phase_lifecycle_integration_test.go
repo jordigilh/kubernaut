@@ -266,15 +266,25 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			}
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
-			// Wait for RR to transition to Analyzing phase
-			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
-					Name:      rr.Name, // Fixed: was incorrectly using spName
-					Namespace: ROControllerNamespace,
-				}, rr)
-				return rr.Status.OverallPhase
-			}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing),
-				"RR should transition to Analyzing phase")
+		// Wait for RR to reach Analyzing or any subsequent phase.
+		// The controller may advance past Analyzing within a single reconcile cycle
+		// (when SP and AI children complete quickly), so we accept any phase at or
+		// beyond Analyzing. The audit event assertion below proves the transition occurred.
+		analyzingOrBeyond := []remediationv1.RemediationPhase{
+			remediationv1.PhaseAnalyzing,
+			remediationv1.PhaseAwaitingApproval,
+			remediationv1.PhaseExecuting,
+			remediationv1.PhaseVerifying,
+			remediationv1.PhaseCompleted,
+		}
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
+				Name:      rr.Name,
+				Namespace: ROControllerNamespace,
+			}, rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(BeElementOf(analyzingOrBeyond),
+			"RR should reach Analyzing or a subsequent phase")
 
 			// Trigger async flush and wait for events to be persisted
 			err := auditStore.Flush(ctx)
