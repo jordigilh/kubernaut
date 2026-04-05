@@ -506,25 +506,43 @@ func buildWorkflowValidator(ds *dsClients, logger *slog.Logger) (*parser.Validat
 		logger.Info("workflow validator disabled (no DataStorage — dev mode)")
 		return nil, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
-	resp, err := ds.ogenClient.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch workflow catalog from DataStorage: %w", err)
-	}
+	retryDelays := []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second}
+	var lastErr error
 
-	switch v := resp.(type) {
-	case *ogenclient.WorkflowListResponse:
-		ids := make([]string, 0, len(v.Workflows))
-		for _, w := range v.Workflows {
-			ids = append(ids, w.WorkflowName)
+	for attempt := 0; attempt <= len(retryDelays); attempt++ {
+		if attempt > 0 {
+			delay := retryDelays[attempt-1]
+			logger.Warn("retrying workflow catalog fetch",
+				"attempt", attempt+1, "delay", delay, "previous_error", lastErr)
+			time.Sleep(delay)
 		}
-		logger.Info("workflow validator enabled (DD-HAPI-002: sole validator)", "allowed_workflows", len(ids))
-		return parser.NewValidator(ids), nil
-	default:
-		return nil, fmt.Errorf("unexpected ListWorkflows response type %T", resp)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		resp, err := ds.ogenClient.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{})
+		cancel()
+
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		switch v := resp.(type) {
+		case *ogenclient.WorkflowListResponse:
+			ids := make([]string, 0, len(v.Workflows))
+			for _, w := range v.Workflows {
+				ids = append(ids, w.WorkflowName)
+			}
+			logger.Info("workflow validator enabled (DD-HAPI-002: sole validator)",
+				"allowed_workflows", len(ids), "attempts", attempt+1)
+			return parser.NewValidator(ids), nil
+		default:
+			lastErr = fmt.Errorf("unexpected ListWorkflows response type %T", resp)
+		}
 	}
+
+	return nil, fmt.Errorf("failed to fetch workflow catalog after %d attempts: %w",
+		len(retryDelays)+1, lastErr)
 }
 
 // newAuthMiddleware creates the DD-AUTH-014 auth middleware using in-cluster K8s config.

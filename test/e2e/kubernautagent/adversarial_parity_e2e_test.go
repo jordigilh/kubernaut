@@ -141,7 +141,7 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 	Context("GAP-004/016: RFC 7807 errors", func() {
 
 		It("E2E-KA-433-ADV-005: Invalid request returns error with detail field", func() {
-			resp, err := http.Post(kaURL+"/api/v1/incident/analyze", "application/json",
+			resp, err := authHTTPClient.Post(kaURL+"/api/v1/incident/analyze", "application/json",
 				strings.NewReader(`{"invalid": "missing required fields"}`))
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
@@ -153,7 +153,7 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 		})
 
 		It("E2E-KA-433-ADV-006: Missing required fields → HTTP 422 or 400", func() {
-			resp, err := http.Post(kaURL+"/api/v1/incident/analyze", "application/json",
+			resp, err := authHTTPClient.Post(kaURL+"/api/v1/incident/analyze", "application/json",
 				strings.NewReader(`{"incident_id": "test", "signal_name": "OOMKilled"}`))
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()

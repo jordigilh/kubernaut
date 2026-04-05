@@ -70,6 +70,10 @@ var (
 	// sessionClient is the session-aware wrapper (submit/poll/result)
 	sessionClient *hapiclient.KubernautAgentClient
 
+	// authHTTPClient carries the ServiceAccount Bearer token for raw HTTP tests
+	// (e.g., RFC 7807 validation) that bypass the ogen client.
+	authHTTPClient *http.Client
+
 	anyTestFailed  bool
 	setupSucceeded bool
 	projectRoot    string
@@ -152,6 +156,11 @@ var _ = SynchronizedBeforeSuite(
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create session client")
 
+		authHTTPClient = &http.Client{
+			Transport: testauth.NewServiceAccountTransport(saToken),
+			Timeout:   30 * time.Second,
+		}
+
 		setupSucceeded = true
 		return []byte(kubeconfigPath)
 	},
@@ -184,6 +193,11 @@ var _ = SynchronizedBeforeSuite(
 			testauth.NewServiceAccountTransport(saToken),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create session client")
+
+		authHTTPClient = &http.Client{
+			Transport: testauth.NewServiceAccountTransport(saToken),
+			Timeout:   30 * time.Second,
+		}
 	},
 )
 
