@@ -264,7 +264,7 @@ spec:
                   Issue #91: promoted from mutable label to immutable spec field
                 type: string
               priority:
-                default: medium
+                default: Medium
                 description: Priority of notification (critical, high, medium, low)
                 enum:
                 - Critical

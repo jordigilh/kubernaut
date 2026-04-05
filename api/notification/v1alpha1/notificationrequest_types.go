@@ -405,7 +405,7 @@ type NotificationRequestSpec struct {
 
 	// Priority of notification (critical, high, medium, low)
 	// +kubebuilder:validation:Required
-	// +kubebuilder:default=medium
+	// +kubebuilder:default=Medium
 	Priority NotificationPriority `json:"priority"`
 
 	// Subject line for notification
