@@ -37,7 +37,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	client "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	client "github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)", func() {

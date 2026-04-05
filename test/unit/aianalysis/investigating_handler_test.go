@@ -494,8 +494,8 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("invalid-workflow"))
 				// RCA preserved
 				Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil(), "RCA should be preserved")
-				// Message contains warnings
-				Expect(analysis.Status.Message).To(ContainSubstring("Parameter validation failed"))
+				// Issue #588: Warnings are stored separately, not in Message
+				Expect(analysis.Status.Warnings).To(ContainElement(ContainSubstring("Parameter validation failed")))
 			})
 
 			// BR-HAPI-197.6: MUST NOT proceed to Analyzing
@@ -595,7 +595,9 @@ var _ = Describe("InvestigatingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.ValidationAttemptsHistory).To(BeEmpty(), "No history when HAPI doesn't provide it")
-				Expect(analysis.Status.Message).To(Equal("Confidence too low"), "Should use warnings for message")
+				// Issue #588: Warnings stored separately, Message only has validation attempt errors
+				Expect(analysis.Status.Message).To(BeEmpty(), "No validation attempts means empty message")
+				Expect(analysis.Status.Warnings).To(ContainElement("Confidence too low"), "Warnings should be stored separately")
 			})
 
 			// DD-HAPI-002 v1.4: Handle malformed timestamp gracefully
