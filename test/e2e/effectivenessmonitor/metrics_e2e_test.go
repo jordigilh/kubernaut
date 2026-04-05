@@ -50,27 +50,45 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 	// E2E-EM-MC-001: Metrics Improvement
 	// ========================================================================
 	It("E2E-EM-MC-001: should produce metrics score > 0 when improvement is detected", func() {
-		By("Injecting cumulative counter series into Prometheus (high rate before, low rate after)")
-		// container_cpu_usage_seconds_total is a counter in production. We inject it as
-		// OTLP Sum (cumulative, monotonic) with multiple data points so that
-		// sum(rate(...[5m])) produces distinct pre/post values for the EM scorer.
+		By("Injecting gauge series spanning 8 minutes into Prometheus (high rate before, low rate after)")
+		// The EM query is sum(rate(container_cpu_usage_seconds_total{ns}[5m])).
+		// rate()[5m] needs the underlying data to span enough time so that the
+		// 5-minute sliding window captures different rate regions at early vs late
+		// evaluation points in the QueryRange.
+		//
+		// High-rate phase (-8m to -4m): counter increases at ~1.0/s
+		// Low-rate phase  (-4m to  0m): counter increases at ~0.2/s
+		//
+		// At early QueryRange eval points, rate()[5m] ≈ 0.84/s (high).
+		// At late eval points, rate()[5m] ≈ 0.36/s (low).
+		// Since CPU is LowerIsBetter, lower post = improvement → score > 0.
 		now := time.Now()
 		labels := map[string]string{
 			"namespace": testNS,
 			"pod":       "target-pod",
 			"container": "workload",
 		}
-		// "Before" phase: cumulative counter increasing at ~0.85/s
-		// "After" phase: cumulative counter increasing at ~0.25/s
-		counterSeries := []infrastructure.TestMetric{
-			{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: 100.0, Timestamp: now.Add(-20 * time.Second), IsCounter: true},
-			{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: 104.25, Timestamp: now.Add(-15 * time.Second), IsCounter: true},
-			{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: 108.50, Timestamp: now.Add(-10 * time.Second), IsCounter: true},
-			{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: 109.75, Timestamp: now.Add(-5 * time.Second), IsCounter: true},
-			{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: 111.00, Timestamp: now, IsCounter: true},
+		var series []infrastructure.TestMetric
+		// High rate: 9 points at 30s intervals from -8m to -4m (+30 per 30s = 1.0/s)
+		for i := 0; i <= 8; i++ {
+			series = append(series, infrastructure.TestMetric{
+				Name:      "container_cpu_usage_seconds_total",
+				Labels:    labels,
+				Value:     100.0 + float64(i)*30.0,
+				Timestamp: now.Add(-8*time.Minute + time.Duration(i)*30*time.Second),
+			})
 		}
-		err := infrastructure.InjectMetrics(prometheusURL, counterSeries)
-		Expect(err).ToNot(HaveOccurred(), "Failed to inject counter series")
+		// Low rate: 8 points at 30s intervals from -3m30s to 0m (+6 per 30s = 0.2/s)
+		for i := 1; i <= 8; i++ {
+			series = append(series, infrastructure.TestMetric{
+				Name:      "container_cpu_usage_seconds_total",
+				Labels:    labels,
+				Value:     340.0 + float64(i)*6.0,
+				Timestamp: now.Add(-4*time.Minute + time.Duration(i)*30*time.Second),
+			})
+		}
+		err := infrastructure.InjectMetrics(prometheusURL, series)
+		Expect(err).ToNot(HaveOccurred(), "Failed to inject metric series")
 
 		By("Creating a target pod and EA")
 		createTargetPod(testNS, "target-pod")
@@ -105,23 +123,27 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 	// E2E-EM-MC-002: No Metrics Change
 	// ========================================================================
 	It("E2E-EM-MC-002: should produce metrics score 0.0 when no change is detected", func() {
-		By("Injecting cumulative counter series with constant rate into Prometheus")
-		// Same rate before and after: counter increasing at ~0.50/s throughout.
+		By("Injecting gauge series spanning 8 minutes with constant rate into Prometheus")
+		// Constant rate of increase (0.5/s) throughout, so rate()[5m] returns
+		// approximately the same value at every evaluation point → PreValue ≈ PostValue → score ≈ 0.
 		now := time.Now()
 		labels := map[string]string{
 			"namespace": testNS,
 			"pod":       "target-pod",
 			"container": "workload",
 		}
-		counterSeries := []infrastructure.TestMetric{
-			{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: 100.0, Timestamp: now.Add(-20 * time.Second), IsCounter: true},
-			{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: 102.50, Timestamp: now.Add(-15 * time.Second), IsCounter: true},
-			{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: 105.00, Timestamp: now.Add(-10 * time.Second), IsCounter: true},
-			{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: 107.50, Timestamp: now.Add(-5 * time.Second), IsCounter: true},
-			{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: 110.00, Timestamp: now, IsCounter: true},
+		var series []infrastructure.TestMetric
+		// 17 points at 30s intervals from -8m to 0m (+15 per 30s = 0.5/s constant)
+		for i := 0; i <= 16; i++ {
+			series = append(series, infrastructure.TestMetric{
+				Name:      "container_cpu_usage_seconds_total",
+				Labels:    labels,
+				Value:     100.0 + float64(i)*15.0,
+				Timestamp: now.Add(-8*time.Minute + time.Duration(i)*30*time.Second),
+			})
 		}
-		err := infrastructure.InjectMetrics(prometheusURL, counterSeries)
-		Expect(err).ToNot(HaveOccurred(), "Failed to inject counter series")
+		err := infrastructure.InjectMetrics(prometheusURL, series)
+		Expect(err).ToNot(HaveOccurred(), "Failed to inject metric series")
 
 		By("Creating a target pod and EA")
 		createTargetPod(testNS, "target-pod")
