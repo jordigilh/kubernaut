@@ -26,6 +26,7 @@ func noWorkflowFoundConfig() MockScenarioConfig {
 		NeedsHumanReview:     BoolPtr(true),
 		HumanReviewReason:    "no_matching_workflows",
 		InvestigationOutcome: "inconclusive",
+		IsActionable:         BoolPtr(false),
 	}
 }
 
@@ -71,12 +72,12 @@ func problemResolvedContradictionConfig() MockScenarioConfig {
 func maxRetriesExhaustedConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "max_retries_exhausted", SignalName: "MOCK_MAX_RETRIES_EXHAUSTED", Severity: "high",
-		Confidence: 0.0,
-		RootCause:            "LLM analysis completed but failed validation after maximum retry attempts. Response format was unparseable or contained invalid data.",
+		WorkflowName: "nonexistent-invalid-workflow-xyz", WorkflowID: uuid.DeterministicUUID("nonexistent-invalid-workflow-xyz"),
+		WorkflowTitle: "Invalid Workflow", Confidence: 0.6,
+		RootCause:            "LLM analysis completed but selected an invalid workflow not present in the catalog.",
 		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "failed-analysis-pod",
-		NeedsHumanReview:     BoolPtr(true),
-		HumanReviewReason:    "llm_parsing_error",
-		InvestigationOutcome: "inconclusive",
+		InvestigationOutcome: "actionable",
+		IsActionable:         BoolPtr(true),
 	}
 }
 

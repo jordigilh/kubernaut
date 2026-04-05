@@ -268,6 +268,8 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 	}
 	if len(r.Warnings) > 0 {
 		resp.Warnings = r.Warnings
+	} else if r.HumanReviewNeeded {
+		resp.Warnings = []string{synthesizeHumanReviewWarning(r)}
 	}
 
 	if len(r.DetectedLabels) > 0 {
@@ -295,7 +297,38 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 		resp.AlternativeWorkflows = alts
 	}
 
+	if len(r.ValidationAttemptsHistory) > 0 {
+		attempts := make([]hapiclient.ValidationAttempt, 0, len(r.ValidationAttemptsHistory))
+		for _, va := range r.ValidationAttemptsHistory {
+			attempt := hapiclient.ValidationAttempt{
+				Attempt:   va.Attempt,
+				IsValid:   va.IsValid,
+				Errors:    va.Errors,
+				Timestamp: va.Timestamp,
+			}
+			if va.WorkflowID != "" {
+				attempt.WorkflowID.SetTo(va.WorkflowID)
+			}
+			attempts = append(attempts, attempt)
+		}
+		resp.ValidationAttemptsHistory = attempts
+	}
+
 	return resp
+}
+
+// synthesizeHumanReviewWarning generates a warning when human review is required
+// but no explicit warnings were set by the parser. Per BR-HAPI-197, human review
+// responses must include at least one warning explaining why automation is unavailable.
+func synthesizeHumanReviewWarning(r *katypes.InvestigationResult) string {
+	reason := r.HumanReviewReason
+	if reason == "" {
+		reason = r.Reason
+	}
+	if reason != "" {
+		return fmt.Sprintf("Human review required: %s", reason)
+	}
+	return "Human review required: investigation could not determine automated remediation"
 }
 
 // mapHumanReviewReason maps free-form investigator reason strings to valid

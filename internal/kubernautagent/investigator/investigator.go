@@ -98,13 +98,16 @@ func New(cfg Config) *Investigator {
 }
 
 // Investigate runs the two-invocation investigation and returns the result.
+// Per BR-AUDIT-005, all audit events use signal.RemediationID as correlation ID
+// so that DataStorage queries by remediation_id return the full investigation trail.
 func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	correlationID := signal.RemediationID
 	signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
 	enrichData := inv.resolveEnrichment(ctx, signalKind, signalName, signalNS, signal.IncidentID)
 	promptEnrichment := toPromptEnrichment(enrichData)
 	tokens := &TokenAccumulator{}
 
-	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, tokens)
+	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, tokens, correlationID)
 	if err != nil {
 		return nil, fmt.Errorf("RCA invocation: %w", err)
 	}
@@ -112,7 +115,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	if rcaResult.HumanReviewNeeded {
 		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, enrichData)
-		completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, "")
+		completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, correlationID)
 		for k, v := range tokens.AuditData() {
 			completeEvent.Data[k] = v
 		}
@@ -137,7 +140,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		promptEnrichment = toPromptEnrichment(enrichData)
 	}
 
-	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, promptEnrichment, tokens)
+	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, promptEnrichment, tokens, correlationID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
 	}
@@ -148,7 +151,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	backfillSeverity(workflowResult, signal)
 	attachDetectedLabels(workflowResult, enrichData)
-	completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, "")
+	completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, correlationID)
 	for k, v := range tokens.AuditData() {
 		completeEvent.Data[k] = v
 	}
@@ -204,7 +207,7 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 	return result
 }
 
-func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator) (*katypes.InvestigationResult, error) {
+func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string) (*katypes.InvestigationResult, error) {
 	systemPrompt, err := inv.builder.RenderInvestigation(signalToPrompt(signal), enrichData)
 	if err != nil {
 		return nil, fmt.Errorf("rendering investigation prompt: %w", err)
@@ -215,7 +218,7 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 		{Role: "user", Content: fmt.Sprintf("Investigate: %s %s in %s — %s", signal.Severity, signal.Name, signal.Namespace, signal.Message)},
 	}
 
-	content, exhausted, err := inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, tokens)
+	content, exhausted, err := inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, tokens, correlationID)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +240,7 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	return result, nil
 }
 
-func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator) (*katypes.InvestigationResult, error) {
+func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string) (*katypes.InvestigationResult, error) {
 	systemPrompt, err := inv.builder.RenderWorkflowSelection(signalToPrompt(signal), rcaSummary, enrichData)
 	if err != nil {
 		return nil, fmt.Errorf("rendering workflow selection prompt: %w", err)
@@ -248,7 +251,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		{Role: "user", Content: fmt.Sprintf("RCA findings: %s\n\nSelect the appropriate remediation workflow.", rcaSummary)},
 	}
 
-	content, exhausted, err := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens)
+	content, exhausted, err := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +274,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		}, nil
 	}
 
-	audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeValidationAttempt, ""), inv.logger)
+	audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeValidationAttempt, correlationID), inv.logger)
 
 	if inv.pipeline.Validator != nil {
 		correctionFn := func(r *katypes.InvestigationResult, validationErr error) (*katypes.InvestigationResult, error) {
@@ -279,7 +282,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			messages = append(messages, llm.Message{Role: "assistant", Content: content})
 			messages = append(messages, llm.Message{Role: "user", Content: correctionMsg})
 
-			correctedContent, corrExhausted, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens)
+			correctedContent, corrExhausted, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID)
 			if corrErr != nil {
 				return nil, corrErr
 			}
@@ -303,12 +306,13 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 }
 
 // runLLMLoop executes the multi-turn LLM conversation loop with tool
-// execution routed through the registry.
-func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, tokens *TokenAccumulator) (string, bool, error) {
+// execution routed through the registry. correlationID is propagated to
+// all audit events per BR-AUDIT-005 (remediation_id as query key).
+func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, tokens *TokenAccumulator, correlationID string) (string, bool, error) {
 	toolDefs := inv.toolDefinitionsForPhase(phase)
 
 	for turn := 0; turn < inv.maxTurns; turn++ {
-		audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeLLMRequest, ""), inv.logger)
+		audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeLLMRequest, correlationID), inv.logger)
 
 		resp, err := inv.client.Chat(ctx, llm.ChatRequest{
 			Messages: messages,
@@ -316,7 +320,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			Options:  llm.ChatOptions{JSONMode: true},
 		})
 		if err != nil {
-			audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeResponseFailed, ""), inv.logger)
+			audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeResponseFailed, correlationID), inv.logger)
 			return "", false, fmt.Errorf("%s LLM call turn %d: %w", phase, turn, err)
 		}
 
@@ -324,14 +328,14 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			tokens.Add(resp.Usage)
 		}
 
-		respEvent := audit.NewEvent(audit.EventTypeLLMResponse, "")
+		respEvent := audit.NewEvent(audit.EventTypeLLMResponse, correlationID)
 		respEvent.Data["prompt_tokens"] = resp.Usage.PromptTokens
 		respEvent.Data["completion_tokens"] = resp.Usage.CompletionTokens
 		respEvent.Data["total_tokens"] = resp.Usage.TotalTokens
 		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.logger)
 
 		if len(resp.ToolCalls) > 0 {
-			audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeLLMToolCall, ""), inv.logger)
+			audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeLLMToolCall, correlationID), inv.logger)
 			messages = append(messages, resp.Message)
 			for _, tc := range resp.ToolCalls {
 				toolResult := inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments))
