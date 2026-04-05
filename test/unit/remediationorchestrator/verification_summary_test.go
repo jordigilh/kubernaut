@@ -485,7 +485,7 @@ var _ = Describe("Verification Summary Builder (#318)", func() {
 			Expect(summary).To(ContainSubstring("all checks were performed, but some indicate the remediation was not fully effective"))
 			Expect(summary).NotTo(ContainSubstring("Verification passed"))
 			Expect(summary).To(ContainSubstring("Related alerts: still firing"))
-			Expect(summary).To(ContainSubstring("Metrics: anomaly persists"))
+			Expect(summary).To(ContainSubstring("Metrics: partial improvement (score: 0.50)"))
 			Expect(vCtx.Outcome).To(Equal("completed"))
 			Expect(vCtx.Reason).To(Equal("full"))
 			Expect(vCtx.Summary).To(ContainSubstring("all checks were performed"))
@@ -543,10 +543,88 @@ var _ = Describe("Verification Summary Builder (#318)", func() {
 			Expect(summary).To(ContainSubstring("all checks were performed, but some indicate the remediation was not fully effective"))
 			Expect(summary).NotTo(ContainSubstring("Verification passed"))
 			Expect(summary).To(ContainSubstring("Related alerts: still firing"))
-			Expect(summary).To(ContainSubstring("Metrics: anomaly persists"))
+			Expect(summary).To(ContainSubstring("Metrics: no improvement detected"))
 			Expect(summary).NotTo(ContainSubstring("Pod health"))
 			Expect(vCtx.Outcome).To(Equal("completed"))
 			Expect(vCtx.Reason).To(Equal("full"))
+		})
+	})
+
+	// ========================================
+	// ISSUE #639: GRADUATED METRICS NOTIFICATION WORDING
+	// ========================================
+
+	Context("Issue #639: BuildComponentBullets graduated metrics messages", func() {
+
+		It("UT-RO-639-004: should produce 'no improvement detected' for score 0.0", func() {
+			score := 0.0
+			ea := &eav1.EffectivenessAssessment{
+				Status: eav1.EffectivenessAssessmentStatus{
+					Components: eav1.EAComponents{
+						MetricsAssessed: true,
+						MetricsScore:    &score,
+					},
+				},
+			}
+			bullets := creator.BuildComponentBullets(ea)
+			Expect(bullets).To(ContainSubstring("Metrics: no improvement detected"))
+			Expect(bullets).NotTo(ContainSubstring("anomaly persists"))
+		})
+
+		It("UT-RO-639-005: should produce 'minimal improvement (score: 0.30)' for score 0.3", func() {
+			score := 0.3
+			ea := &eav1.EffectivenessAssessment{
+				Status: eav1.EffectivenessAssessmentStatus{
+					Components: eav1.EAComponents{
+						MetricsAssessed: true,
+						MetricsScore:    &score,
+					},
+				},
+			}
+			bullets := creator.BuildComponentBullets(ea)
+			Expect(bullets).To(ContainSubstring("Metrics: minimal improvement (score: 0.30)"))
+			Expect(bullets).NotTo(ContainSubstring("anomaly persists"))
+		})
+
+		It("UT-RO-639-006: should produce 'partial improvement (score: 0.75)' for score 0.75", func() {
+			score := 0.75
+			ea := &eav1.EffectivenessAssessment{
+				Status: eav1.EffectivenessAssessmentStatus{
+					Components: eav1.EAComponents{
+						MetricsAssessed: true,
+						MetricsScore:    &score,
+					},
+				},
+			}
+			bullets := creator.BuildComponentBullets(ea)
+			Expect(bullets).To(ContainSubstring("Metrics: partial improvement (score: 0.75)"))
+			Expect(bullets).NotTo(ContainSubstring("anomaly persists"))
+		})
+
+		It("UT-RO-639-007: should produce no metrics bullet for perfect score 1.0", func() {
+			score := 1.0
+			ea := &eav1.EffectivenessAssessment{
+				Status: eav1.EffectivenessAssessmentStatus{
+					Components: eav1.EAComponents{
+						MetricsAssessed: true,
+						MetricsScore:    &score,
+					},
+				},
+			}
+			bullets := creator.BuildComponentBullets(ea)
+			Expect(bullets).NotTo(ContainSubstring("Metrics"))
+		})
+
+		It("UT-RO-639-008: should produce no metrics bullet when metrics not assessed", func() {
+			ea := &eav1.EffectivenessAssessment{
+				Status: eav1.EffectivenessAssessmentStatus{
+					Components: eav1.EAComponents{
+						MetricsAssessed: false,
+					},
+				},
+			}
+			bullets := creator.BuildComponentBullets(ea)
+			Expect(bullets).NotTo(ContainSubstring("Metrics"))
 		})
 	})
 })
