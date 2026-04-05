@@ -23,7 +23,6 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	sqlbuilder "github.com/jordigilh/kubernaut/pkg/datastorage/repository/sql"
-	shareduuid "github.com/jordigilh/kubernaut/pkg/shared/uuid"
 )
 
 // ========================================
@@ -76,40 +75,77 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 		}
 	}
 
-	// #548: Compute deterministic UUID before INSERT so all services agree on workflow identity.
-	workflow.WorkflowID = shareduuid.DeterministicUUID(workflow.WorkflowName)
+	// Issue #548: When WorkflowID is pre-set (deterministic UUID from content hash),
+	// include it in the INSERT. Otherwise fall back to DB-generated UUID for safety.
+	var insertQuery string
+	var args []interface{}
 
-	insertQuery := `
-		INSERT INTO remediation_workflow_catalog (
-			workflow_id,
-			workflow_name, version, schema_version, name, description, owner, maintainer,
-			content, content_hash, parameters, execution_engine, schema_image, schema_digest,
-			execution_bundle, execution_bundle_digest, engine_config,
-			labels, custom_labels, detected_labels, status,
-			is_latest_version, previous_version, version_notes, change_summary,
-			approved_by, approved_at, expected_success_rate, expected_duration_seconds,
-			created_by, action_type, service_account_name
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8,
-			$9, $10, $11, $12, $13, $14,
-			$15, $16, $17,
-			$18, $19, $20, $21,
-			$22, $23, $24, $25,
-			$26, $27, $28, $29,
-			$30, $31, $32
-		)
-	`
+	if workflow.WorkflowID != "" {
+		insertQuery = `
+			INSERT INTO remediation_workflow_catalog (
+				workflow_id,
+				workflow_name, version, schema_version, name, description, owner, maintainer,
+				content, content_hash, parameters, execution_engine, schema_image, schema_digest,
+				execution_bundle, execution_bundle_digest, engine_config,
+				labels, custom_labels, detected_labels, status,
+				is_latest_version, previous_version, version_notes, change_summary,
+				approved_by, approved_at, expected_success_rate, expected_duration_seconds,
+				created_by, action_type, service_account_name
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7, $8,
+				$9, $10, $11, $12, $13, $14,
+				$15, $16, $17,
+				$18, $19, $20, $21,
+				$22, $23, $24, $25,
+				$26, $27, $28, $29,
+				$30, $31, $32
+			)
+			RETURNING workflow_id
+		`
+		args = []interface{}{
+			workflow.WorkflowID,
+			workflow.WorkflowName, workflow.Version, workflow.SchemaVersion, workflow.Name, workflow.Description, workflow.Owner, workflow.Maintainer,
+			workflow.Content, workflow.ContentHash, workflow.Parameters, workflow.ExecutionEngine, workflow.SchemaImage, workflow.SchemaDigest,
+			workflow.ExecutionBundle, workflow.ExecutionBundleDigest, workflow.EngineConfig,
+			workflow.Labels, workflow.CustomLabels, workflow.DetectedLabels, workflow.Status,
+			workflow.IsLatestVersion, workflow.PreviousVersion, workflow.VersionNotes, workflow.ChangeSummary,
+			workflow.ApprovedBy, workflow.ApprovedAt, workflow.ExpectedSuccessRate, workflow.ExpectedDurationSeconds,
+			workflow.CreatedBy, workflow.ActionType, workflow.ServiceAccountName,
+		}
+	} else {
+		insertQuery = `
+			INSERT INTO remediation_workflow_catalog (
+				workflow_name, version, schema_version, name, description, owner, maintainer,
+				content, content_hash, parameters, execution_engine, schema_image, schema_digest,
+				execution_bundle, execution_bundle_digest, engine_config,
+				labels, custom_labels, detected_labels, status,
+				is_latest_version, previous_version, version_notes, change_summary,
+				approved_by, approved_at, expected_success_rate, expected_duration_seconds,
+				created_by, action_type, service_account_name
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7,
+				$8, $9, $10, $11, $12, $13,
+				$14, $15, $16,
+				$17, $18, $19, $20,
+				$21, $22, $23, $24,
+				$25, $26, $27, $28,
+				$29, $30, $31
+			)
+			RETURNING workflow_id
+		`
+		args = []interface{}{
+			workflow.WorkflowName, workflow.Version, workflow.SchemaVersion, workflow.Name, workflow.Description, workflow.Owner, workflow.Maintainer,
+			workflow.Content, workflow.ContentHash, workflow.Parameters, workflow.ExecutionEngine, workflow.SchemaImage, workflow.SchemaDigest,
+			workflow.ExecutionBundle, workflow.ExecutionBundleDigest, workflow.EngineConfig,
+			workflow.Labels, workflow.CustomLabels, workflow.DetectedLabels, workflow.Status,
+			workflow.IsLatestVersion, workflow.PreviousVersion, workflow.VersionNotes, workflow.ChangeSummary,
+			workflow.ApprovedBy, workflow.ApprovedAt, workflow.ExpectedSuccessRate, workflow.ExpectedDurationSeconds,
+			workflow.CreatedBy, workflow.ActionType, workflow.ServiceAccountName,
+		}
+	}
 
-	_, err = tx.ExecContext(ctx, insertQuery,
-		workflow.WorkflowID,
-		workflow.WorkflowName, workflow.Version, workflow.SchemaVersion, workflow.Name, workflow.Description, workflow.Owner, workflow.Maintainer,
-		workflow.Content, workflow.ContentHash, workflow.Parameters, workflow.ExecutionEngine, workflow.SchemaImage, workflow.SchemaDigest,
-		workflow.ExecutionBundle, workflow.ExecutionBundleDigest, workflow.EngineConfig,
-		workflow.Labels, workflow.CustomLabels, workflow.DetectedLabels, workflow.Status,
-		workflow.IsLatestVersion, workflow.PreviousVersion, workflow.VersionNotes, workflow.ChangeSummary,
-		workflow.ApprovedBy, workflow.ApprovedAt, workflow.ExpectedSuccessRate, workflow.ExpectedDurationSeconds,
-		workflow.CreatedBy, workflow.ActionType, workflow.ServiceAccountName,
-	)
+	var confirmedID string
+	err = tx.QueryRowContext(ctx, insertQuery, args...).Scan(&confirmedID)
 	if err != nil {
 		r.logger.Error(err, "failed to create workflow",
 			"workflow_name", workflow.WorkflowName,
@@ -117,6 +153,7 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 			"error", err)
 		return fmt.Errorf("failed to create workflow: %w", err)
 	}
+	workflow.WorkflowID = confirmedID
 
 	// Commit transaction
 	if err = tx.Commit(); err != nil {

@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -403,4 +404,77 @@ func GetMockLLMContainerInfo(containerID string, config MockLLMConfig) MockLLMCo
 		HealthURL:     fmt.Sprintf("http://127.0.0.1:%d/health", config.Port),
 		MetricsURL:    fmt.Sprintf("http://127.0.0.1:%d/metrics", config.Port),
 	}
+}
+
+// UpdateMockLLMConfigMap updates the Mock LLM's ConfigMap with workflow UUIDs
+// and restarts the deployment so it picks up the new scenarios mapping.
+// Originally in holmesgpt_api.go, ported here during the HAPI→KA migration.
+func UpdateMockLLMConfigMap(ctx context.Context, namespace, kubeconfigPath string, workflowUUIDs map[string]string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "   🔄 Updating Mock LLM ConfigMap with %d workflow UUIDs...\n", len(workflowUUIDs))
+
+	scenariosYAML := "scenarios:\n"
+	for _, key := range SortedWorkflowUUIDKeys(workflowUUIDs) {
+		scenariosYAML += fmt.Sprintf("      %s: %s\n", key, workflowUUIDs[key])
+	}
+	scenariosYAML += "    overrides:\n"
+	scenariosYAML += "      oomkilled:\n"
+	scenariosYAML += "        execution_engine: \"job\"\n"
+	scenariosYAML += "      oomkilled_predictive:\n"
+	scenariosYAML += "        execution_engine: \"job\"\n"
+	scenariosYAML += "      crashloop:\n"
+	scenariosYAML += "        execution_engine: \"job\"\n"
+
+	configMap := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mock-llm-scenarios
+  namespace: %s
+  labels:
+    app: mock-llm
+    component: test-infrastructure
+data:
+  scenarios.yaml: |
+    %s
+`, namespace, scenariosYAML)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	cmd.Stdin = strings.NewReader(configMap)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to update Mock LLM ConfigMap: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ ConfigMap updated with workflow UUIDs\n")
+
+	_, _ = fmt.Fprintf(writer, "   🔄 Restarting Mock LLM deployment to reload config...\n")
+	var restartErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			_, _ = fmt.Fprintf(writer, "   ⏳ Retry %d/2: waiting before rollout restart...\n", attempt)
+			time.Sleep(2 * time.Second)
+		}
+		restartCmd := exec.CommandContext(ctx, "kubectl", "rollout", "restart",
+			"deployment/mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath)
+		restartCmd.Stdout = writer
+		restartCmd.Stderr = writer
+		restartErr = restartCmd.Run()
+		if restartErr == nil {
+			break
+		}
+	}
+	if restartErr != nil {
+		return fmt.Errorf("failed to restart Mock LLM deployment after retries: %w", restartErr)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Mock LLM rollout to complete...\n")
+	rolloutCmd := exec.CommandContext(ctx, "kubectl", "rollout", "status",
+		"deployment/mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath, "--timeout=120s")
+	rolloutCmd.Stdout = writer
+	rolloutCmd.Stderr = writer
+	if err := rolloutCmd.Run(); err != nil {
+		return fmt.Errorf("mock LLM rollout failed: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Mock LLM restarted with workflow UUIDs\n")
+
+	return nil
 }
