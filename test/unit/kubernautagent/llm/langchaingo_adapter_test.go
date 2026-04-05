@@ -21,6 +21,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -68,6 +71,21 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 		})
 
 		It("UT-KA-433-202: should create an adapter for the vertex provider", func() {
+			_, thisFile, _, _ := runtime.Caller(0)
+			fixturesDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "fixtures")
+			credPath := filepath.Join(fixturesDir, "gcp-mock-credentials.json")
+			Expect(credPath).To(BeAnExistingFile(), "GCP mock credentials fixture must exist")
+
+			origCreds := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+			os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credPath)
+			DeferCleanup(func() {
+				if origCreds == "" {
+					os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
+				} else {
+					os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", origCreds)
+				}
+			})
+
 			adapter, err := langchaingo.New("vertex", "", "gemini-1.5-pro", "",
 				langchaingo.WithVertexProject("my-project"),
 				langchaingo.WithVertexLocation("us-central1"),
