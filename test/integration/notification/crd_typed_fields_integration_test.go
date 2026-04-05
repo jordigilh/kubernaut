@@ -62,9 +62,9 @@ var _ = Describe("Issue #453 Phase A: Typed Enum Fields Integration", Label("int
 
 			attrs := routing.RoutingAttributesFromSpec(fetched)
 			Expect(attrs["review-source"]).To(Equal("AIAnalysis"))
-			Expect(attrs["type"]).To(Equal("manual-review"))
+			Expect(attrs["type"]).To(Equal("ManualReview"))
 			Expect(attrs["severity"]).To(Equal("critical"))
-			Expect(attrs["priority"]).To(Equal("high"))
+			Expect(attrs["priority"]).To(Equal("High"))
 		})
 	})
 

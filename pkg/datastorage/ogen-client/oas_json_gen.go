@@ -20680,6 +20680,8 @@ func (s *NotificationAuditPayloadNotificationType) Decode(d *jx.Decoder) error {
 		*s = NotificationAuditPayloadNotificationTypeApproval
 	case NotificationAuditPayloadNotificationTypeManualReview:
 		*s = NotificationAuditPayloadNotificationTypeManualReview
+	case NotificationAuditPayloadNotificationTypeCompletion:
+		*s = NotificationAuditPayloadNotificationTypeCompletion
 	default:
 		*s = NotificationAuditPayloadNotificationType(v)
 	}
@@ -20770,6 +20772,8 @@ func (s *NotificationAuditPayloadType) Decode(d *jx.Decoder) error {
 		*s = NotificationAuditPayloadTypeApproval
 	case NotificationAuditPayloadTypeManualReview:
 		*s = NotificationAuditPayloadTypeManualReview
+	case NotificationAuditPayloadTypeCompletion:
+		*s = NotificationAuditPayloadTypeCompletion
 	default:
 		*s = NotificationAuditPayloadType(v)
 	}

@@ -130,7 +130,7 @@ route:
     #
     - match:
         environment: production
-        type: escalation
+        type: Escalation
       receiver: slack-ops-high
 
     # =================================================================

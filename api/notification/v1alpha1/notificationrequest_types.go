@@ -24,34 +24,34 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// +kubebuilder:validation:Enum=escalation;simple;status-update;approval;manual-review;completion
+// +kubebuilder:validation:Enum=Escalation;Simple;StatusUpdate;Approval;ManualReview;Completion
 type NotificationType string
 
 const (
-	NotificationTypeEscalation   NotificationType = "escalation"
-	NotificationTypeSimple       NotificationType = "simple"
-	NotificationTypeStatusUpdate NotificationType = "status-update"
+	NotificationTypeEscalation   NotificationType = "Escalation"
+	NotificationTypeSimple       NotificationType = "Simple"
+	NotificationTypeStatusUpdate NotificationType = "StatusUpdate"
 	// NotificationTypeApproval is used for approval request notifications (BR-ORCH-001)
 	// Added Dec 2025 per RO team request for explicit approval workflow support
-	NotificationTypeApproval NotificationType = "approval"
+	NotificationTypeApproval NotificationType = "Approval"
 	// NotificationTypeManualReview is used for manual intervention required notifications (BR-ORCH-036)
 	// Added Dec 2025 for ExhaustedRetries/PreviousExecutionFailed scenarios requiring operator action
 	// Distinct from 'escalation' to enable spec-field-based routing rules (BR-NOT-065)
-	NotificationTypeManualReview NotificationType = "manual-review"
+	NotificationTypeManualReview NotificationType = "ManualReview"
 	// NotificationTypeCompletion is used for successful remediation completion notifications (BR-ORCH-045)
 	// Created when WorkflowExecution completes successfully and RR transitions to Completed phase
 	// Enables operators to track successful autonomous remediations
-	NotificationTypeCompletion NotificationType = "completion"
+	NotificationTypeCompletion NotificationType = "Completion"
 )
 
-// +kubebuilder:validation:Enum=critical;high;medium;low
+// +kubebuilder:validation:Enum=Critical;High;Medium;Low
 type NotificationPriority string
 
 const (
-	NotificationPriorityCritical NotificationPriority = "critical"
-	NotificationPriorityHigh     NotificationPriority = "high"
-	NotificationPriorityMedium   NotificationPriority = "medium"
-	NotificationPriorityLow      NotificationPriority = "low"
+	NotificationPriorityCritical NotificationPriority = "Critical"
+	NotificationPriorityHigh     NotificationPriority = "High"
+	NotificationPriorityMedium   NotificationPriority = "Medium"
+	NotificationPriorityLow      NotificationPriority = "Low"
 )
 
 // +kubebuilder:validation:Enum=email;slack;teams;sms;webhook;console;file;log

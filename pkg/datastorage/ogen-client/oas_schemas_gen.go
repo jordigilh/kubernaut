@@ -11388,11 +11388,12 @@ func (s *NotificationAuditPayloadFinalStatus) UnmarshalText(data []byte) error {
 type NotificationAuditPayloadNotificationType string
 
 const (
-	NotificationAuditPayloadNotificationTypeEscalation   NotificationAuditPayloadNotificationType = "escalation"
-	NotificationAuditPayloadNotificationTypeSimple       NotificationAuditPayloadNotificationType = "simple"
-	NotificationAuditPayloadNotificationTypeStatusUpdate NotificationAuditPayloadNotificationType = "status-update"
-	NotificationAuditPayloadNotificationTypeApproval     NotificationAuditPayloadNotificationType = "approval"
-	NotificationAuditPayloadNotificationTypeManualReview NotificationAuditPayloadNotificationType = "manual-review"
+	NotificationAuditPayloadNotificationTypeEscalation   NotificationAuditPayloadNotificationType = "Escalation"
+	NotificationAuditPayloadNotificationTypeSimple       NotificationAuditPayloadNotificationType = "Simple"
+	NotificationAuditPayloadNotificationTypeStatusUpdate NotificationAuditPayloadNotificationType = "StatusUpdate"
+	NotificationAuditPayloadNotificationTypeApproval     NotificationAuditPayloadNotificationType = "Approval"
+	NotificationAuditPayloadNotificationTypeManualReview NotificationAuditPayloadNotificationType = "ManualReview"
+	NotificationAuditPayloadNotificationTypeCompletion   NotificationAuditPayloadNotificationType = "Completion"
 )
 
 // AllValues returns all NotificationAuditPayloadNotificationType values.
@@ -11403,6 +11404,7 @@ func (NotificationAuditPayloadNotificationType) AllValues() []NotificationAuditP
 		NotificationAuditPayloadNotificationTypeStatusUpdate,
 		NotificationAuditPayloadNotificationTypeApproval,
 		NotificationAuditPayloadNotificationTypeManualReview,
+		NotificationAuditPayloadNotificationTypeCompletion,
 	}
 }
 
@@ -11418,6 +11420,8 @@ func (s NotificationAuditPayloadNotificationType) MarshalText() ([]byte, error) 
 	case NotificationAuditPayloadNotificationTypeApproval:
 		return []byte(s), nil
 	case NotificationAuditPayloadNotificationTypeManualReview:
+		return []byte(s), nil
+	case NotificationAuditPayloadNotificationTypeCompletion:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -11442,6 +11446,9 @@ func (s *NotificationAuditPayloadNotificationType) UnmarshalText(data []byte) er
 	case NotificationAuditPayloadNotificationTypeManualReview:
 		*s = NotificationAuditPayloadNotificationTypeManualReview
 		return nil
+	case NotificationAuditPayloadNotificationTypeCompletion:
+		*s = NotificationAuditPayloadNotificationTypeCompletion
+		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
@@ -11451,10 +11458,10 @@ func (s *NotificationAuditPayloadNotificationType) UnmarshalText(data []byte) er
 type NotificationAuditPayloadPriority string
 
 const (
-	NotificationAuditPayloadPriorityCritical NotificationAuditPayloadPriority = "critical"
-	NotificationAuditPayloadPriorityHigh     NotificationAuditPayloadPriority = "high"
-	NotificationAuditPayloadPriorityMedium   NotificationAuditPayloadPriority = "medium"
-	NotificationAuditPayloadPriorityLow      NotificationAuditPayloadPriority = "low"
+	NotificationAuditPayloadPriorityCritical NotificationAuditPayloadPriority = "Critical"
+	NotificationAuditPayloadPriorityHigh     NotificationAuditPayloadPriority = "High"
+	NotificationAuditPayloadPriorityMedium   NotificationAuditPayloadPriority = "Medium"
+	NotificationAuditPayloadPriorityLow      NotificationAuditPayloadPriority = "Low"
 )
 
 // AllValues returns all NotificationAuditPayloadPriority values.
@@ -11507,11 +11514,12 @@ func (s *NotificationAuditPayloadPriority) UnmarshalText(data []byte) error {
 type NotificationAuditPayloadType string
 
 const (
-	NotificationAuditPayloadTypeEscalation   NotificationAuditPayloadType = "escalation"
-	NotificationAuditPayloadTypeSimple       NotificationAuditPayloadType = "simple"
-	NotificationAuditPayloadTypeStatusUpdate NotificationAuditPayloadType = "status-update"
-	NotificationAuditPayloadTypeApproval     NotificationAuditPayloadType = "approval"
-	NotificationAuditPayloadTypeManualReview NotificationAuditPayloadType = "manual-review"
+	NotificationAuditPayloadTypeEscalation   NotificationAuditPayloadType = "Escalation"
+	NotificationAuditPayloadTypeSimple       NotificationAuditPayloadType = "Simple"
+	NotificationAuditPayloadTypeStatusUpdate NotificationAuditPayloadType = "StatusUpdate"
+	NotificationAuditPayloadTypeApproval     NotificationAuditPayloadType = "Approval"
+	NotificationAuditPayloadTypeManualReview NotificationAuditPayloadType = "ManualReview"
+	NotificationAuditPayloadTypeCompletion   NotificationAuditPayloadType = "Completion"
 )
 
 // AllValues returns all NotificationAuditPayloadType values.
@@ -11522,6 +11530,7 @@ func (NotificationAuditPayloadType) AllValues() []NotificationAuditPayloadType {
 		NotificationAuditPayloadTypeStatusUpdate,
 		NotificationAuditPayloadTypeApproval,
 		NotificationAuditPayloadTypeManualReview,
+		NotificationAuditPayloadTypeCompletion,
 	}
 }
 
@@ -11537,6 +11546,8 @@ func (s NotificationAuditPayloadType) MarshalText() ([]byte, error) {
 	case NotificationAuditPayloadTypeApproval:
 		return []byte(s), nil
 	case NotificationAuditPayloadTypeManualReview:
+		return []byte(s), nil
+	case NotificationAuditPayloadTypeCompletion:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -11560,6 +11571,9 @@ func (s *NotificationAuditPayloadType) UnmarshalText(data []byte) error {
 		return nil
 	case NotificationAuditPayloadTypeManualReview:
 		*s = NotificationAuditPayloadTypeManualReview
+		return nil
+	case NotificationAuditPayloadTypeCompletion:
+		*s = NotificationAuditPayloadTypeCompletion
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

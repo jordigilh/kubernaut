@@ -55,9 +55,9 @@ var _ = Describe("IT-NOT-453B-001: Routing with typed Context and Extensions", L
 		attrs := routing.RoutingAttributesFromSpec(nr)
 
 		// Spec-derived attributes
-		Expect(attrs["type"]).To(Equal("manual-review"))
+		Expect(attrs["type"]).To(Equal("ManualReview"))
 		Expect(attrs["severity"]).To(Equal("critical"))
-		Expect(attrs["priority"]).To(Equal("high"))
+		Expect(attrs["priority"]).To(Equal("High"))
 		Expect(attrs["review-source"]).To(Equal("AIAnalysis"))
 
 		// Context-derived attributes (via FlattenToMap)

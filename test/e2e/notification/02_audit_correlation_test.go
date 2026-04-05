@@ -123,7 +123,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 						Namespace:  controllerNamespace,
 					},
 					Type:     notificationv1alpha1.NotificationTypeSimple,
-					Priority: notificationv1alpha1.NotificationPriority([]string{"low", "medium", "high"}[i-1]),
+					Priority: notificationv1alpha1.NotificationPriority([]string{"Low", "Medium", "High"}[i-1]),
 					Subject:  "E2E Correlation Test - Notification " + string(rune('0'+i)),
 					Body:     "Testing audit correlation across multiple notifications",
 					Context: &notificationv1alpha1.NotificationContext{

@@ -314,7 +314,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		// Verify priority is preserved
 		Expect(eventData).To(HaveKey("priority"),
 			"FIELD MATCH: event_data should contain priority")
-		Expect(eventData["priority"]).To(Equal("critical"),
+		Expect(eventData["priority"]).To(Equal("Critical"),
 			"FIELD MATCH: event_data.priority should match notification spec")
 
 		// Verify metadata is preserved
@@ -461,7 +461,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 			"FIELD MATCH: Success event notification_id should match resource_id")
 		Expect(sentEventData["subject"]).To(Equal("E2E Partial Failure Audit Test"),
 			"FIELD MATCH: Success event subject should match notification spec")
-		Expect(sentEventData["priority"]).To(Equal("critical"),
+		Expect(sentEventData["priority"]).To(Equal("Critical"),
 			"FIELD MATCH: Success event priority should match notification spec")
 		Expect(string(sentEvent.EventOutcome)).To(Equal("success"),
 			"FIELD MATCH: Success event outcome should be success")
@@ -483,7 +483,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 			"FIELD MATCH: Failed event notification_id should match resource_id")
 		Expect(failedEventData["subject"]).To(Equal("E2E Partial Failure Audit Test"),
 			"FIELD MATCH: Failed event subject should match notification spec")
-		Expect(failedEventData["priority"]).To(Equal("critical"),
+		Expect(failedEventData["priority"]).To(Equal("Critical"),
 			"FIELD MATCH: Failed event priority should match notification spec")
 		Expect(failedEventData).To(HaveKey("error"),
 			"FIELD MATCH: Failed event should contain error details")

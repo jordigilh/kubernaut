@@ -138,8 +138,8 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 			By("Validating event_data contains delivery_channels (IT-AW-276-001)")
 			validateEventData(event, map[string]interface{}{
 				"notification_name":  nrName,
-				"notification_type":  "escalation",
-				"priority":           "high",
+				"notification_type":  "Escalation",
+				"priority":           "High",
 				"final_status":       "Sending",
 				"delivery_channels":  []interface{}{"console", "slack"},
 			})
@@ -295,8 +295,8 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 			By("Validating event_data contains empty delivery_channels (IT-AW-276-002)")
 			validateEventData(event, map[string]interface{}{
 				"notification_name":  nrName,
-				"notification_type":  "status-update",
-				"priority":           "low",
+				"notification_type":  "StatusUpdate",
+				"priority":           "Low",
 				"final_status":       "Sending",
 				"delivery_channels":  []interface{}{},
 			})

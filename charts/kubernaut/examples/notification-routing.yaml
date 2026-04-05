@@ -18,7 +18,7 @@ route:
   receiver: default-console
   routes:
     - match:
-        type: escalation
+        type: Escalation
       receiver: slack-alerts
     - match:
         type: approval_required
