@@ -52,7 +52,8 @@ type LLMConfig struct {
 }
 
 type DataStorageConfig struct {
-	URL string `yaml:"url"`
+	URL         string `yaml:"url"`
+	SATokenPath string `yaml:"sa_token_path"`
 }
 
 type ServerConfig struct {
@@ -140,6 +141,7 @@ func (c *Config) Validate() error {
 func DefaultConfig() *Config {
 	return &Config{
 		LLM:          LLMConfig{Provider: "openai"},
+		DataStorage:  DataStorageConfig{SATokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"},
 		Server:       ServerConfig{Address: "0.0.0.0", Port: 8080},
 		Session:      SessionConfig{TTL: 30 * time.Minute},
 		Investigator: InvestigatorConfig{MaxTurns: 15},

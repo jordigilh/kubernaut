@@ -19,6 +19,7 @@ package enrichment
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
@@ -79,11 +80,17 @@ func (a *DSAdapter) GetRemediationHistory(ctx context.Context, kind, name, names
 	for _, e := range historyCtx.Tier1.Chain {
 		result.Tier1 = append(result.Tier1, mapTier1Entry(e))
 	}
+	slices.SortFunc(result.Tier1, func(a, b Tier1Entry) int {
+		return b.CompletedAt.Compare(a.CompletedAt)
+	})
 
 	result.Tier2 = make([]Tier2Summary, 0, len(historyCtx.Tier2.Chain))
 	for _, e := range historyCtx.Tier2.Chain {
 		result.Tier2 = append(result.Tier2, mapTier2Summary(e))
 	}
+	slices.SortFunc(result.Tier2, func(a, b Tier2Summary) int {
+		return b.CompletedAt.Compare(a.CompletedAt)
+	})
 
 	return result, nil
 }
