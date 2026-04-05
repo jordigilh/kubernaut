@@ -126,6 +126,14 @@ func main() {
 		slogger.Error("workflow validator required but unavailable (DD-HAPI-002: KA is sole validator)", "error", validatorErr)
 		os.Exit(1)
 	}
+	// C2-fix: fail-closed when DS is configured but client init failed (ds == nil).
+	// buildWorkflowValidator returns (nil, nil) for ds==nil (dev mode), but production
+	// with a DS URL must never start without a working validator.
+	if validator == nil && cfg.DataStorage.URL != "" {
+		slogger.Error("DataStorage configured but workflow validator unavailable — fail-closed (DD-HAPI-002)",
+			"ds_url", cfg.DataStorage.URL)
+		os.Exit(1)
+	}
 
 	inv := investigator.New(investigator.Config{
 		Client:       instrumentedLLM,
@@ -282,6 +290,11 @@ type dsClients struct {
 
 // initDSClients creates the DataStorage adapter clients. Returns nil when
 // DataStorage URL is empty or K8s infrastructure is unavailable.
+//
+// DD-AUTH-014: When a ServiceAccount token is available (sa_token_path config
+// or default /var/run/secrets/kubernetes.io/serviceaccount/token), the ogen
+// client is configured with a Bearer token transport so that all DS API calls
+// (including ListWorkflows for the workflow validator) pass authentication.
 func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger *slog.Logger) *dsClients {
 	if cfg.DataStorage.URL == "" {
 		logger.Info("DataStorage URL not configured, DS adapters disabled")
@@ -291,7 +304,20 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger *slog.Logger) *
 		logger.Warn("K8s infrastructure unavailable, DS adapters disabled")
 		return nil
 	}
-	ogenClient, err := ogenclient.NewClient(cfg.DataStorage.URL)
+
+	var opts []ogenclient.ClientOption
+	if tokenData, err := os.ReadFile(cfg.DataStorage.SATokenPath); err == nil && len(tokenData) > 0 {
+		token := string(tokenData)
+		opts = append(opts, ogenclient.WithClient(&http.Client{
+			Transport: &bearerTransport{base: http.DefaultTransport, token: token},
+		}))
+		logger.Info("DS client auth configured (DD-AUTH-014)", "token_path", cfg.DataStorage.SATokenPath)
+	} else {
+		logger.Warn("SA token not available for DS client — DS API calls may fail auth",
+			"path", cfg.DataStorage.SATokenPath, "error", err)
+	}
+
+	ogenClient, err := ogenclient.NewClient(cfg.DataStorage.URL, opts...)
 	if err != nil {
 		logger.Error("failed to create DataStorage ogen client", "url", cfg.DataStorage.URL, "error", err)
 		return nil
@@ -302,6 +328,19 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger *slog.Logger) *
 		dsAdapter:  enrichment.NewDSAdapter(ogenClient),
 		k8sAdapter: enrichment.NewK8sAdapter(infra.dynClient, infra.mapper),
 	}
+}
+
+// bearerTransport injects a Kubernetes ServiceAccount Bearer token into
+// every outbound HTTP request (DD-AUTH-014).
+type bearerTransport struct {
+	base  http.RoundTripper
+	token string
+}
+
+func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r := req.Clone(req.Context())
+	r.Header.Set("Authorization", "Bearer "+t.token)
+	return t.base.RoundTrip(r)
 }
 
 // buildEnricher creates the enrichment.Enricher when DS clients are available.
