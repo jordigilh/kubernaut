@@ -52,7 +52,8 @@ var _ = Describe("TP-433-ADV P4: Enrichment Target Resolution — GAP-001", func
 		It("should fall back to signal resource when RCA target is empty", func() {
 			signal := katypes.SignalContext{
 				ResourceKind: "Pod",
-				Name:         "api-server-abc123",
+				Name:         "OOMKilled",
+				ResourceName: "api-server-abc123",
 				Namespace:    "production",
 			}
 			rcaResult := &katypes.InvestigationResult{
@@ -70,7 +71,8 @@ var _ = Describe("TP-433-ADV P4: Enrichment Target Resolution — GAP-001", func
 		It("should fall back to signal when rcaResult is nil", func() {
 			signal := katypes.SignalContext{
 				ResourceKind: "StatefulSet",
-				Name:         "redis-cluster",
+				Name:         "HighMemory",
+				ResourceName: "redis-cluster",
 				Namespace:    "cache",
 			}
 
@@ -84,13 +86,69 @@ var _ = Describe("TP-433-ADV P4: Enrichment Target Resolution — GAP-001", func
 	Describe("UT-KA-433-ENR-004: ResolveEnrichmentTarget defaults empty ResourceKind to Pod", func() {
 		It("should default to Pod when signal has no ResourceKind", func() {
 			signal := katypes.SignalContext{
-				Name:      "api-server-abc123",
-				Namespace: "production",
+				Name:         "OOMKilled",
+				ResourceName: "api-server-abc123",
+				Namespace:    "production",
 			}
 
 			kind, name, ns := investigator.ResolveEnrichmentTarget(signal, nil)
 			Expect(kind).To(Equal("Pod"))
 			Expect(name).To(Equal("api-server-abc123"))
+			Expect(ns).To(Equal("production"))
+		})
+	})
+
+	// ===== Audit findings =====
+
+	Describe("AUDIT-C1: ResolveEnrichmentTarget uses ResourceName, not Name (SignalName)", func() {
+		It("should use ResourceName for enrichment, not SignalName", func() {
+			signal := katypes.SignalContext{
+				Name:         "OOMKilled",
+				ResourceKind: "Pod",
+				ResourceName: "web-server-abc123",
+				Namespace:    "production",
+			}
+
+			kind, name, ns := investigator.ResolveEnrichmentTarget(signal, nil)
+			Expect(kind).To(Equal("Pod"))
+			Expect(name).To(Equal("web-server-abc123"),
+				"C1: must use ResourceName (K8s object), not Name (signal type)")
+			Expect(ns).To(Equal("production"))
+		})
+
+		It("should fall back to Name only when ResourceName is empty", func() {
+			signal := katypes.SignalContext{
+				Name:         "OOMKilled",
+				ResourceKind: "Pod",
+				Namespace:    "production",
+			}
+
+			kind, name, ns := investigator.ResolveEnrichmentTarget(signal, nil)
+			Expect(kind).To(Equal("Pod"))
+			Expect(name).To(Equal("OOMKilled"),
+				"when ResourceName is empty, Name is the only fallback")
+			Expect(ns).To(Equal("production"))
+		})
+	})
+
+	Describe("AUDIT-M2: ResolveEnrichmentTarget handles partial RemediationTarget", func() {
+		It("should fall back to signal when RCA has Name but no Kind", func() {
+			signal := katypes.SignalContext{
+				ResourceKind: "Pod",
+				ResourceName: "web-pod",
+				Namespace:    "production",
+			}
+			rcaResult := &katypes.InvestigationResult{
+				RemediationTarget: katypes.RemediationTarget{
+					Name:      "api-server",
+					Namespace: "production",
+				},
+			}
+
+			kind, name, ns := investigator.ResolveEnrichmentTarget(signal, rcaResult)
+			Expect(kind).To(Equal("Pod"),
+				"M2: partial target (no Kind) should fall back to signal")
+			Expect(name).To(Equal("web-pod"))
 			Expect(ns).To(Equal("production"))
 		})
 	})

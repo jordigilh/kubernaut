@@ -120,13 +120,19 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	}
 
 	// GAP-001 / ADR-056: Re-enrich using RCA-identified remediation target if different.
+	// H3-fix: retain pre-RCA enrichment if re-enrichment fails.
 	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
 	if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
 		inv.logger.Info("re-enriching with RCA remediation target",
 			"signal", signalKind+"/"+signalName,
 			"rca_target", postRCAKind+"/"+postRCAName,
 		)
-		enrichData = inv.resolveEnrichment(ctx, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
+		reEnriched := inv.resolveEnrichment(ctx, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
+		if reEnriched != nil {
+			enrichData = reEnriched
+		} else {
+			inv.logger.Warn("re-enrichment returned nil, retaining pre-RCA enrichment data")
+		}
 		promptEnrichment = toPromptEnrichment(enrichData)
 	}
 
@@ -161,7 +167,13 @@ func ResolveEnrichmentTarget(signal katypes.SignalContext, rcaResult *katypes.In
 	if kind == "" {
 		kind = "Pod"
 	}
-	return kind, signal.Name, signal.Namespace
+	// C1-fix: Use ResourceName (K8s object identity), not Name (signal type like "OOMKilled").
+	// Fall back to Name only when ResourceName is not available.
+	name = signal.ResourceName
+	if name == "" {
+		name = signal.Name
+	}
+	return kind, name, signal.Namespace
 }
 
 func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, namespace, incidentID string) *enrichment.EnrichmentResult {
@@ -423,6 +435,10 @@ func signalToPrompt(s katypes.SignalContext) prompt.SignalData {
 		BusinessCategory: s.BusinessCategory,
 		Description:      s.Description,
 		SignalMode:       s.SignalMode,
+		FiringTime:       s.FiringTime,
+		ReceivedTime:     s.ReceivedTime,
+		IsDuplicate:      s.IsDuplicate,
+		OccurrenceCount:  s.OccurrenceCount,
 	}
 }
 

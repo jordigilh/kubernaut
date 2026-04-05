@@ -291,4 +291,57 @@ End of analysis.`
 			Expect(*result.IsActionable).To(BeTrue())
 		})
 	})
+
+	// ===== Audit findings =====
+
+	Describe("AUDIT-H5: actionable=false takes precedence over investigation_outcome=actionable", func() {
+		It("should preserve actionable=false even when outcome says actionable", func() {
+			input := `{
+				"rca_summary": "Conflicting signals from LLM",
+				"actionable": false,
+				"investigation_outcome": "actionable",
+				"confidence": 0.5
+			}`
+
+			result, err := p.Parse(input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsActionable).NotTo(BeNil())
+			Expect(*result.IsActionable).To(BeFalse(),
+				"H5: explicit actionable=false must not be overridden by investigation_outcome")
+			Expect(result.Warnings).To(ContainElement(ContainSubstring("not actionable")),
+				"H5: not-actionable warning should be preserved")
+		})
+	})
+
+	Describe("AUDIT-M3: extractBalancedJSON skips prose braces", func() {
+		It("should extract JSON even when prose contains curly braces", func() {
+			input := `Based on my analysis {of the system}, here is the result:
+{"rca_summary": "OOMKilled due to memory leak", "confidence": 0.85, "workflow_id": "oom-recovery"}`
+
+			result, err := p.Parse(input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RCASummary).To(Equal("OOMKilled due to memory leak"),
+				"M3: should skip prose brace and find actual JSON object")
+			Expect(result.WorkflowID).To(Equal("oom-recovery"))
+		})
+	})
+
+	Describe("AUDIT-H6: actionable=false + workflow_id logs warning", func() {
+		It("should set is_actionable=false with workflow present and add warning", func() {
+			input := `{
+				"rca_summary": "Found issue but marked not actionable",
+				"workflow_id": "restart-pod",
+				"actionable": false,
+				"confidence": 0.7
+			}`
+
+			result, err := p.Parse(input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsActionable).NotTo(BeNil())
+			Expect(*result.IsActionable).To(BeFalse(),
+				"H6: actionable=false should be respected even with workflow_id")
+			Expect(result.WorkflowID).To(Equal("restart-pod"),
+				"H6: workflow_id should still be preserved")
+		})
+	})
 })

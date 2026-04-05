@@ -176,4 +176,116 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 			Expect(ebValue).To(Equal("ghcr.io/kubernaut/oom-recovery:v1.0@sha256:abc"))
 		})
 	})
+
+	// ===== Audit findings =====
+
+	Describe("AUDIT-H1: MapIncidentRequestToSignal wires GAP-008/014 fields", func() {
+		It("should populate RemediationID", func() {
+			req := &hapiclient.IncidentRequest{
+				IncidentID:        "h1-test",
+				RemediationID:     "rem-uuid-12345",
+				SignalName:        "OOMKilled",
+				Severity:          hapiclient.SeverityHigh,
+				ResourceNamespace: "prod",
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod",
+				ErrorMessage:      "OOM",
+				Environment:       "production",
+				Priority:          "high",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "test",
+				ClusterName:       "test-cluster",
+				SignalSource:      "kubernetes",
+			}
+
+			signal := server.MapIncidentRequestToSignal(req)
+			Expect(signal.RemediationID).To(Equal("rem-uuid-12345"))
+		})
+
+		It("should populate FiringTime and ReceivedTime when present", func() {
+			req := &hapiclient.IncidentRequest{
+				IncidentID:        "h1-time-test",
+				SignalName:        "HighMemory",
+				Severity:          hapiclient.SeverityCritical,
+				ResourceNamespace: "prod",
+				ResourceKind:      "Pod",
+				ResourceName:      "api-pod",
+				ErrorMessage:      "Memory high",
+				Environment:       "production",
+				Priority:          "critical",
+				RiskTolerance:     "low",
+				BusinessCategory:  "core",
+				ClusterName:       "prod-1",
+				SignalSource:      "prometheus",
+			}
+			req.FiringTime.SetTo("2026-03-01T12:00:00Z")
+			req.ReceivedTime.SetTo("2026-03-01T12:00:05Z")
+
+			signal := server.MapIncidentRequestToSignal(req)
+			Expect(signal.FiringTime).To(Equal("2026-03-01T12:00:00Z"))
+			Expect(signal.ReceivedTime).To(Equal("2026-03-01T12:00:05Z"))
+		})
+
+		It("should populate IsDuplicate and OccurrenceCount", func() {
+			req := &hapiclient.IncidentRequest{
+				IncidentID:        "h1-dedup-test",
+				SignalName:        "OOMKilled",
+				Severity:          hapiclient.SeverityHigh,
+				ResourceNamespace: "prod",
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod",
+				ErrorMessage:      "OOM",
+				Environment:       "production",
+				Priority:          "high",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "test",
+				ClusterName:       "test-cluster",
+				SignalSource:      "kubernetes",
+			}
+			req.IsDuplicate.SetTo(true)
+			req.OccurrenceCount.SetTo(5)
+
+			signal := server.MapIncidentRequestToSignal(req)
+			Expect(signal.IsDuplicate).NotTo(BeNil())
+			Expect(*signal.IsDuplicate).To(BeTrue())
+			Expect(signal.OccurrenceCount).NotTo(BeNil())
+			Expect(*signal.OccurrenceCount).To(Equal(5))
+		})
+	})
+
+	Describe("AUDIT-H2: alternative_workflows mapped in response", func() {
+		It("should include alternative_workflows in IncidentResponse when present", func() {
+			result := &katypes.InvestigationResult{
+				RCASummary: "Memory leak",
+				WorkflowID: "oom-recovery",
+				Confidence: 0.85,
+				AlternativeWorkflows: []katypes.AlternativeWorkflow{
+					{WorkflowID: "memory-optimize", Confidence: 0.6, Rationale: "Could optimize memory"},
+					{WorkflowID: "horizontal-scale", Confidence: 0.4, Rationale: "Scale out"},
+				},
+			}
+
+			sessionID, err := manager.StartInvestigation(
+				context.Background(),
+				func(_ context.Context) (interface{}, error) { return result, nil },
+				map[string]string{"incident_id": "h2-test"},
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func() session.Status {
+				s, _ := manager.GetSession(sessionID)
+				return s.Status
+			}).Should(Equal(session.StatusCompleted))
+
+			params := hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{
+				SessionID: sessionID,
+			}
+			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(context.Background(), params)
+			Expect(err).NotTo(HaveOccurred())
+
+			incResp, ok := resp.(*hapiclient.IncidentResponse)
+			Expect(ok).To(BeTrue())
+			Expect(incResp.AlternativeWorkflows).To(HaveLen(2),
+				"H2: alternative_workflows must be mapped to response")
+		})
+	})
 })

@@ -69,7 +69,7 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 		return &resp, nil
 	}
 
-	signal := mapIncidentRequestToSignal(req)
+	signal := MapIncidentRequestToSignal(req)
 	h.logger.Info("investigation submitted",
 		"incident_id", req.IncidentID,
 		"signal", signal.Name,
@@ -152,7 +152,8 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 	return resp, nil
 }
 
-func mapIncidentRequestToSignal(req *hapiclient.IncidentRequest) katypes.SignalContext {
+// MapIncidentRequestToSignal converts an OpenAPI IncidentRequest to an internal SignalContext.
+func MapIncidentRequestToSignal(req *hapiclient.IncidentRequest) katypes.SignalContext {
 	sc := katypes.SignalContext{
 		Name:             req.SignalName,
 		Namespace:        req.ResourceNamespace,
@@ -167,12 +168,25 @@ func mapIncidentRequestToSignal(req *hapiclient.IncidentRequest) katypes.SignalC
 		RiskTolerance:    req.RiskTolerance,
 		SignalSource:     req.SignalSource,
 		BusinessCategory: req.BusinessCategory,
+		RemediationID:    req.RemediationID,
 	}
 	if v, ok := req.Description.Get(); ok {
 		sc.Description = v
 	}
 	if v, ok := req.SignalMode.Get(); ok {
 		sc.SignalMode = strings.ToLower(string(v))
+	}
+	if v, ok := req.FiringTime.Get(); ok {
+		sc.FiringTime = v
+	}
+	if v, ok := req.ReceivedTime.Get(); ok {
+		sc.ReceivedTime = v
+	}
+	if v, ok := req.IsDuplicate.Get(); ok {
+		sc.IsDuplicate = &v
+	}
+	if v, ok := req.OccurrenceCount.Get(); ok {
+		sc.OccurrenceCount = &v
 	}
 	return sc
 }
@@ -213,12 +227,16 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 
 	if r.HumanReviewNeeded {
 		resp.NeedsHumanReview.SetTo(true)
-		// GAP-015: Prefer structured HumanReviewReason; fall back to legacy Reason
 		reason := r.HumanReviewReason
 		if reason == "" {
 			reason = r.Reason
 		}
-		resp.HumanReviewReason.SetTo(mapHumanReviewReason(reason))
+		mapped, isDefault := mapHumanReviewReason(reason)
+		if isDefault && reason != "" {
+			slog.Warn("unrecognized human review reason, falling back to investigation_inconclusive",
+				"original_reason", reason)
+		}
+		resp.HumanReviewReason.SetTo(mapped)
 	} else {
 		resp.NeedsHumanReview.SetTo(false)
 	}
@@ -257,52 +275,66 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 		resp.DetectedLabels.SetTo(dl)
 	}
 
+	if len(r.AlternativeWorkflows) > 0 {
+		alts := make([]hapiclient.AlternativeWorkflow, 0, len(r.AlternativeWorkflows))
+		for _, aw := range r.AlternativeWorkflows {
+			alt := hapiclient.AlternativeWorkflow{
+				WorkflowID: aw.WorkflowID,
+				Confidence: aw.Confidence,
+				Rationale:  aw.Rationale,
+			}
+			if aw.ExecutionBundle != "" {
+				alt.ExecutionBundle.SetTo(aw.ExecutionBundle)
+			}
+			alts = append(alts, alt)
+		}
+		resp.AlternativeWorkflows = alts
+	}
+
 	return resp
 }
 
 // mapHumanReviewReason maps free-form investigator reason strings to valid
-// HumanReviewReason enum values. The Python HAPI used determine_human_review_reason()
-// for this; the Go KA must do the same to satisfy the OpenAPI schema contract.
-func mapHumanReviewReason(reason string) hapiclient.HumanReviewReason {
-	// Direct enum value match (from parser outcome routing)
+// HumanReviewReason enum values. Returns the mapped enum and whether the
+// default fallback was used (M4: enables caller logging of unrecognized reasons).
+func mapHumanReviewReason(reason string) (hapiclient.HumanReviewReason, bool) {
 	switch reason {
 	case "rca_incomplete":
-		return hapiclient.HumanReviewReasonRcaIncomplete
+		return hapiclient.HumanReviewReasonRcaIncomplete, false
 	case "investigation_inconclusive":
-		return hapiclient.HumanReviewReasonInvestigationInconclusive
+		return hapiclient.HumanReviewReasonInvestigationInconclusive, false
 	case "workflow_not_found":
-		return hapiclient.HumanReviewReasonWorkflowNotFound
+		return hapiclient.HumanReviewReasonWorkflowNotFound, false
 	case "no_matching_workflows":
-		return hapiclient.HumanReviewReasonNoMatchingWorkflows
+		return hapiclient.HumanReviewReasonNoMatchingWorkflows, false
 	case "image_mismatch":
-		return hapiclient.HumanReviewReasonImageMismatch
+		return hapiclient.HumanReviewReasonImageMismatch, false
 	case "parameter_validation_failed":
-		return hapiclient.HumanReviewReasonParameterValidationFailed
+		return hapiclient.HumanReviewReasonParameterValidationFailed, false
 	case "low_confidence":
-		return hapiclient.HumanReviewReasonLowConfidence
+		return hapiclient.HumanReviewReasonLowConfidence, false
 	case "llm_parsing_error":
-		return hapiclient.HumanReviewReasonLlmParsingError
+		return hapiclient.HumanReviewReasonLlmParsingError, false
 	}
 
-	// Substring match (legacy Reason field from investigator)
 	switch {
 	case strings.Contains(reason, "exhausted during RCA"):
-		return hapiclient.HumanReviewReasonRcaIncomplete
+		return hapiclient.HumanReviewReasonRcaIncomplete, false
 	case strings.Contains(reason, "exhausted during workflow selection"):
-		return hapiclient.HumanReviewReasonInvestigationInconclusive
+		return hapiclient.HumanReviewReasonInvestigationInconclusive, false
 	case strings.Contains(reason, "not found") && strings.Contains(reason, "catalog"):
-		return hapiclient.HumanReviewReasonWorkflowNotFound
+		return hapiclient.HumanReviewReasonWorkflowNotFound, false
 	case strings.Contains(reason, "no matching"):
-		return hapiclient.HumanReviewReasonNoMatchingWorkflows
+		return hapiclient.HumanReviewReasonNoMatchingWorkflows, false
 	case strings.Contains(reason, "mismatch") || strings.Contains(reason, "image"):
-		return hapiclient.HumanReviewReasonImageMismatch
+		return hapiclient.HumanReviewReasonImageMismatch, false
 	case strings.Contains(reason, "parameter") || strings.Contains(reason, "validation"):
-		return hapiclient.HumanReviewReasonParameterValidationFailed
+		return hapiclient.HumanReviewReasonParameterValidationFailed, false
 	case strings.Contains(reason, "confidence"):
-		return hapiclient.HumanReviewReasonLowConfidence
+		return hapiclient.HumanReviewReasonLowConfidence, false
 	case strings.Contains(reason, "parse") || strings.Contains(reason, "parsing"):
-		return hapiclient.HumanReviewReasonLlmParsingError
+		return hapiclient.HumanReviewReasonLlmParsingError, false
 	default:
-		return hapiclient.HumanReviewReasonInvestigationInconclusive
+		return hapiclient.HumanReviewReasonInvestigationInconclusive, true
 	}
 }
