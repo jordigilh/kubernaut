@@ -134,14 +134,42 @@ var _ = Describe("TP-433-ADV P5: Prompt Parity — GAP-010/012/019", func() {
 	})
 
 	Describe("UT-KA-433-PRM-008: Timestamps and dedup fields rendered in Phase 1", func() {
-		It("should render firing and received times when provided", func() {
+		It("should render actual firing and received times from signal data", func() {
+			signal := prompt.SignalData{
+				Name: "OOMKilled", Namespace: "prod", Severity: "critical", Message: "OOM",
+				FiringTime:  "2026-03-01T12:00:00Z",
+				ReceivedTime: "2026-03-01T12:00:05Z",
+			}
+			rendered, err := builder.RenderInvestigation(signal, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("2026-03-01T12:00:00Z"),
+				"M6: actual FiringTime value must appear in rendered prompt")
+			Expect(rendered).To(ContainSubstring("2026-03-01T12:00:05Z"),
+				"M6: actual ReceivedTime value must appear in rendered prompt")
+		})
+
+		It("should render N/A when timestamp fields are empty", func() {
 			signal := prompt.SignalData{
 				Name: "OOMKilled", Namespace: "prod", Severity: "critical", Message: "OOM",
 			}
 			rendered, err := builder.RenderInvestigation(signal, nil)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rendered).To(ContainSubstring("Firing Time"))
-			Expect(rendered).To(ContainSubstring("Received Time"))
+			Expect(rendered).To(ContainSubstring("N/A"),
+				"empty timestamps should fall back to N/A")
+		})
+
+		It("should render dedup context when IsDuplicate and OccurrenceCount are set", func() {
+			isDup := true
+			occCount := 3
+			signal := prompt.SignalData{
+				Name: "OOMKilled", Namespace: "prod", Severity: "critical", Message: "OOM",
+				IsDuplicate:     &isDup,
+				OccurrenceCount: &occCount,
+			}
+			rendered, err := builder.RenderInvestigation(signal, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("3"),
+				"M6: OccurrenceCount should appear in rendered prompt")
 		})
 	})
 })

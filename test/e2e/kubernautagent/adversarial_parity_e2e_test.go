@@ -81,10 +81,10 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			Expect(result).NotTo(BeNil())
 
 			isActionable, hasActionable := result.IsActionable.Get()
-			if hasActionable {
-				Expect(isActionable).To(BeFalse(),
-					"problem_resolved should set is_actionable=false")
-			}
+			Expect(hasActionable).To(BeTrue(),
+				"M1: is_actionable must be set for problem_resolved outcome")
+			Expect(isActionable).To(BeFalse(),
+				"problem_resolved should set is_actionable=false")
 
 			_, hasSW := result.SelectedWorkflow.Get()
 			Expect(hasSW).To(BeFalse(),
@@ -99,10 +99,10 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			Expect(result).NotTo(BeNil())
 
 			isActionable, hasActionable := result.IsActionable.Get()
-			if hasActionable {
-				Expect(isActionable).To(BeFalse(),
-					"predictive_no_action should set is_actionable=false")
-			}
+			Expect(hasActionable).To(BeTrue(),
+				"M1: is_actionable must be set for predictive_no_action outcome")
+			Expect(isActionable).To(BeFalse(),
+				"predictive_no_action should set is_actionable=false")
 		})
 
 		It("E2E-KA-433-ADV-003: problem_resolved_contradiction → needs_human_review=true", func() {
@@ -189,6 +189,11 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 		})
 
 		It("E2E-KA-433-ADV-009: /metrics has aiagent_api_llm_tokens_total after investigation", func() {
+			// M5-fix: ensure at least one investigation has run so metrics are populated
+			req := buildRequest("adv-009-tokens", "OOMKilled", "high")
+			_, err := sessionClient.Investigate(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
 			resp, err := http.Get(kaURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
@@ -214,7 +219,9 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
-			if !result.NeedsHumanReview.Value {
+			needsHR, hasHR := result.NeedsHumanReview.Get()
+			Expect(hasHR).To(BeTrue(), "M1: needs_human_review must always be set")
+			if !needsHR {
 				sw, hasSW := result.SelectedWorkflow.Get()
 				Expect(hasSW).To(BeTrue(), "actionable result should have selected_workflow")
 				Expect(sw).To(HaveKey("workflow_id"))
@@ -274,15 +281,17 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
-			if result.NeedsHumanReview.Value {
-				hrReason, hasReason := result.HumanReviewReason.Get()
-				Expect(hasReason).To(BeTrue())
-				Expect(string(hrReason)).To(SatisfyAny(
-					Equal("no_matching_workflows"),
-					Equal("investigation_inconclusive"),
-					Equal("workflow_not_found"),
-				), "no_workflow_found should produce a valid HR reason enum")
-			}
+			needsHR, hasHR := result.NeedsHumanReview.Get()
+			Expect(hasHR).To(BeTrue(), "M1: needs_human_review must always be set")
+			Expect(needsHR).To(BeTrue(),
+				"no_workflow_found should require human review")
+			hrReason, hasReason := result.HumanReviewReason.Get()
+			Expect(hasReason).To(BeTrue())
+			Expect(string(hrReason)).To(SatisfyAny(
+				Equal("no_matching_workflows"),
+				Equal("investigation_inconclusive"),
+				Equal("workflow_not_found"),
+			), "no_workflow_found should produce a valid HR reason enum")
 		})
 
 		It("E2E-KA-433-ADV-016: rca_incomplete → correct HR reason enum", func() {
@@ -291,14 +300,16 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
-			if result.NeedsHumanReview.Value {
-				hrReason, hasReason := result.HumanReviewReason.Get()
-				Expect(hasReason).To(BeTrue())
-				Expect(string(hrReason)).To(SatisfyAny(
-					Equal("rca_incomplete"),
-					Equal("investigation_inconclusive"),
-				), "rca_incomplete should produce a valid HR reason enum")
-			}
+			needsHR, hasHR := result.NeedsHumanReview.Get()
+			Expect(hasHR).To(BeTrue(), "M1: needs_human_review must always be set")
+			Expect(needsHR).To(BeTrue(),
+				"rca_incomplete should require human review")
+			hrReason, hasReason := result.HumanReviewReason.Get()
+			Expect(hasReason).To(BeTrue())
+			Expect(string(hrReason)).To(SatisfyAny(
+				Equal("rca_incomplete"),
+				Equal("investigation_inconclusive"),
+			), "rca_incomplete should produce a valid HR reason enum")
 		})
 	})
 })

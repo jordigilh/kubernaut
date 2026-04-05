@@ -47,6 +47,10 @@ type SignalData struct {
 	BusinessCategory string
 	Description      string
 	SignalMode       string
+	FiringTime       string
+	ReceivedTime     string
+	IsDuplicate      *bool
+	OccurrenceCount  *int
 }
 
 // EnrichmentData contains enrichment context injected into the prompt.
@@ -147,12 +151,14 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentD
 		SignalSource:        withDefault(sanitized.SignalSource, "kubernaut-gateway"),
 		ClusterName:         withDefault(sanitized.ClusterName, "default"),
 		Description:         withDefault(sanitized.Description, sanitized.Message),
-		FiringTime:          "N/A",
-		ReceivedTime:        "N/A",
+		FiringTime:          withDefault(sanitized.FiringTime, "N/A"),
+		ReceivedTime:        withDefault(sanitized.ReceivedTime, "N/A"),
 		SignalMode:          withDefault(sanitized.SignalMode, "reactive"),
 		Priority:            sanitized.Priority,
 		BusinessCategory:    sanitized.BusinessCategory,
 		RiskTolerance:       sanitized.RiskTolerance,
+		IsDuplicate:         sanitized.IsDuplicate != nil && *sanitized.IsDuplicate,
+		OccurrenceCount:     derefIntOr(sanitized.OccurrenceCount, 0),
 	}
 
 	if enrichData != nil {
@@ -255,6 +261,13 @@ func withDefault(value, fallback string) string {
 	return fallback
 }
 
+func derefIntOr(p *int, fallback int) int {
+	if p != nil {
+		return *p
+	}
+	return fallback
+}
+
 func sanitizeSignal(signal SignalData) SignalData {
 	return SignalData{
 		Name:             sanitizeField(signal.Name),
@@ -271,6 +284,10 @@ func sanitizeSignal(signal SignalData) SignalData {
 		BusinessCategory: sanitizeField(signal.BusinessCategory),
 		Description:      sanitizeField(signal.Description),
 		SignalMode:       sanitizeField(signal.SignalMode),
+		FiringTime:       sanitizeField(signal.FiringTime),
+		ReceivedTime:     sanitizeField(signal.ReceivedTime),
+		IsDuplicate:      signal.IsDuplicate,
+		OccurrenceCount:  signal.OccurrenceCount,
 	}
 }
 

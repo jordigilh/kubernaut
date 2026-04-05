@@ -95,42 +95,58 @@ func extractJSON(content string) string {
 // extractBalancedJSON finds the first complete JSON object in content
 // by counting balanced braces. Handles JSON embedded in prose text,
 // mirroring HAPI's json_utils.py balanced extraction.
+//
+// M3-fix: skip `{` chars that are likely prose (not followed by `"`, `\n`, or
+// another `{`). Real JSON objects start with `{"` or `{\n`.
 func extractBalancedJSON(content string) string {
-	start := strings.IndexByte(content, '{')
-	if start == -1 {
-		return ""
-	}
+	pos := 0
+	for pos < len(content) {
+		start := strings.IndexByte(content[pos:], '{')
+		if start == -1 {
+			return ""
+		}
+		start += pos
 
-	depth := 0
-	inString := false
-	escaped := false
-
-	for i := start; i < len(content); i++ {
-		ch := content[i]
-		if escaped {
-			escaped = false
-			continue
-		}
-		if ch == '\\' && inString {
-			escaped = true
-			continue
-		}
-		if ch == '"' {
-			inString = !inString
-			continue
-		}
-		if inString {
-			continue
-		}
-		switch ch {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return content[start : i+1]
+		if start+1 < len(content) {
+			next := content[start+1]
+			if next != '"' && next != '\n' && next != '\r' && next != ' ' && next != '\t' && next != '{' && next != '}' {
+				pos = start + 1
+				continue
 			}
 		}
+
+		depth := 0
+		inString := false
+		escaped := false
+
+		for i := start; i < len(content); i++ {
+			ch := content[i]
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' && inString {
+				escaped = true
+				continue
+			}
+			if ch == '"' {
+				inString = !inString
+				continue
+			}
+			if inString {
+				continue
+			}
+			switch ch {
+			case '{':
+				depth++
+			case '}':
+				depth--
+				if depth == 0 {
+					return content[start : i+1]
+				}
+			}
+		}
+		pos = start + 1
 	}
 	return ""
 }
@@ -270,19 +286,25 @@ func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 
 // applyInvestigationOutcome maps HAPI-style investigation_outcome values
 // to is_actionable/needs_human_review/human_review_reason fields.
+// H5-fix: explicit `actionable` field takes precedence — only set IsActionable
+// from outcome when the `actionable` field was absent.
 func applyInvestigationOutcome(result *katypes.InvestigationResult, outcome string) {
 	switch outcome {
 	case "problem_resolved", "predictive_no_action":
-		falseVal := false
-		result.IsActionable = &falseVal
+		if result.IsActionable == nil {
+			falseVal := false
+			result.IsActionable = &falseVal
+		}
 	case "inconclusive":
 		result.HumanReviewNeeded = true
 		if result.HumanReviewReason == "" {
 			result.HumanReviewReason = "investigation_inconclusive"
 		}
 	case "actionable":
-		trueVal := true
-		result.IsActionable = &trueVal
+		if result.IsActionable == nil {
+			trueVal := true
+			result.IsActionable = &trueVal
+		}
 	}
 }
 
