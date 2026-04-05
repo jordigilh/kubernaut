@@ -191,6 +191,7 @@ spec:
         - "--web.enable-otlp-receiver"
         - "--storage.tsdb.retention.time=1h"
         - "--storage.tsdb.min-block-duration=5m"
+        - "--storage.tsdb.out-of-order-time-window=30m"
         - "--web.listen-address=:9090"
         ports:
         - containerPort: 9090
