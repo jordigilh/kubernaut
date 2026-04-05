@@ -230,7 +230,7 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 		"-p", fmt.Sprintf("%d:%d", config.Port, internalPort), // Port mapping (ignored on host network)
 		"-e", "MOCK_LLM_HOST=0.0.0.0",
 		"-e", fmt.Sprintf("MOCK_LLM_PORT=%d", internalPort),
-		"-e", "MOCK_LLM_FORCE_TEXT=false",
+		"-e", "MOCK_LLM_FORCE_TEXT=true",
 	}
 
 	// Mount config file if specified (DD-TEST-011 v2.0)
@@ -470,7 +470,7 @@ data:
 	_, _ = fmt.Fprintf(writer, "   🗑️  Force-deleting old Mock LLM pods to prevent rollout stall...\n")
 	deleteCmd := exec.CommandContext(ctx, "kubectl", "delete", "pod",
 		"-l", "app=mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath,
-		"--force", "--grace-period=5")
+		"--grace-period=5")
 	deleteCmd.Stdout = writer
 	deleteCmd.Stderr = writer
 	_ = deleteCmd.Run() // Ignore errors — pods may already be gone

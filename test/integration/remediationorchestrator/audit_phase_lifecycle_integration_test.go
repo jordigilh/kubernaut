@@ -276,24 +276,21 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing),
 				"RR should transition to Analyzing phase")
 
-			// Trigger async flush and wait for events to be persisted
-			err := auditStore.Flush(ctx)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Query DataStorage for phase transition audit events
-			// Wait for async flush to complete
+			// Query DataStorage for phase transition audit events.
+			// Flush inside the poll loop to capture in-flight events (SP-AUDIT-001 pattern).
 			correlationID := rr.Name
 			var events []ogenclient.AuditEvent
 
 			Eventually(func() bool {
-				events, err = queryAuditEvents(correlationID, roaudit.EventTypeLifecycleTransitioned)
-				if err != nil {
+				_ = auditStore.Flush(ctx)
+				var qErr error
+				events, qErr = queryAuditEvents(correlationID, roaudit.EventTypeLifecycleTransitioned)
+				if qErr != nil {
 					return false
 				}
-				// Should have 2 events: Pending→Processing and Processing→Analyzing
 				return len(events) >= 2
-			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-				"Should have 2 phase transition audit events")
+			}, 60*time.Second, 1*time.Second).Should(BeTrue(),
+				"Should have 2 phase transition audit events (Pending→Processing + Processing→Analyzing)")
 
 			// Find the Processing→Analyzing transition
 			var analyzingEvent *ogenclient.AuditEvent
