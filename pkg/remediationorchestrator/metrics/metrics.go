@@ -55,6 +55,10 @@ const (
 
 	// Approval decision metrics (BR-AUDIT-006 - SOC 2 compliance)
 	MetricNameApprovalDecisionsTotal = "kubernaut_remediationorchestrator_approval_decisions_total"
+
+	// Override metrics (#594)
+	MetricNameOverrideAppliedTotal            = "kubernaut_rar_override_applied_total"
+	MetricNameOverrideValidationRejectedTotal = "kubernaut_rar_override_validation_rejected_total"
 )
 
 // Metrics holds all Prometheus metrics for the Remediation Orchestrator controller.
@@ -79,6 +83,10 @@ type Metrics struct {
 	// === APPROVAL DECISION METRICS (BR-AUDIT-006 - SOC 2 Compliance) ===
 	// Business Value: Track approval/rejection rates for compliance reporting and operational insights
 	ApprovalDecisionsTotal *prometheus.CounterVec
+
+	// === OVERRIDE METRICS (#594) ===
+	OverrideAppliedTotal            *prometheus.CounterVec
+	OverrideValidationRejectedTotal *prometheus.CounterVec
 }
 
 // NewMetrics creates a new Metrics instance and registers with controller-runtime.
@@ -159,6 +167,22 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"decision", "namespace"},
 		),
+
+		// Override metrics (#594)
+		OverrideAppliedTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameOverrideAppliedTotal,
+				Help: "Total operator overrides applied via RAR approval (#594).",
+			},
+			[]string{"type", "namespace"},
+		),
+		OverrideValidationRejectedTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameOverrideValidationRejectedTotal,
+				Help: "Total operator overrides rejected by webhook validation (#594).",
+			},
+			[]string{"reason", "namespace"},
+		),
 	}
 
 	// Register all metrics with controller-runtime's global registry
@@ -173,6 +197,8 @@ func NewMetrics() *Metrics {
 		m.BlockedTotal,
 		m.CurrentBlockedGauge,
 		m.ApprovalDecisionsTotal,
+		m.OverrideAppliedTotal,
+		m.OverrideValidationRejectedTotal,
 	)
 
 	// Initialize all metrics with 0 values so they appear in /metrics endpoint
@@ -265,6 +291,22 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			},
 			[]string{"decision", "namespace"},
 		),
+
+		// Override metrics (#594)
+		OverrideAppliedTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameOverrideAppliedTotal,
+				Help: "Total operator overrides applied via RAR approval (#594).",
+			},
+			[]string{"type", "namespace"},
+		),
+		OverrideValidationRejectedTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameOverrideValidationRejectedTotal,
+				Help: "Total operator overrides rejected by webhook validation (#594).",
+			},
+			[]string{"reason", "namespace"},
+		),
 	}
 
 	// Register with provided registry (test registry)
@@ -278,6 +320,8 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 		m.BlockedTotal,
 		m.CurrentBlockedGauge,
 		m.ApprovalDecisionsTotal,
+		m.OverrideAppliedTotal,
+		m.OverrideValidationRejectedTotal,
 	)
 
 	// Initialize all metrics with 0 values so they appear in /metrics endpoint

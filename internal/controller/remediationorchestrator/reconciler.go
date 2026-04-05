@@ -65,6 +65,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/handler"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/override"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/status"
@@ -1285,6 +1286,47 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
 		}
 
+		// ========================================
+		// #594: Resolve operator override (if any)
+		// R9/I2: Use DeepCopy to avoid mutating the original AIA
+		// ========================================
+		resolvedWorkflow, overrideApplied, resolveErr := override.ResolveWorkflow(
+			ctx, r.apiReader, rar.Status.WorkflowOverride, ai.Status.SelectedWorkflow, rr.Namespace,
+		)
+		if resolveErr != nil {
+			if override.IsOverrideNotFoundError(resolveErr) {
+				// R10: Permanent error — RW deleted between webhook and reconciler
+				logger.Error(resolveErr, "Override workflow not found, failing RR")
+				r.Recorder.Eventf(rr, corev1.EventTypeWarning, events.EventReasonRemediationFailed,
+					"Override workflow not found: %v", resolveErr)
+				return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, resolveErr)
+			}
+			// Transient error → requeue
+			logger.Error(resolveErr, "Failed to resolve operator workflow override")
+			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
+		}
+		if overrideApplied {
+			r.Recorder.Eventf(rr, corev1.EventTypeNormal, events.EventReasonOperatorOverride,
+				"Operator override applied: workflow=%s rationale=%q",
+				rar.Status.WorkflowOverride.WorkflowName,
+				rar.Status.WorkflowOverride.Rationale)
+
+			// #594: Track override type for operational metrics
+			overrideType := "params"
+			if rar.Status.WorkflowOverride.WorkflowName != "" && rar.Status.WorkflowOverride.Parameters != nil {
+				overrideType = "both"
+			} else if rar.Status.WorkflowOverride.WorkflowName != "" {
+				overrideType = "workflow"
+			}
+			r.Metrics.OverrideAppliedTotal.WithLabelValues(overrideType, rr.Namespace).Inc()
+		}
+
+		// R9/I2: Create a local copy with resolved workflow for WE creation.
+		// SAFETY: Do NOT persist resolvedAI back to API server — AIA must
+		// retain the original AI recommendation for audit trail.
+		resolvedAI := ai.DeepCopy()
+		resolvedAI.Status.SelectedWorkflow = resolvedWorkflow
+
 		// DD-EM-002 + DD-EM-003: Capture pre-remediation spec hash of the remediation target.
 		remTarget := resolveDualTargets(rr, ai).Remediation
 		preHash, degradedReason, hashErr := CapturePreRemediationHash(
@@ -1316,10 +1358,11 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 		}
 
 		// ADR-EM-001, GAP-RO-1: Emit remediation.workflow_created audit event
-		r.emitWorkflowCreatedAudit(ctx, rr, ai, preHash)
+		r.emitWorkflowCreatedAudit(ctx, rr, resolvedAI, preHash)
 
 		// Create WorkflowExecution CRD (BR-ORCH-025, BR-ORCH-031)
-		weName, err := r.weCreator.Create(ctx, rr, ai)
+		// Uses resolvedAI which contains the final workflow (override or AIA)
+		weName, err := r.weCreator.Create(ctx, rr, resolvedAI)
 		if err != nil {
 			logger.Error(err, "Failed to create WorkflowExecution CRD")
 			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
@@ -1330,6 +1373,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 		r.Metrics.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
 
 		// Set WorkflowExecutionRef + SelectedWorkflowRef after approval (BR-ORCH-029, Issue #118 Gap 5)
+		// #594: Uses resolvedAI to reflect override workflow in SelectedWorkflowRef
 		// REFACTOR-RO-001: Using retry helper
 		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
@@ -1338,12 +1382,12 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 				Name:       weName,
 				Namespace:  rr.Namespace,
 			}
-			if ai.Status.SelectedWorkflow != nil {
+			if resolvedAI.Status.SelectedWorkflow != nil {
 				rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
-					WorkflowID:            ai.Status.SelectedWorkflow.WorkflowID,
-					Version:               ai.Status.SelectedWorkflow.Version,
-					ExecutionBundle:        ai.Status.SelectedWorkflow.ExecutionBundle,
-					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
+					WorkflowID:            resolvedAI.Status.SelectedWorkflow.WorkflowID,
+					Version:               resolvedAI.Status.SelectedWorkflow.Version,
+					ExecutionBundle:        resolvedAI.Status.SelectedWorkflow.ExecutionBundle,
+					ExecutionBundleDigest:  resolvedAI.Status.SelectedWorkflow.ExecutionBundleDigest,
 				}
 			}
 			// Issue #387: Capture LLM-identified remediation target for operational triage (kubectl -o wide)
