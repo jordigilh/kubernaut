@@ -175,7 +175,8 @@ func main() {
 	setupLog.Info("Registered WorkflowExecution webhook handler with audit store")
 
 	// Register RemediationApprovalRequest handler (DD-WEBHOOK-003: Complete audit events)
-	rarHandler := authwebhook.NewRemediationApprovalRequestAuthHandler(auditStore)
+	// I1: Use mgr.GetClient() (cached) for consistency with other webhook handlers
+	rarHandler := authwebhook.NewRemediationApprovalRequestAuthHandler(auditStore, mgr.GetClient())
 	if err := rarHandler.InjectDecoder(decoder); err != nil {
 		setupLog.Error(err, "failed to inject decoder into RemediationApprovalRequest handler")
 		os.Exit(1)
