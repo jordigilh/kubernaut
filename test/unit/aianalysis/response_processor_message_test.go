@@ -35,7 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	client "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	client "github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 var _ = Describe("Issue #588: Status.Message and Status.Warnings Independence", func() {
