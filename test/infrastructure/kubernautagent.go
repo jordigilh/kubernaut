@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -111,12 +112,16 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Load images into Kind
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📤 PHASE 3: Loading images into Kind...")
-	for name, image := range images {
-		if err := loadImageToKind(clusterName, image, writer); err != nil {
-			return fmt.Errorf("failed to load %s image: %w", name, err)
+	if os.Getenv("IMAGE_REGISTRY") != "" {
+		_, _ = fmt.Fprintln(writer, "\n⏭️  PHASE 3: Skipping local image loading (CI/CD: IMAGE_REGISTRY set, Kind pulls from registry)")
+	} else {
+		_, _ = fmt.Fprintln(writer, "\n📤 PHASE 3: Loading images into Kind...")
+		for name, image := range images {
+			if err := loadImageToKind(clusterName, image, writer); err != nil {
+				return fmt.Errorf("failed to load %s image: %w", name, err)
+			}
+			_, _ = fmt.Fprintf(writer, "  ✅ %s loaded\n", name)
 		}
-		_, _ = fmt.Fprintf(writer, "  ✅ %s loaded\n", name)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
