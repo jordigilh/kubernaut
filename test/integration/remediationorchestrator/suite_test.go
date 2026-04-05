@@ -64,6 +64,7 @@ import (
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 
@@ -285,6 +286,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	err = eav1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	// R8: RemediationWorkflow (RO reads these for operator override resolution, #594)
+	err = remediationworkflowv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
 	By("Bootstrapping per-process envtest with ALL CRDs")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
@@ -352,10 +357,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 				&eav1.EffectivenessAssessment{}: {
 					Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
 				},
-				&remediationv1.RemediationApprovalRequest{}: {
-					Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
-				},
+			&remediationv1.RemediationApprovalRequest{}: {
+				Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
 			},
+			// R8: RW cache for operator override resolution (#594)
+			&remediationworkflowv1.RemediationWorkflow{}: {
+				Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
+			},
+		},
 		},
 		Metrics: metricsserver.Options{
 			BindAddress: ":0", // Dynamic port allocation (prevents conflicts with E2E tests)
