@@ -23,9 +23,13 @@ import (
 	"net/http"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -42,13 +46,16 @@ type RemediationApprovalRequestAuthHandler struct {
 	authenticator *Authenticator
 	decoder       admission.Decoder
 	auditStore    audit.AuditStore
+	reader        client.Reader
 }
 
-// NewRemediationApprovalRequestAuthHandler creates a new RemediationApprovalRequest authentication handler
-func NewRemediationApprovalRequestAuthHandler(auditStore audit.AuditStore) *RemediationApprovalRequestAuthHandler {
+// NewRemediationApprovalRequestAuthHandler creates a new RemediationApprovalRequest authentication handler.
+// The reader is used for override validation (F2: RW lookup, I1: use mgr.GetClient() in production).
+func NewRemediationApprovalRequestAuthHandler(auditStore audit.AuditStore, reader client.Reader) *RemediationApprovalRequestAuthHandler {
 	return &RemediationApprovalRequestAuthHandler{
 		authenticator: NewAuthenticator(),
 		auditStore:    auditStore,
+		reader:        reader,
 	}
 }
 
@@ -158,6 +165,21 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	// REFACTOR-AW-002: Detect and log identity forgery attempts using extracted helper
 	DetectAndLogForgeryAttempt(logger, rar.Status.DecidedBy, authCtx.Username)
 
+	// G5: Override validation AFTER authentication (SOC2 CC8.1 — audit trail captures WHO attempted invalid overrides)
+	if rar.Status.WorkflowOverride != nil {
+		overrideLog := logger.WithValues(
+			"override.workflowName", rar.Status.WorkflowOverride.WorkflowName,
+			"override.hasParams", rar.Status.WorkflowOverride.Parameters != nil,
+			"override.rationale", rar.Status.WorkflowOverride.Rationale,
+			"authenticatedUser", authCtx.Username,
+		)
+		if err := h.validateWorkflowOverride(ctx, rar); err != nil {
+			overrideLog.Info("Override validation failed", "error", err.Error(), "decision", rar.Status.Decision)
+			return admission.Denied(err.Error())
+		}
+		overrideLog.Info("Override validation passed")
+	}
+
 	// SECURITY: Populate DecidedBy with authenticated user (OVERWRITE any user-provided value)
 	// Per BR-AUTH-001, SOC 2 CC8.1: User attribution is tamper-proof (webhook-enforced)
 	logger.Info("Populating DecidedBy field (authenticated identity)",
@@ -231,6 +253,39 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 
 	// Return patched response
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledRAR)
+}
+
+// validateWorkflowOverride validates the WorkflowOverride on an RAR (#594).
+// - Override is only valid when decision is Approved
+// - If workflowName is set, the referenced RW must exist and be Active
+func (h *RemediationApprovalRequestAuthHandler) validateWorkflowOverride(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) error {
+	override := rar.Status.WorkflowOverride
+	if override == nil {
+		return nil
+	}
+
+	if rar.Status.Decision != remediationv1.ApprovalDecisionApproved {
+		return fmt.Errorf("override rejected: workflowOverride is only valid when decision is Approved (got %q)", rar.Status.Decision)
+	}
+
+	if override.WorkflowName == "" {
+		return nil
+	}
+
+	rw := &remediationworkflowv1.RemediationWorkflow{}
+	err := h.reader.Get(ctx, client.ObjectKey{Name: override.WorkflowName, Namespace: rar.Namespace}, rw)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return fmt.Errorf("override rejected: RemediationWorkflow %q not found in namespace %q", override.WorkflowName, rar.Namespace)
+		}
+		return fmt.Errorf("override rejected: failed to lookup RemediationWorkflow %q: %w", override.WorkflowName, err)
+	}
+
+	if rw.Status.CatalogStatus != sharedtypes.CatalogStatusActive {
+		return fmt.Errorf("override rejected: RemediationWorkflow %q has catalogStatus %q (must be Active)", override.WorkflowName, rw.Status.CatalogStatus)
+	}
+
+	return nil
 }
 
 // InjectDecoder injects the decoder into the handler
