@@ -183,6 +183,24 @@ type ApprovalPolicyEvaluation struct {
 	Decision string `json:"decision"`
 }
 
+// WorkflowOverride allows operators to override the AI-recommended workflow
+// and/or parameters when approving a RemediationApprovalRequest (#594).
+// The RO resolves the final spec from either this override or the AIA default.
+type WorkflowOverride struct {
+	// Name of a RemediationWorkflow CRD to use instead of the AI-recommended one.
+	// If set, the webhook validates the RW exists and has CatalogStatus=Active.
+	// +optional
+	WorkflowName string `json:"workflowName,omitempty"`
+	// Override parameters for the workflow execution.
+	// If non-nil (including empty map), replaces the AI-recommended parameters.
+	// If nil, the AI-recommended parameters are preserved.
+	// +optional
+	Parameters map[string]string `json:"parameters,omitempty"`
+	// Rationale for the override decision (audit trail).
+	// +optional
+	Rationale string `json:"rationale,omitempty"`
+}
+
 // RemediationApprovalRequestStatus defines the observed state of RemediationApprovalRequest.
 type RemediationApprovalRequestStatus struct {
 	// ========================================
@@ -205,6 +223,11 @@ type RemediationApprovalRequestStatus struct {
 	// Optional message from the decision maker
 	// +optional
 	DecisionMessage string `json:"decisionMessage,omitempty"`
+
+	// Operator workflow/parameter override (#594, ADR-040).
+	// Only valid when Decision is Approved. Webhook validates the referenced RW.
+	// +optional
+	WorkflowOverride *WorkflowOverride `json:"workflowOverride,omitempty"`
 
 	// ========================================
 	// LIFECYCLE TRACKING

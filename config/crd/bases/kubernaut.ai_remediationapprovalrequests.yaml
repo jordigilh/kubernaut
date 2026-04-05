@@ -380,6 +380,28 @@ spec:
                   Time remaining until expiration (human-readable, e.g., "5m30s")
                   Updated by controller periodically
                 type: string
+              workflowOverride:
+                description: |-
+                  Operator workflow/parameter override (#594, ADR-040).
+                  Only valid when Decision is Approved. Webhook validates the referenced RW.
+                properties:
+                  parameters:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      Override parameters for the workflow execution.
+                      If non-nil (including empty map), replaces the AI-recommended parameters.
+                      If nil, the AI-recommended parameters are preserved.
+                    type: object
+                  rationale:
+                    description: Rationale for the override decision (audit trail).
+                    type: string
+                  workflowName:
+                    description: |-
+                      Name of a RemediationWorkflow CRD to use instead of the AI-recommended one.
+                      If set, the webhook validates the RW exists and has CatalogStatus=Active.
+                    type: string
+                type: object
             type: object
         type: object
     selectableFields:
