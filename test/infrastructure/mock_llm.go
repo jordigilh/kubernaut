@@ -466,9 +466,18 @@ data:
 		return fmt.Errorf("failed to restart Mock LLM deployment after retries: %w", restartErr)
 	}
 
+	// Force-terminate old Mock LLM pods to avoid rollout stalls from slow termination.
+	_, _ = fmt.Fprintf(writer, "   🗑️  Force-deleting old Mock LLM pods to prevent rollout stall...\n")
+	deleteCmd := exec.CommandContext(ctx, "kubectl", "delete", "pod",
+		"-l", "app=mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath,
+		"--force", "--grace-period=5")
+	deleteCmd.Stdout = writer
+	deleteCmd.Stderr = writer
+	_ = deleteCmd.Run() // Ignore errors — pods may already be gone
+
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Mock LLM rollout to complete...\n")
 	rolloutCmd := exec.CommandContext(ctx, "kubectl", "rollout", "status",
-		"deployment/mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath, "--timeout=120s")
+		"deployment/mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath, "--timeout=180s")
 	rolloutCmd.Stdout = writer
 	rolloutCmd.Stderr = writer
 	if err := rolloutCmd.Run(); err != nil {
