@@ -18,6 +18,7 @@ package parser
 
 import (
 	"fmt"
+	"time"
 
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 )
@@ -72,17 +73,35 @@ func (v *Validator) Validate(result *katypes.InvestigationResult) error {
 }
 
 // SelfCorrect runs a validation-correction loop up to maxAttempts times.
-// Returns the corrected result, or sets HumanReviewNeeded if exhausted.
+// Returns the corrected result with ValidationAttemptsHistory populated.
+// If exhausted, sets HumanReviewNeeded + HumanReviewReason and clears WorkflowID
+// per DD-HAPI-002 v1.2 (invalid workflows must not propagate to execution).
 func (v *Validator) SelfCorrect(result *katypes.InvestigationResult, maxAttempts int,
 	correctionFn func(result *katypes.InvestigationResult, err error) (*katypes.InvestigationResult, error),
 ) (*katypes.InvestigationResult, error) {
 	current := result
+	var history []katypes.ValidationAttemptRecord
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		validationErr := v.Validate(current)
 		if validationErr == nil {
+			history = append(history, katypes.ValidationAttemptRecord{
+				Attempt:    attempt + 1,
+				WorkflowID: current.WorkflowID,
+				IsValid:    true,
+				Timestamp:  time.Now().UTC().Format(time.RFC3339),
+			})
+			current.ValidationAttemptsHistory = history
 			return current, nil
 		}
+
+		history = append(history, katypes.ValidationAttemptRecord{
+			Attempt:    attempt + 1,
+			WorkflowID: current.WorkflowID,
+			IsValid:    false,
+			Errors:     []string{validationErr.Error()},
+			Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		})
 
 		corrected, corrErr := correctionFn(current, validationErr)
 		if corrErr != nil {
@@ -93,10 +112,29 @@ func (v *Validator) SelfCorrect(result *katypes.InvestigationResult, maxAttempts
 
 	finalErr := v.Validate(current)
 	if finalErr == nil {
+		history = append(history, katypes.ValidationAttemptRecord{
+			Attempt:    len(history) + 1,
+			WorkflowID: current.WorkflowID,
+			IsValid:    true,
+			Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		})
+		current.ValidationAttemptsHistory = history
 		return current, nil
 	}
 
+	history = append(history, katypes.ValidationAttemptRecord{
+		Attempt:    len(history) + 1,
+		WorkflowID: current.WorkflowID,
+		IsValid:    false,
+		Errors:     []string{finalErr.Error()},
+		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+	})
+
+	current.ValidationAttemptsHistory = history
 	current.HumanReviewNeeded = true
+	current.HumanReviewReason = "llm_parsing_error"
 	current.Reason = fmt.Sprintf("self-correction exhausted after %d attempts: %s", maxAttempts, finalErr)
+	current.WorkflowID = ""
+	current.ExecutionBundle = ""
 	return current, nil
 }

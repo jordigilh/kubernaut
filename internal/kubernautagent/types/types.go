@@ -58,6 +58,20 @@ type InvestigationResult struct {
 
 	// Alternative workflows for operator context (GAP-009: OpenAPI AlternativeWorkflow schema)
 	AlternativeWorkflows []AlternativeWorkflow `json:"alternative_workflows,omitempty"`
+
+	// History of validation attempts during self-correction (DD-HAPI-002 v1.2).
+	// Populated by Validator.SelfCorrect when validation fails and retries occur.
+	ValidationAttemptsHistory []ValidationAttemptRecord `json:"validation_attempts_history,omitempty"`
+}
+
+// ValidationAttemptRecord captures a single validation attempt during
+// the LLM self-correction loop. Maps to OpenAPI ValidationAttempt schema.
+type ValidationAttemptRecord struct {
+	Attempt    int      `json:"attempt"`
+	WorkflowID string   `json:"workflow_id,omitempty"`
+	IsValid    bool     `json:"is_valid"`
+	Errors     []string `json:"errors,omitempty"`
+	Timestamp  string   `json:"timestamp"`
 }
 
 // AlternativeWorkflow represents a workflow considered but not selected.
