@@ -71,7 +71,7 @@ func main() {
 		addr       string
 	)
 	flag.StringVar(&configPath, "config", "/etc/kubernautagent/config.yaml", "Path to YAML configuration file")
-	flag.StringVar(&addr, "addr", ":8080", "HTTP listen address")
+	flag.StringVar(&addr, "addr", "", "HTTP listen address (overrides config server.port)")
 	flag.Parse()
 
 	slogHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
@@ -91,6 +91,10 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		slogger.Error("invalid configuration", "error", err)
 		os.Exit(1)
+	}
+
+	if addr == "" {
+		addr = fmt.Sprintf("%s:%d", cfg.Server.Address, cfg.Server.Port)
 	}
 
 	slogger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
