@@ -30,75 +30,42 @@ func projectRoot() string {
 	return filepath.Join(filepath.Dir(filename), "..", "..", "..")
 }
 
-var _ = Describe("UT-RR-387-001: CRD Manifest Printer Columns (DD-CRD-003, Issue #387)", func() {
-	It("should define the expected wide printer columns for operational triage", func() {
+// Issue #635 supersedes #387 and #622: Revised column layout with composite fields.
+var _ = Describe("Issue #635: CRD Manifest Printer Columns (DD-CRD-003)", func() {
+	It("UT-RR-635-CRD-001: should define default columns: Phase, Outcome, Target, Alert, Workflow, Confidence, Age", func() {
 		crdPath := filepath.Join(projectRoot(), "config", "crd", "bases", "kubernaut.ai_remediationrequests.yaml")
 		data, err := os.ReadFile(crdPath)
 		Expect(err).NotTo(HaveOccurred(), "CRD manifest should exist at config/crd/bases/")
 
 		crdYAML := string(data)
 
-		// Source column: signal adapter (e.g., "alertmanager")
+		// Default columns (no priority = shown in kubectl get rr)
+		Expect(crdYAML).To(ContainSubstring("name: Phase"))
+		Expect(crdYAML).To(ContainSubstring("name: Outcome"))
+		Expect(crdYAML).To(ContainSubstring("name: Target"))
+		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.targetDisplay"))
+		Expect(crdYAML).To(ContainSubstring("name: Alert"))
+		Expect(crdYAML).To(ContainSubstring("jsonPath: .spec.signalName"))
+		Expect(crdYAML).To(ContainSubstring("name: Workflow"))
+		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.workflowDisplayName"))
+		Expect(crdYAML).To(ContainSubstring("name: Confidence"))
+		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.confidence"))
+		Expect(crdYAML).To(ContainSubstring("name: Age"))
+	})
+
+	It("UT-RR-635-CRD-002: should define wide columns: Source, Signal Target, Namespace, Reason", func() {
+		crdPath := filepath.Join(projectRoot(), "config", "crd", "bases", "kubernaut.ai_remediationrequests.yaml")
+		data, err := os.ReadFile(crdPath)
+		Expect(err).NotTo(HaveOccurred())
+		crdYAML := string(data)
+
+		// Wide columns (priority: 1)
 		Expect(crdYAML).To(ContainSubstring("name: Source"))
 		Expect(crdYAML).To(ContainSubstring("jsonPath: .spec.signalSource"))
-
-		// Target column: signal target resource name
-		Expect(crdYAML).To(ContainSubstring("name: Target"))
-		Expect(crdYAML).To(ContainSubstring("jsonPath: .spec.targetResource.name"))
-
-		// RCA Target column: LLM-identified remediation target (BR-HAPI-191)
-		Expect(crdYAML).To(ContainSubstring("name: RCA Target"))
-		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.remediationTarget.name"))
-
-		// Workflow column: AI-selected workflow name
-		Expect(crdYAML).To(ContainSubstring("name: Workflow"))
-		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.selectedWorkflowRef.workflowId"))
-
-		// All 4 new columns should be wide-only (priority 1)
-		// The existing columns (Phase, Outcome, Age) have no priority (default 0)
-		// and Reason already has priority 1. Count total priority: 1 entries.
-		// After this change: Source, Target, RCA Target, Workflow, Reason = 5 entries with priority: 1
-	})
-})
-
-var _ = Describe("Issue #622: RR -owide Missing Target Resource Namespace/Kind", func() {
-	It("UT-RR-622-001: CRD manifest contains Target NS column", func() {
-		crdPath := filepath.Join(projectRoot(), "config", "crd", "bases", "kubernaut.ai_remediationrequests.yaml")
-		data, err := os.ReadFile(crdPath)
-		Expect(err).NotTo(HaveOccurred())
-		crdYAML := string(data)
-
-		Expect(crdYAML).To(ContainSubstring("name: Target NS"))
-		Expect(crdYAML).To(ContainSubstring("jsonPath: .spec.targetResource.namespace"))
-	})
-
-	It("UT-RR-622-002: CRD manifest contains Target Kind column", func() {
-		crdPath := filepath.Join(projectRoot(), "config", "crd", "bases", "kubernaut.ai_remediationrequests.yaml")
-		data, err := os.ReadFile(crdPath)
-		Expect(err).NotTo(HaveOccurred())
-		crdYAML := string(data)
-
-		Expect(crdYAML).To(ContainSubstring("name: Target Kind"))
-		Expect(crdYAML).To(ContainSubstring("jsonPath: .spec.targetResource.kind"))
-	})
-
-	It("UT-RR-622-003: CRD manifest contains RCA NS column", func() {
-		crdPath := filepath.Join(projectRoot(), "config", "crd", "bases", "kubernaut.ai_remediationrequests.yaml")
-		data, err := os.ReadFile(crdPath)
-		Expect(err).NotTo(HaveOccurred())
-		crdYAML := string(data)
-
-		Expect(crdYAML).To(ContainSubstring("name: RCA NS"))
+		Expect(crdYAML).To(ContainSubstring("name: Signal Target"))
+		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.signalTargetDisplay"))
+		Expect(crdYAML).To(ContainSubstring("name: Namespace"))
 		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.remediationTarget.namespace"))
-	})
-
-	It("UT-RR-622-004: CRD manifest contains RCA Kind column", func() {
-		crdPath := filepath.Join(projectRoot(), "config", "crd", "bases", "kubernaut.ai_remediationrequests.yaml")
-		data, err := os.ReadFile(crdPath)
-		Expect(err).NotTo(HaveOccurred())
-		crdYAML := string(data)
-
-		Expect(crdYAML).To(ContainSubstring("name: RCA Kind"))
-		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.remediationTarget.kind"))
+		Expect(crdYAML).To(ContainSubstring("name: Reason"))
 	})
 })

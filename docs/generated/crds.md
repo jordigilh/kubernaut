@@ -1339,6 +1339,10 @@ _Appears in:_
 | `selectedWorkflowRef`| _[WorkflowReference](#workflowreference)_| SelectedWorkflowRef captures the workflow selected by AI for this remediation.<br />Populated from workflowexecution.selection.completed audit event.|
 | `executionRef`| _[ObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectreference-v1-core)_| ExecutionRef references the WorkflowExecution CRD for this remediation.<br />Populated from workflowexecution.execution.started audit event.|
 | `remediationTarget`| _[ResourceIdentifier](#resourceidentifier)_| RemediationTarget identifies the Kubernetes resource the LLM determined should be<br />remediated. Populated from AIAnalysis.Status.RootCauseAnalysis.AffectedResource.<br />May differ from Spec.TargetResource (e.g., Deployment vs Pod).|
+| `targetDisplay`| _string_| TargetDisplay is the Kubernetes-idiomatic Kind/Name of the RCA target<br />(e.g., "Deployment/web-frontend"). Populated when RemediationTarget is set.|
+| `confidence`| _string_| Confidence is the AI analysis confidence score as a display string<br />(e.g., "0.97"). Populated from AIAnalysis.SelectedWorkflow.Confidence.|
+| `workflowDisplayName`| _string_| WorkflowDisplayName is the human-readable workflow identifier<br />(e.g., "GitRevertCommit:git-revert-v2"). Populated from AIAnalysis.SelectedWorkflow.|
+| `signalTargetDisplay`| _string_| SignalTargetDisplay is the Kubernetes-idiomatic Kind/Name of the signal target<br />(e.g., "Pod/web-frontend-cdbdbc4f8-6kn6j"). Populated from Spec.TargetResource.|
 
 
 ### RemediationTarget
