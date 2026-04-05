@@ -118,11 +118,43 @@ func Load(data []byte) (*Config, error) {
 	return cfg, nil
 }
 
+// SDKConfig represents the SDK configuration file structure.
+// This maps to the kubernaut-agent-sdk-config ConfigMap rendered by
+// the Helm chart when llm.provider/model are set.
+type SDKConfig struct {
+	LLM struct {
+		Provider       string  `yaml:"provider"`
+		Model          string  `yaml:"model"`
+		MaxRetries     int     `yaml:"max_retries"`
+		TimeoutSeconds int     `yaml:"timeout_seconds"`
+		Temperature    float64 `yaml:"temperature"`
+	} `yaml:"llm"`
+}
+
+// MergeSDKConfig loads an SDK config file and merges LLM fields into
+// the main config. SDK values are only applied when the main config
+// doesn't already specify them (main config takes precedence).
+func (c *Config) MergeSDKConfig(data []byte) error {
+	var sdk SDKConfig
+	if err := yaml.Unmarshal(data, &sdk); err != nil {
+		return fmt.Errorf("parsing SDK config: %w", err)
+	}
+	if c.LLM.Provider == "" || c.LLM.Provider == DefaultConfig().LLM.Provider {
+		if sdk.LLM.Provider != "" {
+			c.LLM.Provider = sdk.LLM.Provider
+		}
+	}
+	if c.LLM.Model == "" && sdk.LLM.Model != "" {
+		c.LLM.Model = sdk.LLM.Model
+	}
+	return nil
+}
+
 // Validate checks required fields and value constraints.
 func (c *Config) Validate() error {
 	switch c.LLM.Provider {
-	case "bedrock", "huggingface", "anthropic":
-		// endpoint is optional for these providers
+	case "bedrock", "huggingface", "anthropic", "openai":
+		// endpoint is optional: LangChainGo uses default endpoints for these providers
 	default:
 		if c.LLM.Endpoint == "" {
 			return fmt.Errorf("llm.endpoint is required for provider %q", c.LLM.Provider)

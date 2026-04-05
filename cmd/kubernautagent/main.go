@@ -67,10 +67,12 @@ import (
 
 func main() {
 	var (
-		configPath string
-		addr       string
+		configPath    string
+		sdkConfigPath string
+		addr          string
 	)
 	flag.StringVar(&configPath, "config", "/etc/kubernautagent/config.yaml", "Path to YAML configuration file")
+	flag.StringVar(&sdkConfigPath, "sdk-config", "/etc/kubernaut-agent/sdk/sdk-config.yaml", "Path to SDK configuration file (LLM provider/model)")
 	flag.StringVar(&addr, "addr", "", "HTTP listen address (overrides config server.port)")
 	flag.Parse()
 
@@ -88,6 +90,18 @@ func main() {
 		slogger.Error("failed to parse config", "error", err)
 		os.Exit(1)
 	}
+
+	if sdkData, sdkErr := os.ReadFile(sdkConfigPath); sdkErr == nil {
+		if mergeErr := cfg.MergeSDKConfig(sdkData); mergeErr != nil {
+			slogger.Warn("failed to parse SDK config, continuing with main config only",
+				"path", sdkConfigPath, "error", mergeErr)
+		} else {
+			slogger.Info("merged SDK config", "path", sdkConfigPath)
+		}
+	} else {
+		slogger.Info("SDK config not found, using main config only", "path", sdkConfigPath)
+	}
+
 	if err := cfg.Validate(); err != nil {
 		slogger.Error("invalid configuration", "error", err)
 		os.Exit(1)
