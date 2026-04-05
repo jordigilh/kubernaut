@@ -70,10 +70,28 @@ const (
 // CONDITION REASONS
 // ========================================
 
-// Ready reasons
+// Ready reasons (generic)
 const (
 	ReasonReady    = "Ready"
 	ReasonNotReady = "NotReady"
+)
+
+// Phase-specific Ready reasons (Issue #636)
+// Displayed in the REASON column of `kubectl get rr` via
+// .status.conditions[?(@.type=="Ready")].reason
+const (
+	ReasonProcessing              = "Processing"
+	ReasonAnalyzing               = "Analyzing"
+	ReasonAwaitingApproval        = "AwaitingApproval"
+	ReasonExecuting               = "Executing"
+	ReasonVerifying               = "Verifying"
+	ReasonNoActionRequired        = "NoActionRequired"
+	ReasonManualReviewRequired    = "ManualReviewRequired"
+	ReasonRemediationFailed       = "RemediationFailed"
+	ReasonRemediationTimedOut     = "RemediationTimedOut"
+	ReasonRemediationBlocked      = "RemediationBlocked"
+	ReasonSkippedResourceBusy     = "SkippedResourceBusy"
+	ReasonSkippedRecentlyRemediated = "SkippedRecentlyRemediated"
 )
 
 // SignalProcessing reasons

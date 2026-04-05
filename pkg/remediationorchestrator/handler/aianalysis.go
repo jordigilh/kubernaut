@@ -184,7 +184,7 @@ func (h *AIAnalysisHandler) handleWorkflowNotNeeded(
 		}
 
 		// BR-ORCH-043: Set Ready condition (terminal success - no action required)
-		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "No action required", h.Metrics)
+		remediationrequest.SetReady(rr, true, remediationrequest.ReasonNoActionRequired, "No action required", h.Metrics)
 
 		return nil
 	})
@@ -388,7 +388,7 @@ func (h *AIAnalysisHandler) handleManualReviewCompleted(
 		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
 
 		// BR-ORCH-043: Set Ready condition (terminal success - manual review required)
-		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Manual review required", h.Metrics)
+		remediationrequest.SetReady(rr, true, remediationrequest.ReasonManualReviewRequired, "Manual review required", h.Metrics)
 
 		return nil
 	})
