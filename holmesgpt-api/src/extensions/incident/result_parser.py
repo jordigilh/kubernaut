@@ -71,6 +71,173 @@ def _parse_remediation_target(rca_data: Dict[str, Any]) -> Optional[Dict[str, st
     return result
 
 
+def ensure_incident_response_shape(
+    result: Dict[str, Any],
+    incident_id: str = "unknown",
+    analysis: str = "No analysis available",
+) -> Dict[str, Any]:
+    """Backfill missing required IncidentResponseData fields with safe defaults.
+
+    Issue #624: Early-exit result dicts from llm_integration.py lack required
+    fields (incident_id, analysis, confidence, timestamp). This normalizer
+    ensures all required fields exist before audit event creation.
+
+    The normalized dict uses snake_case field names which Pydantic v2 accepts
+    via ``populate_by_name: True`` on the IncidentResponseData model.
+    """
+    normalized = dict(result)
+    normalized.setdefault("incident_id", incident_id)
+    normalized.setdefault("analysis", analysis)
+    normalized.setdefault("confidence", 0.0)
+    normalized.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+    normalized.setdefault("needs_human_review", False)
+    normalized.setdefault("root_cause_analysis", {
+        "summary": "No root cause analysis available",
+        "severity": "unknown",
+        "contributing_factors": [],
+    })
+    return normalized
+
+
+def _try_parse_json_value(text: str) -> Any:
+    """Parse a JSON or Python-dict/list string into a Python object.
+
+    Tries json.loads first (handles standard JSON with null, true, false),
+    falls back to ast.literal_eval (handles Python syntax with None, True, False).
+    Returns None on failure.
+    """
+    import ast as _ast
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    try:
+        return _ast.literal_eval(text)
+    except (ValueError, SyntaxError):
+        pass
+    return None
+
+
+def _parse_section_headers(analysis: str) -> Optional[Dict[str, Any]]:
+    """Parse Pattern 2B section-header format directly into a Python dict.
+
+    HolmesGPT SDK sometimes returns analysis in section-header format:
+        # root_cause_analysis
+        {"summary": "...", ...}
+        # selected_workflow
+        null
+        # needs_human_review
+        true
+
+    This function extracts each section into native Python objects, avoiding
+    the fragile string-concatenation + re-parsing approach that mixed JSON
+    and Python literal syntax.
+
+    Returns a populated dict if any sections were found, or None if the
+    analysis text doesn't contain section headers.
+    """
+    from .json_utils import extract_balanced_json
+
+    if '# selected_workflow' not in analysis and '# root_cause_analysis' not in analysis:
+        return None
+
+    result: Dict[str, Any] = {}
+
+    # root_cause_analysis (JSON dict)
+    rca_header = re.search(r'# root_cause_analysis\s*\n\s*', analysis)
+    if rca_header:
+        brace_pos = analysis.find('{', rca_header.end())
+        if brace_pos != -1:
+            balanced = extract_balanced_json(analysis, brace_pos)
+            raw = balanced
+            if not raw:
+                m = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis, re.DOTALL)
+                raw = m.group(1) if m else None
+            if raw:
+                parsed = _try_parse_json_value(raw)
+                if isinstance(parsed, dict):
+                    result['root_cause_analysis'] = parsed
+                    logger.debug(f"Pattern 2B: Extracted RCA ({len(raw)} chars)")
+
+    # selected_workflow (JSON dict or null/None)
+    wf_header = re.search(r'# selected_workflow\s*\n\s*', analysis)
+    if wf_header:
+        remainder = analysis[wf_header.end():].strip()
+        if remainder.startswith("None") or remainder.startswith("null"):
+            logger.debug("Pattern 2B: selected_workflow is None/null")
+        else:
+            brace_pos = analysis.find('{', wf_header.end())
+            if brace_pos != -1:
+                balanced = extract_balanced_json(analysis, brace_pos)
+                raw = balanced
+                if not raw:
+                    m = re.search(r'# selected_workflow\s*\n\s*(\{.*?\})\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+                    raw = m.group(1) if m else None
+                if raw:
+                    parsed = _try_parse_json_value(raw)
+                    if isinstance(parsed, dict):
+                        result['selected_workflow'] = parsed
+                        logger.debug(f"Pattern 2B: Extracted workflow ({len(raw)} chars)")
+
+    # investigation_outcome (plain string)
+    m = re.search(r'# investigation_outcome\s*\n\s*["\']?(.*?)["\']?\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+    if m:
+        val = m.group(1).strip()
+        if val and val not in ("None", "null"):
+            result['investigation_outcome'] = val
+            logger.debug(f"Pattern 2B: investigation_outcome = {val}")
+
+    # confidence (float)
+    m = re.search(r'# confidence\s*\n\s*([\d.]+)\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+    if m:
+        try:
+            result['confidence'] = float(m.group(1))
+            logger.debug(f"Pattern 2B: confidence = {result['confidence']}")
+        except ValueError:
+            pass
+
+    # alternative_workflows (JSON list)
+    m = re.search(r'# alternative_workflows\s*\n\s*(\[.*?\])\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+    if m:
+        parsed = _try_parse_json_value(m.group(1))
+        if isinstance(parsed, list):
+            result['alternative_workflows'] = parsed
+            logger.debug(f"Pattern 2B: alternative_workflows ({len(parsed)} items)")
+
+    # needs_human_review (bool)
+    m = re.search(r'# needs_human_review\s*\n\s*(True|False|true|false)\s*(?:\n#|$|\n\n)', analysis, re.IGNORECASE)
+    if m:
+        result['needs_human_review'] = m.group(1).lower() == 'true'
+        logger.debug(f"Pattern 2B: needs_human_review = {result['needs_human_review']}")
+
+    # human_review_reason (plain string)
+    m = re.search(r'# human_review_reason\s*\n\s*["\']?([^"\'\n]+)["\']?\s*(?:\n#|$|\n\n)', analysis)
+    if m:
+        val = m.group(1).strip()
+        if val and val not in ("None", "null"):
+            result['human_review_reason'] = val
+            logger.debug(f"Pattern 2B: human_review_reason = {val}")
+
+    # validation_attempts_history (JSON list)
+    m = re.search(r'# validation_attempts_history\s*\n\s*(\[.*?\])\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+    if m:
+        parsed = _try_parse_json_value(m.group(1))
+        if isinstance(parsed, list):
+            result['validation_attempts_history'] = parsed
+            logger.debug(f"Pattern 2B: validation_attempts_history ({len(parsed)} entries)")
+
+    # actionable (bool)
+    m = re.search(r'# actionable\s*\n\s*(True|False|true|false)\s*(?:\n#|$|\n\n)', analysis, re.IGNORECASE)
+    if m:
+        result['actionable'] = m.group(1).lower() == 'true'
+        logger.debug(f"Pattern 2B: actionable = {result['actionable']}")
+
+    if result:
+        logger.info({"event": "pattern_2b_parsed", "keys": list(result.keys())})
+        return result
+    return None
+
+
 def parse_and_validate_investigation_result(
     investigation: InvestigationResult,
     request_data: Dict[str, Any],
@@ -134,158 +301,26 @@ def parse_and_validate_investigation_result(
             json_match = FakeMatch(json_dict_match.group(0))
             logger.info("Pattern 2A: Successfully extracted complete JSON dict")
 
-    # Pattern 2B: Legacy - Python dict format with section headers (HolmesGPT SDK format)
-    # Format: "# root_cause_analysis\n{'summary': '...', ...}\n\n# selected_workflow\n{'workflow_id': '...', ...}"
-    if not json_match and ('# selected_workflow' in analysis or '# root_cause_analysis' in analysis):
-        import ast
-        parts = {}
-
-        # Extract root_cause_analysis
-        rca_match = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis, re.DOTALL)
-        if rca_match:
-            parts['root_cause_analysis'] = rca_match.group(1)
-            logger.debug(f"Pattern 2B: Extracted RCA: {parts['root_cause_analysis'][:100]}...")
-
-        # Extract selected_workflow
-        wf_match = re.search(r'# selected_workflow\s*\n\s*(\{.*?\}|None)\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
-        if wf_match:
-            parts['selected_workflow'] = wf_match.group(1)
-            logger.debug(f"Pattern 2B: Extracted workflow: {parts['selected_workflow'][:100]}...")
-
-        # BR-HAPI-200: Extract investigation_outcome (for problem_resolved case)
-        outcome_match = re.search(r'# investigation_outcome\s*\n\s*["\']?(.*?)["\']?\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
-        if outcome_match:
-            parts['investigation_outcome'] = f'"{outcome_match.group(1).strip()}"'
-            logger.debug(f"Pattern 2B: Extracted investigation_outcome: {parts['investigation_outcome']}")
-
-        # BR-HAPI-200: Extract confidence (for problem_resolved case)
-        conf_match = re.search(r'# confidence\s*\n\s*([\d.]+)\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
-        if conf_match:
-            parts['confidence'] = conf_match.group(1)
-            logger.debug(f"Pattern 2B: Extracted confidence: {parts['confidence']}")
-        
-        # E2E-HAPI-002: Extract alternative_workflows
-        alt_wf_match = re.search(r'# alternative_workflows\s*\n\s*(\[.*?\])\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
-        if alt_wf_match:
-            parts['alternative_workflows'] = alt_wf_match.group(1)
-            logger.debug(f"Pattern 2B: Extracted alternative_workflows: {parts['alternative_workflows'][:100]}...")
-        
-        # E2E-HAPI-003: Extract needs_human_review
-        nhr_match = re.search(r'# needs_human_review\s*\n\s*(True|False|true|false)\s*(?:\n#|$|\n\n)', analysis, re.IGNORECASE)
-        if nhr_match:
-            parts['needs_human_review'] = nhr_match.group(1)
-            logger.debug(f"Pattern 2B: Extracted needs_human_review: {parts['needs_human_review']}")
-        
-        # E2E-HAPI-003: Extract human_review_reason
-        hrr_match = re.search(r'# human_review_reason\s*\n\s*["\']?([^"\'\n]+)["\']?\s*(?:\n#|$|\n\n)', analysis)
-        if hrr_match:
-            parts['human_review_reason'] = f'"{hrr_match.group(1)}"'
-            logger.debug(f"Pattern 2B: Extracted human_review_reason: {parts['human_review_reason']}")
-        
-        # E2E-HAPI-003: Extract validation_attempts_history
-        vah_match = re.search(r'# validation_attempts_history\s*\n\s*(\[.*?\])\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
-        if vah_match:
-            parts['validation_attempts_history'] = vah_match.group(1)
-            logger.debug("Pattern 2B: Extracted validation_attempts_history")
-
-        # #388: Extract actionable field (for not_actionable case)
-        actionable_match = re.search(r'# actionable\s*\n\s*(True|False|true|false)\s*(?:\n#|$|\n\n)', analysis, re.IGNORECASE)
-        if actionable_match:
-            # capitalize() normalizes "false"→"False", "true"→"True" so
-            # ast.literal_eval can parse the combined dict (json.loads
-            # fails on None for selected_workflow).
-            parts['actionable'] = actionable_match.group(1).capitalize()
-            logger.debug(f"Pattern 2B: Extracted actionable: {parts['actionable']}")
-
-        if parts:
-            # Combine into a single dict string
-            combined_dict = '{'
-            for key, value in parts.items():
-                combined_dict += f'"{key}": {value}, '
-            combined_dict = combined_dict.rstrip(', ') + '}'
-            logger.debug(f"Pattern 2B: Combined dict: {combined_dict[:200]}...")
-
-            # Create a fake match object
-            class FakeMatch:
-                def __init__(self, text):
-                    self._text = text
-                    self.lastindex = None
-                def group(self, n):
-                    return self._text
-
-            json_match = FakeMatch(combined_dict)
-            logger.info("Pattern 2B: Successfully created FakeMatch for SDK format (legacy)")
+    # Pattern 2B: Section-header format (HolmesGPT SDK format)
+    # Parses directly into Python objects — no string serialization round-trip.
+    json_data = None
+    if not json_match:
+        json_data = _parse_section_headers(analysis)
 
     alternative_workflows = []
     selected_workflow = None
     rca = {"summary": "No structured RCA found", "severity": "unknown", "contributing_factors": []}
     confidence = 0.0
     validation_result = None
-    json_data = None  # BR-HAPI-200: Initialize for investigation_outcome check
 
-    if json_match:
+    # Parse Pattern 1/2A match into json_data (only if Pattern 2B didn't produce it)
+    if json_data is None and json_match:
         try:
-            # Handle both regular match objects and FakeMatch
             json_text = json_match.group(1) if hasattr(json_match, 'lastindex') and json_match.lastindex else json_match.group(0)
-
-            # Try parsing as JSON first
-            try:
-                json_data = json.loads(json_text)
-            except json.JSONDecodeError:
-                # Fallback: Try ast.literal_eval for Python dict strings
-                import ast
-                json_data = ast.literal_eval(json_text)
-                logger.debug("Successfully parsed Python dict using ast.literal_eval")
-
-            rca = json_data.get("root_cause_analysis", {})
-            selected_workflow = json_data.get("selected_workflow")
-            # BR-HAPI-200: Extract confidence from top-level JSON first (for problem_resolved case)
-            # Fall back to selected_workflow.confidence for backward compatibility
-            confidence = json_data.get("confidence", selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0)
-
-            # Extract alternative workflows (ADR-045 v1.2 - for audit/context only)
-            raw_alternatives = json_data.get("alternative_workflows", [])
-            logger.info({
-                "event": "alternative_workflows_extraction",
-                "incident_id": incident_id,
-                "raw_alternatives_count": len(raw_alternatives),
-                "raw_alternatives": raw_alternatives
-            })
-            for alt in raw_alternatives:
-                if isinstance(alt, dict) and alt.get("workflow_id"):
-                    # E2E-HAPI-002: rationale is required by Pydantic, provide non-empty default
-                    rationale = alt.get("rationale") or "Alternative workflow option"
-                    alternative_workflows.append({
-                        "workflow_id": alt.get("workflow_id", ""),
-                        "execution_bundle": alt.get("execution_bundle"),
-                        "confidence": float(alt.get("confidence", 0.0)),
-                        "rationale": rationale
-                    })
-            logger.info({
-                "event": "alternative_workflows_parsed",
-                "incident_id": incident_id,
-                "parsed_count": len(alternative_workflows)
-            })
-
-            # DD-HAPI-002 v1.3, DD-WORKFLOW-017: Workflow Response Validation
-            # Step 3b (v1.3): undeclared params stripped in-place from parameters dict
-            if selected_workflow and data_storage_client:
-                validator = WorkflowResponseValidator(data_storage_client)
-                validation_result = validator.validate(
-                    workflow_id=selected_workflow.get("workflow_id", ""),
-                    execution_bundle=selected_workflow.get("execution_bundle"),
-                    parameters=selected_workflow.get("parameters", {})
-                )
-                # DD-WE-005 v2.0: Inject SA on both paths — it comes from the
-                # catalog, not the LLM, so it's valid regardless of other errors.
-                if validation_result.validated_service_account_name:
-                    selected_workflow["service_account_name"] = validation_result.validated_service_account_name
-
-                if validation_result.is_valid:
-                    if validation_result.validated_execution_bundle:
-                        selected_workflow["execution_bundle"] = validation_result.validated_execution_bundle
-
-        except (json.JSONDecodeError, ValueError, SyntaxError) as e:
+            json_data = _try_parse_json_value(json_text)
+            if json_data is None:
+                raise ValueError(f"Could not parse JSON from match ({len(json_text)} chars)")
+        except (ValueError, SyntaxError) as e:
             logger.warning({
                 "event": "parse_error",
                 "error": str(e),
@@ -293,6 +328,49 @@ def parse_and_validate_investigation_result(
                 "incident_id": incident_id
             })
             rca = {"summary": "Failed to parse RCA", "severity": "unknown", "contributing_factors": []}
+
+    # Process json_data (unified for all patterns)
+    if json_data is not None:
+        rca = json_data.get("root_cause_analysis", {})
+        selected_workflow = json_data.get("selected_workflow")
+        confidence = json_data.get("confidence", selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0)
+
+        raw_alternatives = json_data.get("alternative_workflows", [])
+        logger.info({
+            "event": "alternative_workflows_extraction",
+            "incident_id": incident_id,
+            "raw_alternatives_count": len(raw_alternatives),
+            "raw_alternatives": raw_alternatives
+        })
+        for alt in raw_alternatives:
+            if isinstance(alt, dict) and alt.get("workflow_id"):
+                rationale = alt.get("rationale") or "Alternative workflow option"
+                alternative_workflows.append({
+                    "workflow_id": alt.get("workflow_id", ""),
+                    "execution_bundle": alt.get("execution_bundle"),
+                    "confidence": float(alt.get("confidence", 0.0)),
+                    "rationale": rationale
+                })
+        logger.info({
+            "event": "alternative_workflows_parsed",
+            "incident_id": incident_id,
+            "parsed_count": len(alternative_workflows)
+        })
+
+        # DD-HAPI-002 v1.3, DD-WORKFLOW-017: Workflow Response Validation
+        if selected_workflow and data_storage_client:
+            validator = WorkflowResponseValidator(data_storage_client)
+            validation_result = validator.validate(
+                workflow_id=selected_workflow.get("workflow_id", ""),
+                execution_bundle=selected_workflow.get("execution_bundle"),
+                parameters=selected_workflow.get("parameters", {})
+            )
+            if validation_result.validated_service_account_name:
+                selected_workflow["service_account_name"] = validation_result.validated_service_account_name
+
+            if validation_result.is_valid:
+                if validation_result.validated_execution_bundle:
+                    selected_workflow["execution_bundle"] = validation_result.validated_execution_bundle
 
     # ADR-055: owner_chain validation removed. target_in_owner_chain is superseded
     # by affected_resource in Rego policy input (BR-AI-085, FR-AI-085-005).
@@ -583,179 +661,76 @@ def parse_investigation_result(
             json_match = FakeMatch(json_dict_match.group(0))
             logger.info("Pattern 2A: Successfully extracted complete JSON dict")
 
-    # Pattern 2B: Legacy - Python dict format with section headers (HolmesGPT SDK format)
-    # Format: "# root_cause_analysis\n{'summary': '...', ...}\n\n# selected_workflow\n{'workflow_id': '...', ...}"
-    if not json_match and ('# selected_workflow' in analysis or '# root_cause_analysis' in analysis):
-        import ast
-        parts = {}
-
-        # Extract root_cause_analysis
-        rca_match = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis, re.DOTALL)
-        if rca_match:
-            parts['root_cause_analysis'] = rca_match.group(1)
-            logger.debug(f"Pattern 2B: Extracted RCA: {parts['root_cause_analysis'][:100]}...")
-
-        # Extract selected_workflow
-        wf_match = re.search(r'# selected_workflow\s*\n\s*(\{.*?\}|None)\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
-        if wf_match:
-            parts['selected_workflow'] = wf_match.group(1)
-            logger.debug(f"Pattern 2B: Extracted workflow: {parts['selected_workflow'][:100]}...")
-
-        # BR-HAPI-200: Extract investigation_outcome (for problem_resolved case)
-        outcome_match = re.search(r'# investigation_outcome\s*\n\s*["\']?(.*?)["\']?\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
-        if outcome_match:
-            parts['investigation_outcome'] = f'"{outcome_match.group(1).strip()}"'
-            logger.debug(f"Pattern 2B: Extracted investigation_outcome: {parts['investigation_outcome']}")
-
-        # #388: Extract actionable field (for not_actionable case)
-        actionable_match = re.search(r'# actionable\s*\n\s*(True|False|true|false)\s*(?:\n#|$|\n\n)', analysis, re.IGNORECASE)
-        if actionable_match:
-            parts['actionable'] = actionable_match.group(1).capitalize()
-            logger.debug(f"Pattern 2B: Extracted actionable: {parts['actionable']}")
-
-        # BR-HAPI-200: Extract confidence (for problem_resolved case)
-        conf_match = re.search(r'# confidence\s*\n\s*([\d.]+)\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
-        if conf_match:
-            parts['confidence'] = conf_match.group(1)
-            logger.debug(f"Pattern 2B: Extracted confidence: {parts['confidence']}")
-
-        if parts:
-            # Combine into a single dict string
-            combined_dict = '{'
-            for key, value in parts.items():
-                combined_dict += f'"{key}": {value}, '
-            combined_dict = combined_dict.rstrip(', ') + '}'
-            logger.debug(f"Pattern 2B: Combined dict: {combined_dict[:200]}...")
-
-            # Create a fake match object
-            class FakeMatch:
-                def __init__(self, text):
-                    self._text = text
-                    self.lastindex = None
-                def group(self, n):
-                    return self._text
-
-            json_match = FakeMatch(combined_dict)
-            logger.info("Pattern 2B: Successfully created FakeMatch for SDK format (legacy)")
+    # Pattern 2B: Section-header format — direct dict, no string round-trip
+    json_data = None
+    if not json_match:
+        json_data = _parse_section_headers(analysis)
 
     alternative_workflows = []
-    if json_match:
-        try:
-            # Handle both regular match objects and FakeMatch
-            json_text = json_match.group(1) if hasattr(json_match, 'lastindex') and json_match.lastindex else json_match.group(0)
-
-            # Try parsing as JSON first
-            try:
-                json_data = json.loads(json_text)
-            except json.JSONDecodeError:
-                # Fallback: Try ast.literal_eval for Python dict strings
-                import ast
-                try:
-                    json_data = ast.literal_eval(json_text)
-                except (ValueError, SyntaxError) as e:
-                    logger.error({
-                        "event": "parse_error",
-                        "error": str(e),
-                        "json_text_preview": json_text[:200] if json_text else ""
-                    })
-                    raise  # Re-raise to be caught by outer exception handler
-            rca = json_data.get("root_cause_analysis", {})
-            selected_workflow = json_data.get("selected_workflow")
-            # BR-HAPI-200: Extract confidence from top-level JSON first (for problem_resolved case)
-            # Fall back to selected_workflow.confidence for backward compatibility
-            confidence = json_data.get("confidence", selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0)
-
-            # Extract alternative workflows (ADR-045 v1.2 - for audit/context only)
-            raw_alternatives = json_data.get("alternative_workflows", [])
-            logger.info({
-                "event": "alternative_workflows_extraction",
-                "incident_id": incident_id,
-                "raw_alternatives_count": len(raw_alternatives),
-                "raw_alternatives": raw_alternatives
-            })
-            for alt in raw_alternatives:
-                if isinstance(alt, dict) and alt.get("workflow_id"):
-                    # E2E-HAPI-002: rationale is required by Pydantic, provide non-empty default
-                    rationale = alt.get("rationale") or "Alternative workflow option"
-                    alternative_workflows.append({
-                        "workflow_id": alt.get("workflow_id", ""),
-                        "execution_bundle": alt.get("execution_bundle"),
-                        "confidence": float(alt.get("confidence", 0.0)),
-                        "rationale": rationale
-                    })
-            logger.info({
-                "event": "alternative_workflows_parsed",
-                "incident_id": incident_id,
-                "parsed_count": len(alternative_workflows)
-            })
-
-            # DD-HAPI-002 v1.3, DD-WORKFLOW-017: Workflow Response Validation
-            # Step 3b (v1.3): undeclared params stripped in-place from parameters dict
-            if selected_workflow and data_storage_client:
-                from src.validation.workflow_response_validator import WorkflowResponseValidator
-                validator = WorkflowResponseValidator(data_storage_client)
-                validation_result = validator.validate(
-                    workflow_id=selected_workflow.get("workflow_id", ""),
-                    execution_bundle=selected_workflow.get("execution_bundle"),
-                    parameters=selected_workflow.get("parameters", {})
-                )
-                # DD-WE-005 v2.0: Inject SA on both paths — it comes from the
-                # catalog, not the LLM, so it's valid regardless of other errors.
-                if validation_result.validated_service_account_name:
-                    selected_workflow["service_account_name"] = validation_result.validated_service_account_name
-
-                if not validation_result.is_valid:
-                    workflow_validation_failed = True
-                    workflow_validation_errors = validation_result.errors
-                    logger.warning({
-                        "event": "workflow_validation_failed",
-                        "incident_id": request_data.get("incident_id", "unknown"),
-                        "workflow_id": selected_workflow.get("workflow_id"),
-                        "errors": validation_result.errors,
-                        "message": "DD-HAPI-002 v1.2: Workflow response validation failed"
-                    })
-                    selected_workflow["validation_errors"] = validation_result.errors
-                else:
-                    if validation_result.validated_execution_bundle:
-                        selected_workflow["execution_bundle"] = validation_result.validated_execution_bundle
-                    logger.debug({
-                        "event": "workflow_validation_passed",
-                        "incident_id": request_data.get("incident_id", "unknown"),
-                        "workflow_id": selected_workflow.get("workflow_id"),
-                        "execution_bundle": validation_result.validated_execution_bundle
-                    })
-        except json.JSONDecodeError:
-            rca = {"summary": "Failed to parse RCA", "severity": "unknown", "contributing_factors": []}
-            selected_workflow = None
-            confidence = 0.0
-    else:
-        rca = {"summary": "No structured RCA found", "severity": "unknown", "contributing_factors": []}
-        selected_workflow = None
-        confidence = 0.0
-
-    # ADR-055: owner_chain validation removed. target_in_owner_chain is superseded
-    # by affected_resource in Rego policy input (BR-AI-085, FR-AI-085-005).
-    warnings: List[str] = []
-
-    # DD-HAPI-002 v1.2: Workflow validation tracking
+    rca = {"summary": "No structured RCA found", "severity": "unknown", "contributing_factors": []}
+    selected_workflow = None
+    confidence = 0.0
     workflow_validation_failed = False
     workflow_validation_errors: List[str] = []
 
-    # Generate warnings for other conditions (BR-HAPI-197, BR-HAPI-200)
-    # E2E-HAPI-003: Extract LLM-provided human review fields first
-    needs_human_review_from_llm = None
-    human_review_reason_from_llm = None
-    investigation_outcome = None
-    actionable_from_llm = None
-    if json_match:
+    # Parse Pattern 1/2A match into json_data (only if Pattern 2B didn't produce it)
+    if json_data is None and json_match:
         try:
-            json_data_outcome = json.loads(json_match.group(1))
-            investigation_outcome = json_data_outcome.get("investigation_outcome")
-            needs_human_review_from_llm = json_data_outcome.get("needs_human_review")
-            human_review_reason_from_llm = json_data_outcome.get("human_review_reason")
-            actionable_from_llm = json_data_outcome.get("actionable")
-        except json.JSONDecodeError:
-            pass
+            json_text = json_match.group(1) if hasattr(json_match, 'lastindex') and json_match.lastindex else json_match.group(0)
+            json_data = _try_parse_json_value(json_text)
+            if json_data is None:
+                raise ValueError(f"Could not parse JSON from match ({len(json_text)} chars)")
+        except (ValueError, SyntaxError) as e:
+            logger.warning({
+                "event": "parse_error",
+                "error": str(e),
+                "incident_id": incident_id,
+            })
+            rca = {"summary": "Failed to parse RCA", "severity": "unknown", "contributing_factors": []}
+
+    # Process json_data (unified for all patterns)
+    if json_data is not None:
+        rca = json_data.get("root_cause_analysis", {})
+        selected_workflow = json_data.get("selected_workflow")
+        confidence = json_data.get("confidence", selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0)
+
+        raw_alternatives = json_data.get("alternative_workflows", [])
+        for alt in raw_alternatives:
+            if isinstance(alt, dict) and alt.get("workflow_id"):
+                rationale = alt.get("rationale") or "Alternative workflow option"
+                alternative_workflows.append({
+                    "workflow_id": alt.get("workflow_id", ""),
+                    "execution_bundle": alt.get("execution_bundle"),
+                    "confidence": float(alt.get("confidence", 0.0)),
+                    "rationale": rationale
+                })
+
+        if selected_workflow and data_storage_client:
+            from src.validation.workflow_response_validator import WorkflowResponseValidator
+            validator = WorkflowResponseValidator(data_storage_client)
+            validation_result = validator.validate(
+                workflow_id=selected_workflow.get("workflow_id", ""),
+                execution_bundle=selected_workflow.get("execution_bundle"),
+                parameters=selected_workflow.get("parameters", {})
+            )
+            if validation_result.validated_service_account_name:
+                selected_workflow["service_account_name"] = validation_result.validated_service_account_name
+
+            if not validation_result.is_valid:
+                workflow_validation_failed = True
+                workflow_validation_errors = validation_result.errors
+                selected_workflow["validation_errors"] = validation_result.errors
+            else:
+                if validation_result.validated_execution_bundle:
+                    selected_workflow["execution_bundle"] = validation_result.validated_execution_bundle
+
+    warnings: List[str] = []
+
+    # Extract LLM-provided human review fields from json_data directly
+    needs_human_review_from_llm = json_data.get("needs_human_review") if json_data else None
+    human_review_reason_from_llm = json_data.get("human_review_reason") if json_data else None
+    investigation_outcome = json_data.get("investigation_outcome") if json_data else None
+    actionable_from_llm = json_data.get("actionable") if json_data else None
     
     # Initialize with LLM values if provided, otherwise use defaults
     if needs_human_review_from_llm is not None:

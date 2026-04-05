@@ -219,7 +219,6 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		// Step 6: Wait for RemediationApprovalRequest to be created
 		// ================================================================
 		By("Step 6: Waiting for RemediationApprovalRequest creation (BR-ORCH-026)")
-		var rarObj *remediationv1.RemediationApprovalRequest
 		rarName := fmt.Sprintf("rar-%s", remediationRequest.Name)
 		Eventually(func() bool {
 			rar := &remediationv1.RemediationApprovalRequest{}
@@ -228,7 +227,6 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 			}, rar); err != nil {
 				return false
 			}
-			rarObj = rar
 			GinkgoWriter.Printf("  ✅ RAR found: %s (confidence=%.2f, level=%s)\n",
 				rar.Name, rar.Spec.Confidence, rar.Spec.ConfidenceLevel)
 			return true
@@ -271,18 +269,25 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 
 		// ================================================================
 		// Step 8: Approve the RAR (simulates operator approval)
+		// Uses retry loop to handle K8s optimistic concurrency conflicts
+		// when the RO controller updates the RAR between our Get and Update.
 		// ================================================================
 		By("Step 8: Approving RemediationApprovalRequest (simulating operator)")
-		Expect(apiReader.Get(ctx, client.ObjectKey{
-			Name: rarName, Namespace: namespace,
-		}, rarObj)).To(Succeed())
-
-		rarObj.Status.Decision = remediationv1.ApprovalDecisionApproved
-		rarObj.Status.DecidedBy = "e2e-test-admin@kubernaut.ai"
-		rarObj.Status.DecisionMessage = "Approved by E2E test"
-		decidedAt := metav1.Now()
-		rarObj.Status.DecidedAt = &decidedAt
-		Expect(k8sClient.Status().Update(ctx, rarObj)).To(Succeed())
+		Eventually(func() error {
+			freshRAR := &remediationv1.RemediationApprovalRequest{}
+			if err := apiReader.Get(ctx, client.ObjectKey{
+				Name: rarName, Namespace: namespace,
+			}, freshRAR); err != nil {
+				return err
+			}
+			freshRAR.Status.Decision = remediationv1.ApprovalDecisionApproved
+			freshRAR.Status.DecidedBy = "e2e-test-admin@kubernaut.ai"
+			freshRAR.Status.DecisionMessage = "Approved by E2E test"
+			decidedAt := metav1.Now()
+			freshRAR.Status.DecidedAt = &decidedAt
+			return k8sClient.Status().Update(ctx, freshRAR)
+		}, 30*time.Second, 1*time.Second).Should(Succeed(),
+			"RAR status update should succeed (retries on conflict)")
 		GinkgoWriter.Println("  ✅ RAR approved by e2e-test-admin@kubernaut.ai")
 
 		// ================================================================

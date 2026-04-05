@@ -796,7 +796,11 @@ type DeduplicationStatus struct {
 // +kubebuilder:printcolumn:name="Outcome",type=string,JSONPath=`.status.outcome`
 // +kubebuilder:printcolumn:name="Source",type=string,JSONPath=`.spec.signalSource`,priority=1
 // +kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.targetResource.name`,priority=1
+// +kubebuilder:printcolumn:name="Target NS",type=string,JSONPath=`.spec.targetResource.namespace`,priority=1
+// +kubebuilder:printcolumn:name="Target Kind",type=string,JSONPath=`.spec.targetResource.kind`,priority=1
 // +kubebuilder:printcolumn:name="RCA Target",type=string,JSONPath=`.status.remediationTarget.name`,priority=1
+// +kubebuilder:printcolumn:name="RCA NS",type=string,JSONPath=`.status.remediationTarget.namespace`,priority=1
+// +kubebuilder:printcolumn:name="RCA Kind",type=string,JSONPath=`.status.remediationTarget.kind`,priority=1
 // +kubebuilder:printcolumn:name="Workflow",type=string,JSONPath=`.status.selectedWorkflowRef.workflowId`,priority=1
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`

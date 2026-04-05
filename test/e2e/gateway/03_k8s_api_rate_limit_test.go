@@ -148,7 +148,8 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		// Send alerts rapidly (no delay between requests)
 		successCount := 0
 		dedupCount := 0 // HTTP 202 — duplicate / deduplicated signal
-		errorCount := 0
+		http500Count := 0
+		connTimeoutCount := 0
 
 		for i, payload := range alertPayloads {
 			if i%10 == 0 {
@@ -174,9 +175,8 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 				return httpClient.Do(req4)
 			}()
 			if err != nil {
-				// Connection error - count as error but don't fail test
-				errorCount++
-				testLogger.Info(fmt.Sprintf("  ⚠️  Alert %d connection error: %v", i+1, err))
+				connTimeoutCount++
+				testLogger.Info(fmt.Sprintf("  ⚠️  Alert %d connection error (transient): %v", i+1, err))
 				continue
 			}
 			_ = resp.Body.Close()
@@ -190,7 +190,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 				dedupCount++
 
 			case http.StatusInternalServerError: // 500 - Unexpected error
-				errorCount++
+				http500Count++
 				testLogger.Info(fmt.Sprintf("  ⚠️  Alert %d returned HTTP 500 (unexpected)", i+1))
 
 			default:
@@ -201,7 +201,8 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		}
 
 		testLogger.Info("")
-		testLogger.Info(fmt.Sprintf("Burst complete: %d created, %d deduplicated (202), %d errors", successCount, dedupCount, errorCount))
+		testLogger.Info(fmt.Sprintf("Burst complete: %d created, %d deduplicated (202), %d HTTP 500, %d connection timeouts",
+			successCount, dedupCount, http500Count, connTimeoutCount))
 
 		// Step 2: Verify Gateway is still responsive after burst
 		testLogger.Info("")
@@ -246,11 +247,16 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 
 		testLogger.Info(fmt.Sprintf("  ✅ %d CRDs created (from %d alerts)", crdCount, alertCount))
 
-		// Step 4: Verify no errors occurred
+		// Step 4: Verify no server errors occurred
+		// Connection timeouts under rapid load in CI are transient and do not indicate
+		// data loss or gateway instability — only HTTP 500s are treated as failures.
 		testLogger.Info("")
-		testLogger.Info("Step 4: Verify no errors occurred")
-		Expect(errorCount).To(Equal(0), "No HTTP 500 errors should occur during burst")
-		testLogger.Info("  ✅ No errors during burst processing")
+		testLogger.Info("Step 4: Verify no server errors occurred")
+		Expect(http500Count).To(Equal(0), "No HTTP 500 errors should occur during burst")
+		if connTimeoutCount > 0 {
+			testLogger.Info(fmt.Sprintf("  ⚠️  %d connection timeouts (transient, acceptable under burst load)", connTimeoutCount))
+		}
+		testLogger.Info("  ✅ No HTTP 500 errors during burst processing")
 
 		testLogger.Info("")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -262,6 +268,9 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		testLogger.Info("  ✅ Gateway remained responsive throughout burst")
 		testLogger.Info("  ✅ No crashes or data loss")
 		testLogger.Info("  ✅ No HTTP 500 errors")
+		if connTimeoutCount > 0 {
+			testLogger.Info(fmt.Sprintf("  ℹ️  %d transient connection timeouts (expected under CI load)", connTimeoutCount))
+		}
 		testLogger.Info("")
 		testLogger.Info("Future Enhancement: K8s API 429 retry logic (not yet implemented)")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

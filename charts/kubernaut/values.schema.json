@@ -590,7 +590,7 @@
               "additionalProperties": false,
               "properties": {
                 "stabilizationWindow": { "type": "string", "default": "30s", "description": "Time to wait after remediation before assessing effectiveness" },
-                "validityWindow": { "type": "string", "default": "120s", "description": "Time window for assessment validity" }
+                "validityWindow": { "type": "string", "default": "300s", "description": "Time window for assessment validity (must exceed alert for duration)" }
               }
             }
           }

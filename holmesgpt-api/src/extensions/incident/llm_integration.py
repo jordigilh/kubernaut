@@ -117,34 +117,11 @@ def _build_enrichment_context(enrichment_result: Optional["EnrichmentResult"]) -
 def _extract_balanced_json(text: str, start: int) -> Optional[str]:
     """Extract a balanced JSON object starting at position start.
 
-    Uses brace counting with string-literal awareness to handle nested
-    objects like ``{"remediationTarget": {"kind": "Deployment"}}``.
+    Delegates to shared json_utils module (Issue #624).
+    Kept as private wrapper for backward compatibility within this module.
     """
-    if start >= len(text) or text[start] != '{':
-        return None
-    depth = 0
-    in_string = False
-    escape_next = False
-    for i in range(start, len(text)):
-        ch = text[i]
-        if escape_next:
-            escape_next = False
-            continue
-        if ch == '\\' and in_string:
-            escape_next = True
-            continue
-        if ch == '"':
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-        if ch == '{':
-            depth += 1
-        elif ch == '}':
-            depth -= 1
-            if depth == 0:
-                return text[start:i + 1]
-    return None
+    from .json_utils import extract_balanced_json
+    return extract_balanced_json(text, start)
 
 
 def _extract_phase1_json(analysis_text: str) -> Dict[str, Any]:
@@ -537,7 +514,7 @@ async def analyze_incident(
     try:
         # BR-HAPI-211: Sanitize prompt BEFORE sending to LLM to prevent credential leakage
         from src.sanitization import sanitize_for_llm
-        from src.extensions.incident.prompt_builder import create_phase3_workflow_prompt, PHASE3_SECTIONS
+        from src.extensions.incident.prompt_builder import create_phase3_workflow_prompt, PHASE1_SECTIONS, PHASE3_SECTIONS
         base_prompt = sanitize_for_llm(create_incident_investigation_prompt(request_data))
         phase3_base_prompt = sanitize_for_llm(create_phase3_workflow_prompt(request_data))
 
@@ -675,6 +652,7 @@ async def analyze_incident(
                         "attempt": attempt + 1,
                         "phase": 1,
                     },
+                    sections=PHASE1_SECTIONS,
                     source_instance_id="holmesgpt-api"
                 )
 
@@ -709,12 +687,30 @@ async def analyze_incident(
                 # BR-HAPI-200: Capture top-level Phase 1 fields that the
                 # parser must propagate into the final response (e.g.,
                 # investigation_outcome, can_recover, confidence).
+                #
+                # With PHASE1_SECTIONS (#624), these fields are available from
+                # phase1_result.sections (structured JSON).  Fall back to parsed
+                # JSON and then regex extraction from markdown for robustness.
                 phase1_top_level = {}
                 _phase1_propagate_keys = ("investigation_outcome", "can_recover", "confidence")
+                _sections = (phase1_result.sections
+                             if phase1_result and getattr(phase1_result, "sections", None)
+                             else {})
+
                 for _k in _phase1_propagate_keys:
-                    if _k in phase1_json:
+                    # Prefer SDK sections (structured output)
+                    if _k in _sections:
+                        _val = _sections[_k]
+                        if _val is not None:
+                            try:
+                                phase1_top_level[_k] = json.loads(_val) if isinstance(_val, str) else _val
+                            except (json.JSONDecodeError, ValueError):
+                                phase1_top_level[_k] = _val
+                    # Fall back to parsed JSON blob
+                    if _k not in phase1_top_level and _k in phase1_json:
                         phase1_top_level[_k] = phase1_json[_k]
-                # Also parse from section headers (# investigation_outcome\n"resolved")
+
+                # Last resort: regex extraction from markdown section headers
                 if phase1_raw:
                     import re as _re
                     for _field in _phase1_propagate_keys:

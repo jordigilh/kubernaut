@@ -31,8 +31,24 @@ spec:
       name: Target
       priority: 1
       type: string
+    - jsonPath: .spec.targetResource.namespace
+      name: Target NS
+      priority: 1
+      type: string
+    - jsonPath: .spec.targetResource.kind
+      name: Target Kind
+      priority: 1
+      type: string
     - jsonPath: .status.remediationTarget.name
       name: RCA Target
+      priority: 1
+      type: string
+    - jsonPath: .status.remediationTarget.namespace
+      name: RCA NS
+      priority: 1
+      type: string
+    - jsonPath: .status.remediationTarget.kind
+      name: RCA Kind
       priority: 1
       type: string
     - jsonPath: .status.selectedWorkflowRef.workflowId

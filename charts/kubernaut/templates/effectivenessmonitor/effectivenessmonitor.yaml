@@ -11,7 +11,7 @@ data:
   effectivenessmonitor.yaml: |
     assessment:
       stabilizationWindow: {{ .Values.effectivenessmonitor.config.assessment.stabilizationWindow | default "30s" }}
-      validityWindow: {{ .Values.effectivenessmonitor.config.assessment.validityWindow | default "120s" }}
+      validityWindow: {{ .Values.effectivenessmonitor.config.assessment.validityWindow | default "300s" }}
     datastorage:
       url: {{ include "kubernaut.datastorage.url" . }}
       timeout: 10s
