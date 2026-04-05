@@ -32,6 +32,8 @@ func certNotReadyConfig() MockScenarioConfig {
 			"ISSUER_NAME":       "demo-selfsigned-ca",
 			"CA_SECRET_NAME":    "demo-ca-key-pair",
 		},
-		ExecutionEngine: "job",
+		ExecutionEngine:      "job",
+		InvestigationOutcome: "actionable",
+		IsActionable:         BoolPtr(true),
 	}
 }

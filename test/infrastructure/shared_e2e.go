@@ -196,7 +196,7 @@ spec:
         - name: MOCK_LLM_PORT
           value: "8080"
         - name: MOCK_LLM_FORCE_TEXT
-          value: "false"
+          value: "true"
         - name: MOCK_LLM_CONFIG_PATH
           value: "/config/scenarios.yaml"
         volumeMounts:

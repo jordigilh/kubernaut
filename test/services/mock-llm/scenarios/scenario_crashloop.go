@@ -22,8 +22,10 @@ func crashloopConfig() MockScenarioConfig {
 		ScenarioName: "crashloop", SignalName: "CrashLoopBackOff", Severity: "high",
 		WorkflowName: "crashloop-config-fix-v1", WorkflowID: uuid.DeterministicUUID("crashloop-config-fix-v1"),
 		WorkflowTitle: "CrashLoopBackOff - Configuration Fix", Confidence: 0.88,
-		RootCause: "Container failing due to missing configuration",
-		ResourceKind: "Deployment", ResourceNS: "staging", ResourceName: "worker",
-		Parameters: map[string]string{"NAMESPACE": "staging", "DEPLOYMENT_NAME": "worker"},
+		RootCause:            "Container failing due to missing configuration",
+		ResourceKind:         "Deployment", ResourceNS: "staging", ResourceName: "worker",
+		Parameters:           map[string]string{"NAMESPACE": "staging", "DEPLOYMENT_NAME": "worker"},
+		InvestigationOutcome: "actionable",
+		IsActionable:         BoolPtr(true),
 	}
 }

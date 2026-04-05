@@ -22,8 +22,10 @@ func oomkilledConfig() MockScenarioConfig {
 		ScenarioName: "oomkilled", SignalName: "OOMKilled", Severity: "critical",
 		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
 		WorkflowTitle: "OOMKill Recovery - Increase Memory Limits", Confidence: 0.95,
-		RootCause: "Container exceeded memory limits due to traffic spike",
-		ResourceKind: "Deployment", ResourceNS: "production", ResourceName: "api-server",
-		Parameters: map[string]string{"MEMORY_LIMIT_NEW": "512Mi"}, ExecutionEngine: "job",
+		RootCause:            "Container exceeded memory limits due to traffic spike",
+		ResourceKind:         "Deployment", ResourceNS: "production", ResourceName: "api-server",
+		Parameters:           map[string]string{"MEMORY_LIMIT_NEW": "512Mi"}, ExecutionEngine: "job",
+		InvestigationOutcome: "actionable",
+		IsActionable:         BoolPtr(true),
 	}
 }

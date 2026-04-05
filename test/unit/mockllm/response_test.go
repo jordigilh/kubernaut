@@ -103,6 +103,88 @@ var _ = Describe("Response Builders", func() {
 		})
 	})
 
+	Describe("UT-MOCK-030: Text response includes KA outcome routing fields", func() {
+		It("UT-MOCK-030-001: actionable scenario includes investigation_outcome and actionable=true", func() {
+			actionableCfg := cfg
+			actionableCfg.InvestigationOutcome = "actionable"
+			actionableCfg.IsActionable = scenarios.BoolPtr(true)
+
+			resp := response.BuildTextResponse("mock-model", actionableCfg)
+			text := *resp.Choices[0].Message.Content
+			Expect(text).To(ContainSubstring(`"investigation_outcome": "actionable"`))
+			Expect(text).To(ContainSubstring(`"actionable": true`))
+			Expect(text).To(ContainSubstring(`"severity": "critical"`))
+			Expect(text).To(ContainSubstring(`"confidence":`))
+		})
+
+		It("UT-MOCK-030-002: problem_resolved scenario includes actionable=false", func() {
+			resolvedCfg := scenarios.MockScenarioConfig{
+				ScenarioName:         "problem_resolved",
+				Severity:             "low",
+				Confidence:           0.85,
+				RootCause:            "Problem self-resolved",
+				InvestigationOutcome: "problem_resolved",
+				IsActionable:         scenarios.BoolPtr(false),
+			}
+
+			resp := response.BuildTextResponse("mock-model", resolvedCfg)
+			text := *resp.Choices[0].Message.Content
+			Expect(text).To(ContainSubstring(`"investigation_outcome": "problem_resolved"`))
+			Expect(text).To(ContainSubstring(`"actionable": false`))
+		})
+
+		It("UT-MOCK-030-003: human_review scenario includes needs_human_review and reason", func() {
+			reviewCfg := scenarios.MockScenarioConfig{
+				ScenarioName:         "no_workflow_found",
+				Severity:             "critical",
+				Confidence:           0.0,
+				RootCause:            "No workflow found",
+				NeedsHumanReview:     scenarios.BoolPtr(true),
+				HumanReviewReason:    "no_matching_workflows",
+				InvestigationOutcome: "inconclusive",
+			}
+
+			resp := response.BuildTextResponse("mock-model", reviewCfg)
+			text := *resp.Choices[0].Message.Content
+			Expect(text).To(ContainSubstring(`"needs_human_review": true`))
+			Expect(text).To(ContainSubstring(`"human_review_reason": "no_matching_workflows"`))
+			Expect(text).To(ContainSubstring(`"investigation_outcome": "inconclusive"`))
+		})
+
+		It("UT-MOCK-030-004: text response JSON is parseable", func() {
+			actionableCfg := cfg
+			actionableCfg.InvestigationOutcome = "actionable"
+			actionableCfg.IsActionable = scenarios.BoolPtr(true)
+
+			resp := response.BuildTextResponse("mock-model", actionableCfg)
+			text := *resp.Choices[0].Message.Content
+
+			// Extract the JSON block from the markdown
+			jsonStart := -1
+			jsonEnd := -1
+			inCodeBlock := false
+			lines := splitLines(text)
+			for i, line := range lines {
+				if !inCodeBlock && line == "```json" {
+					inCodeBlock = true
+					jsonStart = i + 1
+				} else if inCodeBlock && line == "```" {
+					jsonEnd = i
+					break
+				}
+			}
+			Expect(jsonStart).To(BeNumerically(">", 0), "expected ```json block in response")
+			Expect(jsonEnd).To(BeNumerically(">", jsonStart), "expected closing ``` in response")
+
+			jsonText := joinLines(lines[jsonStart:jsonEnd])
+			var parsed map[string]interface{}
+			Expect(json.Unmarshal([]byte(jsonText), &parsed)).To(Succeed(), "JSON block should be valid JSON")
+			Expect(parsed).To(HaveKey("severity"))
+			Expect(parsed).To(HaveKey("investigation_outcome"))
+			Expect(parsed).To(HaveKey("root_cause_analysis"))
+		})
+	})
+
 	Describe("UT-MOCK-001: Error response builder", func() {
 		It("should produce error response matching Python format", func() {
 			resp := response.BuildErrorResponse("Mock permanent LLM error for testing")
@@ -121,3 +203,29 @@ var _ = Describe("Response Builders", func() {
 
 // Helper to check that a response can round-trip through JSON matching Python shape
 var _ openai.ChatCompletionResponse
+
+func splitLines(s string) []string {
+	var lines []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			lines = append(lines, s[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		lines = append(lines, s[start:])
+	}
+	return lines
+}
+
+func joinLines(lines []string) string {
+	result := ""
+	for i, l := range lines {
+		if i > 0 {
+			result += "\n"
+		}
+		result += l
+	}
+	return result
+}

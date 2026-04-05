@@ -37,7 +37,16 @@ type MockScenarioConfig struct {
 	ExecutionEngine  string
 	Contributing     []string
 	NeedsHumanReview *bool
+
+	// KA outcome routing fields — included as top-level JSON in text responses
+	// so KA's parser can extract them for is_actionable / human_review routing.
+	InvestigationOutcome string // "problem_resolved", "predictive_no_action", "actionable", "inconclusive"
+	IsActionable         *bool
+	HumanReviewReason    string
 }
+
+// BoolPtr is a helper for creating *bool literals in scenario configs.
+func BoolPtr(v bool) *bool { return &v }
 
 // configScenario is a Scenario backed by a static MockScenarioConfig and
 // a MatchFunc that implements the detection logic.
