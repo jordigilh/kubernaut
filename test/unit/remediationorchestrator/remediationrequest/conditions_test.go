@@ -90,6 +90,108 @@ var _ = Describe("RemediationRequest Conditions", func() {
 			Expect(remediationrequest.ReasonApprovalPending).To(Equal("ApprovalPending"))
 		})
 
+		// Issue #636: Phase-specific Ready reasons for meaningful kubectl REASON column
+		It("should define phase-specific Ready reasons for intermediate phases", func() {
+			Expect(remediationrequest.ReasonProcessing).To(Equal("Processing"))
+			Expect(remediationrequest.ReasonAnalyzing).To(Equal("Analyzing"))
+			Expect(remediationrequest.ReasonAwaitingApproval).To(Equal("AwaitingApproval"))
+			Expect(remediationrequest.ReasonExecuting).To(Equal("Executing"))
+			Expect(remediationrequest.ReasonVerifying).To(Equal("Verifying"))
+		})
+
+		It("should define phase-specific Ready reasons for terminal phases", func() {
+			Expect(remediationrequest.ReasonNoActionRequired).To(Equal("NoActionRequired"))
+			Expect(remediationrequest.ReasonManualReviewRequired).To(Equal("ManualReviewRequired"))
+			Expect(remediationrequest.ReasonRemediationFailed).To(Equal("RemediationFailed"))
+			Expect(remediationrequest.ReasonRemediationTimedOut).To(Equal("RemediationTimedOut"))
+			Expect(remediationrequest.ReasonRemediationBlocked).To(Equal("RemediationBlocked"))
+			Expect(remediationrequest.ReasonSkippedResourceBusy).To(Equal("SkippedResourceBusy"))
+			Expect(remediationrequest.ReasonSkippedRecentlyRemediated).To(Equal("SkippedRecentlyRemediated"))
+		})
+	})
+
+	// ========================================
+	// ISSUE #636: PHASE-SPECIFIC READY REASONS
+	// ========================================
+
+	Describe("Issue #636: SetReady with phase-specific reasons", func() {
+		It("should set Ready=False with Processing reason during signal processing", func() {
+			remediationrequest.SetReady(rr, false, remediationrequest.ReasonProcessing, "Signal processing in progress", nil)
+
+			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal("Processing"))
+			Expect(cond.Message).To(Equal("Signal processing in progress"))
+		})
+
+		It("should set Ready=False with Analyzing reason during AI analysis", func() {
+			remediationrequest.SetReady(rr, false, remediationrequest.ReasonAnalyzing, "AI analysis in progress", nil)
+
+			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal("Analyzing"))
+		})
+
+		It("should set Ready=False with AwaitingApproval reason during approval wait", func() {
+			remediationrequest.SetReady(rr, false, remediationrequest.ReasonAwaitingApproval, "Waiting for human approval", nil)
+
+			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal("AwaitingApproval"))
+		})
+
+		It("should set Ready=False with Executing reason during workflow execution", func() {
+			remediationrequest.SetReady(rr, false, remediationrequest.ReasonExecuting, "Workflow execution in progress", nil)
+
+			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal("Executing"))
+		})
+
+		It("should set Ready=True with Verifying reason during effectiveness assessment", func() {
+			remediationrequest.SetReady(rr, true, remediationrequest.ReasonVerifying, "Remediation completed, verifying effectiveness", nil)
+
+			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(cond.Reason).To(Equal("Verifying"))
+		})
+
+		It("should set Ready=True with NoActionRequired for resolved incidents", func() {
+			remediationrequest.SetReady(rr, true, remediationrequest.ReasonNoActionRequired, "No action required", nil)
+
+			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(cond.Reason).To(Equal("NoActionRequired"))
+		})
+
+		It("should set Ready=False with RemediationFailed for failed remediations", func() {
+			remediationrequest.SetReady(rr, false, remediationrequest.ReasonRemediationFailed, "Remediation failed", nil)
+
+			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal("RemediationFailed"))
+		})
+
+		It("should set Ready=False with RemediationTimedOut for timed out remediations", func() {
+			remediationrequest.SetReady(rr, false, remediationrequest.ReasonRemediationTimedOut, "Remediation timed out", nil)
+
+			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal("RemediationTimedOut"))
+		})
+
+		It("should transition Ready reason from intermediate to terminal phase", func() {
+			// Start with intermediate phase reason
+			remediationrequest.SetReady(rr, false, remediationrequest.ReasonExecuting, "Workflow execution in progress", nil)
+			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
+			Expect(cond.Reason).To(Equal("Executing"))
+
+			// Transition to terminal
+			remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Terminal phase: Completed", nil)
+			cond = remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
+			Expect(cond.Reason).To(Equal("Ready"))
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		})
 	})
 
 	// ========================================

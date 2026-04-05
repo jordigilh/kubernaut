@@ -219,7 +219,7 @@ func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remedia
 		// Keep BlockReason for audit trail
 
 		// BR-ORCH-043: Set Ready condition (terminal blocked)
-		remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Remediation blocked", r.Metrics)
+		remediationrequest.SetReady(rr, false, remediationrequest.ReasonRemediationBlocked, "Remediation blocked", r.Metrics)
 
 		return nil
 	})

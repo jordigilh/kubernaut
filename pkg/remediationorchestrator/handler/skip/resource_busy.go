@@ -91,7 +91,7 @@ func (h *ResourceBusyHandler) Handle(
 		// rr.Status.DuplicateOf would be set by RO routing logic before WFE creation
 
 		// BR-ORCH-043: Set Ready condition (terminal skip - resource busy)
-		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Skipped: resource busy", h.ctx.Metrics)
+		remediationrequest.SetReady(rr, true, remediationrequest.ReasonSkippedResourceBusy, "Skipped: resource busy", h.ctx.Metrics)
 
 		return nil
 	})

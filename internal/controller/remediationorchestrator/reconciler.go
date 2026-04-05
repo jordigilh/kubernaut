@@ -1104,6 +1104,10 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 					ExecutionBundle:        ai.Status.SelectedWorkflow.ExecutionBundle,
 					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
 				}
+				// Issue #635: Populate display fields for kubectl printer columns
+				rr.Status.WorkflowDisplayName = remediationrequest.FormatWorkflowDisplay(
+					ai.Status.SelectedWorkflow.ActionType, ai.Status.SelectedWorkflow.WorkflowID)
+				rr.Status.Confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
 			}
 			// Issue #387: Capture LLM-identified remediation target for operational triage (kubectl -o wide)
 			if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
@@ -1113,7 +1117,11 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 					Name:      ar.Name,
 					Namespace: ar.Namespace,
 				}
+				rr.Status.TargetDisplay = remediationrequest.FormatResourceDisplay(ar.Kind, ar.Name)
 			}
+			// Issue #635: Signal target display from spec
+			rr.Status.SignalTargetDisplay = remediationrequest.FormatResourceDisplay(
+				rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name)
 			remediationrequest.SetWorkflowExecutionReady(rr, true, fmt.Sprintf("WorkflowExecution CRD %s created successfully", weName), r.Metrics)
 			return nil
 		})
@@ -1300,6 +1308,10 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 					ExecutionBundle:        ai.Status.SelectedWorkflow.ExecutionBundle,
 					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
 				}
+				// Issue #635: Populate display fields for kubectl printer columns
+				rr.Status.WorkflowDisplayName = remediationrequest.FormatWorkflowDisplay(
+					ai.Status.SelectedWorkflow.ActionType, ai.Status.SelectedWorkflow.WorkflowID)
+				rr.Status.Confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
 			}
 			// Issue #387: Capture LLM-identified remediation target for operational triage (kubectl -o wide)
 			if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
@@ -1309,7 +1321,11 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 					Name:      ar.Name,
 					Namespace: ar.Namespace,
 				}
+				rr.Status.TargetDisplay = remediationrequest.FormatResourceDisplay(ar.Kind, ar.Name)
 			}
+			// Issue #635: Signal target display from spec
+			rr.Status.SignalTargetDisplay = remediationrequest.FormatResourceDisplay(
+				rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name)
 			return nil
 		})
 		if err != nil {
@@ -1636,6 +1652,19 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 			rr.Status.ExecutingStartTime = &now
 		}
 
+		// Issue #636: Set Ready condition with phase-specific reason so that
+		// `kubectl get rr` REASON column reflects the current pipeline stage.
+		switch newPhase {
+		case phase.Processing:
+			remediationrequest.SetReady(rr, false, remediationrequest.ReasonProcessing, "Signal processing in progress", r.Metrics)
+		case phase.Analyzing:
+			remediationrequest.SetReady(rr, false, remediationrequest.ReasonAnalyzing, "AI analysis in progress", r.Metrics)
+		case phase.AwaitingApproval:
+			remediationrequest.SetReady(rr, false, remediationrequest.ReasonAwaitingApproval, "Waiting for human approval", r.Metrics)
+		case phase.Executing:
+			remediationrequest.SetReady(rr, false, remediationrequest.ReasonExecuting, "Workflow execution in progress", r.Metrics)
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -1707,7 +1736,7 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 		rr.Status.ObservedGeneration = rr.Generation
 
 		// BR-ORCH-043: Set Ready condition (remediation succeeded, verification pending)
-		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Remediation completed, verifying effectiveness", r.Metrics)
+		remediationrequest.SetReady(rr, true, remediationrequest.ReasonVerifying, "Remediation completed, verifying effectiveness", r.Metrics)
 
 		// DD-WE-004 V1.0: Reset exponential backoff on success
 		if rr.Status.NextAllowedExecution != nil {
@@ -1937,7 +1966,7 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 		rr.Status.FailureReason = &failureReason
 
 		// BR-ORCH-043: Set Ready condition (terminal failure)
-		remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Remediation failed", r.Metrics)
+		remediationrequest.SetReady(rr, false, remediationrequest.ReasonRemediationFailed, "Remediation failed", r.Metrics)
 
 		// DD-WE-004 V1.0: Set exponential backoff for pre-execution failures
 		// Only applies when BELOW consecutive failure threshold (at threshold → 1-hour fixed block)
@@ -2011,7 +2040,7 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 		rr.Status.TimeoutPhase = &timeoutPhase
 
 		// BR-ORCH-043: Set Ready condition (terminal timeout)
-		remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Remediation timed out", r.Metrics)
+		remediationrequest.SetReady(rr, false, remediationrequest.ReasonRemediationTimedOut, "Remediation timed out", r.Metrics)
 
 		return nil
 	})

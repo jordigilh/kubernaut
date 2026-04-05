@@ -92,7 +92,7 @@ func (h *RecentlyRemediatedHandler) Handle(
 		// rr.Status.DuplicateOf would be set by RO routing logic before WFE creation
 
 		// BR-ORCH-043: Set Ready condition (terminal skip - recently remediated)
-		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Skipped: recently remediated", h.ctx.Metrics)
+		remediationrequest.SetReady(rr, true, remediationrequest.ReasonSkippedRecentlyRemediated, "Skipped: recently remediated", h.ctx.Metrics)
 
 		return nil
 	})
