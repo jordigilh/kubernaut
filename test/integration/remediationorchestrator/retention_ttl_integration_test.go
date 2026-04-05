@@ -137,7 +137,7 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", Label("integration
 
 		It("IT-RO-265-002: RR with expired RetentionExpiryTime should be deleted", func() {
 			By("Creating a RemediationRequest")
-			rr := createRemediationRequest(namespace, rrName)
+			_ = createRemediationRequest(namespace, rrName)
 
 			By("Waiting for RR to be initialized (Processing phase)")
 			Eventually(func() remediationv1.RemediationPhase {
