@@ -26,18 +26,22 @@ func oomkilledPredictiveConfig() MockScenarioConfig {
 		ScenarioName: "oomkilled_predictive", SignalName: "OOMKilled", Severity: "critical",
 		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
 		WorkflowTitle: "OOMKill Recovery - Increase Memory Limits", Confidence: 0.88,
-		RootCause: "Predicted OOMKill based on memory utilization trend analysis (predict_linear). Current memory usage is 85% of limit and growing at 50MB/min. Preemptive action recommended to increase memory limits before the predicted OOMKill event occurs.",
-		ResourceKind: "Deployment", ResourceNS: "production", ResourceName: "api-server",
-		Parameters: map[string]string{"MEMORY_LIMIT_NEW": "512Mi"}, ExecutionEngine: "job",
+		RootCause:            "Predicted OOMKill based on memory utilization trend analysis (predict_linear). Current memory usage is 85% of limit and growing at 50MB/min. Preemptive action recommended to increase memory limits before the predicted OOMKill event occurs.",
+		ResourceKind:         "Deployment", ResourceNS: "production", ResourceName: "api-server",
+		Parameters:           map[string]string{"MEMORY_LIMIT_NEW": "512Mi"}, ExecutionEngine: "job",
+		InvestigationOutcome: "actionable",
+		IsActionable:         BoolPtr(true),
 	}
 }
 
 func predictiveNoActionConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "predictive_no_action", SignalName: "OOMKilled", Severity: "medium",
-		Confidence: 0.82,
-		RootCause:    "Predicted OOMKill based on trend analysis, but current assessment shows the trend is reversing. Memory usage has stabilized at 60% of limit after recent deployment rollout. No preemptive action needed — the prediction is unlikely to materialize.",
-		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "api-server-def456",
+		Confidence:           0.82,
+		RootCause:            "Predicted OOMKill based on trend analysis, but current assessment shows the trend is reversing. Memory usage has stabilized at 60% of limit after recent deployment rollout. No preemptive action needed — the prediction is unlikely to materialize.",
+		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "api-server-def456",
+		InvestigationOutcome: "predictive_no_action",
+		IsActionable:         BoolPtr(false),
 	}
 }
 

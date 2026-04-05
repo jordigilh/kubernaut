@@ -22,8 +22,10 @@ func nodeNotReadyConfig() MockScenarioConfig {
 		ScenarioName: "node_not_ready", SignalName: "NodeNotReady", Severity: "critical",
 		WorkflowName: "node-drain-reboot-v1", WorkflowID: uuid.DeterministicUUID("node-drain-reboot-v1"),
 		WorkflowTitle: "NodeNotReady - Drain and Reboot", Confidence: 0.90,
-		RootCause: "Node experiencing disk pressure",
-		ResourceKind: "Node", ResourceNS: "", ResourceName: "worker-node-1",
-		Parameters: map[string]string{"NODE_NAME": "worker-node-1"},
+		RootCause:            "Node experiencing disk pressure",
+		ResourceKind:         "Node", ResourceNS: "", ResourceName: "worker-node-1",
+		Parameters:           map[string]string{"NODE_NAME": "worker-node-1"},
+		InvestigationOutcome: "actionable",
+		IsActionable:         BoolPtr(true),
 	}
 }

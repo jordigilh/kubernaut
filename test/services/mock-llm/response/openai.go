@@ -126,35 +126,64 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 	}
 }
 
-func buildAnalysisText(cfg scenarios.MockScenarioConfig) string {
-	if cfg.WorkflowID == "" {
-		return fmt.Sprintf(
-			"Based on my investigation of the incident:\n\n## Root Cause Analysis\n\n%s\n\n"+
-				"```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": %q,\n    \"severity\": %q,\n    "+
-				"\"contributing_factors\": %s\n  }\n}\n```\n",
-			cfg.RootCause, cfg.RootCause, cfg.Severity,
-			contributingJSON(cfg),
-		)
+// analysisJSON builds a structured response that KA's parser can fully extract.
+// Top-level fields (investigation_outcome, actionable, severity, confidence,
+// needs_human_review, human_review_reason) are required by KA's outcome routing;
+// the nested root_cause_analysis and selected_workflow are consumed by parseLLMFormat.
+func analysisJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
+	rca := map[string]interface{}{
+		"summary":              cfg.RootCause,
+		"severity":             cfg.Severity,
+		"contributing_factors": contributingSlice(cfg),
 	}
+
+	obj := map[string]interface{}{
+		"root_cause_analysis": rca,
+		"severity":            cfg.Severity,
+		"confidence":          cfg.Confidence,
+	}
+
+	if cfg.WorkflowID != "" {
+		obj["selected_workflow"] = map[string]interface{}{
+			"workflow_id":      cfg.WorkflowID,
+			"version":          "1.0.0",
+			"confidence":       cfg.Confidence,
+			"rationale":        "Selected based on signal analysis",
+			"execution_engine": executionEngine(cfg),
+		}
+	}
+
+	if cfg.InvestigationOutcome != "" {
+		obj["investigation_outcome"] = cfg.InvestigationOutcome
+	}
+	if cfg.IsActionable != nil {
+		obj["actionable"] = *cfg.IsActionable
+	}
+	if cfg.NeedsHumanReview != nil {
+		obj["needs_human_review"] = *cfg.NeedsHumanReview
+	}
+	if cfg.HumanReviewReason != "" {
+		obj["human_review_reason"] = cfg.HumanReviewReason
+	}
+
+	return obj
+}
+
+func buildAnalysisText(cfg scenarios.MockScenarioConfig) string {
+	obj := analysisJSON(cfg)
+	data, _ := json.MarshalIndent(obj, "  ", "  ")
 	return fmt.Sprintf(
 		"Based on my investigation of the incident:\n\n## Root Cause Analysis\n\n%s\n\n"+
-			"```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": %q,\n    \"severity\": %q,\n    "+
-			"\"contributing_factors\": %s\n  },\n  \"selected_workflow\": {\n    \"workflow_id\": %q,\n    "+
-			"\"version\": \"1.0.0\",\n    \"confidence\": %.2f,\n    "+
-			"\"rationale\": \"Selected based on signal analysis\",\n    \"execution_engine\": %q\n  }\n}\n```\n",
-		cfg.RootCause, cfg.RootCause, cfg.Severity,
-		contributingJSON(cfg),
-		cfg.WorkflowID, cfg.Confidence,
-		executionEngine(cfg),
+			"```json\n  %s\n```\n",
+		cfg.RootCause, string(data),
 	)
 }
 
-func contributingJSON(cfg scenarios.MockScenarioConfig) string {
+func contributingSlice(cfg scenarios.MockScenarioConfig) []string {
 	if len(cfg.Contributing) > 0 {
-		data, _ := json.Marshal(cfg.Contributing)
-		return string(data)
+		return cfg.Contributing
 	}
-	return `["traffic_spike", "resource_limits"]`
+	return []string{"traffic_spike", "resource_limits"}
 }
 
 func executionEngine(cfg scenarios.MockScenarioConfig) string {

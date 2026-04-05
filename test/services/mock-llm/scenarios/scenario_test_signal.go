@@ -26,9 +26,11 @@ func testSignalConfig() MockScenarioConfig {
 		ScenarioName: "test_signal", SignalName: "TestSignal", Severity: "critical",
 		WorkflowName: "test-signal-handler-v1", WorkflowID: uuid.DeterministicUUID("test-signal-handler-v1"),
 		WorkflowTitle: "Test Signal Handler", Confidence: 0.90,
-		RootCause: "Test signal for graceful shutdown validation",
-		ResourceKind: "Pod", ResourceNS: "test", ResourceName: "test-pod",
-		Parameters: map[string]string{"NAMESPACE": "test", "POD_NAME": "test-pod"},
+		RootCause:            "Test signal for graceful shutdown validation",
+		ResourceKind:         "Pod", ResourceNS: "test", ResourceName: "test-pod",
+		Parameters:           map[string]string{"NAMESPACE": "test", "POD_NAME": "test-pod"},
+		InvestigationOutcome: "actionable",
+		IsActionable:         BoolPtr(true),
 	}
 }
 
