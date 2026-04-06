@@ -105,17 +105,16 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 				"predictive_no_action should set is_actionable=false")
 		})
 
-		It("E2E-KA-433-ADV-003: problem_resolved_contradiction → needs_human_review=true", func() {
+		It("E2E-KA-433-ADV-003: problem_resolved_contradiction → needs_human_review=false (#301 override)", func() {
 			req := buildRequest("adv-003", "mock_problem_resolved_contradiction", "low")
 			result, err := sessionClient.Investigate(ctx, req)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
-			Expect(result.NeedsHumanReview.Value).To(BeTrue(),
-				"problem_resolved_contradiction should set needs_human_review=true")
-			_, hasReason := result.HumanReviewReason.Get()
-			Expect(hasReason).To(BeTrue(),
-				"contradiction should include human_review_reason")
+			// #301: When investigation_outcome=problem_resolved AND needs_human_review=true,
+			// the resolution takes precedence. Python HAPI enforced this override; KA matches.
+			Expect(result.NeedsHumanReview.Value).To(BeFalse(),
+				"#301: problem_resolved overrides contradictory needs_human_review=true")
 		})
 	})
 

@@ -255,8 +255,8 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			hapiEvents := waitForAuditEvents(correlationID, string(ogenclient.AIAgentResponsePayloadAuditEventEventData), 1)
 			hapiEvent := hapiEvents[0]
 
-		By("Validating HAPI event metadata with testutil")
-		actorID := "holmesgpt-api"
+		By("Validating KA event metadata with testutil")
+		actorID := "kubernaut-agent"
 		validators.ValidateAuditEvent(hapiEvent, validators.ExpectedAuditEvent{
 			EventType:     string(ogenclient.AIAgentResponsePayloadAuditEventEventData),
 			EventCategory: ogenclient.AuditEventEventCategoryAiagent, // ADR-034 v1.6: HolmesGPT API uses "aiagent" category
