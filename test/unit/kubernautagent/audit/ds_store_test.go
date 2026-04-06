@@ -131,8 +131,8 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 		})
 	})
 
-	Describe("UT-KA-433W-012: DSAuditStore skips EventData for non-enrichment events", func() {
-		It("should send zero EventData for LLM request events", func() {
+	Describe("UT-KA-433W-012: DSAuditStore builds EventData for LLM request events", func() {
+		It("should populate LLMRequestPayload EventData for LLM request events", func() {
 			recorder := &fakeOgenClient{}
 			store := audit.NewDSAuditStore(recorder)
 
@@ -142,8 +142,8 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			Expect(recorder.calls).To(HaveLen(1))
 
 			req := recorder.calls[0]
-			Expect(req.EventData.Type).To(Equal(ogenclient.AuditEventRequestEventDataType("")),
-				"non-enrichment events should not set EventData")
+			Expect(req.EventData.Type).To(Equal(ogenclient.LLMRequestPayloadAuditEventRequestEventData),
+				"LLM request events should have LLMRequestPayload EventData")
 		})
 	})
 })

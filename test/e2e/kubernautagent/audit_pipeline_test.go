@@ -408,4 +408,169 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			// BUSINESS IMPACT: Complete incident forensics, compliance reporting
 		})
 	})
+
+	Context("TP-433-AUDIT-SOC2: Audit parity — populated payloads", func() {
+
+		It("E2E-KA-433-AP-001: Full investigation audit trail with populated payloads", func() {
+			remediationID := "test-audit-ap-001-" + time.Now().Format("20060102150405")
+
+			req := &hapiclient.IncidentRequest{
+				IncidentID:        "test-audit-ap-001",
+				RemediationID:     remediationID,
+				SignalName:        "CrashLoopBackOff",
+				Severity:          "critical",
+				SignalSource:      "kubernetes",
+				ResourceNamespace: "default",
+				ResourceKind:      "Deployment",
+				ResourceName:      "test-deploy-ap-001",
+				ErrorMessage:      "Container restarting repeatedly",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
+			}
+
+			_, err := sessionClient.Investigate(ctx, req)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
+
+			var events []ogenclient.AuditEvent
+			Eventually(func() int {
+				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(remediationID),
+				})
+				if qErr != nil {
+					return 0
+				}
+				events = resp.Data
+
+				investigatorEventCount := 0
+				for _, event := range events {
+					switch event.EventType {
+					case "aiagent.llm.request", "aiagent.llm.response", "aiagent.llm.tool_call",
+						"aiagent.workflow.validation_attempt", "aiagent.response.complete", "aiagent.response.failed":
+						investigatorEventCount++
+					}
+				}
+				return investigatorEventCount
+			}, 20*time.Second, 1*time.Second).Should(BeNumerically(">=", 3),
+				"At least 3 investigator audit events (request + response + complete) should be persisted")
+
+			hasRequest := false
+			hasResponse := false
+			hasComplete := false
+			for _, event := range events {
+				switch event.EventType {
+				case "aiagent.llm.request":
+					hasRequest = true
+				case "aiagent.llm.response":
+					hasResponse = true
+				case "aiagent.response.complete":
+					hasComplete = true
+				}
+			}
+
+			Expect(hasRequest).To(BeTrue(), "aiagent.llm.request must be present")
+			Expect(hasResponse).To(BeTrue(), "aiagent.llm.response must be present")
+			Expect(hasComplete).To(BeTrue(), "aiagent.response.complete must be present")
+		})
+
+		It("E2E-KA-433-AP-002: response.complete contains IncidentResponseData", func() {
+			remediationID := "test-audit-ap-002-" + time.Now().Format("20060102150405")
+
+			req := &hapiclient.IncidentRequest{
+				IncidentID:        "test-audit-ap-002",
+				RemediationID:     remediationID,
+				SignalName:        "CrashLoopBackOff",
+				Severity:          "critical",
+				SignalSource:      "kubernetes",
+				ResourceNamespace: "default",
+				ResourceKind:      "Deployment",
+				ResourceName:      "test-deploy-ap-002",
+				ErrorMessage:      "Container restarting repeatedly",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
+			}
+
+			_, err := sessionClient.Investigate(ctx, req)
+			Expect(err).ToNot(HaveOccurred())
+
+			var events []ogenclient.AuditEvent
+			Eventually(func() bool {
+				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(remediationID),
+				})
+				if qErr != nil {
+					return false
+				}
+				events = resp.Data
+				for _, event := range events {
+					if event.EventType == "aiagent.response.complete" {
+						return true
+					}
+				}
+				return false
+			}, 20*time.Second, 1*time.Second).Should(BeTrue(),
+				"response.complete event should be persisted")
+
+			for _, event := range events {
+				if event.EventType == "aiagent.response.complete" {
+					Expect(event.CorrelationID).To(Equal(remediationID))
+					Expect(event.EventAction).NotTo(BeEmpty(), "EventAction must be set on response.complete")
+					break
+				}
+			}
+		})
+
+		It("E2E-KA-433-AP-003: All audit events have ActorType=Service, ActorID=kubernaut-agent", func() {
+			remediationID := "test-audit-ap-003-" + time.Now().Format("20060102150405")
+
+			req := &hapiclient.IncidentRequest{
+				IncidentID:        "test-audit-ap-003",
+				RemediationID:     remediationID,
+				SignalName:        "OOMKilled",
+				Severity:          "high",
+				SignalSource:      "kubernetes",
+				ResourceNamespace: "default",
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod-ap-003",
+				ErrorMessage:      "Container memory limit exceeded",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
+			}
+
+			_, err := sessionClient.Investigate(ctx, req)
+			Expect(err).ToNot(HaveOccurred())
+
+			var events []ogenclient.AuditEvent
+			Eventually(func() int {
+				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(remediationID),
+				})
+				if qErr != nil {
+					return 0
+				}
+				events = resp.Data
+				return len(events)
+			}, 20*time.Second, 1*time.Second).Should(BeNumerically(">=", 2),
+				"At least 2 audit events should be persisted")
+
+			for _, event := range events {
+				if event.ActorType.Set {
+					Expect(event.ActorType.Value).To(Equal("Service"),
+						"ActorType must be Service on %s event", event.EventType)
+				}
+				if event.ActorID.Set {
+					Expect(event.ActorID.Value).To(Equal("kubernaut-agent"),
+						"ActorID must be kubernaut-agent on %s event", event.EventType)
+				}
+			}
+		})
+	})
 })
