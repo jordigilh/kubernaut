@@ -79,10 +79,11 @@ llm:
 	})
 
 	Describe("UT-KA-433-003: Kubernaut Agent rejects invalid config at startup", func() {
-		It("should reject missing LLM endpoint", func() {
+		It("should reject missing LLM endpoint for non-exempt providers", func() {
 			yaml := []byte(`
 llm:
-  model: "llama3"
+  provider: "mistral"
+  model: "mistral-large"
 `)
 			cfg, err := config.Load(yaml)
 			if err == nil && cfg != nil {
@@ -90,6 +91,17 @@ llm:
 			}
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("endpoint"))
+		})
+
+		It("should accept empty LLM endpoint for openai (LangChainGo uses default)", func() {
+			yaml := []byte(`
+llm:
+  provider: "openai"
+  model: "gpt-4o"
+`)
+			cfg, err := config.Load(yaml)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Validate()).NotTo(HaveOccurred())
 		})
 
 		It("should reject invalid max-turns (zero)", func() {
