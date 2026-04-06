@@ -105,6 +105,10 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["effectivenessassessments/status"]
     verbs: ["get"]
+  # Issue #643: Resolve workflow UUID to human-readable CRD name for display
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationworkflows"]
+    verbs: ["get", "list"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
