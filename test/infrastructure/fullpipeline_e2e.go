@@ -330,9 +330,17 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// workflow exists in DataStorage. Seeding here — after DS + AuthWebhook
 	// are ready but before KA deploys — ensures the catalog is populated
 	// when KA starts, matching production deployment ordering.
+	//
+	// Pre-condition: DataStorage HTTP must be accepting connections.
+	// The deployment rollout may complete before the HTTP server is ready.
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🌱 PHASE 6b: Seeding workflow catalog (before KA deployment)...")
 	phase6bStart := time.Now()
+
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DataStorage HTTP endpoint (pre-condition for seeding)...")
+	if err := waitForDataStorageHTTP(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return builtImages, nil, fmt.Errorf("PHASE 6b: DataStorage HTTP not ready: %w", err)
+	}
 
 	if err := SeedE2EActionTypes(kubeconfigPath, namespace, writer); err != nil {
 		return builtImages, nil, fmt.Errorf("PHASE 6b: failed to seed action types: %w", err)
@@ -1309,6 +1317,50 @@ spec:
 	_, _ = fmt.Fprintln(writer, "  ✅ cert-manager scenario ready: Certificate demo-app-cert is NotReady")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
+}
+
+// waitForDataStorageHTTP blocks until the DataStorage pod is Ready and the
+// cluster-internal service is accepting HTTP connections. Phase 6 applies the
+// manifest but doesn't wait for the readiness probe; this guard prevents
+// Phase 6b's ActionType seeding from hitting "connection refused" when the
+// AuthWebhook's validating webhook forwards to DataStorage.
+func waitForDataStorageHTTP(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	rolloutCmd := exec.CommandContext(ctx, "kubectl", "rollout", "status",
+		"deployment/datastorage",
+		"-n", namespace,
+		"--kubeconfig", kubeconfigPath,
+		"--timeout=120s")
+	rolloutCmd.Stdout = writer
+	rolloutCmd.Stderr = writer
+	if err := rolloutCmd.Run(); err != nil {
+		return fmt.Errorf("DataStorage rollout not ready: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ DataStorage deployment rolled out")
+
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load kubeconfig: %w", err)
+	}
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to create clientset: %w", err)
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		pods, listErr := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=datastorage",
+		})
+		if listErr == nil && len(pods.Items) > 0 {
+			for _, cond := range pods.Items[0].Status.Conditions {
+				if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+					_, _ = fmt.Fprintf(writer, "  ✅ DataStorage pod %s ready\n", pods.Items[0].Name)
+					return nil
+				}
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return fmt.Errorf("DataStorage pod not ready within 60s")
 }
 
 // CleanupCertManagerScenario removes cert-manager resources created by SetupCertManagerScenario.
