@@ -133,7 +133,7 @@ func main() {
 	ds := initDSClients(cfg, k8sInfra, slogger)
 	auditStore := buildAuditStore(cfg, ds, slogger)
 	reg := buildToolRegistry(cfg, slogger, k8sInfra, ds)
-	enricher := buildEnricher(ds, auditStore, slogger)
+	enricher := buildEnricher(ds, k8sInfra, auditStore, slogger)
 	sanitizer := buildSanitizationPipeline(cfg, slogger)
 	anomalyDetector := buildAnomalyDetector(cfg, slogger)
 	sum := buildSummarizer(llmClient, cfg, slogger)
@@ -363,11 +363,17 @@ func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // buildEnricher creates the enrichment.Enricher when DS clients are available.
-func buildEnricher(ds *dsClients, auditStore audit.AuditStore, logger *slog.Logger) *enrichment.Enricher {
+// ADR-056: attaches LabelDetector so detected_labels are populated during enrichment.
+func buildEnricher(ds *dsClients, infra *k8sInfra, auditStore audit.AuditStore, logger *slog.Logger) *enrichment.Enricher {
 	if ds == nil {
 		return nil
 	}
-	return enrichment.NewEnricher(ds.k8sAdapter, ds.dsAdapter, auditStore, logger)
+	e := enrichment.NewEnricher(ds.k8sAdapter, ds.dsAdapter, auditStore, logger)
+	if infra != nil && infra.dynClient != nil {
+		e.WithLabelDetector(enrichment.NewLabelDetector(infra.dynClient))
+		logger.Info("label detector enabled (ADR-056)")
+	}
+	return e
 }
 
 // buildSanitizationPipeline creates the G4 + I1 sanitization pipeline
