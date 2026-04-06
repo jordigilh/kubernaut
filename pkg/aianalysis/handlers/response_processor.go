@@ -107,8 +107,10 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	// #301: When HAPI's "Problem self-resolved" signal is present (from investigation_outcome=resolved),
 	// bypass the hasSubstantiveRCA check — the RCA documents the transient condition for audit,
 	// not an ongoing problem requiring intervention.
+	// #607: When agent explicitly says "not actionable", Outcome D must win over Outcome A.
+	// This matches Python HAPI's precedence where actionable=false is evaluated first.
 	isResolved := hasProblemResolvedSignal(resp.Warnings)
-	if !hasSelectedWorkflow && resp.Confidence >= 0.7 && !hasNoWorkflowWarningSignal(resp.Warnings) && (isResolved || !hasSubstantiveRCA(resp.RootCauseAnalysis)) {
+	if !hasSelectedWorkflow && resp.Confidence >= 0.7 && !hasNoWorkflowWarningSignal(resp.Warnings) && !hasNotActionableSignal(resp.Warnings) && (isResolved || !hasSubstantiveRCA(resp.RootCauseAnalysis)) {
 		return p.handleProblemResolvedFromIncident(ctx, analysis, resp)
 	}
 
