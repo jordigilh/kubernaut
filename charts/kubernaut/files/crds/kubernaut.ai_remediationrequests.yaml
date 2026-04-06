@@ -23,11 +23,11 @@ spec:
     - jsonPath: .status.outcome
       name: Outcome
       type: string
-    - jsonPath: .status.targetDisplay
-      name: Target
-      type: string
     - jsonPath: .spec.signalName
       name: Alert
+      type: string
+    - jsonPath: .status.targetDisplay
+      name: RCA Target
       type: string
     - jsonPath: .status.workflowDisplayName
       name: Workflow
@@ -42,16 +42,16 @@ spec:
       name: Source
       priority: 1
       type: string
+    - jsonPath: .spec.targetResource.namespace
+      name: Signal NS
+      priority: 1
+      type: string
     - jsonPath: .status.signalTargetDisplay
       name: Signal Target
       priority: 1
       type: string
     - jsonPath: .status.remediationTarget.namespace
-      name: Namespace
-      priority: 1
-      type: string
-    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
-      name: Reason
+      name: RCA NS
       priority: 1
       type: string
     name: v1alpha1

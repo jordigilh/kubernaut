@@ -51,6 +51,7 @@ import (
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -1104,32 +1105,33 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 					ExecutionBundle:        ai.Status.SelectedWorkflow.ExecutionBundle,
 					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
 				}
-				// Issue #635: Populate display fields for kubectl printer columns
-				rr.Status.WorkflowDisplayName = remediationrequest.FormatWorkflowDisplay(
-					ai.Status.SelectedWorkflow.ActionType, ai.Status.SelectedWorkflow.WorkflowID)
-				rr.Status.Confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
-			}
-			// Issue #387: Capture LLM-identified remediation target for operational triage (kubectl -o wide)
-			if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
-				ar := ai.Status.RootCauseAnalysis.RemediationTarget
-				rr.Status.RemediationTarget = &remediationv1.ResourceIdentifier{
-					Kind:      ar.Kind,
-					Name:      ar.Name,
-					Namespace: ar.Namespace,
-				}
-				rr.Status.TargetDisplay = remediationrequest.FormatResourceDisplay(ar.Kind, ar.Name)
-			}
-			// Issue #635: Signal target display from spec
-			rr.Status.SignalTargetDisplay = remediationrequest.FormatResourceDisplay(
-				rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name)
-			remediationrequest.SetWorkflowExecutionReady(rr, true, fmt.Sprintf("WorkflowExecution CRD %s created successfully", weName), r.Metrics)
-			return nil
-		})
-		if err != nil {
-			logger.Error(err, "Failed to set WorkflowExecutionRef in status")
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
+			// Issue #643: Resolve UUID to human-readable CRD name for display
+			workflowName := r.resolveWorkflowName(ctx, ai.Status.SelectedWorkflow.WorkflowID)
+			rr.Status.WorkflowDisplayName = remediationrequest.FormatWorkflowDisplay(
+				ai.Status.SelectedWorkflow.ActionType, workflowName)
+			rr.Status.Confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
 		}
-		logger.V(1).Info("Set WorkflowExecutionRef in status", "weName", weName)
+		// Issue #387: Capture LLM-identified remediation target for operational triage (kubectl -o wide)
+		if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
+			ar := ai.Status.RootCauseAnalysis.RemediationTarget
+			rr.Status.RemediationTarget = &remediationv1.ResourceIdentifier{
+				Kind:      ar.Kind,
+				Name:      ar.Name,
+				Namespace: ar.Namespace,
+			}
+			rr.Status.TargetDisplay = remediationrequest.FormatResourceDisplay(ar.Kind, ar.Name)
+		}
+		// Issue #635: Signal target display from spec
+		rr.Status.SignalTargetDisplay = remediationrequest.FormatResourceDisplay(
+			rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name)
+		remediationrequest.SetWorkflowExecutionReady(rr, true, fmt.Sprintf("WorkflowExecution CRD %s created successfully", weName), r.Metrics)
+		return nil
+	})
+	if err != nil {
+		logger.Error(err, "Failed to set WorkflowExecutionRef in status")
+		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
+	}
+	logger.V(1).Info("Set WorkflowExecutionRef in status", "weName", weName)
 
 		// Transition to Executing phase
 		return r.transitionPhase(ctx, rr, phase.Executing)
@@ -1308,31 +1310,32 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 					ExecutionBundle:        ai.Status.SelectedWorkflow.ExecutionBundle,
 					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
 				}
-				// Issue #635: Populate display fields for kubectl printer columns
-				rr.Status.WorkflowDisplayName = remediationrequest.FormatWorkflowDisplay(
-					ai.Status.SelectedWorkflow.ActionType, ai.Status.SelectedWorkflow.WorkflowID)
-				rr.Status.Confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
-			}
-			// Issue #387: Capture LLM-identified remediation target for operational triage (kubectl -o wide)
-			if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
-				ar := ai.Status.RootCauseAnalysis.RemediationTarget
-				rr.Status.RemediationTarget = &remediationv1.ResourceIdentifier{
-					Kind:      ar.Kind,
-					Name:      ar.Name,
-					Namespace: ar.Namespace,
-				}
-				rr.Status.TargetDisplay = remediationrequest.FormatResourceDisplay(ar.Kind, ar.Name)
-			}
-			// Issue #635: Signal target display from spec
-			rr.Status.SignalTargetDisplay = remediationrequest.FormatResourceDisplay(
-				rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name)
-			return nil
-		})
-		if err != nil {
-			logger.Error(err, "Failed to set WorkflowExecutionRef in status")
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
+			// Issue #643: Resolve UUID to human-readable CRD name for display
+			workflowName := r.resolveWorkflowName(ctx, ai.Status.SelectedWorkflow.WorkflowID)
+			rr.Status.WorkflowDisplayName = remediationrequest.FormatWorkflowDisplay(
+				ai.Status.SelectedWorkflow.ActionType, workflowName)
+			rr.Status.Confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
 		}
-		logger.V(1).Info("Set WorkflowExecutionRef in status after approval", "weName", weName)
+		// Issue #387: Capture LLM-identified remediation target for operational triage (kubectl -o wide)
+		if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
+			ar := ai.Status.RootCauseAnalysis.RemediationTarget
+			rr.Status.RemediationTarget = &remediationv1.ResourceIdentifier{
+				Kind:      ar.Kind,
+				Name:      ar.Name,
+				Namespace: ar.Namespace,
+			}
+			rr.Status.TargetDisplay = remediationrequest.FormatResourceDisplay(ar.Kind, ar.Name)
+		}
+		// Issue #635: Signal target display from spec
+		rr.Status.SignalTargetDisplay = remediationrequest.FormatResourceDisplay(
+			rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name)
+		return nil
+	})
+	if err != nil {
+		logger.Error(err, "Failed to set WorkflowExecutionRef in status")
+		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
+	}
+	logger.V(1).Info("Set WorkflowExecutionRef in status after approval", "weName", weName)
 
 		// Transition to Executing phase
 		return r.transitionPhase(ctx, rr, phase.Executing)
@@ -2822,6 +2825,24 @@ func (r *Reconciler) emitTimeoutAudit(ctx context.Context, rr *remediationv1.Rem
 	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "Failed to store timeout audit event", "timeoutType", timeoutType)
 	}
+}
+
+// resolveWorkflowName resolves a workflow UUID to its CRD metadata.name by
+// listing RemediationWorkflow CRDs. Returns the UUID unchanged if no match is
+// found (graceful degradation — the display is still usable, just not ideal).
+// Issue #643: workflowDisplayName should show the human-readable CRD name.
+func (r *Reconciler) resolveWorkflowName(ctx context.Context, workflowID string) string {
+	var rwList remediationworkflowv1.RemediationWorkflowList
+	if err := r.client.List(ctx, &rwList); err != nil {
+		log.FromContext(ctx).V(1).Info("Failed to list RemediationWorkflows for display name resolution", "error", err)
+		return workflowID
+	}
+	for i := range rwList.Items {
+		if rwList.Items[i].Status.WorkflowID == workflowID {
+			return rwList.Items[i].Name
+		}
+	}
+	return workflowID
 }
 
 // SetupWithManager sets up the controller with the Manager.
