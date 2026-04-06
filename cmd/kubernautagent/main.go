@@ -545,7 +545,9 @@ func buildWorkflowValidator(ds *dsClients, logger *slog.Logger) (*parser.Validat
 		case *ogenclient.WorkflowListResponse:
 			ids := make([]string, 0, len(v.Workflows))
 			for _, w := range v.Workflows {
-				ids = append(ids, w.WorkflowName)
+				if w.WorkflowId.Set {
+					ids = append(ids, w.WorkflowId.Value.String())
+				}
 			}
 			logger.Info("workflow validator enabled (DD-HAPI-002: sole validator)",
 				"allowed_workflows", len(ids), "attempts", attempt+1)
