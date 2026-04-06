@@ -421,6 +421,31 @@ If storage cost becomes a concern in the future, we can:
 
 ---
 
+## v1.3 Update: Kubernaut Agent Replaces HAPI
+
+Starting in v1.3 ([issue #433](https://github.com/jordigilh/kubernaut/issues/433) — Kubernaut Agent Go rewrite), the **Kubernaut Agent (KA)** replaces **HolmesGPT API (HAPI)** as the emitter of all `aiagent.*` audit events. The hybrid pattern in this document (provider `aiagent.*` plus consumer `aianalysis.*`) remains: **KA** provides the provider-side `aiagent.*` events; **AI Analysis** continues to emit `aianalysis.analysis.completed` / `aianalysis.analysis.failed` for consumer perspective.
+
+**Eight enriched event types** (all with fully populated payloads; previously empty or incomplete in prior implementations):
+
+| Event type | Summary |
+|------------|---------|
+| `aiagent.llm.request` | LLM request metadata |
+| `aiagent.llm.response` | LLM response metadata |
+| `aiagent.llm.tool_call` | One event **per tool call** (not per LLM turn) |
+| `aiagent.workflow.validation_attempt` | Per validation attempt, including `workflow_id` and `is_final_attempt` |
+| `aiagent.response.complete` | Full `IncidentResponseData`, including **cumulative token** totals |
+| `aiagent.response.failed` | Failure path with phase and duration context |
+| `aiagent.enrichment.completed` | Phase 2 enrichment success |
+| `aiagent.enrichment.failed` | Phase 2 enrichment failure |
+
+**OpenAPI schema extensions** (v1.3): `rootCauseAnalysis` includes `remediationTarget`; `alternativeWorkflows` entries include `executionBundle` and `confidence`.
+
+**SOC2 CC8.1 / reconstruction**: With populated payloads, per-tool-call and per-attempt events, and full response data on `aiagent.response.complete`, **full conversation reconstruction** from audit data is now **supported** for the `aiagent` trail (subject to retention and query access controls).
+
+**Verification**: Test plan [TP-433-AUDIT-SOC2](../../tests/433/TP-433-AUDIT-SOC2.md) — 19 unit tests, 8 integration tests, 3 E2E tests.
+
+---
+
 ## Changelog
 
 | Date | Change | Reference |

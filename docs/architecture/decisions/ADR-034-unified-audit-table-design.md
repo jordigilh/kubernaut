@@ -759,6 +759,12 @@ This ADR establishes the following subdocument as authoritative for specific imp
 
 ---
 
+## v1.3 Update
+
+In v1.3 (issue [#433](https://github.com/jordigilh/kubernaut/issues/433)), the **Kubernaut Agent (KA)** replaces **HolmesGPT API (HAPI)** as the runtime emitter of **`aiagent`** category events. **`event_category = 'aiagent'`** and the unified **`audit_events`** schema are **unchanged**; only the producing service and payload completeness/granularity change. See [TP-433-AUDIT-SOC2](../../tests/433/TP-433-AUDIT-SOC2.md).
+
+---
+
 ## Changelog
 
 | Date | Change | Reference |
