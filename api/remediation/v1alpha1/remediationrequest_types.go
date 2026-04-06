@@ -819,15 +819,15 @@ type DeduplicationStatus struct {
 // +kubebuilder:selectablefield:JSONPath=.spec.severity
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.overallPhase`
 // +kubebuilder:printcolumn:name="Outcome",type=string,JSONPath=`.status.outcome`
-// +kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.status.targetDisplay`
 // +kubebuilder:printcolumn:name="Alert",type=string,JSONPath=`.spec.signalName`
+// +kubebuilder:printcolumn:name="RCA Target",type=string,JSONPath=`.status.targetDisplay`
 // +kubebuilder:printcolumn:name="Workflow",type=string,JSONPath=`.status.workflowDisplayName`
 // +kubebuilder:printcolumn:name="Confidence",type=string,JSONPath=`.status.confidence`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:printcolumn:name="Source",type=string,JSONPath=`.spec.signalSource`,priority=1
+// +kubebuilder:printcolumn:name="Signal NS",type=string,JSONPath=`.spec.targetResource.namespace`,priority=1
 // +kubebuilder:printcolumn:name="Signal Target",type=string,JSONPath=`.status.signalTargetDisplay`,priority=1
-// +kubebuilder:printcolumn:name="Namespace",type=string,JSONPath=`.status.remediationTarget.namespace`,priority=1
-// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
+// +kubebuilder:printcolumn:name="RCA NS",type=string,JSONPath=`.status.remediationTarget.namespace`,priority=1
 
 // RemediationRequest is the Schema for the remediationrequests API.
 // DD-CRD-003: Printer columns for operational triage
