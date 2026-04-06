@@ -60,6 +60,13 @@ func NewLabelDetector(dynClient dynamic.Interface) *LabelDetector {
 // DetectLabels detects infrastructure characteristics for the given resource,
 // using the resolved owner chain to inspect the root owner's annotations/labels
 // and querying related resources (HPA, PDB, NetworkPolicy, ResourceQuota).
+// AllDetectionCategories lists every label detection category. When the root
+// resource cannot be fetched, all categories are marked as failed.
+var AllDetectionCategories = []string{
+	"gitOpsManaged", "helmManaged", "stateful", "serviceMesh",
+	"hpaEnabled", "pdbProtected", "networkIsolated", "resourceQuotaConstrained",
+}
+
 func (d *LabelDetector) DetectLabels(ctx context.Context, kind, name, namespace string, ownerChain []OwnerChainEntry) (*DetectedLabels, error) {
 	result := &DetectedLabels{}
 	var failed []string
@@ -69,10 +76,7 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, kind, name, namespace 
 	rootObj, err := d.fetchResource(ctx, rootKind, rootName, rootNS)
 	if err != nil {
 		slog.Warn("label detection: root owner fetch failed", "kind", rootKind, "name", rootName, "error", err)
-		result.FailedDetections = []string{
-			"gitOpsManaged", "helmManaged", "stateful", "serviceMesh",
-			"hpaEnabled", "pdbProtected", "networkIsolated", "resourceQuotaConstrained",
-		}
+		result.FailedDetections = append([]string(nil), AllDetectionCategories...)
 		return result, nil
 	}
 

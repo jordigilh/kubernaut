@@ -132,6 +132,15 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		)
 		reEnriched := inv.resolveEnrichment(ctx, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
 		if reEnriched != nil {
+			// When the RCA target resource doesn't exist, label detection marks all
+			// labels as FailedDetections. Preserve the pre-RCA detected labels
+			// which were computed against the actual signal target.
+			if enrichData != nil && enrichData.DetectedLabels != nil &&
+				reEnriched.DetectedLabels != nil &&
+				len(reEnriched.DetectedLabels.FailedDetections) >= len(enrichment.AllDetectionCategories) {
+				inv.logger.Info("re-enrichment label detection fully failed, retaining pre-RCA detected labels")
+				reEnriched.DetectedLabels = enrichData.DetectedLabels
+			}
 			enrichData = reEnriched
 		} else {
 			inv.logger.Warn("re-enrichment returned nil, retaining pre-RCA enrichment data")
