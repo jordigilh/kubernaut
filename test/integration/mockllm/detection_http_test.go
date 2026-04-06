@@ -64,6 +64,6 @@ var _ = Describe("Scenario Detection over HTTP", func() {
 			"self-resolved"),
 		Entry("IT-MOCK-026-004: CrashLoopBackOff → configuration RCA",
 			"- Signal Name: CrashLoopBackOff\n- Namespace: staging",
-			"missing configuration"),
+			"invalid configuration directive"),
 	)
 })

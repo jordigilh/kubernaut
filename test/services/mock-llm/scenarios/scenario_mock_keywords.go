@@ -35,9 +35,15 @@ func lowConfidenceConfig() MockScenarioConfig {
 		ScenarioName: "low_confidence", SignalName: "MOCK_LOW_CONFIDENCE", Severity: "critical",
 		WorkflowName: "generic-restart-v1", WorkflowID: uuid.DeterministicUUID("generic-restart-v1"),
 		WorkflowTitle: "Generic Pod Restart", Confidence: 0.35,
-		RootCause:            "Multiple possible root causes identified, requires human judgment",
-		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "ambiguous-pod",
-		Parameters:           map[string]string{"NAMESPACE": "production", "POD_NAME": "ambiguous-pod"},
+		Rationale:    "Multiple possible root causes identified; generic restart is safest but requires human judgment to confirm",
+		RootCause:    "Multiple possible root causes identified, requires human judgment",
+		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "ambiguous-pod",
+		Parameters:   map[string]string{"NAMESPACE": "production", "POD_NAME": "ambiguous-pod"},
+		Contributing: []string{"ambiguous_root_cause", "multiple_correlated_signals"},
+		Alternatives: []MockAlternativeWorkflow{
+			{WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"), Confidence: 0.30, Rationale: "Alternative approach for ambiguous root cause"},
+			{WorkflowName: "node-drain-reboot-v1", WorkflowID: uuid.DeterministicUUID("node-drain-reboot-v1"), Confidence: 0.20, Rationale: "Requires human expertise to determine correct remediation"},
+		},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
 	}
@@ -78,6 +84,19 @@ func maxRetriesExhaustedConfig() MockScenarioConfig {
 		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "failed-analysis-pod",
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
+	}
+}
+
+func notActionableConfig() MockScenarioConfig {
+	return MockScenarioConfig{
+		ScenarioName: "not_actionable", SignalName: "MOCK_NOT_ACTIONABLE", Severity: "low",
+		Confidence:           0.0,
+		Rationale:            "Orphaned PVC from completed batch job; no active workload references it",
+		RootCause:            "Orphaned PVC from completed batch job — no active workload references this volume",
+		ResourceKind:         "PersistentVolumeClaim", ResourceNS: "production", ResourceName: "batch-job-pvc-expired",
+		Contributing:         []string{"batch_job_completed", "pvc_retention_policy", "no_active_consumers"},
+		InvestigationOutcome: "predictive_no_action",
+		IsActionable:         BoolPtr(false),
 	}
 }
 

@@ -102,6 +102,7 @@ func defaultRegistryInternal() *Registry {
 	r.Register(mockKeywordScenarioMulti("problem_resolved", []string{"mock_not_reproducible", "mock not reproducible"}, problemResolvedConfig()))
 	r.Register(mockKeywordScenario("rca_incomplete", "mock_rca_incomplete", rcaIncompleteConfig()))
 	r.Register(mockKeywordScenario("max_retries_exhausted", "mock_max_retries_exhausted", maxRetriesExhaustedConfig()))
+	r.Register(mockKeywordScenario("not_actionable", "mock_not_actionable", notActionableConfig()))
 
 	// Test signal scenario
 	r.Register(testSignalScenario())

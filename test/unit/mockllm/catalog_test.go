@@ -90,5 +90,9 @@ var _ = Describe("Scenario Catalog Validation", func() {
 			"cert_not_ready", "CertManagerCertNotReady", "critical",
 			uuid.DeterministicUUID("fix-certificate-v1"), 0.92,
 			"Certificate stuck"),
+		Entry("UT-MOCK-026-011: not_actionable",
+			"not_actionable", "MOCK_NOT_ACTIONABLE", "low",
+			"", 0.0,
+			"Orphaned PVC"),
 	)
 })
