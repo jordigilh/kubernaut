@@ -71,6 +71,10 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 
 Track progress on the [v1.5 milestone](https://github.com/jordigilh/kubernaut/milestone/6). See [#648](https://github.com/jordigilh/kubernaut/issues/648) for the design discussion.
 
+### v1.6 — Multi-Cluster Federation (planned)
+
+- **Fleet-wide remediation** — MCP-based multi-cluster architecture enabling centralized signal ingestion, cross-cluster RCA investigation, and federated workflow execution across Kubernetes fleets
+
 ### v1.2 — Operational Resilience and Security Hardening ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.2.0))
 
 - **Per-workflow ServiceAccount** — Each remediation workflow runs under its own SA with least-privilege RBAC, replacing the shared default
