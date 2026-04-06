@@ -175,6 +175,7 @@ type llmAlternative struct {
 type llmRCA struct {
 	Summary              string        `json:"summary"`
 	Severity             string        `json:"severity,omitempty"`
+	SignalName           string        `json:"signal_name,omitempty"`
 	ContributingFactors  []string      `json:"contributing_factors,omitempty"`
 	RemediationTarget    *llmRemTarget `json:"remediation_target,omitempty"`
 	RemediationTargetAlt *llmRemTarget `json:"remediationTarget,omitempty"`
@@ -221,6 +222,7 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 	if resp.RCA != nil {
 		result.RCASummary = resp.RCA.Summary
 		result.Severity = resp.RCA.Severity
+		result.SignalName = resp.RCA.SignalName
 		result.ContributingFactors = resp.RCA.ContributingFactors
 		if t := resp.RCA.resolvedTarget(); t != nil {
 			result.RemediationTarget = katypes.RemediationTarget{

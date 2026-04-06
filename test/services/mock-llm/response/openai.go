@@ -137,6 +137,7 @@ func analysisJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 	rca := map[string]interface{}{
 		"summary":              cfg.RootCause,
 		"severity":             cfg.Severity,
+		"signal_name":          cfg.SignalName,
 		"contributing_factors": contributingSlice(cfg),
 	}
 	if cfg.ResourceKind != "" {
