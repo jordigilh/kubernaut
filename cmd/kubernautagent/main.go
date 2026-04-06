@@ -163,6 +163,7 @@ func main() {
 		MaxTurns:     cfg.Investigator.MaxTurns,
 		PhaseTools:   phaseTools,
 		Registry:     reg,
+		ModelName:    cfg.LLM.Model,
 		Pipeline: investigator.Pipeline{
 			Sanitizer:       sanitizer,
 			AnomalyDetector: anomalyDetector,

@@ -18,10 +18,10 @@ package investigator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
-
-	"encoding/json"
+	"time"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
@@ -61,6 +61,7 @@ type Config struct {
 	PhaseTools   katypes.PhaseToolMap
 	Registry     *registry.Registry
 	Pipeline     Pipeline
+	ModelName    string
 }
 
 // Investigator orchestrates the two-invocation architecture:
@@ -77,6 +78,7 @@ type Investigator struct {
 	phaseTools   katypes.PhaseToolMap
 	registry     *registry.Registry
 	pipeline     Pipeline
+	modelName    string
 }
 
 // New creates an Investigator from the given configuration.
@@ -94,6 +96,7 @@ func New(cfg Config) *Investigator {
 		phaseTools:   cfg.PhaseTools,
 		registry:     cfg.Registry,
 		pipeline:     cfg.Pipeline,
+		modelName:    cfg.ModelName,
 	}
 }
 
@@ -115,11 +118,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	if rcaResult.HumanReviewNeeded {
 		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, enrichData)
-		completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, correlationID)
-		for k, v := range tokens.AuditData() {
-			completeEvent.Data[k] = v
-		}
-		audit.StoreBestEffort(ctx, inv.auditStore, completeEvent, inv.logger)
+		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
 		return rcaResult, nil
 	}
 
@@ -151,11 +150,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	backfillSeverity(workflowResult, signal)
 	attachDetectedLabels(workflowResult, enrichData)
-	completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, correlationID)
-	for k, v := range tokens.AuditData() {
-		completeEvent.Data[k] = v
-	}
-	audit.StoreBestEffort(ctx, inv.auditStore, completeEvent, inv.logger)
+	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID)
 	return workflowResult, nil
 }
 
@@ -274,10 +269,16 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		}, nil
 	}
 
-	audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeValidationAttempt, correlationID), inv.logger)
-
 	if inv.pipeline.Validator != nil {
+		attempt := 0
 		correctionFn := func(r *katypes.InvestigationResult, validationErr error) (*katypes.InvestigationResult, error) {
+			attempt++
+			var errStrs []string
+			if validationErr != nil {
+				errStrs = []string{validationErr.Error()}
+			}
+			inv.emitValidationEvent(ctx, attempt, maxSelfCorrectionAttempts, false, errStrs, r.WorkflowID, correlationID)
+
 			correctionMsg := fmt.Sprintf("Validation failed: %s. Please select a valid workflow.", validationErr)
 			messages = append(messages, llm.Message{Role: "assistant", Content: content})
 			messages = append(messages, llm.Message{Role: "user", Content: correctionMsg})
@@ -299,6 +300,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		if corrErr != nil {
 			return nil, fmt.Errorf("validation self-correction failed: %w", corrErr)
 		}
+		inv.emitValidationEvent(ctx, attempt+1, maxSelfCorrectionAttempts, true, nil, corrected.WorkflowID, correlationID)
 		return corrected, nil
 	}
 
@@ -310,9 +312,17 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 // all audit events per BR-AUDIT-005 (remediation_id as query key).
 func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, tokens *TokenAccumulator, correlationID string) (string, bool, error) {
 	toolDefs := inv.toolDefinitionsForPhase(phase)
+	loopStart := time.Now()
 
 	for turn := 0; turn < inv.maxTurns; turn++ {
-		audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeLLMRequest, correlationID), inv.logger)
+		reqEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+		reqEvent.EventAction = audit.ActionLLMRequest
+		reqEvent.EventOutcome = audit.OutcomeSuccess
+		reqEvent.Data["model"] = inv.modelName
+		reqEvent.Data["prompt_length"] = totalPromptLength(messages)
+		reqEvent.Data["prompt_preview"] = lastUserMessage(messages, 500)
+		reqEvent.Data["toolsets_enabled"] = toolNames(toolDefs)
+		audit.StoreBestEffort(ctx, inv.auditStore, reqEvent, inv.logger)
 
 		resp, err := inv.client.Chat(ctx, llm.ChatRequest{
 			Messages: messages,
@@ -320,7 +330,13 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			Options:  llm.ChatOptions{JSONMode: true},
 		})
 		if err != nil {
-			audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeResponseFailed, correlationID), inv.logger)
+			failEvent := audit.NewEvent(audit.EventTypeResponseFailed, correlationID)
+			failEvent.EventAction = audit.ActionResponseFailed
+			failEvent.EventOutcome = audit.OutcomeFailure
+			failEvent.Data["error_message"] = err.Error()
+			failEvent.Data["phase"] = string(phase)
+			failEvent.Data["duration_seconds"] = time.Since(loopStart).Seconds()
+			audit.StoreBestEffort(ctx, inv.auditStore, failEvent, inv.logger)
 			return "", false, fmt.Errorf("%s LLM call turn %d: %w", phase, turn, err)
 		}
 
@@ -329,16 +345,32 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		}
 
 		respEvent := audit.NewEvent(audit.EventTypeLLMResponse, correlationID)
+		respEvent.EventAction = audit.ActionLLMResponse
+		respEvent.EventOutcome = audit.OutcomeSuccess
 		respEvent.Data["prompt_tokens"] = resp.Usage.PromptTokens
 		respEvent.Data["completion_tokens"] = resp.Usage.CompletionTokens
 		respEvent.Data["total_tokens"] = resp.Usage.TotalTokens
+		respEvent.Data["has_analysis"] = resp.Message.Content != ""
+		respEvent.Data["analysis_length"] = len(resp.Message.Content)
+		respEvent.Data["analysis_preview"] = truncatePreview(resp.Message.Content, 500)
+		respEvent.Data["tool_call_count"] = len(resp.ToolCalls)
 		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.logger)
 
 		if len(resp.ToolCalls) > 0 {
-			audit.StoreBestEffort(ctx, inv.auditStore, audit.NewEvent(audit.EventTypeLLMToolCall, correlationID), inv.logger)
 			messages = append(messages, resp.Message)
-			for _, tc := range resp.ToolCalls {
+			for i, tc := range resp.ToolCalls {
 				toolResult := inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments))
+
+				tcEvent := audit.NewEvent(audit.EventTypeLLMToolCall, correlationID)
+				tcEvent.EventAction = audit.ActionToolExecution
+				tcEvent.EventOutcome = audit.OutcomeSuccess
+				tcEvent.Data["tool_call_index"] = i
+				tcEvent.Data["tool_name"] = tc.Name
+				tcEvent.Data["tool_arguments"] = tc.Arguments
+				tcEvent.Data["tool_result"] = toolResult
+				tcEvent.Data["tool_result_preview"] = truncatePreview(toolResult, 500)
+				audit.StoreBestEffort(ctx, inv.auditStore, tcEvent, inv.logger)
+
 				messages = append(messages, llm.Message{
 					Role:       "tool",
 					Content:    toolResult,
@@ -356,6 +388,38 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 	}
 
 	return "", true, nil
+}
+
+func totalPromptLength(messages []llm.Message) int {
+	total := 0
+	for _, m := range messages {
+		total += len(m.Content)
+	}
+	return total
+}
+
+func lastUserMessage(messages []llm.Message, maxLen int) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			return truncatePreview(messages[i].Content, maxLen)
+		}
+	}
+	return ""
+}
+
+func truncatePreview(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen]
+}
+
+func toolNames(defs []llm.ToolDefinition) []string {
+	names := make([]string, len(defs))
+	for i, d := range defs {
+		names[i] = d.Name
+	}
+	return names
 }
 
 func (inv *Investigator) toolDefinitionsForPhase(phase katypes.Phase) []llm.ToolDefinition {
@@ -428,6 +492,82 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 	}
 
 	return result
+}
+
+func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID string) {
+	completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, correlationID)
+	completeEvent.EventAction = audit.ActionResponseSent
+	completeEvent.EventOutcome = audit.OutcomeSuccess
+	for k, v := range tokens.AuditData() {
+		completeEvent.Data[k] = v
+	}
+	if b, err := json.Marshal(resultToAuditJSON(result)); err == nil {
+		completeEvent.Data["response_data"] = string(b)
+	}
+	audit.StoreBestEffort(ctx, inv.auditStore, completeEvent, inv.logger)
+}
+
+func resultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
+	m := map[string]interface{}{
+		"rca_summary":        r.RCASummary,
+		"severity":           r.Severity,
+		"confidence":         r.Confidence,
+		"needs_human_review": r.HumanReviewNeeded,
+	}
+	if r.WorkflowID != "" {
+		m["workflow_id"] = r.WorkflowID
+	}
+	if r.ExecutionBundle != "" {
+		m["execution_bundle"] = r.ExecutionBundle
+	}
+	if len(r.ContributingFactors) > 0 {
+		m["contributing_factors"] = r.ContributingFactors
+	}
+	if r.Reason != "" {
+		m["human_review_reason"] = r.Reason
+	}
+	if len(r.Warnings) > 0 {
+		m["warnings"] = r.Warnings
+	}
+	if len(r.Parameters) > 0 {
+		m["parameters"] = r.Parameters
+	}
+	if r.RemediationTarget.Kind != "" {
+		m["remediation_target"] = map[string]interface{}{
+			"kind":      r.RemediationTarget.Kind,
+			"name":      r.RemediationTarget.Name,
+			"namespace": r.RemediationTarget.Namespace,
+		}
+	}
+	if len(r.AlternativeWorkflows) > 0 {
+		alts := make([]map[string]interface{}, len(r.AlternativeWorkflows))
+		for i, alt := range r.AlternativeWorkflows {
+			a := map[string]interface{}{"workflow_id": alt.WorkflowID}
+			if alt.Rationale != "" {
+				a["rationale"] = alt.Rationale
+			}
+			alts[i] = a
+		}
+		m["alternative_workflows"] = alts
+	}
+	return m
+}
+
+func (inv *Investigator) emitValidationEvent(ctx context.Context, attempt, maxAttempts int, isValid bool, errors []string, workflowID, correlationID string) {
+	valEvent := audit.NewEvent(audit.EventTypeValidationAttempt, correlationID)
+	valEvent.EventAction = audit.ActionValidation
+	if isValid {
+		valEvent.EventOutcome = audit.OutcomeSuccess
+	} else {
+		valEvent.EventOutcome = audit.OutcomeFailure
+	}
+	valEvent.Data["attempt"] = attempt
+	valEvent.Data["max_attempts"] = maxAttempts
+	valEvent.Data["is_valid"] = isValid
+	valEvent.Data["errors"] = errors
+	valEvent.Data["workflow_id"] = workflowID
+	valEvent.Data["is_final_attempt"] = attempt == maxAttempts
+	audit.StoreBestEffort(ctx, inv.auditStore, valEvent, inv.logger)
 }
 
 func toolErrorJSON(msg string) string {

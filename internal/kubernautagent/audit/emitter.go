@@ -19,6 +19,8 @@ package audit
 import (
 	"context"
 	"log/slog"
+
+	"github.com/google/uuid"
 )
 
 // EventCategory is the audit event_category for all Kubernaut Agent events.
@@ -33,6 +35,21 @@ const (
 	EventTypeResponseFailed      = "aiagent.response.failed"
 	EventTypeEnrichmentCompleted = "aiagent.enrichment.completed"
 	EventTypeEnrichmentFailed    = "aiagent.enrichment.failed"
+)
+
+const (
+	ActionLLMRequest     = "llm_request"
+	ActionLLMResponse    = "llm_response"
+	ActionToolExecution  = "tool_execution"
+	ActionValidation     = "validation"
+	ActionResponseSent   = "response_sent"
+	ActionResponseFailed = "response_failed"
+)
+
+const (
+	OutcomeSuccess = "success"
+	OutcomeFailure = "failure"
+	OutcomePending = "pending"
 )
 
 // AllEventTypes lists all 8 Kubernaut Agent audit event types.
@@ -62,13 +79,15 @@ type AuditStore interface {
 	StoreAudit(ctx context.Context, event *AuditEvent) error
 }
 
-// NewEvent creates an AuditEvent with the correct event_category.
+// NewEvent creates an AuditEvent with the correct event_category and a unique event_id.
 func NewEvent(eventType string, correlationID string) *AuditEvent {
+	data := make(map[string]interface{})
+	data["event_id"] = uuid.New().String()
 	return &AuditEvent{
 		EventType:     eventType,
 		EventCategory: EventCategory,
 		CorrelationID: correlationID,
-		Data:          make(map[string]interface{}),
+		Data:          data,
 	}
 }
 

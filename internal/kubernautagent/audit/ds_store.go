@@ -18,9 +18,11 @@ package audit
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/go-faster/jx"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
@@ -49,6 +51,8 @@ func (s *DSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) error 
 		EventOutcome:   ogenclient.AuditEventRequestEventOutcome(event.EventOutcome),
 		CorrelationID:  event.CorrelationID,
 	}
+	req.ActorType.SetTo("Service")
+	req.ActorID.SetTo("kubernaut-agent")
 
 	if ed, ok := buildEventData(event); ok {
 		req.EventData = ed
@@ -92,6 +96,106 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		}
 		return ogenclient.NewAIAgentEnrichmentFailedPayloadAuditEventRequestEventData(payload), true
 
+	case EventTypeLLMRequest:
+		payload := ogenclient.LLMRequestPayload{
+			EventType:     ogenclient.LLMRequestPayloadEventTypeAiagentLlmRequest,
+			EventID:       dataString(event.Data, "event_id"),
+			IncidentID:    event.CorrelationID,
+			Model:         dataString(event.Data, "model"),
+			PromptLength:  dataInt(event.Data, "prompt_length"),
+			PromptPreview: truncate(dataString(event.Data, "prompt_preview"), previewMaxLen),
+		}
+		if tools := dataStringSlice(event.Data, "toolsets_enabled"); len(tools) > 0 {
+			payload.ToolsetsEnabled = tools
+		}
+		return ogenclient.NewLLMRequestPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeLLMResponse:
+		payload := ogenclient.LLMResponsePayload{
+			EventType:       ogenclient.LLMResponsePayloadEventTypeAiagentLlmResponse,
+			EventID:         dataString(event.Data, "event_id"),
+			IncidentID:      event.CorrelationID,
+			HasAnalysis:     dataBool(event.Data, "has_analysis"),
+			AnalysisLength:  dataInt(event.Data, "analysis_length"),
+			AnalysisPreview: truncate(dataString(event.Data, "analysis_preview"), previewMaxLen),
+		}
+		if tokens := dataInt(event.Data, "total_tokens"); tokens > 0 {
+			payload.TokensUsed.SetTo(tokens)
+		}
+		if tc := dataInt(event.Data, "tool_call_count"); tc > 0 {
+			payload.ToolCallCount.SetTo(tc)
+		}
+		return ogenclient.NewLLMResponsePayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeLLMToolCall:
+		payload := ogenclient.LLMToolCallPayload{
+			EventType:     ogenclient.LLMToolCallPayloadEventTypeAiagentLlmToolCall,
+			EventID:       dataString(event.Data, "event_id"),
+			IncidentID:    event.CorrelationID,
+			ToolCallIndex: dataInt(event.Data, "tool_call_index"),
+			ToolName:      dataString(event.Data, "tool_name"),
+		}
+		if args := dataString(event.Data, "tool_arguments"); args != "" {
+			payload.ToolArguments.SetTo(toJxRawMap(args))
+		}
+		if result := dataString(event.Data, "tool_result"); result != "" {
+			payload.ToolResult = toJxRaw(result)
+		}
+		if preview := dataString(event.Data, "tool_result_preview"); preview != "" {
+			payload.ToolResultPreview.SetTo(truncate(preview, previewMaxLen))
+		}
+		return ogenclient.NewLLMToolCallPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeValidationAttempt:
+		payload := ogenclient.WorkflowValidationPayload{
+			EventType:   ogenclient.WorkflowValidationPayloadEventTypeAiagentWorkflowValidationAttempt,
+			EventID:     dataString(event.Data, "event_id"),
+			IncidentID:  event.CorrelationID,
+			Attempt:     dataInt(event.Data, "attempt"),
+			MaxAttempts: dataInt(event.Data, "max_attempts"),
+			IsValid:     dataBool(event.Data, "is_valid"),
+		}
+		if errs, ok := event.Data["errors"].([]string); ok {
+			payload.Errors = errs
+		}
+		if wfID := dataString(event.Data, "workflow_id"); wfID != "" {
+			payload.WorkflowID.SetTo(wfID)
+		}
+		if dataBool(event.Data, "is_final_attempt") {
+			payload.IsFinalAttempt.SetTo(true)
+		}
+		return ogenclient.NewWorkflowValidationPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeResponseComplete:
+		payload := ogenclient.AIAgentResponsePayload{
+			EventType:  ogenclient.AIAgentResponsePayloadEventTypeAiagentResponseComplete,
+			EventID:    dataString(event.Data, "event_id"),
+			IncidentID: event.CorrelationID,
+		}
+		if rd := dataString(event.Data, "response_data"); rd != "" {
+			payload.ResponseData = toIncidentResponseData(rd, event.CorrelationID)
+		}
+		if pt := dataInt(event.Data, "total_prompt_tokens"); pt > 0 {
+			payload.TotalPromptTokens.SetTo(pt)
+		}
+		if ct := dataInt(event.Data, "total_completion_tokens"); ct > 0 {
+			payload.TotalCompletionTokens.SetTo(ct)
+		}
+		return ogenclient.NewAIAgentResponsePayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeResponseFailed:
+		payload := ogenclient.AIAgentResponseFailedPayload{
+			EventType:    ogenclient.AIAgentResponseFailedPayloadEventTypeAiagentResponseFailed,
+			EventID:      dataString(event.Data, "event_id"),
+			IncidentID:   event.CorrelationID,
+			ErrorMessage: dataString(event.Data, "error_message"),
+			Phase:        dataString(event.Data, "phase"),
+		}
+		if dur := dataFloat64(event.Data, "duration_seconds"); dur > 0 {
+			payload.DurationSeconds.SetTo(float32(dur))
+		}
+		return ogenclient.NewAIAgentResponseFailedPayloadAuditEventRequestEventData(payload), true
+
 	default:
 		return ogenclient.AuditEventRequestEventData{}, false
 	}
@@ -127,6 +231,184 @@ func dataBool(d map[string]interface{}, key string) bool {
 		}
 	}
 	return false
+}
+
+func dataFloat64(d map[string]interface{}, key string) float64 {
+	if v, ok := d[key]; ok {
+		switch n := v.(type) {
+		case float64:
+			return n
+		case float32:
+			return float64(n)
+		case int:
+			return float64(n)
+		}
+	}
+	return 0
+}
+
+func dataStringSlice(d map[string]interface{}, key string) []string {
+	if v, ok := d[key]; ok {
+		if ss, ok := v.([]string); ok {
+			return ss
+		}
+	}
+	return nil
+}
+
+const previewMaxLen = 500
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen]
+}
+
+func toJxRaw(s string) jx.Raw {
+	if json.Valid([]byte(s)) {
+		return jx.Raw(s)
+	}
+	b, _ := json.Marshal(s)
+	return jx.Raw(b)
+}
+
+func toJxRawMap(s string) ogenclient.LLMToolCallPayloadToolArguments {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return nil
+	}
+	result := make(ogenclient.LLMToolCallPayloadToolArguments, len(raw))
+	for k, v := range raw {
+		result[k] = jx.Raw(v)
+	}
+	return result
+}
+
+type investigationResultJSON struct {
+	RCASummary           string                       `json:"rca_summary"`
+	Severity             string                       `json:"severity"`
+	ContributingFactors  []string                     `json:"contributing_factors"`
+	WorkflowID           string                       `json:"workflow_id"`
+	ExecutionBundle      string                       `json:"execution_bundle"`
+	Confidence           float64                      `json:"confidence"`
+	NeedsHumanReview     bool                         `json:"needs_human_review"`
+	HumanReviewReason    string                       `json:"human_review_reason"`
+	Warnings             []string                     `json:"warnings"`
+	Parameters           map[string]interface{}        `json:"parameters"`
+	AlternativeWorkflows []altWorkflowJSON            `json:"alternative_workflows"`
+	RemediationTarget    *remediationTargetJSON       `json:"remediation_target"`
+}
+
+type altWorkflowJSON struct {
+	WorkflowID      string  `json:"workflow_id"`
+	Rationale       string  `json:"rationale"`
+	ExecutionBundle string  `json:"execution_bundle"`
+	Confidence      float64 `json:"confidence"`
+}
+
+type remediationTargetJSON struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclient.IncidentResponseData {
+	var ir investigationResultJSON
+	if err := json.Unmarshal([]byte(responseDataJSON), &ir); err != nil {
+		return ogenclient.IncidentResponseData{
+			IncidentId: incidentID,
+			Timestamp:  time.Now().UTC(),
+		}
+	}
+
+	data := ogenclient.IncidentResponseData{
+		IncidentId: incidentID,
+		Analysis:   ir.RCASummary,
+		Confidence: float32(ir.Confidence),
+		Timestamp:  time.Now().UTC(),
+		RootCauseAnalysis: ogenclient.IncidentResponseDataRootCauseAnalysis{
+			Summary:            ir.RCASummary,
+			Severity:           mapSeverity(ir.Severity),
+			ContributingFactors: ir.ContributingFactors,
+		},
+	}
+
+	if ir.RemediationTarget != nil {
+		var rt ogenclient.IncidentResponseDataRootCauseAnalysisRemediationTarget
+		if ir.RemediationTarget.Kind != "" {
+			rt.Kind.SetTo(ir.RemediationTarget.Kind)
+		}
+		if ir.RemediationTarget.Name != "" {
+			rt.Name.SetTo(ir.RemediationTarget.Name)
+		}
+		if ir.RemediationTarget.Namespace != "" {
+			rt.Namespace.SetTo(ir.RemediationTarget.Namespace)
+		}
+		data.RootCauseAnalysis.RemediationTarget.SetTo(rt)
+	}
+
+	if ir.WorkflowID != "" {
+		sw := ogenclient.IncidentResponseDataSelectedWorkflow{}
+		sw.WorkflowId.SetTo(ir.WorkflowID)
+		if ir.ExecutionBundle != "" {
+			sw.ExecutionBundle.SetTo(ir.ExecutionBundle)
+		}
+		sw.Confidence.SetTo(float32(ir.Confidence))
+		if len(ir.Parameters) > 0 {
+			params := make(ogenclient.IncidentResponseDataSelectedWorkflowParameters, len(ir.Parameters))
+			for k, v := range ir.Parameters {
+				b, _ := json.Marshal(v)
+				params[k] = jx.Raw(b)
+			}
+			sw.Parameters.SetTo(params)
+		}
+		data.SelectedWorkflow.SetTo(sw)
+	}
+
+	if ir.NeedsHumanReview {
+		data.NeedsHumanReview.SetTo(true)
+	}
+	if ir.HumanReviewReason != "" {
+		data.HumanReviewReason.SetTo(ogenclient.IncidentResponseDataHumanReviewReason(ir.HumanReviewReason))
+	}
+	if len(ir.Warnings) > 0 {
+		data.Warnings = ir.Warnings
+	}
+
+	for _, alt := range ir.AlternativeWorkflows {
+		item := ogenclient.IncidentResponseDataAlternativeWorkflowsItem{}
+		if alt.WorkflowID != "" {
+			item.WorkflowId.SetTo(alt.WorkflowID)
+		}
+		if alt.Rationale != "" {
+			item.Rationale.SetTo(alt.Rationale)
+		}
+		if alt.ExecutionBundle != "" {
+			item.ExecutionBundle.SetTo(alt.ExecutionBundle)
+		}
+		if alt.Confidence > 0 {
+			item.Confidence.SetTo(float32(alt.Confidence))
+		}
+		data.AlternativeWorkflows = append(data.AlternativeWorkflows, item)
+	}
+
+	return data
+}
+
+func mapSeverity(s string) ogenclient.IncidentResponseDataRootCauseAnalysisSeverity {
+	switch s {
+	case "critical":
+		return ogenclient.IncidentResponseDataRootCauseAnalysisSeverityCritical
+	case "high":
+		return ogenclient.IncidentResponseDataRootCauseAnalysisSeverityHigh
+	case "medium":
+		return ogenclient.IncidentResponseDataRootCauseAnalysisSeverityMedium
+	case "low":
+		return ogenclient.IncidentResponseDataRootCauseAnalysisSeverityLow
+	default:
+		return ogenclient.IncidentResponseDataRootCauseAnalysisSeverityUnknown
+	}
 }
 
 var _ AuditStore = (*DSAuditStore)(nil)
