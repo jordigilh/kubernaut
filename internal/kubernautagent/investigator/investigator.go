@@ -118,6 +118,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	if rcaResult.HumanReviewNeeded {
 		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, enrichData)
+		injectRemediationTarget(rcaResult, signal, enrichData)
 		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
 		return rcaResult, nil
 	}
@@ -153,6 +154,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	backfillSeverity(workflowResult, signal)
 	attachDetectedLabels(workflowResult, enrichData)
+	injectRemediationTarget(workflowResult, signal, enrichData)
 	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID)
 	return workflowResult, nil
 }
@@ -304,10 +306,33 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			return nil, fmt.Errorf("validation self-correction failed: %w", corrErr)
 		}
 		inv.emitValidationEvent(ctx, attempt+1, maxSelfCorrectionAttempts, true, nil, corrected.WorkflowID, correlationID)
+		enrichFromCatalog(corrected, inv.pipeline.Validator)
 		return corrected, nil
 	}
 
 	return result, nil
+}
+
+// enrichFromCatalog backfills execution metadata from the workflow catalog
+// into the InvestigationResult, replicating HAPI's behavior of including
+// execution_engine, execution_bundle, and execution_bundle_digest.
+func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator) {
+	if result == nil || v == nil || result.WorkflowID == "" {
+		return
+	}
+	meta, ok := v.GetWorkflowMeta(result.WorkflowID)
+	if !ok {
+		return
+	}
+	if result.ExecutionEngine == "" {
+		result.ExecutionEngine = meta.ExecutionEngine
+	}
+	if result.ExecutionBundle == "" {
+		result.ExecutionBundle = meta.ExecutionBundle
+	}
+	if result.ExecutionBundleDigest == "" {
+		result.ExecutionBundleDigest = meta.ExecutionBundleDigest
+	}
 }
 
 // runLLMLoop executes the multi-turn LLM conversation loop with tool
@@ -685,6 +710,32 @@ func attachDetectedLabels(result *katypes.InvestigationResult, enrichData *enric
 		return
 	}
 	result.DetectedLabels = detectedLabelsToResult(enrichData.DetectedLabels)
+}
+
+// injectRemediationTarget replicates HAPI's _inject_target_resource: always
+// populate remediationTarget from the K8s root owner (owner chain resolution),
+// not from the LLM's response. The K8s owner chain is ground truth; the LLM
+// might hallucinate resource names.
+func injectRemediationTarget(result *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult) {
+	if result == nil {
+		return
+	}
+	rootKind := signal.ResourceKind
+	rootName := signal.ResourceName
+	rootNS := signal.Namespace
+	if enrichData != nil && len(enrichData.OwnerChain) > 0 {
+		root := enrichData.OwnerChain[len(enrichData.OwnerChain)-1]
+		rootKind = root.Kind
+		rootName = root.Name
+		if root.Namespace != "" {
+			rootNS = root.Namespace
+		}
+	}
+	result.RemediationTarget = katypes.RemediationTarget{
+		Kind:      rootKind,
+		Name:      rootName,
+		Namespace: rootNS,
+	}
 }
 
 // allLabelDetectionsFailed returns true when every detection category is in
