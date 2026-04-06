@@ -299,7 +299,14 @@ func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 	if flat.Actionable != nil && !*flat.Actionable {
 		falseVal := false
 		result.IsActionable = &falseVal
-		result.Warnings = append(result.Warnings, notActionableWarning)
+		// When investigation_outcome=problem_resolved, the outcome handler synthesizes
+		// its own warning ("Problem self-resolved"). Adding the generic "not actionable"
+		// warning would cause AA's response processor to route to NotActionable (Outcome D)
+		// instead of ProblemResolved (Outcome A). HAPI Python had the same precedence:
+		// the resolved outcome is authoritative over the actionable flag.
+		if flat.InvestigationOutcome != "problem_resolved" {
+			result.Warnings = append(result.Warnings, notActionableWarning)
+		}
 		if result.Confidence < confidenceFloor {
 			result.Confidence = confidenceFloor
 		}

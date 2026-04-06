@@ -374,6 +374,8 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 	}
 	if len(ir.Warnings) > 0 {
 		data.Warnings = ir.Warnings
+	} else {
+		data.Warnings = []string{}
 	}
 
 	for _, alt := range ir.AlternativeWorkflows {
