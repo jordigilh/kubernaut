@@ -46,7 +46,36 @@ Kubernaut bridges that gap. It uses an LLM to investigate the actual root cause 
 
 ## Roadmap
 
-### v1.2 — Operational Resilience and Security Hardening (current)
+### v1.3 — Go Unification and Enterprise Distribution (current)
+
+- **HAPI Go rewrite** — Full reimplementation of the HolmesGPT-API service in Go, eliminating the Python runtime dependency
+- **Mock LLM Go rewrite** — DAG-based conversation engine with declarative YAML scenarios and fault injection for resilience testing
+- **Kubernaut Operator** — OLM-packaged operator for OperatorHub distribution on OpenShift
+- **Inter-pod TLS** — Encrypted communication between all internal services
+- **Audit event retention** — Automated deletion of expired audit events
+- **Label-based notification routing** — Route notifications to signal and RCA target resource owners
+
+Track progress on the [v1.3 milestone](https://github.com/jordigilh/kubernaut/milestone/4).
+
+### v1.4 — Operator Experience and AI Safety (next)
+
+- **OCP Console Plugin** — Operator dashboard and RAR conversational interface integrated into the OpenShift Console
+- **Prompt injection guardrails** — Shadow agent with a dedicated scanning model to protect the agentic pipeline against prompt injection attacks
+- **Operator workflow/parameter override** — Allow operators to override workflow selection and parameters during RAR approval
+
+Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/milestone/5).
+
+### v1.5 — Multi-Agent Consensus RCA (planned)
+
+- **Ensemble RCA investigation** — Two independent LLM agents (different model families) perform parallel root cause analysis; a consolidator validates agreement and cross-examines on divergence to improve diagnostic accuracy
+
+Track progress on the [v1.5 milestone](https://github.com/jordigilh/kubernaut/milestone/6). See [#648](https://github.com/jordigilh/kubernaut/issues/648) for the design discussion.
+
+### v1.6 — Multi-Cluster Federation (planned)
+
+- **Fleet-wide remediation** — MCP-based multi-cluster architecture enabling centralized signal ingestion, cross-cluster RCA investigation, and federated workflow execution across Kubernetes fleets
+
+### v1.2 — Operational Resilience and Security Hardening ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.2.0))
 
 - **Per-workflow ServiceAccount** — Each remediation workflow runs under its own SA with least-privilege RBAC, replacing the shared default
 - **Short-lived token injection** — Ansible executor uses Kubernetes TokenRequest API with configurable TTL instead of long-lived secrets
@@ -56,17 +85,6 @@ Kubernaut bridges that gap. It uses an LLM to investigate the actual root cause 
 - **Hash-capture degradation visibility** — Explicit conditions and notification enrichment when spec hash capture fails
 
 See [CHANGELOG.md](CHANGELOG.md) for the complete list.
-
-### v1.3 — Go Unification and Enterprise Distribution (next)
-
-- **HAPI Go rewrite** — Full reimplementation of the HolmesGPT-API service in Go, eliminating the Python runtime dependency
-- **Mock LLM Go rewrite** — DAG-based conversation engine with declarative YAML scenarios and fault injection for resilience testing
-- **Kubernaut Operator** — OLM-packaged operator for OperatorHub distribution on OpenShift and vanilla Kubernetes
-- **Inter-pod TLS** — Encrypted communication between all internal services
-- **Audit event retention** — Automated deletion of expired audit events
-- **Label-based notification routing** — Route notifications to signal and RCA target resource owners
-
-Track progress on the [v1.3 milestone](https://github.com/jordigilh/kubernaut/milestone/4).
 
 ---
 
