@@ -156,13 +156,20 @@ const confidenceFloor = 0.8
 
 // llmResponse is the nested JSON structure that LLMs typically produce.
 type llmResponse struct {
-	RCA                  *llmRCA      `json:"root_cause_analysis"`
-	Workflow             *llmWorkflow `json:"selected_workflow"`
-	Severity             string       `json:"severity,omitempty"`
-	Actionable           *bool        `json:"actionable,omitempty"`
-	InvestigationOutcome string       `json:"investigation_outcome,omitempty"`
-	NeedsHumanReview     *bool        `json:"needs_human_review,omitempty"`
-	HumanReviewReason    string       `json:"human_review_reason,omitempty"`
+	RCA                  *llmRCA           `json:"root_cause_analysis"`
+	Workflow             *llmWorkflow      `json:"selected_workflow"`
+	AlternativeWorkflows []llmAlternative  `json:"alternative_workflows,omitempty"`
+	Severity             string            `json:"severity,omitempty"`
+	Actionable           *bool             `json:"actionable,omitempty"`
+	InvestigationOutcome string            `json:"investigation_outcome,omitempty"`
+	NeedsHumanReview     *bool             `json:"needs_human_review,omitempty"`
+	HumanReviewReason    string            `json:"human_review_reason,omitempty"`
+}
+
+type llmAlternative struct {
+	WorkflowID string  `json:"workflow_id"`
+	Confidence float64 `json:"confidence"`
+	Rationale  string  `json:"rationale"`
 }
 
 type llmRCA struct {
@@ -229,6 +236,14 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 		result.WorkflowID = resp.Workflow.WorkflowID
 		result.ExecutionBundle = resp.Workflow.ExecutionBundle
 		result.Confidence = resp.Workflow.Confidence
+	}
+
+	for _, alt := range resp.AlternativeWorkflows {
+		result.AlternativeWorkflows = append(result.AlternativeWorkflows, katypes.AlternativeWorkflow{
+			WorkflowID: alt.WorkflowID,
+			Confidence: alt.Confidence,
+			Rationale:  alt.Rationale,
+		})
 	}
 
 	applyFlatFields(result, flatLLMFields{

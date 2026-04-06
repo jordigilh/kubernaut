@@ -17,6 +17,16 @@ package scenarios
 
 import "github.com/jordigilh/kubernaut/test/services/mock-llm/conversation"
 
+// MockAlternativeWorkflow mirrors real Claude behavior where the LLM returns
+// ranked alternatives alongside the primary workflow selection.
+// Golden transcript ref: kubernaut-demo-scenarios#296
+type MockAlternativeWorkflow struct {
+	WorkflowName string
+	WorkflowID   string
+	Confidence   float64
+	Rationale    string
+}
+
 // MockScenarioConfig holds the static configuration for a mock scenario.
 type MockScenarioConfig struct {
 	ScenarioName     string
@@ -26,6 +36,7 @@ type MockScenarioConfig struct {
 	WorkflowID       string
 	WorkflowTitle    string
 	Confidence       float64
+	Rationale        string // primary workflow rationale (golden transcript fidelity)
 	RootCause        string
 	ResourceKind     string
 	ResourceNS       string
@@ -37,6 +48,7 @@ type MockScenarioConfig struct {
 	ExecutionEngine  string
 	Contributing     []string
 	NeedsHumanReview *bool
+	Alternatives     []MockAlternativeWorkflow // ranked alternatives (golden transcript fidelity)
 
 	// KA outcome routing fields — included as top-level JSON in text responses
 	// so KA's parser can extract them for is_actionable / human_review routing.
