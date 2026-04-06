@@ -5,7 +5,7 @@ All notable changes to Kubernaut will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.0] - 2026-03-28
+## [1.2.0] - 2026-04-06
 
 ### Added
 
@@ -61,6 +61,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Duplicate scheduled audit event** — Removed duplicate `effectiveness.assessment.scheduled` emission from `emitAssessingTransitionEvents`.
 - **HasWorkflowCompleted event type** — Corrected from `workflowexecution.execution.completed` to `workflowexecution.workflow.completed` to match the WE controller's actual event type.
 - **Notification CircuitBreakerState type assertion** — Fixed `UpdateCircuitBreakerState` type assertion that would panic on non-string values.
+- **RR CRD namespace and kind columns** (#622) — Added namespace and kind to `kubectl get rr -owide` output.
+- **Notification field ordering and content** (#621, #626, #627) — Added RR name, reordered notification fields, included cluster name in timeout messages.
+- **HAPI Phase 1 structured output** (#624) — Enabled `PHASE1_SECTIONS` for structured LLM output and refactored Pattern 2B to parse directly into Python dict, eliminating markdown round-trip.
+- **EM validityWindow** (#625) — Increased EM `validityWindow` from 120s to 300s to prevent premature assessment expiry.
+- **WE controller RBAC** (#637) — Added missing `serviceaccounts/token` create and `serviceaccounts` get permissions to the WorkflowExecution controller ClusterRole.
+- **RR phase-specific Ready reasons** (#636) — Replaced generic Ready condition reasons with 12 phase-specific reasons (e.g., `Processing`, `Analyzing`, `AwaitingApproval`) for meaningful `kubectl get rr` REASON column.
+- **RR kubectl column layout** (#635) — Overhauled `kubectl get rr` output with composite TARGET, WORKFLOW, CONFIDENCE, and ALERT columns. Added `FormatResourceDisplay`, `FormatWorkflowDisplay`, and `FormatConfidence` display helpers.
+- **EM CPU metric query** (#639) — Corrected CPU metric query from raw `sum(container_cpu_usage_seconds_total)` to `sum(rate(...[5m]))`, preventing always-zero metric scores for counter-type metrics.
+- **Graduated notification wording** (#639) — Replaced unconditional "anomaly persists" message with graduated wording based on `MetricsScore` (full improvement / partial improvement / minimal improvement / no improvement).
+- **NotificationRequest PascalCase enums** (#640) — Migrated `NotificationType` and `NotificationPriority` enum values from lowercase to PascalCase for consistency with other CRD enums. Updated OpenAPI specs, ogen-client, routing attributes, and all test fixtures.
+- **RR WorkflowDisplayName resolution** (#643) — Resolved workflow UUID to human-readable CRD name via `RemediationWorkflow` lookup. Fixed scheme registration, RBAC, and cache-blocking issue by using `apiReader` for direct API reads.
+- **RR printer column layout** (#644) — Reordered `kubectl get rr -owide` columns to follow the pipeline flow, renamed "Target" to "RCA Target", added "Signal NS" column, removed redundant "Reason" column.
 
 ### Changed
 
@@ -73,6 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking: Storm detection removed** — `stormCorrelationId` and `stormWindowId` fields no longer exist in SignalProcessing and RemediationRequest CRDs. Any custom tooling reading these fields must be updated.
 - **Breaking: CRD typed enums** — String fields replaced with typed enums across all CRDs. Existing resources with free-form string values that don't match the enum will fail validation on update.
 - **Breaking: `metav1.Duration` fields** — WorkflowExecution duration fields now require Go duration format (e.g., `30s`, `5m`) instead of free-form strings.
+- **Breaking: NotificationRequest PascalCase enums** (#640) — `NotificationType` values changed from lowercase (e.g., `escalation`, `manual-review`) to PascalCase (e.g., `Escalation`, `ManualReview`). `NotificationPriority` values changed similarly (e.g., `critical` → `Critical`). Update any routing configurations or tooling that matches on these values.
 - **Database migration required** — Run migrations 002 and 003 before upgrading controllers. The Helm pre-upgrade hook handles this automatically.
 
 [1.2.0]: https://github.com/jordigilh/kubernaut/compare/v1.1.0...v1.2.0
