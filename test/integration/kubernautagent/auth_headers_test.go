@@ -55,12 +55,12 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 		})
 
 		It("should inject headers from all three sources over real HTTP", func() {
-			os.Setenv("KA_IT_TEST_API_KEY", "secret-key-123")
-			defer os.Unsetenv("KA_IT_TEST_API_KEY")
+			Expect(os.Setenv("KA_IT_TEST_API_KEY", "secret-key-123")).To(Succeed())
+			defer func() { _ = os.Unsetenv("KA_IT_TEST_API_KEY") }()
 
 			tmpFile, err := os.CreateTemp("", "ka-it-token-*")
 			Expect(err).NotTo(HaveOccurred())
-			defer os.Remove(tmpFile.Name())
+			defer func() { _ = os.Remove(tmpFile.Name()) }()
 			err = os.WriteFile(tmpFile.Name(), []byte("jwt-token-xyz"), 0644)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -157,8 +157,8 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 			hdefs := []config.HeaderDefinition{
 				{Name: "Authorization", SecretKeyRef: "KA_IT_SCRUB_SECRET"},
 			}
-			os.Setenv("KA_IT_SCRUB_SECRET", "Bearer super-secret-key-do-not-leak")
-			defer os.Unsetenv("KA_IT_SCRUB_SECRET")
+			Expect(os.Setenv("KA_IT_SCRUB_SECRET", "Bearer super-secret-key-do-not-leak")).To(Succeed())
+			defer func() { _ = os.Unsetenv("KA_IT_SCRUB_SECRET") }()
 
 			client, err := llmclient.NewLLMClientWithLogger(server.URL, hdefs, logger)
 			Expect(err).NotTo(HaveOccurred())
@@ -184,7 +184,7 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 
 			tmpFile, err := os.CreateTemp("", "ka-it-rotation-*")
 			Expect(err).NotTo(HaveOccurred())
-			defer os.Remove(tmpFile.Name())
+			defer func() { _ = os.Remove(tmpFile.Name()) }()
 			err = os.WriteFile(tmpFile.Name(), []byte("token-v1"), 0644)
 			Expect(err).NotTo(HaveOccurred())
 
