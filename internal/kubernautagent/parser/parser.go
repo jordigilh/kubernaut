@@ -175,6 +175,7 @@ type llmAlternative struct {
 type llmRCA struct {
 	Summary              string        `json:"summary"`
 	Severity             string        `json:"severity,omitempty"`
+	ContributingFactors  []string      `json:"contributing_factors,omitempty"`
 	RemediationTarget    *llmRemTarget `json:"remediation_target,omitempty"`
 	RemediationTargetAlt *llmRemTarget `json:"remediationTarget,omitempty"`
 }
@@ -220,6 +221,7 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 	if resp.RCA != nil {
 		result.RCASummary = resp.RCA.Summary
 		result.Severity = resp.RCA.Severity
+		result.ContributingFactors = resp.RCA.ContributingFactors
 		if t := resp.RCA.resolvedTarget(); t != nil {
 			result.RemediationTarget = katypes.RemediationTarget{
 				Kind:      t.Kind,
@@ -309,6 +311,14 @@ func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 		if flat.HumanReviewReason != "" {
 			result.HumanReviewReason = flat.HumanReviewReason
 		}
+	}
+
+	// #301: Contradiction override — when the LLM says the problem is resolved
+	// but also sets needs_human_review=true, the resolution takes precedence.
+	// Python HAPI enforced this; KA must match for AA parity.
+	if flat.InvestigationOutcome == "problem_resolved" && result.HumanReviewNeeded {
+		result.HumanReviewNeeded = false
+		result.HumanReviewReason = ""
 	}
 }
 

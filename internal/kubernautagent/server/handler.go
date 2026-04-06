@@ -69,6 +69,15 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 		return &resp, nil
 	}
 
+	if req.RemediationID == "" {
+		return &hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON{
+			Type:   "urn:kubernaut:error:validation",
+			Title:  "Validation Error",
+			Detail: "remediation_id is required (DD-WORKFLOW-002)",
+			Status: 400,
+		}, nil
+	}
+
 	signal := MapIncidentRequestToSignal(req)
 	h.logger.Info("investigation submitted",
 		"incident_id", req.IncidentID,
@@ -225,7 +234,11 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 	}
 	if r.RemediationTarget.Kind != "" {
 		targetRaw, _ := json.Marshal(r.RemediationTarget)
-		rca["remediation_target"] = jx.Raw(targetRaw)
+		rca["remediationTarget"] = jx.Raw(targetRaw)
+	}
+	if len(r.ContributingFactors) > 0 {
+		cfRaw, _ := json.Marshal(r.ContributingFactors)
+		rca["contributing_factors"] = jx.Raw(cfRaw)
 	}
 	resp.RootCauseAnalysis = rca
 

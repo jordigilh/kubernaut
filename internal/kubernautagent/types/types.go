@@ -52,6 +52,9 @@ type InvestigationResult struct {
 	// Outcome routing (is_actionable already existed, GAP-002 population in P3)
 	IsActionable *bool `json:"is_actionable,omitempty"`
 
+	// RCA detail (contributing factors extracted from LLM root_cause_analysis)
+	ContributingFactors []string `json:"contributing_factors,omitempty"`
+
 	// Observability
 	Warnings       []string               `json:"warnings,omitempty"`
 	DetectedLabels map[string]interface{} `json:"detected_labels,omitempty"`
