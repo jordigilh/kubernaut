@@ -185,8 +185,13 @@ func extractScaleTargetRef(hpa *unstructured.Unstructured) (string, string) {
 }
 
 func (d *LabelDetector) detectPDB(ctx context.Context, rootObj *unstructured.Unstructured, rootNS string, result *DetectedLabels, failed *[]string) {
+	// PDB selectors match pod labels, not the controller's own metadata.labels.
+	// For Deployments/StatefulSets/DaemonSets/ReplicaSets, extract the pod
+	// template labels from spec.template.metadata.labels.
+	podLabels := extractPodTemplateLabels(rootObj)
 	rootLabels := rootObj.GetLabels()
-	if len(rootLabels) == 0 {
+
+	if len(podLabels) == 0 && len(rootLabels) == 0 {
 		return
 	}
 	list, err := d.dynClient.Resource(pdbGVR).Namespace(rootNS).List(ctx, metav1.ListOptions{})
@@ -197,11 +202,41 @@ func (d *LabelDetector) detectPDB(ctx context.Context, rootObj *unstructured.Uns
 	}
 	for i := range list.Items {
 		matchLabels := extractPDBMatchLabels(&list.Items[i])
-		if len(matchLabels) > 0 && labelsSubset(matchLabels, rootLabels) {
+		if len(matchLabels) == 0 {
+			continue
+		}
+		if (len(podLabels) > 0 && labelsSubset(matchLabels, podLabels)) ||
+			(len(rootLabels) > 0 && labelsSubset(matchLabels, rootLabels)) {
 			result.PDBProtected = true
 			return
 		}
 	}
+}
+
+func extractPodTemplateLabels(obj *unstructured.Unstructured) map[string]string {
+	spec, ok := obj.Object["spec"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	tmpl, ok := spec["template"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	meta, ok := tmpl["metadata"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	raw, ok := meta["labels"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	out := make(map[string]string, len(raw))
+	for k, v := range raw {
+		if s, ok := v.(string); ok {
+			out[k] = s
+		}
+	}
+	return out
 }
 
 func extractPDBMatchLabels(pdb *unstructured.Unstructured) map[string]string {
