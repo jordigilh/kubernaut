@@ -71,10 +71,11 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 
 	if req.RemediationID == "" {
 		return &hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON{
-			Type:   "urn:kubernaut:error:validation",
-			Title:  "Validation Error",
-			Detail: "remediation_id is required (DD-WORKFLOW-002)",
-			Status: 400,
+			Type:     "urn:kubernaut:error:validation",
+			Title:    "Validation Error",
+			Detail:   "remediation_id is required (DD-WORKFLOW-002)",
+			Status:   400,
+			Instance: "/api/v1/incident/analyze",
 		}, nil
 	}
 
@@ -287,6 +288,8 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 		resp.Warnings = r.Warnings
 	} else if r.HumanReviewNeeded {
 		resp.Warnings = []string{synthesizeHumanReviewWarning(r)}
+	} else {
+		resp.Warnings = []string{}
 	}
 
 	if len(r.DetectedLabels) > 0 {

@@ -152,6 +152,7 @@ func extractBalancedJSON(content string) string {
 }
 
 const notActionableWarning = "Alert not actionable — no remediation warranted"
+const problemResolvedWarning = "Problem self-resolved"
 const confidenceFloor = 0.8
 
 // llmResponse is the nested JSON structure that LLMs typically produce.
@@ -330,7 +331,17 @@ func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 // from outcome when the `actionable` field was absent.
 func applyInvestigationOutcome(result *katypes.InvestigationResult, outcome string) {
 	switch outcome {
-	case "problem_resolved", "predictive_no_action":
+	case "problem_resolved":
+		if result.IsActionable == nil {
+			falseVal := false
+			result.IsActionable = &falseVal
+		}
+		warning := problemResolvedWarning
+		if result.RCASummary != "" {
+			warning += ": " + result.RCASummary
+		}
+		result.Warnings = append(result.Warnings, warning)
+	case "predictive_no_action":
 		if result.IsActionable == nil {
 			falseVal := false
 			result.IsActionable = &falseVal
