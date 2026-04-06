@@ -153,7 +153,7 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Integration — #433", func()
 			slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				time.Sleep(2 * time.Second)
 				w.Header().Set("Content-Type", "application/json")
-				fmt.Fprint(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
+				_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
 			}))
 			defer slowServer.Close()
 
@@ -179,7 +179,7 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Integration — #433", func()
 			headerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				receivedHeaders = r.Header.Clone()
 				w.Header().Set("Content-Type", "application/json")
-				fmt.Fprint(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
+				_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
 			}))
 			defer headerServer.Close()
 
@@ -221,7 +221,7 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Integration — #433", func()
 					capturedQuery = r.URL.Query()
 				}
 				w.Header().Set("Content-Type", "application/json")
-				fmt.Fprint(w, serverBody)
+				_, _ = fmt.Fprint(w, serverBody)
 			}))
 
 			client, err := prometheus.NewClient(prometheus.ClientConfig{

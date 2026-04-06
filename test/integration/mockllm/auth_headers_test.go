@@ -71,21 +71,24 @@ var _ = Describe("Auth Header Endpoints", func() {
 	Describe("IT-MOCK-006-002: Headers cleared after reset", func() {
 		It("should clear headers after POST /api/test/reset", func() {
 			body := chatRequest("test", nil)
-			req, _ := http.NewRequest("POST", server.URL+"/v1/chat/completions", body)
+			req, err := http.NewRequest("POST", server.URL+"/v1/chat/completions", body)
+			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Authorization", "Bearer old-token")
 			client := &http.Client{}
-			resp, _ := client.Do(req)
+			resp, err := client.Do(req)
+			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
 
 			// Reset
 			postJSON(server.URL+"/api/test/reset", marshalReq(nil)).Body.Close()
 
 			// Headers should be empty
-			hresp, _ := http.Get(server.URL + "/api/test/headers")
+			hresp, err := http.Get(server.URL + "/api/test/headers")
+			Expect(err).NotTo(HaveOccurred())
 			defer hresp.Body.Close()
 			var result map[string]interface{}
-			json.NewDecoder(hresp.Body).Decode(&result)
+			Expect(json.NewDecoder(hresp.Body).Decode(&result)).To(Succeed())
 			headers := result["headers"].(map[string]interface{})
 			Expect(headers).To(BeEmpty())
 		})
@@ -99,17 +102,20 @@ var _ = Describe("Auth Header Endpoints", func() {
 			defer noHeaderServer.Close()
 
 			body := chatRequest("test", nil)
-			req, _ := http.NewRequest("POST", noHeaderServer.URL+"/v1/chat/completions", body)
+			req, err := http.NewRequest("POST", noHeaderServer.URL+"/v1/chat/completions", body)
+			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Authorization", "Bearer hidden")
 			client := &http.Client{}
-			resp, _ := client.Do(req)
+			resp, err := client.Do(req)
+			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
 
-			hresp, _ := http.Get(noHeaderServer.URL + "/api/test/headers")
+			hresp, err := http.Get(noHeaderServer.URL + "/api/test/headers")
+			Expect(err).NotTo(HaveOccurred())
 			defer hresp.Body.Close()
 			var result map[string]interface{}
-			json.NewDecoder(hresp.Body).Decode(&result)
+			Expect(json.NewDecoder(hresp.Body).Decode(&result)).To(Succeed())
 			headers := result["headers"].(map[string]interface{})
 			Expect(headers).To(BeEmpty())
 		})
@@ -118,18 +124,21 @@ var _ = Describe("Auth Header Endpoints", func() {
 	Describe("IT-MOCK-007-002: Only configured headers are recorded", func() {
 		It("should not record unconfigured headers", func() {
 			body := chatRequest("test", nil)
-			req, _ := http.NewRequest("POST", server.URL+"/v1/chat/completions", body)
+			req, err := http.NewRequest("POST", server.URL+"/v1/chat/completions", body)
+			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Authorization", "Bearer tok")
 			req.Header.Set("X-Untracked-Header", "should-not-appear")
 			client := &http.Client{}
-			resp, _ := client.Do(req)
+			resp, err := client.Do(req)
+			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
 
-			hresp, _ := http.Get(server.URL + "/api/test/headers")
+			hresp, err := http.Get(server.URL + "/api/test/headers")
+			Expect(err).NotTo(HaveOccurred())
 			defer hresp.Body.Close()
 			var result map[string]interface{}
-			json.NewDecoder(hresp.Body).Decode(&result)
+			Expect(json.NewDecoder(hresp.Body).Decode(&result)).To(Succeed())
 			headers := result["headers"].(map[string]interface{})
 			Expect(headers).To(HaveKey("Authorization"))
 			Expect(headers).NotTo(HaveKey("X-Untracked-Header"))
@@ -140,18 +149,21 @@ var _ = Describe("Auth Header Endpoints", func() {
 		It("should overwrite with latest header value", func() {
 			for _, token := range []string{"old-token", "new-token"} {
 				body := chatRequest("test", nil)
-				req, _ := http.NewRequest("POST", server.URL+"/v1/chat/completions", body)
+				req, err := http.NewRequest("POST", server.URL+"/v1/chat/completions", body)
+				Expect(err).NotTo(HaveOccurred())
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("Authorization", "Bearer "+token)
 				client := &http.Client{}
-				resp, _ := client.Do(req)
+				resp, err := client.Do(req)
+				Expect(err).NotTo(HaveOccurred())
 				resp.Body.Close()
 			}
 
-			hresp, _ := http.Get(server.URL + "/api/test/headers")
+			hresp, err := http.Get(server.URL + "/api/test/headers")
+			Expect(err).NotTo(HaveOccurred())
 			defer hresp.Body.Close()
 			var result map[string]interface{}
-			json.NewDecoder(hresp.Body).Decode(&result)
+			Expect(json.NewDecoder(hresp.Body).Decode(&result)).To(Succeed())
 			headers := result["headers"].(map[string]interface{})
 			Expect(headers["Authorization"]).To(Equal("Bearer new-token"))
 		})
