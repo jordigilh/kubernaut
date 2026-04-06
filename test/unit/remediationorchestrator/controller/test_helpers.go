@@ -34,12 +34,14 @@ import (
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 )
 
-// setupScheme creates a scheme with all CRD types registered
+// setupScheme creates a scheme with all CRD types registered.
+// Must mirror cmd/remediationorchestrator/main.go init() exactly.
 func setupScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
@@ -49,6 +51,7 @@ func setupScheme() *runtime.Scheme {
 	_ = workflowexecutionv1.AddToScheme(scheme)
 	_ = notificationv1.AddToScheme(scheme)
 	_ = eav1.AddToScheme(scheme)
+	_ = remediationworkflowv1.AddToScheme(scheme) // Issue #643: required for workflow name resolution
 	return scheme
 }
 

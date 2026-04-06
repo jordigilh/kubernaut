@@ -1088,6 +1088,16 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// BR-ORCH-044: Track child CRD creation
 		r.Metrics.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
 
+		// Issue #643: Resolve workflow UUID outside the retry callback — the name
+		// is immutable between retries and the API call should not repeat on conflicts.
+		var workflowDisplayName, confidence string
+		if ai.Status.SelectedWorkflow != nil {
+			workflowName := r.resolveWorkflowName(ctx, ai.Status.SelectedWorkflow.WorkflowID)
+			workflowDisplayName = remediationrequest.FormatWorkflowDisplay(
+				ai.Status.SelectedWorkflow.ActionType, workflowName)
+			confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
+		}
+
 		// Set WorkflowExecutionRef + SelectedWorkflowRef in status (BR-ORCH-029, Issue #118 Gap 5)
 		// REFACTOR-RO-001: Using retry helper
 		// DD-CRD-002-RR: Also persists WorkflowExecutionReady=True condition set by creator
@@ -1105,11 +1115,8 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 					ExecutionBundle:        ai.Status.SelectedWorkflow.ExecutionBundle,
 					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
 				}
-			// Issue #643: Resolve UUID to human-readable CRD name for display
-			workflowName := r.resolveWorkflowName(ctx, ai.Status.SelectedWorkflow.WorkflowID)
-			rr.Status.WorkflowDisplayName = remediationrequest.FormatWorkflowDisplay(
-				ai.Status.SelectedWorkflow.ActionType, workflowName)
-			rr.Status.Confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
+			rr.Status.WorkflowDisplayName = workflowDisplayName
+			rr.Status.Confidence = confidence
 		}
 		// Issue #387: Capture LLM-identified remediation target for operational triage (kubectl -o wide)
 		if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
@@ -1294,6 +1301,15 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 		// BR-ORCH-044: Track child CRD creation
 		r.Metrics.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
 
+		// Issue #643: Resolve workflow UUID outside the retry callback.
+		var workflowDisplayName2, confidence2 string
+		if ai.Status.SelectedWorkflow != nil {
+			workflowName := r.resolveWorkflowName(ctx, ai.Status.SelectedWorkflow.WorkflowID)
+			workflowDisplayName2 = remediationrequest.FormatWorkflowDisplay(
+				ai.Status.SelectedWorkflow.ActionType, workflowName)
+			confidence2 = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
+		}
+
 		// Set WorkflowExecutionRef + SelectedWorkflowRef after approval (BR-ORCH-029, Issue #118 Gap 5)
 		// REFACTOR-RO-001: Using retry helper
 		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
@@ -1310,11 +1326,8 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 					ExecutionBundle:        ai.Status.SelectedWorkflow.ExecutionBundle,
 					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
 				}
-			// Issue #643: Resolve UUID to human-readable CRD name for display
-			workflowName := r.resolveWorkflowName(ctx, ai.Status.SelectedWorkflow.WorkflowID)
-			rr.Status.WorkflowDisplayName = remediationrequest.FormatWorkflowDisplay(
-				ai.Status.SelectedWorkflow.ActionType, workflowName)
-			rr.Status.Confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
+			rr.Status.WorkflowDisplayName = workflowDisplayName2
+			rr.Status.Confidence = confidence2
 		}
 		// Issue #387: Capture LLM-identified remediation target for operational triage (kubectl -o wide)
 		if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
@@ -2831,9 +2844,12 @@ func (r *Reconciler) emitTimeoutAudit(ctx context.Context, rr *remediationv1.Rem
 // listing RemediationWorkflow CRDs. Returns the UUID unchanged if no match is
 // found (graceful degradation — the display is still usable, just not ideal).
 // Issue #643: workflowDisplayName should show the human-readable CRD name.
+// Uses apiReader (direct API call) instead of r.client (cached) because
+// RemediationWorkflow is not in the controller's watch list — a cached List
+// would trigger an on-demand informer sync that blocks the reconcile loop.
 func (r *Reconciler) resolveWorkflowName(ctx context.Context, workflowID string) string {
 	var rwList remediationworkflowv1.RemediationWorkflowList
-	if err := r.client.List(ctx, &rwList); err != nil {
+	if err := r.apiReader.List(ctx, &rwList); err != nil {
 		log.FromContext(ctx).V(1).Info("Failed to list RemediationWorkflows for display name resolution", "error", err)
 		return workflowID
 	}
