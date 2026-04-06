@@ -227,7 +227,7 @@ SELECT
     event_data->>'confidence' AS confidence
 FROM audit_events
 WHERE correlation_id = 'rr-production-cpu-spike-2026-02-03'
-  AND (event_category = 'webhook' OR event_category = 'orchestration')
+  AND (event_category = 'approval' OR event_category = 'orchestration')
   AND (event_type LIKE '%approval%')
 ORDER BY event_timestamp;
 

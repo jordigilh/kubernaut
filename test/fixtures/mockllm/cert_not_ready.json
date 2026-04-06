@@ -1,0 +1,94 @@
+{
+  "legacy_turn1": {
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "index": 0,
+          "message": {
+            "content": null,
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"query\": \"CertManagerCertNotReady critical\", \"rca_resource\": {\"signal_name\": \"CertManagerCertNotReady\", \"kind\": \"Certificate\", \"namespace\": \"default\", \"name\": \"demo-app-cert\"}}",
+                  "name": "search_workflow_catalog"
+                },
+                "id": "call_f86f72f1b394",
+                "type": "function"
+              }
+            ]
+          }
+        }
+      ],
+      "created": 1701388800,
+      "id": "chatcmpl-f4a89746",
+      "model": "mock-model",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 50,
+        "prompt_tokens": 500,
+        "total_tokens": 550
+      }
+    },
+    "status_code": 200
+  },
+  "text_only": {
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\ncert-manager Certificate stuck in NotReady state due to missing or corrupted CA Secret backing the ClusterIssuer\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"cert-manager Certificate stuck in NotReady state due to missing or corrupted CA Secret backing the ClusterIssuer\",\n    \"severity\": \"critical\",\n    \"contributing_factors\": [\"traffic_spike\", \"resource_limits\"]\n  },\n  \"selected_workflow\": {\n    \"workflow_id\": \"21053597-2865-572b-89bf-de49b5b685da\",\n    \"version\": \"1.0.0\",\n    \"confidence\": 0.92,\n    \"rationale\": \"Selected based on signal analysis\",\n    \"execution_engine\": \"job\"\n  }\n}\n```\n",
+            "role": "assistant"
+          }
+        }
+      ],
+      "created": 1701388800,
+      "id": "chatcmpl-44a23e59",
+      "model": "mock-model",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 50,
+        "prompt_tokens": 100,
+        "total_tokens": 150
+      }
+    },
+    "status_code": 200
+  },
+  "three_step_turn1": {
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "index": 0,
+          "message": {
+            "content": null,
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"limit\": 100}",
+                  "name": "list_available_actions"
+                },
+                "id": "call_cb7578d2c87f",
+                "type": "function"
+              }
+            ]
+          }
+        }
+      ],
+      "created": 1701388800,
+      "id": "chatcmpl-73772018",
+      "model": "mock-model",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 50,
+        "prompt_tokens": 500,
+        "total_tokens": 550
+      }
+    },
+    "status_code": 200
+  }
+}

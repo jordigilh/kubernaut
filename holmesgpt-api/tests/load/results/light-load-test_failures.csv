@@ -1,3 +1,0 @@
-Method,Name,Error,Occurrences
-POST,/api/v1/recovery,CatchResponseError('Unexpected status code: 404'),49
-POST,/api/v1/postexec,CatchResponseError('Unexpected status code: 404'),15

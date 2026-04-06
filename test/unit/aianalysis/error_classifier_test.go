@@ -27,7 +27,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
-	hgptclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // ========================================
@@ -75,7 +75,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 401 as Authentication Error", func() {
 			// Arrange
-			apiErr := &hgptclient.APIError{
+			apiErr := &agentclient.APIError{
 				StatusCode: 401,
 				Message:    "Unauthorized",
 			}
@@ -101,7 +101,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 403 as Authorization Error", func() {
 			// Arrange
-			apiErr := &hgptclient.APIError{
+			apiErr := &agentclient.APIError{
 				StatusCode: 403,
 				Message:    "Forbidden",
 			}
@@ -124,7 +124,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 404 as Configuration Error", func() {
 			// Arrange
-			apiErr := &hgptclient.APIError{
+			apiErr := &agentclient.APIError{
 				StatusCode: 404,
 				Message:    "Endpoint not found",
 			}
@@ -147,7 +147,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 429 as Rate Limit Error", func() {
 			// Arrange
-			apiErr := &hgptclient.APIError{
+			apiErr := &agentclient.APIError{
 				StatusCode: 429,
 				Message:    "Too many requests",
 			}
@@ -172,7 +172,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 500 as Transient Error", func() {
 			// Arrange
-			apiErr := &hgptclient.APIError{
+			apiErr := &agentclient.APIError{
 				StatusCode: 500,
 				Message:    "Internal server error",
 			}
@@ -197,7 +197,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 502 as Transient Error", func() {
 			// Arrange
-			apiErr := &hgptclient.APIError{
+			apiErr := &agentclient.APIError{
 				StatusCode: 502,
 				Message:    "Bad gateway",
 			}
@@ -217,7 +217,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 503 as Transient Error", func() {
 			// Arrange
-			apiErr := &hgptclient.APIError{
+			apiErr := &agentclient.APIError{
 				StatusCode: 503,
 				Message:    "Service unavailable",
 			}
@@ -237,7 +237,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 504 as Transient Error", func() {
 			// Arrange
-			apiErr := &hgptclient.APIError{
+			apiErr := &agentclient.APIError{
 				StatusCode: 504,
 				Message:    "Gateway timeout",
 			}
@@ -257,7 +257,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 400 as Permanent Error", func() {
 			// Arrange
-			apiErr := &hgptclient.APIError{
+			apiErr := &agentclient.APIError{
 				StatusCode: 400,
 				Message:    "Bad request - invalid parameter",
 			}
@@ -280,7 +280,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 422 as Permanent Error", func() {
 			// Arrange
-			apiErr := &hgptclient.APIError{
+			apiErr := &agentclient.APIError{
 				StatusCode: 422,
 				Message:    "Validation failed",
 			}
@@ -300,7 +300,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify unknown HTTP status codes as Transient with alert", func() {
 			// Arrange
-			apiErr := &hgptclient.APIError{
+			apiErr := &agentclient.APIError{
 				StatusCode: 418,
 				Message:    "I'm a teapot",
 			}

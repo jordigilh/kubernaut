@@ -39,7 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	client "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func() {
@@ -133,14 +133,14 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		analysis = createAnalysisForPostRCA()
 
 		// AND: A successful HAPI incident response WITHOUT detected_labels
-		hapiResp := &client.IncidentResponse{
+		hapiResp := &agentclient.IncidentResponse{
 			IncidentID:       "test-no-labels-001",
 			Analysis:         "Test analysis",
-			NeedsHumanReview: client.NewOptBool(false),
+			NeedsHumanReview: agentclient.NewOptBool(false),
 			Confidence:       0.85,
 			Timestamp:        "2026-02-17T12:00:00Z",
-			SelectedWorkflow: client.OptNilIncidentResponseSelectedWorkflow{
-				Value: client.IncidentResponseSelectedWorkflow{
+			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
+				Value: agentclient.IncidentResponseSelectedWorkflow{
 					"workflow_id":      jx.Raw(`"restart-pod-v1"`),
 					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/restart-pod:v1.0"`),
 					"confidence":       jx.Raw(`0.85`),
@@ -240,21 +240,21 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 
 		// AND: A HAPI incident response with detected_labels Set but Value is nil/invalid
 		// (simulates API returning non-object e.g. string "not_a_dict" - client would pass nil)
-		hapiResp := &client.IncidentResponse{
+		hapiResp := &agentclient.IncidentResponse{
 			IncidentID:       "test-malformed-labels-001",
 			Analysis:         "Test analysis",
-			NeedsHumanReview: client.NewOptBool(false),
+			NeedsHumanReview: agentclient.NewOptBool(false),
 			Confidence:       0.85,
 			Timestamp:        "2026-02-17T12:00:00Z",
-			SelectedWorkflow: client.OptNilIncidentResponseSelectedWorkflow{
-				Value: client.IncidentResponseSelectedWorkflow{
+			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
+				Value: agentclient.IncidentResponseSelectedWorkflow{
 					"workflow_id":      jx.Raw(`"restart-pod-v1"`),
 					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/restart-pod:v1.0"`),
 					"confidence":       jx.Raw(`0.85`),
 				},
 				Set: true,
 			},
-			DetectedLabels: client.OptNilIncidentResponseDetectedLabels{
+			DetectedLabels: agentclient.OptNilIncidentResponseDetectedLabels{
 				Value: nil, // malformed - not a valid map (e.g. API returned string)
 				Set:   true,
 				Null:  false,
@@ -291,23 +291,23 @@ func createAnalysisForPostRCA() *aianalysisv1.AIAnalysis {
 	}
 }
 
-func buildIncidentResponseWithDetectedLabels(labels map[string]jx.Raw) *client.IncidentResponse {
-	return &client.IncidentResponse{
+func buildIncidentResponseWithDetectedLabels(labels map[string]jx.Raw) *agentclient.IncidentResponse {
+	return &agentclient.IncidentResponse{
 		IncidentID:       "test-with-labels-001",
 		Analysis:         "Root cause: memory pressure",
-		NeedsHumanReview: client.NewOptBool(false),
+		NeedsHumanReview: agentclient.NewOptBool(false),
 		Confidence:       0.90,
 		Timestamp:        "2026-02-17T12:00:00Z",
-		SelectedWorkflow: client.OptNilIncidentResponseSelectedWorkflow{
-			Value: client.IncidentResponseSelectedWorkflow{
+		SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
+			Value: agentclient.IncidentResponseSelectedWorkflow{
 				"workflow_id":      jx.Raw(`"restart-pod-v1"`),
 				"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/restart-pod:v1.0"`),
 				"confidence":       jx.Raw(`0.90`),
 			},
 			Set: true,
 		},
-		DetectedLabels: client.NewOptNilIncidentResponseDetectedLabels(
-			client.IncidentResponseDetectedLabels(labels),
+		DetectedLabels: agentclient.NewOptNilIncidentResponseDetectedLabels(
+			agentclient.IncidentResponseDetectedLabels(labels),
 		),
 	}
 }

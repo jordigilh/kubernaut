@@ -1,0 +1,45 @@
+{{- /*
+Cluster Context Section Template
+
+Ported from: holmesgpt-api/src/extensions/incident/prompt_builder.py (build_cluster_context_section)
+Design Decisions: DD-HAPI-001, DD-WORKFLOW-001 v2.1, DD-WORKFLOW-001 v2.2
+
+Converts DetectedLabels into natural language for LLM context.
+Fields in failedDetections are EXCLUDED (DD-WORKFLOW-001 v2.1).
+
+Data fields (all booleans reflect "detected AND not in failedDetections"):
+  .GitOpsManaged  bool
+  .GitOpsTool     string   - e.g., "ArgoCD", "Flux"; empty if unknown
+  .PDBProtected   bool
+  .HPAEnabled     bool
+  .Stateful       bool
+  .HelmManaged    bool
+  .NetworkIsolated bool
+  .ServiceMesh    string   - e.g., "Istio"; empty if none detected
+  .HasAny         bool     - True if at least one section is non-empty
+*/ -}}
+{{- if not .HasAny -}}
+No special cluster characteristics detected.
+{{- else -}}
+{{- if .GitOpsManaged }}
+This namespace is managed by GitOps ({{ if .GitOpsTool }}{{ .GitOpsTool }}{{ else }}unknown{{ end }}). DO NOT make direct changes - recommend GitOps-aware workflows.
+{{- end }}
+{{- if .PDBProtected }}
+A PodDisruptionBudget protects this workload. Workflows must respect PDB constraints.
+{{- end }}
+{{- if .HPAEnabled }}
+HorizontalPodAutoscaler is active. Manual scaling may conflict with HPA - prefer HPA-aware workflows.
+{{- end }}
+{{- if .Stateful }}
+This is a STATEFUL workload (StatefulSet or has PVCs). Use stateful-aware remediation workflows.
+{{- end }}
+{{- if .HelmManaged }}
+This resource is managed by Helm. Consider Helm-compatible workflows.
+{{- end }}
+{{- if .NetworkIsolated }}
+NetworkPolicy restricts traffic in this namespace. Workflows may need network exceptions.
+{{- end }}
+{{- if .ServiceMesh }}
+Service mesh ({{ .ServiceMesh }}) is present. Consider service mesh-aware workflows.
+{{- end }}
+{{- end -}}

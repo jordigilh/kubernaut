@@ -1,0 +1,32 @@
+{
+  "legacy_turn1": {
+    "body": {
+      "error": {
+        "code": "internal_error",
+        "message": "Mock permanent LLM error for testing",
+        "type": "server_error"
+      }
+    },
+    "status_code": 500
+  },
+  "text_only": {
+    "body": {
+      "error": {
+        "code": "internal_error",
+        "message": "Mock permanent LLM error for testing",
+        "type": "server_error"
+      }
+    },
+    "status_code": 500
+  },
+  "three_step_turn1": {
+    "body": {
+      "error": {
+        "code": "internal_error",
+        "message": "Mock permanent LLM error for testing",
+        "type": "server_error"
+      }
+    },
+    "status_code": 500
+  }
+}

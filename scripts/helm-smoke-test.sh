@@ -395,9 +395,9 @@ tls_flags() {
 production_secret_flags() {
   echo "--set postgresql.auth.existingSecret=kubernaut-pg-credentials"
   echo "--set valkey.existingSecret=kubernaut-valkey-credentials"
-  echo "--set holmesgptApi.llm.provider=openai"
-  echo "--set holmesgptApi.llm.model=gpt-4o"
-  echo "--set holmesgptApi.llm.credentialsSecretName=kubernaut-llm-credentials"
+  echo "--set kubernautAgent.llm.provider=openai"
+  echo "--set kubernautAgent.llm.model=gpt-4o"
+  echo "--set kubernautAgent.llm.credentialsSecretName=kubernaut-llm-credentials"
   echo "--set gateway.auth.signalSources[0].name=alertmanager"
   echo "--set gateway.auth.signalSources[0].serviceAccount=alertmanager-kube-prometheus-stack-alertmanager"
   echo "--set gateway.auth.signalSources[0].namespace=monitoring"
@@ -549,8 +549,8 @@ run_verify_001() {
 
 run_verify_002() {
   assert_port_forward_responds \
-    "holmesgpt-api" 8080 "/health" \
-    "ST-CHART-VERIFY-002: HolmesGPT API health endpoint"
+    "kubernaut-agent" 8080 "/health" \
+    "ST-CHART-VERIFY-002: Kubernaut Agent health endpoint"
 }
 
 run_verify_003() {
@@ -915,8 +915,8 @@ template_common_args() {
 }
 
 template_llm_args() {
-  echo "--set" "holmesgptApi.llm.provider=openai"
-  echo "--set" "holmesgptApi.llm.model=gpt-4"
+  echo "--set" "kubernautAgent.llm.provider=openai"
+  echo "--set" "kubernautAgent.llm.model=gpt-4"
 }
 
 run_template_tests() {
@@ -935,7 +935,7 @@ run_template_tests() {
 
   echo "# --- Template Tests: Issue #390 ConfigMap Split ---"
   local tpl_flag="-s"
-  local tpl_path="templates/holmesgpt-api/holmesgpt-api.yaml"
+  local tpl_path="templates/kubernaut-agent/kubernaut-agent.yaml"
   local output
   local tier2_file
   tier2_file=$(mktemp)
@@ -956,9 +956,9 @@ SDKEOF
   # IT-HAPI-390-001: Two ConfigMaps rendered
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) $(template_llm_args) 2>&1)
-  if echo "$output" | grep -q "name: holmesgpt-api-config" && \
-     echo "$output" | grep -q "name: holmesgpt-sdk-config"; then
-    tap_ok "IT-HAPI-390-001: helm template renders both holmesgpt-api-config and holmesgpt-sdk-config"
+  if echo "$output" | grep -q "name: kubernaut-agent-config" && \
+     echo "$output" | grep -q "name: kubernaut-agent-sdk-config"; then
+    tap_ok "IT-HAPI-390-001: helm template renders both kubernaut-agent-config and kubernaut-agent-sdk-config"
   else
     tap_not_ok "IT-HAPI-390-001: helm template renders both ConfigMaps" "Missing one or both ConfigMaps in output"
   fi
@@ -966,27 +966,27 @@ SDKEOF
   # IT-HAPI-390-002: existingSdkConfigMap skips SDK template
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) $(template_llm_args) \
-    --set holmesgptApi.existingSdkConfigMap=my-custom 2>&1)
-  if ! echo "$output" | grep -q "name: holmesgpt-sdk-config" && \
+    --set kubernautAgent.existingSdkConfigMap=my-custom 2>&1)
+  if ! echo "$output" | grep -q "name: kubernaut-agent-sdk-config" && \
      echo "$output" | grep -q 'name: my-custom'; then
     tap_ok "IT-HAPI-390-002: existingSdkConfigMap skips SDK ConfigMap, references user ConfigMap"
   else
-    tap_not_ok "IT-HAPI-390-002: existingSdkConfigMap skips SDK template" "holmesgpt-sdk-config still rendered or user ConfigMap not referenced"
+    tap_not_ok "IT-HAPI-390-002: existingSdkConfigMap skips SDK template" "kubernaut-agent-sdk-config still rendered or user ConfigMap not referenced"
   fi
 
   # IT-HAPI-390-003: Deployment has sdk-config volume mount
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) $(template_llm_args) 2>&1)
-  if echo "$output" | grep -q "mountPath: /etc/holmesgpt/sdk" && \
+  if echo "$output" | grep -q "mountPath: /etc/kubernaut-agent/sdk" && \
      echo "$output" | grep -q "name: sdk-config"; then
-    tap_ok "IT-HAPI-390-003: Deployment has sdk-config volume and /etc/holmesgpt/sdk mount"
+    tap_ok "IT-HAPI-390-003: Deployment has sdk-config volume and /etc/kubernaut-agent/sdk mount"
   else
     tap_not_ok "IT-HAPI-390-003: Deployment sdk-config volume mount" "Missing sdk-config volume or mount"
   fi
 
   # IT-HAPI-390-004: helm lint passes
   if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) >/dev/null 2>&1 && \
-     helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) --set holmesgptApi.existingSdkConfigMap=my-custom >/dev/null 2>&1; then
+     helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) --set kubernautAgent.existingSdkConfigMap=my-custom >/dev/null 2>&1; then
     tap_ok "IT-HAPI-390-004: helm lint passes for default and existingSdkConfigMap modes"
   else
     tap_not_ok "IT-HAPI-390-004: helm lint" "One or more lint modes failed"
@@ -1008,7 +1008,7 @@ SDKEOF
   # Tier 2: sdkConfigContent renders verbatim via --set-file
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) \
-    --set-file "holmesgptApi.sdkConfigContent=$tier2_file" 2>&1)
+    --set-file "kubernautAgent.sdkConfigContent=$tier2_file" 2>&1)
   if echo "$output" | grep -q "provider: anthropic" && \
      echo "$output" | grep -q "model: claude-4"; then
     tap_ok "ST-SDK-TIER2-001: sdkConfigContent renders user content verbatim via --set-file"
@@ -1026,9 +1026,9 @@ SDKEOF
   # Tier 3 wins over Tier 2: existingSdkConfigMap takes priority
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) \
-    --set-file "holmesgptApi.sdkConfigContent=$tier2_file" \
-    --set holmesgptApi.existingSdkConfigMap=external-cm 2>&1)
-  if ! echo "$output" | grep -q "name: holmesgpt-sdk-config" && \
+    --set-file "kubernautAgent.sdkConfigContent=$tier2_file" \
+    --set kubernautAgent.existingSdkConfigMap=external-cm 2>&1)
+  if ! echo "$output" | grep -q "name: kubernaut-agent-sdk-config" && \
      echo "$output" | grep -q "name: external-cm"; then
     tap_ok "ST-SDK-TIER3-001: existingSdkConfigMap takes priority over sdkConfigContent"
   else

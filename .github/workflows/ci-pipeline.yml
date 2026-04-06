@@ -2,14 +2,14 @@ name: CI Pipeline
 
 # 4-Stage CI Pipeline with Registry-Aware Image Reuse
 #
-# Stage 1: Lint & Unit Tests (parallel: 2 lint + 10 unit test jobs) ~1-2 min
-# Stage 2: Build & Push Images (parallel matrix: 10 images) ~5 min
-# Stage 3: Integration Tests (parallel matrix: 9 services) ~15 min
-# Stage 4: E2E Tests (parallel jobs: 8 services, when enabled) ~30 min each
+# Stage 1: Lint & Unit Tests (parallel: 1 lint + 10 unit test jobs) ~1-2 min
+# Stage 2: Build & Push Images (parallel matrix: 12 images) ~5 min
+# Stage 3: Integration Tests (parallel matrix: 10 services) ~15 min
+# Stage 4: E2E Tests (parallel jobs: 10 services, when enabled) ~30 min each
 #
 # CI/CD Optimization (Registry-Aware):
 #   - All images pushed to ghcr.io after unit tests pass
-#   - Integration tests pull dependency images (DataStorage, HAPI, Mock LLM) from registry
+#   - Integration tests pull dependency images (DataStorage, KA, Mock LLM) from registry
 #   - E2E tests pull service images from registry
 #   - Automatic fallback to local build if registry pull fails
 #   - Saves ~60% disk space and ~30% build time in CI
@@ -24,7 +24,7 @@ name: CI Pipeline
 #   - Push to main → always runs (full validation)
 #
 # Optimization Strategy:
-#   - Parallel lint jobs (Go + Python)
+#   - Go lint job
 #   - No redundant builds (code compiled once in Stage 2 image builds)
 #   - Sequential stages ensure images ready before tests
 #   - Matrix parallelization for homogeneous jobs (unit, build, integration)
@@ -72,7 +72,6 @@ jobs:
           filters: |
             code:
               - '**.go'
-              - '**.py'
               - 'go.mod'
               - 'go.sum'
               - 'test/**'
@@ -82,7 +81,6 @@ jobs:
               - 'api/**'
               - 'migrations/**'
               - 'Makefile'
-              - 'holmesgpt-api/**'
               - '.github/workflows/**'
               - 'docker/**'
               - 'charts/**'
@@ -91,7 +89,7 @@ jobs:
 
   # ========================================
   # STAGE 1: LINT & UNIT TESTS (ALL PARALLEL)
-  # 11 parallel jobs (2 lint + 9 unit tests) ~2 min total
+  # 11 parallel jobs (1 lint + 10 unit tests) ~2 min total
   # Note: Code compilation happens in Stage 2 (image builds)
   # Skipped for docs-only PRs (detect-changes.code_changed == false)
   # ========================================
@@ -128,28 +126,6 @@ jobs:
           only-new-issues: true
         continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
-  lint-python:
-    name: Lint (Python Services)
-    needs: [detect-changes]
-    if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-        with:
-          submodules: true
-
-      - name: Lint Python code (HAPI)
-        uses: astral-sh/ruff-action@v3
-        with:
-          version: "0.8.4"
-          args: "check"
-          src: "holmesgpt-api/src/ holmesgpt-api/tests/"
-        continue-on-error: true  # Don't block CI for lint warnings in V1.0
-
   unit-tests:
     name: Unit Tests (${{ matrix.service }})
     needs: [detect-changes]
@@ -165,11 +141,11 @@ jobs:
           - datastorage
           - effectivenessmonitor
           - gateway
+          - kubernautagent
           - notification
           - remediationorchestrator
           - signalprocessing
           - workflowexecution
-          - holmesgpt-api
           - shared-packages  # pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared
     steps:
       - name: Checkout code
@@ -178,36 +154,12 @@ jobs:
           submodules: true
 
       - name: Set up Go
-        if: matrix.service != 'holmesgpt-api'
         uses: actions/setup-go@v6
         with:
           go-version: '1.25'
           cache: true
 
-      - name: Set up Python
-        if: matrix.service == 'holmesgpt-api'
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: 'holmesgpt-api/requirements*.txt'
-
-      - name: Install Python dependencies
-        if: matrix.service == 'holmesgpt-api'
-        working-directory: holmesgpt-api
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-test.txt
-
-      - name: Install Podman (for holmesgpt-api unit tests)
-        if: matrix.service == 'holmesgpt-api'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-
       - name: Generate Go code
-        if: matrix.service != 'holmesgpt-api'
         run: |
           echo "🔄 Generating Go code for tests..."
           export PATH="${{ github.workspace }}/bin:$PATH"
@@ -222,42 +174,19 @@ jobs:
       - name: Calculate and save coverage
         if: always()
         run: |
-          # Create coverage summary file for this service
           mkdir -p coverage-reports
-          
-          # Extract coverage percentage from coverage file
-          if [ "${{ matrix.service }}" = "holmesgpt-api" ]; then
-            # Python coverage from pytest output
-            if [ -f coverage_unit_holmesgpt-api.txt ]; then
-              COVERAGE=$(grep "TOTAL" coverage_unit_holmesgpt-api.txt | awk '{print $NF}' | tr -d '%')
-              # Validate COVERAGE is not empty before writing
-              if [ -z "$COVERAGE" ]; then
-                echo "${{ matrix.service }},N/A" > coverage-reports/unit-${{ matrix.service }}.txt
-                echo "⚠️  No coverage data found for ${{ matrix.service }} (file exists but TOTAL line missing or malformed)"
-              else
-                echo "${{ matrix.service }},${COVERAGE}%" > coverage-reports/unit-${{ matrix.service }}.txt
-                echo "📊 Unit Coverage for ${{ matrix.service }}: ${COVERAGE}%"
-              fi
-            else
+          if [ -f coverage_unit_${{ matrix.service }}.out ]; then
+            COVERAGE=$(go tool cover -func=coverage_unit_${{ matrix.service }}.out | grep total | awk '{print $3}')
+            if [ -z "$COVERAGE" ]; then
               echo "${{ matrix.service }},N/A" > coverage-reports/unit-${{ matrix.service }}.txt
-              echo "ℹ️  Coverage file not found for ${{ matrix.service }}"
+              echo "⚠️  No coverage data found for ${{ matrix.service }} (coverage file exists but parsing failed)"
+            else
+              echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/unit-${{ matrix.service }}.txt
+              echo "📊 Unit Coverage for ${{ matrix.service }}: ${COVERAGE}"
             fi
           else
-            # Go coverage
-            if [ -f coverage_unit_${{ matrix.service }}.out ]; then
-              COVERAGE=$(go tool cover -func=coverage_unit_${{ matrix.service }}.out | grep total | awk '{print $3}')
-              # Validate COVERAGE is not empty before writing
-              if [ -z "$COVERAGE" ]; then
-                echo "${{ matrix.service }},N/A" > coverage-reports/unit-${{ matrix.service }}.txt
-                echo "⚠️  No coverage data found for ${{ matrix.service }} (coverage file exists but parsing failed)"
-              else
-                echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/unit-${{ matrix.service }}.txt
-                echo "📊 Unit Coverage for ${{ matrix.service }}: ${COVERAGE}"
-              fi
-            else
-              echo "${{ matrix.service }},N/A" > coverage-reports/unit-${{ matrix.service }}.txt
-              echo "ℹ️  Coverage file not found for ${{ matrix.service }}"
-            fi
+            echo "${{ matrix.service }},N/A" > coverage-reports/unit-${{ matrix.service }}.txt
+            echo "ℹ️  Coverage file not found for ${{ matrix.service }}"
           fi
       
       - name: Upload coverage report
@@ -278,83 +207,6 @@ jobs:
             coverage_unit_${{ matrix.service }}.txt
           retention-days: 1
           if-no-files-found: ignore
-
-  # unit-tests-disabled:
-  #   name: Unit Tests (${{ matrix.service }})
-  #   runs-on: ubuntu-latest
-  #   timeout-minutes: 5
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       service:
-  #         - aianalysis
-  #         - authwebhook
-  #         - datastorage
-  #         - gateway
-  #         - notification
-  #         - remediationorchestrator
-  #         - signalprocessing
-  #         - workflowexecution
-  #         - holmesgpt-api
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v5
-  #       with:
-  #         submodules: true
-  #
-  #     - name: Set up Go
-  #       if: matrix.service != 'holmesgpt-api'
-  #       uses: actions/setup-go@v6
-  #       with:
-  #         go-version: '1.25'
-  #         cache: true
-  #
-  #     - name: Set up Python
-  #       if: matrix.service == 'holmesgpt-api'
-  #       uses: actions/setup-python@v6
-  #       with:
-  #         python-version: '3.12'
-  #         cache: 'pip'
-  #         cache-dependency-path: 'holmesgpt-api/requirements*.txt'
-  #
-  #     - name: Install Python dependencies
-  #       if: matrix.service == 'holmesgpt-api'
-  #       working-directory: holmesgpt-api
-  #       run: |
-  #         pip install --upgrade pip
-  #         pip install -r requirements.txt
-  #         pip install -r requirements-test.txt
-  #
-  #     - name: Generate Go code
-  #       if: matrix.service != 'holmesgpt-api'
-  #       run: |
-  #         echo "🔄 Generating Go code for tests..."
-  #         export PATH="${{ github.workspace }}/bin:$PATH"
-  #         make generate
-  #
-  #     - name: Run unit tests (Go)
-  #       if: matrix.service != 'holmesgpt-api'
-  #       run: |
-  #         echo "🧪 Running unit tests for ${{ matrix.service }}..."
-  #         export PATH="${{ github.workspace }}/bin:$PATH"
-  #         make test-unit-${{ matrix.service }}
-  #
-  #     - name: Run unit tests (Python)
-  #       if: matrix.service == 'holmesgpt-api'
-  #       run: |
-  #         echo "🧪 Running HolmesGPT API unit tests..."
-  #         make test-unit-holmesgpt-api
-  #
-  #
-  #     - name: Upload coverage
-  #       if: always()
-  #       uses: actions/upload-artifact@v6
-  #       with:
-  #         name: unit-test-coverage-${{ matrix.service }}
-  #         path: |
-  #           coverage.out
-  #           holmesgpt-api/htmlcov/
-  #         retention-days: 7
 
   # ========================================
   # STAGE 2: BUILD & PUSH IMAGES (ghcr.io)
@@ -407,19 +259,19 @@ jobs:
           - service: effectivenessmonitor
             dockerfile: docker/effectivenessmonitor-controller.Dockerfile
             image_name: effectivenessmonitor  # Operator SDK convention: image name without -controller suffix
-          # Python Services (1)
-          - service: holmesgpt-api
-            dockerfile: holmesgpt-api/Dockerfile.e2e
-            image_name: holmesgpt-api
+          # Kubernaut Agent (Go, replaces Python HAPI)
+          - service: kubernautagent
+            dockerfile: docker/kubernautagent.Dockerfile
+            image_name: kubernautagent
           # Infrastructure (1)
           - service: db-migrate
             dockerfile: docker/db-migrate.Dockerfile
             image_name: db-migrate
           # Test Fixtures (1)
           - service: mock-llm
-            dockerfile: test/services/mock-llm/Dockerfile
+            dockerfile: test/services/mock-llm/go.Dockerfile
             image_name: mock-llm
-            context: test/services/mock-llm
+            context: .
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -465,18 +317,8 @@ jobs:
           echo "   Dockerfile: ${{ matrix.dockerfile }}"
           echo "   Context: ${CONTEXT}"
           
-          # Go service images are built with coverage instrumentation (GOFLAGS=-cover)
-          # so E2E tests can collect real service coverage via GOCOVERDIR.
-          # Python (holmesgpt-api) and test fixtures (mock-llm) don't use GOFLAGS.
-          COVERAGE_ARG=""
-          case "${{ matrix.service }}" in
-            holmesgpt-api|mock-llm) ;;
-            *) COVERAGE_ARG="--build-arg GOFLAGS=-cover"
-               echo "   📊 Coverage instrumentation: enabled (GOFLAGS=-cover)" ;;
-          esac
-          
           docker build \
-            $COVERAGE_ARG \
+            --build-arg GOFLAGS=-cover \
             -t ${IMAGE_NAME}:${IMAGE_TAG} \
             -f ${{ matrix.dockerfile }} \
             ${CONTEXT}
@@ -489,13 +331,10 @@ jobs:
   # ========================================
   # STAGE 3: INTEGRATION TESTS
   # Waits for BOTH unit-tests AND build-and-push-images to complete
-  # Matrix strategy: 9 services (all use same pattern: envtest + Podman)
-  #   - 7 Go services: signalprocessing, aianalysis, workflowexecution,
-  #     remediationorchestrator, notification, gateway, datastorage
-  #   - 1 Go+Python hybrid: holmesgpt-api (Go infrastructure, Python tests)
+  # Matrix strategy: 10 services (all Go, same pattern: envtest + Podman)
   # 
   # CI/CD Optimization:
-  #   - Pulls dependency images from ghcr.io (DataStorage, HAPI, Mock LLM)
+  #   - Pulls dependency images from ghcr.io (DataStorage, KA, Mock LLM)
   #   - Fallback to local build if registry pull fails
   #   - Saves ~60% disk space and ~30% build time
   #
@@ -519,7 +358,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, holmesgpt-api]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -548,13 +387,13 @@ jobs:
           - service: effectivenessmonitor
             service_name: "Effectiveness Monitor"
             timeout: 15
-          - service: holmesgpt-api
-            service_name: "HolmesGPT API"
-            timeout: 10
+          - service: kubernautagent
+            service_name: "Kubernaut Agent"
+            timeout: 15
     steps:
       - uses: actions/checkout@v5
         with:
-          submodules: true  # CRITICAL: holmesgpt is a submodule required for HAPI builds
+          submodules: true
       - uses: actions/setup-go@v6
         with:
           go-version: '1.25'
@@ -586,42 +425,18 @@ jobs:
         if: always()
         run: |
           mkdir -p coverage-reports
-          
-          if [ "${{ matrix.service }}" = "holmesgpt-api" ]; then
-            # HolmesGPT API: prefer Python integration coverage (from pytest in container)
-            if [ -f coverage_integration_holmesgpt-api_python.txt ]; then
-              COVERAGE=$(grep "TOTAL" coverage_integration_holmesgpt-api_python.txt | awk '{print $NF}' | tr -d '%')
-              if [ -z "$COVERAGE" ]; then
-                echo "holmesgpt-api,N/A" > coverage-reports/integration-holmesgpt-api.txt
-                echo "⚠️  Python integration coverage file present but TOTAL line missing or malformed"
-              else
-                echo "holmesgpt-api,${COVERAGE}%" > coverage-reports/integration-holmesgpt-api.txt
-                echo "📊 Integration Coverage for holmesgpt-api (Python): ${COVERAGE}%"
-              fi
-            elif [ -f coverage_integration_holmesgpt-api.out ]; then
-              COVERAGE=$(go tool cover -func=coverage_integration_holmesgpt-api.out | grep total | awk '{print $3}')
-              [ -z "$COVERAGE" ] && COVERAGE="N/A"
-              echo "holmesgpt-api,${COVERAGE}" > coverage-reports/integration-holmesgpt-api.txt
-              echo "📊 Integration Coverage for holmesgpt-api (Go fallback): ${COVERAGE}"
+          if [ -f coverage_integration_${{ matrix.service }}.out ]; then
+            COVERAGE=$(go tool cover -func=coverage_integration_${{ matrix.service }}.out | grep total | awk '{print $3}')
+            if [ -z "$COVERAGE" ]; then
+              echo "${{ matrix.service }},N/A" > coverage-reports/integration-${{ matrix.service }}.txt
+              echo "⚠️  No integration coverage data found for ${{ matrix.service }} (parsing failed)"
             else
-              echo "holmesgpt-api,N/A" > coverage-reports/integration-holmesgpt-api.txt
-              echo "ℹ️  No integration coverage data found for holmesgpt-api"
+              echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/integration-${{ matrix.service }}.txt
+              echo "📊 Integration Coverage for ${{ matrix.service }}: ${COVERAGE}"
             fi
           else
-            # Go services: use Go coverage file
-            if [ -f coverage_integration_${{ matrix.service }}.out ]; then
-              COVERAGE=$(go tool cover -func=coverage_integration_${{ matrix.service }}.out | grep total | awk '{print $3}')
-              if [ -z "$COVERAGE" ]; then
-                echo "${{ matrix.service }},N/A" > coverage-reports/integration-${{ matrix.service }}.txt
-                echo "⚠️  No integration coverage data found for ${{ matrix.service }} (parsing failed)"
-              else
-                echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/integration-${{ matrix.service }}.txt
-                echo "📊 Integration Coverage for ${{ matrix.service }}: ${COVERAGE}"
-              fi
-            else
-              echo "${{ matrix.service }},N/A" > coverage-reports/integration-${{ matrix.service }}.txt
-              echo "ℹ️  No integration coverage data found for ${{ matrix.service }}"
-            fi
+            echo "${{ matrix.service }},N/A" > coverage-reports/integration-${{ matrix.service }}.txt
+            echo "ℹ️  No integration coverage data found for ${{ matrix.service }}"
           fi
       
       - name: Upload integration coverage report
@@ -637,9 +452,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: coverage-profile-integration-${{ matrix.service }}
-          path: |
-            coverage_integration_${{ matrix.service }}.out
-            coverage_integration_${{ matrix.service }}_python.txt
+          path: coverage_integration_${{ matrix.service }}.out
           retention-days: 1
           if-no-files-found: ignore
       
@@ -674,12 +487,13 @@ jobs:
         run: podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
   # ========================================
   # STAGE 4: E2E TESTS (PARALLEL)
-  # Matrix job, 9 services in parallel (~30 min each)
+  # Matrix job, 11 services in parallel (~30 min each)
   # 
   # Test Coverage:
-  #   - 8 Go services: signalprocessing, aianalysis, authwebhook, workflowexecution,
-  #     remediationorchestrator, notification, gateway, datastorage
-  #   - 1 Go+Python hybrid: holmesgpt-api (Go infrastructure, Python tests)
+  #   - 10 Go services: signalprocessing, aianalysis, authwebhook, workflowexecution,
+  #     remediationorchestrator, notification, gateway, datastorage,
+  #     effectivenessmonitor, kubernautagent
+  #   - 1 full pipeline E2E
   # 
   # Image Strategy:
   #   - E2E tests attempt registry pull first (fast path, ~30% time savings)
@@ -709,7 +523,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, holmesgpt-api, fullpipeline]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, fullpipeline]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -738,8 +552,8 @@ jobs:
           - service: effectivenessmonitor
             service_name: "Effectiveness Monitor"
             timeout: 40
-          - service: holmesgpt-api
-            service_name: "HolmesGPT API"
+          - service: kubernautagent
+            service_name: "Kubernaut Agent"
             timeout: 35
           - service: fullpipeline
             service_name: "Full Pipeline"
@@ -747,7 +561,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          submodules: true  # CRITICAL: holmesgpt is a submodule required for HAPI builds
+          submodules: true
       - uses: actions/setup-go@v6
         with:
           go-version: '1.25'
@@ -762,9 +576,6 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
       - name: Install Kind v0.30.0
         run: |
-          # Install Kind v0.30.0 (required by E2E test infrastructure)
-          # Authority: test/infrastructure/kind_cluster_helpers.go (version validation)
-          # Uses GitHub releases URL (kind.sigs.k8s.io/dl/ returns HTML, not binary)
           KIND_VERSION="v0.30.0"
           curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
           chmod +x ./kind
@@ -772,9 +583,6 @@ jobs:
           kind version
       - name: Install Tekton CLI (tkn)
         run: |
-          # Install tkn CLI (required by WorkflowExecution E2E tests for bundle creation)
-          # Authority: test/infrastructure/tekton_bundles.go
-          # v0.40.0+ required for --override flag support
           TKN_VERSION="0.40.0"
           TKN_TARBALL="tkn_${TKN_VERSION}_Linux_x86_64.tar.gz"
           TKN_URL="https://github.com/tektoncd/cli/releases/download/v${TKN_VERSION}/${TKN_TARBALL}"
@@ -787,20 +595,6 @@ jobs:
           chmod +x tkn
           sudo mv tkn /usr/local/bin/tkn
           tkn version
-      - name: Setup Python (for holmesgpt-api E2E)
-        if: matrix.service == 'holmesgpt-api'
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: 'holmesgpt-api/requirements*.txt'
-      - name: Install Python dependencies (for holmesgpt-api E2E)
-        if: matrix.service == 'holmesgpt-api'
-        working-directory: holmesgpt-api
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-test.txt
       - name: Disable AppArmor rsyslog profile (for AWX)
         if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline'
         run: |
@@ -818,40 +612,19 @@ jobs:
       - name: Calculate and save E2E coverage
         if: always()
         run: |
-          # Create coverage summary file for this service
           mkdir -p coverage-reports
-          
-          if [ "${{ matrix.service }}" = "holmesgpt-api" ]; then
-            # DD-TEST-007: HAPI uses Python coverage.py (not Go coverage)
-            if [ -f coverage_e2e_holmesgpt-api_python.txt ]; then
-              COVERAGE=$(grep "TOTAL" coverage_e2e_holmesgpt-api_python.txt | awk '{print $NF}' | tr -d '%')
-              if [ -z "$COVERAGE" ]; then
-                echo "holmesgpt-api,N/A" > coverage-reports/e2e-holmesgpt-api.txt
-                echo "⚠️  Python E2E coverage file present but TOTAL line missing"
-              else
-                echo "holmesgpt-api,${COVERAGE}%" > coverage-reports/e2e-holmesgpt-api.txt
-                echo "📊 E2E Coverage for holmesgpt-api (Python): ${COVERAGE}%"
-              fi
+          if [ -f coverage_e2e_${{ matrix.service }}.out ]; then
+            COVERAGE=$(go tool cover -func=coverage_e2e_${{ matrix.service }}.out | grep total | awk '{print $3}')
+            if [ -z "$COVERAGE" ]; then
+              echo "${{ matrix.service }},N/A" > coverage-reports/e2e-${{ matrix.service }}.txt
+              echo "⚠️  No E2E coverage data found for ${{ matrix.service }} (coverage file exists but parsing failed)"
             else
-              echo "holmesgpt-api,N/A" > coverage-reports/e2e-holmesgpt-api.txt
-              echo "ℹ️  No Python E2E coverage data found for holmesgpt-api"
+              echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/e2e-${{ matrix.service }}.txt
+              echo "📊 E2E Coverage for ${{ matrix.service }}: ${COVERAGE}"
             fi
           else
-            # Go services: use Go coverage file
-            if [ -f coverage_e2e_${{ matrix.service }}.out ]; then
-              COVERAGE=$(go tool cover -func=coverage_e2e_${{ matrix.service }}.out | grep total | awk '{print $3}')
-              # Validate COVERAGE is not empty before writing
-              if [ -z "$COVERAGE" ]; then
-                echo "${{ matrix.service }},N/A" > coverage-reports/e2e-${{ matrix.service }}.txt
-                echo "⚠️  No E2E coverage data found for ${{ matrix.service }} (coverage file exists but parsing failed)"
-              else
-                echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/e2e-${{ matrix.service }}.txt
-                echo "📊 E2E Coverage for ${{ matrix.service }}: ${COVERAGE}"
-              fi
-            else
-              echo "${{ matrix.service }},N/A" > coverage-reports/e2e-${{ matrix.service }}.txt
-              echo "ℹ️  No E2E coverage data found for ${{ matrix.service }}"
-            fi
+            echo "${{ matrix.service }},N/A" > coverage-reports/e2e-${{ matrix.service }}.txt
+            echo "ℹ️  No E2E coverage data found for ${{ matrix.service }}"
           fi
       
       - name: Upload E2E coverage report
@@ -867,9 +640,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: coverage-profile-e2e-${{ matrix.service }}
-          path: |
-            coverage_e2e_${{ matrix.service }}.out
-            coverage_e2e_${{ matrix.service }}_python.txt
+          path: coverage_e2e_${{ matrix.service }}.out
           retention-days: 1
           if-no-files-found: ignore
 
@@ -997,9 +768,9 @@ jobs:
             --set postgresql.auth.existingSecret=lint-placeholder \
             --set datastorage.dbExistingSecret=lint-placeholder \
             --set valkey.existingSecret=lint-placeholder \
-            --set holmesgptApi.llm.provider=openai \
-            --set holmesgptApi.llm.model=gpt-4o \
-            --set holmesgptApi.llm.credentialsSecretName=lint-placeholder
+            --set kubernautAgent.llm.provider=openai \
+            --set kubernautAgent.llm.model=gpt-4o \
+            --set kubernautAgent.llm.credentialsSecretName=lint-placeholder
           echo "PASS: values.schema.json is consistent with values.yaml"
 
       - name: Install Podman
@@ -1069,7 +840,7 @@ jobs:
   # ========================================
   summary:
     name: Test Suite Summary
-    needs: [detect-changes, lint-go, lint-python, integration-tests, e2e-tests, helm-smoke-test]
+    needs: [detect-changes, lint-go, integration-tests, e2e-tests, helm-smoke-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -1145,14 +916,6 @@ jobs:
                 if [ ! -s "$out_file" ]; then
                   echo "${coverage}" > "coverage_${tier}_${service}.pct"
                   echo "  📝 coverage_${tier}_${service}.pct = $coverage (fallback)"
-                  
-                  # For Python holmesgpt-api, also create TOTAL line files
-                  if [ "$service" = "holmesgpt-api" ] && [ "$tier" = "unit" ] && [ ! -s "coverage_unit_holmesgpt-api.txt" ]; then
-                    echo "TOTAL                                            3523   1396  ${coverage}" > "coverage_unit_holmesgpt-api.txt"
-                  fi
-                  if [ "$service" = "holmesgpt-api" ] && [ "$tier" = "integration" ] && [ ! -s "coverage_integration_holmesgpt-api_python.txt" ]; then
-                    echo "TOTAL                                            3523   1872  ${coverage}" > "coverage_integration_holmesgpt-api_python.txt"
-                  fi
                 else
                   echo "  ✅ $out_file exists ($(wc -l < "$out_file") lines), skip .pct"
                 fi
@@ -1217,20 +980,19 @@ jobs:
           echo "═══════════════════════════════════════════════════════════"
           echo ""
           echo "STAGE 1 - Lint & Unit Tests (All Parallel):"
-          echo "  Lint (Go):       ${{ needs.lint-go.result }}"
-          echo "  Lint (Python):   ${{ needs.lint-python.result }}"
-          echo "  Unit Tests (10): ${{ needs.unit-tests.result }}"
+          echo "  Lint (Go):        ${{ needs.lint-go.result }}"
+          echo "  Unit Tests (11):  ${{ needs.unit-tests.result }}"
           echo ""
           echo "STAGE 2 - Build & Push Images (Parallel Matrix):"
-          echo "  All Images (10 services): ${{ needs.build-and-push-images.result }}"
+          echo "  All Images (12 services): ${{ needs.build-and-push-images.result }}"
           echo "  Registry: ghcr.io (CI/CD ephemeral images, 14-day retention)"
           echo ""
           echo "STAGE 3 - Integration Tests (Parallel Matrix):"
-          echo "  All Services (9 services):  ${{ needs.integration-tests.result }}"
-          echo "  Image Strategy: Pull from ghcr.io (DataStorage, HAPI, Mock LLM)"
+          echo "  All Services (10 services): ${{ needs.integration-tests.result }}"
+          echo "  Image Strategy: Pull from ghcr.io (DataStorage, KA, Mock LLM)"
           echo ""
           echo "STAGE 4 - E2E Tests (Parallel Matrix):"
-          echo "  All Services (9 services):  ${{ needs.e2e-tests.result }}"
+          echo "  All Services (11 services): ${{ needs.e2e-tests.result }}"
           echo "  Image Strategy: Pull from ghcr.io (all service images)"
           echo ""
           echo "Helm Smoke Tests (parallel with Stage 3+4):"
@@ -1244,18 +1006,18 @@ jobs:
           echo "  ✅ Sequential stages ensure images ready before use"
           echo ""
           echo "Optimizations:"
-          echo "  ✅ Stage 1: All parallel (2 lint + 9 unit tests)"
+          echo "  ✅ Stage 1: All parallel (1 lint + 11 unit tests)"
           echo "  ✅ No redundant builds (code compiled once in image builds)"
-          echo "  ✅ Parallel image builds & push to ghcr.io (matrix: 10 images)"
+          echo "  ✅ Parallel image builds & push to ghcr.io (matrix: 12 images)"
           echo "  ✅ Integration tests reuse registry images (saves ~60% disk, ~30% time)"
-          echo "  ✅ Parallel integration tests (matrix: 9 services)"
+          echo "  ✅ Parallel integration tests (matrix: 10 services)"
           echo "  ✅ E2E tests reuse registry images (saves ~60% disk, ~30% time)"
-          echo "  ✅ Parallel E2E tests (matrix: 9 services)"
+          echo "  ✅ Parallel E2E tests (matrix: 11 services)"
           echo "  ✅ Automatic fallback to local build if registry pull fails"
           echo "═══════════════════════════════════════════════════════════"
 
           # Check for lint failure (non-blocking, but report)
-          if [ "${{ needs.lint-go.result }}" != "success" ] || [ "${{ needs.lint-python.result }}" != "success" ]; then
+          if [ "${{ needs.lint-go.result }}" != "success" ]; then
             echo ""
             echo "⚠️  Lint warnings detected (non-blocking in V1.0)"
           fi
@@ -1277,7 +1039,7 @@ jobs:
             echo "❌ Image builds failed - check individual service builds in the matrix"
             echo "   Services: datastorage, gateway, aianalysis, authwebhook, notification,"
             echo "             remediationorchestrator, signalprocessing, workflowexecution,"
-            echo "             holmesgpt-api, mock-llm"
+            echo "             kubernautagent, mock-llm"
             exit 1
           elif [ "${{ needs.build-and-push-images.result }}" == "cancelled" ]; then
             echo ""
@@ -1291,7 +1053,7 @@ jobs:
             echo "❌ Integration tests failed - check individual service logs in the matrix"
             echo "   Services tested: signalprocessing, aianalysis, workflowexecution,"
             echo "                    remediationorchestrator, gateway, datastorage,"
-            echo "                    notification, holmesgpt-api, authwebhook"
+            echo "                    notification, kubernautagent, authwebhook"
             exit 1
           elif [ "${{ needs.integration-tests.result }}" == "skipped" ]; then
             echo ""
@@ -1308,7 +1070,7 @@ jobs:
             echo "❌ E2E tests failed - check individual service logs in the matrix"
             echo "   Services tested: signalprocessing, aianalysis, workflowexecution,"
             echo "                    remediationorchestrator, gateway, datastorage,"
-            echo "                    notification, authwebhook, holmesgpt-api"
+            echo "                    notification, authwebhook, kubernautagent"
             exit 1
           elif [ "${{ needs.e2e-tests.result }}" == "skipped" ]; then
             echo ""
@@ -1356,7 +1118,7 @@ jobs:
   merge-gate:
     name: Merge Gate
     if: always()
-    needs: [detect-changes, lint-go, lint-python, unit-tests, build-and-push-images,
+    needs: [detect-changes, lint-go, unit-tests, build-and-push-images,
             integration-tests, e2e-tests, helm-smoke-test, summary]
     runs-on: ubuntu-latest
     steps:
@@ -1371,7 +1133,6 @@ jobs:
           echo "Job results:"
           echo "  detect-changes:       ${{ needs.detect-changes.result }}"
           echo "  lint-go:              ${{ needs.lint-go.result }}"
-          echo "  lint-python:          ${{ needs.lint-python.result }}"
           echo "  unit-tests:           ${{ needs.unit-tests.result }}"
           echo "  build-and-push:       ${{ needs.build-and-push-images.result }}"
           echo "  integration-tests:    ${{ needs.integration-tests.result }}"

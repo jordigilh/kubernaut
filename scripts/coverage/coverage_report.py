@@ -85,6 +85,16 @@ GO_SERVICE_CONFIG = {
         "unit_exclude": r"/(audit|status)/",
         "int_include": r"/(audit|status)/",
     },
+    "kubernautagent": {
+        "pkg_pattern": "/pkg/kubernautagent/",
+        # KA uses internal/kubernautagent/ (not internal/controller/).
+        # internal_pattern is treated like pkg_pattern for filtering
+        # (subject to exclude/include), unlike controller_pattern which
+        # is always included for integration tests.
+        "internal_pattern": "/internal/kubernautagent/",
+        "unit_exclude": r"/(enrichment/enricher\.go:|investigator/investigator\.go:|server/handler\.go:|session/manager\.go:|tools/k8s/tools\.go:|tools/prometheus/client\.go:|tools/mcp/provider\.go:|llm/client\.go:)",
+        "int_include": r"/(enrichment/enricher\.go:|investigator/investigator\.go:|server/handler\.go:|session/manager\.go:|tools/k8s/tools\.go:|tools/prometheus/client\.go:|tools/mcp/provider\.go:|llm/client\.go:)",
+    },
     "effectivenessmonitor": {
         "pkg_pattern": "/pkg/effectivenessmonitor/",
         "controller_pattern": "/internal/controller/effectivenessmonitor/",
@@ -96,7 +106,7 @@ GO_SERVICE_CONFIG = {
     },
 }
 
-# Python holmesgpt-api: module patterns for unit vs integration
+# Python kubernautagent: module patterns for unit vs integration
 PYTHON_UNIT_PATTERNS = [
     r"src/(models|validation|sanitization|toolsets|config)/",
     r"src/audit/buffered_store\.py",
@@ -186,12 +196,15 @@ def calculate_coverage(entries: list[CoverageEntry]) -> str:
 
 
 def _matches_service_pkg(
-    key: str, pkg_pattern: str, controller_pattern: Optional[str] = None
+    key: str, pkg_pattern: str, controller_pattern: Optional[str] = None,
+    internal_pattern: Optional[str] = None,
 ) -> bool:
-    """Check if a coverage entry key matches the service's package or controller patterns."""
+    """Check if a coverage entry key matches the service's package, controller, or internal patterns."""
     if pkg_pattern in key:
         return True
     if controller_pattern and controller_pattern in key:
+        return True
+    if internal_pattern and internal_pattern in key:
         return True
     return False
 
@@ -200,17 +213,24 @@ def filter_go_entries(
     entries: list[CoverageEntry],
     pkg_pattern: str,
     controller_pattern: Optional[str] = None,
+    internal_pattern: Optional[str] = None,
     exclude_pattern: Optional[str] = None,
     include_pattern: Optional[str] = None,
 ) -> list[CoverageEntry]:
     """Filter Go coverage entries by package and inclusion/exclusion patterns.
 
-    For unit tests: only pkg_pattern entries are considered (controller code
-    requires k8s API and cannot be unit-tested).
+    For unit tests: pkg_pattern and internal_pattern entries are considered,
+    subject to exclude/include filtering. Controller code requires k8s API
+    and cannot be unit-tested.
 
-    For integration/E2E: both pkg_pattern and controller_pattern entries are
-    included. The exclude/include filters apply to pkg entries; controller
-    entries are always included (all controller code is integration-testable).
+    For integration/E2E: pkg_pattern, internal_pattern, and controller_pattern
+    entries are included. The exclude/include filters apply to pkg and internal
+    entries; controller entries are always included (all controller code is
+    integration-testable).
+
+    internal_pattern is for services like kubernautagent where internal code
+    lives at internal/<service>/ instead of internal/controller/<service>/ and
+    contains both unit-testable and integration-testable code.
     """
     filtered = []
     for e in entries:
@@ -219,9 +239,10 @@ def filter_go_entries(
             continue
 
         is_pkg = pkg_pattern in e.key
+        is_internal = internal_pattern is not None and internal_pattern in e.key
         is_controller = controller_pattern is not None and controller_pattern in e.key
 
-        if not is_pkg and not is_controller:
+        if not is_pkg and not is_internal and not is_controller:
             continue
 
         # Controller entries: always include (no exclude/include filtering)
@@ -229,7 +250,7 @@ def filter_go_entries(
             filtered.append(e)
             continue
 
-        # Package entries: apply exclude/include patterns
+        # Package and internal entries: apply exclude/include patterns
         if exclude_pattern and re.search(exclude_pattern, e.key):
             continue
         if include_pattern and not re.search(include_pattern, e.key):
@@ -297,25 +318,28 @@ def calc_go_service_tier(service: str, tier: str) -> str:
 
     pkg_pattern = config["pkg_pattern"]
     controller_pattern = config.get("controller_pattern")
+    internal_pattern = config.get("internal_pattern")
 
     if tier == "unit":
-        # Unit tests: only pkg code — controllers need k8s API
+        # Unit tests: pkg + internal code (subject to exclude), controllers excluded
         filtered = filter_go_entries(
-            entries, pkg_pattern, exclude_pattern=config["unit_exclude"]
+            entries, pkg_pattern, internal_pattern=internal_pattern,
+            exclude_pattern=config["unit_exclude"],
         )
         return calculate_coverage(filtered)
     elif tier == "integration":
-        # Integration tests: pkg integration code + ALL controller code
+        # Integration tests: pkg + internal integration code + ALL controller code
         filtered = filter_go_entries(
             entries, pkg_pattern, controller_pattern=controller_pattern,
-            include_pattern=config["int_include"]
+            internal_pattern=internal_pattern,
+            include_pattern=config["int_include"],
         )
         return calculate_coverage(filtered)
     elif tier == "e2e":
-        # E2E uses full service coverage (pkg + controller, no sub-tier filtering)
+        # E2E uses full service coverage (pkg + controller + internal, no sub-tier filtering)
         filtered = [
             e for e in entries
-            if _matches_service_pkg(e.key, pkg_pattern, controller_pattern)
+            if _matches_service_pkg(e.key, pkg_pattern, controller_pattern, internal_pattern)
             and not is_generated_code(e.key)
         ]
         return calculate_coverage(filtered)
@@ -337,6 +361,8 @@ def calc_go_service_all_tiers(service: str) -> str:
     pkg_pattern = config["pkg_pattern"]
     controller_pattern = config.get("controller_pattern")
 
+    internal_pattern = config.get("internal_pattern")
+
     # Collect entries from all available tiers
     all_entries = []
     has_real_data = False
@@ -346,10 +372,10 @@ def calc_go_service_all_tiers(service: str) -> str:
         entries = parse_go_coverage_file(covfile)
         if entries:
             has_real_data = True
-            # Filter to service's package + controller and exclude generated code
+            # Filter to service's package + controller + internal and exclude generated code
             filtered = [
                 e for e in entries
-                if _matches_service_pkg(e.key, pkg_pattern, controller_pattern)
+                if _matches_service_pkg(e.key, pkg_pattern, controller_pattern, internal_pattern)
                 and not is_generated_code(e.key)
             ]
             all_entries.append(filtered)
@@ -380,7 +406,7 @@ def calc_go_service_all_tiers(service: str) -> str:
 
 
 # ============================================================================
-# Python (holmesgpt-api) coverage calculation
+# Python (kubernautagent) coverage calculation
 # ============================================================================
 
 @dataclass
@@ -481,10 +507,10 @@ def parse_python_coverage_file(filepath: str) -> list[PythonModuleCoverage]:
                     continue
 
                 # Normalize path: E2E coverage.py reports use
-                # "holmesgpt-api/src/..." while unit/integration pytest
+                # "kubernautagent/src/..." while unit/integration pytest
                 # reports use "src/...". Normalize to "src/" prefix.
-                if name.startswith("holmesgpt-api/"):
-                    name = name[len("holmesgpt-api/"):]
+                if name.startswith("kubernautagent/"):
+                    name = name[len("kubernautagent/"):]
 
                 # Only include Python source modules
                 if not name.startswith("src/"):
@@ -622,11 +648,11 @@ def get_python_total_from_file(filepath: str) -> Optional[str]:
 
 
 def calc_python_service() -> ServiceCoverage:
-    """Calculate all coverage tiers for holmesgpt-api (Python service)."""
-    svc = ServiceCoverage(name="holmesgpt-api", language="python")
+    """Calculate all coverage tiers for kubernautagent (Python service)."""
+    svc = ServiceCoverage(name="kubernautagent", language="python")
 
     # Unit coverage
-    unit_file = "coverage_unit_holmesgpt-api.txt"
+    unit_file = "coverage_unit_kubernautagent.txt"
     unit_modules = parse_python_coverage_file(unit_file)
     if unit_modules:
         filtered = filter_python_modules(unit_modules, PYTHON_UNIT_PATTERNS)
@@ -637,7 +663,7 @@ def calc_python_service() -> ServiceCoverage:
         svc.unit = total if total else "-"
 
     # Integration coverage
-    int_file = "coverage_integration_holmesgpt-api_python.txt"
+    int_file = "coverage_integration_kubernautagent_python.txt"
     int_modules = parse_python_coverage_file(int_file)
     if int_modules:
         filtered = filter_python_modules(int_modules, PYTHON_INTEGRATION_PATTERNS)
@@ -649,7 +675,7 @@ def calc_python_service() -> ServiceCoverage:
     # E2E coverage (Python coverage.py - DD-TEST-007)
     # The E2E test collects Python service coverage via coverage.py inside the container.
     # The report is in standard `coverage report` text format (same as unit/integration).
-    e2e_file = "coverage_e2e_holmesgpt-api_python.txt"
+    e2e_file = "coverage_e2e_kubernautagent_python.txt"
     e2e_modules = parse_python_coverage_file(e2e_file)
     if e2e_modules:
         svc.e2e = calc_python_coverage(e2e_modules)
@@ -660,7 +686,7 @@ def calc_python_service() -> ServiceCoverage:
             svc.e2e = total
         else:
             # Legacy fallback: check .pct file
-            pct = read_pct_file("coverage_e2e_holmesgpt-api.pct")
+            pct = read_pct_file("coverage_e2e_kubernautagent.pct")
             svc.e2e = pct if pct else "-"
 
     # All Tiers: line-level merge across all tier files.
@@ -716,7 +742,7 @@ def generate_all_service_coverage(filter_service: Optional[str] = None) -> list[
     results = []
 
     # Python service
-    if not filter_service or filter_service == "holmesgpt-api":
+    if not filter_service or filter_service == "kubernautagent":
         results.append(calc_python_service())
 
     # Go services

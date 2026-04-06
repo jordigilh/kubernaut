@@ -196,7 +196,7 @@ func countEventsByType(events []ogenclient.AuditEvent) map[string]int {
 func validateEventMetadata(event ogenclient.AuditEvent, expectedCategory string) {
 	// Validate event_category matches service
 	Expect(string(event.EventCategory)).To(Equal(expectedCategory),
-		"Webhook events must have event_category='webhook'")
+		"event_category must match the business domain (ADR-034 v1.8)")
 
 	// Validate event_outcome is valid
 	outcome := string(event.EventOutcome)

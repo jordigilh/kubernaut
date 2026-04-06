@@ -141,6 +141,8 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 				// ASSERT: Create succeeds
 				Expect(err).ToNot(HaveOccurred(), "Create should succeed")
+				Expect(testWorkflow.WorkflowID).ToNot(BeEmpty(),
+					"WorkflowID should be assigned after Create")
 
 				// ASSERT: Verify workflow persisted with correct composite PK
 				// Use Eventually to handle transaction commit delays (DS-FLAKY-006 fix)

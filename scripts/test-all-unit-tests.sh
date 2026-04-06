@@ -3,7 +3,7 @@
 # This script runs unit tests for:
 # - All Go services in cmd/
 # - authwebhook (separate test target)
-# - holmesgpt-api (Python service)
+# - kubernautagent (Go LLM investigation service)
 
 set -e
 
@@ -48,7 +48,7 @@ done
 # Special services
 echo "=== Special Services ==="
 run_test "authwebhook"
-run_test "holmesgpt-api"
+run_test "kubernautagent"
 
 # Summary
 echo "=========================================="

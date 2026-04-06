@@ -26,7 +26,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
 )
 
 var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
@@ -68,8 +69,8 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 								Name:      "payment-service",
 								Namespace: "payments",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								KubernetesContext: &sharedtypes.KubernetesContext{
+							EnrichmentResults: types.EnrichmentResults{
+								KubernetesContext: &types.KubernetesContext{
 									CustomLabels: map[string][]string{
 										"team":        {"payments"},
 										"cost_center": {"revenue"},
@@ -124,7 +125,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			Expect(analysis.Status.RootCauseAnalysis.Summary).NotTo(BeEmpty())
 			Expect(analysis.Status.RootCauseAnalysis.Severity).To(BeElementOf("critical", "high", "medium", "low", "unknown"))
 			Expect(analysis.Status.RootCauseAnalysis.SignalType).NotTo(BeEmpty())
-			Expect(analysis.Status.RootCauseAnalysis.ContributingFactors).To(ContainElement("identified_by_mock_llm"))
+			Expect(analysis.Status.RootCauseAnalysis.ContributingFactors).To(ContainElement("invalid_configuration_directive"))
 
 			// E2E-AA-163-001: RemediationTarget populated from mock LLM (crashloop scenario returns Deployment)
 			Expect(analysis.Status.RootCauseAnalysis.RemediationTarget).NotTo(BeNil())
@@ -188,7 +189,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 								Name:      "web-app",
 								Namespace: "staging",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
+							EnrichmentResults: types.EnrichmentResults{},
 						},
 						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeWorkflowSelection},
 					},
@@ -244,7 +245,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 								Name:      "test-app",
 								Namespace: "production",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
+							EnrichmentResults: types.EnrichmentResults{},
 						},
 						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
@@ -301,7 +302,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 								Name:      "web-app",
 								Namespace: "staging",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
+							EnrichmentResults: types.EnrichmentResults{},
 						},
 						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
 					},
@@ -332,9 +333,9 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 
 			By("Verifying AlternativeWorkflows populated (mock low_confidence scenario returns exactly 2 alternatives)")
 			Expect(analysis.Status.AlternativeWorkflows).To(HaveLen(2))
-			Expect(analysis.Status.AlternativeWorkflows[0].WorkflowID).To(Equal("d3c95ea1-66cb-6bf2-c59e-7dd27f1fec6d"))
+			Expect(analysis.Status.AlternativeWorkflows[0].WorkflowID).To(Equal(uuid.DeterministicUUID("oomkill-increase-memory-v1")))
 			Expect(analysis.Status.AlternativeWorkflows[0].Rationale).To(Equal("Alternative approach for ambiguous root cause"))
-			Expect(analysis.Status.AlternativeWorkflows[1].WorkflowID).To(Equal("e4d06fb2-77dc-7cg3-d60f-8ee38g2gfd7e"))
+			Expect(analysis.Status.AlternativeWorkflows[1].WorkflowID).To(Equal(uuid.DeterministicUUID("node-drain-reboot-v1")))
 			Expect(analysis.Status.AlternativeWorkflows[1].Rationale).To(Equal("Requires human expertise to determine correct remediation"))
 			Expect(analysis.Status.AlternativeWorkflows[0].Confidence).To(BeNumerically(">", analysis.Status.AlternativeWorkflows[1].Confidence))
 		})
@@ -369,7 +370,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 								Name:      "llm-parse-fail-pod",
 								Namespace: "staging",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
+							EnrichmentResults: types.EnrichmentResults{},
 						},
 						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
 					},
@@ -385,11 +386,11 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			By("Creating AIAnalysis with MOCK_MAX_RETRIES_EXHAUSTED signal type")
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for phase to reach Failed or Completed (max_retries returns no workflow)")
+			By("Waiting for phase to reach Failed or Completed (self-correction loop + HTTP round-trips need headroom)")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
 				return string(analysis.Status.Phase)
-			}, timeout, interval).Should(Or(Equal("Failed"), Equal("Completed")))
+			}, 60*time.Second, interval).Should(Or(Equal("Failed"), Equal("Completed")))
 
 			By("Verifying ValidationAttemptsHistory populated with 3 attempts")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())

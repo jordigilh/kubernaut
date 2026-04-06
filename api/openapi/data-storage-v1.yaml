@@ -2364,9 +2364,9 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, webhook, effectiveness, actiontype]
+          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, approval, effectiveness, actiontype]
           description: |
-            Domain-level event category (ADR-034 v1.8).
+            Domain-level event category (ADR-034 v1.8, Issue #306).
             Per convention: event_category identifies the business domain of the event.
             The emitter/service is captured in the event_type first segment.
             Values:
@@ -2378,7 +2378,7 @@ components:
             - workflow: Workflow catalog and discovery events
             - workflowexecution: Workflow execution lifecycle events
             - orchestration: Remediation orchestration lifecycle events
-            - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
+            - approval: Remediation approval request decision events
             - effectiveness: Effectiveness assessment and monitoring events
             - actiontype: ActionType taxonomy lifecycle events (Issue #300)
           example: gateway

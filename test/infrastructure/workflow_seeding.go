@@ -52,7 +52,7 @@ func workflowIDToImageName(workflowID string) string {
 // NOT sent to the API; they serve as human-readable documentation and as key
 // components for workflowUUIDs map lookups (key format: "workflowID:environment").
 type TestWorkflow struct {
-	WorkflowID      string // Must match Mock LLM workflow_id or Python fixture workflow_name
+	WorkflowID      string // Must match Mock LLM workflow_id in scenarios registry
 	Name            string
 	Description     string
 	ActionType      string // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "ScaleReplicas", "RestartPod")
@@ -166,6 +166,9 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 	}
 }
 
+// Deprecated: SortedWorkflowUUIDKeys is part of the legacy ConfigMap sync infrastructure.
+// The Go Mock LLM uses deterministic UUIDs and no longer requires external UUID synchronization.
+//
 // SortedWorkflowUUIDKeys returns the keys of a workflowUUIDs map sorted so that
 // ":production" entries come after all other environments for the same workflow name.
 // This is critical because the Mock LLM's load_scenarios_from_file does last-write-wins

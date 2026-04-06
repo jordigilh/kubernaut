@@ -21,13 +21,13 @@ import (
 	"encoding/json"
 
 	"github.com/go-faster/jx"
-	client "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // Helper functions for extracting values from generated optional types
 
 // GetOptBoolValue returns the bool value from OptBool, or false if not set
-func GetOptBoolValue(opt client.OptBool) bool {
+func GetOptBoolValue(opt agentclient.OptBool) bool {
 	if opt.Set {
 		return opt.Value
 	}
@@ -36,7 +36,7 @@ func GetOptBoolValue(opt client.OptBool) bool {
 
 // GetOptNilBoolValue returns a *bool from OptNilBool:
 // nil if not set or null, pointer to value otherwise.
-func GetOptNilBoolValue(opt client.OptNilBool) *bool {
+func GetOptNilBoolValue(opt agentclient.OptNilBool) *bool {
 	if opt.Set && !opt.Null {
 		v := opt.Value
 		return &v
@@ -45,7 +45,7 @@ func GetOptNilBoolValue(opt client.OptNilBool) *bool {
 }
 
 // GetOptNilStringValue returns the string value from OptNilString, or empty string if not set
-func GetOptNilStringValue(opt client.OptNilString) string {
+func GetOptNilStringValue(opt agentclient.OptNilString) string {
 	if opt.Set && !opt.Null {
 		return opt.Value
 	}

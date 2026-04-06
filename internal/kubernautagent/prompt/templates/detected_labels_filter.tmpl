@@ -1,0 +1,19 @@
+{{- /* Workflow Discovery Context: DetectedLabels Filter Instructions
+     Source: holmesgpt-api/src/extensions/incident/prompt_builder.py build_mcp_filter_instructions
+     DDs: DD-HAPI-001, DD-WORKFLOW-001 v2.1
+     Injected into the prompt when DetectedLabels are available from get_resource_context.
+*/ -}}
+{{ if .Filters }}
+### Workflow Discovery Context (DetectedLabels)
+
+The following detected labels describe the target cluster environment.
+Use these to inform your workflow selection reasoning — prefer workflows
+that are compatible with the detected environment characteristics.
+
+Detected environment characteristics:
+```json
+{{ .FiltersJSON }}
+```
+
+**IMPORTANT**: {{ .GuidanceText }}
+{{ end -}}

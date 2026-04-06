@@ -30,7 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	hgptclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -336,7 +336,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			var auditSpy *auditClientSpy
 
 			BeforeEach(func() {
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 				// Use audit spy to capture failure events for Gap #7 validation
 				auditSpy = &auditClientSpy{}
 				testMetrics := metrics.NewMetrics()
@@ -746,7 +746,7 @@ var _ = Describe("InvestigatingHandler", func() {
 						"low",
 						[]string{"Transient condition", "Auto-recovery"},
 					)
-					mockClient.Response = &hgptclient.IncidentResponse{
+					mockClient.Response = &agentclient.IncidentResponse{
 						IncidentID:        "mock-incident-001",
 						Analysis:          "Investigated OOMKilled signal. Pod recovered automatically.",
 						RootCauseAnalysis: rcaMap,
@@ -787,7 +787,7 @@ var _ = Describe("InvestigatingHandler", func() {
 						"high",
 						[]string{"Insufficient memory limits", "Traffic spike"},
 					)
-					mockClient.Response = &hgptclient.IncidentResponse{
+					mockClient.Response = &agentclient.IncidentResponse{
 						IncidentID:        "mock-incident-001",
 						Analysis:          "Identified persistent OOM condition requiring intervention.",
 						RootCauseAnalysis: rcaMap,
@@ -819,7 +819,7 @@ var _ = Describe("InvestigatingHandler", func() {
 						"low",
 						[]string{"Temporary memory spike", "Transient condition"},
 					)
-					mockClient.Response = &hgptclient.IncidentResponse{
+					mockClient.Response = &agentclient.IncidentResponse{
 						IncidentID:        "mock-incident-001",
 						Analysis:          "Memory pressure resolved after automatic restart.",
 						RootCauseAnalysis: rcaMap,
@@ -952,7 +952,7 @@ var _ = Describe("InvestigatingHandler", func() {
 		Context("Error Classification - BR-AI-009 & BR-AI-010", func() {
 			It("should classify 503 Service Unavailable as transient and retry", func() {
 				analysis := createTestAnalysis()
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -964,7 +964,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 			It("should classify 429 Too Many Requests as transient and retry", func() {
 				analysis := createTestAnalysis()
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 429, Message: "Too Many Requests"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 429, Message: "Too Many Requests"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -975,7 +975,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 			It("should classify 500 Internal Server Error as transient and retry", func() {
 				analysis := createTestAnalysis()
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 500, Message: "Internal Server Error"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 500, Message: "Internal Server Error"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -993,17 +993,17 @@ var _ = Describe("InvestigatingHandler", func() {
 			It("should increase backoff duration with each retry attempt", func() {
 				By("First attempt")
 				analysis := createTestAnalysis()
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 				result1, _ := handler.Handle(ctx, analysis)
 				backoff1 := result1.RequeueAfter
 
 				By("Second attempt")
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 				result2, _ := handler.Handle(ctx, analysis)
 				backoff2 := result2.RequeueAfter
 
 				By("Third attempt")
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 				result3, _ := handler.Handle(ctx, analysis)
 				backoff3 := result3.RequeueAfter
 
@@ -1043,7 +1043,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				analysis.Status.ConsecutiveFailures = 0
 
 				// Using transient error (503) to trigger retry path
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -1060,7 +1060,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				analysis := createTestAnalysis()
 				// ConsecutiveFailures defaults to 0
 
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -1076,7 +1076,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				analysis := createTestAnalysis()
 				analysis.Status.ConsecutiveFailures = 2
 
-				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -1104,7 +1104,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					"low",
 					[]string{"Completed batch job artifacts"},
 				)
-				mockClient.Response = &hgptclient.IncidentResponse{
+				mockClient.Response = &agentclient.IncidentResponse{
 					IncidentID:        "mock-incident-388-001",
 					Analysis:          "These PVCs are leftover from completed batch jobs. They consume storage but do not affect any running workload. No remediation is needed.",
 					RootCauseAnalysis: rcaMap,
@@ -1155,7 +1155,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					"low",
 					[]string{"Completed batch job artifacts", "No PVC cleanup policy configured"},
 				)
-				mockClient.Response = &hgptclient.IncidentResponse{
+				mockClient.Response = &agentclient.IncidentResponse{
 					IncidentID:        "mock-incident-388-002",
 					Analysis:          "Found 12 orphaned PVCs. While they use storage, they don't impact running workloads.",
 					RootCauseAnalysis: rcaMap,
@@ -1187,23 +1187,23 @@ var _ = Describe("InvestigatingHandler", func() {
 	})
 
 	// ========================================
-	// ISSUE #607: NOT-ACTIONABLE CONFIDENCE GATE BUG
-	// When the LLM returns actionable=false but omits/low confidence,
-	// the AA processor incorrectly falls through to terminal failure
-	// instead of routing to handleNotActionableFromIncident.
+	// ISSUE #607: NOT-ACTIONABLE WITH LOW/ZERO CONFIDENCE
+	// The confidence gate on the actionable=false path must be removed.
+	// When the LLM signals actionable=false, it is authoritative regardless
+	// of confidence (same pattern as needs_human_review on line 94).
 	// ========================================
 	Describe("InvestigatingHandler.NotActionableConfidenceGate (#607)", func() {
-		// UT-AA-607-001: Not-actionable with low confidence (0.4) routes to Completed
-		Context("UT-AA-607-001: not-actionable with low confidence routes correctly", func() {
+
+		Context("UT-AA-607-001: not-actionable with low confidence routes to Completed/NotActionable", func() {
 			BeforeEach(func() {
 				rcaMap := mocks.BuildMockRCA(
-					"Orphaned PVCs from completed batch jobs — benign condition",
+					"Orphaned PVCs from completed batch jobs — not impacting any workload",
 					"low",
 					[]string{"Completed batch job artifacts"},
 				)
-				mockClient.Response = &hgptclient.IncidentResponse{
+				mockClient.Response = &agentclient.IncidentResponse{
 					IncidentID:        "mock-incident-607-001",
-					Analysis:          "PVCs are orphaned but not impacting workloads.",
+					Analysis:          "These PVCs are leftover from completed batch jobs.",
 					RootCauseAnalysis: rcaMap,
 					Confidence:        0.4,
 					Timestamp:         "2026-03-04T10:00:00Z",
@@ -1221,7 +1221,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
-					"#607: actionable=false is authoritative — confidence should not gate it")
+					"#607: actionable=false is authoritative — confidence must not gate it")
 				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
 				Expect(analysis.Status.SubReason).To(Equal("NotActionable"))
 				Expect(analysis.Status.Actionability).To(Equal(aianalysis.ActionabilityNotActionable))
@@ -1229,17 +1229,16 @@ var _ = Describe("InvestigatingHandler", func() {
 			})
 		})
 
-		// UT-AA-607-002: Not-actionable with zero confidence (LLM omitted field) — exact #607 scenario
 		Context("UT-AA-607-002: not-actionable with zero confidence (omitted) routes correctly", func() {
 			BeforeEach(func() {
 				rcaMap := mocks.BuildMockRCA(
-					"5 orphaned PVCs from completed batch jobs",
+					"Orphaned PVCs from completed batch jobs",
 					"low",
 					[]string{"Completed batch job artifacts"},
 				)
-				mockClient.Response = &hgptclient.IncidentResponse{
+				mockClient.Response = &agentclient.IncidentResponse{
 					IncidentID:        "mock-incident-607-002",
-					Analysis:          "Orphaned PVCs detected. No impact on running workloads.",
+					Analysis:          "Stale resources with no impact.",
 					RootCauseAnalysis: rcaMap,
 					Confidence:        0.0,
 					Timestamp:         "2026-03-04T10:00:00Z",
@@ -1257,99 +1256,85 @@ var _ = Describe("InvestigatingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
-					"#607: Zero confidence must not block actionable=false determination")
-				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
-				Expect(analysis.Status.SubReason).To(Equal("NotActionable"))
+					"#607: Zero confidence must not block the not-actionable determination")
+				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded),
+					"#607: Must be WorkflowNotNeeded, not WorkflowResolutionFailed")
 				Expect(analysis.Status.NeedsHumanReview).To(BeFalse())
 			})
 		})
 
-		// UT-AA-607-003: Partial signal (warning only, is_actionable NOT set) must NOT route to NotActionable
-		Context("UT-AA-607-003: partial signal without is_actionable falls through to terminal failure", func() {
+		Context("UT-AA-607-003: partial signal (warning only) does NOT route to NotActionable", func() {
 			BeforeEach(func() {
-				rcaMap := mocks.BuildMockRCA(
-					"Orphaned PVCs detected",
-					"low",
-					[]string{"Completed batch job artifacts"},
-				)
-				mockClient.Response = &hgptclient.IncidentResponse{
-					IncidentID:        "mock-incident-607-003",
-					Analysis:          "PVCs are orphaned.",
-					RootCauseAnalysis: rcaMap,
-					Confidence:        0.0,
-					Timestamp:         "2026-03-04T10:00:00Z",
-					Warnings:          []string{"Alert not actionable — no remediation warranted"},
+				mockClient.Response = &agentclient.IncidentResponse{
+					IncidentID: "mock-incident-607-003",
+					Analysis:   "Some analysis",
+					Confidence: 0.0,
+					Timestamp:  "2026-03-04T10:00:00Z",
+					Warnings:   []string{"Alert not actionable — no remediation warranted"},
 				}
 				mockClient.Response.NeedsHumanReview.SetTo(false)
-				// IsActionable deliberately NOT set — zero-value OptNilBool
 				mockClient.Err = nil
 			})
 
-			It("should fail because dual-field check requires both warning AND is_actionable=false", func() {
+			It("should fall through to terminal failure when is_actionable is missing", func() {
 				analysis := createTestAnalysis()
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
-					"#607: Warning alone is insufficient — is_actionable must be explicitly false")
+					"#607: Warning alone without is_actionable=false must NOT route to NotActionable")
 				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed))
 				Expect(analysis.Status.NeedsHumanReview).To(BeTrue())
 			})
 		})
 
-		// UT-AA-607-004: Resolved path still requires confidence >= 0.7 (regression guard)
-		Context("UT-AA-607-004: resolved path with low confidence still fails", func() {
+		Context("UT-AA-607-004: resolved path still requires confidence >= 0.7", func() {
 			BeforeEach(func() {
-				mockClient.Response = &hgptclient.IncidentResponse{
-					IncidentID:        "mock-incident-607-004",
-					Analysis:          "The issue resolved itself.",
-					RootCauseAnalysis: mocks.BuildMockRCA("Transient issue", "low", nil),
-					Confidence:        0.4,
-					Timestamp:         "2026-03-04T10:00:00Z",
-					Warnings:          []string{"Problem self-resolved - no remediation required"},
+				mockClient.Response = &agentclient.IncidentResponse{
+					IncidentID: "mock-incident-607-004",
+					Analysis:   "Problem appears to have self-resolved.",
+					Confidence: 0.4,
+					Timestamp:  "2026-03-04T10:00:00Z",
+					Warnings:   []string{"Problem self-resolved - no remediation required"},
 				}
 				mockClient.Response.NeedsHumanReview.SetTo(false)
 				mockClient.Err = nil
 			})
 
-			It("should fail because resolved path retains confidence >= 0.7 gate", func() {
+			It("should NOT route to resolved when confidence is below 0.7", func() {
 				analysis := createTestAnalysis()
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
-					"#607: Resolved path must still require confidence >= 0.7")
-				Expect(analysis.Status.Reason).ToNot(Equal(aianalysisv1.ReasonWorkflowNotNeeded),
-					"Should NOT route to WorkflowNotNeeded with low confidence on resolved path")
+					"#607 regression: Resolved path must still require confidence >= 0.7")
+				Expect(analysis.Status.Reason).NotTo(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
 			})
 		})
 
-		// UT-AA-607-005: Terminal failure path fires normally (no signals, low confidence)
-		Context("UT-AA-607-005: terminal failure with no signals and low confidence", func() {
+		Context("UT-AA-607-005: terminal failure path fires normally", func() {
 			BeforeEach(func() {
-				mockClient.Response = &hgptclient.IncidentResponse{
-					IncidentID:        "mock-incident-607-005",
-					Analysis:          "Unable to determine root cause.",
-					RootCauseAnalysis: mocks.BuildMockRCA("Unknown", "unknown", nil),
-					Confidence:        0.3,
-					Timestamp:         "2026-03-04T10:00:00Z",
-					Warnings:          []string{},
+				mockClient.Response = &agentclient.IncidentResponse{
+					IncidentID: "mock-incident-607-005",
+					Analysis:   "Unable to determine root cause.",
+					Confidence: 0.3,
+					Timestamp:  "2026-03-04T10:00:00Z",
+					Warnings:   []string{},
 				}
 				mockClient.Response.NeedsHumanReview.SetTo(false)
-				// IsActionable deliberately NOT set
 				mockClient.Err = nil
 			})
 
-			It("should fail with WorkflowResolutionFailed and need human review", func() {
+			It("should route to Failed/WorkflowResolutionFailed with human review", func() {
 				analysis := createTestAnalysis()
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
-					"#607: Ambiguous LLM responses must still escalate to human review")
+					"#607 regression: Terminal failure path must be unaffected")
 				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed))
 				Expect(analysis.Status.NeedsHumanReview).To(BeTrue())
 			})

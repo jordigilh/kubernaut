@@ -217,6 +217,9 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 	It("IT-NOT-453B-007 [BR-ORCH-034] should populate Lineage and Dedup on bulk duplicate NotificationRequest", func() {
 		rr := newRR("rr-it-453b-007")
 
+		// Re-fetch to get the latest ResourceVersion (controller may have reconciled)
+		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
+
 		// Set status DuplicateCount via status subresource
 		rr.Status.DuplicateCount = 5
 		rr.Status.OverallPhase = remediationv1.PhaseCompleted

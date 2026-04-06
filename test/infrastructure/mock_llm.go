@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -122,16 +123,14 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	_, _ = fmt.Fprintf(writer, "🔨 Building Mock LLM image locally: %s (--no-cache for fresh code)\n", baseImageName)
 	_, _ = fmt.Fprintf(writer, "   Will tag as: %s (DD-TEST-004 unique)\n", uniqueImageName)
 
-	// Build context is test/services/mock-llm/
 	projectRoot := getProjectRoot()
-	buildContext := fmt.Sprintf("%s/test/services/mock-llm", projectRoot)
 
 	// Build with --no-cache to ensure fresh code (addresses recurring cache issues)
 	buildCmd := exec.CommandContext(ctx, "podman", "build",
 		"--no-cache",
 		"-t", baseImageName,
-		"-f", fmt.Sprintf("%s/Dockerfile", buildContext),
-		buildContext,
+		"-f", fmt.Sprintf("%s/test/services/mock-llm/go.Dockerfile", projectRoot),
+		projectRoot,
 	)
 
 	output, err := buildCmd.CombinedOutput()
@@ -231,7 +230,7 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 		"-p", fmt.Sprintf("%d:%d", config.Port, internalPort), // Port mapping (ignored on host network)
 		"-e", "MOCK_LLM_HOST=0.0.0.0",
 		"-e", fmt.Sprintf("MOCK_LLM_PORT=%d", internalPort),
-		"-e", "MOCK_LLM_FORCE_TEXT=false",
+		"-e", "MOCK_LLM_FORCE_TEXT=true",
 	}
 
 	// Mount config file if specified (DD-TEST-011 v2.0)
@@ -405,4 +404,79 @@ func GetMockLLMContainerInfo(containerID string, config MockLLMConfig) MockLLMCo
 		HealthURL:     fmt.Sprintf("http://127.0.0.1:%d/health", config.Port),
 		MetricsURL:    fmt.Sprintf("http://127.0.0.1:%d/metrics", config.Port),
 	}
+}
+
+// UpdateMockLLMConfigMap updates the Mock LLM's ConfigMap with workflow UUIDs
+// and restarts the deployment so it picks up the new scenarios mapping.
+// Originally in holmesgpt_api.go, ported here during the HAPI→KA migration.
+func UpdateMockLLMConfigMap(ctx context.Context, namespace, kubeconfigPath string, workflowUUIDs map[string]string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "   🔄 Updating Mock LLM ConfigMap with %d workflow UUIDs...\n", len(workflowUUIDs))
+
+	scenariosYAML := "scenarios:\n"
+	for _, key := range SortedWorkflowUUIDKeys(workflowUUIDs) {
+		scenariosYAML += fmt.Sprintf("      %s:\n        workflow_id: \"%s\"\n", key, workflowUUIDs[key])
+	}
+
+	configMap := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mock-llm-scenarios
+  namespace: %s
+  labels:
+    app: mock-llm
+    component: test-infrastructure
+data:
+  scenarios.yaml: |
+    %s
+`, namespace, scenariosYAML)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	cmd.Stdin = strings.NewReader(configMap)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to update Mock LLM ConfigMap: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ ConfigMap updated with workflow UUIDs\n")
+
+	_, _ = fmt.Fprintf(writer, "   🔄 Restarting Mock LLM deployment to reload config...\n")
+	var restartErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			_, _ = fmt.Fprintf(writer, "   ⏳ Retry %d/2: waiting before rollout restart...\n", attempt)
+			time.Sleep(2 * time.Second)
+		}
+		restartCmd := exec.CommandContext(ctx, "kubectl", "rollout", "restart",
+			"deployment/mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath)
+		restartCmd.Stdout = writer
+		restartCmd.Stderr = writer
+		restartErr = restartCmd.Run()
+		if restartErr == nil {
+			break
+		}
+	}
+	if restartErr != nil {
+		return fmt.Errorf("failed to restart Mock LLM deployment after retries: %w", restartErr)
+	}
+
+	// Force-terminate old Mock LLM pods to avoid rollout stalls from slow termination.
+	_, _ = fmt.Fprintf(writer, "   🗑️  Force-deleting old Mock LLM pods to prevent rollout stall...\n")
+	deleteCmd := exec.CommandContext(ctx, "kubectl", "delete", "pod",
+		"-l", "app=mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath,
+		"--grace-period=5")
+	deleteCmd.Stdout = writer
+	deleteCmd.Stderr = writer
+	_ = deleteCmd.Run() // Ignore errors — pods may already be gone
+
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Mock LLM rollout to complete...\n")
+	rolloutCmd := exec.CommandContext(ctx, "kubectl", "rollout", "status",
+		"deployment/mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath, "--timeout=180s")
+	rolloutCmd.Stdout = writer
+	rolloutCmd.Stderr = writer
+	if err := rolloutCmd.Run(); err != nil {
+		return fmt.Errorf("mock LLM rollout failed: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Mock LLM restarted with workflow UUIDs\n")
+
+	return nil
 }

@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/types/ogenconv"
 	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -295,5 +296,5 @@ func (h *ActionTypeHandler) updateCRDStatusCreate(namespace, name, registeredBy 
 
 // crdDescriptionToOgen converts a CRD ActionTypeDescription to the ogen-generated type.
 func crdDescriptionToOgen(d atv1alpha1.ActionTypeDescription) ogenclient.ActionTypeDescription {
-	return sharedtypes.SharedDescriptionToOgen(atv1alpha1.DescriptionToShared(d))
+	return ogenconv.SharedDescriptionToOgen(atv1alpha1.DescriptionToShared(d))
 }
