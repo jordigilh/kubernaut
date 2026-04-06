@@ -580,7 +580,7 @@ func buildWorkflowValidator(ds *dsClients, logger *slog.Logger) (*parser.Validat
 		return nil, nil
 	}
 
-	retryDelays := []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second}
+	retryDelays := []time.Duration{5 * time.Second, 10 * time.Second, 15 * time.Second, 20 * time.Second, 30 * time.Second}
 	var lastErr error
 
 	for attempt := 0; attempt <= len(retryDelays); attempt++ {
@@ -607,6 +607,14 @@ func buildWorkflowValidator(ds *dsClients, logger *slog.Logger) (*parser.Validat
 				if w.WorkflowId.Set {
 					ids = append(ids, w.WorkflowId.Value.String())
 				}
+			}
+			if len(ids) == 0 {
+				// Workflow catalog is empty — likely a timing issue where
+				// workflow schemas haven't been reconciled into DataStorage yet.
+				lastErr = fmt.Errorf("workflow catalog returned 0 workflows (not ready)")
+				logger.Warn("workflow catalog empty, will retry",
+					"attempt", attempt+1, "max_attempts", len(retryDelays)+1)
+				continue
 			}
 			logger.Info("workflow validator enabled (DD-HAPI-002: sole validator)",
 				"allowed_workflows", len(ids), "attempts", attempt+1)
