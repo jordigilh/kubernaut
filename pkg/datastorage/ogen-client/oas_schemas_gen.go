@@ -9562,6 +9562,10 @@ func (s *IncidentResponseData) SetAlternativeWorkflows(val []IncidentResponseDat
 type IncidentResponseDataAlternativeWorkflowsItem struct {
 	WorkflowId OptString `json:"workflowId"`
 	Rationale  OptString `json:"rationale"`
+	// Execution bundle for the alternative workflow.
+	ExecutionBundle OptString `json:"executionBundle"`
+	// Confidence score for the alternative workflow.
+	Confidence OptFloat32 `json:"confidence"`
 }
 
 // GetWorkflowId returns the value of WorkflowId.
@@ -9574,6 +9578,16 @@ func (s *IncidentResponseDataAlternativeWorkflowsItem) GetRationale() OptString 
 	return s.Rationale
 }
 
+// GetExecutionBundle returns the value of ExecutionBundle.
+func (s *IncidentResponseDataAlternativeWorkflowsItem) GetExecutionBundle() OptString {
+	return s.ExecutionBundle
+}
+
+// GetConfidence returns the value of Confidence.
+func (s *IncidentResponseDataAlternativeWorkflowsItem) GetConfidence() OptFloat32 {
+	return s.Confidence
+}
+
 // SetWorkflowId sets the value of WorkflowId.
 func (s *IncidentResponseDataAlternativeWorkflowsItem) SetWorkflowId(val OptString) {
 	s.WorkflowId = val
@@ -9582,6 +9596,16 @@ func (s *IncidentResponseDataAlternativeWorkflowsItem) SetWorkflowId(val OptStri
 // SetRationale sets the value of Rationale.
 func (s *IncidentResponseDataAlternativeWorkflowsItem) SetRationale(val OptString) {
 	s.Rationale = val
+}
+
+// SetExecutionBundle sets the value of ExecutionBundle.
+func (s *IncidentResponseDataAlternativeWorkflowsItem) SetExecutionBundle(val OptString) {
+	s.ExecutionBundle = val
+}
+
+// SetConfidence sets the value of Confidence.
+func (s *IncidentResponseDataAlternativeWorkflowsItem) SetConfidence(val OptFloat32) {
+	s.Confidence = val
 }
 
 // Structured reason when needsHumanReview=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212).
@@ -9676,6 +9700,8 @@ type IncidentResponseDataRootCauseAnalysis struct {
 	Severity IncidentResponseDataRootCauseAnalysisSeverity `json:"severity"`
 	// List of contributing factors.
 	ContributingFactors []string `json:"contributingFactors"`
+	// Target resource for remediation (kind/name/namespace from KA investigation).
+	RemediationTarget OptIncidentResponseDataRootCauseAnalysisRemediationTarget `json:"remediationTarget"`
 }
 
 // GetSummary returns the value of Summary.
@@ -9693,6 +9719,11 @@ func (s *IncidentResponseDataRootCauseAnalysis) GetContributingFactors() []strin
 	return s.ContributingFactors
 }
 
+// GetRemediationTarget returns the value of RemediationTarget.
+func (s *IncidentResponseDataRootCauseAnalysis) GetRemediationTarget() OptIncidentResponseDataRootCauseAnalysisRemediationTarget {
+	return s.RemediationTarget
+}
+
 // SetSummary sets the value of Summary.
 func (s *IncidentResponseDataRootCauseAnalysis) SetSummary(val string) {
 	s.Summary = val
@@ -9706,6 +9737,51 @@ func (s *IncidentResponseDataRootCauseAnalysis) SetSeverity(val IncidentResponse
 // SetContributingFactors sets the value of ContributingFactors.
 func (s *IncidentResponseDataRootCauseAnalysis) SetContributingFactors(val []string) {
 	s.ContributingFactors = val
+}
+
+// SetRemediationTarget sets the value of RemediationTarget.
+func (s *IncidentResponseDataRootCauseAnalysis) SetRemediationTarget(val OptIncidentResponseDataRootCauseAnalysisRemediationTarget) {
+	s.RemediationTarget = val
+}
+
+// Target resource for remediation (kind/name/namespace from KA investigation).
+type IncidentResponseDataRootCauseAnalysisRemediationTarget struct {
+	// Kubernetes resource kind.
+	Kind OptString `json:"kind"`
+	// Resource name.
+	Name OptString `json:"name"`
+	// Resource namespace (empty for cluster-scoped).
+	Namespace OptString `json:"namespace"`
+}
+
+// GetKind returns the value of Kind.
+func (s *IncidentResponseDataRootCauseAnalysisRemediationTarget) GetKind() OptString {
+	return s.Kind
+}
+
+// GetName returns the value of Name.
+func (s *IncidentResponseDataRootCauseAnalysisRemediationTarget) GetName() OptString {
+	return s.Name
+}
+
+// GetNamespace returns the value of Namespace.
+func (s *IncidentResponseDataRootCauseAnalysisRemediationTarget) GetNamespace() OptString {
+	return s.Namespace
+}
+
+// SetKind sets the value of Kind.
+func (s *IncidentResponseDataRootCauseAnalysisRemediationTarget) SetKind(val OptString) {
+	s.Kind = val
+}
+
+// SetName sets the value of Name.
+func (s *IncidentResponseDataRootCauseAnalysisRemediationTarget) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetNamespace sets the value of Namespace.
+func (s *IncidentResponseDataRootCauseAnalysisRemediationTarget) SetNamespace(val OptString) {
+	s.Namespace = val
 }
 
 // Incident severity (BR-SEVERITY-001).
@@ -13523,6 +13599,52 @@ func (o OptIncidentResponseDataHumanReviewReason) Get() (v IncidentResponseDataH
 
 // Or returns value if set, or given parameter if does not.
 func (o OptIncidentResponseDataHumanReviewReason) Or(d IncidentResponseDataHumanReviewReason) IncidentResponseDataHumanReviewReason {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptIncidentResponseDataRootCauseAnalysisRemediationTarget returns new OptIncidentResponseDataRootCauseAnalysisRemediationTarget with value set to v.
+func NewOptIncidentResponseDataRootCauseAnalysisRemediationTarget(v IncidentResponseDataRootCauseAnalysisRemediationTarget) OptIncidentResponseDataRootCauseAnalysisRemediationTarget {
+	return OptIncidentResponseDataRootCauseAnalysisRemediationTarget{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptIncidentResponseDataRootCauseAnalysisRemediationTarget is optional IncidentResponseDataRootCauseAnalysisRemediationTarget.
+type OptIncidentResponseDataRootCauseAnalysisRemediationTarget struct {
+	Value IncidentResponseDataRootCauseAnalysisRemediationTarget
+	Set   bool
+}
+
+// IsSet returns true if OptIncidentResponseDataRootCauseAnalysisRemediationTarget was set.
+func (o OptIncidentResponseDataRootCauseAnalysisRemediationTarget) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptIncidentResponseDataRootCauseAnalysisRemediationTarget) Reset() {
+	var v IncidentResponseDataRootCauseAnalysisRemediationTarget
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptIncidentResponseDataRootCauseAnalysisRemediationTarget) SetTo(v IncidentResponseDataRootCauseAnalysisRemediationTarget) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptIncidentResponseDataRootCauseAnalysisRemediationTarget) Get() (v IncidentResponseDataRootCauseAnalysisRemediationTarget, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptIncidentResponseDataRootCauseAnalysisRemediationTarget) Or(d IncidentResponseDataRootCauseAnalysisRemediationTarget) IncidentResponseDataRootCauseAnalysisRemediationTarget {
 	if v, ok := o.Get(); ok {
 		return v
 	}
