@@ -68,10 +68,10 @@ const (
 	NotificationTypeApprovalRequired = "approval_required"
 	NotificationTypeCompleted        = "completed"
 	NotificationTypeFailed           = "failed"
-	NotificationTypeEscalation       = "escalation"
+	NotificationTypeEscalation       = "Escalation"
 	NotificationTypeStatusUpdate     = "status_update"
 	// NotificationTypeManualReview indicates manual review is required (BR-ORCH-036).
-	NotificationTypeManualReview = "manual-review"
+	NotificationTypeManualReview = "ManualReview"
 	// NotificationTypeBulkDuplicate indicates a bulk duplicate notification (BR-ORCH-034).
 	NotificationTypeBulkDuplicate = "bulk-duplicate"
 )

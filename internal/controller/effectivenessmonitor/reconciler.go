@@ -1100,7 +1100,7 @@ func (r *Reconciler) assessMetrics(ctx context.Context, ea *eav1.EffectivenessAs
 	queries := []metricQuerySpec{
 		{
 			Name:          "container_cpu_usage_seconds_total",
-			Query:         fmt.Sprintf(`sum(container_cpu_usage_seconds_total{namespace="%s"})`, ns),
+			Query:         fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{namespace="%s"}[5m]))`, ns),
 			LowerIsBetter: true,
 		},
 		{

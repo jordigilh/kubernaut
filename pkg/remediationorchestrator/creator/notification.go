@@ -1134,7 +1134,14 @@ func BuildComponentBullets(ea *eav1.EffectivenessAssessment) string {
 		bullets = append(bullets, "- Resource integrity: spec modified externally after remediation")
 	}
 	if c.MetricsAssessed && c.MetricsScore != nil && *c.MetricsScore < 1.0 {
-		bullets = append(bullets, "- Metrics: anomaly persists")
+		switch {
+		case *c.MetricsScore >= 0.5:
+			bullets = append(bullets, fmt.Sprintf("- Metrics: partial improvement (score: %.2f)", *c.MetricsScore))
+		case *c.MetricsScore > 0.0:
+			bullets = append(bullets, fmt.Sprintf("- Metrics: minimal improvement (score: %.2f)", *c.MetricsScore))
+		default:
+			bullets = append(bullets, "- Metrics: no improvement detected")
+		}
 	}
 
 	return strings.Join(bullets, "\n")

@@ -4043,15 +4043,15 @@ components:
           description: Alias for notification_id
         type:
           type: string
-          enum: [escalation, simple, status-update, approval, manual-review]
+          enum: [Escalation, Simple, StatusUpdate, Approval, ManualReview, Completion]
           description: Notification type (matches api/notification/v1alpha1/notificationrequest_types.go:31-40)
         notification_type:
           type: string
-          enum: [escalation, simple, status-update, approval, manual-review]
+          enum: [Escalation, Simple, StatusUpdate, Approval, ManualReview, Completion]
           description: Alias for type (matches CRD NotificationType enum)
         priority:
           type: string
-          enum: [critical, high, medium, low]
+          enum: [Critical, High, Medium, Low]
           description: Notification priority (matches api/notification/v1alpha1/notificationrequest_types.go:47-50)
         final_status:
           type: string

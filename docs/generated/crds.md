@@ -842,14 +842,14 @@ _Appears in:_
 - [NotificationRequestSpec](#notificationrequestspec)
 
 _Validation:_
-- Enum: [critical high medium low]
+- Enum: [Critical High Medium Low]
 
 | Value| Description|
 | ---| ---|
-| `critical`||
-| `high`||
-| `medium`||
-| `low`||
+| `Critical`||
+| `High`||
+| `Medium`||
+| `Low`||
 
 
 ## NotificationRequest
@@ -955,16 +955,16 @@ _Appears in:_
 - [NotificationRequestSpec](#notificationrequestspec)
 
 _Validation:_
-- Enum: [escalation simple status-update approval manual-review completion]
+- Enum: [Escalation Simple StatusUpdate Approval ManualReview Completion]
 
 | Value| Description|
 | ---| ---|
-| `escalation`||
-| `simple`||
-| `status-update`||
-| `approval`| NotificationTypeApproval is used for approval request notifications <br />Added Dec 2025 per RO team request for explicit approval workflow support|
-| `manual-review`| NotificationTypeManualReview is used for manual intervention required notifications <br />Added Dec 2025 for ExhaustedRetries/PreviousExecutionFailed scenarios requiring operator action<br />Distinct from 'escalation' to enable spec-field-based routing rules |
-| `completion`| NotificationTypeCompletion is used for successful remediation completion notifications <br />Created when WorkflowExecution completes successfully and RR transitions to Completed phase<br />Enables operators to track successful autonomous remediations|
+| `Escalation`||
+| `Simple`||
+| `StatusUpdate`||
+| `Approval`| NotificationTypeApproval is used for approval request notifications <br />Added Dec 2025 per RO team request for explicit approval workflow support|
+| `ManualReview`| NotificationTypeManualReview is used for manual intervention required notifications <br />Added Dec 2025 for ExhaustedRetries/PreviousExecutionFailed scenarios requiring operator action<br />Distinct from 'escalation' to enable spec-field-based routing rules |
+| `Completion`| NotificationTypeCompletion is used for successful remediation completion notifications <br />Created when WorkflowExecution completes successfully and RR transitions to Completed phase<br />Enables operators to track successful autonomous remediations|
 
 
 ### ObjectRef

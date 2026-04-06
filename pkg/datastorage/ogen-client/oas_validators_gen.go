@@ -3714,15 +3714,17 @@ func (s NotificationAuditPayloadFinalStatus) Validate() error {
 
 func (s NotificationAuditPayloadNotificationType) Validate() error {
 	switch s {
-	case "escalation":
+	case "Escalation":
 		return nil
-	case "simple":
+	case "Simple":
 		return nil
-	case "status-update":
+	case "StatusUpdate":
 		return nil
-	case "approval":
+	case "Approval":
 		return nil
-	case "manual-review":
+	case "ManualReview":
+		return nil
+	case "Completion":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -3731,13 +3733,13 @@ func (s NotificationAuditPayloadNotificationType) Validate() error {
 
 func (s NotificationAuditPayloadPriority) Validate() error {
 	switch s {
-	case "critical":
+	case "Critical":
 		return nil
-	case "high":
+	case "High":
 		return nil
-	case "medium":
+	case "Medium":
 		return nil
-	case "low":
+	case "Low":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -3746,15 +3748,17 @@ func (s NotificationAuditPayloadPriority) Validate() error {
 
 func (s NotificationAuditPayloadType) Validate() error {
 	switch s {
-	case "escalation":
+	case "Escalation":
 		return nil
-	case "simple":
+	case "Simple":
 		return nil
-	case "status-update":
+	case "StatusUpdate":
 		return nil
-	case "approval":
+	case "Approval":
 		return nil
-	case "manual-review":
+	case "ManualReview":
+		return nil
+	case "Completion":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

@@ -101,9 +101,9 @@ var _ = Describe("Issue #453 Phase A: Typed Enum Fields", func() {
 			}
 			attrs := routing.RoutingAttributesFromSpec(nr)
 			Expect(attrs["review-source"]).To(Equal("AIAnalysis"))
-			Expect(attrs["type"]).To(Equal("manual-review"))
+			Expect(attrs["type"]).To(Equal("ManualReview"))
 			Expect(attrs["severity"]).To(Equal("critical"))
-			Expect(attrs["priority"]).To(Equal("high"))
+			Expect(attrs["priority"]).To(Equal("High"))
 		})
 
 		It("should produce review-source for WorkflowExecution source", func() {

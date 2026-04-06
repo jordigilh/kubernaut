@@ -130,7 +130,7 @@ var _ = Describe("Notification Controller K8s Events [DD-EVENT-001]", func() {
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Subject:  "Test",
 					Body:     "Test body",
-					Priority: "critical",
+					Priority: "Critical",
 				},
 				Status: notificationv1alpha1.NotificationRequestStatus{
 					Phase: "", // Uninitialized
@@ -201,7 +201,7 @@ var _ = Describe("Notification Controller K8s Events [DD-EVENT-001]", func() {
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Subject:  "Test",
 					Body:     "Test body",
-					Priority: "critical",
+					Priority: "Critical",
 				},
 				Status: notificationv1alpha1.NotificationRequestStatus{
 					Phase:                notificationv1alpha1.NotificationPhasePending,
