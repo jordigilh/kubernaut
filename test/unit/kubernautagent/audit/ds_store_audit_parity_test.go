@@ -393,4 +393,26 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
+
+	Describe("UT-KA-433-AP-022: toIncidentResponseData defaults warnings to empty array", func() {
+		It("should return non-nil Warnings when InvestigationResult has no warnings", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeResponseComplete, "corr-warn")
+			event.Data["response_data"] = `{"rca_summary":"test","severity":"low","confidence":0.9}`
+			event.Data["total_prompt_tokens"] = 100
+			event.Data["total_completion_tokens"] = 50
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recorder.calls).To(HaveLen(1))
+
+			payload, ok := recorder.calls[0].EventData.GetAIAgentResponsePayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.ResponseData.Warnings).NotTo(BeNil(),
+				"Warnings must be non-nil empty slice, not nil, so AA IT nil-checks pass")
+			Expect(payload.ResponseData.Warnings).To(BeEmpty())
+		})
+	})
 })

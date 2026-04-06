@@ -74,6 +74,9 @@ KA currently emits all 8 event types but populates almost no data beyond correla
 | R3 | `IncidentResponseData` mapper fails on edge cases (nil severity, empty parameters) | Runtime panic in production | Medium | UT-KA-433-AP-015..019 | Dedicated edge-case unit tests for nil/empty handling |
 | R4 | Per-tool-call emission increases audit volume, overwhelming DS | Performance degradation | Low | E2E-KA-433-AP-001 | Fire-and-forget pattern (`StoreBestEffort`) prevents blocking; DS handles batching |
 | R5 | Stale unit test UT-KA-433W-012 conflicts with new `buildEventData` behavior | False test failures | High | UT-KA-433W-012 | Update test in Phase 1-RED to expect populated `LLMRequestPayload` |
+| R6 | Re-enrichment preserves detected labels from a different resource identity when RCA target fetch fails | Rego policy evaluates labels for the wrong resource — could auto-approve unsafe remediations | Medium | IT-KA-433-AP-020 | IT validates labels are NOT carried across resource identities |
+| R7 | `problem_resolved` + `actionable=false` emits dual warnings causing AA misrouting | AA classifies as NotActionable instead of ProblemResolved; IT AA timeouts | Medium | UT-KA-433-AP-021 | UT validates warning exclusivity |
+| R8 | `toIncidentResponseData` returns nil Warnings when source has empty list | AA IT expects non-nil empty array; integration test failures | Medium | UT-KA-433-AP-022 | UT validates non-nil empty array default |
 
 ### 3.1 Risk-to-Test Traceability
 
@@ -81,6 +84,9 @@ KA currently emits all 8 event types but populates almost no data beyond correla
 - **R2**: Mitigated by UT-KA-433-AP-009 (unit-level `jx.Raw` validation) + IT-KA-433-AP-003 (integration-level)
 - **R3**: Mitigated by UT-KA-433-AP-015..019 (comprehensive mapper edge cases)
 - **R5**: Mitigated by updating UT-KA-433W-012 in Phase 1-RED
+- **R6**: Mitigated by IT-KA-433-AP-020 (re-enrichment label contamination)
+- **R7**: Mitigated by UT-KA-433-AP-021 (warning precedence regression guard)
+- **R8**: Mitigated by UT-KA-433-AP-022 (warnings nil-vs-empty regression guard)
 
 ---
 
@@ -219,6 +225,9 @@ Tests validate observable audit outcomes:
 | DD-AUDIT-005 | Error details in response.failed | P1 | Integration | IT-KA-433-AP-006 | Pending |
 | BR-AUDIT-021-030 | Per-attempt validation audit | P1 | Unit | UT-KA-433-AP-012..013 | Pending |
 | BR-AUDIT-021-030 | Per-attempt validation audit | P1 | Integration | IT-KA-433-AP-004 | Pending |
+| ADR-056 | Re-enrichment must not contaminate labels from different resource identity | P0 | Integration | IT-KA-433-AP-020 | Pending |
+| BR-HAPI-200 | `problem_resolved` outcome takes precedence over `actionable=false` warning | P0 | Unit | UT-KA-433-AP-021 | Pending |
+| DD-AUDIT-005 | Warnings array must be non-nil in `IncidentResponseData` | P0 | Unit | UT-KA-433-AP-022 | Pending |
 
 ---
 
@@ -259,6 +268,8 @@ Format: `{TIER}-KA-433-AP-{NNN}` (AP = Audit Parity)
 | `UT-KA-433-AP-017` | `toIncidentResponseData` maps alternatives with extended schema fields — ensures no data loss | Pending |
 | `UT-KA-433-AP-018` | `toIncidentResponseData` maps cumulative token totals — enables cost tracking | Pending |
 | `UT-KA-433-AP-019` | `toIncidentResponseData` handles nil/empty optionals without panic — ensures robustness | Pending |
+| `UT-KA-433-AP-021` | Parser suppresses "Alert not actionable" warning when `investigation_outcome=problem_resolved` — prevents AA misrouting (BR-HAPI-200) | Pending |
+| `UT-KA-433-AP-022` | `toIncidentResponseData` defaults `Warnings` to non-nil empty `[]string{}` — prevents AA IT nil-check failures (DD-AUDIT-005) | Pending |
 
 **Stale test update**: `UT-KA-433W-012` in `ds_store_test.go` must be updated to expect populated `LLMRequestPayload` EventData (currently asserts empty, contradicting `buildEventData` implementation).
 
@@ -278,6 +289,7 @@ Format: `{TIER}-KA-433-AP-{NNN}` (AP = Audit Parity)
 | `IT-KA-433-AP-006` | Investigation emits `response.failed` with `error_message` and `phase` — operator can diagnose failures | Pending |
 | `IT-KA-433-AP-007` | All investigator events have UUID `event_id` in Data — enables per-event traceability | Pending |
 | `IT-KA-433-AP-008` | All investigator events have `EventAction` and `EventOutcome` set — enables event classification | Pending |
+| `IT-KA-433-AP-020` | Re-enrichment with different RCA target must NOT copy detected labels from signal target — prevents cross-resource label contamination (ADR-056) | Pending |
 
 ### Tier 3: E2E Tests
 
@@ -446,6 +458,81 @@ No tier is skipped. All three tiers are applicable and required.
 
 ---
 
+### IT-KA-433-AP-020: Re-enrichment must NOT copy labels across different resource identities
+
+**BR**: ADR-056
+**Priority**: P0
+**Type**: Integration
+**File**: `test/integration/kubernautagent/investigator/investigator_audit_parity_test.go`
+
+**Preconditions**:
+- Fake dynamic K8s client with `Deployment/api-server` in `production` namespace (with `app.kubernetes.io/managed-by: Helm` label so `HelmManaged=true`)
+- `Deployment/worker` does NOT exist in the fake client
+- `LabelDetector` wired into `Enricher` via `.WithLabelDetector()`
+
+**Test Steps**:
+1. **Given**: Signal targets `Deployment/api-server` in namespace `production`
+2. **When**: Mock LLM RCA response returns `remediation_target: {kind: "Deployment", name: "worker", namespace: "production"}`
+3. **And**: Investigator re-enriches with `Deployment/worker` (label detection fails — all categories marked as `FailedDetections`)
+4. **Then**: `result.DetectedLabels["helmManaged"]` is `false` (NOT inherited from `api-server`)
+5. **And**: `result.DetectedLabels["failedDetections"]` contains all 8 detection categories
+
+**Expected Results**:
+1. Labels from `api-server` are NOT present in the final result (no cross-resource contamination)
+2. `failedDetections` lists all 8 categories (gitOpsManaged, helmManaged, stateful, serviceMesh, hpaEnabled, pdbProtected, networkIsolated, resourceQuotaConstrained)
+
+**Acceptance Criteria**:
+- **Behavior**: Re-enrichment with a different resource identity does not inherit labels from the original signal target
+- **Correctness**: Labels accurately reflect the RCA target's detection results, even when all detections fail
+
+### UT-KA-433-AP-021: problem_resolved suppresses not-actionable warning
+
+**BR**: BR-HAPI-200
+**Priority**: P0
+**Type**: Unit (regression guard)
+**File**: `test/unit/kubernautagent/parser/parser_test.go`
+
+**Preconditions**:
+- Parser fix already committed (this test locks in the invariant)
+
+**Test Steps**:
+1. **Given**: LLM JSON response with both `"actionable": false` and `"investigation_outcome": "problem_resolved"`
+2. **When**: `ResultParser.Parse()` processes the response
+3. **Then**: `result.Warnings` contains "Problem self-resolved" but NOT "Alert not actionable"
+
+**Expected Results**:
+1. Only the `problem_resolved` warning is present — the generic "not actionable" warning is suppressed
+2. `result.IsActionable` is `false`
+
+**Acceptance Criteria**:
+- **Behavior**: `problem_resolved` outcome takes precedence over the `actionable=false` warning
+- **Regression**: If the parser suppression logic is reverted, this test fails immediately
+
+### UT-KA-433-AP-022: toIncidentResponseData defaults warnings to empty array
+
+**BR**: DD-AUDIT-005
+**Priority**: P0
+**Type**: Unit (regression guard)
+**File**: `test/unit/kubernautagent/audit/ds_store_audit_parity_test.go`
+
+**Preconditions**:
+- ds_store.go fix already committed (this test locks in the invariant)
+
+**Test Steps**:
+1. **Given**: `AuditEvent` of type `response.complete` with `response_data` JSON that has no `warnings` field
+2. **When**: `DSAuditStore.StoreAudit()` processes the event
+3. **Then**: The recorded `IncidentResponseData.Warnings` is non-nil (empty `[]string{}`)
+
+**Expected Results**:
+1. `Warnings` is not nil — it is an empty slice
+2. JSON serialization produces `"warnings":[]` (not omitted)
+
+**Acceptance Criteria**:
+- **Behavior**: Empty warnings are represented as `[]string{}`, never `nil`
+- **Regression**: If the nil-guard in `toIncidentResponseData` is removed, this test fails immediately
+
+---
+
 ## 11. Dependencies & Schedule
 
 ### 11.1 Blocking Dependencies
@@ -476,8 +563,9 @@ No tier is skipped. All three tiers are applicable and required.
 | Deliverable | Location | Description |
 |-------------|----------|-------------|
 | This test plan | `docs/tests/433/TP-433-AUDIT-SOC2.md` | Strategy and test design |
-| Unit test suite | `test/unit/kubernautagent/audit/ds_store_audit_parity_test.go` | 19 Ginkgo BDD tests |
-| Integration test suite | `test/integration/kubernautagent/investigator/investigator_audit_parity_test.go` | 8 Ginkgo BDD tests |
+| Unit test suite (audit) | `test/unit/kubernautagent/audit/ds_store_audit_parity_test.go` | 20 Ginkgo BDD tests |
+| Unit test suite (parser) | `test/unit/kubernautagent/parser/parser_test.go` | 1 new Ginkgo BDD test (UT-KA-433-AP-021) |
+| Integration test suite | `test/integration/kubernautagent/investigator/investigator_audit_parity_test.go` | 9 Ginkgo BDD tests |
 | E2E test extensions | `test/e2e/kubernautagent/audit_pipeline_test.go` | 3 Ginkgo BDD tests |
 | Coverage report | CI artifact | Per-tier coverage percentages |
 
@@ -518,3 +606,4 @@ go tool cover -func=audit_ut_coverage.out
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-04 | Initial test plan covering GAP-A1..A8 and SOC2 CC8.1 |
+| 1.1 | 2026-03-04 | Added IT-KA-433-AP-020 (label contamination), UT-KA-433-AP-021 (warning precedence), UT-KA-433-AP-022 (warnings nil-vs-empty); risks R6-R8; BR matrix rows for ADR-056, BR-HAPI-200, DD-AUDIT-005 |

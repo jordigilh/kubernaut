@@ -34,6 +34,15 @@ import (
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+
+	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
 type errorLLMClient struct {
@@ -294,6 +303,110 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 					Expect(e.EventOutcome).To(Equal(audit.OutcomeSuccess))
 				}
 			}
+		})
+	})
+
+	Describe("IT-KA-433-AP-020: Re-enrichment must NOT copy labels across different resource identities", func() {
+		It("should mark labels as failed when RCA target differs and cannot be resolved", func() {
+			scheme := runtime.NewScheme()
+			_ = appsv1.AddToScheme(scheme)
+			_ = autoscalingv2.AddToScheme(scheme)
+			_ = policyv1.AddToScheme(scheme)
+			_ = networkingv1.AddToScheme(scheme)
+			_ = corev1.AddToScheme(scheme)
+
+			apiServerDeploy := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "api-server",
+					Namespace: "production",
+					Labels: map[string]string{
+						"app.kubernetes.io/managed-by": "Helm",
+					},
+				},
+				Spec: appsv1.DeploymentSpec{
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"app": "api-server"},
+					},
+					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{"app": "api-server"},
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{Name: "app", Image: "app:latest"}},
+						},
+					},
+				},
+			}
+
+			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, apiServerDeploy)
+			ld := enrichment.NewLabelDetector(dynClient)
+
+			k8sClientForLabels := &resourceAwareK8sClient{
+				chains: map[string][]enrichment.OwnerChainEntry{
+					"api-server": {{Kind: "Deployment", Name: "api-server", Namespace: "production"}},
+					"worker":     {{Kind: "Deployment", Name: "worker", Namespace: "production"}},
+				},
+			}
+			labelEnricher := enrichment.NewEnricher(
+				k8sClientForLabels,
+				&fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}},
+				auditStore,
+				logger,
+			).WithLabelDetector(ld)
+
+			labelMockClient := &mockLLMClient{}
+			labelMockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{
+					"rca_summary": "OOM due to worker memory leak",
+					"remediation_target": {"kind": "Deployment", "name": "worker", "namespace": "production"}
+				}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{
+					"workflow_id": "oom-recovery",
+					"confidence": 0.9
+				}`}},
+			}
+
+			labelSignal := katypes.SignalContext{
+				Name:          "api-server-abc",
+				Namespace:     "production",
+				Severity:      "high",
+				Message:       "OOMKilled",
+				ResourceKind:  "Deployment",
+				ResourceName:  "api-server",
+				RemediationID: "rem-it-label-020",
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client:       labelMockClient,
+				Builder:      builder,
+				ResultParser: rp,
+				Enricher:     labelEnricher,
+				AuditStore:   auditStore,
+				Logger:       logger,
+				MaxTurns:     15,
+				PhaseTools:   phaseTools,
+			})
+
+			result, err := inv.Investigate(context.Background(), labelSignal)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			Expect(result.DetectedLabels).NotTo(BeNil(),
+				"DetectedLabels must be populated from re-enrichment")
+
+			helmVal, hasHelm := result.DetectedLabels["helmManaged"]
+			if hasHelm {
+				Expect(helmVal).To(BeFalse(),
+					"helmManaged must NOT be inherited from api-server — worker is a different resource identity")
+			}
+
+			failedRaw, hasFailed := result.DetectedLabels["failedDetections"]
+			Expect(hasFailed).To(BeTrue(),
+				"failedDetections must be present since worker Deployment does not exist")
+			failedSlice, ok := failedRaw.([]string)
+			Expect(ok).To(BeTrue())
+			Expect(failedSlice).To(HaveLen(len(enrichment.AllDetectionCategories)),
+				"all detection categories must be listed as failed for non-existent resource")
 		})
 	})
 })

@@ -381,4 +381,21 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 			Expect(result.RemediationTarget.Name).To(BeEmpty())
 		})
 	})
+
+	Describe("UT-KA-433-AP-021: problem_resolved suppresses not-actionable warning", func() {
+		It("should emit Problem self-resolved but NOT Alert not actionable", func() {
+			p := parser.NewResultParser()
+			result, err := p.Parse(`{
+				"rca_summary": "Transient OOM cleared after restart",
+				"actionable": false,
+				"investigation_outcome": "problem_resolved",
+				"confidence": 0.85
+			}`)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.Warnings).To(ContainElement(ContainSubstring("Problem self-resolved")))
+			Expect(result.Warnings).NotTo(ContainElement(ContainSubstring("Alert not actionable")),
+				"problem_resolved outcome must suppress the generic not-actionable warning")
+		})
+	})
 })

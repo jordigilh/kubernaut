@@ -79,6 +79,23 @@ func (f *fakeK8sClient) GetSpecHash(_ context.Context, _, _, _ string) (string, 
 	return "", nil
 }
 
+// resourceAwareK8sClient returns different owner chains based on the resource name.
+// Used by IT-KA-433-AP-020 to test cross-target label contamination.
+type resourceAwareK8sClient struct {
+	chains map[string][]enrichment.OwnerChainEntry
+}
+
+func (r *resourceAwareK8sClient) GetOwnerChain(_ context.Context, _, name, _ string) ([]enrichment.OwnerChainEntry, error) {
+	if chain, ok := r.chains[name]; ok {
+		return chain, nil
+	}
+	return nil, nil
+}
+
+func (r *resourceAwareK8sClient) GetSpecHash(_ context.Context, _, _, _ string) (string, error) {
+	return "", nil
+}
+
 type fakeDataStorageClient struct {
 	history *enrichment.RemediationHistoryResult
 	err     error
