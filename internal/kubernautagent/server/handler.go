@@ -285,6 +285,10 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 			eeRaw, _ := json.Marshal(r.ExecutionEngine)
 			sw["execution_engine"] = jx.Raw(eeRaw)
 		}
+		if r.ServiceAccountName != "" {
+			saRaw, _ := json.Marshal(r.ServiceAccountName)
+			sw["service_account_name"] = jx.Raw(saRaw)
+		}
 		resp.SelectedWorkflow.SetTo(sw)
 	}
 

@@ -317,7 +317,8 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 
 // enrichFromCatalog backfills execution metadata from the workflow catalog
 // into the InvestigationResult, replicating HAPI's behavior of including
-// execution_engine, execution_bundle, and execution_bundle_digest.
+// execution_engine, execution_bundle, execution_bundle_digest, and
+// service_account_name so downstream controllers (WE) can use them.
 func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator) {
 	if result == nil || v == nil || result.WorkflowID == "" {
 		return
@@ -334,6 +335,9 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 	}
 	if result.ExecutionBundleDigest == "" {
 		result.ExecutionBundleDigest = meta.ExecutionBundleDigest
+	}
+	if result.ServiceAccountName == "" {
+		result.ServiceAccountName = meta.ServiceAccountName
 	}
 }
 
