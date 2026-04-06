@@ -36,6 +36,7 @@ import (
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	prodcontroller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
@@ -73,9 +74,10 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 		_ = signalprocessingv1.AddToScheme(scheme)
 		_ = aianalysisv1.AddToScheme(scheme)
 		_ = workflowexecutionv1.AddToScheme(scheme)
-		_ = notificationv1.AddToScheme(scheme) // Required for approval notifications
+		_ = notificationv1.AddToScheme(scheme)
 		_ = corev1.AddToScheme(scheme)
 		_ = eav1.AddToScheme(scheme)
+		_ = remediationworkflowv1.AddToScheme(scheme)
 	})
 
 	DescribeTable("Phase Transitions",
@@ -757,6 +759,7 @@ var _ = Describe("UT-RO-214-010: CapturePreRemediationHash API error soft-fail (
 		_ = notificationv1.AddToScheme(scheme)
 		_ = corev1.AddToScheme(scheme)
 		_ = eav1.AddToScheme(scheme)
+		_ = remediationworkflowv1.AddToScheme(scheme)
 	})
 
 	It("should proceed with empty hash when apiReader returns error for target resource", func() {
