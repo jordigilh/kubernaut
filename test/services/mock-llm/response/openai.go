@@ -130,11 +130,21 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 // Top-level fields (investigation_outcome, actionable, severity, confidence,
 // needs_human_review, human_review_reason) are required by KA's outcome routing;
 // the nested root_cause_analysis and selected_workflow are consumed by parseLLMFormat.
+//
+// Golden transcript ref: kubernaut-demo-scenarios#296 — response structure mirrors
+// real Claude Sonnet 4 output to ensure KA parser fidelity.
 func analysisJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 	rca := map[string]interface{}{
 		"summary":              cfg.RootCause,
 		"severity":             cfg.Severity,
 		"contributing_factors": contributingSlice(cfg),
+	}
+	if cfg.ResourceKind != "" {
+		rca["remediation_target"] = map[string]string{
+			"kind":      cfg.ResourceKind,
+			"name":      cfg.ResourceName,
+			"namespace": cfg.ResourceNS,
+		}
 	}
 
 	obj := map[string]interface{}{
@@ -148,9 +158,21 @@ func analysisJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 			"workflow_id":      cfg.WorkflowID,
 			"version":          "1.0.0",
 			"confidence":       cfg.Confidence,
-			"rationale":        "Selected based on signal analysis",
+			"rationale":        workflowRationale(cfg),
 			"execution_engine": executionEngine(cfg),
 		}
+	}
+
+	if len(cfg.Alternatives) > 0 {
+		alts := make([]map[string]interface{}, 0, len(cfg.Alternatives))
+		for _, a := range cfg.Alternatives {
+			alts = append(alts, map[string]interface{}{
+				"workflow_id": a.WorkflowID,
+				"confidence":  a.Confidence,
+				"rationale":   a.Rationale,
+			})
+		}
+		obj["alternative_workflows"] = alts
 	}
 
 	if cfg.InvestigationOutcome != "" {
@@ -167,6 +189,13 @@ func analysisJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 	}
 
 	return obj
+}
+
+func workflowRationale(cfg scenarios.MockScenarioConfig) string {
+	if cfg.Rationale != "" {
+		return cfg.Rationale
+	}
+	return "Selected based on signal analysis"
 }
 
 func buildAnalysisText(cfg scenarios.MockScenarioConfig) string {
