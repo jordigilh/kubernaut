@@ -96,13 +96,13 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Integration — #433", func()
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
 				case "/api/v1/label/__name__/values":
-					fmt.Fprint(w, `{"status":"success","data":["up","container_memory_usage_bytes","node_cpu_seconds_total"]}`)
-				case "/api/v1/labels":
-					fmt.Fprint(w, `{"status":"success","data":["__name__","instance","job","namespace","pod"]}`)
-				case "/api/v1/metadata":
-					fmt.Fprint(w, `{"status":"success","data":{"up":[{"type":"gauge","help":"Health check metric","unit":""}]}}`)
-				default:
-					fmt.Fprintf(w, `{"status":"success","data":["value-a","value-b"]}`)
+				_, _ = fmt.Fprint(w, `{"status":"success","data":["up","container_memory_usage_bytes","node_cpu_seconds_total"]}`)
+			case "/api/v1/labels":
+				_, _ = fmt.Fprint(w, `{"status":"success","data":["__name__","instance","job","namespace","pod"]}`)
+			case "/api/v1/metadata":
+				_, _ = fmt.Fprint(w, `{"status":"success","data":{"up":[{"type":"gauge","help":"Health check metric","unit":""}]}}`)
+			default:
+				_, _ = fmt.Fprintf(w, `{"status":"success","data":["value-a","value-b"]}`)
 				}
 			}))
 
