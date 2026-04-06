@@ -38,6 +38,7 @@ import (
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/version"
@@ -64,7 +65,8 @@ func init() {
 	utilruntime.Must(aianalysisv1.AddToScheme(scheme))
 	utilruntime.Must(workflowexecutionv1.AddToScheme(scheme))
 	utilruntime.Must(notificationv1.AddToScheme(scheme))
-	utilruntime.Must(eav1.AddToScheme(scheme)) // ADR-EM-001: EA CRD scheme for EA creation on terminal phases
+	utilruntime.Must(eav1.AddToScheme(scheme))                  // ADR-EM-001: EA CRD scheme for EA creation on terminal phases
+	utilruntime.Must(remediationworkflowv1.AddToScheme(scheme)) // Issue #643: RW scheme for workflow name resolution
 	//+kubebuilder:scaffold:scheme
 }
 
