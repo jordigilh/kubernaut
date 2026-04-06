@@ -33,9 +33,18 @@ func (e *ValidationError) Error() string {
 	return e.Field + ": " + e.Message
 }
 
+// WorkflowMeta holds catalog metadata for a workflow.
+type WorkflowMeta struct {
+	ExecutionEngine       string
+	ExecutionBundle       string
+	ExecutionBundleDigest string
+	ServiceAccountName    string
+}
+
 // Validator checks InvestigationResult against session-specific constraints.
 type Validator struct {
 	allowedWorkflows map[string]struct{}
+	catalogMeta      map[string]WorkflowMeta
 }
 
 // NewValidator creates a result validator with the given workflow allowlist.
@@ -44,7 +53,21 @@ func NewValidator(allowedWorkflows []string) *Validator {
 	for _, w := range allowedWorkflows {
 		allowed[w] = struct{}{}
 	}
-	return &Validator{allowedWorkflows: allowed}
+	return &Validator{
+		allowedWorkflows: allowed,
+		catalogMeta:      make(map[string]WorkflowMeta),
+	}
+}
+
+// SetWorkflowMeta stores catalog metadata for a workflow ID (UUID).
+func (v *Validator) SetWorkflowMeta(workflowID string, meta WorkflowMeta) {
+	v.catalogMeta[workflowID] = meta
+}
+
+// GetWorkflowMeta returns catalog metadata for a workflow ID, if available.
+func (v *Validator) GetWorkflowMeta(workflowID string) (WorkflowMeta, bool) {
+	m, ok := v.catalogMeta[workflowID]
+	return m, ok
 }
 
 // Validate checks the result against the allowlist and parameter bounds.

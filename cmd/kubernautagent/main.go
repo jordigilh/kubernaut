@@ -609,16 +609,34 @@ func buildWorkflowValidator(ds *dsClients, logger *slog.Logger) (*parser.Validat
 				}
 			}
 			if len(ids) == 0 {
-				// Workflow catalog is empty — likely a timing issue where
-				// workflow schemas haven't been reconciled into DataStorage yet.
 				lastErr = fmt.Errorf("workflow catalog returned 0 workflows (not ready)")
 				logger.Warn("workflow catalog empty, will retry",
 					"attempt", attempt+1, "max_attempts", len(retryDelays)+1)
 				continue
 			}
+			validator := parser.NewValidator(ids)
+			for _, w := range v.Workflows {
+				if !w.WorkflowId.Set {
+					continue
+				}
+				wfID := w.WorkflowId.Value.String()
+				meta := parser.WorkflowMeta{
+					ExecutionEngine: w.ExecutionEngine,
+				}
+				if w.ExecutionBundle.Set {
+					meta.ExecutionBundle = w.ExecutionBundle.Value
+				}
+				if w.ExecutionBundleDigest.Set {
+					meta.ExecutionBundleDigest = w.ExecutionBundleDigest.Value
+				}
+				if w.ServiceAccountName.Set {
+					meta.ServiceAccountName = w.ServiceAccountName.Value
+				}
+				validator.SetWorkflowMeta(wfID, meta)
+			}
 			logger.Info("workflow validator enabled (DD-HAPI-002: sole validator)",
 				"allowed_workflows", len(ids), "attempts", attempt+1)
-			return parser.NewValidator(ids), nil
+			return validator, nil
 		default:
 			lastErr = fmt.Errorf("unexpected ListWorkflows response type %T", resp)
 		}

@@ -273,10 +273,17 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 		}
 		confRaw, _ := json.Marshal(r.Confidence)
 		sw["confidence"] = jx.Raw(confRaw)
-		// GAP-009: Include execution_bundle in selected_workflow per OpenAPI schema
 		if r.ExecutionBundle != "" {
 			ebRaw, _ := json.Marshal(r.ExecutionBundle)
 			sw["execution_bundle"] = jx.Raw(ebRaw)
+		}
+		if r.ExecutionBundleDigest != "" {
+			ebdRaw, _ := json.Marshal(r.ExecutionBundleDigest)
+			sw["execution_bundle_digest"] = jx.Raw(ebdRaw)
+		}
+		if r.ExecutionEngine != "" {
+			eeRaw, _ := json.Marshal(r.ExecutionEngine)
+			sw["execution_engine"] = jx.Raw(eeRaw)
 		}
 		resp.SelectedWorkflow.SetTo(sw)
 	}

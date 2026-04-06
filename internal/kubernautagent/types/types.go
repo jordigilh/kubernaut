@@ -42,7 +42,9 @@ type InvestigationResult struct {
 	Confidence        float64                `json:"confidence"`
 
 	// Workflow selection (GAP-009: OpenAPI selected_workflow includes execution_bundle)
-	ExecutionBundle string `json:"execution_bundle,omitempty"`
+	ExecutionBundle       string `json:"execution_bundle,omitempty"`
+	ExecutionBundleDigest string `json:"execution_bundle_digest,omitempty"`
+	ExecutionEngine       string `json:"execution_engine,omitempty"`
 
 	// Human review fields (GAP-013: HumanReviewReason for OpenAPI enum mapping)
 	HumanReviewNeeded bool   `json:"human_review_needed"`
