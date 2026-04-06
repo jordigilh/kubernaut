@@ -139,6 +139,54 @@ var _ = Describe("Override Wiring Integration", func() {
 		)
 	})
 
+	Describe("IT-MOCK-561-005: WorkflowName-based override matching (ConfigMap key format)", func() {
+		It("should apply override when key uses <workflow_name>:<environment> format from DataStorage", func() {
+			tmpDir := GinkgoT().TempDir()
+			overridePath := filepath.Join(tmpDir, "overrides.yaml")
+			Expect(os.WriteFile(overridePath, []byte(`scenarios:
+  oomkill-increase-memory-v1:production:
+    workflow_id: "ds-generated-uuid-for-oomkill"
+`), 0644)).To(Succeed())
+
+			overrides, err := config.LoadYAMLOverrides(overridePath)
+			Expect(err).NotTo(HaveOccurred())
+
+			registry := scenarios.DefaultRegistryWithOverrides(overrides)
+
+			oomScenario, found := registry.Get("oomkilled")
+			Expect(found).To(BeTrue(), "oomkilled scenario must be registered")
+
+			withCfg, ok := oomScenario.(scenarios.ScenarioWithConfig)
+			Expect(ok).To(BeTrue())
+			Expect(withCfg.Config().WorkflowID).To(Equal("ds-generated-uuid-for-oomkill"),
+				"override keyed by WorkflowName:environment should apply to matching scenario")
+		})
+
+		It("should prefer :production override when multiple environments exist", func() {
+			tmpDir := GinkgoT().TempDir()
+			overridePath := filepath.Join(tmpDir, "overrides.yaml")
+			Expect(os.WriteFile(overridePath, []byte(`scenarios:
+  crashloop-config-fix-v1:staging:
+    workflow_id: "uuid-staging"
+  crashloop-config-fix-v1:production:
+    workflow_id: "uuid-production"
+`), 0644)).To(Succeed())
+
+			overrides, err := config.LoadYAMLOverrides(overridePath)
+			Expect(err).NotTo(HaveOccurred())
+
+			registry := scenarios.DefaultRegistryWithOverrides(overrides)
+
+			crashScenario, found := registry.Get("crashloop")
+			Expect(found).To(BeTrue(), "crashloop scenario must be registered")
+
+			withCfg, ok := crashScenario.(scenarios.ScenarioWithConfig)
+			Expect(ok).To(BeTrue())
+			Expect(withCfg.Config().WorkflowID).To(Equal("uuid-production"),
+				":production override should take precedence over other environments")
+		})
+	})
+
 	Describe("IT-MOCK-561-004: MOCK_LLM_CONFIG_PATH env var wired at startup", func() {
 		It("should load overrides from the path specified by MOCK_LLM_CONFIG_PATH", func() {
 			tmpDir := GinkgoT().TempDir()
@@ -148,8 +196,8 @@ var _ = Describe("Override Wiring Integration", func() {
     workflow_id: "env-var-wired-uuid"
 `), 0644)).To(Succeed())
 
-			os.Setenv("MOCK_LLM_CONFIG_PATH", overridePath)
-			defer os.Unsetenv("MOCK_LLM_CONFIG_PATH")
+			Expect(os.Setenv("MOCK_LLM_CONFIG_PATH", overridePath)).To(Succeed())
+			defer func() { Expect(os.Unsetenv("MOCK_LLM_CONFIG_PATH")).To(Succeed()) }()
 
 			cfg := config.LoadFromEnv()
 			Expect(cfg.ConfigPath).To(Equal(overridePath))
