@@ -33,8 +33,8 @@ var _ = Describe("Server Config Integration", func() {
 
 	Describe("IT-MOCK-032-001: Server respects MOCK_LLM_FORCE_TEXT env var", func() {
 		It("should force text mode when MOCK_LLM_FORCE_TEXT=true is loaded from config", func() {
-			os.Setenv("MOCK_LLM_FORCE_TEXT", "true")
-			defer os.Unsetenv("MOCK_LLM_FORCE_TEXT")
+			Expect(os.Setenv("MOCK_LLM_FORCE_TEXT", "true")).To(Succeed())
+			defer func() { Expect(os.Unsetenv("MOCK_LLM_FORCE_TEXT")).To(Succeed()) }()
 
 			cfg := config.LoadFromEnv()
 			Expect(cfg.ForceText).To(BeTrue())
