@@ -306,8 +306,8 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 		})
 	})
 
-	Describe("IT-KA-433-AP-020: Re-enrichment must NOT copy labels across different resource identities", func() {
-		It("should mark labels as failed when RCA target differs and cannot be resolved", func() {
+	Describe("IT-KA-433-AP-020: Re-enrichment preserves signal-target labels when RCA target is unreachable", func() {
+		It("should preserve signal-target labels when RCA target cannot be resolved", func() {
 			scheme := runtime.NewScheme()
 			_ = appsv1.AddToScheme(scheme)
 			_ = autoscalingv2.AddToScheme(scheme)
@@ -392,21 +392,25 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			Expect(result).NotTo(BeNil())
 
 			Expect(result.DetectedLabels).NotTo(BeNil(),
-				"DetectedLabels must be populated from re-enrichment")
+				"DetectedLabels must be populated — original signal-target labels preserved")
 
+			// When the RCA target (worker) can't be resolved, the investigator
+			// preserves the signal-target (api-server) labels instead of replacing
+			// them with all-failed detections.
 			helmVal, hasHelm := result.DetectedLabels["helmManaged"]
-			if hasHelm {
-				Expect(helmVal).To(BeFalse(),
-					"helmManaged must NOT be inherited from api-server — worker is a different resource identity")
-			}
+			Expect(hasHelm).To(BeTrue(), "helmManaged must be present from signal-target api-server")
+			Expect(helmVal).To(BeTrue(),
+				"helmManaged must be true — preserved from api-server (managed-by=Helm)")
 
+			// failedDetections should NOT include all categories since we preserved
+			// the api-server labels (which successfully detected helmManaged etc.)
 			failedRaw, hasFailed := result.DetectedLabels["failedDetections"]
-			Expect(hasFailed).To(BeTrue(),
-				"failedDetections must be present since worker Deployment does not exist")
-			failedSlice, ok := failedRaw.([]string)
-			Expect(ok).To(BeTrue())
-			Expect(failedSlice).To(HaveLen(len(enrichment.AllDetectionCategories)),
-				"all detection categories must be listed as failed for non-existent resource")
+			if hasFailed {
+				failedSlice, ok := failedRaw.([]string)
+				Expect(ok).To(BeTrue())
+				Expect(failedSlice).NotTo(HaveLen(len(enrichment.AllDetectionCategories)),
+					"should NOT have all categories failed — signal-target labels were preserved")
+			}
 		})
 	})
 })

@@ -131,8 +131,11 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			"rca_target", postRCAKind+"/"+postRCAName,
 		)
 		reEnriched := inv.resolveEnrichment(ctx, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
-		if reEnriched != nil {
+		if reEnriched != nil && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
 			enrichData = reEnriched
+		} else if reEnriched != nil {
+			inv.logger.Warn("re-enrichment labels all failed (RCA target not found), preserving signal-target labels",
+				"rca_target", postRCAKind+"/"+postRCAName)
 		} else {
 			inv.logger.Warn("re-enrichment returned nil, retaining pre-RCA enrichment data")
 		}
@@ -682,4 +685,14 @@ func attachDetectedLabels(result *katypes.InvestigationResult, enrichData *enric
 		return
 	}
 	result.DetectedLabels = detectedLabelsToResult(enrichData.DetectedLabels)
+}
+
+// allLabelDetectionsFailed returns true when every detection category is in
+// FailedDetections, indicating the target resource could not be fetched at all.
+// Used to decide whether to keep the original signal-target labels instead.
+func allLabelDetectionsFailed(labels *enrichment.DetectedLabels) bool {
+	if labels == nil {
+		return false
+	}
+	return len(labels.FailedDetections) >= len(enrichment.AllDetectionCategories)
 }
