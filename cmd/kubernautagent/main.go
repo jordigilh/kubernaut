@@ -25,6 +25,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -100,6 +102,10 @@ func main() {
 		}
 	} else {
 		slogger.Info("SDK config not found, using main config only", "path", sdkConfigPath)
+	}
+
+	if cfg.LLM.APIKey == "" {
+		cfg.LLM.APIKey = resolveCredentialsFile(cfg.LLM.Provider, slogger)
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -410,6 +416,52 @@ func buildLLMProviderOptions(cfg *kaconfig.Config) []langchaingo.Option {
 		opts = append(opts, langchaingo.WithBedrockRegion(cfg.LLM.BedrockRegion))
 	}
 	return opts
+}
+
+// resolveCredentialsFile reads the LLM API key from the Helm-mounted credentials
+// directory (/etc/kubernaut-agent/credentials/). The Helm chart mounts the
+// credentialsSecretName as a volume; each secret key becomes a file.
+// Providers use different env-var names (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.),
+// so we try the provider-specific key first, then fall back to any single file.
+func resolveCredentialsFile(provider string, logger *slog.Logger) string {
+	const credDir = "/etc/kubernaut-agent/credentials"
+
+	providerKeyFiles := map[string]string{
+		"openai":     "OPENAI_API_KEY",
+		"anthropic":  "ANTHROPIC_API_KEY",
+		"mistral":    "MISTRAL_API_KEY",
+		"huggingface": "HUGGINGFACEHUB_API_TOKEN",
+	}
+
+	if keyFile, ok := providerKeyFiles[provider]; ok {
+		path := filepath.Join(credDir, keyFile)
+		if data, err := os.ReadFile(path); err == nil {
+			key := strings.TrimSpace(string(data))
+			if key != "" {
+				logger.Info("resolved LLM API key from credentials file", "path", path)
+				return key
+			}
+		}
+	}
+
+	entries, err := os.ReadDir(credDir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		path := filepath.Join(credDir, e.Name())
+		if data, readErr := os.ReadFile(path); readErr == nil {
+			key := strings.TrimSpace(string(data))
+			if key != "" {
+				logger.Info("resolved LLM API key from credentials file (fallback)", "path", path)
+				return key
+			}
+		}
+	}
+	return ""
 }
 
 // buildAuditStore creates a DSAuditStore when audit is enabled and DS is available,
