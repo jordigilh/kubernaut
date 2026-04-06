@@ -119,6 +119,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, enrichData)
 		injectRemediationTarget(rcaResult, signal, enrichData)
+		injectTargetResourceParameters(rcaResult)
 		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
 		return rcaResult, nil
 	}
@@ -155,6 +156,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	backfillSeverity(workflowResult, signal)
 	attachDetectedLabels(workflowResult, enrichData)
 	injectRemediationTarget(workflowResult, signal, enrichData)
+	injectTargetResourceParameters(workflowResult)
 	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID)
 	return workflowResult, nil
 }
@@ -712,10 +714,18 @@ func attachDetectedLabels(result *katypes.InvestigationResult, enrichData *enric
 	result.DetectedLabels = detectedLabelsToResult(enrichData.DetectedLabels)
 }
 
-// injectRemediationTarget replicates HAPI's _inject_target_resource: always
-// populate remediationTarget from the K8s root owner (owner chain resolution),
-// not from the LLM's response. The K8s owner chain is ground truth; the LLM
-// might hallucinate resource names.
+// injectRemediationTarget replicates HAPI's _inject_target_resource behavior.
+//
+// Logic:
+//   - If the LLM did not provide a remediation_target (Kind==""), inject the
+//     K8s root owner from the owner chain.
+//   - If the LLM provided a target with the SAME Kind as the root owner
+//     (e.g., both Deployment), override with the root owner. K8s identity is
+//     authoritative for same-kind resources — the LLM may return a name that
+//     doesn't exist in the cluster.
+//   - If the LLM provided a target with a DIFFERENT Kind (e.g., Certificate
+//     when the root owner is Deployment), preserve the LLM's target. The LLM
+//     identified a cross-type resource that owner-chain resolution can't reach.
 func injectRemediationTarget(result *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult) {
 	if result == nil {
 		return
@@ -731,11 +741,33 @@ func injectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 			rootNS = root.Namespace
 		}
 	}
-	result.RemediationTarget = katypes.RemediationTarget{
-		Kind:      rootKind,
-		Name:      rootName,
-		Namespace: rootNS,
+
+	llmKind := result.RemediationTarget.Kind
+	if llmKind == "" || llmKind == rootKind {
+		result.RemediationTarget = katypes.RemediationTarget{
+			Kind:      rootKind,
+			Name:      rootName,
+			Namespace: rootNS,
+		}
+		return
 	}
+	// LLM identified a different Kind (cross-type target) — preserve it.
+}
+
+// injectTargetResourceParameters merges TARGET_RESOURCE_NAME, TARGET_RESOURCE_KIND,
+// and TARGET_RESOURCE_NAMESPACE into result.Parameters from the final
+// RemediationTarget. HAPI injected these so that WorkflowExecution Jobs receive
+// the correct target identity as environment variables.
+func injectTargetResourceParameters(result *katypes.InvestigationResult) {
+	if result == nil || result.RemediationTarget.Kind == "" {
+		return
+	}
+	if result.Parameters == nil {
+		result.Parameters = make(map[string]interface{})
+	}
+	result.Parameters["TARGET_RESOURCE_NAME"] = result.RemediationTarget.Name
+	result.Parameters["TARGET_RESOURCE_KIND"] = result.RemediationTarget.Kind
+	result.Parameters["TARGET_RESOURCE_NAMESPACE"] = result.RemediationTarget.Namespace
 }
 
 // allLabelDetectionsFailed returns true when every detection category is in
