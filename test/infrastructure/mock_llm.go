@@ -414,15 +414,8 @@ func UpdateMockLLMConfigMap(ctx context.Context, namespace, kubeconfigPath strin
 
 	scenariosYAML := "scenarios:\n"
 	for _, key := range SortedWorkflowUUIDKeys(workflowUUIDs) {
-		scenariosYAML += fmt.Sprintf("      %s: %s\n", key, workflowUUIDs[key])
+		scenariosYAML += fmt.Sprintf("      %s:\n        workflow_id: \"%s\"\n", key, workflowUUIDs[key])
 	}
-	scenariosYAML += "    overrides:\n"
-	scenariosYAML += "      oomkilled:\n"
-	scenariosYAML += "        execution_engine: \"job\"\n"
-	scenariosYAML += "      oomkilled_predictive:\n"
-	scenariosYAML += "        execution_engine: \"job\"\n"
-	scenariosYAML += "      crashloop:\n"
-	scenariosYAML += "        execution_engine: \"job\"\n"
 
 	configMap := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
