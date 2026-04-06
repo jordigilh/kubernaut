@@ -123,11 +123,16 @@ var _ = SynchronizedBeforeSuite(
 
 		By("Setting up Full Pipeline E2E infrastructure (Issue #39)")
 		ctx := context.Background()
-		images, err := infrastructure.SetupFullPipelineInfrastructure(
+		images, seededUUIDs, err := infrastructure.SetupFullPipelineInfrastructure(
 			ctx, clusterName, tempKubeconfigPath, GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred(), "Full pipeline infrastructure setup failed")
 		_ = images // builtImages stored locally on process 1 for cleanup
+
+		// Validate workflow catalog was seeded (Phase 6b of infrastructure setup)
+		Expect(seededUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
+		Expect(seededUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"))
+		Expect(seededUUIDs).To(HaveKey("fix-certificate-v1:production"))
 
 		// DD-AUTH-014: Create E2E ServiceAccount for DataStorage authentication
 		By("Creating E2E ServiceAccount for DataStorage authentication (DD-AUTH-014)")
@@ -150,31 +155,6 @@ var _ = SynchronizedBeforeSuite(
 		By("Setting KUBECONFIG for all processes")
 		err = os.Setenv("KUBECONFIG", tempKubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
-
-		// DD-WORKFLOW-016: Seed action types via kubectl apply before workflow registration (FK constraint).
-		By("Seeding action types via kubectl apply (DD-WORKFLOW-016)")
-		Expect(infrastructure.SeedE2EActionTypes(tempKubeconfigPath, namespace, GinkgoWriter)).To(Succeed(), "Failed to seed action types")
-
-		By("Seeding FP test workflows via kubectl apply (declarative, job engine — no Tekton in FP cluster)")
-		fpWorkflows := []infrastructure.WorkflowSeedSpec{
-			{FixtureDir: "crashloop-config-fix-job", Environment: "production"},
-			{FixtureDir: "oomkill-increase-memory-job", Environment: "production"},
-			{FixtureDir: "fix-certificate", Environment: "production"},
-		}
-		seededUUIDs, seedErr := infrastructure.SeedWorkflowsViaKubectlApply(
-			tempKubeconfigPath, namespace, fpWorkflows, GinkgoWriter,
-		)
-		Expect(seedErr).ToNot(HaveOccurred(), "Failed to seed workflows via kubectl apply")
-		Expect(seededUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
-		Expect(seededUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"))
-		Expect(seededUUIDs).To(HaveKey("fix-certificate-v1:production"))
-
-		if os.Getenv("SKIP_MOCK_LLM") == "" {
-			By("Updating Mock LLM ConfigMap with all workflow UUIDs (once)")
-			Expect(infrastructure.UpdateMockLLMConfigMap(
-				ctx, namespace, tempKubeconfigPath, seededUUIDs, GinkgoWriter,
-			)).To(Succeed(), "Failed to update Mock LLM ConfigMap")
-		}
 
 		GinkgoWriter.Println("✅ Full Pipeline E2E infrastructure ready (Process 1)")
 
