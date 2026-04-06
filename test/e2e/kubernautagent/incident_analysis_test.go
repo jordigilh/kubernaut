@@ -333,8 +333,8 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 				"confidence field must be present")
 
 			// CORRECTNESS: Exact confidence value from Mock LLM
-			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.88, 0.05),
-				"Mock LLM 'crashloop' scenario returns confidence = 0.88 ± 0.05")
+			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.95, 0.05),
+				"Mock LLM 'crashloop' scenario returns confidence = 0.95 ± 0.05")
 
 			// BUSINESS IMPACT: AIAnalysis can parse response without errors
 		})

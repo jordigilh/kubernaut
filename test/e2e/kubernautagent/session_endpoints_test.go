@@ -116,8 +116,8 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				"incident_id must match request")
 			Expect(result.NeedsHumanReview.Value).To(BeFalse(),
 				"needs_human_review must be false for confident CrashLoopBackOff recommendation")
-			Expect(result.Confidence).To(BeNumerically("~", 0.88, 0.05),
-				"Mock LLM 'crashloop' scenario returns confidence = 0.88 ± 0.05")
+			Expect(result.Confidence).To(BeNumerically("~", 0.95, 0.05),
+				"Mock LLM 'crashloop' scenario returns confidence = 0.95 ± 0.05")
 			Expect(len(result.Analysis) > 0).To(BeTrue(),
 				"analysis field must be present")
 

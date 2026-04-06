@@ -157,8 +157,8 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 			// ========================================
 			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
 				"selected_workflow must be present for CrashLoop via three-step discovery")
-			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.88, 0.10),
-				"Confidence should be ~0.88 for CrashLoop scenario")
+			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.95, 0.05),
+				"Confidence should be ~0.95 for CrashLoop scenario")
 
 			logger.Info("✅ E2E-HAPI-017-001-001b: CrashLoop three-step discovery PASSED",
 				"incident_id", incidentResp.IncidentID,

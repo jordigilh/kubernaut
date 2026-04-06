@@ -26,7 +26,6 @@ func noWorkflowFoundConfig() MockScenarioConfig {
 		NeedsHumanReview:     BoolPtr(true),
 		HumanReviewReason:    "no_matching_workflows",
 		InvestigationOutcome: "inconclusive",
-		IsActionable:         BoolPtr(false),
 	}
 }
 
