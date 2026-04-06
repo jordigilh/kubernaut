@@ -15,11 +15,21 @@ limitations under the License.
 */
 package scenarios
 
-import "github.com/jordigilh/kubernaut/test/services/mock-llm/config"
+import (
+	"strings"
+
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
+)
 
 // DefaultRegistryWithOverrides returns a fully populated registry with optional
 // per-scenario overrides applied. If overrides is nil, behaves identically to
 // DefaultRegistry.
+//
+// Override keys in the ConfigMap use "<workflow_name>:<environment>" format
+// (populated by test infrastructure from DataStorage UUIDs). The lookup checks:
+//  1. Exact match by ScenarioName (backward compatibility)
+//  2. Fallback match by WorkflowName prefix (strips ":environment" suffix),
+//     preferring ":production" when multiple environments exist
 func DefaultRegistryWithOverrides(overrides *config.Overrides) *Registry {
 	r := defaultRegistryInternal()
 	if overrides != nil {
@@ -29,16 +39,50 @@ func DefaultRegistryWithOverrides(overrides *config.Overrides) *Registry {
 				continue
 			}
 			if ov, found := overrides.Scenarios[cs.config.ScenarioName]; found {
-				if ov.WorkflowID != "" {
-					cs.config.WorkflowID = ov.WorkflowID
-				}
-				if ov.Confidence != nil {
-					cs.config.Confidence = *ov.Confidence
-				}
+				applyOverride(cs, ov)
+				continue
+			}
+			if cs.config.WorkflowName == "" {
+				continue
+			}
+			if ov, found := findOverrideByWorkflowName(overrides.Scenarios, cs.config.WorkflowName); found {
+				applyOverride(cs, ov)
 			}
 		}
 	}
 	return r
+}
+
+func applyOverride(cs *configScenario, ov config.ScenarioOverride) {
+	if ov.WorkflowID != "" {
+		cs.config.WorkflowID = ov.WorkflowID
+	}
+	if ov.Confidence != nil {
+		cs.config.Confidence = *ov.Confidence
+	}
+}
+
+// findOverrideByWorkflowName searches override keys for entries matching the
+// given workflow name. Keys have format "workflow_name:environment". When
+// multiple environments match, ":production" is preferred since the E2E
+// tests assert against production workflows.
+func findOverrideByWorkflowName(overrides map[string]config.ScenarioOverride, workflowName string) (config.ScenarioOverride, bool) {
+	var best config.ScenarioOverride
+	found := false
+	for key, ov := range overrides {
+		name := key
+		if idx := strings.Index(key, ":"); idx != -1 {
+			name = key[:idx]
+		}
+		if name == workflowName {
+			best = ov
+			found = true
+			if strings.HasSuffix(key, ":production") {
+				return ov, true
+			}
+		}
+	}
+	return best, found
 }
 
 // DefaultRegistry returns a fully populated registry with all 15 scenarios
