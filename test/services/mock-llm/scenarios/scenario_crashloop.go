@@ -32,5 +32,6 @@ func crashloopConfig() MockScenarioConfig {
 		},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
+		ExecutionEngine:      "job",
 	}
 }
