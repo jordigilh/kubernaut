@@ -942,8 +942,9 @@ In v1.3 (issue [#433](https://github.com/jordigilh/kubernaut/issues/433), Kubern
 | `aiagent.response.failed` | `response_failed` | `failure` |
 | `aiagent.enrichment.completed` | `enrichment` | `success` |
 | `aiagent.enrichment.failed` | `enrichment` | `failure` |
+| `aiagent.conversation.turn` | `conversation_turn` | `success` |
 
-**Granularity**: `aiagent.llm.tool_call` is emitted **once per tool call**. `aiagent.workflow.validation_attempt` is emitted per validation attempt and includes `workflow_id` and `is_final_attempt` where applicable.
+**Granularity**: `aiagent.llm.tool_call` is emitted **once per tool call**. `aiagent.workflow.validation_attempt` is emitted per validation attempt and includes `workflow_id` and `is_final_attempt` where applicable. `aiagent.conversation.turn` is emitted once per user message in the conversational RAR API (see [DD-CONV-001](./DD-CONV-001-conversation-tool-call-architecture.md)).
 
 **Reference**: [TP-433-AUDIT-SOC2](../../tests/433/TP-433-AUDIT-SOC2.md).
 
