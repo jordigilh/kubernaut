@@ -151,7 +151,7 @@ func main() {
 
 	k8sInfra := initK8sInfra(slogger)
 	ds := initDSClients(cfg, k8sInfra, slogger)
-	auditStore := buildAuditStore(cfg, ds, slogger)
+	auditStore, auditCleanup := buildAuditStore(cfg, ds, slogger, logrLogger)
 	reg := buildToolRegistry(cfg, slogger, k8sInfra, ds)
 	enricher := buildEnricher(ds, k8sInfra, auditStore, slogger)
 	sanitizer := buildSanitizationPipeline(cfg, slogger)
@@ -253,6 +253,9 @@ func main() {
 	if shutdownErr := httpServer.Shutdown(shutdownCtx); shutdownErr != nil {
 		fmt.Fprintf(os.Stderr, "shutdown error: %v\n", shutdownErr)
 	}
+
+	slogger.Info("flushing audit store...")
+	auditCleanup()
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
@@ -517,15 +520,26 @@ func resolveCredentialsFile(provider string, logger *slog.Logger) string {
 	return ""
 }
 
-// buildAuditStore creates a DSAuditStore when audit is enabled and DS is available,
-// falling back to NopAuditStore otherwise.
-func buildAuditStore(cfg *kaconfig.Config, ds *dsClients, logger *slog.Logger) audit.AuditStore {
-	if cfg.Audit.Enabled && ds != nil {
-		logger.Info("audit store enabled (DataStorage-backed)")
-		return audit.NewDSAuditStore(ds.ogenClient)
+// buildAuditStore creates a BufferedDSAuditStore (DD-AUDIT-002 aligned) when audit
+// is enabled and DS is available, falling back to NopAuditStore otherwise.
+// The returned cleanup function flushes and closes the buffered store on shutdown.
+func buildAuditStore(cfg *kaconfig.Config, ds *dsClients, slogger *slog.Logger, logrLog logr.Logger) (audit.AuditStore, func()) {
+	nop := func() {}
+	if !cfg.Audit.Enabled || ds == nil {
+		slogger.Info("audit store disabled (nop)")
+		return audit.NopAuditStore{}, nop
 	}
-	logger.Info("audit store disabled (nop)")
-	return audit.NopAuditStore{}
+	store, err := audit.NewBufferedDSAuditStore(ds.ogenClient, logrLog)
+	if err != nil {
+		slogger.Error("failed to create buffered audit store, falling back to nop", "error", err)
+		return audit.NopAuditStore{}, nop
+	}
+	slogger.Info("audit store enabled (buffered, DD-AUDIT-002 aligned)")
+	return store, func() {
+		if closeErr := store.Close(); closeErr != nil {
+			slogger.Error("audit store close error", "error", closeErr)
+		}
+	}
 }
 
 // buildSummarizer creates a tool output summarizer when the threshold is positive.

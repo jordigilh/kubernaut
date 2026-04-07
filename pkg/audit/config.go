@@ -152,6 +152,15 @@ func RecommendedConfig(serviceName string) Config {
 			FlushInterval: 1 * time.Second,
 			MaxRetries:    3,
 		}
+	case "kubernaut-agent":
+		// KubernautAgent: ~500 events/day (investigation audit trail: 8 event types per investigation)
+		// Aligned with platform pattern per DD-AUDIT-002 (was previously using direct DSAuditStore)
+		return Config{
+			BufferSize:    20000, // DD-AUDIT-004: LOW tier
+			BatchSize:     50,   // Smaller batches — KA emits fewer, larger events (response payloads)
+			FlushInterval: 500 * time.Millisecond,
+			MaxRetries:    3,
+		}
 	case "notification", "notification-controller":
 		// Notification: 500 events/day (delivery operations)
 		// Buffer sized for 10x burst + 1.5x safety margin
