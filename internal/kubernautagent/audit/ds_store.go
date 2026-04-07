@@ -55,6 +55,9 @@ func (s *DSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) error 
 	}
 	req.ActorType.SetTo("Service")
 	req.ActorID.SetTo("kubernaut-agent")
+	if event.ParentEventID != nil {
+		req.ParentEventID.SetTo(*event.ParentEventID)
+	}
 
 	if ed, ok := buildEventData(event); ok {
 		req.EventData = ed
@@ -150,6 +153,22 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 			payload.ToolResultPreview.SetTo(truncate(preview, previewMaxLen))
 		}
 		return ogenclient.NewLLMToolCallPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeConversationTurn:
+		payload := ogenclient.ConversationTurnPayload{
+			EventType: ogenclient.ConversationTurnPayloadEventTypeAiagentConversationTurn,
+			EventID:   dataString(event.Data, "event_id"),
+			SessionID: dataString(event.Data, "session_id"),
+			UserID:    dataString(event.Data, "user_id"),
+			Question:  dataString(event.Data, "question"),
+		}
+		if answer := dataString(event.Data, "answer"); answer != "" {
+			payload.Answer.SetTo(answer)
+		}
+		if tn := dataInt(event.Data, "turn_number"); tn > 0 {
+			payload.TurnNumber.SetTo(tn)
+		}
+		return ogenclient.NewConversationTurnPayloadAuditEventRequestEventData(payload), true
 
 	case EventTypeValidationAttempt:
 		payload := ogenclient.WorkflowValidationPayload{
