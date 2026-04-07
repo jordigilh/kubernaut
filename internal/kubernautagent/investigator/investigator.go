@@ -563,7 +563,9 @@ func resultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 	if len(r.ContributingFactors) > 0 {
 		m["contributing_factors"] = r.ContributingFactors
 	}
-	if r.Reason != "" {
+	if r.HumanReviewReason != "" {
+		m["human_review_reason"] = r.HumanReviewReason
+	} else if r.Reason != "" {
 		m["human_review_reason"] = r.Reason
 	}
 	if len(r.Warnings) > 0 {

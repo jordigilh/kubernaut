@@ -375,7 +375,9 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 		data.NeedsHumanReview.SetTo(true)
 	}
 	if ir.HumanReviewReason != "" {
-		data.HumanReviewReason.SetTo(ogenclient.IncidentResponseDataHumanReviewReason(ir.HumanReviewReason))
+		if reason, ok := validHumanReviewReason(ir.HumanReviewReason); ok {
+			data.HumanReviewReason.SetTo(reason)
+		}
 	}
 	if len(ir.Warnings) > 0 {
 		data.Warnings = ir.Warnings
@@ -416,6 +418,25 @@ func mapSeverity(s string) ogenclient.IncidentResponseDataRootCauseAnalysisSever
 	default:
 		return ogenclient.IncidentResponseDataRootCauseAnalysisSeverityUnknown
 	}
+}
+
+var validHumanReviewReasons = map[string]ogenclient.IncidentResponseDataHumanReviewReason{
+	"workflow_not_found":          ogenclient.IncidentResponseDataHumanReviewReasonWorkflowNotFound,
+	"image_mismatch":              ogenclient.IncidentResponseDataHumanReviewReasonImageMismatch,
+	"parameter_validation_failed": ogenclient.IncidentResponseDataHumanReviewReasonParameterValidationFailed,
+	"no_matching_workflows":       ogenclient.IncidentResponseDataHumanReviewReasonNoMatchingWorkflows,
+	"low_confidence":              ogenclient.IncidentResponseDataHumanReviewReasonLowConfidence,
+	"llm_parsing_error":           ogenclient.IncidentResponseDataHumanReviewReasonLlmParsingError,
+	"investigation_inconclusive":  ogenclient.IncidentResponseDataHumanReviewReasonInvestigationInconclusive,
+	"rca_incomplete":              ogenclient.IncidentResponseDataHumanReviewReasonRcaIncomplete,
+}
+
+// validHumanReviewReason returns the ogen enum value if the string is a recognised
+// HumanReviewReason. Free-text values from the LLM are rejected so that the
+// ogen client-side OpenAPI validation does not drop the entire audit event.
+func validHumanReviewReason(s string) (ogenclient.IncidentResponseDataHumanReviewReason, bool) {
+	v, ok := validHumanReviewReasons[s]
+	return v, ok
 }
 
 var _ AuditStore = (*DSAuditStore)(nil)
