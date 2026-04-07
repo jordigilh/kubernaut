@@ -144,14 +144,16 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 	// --- Phase 3: LLM Response ---
 
 	Describe("UT-KA-433-AP-007: buildEventData maps LLMResponsePayload", func() {
-		It("should populate has_analysis, analysis_length, analysis_preview, tokens_used, tool_call_count", func() {
+		It("should populate has_analysis, analysis_length, analysis_preview, analysis_full, tokens_used, tool_call_count", func() {
 			recorder := &fakeOgenClient{}
 			store := audit.NewDSAuditStore(recorder)
 
+			fullResponse := `{"root_cause_analysis":{"summary":"OOMKilled"},"confidence":0.9}`
 			event := audit.NewEvent(audit.EventTypeLLMResponse, "corr-llm-resp")
 			event.Data["has_analysis"] = true
 			event.Data["analysis_length"] = 500
 			event.Data["analysis_preview"] = "Root cause: OOMKilled..."
+			event.Data["analysis_full"] = fullResponse
 			event.Data["total_tokens"] = 800
 			event.Data["tool_call_count"] = 3
 
@@ -166,8 +168,26 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			Expect(payload.HasAnalysis).To(BeTrue())
 			Expect(payload.AnalysisLength).To(Equal(500))
 			Expect(payload.AnalysisPreview).To(Equal("Root cause: OOMKilled..."))
+			Expect(payload.AnalysisFull.Value).To(Equal(fullResponse))
 			Expect(payload.TokensUsed.Value).To(Equal(800))
 			Expect(payload.ToolCallCount.Value).To(Equal(3))
+		})
+
+		It("should omit analysis_full when not provided (BR-TESTING-001)", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeLLMResponse, "corr-llm-no-full")
+			event.Data["has_analysis"] = true
+			event.Data["analysis_length"] = 100
+			event.Data["analysis_preview"] = "short preview"
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			payload, ok := recorder.calls[0].EventData.GetLLMResponsePayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.AnalysisFull.Set).To(BeFalse(), "analysis_full should not be set when absent from event data")
 		})
 	})
 

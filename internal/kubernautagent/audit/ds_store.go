@@ -119,6 +119,9 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 			AnalysisLength:  dataInt(event.Data, "analysis_length"),
 			AnalysisPreview: truncate(dataString(event.Data, "analysis_preview"), previewMaxLen),
 		}
+		if full := dataString(event.Data, "analysis_full"); full != "" {
+			payload.AnalysisFull.SetTo(full)
+		}
 		if tokens := dataInt(event.Data, "total_tokens"); tokens > 0 {
 			payload.TokensUsed.SetTo(tokens)
 		}

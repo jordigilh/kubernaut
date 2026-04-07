@@ -10082,6 +10082,9 @@ type LLMResponsePayload struct {
 	AnalysisLength int `json:"analysis_length"`
 	// First 500 characters of response for audit.
 	AnalysisPreview string `json:"analysis_preview"`
+	// Full LLM response content for golden transcript capture and parser fidelity testing
+	// (BR-TESTING-001).
+	AnalysisFull OptString `json:"analysis_full"`
 	// Tokens consumed by LLM.
 	TokensUsed OptInt `json:"tokens_used"`
 	// Number of tool calls made by LLM.
@@ -10116,6 +10119,11 @@ func (s *LLMResponsePayload) GetAnalysisLength() int {
 // GetAnalysisPreview returns the value of AnalysisPreview.
 func (s *LLMResponsePayload) GetAnalysisPreview() string {
 	return s.AnalysisPreview
+}
+
+// GetAnalysisFull returns the value of AnalysisFull.
+func (s *LLMResponsePayload) GetAnalysisFull() OptString {
+	return s.AnalysisFull
 }
 
 // GetTokensUsed returns the value of TokensUsed.
@@ -10156,6 +10164,11 @@ func (s *LLMResponsePayload) SetAnalysisLength(val int) {
 // SetAnalysisPreview sets the value of AnalysisPreview.
 func (s *LLMResponsePayload) SetAnalysisPreview(val string) {
 	s.AnalysisPreview = val
+}
+
+// SetAnalysisFull sets the value of AnalysisFull.
+func (s *LLMResponsePayload) SetAnalysisFull(val OptString) {
+	s.AnalysisFull = val
 }
 
 // SetTokensUsed sets the value of TokensUsed.

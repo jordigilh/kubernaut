@@ -118,19 +118,24 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			reqEvents := eventsOfType(audit.EventTypeLLMRequest)
-			Expect(reqEvents).NotTo(BeEmpty())
+			Expect(reqEvents).To(HaveLen(1))
 			first := reqEvents[0]
 			Expect(first.Data["model"]).To(Equal("claude-sonnet-4-20250514"))
-			Expect(first.Data["prompt_preview"]).NotTo(BeEmpty())
-			Expect(first.Data["prompt_length"]).To(BeNumerically(">", 0))
+			preview, ok := first.Data["prompt_preview"].(string)
+			Expect(ok).To(BeTrue())
+			Expect(preview).To(ContainSubstring(signal.Name), "prompt_preview should embed signal name")
+			promptLen, ok := first.Data["prompt_length"].(int)
+			Expect(ok).To(BeTrue())
+			Expect(promptLen).To(BeNumerically(">=", len(preview)), "prompt_length should be at least as long as the preview")
 		})
 	})
 
 	Describe("IT-KA-433-AP-002: Investigation emits llm.response with analysis fields", func() {
 		It("should include has_analysis and analysis_preview in llm.response event", func() {
+			expectedContent := `{"rca_summary":"OOMKilled due to memory leak"}`
 			mockClient.responses = []llm.ChatResponse{
 				{
-					Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory leak"}`},
+					Message: llm.Message{Role: "assistant", Content: expectedContent},
 					Usage:   llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
 				},
 				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-recovery","confidence":0.9}`}},
@@ -144,11 +149,12 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			respEvents := eventsOfType(audit.EventTypeLLMResponse)
-			Expect(respEvents).NotTo(BeEmpty())
+			Expect(respEvents).To(HaveLen(2))
 			first := respEvents[0]
-			Expect(first.Data["has_analysis"]).To(BeTrue())
-			Expect(first.Data["analysis_preview"]).NotTo(BeEmpty())
-			Expect(first.Data["analysis_length"]).To(BeNumerically(">", 0))
+			Expect(first.Data["has_analysis"]).To(Equal(true))
+			Expect(first.Data["analysis_preview"]).To(Equal(expectedContent))
+			Expect(first.Data["analysis_full"]).To(Equal(expectedContent))
+			Expect(first.Data["analysis_length"]).To(Equal(len(expectedContent)))
 		})
 	})
 
@@ -183,9 +189,10 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			Expect(tcEvents).To(HaveLen(2))
 			Expect(tcEvents[0].Data["tool_call_index"]).To(Equal(0))
 			Expect(tcEvents[0].Data["tool_name"]).To(Equal("get_pods"))
-			Expect(tcEvents[0].Data["tool_result"]).NotTo(BeEmpty())
+			Expect(tcEvents[0].Data["tool_result"]).To(Equal(`{"items":[{"name":"api"}]}`))
 			Expect(tcEvents[1].Data["tool_call_index"]).To(Equal(1))
 			Expect(tcEvents[1].Data["tool_name"]).To(Equal("get_logs"))
+			Expect(tcEvents[1].Data["tool_result"]).To(Equal(`{"logs":"OOMKilled"}`))
 		})
 	})
 
@@ -210,11 +217,11 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			completeEvents := eventsOfType(audit.EventTypeResponseComplete)
-			Expect(completeEvents).NotTo(BeEmpty())
-			last := completeEvents[len(completeEvents)-1]
-			Expect(last.Data["response_data"]).NotTo(BeEmpty())
-			Expect(last.Data["total_prompt_tokens"]).To(BeNumerically(">", 0))
-			Expect(last.Data["total_completion_tokens"]).To(BeNumerically(">", 0))
+			Expect(completeEvents).To(HaveLen(1))
+			last := completeEvents[0]
+			Expect(last.Data["response_data"]).To(ContainSubstring("oom-recovery"), "response_data should contain the selected workflow")
+			Expect(last.Data["total_prompt_tokens"]).To(Equal(300))
+			Expect(last.Data["total_completion_tokens"]).To(Equal(150))
 		})
 	})
 
@@ -230,10 +237,10 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			Expect(err).To(HaveOccurred())
 
 			failEvents := eventsOfType(audit.EventTypeResponseFailed)
-			Expect(failEvents).NotTo(BeEmpty())
+			Expect(failEvents).To(HaveLen(1))
 			first := failEvents[0]
-			Expect(first.Data["error_message"]).NotTo(BeEmpty())
-			Expect(first.Data["phase"]).NotTo(BeEmpty())
+			Expect(first.Data["error_message"]).To(ContainSubstring("LLM timeout after 30s"))
+			Expect(first.Data["phase"]).To(Equal("rca"))
 			Expect(first.EventAction).To(Equal(audit.ActionResponseFailed))
 			Expect(first.EventOutcome).To(Equal(audit.OutcomeFailure))
 		})

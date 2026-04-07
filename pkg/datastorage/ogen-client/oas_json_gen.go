@@ -7225,6 +7225,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.AnalysisPreview)
 			}
 			{
+				if s.AnalysisFull.Set {
+					e.FieldStart("analysis_full")
+					s.AnalysisFull.Encode(e)
+				}
+			}
+			{
 				if s.TokensUsed.Set {
 					e.FieldStart("tokens_used")
 					s.TokensUsed.Encode(e)
@@ -10232,6 +10238,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("analysis_preview")
 				e.Str(s.AnalysisPreview)
+			}
+			{
+				if s.AnalysisFull.Set {
+					e.FieldStart("analysis_full")
+					s.AnalysisFull.Encode(e)
+				}
 			}
 			{
 				if s.TokensUsed.Set {
@@ -18872,6 +18884,12 @@ func (s *LLMResponsePayload) encodeFields(e *jx.Encoder) {
 		e.Str(s.AnalysisPreview)
 	}
 	{
+		if s.AnalysisFull.Set {
+			e.FieldStart("analysis_full")
+			s.AnalysisFull.Encode(e)
+		}
+	}
+	{
 		if s.TokensUsed.Set {
 			e.FieldStart("tokens_used")
 			s.TokensUsed.Encode(e)
@@ -18885,15 +18903,16 @@ func (s *LLMResponsePayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfLLMResponsePayload = [8]string{
+var jsonFieldsNameOfLLMResponsePayload = [9]string{
 	0: "event_type",
 	1: "event_id",
 	2: "incident_id",
 	3: "has_analysis",
 	4: "analysis_length",
 	5: "analysis_preview",
-	6: "tokens_used",
-	7: "tool_call_count",
+	6: "analysis_full",
+	7: "tokens_used",
+	8: "tool_call_count",
 }
 
 // Decode decodes LLMResponsePayload from json.
@@ -18901,7 +18920,7 @@ func (s *LLMResponsePayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode LLMResponsePayload to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 	s.setDefaults()
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
@@ -18976,6 +18995,16 @@ func (s *LLMResponsePayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"analysis_preview\"")
 			}
+		case "analysis_full":
+			if err := func() error {
+				s.AnalysisFull.Reset()
+				if err := s.AnalysisFull.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"analysis_full\"")
+			}
 		case "tokens_used":
 			if err := func() error {
 				s.TokensUsed.Reset()
@@ -19005,8 +19034,9 @@ func (s *LLMResponsePayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
+	for i, mask := range [2]uint8{
 		0b00111111,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

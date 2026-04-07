@@ -5406,6 +5406,9 @@ components:
         analysis_preview:
           type: string
           description: First 500 characters of response for audit
+        analysis_full:
+          type: string
+          description: Full LLM response content for golden transcript capture and parser fidelity testing (BR-TESTING-001)
         tokens_used:
           type: integer
           minimum: 0
