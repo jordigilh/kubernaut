@@ -1,0 +1,478 @@
+{
+  "scenario": "cert-failure",
+  "signalName": "CertManagerCertNotReady",
+  "kubernautVersion": "1.2.0-rc8",
+  "capturedAt": "2026-04-07T17:56:16Z",
+  "remediationRequest": {
+    "name": "rr-c82834669789-87bdc376",
+    "phase": "Verifying",
+    "outcome": "Remediated"
+  },
+  "analysis": {
+    "remediationId": "rr-c82834669789-87bdc376",
+    "signal": {
+      "signalName": "CertManagerCertNotReady",
+      "severity": "critical",
+      "environment": "Staging",
+      "targetResource": {
+        "kind": "Deployment",
+        "name": "demo-app",
+        "namespace": "demo-cert-failure"
+      },
+      "businessPriority": "P1"
+    },
+    "investigation": {
+      "sessionId": "a83a5883-3ca9-4ed9-a9de-f8d50c244c95",
+      "durationMs": 120859,
+      "pollCount": 8
+    },
+    "rootCauseAnalysis": {
+      "contributingFactors": [
+        "Missing CA Secret 'demo-ca-key-pair' in cert-manager namespace",
+        "ClusterIssuer 'demo-selfsigned-ca' unable to initialize",
+        "Certificate 'demo-app-cert' stuck in NotReady state"
+      ],
+      "remediationTarget": {
+        "kind": "Certificate",
+        "name": "demo-app-cert",
+        "namespace": "demo-cert-failure"
+      },
+      "severity": "high",
+      "signalType": "",
+      "summary": "Certificate issuance failure due to missing CA Secret. The ClusterIssuer 'demo-selfsigned-ca' cannot sign certificates because the required CA Secret 'demo-ca-key-pair' is missing from the cert-manager namespace."
+    },
+    "rootCauseSummary": "Certificate issuance failure due to missing CA Secret. The ClusterIssuer 'demo-selfsigned-ca' cannot sign certificates because the required CA Secret 'demo-ca-key-pair' is missing from the cert-manager namespace.",
+    "postRCAContext": {
+      "gitOpsManaged": false,
+      "helmManaged": false,
+      "hpaEnabled": false,
+      "networkIsolated": false,
+      "pdbProtected": false,
+      "resourceQuotaConstrained": false,
+      "stateful": false
+    },
+    "selectedWorkflow": {
+      "confidence": 0.95,
+      "executionBundle": "quay.io/kubernaut-cicd/test-workflows/fix-certificate-job@sha256:62948bdcd830f374fd363429b7a71e53eff5b6e075c50b59b32cb0b7899261c6",
+      "parameters": {
+        "CA_SECRET_NAME": "demo-ca-key-pair",
+        "CA_SECRET_NAMESPACE": "cert-manager",
+        "CERTIFICATE_NAME": "demo-app-cert",
+        "ISSUER_NAME": "demo-selfsigned-ca",
+        "TARGET_RESOURCE_KIND": "Certificate",
+        "TARGET_RESOURCE_NAME": "demo-app-cert",
+        "TARGET_RESOURCE_NAMESPACE": "demo-cert-failure"
+      },
+      "rationale": "Perfect match for the RCA findings. The workflow is specifically designed to recreate missing CA Secrets backing cert-manager ClusterIssuers, which exactly matches our root cause. The workflow will recreate the missing 'demo-ca-key-pair' Secret to restore the 'demo-selfsigned-ca' ClusterIssuer functionality.",
+      "serviceAccountName": "fix-certificate-v1-runner",
+      "version": "",
+      "workflowId": "335fa6f1-2563-5b7a-874a-ec9ef7a2864d"
+    },
+    "alternativeWorkflows": null,
+    "actionability": "Actionable",
+    "approvalRequired": false,
+    "approvalReason": "Auto-approved",
+    "needsHumanReview": false
+  },
+  "hapiDialog": {
+    "toolCalls": [
+      {
+        "index": 1,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'in_progress'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'in_progress'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'in_progress'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'pending'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'pending'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'pending'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.02,
+        "outputChars": 667
+      },
+      {
+        "index": 2,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe pod worker-77784c6cf7-drrnt -n demo-crashloop",
+        "durationSec": 0.59,
+        "outputChars": 3374
+      },
+      {
+        "index": 3,
+        "tool": "kubectl_events",
+        "description": "kubectl events --for pod/worker-77784c6cf7-drrnt -n demo-crashloop",
+        "durationSec": 0.57,
+        "outputChars": 807
+      },
+      {
+        "index": 4,
+        "tool": "fetch_pod_logs",
+        "description": "Fetch Logs (pod=worker-77784c6cf7-drrnt, namespace=demo-crashloop)",
+        "durationSec": 0.6,
+        "outputChars": 747
+      },
+      {
+        "index": 5,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'completed'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'completed'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'completed'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'in_progress'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'in_progress'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'pending'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.02,
+        "outputChars": 667
+      },
+      {
+        "index": 6,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe deployment worker -n demo-crashloop",
+        "durationSec": 0.36,
+        "outputChars": 1996
+      },
+      {
+        "index": 7,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe configmap worker-config-bad -n demo-crashloop",
+        "durationSec": 0.32,
+        "outputChars": 348
+      },
+      {
+        "index": 8,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'completed'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'completed'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'completed'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'completed'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'completed'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'in_progress'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.02,
+        "outputChars": 667
+      },
+      {
+        "index": 9,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe node kubernaut-demo-worker -n demo-crashloop",
+        "durationSec": 0.31,
+        "outputChars": 5715
+      },
+      {
+        "index": 10,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide pod -n demo-crashloop",
+        "durationSec": 0.29,
+        "outputChars": 722
+      },
+      {
+        "index": 11,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'completed'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'completed'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'completed'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'completed'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'completed'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'completed'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'completed'}] investigation tasks",
+        "durationSec": 0.0,
+        "outputChars": 667
+      },
+      {
+        "index": 12,
+        "tool": "get_namespaced_resource_context",
+        "description": "Get resource context for Pod/demo-crashloop/worker-77784c6cf7-drrnt",
+        "durationSec": 0.2,
+        "outputChars": 463
+      },
+      {
+        "index": 13,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Pod, env=Production)",
+        "durationSec": 0.08,
+        "outputChars": 6936
+      },
+      {
+        "index": 14,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Pod, env=Production)",
+        "durationSec": 0.02,
+        "outputChars": 3611
+      },
+      {
+        "index": 15,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'RollbackDeployment'",
+        "durationSec": 0.02,
+        "outputChars": 4937
+      },
+      {
+        "index": 16,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '749c768b-221c-5262-ace4-6eb9b0c7b470'",
+        "durationSec": 0.01,
+        "outputChars": 3254
+      },
+      {
+        "index": 1,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Deployment, env=Production)",
+        "durationSec": 0.02,
+        "outputChars": 7408
+      },
+      {
+        "index": 2,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Deployment, env=Production)",
+        "durationSec": 0.02,
+        "outputChars": 4083
+      },
+      {
+        "index": 3,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'RollbackDeployment'",
+        "durationSec": 0.02,
+        "outputChars": 4937
+      },
+      {
+        "index": 4,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '749c768b-221c-5262-ace4-6eb9b0c7b470'",
+        "durationSec": 0.02,
+        "outputChars": 3254
+      },
+      {
+        "index": 1,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check deployment status and basic health', 'status': 'in_progress'}, {'id': '2', 'content': 'Examine certificate resources and their status', 'status': 'in_progress'}, {'id': '3', 'content': 'Check cert-manager pods and logs', 'status': 'pending'}, {'id': '4', 'content': 'Investigate certificate issuance process', 'status': 'pending'}, {'id': '5', 'content': 'Check ingress/service configuration', 'status': 'pending'}, {'id': '6', 'content': 'Analyze events for certificate-related issues', 'status': 'pending'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 688
+      },
+      {
+        "index": 2,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe deployment demo-app -n demo-cert-failure",
+        "durationSec": 0.31,
+        "outputChars": 1615
+      },
+      {
+        "index": 3,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide certificate -n demo-cert-failure",
+        "durationSec": 0.22,
+        "outputChars": 243
+      },
+      {
+        "index": 4,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe certificate demo-app-cert -n demo-cert-failure",
+        "durationSec": 0.48,
+        "outputChars": 2373
+      },
+      {
+        "index": 5,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide issuer -n demo-cert-failure",
+        "durationSec": 0.47,
+        "outputChars": 230
+      },
+      {
+        "index": 6,
+        "tool": "kubectl_get_by_kind_in_cluster",
+        "description": "kubectl get -A --show-labels -o wide pod",
+        "durationSec": 0.61,
+        "outputChars": 20111
+      },
+      {
+        "index": 7,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check deployment status and basic health', 'status': 'completed'}, {'id': '2', 'content': 'Examine certificate resources and their status', 'status': 'completed'}, {'id': '3', 'content': 'Check cert-manager pods and logs', 'status': 'in_progress'}, {'id': '4', 'content': 'Investigate certificate issuance process', 'status': 'in_progress'}, {'id': '5', 'content': 'Check ingress/service configuration', 'status': 'pending'}, {'id': '6', 'content': 'Analyze events for certificate-related issues', 'status': 'pending'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 688
+      },
+      {
+        "index": 8,
+        "tool": "kubectl_get_by_kind_in_cluster",
+        "description": "kubectl get -A --show-labels -o wide clusterissuer",
+        "durationSec": 0.66,
+        "outputChars": 235
+      },
+      {
+        "index": 9,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide certificaterequest -n demo-cert-failure",
+        "durationSec": 0.64,
+        "outputChars": 572
+      },
+      {
+        "index": 10,
+        "tool": "fetch_pod_logs",
+        "description": "Fetch Logs (pod=cert-manager-5f885f9c55-qljjs, namespace=cert-manager)",
+        "durationSec": 0.76,
+        "outputChars": 14912
+      },
+      {
+        "index": 11,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe clusterissuer demo-selfsigned-ca -n cert-manager",
+        "durationSec": 0.49,
+        "outputChars": 1250
+      },
+      {
+        "index": 12,
+        "tool": "kubectl_find_resource",
+        "description": "kubectl get -A --show-labels -o wide secret | grep demo-ca-key-pair",
+        "durationSec": 0.59,
+        "outputChars": 0
+      },
+      {
+        "index": 13,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide secret -n demo-cert-failure",
+        "durationSec": 0.49,
+        "outputChars": 172
+      },
+      {
+        "index": 14,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check deployment status and basic health', 'status': 'completed'}, {'id': '2', 'content': 'Examine certificate resources and their status', 'status': 'completed'}, {'id': '3', 'content': 'Check cert-manager pods and logs', 'status': 'completed'}, {'id': '4', 'content': 'Investigate certificate issuance process', 'status': 'completed'}, {'id': '5', 'content': 'Check ingress/service configuration', 'status': 'in_progress'}, {'id': '6', 'content': 'Analyze events for certificate-related issues', 'status': 'in_progress'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.03,
+        "outputChars": 688
+      },
+      {
+        "index": 15,
+        "tool": "kubectl_events",
+        "description": "kubectl events --for certificate/demo-app-cert -n demo-cert-failure",
+        "durationSec": 0.43,
+        "outputChars": 865
+      },
+      {
+        "index": 16,
+        "tool": "kubectl_events",
+        "description": "kubectl events --for clusterissuer/demo-selfsigned-ca -n cert-manager",
+        "durationSec": 0.52,
+        "outputChars": 42
+      },
+      {
+        "index": 17,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide service -n demo-cert-failure",
+        "durationSec": 0.43,
+        "outputChars": 245
+      },
+      {
+        "index": 18,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide ingress -n demo-cert-failure",
+        "durationSec": 0.43,
+        "outputChars": 238
+      },
+      {
+        "index": 19,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide secret -n cert-manager",
+        "durationSec": 0.43,
+        "outputChars": 346
+      },
+      {
+        "index": 20,
+        "tool": "kubectl_find_resource",
+        "description": "kubectl get -A --show-labels -o wide secret | grep demo-app-tls",
+        "durationSec": 0.43,
+        "outputChars": 0
+      },
+      {
+        "index": 21,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check deployment status and basic health', 'status': 'completed'}, {'id': '2', 'content': 'Examine certificate resources and their status', 'status': 'completed'}, {'id': '3', 'content': 'Check cert-manager pods and logs', 'status': 'completed'}, {'id': '4', 'content': 'Investigate certificate issuance process', 'status': 'completed'}, {'id': '5', 'content': 'Check ingress/service configuration', 'status': 'completed'}, {'id': '6', 'content': 'Analyze events for certificate-related issues', 'status': 'completed'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'in_progress'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 688
+      },
+      {
+        "index": 22,
+        "tool": "get_namespaced_resource_context",
+        "description": "Get resource context for Certificate/demo-cert-failure/demo-app-cert",
+        "durationSec": 0.05,
+        "outputChars": 147
+      },
+      {
+        "index": 23,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Deployment, env=Staging)",
+        "durationSec": 0.02,
+        "outputChars": 6936
+      },
+      {
+        "index": 24,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Deployment, env=Staging)",
+        "durationSec": 0.02,
+        "outputChars": 3611
+      },
+      {
+        "index": 25,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'FixCertificate'",
+        "durationSec": 0.02,
+        "outputChars": 1138
+      },
+      {
+        "index": 26,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '335fa6f1-2563-5b7a-874a-ec9ef7a2864d'",
+        "durationSec": 0.01,
+        "outputChars": 4611
+      },
+      {
+        "index": 27,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check deployment status and basic health', 'status': 'completed'}, {'id': '2', 'content': 'Examine certificate resources and their status', 'status': 'completed'}, {'id': '3', 'content': 'Check cert-manager pods and logs', 'status': 'completed'}, {'id': '4', 'content': 'Investigate certificate issuance process', 'status': 'completed'}, {'id': '5', 'content': 'Check ingress/service configuration', 'status': 'completed'}, {'id': '6', 'content': 'Analyze events for certificate-related issues', 'status': 'completed'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'completed'}] investigation tasks",
+        "durationSec": 0.0,
+        "outputChars": 688
+      },
+      {
+        "index": 1,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Certificate, env=Staging)",
+        "durationSec": 0.02,
+        "outputChars": 7408
+      },
+      {
+        "index": 2,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Certificate, env=Staging)",
+        "durationSec": 0.02,
+        "outputChars": 4083
+      },
+      {
+        "index": 3,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'FixCertificate'",
+        "durationSec": 0.01,
+        "outputChars": 1138
+      },
+      {
+        "index": 4,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '335fa6f1-2563-5b7a-874a-ec9ef7a2864d'",
+        "durationSec": 0.01,
+        "outputChars": 4611
+      }
+    ],
+    "aiMessages": [
+      "I'll investigate this KubePodCrashLooping incident for pod `worker-77784c6cf7-drrnt` in the `demo-crashloop` namespace. Let me start by creating an investigation plan and gathering information about the affected pod.",
+      "Now let me complete the first three tasks and continue with the investigation by checking the deployment and ConfigMap.",
+      "Now let me check the node health and complete the remaining tasks.",
+      "Now let me complete the investigation and determine the root cause and remediation target.",
+      "Now let me proceed with workflow discovery to find appropriate remediation options.",
+      "Let me get the remaining action types to see all available options.",
+      "Based on my investigation, the root cause is an invalid configuration in the ConfigMap `worker-config-bad`. The pod logs show `[emerg] invalid directive found in /etc/demo-http-server/config.yaml \u2014 aborting`, and the ConfigMap contains an invalid directive `invalid_directive_that_breaks_nginx on;`.",
+      "Based on the investigation, the most appropriate workflow is `crashloop-rollback-v1` since this is specifically a CrashLoopBackOff caused by a bad configuration change (invalid directive in the ConfigMap). Let me get the full workflow details.",
+      "I need to follow the three-step workflow discovery protocol to select the most appropriate remediation workflow for this KubePodCrashLooping incident.",
+      "I need to see all available action types since there are more. Let me get the remaining ones:",
+      "Now I have all available action types. Based on the RCA findings, this is a case where:",
+      "Perfect! I have 4 workflows to choose from. Based on the incident context and RCA findings:",
+      "I'll investigate this CertManagerCertNotReady incident for the demo-app deployment in the demo-cert-failure namespace. Let me start by creating an investigation plan and gathering information about the certificate issue.",
+      "Now let me get more details about the certificate and check the cert-manager components:",
+      "Let me check the ClusterIssuer and CertificateRequest resources to understand the certificate issuance process:",
+      "Now let me check the ClusterIssuer details and look for the missing secret:",
+      "Let me check events and continue the investigation:",
+      "Let me check if there are any ingress resources and look for the missing secret in the cert-manager namespace:",
+      "Now let me complete the investigation and determine the root cause:",
+      "Now let me discover available remediation workflows:",
+      "Let me get the remaining action types:",
+      "Based on my investigation, I can see that the `FixCertificate` action type is the most appropriate. Let me get the workflows for this action:",
+      "Now let me get the full workflow details:",
+      "Now let me complete the investigation:",
+      "I'll help you select the appropriate remediation workflow for this CertManagerCertNotReady incident. Based on the RCA, the issue is a missing CA Secret that's preventing certificate issuance. Let me follow the three-step workflow discovery protocol.",
+      "Perfect! I can see that `FixCertificate` is exactly what we need for this incident. The description matches our RCA findings perfectly - it's designed to \"Recreate a missing or corrupted CA Secret backing a cert-manager ClusterIssuer to restore certificate issuance\" which is exactly our issue. Let me get the remaining action types to ensure I'm not missing anything, then proceed to Step 2.",
+      "Now I have all available action types. The `FixCertificate` action type is clearly the best match for our RCA findings. The cluster context shows `gitOpsManaged: false`, so we don't need to prefer git-based actions. Let me proceed to Step 2 to get the specific workflows for the FixCertificate action type.",
+      "Perfect! There's exactly one workflow for the FixCertificate action type, and it matches our needs perfectly. Now let me get the full workflow details including the parameter schema in Step 3."
+    ],
+    "llmModel": "claude-sonnet-4 (vertex_ai)",
+    "llmCallCount": 64
+  },
+  "effectivenessAssessment": {
+    "metricsScore": 0,
+    "alertScore": 1,
+    "healthScore": null,
+    "metricsAssessed": true,
+    "alertAssessed": true,
+    "healthAssessed": true
+  }
+}
