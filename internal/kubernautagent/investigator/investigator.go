@@ -344,9 +344,7 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 	if result.ServiceAccountName == "" {
 		result.ServiceAccountName = meta.ServiceAccountName
 	}
-	if result.WorkflowVersion == "" {
-		result.WorkflowVersion = meta.Version
-	}
+	result.WorkflowVersion = meta.Version
 }
 
 // runLLMLoop executes the multi-turn LLM conversation loop with tool
