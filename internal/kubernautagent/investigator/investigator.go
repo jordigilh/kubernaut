@@ -307,7 +307,12 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		if corrErr != nil {
 			return nil, fmt.Errorf("validation self-correction failed: %w", corrErr)
 		}
-		inv.emitValidationEvent(ctx, attempt+1, maxSelfCorrectionAttempts, true, nil, corrected.WorkflowID, correlationID)
+		isValid := !corrected.HumanReviewNeeded
+		var finalErrors []string
+		if !isValid {
+			finalErrors = []string{"validation exhausted all attempts"}
+		}
+		inv.emitValidationEvent(ctx, attempt+1, maxSelfCorrectionAttempts, isValid, finalErrors, corrected.WorkflowID, correlationID)
 		enrichFromCatalog(corrected, inv.pipeline.Validator)
 		return corrected, nil
 	}
