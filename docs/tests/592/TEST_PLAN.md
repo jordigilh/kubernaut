@@ -2,12 +2,12 @@
 
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 
-**Test Plan Identifier**: TP-592-v4.0
+**Test Plan Identifier**: TP-592-v5.0
 **Feature**: Conversational API backend for the Kubernaut Agent, scoped to RemediationApprovalRequest (RAR) review (backend only — Slack bot #633 and kubectl plugin #634 deferred to v1.5)
-**Version**: 4.0
+**Version**: 5.0
 **Created**: 2026-03-04
 **Author**: AI Assistant
-**Status**: Draft
+**Status**: Active
 **Branch**: `development/v1.4`
 
 ---
@@ -45,8 +45,10 @@ This test plan validates the conversational RAR backend API introduced by Issue 
 |--------|--------|-------------|
 | Unit test pass rate | 100% | `ginkgo ./test/unit/kubernautagent/investigator/... ./test/unit/kubernautagent/conversation/...` |
 | Integration test pass rate | 100% | `ginkgo ./test/integration/kubernautagent/conversation/...` |
+| E2E test pass rate | 100% | `make test-e2e-kubernautagent` with `--ginkgo.focus="CS-592"` |
 | Unit-testable code coverage | >=80% | Audit completeness, session, audit reconstruction, auth, SSE, rate limit, override, lifecycle, config |
 | Integration-testable code coverage | >=80% | Conversation flow, SSE streaming, auth middleware, lifecycle transitions, LLM failure, TLS |
+| E2E-testable code coverage | System-level | Binary coverage profiling (Go 1.20+); primary goal is behavioral validation |
 | Backward compatibility | 0 regressions | Existing KA tests pass without modification |
 
 ---
@@ -148,7 +150,7 @@ This test plan validates the conversational RAR backend API introduced by Issue 
 
 - **Unit**: >=80% — audit completeness, audit reconstruction, session management, auth, SSE, rate limiting, override validation, lifecycle, config, guardrails
 - **Integration**: >=80% — end-to-end conversation flow, SSE streaming, auth middleware, lifecycle transitions, LLM failure handling, TLS enforcement
-- **E2E**: Deferred — requires KA + DataStorage + MockLLM in Kind. Blocked on v1.3 CI/CD.
+- **E2E**: System-level behavioral validation — KA + DataStorage + MockLLM in Kind cluster. 7 tests validating real K8s auth, SSE streaming, audit persistence, rate limiting. Coverage measured via Go 1.20+ binary profiling.
 
 ### 5.2 Two-Tier Minimum
 
@@ -164,7 +166,7 @@ Tests validate **business outcomes** — behavior, correctness, and data accurac
 
 **PASS** — all of the following must be true:
 
-1. All 40 tests pass (33 unit + 7 integration)
+1. All 47 tests pass (33 unit + 7 integration + 7 E2E)
 2. Per-tier code coverage meets >=80% threshold
 3. Auth enforced on all conversation paths (no bypass)
 4. SSE reconnection works with `Last-Event-ID`
@@ -273,6 +275,13 @@ Tests validate **business outcomes** — behavior, correctness, and data accurac
 | BR-CONV-009 | Lifecycle: RAR state change → session transition → 409 | P0 | Integration | IT-CS-592-007 | Pending |
 | BR-CONV-005 | LLM failure mid-stream → SSE error event | P0 | Integration | IT-CS-592-008 | Pending |
 | BR-CONV-004 | TLS enforcement: non-TLS rejected, TLS accepted | P0 | Integration | IT-CS-592-009 | Pending |
+| BR-CONV-004 | Session creation with real K8s TokenReview + SAR auth | P0 | E2E | E2E-CS-592-001 | Pending |
+| BR-CONV-001 | Full conversation flow: session → message → SSE response | P0 | E2E | E2E-CS-592-002 | Pending |
+| BR-CONV-007 | Conversation turn audit event persisted in DataStorage | P0 | E2E | E2E-CS-592-003 | Pending |
+| BR-CONV-004 | Unauthorized access rejected (missing token → 401) | P0 | E2E | E2E-CS-592-004 | Pending |
+| BR-CONV-006 | Rate limiting enforced (per-user 10/min → 429) | P1 | E2E | E2E-CS-592-005 | Pending |
+| BR-CONV-001 | Investigation-seeded conversation session | P1 | E2E | E2E-CS-592-006 | Pending |
+| BR-CONV-005 | SSE event IDs unique across conversation turns | P1 | E2E | E2E-CS-592-007 | Pending |
 
 ### Status Legend
 
@@ -387,9 +396,19 @@ Format: `{TIER}-CS-592-{SEQUENCE}`
 | `IT-CS-592-008` | LLM failure mid-stream → SSE `event: error` delivered to client | Cycle 8 | Pending |
 | `IT-CS-592-009` | TLS enforcement: non-TLS connection rejected; TLS connection succeeds | Cycle 8 | Pending |
 
-### Tier Skip Rationale
+### Tier 3: E2E Tests (7 tests)
 
-- **E2E**: Requires KA + DataStorage + MockLLM in Kind with stable CI/CD. Deferred to post-v1.3-stabilization.
+**Testable code scope**: Full conversation API stack in Kind cluster — handler wiring, real K8s auth (TokenReview + SAR), SSE streaming, audit persistence in DataStorage, rate limiting.
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `E2E-CS-592-001` | Operator creates a conversation session with real K8s auth (TokenReview + SAR) and receives a valid session ID | Pending |
+| `E2E-CS-592-002` | Operator sends a message and receives an SSE stream with LLM response tokens including valid event IDs and JSON payloads | Pending |
+| `E2E-CS-592-003` | Conversation turn audit event (`aiagent.conversation.turn`) is persisted in DataStorage with correct action and outcome fields | Pending |
+| `E2E-CS-592-004` | Request without bearer token is rejected with 401 and RFC 7807 problem detail | Pending |
+| `E2E-CS-592-005` | Per-user rate limit (10/min) is enforced — 11th request within 1 minute returns 429 | Pending |
+| `E2E-CS-592-006` | Conversation session is created and responds to messages even without prior investigation audit trail | Pending |
+| `E2E-CS-592-007` | SSE event IDs are unique numeric strings across multiple conversation turns, supporting reconnection | Pending |
 
 ---
 
@@ -509,6 +528,18 @@ Format: `{TIER}-CS-592-{SEQUENCE}`
 - **Infrastructure**: `httptest.NewTLSServer` with conversation handler, mock DataStorage + LLM + K8s auth
 - **Location**: `test/integration/kubernautagent/conversation/`
 
+### 10.3 E2E Tests
+
+- **Framework**: Ginkgo/Gomega BDD
+- **Infrastructure**: Kind cluster with KA + DataStorage + Mock LLM + PostgreSQL + Redis
+- **CRDs**: `kubernaut.ai_remediationapprovalrequests.yaml`, `kubernaut.ai_remediationworkflows.yaml`
+- **Auth**: Real K8s TokenReview + SubjectAccessReview via ServiceAccount bearer tokens
+- **RBAC**: E2E SA granted `update` on `remediationapprovalrequests` in `kubernaut.ai` API group
+- **Config**: KA ConfigMap includes `conversation.enabled: true` with 5m TTL, 10/min rate limit, 30 session turns
+- **Location**: `test/e2e/kubernautagent/conversation_e2e_test.go`
+- **Resources**: Kind cluster (~4 GB RAM, ~2 CPU), Docker daemon
+- **Timeout**: 15 minutes (shared with existing KA E2E suite)
+
 ### 10.4 Tools & Versions
 
 | Tool | Minimum Version | Purpose |
@@ -545,11 +576,13 @@ Format: `{TIER}-CS-592-{SEQUENCE}`
 
 | Deliverable | Location | Description |
 |-------------|----------|-------------|
-| This test plan | `docs/tests/592/TEST_PLAN.md` | Strategy and test design (v4.0) |
+| This test plan | `docs/tests/592/TEST_PLAN.md` | Strategy and test design (v5.0) |
 | Implementation plan | `docs/tests/592/IMPLEMENTATION_PLAN.md` | TDD cycle execution plan (v4.0) |
 | Phase 0 unit tests | `test/unit/kubernautagent/investigator/audit_completeness_test.go` | Audit completeness validation |
 | Conversation unit tests | `test/unit/kubernautagent/conversation/` | Ginkgo BDD test files (29 tests) |
 | Integration test suite | `test/integration/kubernautagent/conversation/` | Ginkgo BDD test files (7 tests) |
+| E2E test suite | `test/e2e/kubernautagent/conversation_e2e_test.go` | Ginkgo BDD E2E tests (7 tests) |
+| E2E infrastructure | `test/infrastructure/kubernautagent.go` | Kind cluster + CRD + RBAC for conversation E2E |
 | Coverage report | CI artifact | Per-tier coverage percentages |
 
 ---
@@ -566,7 +599,13 @@ ginkgo -v ./test/unit/kubernautagent/conversation/...
 # Integration tests
 ginkgo -v ./test/integration/kubernautagent/conversation/...
 
-# All #592 tests
+# E2E tests (requires Kind cluster — ~15 min)
+make test-e2e-kubernautagent
+
+# E2E conversation tests only
+GINKGO_FOCUS="CS-592" make test-e2e-kubernautagent
+
+# All #592 tests (unit + integration)
 ginkgo -v --focus="CS-592" ./test/unit/kubernautagent/... ./test/integration/kubernautagent/...
 
 # Coverage
@@ -591,6 +630,7 @@ go tool cover -func=coverage-integration.out
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 5.0 | 2026-03-04 | Added E2E tier: 7 tests (E2E-CS-592-001 through 007) covering real K8s auth, SSE streaming, audit persistence, rate limiting, investigation-seeded conversations, SSE reconnection IDs. Infrastructure changes: KA ConfigMap enables conversation, CRD installation for RAR/RW, RBAC for E2E SA. Updated pass criteria from 40 to 47 tests. Removed E2E tier skip rationale. |
 | 1.0 | 2026-03-04 | Initial test plan |
 | 2.0 | 2026-03-04 | Scope reduction: remove Slack bot (#633/v1.5) and kubectl plugin (#634/v1.5). Add #594 dependency for override CRD types. OCP Console Plugin (#632) is the v1.4 client. |
 | 4.0 | 2026-04-07 | Full rewrite: add Phase 0 (audit completeness, 4 tests), correct audit event types to `emitter.go` constants, add structured `messages` schema (not `prompt_content`), fix test count to 33 unit + 7 integration = 40 total, add missing acceptance criteria tests (UT-031 read-only tools, UT-032 mutating refusal, UT-033 RR lifecycle, IT-008 LLM failure SSE, IT-009 TLS), renumber UT-010-TTL to UT-030, add configurable LLM tests (UT-023/024), add pending state test (UT-025), add anti-pattern-compliant test infrastructure, 4 checkpoints. No backward compatibility for audit events. |

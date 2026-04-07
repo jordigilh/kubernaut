@@ -22,6 +22,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -180,6 +181,27 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4.6: Install CRDs required for conversation E2E (#592)
+	// RemediationApprovalRequest CRD needed for conversation SAR checks.
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📋 PHASE 4.6: Installing CRDs for conversation E2E...")
+	conversationCRDs := []string{
+		"kubernaut.ai_remediationapprovalrequests.yaml",
+		"kubernaut.ai_remediationworkflows.yaml",
+	}
+	for _, crdFile := range conversationCRDs {
+		crdPath := filepath.Join(projectRoot, "config/crd/bases", crdFile)
+		_, _ = fmt.Fprintf(writer, "  ├── Installing %s...\n", crdFile)
+		crdCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+		crdCmd.Stdout = writer
+		crdCmd.Stderr = writer
+		if err := crdCmd.Run(); err != nil {
+			return fmt.Errorf("failed to apply CRD %s: %w", crdFile, err)
+		}
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ Conversation CRDs installed")
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 5: Seed workflows + deploy Mock LLM (same as AIAnalysis E2E Phase 4c/4d)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🌱 PHASE 5: Seeding workflows and deploying Mock LLM...")
@@ -251,6 +273,12 @@ rules:
     resources: ["services"]
     resourceNames: ["kubernaut-agent"]
     verbs: ["create", "get"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationapprovalrequests"]
+    verbs: ["get", "update"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationworkflows"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -436,6 +464,15 @@ data:
       batch_size: 50
     auth:
       resource_name: "kubernaut-agent"
+    conversation:
+      enabled: true
+      session:
+        ttl: "5m"
+        max_turns: 30
+      rate_limit:
+        per_user_per_minute: 10
+        per_session: 30
+      max_tool_turns: 15
 ---
 apiVersion: apps/v1
 kind: Deployment
