@@ -123,10 +123,20 @@ func WithStructuredOutput(enabled bool) BuilderOption {
 	return func(b *Builder) { b.structuredOutput = enabled }
 }
 
+// ConversationTemplateData holds fields for the conversation system prompt template.
+type ConversationTemplateData struct {
+	RARName              string
+	Namespace            string
+	AvailableTools       []string
+	InvestigationSummary string
+	AuditHistory         string
+}
+
 // Builder renders prompt templates with signal and enrichment data.
 type Builder struct {
 	investigationTmpl *template.Template
 	workflowTmpl      *template.Template
+	conversationTmpl  *template.Template
 	structuredOutput  bool
 }
 
@@ -140,14 +150,28 @@ func NewBuilder(opts ...BuilderOption) (*Builder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing workflow selection template: %w", err)
 	}
+	convTmpl, err := template.ParseFS(templateFS, "templates/conversation.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("parsing conversation template: %w", err)
+	}
 	b := &Builder{
 		investigationTmpl: invTmpl,
 		workflowTmpl:      wfTmpl,
+		conversationTmpl:  convTmpl,
 	}
 	for _, opt := range opts {
 		opt(b)
 	}
 	return b, nil
+}
+
+// RenderConversation renders the conversation system prompt using the conversation template.
+func (b *Builder) RenderConversation(data ConversationTemplateData) (string, error) {
+	var buf bytes.Buffer
+	if err := b.conversationTmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("rendering conversation template: %w", err)
+	}
+	return buf.String(), nil
 }
 
 // RenderInvestigation renders the Phase 1 investigation prompt.

@@ -40,6 +40,7 @@ type Config struct {
 	Sanitization  SanitizationConfig  `yaml:"sanitization"`
 	Anomaly       AnomalyConfig       `yaml:"anomaly"`
 	Summarizer    SummarizerConfig    `yaml:"summarizer"`
+	Conversation  ConversationConfig  `yaml:"conversation"`
 }
 
 type LLMConfig struct {
@@ -128,6 +129,62 @@ type AnomalyConfig struct {
 	MaxToolCallsPerTool int `yaml:"max_tool_calls_per_tool"`
 	MaxTotalToolCalls   int `yaml:"max_total_tool_calls"`
 	MaxRepeatedFailures int `yaml:"max_repeated_failures"`
+}
+
+// ConversationConfig holds settings for the conversational RAR API (#592).
+type ConversationConfig struct {
+	Enabled      bool                      `yaml:"enabled"`
+	LLM          *LLMConfig                `yaml:"llm"`
+	Session      ConversationSessionConfig `yaml:"session"`
+	RateLimit    RateLimitConfig           `yaml:"rate_limit"`
+	MaxToolTurns int                       `yaml:"max_tool_turns"` // DD-CONV-001: bounded tool-call loop iterations (default 15)
+}
+
+// ConversationSessionConfig controls conversation session behavior.
+type ConversationSessionConfig struct {
+	TTL      time.Duration `yaml:"ttl"`
+	MaxTurns int           `yaml:"max_turns"`
+}
+
+// RateLimitConfig controls per-user and per-session rate limits.
+type RateLimitConfig struct {
+	PerUserPerMinute int `yaml:"per_user_per_minute"`
+	PerSession       int `yaml:"per_session"`
+}
+
+// EffectiveLLM returns a merged LLM config: fields set in conversation.llm
+// override the base investigation config; unset fields inherit the base value.
+func (c *ConversationConfig) EffectiveLLM(base LLMConfig) LLMConfig {
+	if c.LLM == nil {
+		return base
+	}
+	merged := base
+	ov := c.LLM
+	if ov.Provider != "" {
+		merged.Provider = ov.Provider
+	}
+	if ov.Endpoint != "" {
+		merged.Endpoint = ov.Endpoint
+	}
+	if ov.Model != "" {
+		merged.Model = ov.Model
+	}
+	if ov.APIKey != "" {
+		merged.APIKey = ov.APIKey
+	}
+	if ov.AzureAPIVersion != "" {
+		merged.AzureAPIVersion = ov.AzureAPIVersion
+	}
+	if ov.VertexProject != "" {
+		merged.VertexProject = ov.VertexProject
+	}
+	if ov.VertexLocation != "" {
+		merged.VertexLocation = ov.VertexLocation
+	}
+	if ov.BedrockRegion != "" {
+		merged.BedrockRegion = ov.BedrockRegion
+	}
+	return merged
 }
 
 // Load parses configuration from YAML bytes and applies defaults.
@@ -223,6 +280,11 @@ func DefaultConfig() *Config {
 			MaxToolCallsPerTool: 5,
 			MaxTotalToolCalls:   30,
 			MaxRepeatedFailures: 3,
+		},
+		Conversation: ConversationConfig{
+			Session:      ConversationSessionConfig{TTL: 30 * time.Minute, MaxTurns: 30},
+			RateLimit:    RateLimitConfig{PerUserPerMinute: 10, PerSession: 30},
+			MaxToolTurns: 15,
 		},
 		Sanitization: SanitizationConfig{
 			InjectionPatternsEnabled: true,
