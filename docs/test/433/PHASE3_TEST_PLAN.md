@@ -53,7 +53,7 @@ Phase 3 adds `kubectl_logs_all_containers_grep`, `fetch_pod_logs` (HAPI parity),
 
 | ID | Description | Status |
 |----|-------------|--------|
-| UT-KA-433-630 | Total registered tools = 36 (20 K8s + 5 custom + 8 Prom + 1 TodoWrite + 1 fetch_pod_logs + 1 top_pods — see parity matrix) | |
+| UT-KA-433-630 | Total registered tools = 36 (19 K8s + 2 K8s-metrics + 8 Prom + 5 custom + 1 TodoWrite + 1 fetch_pod_logs — see parity matrix) | |
 
 ---
 

@@ -4,7 +4,7 @@
 
 **Test Plan Identifier**: TP-433-v1.0
 **Feature**: Kubernaut Agent — Go reimplementation of HolmesGPT-API with Kubernaut-owned interface architecture. Replaces the Python HolmesGPT SDK dependency with a purpose-built Go investigation engine using LangChainGo, client-go, and a layered security architecture.
-**Version**: 1.0
+**Version**: 1.3
 **Created**: 2026-03-04
 **Author**: AI Assistant
 **Status**: Draft
@@ -22,7 +22,7 @@ The test plan covers six functional areas:
 
 1. **Core Engine**: Configuration, session management, audit event emission, MCP skeleton
 2. **Investigation Loop**: Two-invocation architecture (RCA then Workflow Selection), prompt rendering, result parsing/validation, enrichment, LangChainGo adapter
-3. **Kubernetes Toolset**: 11 K8s tools via client-go replacing kubectl subprocess calls
+3. **Kubernetes Toolset**: 21 K8s tools (19 baseline + 2 metrics) via client-go replacing kubectl subprocess calls
 4. **Prometheus + Custom Tools**: 6 Prometheus tools, 3 workflow discovery tools, resource context, sanitization pipeline, llm_summarize transformer
 5. **Security Hardening**: I1 injection stripping, G4 credential scrubbing, I7 anomaly detection, I4 phase-based tool scoping, I5 output validation
 6. **E2E Parity + Containerization**: Full investigation flow against mock-llm, API contract, NFRs (image size, CVE scan)
@@ -504,7 +504,7 @@ Five checkpoints are integrated into the TDD implementation plan. Each is a hard
 | CHECKPOINT 0 | After Phase 0, before any code | Doc consistency, LangChainGo version alignment, prompt equivalence, BR coverage, config forward-check |
 | CHECKPOINT 1 | After Phase 1-REFACTOR | Build+race, config forward-compat, audit OpenAPI compliance, MCP interface review, goroutine leak check |
 | CHECKPOINT 2 (critical) | After Phase 2-REFACTOR | Two-invocation behavioral trace, context preservation, 8 audit events, tool name alignment, self-correction termination |
-| CHECKPOINT 3 | After Phase 4-REFACTOR | Registry completeness (21 tools), tool name vs phase alignment, K8s output spot-check, Prometheus size handling, sanitization end-to-end |
+| CHECKPOINT 3 | After Phase 4-REFACTOR | Registry completeness (36 tools), tool name vs phase alignment, K8s output spot-check, Prometheus size handling, sanitization end-to-end |
 | CHECKPOINT 4 | After Phase 5-REFACTOR | Layered security integration, false positive validation, sanitization latency, anomaly threshold validation, full build+lint+race, per-tier coverage |
 
 ---

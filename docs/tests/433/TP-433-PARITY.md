@@ -314,8 +314,8 @@ Format: `{TIER}-KA-433-{SUB}-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `IT-KA-433-LM-001` | Investigation flow increments `aiagent_api_llm_calls_total` Prometheus counter (business logic side effect) | Pending |
-| `IT-KA-433-LM-002` | Investigation flow updates `aiagent_api_llm_duration_seconds` Prometheus histogram (business logic side effect) | Pending |
+| `IT-KA-433-LM-001` | Investigation flow increments `aiagent_api_llm_requests_total` Prometheus counter (business logic side effect) | Pending |
+| `IT-KA-433-LM-002` | Investigation flow updates `aiagent_api_llm_request_duration_seconds` Prometheus histogram (business logic side effect) | Pending |
 
 **Phase P5 -- Three-Phase RCA (2 IT) -- Note: Also add 3 UT for LLM Metrics**
 

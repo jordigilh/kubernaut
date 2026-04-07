@@ -51,6 +51,7 @@
 || DD-AUDIT-001 | [Audit Responsibility Pattern](./DD-AUDIT-001-audit-responsibility-pattern.md) | All Services | ✅ Approved | 2025-11-02 | Distributed audit pattern (services write their own traces) |
 || DD-AUDIT-002 | [Audit Shared Library Design](./DD-AUDIT-002-audit-shared-library-design.md) | All Services | ✅ Approved | 2025-11-08 | Shared library (`pkg/audit/`) for async buffered writes |
 || DD-AUDIT-003 | [Service Audit Trace Requirements](./DD-AUDIT-003-service-audit-trace-requirements.md) | All Services | ✅ Approved | 2025-11-08 | Defines which 8 of 11 services must generate audit traces |
+|| DD-AUDIT-004 | [Structured Types for Audit Event Payloads](./DD-AUDIT-004-structured-types-for-audit-event-payloads.md) | All Services | ✅ Approved | 2025-12-16 | Type-safe audit event data (eliminates `map[string]interface{}`) |
 
 #### **Service-Specific Decisions**
 
@@ -185,5 +186,4 @@ What other options did we evaluate?
 ---
 
 **Maintained By**: Kubernaut Architecture Team
-**Last Updated**: October 16, 2025
-||| DD-AUDIT-004 | [Structured Types for Audit Event Payloads](./DD-AUDIT-004-structured-types-for-audit-event-payloads.md) | All Services | ✅ Approved | 2025-12-16 | Type-safe audit event data (eliminates \`map[string]interface{}\`) |
+**Last Updated**: April 6, 2026
