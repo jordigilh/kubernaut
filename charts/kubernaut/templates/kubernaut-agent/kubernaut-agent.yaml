@@ -141,6 +141,14 @@ metadata:
     service.beta.openshift.io/inject-cabundle: "true"
 data: {}
 {{- end }}
+{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+{{- if not .Values.kubernautAgent.llm.oauth2.tokenURL }}
+{{- fail "kubernautAgent.llm.oauth2.tokenURL is required when oauth2.enabled=true" }}
+{{- end }}
+{{- if not .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
+{{- fail "kubernautAgent.llm.oauth2.credentialsSecretRef is required when oauth2.enabled=true" }}
+{{- end }}
+{{- end }}
 {{- if not .Values.kubernautAgent.existingSdkConfigMap }}
 ---
 apiVersion: v1
@@ -163,6 +171,20 @@ data:
       max_retries: 3
       timeout_seconds: 120
       temperature: 0.7
+{{- if .Values.kubernautAgent.llm.structuredOutput }}
+      structured_output: true
+{{- end }}
+{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+      oauth2:
+        enabled: true
+        token_url: {{ .Values.kubernautAgent.llm.oauth2.tokenURL | quote }}
+{{- if .Values.kubernautAgent.llm.oauth2.scopes }}
+        scopes:
+{{- range (splitList " " .Values.kubernautAgent.llm.oauth2.scopes) }}
+          - {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- if and .Values.kubernautAgent.prometheus.enabled .Values.kubernautAgent.prometheus.url }}
     toolsets:
       prometheus/metrics:
@@ -214,6 +236,19 @@ spec:
             {{- include "kubernaut.containerSecurityContext" .Values.kubernautAgent | nindent 12 }}
           ports:
             - containerPort: 8080
+{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+          env:
+            - name: OAUTH2_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
+                  key: client-id
+            - name: OAUTH2_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
+                  key: client-secret
+{{- end }}
           args:
             - "-config"
             - "/etc/kubernaut-agent/config.yaml"
