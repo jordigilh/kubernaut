@@ -99,10 +99,8 @@ var _ = Describe("Audit Reconstruction — #592", func() {
 
 			messages, err := fetcher.FetchInvestigationHistory(context.Background(), "rem-001")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(messages).NotTo(BeEmpty(),
-				"FetchInvestigationHistory must reconstruct audit events into LLM messages")
 			Expect(len(messages)).To(BeNumerically(">=", 2),
-				"should produce at least system + user messages from the audit chain")
+				"must reconstruct at least system + user messages from 5-event audit chain")
 
 			hasSystem := false
 			hasUser := false
@@ -124,8 +122,8 @@ var _ = Describe("Audit Reconstruction — #592", func() {
 			events := sampleAuditChain()
 			messages := conversation.EventsToMessages(events)
 
-			Expect(messages).NotTo(BeEmpty(),
-				"EventsToMessages must produce messages from audit events")
+			Expect(len(messages)).To(BeNumerically(">=", 3),
+				"5-event chain with request/response/tool events must produce system + assistant + tool messages")
 
 			roleMap := map[string]bool{}
 			for _, m := range messages {
@@ -184,7 +182,6 @@ var _ = Describe("Audit Reconstruction — #592", func() {
 
 			messages, err := fetcher.FetchInvestigationHistory(context.Background(), "rem-004")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(messages).NotTo(BeEmpty())
 			Expect(len(messages)).To(BeNumerically("<", 50),
 				"should summarize older turns to stay within token budget")
 		})

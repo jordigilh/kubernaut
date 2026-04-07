@@ -303,12 +303,6 @@ var _ = Describe("LLMAdapter — #592 Phase 5B-5D", func() {
 		})
 	})
 
-	Describe("UT-CS-592-G4-003: HandlePostMessage writes SSE headers", func() {
-		It("is verified by IT-CS-592-001/003 in integration tests (SSE Content-Type, Cache-Control, flush)", func() {
-			Skip("integration-only: requires httptest.NewRecorder; see conversation_handler_test.go")
-		})
-	})
-
 	Describe("UT-CS-592-G4-005: Chat messages include correct roles", func() {
 		It("should send system + user roles on first call, system + user + assistant + user on second", func() {
 			s, err := sessions.Create("rar-1", "ns-1", "user:alice", "")
@@ -346,7 +340,8 @@ var _ = Describe("LLMAdapter — #592 Phase 5B-5D", func() {
 		It("should execute todo_write via session.TodoWrite(), not global registry", func() {
 			s, err := sessions.Create("rar-1", "ns-1", "user:alice", "")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(s.TodoWrite()).ToNot(BeNil(), "session must have a per-session todo_write")
+			Expect(s.TodoWrite().Name()).To(Equal("todo_write"),
+				"session must expose a per-session todo_write tool")
 
 			mockClient.responses = []llm.ChatResponse{
 				{

@@ -35,7 +35,8 @@ var _ = Describe("Session Phase 4 — #592 (todoWrite, CorrelationID, Messages)"
 
 			s1, err := mgr.Create("rar-1", "ns-1", "user:alice", "corr-1")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(s1.TodoWrite()).ToNot(BeNil(), "session must have a todoWrite tool")
+			Expect(s1.TodoWrite().Name()).To(Equal("todo_write"),
+				"session must have a per-session todoWrite tool")
 			Expect(s1.TodoWrite().Name()).To(Equal("todo_write"))
 
 			s2, err := mgr.Create("rar-2", "ns-2", "user:bob", "corr-2")
@@ -72,7 +73,8 @@ var _ = Describe("Session Phase 4 — #592 (todoWrite, CorrelationID, Messages)"
 			s, err := mgr.Create("rar-1", "ns-1", "user:alice", "")
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(s.GetMessages()).To(BeEmpty())
+			Expect(s.GetMessages()).To(HaveLen(0),
+				"new session should have no conversation history")
 
 			s.AppendMessages(
 				llm.Message{Role: "user", Content: "What caused the OOM?"},

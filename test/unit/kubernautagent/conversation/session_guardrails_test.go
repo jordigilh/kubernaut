@@ -46,11 +46,13 @@ var _ = Describe("Session Guardrails — #592 Phase 2", func() {
 
 			s1, err := mgr.Create("rar-prod", "production", "user:alice", "")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(s1.Guardrails).ToNot(BeNil(), "session must have guardrails")
+			Expect(s1.Guardrails.ReadOnlyToolNames()).To(ContainElement("kubectl_get_by_name"),
+				"session guardrails must expose read-only tools for its namespace")
 
 			s2, err := mgr.Create("rar-staging", "staging", "user:bob", "")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(s2.Guardrails).ToNot(BeNil(), "session must have guardrails")
+			Expect(s2.Guardrails.ReadOnlyToolNames()).To(ContainElement("kubectl_get_by_name"),
+				"session guardrails must expose read-only tools for its namespace")
 
 			Expect(s1.Guardrails.ValidateToolCall("kubectl_get", map[string]interface{}{
 				"namespace": "production",
@@ -71,7 +73,8 @@ var _ = Describe("Session Guardrails — #592 Phase 2", func() {
 			g := conversation.NewGuardrails("ns", "rr")
 			names := g.ReadOnlyToolNames()
 
-			Expect(names).ToNot(BeEmpty(), "must have at least one read-only tool")
+			Expect(len(names)).To(BeNumerically(">=", 10),
+				"must expose a comprehensive set of read-only K8s tools")
 			Expect(names).To(ContainElement("kubectl_get_by_name"))
 			Expect(names).To(ContainElement("kubectl_describe"))
 			Expect(names).NotTo(ContainElement("todo_write"),

@@ -76,11 +76,13 @@ var _ = Describe("Config + TTL + Read-Only Tools — #592", func() {
 
 			session, err := mgr.Create("payment-svc-oomkill", "production", "user-1", "")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(session).NotTo(BeNil())
+			Expect(session.ID).NotTo(BeEmpty(),
+				"created session must have a valid ID")
 
 			retrieved, err := mgr.Get(session.ID)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(retrieved).NotTo(BeNil(), "session should exist immediately after creation")
+			Expect(retrieved.ID).To(Equal(session.ID),
+				"session should be retrievable by its ID immediately after creation")
 
 			time.Sleep(100 * time.Millisecond) // ✅ APPROVED EXCEPTION: deterministic TTL expiry test with 50ms TTL
 

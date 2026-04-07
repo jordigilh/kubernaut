@@ -110,13 +110,12 @@ var _ = Describe("Auth + SSE + Rate Limit — #592", func() {
 			evt2 := writer.WriteEvent("message", "World")
 			evt3 := writer.WriteEvent("message", "!")
 
-			Expect(evt1).NotTo(BeNil(), "WriteEvent must return an event")
-			Expect(evt2).NotTo(BeNil())
-			Expect(evt3).NotTo(BeNil())
-
-			id1, _ := strconv.Atoi(evt1.ID)
-			id2, _ := strconv.Atoi(evt2.ID)
-			id3, _ := strconv.Atoi(evt3.ID)
+			id1, err1 := strconv.Atoi(evt1.ID)
+			id2, err2 := strconv.Atoi(evt2.ID)
+			id3, err3 := strconv.Atoi(evt3.ID)
+			Expect(err1).NotTo(HaveOccurred(), "event ID must be a valid integer")
+			Expect(err2).NotTo(HaveOccurred())
+			Expect(err3).NotTo(HaveOccurred())
 			Expect(id1).To(BeNumerically("<", id2))
 			Expect(id2).To(BeNumerically("<", id3))
 		})
@@ -130,12 +129,9 @@ var _ = Describe("Auth + SSE + Rate Limit — #592", func() {
 			_ = writer.WriteEvent("message", "World")
 			_ = writer.WriteEvent("message", "!")
 
-			Expect(evt1).NotTo(BeNil())
 			replayed := writer.ReplayFrom(evt1.ID)
-			Expect(replayed).NotTo(BeEmpty(),
-				"ReplayFrom must return events after the given ID")
 			Expect(len(replayed)).To(BeNumerically(">=", 2),
-				"should replay events 2 and 3 after event 1")
+				"ReplayFrom must return events 2 and 3 after event 1")
 		})
 	})
 
@@ -144,12 +140,11 @@ var _ = Describe("Auth + SSE + Rate Limit — #592", func() {
 			writer := conversation.NewSSEWriter(60 * time.Second)
 
 			_ = writer.WriteEvent("message", "First")
-			evt2 := writer.WriteEvent("message", "Second")
+			_ = writer.WriteEvent("message", "Second")
 
-			Expect(evt2).NotTo(BeNil())
 			replayed := writer.ReplayFrom("0")
 			Expect(len(replayed)).To(BeNumerically(">=", 2),
-				"buffer should retain events within TTL window")
+				"buffer should retain events within TTL window for reconnection")
 		})
 	})
 
@@ -185,8 +180,8 @@ var _ = Describe("Auth + SSE + Rate Limit — #592", func() {
 			emitter.EmitTurn(context.Background(), "session-1", "user:alice", "rem-001",
 				"What caused the OOM?", "The pod exceeded memory limits due to...")
 
-			Expect(store.events).NotTo(BeEmpty(),
-				"EmitTurn must store an audit event")
+			Expect(store.events).To(HaveLen(1),
+				"EmitTurn must store exactly one audit event per turn")
 			evt := store.events[0]
 			Expect(evt.Data).To(HaveKeyWithValue("user_id", "user:alice"))
 			Expect(evt.CorrelationID).To(Equal("rem-001"))
