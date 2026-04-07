@@ -1115,6 +1115,11 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case ConversationTurnPayloadAuditEventEventData:
+		if err := s.ConversationTurnPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case WorkflowValidationPayloadAuditEventEventData:
 		if err := s.WorkflowValidationPayload.Validate(); err != nil {
 			return err
@@ -1464,6 +1469,11 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
+	case ConversationTurnPayloadAuditEventRequestEventData:
+		if err := s.ConversationTurnPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case WorkflowValidationPayloadAuditEventRequestEventData:
 		if err := s.WorkflowValidationPayload.Validate(); err != nil {
 			return err
@@ -1684,6 +1694,66 @@ func (s *AuditExportResponseHashChainVerification) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s *ConversationTurnPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.TurnNumber.Get(); ok {
+			if err := func() error {
+				if err := (validate.Int{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        false,
+					Max:           0,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    0,
+					Pattern:       nil,
+				}).Validate(int64(value)); err != nil {
+					return errors.Wrap(err, "int")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "turn_number",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ConversationTurnPayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.conversation.turn":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *CreateActionTypeCreated) Validate() error {
