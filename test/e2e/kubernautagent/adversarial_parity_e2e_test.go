@@ -151,7 +151,7 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			), "malformed request should return 400 or 422")
 		})
 
-		It("E2E-KA-433-ADV-006: Missing required fields → HTTP 422 or 400", func() {
+		It("E2E-KA-433-ADV-006: Missing remediation_id → HTTP 422 or 400", func() {
 			resp, err := authHTTPClient.Post(kaURL+"/api/v1/incident/analyze", "application/json",
 				strings.NewReader(`{"incident_id": "test", "signal_name": "OOMKilled"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -160,7 +160,19 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			Expect(resp.StatusCode).To(SatisfyAny(
 				Equal(http.StatusBadRequest),
 				Equal(http.StatusUnprocessableEntity),
-			), "incomplete request should be rejected")
+			), "missing remediation_id should be rejected")
+		})
+
+		It("E2E-KA-433-ADV-007: Missing incident_id → HTTP 422 or 400", func() {
+			resp, err := authHTTPClient.Post(kaURL+"/api/v1/incident/analyze", "application/json",
+				strings.NewReader(`{"remediation_id": "rem-test", "signal_name": "OOMKilled"}`))
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
+
+			Expect(resp.StatusCode).To(SatisfyAny(
+				Equal(http.StatusBadRequest),
+				Equal(http.StatusUnprocessableEntity),
+			), "missing incident_id should be rejected")
 		})
 	})
 
