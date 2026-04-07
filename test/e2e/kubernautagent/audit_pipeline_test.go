@@ -435,26 +435,31 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			var events []ogenclient.AuditEvent
-			Eventually(func() int {
+			Eventually(func() bool {
 				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
 					CorrelationID: ogenclient.NewOptString(remediationID),
 				})
 				if qErr != nil {
-					return 0
+					return false
 				}
 				events = resp.Data
 
-				investigatorEventCount := 0
+				hasRequest := false
+				hasResponse := false
+				hasComplete := false
 				for _, event := range events {
 					switch event.EventType {
-					case "aiagent.llm.request", "aiagent.llm.response", "aiagent.llm.tool_call",
-						"aiagent.workflow.validation_attempt", "aiagent.response.complete", "aiagent.response.failed":
-						investigatorEventCount++
+					case "aiagent.llm.request":
+						hasRequest = true
+					case "aiagent.llm.response":
+						hasResponse = true
+					case "aiagent.response.complete":
+						hasComplete = true
 					}
 				}
-				return investigatorEventCount
-			}, 20*time.Second, 1*time.Second).Should(BeNumerically(">=", 3),
-				"At least 3 investigator audit events (request + response + complete) should be persisted")
+				return hasRequest && hasResponse && hasComplete
+			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
+				"All 3 required audit events (request + response + complete) must be present")
 
 			hasRequest := false
 			hasResponse := false

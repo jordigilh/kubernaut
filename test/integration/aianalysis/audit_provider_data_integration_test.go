@@ -409,7 +409,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			// FIX: AA-INT-HAPI-001 - Use standardized waitForAuditEvents pattern
 			// ROOT CAUSE: Inline Eventually() used stricter query params (EventCategory="analysis")
 			// and shorter timeout (30s vs 90s) compared to successful tests.
-			// HAPI Python audit buffer can be slow to flush under load (batch_size triggers, not timer).
+			// KA BufferedAuditStore flush can lag under load (batch_size triggers, not timer).
 			// SOLUTION: Use same pattern as successful "Hybrid Audit Event Emission" test (line 259)
 			By("Querying HAPI event for RR reconstruction validation (with Eventually for async buffer)")
 			hapiEventType := string(ogenclient.AIAgentResponsePayloadAuditEventEventData)
