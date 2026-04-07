@@ -40,7 +40,7 @@ var _ k8s.ResourceResolver = (*nopResolver)(nil)
 var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 
 	Describe("UT-KA-433-029: Baseline K8s tools satisfy Tool interface", func() {
-		It("should create 18 baseline tools implementing the Tool interface", func() {
+		It("should create 19 baseline tools implementing the Tool interface", func() {
 			client := fake.NewSimpleClientset()
 			allTools := k8s.NewAllTools(client, &nopResolver{})
 			Expect(allTools).NotTo(BeNil(), "NewAllTools should not return nil")
@@ -131,6 +131,14 @@ var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 			Expect(err).To(HaveOccurred())
 			var notFound *registry.ErrToolNotFound
 			Expect(err).To(BeAssignableToTypeOf(notFound))
+		})
+	})
+
+	Describe("UT-KA-433-630: Full tool registry count matches production wiring", func() {
+		It("should register exactly 36 tools matching main.go wiring", func() {
+			expectedTotal := len(k8s.AllToolNames) + len(k8s.MetricsToolNames) + 8 + 5 + 1 + 1
+			Expect(expectedTotal).To(Equal(36),
+				"K8s baseline (19) + K8s metrics (2) + Prometheus (8) + Custom (5) + TodoWrite (1) + FetchPodLogs (1)")
 		})
 	})
 })
