@@ -547,3 +547,60 @@ llm:
 		})
 	})
 })
+
+var _ = Describe("Conversation LLM Config — #592", func() {
+
+	Describe("UT-CS-592-023: EffectiveLLM defaults to investigation model when LLM field is nil", func() {
+		It("should return the base LLM config unchanged", func() {
+			conv := config.ConversationConfig{
+				Enabled: true,
+				LLM:     nil,
+			}
+			base := config.LLMConfig{
+				Provider: "openai",
+				Endpoint: "https://api.openai.com/v1",
+				Model:    "gpt-4o",
+				APIKey:   "sk-base-key",
+			}
+
+			effective := conv.EffectiveLLM(base)
+
+			Expect(effective.Provider).To(Equal("openai"),
+				"nil conversation LLM must inherit base provider")
+			Expect(effective.Model).To(Equal("gpt-4o"),
+				"nil conversation LLM must inherit base model")
+			Expect(effective.Endpoint).To(Equal("https://api.openai.com/v1"),
+				"nil conversation LLM must inherit base endpoint")
+			Expect(effective.APIKey).To(Equal("sk-base-key"),
+				"nil conversation LLM must inherit base API key")
+		})
+	})
+
+	Describe("UT-CS-592-024: EffectiveLLM uses override when set", func() {
+		It("should merge conversation overrides over base config", func() {
+			conv := config.ConversationConfig{
+				Enabled: true,
+				LLM: &config.LLMConfig{
+					Model: "gpt-4o-mini",
+				},
+			}
+			base := config.LLMConfig{
+				Provider: "openai",
+				Endpoint: "https://api.openai.com/v1",
+				Model:    "gpt-4o",
+				APIKey:   "sk-base-key",
+			}
+
+			effective := conv.EffectiveLLM(base)
+
+			Expect(effective.Model).To(Equal("gpt-4o-mini"),
+				"conversation LLM override must take precedence for Model")
+			Expect(effective.Provider).To(Equal("openai"),
+				"unset fields must inherit from base")
+			Expect(effective.Endpoint).To(Equal("https://api.openai.com/v1"),
+				"unset fields must inherit from base")
+			Expect(effective.APIKey).To(Equal("sk-base-key"),
+				"unset fields must inherit from base")
+		})
+	})
+})
