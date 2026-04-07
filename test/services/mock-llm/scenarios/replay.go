@@ -30,18 +30,21 @@ import (
 const replayConfidence = 1.1
 
 // GoldenTranscript is the JSON schema for files in MOCK_LLM_GOLDEN_DIR.
-// See Phase 5b in the implementation plan for the full specification.
+// Supports two dialog formats:
+//   - kaDialog: KA v1.3+ native format with rawResponses (full LLM JSON)
+//   - hapiDialog: HAPI v1.2 format with aiMessages (backward compatibility)
+//
+// When kaDialog.rawResponses is populated, the last entry becomes ExactAnalysisText.
+// When only hapiDialog is present, ExactAnalysisText is synthesized from the
+// analysis fields, converting camelCase HAPI format to the snake_case JSON
+// that KA's ResultParser expects.
 type GoldenTranscript struct {
 	Scenario         string `json:"scenario"`
 	SignalName       string `json:"signalName"`
 	KubernautVersion string `json:"kubernautVersion"`
 	CapturedAt       string `json:"capturedAt"`
-	Analysis         struct {
-		Signal            json.RawMessage `json:"signal"`
-		RootCauseAnalysis json.RawMessage `json:"rootCauseAnalysis"`
-		SelectedWorkflow  json.RawMessage `json:"selectedWorkflow"`
-	} `json:"analysis"`
-	KADialog struct {
+	Analysis         HAPIAnalysis `json:"analysis"`
+	KADialog         struct {
 		RawResponses []string `json:"rawResponses"`
 		ToolCalls    []struct {
 			Tool      string          `json:"tool"`
@@ -51,6 +54,32 @@ type GoldenTranscript struct {
 		LLMModel     string `json:"llmModel"`
 		LLMCallCount int    `json:"llmCallCount"`
 	} `json:"kaDialog"`
+	HAPIDialog *HAPIDialog `json:"hapiDialog,omitempty"`
+}
+
+// HAPIDialog holds the HAPI v1.2 conversation format captured from pod logs.
+type HAPIDialog struct {
+	ToolCalls []struct {
+		Index       int     `json:"index"`
+		Tool        string  `json:"tool"`
+		Description string  `json:"description"`
+		DurationSec float64 `json:"durationSec"`
+		OutputChars int     `json:"outputChars"`
+	} `json:"toolCalls"`
+	AIMessages   []string `json:"aiMessages"`
+	LLMModel     string   `json:"llmModel"`
+	LLMCallCount int      `json:"llmCallCount"`
+}
+
+// HAPIAnalysis is a superset that captures both KA-native fields (json.RawMessage)
+// and HAPI's typed analysis fields for backward-compatible synthesis.
+type HAPIAnalysis struct {
+	Signal            json.RawMessage    `json:"signal,omitempty"`
+	RootCauseAnalysis json.RawMessage    `json:"rootCauseAnalysis"`
+	SelectedWorkflow  json.RawMessage    `json:"selectedWorkflow,omitempty"`
+	AlternativeWFs    json.RawMessage    `json:"alternativeWorkflows,omitempty"`
+	NeedsHumanReview  *bool              `json:"needsHumanReview,omitempty"`
+	Actionability     string             `json:"actionability,omitempty"`
 }
 
 // replayScenario matches on signalName from a golden transcript and returns
@@ -129,6 +158,13 @@ func LoadReplayScenarios(goldenDir string) ([]*replayScenario, []error) {
 		exactText := ""
 		if len(t.KADialog.RawResponses) > 0 {
 			exactText = t.KADialog.RawResponses[len(t.KADialog.RawResponses)-1]
+		} else if t.HAPIDialog != nil {
+			synthesized, synthErr := synthesizeFromHAPI(t.Analysis)
+			if synthErr != nil {
+				errs = append(errs, fmt.Errorf("synthesizing %s: %w", path, synthErr))
+				continue
+			}
+			exactText = synthesized
 		}
 
 		cfg := MockScenarioConfig{
@@ -144,4 +180,94 @@ func LoadReplayScenarios(goldenDir string) ([]*replayScenario, []error) {
 	}
 
 	return scenarios, errs
+}
+
+// synthesizeFromHAPI converts HAPI's camelCase analysis fields to the snake_case
+// JSON format that KA's ResultParser expects. This bridges the gap between
+// HAPI v1.2 golden transcripts and KA's structured output contract.
+func synthesizeFromHAPI(analysis HAPIAnalysis) (string, error) {
+	result := make(map[string]interface{})
+
+	if len(analysis.RootCauseAnalysis) > 0 {
+		var hapiRCA map[string]interface{}
+		if err := json.Unmarshal(analysis.RootCauseAnalysis, &hapiRCA); err == nil {
+			snakeRCA := camelToSnakeMap(hapiRCA)
+			result["root_cause_analysis"] = snakeRCA
+		}
+	}
+
+	if len(analysis.SelectedWorkflow) > 0 {
+		var hapiWF map[string]interface{}
+		if err := json.Unmarshal(analysis.SelectedWorkflow, &hapiWF); err == nil {
+			snakeWF := camelToSnakeMap(hapiWF)
+			result["selected_workflow"] = snakeWF
+			if conf, ok := snakeWF["confidence"]; ok {
+				result["confidence"] = conf
+			}
+		}
+	}
+
+	if len(analysis.AlternativeWFs) > 0 {
+		var hapiAlts []map[string]interface{}
+		if err := json.Unmarshal(analysis.AlternativeWFs, &hapiAlts); err == nil {
+			snakeAlts := make([]map[string]interface{}, len(hapiAlts))
+			for i, alt := range hapiAlts {
+				snakeAlts[i] = camelToSnakeMap(alt)
+			}
+			result["alternative_workflows"] = snakeAlts
+		}
+	}
+
+	if analysis.NeedsHumanReview != nil {
+		result["needs_human_review"] = *analysis.NeedsHumanReview
+	}
+
+	if analysis.Actionability != "" {
+		result["investigation_outcome"] = strings.ToLower(analysis.Actionability)
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("marshaling synthesized response: %w", err)
+	}
+	return string(data), nil
+}
+
+// camelToSnakeMap converts known camelCase keys to snake_case for KA parser
+// compatibility. Only converts keys that appear in the LLM response schema;
+// unknown keys are passed through unchanged.
+func camelToSnakeMap(m map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		snakeKey := camelToSnake(k)
+		switch val := v.(type) {
+		case map[string]interface{}:
+			out[snakeKey] = camelToSnakeMap(val)
+		default:
+			out[snakeKey] = v
+			_ = val
+		}
+	}
+	return out
+}
+
+var camelSnakeOverrides = map[string]string{
+	"workflowId":          "workflow_id",
+	"executionBundle":     "execution_bundle",
+	"executionEngine":     "execution_engine",
+	"serviceAccountName":  "service_account_name",
+	"remediationTarget":   "remediation_target",
+	"contributingFactors": "contributing_factors",
+	"signalName":          "signal_name",
+	"needsHumanReview":    "needs_human_review",
+	"humanReviewReason":   "human_review_reason",
+	"rootCauseAnalysis":   "root_cause_analysis",
+	"selectedWorkflow":    "selected_workflow",
+}
+
+func camelToSnake(s string) string {
+	if override, ok := camelSnakeOverrides[s]; ok {
+		return override
+	}
+	return s
 }
