@@ -632,7 +632,19 @@
           "properties": {
             "credentialsSecretName": { "type": "string", "default": "llm-credentials", "description": "Name of the pre-existing K8s Secret containing LLM API credentials (e.g. OPENAI_API_KEY)" },
             "provider": { "type": "string", "default": "", "description": "Quickstart: LLM provider name (openai, anthropic). Auto-generates SDK config when set with model." },
-            "model": { "type": "string", "default": "", "description": "Quickstart: LLM model name (gpt-4o, claude-sonnet-4-20250514). Auto-generates SDK config when set with provider." }
+            "model": { "type": "string", "default": "", "description": "Quickstart: LLM model name (gpt-4o, claude-sonnet-4-20250514). Auto-generates SDK config when set with provider." },
+            "structuredOutput": { "type": "boolean", "default": false, "description": "Enable structured JSON output via provider-native schema enforcement." },
+            "oauth2": {
+              "type": "object",
+              "description": "OAuth2 client credentials grant for enterprise LLM gateway authentication.",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "default": false, "description": "Enable OAuth2 client credentials token acquisition for LLM requests." },
+                "tokenURL": { "type": "string", "default": "", "description": "OAuth2 token endpoint URL (e.g. Keycloak, Azure AD)." },
+                "credentialsSecretRef": { "type": "string", "default": "", "description": "K8s Secret name containing client-id and client-secret keys." },
+                "scopes": { "type": "string", "default": "", "description": "Space-separated OAuth2 scopes." }
+              }
+            }
           }
         },
         "sdkConfigContent": {

@@ -44,6 +44,7 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
+	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
@@ -74,7 +75,7 @@ func main() {
 		addr          string
 	)
 	flag.StringVar(&configPath, "config", "/etc/kubernautagent/config.yaml", "Path to YAML configuration file")
-	flag.StringVar(&sdkConfigPath, "sdk-config", "/etc/kubernaut-agent/sdk/sdk-config.yaml", "Path to SDK configuration file (LLM provider/model)")
+	flag.StringVar(&sdkConfigPath, "sdk-config", "/etc/kubernaut-agent/sdk/sdk-config.yaml", "Path to SDK configuration file (LLM provider, model, auth, transport)")
 	flag.StringVar(&addr, "addr", "", "HTTP listen address (overrides config server.port)")
 	flag.Parse()
 
@@ -108,6 +109,15 @@ func main() {
 		cfg.LLM.APIKey = resolveCredentialsFile(cfg.LLM.Provider, slogger)
 	}
 
+	if cfg.LLM.OAuth2.Enabled {
+		if v := os.Getenv("OAUTH2_CLIENT_ID"); v != "" {
+			cfg.LLM.OAuth2.ClientID = v
+		}
+		if v := os.Getenv("OAUTH2_CLIENT_SECRET"); v != "" {
+			cfg.LLM.OAuth2.ClientSecret = v
+		}
+	}
+
 	if err := cfg.Validate(); err != nil {
 		slogger.Error("invalid configuration", "error", err)
 		os.Exit(1)
@@ -126,7 +136,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	promptBuilder, err := prompt.NewBuilder()
+	var promptOpts []prompt.BuilderOption
+	if cfg.LLM.StructuredOutput {
+		promptOpts = append(promptOpts, prompt.WithStructuredOutput(true))
+	}
+	promptBuilder, err := prompt.NewBuilder(promptOpts...)
 	if err != nil {
 		slogger.Error("failed to create prompt builder", "error", err)
 		os.Exit(1)
@@ -415,7 +429,46 @@ func buildLLMProviderOptions(cfg *kaconfig.Config) []langchaingo.Option {
 	if cfg.LLM.BedrockRegion != "" {
 		opts = append(opts, langchaingo.WithBedrockRegion(cfg.LLM.BedrockRegion))
 	}
+
+	if rt := buildTransportChain(cfg); rt != nil {
+		opts = append(opts, langchaingo.WithHTTPClient(&http.Client{Transport: rt}))
+	}
 	return opts
+}
+
+// buildTransportChain composes the HTTP transport stack for the LLM client.
+// Layers are applied inside-out: the innermost transport (DefaultTransport)
+// handles the actual HTTP call, and outer layers intercept/decorate.
+//
+// Chain: StructuredOutputTransport? → AuthHeadersTransport? → OAuth2Transport? → http.DefaultTransport
+//
+// Returns nil when no custom transports are needed (caller uses provider defaults).
+func buildTransportChain(cfg *kaconfig.Config) http.RoundTripper {
+	var base http.RoundTripper = http.DefaultTransport
+	needsCustom := false
+
+	if cfg.LLM.OAuth2.Enabled {
+		base = llmtransport.NewOAuth2ClientCredentialsTransport(cfg.LLM.OAuth2, base)
+		needsCustom = true
+	}
+
+	if len(cfg.LLM.CustomHeaders) > 0 {
+		base = llmtransport.NewAuthHeadersTransport(cfg.LLM.CustomHeaders, base)
+		needsCustom = true
+	}
+
+	if cfg.LLM.StructuredOutput {
+		base = llmtransport.NewStructuredOutputTransport(
+			parser.InvestigationResultSchema(),
+			base,
+		)
+		needsCustom = true
+	}
+
+	if !needsCustom {
+		return nil
+	}
+	return base
 }
 
 // resolveCredentialsFile reads the LLM API key from the Helm-mounted credentials

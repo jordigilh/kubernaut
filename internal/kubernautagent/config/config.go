@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"time"
 
+	pkgconfig "github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -41,14 +42,28 @@ type Config struct {
 }
 
 type LLMConfig struct {
-	Provider        string `yaml:"provider"`
-	Endpoint        string `yaml:"endpoint"`
-	Model           string `yaml:"model"`
-	APIKey          string `yaml:"api_key"`
-	AzureAPIVersion string `yaml:"azure_api_version"`
-	VertexProject   string `yaml:"vertex_project"`
-	VertexLocation  string `yaml:"vertex_location"`
-	BedrockRegion   string `yaml:"bedrock_region"`
+	Provider         string                       `yaml:"provider"`
+	Endpoint         string                       `yaml:"endpoint"`
+	Model            string                       `yaml:"model"`
+	APIKey           string                       `yaml:"api_key"`
+	AzureAPIVersion  string                       `yaml:"azure_api_version"`
+	VertexProject    string                       `yaml:"vertex_project"`
+	VertexLocation   string                       `yaml:"vertex_location"`
+	BedrockRegion    string                       `yaml:"bedrock_region"`
+	StructuredOutput bool                         `yaml:"-"`
+	CustomHeaders    []pkgconfig.HeaderDefinition `yaml:"-"`
+	OAuth2           OAuth2Config                 `yaml:"-"`
+}
+
+// OAuth2Config holds OAuth2 client credentials configuration for enterprise
+// LLM gateway authentication. When enabled, KA acquires and refreshes JWTs
+// automatically via the client credentials grant (RFC 6749 s4.4).
+type OAuth2Config struct {
+	Enabled      bool     `yaml:"enabled"`
+	TokenURL     string   `yaml:"token_url"`
+	ClientID     string   `yaml:"client_id"`
+	ClientSecret string   `yaml:"client_secret"`
+	Scopes       []string `yaml:"scopes,omitempty"`
 }
 
 type DataStorageConfig struct {
@@ -120,20 +135,26 @@ func Load(data []byte) (*Config, error) {
 
 // SDKConfig represents the SDK configuration file structure.
 // This maps to the kubernaut-agent-sdk-config ConfigMap rendered by
-// the Helm chart when llm.provider/model are set.
+// the Helm chart when llm.provider/model are set. Transport fields
+// (structured_output, custom_headers, oauth2) are sourced exclusively
+// from this config; they are ignored in the main config.yaml.
 type SDKConfig struct {
 	LLM struct {
-		Provider       string  `yaml:"provider"`
-		Model          string  `yaml:"model"`
-		MaxRetries     int     `yaml:"max_retries"`
-		TimeoutSeconds int     `yaml:"timeout_seconds"`
-		Temperature    float64 `yaml:"temperature"`
+		Provider         string                       `yaml:"provider"`
+		Model            string                       `yaml:"model"`
+		MaxRetries       int                          `yaml:"max_retries"`
+		TimeoutSeconds   int                          `yaml:"timeout_seconds"`
+		Temperature      float64                      `yaml:"temperature"`
+		StructuredOutput bool                         `yaml:"structured_output"`
+		CustomHeaders    []pkgconfig.HeaderDefinition `yaml:"custom_headers,omitempty"`
+		OAuth2           OAuth2Config                 `yaml:"oauth2,omitempty"`
 	} `yaml:"llm"`
 }
 
 // MergeSDKConfig loads an SDK config file and merges LLM fields into
-// the main config. SDK values are only applied when the main config
-// doesn't already specify them (main config takes precedence).
+// the main config. Provider and model use gap-fill semantics (main
+// config takes precedence). Transport fields (structured_output,
+// custom_headers, oauth2) are sourced exclusively from the SDK config.
 func (c *Config) MergeSDKConfig(data []byte) error {
 	var sdk SDKConfig
 	if err := yaml.Unmarshal(data, &sdk); err != nil {
@@ -147,6 +168,9 @@ func (c *Config) MergeSDKConfig(data []byte) error {
 	if c.LLM.Model == "" && sdk.LLM.Model != "" {
 		c.LLM.Model = sdk.LLM.Model
 	}
+	c.LLM.StructuredOutput = sdk.LLM.StructuredOutput
+	c.LLM.CustomHeaders = sdk.LLM.CustomHeaders
+	c.LLM.OAuth2 = sdk.LLM.OAuth2
 	return nil
 }
 
@@ -165,6 +189,17 @@ func (c *Config) Validate() error {
 	}
 	if c.Investigator.MaxTurns <= 0 {
 		return fmt.Errorf("investigator.max_turns must be positive, got %d", c.Investigator.MaxTurns)
+	}
+	if c.LLM.OAuth2.Enabled {
+		if c.LLM.OAuth2.TokenURL == "" {
+			return fmt.Errorf("llm.oauth2.token_url is required when oauth2.enabled=true")
+		}
+		if c.LLM.OAuth2.ClientID == "" {
+			return fmt.Errorf("llm.oauth2.client_id is required when oauth2.enabled=true")
+		}
+		if c.LLM.OAuth2.ClientSecret == "" {
+			return fmt.Errorf("llm.oauth2.client_secret is required when oauth2.enabled=true")
+		}
 	}
 	return nil
 }
