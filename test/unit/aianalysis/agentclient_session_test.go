@@ -196,9 +196,9 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 		Context("with 404 Not Found [UT-AA-064-027]", func() {
 			BeforeEach(func() {
 				mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Content-Type", "application/json")
+					w.Header().Set("Content-Type", "application/problem+json")
 					w.WriteHeader(http.StatusNotFound)
-					_, _ = w.Write([]byte(`{"detail": "Session sess-lost not found"}`))
+					_, _ = w.Write([]byte(`{"type":"https://kubernaut.ai/problems/not-found","title":"Session Not Found","detail":"Session sess-lost not found","status":404,"instance":"/api/v1/incident/session/sess-lost"}`))
 				}))
 
 				var err error
@@ -265,9 +265,9 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 		Context("with 409 Conflict [UT-AA-064-029]", func() {
 			BeforeEach(func() {
 				mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Content-Type", "application/json")
+					w.Header().Set("Content-Type", "application/problem+json")
 					w.WriteHeader(http.StatusConflict)
-					_, _ = w.Write([]byte(`{"detail": "Session not yet completed (status: investigating)"}`))
+					_, _ = w.Write([]byte(`{"type":"https://kubernaut.ai/problems/session-not-completed","title":"Session Not Completed","detail":"Session not yet completed (status: investigating)","status":409,"instance":"/api/v1/incident/session/sess-result-pending/result"}`))
 				}))
 
 				var err error
@@ -289,7 +289,9 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 		Context("with 404 Not Found [UT-AA-064-030]", func() {
 			BeforeEach(func() {
 				mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/problem+json")
 					w.WriteHeader(http.StatusNotFound)
+					_, _ = w.Write([]byte(`{"type":"https://kubernaut.ai/problems/not-found","title":"Session Not Found","detail":"session sess-gone not found","status":404,"instance":"/api/v1/incident/session/sess-gone/result"}`))
 				}))
 
 				var err error

@@ -209,14 +209,28 @@ func encodeIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRe
 		return nil
 
 	case *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound:
+		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(404)
 		span.SetStatus(codes.Error, http.StatusText(404))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
 
 		return nil
 
 	case *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict:
+		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(409)
 		span.SetStatus(codes.Error, http.StatusText(409))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
 
 		return nil
 
@@ -253,9 +267,16 @@ func encodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse
 
 		return nil
 
-	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound:
+	case *HTTPError:
+		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(404)
 		span.SetStatus(codes.Error, http.StatusText(404))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
 
 		return nil
 

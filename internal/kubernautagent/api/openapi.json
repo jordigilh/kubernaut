@@ -390,7 +390,14 @@
             }
           },
           "404": {
-            "description": "Session not found (HAPI may have restarted)"
+            "description": "Session not found (HAPI may have restarted)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -436,10 +443,24 @@
             }
           },
           "404": {
-            "description": "Session not found"
+            "description": "Session not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Session not yet completed"
+            "description": "Session not yet completed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",

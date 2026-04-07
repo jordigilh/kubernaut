@@ -49,9 +49,10 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 	})
 
 	Describe("UT-KA-433-HTTP-001: Error response has RFC 7807 fields (GAP-004)", func() {
-		It("should return error with detail field when investigator is nil", func() {
+		It("should return 500 problem+json with detail field when investigator is nil", func() {
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-001",
+				RemediationID:     "rem-001",
 				SignalName:        "OOMKilled",
 				ResourceNamespace: "prod",
 				Severity:          hapiclient.SeverityCritical,
@@ -62,9 +63,134 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 			resp, err := handler.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(context.Background(), req)
 			Expect(err).NotTo(HaveOccurred())
 
-			errResp, ok := resp.(*hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError)
-			Expect(ok).To(BeTrue(), "error response should be internal server error type")
+			errResp, ok := resp.(*hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON)
+			Expect(ok).To(BeTrue(), "error response should be problem+json 500 type")
 			Expect(errResp.Detail).To(ContainSubstring("investigator not configured"))
+			Expect(errResp.Type).To(Equal("https://kubernaut.ai/problems/internal-error"))
+			Expect(errResp.Status).To(Equal(500))
+		})
+	})
+
+	Describe("UT-KA-433-HTTP-002: Missing remediation_id returns 422 problem+json", func() {
+		It("should return 422 with validation error when remediation_id is missing", func() {
+			req := &hapiclient.IncidentRequest{
+				IncidentID:        "test-val-001",
+				SignalName:        "OOMKilled",
+				ResourceNamespace: "prod",
+				Severity:          hapiclient.SeverityCritical,
+				ErrorMessage:      "OOMKilled",
+				ResourceKind:      "Pod",
+				ResourceName:      "api-server",
+			}
+			resp, err := handler.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(context.Background(), req)
+			Expect(err).NotTo(HaveOccurred())
+
+			errResp, ok := resp.(*hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON)
+			Expect(ok).To(BeTrue(), "missing remediation_id should return 422 problem+json")
+			Expect(errResp.Status).To(Equal(422))
+			Expect(errResp.Type).To(Equal("https://kubernaut.ai/problems/validation-error"))
+			Expect(errResp.Title).To(Equal("Validation Error"))
+			Expect(errResp.Detail).To(ContainSubstring("remediation_id"))
+		})
+	})
+
+	Describe("UT-KA-433-HTTP-003: Missing incident_id returns 422 problem+json", func() {
+		It("should return 422 with validation error when incident_id is missing", func() {
+			req := &hapiclient.IncidentRequest{
+				RemediationID:     "rem-test",
+				SignalName:        "OOMKilled",
+				ResourceNamespace: "prod",
+				Severity:          hapiclient.SeverityCritical,
+				ErrorMessage:      "OOMKilled",
+				ResourceKind:      "Pod",
+				ResourceName:      "api-server",
+			}
+			resp, err := handler.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(context.Background(), req)
+			Expect(err).NotTo(HaveOccurred())
+
+			errResp, ok := resp.(*hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON)
+			Expect(ok).To(BeTrue(), "missing incident_id should return 422 problem+json")
+			Expect(errResp.Status).To(Equal(422))
+			Expect(errResp.Detail).To(ContainSubstring("incident_id"))
+		})
+	})
+
+	Describe("UT-KA-433-HTTP-004: 422 response includes instance field", func() {
+		It("should set instance to /api/v1/incident/analyze", func() {
+			req := &hapiclient.IncidentRequest{
+				SignalName:        "OOMKilled",
+				ResourceNamespace: "prod",
+				Severity:          hapiclient.SeverityCritical,
+				ErrorMessage:      "OOMKilled",
+				ResourceKind:      "Pod",
+				ResourceName:      "api-server",
+			}
+			resp, err := handler.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(context.Background(), req)
+			Expect(err).NotTo(HaveOccurred())
+
+			errResp, ok := resp.(*hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON)
+			Expect(ok).To(BeTrue())
+			Expect(errResp.Instance).To(Equal("/api/v1/incident/analyze"))
+		})
+	})
+
+	Describe("UT-KA-433-HTTP-007: 500 error returns problem+json", func() {
+		It("should return problem+json with type/title/status when investigation cannot start", func() {
+			req := &hapiclient.IncidentRequest{
+				IncidentID:        "test-500",
+				RemediationID:     "rem-500",
+				SignalName:        "OOMKilled",
+				ResourceNamespace: "prod",
+				Severity:          hapiclient.SeverityCritical,
+				ErrorMessage:      "OOMKilled",
+				ResourceKind:      "Pod",
+				ResourceName:      "api-server",
+			}
+			resp, err := handler.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(context.Background(), req)
+			Expect(err).NotTo(HaveOccurred())
+
+			errResp, ok := resp.(*hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON)
+			Expect(ok).To(BeTrue(), "500 errors should use problem+json type")
+			Expect(errResp.Type).To(Equal("https://kubernaut.ai/problems/internal-error"))
+			Expect(errResp.Title).To(Equal("Internal Server Error"))
+			Expect(errResp.Status).To(Equal(500))
+			Expect(errResp.Instance).To(Equal("/api/v1/incident/analyze"))
+		})
+	})
+
+	Describe("UT-KA-433-HTTP-008: Session not found returns 404", func() {
+		It("should return 404 empty response for unknown session_id on result endpoint", func() {
+			params := hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{
+				SessionID: "non-existent-uuid",
+			}
+			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(context.Background(), params)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, ok := resp.(*hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound)
+			Expect(ok).To(BeTrue(), "unknown session should return 404")
+		})
+	})
+
+	Describe("UT-KA-433-HTTP-009: Session not completed returns 409", func() {
+		It("should return 409 when session is still running", func() {
+			sessionID, err := manager.StartInvestigation(
+				context.Background(),
+				func(bgCtx context.Context) (interface{}, error) {
+					<-bgCtx.Done()
+					return nil, bgCtx.Err()
+				},
+				map[string]string{"incident_id": "running-test"},
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			params := hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{
+				SessionID: sessionID,
+			}
+			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(context.Background(), params)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, ok := resp.(*hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict)
+			Expect(ok).To(BeTrue(), "running session should return 409")
 		})
 	})
 

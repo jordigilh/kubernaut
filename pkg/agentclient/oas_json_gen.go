@@ -3010,6 +3010,82 @@ func (s *IncidentResponseSelectedWorkflow) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict as json.
+func (s *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict) Encode(e *jx.Encoder) {
+	unwrapped := (*HTTPError)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict from json.
+func (s *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict to nil")
+	}
+	var unwrapped HTTPError
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound as json.
+func (s *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound) Encode(e *jx.Encoder) {
+	unwrapped := (*HTTPError)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound from json.
+func (s *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound to nil")
+	}
+	var unwrapped HTTPError
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON as json.
 func (s IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON) Encode(e *jx.Encoder) {
 	unwrapped := jx.Raw(s)

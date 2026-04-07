@@ -61,20 +61,33 @@ func NewHandler(sessions *session.Manager, inv *investigator.Investigator, logge
 func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 	ctx context.Context, req *hapiclient.IncidentRequest,
 ) (hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes, error) {
-	if h.investigator == nil {
-		h.logger.Error("investigator not configured")
-		resp := hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError{
-			Detail: "investigator not configured",
-		}
-		return &resp, nil
-	}
-
 	if req.RemediationID == "" {
-		return &hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON{
-			Type:     "urn:kubernaut:error:validation",
+		return &hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON{
+			Type:     "https://kubernaut.ai/problems/validation-error",
 			Title:    "Validation Error",
 			Detail:   "remediation_id is required (DD-WORKFLOW-002)",
-			Status:   400,
+			Status:   422,
+			Instance: "/api/v1/incident/analyze",
+		}, nil
+	}
+
+	if req.IncidentID == "" {
+		return &hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON{
+			Type:     "https://kubernaut.ai/problems/validation-error",
+			Title:    "Validation Error",
+			Detail:   "incident_id is required",
+			Status:   422,
+			Instance: "/api/v1/incident/analyze",
+		}, nil
+	}
+
+	if h.investigator == nil {
+		h.logger.Error("investigator not configured")
+		return &hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
+			Type:     "https://kubernaut.ai/problems/internal-error",
+			Title:    "Internal Server Error",
+			Detail:   "investigator not configured",
+			Status:   500,
 			Instance: "/api/v1/incident/analyze",
 		}, nil
 	}
@@ -94,10 +107,13 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 	}, metadata)
 	if err != nil {
 		h.logger.Error("failed to start investigation", "error", err)
-		resp := hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError{
-			Detail: "failed to start investigation: " + err.Error(),
-		}
-		return &resp, nil
+		return &hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
+			Type:     "https://kubernaut.ai/problems/internal-error",
+			Title:    "Internal Server Error",
+			Detail:   "failed to start investigation: " + err.Error(),
+			Status:   500,
+			Instance: "/api/v1/incident/analyze",
+		}, nil
 	}
 
 	body, _ := json.Marshal(map[string]string{"session_id": sessionID})
@@ -113,7 +129,13 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 	sess, err := h.sessions.GetSession(params.SessionID)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
-			return &hapiclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound{}, nil
+			return &hapiclient.HTTPError{
+				Type:     "https://kubernaut.ai/problems/not-found",
+				Title:    "Session Not Found",
+				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
+				Status:   404,
+				Instance: fmt.Sprintf("/api/v1/incident/session/%s", params.SessionID),
+			}, nil
 		}
 		h.logger.Error("session lookup failed", "session_id", params.SessionID, "error", err)
 		return nil, fmt.Errorf("session lookup: %w", err)
@@ -137,20 +159,38 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 	sess, err := h.sessions.GetSession(params.SessionID)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
-			return &hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound{}, nil
+			return &hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound{
+				Type:     "https://kubernaut.ai/problems/not-found",
+				Title:    "Session Not Found",
+				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
+				Status:   404,
+				Instance: fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID),
+			}, nil
 		}
 		h.logger.Error("session lookup failed", "session_id", params.SessionID, "error", err)
 		return nil, fmt.Errorf("session lookup: %w", err)
 	}
 
 	if sess.Status != session.StatusCompleted {
-		return &hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{}, nil
+		return &hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{
+			Type:     "https://kubernaut.ai/problems/session-not-completed",
+			Title:    "Session Not Completed",
+			Detail:   fmt.Sprintf("session %s is %s, not completed", params.SessionID, mapSessionStatusToAPI(sess.Status)),
+			Status:   409,
+			Instance: fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID),
+		}, nil
 	}
 
 	result, ok := sess.Result.(*katypes.InvestigationResult)
 	if !ok {
 		h.logger.Error("unexpected result type in session", "session_id", sess.ID)
-		return &hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{}, nil
+		return &hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{
+			Type:     "https://kubernaut.ai/problems/session-not-completed",
+			Title:    "Session Not Completed",
+			Detail:   "session result is not an investigation result",
+			Status:   409,
+			Instance: fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID),
+		}, nil
 	}
 
 	var incidentID string

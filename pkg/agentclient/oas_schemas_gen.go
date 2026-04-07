@@ -284,6 +284,8 @@ func (s *HTTPError) SetRequestID(val OptNilString) {
 	s.RequestID = val
 }
 
+func (*HTTPError) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {}
+
 // Ref: #/components/schemas/HTTPValidationError
 type HTTPValidationError struct {
 	Detail []ValidationError `json:"detail"`
@@ -1364,22 +1366,14 @@ func (s *IncidentResponseSelectedWorkflow) init() IncidentResponseSelectedWorkfl
 	return m
 }
 
-// IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict is response for IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet operation.
-type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict struct{}
+type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict HTTPError
 
 func (*IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
 }
 
-// IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound is response for IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet operation.
-type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound struct{}
+type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound HTTPError
 
 func (*IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
-}
-
-// IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound is response for IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet operation.
-type IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound struct{}
-
-func (*IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {
 }
 
 type IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON jx.Raw
