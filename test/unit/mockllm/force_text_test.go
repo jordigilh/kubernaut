@@ -57,7 +57,7 @@ var _ = Describe("Force-Text Mode", func() {
 				Severity:     "high",
 			}
 			resp := response.BuildForceTextResponse("mock-model", cfg, nil)
-			Expect(*resp.Choices[0].Message.Content).To(ContainSubstring("Root Cause Analysis"))
+			Expect(*resp.Choices[0].Message.Content).To(ContainSubstring("root_cause_analysis"))
 			Expect(*resp.Choices[0].Message.Content).To(ContainSubstring("Container failing"))
 		})
 	})

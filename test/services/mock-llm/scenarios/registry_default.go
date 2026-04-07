@@ -31,26 +31,7 @@ import (
 //  2. Fallback match by WorkflowName prefix (strips ":environment" suffix),
 //     preferring ":production" when multiple environments exist
 func DefaultRegistryWithOverrides(overrides *config.Overrides) *Registry {
-	r := defaultRegistryInternal()
-	if overrides != nil {
-		for _, s := range r.scenarios {
-			cs, ok := s.(*configScenario)
-			if !ok {
-				continue
-			}
-			if ov, found := overrides.Scenarios[cs.config.ScenarioName]; found {
-				applyOverride(cs, ov)
-				continue
-			}
-			if cs.config.WorkflowName == "" {
-				continue
-			}
-			if ov, found := findOverrideByWorkflowName(overrides.Scenarios, cs.config.WorkflowName); found {
-				applyOverride(cs, ov)
-			}
-		}
-	}
-	return r
+	return DefaultRegistryFull(overrides, "")
 }
 
 func applyOverride(cs *configScenario, ov config.ScenarioOverride) {
@@ -85,6 +66,31 @@ func findOverrideByWorkflowName(overrides map[string]config.ScenarioOverride, wo
 	return best, found
 }
 
+// DefaultRegistryFull returns a registry with optional overrides and golden
+// transcript replay. goldenDir may be empty to skip replay loading.
+func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registry {
+	r := defaultRegistryWithGoldenDir(goldenDir)
+	if overrides != nil {
+		for _, s := range r.scenarios {
+			cs, ok := s.(*configScenario)
+			if !ok {
+				continue
+			}
+			if ov, found := overrides.Scenarios[cs.config.ScenarioName]; found {
+				applyOverride(cs, ov)
+				continue
+			}
+			if cs.config.WorkflowName == "" {
+				continue
+			}
+			if ov, found := findOverrideByWorkflowName(overrides.Scenarios, cs.config.WorkflowName); found {
+				applyOverride(cs, ov)
+			}
+		}
+	}
+	return r
+}
+
 // DefaultRegistry returns a fully populated registry with all 15 scenarios
 // and a default fallback, matching the Python MOCK_SCENARIOS catalog.
 func DefaultRegistry() *Registry {
@@ -92,7 +98,19 @@ func DefaultRegistry() *Registry {
 }
 
 func defaultRegistryInternal() *Registry {
+	return defaultRegistryWithGoldenDir("")
+}
+
+func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r := NewRegistry()
+
+	// Golden transcript replay scenarios (highest priority = 1.1)
+	if goldenDir != "" {
+		replays, _ := LoadReplayScenarios(goldenDir)
+		for _, rs := range replays {
+			r.Register(rs)
+		}
+	}
 
 	// Mock keyword scenarios (highest priority = 1.0)
 	r.Register(mockKeywordScenario("no_workflow_found", "mock_no_workflow_found", noWorkflowFoundConfig()))

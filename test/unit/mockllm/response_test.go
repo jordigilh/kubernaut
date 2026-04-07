@@ -83,7 +83,7 @@ var _ = Describe("Response Builders", func() {
 			Expect(resp.Choices).To(HaveLen(1))
 			Expect(resp.Choices[0].FinishReason).To(Equal("stop"))
 			Expect(resp.Choices[0].Message.Content).NotTo(BeNil())
-			Expect(*resp.Choices[0].Message.Content).To(ContainSubstring("Root Cause Analysis"))
+			Expect(*resp.Choices[0].Message.Content).To(ContainSubstring("root_cause_analysis"))
 			Expect(resp.Choices[0].Message.ToolCalls).To(BeEmpty())
 		})
 	})
@@ -93,7 +93,7 @@ var _ = Describe("Response Builders", func() {
 			resp := response.BuildOllamaResponse("mock-model", cfg)
 			Expect(resp.Done).To(BeTrue())
 			Expect(resp.Model).To(Equal("mock-model"))
-			Expect(resp.Response).To(ContainSubstring("Root Cause Analysis"))
+			Expect(resp.Response).To(ContainSubstring("root_cause_analysis"))
 			Expect(resp.TotalDuration).To(BeNumerically(">", 0))
 		})
 
@@ -159,26 +159,9 @@ var _ = Describe("Response Builders", func() {
 			resp := response.BuildTextResponse("mock-model", actionableCfg)
 			text := *resp.Choices[0].Message.Content
 
-			// Extract the JSON block from the markdown
-			jsonStart := -1
-			jsonEnd := -1
-			inCodeBlock := false
-			lines := splitLines(text)
-			for i, line := range lines {
-				if !inCodeBlock && line == "```json" {
-					inCodeBlock = true
-					jsonStart = i + 1
-				} else if inCodeBlock && line == "```" {
-					jsonEnd = i
-					break
-				}
-			}
-			Expect(jsonStart).To(BeNumerically(">", 0), "expected ```json block in response")
-			Expect(jsonEnd).To(BeNumerically(">", jsonStart), "expected closing ``` in response")
-
-			jsonText := joinLines(lines[jsonStart:jsonEnd])
 			var parsed map[string]interface{}
-			Expect(json.Unmarshal([]byte(jsonText), &parsed)).To(Succeed(), "JSON block should be valid JSON")
+			Expect(json.Unmarshal([]byte(text), &parsed)).To(Succeed(),
+				"response must be valid pure JSON (no markdown wrapping)")
 			Expect(parsed).To(HaveKey("severity"))
 			Expect(parsed).To(HaveKey("investigation_outcome"))
 			Expect(parsed).To(HaveKey("root_cause_analysis"))

@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -80,6 +81,7 @@ type MockLLMConfig struct {
 	ImageTag       string // Unique image tag per DD-TEST-004 (use GenerateInfraImageName)
 	Network        string // Podman network for container-to-container communication (e.g., "aianalysis_test_network")
 	ConfigFilePath string // Optional: Host path to scenarios.yaml file (DD-TEST-011 v2.0)
+	GoldenDirPath  string // Optional: Host path to golden transcripts directory (BR-TESTING-001 Phase 7)
 }
 
 // BuildMockLLMImage builds the Mock LLM container image for integration tests
@@ -238,6 +240,13 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 		args = append(args, "-v", fmt.Sprintf("%s:/config/scenarios.yaml:ro", config.ConfigFilePath))
 		args = append(args, "-e", "MOCK_LLM_CONFIG_PATH=/config/scenarios.yaml")
 		_, _ = fmt.Fprintf(writer, "📋 Mounting config file: %s → /config/scenarios.yaml\n", config.ConfigFilePath)
+	}
+
+	// Mount golden transcripts directory if specified (BR-TESTING-001 Phase 7)
+	if config.GoldenDirPath != "" {
+		args = append(args, "-v", fmt.Sprintf("%s:/golden-transcripts:ro", config.GoldenDirPath))
+		args = append(args, "-e", "MOCK_LLM_GOLDEN_DIR=/golden-transcripts")
+		_, _ = fmt.Fprintf(writer, "📋 Mounting golden transcripts: %s → /golden-transcripts\n", config.GoldenDirPath)
 	}
 
 	// Add network if specified (for container-to-container communication)
@@ -478,5 +487,65 @@ data:
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Mock LLM restarted with workflow UUIDs\n")
 
+	return nil
+}
+
+// CreateGoldenTranscriptsConfigMap creates a ConfigMap containing golden
+// transcript JSON files for the mock LLM replay mode (BR-TESTING-001 Phase 7).
+// goldenDir is the local directory containing .json golden transcript files.
+// The ConfigMap is mounted at /golden-transcripts in the mock LLM deployment.
+//
+// Prerequisite: golden transcripts captured per kubernaut-demo-scenarios#300.
+func CreateGoldenTranscriptsConfigMap(ctx context.Context, namespace, kubeconfigPath, goldenDir string, writer io.Writer) error {
+	if goldenDir == "" {
+		return nil
+	}
+
+	entries, err := os.ReadDir(goldenDir)
+	if err != nil {
+		return fmt.Errorf("reading golden transcripts dir %s: %w", goldenDir, err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   📋 Creating golden transcripts ConfigMap from %s...\n", goldenDir)
+
+	args := []string{
+		"create", "configmap", "mock-llm-golden-transcripts",
+		"-n", namespace,
+		"--kubeconfig", kubeconfigPath,
+		"--dry-run=client", "-o", "yaml",
+	}
+
+	fileCount := 0
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		args = append(args, fmt.Sprintf("--from-file=%s=%s",
+			entry.Name(), filepath.Join(goldenDir, entry.Name())))
+		fileCount++
+	}
+
+	if fileCount == 0 {
+		_, _ = fmt.Fprintf(writer, "   ℹ️  No .json files found in golden dir, skipping ConfigMap\n")
+		return nil
+	}
+
+	// Generate the ConfigMap YAML via dry-run, then apply
+	genCmd := exec.CommandContext(ctx, "kubectl", args...)
+	yamlBytes, err := genCmd.Output()
+	if err != nil {
+		return fmt.Errorf("generating golden transcripts ConfigMap: %w", err)
+	}
+
+	applyCmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-",
+		"--kubeconfig", kubeconfigPath)
+	applyCmd.Stdin = strings.NewReader(string(yamlBytes))
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+	if err := applyCmd.Run(); err != nil {
+		return fmt.Errorf("applying golden transcripts ConfigMap: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ✅ Golden transcripts ConfigMap created (%d files)\n", fileCount)
 	return nil
 }

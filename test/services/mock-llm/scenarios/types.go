@@ -55,6 +55,11 @@ type MockScenarioConfig struct {
 	InvestigationOutcome string // "problem_resolved", "predictive_no_action", "actionable", "inconclusive"
 	IsActionable         *bool
 	HumanReviewReason    string
+
+	// ExactAnalysisText, when non-empty, is returned verbatim as the LLM
+	// response text instead of synthesizing from the other config fields.
+	// Used by golden transcript replay to produce full-fidelity responses.
+	ExactAnalysisText string
 }
 
 // BoolPtr is a helper for creating *bool literals in scenario configs.

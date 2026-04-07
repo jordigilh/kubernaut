@@ -29,6 +29,7 @@ type Config struct {
 
 	ConfigPath    string
 	RecordHeaders string
+	GoldenDir     string
 }
 
 // LoadFromEnv reads configuration from environment variables with sensible defaults.
@@ -40,6 +41,7 @@ func LoadFromEnv() *Config {
 		LogLevel:      envOrDefault("MOCK_LLM_LOG_LEVEL", "info"),
 		ConfigPath:    os.Getenv("MOCK_LLM_CONFIG_PATH"),
 		RecordHeaders: os.Getenv("MOCK_LLM_RECORD_HEADERS"),
+		GoldenDir:     os.Getenv("MOCK_LLM_GOLDEN_DIR"),
 	}
 }
 

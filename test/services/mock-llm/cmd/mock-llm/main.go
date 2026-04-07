@@ -39,7 +39,7 @@ func main() {
 		log.Fatalf("Failed to load YAML overrides from %s: %v", cfg.ConfigPath, err)
 	}
 
-	registry := scenarios.DefaultRegistryWithOverrides(overrides)
+	registry := scenarios.DefaultRegistryFull(overrides, cfg.GoldenDir)
 	m := mockmetrics.NewMetrics()
 
 	router := handlers.NewFullRouterWithMetrics(registry, cfg.ForceText, cfg.RecordHeaders, nil, m)

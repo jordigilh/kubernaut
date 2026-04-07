@@ -200,13 +200,12 @@ func workflowRationale(cfg scenarios.MockScenarioConfig) string {
 }
 
 func buildAnalysisText(cfg scenarios.MockScenarioConfig) string {
+	if cfg.ExactAnalysisText != "" {
+		return cfg.ExactAnalysisText
+	}
 	obj := analysisJSON(cfg)
-	data, _ := json.MarshalIndent(obj, "  ", "  ")
-	return fmt.Sprintf(
-		"Based on my investigation of the incident:\n\n## Root Cause Analysis\n\n%s\n\n"+
-			"```json\n  %s\n```\n",
-		cfg.RootCause, string(data),
-	)
+	data, _ := json.MarshalIndent(obj, "", "  ")
+	return string(data)
 }
 
 func contributingSlice(cfg scenarios.MockScenarioConfig) []string {
