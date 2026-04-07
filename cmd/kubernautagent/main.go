@@ -51,6 +51,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/conversation"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
@@ -200,6 +201,37 @@ func main() {
 		os.Exit(1)
 	}
 
+	var convHandler *conversation.Handler
+	if cfg.Conversation.Enabled {
+		convLLMCfg := cfg.Conversation.EffectiveLLM(cfg.LLM)
+		convLLMClient, convErr := langchaingo.New(
+			convLLMCfg.Provider, convLLMCfg.Endpoint, convLLMCfg.Model, convLLMCfg.APIKey,
+			buildLLMProviderOptionsFromConfig(convLLMCfg)...)
+		if convErr != nil {
+			slogger.Warn("conversation LLM client failed, disabled", "error", convErr)
+		} else {
+			convAuthn, convAuthz := buildConversationAuth(k8sInfra, slogger)
+			if convAuthn != nil && convAuthz != nil {
+				convHandler = conversation.NewHandler(conversation.HandlerDeps{
+					Authenticator: convAuthn,
+					Authorizer:    convAuthz,
+					AuditStore:    auditStore,
+					Config:        cfg.Conversation,
+					Logger:        slogger,
+					PromptBuilder: promptBuilder,
+				}).WithLLMClient(conversation.LLMAdapterDeps{
+					Client:       llm.NewInstrumentedClient(convLLMClient),
+					ToolRegistry: reg,
+					AuditStore:   auditStore,
+					Logger:       slogger,
+					MaxToolTurns: cfg.Conversation.MaxToolTurns,
+					ModelName:    convLLMCfg.Model,
+				})
+				slogger.Info("conversation API enabled", "model", convLLMCfg.Model)
+			}
+		}
+	}
+
 	r := chi.NewRouter()
 
 	r.Get("/health", healthHandler)
@@ -208,7 +240,7 @@ func main() {
 	r.Handle("/metrics", promhttp.Handler())
 
 	r.Route("/api/v1", func(r chi.Router) {
-		authMw := newAuthMiddleware(cfg, logrLogger)
+		authMw := newAuthMiddleware(k8sInfra, logrLogger)
 		if authMw != nil {
 			r.Use(authMw.Handler)
 			slogger.Info("auth middleware enabled (DD-AUTH-014)",
@@ -218,6 +250,14 @@ func main() {
 			)
 		} else {
 			slogger.Info("auth middleware DISABLED (no in-cluster K8s config)")
+		}
+
+		if convHandler != nil {
+			r.Route("/conversations", func(r chi.Router) {
+				r.Post("/sessions", convHandler.HandleCreateSession)
+				r.Post("/sessions/{sessionID}/messages", convHandler.HandlePostMessage)
+			})
+			slogger.Info("conversation routes registered under /api/v1/conversations")
 		}
 
 		r.Handle("/*", ogenSrv)
@@ -432,20 +472,21 @@ func buildSanitizationPipeline(cfg *kaconfig.Config, logger *slog.Logger) *sanit
 	return sanitization.NewPipeline(stages...)
 }
 
-// buildLLMProviderOptions returns provider-specific LangChainGo options based on config.
-func buildLLMProviderOptions(cfg *kaconfig.Config) []langchaingo.Option {
+// buildLLMProviderOptionsFromConfig returns provider-specific LangChainGo options
+// from a standalone LLMConfig. Used by both the investigator and conversation paths.
+func buildLLMProviderOptionsFromConfig(llmCfg kaconfig.LLMConfig) []langchaingo.Option {
 	var opts []langchaingo.Option
-	if cfg.LLM.AzureAPIVersion != "" {
-		opts = append(opts, langchaingo.WithAzureAPIVersion(cfg.LLM.AzureAPIVersion))
+	if llmCfg.AzureAPIVersion != "" {
+		opts = append(opts, langchaingo.WithAzureAPIVersion(llmCfg.AzureAPIVersion))
 	}
-	if cfg.LLM.VertexProject != "" {
-		opts = append(opts, langchaingo.WithVertexProject(cfg.LLM.VertexProject))
+	if llmCfg.VertexProject != "" {
+		opts = append(opts, langchaingo.WithVertexProject(llmCfg.VertexProject))
 	}
-	if cfg.LLM.VertexLocation != "" {
-		opts = append(opts, langchaingo.WithVertexLocation(cfg.LLM.VertexLocation))
+	if llmCfg.VertexLocation != "" {
+		opts = append(opts, langchaingo.WithVertexLocation(llmCfg.VertexLocation))
 	}
-	if cfg.LLM.BedrockRegion != "" {
-		opts = append(opts, langchaingo.WithBedrockRegion(cfg.LLM.BedrockRegion))
+	if llmCfg.BedrockRegion != "" {
+		opts = append(opts, langchaingo.WithBedrockRegion(llmCfg.BedrockRegion))
 	}
 
 	if rt := buildTransportChain(cfg); rt != nil {
@@ -487,6 +528,11 @@ func buildTransportChain(cfg *kaconfig.Config) http.RoundTripper {
 		return nil
 	}
 	return base
+}
+
+// buildLLMProviderOptions returns provider-specific LangChainGo options based on config.
+func buildLLMProviderOptions(cfg *kaconfig.Config) []langchaingo.Option {
+	return buildLLMProviderOptionsFromConfig(cfg.LLM)
 }
 
 // resolveCredentialsFile reads the LLM API key from the Helm-mounted credentials
@@ -748,22 +794,15 @@ func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validato
 	return validator, nil
 }
 
-// newAuthMiddleware creates the DD-AUTH-014 auth middleware using in-cluster K8s config.
-func newAuthMiddleware(_ *kaconfig.Config, logger logr.Logger) *auth.Middleware {
-	kubeConfig, err := ctrl.GetConfig()
-	if err != nil {
-		logger.Info("K8s config not available, auth middleware disabled", "error", err)
+// newAuthMiddleware creates the DD-AUTH-014 auth middleware using the shared k8sInfra clientset.
+func newAuthMiddleware(infra *k8sInfra, logger logr.Logger) *auth.Middleware {
+	if infra == nil || infra.clientset == nil {
+		logger.Info("K8s infrastructure not available, auth middleware disabled")
 		return nil
 	}
 
-	k8sClientset, err := kubernetes.NewForConfig(kubeConfig)
-	if err != nil {
-		logger.Error(err, "failed to create K8s clientset for auth")
-		return nil
-	}
-
-	authenticator := auth.NewK8sAuthenticator(k8sClientset)
-	authorizer := auth.NewK8sAuthorizer(k8sClientset)
+	authenticator := auth.NewK8sAuthenticator(infra.clientset)
+	authorizer := auth.NewK8sAuthorizer(infra.clientset)
 
 	namespace := detectNamespace()
 
@@ -773,4 +812,13 @@ func newAuthMiddleware(_ *kaconfig.Config, logger logr.Logger) *auth.Middleware 
 		ResourceName: "kubernaut-agent",
 		Verb:         "create",
 	}, logger)
+}
+
+// buildConversationAuth creates authenticator/authorizer for the conversation API using shared k8sInfra.
+func buildConversationAuth(infra *k8sInfra, logger *slog.Logger) (auth.Authenticator, auth.Authorizer) {
+	if infra == nil || infra.clientset == nil {
+		logger.Warn("K8s infrastructure unavailable for conversation auth")
+		return nil, nil
+	}
+	return auth.NewK8sAuthenticator(infra.clientset), auth.NewK8sAuthorizer(infra.clientset)
 }
