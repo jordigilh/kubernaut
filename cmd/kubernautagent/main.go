@@ -488,7 +488,12 @@ func buildLLMProviderOptionsFromConfig(llmCfg kaconfig.LLMConfig) []langchaingo.
 	if llmCfg.BedrockRegion != "" {
 		opts = append(opts, langchaingo.WithBedrockRegion(llmCfg.BedrockRegion))
 	}
+	return opts
+}
 
+// buildLLMProviderOptions returns provider-specific LangChainGo options based on config.
+func buildLLMProviderOptions(cfg *kaconfig.Config) []langchaingo.Option {
+	opts := buildLLMProviderOptionsFromConfig(cfg.LLM)
 	if rt := buildTransportChain(cfg); rt != nil {
 		opts = append(opts, langchaingo.WithHTTPClient(&http.Client{Transport: rt}))
 	}
@@ -528,11 +533,6 @@ func buildTransportChain(cfg *kaconfig.Config) http.RoundTripper {
 		return nil
 	}
 	return base
-}
-
-// buildLLMProviderOptions returns provider-specific LangChainGo options based on config.
-func buildLLMProviderOptions(cfg *kaconfig.Config) []langchaingo.Option {
-	return buildLLMProviderOptionsFromConfig(cfg.LLM)
 }
 
 // resolveCredentialsFile reads the LLM API key from the Helm-mounted credentials
