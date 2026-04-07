@@ -741,10 +741,6 @@ def generate_all_service_coverage(filter_service: Optional[str] = None) -> list[
     """Generate coverage data for all services."""
     results = []
 
-    # Python service
-    if not filter_service or filter_service == "kubernautagent":
-        results.append(calc_python_service())
-
     # Go services
     for service in GO_SERVICE_CONFIG:
         if filter_service and filter_service != service:
