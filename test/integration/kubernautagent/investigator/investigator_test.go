@@ -116,6 +116,16 @@ func (f *fakeTool) Description() string                                         
 func (f *fakeTool) Parameters() json.RawMessage                                          { return nil }
 func (f *fakeTool) Execute(_ context.Context, _ json.RawMessage) (string, error) { return f.result, f.err }
 
+func filterEvents(events []*audit.AuditEvent, eventType string) []*audit.AuditEvent {
+	var filtered []*audit.AuditEvent
+	for _, e := range events {
+		if e.EventType == eventType {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
 var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 
 	var (

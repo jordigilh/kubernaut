@@ -420,4 +420,101 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			}
 		})
 	})
+
+	Describe("IT-KA-433-AP-004: Investigation emits validation_attempt per self-correction attempt", func() {
+		It("should emit one failure validation_attempt then one success when correction succeeds", func() {
+			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+			auditStore := &recordingAuditStore{}
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
+			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+			phaseTools := investigator.DefaultPhaseToolMap()
+
+			validator := parser.NewValidator([]string{"restart", "scale-up"})
+
+			mockClient := &mockLLMClient{
+				responses: []llm.ChatResponse{
+					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"pod crashed"}`}},
+					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"unknown-workflow","confidence":0.8}`}},
+					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+				},
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools,
+				Pipeline: investigator.Pipeline{Validator: validator},
+			})
+
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.WorkflowID).To(Equal("restart"))
+
+			validationEvents := filterEvents(auditStore.events, audit.EventTypeValidationAttempt)
+			Expect(validationEvents).To(HaveLen(2),
+				"one failure attempt + one success attempt")
+
+			failEvent := validationEvents[0]
+			Expect(failEvent.Data["is_valid"]).To(BeFalse(),
+				"first attempt should be marked invalid")
+			Expect(failEvent.Data["attempt"]).To(Equal(1))
+			Expect(failEvent.EventOutcome).To(Equal(audit.OutcomeFailure))
+
+			successEvent := validationEvents[1]
+			Expect(successEvent.Data["is_valid"]).To(BeTrue(),
+				"final attempt should be marked valid after correction")
+			Expect(successEvent.EventOutcome).To(Equal(audit.OutcomeSuccess))
+		})
+
+		It("should emit isValid=false on final event when validation is exhausted", func() {
+			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+			auditStore := &recordingAuditStore{}
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
+			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+			phaseTools := investigator.DefaultPhaseToolMap()
+
+			validator := parser.NewValidator([]string{"restart", "scale-up"})
+
+			mockClient := &mockLLMClient{
+				responses: []llm.ChatResponse{
+					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"pod crashed"}`}},
+					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"bad-1","confidence":0.8}`}},
+					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"bad-2","confidence":0.7}`}},
+					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"bad-3","confidence":0.6}`}},
+				},
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools,
+				Pipeline: investigator.Pipeline{Validator: validator},
+			})
+
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.HumanReviewNeeded).To(BeTrue(),
+				"exhaustion should trigger human review")
+
+			validationEvents := filterEvents(auditStore.events, audit.EventTypeValidationAttempt)
+			Expect(len(validationEvents)).To(BeNumerically(">=", 2),
+				"at least correction attempts + final emit")
+
+			lastEvent := validationEvents[len(validationEvents)-1]
+			Expect(lastEvent.Data["is_valid"]).To(BeFalse(),
+				"final validation event must reflect exhaustion (isValid=false)")
+		})
+	})
 })
