@@ -73,7 +73,48 @@ Set `selected_workflow` to None. Do NOT include `investigation_outcome`.
 Set `selected_workflow` to None, include `actionable: false`.
 
 ## Expected Response Format
+{{ if .StructuredOutput }}
+**CRITICAL**: Respond with a SINGLE JSON object (no markdown, no section headers, no prose):
 
+```json
+{
+  "root_cause_analysis": {
+    "summary": "Brief summary from Phase 1 RCA",
+    "severity": "critical|high|medium|low|info|unknown",
+    "signal_name": "SignalName",
+    "contributing_factors": ["factor1", "factor2"],
+    "remediation_target": {
+      "kind": "Deployment",
+      "name": "resource-name",
+      "namespace": "namespace"
+    }
+  },
+  "selected_workflow": {
+    "workflow_id": "workflow-id-from-catalog",
+    "confidence": 0.95,
+    "rationale": "Why this workflow addresses the root cause",
+    "parameters": {"PARAM_NAME": "value"},
+    "execution_engine": "job"
+  },
+  "alternative_workflows": [
+    {"workflow_id": "alt-id", "confidence": 0.75, "rationale": "Why considered"}
+  ],
+  "severity": "high",
+  "confidence": 0.95,
+  "investigation_outcome": "actionable",
+  "actionable": true
+}
+```
+
+**Rules**:
+- Output ONLY the JSON object, no surrounding text
+- All fields in root_cause_analysis.summary and selected_workflow are required when actionable
+- Top-level severity must match root_cause_analysis.severity
+- Top-level confidence must match selected_workflow.confidence
+- parameters should only contain workflow-specific values (kind/name/namespace are injected by the system)
+- For non-actionable outcomes, omit selected_workflow and set actionable to false
+- If human review is needed, include "needs_human_review": true and "human_review_reason"
+{{ else }}
 **CRITICAL**: Use section header format. Each field on its own line with a `#` header:
 
 # root_cause_analysis
@@ -93,3 +134,4 @@ Set `selected_workflow` to None, include `actionable: false`.
 - Include up to 2-3 `alternative_workflows` (for audit/context only)
 - Each field must have its own `# field_name` header
 - Populate ALL required parameters from the workflow schema
+{{ end }}

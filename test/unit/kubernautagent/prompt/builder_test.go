@@ -131,4 +131,40 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 				"prompt injection pattern should be stripped from rendered output")
 		})
 	})
+
+	Describe("UT-KA-SO-PROMPT-001: WithStructuredOutput renders pure JSON format section", func() {
+		It("should include SINGLE JSON object instruction when structured output enabled", func() {
+			builder, err := prompt.NewBuilder(prompt.WithStructuredOutput(true))
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name:      "test-signal",
+				Namespace: "default",
+				Severity:  "high",
+				Message:   "Test message",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("SINGLE JSON object"),
+				"structured output mode must instruct LLM to return pure JSON")
+			Expect(rendered).NotTo(ContainSubstring("Use section header format"),
+				"structured output mode must NOT include legacy section header instructions")
+		})
+
+		It("should include legacy section header format when structured output disabled", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name:      "test-signal",
+				Namespace: "default",
+				Severity:  "high",
+				Message:   "Test message",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("Use section header format"),
+				"default mode must use legacy section header instructions")
+			Expect(rendered).NotTo(ContainSubstring("SINGLE JSON object"),
+				"default mode must NOT include structured output instructions")
+		})
+	})
 })

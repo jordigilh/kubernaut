@@ -156,15 +156,19 @@ const problemResolvedWarning = "Problem self-resolved"
 const confidenceFloor = 0.8
 
 // llmResponse is the nested JSON structure that LLMs typically produce.
+// Fields here must stay in sync with the JSON schema in schema.go and the
+// structured output prompt template in incident_investigation.tmpl.
 type llmResponse struct {
 	RCA                  *llmRCA           `json:"root_cause_analysis"`
 	Workflow             *llmWorkflow      `json:"selected_workflow"`
 	AlternativeWorkflows []llmAlternative  `json:"alternative_workflows,omitempty"`
 	Severity             string            `json:"severity,omitempty"`
+	Confidence           float64           `json:"confidence,omitempty"`
 	Actionable           *bool             `json:"actionable,omitempty"`
 	InvestigationOutcome string            `json:"investigation_outcome,omitempty"`
 	NeedsHumanReview     *bool             `json:"needs_human_review,omitempty"`
 	HumanReviewReason    string            `json:"human_review_reason,omitempty"`
+	DetectedLabels       map[string]interface{} `json:"detected_labels,omitempty"`
 }
 
 type llmAlternative struct {
@@ -196,9 +200,12 @@ type llmRemTarget struct {
 }
 
 type llmWorkflow struct {
-	WorkflowID      string  `json:"workflow_id"`
-	ExecutionBundle string  `json:"execution_bundle,omitempty"`
-	Confidence      float64 `json:"confidence"`
+	WorkflowID      string                 `json:"workflow_id"`
+	ExecutionBundle string                 `json:"execution_bundle,omitempty"`
+	Confidence      float64                `json:"confidence"`
+	Rationale       string                 `json:"rationale,omitempty"`
+	Parameters      map[string]interface{} `json:"parameters,omitempty"`
+	ExecutionEngine string                 `json:"execution_engine,omitempty"`
 }
 
 // flatLLMFields captures top-level fields that may appear alongside the flat
@@ -237,10 +244,25 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 	if resp.Severity != "" {
 		result.Severity = resp.Severity
 	}
+	// Top-level confidence serves as fallback when selected_workflow is absent
+	// (e.g., not-actionable outcomes where the LLM still provides a confidence score).
+	if resp.Confidence > 0 {
+		result.Confidence = resp.Confidence
+	}
 	if resp.Workflow != nil {
 		result.WorkflowID = resp.Workflow.WorkflowID
 		result.ExecutionBundle = resp.Workflow.ExecutionBundle
 		result.Confidence = resp.Workflow.Confidence
+		result.Reason = resp.Workflow.Rationale
+		result.ExecutionEngine = resp.Workflow.ExecutionEngine
+		if resp.Workflow.Parameters != nil {
+			if result.Parameters == nil {
+				result.Parameters = make(map[string]interface{})
+			}
+			for k, v := range resp.Workflow.Parameters {
+				result.Parameters[k] = v
+			}
+		}
 	}
 
 	for _, alt := range resp.AlternativeWorkflows {
@@ -258,6 +280,10 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 		NeedsHumanReview:     resp.NeedsHumanReview,
 		HumanReviewReason:    resp.HumanReviewReason,
 	})
+
+	if len(resp.DetectedLabels) > 0 {
+		result.DetectedLabels = resp.DetectedLabels
+	}
 
 	if result.RCASummary == "" && result.WorkflowID == "" {
 		return nil, fmt.Errorf("no recognized fields in LLM JSON response")

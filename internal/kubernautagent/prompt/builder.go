@@ -93,6 +93,7 @@ type investigationTemplateData struct {
 	Priority                    string
 	BusinessCategory            string
 	RiskTolerance               string
+	StructuredOutput            bool
 }
 
 // workflowTemplateData maps to fields expected by phase3_workflow_selection.tmpl.
@@ -109,16 +110,28 @@ type workflowTemplateData struct {
 	RiskDescription     string
 	RCASummary          string
 	EnrichmentContext   string
+	StructuredOutput    bool
+}
+
+// BuilderOption configures prompt builder behaviour.
+type BuilderOption func(*Builder)
+
+// WithStructuredOutput enables the structured JSON output prompt format.
+// When enabled, the investigation template instructs the LLM to return a
+// single JSON object instead of section headers with fragments.
+func WithStructuredOutput(enabled bool) BuilderOption {
+	return func(b *Builder) { b.structuredOutput = enabled }
 }
 
 // Builder renders prompt templates with signal and enrichment data.
 type Builder struct {
 	investigationTmpl *template.Template
 	workflowTmpl      *template.Template
+	structuredOutput  bool
 }
 
 // NewBuilder creates a prompt builder with embedded templates.
-func NewBuilder() (*Builder, error) {
+func NewBuilder(opts ...BuilderOption) (*Builder, error) {
 	invTmpl, err := template.ParseFS(templateFS, "templates/incident_investigation.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("parsing investigation template: %w", err)
@@ -127,10 +140,14 @@ func NewBuilder() (*Builder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing workflow selection template: %w", err)
 	}
-	return &Builder{
+	b := &Builder{
 		investigationTmpl: invTmpl,
 		workflowTmpl:      wfTmpl,
-	}, nil
+	}
+	for _, opt := range opts {
+		opt(b)
+	}
+	return b, nil
 }
 
 // RenderInvestigation renders the Phase 1 investigation prompt.
@@ -138,6 +155,7 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentD
 	sanitized := sanitizeSignal(signal)
 
 	data := investigationTemplateData{
+		StructuredOutput:    b.structuredOutput,
 		IncidentSummary:     fmt.Sprintf("%s %s in %s: %s", sanitized.Severity, sanitized.Name, sanitized.Namespace, sanitized.Message),
 		PriorityDescription: withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
 		Environment:         withDefault(sanitized.Environment, sanitized.Namespace),
@@ -211,6 +229,7 @@ func (b *Builder) RenderWorkflowSelection(signal SignalData, rcaSummary string, 
 		Environment:         withDefault(sanitized.Environment, "default"),
 		RiskDescription:     withDefault(sanitized.RiskTolerance, inferRisk(sanitized.Severity)),
 		RCASummary:          rcaSummary,
+		StructuredOutput:    b.structuredOutput,
 	}
 
 	if enrichData != nil {

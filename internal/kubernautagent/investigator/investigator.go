@@ -387,6 +387,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		respEvent.Data["has_analysis"] = resp.Message.Content != ""
 		respEvent.Data["analysis_length"] = len(resp.Message.Content)
 		respEvent.Data["analysis_preview"] = truncatePreview(resp.Message.Content, 500)
+		respEvent.Data["analysis_full"] = resp.Message.Content
 		respEvent.Data["tool_call_count"] = len(resp.ToolCalls)
 		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.logger)
 

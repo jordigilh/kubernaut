@@ -17,6 +17,8 @@ limitations under the License.
 package parser_test
 
 import (
+	"encoding/json"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -379,6 +381,125 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 			Expect(result).NotTo(BeNil())
 			Expect(result.RemediationTarget.Kind).To(BeEmpty())
 			Expect(result.RemediationTarget.Name).To(BeEmpty())
+		})
+	})
+
+	Describe("UT-KA-SCHEMA-001: InvestigationResultSchema returns valid JSON Schema", func() {
+		It("should return parseable JSON with required top-level keys", func() {
+			schema := parser.InvestigationResultSchema()
+			Expect(schema).NotTo(BeEmpty())
+
+			var parsed map[string]interface{}
+			err := json.Unmarshal(schema, &parsed)
+			Expect(err).NotTo(HaveOccurred(), "schema must be valid JSON")
+			Expect(parsed).To(HaveKey("type"))
+			Expect(parsed["type"]).To(Equal("object"))
+			Expect(parsed).To(HaveKey("properties"))
+			Expect(parsed).To(HaveKey("required"))
+
+			props := parsed["properties"].(map[string]interface{})
+			Expect(props).To(HaveKey("root_cause_analysis"))
+			Expect(props).To(HaveKey("selected_workflow"))
+			Expect(props).To(HaveKey("confidence"))
+			Expect(props).To(HaveKey("severity"))
+			Expect(props).To(HaveKey("actionable"))
+			Expect(props).To(HaveKey("needs_human_review"))
+			Expect(props).To(HaveKey("detected_labels"))
+		})
+	})
+
+	Describe("UT-KA-STRUCTURED-002: Top-level confidence parsed from nested format without selected_workflow", func() {
+		It("should extract top-level confidence when no selected_workflow is present", func() {
+			p := parser.NewResultParser()
+			content := `{
+				"root_cause_analysis": {
+					"summary": "Transient network issue resolved itself"
+				},
+				"confidence": 0.82,
+				"investigation_outcome": "problem_resolved",
+				"actionable": false
+			}`
+			result, err := p.Parse(content)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.Confidence).To(BeNumerically("~", 0.82, 0.01),
+				"top-level confidence must be extracted even without selected_workflow")
+		})
+	})
+
+	Describe("UT-KA-STRUCTURED-003: DetectedLabels parsed from nested format", func() {
+		It("should extract detected_labels from nested LLM response", func() {
+			p := parser.NewResultParser()
+			content := `{
+				"root_cause_analysis": {
+					"summary": "OOMKilled due to memory spike"
+				},
+				"selected_workflow": {
+					"workflow_id": "oom-increase-memory",
+					"confidence": 0.9
+				},
+				"confidence": 0.9,
+				"detected_labels": {
+					"app": "web-server",
+					"team": "platform"
+				}
+			}`
+			result, err := p.Parse(content)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.DetectedLabels).To(HaveKeyWithValue("app", "web-server"))
+			Expect(result.DetectedLabels).To(HaveKeyWithValue("team", "platform"))
+		})
+	})
+
+	Describe("UT-KA-STRUCTURED-001: Nested selected_workflow fields propagated to InvestigationResult", func() {
+		It("should extract rationale, parameters, and execution_engine from nested selected_workflow", func() {
+			p := parser.NewResultParser()
+			content := `{
+				"root_cause_analysis": {
+					"summary": "OOMKilled due to memory limit exceeded",
+					"severity": "high",
+					"signal_name": "OOMKilled",
+					"contributing_factors": ["memory_leak", "traffic_spike"],
+					"remediationTarget": {
+						"kind": "Deployment",
+						"name": "web-app",
+						"namespace": "production"
+					}
+				},
+				"selected_workflow": {
+					"workflow_id": "oom-increase-memory",
+					"confidence": 0.95,
+					"rationale": "Memory limit increase addresses the OOM condition directly",
+					"parameters": {"MEMORY_LIMIT_NEW": "512Mi"},
+					"execution_engine": "job"
+				},
+				"alternative_workflows": [
+					{"workflow_id": "restart-pod", "confidence": 0.60, "rationale": "Temporary fix"}
+				],
+				"confidence": 0.95,
+				"investigation_outcome": "actionable",
+				"actionable": true
+			}`
+			result, err := p.Parse(content)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			Expect(result.WorkflowID).To(Equal("oom-increase-memory"))
+			Expect(result.Confidence).To(BeNumerically("~", 0.95, 0.01))
+			Expect(result.Reason).To(Equal("Memory limit increase addresses the OOM condition directly"),
+				"rationale from selected_workflow must map to InvestigationResult.Reason")
+			Expect(result.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
+				"parameters from selected_workflow must propagate")
+			Expect(result.ExecutionEngine).To(Equal("job"),
+				"execution_engine from selected_workflow must propagate")
+
+			Expect(result.RCASummary).To(ContainSubstring("OOMKilled"))
+			Expect(result.Severity).To(Equal("high"))
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"))
+
+			Expect(result.AlternativeWorkflows).To(HaveLen(1))
+			Expect(result.AlternativeWorkflows[0].Rationale).To(Equal("Temporary fix"))
 		})
 	})
 

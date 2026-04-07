@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
@@ -44,6 +45,7 @@ type options struct {
 	vertexProject   string
 	vertexLocation  string
 	bedrockRegion   string
+	httpClient      *http.Client
 }
 
 // WithAzureAPIVersion sets the Azure OpenAI API version (required for "azure" provider).
@@ -63,6 +65,13 @@ func WithVertexLocation(l string) Option {
 
 func WithBedrockRegion(r string) Option {
 	return func(o *options) { o.bedrockRegion = r }
+}
+
+// WithHTTPClient sets a custom HTTP client for providers that support it
+// (currently Anthropic). Used to chain transports for structured output
+// injection and auth header passthrough.
+func WithHTTPClient(c *http.Client) Option {
+	return func(o *options) { o.httpClient = c }
 }
 
 // Adapter implements llm.Client by delegating to LangChainGo.
@@ -122,6 +131,9 @@ func newModel(provider, endpoint, model, apiKey string, o *options) (llms.Model,
 		aopts := []anthropic.Option{anthropic.WithModel(model), anthropic.WithToken(apiKey)}
 		if endpoint != "" {
 			aopts = append(aopts, anthropic.WithBaseURL(endpoint))
+		}
+		if o.httpClient != nil {
+			aopts = append(aopts, anthropic.WithHTTPClient(o.httpClient))
 		}
 		return anthropic.New(aopts...)
 	case "bedrock":
