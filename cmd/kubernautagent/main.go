@@ -724,18 +724,19 @@ func buildWorkflowValidator(ds *dsClients, logger *slog.Logger) (*parser.Validat
 					continue
 				}
 				wfID := w.WorkflowId.Value.String()
-				meta := parser.WorkflowMeta{
-					ExecutionEngine: w.ExecutionEngine,
-				}
-				if w.ExecutionBundle.Set {
-					meta.ExecutionBundle = w.ExecutionBundle.Value
-				}
-				if w.ExecutionBundleDigest.Set {
-					meta.ExecutionBundleDigest = w.ExecutionBundleDigest.Value
-				}
-				if w.ServiceAccountName.Set {
-					meta.ServiceAccountName = w.ServiceAccountName.Value
-				}
+			meta := parser.WorkflowMeta{
+				ExecutionEngine: w.ExecutionEngine,
+				Version:         w.Version,
+			}
+			if w.ExecutionBundle.Set {
+				meta.ExecutionBundle = w.ExecutionBundle.Value
+			}
+			if w.ExecutionBundleDigest.Set {
+				meta.ExecutionBundleDigest = w.ExecutionBundleDigest.Value
+			}
+			if w.ServiceAccountName.Set {
+				meta.ServiceAccountName = w.ServiceAccountName.Value
+			}
 				validator.SetWorkflowMeta(wfID, meta)
 			}
 			logger.Info("workflow validator enabled (DD-HAPI-002: sole validator)",

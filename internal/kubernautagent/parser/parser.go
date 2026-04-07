@@ -204,6 +204,7 @@ type llmWorkflow struct {
 	ExecutionBundle string                 `json:"execution_bundle,omitempty"`
 	Confidence      float64                `json:"confidence"`
 	Rationale       string                 `json:"rationale,omitempty"`
+	Version         string                 `json:"version,omitempty"`
 	Parameters      map[string]interface{} `json:"parameters,omitempty"`
 	ExecutionEngine string                 `json:"execution_engine,omitempty"`
 }
@@ -254,6 +255,8 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 		result.ExecutionBundle = resp.Workflow.ExecutionBundle
 		result.Confidence = resp.Workflow.Confidence
 		result.Reason = resp.Workflow.Rationale
+		result.WorkflowRationale = resp.Workflow.Rationale
+		result.WorkflowVersion = resp.Workflow.Version
 		result.ExecutionEngine = resp.Workflow.ExecutionEngine
 		if resp.Workflow.Parameters != nil {
 			if result.Parameters == nil {

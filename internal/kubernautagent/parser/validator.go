@@ -39,6 +39,7 @@ type WorkflowMeta struct {
 	ExecutionBundle       string
 	ExecutionBundleDigest string
 	ServiceAccountName    string
+	Version               string
 }
 
 // Validator checks InvestigationResult against session-specific constraints.

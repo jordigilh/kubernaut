@@ -46,6 +46,8 @@ type InvestigationResult struct {
 	ExecutionBundleDigest string `json:"execution_bundle_digest,omitempty"`
 	ExecutionEngine       string `json:"execution_engine,omitempty"`
 	ServiceAccountName    string `json:"service_account_name,omitempty"`
+	WorkflowVersion       string `json:"workflow_version,omitempty"`
+	WorkflowRationale     string `json:"workflow_rationale,omitempty"`
 
 	// Human review fields (GAP-013: HumanReviewReason for OpenAPI enum mapping)
 	HumanReviewNeeded bool   `json:"human_review_needed"`

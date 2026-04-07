@@ -329,6 +329,14 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 			saRaw, _ := json.Marshal(r.ServiceAccountName)
 			sw["service_account_name"] = jx.Raw(saRaw)
 		}
+		if r.WorkflowVersion != "" {
+			vRaw, _ := json.Marshal(r.WorkflowVersion)
+			sw["version"] = jx.Raw(vRaw)
+		}
+		if r.WorkflowRationale != "" {
+			rRaw, _ := json.Marshal(r.WorkflowRationale)
+			sw["rationale"] = jx.Raw(rRaw)
+		}
 		resp.SelectedWorkflow.SetTo(sw)
 	}
 
