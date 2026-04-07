@@ -1,0 +1,52 @@
+{{- if and .Values.networkPolicies.enabled .Values.networkPolicies.kubernautAgent.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-kubernaut-agent
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: kubernaut-agent
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Investigation traffic from aianalysis-controller
+    - ports:
+        - port: 8443
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              app: aianalysis-controller
+    # Conversation API traffic
+    {{- if .Values.kubernautAgent.conversations.enabled }}
+    - ports:
+        - port: {{ .Values.kubernautAgent.conversations.port | default 8444 }}
+          protocol: TCP
+      from:
+        {{- if .Values.networkPolicies.kubernautAgent.conversationIngress }}
+        {{- toYaml .Values.networkPolicies.kubernautAgent.conversationIngress | nindent 8 }}
+        {{- else }}
+        - podSelector:
+            matchLabels:
+              app: gateway-service
+        {{- end }}
+    {{- end }}
+    {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
+  egress:
+    {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
+    {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+    {{- if .Values.networkPolicies.externalLLM.cidr }}
+    - ports:
+        - port: {{ .Values.networkPolicies.externalLLM.port | default 443 }}
+          protocol: TCP
+      to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicies.externalLLM.cidr }}
+    {{- end }}
+{{- end }}

@@ -329,6 +329,21 @@ kubernautAgent:
       enabled: false
       caConfigMapName: ""
       caConfigMapKey: "service-ca.crt"
+  # -- Conversational API (#592): interactive follow-up on investigation results.
+  conversations:
+    enabled: false
+    port: 8444
+    session:
+      ttl: 30m
+      maxTurns: 30
+    rateLimit:
+      perUserPerMinute: 10
+      perSession: 30
+    # Optional separate LLM config for conversations (cheaper model).
+    # If omitted, reuses the investigation LLM config.
+    # llm:
+    #   provider: "openai"
+    #   model: "gpt-4o-mini"
 
 # -- AuthWebhook admission controller
 authwebhook:
@@ -430,6 +445,14 @@ networkPolicies:
     enabled: true
   holmesgptApi:
     enabled: true
+  kubernautAgent:
+    enabled: true
+    # conversationIngress overrides the default source selector for conversation API traffic.
+    # If empty, defaults to gateway-service pods.
+    # conversationIngress:
+    #   - podSelector:
+    #       matchLabels:
+    #         app: ocp-console-plugin
   signalprocessing:
     enabled: true
   remediationorchestrator:
