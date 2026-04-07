@@ -431,16 +431,49 @@ type BufferedDSAuditStore struct {
 	inner sharedaudit.AuditStore
 }
 
-// NewBufferedDSAuditStore creates a KA audit store backed by the platform
-// BufferedAuditStore. It creates an OpenAPIClientAdapter (same as all other
-// services) for the DataStorage batch endpoint, then wraps it with buffering,
-// retry, and KA-specific event conversion.
-func NewBufferedDSAuditStore(dsURL string, dsTimeout time.Duration, logger logr.Logger) (*BufferedDSAuditStore, error) {
-	dsClient, err := sharedaudit.NewOpenAPIClientAdapter(dsURL, dsTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("create DS audit client: %w", err)
+// BufferedDSAuditStoreOption allows callers to override RecommendedConfig fields.
+type BufferedDSAuditStoreOption func(*sharedaudit.Config)
+
+// WithFlushInterval overrides the default flush interval from RecommendedConfig.
+func WithFlushInterval(d time.Duration) BufferedDSAuditStoreOption {
+	return func(c *sharedaudit.Config) {
+		if d > 0 {
+			c.FlushInterval = d
+		}
 	}
+}
+
+// WithBufferSize overrides the default buffer size from RecommendedConfig.
+func WithBufferSize(n int) BufferedDSAuditStoreOption {
+	return func(c *sharedaudit.Config) {
+		if n > 0 {
+			c.BufferSize = n
+		}
+	}
+}
+
+// WithBatchSize overrides the default batch size from RecommendedConfig.
+func WithBatchSize(n int) BufferedDSAuditStoreOption {
+	return func(c *sharedaudit.Config) {
+		if n > 0 {
+			c.BatchSize = n
+		}
+	}
+}
+
+// NewBufferedDSAuditStore creates a KA audit store backed by the platform
+// BufferedAuditStore. The caller provides a DataStorageClient (typically
+// created via audit.NewOpenAPIClientAdapterWithTransport to share auth
+// transport with the rest of KA's DS operations).
+//
+// Optional BufferedDSAuditStoreOption values override the RecommendedConfig
+// defaults, allowing integration/E2E tests to control flush behaviour via
+// the same YAML fields that HAPI v1.2 used (flush_interval_seconds, etc.).
+func NewBufferedDSAuditStore(dsClient sharedaudit.DataStorageClient, logger logr.Logger, opts ...BufferedDSAuditStoreOption) (*BufferedDSAuditStore, error) {
 	cfg := sharedaudit.RecommendedConfig("kubernaut-agent")
+	for _, o := range opts {
+		o(&cfg)
+	}
 	inner, err := sharedaudit.NewBufferedStore(dsClient, cfg, "kubernaut-agent", logger)
 	if err != nil {
 		return nil, fmt.Errorf("create buffered audit store: %w", err)

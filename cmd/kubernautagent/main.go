@@ -41,6 +41,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
@@ -151,7 +152,7 @@ func main() {
 
 	k8sInfra := initK8sInfra(slogger)
 	ds := initDSClients(cfg, k8sInfra, slogger)
-	auditStore, auditCleanup := buildAuditStore(cfg, ds, slogger, logrLogger)
+	auditStore, auditCleanup := buildAuditStore(cfg, slogger, logrLogger)
 	reg := buildToolRegistry(cfg, slogger, k8sInfra, ds)
 	enricher := buildEnricher(ds, k8sInfra, auditStore, slogger)
 	sanitizer := buildSanitizationPipeline(cfg, slogger)
@@ -523,15 +524,48 @@ func resolveCredentialsFile(provider string, logger *slog.Logger) string {
 // buildAuditStore creates a BufferedDSAuditStore (DD-AUDIT-002 aligned) when audit
 // is enabled and DS is available, falling back to NopAuditStore otherwise.
 // Uses the same OpenAPIClientAdapter + BufferedAuditStore stack as every other
-// platform service. The returned cleanup function flushes and closes the buffered
-// store on shutdown.
-func buildAuditStore(cfg *kaconfig.Config, ds *dsClients, slogger *slog.Logger, logrLog logr.Logger) (audit.AuditStore, func()) {
+// platform service. Auth transport is shared with initDSClients (same SA token)
+// to guarantee identical authentication behavior.
+func buildAuditStore(cfg *kaconfig.Config, slogger *slog.Logger, logrLog logr.Logger) (audit.AuditStore, func()) {
 	nop := func() {}
-	if !cfg.Audit.Enabled || ds == nil || cfg.DataStorage.URL == "" {
+	if !cfg.Audit.Enabled || cfg.DataStorage.URL == "" {
 		slogger.Info("audit store disabled (nop)")
 		return audit.NopAuditStore{}, nop
 	}
-	store, err := audit.NewBufferedDSAuditStore(cfg.DataStorage.URL, 5*time.Second, logrLog)
+
+	// Use the same auth transport as initDSClients: read SA token from the
+	// configured path and inject as Bearer header on every request.
+	var transport http.RoundTripper
+	if tokenData, err := os.ReadFile(cfg.DataStorage.SATokenPath); err == nil && len(tokenData) > 0 {
+		transport = &bearerTransport{base: http.DefaultTransport, token: string(tokenData)}
+		slogger.Info("audit store auth configured (same SA token as DS client)",
+			"token_path", cfg.DataStorage.SATokenPath)
+	} else {
+		slogger.Warn("SA token not available for audit store — batch writes may fail auth",
+			"path", cfg.DataStorage.SATokenPath, "error", err)
+	}
+
+	dsClient, err := sharedaudit.NewOpenAPIClientAdapterWithTransport(
+		cfg.DataStorage.URL, 5*time.Second, transport,
+	)
+	if err != nil {
+		slogger.Error("failed to create DS audit client, falling back to nop", "error", err)
+		return audit.NopAuditStore{}, nop
+	}
+
+	var storeOpts []audit.BufferedDSAuditStoreOption
+	if cfg.Audit.FlushIntervalSeconds > 0 {
+		storeOpts = append(storeOpts, audit.WithFlushInterval(
+			time.Duration(cfg.Audit.FlushIntervalSeconds*float64(time.Second))))
+	}
+	if cfg.Audit.BufferSize > 0 {
+		storeOpts = append(storeOpts, audit.WithBufferSize(cfg.Audit.BufferSize))
+	}
+	if cfg.Audit.BatchSize > 0 {
+		storeOpts = append(storeOpts, audit.WithBatchSize(cfg.Audit.BatchSize))
+	}
+
+	store, err := audit.NewBufferedDSAuditStore(dsClient, logrLog, storeOpts...)
 	if err != nil {
 		slogger.Error("failed to create buffered audit store, falling back to nop", "error", err)
 		return audit.NopAuditStore{}, nop

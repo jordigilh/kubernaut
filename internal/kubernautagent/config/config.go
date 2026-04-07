@@ -81,8 +81,11 @@ type SessionConfig struct {
 }
 
 type AuditConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	Endpoint string `yaml:"endpoint"`
+	Enabled              bool    `yaml:"enabled"`
+	Endpoint             string  `yaml:"endpoint"`
+	FlushIntervalSeconds float64 `yaml:"flush_interval_seconds"`
+	BufferSize           int     `yaml:"buffer_size"`
+	BatchSize            int     `yaml:"batch_size"`
 }
 
 type MCPConfig struct {
