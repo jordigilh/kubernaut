@@ -420,50 +420,28 @@ func mapSeverity(s string) ogenclient.IncidentResponseDataRootCauseAnalysisSever
 
 var _ AuditStore = (*DSAuditStore)(nil)
 
-// BatchAuditCreator is the subset of the ogen client used for batch writes.
-type BatchAuditCreator interface {
-	CreateAuditEventsBatch(ctx context.Context, request []ogenclient.AuditEventRequest) (*ogenclient.BatchAuditEventResponse, error)
-}
-
-// ogenBatchAdapter wraps the ogen batch endpoint to implement
-// pkg/audit.DataStorageClient required by BufferedAuditStore.
-type ogenBatchAdapter struct {
-	client BatchAuditCreator
-}
-
-func (a *ogenBatchAdapter) StoreBatch(ctx context.Context, events []*ogenclient.AuditEventRequest) error {
-	if len(events) == 0 {
-		return nil
-	}
-	batch := make([]ogenclient.AuditEventRequest, 0, len(events))
-	for _, e := range events {
-		if e != nil {
-			batch = append(batch, *e)
-		}
-	}
-	if _, err := a.client.CreateAuditEventsBatch(ctx, batch); err != nil {
-		return fmt.Errorf("batch write: %w", err)
-	}
-	return nil
-}
-
 // BufferedDSAuditStore wraps pkg/audit.BufferedAuditStore to implement KA's
 // internal AuditStore interface. Events are converted from KA's AuditEvent
 // format to the OpenAPI AuditEventRequest format, then enqueued into the
 // platform buffered store for batched writes with retry.
 //
-// This aligns KA with every other service per DD-AUDIT-002.
+// Uses the same OpenAPIClientAdapter + BufferedAuditStore stack as every other
+// platform service (DD-AUDIT-002 alignment).
 type BufferedDSAuditStore struct {
 	inner sharedaudit.AuditStore
 }
 
 // NewBufferedDSAuditStore creates a KA audit store backed by the platform
-// BufferedAuditStore. The batchClient is used for batch HTTP writes to
-// DataStorage with retry and backoff.
-func NewBufferedDSAuditStore(batchClient BatchAuditCreator, logger logr.Logger) (*BufferedDSAuditStore, error) {
+// BufferedAuditStore. It creates an OpenAPIClientAdapter (same as all other
+// services) for the DataStorage batch endpoint, then wraps it with buffering,
+// retry, and KA-specific event conversion.
+func NewBufferedDSAuditStore(dsURL string, dsTimeout time.Duration, logger logr.Logger) (*BufferedDSAuditStore, error) {
+	dsClient, err := sharedaudit.NewOpenAPIClientAdapter(dsURL, dsTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("create DS audit client: %w", err)
+	}
 	cfg := sharedaudit.RecommendedConfig("kubernaut-agent")
-	adapter := &ogenBatchAdapter{client: batchClient}
-	inner, err := sharedaudit.NewBufferedStore(adapter, cfg, "kubernaut-agent", logger)
+	inner, err := sharedaudit.NewBufferedStore(dsClient, cfg, "kubernaut-agent", logger)
 	if err != nil {
 		return nil, fmt.Errorf("create buffered audit store: %w", err)
 	}

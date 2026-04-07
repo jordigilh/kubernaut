@@ -522,19 +522,22 @@ func resolveCredentialsFile(provider string, logger *slog.Logger) string {
 
 // buildAuditStore creates a BufferedDSAuditStore (DD-AUDIT-002 aligned) when audit
 // is enabled and DS is available, falling back to NopAuditStore otherwise.
-// The returned cleanup function flushes and closes the buffered store on shutdown.
+// Uses the same OpenAPIClientAdapter + BufferedAuditStore stack as every other
+// platform service. The returned cleanup function flushes and closes the buffered
+// store on shutdown.
 func buildAuditStore(cfg *kaconfig.Config, ds *dsClients, slogger *slog.Logger, logrLog logr.Logger) (audit.AuditStore, func()) {
 	nop := func() {}
-	if !cfg.Audit.Enabled || ds == nil {
+	if !cfg.Audit.Enabled || ds == nil || cfg.DataStorage.URL == "" {
 		slogger.Info("audit store disabled (nop)")
 		return audit.NopAuditStore{}, nop
 	}
-	store, err := audit.NewBufferedDSAuditStore(ds.ogenClient, logrLog)
+	store, err := audit.NewBufferedDSAuditStore(cfg.DataStorage.URL, 5*time.Second, logrLog)
 	if err != nil {
 		slogger.Error("failed to create buffered audit store, falling back to nop", "error", err)
 		return audit.NopAuditStore{}, nop
 	}
-	slogger.Info("audit store enabled (buffered, DD-AUDIT-002 aligned)")
+	slogger.Info("audit store enabled (buffered, DD-AUDIT-002 aligned)",
+		"ds_url", cfg.DataStorage.URL)
 	return store, func() {
 		if closeErr := store.Close(); closeErr != nil {
 			slogger.Error("audit store close error", "error", closeErr)
