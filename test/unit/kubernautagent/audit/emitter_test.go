@@ -55,6 +55,7 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 			Entry("aiagent.llm.request", audit.EventTypeLLMRequest),
 			Entry("aiagent.llm.response", audit.EventTypeLLMResponse),
 			Entry("aiagent.llm.tool_call", audit.EventTypeLLMToolCall),
+			Entry("aiagent.conversation.turn", audit.EventTypeConversationTurn),
 			Entry("aiagent.workflow.validation_attempt", audit.EventTypeValidationAttempt),
 			Entry("aiagent.response.complete", audit.EventTypeResponseComplete),
 			Entry("aiagent.response.failed", audit.EventTypeResponseFailed),
@@ -62,8 +63,8 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 			Entry("aiagent.enrichment.failed", audit.EventTypeEnrichmentFailed),
 		)
 
-		It("should define exactly 8 event types", func() {
-			Expect(audit.AllEventTypes).To(HaveLen(8))
+		It("should define exactly 9 event types", func() {
+			Expect(audit.AllEventTypes).To(HaveLen(9))
 		})
 	})
 

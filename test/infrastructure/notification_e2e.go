@@ -542,7 +542,7 @@ spec:
 // static YAML files (RBAC, ConfigMap, Service, Deployment) into a single atomic apply.
 //
 // Standardization: same pattern as AA, SP, RO, EM, WE, KA, Gateway.
-func notificationControllerManifest(namespace, imageName, slackWebhookURL string, enableCoverage bool) string {
+func notificationControllerManifest(namespace, imageName string, enableCoverage bool) string {
 	pullPolicy := GetImagePullPolicy()
 
 	coverageEnvYAML := ""

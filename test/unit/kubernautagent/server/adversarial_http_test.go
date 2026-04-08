@@ -379,10 +379,10 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 		})
 
 		It("UT-KA-462-001: should populate SignalAnnotations when present", func() {
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "h1-annot-test",
 				SignalName:        "OOMKilled",
-				Severity:          hapiclient.SeverityHigh,
+				Severity:          agentclient.SeverityHigh,
 				ResourceNamespace: "prod",
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod",
@@ -394,7 +394,7 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 				ClusterName:       "test-cluster",
 				SignalSource:      "kubernetes",
 			}
-			req.SignalAnnotations.SetTo(hapiclient.IncidentRequestSignalAnnotations{
+			req.SignalAnnotations.SetTo(agentclient.IncidentRequestSignalAnnotations{
 				"description": "Pod OOMKilled in production",
 				"summary":     "Memory limit exceeded",
 			})
@@ -407,10 +407,10 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 		})
 
 		It("UT-KA-462-001b: should populate SignalLabels when present (pre-existing gap fix)", func() {
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "h1-labels-test",
 				SignalName:        "OOMKilled",
-				Severity:          hapiclient.SeverityHigh,
+				Severity:          agentclient.SeverityHigh,
 				ResourceNamespace: "prod",
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod",
@@ -422,7 +422,7 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 				ClusterName:       "test-cluster",
 				SignalSource:      "kubernetes",
 			}
-			req.SignalLabels.SetTo(hapiclient.IncidentRequestSignalLabels{
+			req.SignalLabels.SetTo(agentclient.IncidentRequestSignalLabels{
 				"alertname": "OOMKilled",
 				"severity":  "critical",
 			})
