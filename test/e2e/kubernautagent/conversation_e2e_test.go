@@ -162,8 +162,8 @@ var _ = Describe("E2E-CS-592: Conversation API", Label("e2e", "kubernautagent", 
 	// E2E-CS-592-002: Full conversation flow with SSE streaming
 	// BR-CONV-001, BR-CONV-005
 	// =====================================================================
-	It("E2E-CS-592-002: completes a full conversation flow — create session, post message, receive SSE response", func() {
-		session, resp := createConversationSession(authHTTPClient, sharedNamespace, "e2e-test-rar-002")
+	It("E2E-CS-592-002: completes a full conversation flow with golden transcript content from RAR context", func() {
+		session, resp := createConversationSession(authHTTPClient, sharedNamespace, "e2e-conversation-rar")
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 		Expect(session.SessionID).To(HaveLen(36),
 			"Session ID should be a UUID (36 chars)")
@@ -192,6 +192,14 @@ var _ = Describe("E2E-CS-592: Conversation API", Label("e2e", "kubernautagent", 
 					"SSE message data should be valid JSON")
 				Expect(payload).To(HaveKey("content"),
 					"SSE message payload should contain a 'content' field with the LLM response")
+
+				content := payload["content"]
+				Expect(content).To(ContainSubstring("root_cause_analysis"),
+					"LLM response should contain root cause analysis from golden transcript replay (synthesizeFromHAPI)")
+				Expect(content).To(ContainSubstring("selected_workflow"),
+					"LLM response should contain selected workflow recommendation from golden transcript")
+				Expect(content).To(ContainSubstring("confidence"),
+					"LLM response should include confidence score from golden transcript")
 			}
 		}
 		Expect(hasMessageEvent).To(BeTrue(),
@@ -202,8 +210,8 @@ var _ = Describe("E2E-CS-592: Conversation API", Label("e2e", "kubernautagent", 
 	// E2E-CS-592-003: Conversation turn audit persisted in DataStorage
 	// BR-CONV-007
 	// =====================================================================
-	It("E2E-CS-592-003: persists conversation turn audit events in DataStorage", func() {
-		session, resp := createConversationSession(authHTTPClient, sharedNamespace, "e2e-test-rar-003")
+	It("E2E-CS-592-003: persists conversation turn audit events with meaningful content in DataStorage", func() {
+		session, resp := createConversationSession(authHTTPClient, sharedNamespace, "e2e-conversation-rar")
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
 		msgResp, err := postConversationMessage(authHTTPClient, session.SessionID, "Explain the investigation findings")
@@ -263,10 +271,10 @@ var _ = Describe("E2E-CS-592: Conversation API", Label("e2e", "kubernautagent", 
 	// E2E-CS-592-006: Investigation-seeded conversation
 	// BR-CONV-001
 	// =====================================================================
-	It("E2E-CS-592-006: creates an investigation-seeded conversation session", func() {
-		session, resp := createConversationSession(authHTTPClient, sharedNamespace, "e2e-test-rar-seeded")
+	It("E2E-CS-592-006: validates investigation context is present in LLM response via RAR fixture", func() {
+		session, resp := createConversationSession(authHTTPClient, sharedNamespace, "e2e-conversation-rar")
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated),
-			"Session creation should succeed even without prior investigation audit trail")
+			"Session creation with RAR fixture should succeed")
 		Expect(session.SessionID).To(HaveLen(36),
 			"Session ID should be a valid UUID")
 
@@ -278,7 +286,23 @@ var _ = Describe("E2E-CS-592: Conversation API", Label("e2e", "kubernautagent", 
 		defer func() { _ = msgResp.Body.Close() }()
 		events := parseSSEStream(msgResp.Body)
 		Expect(len(events)).To(BeNumerically(">=", 1),
-			"LLM should respond with at least one SSE event even without investigation context")
+			"LLM should respond with at least one SSE event with investigation context")
+
+		var messageContent string
+		for _, ev := range events {
+			if ev.Event == "message" {
+				var payload map[string]string
+				if json.Unmarshal([]byte(ev.Data), &payload) == nil {
+					messageContent = payload["content"]
+				}
+			}
+		}
+		Expect(messageContent).ToNot(BeEmpty(),
+			"SSE stream should include a message event with non-empty content")
+		Expect(messageContent).To(SatisfyAny(
+			ContainSubstring("root_cause_analysis"),
+			ContainSubstring("investigation_outcome"),
+		), "LLM response should contain investigation context from golden transcript replay")
 	})
 
 	// =====================================================================

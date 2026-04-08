@@ -202,6 +202,52 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	_, _ = fmt.Fprintln(writer, "  ✅ Conversation CRDs installed")
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4.7: Create RAR fixture for conversation E2E (#592 hardening)
+	// Provides a real RAR CRD instance with investigation context so that
+	// mock LLM golden transcript replay can match via extractSignal().
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📋 PHASE 4.7: Creating RAR fixture for conversation E2E...")
+	rarFixtureYAML := fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationApprovalRequest
+metadata:
+  name: e2e-conversation-rar
+  namespace: %s
+spec:
+  remediationRequestRef:
+    apiVersion: kubernaut.ai/v1alpha1
+    kind: RemediationRequest
+    name: rr-e2e-crashloop
+    namespace: %s
+  aiAnalysisRef:
+    name: aia-e2e-crashloop
+  confidence: 0.85
+  confidenceLevel: high
+  reason: "Pod crash-looping due to configuration error"
+  recommendedWorkflow:
+    workflowId: "crashloop-config-fix"
+    version: "1.0"
+    executionBundle: "fix-config"
+    rationale: "Configuration error detected"
+  investigationSummary: |
+    - Signal Name: KubePodCrashLooping
+    Root cause analysis determined the pod is crash-looping due to a missing
+    configuration file. Recommended remediation: apply crashloop-config-fix workflow.
+  recommendedActions:
+    - action: "Apply crashloop-config-fix workflow"
+      rationale: "Fixes configuration error"
+  whyApprovalRequired: "Production workload requires human approval"
+  requiredBy: "2026-12-31T23:59:59Z"
+`, namespace, namespace)
+	rarCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	rarCmd.Stdin = strings.NewReader(rarFixtureYAML)
+	rarCmd.Stdout = writer
+	rarCmd.Stderr = writer
+	if err := rarCmd.Run(); err != nil {
+		return fmt.Errorf("failed to create RAR fixture: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ RAR fixture e2e-conversation-rar created")
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 5: Seed workflows + deploy Mock LLM (same as AIAnalysis E2E Phase 4c/4d)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🌱 PHASE 5: Seeding workflows and deploying Mock LLM...")
@@ -402,6 +448,9 @@ rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     verbs: ["get", "list"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationapprovalrequests", "remediationworkflows"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
