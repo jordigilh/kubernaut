@@ -22,7 +22,7 @@ spec:
   
   execution:
     engine: job
-    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:9771eca86cd5b39ac22c9490a5e7e0420abe6b4576e927326edfac1ecc7e5980
+    bundle: quay.io/kubernaut-cicd/test-workflows/job-failing:v1.0.0-exec@sha256:a5d3478abf448cc72177fc6d0355a0fd9363a91f87acd4dd1713378770cda682
   
   parameters:
     - name: TARGET_RESOURCE_NAME

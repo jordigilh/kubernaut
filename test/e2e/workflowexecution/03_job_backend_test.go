@@ -158,8 +158,9 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: jobFailureUUID,
 						Version:    "v1.0.0",
-						// Job failing image: exits with non-zero status
-						ExecutionBundle: fmt.Sprintf("%s/job-failing:%s",
+						// Spec seed — resolveExecutionBundle overrides from DS catalog
+						// (job-failing:v1.0.0-exec, which exits non-zero)
+						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
 							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
 					},
 					TargetResource: targetResource,
@@ -481,7 +482,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 
 // createTestJobWFE creates a WorkflowExecution for job-backend E2E (engine resolved from DS at runtime).
 // Issue #518: WorkflowID must be a valid UUID (resolved at runtime by the WE controller via DS).
-// Uses the pre-built job-hello-world image from quay.io/kubernaut-cicd.
+// Uses the pre-built placeholder-execution image (echoes params and exits 0).
 func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
 	jobHelloWorldUUID := infrastructure.RegisteredWorkflowUUIDs["test-job-hello-world"]
 	Expect(jobHelloWorldUUID).ToNot(BeEmpty(),
@@ -502,9 +503,7 @@ func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.Wo
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowID: jobHelloWorldUUID,
 				Version:    "v1.0.0",
-				// Job hello-world image: echoes params and exits 0
-				// Pre-built multi-arch image from quay.io/kubernaut-cicd (amd64 + arm64)
-				ExecutionBundle: fmt.Sprintf("%s/job-hello-world:%s",
+				ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
 					infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
 			},
 			TargetResource: targetResource,
