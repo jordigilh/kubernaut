@@ -68,7 +68,7 @@ func mustMarshal(v interface{}) json.RawMessage {
 }
 
 // HandlerDeps bundles the dependencies for NewHandler.
-// Optional fields (PromptBuilder) default to nil when omitted.
+// Optional fields (PromptBuilder, RARReader) default to nil when omitted.
 type HandlerDeps struct {
 	Authenticator auth.Authenticator
 	Authorizer    auth.Authorizer
@@ -76,6 +76,7 @@ type HandlerDeps struct {
 	Config        config.ConversationConfig
 	Logger        *slog.Logger
 	PromptBuilder *prompt.Builder // nil is safe for tests that don't exercise prompt rendering
+	RARReader     RARReader       // nil when running outside a cluster
 }
 
 // Handler serves the conversation HTTP API.
@@ -86,6 +87,7 @@ type Handler struct {
 	rateLimiter *RateLimiter
 	auditor     *TurnAuditor
 	llm         ConversationLLM
+	rarReader   RARReader
 	config      config.ConversationConfig
 	logger      *slog.Logger
 }
@@ -99,6 +101,7 @@ func NewHandler(deps HandlerDeps) *Handler {
 		rateLimiter: NewRateLimiter(deps.Config.RateLimit.PerUserPerMinute, deps.Config.RateLimit.PerSession),
 		auditor:     NewTurnAuditor(deps.AuditStore),
 		llm:         &defaultLLM{},
+		rarReader:   deps.RARReader,
 		config:      deps.Config,
 		logger:      deps.Logger,
 	}
@@ -189,6 +192,16 @@ func (h *Handler) HandleCreateSession(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("session creation failed", slog.Any("error", err))
 		writeRFC7807(w, http.StatusInternalServerError, "failed to create session")
 		return
+	}
+
+	if h.rarReader != nil {
+		rarCtx, rarErr := h.rarReader.GetRARContext(r.Context(), req.RARNamespace, req.RARName)
+		if rarErr != nil {
+			h.logger.Warn("failed to read RAR context, proceeding without investigation context",
+				slog.String("rar", req.RARName), slog.String("namespace", req.RARNamespace), slog.Any("error", rarErr))
+		} else {
+			session.SetInvestigationContext(rarCtx.InvestigationSummary)
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, createSessionResponse{

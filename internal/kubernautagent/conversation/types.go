@@ -44,21 +44,22 @@ const (
 
 // Session holds the state for a conversation about a specific RAR.
 type Session struct {
-	mu            sync.RWMutex // protects Messages
-	ID            string
-	RARName       string
-	RARNamespace  string
-	State         SessionState
-	Participants  []string
-	TTL           time.Duration
-	CreatedAt     time.Time
-	LastActivity  time.Time
-	TurnCount     int
-	Guardrails    *Guardrails
-	promptBuilder *prompt.Builder
-	todoWrite     tools.Tool
-	CorrelationID string
-	Messages      []llm.Message
+	mu                   sync.RWMutex // protects Messages
+	ID                   string
+	RARName              string
+	RARNamespace         string
+	State                SessionState
+	Participants         []string
+	TTL                  time.Duration
+	CreatedAt            time.Time
+	LastActivity         time.Time
+	TurnCount            int
+	Guardrails           *Guardrails
+	promptBuilder        *prompt.Builder
+	todoWrite            tools.Tool
+	CorrelationID        string
+	InvestigationSummary string
+	Messages             []llm.Message
 }
 
 // TodoWrite returns the per-session todo_write tool (DD-CONV-001).
@@ -73,9 +74,10 @@ func (s *Session) SystemPrompt() (string, error) {
 		return "", fmt.Errorf("prompt builder not initialized for session %s", s.ID)
 	}
 	return s.promptBuilder.RenderConversation(prompt.ConversationTemplateData{
-		RARName:        s.RARName,
-		Namespace:      s.RARNamespace,
-		AvailableTools: s.Guardrails.ReadOnlyToolNames(),
+		RARName:              s.RARName,
+		Namespace:            s.RARNamespace,
+		AvailableTools:       s.Guardrails.ReadOnlyToolNames(),
+		InvestigationSummary: s.InvestigationSummary,
 	})
 }
 
@@ -109,4 +111,10 @@ func (s *Session) IsClosed() bool {
 // IsInteractive returns true when the session is in interactive state.
 func (s *Session) IsInteractive() bool {
 	return s.State == SessionInteractive
+}
+
+// SetInvestigationContext populates the investigation context fetched from the RAR CRD.
+// Called by the handler after session creation when a RARReader is available.
+func (s *Session) SetInvestigationContext(summary string) {
+	s.InvestigationSummary = summary
 }

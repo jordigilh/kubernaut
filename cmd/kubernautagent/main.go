@@ -212,13 +212,18 @@ func main() {
 		} else {
 			convAuthn, convAuthz := buildConversationAuth(k8sInfra, slogger)
 			if convAuthn != nil && convAuthz != nil {
-				convHandler = conversation.NewHandler(conversation.HandlerDeps{
+				var rarReader conversation.RARReader
+			if k8sInfra != nil {
+				rarReader = conversation.NewDynamicRARReader(k8sInfra.dynClient, slogger)
+			}
+			convHandler = conversation.NewHandler(conversation.HandlerDeps{
 					Authenticator: convAuthn,
 					Authorizer:    convAuthz,
 					AuditStore:    auditStore,
 					Config:        cfg.Conversation,
 					Logger:        slogger,
 					PromptBuilder: promptBuilder,
+					RARReader:     rarReader,
 				}).WithLLMClient(conversation.LLMAdapterDeps{
 					Client:       llm.NewInstrumentedClient(convLLMClient),
 					ToolRegistry: reg,
