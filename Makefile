@@ -662,7 +662,7 @@ test-e2e-kubernautagent: ginkgo ensure-coverage-dirs generate-agentclient ## Run
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Kubernaut Agent E2E Tests (#433 — API Contract Parity)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Validates: Same OpenAPI contract as retired Python HAPI"
+	@echo "📋 Validates: Same OpenAPI contract as retired Python KA (HAPI)"
 	@echo "🔧 Test Framework: Ginkgo/Gomega (Go BDD)"
 	@echo "📦 Dockerfile: docker/kubernautagent.Dockerfile (ADR-027 UBI10)"
 	@echo "⏱️  Expected Duration: ~10 minutes"
@@ -736,7 +736,7 @@ test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E test
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Full Pipeline E2E Tests (Issue #39)"
 	@echo "   All Kubernaut services in a single Kind cluster"
-	@echo "   Event → Gateway → RO → SP → AA → HAPI → WE(Job) → Notification"
+	@echo "   Event → Gateway → RO → SP → AA → KA → WE(Job) → Notification"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@$(GINKGO) -v --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"

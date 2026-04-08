@@ -8,7 +8,7 @@ nodes:
     containerPath: /coverdata
     readOnly: false
   extraPortMappings:
-  # HolmesGPT API (HAPI) - Per DD-TEST-001 v2.9
+  # Kubernaut Agent (KA) - Per DD-TEST-001 v2.9
   - containerPort: 30088
     hostPort: 8088
     protocol: TCP

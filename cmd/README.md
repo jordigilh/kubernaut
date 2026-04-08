@@ -33,7 +33,7 @@ Each CRD controller runs as a separate microservice with its own binary:
 
 | Directory | Service | Description |
 |-----------|---------|-------------|
-| `holmesgpt-api/` (repo root) | HolmesGPT-API (HAPI) | LLM-powered root cause analysis |
+| `holmesgpt-api/` (repo root) | Kubernaut Agent (KA) | LLM-powered root cause analysis |
 
 > **Note**: `holmesgpt-api/` lives at the repository root, not under `cmd/`.
 
@@ -71,7 +71,7 @@ RemediationRequest (rr)
 Remediation Orchestrator
     ↓ creates child CRDs
     ├→ SignalProcessing (sp) → Signal Processing Service
-    ├→ AIAnalysis (aia) → AI Analysis Service → calls HAPI (HolmesGPT-API)
+    ├→ AIAnalysis (aia) → AI Analysis Service → calls KA (Kubernaut Agent)
     ├→ WorkflowExecution (wfe) → Workflow Execution Service
     ├→ NotificationRequest (notif) → Notification Service
     └→ EffectivenessAssessment (ea) → Effectiveness Monitor Service

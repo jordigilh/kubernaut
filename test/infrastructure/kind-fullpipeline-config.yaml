@@ -3,12 +3,12 @@
 #
 # Full Pipeline E2E deploys ALL Kubernaut services in a single Kind cluster
 # to test the complete remediation lifecycle:
-#   Gateway → RO → SP → AA → HAPI → WE → Notification
+#   Gateway → RO → SP → AA → KA → WE → Notification
 #
 # Port Allocation (from DD-TEST-001 v2.8):
 #   Gateway API:      hostPort 30080, NodePort 30080
 #   Data Storage API: hostPort 30081, NodePort 30081
-#   Mock LLM:         ClusterIP only (internal access by HAPI)
+#   Mock LLM:         ClusterIP only (internal access by KA)
 #   Prometheus:        hostPort 9190,  NodePort 30190 (EM metric comparison)
 #   AlertManager:      hostPort 9193,  NodePort 30193 (EM alert resolution)
 #
@@ -17,7 +17,7 @@
 #   Path: ~/.kube/fullpipeline-e2e-config
 #   Cluster Name: fullpipeline-e2e
 #
-# Memory Budget: ~6GB total
+# Memory Budget: ~5.7GB total
 #   - Kind cluster overhead: ~1.5GB
 #   - PostgreSQL: ~256MB
 #   - DataStorage: ~128MB
@@ -27,7 +27,7 @@
 #   - AA Controller: ~128MB
 #   - WE Controller: ~64MB
 #   - Notification Controller: ~64MB
-#   - HAPI + Mock LLM: ~512MB
+#   - KA + Mock LLM: ~192MB
 #   - Event Exporter: ~64MB
 #   - Prometheus: ~128MB
 #   - AlertManager: ~64MB

@@ -24,13 +24,13 @@ This matrix documents the **actual dependencies** deployed by each E2E test suit
 |---------|---------------|-----------------|----------------------|---------------------|-------|
 | **datastorage** | `datastorage` | None (standalone) | PostgreSQL 16, Redis | `kind-datastorage-config.yaml` | Core dependency for all other services |
 | **gateway** | `gateway`, `datastorage` | None | PostgreSQL 16, Redis | `kind-gateway-config.yaml` | Ingestion service with DS for audit |
-| **aianalysis** | `aianalysis`, `datastorage`, `holmesgpt-api`, `mock-llm` | None | PostgreSQL 16, Redis | `kind-aianalysis-config.yaml` | AI analysis with HAPI + Mock LLM |
+| **aianalysis** | `aianalysis`, `datastorage`, `holmesgpt-api`, `mock-llm` | None | PostgreSQL 16, Redis | `kind-aianalysis-config.yaml` | AI analysis with KA + Mock LLM |
 | **authwebhook** | `authwebhook`, `datastorage` | None | PostgreSQL 16, Redis | `kind-authwebhook-config.yaml` | User attribution for SOC2 CC8.1 |
 | **notification** | `notification`, `authwebhook` | DS (shared deployment) | None | `kind-notification-config.yaml` | Uses shared DS, requires AW |
 | **remediationorchestrator** | `remediationorchestrator`, `datastorage`, `authwebhook` | None | PostgreSQL 16, Redis | `kind-remediationorchestrator-config.yaml` | Requires DS + AW (SOC2) |
 | **signalprocessing** | `signalprocessing`, `datastorage` | None | PostgreSQL 16, Redis | `kind-signalprocessing-config.yaml` | Signal enrichment with DS audit |
 | **workflowexecution** | `workflowexecution`, `datastorage`, `authwebhook` | None | PostgreSQL 16, Redis, Tekton v1.7.0 | `kind-workflowexecution-config.yaml` | Requires DS + AW + Tekton |
-| **holmesgpt-api** | `holmesgpt-api`, `datastorage`, `mock-llm` | None | PostgreSQL 16, Redis | (uses workflowexecution config) | HAPI with Mock LLM + DS audit |
+| **holmesgpt-api** | `holmesgpt-api`, `datastorage`, `mock-llm` | None | PostgreSQL 16, Redis | (uses workflowexecution config) | KA with Mock LLM + DS audit |
 
 ---
 

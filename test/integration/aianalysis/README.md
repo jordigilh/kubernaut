@@ -106,8 +106,8 @@ The compose file sets these automatically:
 | `POSTGRES_PASSWORD` | kubernaut-test-password | Test password |
 | `POSTGRES_DB` | kubernaut | Database name |
 | `REDIS_ADDR` | redis:6379 | Internal Redis address |
-| `LLM_ENDPOINT` | http://mock-llm:8080 | HAPI → Mock LLM service (no real LLM calls) |
-| `DATASTORAGE_URL` | http://datastorage:8080 | HAPI → DS connection |
+| `LLM_ENDPOINT` | http://mock-llm:8080 | KA → Mock LLM service (no real LLM calls) |
+| `DATASTORAGE_URL` | http://datastorage:8080 | KA → DS connection |
 
 ## Troubleshooting
 
