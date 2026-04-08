@@ -44,6 +44,10 @@ type WorkflowQuerier interface {
 	// from the DS catalog. Issue #518: the WE controller resolves the engine at
 	// runtime rather than reading it from the WFE spec.
 	GetWorkflowExecutionEngine(ctx context.Context, workflowID string) (engine string, workflowName string, err error)
+	// GetWorkflowExecutionBundle retrieves the execution bundle OCI reference and
+	// its digest from the DS catalog. Defense-in-depth: the WE controller resolves
+	// the bundle at runtime rather than blindly trusting the WFE spec value.
+	GetWorkflowExecutionBundle(ctx context.Context, workflowID string) (bundle string, digest string, err error)
 }
 
 // WorkflowCatalogClient is a narrow interface satisfied by the ogen-generated
@@ -185,4 +189,35 @@ func (q *OgenWorkflowQuerier) GetWorkflowExecutionEngine(ctx context.Context, wo
 	}
 
 	return wf.ExecutionEngine, wf.WorkflowName, nil
+}
+
+// GetWorkflowExecutionBundle retrieves the execution bundle OCI reference and
+// its digest from the DS catalog. Returns empty strings when the catalog entry
+// does not define an execution bundle (caller preserves the existing spec value).
+func (q *OgenWorkflowQuerier) GetWorkflowExecutionBundle(ctx context.Context, workflowID string) (string, string, error) {
+	uid, err := uuid.Parse(workflowID)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid workflow ID %q: %w", workflowID, err)
+	}
+
+	res, err := q.client.GetWorkflowByID(ctx, ogenclient.GetWorkflowByIDParams{
+		WorkflowID: uid,
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("DS query failed for workflow %s: %w", workflowID, err)
+	}
+
+	wf, ok := res.(*ogenclient.RemediationWorkflow)
+	if !ok {
+		return "", "", fmt.Errorf("workflow %s not found in catalog", workflowID)
+	}
+
+	var bundle, digest string
+	if wf.ExecutionBundle.IsSet() {
+		bundle = wf.ExecutionBundle.Value
+	}
+	if wf.ExecutionBundleDigest.IsSet() {
+		digest = wf.ExecutionBundleDigest.Value
+	}
+	return bundle, digest, nil
 }

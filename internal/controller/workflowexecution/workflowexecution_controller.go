@@ -379,6 +379,13 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	logger.Info("Resolved execution engine from catalog", "engine", engine, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
 
 	// ========================================
+	// Step 1.3: Resolve execution bundle from DS catalog (defense-in-depth)
+	// ========================================
+	if resolveErr := r.resolveExecutionBundle(ctx, wfe); resolveErr != nil {
+		logger.Error(resolveErr, "Failed to resolve execution bundle from DS (non-fatal)")
+	}
+
+	// ========================================
 	// Step 1.5: Check if cooldown is active for target resource (BR-WE-009)
 	// BUGFIX: Was only tracked in terminal phase, not enforced during pending
 	// ========================================
@@ -1752,6 +1759,41 @@ func (r *WorkflowExecutionReconciler) resolveExecutionEngine(ctx context.Context
 
 	wfe.Status.ExecutionEngine = engine
 	return engine, nil
+}
+
+// resolveExecutionBundle overrides wfe.Spec.WorkflowRef.ExecutionBundle with the
+// authoritative value from the DS catalog (defense-in-depth). Non-fatal: if the
+// querier is nil, the workflow ID is empty, or the catalog entry has no bundle,
+// the existing spec value is preserved.
+func (r *WorkflowExecutionReconciler) resolveExecutionBundle(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
+	if r.WorkflowQuerier == nil || wfe.Spec.WorkflowRef.WorkflowID == "" {
+		return nil
+	}
+
+	logger := log.FromContext(ctx)
+
+	bundle, digest, err := r.WorkflowQuerier.GetWorkflowExecutionBundle(ctx, wfe.Spec.WorkflowRef.WorkflowID)
+	if err != nil {
+		return fmt.Errorf("failed to resolve execution bundle from DS for workflow %s: %w", wfe.Spec.WorkflowRef.WorkflowID, err)
+	}
+
+	if bundle == "" {
+		return nil
+	}
+
+	if wfe.Spec.WorkflowRef.ExecutionBundle != bundle {
+		logger.Info("Overriding execution bundle from DS catalog",
+			"specBundle", wfe.Spec.WorkflowRef.ExecutionBundle,
+			"catalogBundle", bundle,
+			"workflowID", wfe.Spec.WorkflowRef.WorkflowID,
+		)
+	}
+	wfe.Spec.WorkflowRef.ExecutionBundle = bundle
+	if digest != "" {
+		wfe.Spec.WorkflowRef.ExecutionBundleDigest = digest
+	}
+
+	return nil
 }
 
 // ========================================
