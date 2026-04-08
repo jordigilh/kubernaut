@@ -31,7 +31,7 @@ Kubernaut bridges that gap. It uses an LLM to investigate the actual root cause 
 ## What It Does
 
 - **Detects** — Ingests Prometheus AlertManager alerts and Kubernetes Events, validates resource scope, and deduplicates by fingerprint
-- **Investigates** — HolmesGPT performs live root cause analysis using Kubernetes inspection tools, configurable observability toolsets (Prometheus, etc.), and remediation history
+- **Investigates** — Performs live root cause analysis using Kubernetes inspection tools, configurable observability toolsets (Prometheus, etc.), and remediation history
 - **Remediates** — Selects and executes a workflow from a searchable catalog via Tekton Pipelines, Kubernetes Jobs, or Ansible (AWX/AAP), with optional human approval gates
 - **Closes the loop** — Notifies the team (Slack, console), evaluates whether the fix worked via health checks, alert resolution, and spec hash drift detection, and feeds effectiveness scores back into future investigations
 
@@ -46,6 +46,9 @@ Kubernaut bridges that gap. It uses an LLM to investigate the actual root cause 
 
 ## Roadmap
 
+<<<<<<< HEAD
+### v1.2 — Operational Resilience and Security Hardening (latest)
+=======
 ### v1.3 — Go Unification and Enterprise Distribution (current)
 
 - **HAPI Go rewrite** — Full reimplementation of the HolmesGPT-API service in Go, eliminating the Python runtime dependency
@@ -76,6 +79,7 @@ Track progress on the [v1.5 milestone](https://github.com/jordigilh/kubernaut/mi
 - **Fleet-wide remediation** — MCP-based multi-cluster architecture enabling centralized signal ingestion, cross-cluster RCA investigation, and federated workflow execution across Kubernetes fleets
 
 ### v1.2 — Operational Resilience and Security Hardening ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.2.0))
+>>>>>>> origin/main
 
 - **Per-workflow ServiceAccount** — Each remediation workflow runs under its own SA with least-privilege RBAC, replacing the shared default
 - **Short-lived token injection** — Ansible executor uses Kubernetes TokenRequest API with configurable TTL instead of long-lived secrets
@@ -86,6 +90,24 @@ Track progress on the [v1.5 milestone](https://github.com/jordigilh/kubernaut/mi
 
 See [CHANGELOG.md](CHANGELOG.md) for the complete list.
 
+<<<<<<< HEAD
+### v1.3 — Go Unification and Enterprise Distribution (next)
+
+- **Kubernaut Agent (KA)** — Ground-up rewrite of the HolmesGPT-API (HAPI) service in Go,
+  designed for security-first operation and agentic investigation flow with
+  layered prompt-injection defenses; architecture enables shadow-agent audit
+  (v1.4) and multi-agent consensus investigation (v1.5)
+  ([#433](https://github.com/jordigilh/kubernaut/issues/433))
+- **Mock LLM Go rewrite** — DAG-based conversation engine with declarative YAML scenarios and fault injection for resilience testing
+- **Kubernaut Operator** — OLM-packaged operator for OperatorHub distribution on OpenShift and vanilla Kubernetes
+- **Inter-pod TLS** — Encrypted communication between all internal services
+- **Audit event retention** — Automated deletion of expired audit events
+- **Label-based notification routing** — Route notifications to signal and RCA target resource owners
+
+Track progress on the [v1.3 milestone](https://github.com/jordigilh/kubernaut/milestone/4).
+
+=======
+>>>>>>> origin/main
 ---
 
 ## Installation
