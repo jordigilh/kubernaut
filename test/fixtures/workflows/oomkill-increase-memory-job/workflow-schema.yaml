@@ -22,7 +22,7 @@ spec:
   
   execution:
     engine: job
-    bundle: quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec@sha256:d8c87f9e8b9692309863be7e06a1ec90feb711210982ecf31748c5fbfb513a6a
+    bundle: quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec@sha256:80cbeb644bdbe8be48286c8584cf91b541fceae1497a8f3d91cc3af5d4e392e9
     # DD-WE-005 v2.0: Pre-created SA with cross-namespace RBAC so remediate.sh
     # can kubectl get/patch Deployments in any namespace.
     serviceAccountName: workflow-job-executor

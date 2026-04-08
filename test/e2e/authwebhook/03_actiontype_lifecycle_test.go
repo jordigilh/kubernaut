@@ -232,7 +232,7 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 				},
 				Execution: rwv1alpha1.RemediationWorkflowExecution{
 					Engine: "job",
-					Bundle: "quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3",
+					Bundle: "quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:9771eca86cd5b39ac22c9490a5e7e0420abe6b4576e927326edfac1ecc7e5980",
 				},
 				Parameters: []rwv1alpha1.RemediationWorkflowParameter{
 					{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target resource"},
