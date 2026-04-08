@@ -34,22 +34,22 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
-// ADR-056 SoC: E2E tests for DetectedLabels in HAPI responses.
+// ADR-056 SoC: E2E tests for DetectedLabels in KA responses.
 //
-// These tests verify that when HAPI processes incident analysis in a Kind cluster
+// These tests verify that when KA processes incident analysis in a Kind cluster
 // with real K8s resources, the response includes correctly computed detected_labels.
 //
 // Business Requirements:
-//   - ADR-056: DetectedLabels computed post-RCA by HAPI
+//   - ADR-056: DetectedLabels computed post-RCA by KA
 //   - BR-SP-101: Infrastructure label detection (PDB, HPA, etc.)
 //
-// Infrastructure: Kind cluster with HAPI, Mock LLM (3-step), DataStorage
+// Infrastructure: Kind cluster with KA, Mock LLM (3-step), DataStorage
 // K8s resources (Deployments, PDBs, HPAs) are created in a dedicated test namespace.
 
-var _ = Describe("E2E-HAPI ADR-056 DetectedLabels", Label("e2e", "hapi", "adr-056", "detected-labels"), func() {
+var _ = Describe("E2E-KA ADR-056 DetectedLabels", Label("e2e", "ka", "adr-056", "detected-labels"), func() {
 	var (
 		testCtx      context.Context
 		testCancel   context.CancelFunc
@@ -120,9 +120,9 @@ var _ = Describe("E2E-HAPI ADR-056 DetectedLabels", Label("e2e", "hapi", "adr-05
 	})
 
 	Context("Incident Analysis with DetectedLabels", func() {
-		It("E2E-HAPI-056-001: should include detected_labels in incident analysis response", func() {
+		It("E2E-KA-056-001: should include detected_labels in incident analysis response", func() {
 			By("Sending incident analysis request targeting test namespace resources")
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "e2e-dl-001",
 				RemediationID:     "req-e2e-dl-001",
 				SignalName:        "CrashLoopBackOff",
@@ -140,19 +140,19 @@ var _ = Describe("E2E-HAPI ADR-056 DetectedLabels", Label("e2e", "hapi", "adr-05
 			}
 
 			resp, err := sessionClient.Investigate(testCtx, req)
-			Expect(err).NotTo(HaveOccurred(), "HAPI incident analysis should succeed")
+			Expect(err).NotTo(HaveOccurred(), "KA incident analysis should succeed")
 			Expect(resp).NotTo(BeNil())
 
 			By("Verifying detected_labels is present in response")
-			// ADR-056: HAPI computes DetectedLabels on-demand during list_available_actions
+			// ADR-056: KA computes DetectedLabels on-demand during list_available_actions
 			// and includes them in the response via inject_detected_labels.
 			Expect(resp.DetectedLabels.Set).To(BeTrue(),
-				"detected_labels should be present in HAPI response (ADR-056)")
+				"detected_labels should be present in KA response (ADR-056)")
 		})
 	})
 
 	Context("Infrastructure Label Detection", func() {
-		It("E2E-HAPI-056-003: should detect PDB and HPA from Kind cluster resources", func() {
+		It("E2E-KA-056-003: should detect PDB and HPA from Kind cluster resources", func() {
 			By("Creating PodDisruptionBudget for test Deployment")
 			pdb := &policyv1.PodDisruptionBudget{
 				ObjectMeta: metav1.ObjectMeta{
@@ -199,7 +199,7 @@ var _ = Describe("E2E-HAPI ADR-056 DetectedLabels", Label("e2e", "hapi", "adr-05
 			Expect(err).NotTo(HaveOccurred(), "Failed to create HPA")
 
 			By("Sending incident analysis request targeting test namespace")
-			resp, err := sessionClient.Investigate(testCtx, &hapiclient.IncidentRequest{
+			resp, err := sessionClient.Investigate(testCtx, &agentclient.IncidentRequest{
 				IncidentID:        "e2e-dl-003",
 				RemediationID:     "req-e2e-dl-003",
 				SignalName:        "CrashLoopBackOff",
@@ -216,14 +216,14 @@ var _ = Describe("E2E-HAPI ADR-056 DetectedLabels", Label("e2e", "hapi", "adr-05
 				ClusterName:       "e2e-test",
 			})
 
-			Expect(err).NotTo(HaveOccurred(), "HAPI should succeed with K8s resources present")
+			Expect(err).NotTo(HaveOccurred(), "KA should succeed with K8s resources present")
 			Expect(resp).NotTo(BeNil())
 
 			By("Verifying detected_labels reflect PDB and HPA presence")
 			Expect(resp.DetectedLabels.Set).To(BeTrue(),
 				"detected_labels should be present when K8s resources exist")
 
-			// If HAPI successfully detected labels, verify PDB and HPA detection
+			// If KA successfully detected labels, verify PDB and HPA detection
 			if !resp.DetectedLabels.Null && len(resp.DetectedLabels.Value) > 0 {
 				GinkgoWriter.Printf("detected_labels keys: %v\n", getMapKeys(resp.DetectedLabels.Value))
 			}

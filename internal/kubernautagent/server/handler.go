@@ -27,7 +27,7 @@ import (
 
 	"github.com/go-faster/jx"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
@@ -38,14 +38,14 @@ import (
 // endpoints. Operational endpoints (/health, /ready, /config, /metrics) are
 // served directly by the HTTP mux in cmd/kubernautagent/main.go.
 type Handler struct {
-	hapiclient.UnimplementedHandler
+	agentclient.UnimplementedHandler
 
 	sessions     *session.Manager
 	investigator *investigator.Investigator
 	logger       *slog.Logger
 }
 
-var _ hapiclient.Handler = (*Handler)(nil)
+var _ agentclient.Handler = (*Handler)(nil)
 
 // NewHandler creates a Kubernaut Agent ogen handler.
 func NewHandler(sessions *session.Manager, inv *investigator.Investigator, logger *slog.Logger) *Handler {
@@ -59,10 +59,10 @@ func NewHandler(sessions *session.Manager, inv *investigator.Investigator, logge
 // IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost implements POST /api/v1/incident/analyze.
 // Returns HTTP 202 with {"session_id": "<uuid>"}.
 func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
-	ctx context.Context, req *hapiclient.IncidentRequest,
-) (hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes, error) {
+	ctx context.Context, req *agentclient.IncidentRequest,
+) (agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes, error) {
 	if req.RemediationID == "" {
-		return &hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON{
+		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON{
 			Type:     "https://kubernaut.ai/problems/validation-error",
 			Title:    "Validation Error",
 			Detail:   "remediation_id is required (DD-WORKFLOW-002)",
@@ -72,7 +72,7 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 	}
 
 	if req.IncidentID == "" {
-		return &hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON{
+		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON{
 			Type:     "https://kubernaut.ai/problems/validation-error",
 			Title:    "Validation Error",
 			Detail:   "incident_id is required",
@@ -83,7 +83,7 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 
 	if h.investigator == nil {
 		h.logger.Error("investigator not configured")
-		return &hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
+		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
 			Type:     "https://kubernaut.ai/problems/internal-error",
 			Title:    "Internal Server Error",
 			Detail:   "investigator not configured",
@@ -107,7 +107,7 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 	}, metadata)
 	if err != nil {
 		h.logger.Error("failed to start investigation", "error", err)
-		return &hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
+		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
 			Type:     "https://kubernaut.ai/problems/internal-error",
 			Title:    "Internal Server Error",
 			Detail:   "failed to start investigation: " + err.Error(),
@@ -117,19 +117,19 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 	}
 
 	body, _ := json.Marshal(map[string]string{"session_id": sessionID})
-	raw := hapiclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON(body)
+	raw := agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON(body)
 	return &raw, nil
 }
 
 // IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet implements GET /api/v1/incident/session/{session_id}.
 func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 	_ context.Context,
-	params hapiclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams,
-) (hapiclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, error) {
+	params agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams,
+) (agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, error) {
 	sess, err := h.sessions.GetSession(params.SessionID)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
-			return &hapiclient.HTTPError{
+			return &agentclient.HTTPError{
 				Type:     "https://kubernaut.ai/problems/not-found",
 				Title:    "Session Not Found",
 				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
@@ -146,7 +146,7 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 		"session_id": sess.ID,
 		"status":     status,
 	})
-	raw := hapiclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON(body)
+	raw := agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON(body)
 	return &raw, nil
 }
 
@@ -154,12 +154,12 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 // GET /api/v1/incident/session/{session_id}/result.
 func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(
 	_ context.Context,
-	params hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams,
-) (hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes, error) {
+	params agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams,
+) (agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes, error) {
 	sess, err := h.sessions.GetSession(params.SessionID)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
-			return &hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound{
+			return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound{
 				Type:     "https://kubernaut.ai/problems/not-found",
 				Title:    "Session Not Found",
 				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
@@ -172,7 +172,7 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 	}
 
 	if sess.Status != session.StatusCompleted {
-		return &hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{
+		return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{
 			Type:     "https://kubernaut.ai/problems/session-not-completed",
 			Title:    "Session Not Completed",
 			Detail:   fmt.Sprintf("session %s is %s, not completed", params.SessionID, mapSessionStatusToAPI(sess.Status)),
@@ -184,7 +184,7 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 	result, ok := sess.Result.(*katypes.InvestigationResult)
 	if !ok {
 		h.logger.Error("unexpected result type in session", "session_id", sess.ID)
-		return &hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{
+		return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{
 			Type:     "https://kubernaut.ai/problems/session-not-completed",
 			Title:    "Session Not Completed",
 			Detail:   "session result is not an investigation result",
@@ -203,7 +203,7 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 }
 
 // MapIncidentRequestToSignal converts an OpenAPI IncidentRequest to an internal SignalContext.
-func MapIncidentRequestToSignal(req *hapiclient.IncidentRequest) katypes.SignalContext {
+func MapIncidentRequestToSignal(req *agentclient.IncidentRequest) katypes.SignalContext {
 	sc := katypes.SignalContext{
 		Name:             req.SignalName,
 		Namespace:        req.ResourceNamespace,
@@ -256,15 +256,15 @@ func mapSessionStatusToAPI(s session.Status) string {
 	}
 }
 
-func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID string) *hapiclient.IncidentResponse {
-	resp := &hapiclient.IncidentResponse{
+func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID string) *agentclient.IncidentResponse {
+	resp := &agentclient.IncidentResponse{
 		IncidentID: incidentID,
 		Analysis:   r.RCASummary,
 		Confidence: r.Confidence,
 		Timestamp:  time.Now().UTC().Format(time.RFC3339),
 	}
 
-	rca := hapiclient.IncidentResponseRootCauseAnalysis{}
+	rca := agentclient.IncidentResponseRootCauseAnalysis{}
 	if r.RCASummary != "" {
 		summaryRaw, _ := json.Marshal(r.RCASummary)
 		rca["summary"] = jx.Raw(summaryRaw)
@@ -304,7 +304,7 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 	}
 
 	if r.WorkflowID != "" {
-		sw := hapiclient.IncidentResponseSelectedWorkflow{}
+		sw := agentclient.IncidentResponseSelectedWorkflow{}
 		wfIDRaw, _ := json.Marshal(r.WorkflowID)
 		sw["workflow_id"] = jx.Raw(wfIDRaw)
 		if len(r.Parameters) > 0 {
@@ -352,7 +352,7 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 	}
 
 	if len(r.DetectedLabels) > 0 {
-		dl := make(hapiclient.IncidentResponseDetectedLabels, len(r.DetectedLabels))
+		dl := make(agentclient.IncidentResponseDetectedLabels, len(r.DetectedLabels))
 		for k, v := range r.DetectedLabels {
 			raw, _ := json.Marshal(v)
 			dl[k] = jx.Raw(raw)
@@ -361,9 +361,9 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 	}
 
 	if len(r.AlternativeWorkflows) > 0 {
-		alts := make([]hapiclient.AlternativeWorkflow, 0, len(r.AlternativeWorkflows))
+		alts := make([]agentclient.AlternativeWorkflow, 0, len(r.AlternativeWorkflows))
 		for _, aw := range r.AlternativeWorkflows {
-			alt := hapiclient.AlternativeWorkflow{
+			alt := agentclient.AlternativeWorkflow{
 				WorkflowID: aw.WorkflowID,
 				Confidence: aw.Confidence,
 				Rationale:  aw.Rationale,
@@ -377,9 +377,9 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 	}
 
 	if len(r.ValidationAttemptsHistory) > 0 {
-		attempts := make([]hapiclient.ValidationAttempt, 0, len(r.ValidationAttemptsHistory))
+		attempts := make([]agentclient.ValidationAttempt, 0, len(r.ValidationAttemptsHistory))
 		for _, va := range r.ValidationAttemptsHistory {
-			attempt := hapiclient.ValidationAttempt{
+			attempt := agentclient.ValidationAttempt{
 				Attempt:   va.Attempt,
 				IsValid:   va.IsValid,
 				Errors:    va.Errors,
@@ -413,44 +413,44 @@ func synthesizeHumanReviewWarning(r *katypes.InvestigationResult) string {
 // mapHumanReviewReason maps free-form investigator reason strings to valid
 // HumanReviewReason enum values. Returns the mapped enum and whether the
 // default fallback was used (M4: enables caller logging of unrecognized reasons).
-func mapHumanReviewReason(reason string) (hapiclient.HumanReviewReason, bool) {
+func mapHumanReviewReason(reason string) (agentclient.HumanReviewReason, bool) {
 	switch reason {
 	case "rca_incomplete":
-		return hapiclient.HumanReviewReasonRcaIncomplete, false
+		return agentclient.HumanReviewReasonRcaIncomplete, false
 	case "investigation_inconclusive":
-		return hapiclient.HumanReviewReasonInvestigationInconclusive, false
+		return agentclient.HumanReviewReasonInvestigationInconclusive, false
 	case "workflow_not_found":
-		return hapiclient.HumanReviewReasonWorkflowNotFound, false
+		return agentclient.HumanReviewReasonWorkflowNotFound, false
 	case "no_matching_workflows":
-		return hapiclient.HumanReviewReasonNoMatchingWorkflows, false
+		return agentclient.HumanReviewReasonNoMatchingWorkflows, false
 	case "image_mismatch":
-		return hapiclient.HumanReviewReasonImageMismatch, false
+		return agentclient.HumanReviewReasonImageMismatch, false
 	case "parameter_validation_failed":
-		return hapiclient.HumanReviewReasonParameterValidationFailed, false
+		return agentclient.HumanReviewReasonParameterValidationFailed, false
 	case "low_confidence":
-		return hapiclient.HumanReviewReasonLowConfidence, false
+		return agentclient.HumanReviewReasonLowConfidence, false
 	case "llm_parsing_error":
-		return hapiclient.HumanReviewReasonLlmParsingError, false
+		return agentclient.HumanReviewReasonLlmParsingError, false
 	}
 
 	switch {
 	case strings.Contains(reason, "exhausted during RCA"):
-		return hapiclient.HumanReviewReasonRcaIncomplete, false
+		return agentclient.HumanReviewReasonRcaIncomplete, false
 	case strings.Contains(reason, "exhausted during workflow selection"):
-		return hapiclient.HumanReviewReasonInvestigationInconclusive, false
+		return agentclient.HumanReviewReasonInvestigationInconclusive, false
 	case strings.Contains(reason, "not found") && strings.Contains(reason, "catalog"):
-		return hapiclient.HumanReviewReasonWorkflowNotFound, false
+		return agentclient.HumanReviewReasonWorkflowNotFound, false
 	case strings.Contains(reason, "no matching"):
-		return hapiclient.HumanReviewReasonNoMatchingWorkflows, false
+		return agentclient.HumanReviewReasonNoMatchingWorkflows, false
 	case strings.Contains(reason, "mismatch") || strings.Contains(reason, "image"):
-		return hapiclient.HumanReviewReasonImageMismatch, false
+		return agentclient.HumanReviewReasonImageMismatch, false
 	case strings.Contains(reason, "parameter") || strings.Contains(reason, "validation"):
-		return hapiclient.HumanReviewReasonParameterValidationFailed, false
+		return agentclient.HumanReviewReasonParameterValidationFailed, false
 	case strings.Contains(reason, "confidence"):
-		return hapiclient.HumanReviewReasonLowConfidence, false
+		return agentclient.HumanReviewReasonLowConfidence, false
 	case strings.Contains(reason, "parse") || strings.Contains(reason, "parsing"):
-		return hapiclient.HumanReviewReasonLlmParsingError, false
+		return agentclient.HumanReviewReasonLlmParsingError, false
 	default:
-		return hapiclient.HumanReviewReasonInvestigationInconclusive, true
+		return agentclient.HumanReviewReasonInvestigationInconclusive, true
 	}
 }

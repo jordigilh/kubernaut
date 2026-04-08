@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // Kubernaut Agent E2E Tests — #433
@@ -32,7 +32,7 @@ import (
 // Business Requirements: BR-HAPI-433
 //
 // These tests validate API contract parity between the Go Kubernaut Agent
-// and the retired Python HAPI service. The same ogen-generated client is
+// and the retired Python KA service. The same ogen-generated client is
 // used (pkg/agentclient) to ensure wire-level compatibility.
 
 var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e", "ka", "parity"), func() {
@@ -41,7 +41,7 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 	// FUNCTIONAL TESTS (E2E-KA-433-001..005)
 	// =====================================================================
 
-	Context("BR-HAPI-433: Full investigation parity with Python HAPI", func() {
+	Context("BR-HAPI-433: Full investigation parity with Python KA", func() {
 
 		It("E2E-KA-433-001: OOMKilled investigation produces correct workflow selection", func() {
 			// ========================================
@@ -52,11 +52,11 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 			// BR: BR-HAPI-433
 			// Risk Mitigation: R7 (Mock-llm parity divergence)
 
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "e2e-ka-001-oom",
 				RemediationID:     "req-e2e-ka-001",
 				SignalName:        "OOMKilled",
-				Severity:          hapiclient.SeverityHigh,
+				Severity:          agentclient.SeverityHigh,
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "production",
 				ResourceKind:      "Pod",
@@ -95,11 +95,11 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 			// BR: BR-HAPI-433
 			// Risk Mitigation: R7 (Mock-llm parity divergence)
 
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "e2e-ka-002-clb",
 				RemediationID:     "req-e2e-ka-002",
 				SignalName:        "CrashLoopBackOff",
-				Severity:          hapiclient.SeverityCritical,
+				Severity:          agentclient.SeverityCritical,
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "production",
 				ResourceKind:      "Pod",
@@ -131,11 +131,11 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 			// Business Outcome: POST /analyze returns 202 with session ID in response body
 			// BR: BR-HAPI-433 (FR-07)
 
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "e2e-ka-003-session",
 				RemediationID:     "req-e2e-ka-003",
 				SignalName:        "OOMKilled",
-				Severity:          hapiclient.SeverityMedium,
+				Severity:          agentclient.SeverityMedium,
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
 				ResourceKind:      "Pod",
@@ -161,11 +161,11 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 			// Business Outcome: GET /session/{id} returns investigation progress/status
 			// BR: BR-HAPI-433 (FR-07)
 
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "e2e-ka-004-poll",
 				RemediationID:     "req-e2e-ka-004",
 				SignalName:        "OOMKilled",
-				Severity:          hapiclient.SeverityMedium,
+				Severity:          agentclient.SeverityMedium,
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
 				ResourceKind:      "Pod",
@@ -203,11 +203,11 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 			// Business Outcome: GET /result returns completed investigation JSON matching API contract
 			// BR: BR-HAPI-433 (FR-07)
 
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "e2e-ka-005-result",
 				RemediationID:     "req-e2e-ka-005",
 				SignalName:        "OOMKilled",
-				Severity:          hapiclient.SeverityHigh,
+				Severity:          agentclient.SeverityHigh,
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "production",
 				ResourceKind:      "Pod",

@@ -24,19 +24,19 @@ import (
 	. "github.com/onsi/gomega"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // Audit Pipeline E2E Tests
-// Test Plan: docs/development/testing/HAPI_E2E_TEST_PLAN.md
-// Scenarios: E2E-HAPI-045 through E2E-HAPI-048 (4 total)
+// Test Plan: docs/development/testing/KA_E2E_TEST_PLAN.md
+// Scenarios: E2E-KA-045 through E2E-KA-048 (4 total)
 // Business Requirements: BR-AUDIT-005, DD-HAPI-002 v1.2
 //
 // Purpose: Validate audit event persistence to DataStorage for compliance and debugging
 
-var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func() {
+var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 
 	var dataStorageClient *ogenclient.Client
 
@@ -57,11 +57,11 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 
 	Context("BR-AUDIT-005: Audit event persistence", func() {
 
-		It("E2E-HAPI-045: LLM request event persisted to DataStorage", func() {
+		It("E2E-KA-045: LLM request event persisted to DataStorage", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-045
+			// Scenario ID: E2E-KA-045
 			// Business Outcome: All LLM API calls are audited for compliance and debugging
 			// Ported from: test_audit_pipeline_e2e.py:350
 			// BR: BR-AUDIT-005
@@ -71,7 +71,7 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			// ========================================
 			remediationID := "test-audit-045-" + time.Now().Format("20060102150405")
 
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-audit-045",
 				RemediationID:     remediationID,
 				SignalName:        "OOMKilled",
@@ -89,15 +89,15 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			}
 
 			// ========================================
-			// ACT: Call HAPI incident analysis via session client (BR-AA-HAPI-064)
+			// ACT: Call KA incident analysis via session client (BR-AA-HAPI-064)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT: Query DataStorage for audit events with retry (async buffering)
 			// ========================================
-			// HAPI uses async audit buffering, so events may take a few seconds to appear
+			// KA uses async audit buffering, so events may take a few seconds to appear
 			var events []ogenclient.AuditEvent
 
 			Eventually(func() bool {
@@ -142,11 +142,11 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			// BUSINESS IMPACT: Compliance team can audit all LLM interactions
 		})
 
-		It("E2E-HAPI-046: LLM response event persisted to DataStorage", func() {
+		It("E2E-KA-046: LLM response event persisted to DataStorage", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-046
+			// Scenario ID: E2E-KA-046
 			// Business Outcome: All LLM responses audited for cost tracking and analysis
 			// Ported from: test_audit_pipeline_e2e.py:425
 			// BR: BR-AUDIT-005
@@ -156,7 +156,7 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			// ========================================
 			remediationID := "test-audit-046-" + time.Now().Format("20060102150405")
 
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-audit-046",
 				RemediationID:     remediationID,
 				SignalName:        "CrashLoopBackOff",
@@ -177,7 +177,7 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
@@ -224,11 +224,11 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			// BUSINESS IMPACT: Cost analysis, quality monitoring, debugging
 		})
 
-		It("E2E-HAPI-047: Validation attempt event persisted", func() {
+		It("E2E-KA-047: Validation attempt event persisted", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-047
+			// Scenario ID: E2E-KA-047
 			// Business Outcome: Workflow validation attempts audited for quality analysis
 			// Ported from: test_audit_pipeline_e2e.py:492
 			// BR: DD-HAPI-002 v1.2
@@ -238,7 +238,7 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			// ========================================
 			remediationID := "test-audit-047-" + time.Now().Format("20060102150405")
 
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-audit-047",
 				RemediationID:     remediationID,
 				SignalName:        "OOMKilled",
@@ -256,10 +256,10 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			}
 
 			// ========================================
-			// ACT: Call HAPI (triggers validation) (BR-AA-HAPI-064: async session flow)
+			// ACT: Call KA (triggers validation) (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
@@ -306,11 +306,11 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			// BUSINESS IMPACT: Self-correction quality analysis, debugging failed validations
 		})
 
-		It("E2E-HAPI-048: Complete audit trail persisted", func() {
+		It("E2E-KA-048: Complete audit trail persisted", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-048
+			// Scenario ID: E2E-KA-048
 			// Business Outcome: Complete audit trail (all event types) available for incident forensics
 			// Ported from: test_audit_pipeline_e2e.py:573
 			// BR: BR-AUDIT-005
@@ -320,7 +320,7 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			// ========================================
 			remediationID := "test-audit-048-" + time.Now().Format("20060102150405")
 
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-audit-048",
 				RemediationID:     remediationID,
 				SignalName:        "CrashLoopBackOff",
@@ -341,7 +341,7 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT: Validate complete trail
@@ -414,7 +414,7 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 		It("E2E-KA-433-AP-001: Full investigation audit trail with populated payloads", func() {
 			remediationID := "test-audit-ap-001-" + time.Now().Format("20060102150405")
 
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-audit-ap-001",
 				RemediationID:     remediationID,
 				SignalName:        "CrashLoopBackOff",
@@ -483,7 +483,7 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 		It("E2E-KA-433-AP-002: response.complete contains IncidentResponseData", func() {
 			remediationID := "test-audit-ap-002-" + time.Now().Format("20060102150405")
 
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-audit-ap-002",
 				RemediationID:     remediationID,
 				SignalName:        "CrashLoopBackOff",
@@ -533,7 +533,7 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 		It("E2E-KA-433-AP-003: All audit events have ActorType=Service, ActorID=kubernaut-agent", func() {
 			remediationID := "test-audit-ap-003-" + time.Now().Format("20060102150405")
 
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-audit-ap-003",
 				RemediationID:     remediationID,
 				SignalName:        "OOMKilled",

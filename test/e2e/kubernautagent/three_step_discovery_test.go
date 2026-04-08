@@ -20,11 +20,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // ========================================
-// E2E-HAPI-017: Three-Step Workflow Discovery (DD-HAPI-017)
+// E2E-KA-017: Three-Step Workflow Discovery (DD-HAPI-017)
 // ========================================
 //
 // Business Requirements:
@@ -36,25 +36,25 @@ import (
 //
 // Test Strategy:
 //   The three-step discovery protocol (list_available_actions → list_workflows → get_workflow)
-//   is transparent to API callers. The HAPI Python toolset handles the multi-turn tool call
+//   is transparent to API callers. The KA Python toolset handles the multi-turn tool call
 //   loop internally. Mock LLM is programmed to follow the three-step sequence when it detects
 //   the discovery tools in the available tools list.
 //
-//   These tests verify that the full stack (HAPI → Mock LLM → DS) works with the new protocol
+//   These tests verify that the full stack (KA → Mock LLM → DS) works with the new protocol
 //   by exercising incident flows that trigger workflow discovery.
 
-var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "hapi", "discovery", "three-step"), func() {
+var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka", "discovery", "three-step"), func() {
 
 	Context("BR-HAPI-017-001: Incident flow with three-step discovery", func() {
 
-		It("E2E-HAPI-017-001-001: Incident analysis uses three-step discovery to select workflow", func() {
+		It("E2E-KA-017-001-001: Incident analysis uses three-step discovery to select workflow", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-017-001-001
+			// Scenario ID: E2E-KA-017-001-001
 			// Business Outcome: Full incident analysis uses three-step discovery with Mock LLM.
 			//   Mock LLM calls list_available_actions → list_workflows → get_workflow,
-			//   HAPI returns a valid investigation result with selected workflow.
+			//   KA returns a valid investigation result with selected workflow.
 			// BR: BR-HAPI-017-001
 			// Phase: 11 (DD-HAPI-017 Implementation Plan)
 
@@ -67,7 +67,7 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 			//   Step 2: list_workflows(action_type="IncreaseMemoryLimits") → DS returns workflows
 			//   Step 3: get_workflow(workflow_id=<oomkill-increase-memory-v1 UUID>) → DS returns full detail
 			//   Step 4: Final analysis with selected_workflow
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-discovery-017-001",
 				RemediationID:     "test-rem-017-001",
 				SignalName:        "OOMKilled",
@@ -88,7 +88,7 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis should succeed with three-step discovery")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed with three-step discovery")
 
 			// ========================================
 			// ASSERT
@@ -110,17 +110,17 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 			Expect(incidentResp.Analysis).ToNot(BeEmpty(),
 				"Analysis text should be populated from Mock LLM final response")
 
-			logger.Info("✅ E2E-HAPI-017-001-001: Incident three-step discovery PASSED",
+			logger.Info("✅ E2E-KA-017-001-001: Incident three-step discovery PASSED",
 				"incident_id", incidentResp.IncidentID,
 				"confidence", incidentResp.Confidence,
 				"selected_workflow_set", incidentResp.SelectedWorkflow.Set)
 		})
 
-		It("E2E-HAPI-017-001-001b: CrashLoop incident also uses three-step discovery", func() {
+		It("E2E-KA-017-001-001b: CrashLoop incident also uses three-step discovery", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-017-001-001b (variant)
+			// Scenario ID: E2E-KA-017-001-001b (variant)
 			// Business Outcome: Different signal type also works with three-step discovery.
 			// BR: BR-HAPI-017-001
 
@@ -129,7 +129,7 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 			// ========================================
 			// CrashLoopBackOff triggers the "crashloop" Mock LLM scenario.
 			// Three-step: list_available_actions → list_workflows(RestartDeployment) → get_workflow
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-discovery-017-001b",
 				RemediationID:     "test-rem-017-001b",
 				SignalName:        "CrashLoopBackOff",
@@ -150,7 +150,7 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 			// ACT
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis should succeed for CrashLoop via three-step")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed for CrashLoop via three-step")
 
 			// ========================================
 			// ASSERT
@@ -160,7 +160,7 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.95, 0.05),
 				"Confidence should be ~0.95 for CrashLoop scenario")
 
-			logger.Info("✅ E2E-HAPI-017-001-001b: CrashLoop three-step discovery PASSED",
+			logger.Info("✅ E2E-KA-017-001-001b: CrashLoop three-step discovery PASSED",
 				"incident_id", incidentResp.IncidentID,
 				"confidence", incidentResp.Confidence)
 		})

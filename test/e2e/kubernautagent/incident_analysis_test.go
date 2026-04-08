@@ -20,40 +20,40 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/ogenx"
 )
 
 // BR-AA-HAPI-064: Success-path tests migrated from ogen direct client (sync 200) to
-// sessionClient.Investigate() (async submit/poll/result wrapper) because HAPI
+// sessionClient.Investigate() (async submit/poll/result wrapper) because KA
 // endpoints are now async-only (202 Accepted).
-// Error-path tests (E2E-HAPI-007, 008) retain the ogen client for strict
+// Error-path tests (E2E-KA-007, 008) retain the ogen client for strict
 // type-safe validation of 4xx error responses.
 
 // Incident Analysis E2E Tests
-// Test Plan: docs/development/testing/HAPI_E2E_TEST_PLAN.md
-// Scenarios: E2E-HAPI-001 through E2E-HAPI-008 (8 total)
+// Test Plan: docs/development/testing/KA_E2E_TEST_PLAN.md
+// Scenarios: E2E-KA-001 through E2E-KA-008 (8 total)
 // Business Requirements: BR-HAPI-197, BR-HAPI-002, BR-AI-075, BR-HAPI-200
 //
 // Purpose: Validate incident analysis endpoint behavior and correctness
 
-var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"), func() {
+var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), func() {
 
 	Context("BR-HAPI-197: Human review scenarios", func() {
 
-		It("E2E-HAPI-001: No workflow found returns human review", func() {
+		It("E2E-KA-001: No workflow found returns human review", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-001
+			// Scenario ID: E2E-KA-001
 			// Business Outcome: When no matching workflow exists, system escalates to human operator with clear reason
-			// Ported from: test_mock_llm_edge_cases_e2e.py:121 (Python HAPI, deprecated)
+			// Ported from: test_mock_llm_edge_cases_e2e.py:121 (Python KA, deprecated)
 			// BR: BR-HAPI-197
 
 			// ========================================
 			// ARRANGE: Create request with MOCK_NO_WORKFLOW_FOUND
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-edge-001",
 				RemediationID:     "test-rem-001",
 				SignalName:        "MOCK_NO_WORKFLOW_FOUND",
@@ -71,10 +71,10 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			}
 
 			// ========================================
-			// ACT: Call HAPI incident analysis via session client (BR-AA-HAPI-064)
+			// ACT: Call KA incident analysis via session client (BR-AA-HAPI-064)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT: Business outcome validation
@@ -82,7 +82,7 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// BEHAVIOR: Human review required
 			Expect(incidentResp.NeedsHumanReview.Value).To(BeTrue(),
 				"needs_human_review must be true when no workflow found")
-			Expect(incidentResp.HumanReviewReason.Value).To(Equal(hapiclient.HumanReviewReasonNoMatchingWorkflows),
+			Expect(incidentResp.HumanReviewReason.Value).To(Equal(agentclient.HumanReviewReasonNoMatchingWorkflows),
 				"human_review_reason must indicate no matching workflows")
 			Expect(incidentResp.SelectedWorkflow.Value).To(BeNil(),
 				"selected_workflow.value must be nil when no workflow found (OpenAPI client bug: .Set=true for null)")
@@ -92,7 +92,7 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 				"confidence must be 0.0 when no automation possible")
 
 			// CORRECTNESS: Warnings present (may or may not contain "MOCK" - implementation detail)
-			// E2E-HAPI-001 FIX: Removed "MOCK" substring requirement - tests business behavior, not implementation
+			// E2E-KA-001 FIX: Removed "MOCK" substring requirement - tests business behavior, not implementation
 			Expect(incidentResp.Warnings).ToNot(BeEmpty(),
 				"warnings must be present when no workflow found")
 
@@ -102,19 +102,19 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// - Does NOT create WorkflowExecution CRD
 		})
 
-		It("E2E-HAPI-002: Low confidence returns human review with alternatives", func() {
+		It("E2E-KA-002: Low confidence returns human review with alternatives", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-002
+			// Scenario ID: E2E-KA-002
 			// Business Outcome: When confidence is low, system provides tentative recommendation but requires human decision
-			// Ported from: test_mock_llm_edge_cases_e2e.py:153 (Python HAPI, deprecated)
+			// Ported from: test_mock_llm_edge_cases_e2e.py:153 (Python KA, deprecated)
 			// BR: BR-HAPI-197
 
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-edge-002",
 				RemediationID:     "test-rem-002",
 				SignalName:        "MOCK_LOW_CONFIDENCE",
@@ -135,15 +135,15 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			// BR-HAPI-197 + BR-HAPI-198: HAPI returns confidence but does NOT enforce thresholds
+			// BR-HAPI-197 + BR-HAPI-198: KA returns confidence but does NOT enforce thresholds
 			// AIAnalysis owns the threshold logic (70% in V1.0, configurable in V1.1)
 			Expect(incidentResp.NeedsHumanReview.Value).To(BeFalse(),
-				"HAPI should NOT set needs_human_review based on confidence thresholds (BR-HAPI-197)")
+				"KA should NOT set needs_human_review based on confidence thresholds (BR-HAPI-197)")
 			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
 				"selected_workflow must be present")
 
@@ -158,19 +158,19 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// BUSINESS IMPACT: AIAnalysis applies 70% threshold, sees 0.35 < 0.70, sets needs_human_review=true
 		})
 
-		It("E2E-HAPI-003: Max retries exhausted returns validation history", func() {
+		It("E2E-KA-003: Max retries exhausted returns validation history", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-003
+			// Scenario ID: E2E-KA-003
 			// Business Outcome: When LLM self-correction fails after max retries, provide complete validation history for debugging
-			// Ported from: test_mock_llm_edge_cases_e2e.py:189 (Python HAPI, deprecated)
+			// Ported from: test_mock_llm_edge_cases_e2e.py:189 (Python KA, deprecated)
 			// BR: BR-HAPI-197
 
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-edge-003",
 				RemediationID:     "test-rem-003",
 				SignalName:        "MOCK_MAX_RETRIES_EXHAUSTED",
@@ -191,7 +191,7 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
@@ -199,7 +199,7 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// BEHAVIOR: AI gave up after max retries
 			Expect(incidentResp.NeedsHumanReview.Value).To(BeTrue(),
 				"needs_human_review must be true when max retries exhausted")
-			Expect(incidentResp.HumanReviewReason.Value).To(Equal(hapiclient.HumanReviewReasonLlmParsingError),
+			Expect(incidentResp.HumanReviewReason.Value).To(Equal(agentclient.HumanReviewReasonLlmParsingError),
 				"human_review_reason must indicate LLM parsing error")
 			Expect(incidentResp.SelectedWorkflow.Set).To(BeFalse(),
 				"selected_workflow must be null when parsing failed")
@@ -228,19 +228,19 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 
 	Context("BR-HAPI-002: Happy path scenarios", func() {
 
-		It("E2E-HAPI-004: Normal incident analysis succeeds", func() {
+		It("E2E-KA-004: Normal incident analysis succeeds", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-004
+			// Scenario ID: E2E-KA-004
 			// Business Outcome: Standard signal types produce confident workflow recommendations
-			// Ported from: test_mock_llm_edge_cases_e2e.py:332 (Python HAPI, deprecated)
+			// Ported from: test_mock_llm_edge_cases_e2e.py:332 (Python KA, deprecated)
 			// BR: BR-HAPI-002
 
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-happy-004",
 				RemediationID:     "test-rem-004",
 				SignalName:        "OOMKilled",
@@ -261,7 +261,7 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
@@ -284,19 +284,19 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 
 	Context("BR-AI-075: Response structure validation", func() {
 
-		It("E2E-HAPI-005: Incident response structure validation", func() {
+		It("E2E-KA-005: Incident response structure validation", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-005
+			// Scenario ID: E2E-KA-005
 			// Business Outcome: Response contains all fields required by AIAnalysis controller
-			// Ported from: test_workflow_selection_e2e.py:217 (Python HAPI, deprecated)
+			// Ported from: test_workflow_selection_e2e.py:217 (Python KA, deprecated)
 			// BR: BR-AI-075
 
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-struct-005",
 				RemediationID:     "test-rem-005",
 				SignalName:        "CrashLoopBackOff",
@@ -317,7 +317,7 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
@@ -339,19 +339,19 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// BUSINESS IMPACT: AIAnalysis can parse response without errors
 		})
 
-		It("E2E-HAPI-006: Incident with enrichment results processing", func() {
+		It("E2E-KA-006: Incident with enrichment results processing", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-006
+			// Scenario ID: E2E-KA-006
 			// Business Outcome: EnrichmentResults (detectedLabels, customLabels) influence workflow selection
-			// Ported from: test_workflow_selection_e2e.py:246 (Python HAPI, deprecated)
+			// Ported from: test_workflow_selection_e2e.py:246 (Python KA, deprecated)
 			// BR: DD-HAPI-001 (Custom Labels Auto-Append)
 
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-enrich-006",
 				RemediationID:     "test-rem-006",
 				SignalName:        "OOMKilled",
@@ -373,7 +373,7 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
@@ -392,19 +392,19 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 
 	Context("BR-HAPI-200: Error handling", func() {
 
-		It("E2E-HAPI-007: Invalid request returns error", func() {
+		It("E2E-KA-007: Invalid request returns error", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-007
+			// Scenario ID: E2E-KA-007
 			// Business Outcome: Invalid requests rejected with clear error messages
-			// Ported from: test_workflow_selection_e2e.py:342 (Python HAPI, deprecated)
+			// Ported from: test_workflow_selection_e2e.py:342 (Python KA, deprecated)
 			// BR: BR-HAPI-200
 
 			// ========================================
 			// ARRANGE: Create request with missing required fields
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID: "test-invalid-007",
 				// Missing remediation_id, signal_type, severity, etc.
 			}
@@ -412,7 +412,7 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// ========================================
 			// ACT
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			resp, err := kaClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
 			err = ogenx.ToError(resp, err) // Convert ogen response to Go error
 
 			// ========================================
@@ -429,19 +429,19 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// BUSINESS IMPACT: Caller knows what to fix
 		})
 
-		It("E2E-HAPI-008: Missing remediation ID returns error", func() {
+		It("E2E-KA-008: Missing remediation ID returns error", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-008
+			// Scenario ID: E2E-KA-008
 			// Business Outcome: remediation_id is mandatory for audit trail correlation
-			// Ported from: test_workflow_selection_e2e.py:364 (Python HAPI, deprecated)
+			// Ported from: test_workflow_selection_e2e.py:364 (Python KA, deprecated)
 			// BR: DD-WORKFLOW-002
 
 			// ========================================
 			// ARRANGE: Create request WITHOUT remediation_id
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID: "test-no-rem-008",
 				// remediation_id is MISSING
 				SignalName:        "OOMKilled",
@@ -456,7 +456,7 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// ========================================
 			// ACT
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			resp, err := kaClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
 			err = ogenx.ToError(resp, err) // Convert ogen response to Go error
 
 			// ========================================

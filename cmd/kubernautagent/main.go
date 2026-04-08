@@ -40,7 +40,7 @@ import (
 	"k8s.io/client-go/restmapper"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
@@ -198,7 +198,7 @@ func main() {
 
 	handler := kaserver.NewHandler(mgr, inv, slogger)
 
-	ogenSrv, err := hapiclient.NewServer(handler)
+	ogenSrv, err := agentclient.NewServer(handler)
 	if err != nil {
 		slogger.Error("failed to create ogen server", "error", err)
 		os.Exit(1)

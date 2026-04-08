@@ -30,19 +30,19 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // Kubernaut Agent E2E Test Suite (#433)
 //
-// Validates API contract parity with the retired Python HAPI service.
+// Validates API contract parity with the retired Python KA service.
 // Uses the same ogen-generated client (pkg/agentclient) since KA
 // implements the same OpenAPI Handler interface.
 //
 // Infrastructure: Kind cluster + DataStorage + Mock LLM + Kubernaut Agent (Go)
-// Replaces: test/e2e/holmesgpt-api/ (Python HAPI E2E tests)
+// Replaces: test/e2e/holmesgpt-api/ (Python KA E2E tests)
 
 func TestKubernautAgentE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -58,17 +58,17 @@ var (
 	clusterName    string
 	kubeconfigPath string
 
-	// Same port mapping as HAPI (DD-TEST-001 v2.9)
+	// Same port mapping as KA (DD-TEST-001 v2.9)
 	kaURL          string // http://localhost:8088
 	dataStorageURL string // http://localhost:8089
 
 	sharedNamespace string = "kubernaut-agent-e2e"
 
-	// hapiClient is the ogen-generated client (error-path tests)
-	hapiClient *hapiclient.Client
+	// kaClient is the ogen-generated client (error-path tests)
+	kaClient *agentclient.Client
 
 	// sessionClient is the session-aware wrapper (submit/poll/result)
-	sessionClient *hapiclient.KubernautAgentClient
+	sessionClient *agentclient.KubernautAgentClient
 
 	// authHTTPClient carries the ServiceAccount Bearer token for raw HTTP tests
 	// (e.g., RFC 7807 validation) that bypass the ogen client.
@@ -141,17 +141,17 @@ var _ = SynchronizedBeforeSuite(
 			Fail(fmt.Sprintf("Failed to get ServiceAccount token: %v", err))
 		}
 
-		hapiClient, err = hapiclient.NewClient(
+		kaClient, err = agentclient.NewClient(
 			kaURL,
-			hapiclient.WithClient(&http.Client{
+			agentclient.WithClient(&http.Client{
 				Transport: testauth.NewServiceAccountTransport(saToken),
 				Timeout:   60 * time.Second,
 			}),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated client")
 
-		sessionClient, err = hapiclient.NewKubernautAgentClientWithTransport(
-			hapiclient.Config{BaseURL: kaURL},
+		sessionClient, err = agentclient.NewKubernautAgentClientWithTransport(
+			agentclient.Config{BaseURL: kaURL},
 			testauth.NewServiceAccountTransport(saToken),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create session client")
@@ -179,17 +179,17 @@ var _ = SynchronizedBeforeSuite(
 		saToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "kubernaut-agent-e2e-sa", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to get ServiceAccount token")
 
-		hapiClient, err = hapiclient.NewClient(
+		kaClient, err = agentclient.NewClient(
 			kaURL,
-			hapiclient.WithClient(&http.Client{
+			agentclient.WithClient(&http.Client{
 				Transport: testauth.NewServiceAccountTransport(saToken),
 				Timeout:   60 * time.Second,
 			}),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated client")
 
-		sessionClient, err = hapiclient.NewKubernautAgentClientWithTransport(
-			hapiclient.Config{BaseURL: kaURL},
+		sessionClient, err = agentclient.NewKubernautAgentClientWithTransport(
+			agentclient.Config{BaseURL: kaURL},
 			testauth.NewServiceAccountTransport(saToken),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create session client")

@@ -20,36 +20,36 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // BR-AA-HAPI-064: All success-path tests migrated from ogen direct client (sync 200) to
-// sessionClient.Investigate() (async submit/poll/result wrapper) because HAPI
+// sessionClient.Investigate() (async submit/poll/result wrapper) because KA
 // endpoints are now async-only (202 Accepted).
 
 // Proactive Signal Mode E2E Tests
-// Test Plan: docs/development/testing/HAPI_E2E_TEST_PLAN.md (Category G)
-// Scenarios: E2E-HAPI-055 through E2E-HAPI-057 (3 total)
+// Test Plan: docs/development/testing/KA_E2E_TEST_PLAN.md (Category G)
+// Scenarios: E2E-KA-055 through E2E-KA-057 (3 total)
 // Business Requirements: BR-AI-084 (Proactive Signal Mode Prompt Strategy)
 // Architecture: ADR-054 (Proactive Signal Mode Classification)
 //
-// Purpose: Validate HAPI correctly adapts the investigation prompt for proactive
+// Purpose: Validate KA correctly adapts the investigation prompt for proactive
 // signal mode and returns appropriate proactive-aware analysis results.
 //
 // Mock LLM Scenarios:
 //   - oomkilled_predictive: Triggered by proactive keywords + "oomkilled" in prompt
 //   - Standard oomkilled: Triggered by "oomkilled" without proactive keywords
 
-var _ = Describe("E2E-HAPI-084: Proactive Signal Mode Investigation", Label("e2e", "hapi", "signalmode"), func() {
+var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e", "ka", "signalmode"), func() {
 
 	Context("BR-AI-084: Proactive signal mode prompt adaptation", func() {
 
-		It("E2E-HAPI-055: Proactive OOMKill returns proactive-aware analysis", func() {
+		It("E2E-KA-055: Proactive OOMKill returns proactive-aware analysis", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-055
-			// Business Outcome: When signal_mode=proactive, HAPI adapts its 5-phase investigation
+			// Scenario ID: E2E-KA-055
+			// Business Outcome: When signal_mode=proactive, KA adapts its 5-phase investigation
 			//   prompt to perform preemptive analysis. Mock LLM detects proactive keywords and
 			//   returns the oomkilled_predictive scenario with prevention-focused root cause.
 			// Mock LLM Scenario: oomkilled_predictive (Go Mock LLM scenarios registry)
@@ -58,7 +58,7 @@ var _ = Describe("E2E-HAPI-084: Proactive Signal Mode Investigation", Label("e2e
 			// ========================================
 			// ARRANGE: Create request with signal_mode=proactive
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-proactive-055",
 				RemediationID:     "test-rem-proactive-055",
 				SignalName:        "OOMKilled", // Normalized by SP from PredictedOOMKill (ADR-054)
@@ -75,15 +75,15 @@ var _ = Describe("E2E-HAPI-084: Proactive Signal Mode Investigation", Label("e2e
 				ClusterName:       "e2e-test",
 			}
 			// BR-AI-084: Set signal_mode to proactive
-			req.SignalMode = hapiclient.NewOptNilSignalMode(
-				hapiclient.SignalModeProactive,
+			req.SignalMode = agentclient.NewOptNilSignalMode(
+				agentclient.SignalModeProactive,
 			)
 
 			// ========================================
-			// ACT: Call HAPI incident analysis endpoint (BR-AA-HAPI-064: async session flow)
+			// ACT: Call KA incident analysis endpoint (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT: Business outcome validation
@@ -126,11 +126,11 @@ var _ = Describe("E2E-HAPI-084: Proactive Signal Mode Investigation", Label("e2e
 
 	Context("BR-AI-084: Reactive signal mode (backwards compatibility)", func() {
 
-		It("E2E-HAPI-056: Reactive signal mode returns standard RCA analysis", func() {
+		It("E2E-KA-056: Reactive signal mode returns standard RCA analysis", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-056
+			// Scenario ID: E2E-KA-056
 			// Business Outcome: Existing reactive requests continue working unchanged.
 			//   signal_mode=reactive produces standard RCA results without proactive language.
 			// Mock LLM Scenario: oomkilled (standard reactive scenario)
@@ -139,7 +139,7 @@ var _ = Describe("E2E-HAPI-084: Proactive Signal Mode Investigation", Label("e2e
 			// ========================================
 			// ARRANGE: Create request with explicit reactive signal mode
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-reactive-056",
 				RemediationID:     "test-rem-reactive-056",
 				SignalName:        "OOMKilled",
@@ -156,15 +156,15 @@ var _ = Describe("E2E-HAPI-084: Proactive Signal Mode Investigation", Label("e2e
 				ClusterName:       "e2e-test",
 			}
 			// Set explicit reactive mode
-			req.SignalMode = hapiclient.NewOptNilSignalMode(
-				hapiclient.SignalModeReactive,
+			req.SignalMode = agentclient.NewOptNilSignalMode(
+				agentclient.SignalModeReactive,
 			)
 
 			// ========================================
-			// ACT: Call HAPI incident analysis endpoint (BR-AA-HAPI-064: async session flow)
+			// ACT: Call KA incident analysis endpoint (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT: Business outcome validation
@@ -184,11 +184,11 @@ var _ = Describe("E2E-HAPI-084: Proactive Signal Mode Investigation", Label("e2e
 			// BUSINESS IMPACT: Existing reactive flow unchanged by ADR-054
 		})
 
-		It("E2E-HAPI-057: Missing signal mode defaults to reactive behavior", func() {
+		It("E2E-KA-057: Missing signal mode defaults to reactive behavior", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-057
+			// Scenario ID: E2E-KA-057
 			// Business Outcome: Requests without signal_mode should default to reactive behavior.
 			//   Ensures backwards compatibility with pre-ADR-054 clients.
 			// Mock LLM Scenario: oomkilled (standard reactive scenario - no proactive keywords in prompt)
@@ -197,7 +197,7 @@ var _ = Describe("E2E-HAPI-084: Proactive Signal Mode Investigation", Label("e2e
 			// ========================================
 			// ARRANGE: Request without setting signal_mode
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-default-057",
 				RemediationID:     "test-rem-default-057",
 				SignalName:        "OOMKilled",
@@ -216,10 +216,10 @@ var _ = Describe("E2E-HAPI-084: Proactive Signal Mode Investigation", Label("e2e
 			// signal_mode intentionally NOT set — defaults to reactive
 
 			// ========================================
-			// ACT: Call HAPI incident analysis endpoint (BR-AA-HAPI-064: async session flow)
+			// ACT: Call KA incident analysis endpoint (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT: Business outcome validation

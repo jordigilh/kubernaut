@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // TP-433-ADV Phase 8: E2E Adversarial Parity Tests
@@ -40,17 +40,17 @@ import (
 var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", "adversarial"), func() {
 
 	// Helper to build a standard request with the mock keyword as signal name
-	buildRequest := func(incidentID, signalName, severity string) *hapiclient.IncidentRequest {
-		sev := hapiclient.SeverityCritical
+	buildRequest := func(incidentID, signalName, severity string) *agentclient.IncidentRequest {
+		sev := agentclient.SeverityCritical
 		switch severity {
 		case "high":
-			sev = hapiclient.SeverityHigh
+			sev = agentclient.SeverityHigh
 		case "medium":
-			sev = hapiclient.SeverityMedium
+			sev = agentclient.SeverityMedium
 		case "low":
-			sev = hapiclient.SeverityLow
+			sev = agentclient.SeverityLow
 		}
-		return &hapiclient.IncidentRequest{
+		return &agentclient.IncidentRequest{
 			IncidentID:        incidentID,
 			RemediationID:     "rem-adv-" + incidentID,
 			SignalName:        signalName,
@@ -93,7 +93,7 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 
 		It("E2E-KA-433-ADV-002: predictive_no_action → is_actionable=false", func() {
 			req := buildRequest("adv-002", "mock_predictive_no_action", "low")
-			req.SignalMode.SetTo(hapiclient.SignalModeProactive)
+			req.SignalMode.SetTo(agentclient.SignalModeProactive)
 			result, err := sessionClient.Investigate(ctx, req)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -112,7 +112,7 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			Expect(result).NotTo(BeNil())
 
 			// #301: When investigation_outcome=problem_resolved AND needs_human_review=true,
-			// the resolution takes precedence. Python HAPI enforced this override; KA matches.
+			// the resolution takes precedence. Python KA enforced this override; KA matches.
 			Expect(result.NeedsHumanReview.Value).To(BeFalse(),
 				"#301: problem_resolved overrides contradictory needs_human_review=true")
 		})

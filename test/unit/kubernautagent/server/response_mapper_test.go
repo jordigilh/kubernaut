@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
@@ -66,13 +66,13 @@ var _ = Describe("Response Mapper — #433", func() {
 				return sess.Status
 			}, 2*time.Second, 10*time.Millisecond).Should(Equal(session.StatusCompleted))
 
-			params := hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{
+			params := agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{
 				SessionID: id,
 			}
 			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(nil, params)
 			Expect(err).NotTo(HaveOccurred())
 
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
+			incidentResp, ok := resp.(*agentclient.IncidentResponse)
 			Expect(ok).To(BeTrue(), "response should be *IncidentResponse")
 			Expect(incidentResp.IncidentID).To(Equal("e2e-ka-001-oom"))
 		})
@@ -96,13 +96,13 @@ var _ = Describe("Response Mapper — #433", func() {
 				return sess.Status
 			}, 2*time.Second, 10*time.Millisecond).Should(Equal(session.StatusCompleted))
 
-			params := hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{
+			params := agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{
 				SessionID: id,
 			}
 			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(nil, params)
 			Expect(err).NotTo(HaveOccurred())
 
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
+			incidentResp, ok := resp.(*agentclient.IncidentResponse)
 			Expect(ok).To(BeTrue(), "response should be *IncidentResponse")
 			Expect(incidentResp.Timestamp).NotTo(BeEmpty(), "timestamp must be set")
 			_, parseErr := time.Parse(time.RFC3339, incidentResp.Timestamp)
@@ -128,13 +128,13 @@ var _ = Describe("Response Mapper — #433", func() {
 				return sess.Status
 			}, 2*time.Second, 10*time.Millisecond).Should(Equal(session.StatusCompleted))
 
-			params := hapiclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{
+			params := agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{
 				SessionID: id,
 			}
 			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(nil, params)
 			Expect(err).NotTo(HaveOccurred())
 
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
+			incidentResp, ok := resp.(*agentclient.IncidentResponse)
 			Expect(ok).To(BeTrue(), "response should be *IncidentResponse")
 			Expect(incidentResp.RootCauseAnalysis).NotTo(BeEmpty(), "root_cause_analysis must not be empty")
 		})

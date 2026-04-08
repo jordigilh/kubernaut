@@ -20,32 +20,32 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	hapiclient "github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // Workflow Catalog E2E Tests
-// Test Plan: docs/development/testing/HAPI_E2E_TEST_PLAN.md
-// Scenarios: E2E-HAPI-030 through E2E-HAPI-044 (15 total)
+// Test Plan: docs/development/testing/KA_E2E_TEST_PLAN.md
+// Scenarios: E2E-KA-030 through E2E-KA-044 (15 total)
 // Business Requirements: BR-STORAGE-013, BR-HAPI-250, DD-WORKFLOW-004, DD-LLM-001, BR-AI-075
 //
 // Purpose: Validate workflow catalog search functionality and DataStorage integration
 //
-// NOTE: These tests validate the workflow catalog tool (used by HAPI internally for LLM-driven workflow search).
+// NOTE: These tests validate the workflow catalog tool (used by KA internally for LLM-driven workflow search).
 // The workflow catalog is not a direct HTTP endpoint, but is invoked as part of incident analysis.
 //
 // BR-AA-HAPI-064: All success-path tests migrated from ogen direct client (sync 200) to
-// sessionClient.Investigate() (async submit/poll/result wrapper) because HAPI
+// sessionClient.Investigate() (async submit/poll/result wrapper) because KA
 // endpoints are now async-only (202 Accepted).
 
-var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), func() {
+var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func() {
 
 	Context("BR-STORAGE-013: Semantic search functionality", func() {
 
-		It("E2E-HAPI-030: Semantic search with exact match", func() {
+		It("E2E-KA-030: Semantic search with exact match", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-030
+			// Scenario ID: E2E-KA-030
 			// Business Outcome: Workflow catalog finds workflows by semantic similarity to incident description
 			// Ported from: test_workflow_catalog_data_storage_integration.py:181
 			// BR: BR-STORAGE-013
@@ -53,7 +53,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ========================================
 			// ARRANGE: Create incident request that will trigger workflow catalog search
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-catalog-030",
 				RemediationID:     "test-rem-030",
 				SignalName:        "OOMKilled",
@@ -71,11 +71,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			}
 
 			// ========================================
-			// ACT: Call HAPI (which internally uses workflow catalog)
+			// ACT: Call KA (which internally uses workflow catalog)
 			// (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
@@ -90,11 +90,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// BUSINESS IMPACT: LLM finds relevant workflows without exact keyword matching
 		})
 
-		It("E2E-HAPI-031: Confidence scoring validation", func() {
+		It("E2E-KA-031: Confidence scoring validation", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-031
+			// Scenario ID: E2E-KA-031
 			// Business Outcome: Workflows ranked by V1.0 base similarity scoring (no boost/penalty yet)
 			// Ported from: test_workflow_catalog_data_storage_integration.py:252
 			// BR: DD-WORKFLOW-004 v2.0
@@ -102,7 +102,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-catalog-031",
 				RemediationID:     "test-rem-031",
 				SignalName:        "OOMKilled",
@@ -123,7 +123,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
@@ -138,11 +138,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// BUSINESS IMPACT: LLM sees most relevant workflows first
 		})
 
-		It("E2E-HAPI-032: Empty results handling", func() {
+		It("E2E-KA-032: Empty results handling", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-032
+			// Scenario ID: E2E-KA-032
 			// Business Outcome: No matching workflows returns empty array (not error)
 			// Ported from: test_workflow_catalog_data_storage_integration.py:303
 			// BR: BR-HAPI-250
@@ -150,7 +150,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 		// ========================================
 		// ARRANGE: Create request with Mock LLM scenario for no workflow found
 		// ========================================
-		req := &hapiclient.IncidentRequest{
+		req := &agentclient.IncidentRequest{
 			IncidentID:        "test-catalog-032",
 			RemediationID:     "test-rem-032",
 			SignalName:        "MOCK_NO_WORKFLOW_FOUND",  // Mock LLM scenario
@@ -170,7 +170,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI should handle empty workflow results gracefully")
+			Expect(err).ToNot(HaveOccurred(), "KA should handle empty workflow results gracefully")
 
 			// ========================================
 			// ASSERT
@@ -178,17 +178,17 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// BEHAVIOR: Graceful empty results (escalates to human review)
 		Expect(incidentResp.NeedsHumanReview.Value).To(BeTrue(),
 			"needs_human_review must be true when no workflows found")
-		Expect(incidentResp.HumanReviewReason.Value).To(Equal(hapiclient.HumanReviewReasonNoMatchingWorkflows),
+		Expect(incidentResp.HumanReviewReason.Value).To(Equal(agentclient.HumanReviewReasonNoMatchingWorkflows),
 			"human_review_reason must indicate no matching workflows")
 
 			// BUSINESS IMPACT: LLM can tell operator "No automated remediation available"
 		})
 
-		It("E2E-HAPI-033: Filter validation", func() {
+		It("E2E-KA-033: Filter validation", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-033
+			// Scenario ID: E2E-KA-033
 			// Business Outcome: Mandatory label filters correctly narrow search results
 			// Ported from: test_workflow_catalog_data_storage_integration.py:335
 			// BR: DD-LLM-001
@@ -196,7 +196,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-catalog-033",
 				RemediationID:     "test-rem-033",
 				SignalName:        "CrashLoopBackOff",
@@ -216,7 +216,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
@@ -232,11 +232,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// BUSINESS IMPACT: Workflows match incident type (no irrelevant suggestions)
 		})
 
-		It("E2E-HAPI-034: Top-K limiting", func() {
+		It("E2E-KA-034: Top-K limiting", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-034
+			// Scenario ID: E2E-KA-034
 			// Business Outcome: Tool respects result count limit (prevents LLM context overflow)
 			// Ported from: test_workflow_catalog_data_storage_integration.py:384
 			// BR: BR-HAPI-250
@@ -244,7 +244,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-catalog-034",
 				RemediationID:     "test-rem-034",
 				SignalName:        "OOMKilled",
@@ -264,13 +264,13 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: Result count limited
-			// HAPI returns selected_workflow (top 1) + alternative_workflows (typically top 5-10)
+			// KA returns selected_workflow (top 1) + alternative_workflows (typically top 5-10)
 			// Total should not exceed reasonable LLM context limits
 
 			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
@@ -283,11 +283,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 
 	Context("Critical user journeys", func() {
 
-		It("E2E-HAPI-036: OOMKilled incident finds memory workflow", func() {
+		It("E2E-KA-036: OOMKilled incident finds memory workflow", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-036
+			// Scenario ID: E2E-KA-036
 			// Business Outcome: Complete user journey - AI finds OOMKilled remediation workflow
 			// Ported from: test_workflow_catalog_e2e.py:85
 			// BR: BR-STORAGE-013
@@ -295,7 +295,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-catalog-036",
 				RemediationID:     "test-rem-036",
 				SignalName:        "OOMKilled",
@@ -316,7 +316,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
@@ -331,11 +331,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// BUSINESS IMPACT: Operator presented with actionable remediation
 		})
 
-		It("E2E-HAPI-037: CrashLoop incident finds restart workflow", func() {
+		It("E2E-KA-037: CrashLoop incident finds restart workflow", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-037
+			// Scenario ID: E2E-KA-037
 			// Business Outcome: AI finds CrashLoopBackOff remediation workflow
 			// Ported from: test_workflow_catalog_e2e.py:151
 			// BR: BR-STORAGE-013
@@ -343,7 +343,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-catalog-037",
 				RemediationID:     "test-rem-037",
 				SignalName:        "CrashLoopBackOff",
@@ -363,7 +363,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
@@ -378,11 +378,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// BUSINESS IMPACT: Operator has automated restart remediation option
 		})
 
-		It("E2E-HAPI-038: AI handles no matching workflows gracefully", func() {
+		It("E2E-KA-038: AI handles no matching workflows gracefully", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-038
+			// Scenario ID: E2E-KA-038
 			// Business Outcome: AI handles "no automated solution" scenario without errors
 			// Ported from: test_workflow_catalog_e2e.py:218
 			// BR: BR-HAPI-250
@@ -390,7 +390,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 		// ========================================
 		// ARRANGE: Use Mock LLM scenario for no workflow found
 		// ========================================
-		req := &hapiclient.IncidentRequest{
+		req := &agentclient.IncidentRequest{
 			IncidentID:        "test-catalog-038",
 			RemediationID:     "test-rem-038",
 			SignalName:        "MOCK_NO_WORKFLOW_FOUND",  // Mock LLM scenario
@@ -410,7 +410,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			respObj, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI should handle empty workflow results gracefully")
+			Expect(err).ToNot(HaveOccurred(), "KA should handle empty workflow results gracefully")
 
 			// ========================================
 			// ASSERT
@@ -426,11 +426,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 
 	Context("BR-AI-075: Container image integration", func() {
 
-		It("E2E-HAPI-040: DataStorage returns container_image in search", func() {
+		It("E2E-KA-040: DataStorage returns container_image in search", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-040
+			// Scenario ID: E2E-KA-040
 			// Business Outcome: Workflow search results include container_image for WorkflowExecution
 			// Ported from: test_workflow_catalog_container_image_integration.py:100
 			// BR: BR-AI-075
@@ -438,7 +438,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-catalog-040",
 				RemediationID:     "test-rem-040",
 				SignalName:        "OOMKilled",
@@ -458,7 +458,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
@@ -470,11 +470,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// BUSINESS IMPACT: WorkflowExecution can pull and execute container without additional lookups
 		})
 
-		It("E2E-HAPI-041: DataStorage returns container_digest in search", func() {
+		It("E2E-KA-041: DataStorage returns container_digest in search", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-041
+			// Scenario ID: E2E-KA-041
 			// Business Outcome: Workflow results include immutable digest for security
 			// Ported from: test_workflow_catalog_container_image_integration.py:152
 			// BR: BR-AI-075
@@ -482,7 +482,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-catalog-041",
 				RemediationID:     "test-rem-041",
 				SignalName:        "OOMKilled",
@@ -502,7 +502,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
@@ -514,11 +514,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// BUSINESS IMPACT: WorkflowExecution uses immutable digest (security requirement)
 		})
 
-		It("E2E-HAPI-042: End-to-end container image flow", func() {
+		It("E2E-KA-042: End-to-end container image flow", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-042
+			// Scenario ID: E2E-KA-042
 			// Business Outcome: Complete flow from search to container_image extraction validated
 			// Ported from: test_workflow_catalog_container_image_integration.py:206
 			// BR: BR-AI-075
@@ -526,7 +526,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-catalog-042",
 				RemediationID:     "test-rem-042",
 				SignalName:        "OOMKilled",
@@ -546,7 +546,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
@@ -558,11 +558,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// BUSINESS IMPACT: AIAnalysis has all data to create WorkflowExecution CRD
 		})
 
-		It("E2E-HAPI-043: Container image matches catalog entry", func() {
+		It("E2E-KA-043: Container image matches catalog entry", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
-			// Scenario ID: E2E-HAPI-043
+			// Scenario ID: E2E-KA-043
 			// Business Outcome: Returned container_image has valid OCI format
 			// Ported from: test_workflow_catalog_container_image_integration.py:278
 			// BR: BR-AI-075
@@ -570,7 +570,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &hapiclient.IncidentRequest{
+			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-catalog-043",
 				RemediationID:     "test-rem-043",
 				SignalName:        "CrashLoopBackOff",
@@ -590,7 +590,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
