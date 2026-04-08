@@ -209,7 +209,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 	Describe("Handle", func() {
 		// BR-AI-007: Process HolmesGPT response
-		// NOTE: To proceed to Analyzing phase, HAPI MUST return a SelectedWorkflow
+		// NOTE: To proceed to Analyzing phase, KA MUST return a SelectedWorkflow
 		// If no workflow is returned with high confidence, it triggers "Resolved" (BR-HAPI-200)
 		Context("with successful API response including workflow", func() {
 			BeforeEach(func() {
@@ -240,7 +240,7 @@ var _ = Describe("InvestigatingHandler", func() {
 		})
 
 		// BR-AI-008: Handle warnings
-		// NOTE: To proceed to Analyzing phase, HAPI MUST return a SelectedWorkflow
+		// NOTE: To proceed to Analyzing phase, KA MUST return a SelectedWorkflow
 		Context("with warnings in response including workflow", func() {
 			BeforeEach(func() {
 				mockClient.WithFullResponse(
@@ -414,7 +414,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			)
 
 			// BR-HAPI-197: Backward compatibility - fallback to warning parsing
-			// Business Value: Operators can diagnose failures even with older HAPI versions
+			// Business Value: Operators can diagnose failures even with older KA versions
 			DescribeTable("should fallback to warning parsing when enum is nil",
 				func(warnings []string, expectedSubReason string) {
 					mockClient.WithHumanReviewRequired(warnings)
@@ -461,7 +461,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			)
 
 			// BR-HAPI-197: Unknown enum value handling
-			// Business Value: System handles new HAPI enum values gracefully
+			// Business Value: System handles new KA enum values gracefully
 			It("should default to WorkflowNotFound for unknown human_review_reason enum", func() {
 				mockClient.WithHumanReviewReasonEnum("some_future_enum_value", []string{"Unknown reason"})
 				analysis := createTestAnalysis()
@@ -513,7 +513,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 			// ========================================
 			// DD-HAPI-002 v1.4: ValidationAttemptsHistory Support
-			// HAPI retries up to 3 times with LLM self-correction
+			// KA retries up to 3 times with LLM self-correction
 			// validation_attempts_history provides audit trail
 			// ========================================
 
@@ -594,14 +594,14 @@ var _ = Describe("InvestigatingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ValidationAttemptsHistory).To(BeEmpty(), "No history when HAPI doesn't provide it")
+				Expect(analysis.Status.ValidationAttemptsHistory).To(BeEmpty(), "No history when KA doesn't provide it")
 				// Issue #588: Warnings stored separately, Message only has validation attempt errors
 				Expect(analysis.Status.Message).To(BeEmpty(), "No validation attempts means empty message")
 				Expect(analysis.Status.Warnings).To(ContainElement("Confidence too low"), "Warnings should be stored separately")
 			})
 
 			// DD-HAPI-002 v1.4: Handle malformed timestamp gracefully
-			// Business Value: System doesn't crash on bad HAPI data, provides fallback
+			// Business Value: System doesn't crash on bad KA data, provides fallback
 			It("should fallback to current time when timestamp is malformed", func() {
 				mockClient.WithHumanReviewAndHistory(
 					"workflow_not_found",
@@ -735,9 +735,9 @@ var _ = Describe("InvestigatingHandler", func() {
 		})
 
 		// #301: Self-resolved with resolution-oriented RCA should complete (not escalate)
-		// Bug: hasSubstantiveRCA blocks the ProblemResolved path even when HAPI's
+		// Bug: hasSubstantiveRCA blocks the ProblemResolved path even when KA's
 		// "Problem self-resolved" signal is present and RCA describes a transient condition.
-		Context("when HAPI signals problem self-resolved with resolution RCA (#301)", func() {
+		Context("when KA signals problem self-resolved with resolution RCA (#301)", func() {
 			// UT-AA-301-001: Self-resolved with resolution RCA → should complete
 			Context("UT-AA-301-001: resolution warning + resolution-oriented RCA", func() {
 				BeforeEach(func() {
@@ -765,7 +765,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 					Expect(err).NotTo(HaveOccurred())
 					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
-						"#301: HAPI self-resolved signal should bypass hasSubstantiveRCA")
+						"#301: KA self-resolved signal should bypass hasSubstantiveRCA")
 					Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
 					Expect(analysis.Status.SubReason).To(Equal("ProblemResolved"))
 					Expect(analysis.Status.NeedsHumanReview).To(BeFalse(),
@@ -942,7 +942,7 @@ var _ = Describe("InvestigatingHandler", func() {
 	// ========================================
 	Describe("Retry Mechanism", func() {
 		// BR-AI-021: Exponential backoff for transient errors
-		// Business Value: System retries intelligently without overwhelming HAPI
+		// Business Value: System retries intelligently without overwhelming KA
 
 		// ========================================
 		// ERROR CLASSIFICATION TESTS (BR-AI-009, BR-AI-010)
@@ -1092,12 +1092,12 @@ var _ = Describe("InvestigatingHandler", func() {
 
 	// ========================================
 	// ISSUE #388: ALERT NOT ACTIONABLE (OUTCOME D)
-	// When HAPI signals actionable=false, AIAnalysis should route to
+	// When KA signals actionable=false, AIAnalysis should route to
 	// Completed/WorkflowNotNeeded/NotActionable (not Failed/NeedsHumanReview).
 	// ========================================
 	Describe("InvestigatingHandler.HandleNotActionable (#388)", func() {
 		// UT-AA-388-001: Not-actionable response routes to Completed/WorkflowNotNeeded/NotActionable
-		Context("UT-AA-388-001: when HAPI signals alert is not actionable", func() {
+		Context("UT-AA-388-001: when KA signals alert is not actionable", func() {
 			BeforeEach(func() {
 				rcaMap := mocks.BuildMockRCA(
 					"Orphaned PVCs from completed batch jobs — not impacting any workload",

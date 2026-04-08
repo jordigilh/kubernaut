@@ -93,7 +93,7 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 		})
 	})
 
-	Describe("UT-KA-433-131: DetectedLabels struct matches HAPI LabelDetector output", func() {
+	Describe("UT-KA-433-131: DetectedLabels struct matches KA LabelDetector output", func() {
 		It("should round-trip serialize all 10 DetectedLabels fields", func() {
 			labels := enrichment.DetectedLabels{
 				FailedDetections:         []string{"hpaEnabled"},

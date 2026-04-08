@@ -201,7 +201,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 }
 
 // DeployNotificationController deploys the Notification controller and all its resources
-// using a single inline YAML template. Standardized: same pattern as AA, SP, RO, EM, WE, HAPI.
+// using a single inline YAML template. Standardized: same pattern as AA, SP, RO, EM, WE, KA.
 func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath, notificationImageName string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Deploying Notification Controller in Namespace: %s\n", namespace)
@@ -544,7 +544,7 @@ func resolveSlackWebhookURL(writer io.Writer) string {
 // YAML manifest as an inline template. This consolidates what was previously 4 separate
 // static YAML files (RBAC, ConfigMap, Service, Deployment) into a single atomic apply.
 //
-// Standardization: same pattern as AA, SP, RO, EM, WE, HAPI, Gateway.
+// Standardization: same pattern as AA, SP, RO, EM, WE, KA, Gateway.
 func notificationControllerManifest(namespace, imageName, slackWebhookURL string, enableCoverage bool) string {
 	pullPolicy := GetImagePullPolicy()
 

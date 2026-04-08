@@ -744,10 +744,10 @@ func createKindClusterWithConfig(clusterName, kubeconfigPath, configPath string,
 		KubeconfigPath:            kubeconfigPath,
 		ConfigPath:                configPath,
 		WaitTimeout:               "60s",
-		DeleteExisting:            true,  // Original behavior: delete if exists
+		DeleteExisting:            true, // Original behavior: delete if exists
 		ReuseExisting:             false,
-		CleanupOrphanedContainers: true,  // Podman cleanup on macOS
-		UsePodman:                 true,  // CRITICAL: Sets KIND_EXPERIMENTAL_PROVIDER=podman
+		CleanupOrphanedContainers: true, // Podman cleanup on macOS
+		UsePodman:                 true, // CRITICAL: Sets KIND_EXPERIMENTAL_PROVIDER=podman
 	}
 	return CreateKindClusterWithConfig(opts, writer)
 }

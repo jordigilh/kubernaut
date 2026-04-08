@@ -32,7 +32,7 @@ type OwnerChainEntry struct {
 	Namespace string `json:"namespace,omitempty"`
 }
 
-// DetectedLabels holds the structured label detection results matching HAPI's LabelDetector output.
+// DetectedLabels holds the structured label detection results matching KA's LabelDetector output.
 type DetectedLabels struct {
 	FailedDetections         []string `json:"failedDetections"`
 	GitOpsManaged            bool     `json:"gitOpsManaged"`

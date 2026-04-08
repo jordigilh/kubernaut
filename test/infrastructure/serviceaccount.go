@@ -1201,7 +1201,7 @@ func WriteEnvtestKubeconfigToFile(cfg *rest.Config, serviceName string) (string,
 	return kubeconfigPath, nil
 }
 
-// CreateServiceAccountForHTTPService creates a ServiceAccount for HTTP services (like HAPI)
+// CreateServiceAccountForHTTPService creates a ServiceAccount for HTTP services (like KA)
 // that need to validate incoming tokens via TokenReview/SAR APIs.
 //
 // This is similar to the datastorage-service setup but reusable for any HTTP service.

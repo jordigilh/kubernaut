@@ -73,7 +73,7 @@ func defaultTimeout(cfg Config) time.Duration {
 	return 60 * time.Second
 }
 
-// NewKubernautAgentClient creates a new HAPI client using the generated OpenAPI client.
+// NewKubernautAgentClient creates a new KA client using the generated OpenAPI client.
 //
 // DD-HAPI-003: Uses generated client for compile-time type safety and contract compliance.
 // DD-AUTH-006: Uses ServiceAccount authentication by default (production/E2E).
@@ -114,13 +114,13 @@ func NewKubernautAgentClientWithTransport(cfg Config, transport http.RoundTrippe
 //	    IncidentID: "incident-123",
 //	    // ... other fields
 //	}
-//	resp, err := hapiClient.Investigate(ctx, req)
+//	resp, err := kaClient.Investigate(ctx, req)
 //
 // Returns:
 //   - *IncidentResponse: Successful response with AI analysis
 //   - *APIError: HTTP error (4xx, 5xx)
 func (c *KubernautAgentClient) Investigate(ctx context.Context, req *IncidentRequest) (*IncidentResponse, error) {
-	// BR-AA-HAPI-064: HAPI endpoints are async-only (202 Accepted).
+	// BR-AA-HAPI-064: KA endpoints are async-only (202 Accepted).
 	// This sync wrapper internally does submit -> poll -> get result,
 	// providing backward-compatible API for callers that don't need
 	// explicit session management (e.g., integration tests, one-shot callers).
@@ -138,7 +138,7 @@ func (c *KubernautAgentClient) Investigate(ctx context.Context, req *IncidentReq
 	return c.GetSessionResult(ctx, sessionID)
 }
 
-// awaitSession polls a HAPI session until it reaches a terminal state ("completed" or "failed").
+// awaitSession polls a KA session until it reaches a terminal state ("completed" or "failed").
 // Used by the sync wrapper Investigate() to block until the async investigation finishes.
 // The poll interval is 1s, bounded by the ctx deadline.
 //

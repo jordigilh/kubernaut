@@ -131,10 +131,10 @@ var (
 	// Shared infrastructure for cleanup (SynchronizedAfterSuite second function)
 	sharedTestEnv     *envtest.Environment
 	sharedCfg         *rest.Config
-	hapiContainer     *infrastructure.ContainerInstance
+	kaContainer       *infrastructure.ContainerInstance
 	mockLLMConfig     infrastructure.MockLLMConfig
 	mockLLMConfigPath string
-	hapiSATokenDir    string
+	kaSATokenDir      string
 
 	// DD-WORKFLOW-002 v3.0: Workflow UUID mapping for test assertions
 	// Map format: "workflow_name:environment" → "actual-uuid-from-datastorage"
@@ -152,7 +152,7 @@ func TestAIAnalysisIntegration(t *testing.T) {
 // Phase 2: Per-Process Controller Environment (ALL Processes)
 //
 // TIMEOUT NOTE: Infrastructure startup takes ~70-90 seconds locally, but up to 3+ minutes in CI.
-// CI environments (GitHub Actions) have slower container startup times, especially HAPI.
+// CI environments (GitHub Actions) have slower container startup times, especially KA.
 // Default Ginkgo timeout (60s) is insufficient, causing INTERRUPTED in parallel mode.
 // NodeTimeout(5*time.Minute) ensures sufficient time for complete infrastructure startup in CI.
 var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecContext) []byte {
@@ -271,8 +271,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	}
 	GinkgoWriter.Println("✅ AIAnalysis controller granted Kubernaut Agent access permissions")
 
-	// DD-AUTH-014: Create ServiceAccount for HAPI service (for TokenReview/SAR validation)
-	// HAPI is an HTTP server (like DataStorage) that validates incoming Bearer tokens
+	// DD-AUTH-014: Create ServiceAccount for KA service (for TokenReview/SAR validation)
+	// KA is an HTTP server (like DataStorage) that validates incoming Bearer tokens
 	// Platform-specific: Linux uses host network, macOS uses bridge network
 	By("Creating ServiceAccount for Kubernaut Agent service with TokenReview/SAR permissions")
 	useHostNetworkForKA := runtime.GOOS == "linux"
@@ -371,7 +371,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
 
 	// DD-AUTH-014: Create authenticated DataStorage client for workflow seeding
-	// Pattern: Use same helper as HAPI integration tests (matches working pattern)
+	// Pattern: Use same helper as KA integration tests (matches working pattern)
 	By("Creating authenticated DataStorage client for workflow seeding")
 	dataStorageURL := "http://127.0.0.1:18095" // AIAnalysis integration test DS port
 	seedClient := integration.NewAuthenticatedDataStorageClients(
@@ -384,7 +384,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Seed test workflows into DataStorage BEFORE starting Mock LLM
 	// Pattern: DD-TEST-011 v2.0 - File-Based Configuration
 	// Must seed workflows first so Mock LLM can load UUIDs at startup
-	// DD-AUTH-014: Now uses authenticated client (matches HAPI pattern)
+	// DD-AUTH-014: Now uses authenticated client (matches KA pattern)
 	By("Seeding test workflows into DataStorage (with authentication)")
 	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(seedClient.OpenAPIClient, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Test workflows must be seeded successfully")
@@ -402,14 +402,14 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
 
 	By("Starting Mock LLM service with configuration file (DD-TEST-011 v2.0)")
-	// Per DD-TEST-001 v2.3: Port 18141 (AIAnalysis-specific, unique from HAPI's 18140)
+	// Per DD-TEST-001 v2.3: Port 18141 (AIAnalysis-specific, unique from KA's 18140)
 	// Per MOCK_LLM_MIGRATION_PLAN.md v1.3.0: Standalone service for test isolation
 	mockLLMConfig = infrastructure.GetMockLLMConfigForAIAnalysis()
 	mockLLMConfig.ImageTag = mockLLMImageName        // Use the built image tag
 	mockLLMConfig.ConfigFilePath = mockLLMConfigPath // DD-TEST-011 v2.0: Mount config file
-	// DD-AUTH-014: Platform-specific network (must match HAPI's network mode)
+	// DD-AUTH-014: Platform-specific network (must match KA's network mode)
 	if runtime.GOOS == "linux" {
-		mockLLMConfig.Network = "host" // Linux CI: Host network (HAPI will reach via 127.0.0.1)
+		mockLLMConfig.Network = "host" // Linux CI: Host network (KA will reach via 127.0.0.1)
 	} else {
 		mockLLMConfig.Network = "aianalysis_test_network" // macOS: Bridge network with container-to-container DNS
 	}
@@ -423,10 +423,10 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	By("Starting Kubernaut Agent HTTP service (using pre-built image)")
 
 	// DD-AUTH-014: Create ServiceAccount secrets directory for KA container
-	hapiSATokenDir = filepath.Join(os.TempDir(), fmt.Sprintf("aianalysis-ka-sa-secrets-%d", time.Now().UnixNano()))
-	err = os.MkdirAll(hapiSATokenDir, 0755)
+	kaSATokenDir = filepath.Join(os.TempDir(), fmt.Sprintf("aianalysis-ka-sa-secrets-%d", time.Now().UnixNano()))
+	err = os.MkdirAll(kaSATokenDir, 0755)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create KA ServiceAccount secrets directory")
-	kaTokenFilePath := filepath.Join(hapiSATokenDir, "token")
+	kaTokenFilePath := filepath.Join(kaSATokenDir, "token")
 	err = os.WriteFile(kaTokenFilePath, []byte(kaServiceAuthConfig.Token), 0644)
 	Expect(err).ToNot(HaveOccurred(), "Failed to write KA ServiceAccount token to file")
 	GinkgoWriter.Printf("✅ KA ServiceAccount token written to: %s\n", kaTokenFilePath)
@@ -479,7 +479,7 @@ auth:
 		Volumes: map[string]string{
 			kaConfigDir:                          "/etc/kubernautagent:ro",
 			kaServiceAuthConfig.KubeconfigPath:   "/tmp/kubeconfig:ro",
-			hapiSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
+			kaSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
 		},
 		HealthCheck: &infrastructure.HealthCheckConfig{
 			URL:     "http://127.0.0.1:18120/health",
@@ -498,9 +498,9 @@ auth:
 		}
 		GinkgoWriter.Printf("   🌐 KA using bridge network (macOS)\n")
 	}
-	hapiContainer, err = infrastructure.StartGenericContainer(kaContainerConfig, GinkgoWriter)
+	kaContainer, err = infrastructure.StartGenericContainer(kaContainerConfig, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "KA container must start successfully")
-	GinkgoWriter.Printf("✅ Kubernaut Agent started at http://127.0.0.1:18120 (container: %s)\n", hapiContainer.ID)
+	GinkgoWriter.Printf("✅ Kubernaut Agent started at http://127.0.0.1:18120 (container: %s)\n", kaContainer.ID)
 
 	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
 
@@ -642,13 +642,13 @@ auth:
 	auditClient := aiaudit.NewAuditClient(auditStore, auditLogger)
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process agent client with authentication", processNum))
-	// DD-AUTH-014: HAPI middleware requires Bearer token (real K8s auth via envtest)
-	// Use ServiceAccount transport (HAPI will mock-validate the token)
-	hapiAuthTransport := testauth.NewServiceAccountTransport(token)
+	// DD-AUTH-014: KA middleware requires Bearer token (real K8s auth via envtest)
+	// Use ServiceAccount transport (KA will mock-validate the token)
+	kaAuthTransport := testauth.NewServiceAccountTransport(token)
 	realAgentClient, err = agentclient.NewKubernautAgentClientWithTransport(agentclient.Config{
 		BaseURL: "http://localhost:18120",
 		Timeout: 30 * time.Second,
-	}, hapiAuthTransport)
+	}, kaAuthTransport)
 	Expect(err).ToNot(HaveOccurred(), "failed to create real agent client")
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process Rego evaluator", processNum))
@@ -791,15 +791,15 @@ var _ = SynchronizedAfterSuite(func() {
 		// Cleanup in reverse order of setup
 
 		// 1. Stop KA container (capture logs first for debugging)
-		if hapiContainer != nil {
+		if kaContainer != nil {
 			GinkgoWriter.Println("\n📋 Capturing KA container logs before cleanup:")
-			logsCmd := exec.Command("podman", "logs", "--tail", "100", hapiContainer.Name)
+			logsCmd := exec.Command("podman", "logs", "--tail", "100", kaContainer.Name)
 			logsCmd.Stdout = GinkgoWriter
 			logsCmd.Stderr = GinkgoWriter
 			_ = logsCmd.Run()
 			GinkgoWriter.Println("")
 
-			if err := infrastructure.StopGenericContainer(hapiContainer, GinkgoWriter); err != nil {
+			if err := infrastructure.StopGenericContainer(kaContainer, GinkgoWriter); err != nil {
 				GinkgoWriter.Printf("⚠️  Failed to stop KA container: %v\n", err)
 			}
 		}
@@ -819,8 +819,8 @@ var _ = SynchronizedAfterSuite(func() {
 		}
 
 		// 4. Remove KA ServiceAccount token directory
-		if hapiSATokenDir != "" {
-			_ = os.RemoveAll(hapiSATokenDir)
+		if kaSATokenDir != "" {
+			_ = os.RemoveAll(kaSATokenDir)
 		}
 
 		// 5. Stop DataStorage infrastructure (PostgreSQL, Redis, DataStorage container)

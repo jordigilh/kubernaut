@@ -742,7 +742,7 @@ func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// BR-AUDIT-023: Emit discovery audit events when context filters are present.
-	// DD-WORKFLOW-014 v3.0: Context filters indicate HAPI is validating its selection,
+	// DD-WORKFLOW-014 v3.0: Context filters indicate KA is validating its selection,
 	// so we emit both workflow_retrieved and selection_validated.
 	if filters.HasContextFilters() && h.auditStore != nil {
 		retrievedEvent, err := dsaudit.NewWorkflowRetrievedAuditEvent(workflowID, filters, durationMs)

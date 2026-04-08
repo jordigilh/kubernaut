@@ -34,7 +34,7 @@ import (
 // ========================================
 
 // HolmesGPTClientInterface defines the contract for calling HolmesGPT-API.
-// Uses generated OpenAPI types for type-safe HAPI contract compliance.
+// Uses generated OpenAPI types for type-safe KA contract compliance.
 //
 // Methods:
 // - Investigate: (Legacy sync) Analyzes incidents via /incident/analyze endpoint

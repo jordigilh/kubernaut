@@ -74,7 +74,7 @@ func CreateKindClusterWithExtraMounts(
 		return fmt.Errorf("failed to get kind version: %w", err)
 	}
 	versionStr := string(versionOutput)
-	
+
 	// Extract version (format: "kind v0.30.0 go1.25.0 darwin/arm64")
 	if !strings.Contains(versionStr, "kind v0.30.") {
 		_, _ = fmt.Fprintf(writer, "  ⚠️  WARNING: Unexpected Kind version detected\n")
@@ -280,7 +280,6 @@ type KindClusterOptions struct {
 //	    ProjectRootAsWorkingDir: true,
 //	}
 //	err := infrastructure.CreateKindClusterWithConfig(opts, writer)
-//
 func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🔧 Creating Kind cluster: %s\n", opts.ClusterName)
 
@@ -291,7 +290,7 @@ func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) erro
 		return fmt.Errorf("failed to get kind version: %w", err)
 	}
 	versionStr := string(versionOutput)
-	
+
 	// Extract version (format: "kind v0.30.0 go1.25.0 darwin/arm64")
 	if !strings.Contains(versionStr, "kind v0.30.") {
 		_, _ = fmt.Fprintf(writer, "  ⚠️  WARNING: Unexpected Kind version detected\n")

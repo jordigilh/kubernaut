@@ -41,8 +41,8 @@ var _ = Describe("RequestBuilder", func() {
 	})
 
 	Describe("BuildIncidentRequest", func() {
-		Context("BR-AI-084: Signal mode pass-through to HAPI", func() {
-			It("UT-AA-084-001: should pass signalMode = reactive to HAPI", func() {
+		Context("BR-AI-084: Signal mode pass-through to KA", func() {
+			It("UT-AA-084-001: should pass signalMode = reactive to KA", func() {
 				// Arrange: AA with reactive signal mode
 				analysis := helpers.NewAIAnalysis("ai-test", "default")
 				analysis.Spec.AnalysisRequest.SignalContext.SignalMode = "reactive"
@@ -57,7 +57,7 @@ var _ = Describe("RequestBuilder", func() {
 				Expect(req.SignalName).To(Equal("OOMKilled"))
 			})
 
-			It("UT-AA-084-002: should pass signalMode = proactive to HAPI", func() {
+			It("UT-AA-084-002: should pass signalMode = proactive to KA", func() {
 				// Arrange: AA with proactive signal mode
 				analysis := helpers.NewAIAnalysis("ai-test", "default")
 				analysis.Spec.AnalysisRequest.SignalContext.SignalMode = "proactive"
@@ -88,7 +88,7 @@ var _ = Describe("RequestBuilder", func() {
 	})
 
 	Describe("BuildIncidentRequest - existing fields", func() {
-		It("should set all required HAPI fields", func() {
+		It("should set all required KA fields", func() {
 			analysis := helpers.NewAIAnalysis("ai-test", "default")
 			analysis.Spec.AnalysisRequest.SignalContext.Severity = "critical"
 			analysis.Spec.AnalysisRequest.SignalContext.SignalName = "OOMKilled"
@@ -113,7 +113,7 @@ var _ = Describe("RequestBuilder", func() {
 	})
 
 	Describe("BuildIncidentRequest - BusinessClassification mapping (BR-SP-002)", func() {
-		It("should map all BusinessClassification fields to HAPI client types", func() {
+		It("should map all BusinessClassification fields to KA client types", func() {
 			analysis := helpers.NewAIAnalysis("ai-bizclass", "default")
 			analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = &sharedtypes.BusinessClassification{
 				BusinessUnit:   "payments",

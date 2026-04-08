@@ -192,7 +192,7 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 			})
 		})
 
-		// UT-AA-064-027: Session lost — 404 Not Found (HAPI restarted)
+		// UT-AA-064-027: Session lost — 404 Not Found (KA restarted)
 		Context("with 404 Not Found [UT-AA-064-027]", func() {
 			BeforeEach(func() {
 				mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -231,7 +231,7 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
-					// ADR-055: target_in_owner_chain removed from HAPI response
+					// ADR-055: target_in_owner_chain removed from KA response
 					_, _ = w.Write([]byte(`{
 						"incident_id": "test-incident-result",
 						"analysis": "Root cause: memory leak",
@@ -285,7 +285,7 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 			})
 		})
 
-		// UT-AA-064-030: Session not found — 404 (HAPI restarted)
+		// UT-AA-064-030: Session not found — 404 (KA restarted)
 		Context("with 404 Not Found [UT-AA-064-030]", func() {
 			BeforeEach(func() {
 				mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -32,7 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
-var _ = Describe("HAPI-KA Integration Parity — Signal Mode (TP-433-PARITY)", func() {
+var _ = Describe("KA-KA Integration Parity — Signal Mode (TP-433-PARITY)", func() {
 
 	var (
 		logger     *slog.Logger

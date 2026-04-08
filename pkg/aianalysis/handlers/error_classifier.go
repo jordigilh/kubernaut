@@ -69,7 +69,7 @@ const (
 	// ErrorTypePermanent indicates permanent failure (bad request, etc.)
 	ErrorTypePermanent ErrorType = "Permanent"
 
-	// ErrorTypeSessionLost indicates HAPI session was lost (404 on poll)
+	// ErrorTypeSessionLost indicates KA session was lost (404 on poll)
 	// BR-AA-HAPI-064.5: Triggers session regeneration, not standard retry
 	ErrorTypeSessionLost ErrorType = "SessionLost"
 )

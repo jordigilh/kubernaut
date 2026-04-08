@@ -27,7 +27,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 )
 
-// AllToolNames lists the 8 Prometheus tool names matching HAPI parity.
+// AllToolNames lists the 8 Prometheus tool names matching KA parity.
 var AllToolNames = []string{
 	"execute_prometheus_instant_query",
 	"execute_prometheus_range_query",

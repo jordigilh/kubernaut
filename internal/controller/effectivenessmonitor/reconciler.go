@@ -1670,7 +1670,7 @@ func (r *Reconciler) determineAssessmentReason(ea *eav1.EffectivenessAssessment)
 		// ADR-EM-001, Batch 3: Distinguish metrics_timed_out from generic partial.
 		// metrics_timed_out: ALL non-temporal checks completed (health + hash + alerts),
 		// Prometheus is enabled but metrics were NOT assessed before validity expired.
-		// This gives HAPI/DS a precise signal that the assessment was complete
+		// This gives KA/DS a precise signal that the assessment was complete
 		// except for metrics collection which requires temporal data.
 		// If alerts are also missing, the correct reason is "partial" (multiple gaps).
 		if r.Config.PrometheusEnabled && !components.MetricsAssessed &&

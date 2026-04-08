@@ -279,7 +279,7 @@ func (h *AIAnalysisHandler) handleFailed(
 	ai *aianalysisv1.AIAnalysis,
 ) (ctrl.Result, error) {
 	// BR-HAPI-197: Check NeedsHumanReview FIRST (takes precedence over WorkflowResolutionFailed)
-	// This flag is set by HAPI when AI cannot produce a reliable result
+	// This flag is set by KA when AI cannot produce a reliable result
 	if ai.Status.NeedsHumanReview {
 		return h.handleHumanReviewRequired(ctx, rr, ai)
 	}
@@ -294,7 +294,7 @@ func (h *AIAnalysisHandler) handleFailed(
 	return h.propagateFailure(ctx, rr, ai)
 }
 
-// handleHumanReviewRequired processes AIAnalysis when HAPI explicitly requires human review (BR-HAPI-197).
+// handleHumanReviewRequired processes AIAnalysis when KA explicitly requires human review (BR-HAPI-197).
 // Issue #550: Routes to handleManualReviewCompleted when no workflow was selected (SelectedWorkflow=nil),
 // or to the existing Failed path when a workflow was present but rejected (SelectedWorkflow!=nil).
 func (h *AIAnalysisHandler) handleHumanReviewRequired(
@@ -332,7 +332,7 @@ func (h *AIAnalysisHandler) handleHumanReviewRequired(
 	return h.createManualReviewAndUpdateStatus(ctx, logger, rr, reviewCtx, "HumanReviewRequired", ai.Status.HumanReviewReason)
 }
 
-// handleManualReviewCompleted processes the case where HAPI requires human review but no workflow
+// handleManualReviewCompleted processes the case where KA requires human review but no workflow
 // was selected (Issue #550). The RR transitions to Completed with Outcome=ManualReviewRequired,
 // which is a valid terminal state (not a failure). This avoids inflating failure metrics and
 // exponential backoff for cases where the LLM intentionally omitted a workflow.
@@ -537,7 +537,7 @@ func (h *AIAnalysisHandler) propagateFailure(
 
 // HandleRemediationTargetMissing handles the defense-in-depth case where AIAnalysis completed
 // with a SelectedWorkflow but RemediationTarget is nil or has empty Kind/Name.
-// This is the RO layer of the three-layer defense chain (HAPI -> AA -> RO) per DD-HAPI-006 v1.2
+// This is the RO layer of the three-layer defense chain (KA -> AA -> RO) per DD-HAPI-006 v1.2
 // and BR-ORCH-036 v4.0. Produces the same seamless response as handleHumanReviewRequired:
 // Failed + ManualReviewRequired + NotificationRequest.
 func (h *AIAnalysisHandler) HandleRemediationTargetMissing(

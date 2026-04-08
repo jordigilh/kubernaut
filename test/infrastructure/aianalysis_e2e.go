@@ -320,7 +320,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// Acceptable trade-off: Small duplication avoids architectural issues
 	// Source of truth: test/integration/aianalysis/test_workflows.go:GetAIAnalysisTestWorkflows()
 	// BR-HAPI-191: SchemaParameters MUST match Mock LLM scenario parameters
-	// HAPI validates LLM response parameters against workflow schema from DataStorage
+	// KA validates LLM response parameters against workflow schema from DataStorage
 	// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
 	// Actual schema comes from OCI image via pullspec-only registration.
 	oomkillParams := []models.WorkflowParameter{
@@ -591,7 +591,7 @@ subjects:
 ---
 # RoleBinding: Grant HolmesGPT-API access to DataStorage for audit writes (DD-AUTH-014)
 # Authority: DD-AUTH-014 (Middleware-based authentication) + BR-HAPI-197 (Audit trail)
-# Required for: HAPI audit events → DataStorage REST API
+# Required for: KA audit events → DataStorage REST API
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -636,7 +636,7 @@ rules:
   resources: ["networkpolicies"]
   verbs: ["get", "list"]
 ---
-# ClusterRoleBinding: Grant HAPI investigation + label detection permissions cluster-wide
+# ClusterRoleBinding: Grant KA investigation + label detection permissions cluster-wide
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:

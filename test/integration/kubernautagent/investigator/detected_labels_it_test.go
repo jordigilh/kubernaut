@@ -42,7 +42,7 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
-var _ = Describe("HAPI-KA Integration Parity — Detected Labels (TP-433-PARITY)", func() {
+var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)", func() {
 
 	var (
 		logger     *slog.Logger

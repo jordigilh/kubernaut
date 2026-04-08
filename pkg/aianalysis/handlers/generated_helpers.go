@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package handlers provides helper functions for working with generated HAPI types
+// Package handlers provides helper functions for working with generated KA types
 package handlers
 
 import (

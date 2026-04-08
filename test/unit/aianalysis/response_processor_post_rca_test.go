@@ -17,7 +17,7 @@ limitations under the License.
 // Package aianalysis contains unit tests for PostRCAContext population
 // in the ResponseProcessor.
 //
-// ADR-056: DetectedLabels are computed by HAPI's LabelDetector and returned
+// ADR-056: DetectedLabels are computed by KA's LabelDetector and returned
 // in the response. The ResponseProcessor extracts them into PostRCAContext
 // on AIAnalysisStatus for Rego policy input and immutability enforcement.
 //
@@ -58,7 +58,7 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// UT-AA-056-003: ProcessIncidentResponse populates PostRCAContext
-	// ADR-056: DetectedLabels from HAPI response → PostRCAContext
+	// ADR-056: DetectedLabels from KA response → PostRCAContext
 	// ═══════════════════════════════════════════════════════════════════════
 
 	It("UT-AA-056-003: should populate PostRCAContext.DetectedLabels from incident response", func() {
@@ -66,8 +66,8 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		analysis = createAnalysisForPostRCA()
 		Expect(analysis.Status.PostRCAContext).To(BeNil(), "PostRCAContext must be nil initially")
 
-		// AND: A successful HAPI incident response with detected_labels
-		hapiResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
+		// AND: A successful KA incident response with detected_labels
+		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
 			"gitOpsManaged":   jx.Raw(`true`),
 			"pdbProtected":    jx.Raw(`true`),
 			"hpaEnabled":      jx.Raw(`false`),
@@ -79,14 +79,14 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		})
 
 		// WHEN: Processing the incident response
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, hapiResp)
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
 
 		// THEN: PostRCAContext should be populated
 		Expect(err).ToNot(HaveOccurred())
 		Expect(analysis.Status.PostRCAContext.DetectedLabels.GitOpsManaged).To(BeTrue(),
 			"ADR-056: PostRCAContext.DetectedLabels must be populated when detected_labels present")
 
-		// AND: Individual label values must match HAPI response
+		// AND: Individual label values must match KA response
 		dl := analysis.Status.PostRCAContext.DetectedLabels
 		Expect(dl.GitOpsManaged).To(BeTrue(), "gitOpsManaged must be true")
 		Expect(dl.PDBProtected).To(BeTrue(), "pdbProtected must be true")
@@ -107,13 +107,13 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		// GIVEN: An AIAnalysis with no PostRCAContext
 		analysis = createAnalysisForPostRCA()
 
-		// AND: A HAPI incident response with detected_labels
-		hapiResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
+		// AND: A KA incident response with detected_labels
+		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
 			"stateful": jx.Raw(`true`),
 		})
 
 		// WHEN: Processing the incident response
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, hapiResp)
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
 
 		// THEN: SetAt must be non-nil (immutability guard)
 		Expect(err).ToNot(HaveOccurred())
@@ -125,15 +125,15 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// UT-AA-056-006: PostRCAContext is nil when detected_labels absent
-	// ADR-056: No labels in HAPI response means PostRCAContext stays nil
+	// ADR-056: No labels in KA response means PostRCAContext stays nil
 	// ═══════════════════════════════════════════════════════════════════════
 
 	It("UT-AA-056-006: should leave PostRCAContext nil when detected_labels absent from response", func() {
 		// GIVEN: An AIAnalysis with no PostRCAContext
 		analysis = createAnalysisForPostRCA()
 
-		// AND: A successful HAPI incident response WITHOUT detected_labels
-		hapiResp := &agentclient.IncidentResponse{
+		// AND: A successful KA incident response WITHOUT detected_labels
+		kaResp := &agentclient.IncidentResponse{
 			IncidentID:       "test-no-labels-001",
 			Analysis:         "Test analysis",
 			NeedsHumanReview: agentclient.NewOptBool(false),
@@ -150,12 +150,12 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		}
 
 		// WHEN: Processing the incident response
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, hapiResp)
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
 
 		// THEN: PostRCAContext should remain nil (no labels to extract)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(analysis.Status.PostRCAContext).To(BeNil(),
-			"PostRCAContext must remain nil when no detected_labels in HAPI response")
+			"PostRCAContext must remain nil when no detected_labels in KA response")
 	})
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -163,12 +163,12 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 	// DD-WORKFLOW-001 v2.2: Detection failure tracking via failedDetections
 	// ═══════════════════════════════════════════════════════════════════════
 
-	It("UT-AA-056-007: should propagate failedDetections from HAPI response to PostRCAContext", func() {
+	It("UT-AA-056-007: should propagate failedDetections from KA response to PostRCAContext", func() {
 		// GIVEN: An AIAnalysis with no PostRCAContext
 		analysis = createAnalysisForPostRCA()
 
-		// AND: A HAPI response where some detections failed (RBAC denied)
-		hapiResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
+		// AND: A KA response where some detections failed (RBAC denied)
+		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
 			"gitOpsManaged":    jx.Raw(`false`),
 			"pdbProtected":     jx.Raw(`false`),
 			"hpaEnabled":       jx.Raw(`false`),
@@ -179,13 +179,13 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		})
 
 		// WHEN: Processing the incident response
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, hapiResp)
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
 
 		// THEN: PostRCAContext should be populated with failedDetections
 		Expect(err).ToNot(HaveOccurred())
 		dl := analysis.Status.PostRCAContext.DetectedLabels
 		Expect(dl.FailedDetections).To(ConsistOf("pdbProtected", "hpaEnabled"),
-			"failedDetections must be propagated from HAPI response")
+			"failedDetections must be propagated from KA response")
 		Expect(dl.PDBProtected).To(BeFalse(),
 			"pdbProtected should be false (but in failedDetections, so value is unreliable)")
 		Expect(dl.Stateful).To(BeTrue(),
@@ -197,13 +197,13 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 	// #366: Detect namespace ResourceQuota and surface to LLM
 	// ═══════════════════════════════════════════════════════════════════════
 
-	It("UT-AA-366-001: should round-trip ResourceQuotaConstrained and failedDetections from HAPI response", func() {
+	It("UT-AA-366-001: should round-trip ResourceQuotaConstrained and failedDetections from KA response", func() {
 		// GIVEN: An AIAnalysis in Investigating phase with no PostRCAContext
 		analysis = createAnalysisForPostRCA()
 		Expect(analysis.Status.PostRCAContext).To(BeNil(), "PostRCAContext must be nil initially")
 
-		// AND: A HAPI incident response with resourceQuotaConstrained=true and failedDetections including it
-		hapiResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
+		// AND: A KA incident response with resourceQuotaConstrained=true and failedDetections including it
+		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
 			"gitOpsManaged":            jx.Raw(`false`),
 			"pdbProtected":             jx.Raw(`false`),
 			"hpaEnabled":               jx.Raw(`false`),
@@ -216,7 +216,7 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		})
 
 		// WHEN: Processing the incident response
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, hapiResp)
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
 
 		// THEN: PostRCAContext should be populated with the new field
 		Expect(err).ToNot(HaveOccurred())
@@ -238,9 +238,9 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		// GIVEN: An AIAnalysis with no PostRCAContext
 		analysis = createAnalysisForPostRCA()
 
-		// AND: A HAPI incident response with detected_labels Set but Value is nil/invalid
+		// AND: A KA incident response with detected_labels Set but Value is nil/invalid
 		// (simulates API returning non-object e.g. string "not_a_dict" - client would pass nil)
-		hapiResp := &agentclient.IncidentResponse{
+		kaResp := &agentclient.IncidentResponse{
 			IncidentID:       "test-malformed-labels-001",
 			Analysis:         "Test analysis",
 			NeedsHumanReview: agentclient.NewOptBool(false),
@@ -262,7 +262,7 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		}
 
 		// WHEN: Processing the incident response (must not panic)
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, hapiResp)
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
 
 		// THEN: No error, PostRCAContext remains nil (malformed data skipped)
 		Expect(err).ToNot(HaveOccurred())

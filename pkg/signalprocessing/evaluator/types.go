@@ -59,7 +59,7 @@ type SignalInput struct {
 }
 
 // SeverityResult contains the determined severity and source attribution.
-// DD-SEVERITY-001: Aligned with HAPI/workflow catalog.
+// DD-SEVERITY-001: Aligned with KA/workflow catalog.
 type SeverityResult struct {
 	Severity   string
 	Source     string

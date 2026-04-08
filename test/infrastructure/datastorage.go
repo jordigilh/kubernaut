@@ -101,11 +101,11 @@ func CleanupFailureMarker(clusterName string) {
 	_ = os.Remove(filepath.Join("/tmp/kubernaut-e2e-failures", clusterName))
 }
 
-//   - clusterName: Name of the Kind cluster (used for kubeconfig context)
-//   - kubeconfigPath: Path to the kubeconfig file
-//   - namespace: Kubernetes namespace to collect logs from (e.g., "kubernaut-system")
-//   - serviceName: Service name for directory naming (e.g., "fullpipeline", "aianalysis")
-//   - writer: Output writer for logging
+// - clusterName: Name of the Kind cluster (used for kubeconfig context)
+// - kubeconfigPath: Path to the kubeconfig file
+// - namespace: Kubernetes namespace to collect logs from (e.g., "kubernaut-system")
+// - serviceName: Service name for directory naming (e.g., "fullpipeline", "aianalysis")
+// - writer: Output writer for logging
 func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName string, writer io.Writer) {
 	_, _ = fmt.Fprintf(writer, "═══════════════════════════════════════════════════════════\n")
 	_, _ = fmt.Fprintf(writer, "📋 MUST-GATHER: Collecting pod logs via kubectl\n")

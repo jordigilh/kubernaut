@@ -550,13 +550,13 @@ func awxAPIRequest(method, url string, body interface{}, token string) (map[stri
 
 // AWXConfig holds the IDs created during AWX configuration.
 type AWXConfig struct {
-	APIURL              string
-	OrganizationID      int
-	ProjectID           int
-	InventoryID         int
-	SuccessTemplateID   int
-	FailureTemplateID   int
-	Token               string
+	APIURL            string
+	OrganizationID    int
+	ProjectID         int
+	InventoryID       int
+	SuccessTemplateID int
+	FailureTemplateID int
+	Token             string
 }
 
 // ConfigureAWX creates the project, inventory, job templates, and API token in AWX.
@@ -585,12 +585,12 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 	// Retry on 500 errors: AWX task queue may not be fully initialized right after pod readiness.
 	_, _ = fmt.Fprintf(writer, "   Creating project (Git: %s)...\n", AWXTestPlaybooksRepo)
 	projectBody := map[string]interface{}{
-		"name":             "kubernaut-test-playbooks",
-		"description":      "E2E test playbooks for Kubernaut Ansible engine",
-		"organization":     cfg.OrganizationID,
-		"scm_type":         "git",
-		"scm_url":          AWXTestPlaybooksRepo,
-		"scm_branch":       AWXTestPlaybooksCommit,
+		"name":                 "kubernaut-test-playbooks",
+		"description":          "E2E test playbooks for Kubernaut Ansible engine",
+		"organization":         cfg.OrganizationID,
+		"scm_type":             "git",
+		"scm_url":              AWXTestPlaybooksRepo,
+		"scm_branch":           AWXTestPlaybooksCommit,
 		"scm_update_on_launch": true,
 	}
 	var projectResult map[string]interface{}
@@ -684,11 +684,11 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 	// 5. Create success job template
 	_, _ = fmt.Fprintf(writer, "   Creating success job template...\n")
 	successBody := map[string]interface{}{
-		"name":         "kubernaut-test-success",
-		"description":  "E2E test: successful remediation playbook",
-		"project":      cfg.ProjectID,
-		"playbook":     "playbooks/test-success.yml",
-		"inventory":    cfg.InventoryID,
+		"name":                    "kubernaut-test-success",
+		"description":             "E2E test: successful remediation playbook",
+		"project":                 cfg.ProjectID,
+		"playbook":                "playbooks/test-success.yml",
+		"inventory":               cfg.InventoryID,
 		"ask_variables_on_launch": true,
 	}
 	successResult, successStatus, err := awxAPIRequest("POST", awxBaseURL+"/api/v2/job_templates/", successBody, "")
@@ -704,11 +704,11 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 	// 6. Create failure job template
 	_, _ = fmt.Fprintf(writer, "   Creating failure job template...\n")
 	failureBody := map[string]interface{}{
-		"name":         "kubernaut-test-failure",
-		"description":  "E2E test: intentionally failing remediation playbook",
-		"project":      cfg.ProjectID,
-		"playbook":     "playbooks/test-failure.yml",
-		"inventory":    cfg.InventoryID,
+		"name":                    "kubernaut-test-failure",
+		"description":             "E2E test: intentionally failing remediation playbook",
+		"project":                 cfg.ProjectID,
+		"playbook":                "playbooks/test-failure.yml",
+		"inventory":               cfg.InventoryID,
 		"ask_variables_on_launch": true,
 	}
 	failureResult, failureStatus, err := awxAPIRequest("POST", awxBaseURL+"/api/v2/job_templates/", failureBody, "")
@@ -733,12 +733,12 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 	for _, dt := range depTemplates {
 		_, _ = fmt.Fprintf(writer, "   Creating dep-injection template: %s...\n", dt.name)
 		dtBody := map[string]interface{}{
-			"name":                    dt.name,
-			"description":             dt.desc,
-			"project":                 cfg.ProjectID,
-			"playbook":                dt.playbook,
-			"inventory":               cfg.InventoryID,
-			"ask_variables_on_launch": true,
+			"name":                     dt.name,
+			"description":              dt.desc,
+			"project":                  cfg.ProjectID,
+			"playbook":                 dt.playbook,
+			"inventory":                cfg.InventoryID,
+			"ask_variables_on_launch":  true,
 			"ask_credential_on_launch": true,
 		}
 		dtResult, dtStatus, dtErr := awxAPIRequest("POST", awxBaseURL+"/api/v2/job_templates/", dtBody, "")

@@ -62,7 +62,7 @@ func (m *Manager) AtomicStatusUpdate(
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 		// 1. Refetch to get latest resourceVersion (optimistic locking)
 		// AA-HAPI-001: Use APIReader to bypass cache and get FRESH data
-		// This prevents duplicate HAPI calls when cache is stale after status write
+		// This prevents duplicate KA calls when cache is stale after status write
 		if err := m.apiReader.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
 		return fmt.Errorf("failed to refetch AIAnalysis: %w", err)
 	}

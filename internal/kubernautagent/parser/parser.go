@@ -94,7 +94,7 @@ func extractJSON(content string) string {
 
 // extractBalancedJSON finds the first complete JSON object in content
 // by counting balanced braces. Handles JSON embedded in prose text,
-// mirroring HAPI's json_utils.py balanced extraction.
+// mirroring KA's json_utils.py balanced extraction.
 //
 // M3-fix: skip `{` chars that are likely prose (not followed by `"`, `\n`, or
 // another `{`). Real JSON objects start with `{"` or `{\n`.
@@ -329,7 +329,7 @@ func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 		// When investigation_outcome=problem_resolved, the outcome handler synthesizes
 		// its own warning ("Problem self-resolved"). Adding the generic "not actionable"
 		// warning would cause AA's response processor to route to NotActionable (Outcome D)
-		// instead of ProblemResolved (Outcome A). HAPI Python had the same precedence:
+		// instead of ProblemResolved (Outcome A). KA Python had the same precedence:
 		// the resolved outcome is authoritative over the actionable flag.
 		if flat.InvestigationOutcome != "problem_resolved" {
 			result.Warnings = append(result.Warnings, notActionableWarning)
@@ -352,14 +352,14 @@ func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 
 	// #301: Contradiction override — when the LLM says the problem is resolved
 	// but also sets needs_human_review=true, the resolution takes precedence.
-	// Python HAPI enforced this; KA must match for AA parity.
+	// Python KA enforced this; KA must match for AA parity.
 	if flat.InvestigationOutcome == "problem_resolved" && result.HumanReviewNeeded {
 		result.HumanReviewNeeded = false
 		result.HumanReviewReason = ""
 	}
 }
 
-// applyInvestigationOutcome maps HAPI-style investigation_outcome values
+// applyInvestigationOutcome maps KA-style investigation_outcome values
 // to is_actionable/needs_human_review/human_review_reason fields.
 // H5-fix: explicit `actionable` field takes precedence — only set IsActionable
 // from outcome when the `actionable` field was absent.
@@ -394,7 +394,7 @@ func applyInvestigationOutcome(result *katypes.InvestigationResult, outcome stri
 }
 
 // applyOutcomeRouting derives is_actionable from other fields when the LLM
-// did not provide it explicitly. This mirrors HAPI's determine_investigation_outcome().
+// did not provide it explicitly. This mirrors KA's determine_investigation_outcome().
 func applyOutcomeRouting(result *katypes.InvestigationResult) {
 	if result.IsActionable != nil {
 		return

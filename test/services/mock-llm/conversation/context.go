@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -49,11 +49,11 @@ func (c *Context) CountToolResults() int {
 	return count
 }
 
-// Phase 3 markers that HAPI injects into the enriched prompt.
+// Phase 3 markers that KA injects into the enriched prompt.
 const (
 	MarkerEnrichmentContext = "## Enrichment Context (Phase 2"
-	MarkerPhase1RCA        = "## Phase 1 Root Cause Analysis"
-	MarkerRootOwner        = "**Root Owner**:"
+	MarkerPhase1RCA         = "## Phase 1 Root Cause Analysis"
+	MarkerRootOwner         = "**Root Owner**:"
 )
 
 // HasPhase3Markers returns true only when ALL three Phase 3 markers are

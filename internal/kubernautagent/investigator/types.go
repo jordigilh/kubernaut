@@ -30,8 +30,8 @@ var resourceContextTools = []string{
 }
 
 // DefaultPhaseToolMap returns the production phase-to-tool mapping.
-// TodoWrite is available in all phases (matching HAPI CoreInvestigationToolset behavior).
-// Resource context tools are in PhaseRCA (matching HAPI Phase 1).
+// TodoWrite is available in all phases (matching KA CoreInvestigationToolset behavior).
+// Resource context tools are in PhaseRCA (matching KA Phase 1).
 func DefaultPhaseToolMap() katypes.PhaseToolMap {
 	todo := investigation.ToolName
 

@@ -968,7 +968,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		}
 
 		// DD-HAPI-006 v1.2 defense-in-depth: RemediationTarget MUST be present for routing.
-		// This is the RO layer of the three-layer chain (HAPI -> AA -> RO).
+		// This is the RO layer of the three-layer chain (KA -> AA -> RO).
 		// WorkflowNotNeeded and ApprovalRequired are already handled above.
 		// Reaching here with empty RemediationTarget means a data integrity issue.
 		if ai.Status.RootCauseAnalysis == nil ||

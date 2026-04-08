@@ -39,7 +39,7 @@ import (
 // - BR-AI-010: Retry logic for transient failures
 //
 // Test Tier: UNIT (70%+ coverage)
-// Testing Pattern: Mock ALL external dependencies (HAPI client is mocked)
+// Testing Pattern: Mock ALL external dependencies (KA client is mocked)
 //
 // Test Plan Mapping:
 // - AA-UNIT-ERR-001 to AA-UNIT-ERR-016 (16 error classification tests)

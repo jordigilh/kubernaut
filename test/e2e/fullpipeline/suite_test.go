@@ -19,7 +19,7 @@ limitations under the License.
 // This suite deploys ALL Kubernaut services in a single Kind cluster and validates
 // the complete remediation lifecycle end-to-end:
 //
-//	K8s Event (OOMKill) → Gateway → RO → SP → AA → HAPI(MockLLM) → WE(Job) → Notification
+//	K8s Event (OOMKill) → Gateway → RO → SP → AA → KA(MockLLM) → WE(Job) → Notification
 //
 // Defense-in-Depth Strategy (per 03-testing-strategy.mdc):
 //   - Unit tests (70%+): Business logic in isolation (test/unit/)
@@ -70,7 +70,7 @@ import (
 )
 
 const (
-	timeout  = 10 * time.Minute        // Longer timeout for full pipeline E2E (real LLM needs more time)
+	timeout  = 10 * time.Minute       // Longer timeout for full pipeline E2E (real LLM needs more time)
 	interval = 500 * time.Millisecond // Tighter polling for faster state-transition detection
 
 	clusterName = "fullpipeline-e2e"

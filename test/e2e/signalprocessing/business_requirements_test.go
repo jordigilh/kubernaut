@@ -33,7 +33,7 @@ limitations under the License.
 // - BR-SP-051: Environment classification from namespace labels
 // - BR-SP-070: Priority assignment (P0-P3) based on environment + severity
 // - BR-SP-100: Owner chain traversal for enrichment
-// - BR-SP-101: Detected labels (removed - ADR-056: relocated to HAPI)
+// - BR-SP-101: Detected labels (removed - ADR-056: relocated to KA)
 // - BR-SP-102: CustomLabels from Rego policies
 //
 // NOTE: These tests duplicate some integration test scenarios intentionally
@@ -740,10 +740,8 @@ var _ = Describe("BR-SP-100: Owner Chain Enables Root Cause Analysis", func() {
 	})
 })
 
-
-// BR-SP-101: DetectedLabels tests removed - ADR-056: DetectedLabels relocated to HAPI
+// BR-SP-101: DetectedLabels tests removed - ADR-056: DetectedLabels relocated to KA
 // See: holmesgpt-api/tests/unit/test_label_detector.py
-
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // BR-SP-102: CustomLabels from Rego

@@ -284,7 +284,7 @@ func generateHTMLReport(coverDir, profileFile string, writer io.Writer) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Python E2E Coverage Collection
 //
-// Python services (HAPI) use coverage.py instead of GOCOVERDIR.
+// Python services (legacy HolmesGPT API) use coverage.py instead of GOCOVERDIR.
 // The entrypoint wraps uvicorn with `coverage run` when E2E_COVERAGE=true,
 // writing a .coverage SQLite database to /coverdata/.coverage.
 //

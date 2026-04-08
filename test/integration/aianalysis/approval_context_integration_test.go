@@ -36,12 +36,12 @@ import (
 // Scenarios: IT-AA-085, IT-AA-086, IT-AA-088
 // Business Requirements: BR-AI-076, BR-HAPI-200, BR-AI-028, BR-AI-029
 //
-// Purpose: Validate HAPI-AA integration for approval context population,
+// Purpose: Validate KA-AA integration for approval context population,
 // human review reason propagation, and Rego policy evaluation with real MockLLM responses.
 //
 // Test Strategy (per 03-testing-strategy.mdc):
-// - Integration tests use REAL HAPI service (business logic, not external API)
-// - HAPI runs with Mock LLM enabled (external API properly mocked)
+// - Integration tests use REAL KA service (business logic, not external API)
+// - KA runs with Mock LLM enabled (external API properly mocked)
 // - Uses real Kubernetes API (envtest) for complete reconciliation validation
 // - MockLLM scenarios: low_confidence, no_workflow_found, max_retries_exhausted, oomkilled
 //
@@ -52,7 +52,7 @@ import (
 //   - Mock LLM Service (:18141) - Provides deterministic test responses
 //   - HolmesGPT API (:18120) - Real business logic with Mock LLM backend
 
-var _ = Describe("Approval Context Integration", Label("integration", "approval", "hapi-aa"), func() {
+var _ = Describe("Approval Context Integration", Label("integration", "approval", "ka-aa"), func() {
 	var (
 		testCtx    context.Context
 		cancelFunc context.CancelFunc
@@ -121,13 +121,13 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 	}
 
 	Context("BR-AI-076: Alternative Workflows in Approval Context", func() {
-		It("IT-AA-085: Should populate approval context with alternatives from HAPI", func() {
+		It("IT-AA-085: Should populate approval context with alternatives from KA", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
 			// Scenario ID: IT-AA-085
 			// Gap ID: GAP-001
-			// Business Outcome: Alternative workflows from HAPI correctly populate AIAnalysis approvalContext
+			// Business Outcome: Alternative workflows from KA correctly populate AIAnalysis approvalContext
 			// Confidence: 95%
 			// BR: BR-AI-076 (Approval Context), BR-AUDIT-005 Gap #4 (Alternative Workflows)
 			// MockLLM Scenario: low_confidence (confidence=0.35, includes alternatives)
@@ -138,7 +138,7 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 			// Mock LLM "low_confidence" scenario returns:
 			// - confidence: 0.35 (low, <0.8 threshold)
 			// - selected_workflow: generic-restart-v1
-			// - alternative_workflows: [alt1, alt2] (E2E-HAPI-002 validated)
+			// - alternative_workflows: [alt1, alt2] (E2E-KA-002 validated)
 			result := createAndReconcileAIAnalysis("MOCK_LOW_CONFIDENCE", "high")
 
 		// ========================================
@@ -184,13 +184,13 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 	})
 
 	Context("BR-HAPI-200, BR-AI-028: Human Review Reason Code Mapping", func() {
-		It("IT-AA-086: Maps HAPI human_review_reason to AA approval status", func() {
+		It("IT-AA-086: Maps KA human_review_reason to AA approval status", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
 			// Scenario ID: IT-AA-086
 			// Gap ID: GAP-002
-			// Business Outcome: HAPI human_review_reason correctly triggers AA approval routing
+			// Business Outcome: KA human_review_reason correctly triggers AA approval routing
 			// Confidence: 93%
 			// BR: BR-HAPI-200 (Structured Human Review Reasons), BR-AI-028 (Auto-Approve or Flag)
 			// MockLLM Scenarios: no_workflow_found, max_retries_exhausted
@@ -222,7 +222,7 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 			By(fmt.Sprintf("Testing %s scenario", tc.scenario))
 
 			// ARRANGE & ACT: Create and reconcile AIAnalysis with specific scenario
-			// HAPI will set human_review_reason based on MockLLM scenario
+			// KA will set human_review_reason based on MockLLM scenario
 			result := createAndReconcileAIAnalysis(tc.signalType, "high")
 
 			// ASSERT: Per BR-AI-050, low confidence (<0.7) and no workflow scenarios transition to Failed
@@ -261,7 +261,7 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 				// ========================================
 				// BUSINESS IMPACT
 				// ========================================
-				// Human review reasons correctly propagate from HAPI to AA
+				// Human review reasons correctly propagate from KA to AA
 				// Enables proper approval routing based on failure type
 				// Operators see consistent reason codes across the system
 			}
@@ -314,7 +314,7 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 			By(fmt.Sprintf("Testing %s: %s", tc.scenario, tc.description))
 
 			// ARRANGE & ACT: Create and reconcile AIAnalysis with specific scenario
-			// HAPI returns MockLLM confidence, Rego policy evaluates for approval
+			// KA returns MockLLM confidence, Rego policy evaluates for approval
 			result := createAndReconcileAIAnalysis(tc.signalType, "high")
 
 			// ASSERT: Per BR-AI-050, confidence <0.7 transitions to Failed phase
@@ -373,9 +373,9 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 				// ========================================
 				// BUSINESS IMPACT
 				// ========================================
-				// Rego policies correctly evaluate real HAPI confidence scores
+				// Rego policies correctly evaluate real KA confidence scores
 				// Enables automated approval routing based on confidence thresholds
-				// Validates complete HAPI-AA-Rego integration end-to-end
+				// Validates complete KA-AA-Rego integration end-to-end
 			}
 		})
 	})

@@ -780,7 +780,7 @@ spec:
 // (e.g., GatewayCoverageManifest) that need the combined manifest.
 //
 // Standardization: All kubernaut E2E services use inline YAML templates piped to
-// kubectl apply -f - (same pattern as AA, SP, RO, EM, WE, HAPI).
+// kubectl apply -f - (same pattern as AA, SP, RO, EM, WE, KA).
 func gatewayManifest(imageName string, enableCoverage bool) string {
 	return gatewayRBACManifest() + gatewayWorkloadManifest(imageName, enableCoverage)
 }
@@ -788,7 +788,7 @@ func gatewayManifest(imageName string, enableCoverage bool) string {
 // deployGatewayService deploys Gateway service using an inline YAML template.
 // Applies RBAC first, then workload after 2s propagation delay to avoid API race
 // where SA may not be visible when the pod is created.
-// Standardized: same pattern as AA, SP, RO, EM, WE, HAPI (no static YAML files).
+// Standardized: same pattern as AA, SP, RO, EM, WE, KA (no static YAML files).
 func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewayImageName string, writer io.Writer) error {
 	if gatewayImageName == "" {
 		return fmt.Errorf("gatewayImageName parameter is required")

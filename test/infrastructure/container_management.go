@@ -16,7 +16,7 @@ import (
 // ============================================================================
 //
 // This file provides generic container start/stop abstractions that work with
-// any container image (DataStorage, HAPI, Mock LLM, etc.). It implements the
+// any container image (DataStorage, KA, Mock LLM, etc.). It implements the
 // DD-TEST-002 sequential container orchestration pattern.
 //
 // Key Features:
@@ -27,12 +27,12 @@ import (
 //
 // Related:
 // - datastorage_bootstrap.go: DataStorage-specific infrastructure
-// - hapi_bootstrap.go: HAPI-specific image building
+// - aianalysis_e2e.go / kubernautagent.go: service-specific image building
 // - e2e_images.go: E2E/Kind image management
 // ============================================================================
 
 // GenericContainerConfig defines configuration for starting any container
-// This abstraction allows services to bootstrap custom dependencies (e.g., HAPI for AIAnalysis)
+// This abstraction allows services to bootstrap custom dependencies (e.g., KA for AIAnalysis)
 // while reusing the proven sequential startup pattern from DD-TEST-002.
 //
 // Image Naming (DD-TEST-001 v1.3):
@@ -41,10 +41,10 @@ import (
 //	Image: infrastructure.GenerateInfraImageName("holmesgpt-api", "aianalysis")
 //	→ "holmesgpt-api:holmesgpt-api-aianalysis-1734278400-a1b2c3d4"
 //
-// Example Usage (AIAnalysis starting HAPI):
+// Example Usage (AIAnalysis starting KA):
 //
-//	hapiConfig := infrastructure.GenericContainerConfig{
-//	    Name:    "aianalysis_hapi_test",
+//	kaConfig := infrastructure.GenericContainerConfig{
+//	    Name:    "aianalysis_ka_test",
 //	    Image:   infrastructure.GenerateInfraImageName("holmesgpt-api", "aianalysis"), // DD-TEST-001 v1.3
 //	    Network: "aianalysis_test_network",
 //	    Ports:   map[int]int{8080: 18120}, // container:host
@@ -59,7 +59,7 @@ import (
 //	        Timeout: 30 * time.Second,
 //	    },
 //	}
-//	hapiContainer, err := infrastructure.StartGenericContainer(hapiConfig, writer)
+//	kaContainer, err := infrastructure.StartGenericContainer(kaConfig, writer)
 type GenericContainerConfig struct {
 	// Container Configuration
 	Name       string            // Container name (e.g., "aianalysis_ka_test")
@@ -252,7 +252,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 	}
 
 	// Step 5: Start streaming container logs in background (for runtime debugging)
-	// This is critical for debugging HAPI audit events, Python exceptions, etc.
+	// This is critical for debugging KA audit events, Python exceptions, etc.
 	go func() {
 		logsCmd := exec.Command("podman", "logs", "-f", cfg.Name)
 		logsCmd.Stdout = writer

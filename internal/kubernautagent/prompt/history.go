@@ -26,7 +26,7 @@ import (
 )
 
 // RepeatedRemediationEscalationThreshold is the minimum count of completed-but-recurring
-// remediations before the LLM is warned to escalate (HAPI constants.py:92).
+// remediations before the LLM is warned to escalate (KA constants.py:92).
 const RepeatedRemediationEscalationThreshold = 2
 
 // HistoryEntry is a unified interface for detection algorithms that operate on
@@ -61,7 +61,7 @@ type remediationHistoryTemplateData struct {
 }
 
 // BuildRemediationHistorySection renders the full remediation history prompt section.
-// 1:1 port of HAPI build_remediation_history_section().
+// 1:1 port of KA build_remediation_history_section().
 func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult, escalationThreshold int) string {
 	if result == nil {
 		return ""
@@ -148,7 +148,7 @@ func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult,
 }
 
 // FormatTier1Entry formats a single Tier1 detailed entry for the prompt.
-// 1:1 port of HAPI _format_tier1_entry().
+// 1:1 port of KA _format_tier1_entry().
 func FormatTier1Entry(entry enrichment.Tier1Entry, causalChains map[string]string) string {
 	completed := entry.CompletedAt.UTC().Format("2006-01-02T15:04:05Z")
 	workflow := withDefault(entry.ActionType, "unknown")
@@ -213,7 +213,7 @@ func FormatTier1Entry(entry enrichment.Tier1Entry, causalChains map[string]strin
 }
 
 // FormatTier2Summary formats a single Tier2 compact summary entry for the prompt.
-// 1:1 port of HAPI _format_tier2_entry().
+// 1:1 port of KA _format_tier2_entry().
 func FormatTier2Summary(entry enrichment.Tier2Summary) string {
 	completed := entry.CompletedAt.UTC().Format("2006-01-02T15:04:05Z")
 	workflow := withDefault(entry.ActionType, "unknown")
@@ -236,7 +236,7 @@ func FormatTier2Summary(entry enrichment.Tier2Summary) string {
 }
 
 // FormatHealthChecks formats health check results into readable text.
-// 1:1 port of HAPI _format_health_checks().
+// 1:1 port of KA _format_health_checks().
 func FormatHealthChecks(hc *enrichment.HealthChecks) string {
 	if hc == nil {
 		return "N/A"
@@ -271,7 +271,7 @@ func FormatHealthChecks(hc *enrichment.HealthChecks) string {
 }
 
 // FormatMetricDeltas formats metric deltas with before->after notation.
-// 1:1 port of HAPI _format_metric_deltas().
+// 1:1 port of KA _format_metric_deltas().
 func FormatMetricDeltas(md *enrichment.MetricDeltas) string {
 	if md == nil {
 		return "N/A"
@@ -297,7 +297,7 @@ func FormatMetricDeltas(md *enrichment.MetricDeltas) string {
 
 // DetectDecliningEffectiveness groups Tier1 entries by actionType and checks
 // for monotonically decreasing scores across >= 3 entries.
-// 1:1 port of HAPI _detect_declining_effectiveness().
+// 1:1 port of KA _detect_declining_effectiveness().
 func DetectDecliningEffectiveness(chain []enrichment.Tier1Entry) []string {
 	actionScores := make(map[string][]float64)
 	for _, e := range chain {
@@ -330,7 +330,7 @@ func DetectDecliningEffectiveness(chain []enrichment.Tier1Entry) []string {
 
 // DetectCompletedButRecurring finds workflows that completed successfully
 // multiple times for the same signal type across all tiers.
-// 1:1 port of HAPI _detect_completed_but_recurring().
+// 1:1 port of KA _detect_completed_but_recurring().
 func DetectCompletedButRecurring(entries []HistoryEntry, threshold int) []RecurringPattern {
 	completedOutcomes := map[string]bool{
 		"completed": true, "success": true, "Completed": true, "Success": true,
@@ -366,7 +366,7 @@ func DetectCompletedButRecurring(entries []HistoryEntry, threshold int) []Recurr
 
 // AllZeroEffectiveness checks if all completed recurring entries for an
 // action+signal combination have zero (or nil) effectiveness and unresolved signal.
-// 1:1 port of HAPI _all_zero_effectiveness().
+// 1:1 port of KA _all_zero_effectiveness().
 func AllZeroEffectiveness(entries []HistoryEntry, actionType, signalType string) bool {
 	completedOutcomes := map[string]bool{
 		"completed": true, "success": true, "Completed": true, "Success": true,
@@ -396,7 +396,7 @@ func AllZeroEffectiveness(entries []HistoryEntry, actionType, signalType string)
 
 // DetectSpecDriftCausalChains detects when a spec_drift entry's postRemediationSpecHash
 // matches a subsequent entry's preRemediationSpecHash.
-// 1:1 port of HAPI _detect_spec_drift_causal_chains().
+// 1:1 port of KA _detect_spec_drift_causal_chains().
 func DetectSpecDriftCausalChains(chain []enrichment.Tier1Entry) map[string]string {
 	preHashIndex := make(map[string]string)
 	for _, e := range chain {
@@ -422,7 +422,7 @@ func DetectSpecDriftCausalChains(chain []enrichment.Tier1Entry) map[string]strin
 }
 
 // EffectivenessLevel classifies a score into human-readable level.
-// 1:1 port of HAPI effectiveness_level().
+// 1:1 port of KA effectiveness_level().
 func EffectivenessLevel(score *float64) string {
 	if score == nil {
 		return "unknown"

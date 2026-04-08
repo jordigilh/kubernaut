@@ -112,7 +112,7 @@ var _ = Describe("AuditClient RecordError", func() {
 	Context("Basic error recording", func() {
 		It("should emit aianalysis.error event with correct structure", func() {
 			// Given: An error during Investigating phase
-			testErr := errors.New("HAPI request timeout")
+			testErr := errors.New("KA request timeout")
 
 			// When: RecordError is called
 			auditClient.RecordError(ctx, analysis, "Investigating", testErr)
@@ -150,7 +150,7 @@ var _ = Describe("AuditClient RecordError", func() {
 
 		It("should include error details in event payload", func() {
 			// Given: An error with specific message
-			testErr := errors.New("HAPI connection refused")
+			testErr := errors.New("KA connection refused")
 
 			// When: RecordError is called
 			auditClient.RecordError(ctx, analysis, "Analyzing", testErr)
@@ -168,7 +168,7 @@ var _ = Describe("AuditClient RecordError", func() {
 			// Verify payload fields
 			Expect(payload.Phase).To(Equal("Analyzing"),
 				"Phase should match the provided phase")
-			Expect(payload.ErrorMessage).To(Equal("HAPI connection refused"),
+			Expect(payload.ErrorMessage).To(Equal("KA connection refused"),
 				"Error message should match the error text")
 		})
 
@@ -211,7 +211,7 @@ var _ = Describe("AuditClient RecordError", func() {
 		})
 
 		It("should record error in Investigating phase", func() {
-			testErr := errors.New("HAPI timeout")
+			testErr := errors.New("KA timeout")
 			auditClient.RecordError(ctx, analysis, "Investigating", testErr)
 
 			Expect(mockStore.StoredEvents).To(HaveLen(1))
@@ -259,7 +259,7 @@ var _ = Describe("AuditClient RecordError", func() {
 		It("should not fail reconciliation when audit store fails", func() {
 			// Given: Mock store that returns error
 			mockStore.StoreError = errors.New("audit store unavailable")
-			testErr := errors.New("HAPI error")
+			testErr := errors.New("KA error")
 
 			// When: RecordError is called
 			// Then: Should not panic (fire-and-forget pattern)

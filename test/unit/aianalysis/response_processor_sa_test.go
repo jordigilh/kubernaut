@@ -28,7 +28,7 @@ import (
 // ========================================
 // Authority: DD-WE-005 v2.0 (Per-Workflow ServiceAccount Reference)
 // Validates GetStringFromMap correctly extracts service_account_name
-// from HAPI response maps (same pattern used at 3 mapping sites).
+// from KA response maps (same pattern used at 3 mapping sites).
 // ========================================
 
 var _ = Describe("Response Processor SA Mapping [DD-WE-005] (#481)", func() {

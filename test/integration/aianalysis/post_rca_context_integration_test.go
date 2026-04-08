@@ -36,15 +36,15 @@ import (
 // in the AIAnalysis controller reconciliation loop.
 //
 // Business Requirements:
-//   - BR-AI-056: DetectedLabels stored in PostRCAContext via HAPI
+//   - BR-AI-056: DetectedLabels stored in PostRCAContext via KA
 //   - BR-AI-013: Rego policy evaluation uses detected_labels
 //   - BR-AI-082: PostRCAContext.setAt immutability guard
 //   - ADR-056 Phase 4: enrichmentResults must NOT contain detectedLabels
 //
-// Infrastructure: envtest (per-process) + HAPI container + Mock LLM (3-step) + DataStorage
+// Infrastructure: envtest (per-process) + KA container + Mock LLM (3-step) + DataStorage
 //
-// IMPORTANT: HAPI computes DetectedLabels by querying K8s resources (PDBs, HPAs, etc.)
-// via the shared envtest. Whether PostRCAContext is populated depends on whether HAPI
+// IMPORTANT: KA computes DetectedLabels by querying K8s resources (PDBs, HPAs, etc.)
+// via the shared envtest. Whether PostRCAContext is populated depends on whether KA
 // can discover K8s resources matching the target resource in its connected envtest.
 // In integration tests, PostRCAContext may be nil if the shared envtest lacks resources.
 // E2E tests (Kind cluster) provide the full label detection path.
@@ -101,7 +101,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 	}
 
 	Context("Incident Analysis with PostRCAContext - ADR-056", func() {
-		It("IT-AA-056-001: should complete reconciliation and handle PostRCAContext from HAPI response", func() {
+		It("IT-AA-056-001: should complete reconciliation and handle PostRCAContext from KA response", func() {
 			analysis := newIncidentAnalysis("001")
 			defer func() { _ = k8sClient.Delete(ctx, analysis) }()
 
@@ -111,11 +111,11 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 			By("Waiting for reconciliation to reach terminal phase")
 			waitForTerminalPhase(analysis)
 
-			By("Verifying HAPI was called and PostRCAContext handling")
+			By("Verifying KA was called and PostRCAContext handling")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 
-			// ADR-056: HAPI computes DetectedLabels on-demand during list_available_actions.
-			// After reconciliation, PostRCAContext is populated if HAPI returns non-empty labels.
+			// ADR-056: KA computes DetectedLabels on-demand during list_available_actions.
+			// After reconciliation, PostRCAContext is populated if KA returns non-empty labels.
 			// The controller must not crash regardless of label detection outcome.
 			if analysis.Status.PostRCAContext != nil {
 				Expect(analysis.Status.PostRCAContext.DetectedLabels).NotTo(BeNil(),
@@ -126,7 +126,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 
 			// The reconciliation should complete successfully regardless of label detection
 			Expect(analysis.Status.InvestigationID).NotTo(BeEmpty(),
-				"InvestigationID should be set after HAPI call")
+				"InvestigationID should be set after KA call")
 		})
 
 		It("IT-AA-056-003: should reach Analyzing phase with detected_labels in Rego input", func() {
@@ -176,7 +176,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 			if analysis.Status.PostRCAContext != nil &&
 				analysis.Status.PostRCAContext.DetectedLabels != nil &&
 				len(analysis.Status.PostRCAContext.DetectedLabels.FailedDetections) > 0 {
-				// failedDetections were propagated correctly from HAPI
+				// failedDetections were propagated correctly from KA
 				GinkgoWriter.Printf("failedDetections found: %v\n",
 					analysis.Status.PostRCAContext.DetectedLabels.FailedDetections)
 			}
@@ -230,7 +230,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 
 			// ADR-056 Phase 4: DetectedLabels and OwnerChain were removed from EnrichmentResults.
-			// Verify at the JSON serialization level that the HAPI request's enrichmentResults
+			// Verify at the JSON serialization level that the KA request's enrichmentResults
 			// does NOT contain these deprecated fields.
 			enrichmentJSON, err := json.Marshal(analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults)
 			Expect(err).NotTo(HaveOccurred())

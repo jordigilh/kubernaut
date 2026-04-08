@@ -489,7 +489,7 @@ func WithBatchSize(n int) BufferedDSAuditStoreOption {
 //
 // Optional BufferedDSAuditStoreOption values override the RecommendedConfig
 // defaults, allowing integration/E2E tests to control flush behaviour via
-// the same YAML fields that HAPI v1.2 used (flush_interval_seconds, etc.).
+// the same YAML fields that KA v1.2 used (flush_interval_seconds, etc.).
 func NewBufferedDSAuditStore(dsClient sharedaudit.DataStorageClient, logger logr.Logger, opts ...BufferedDSAuditStoreOption) (*BufferedDSAuditStore, error) {
 	cfg := sharedaudit.RecommendedConfig("kubernaut-agent")
 	for _, o := range opts {

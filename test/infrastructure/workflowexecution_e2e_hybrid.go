@@ -1370,14 +1370,14 @@ spec:
     targetPort: 9090
     nodePort: 30185
 `,
-		namespace,          // [1] controller namespace (kubernaut-system)
-		ExecutionNamespace, // [2] execution namespace (kubernaut-workflows)
-		imageName,          // [3] controller image
+		namespace,            // [1] controller namespace (kubernaut-system)
+		ExecutionNamespace,   // [2] execution namespace (kubernaut-workflows)
+		imageName,            // [3] controller image
 		GetImagePullPolicy(), // [4] pull policy
-		securityContext,    // [5] pod security context (coverage only)
-		coverageEnv,        // [6] GOCOVERDIR env var (coverage only)
-		coverageVolumeMount, // [7] /coverdata volume mount (coverage only)
-		coverageVolume,     // [8] hostPath volume (coverage only)
+		securityContext,      // [5] pod security context (coverage only)
+		coverageEnv,          // [6] GOCOVERDIR env var (coverage only)
+		coverageVolumeMount,  // [7] /coverdata volume mount (coverage only)
+		coverageVolume,       // [8] hostPath volume (coverage only)
 	)
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "--server-side", "-f", "-")

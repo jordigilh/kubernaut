@@ -27,7 +27,7 @@ import (
 )
 
 // MockHolmesGPTClient is a mock implementation of HolmesGPTClientInterface for unit tests.
-// Now uses generated types from HAPI OpenAPI spec for type-safe testing.
+// Now uses generated types from KA OpenAPI spec for type-safe testing.
 // BR-AI-006: Mock for API call testing
 // BR-AA-HAPI-064: Extended with async session methods
 type MockHolmesGPTClient struct {
@@ -181,9 +181,9 @@ func (m *MockHolmesGPTClient) WithFullResponse(
 	var alternatives []agentclient.AlternativeWorkflow
 	if includeAlternatives && workflowID != "" {
 		alt := agentclient.AlternativeWorkflow{
-			WorkflowID:     "wf-scale-deployment",
-			Confidence:     0.75,
-			Rationale:      "Consider scaling deployment for resource pressure",
+			WorkflowID:      "wf-scale-deployment",
+			Confidence:      0.75,
+			Rationale:       "Consider scaling deployment for resource pressure",
 			ExecutionBundle: agentclient.NewOptNilString("kubernaut.io/workflows/scale:v1.0.0"),
 		}
 		alternatives = append(alternatives, alt)

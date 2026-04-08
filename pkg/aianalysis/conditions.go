@@ -40,7 +40,7 @@ const (
 	// ConditionApprovalRequired indicates human approval is needed
 	ConditionApprovalRequired = "ApprovalRequired"
 
-	// ConditionInvestigationSessionReady indicates the HAPI session health
+	// ConditionInvestigationSessionReady indicates the KA session health
 	// BR-AA-HAPI-064.7: Operators can observe session health via standard K8s Conditions
 	ConditionInvestigationSessionReady = "InvestigationSessionReady"
 )
@@ -95,16 +95,16 @@ const (
 	// Session-related reasons (BR-AA-HAPI-064)
 	// ========================================
 
-	// ReasonSessionCreated - HAPI session was created successfully
+	// ReasonSessionCreated - KA session was created successfully
 	ReasonSessionCreated = "SessionCreated"
 
-	// ReasonSessionActive - HAPI session is active and being polled
+	// ReasonSessionActive - KA session is active and being polled
 	ReasonSessionActive = "SessionActive"
 
-	// ReasonSessionLost - HAPI session was lost (404 on poll)
+	// ReasonSessionLost - KA session was lost (404 on poll)
 	ReasonSessionLost = "SessionLost"
 
-	// ReasonSessionRegenerated - HAPI session was regenerated after loss
+	// ReasonSessionRegenerated - KA session was regenerated after loss
 	ReasonSessionRegenerated = "SessionRegenerated"
 
 	// ReasonSessionRegenerationExceeded - session regeneration cap exceeded

@@ -220,7 +220,7 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 
 	// DD-TEST-009: Add 15-minute timeout to prevent infinite hangs
 	// Context: E2E tests were hanging indefinitely when Podman build processes stalled
-	// during dependency downloads (especially Python packages in HAPI)
+	// during dependency downloads (especially Python packages in legacy HolmesGPT stacks)
 	buildCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
@@ -439,7 +439,7 @@ func CleanupE2EImage(imageName string, writer io.Writer) error {
 // Example:
 //
 //	var _ = AfterSuite(func() {
-//	    images := []string{gatewayImage, dataStorageImage, hapiImage}
+//	    images := []string{gatewayImage, dataStorageImage, kaImage}
 //	    _ = infrastructure.CleanupE2EImages(images, GinkgoWriter)
 //	})
 func CleanupE2EImages(imageNames []string, writer io.Writer) error {

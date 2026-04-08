@@ -128,7 +128,7 @@ func NewWorkflowRetrievedAuditEvent(workflowID string, filters *models.WorkflowD
 }
 
 // NewSelectionValidatedAuditEvent creates an audit event for post-selection validation.
-// Emitted when DS validates a HAPI-selected workflow against context filters.
+// Emitted when DS validates a KA-selected workflow against context filters.
 // GAP-WF-6: durationMs reflects actual query duration (DD-WORKFLOW-014 v3.0)
 func NewSelectionValidatedAuditEvent(workflowID string, filters *models.WorkflowDiscoveryFilters, valid bool, durationMs int64) (*ogenclient.AuditEventRequest, error) {
 	event := newBaseDiscoveryEvent(EventTypeSelectionValidated, ActionValidate)

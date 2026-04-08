@@ -143,7 +143,7 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 	// IT-RO-251-001: GitOps-managed target → Config.HashComputeDelay set
 	// BR: BR-RO-103.2, BR-RO-103.3
 	//
-	// Business outcome: When the HAPI/RCA pipeline detects GitOps management
+	// Business outcome: When the KA/RCA pipeline detects GitOps management
 	// (DetectedLabels.GitOpsManaged=true in AIAnalysis), the RO sets
 	// Config.HashComputeDelay in the EA spec so the EM defers hash computation
 	// until after the GitOps controller (ArgoCD/FluxCD) reconciles the target.

@@ -50,12 +50,12 @@ const (
 	// Type: Warning
 	EventReasonAnalysisFailed = "AnalysisFailed"
 
-	// EventReasonSessionCreated is emitted when a HAPI investigation session
+	// EventReasonSessionCreated is emitted when a KA investigation session
 	// is submitted and accepted (issue #64: session-based pull design).
 	EventReasonSessionCreated = "SessionCreated"
 
-	// EventReasonSessionLost is emitted when a HAPI session is lost (404 on poll,
-	// typically due to HAPI restart) and regeneration is attempted.
+	// EventReasonSessionLost is emitted when a KA session is lost (404 on poll,
+	// typically due to KA restart) and regeneration is attempted.
 	// Type: Warning
 	EventReasonSessionLost = "SessionLost"
 
@@ -69,7 +69,7 @@ const (
 	// for workflow execution (low confidence or policy mandate).
 	EventReasonApprovalRequired = "ApprovalRequired"
 
-	// EventReasonHumanReviewRequired is emitted when HAPI flags the investigation
+	// EventReasonHumanReviewRequired is emitted when KA flags the investigation
 	// for human review (needs_human_review=true).
 	// Type: Warning
 	EventReasonHumanReviewRequired = "HumanReviewRequired"

@@ -41,9 +41,9 @@ import (
 // (>= 0.7) blocked this path when the LLM omitted or returned low confidence.
 //
 // This E2E test validates the full pipeline:
-//   AA → HAPI → Mock LLM (actionable=false, confidence=0.0) → HAPI (floor to 0.8) → AA (Completed)
+//   AA → KA → Mock LLM (actionable=false, confidence=0.0) → KA (floor to 0.8) → AA (Completed)
 //
-// Regression gate for the 433 team replacing HAPI.
+// Regression gate for the 433 team migrating to KA.
 
 var _ = Describe("E2E-AA-607: Not-Actionable Confidence Gate", Label("e2e", "not-actionable", "aianalysis"), func() {
 	const (

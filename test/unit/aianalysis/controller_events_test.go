@@ -539,7 +539,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 	// UT-AA-095-07: HumanReviewRequired event
 	Context("UT-AA-095-07: HumanReviewRequired event", func() {
-		It("should emit HumanReviewRequired Warning event when HAPI flags human review", func() {
+		It("should emit HumanReviewRequired Warning event when KA flags human review", func() {
 			recorder := record.NewFakeRecorder(20)
 			mockHolmes := mocks.NewMockHolmesGPTClient().
 				WithHumanReviewRequired([]string{"Investigation inconclusive, needs human review"})

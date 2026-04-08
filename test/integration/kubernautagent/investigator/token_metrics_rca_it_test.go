@@ -33,7 +33,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
-var _ = Describe("HAPI-KA Integration Parity — Token Usage (TP-433-PARITY)", func() {
+var _ = Describe("KA-KA Integration Parity — Token Usage (TP-433-PARITY)", func() {
 
 	var (
 		logger     *slog.Logger
@@ -101,7 +101,7 @@ var _ = Describe("HAPI-KA Integration Parity — Token Usage (TP-433-PARITY)", f
 	})
 })
 
-var _ = Describe("HAPI-KA Integration Parity — LLM Metrics (TP-433-PARITY)", func() {
+var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", func() {
 
 	var (
 		logger     *slog.Logger
@@ -188,7 +188,7 @@ var _ = Describe("HAPI-KA Integration Parity — LLM Metrics (TP-433-PARITY)", f
 	})
 })
 
-var _ = Describe("HAPI-KA Integration Parity — RCA (TP-433-PARITY)", func() {
+var _ = Describe("KA-KA Integration Parity — RCA (TP-433-PARITY)", func() {
 
 	var (
 		logger     *slog.Logger

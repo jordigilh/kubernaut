@@ -69,7 +69,7 @@ var _ = Describe("HolmesGPTClient", func() {
 					case r.URL.Path == "/api/v1/incident/session/test-session-001/result" && r.Method == http.MethodGet:
 						// Step 3: Get result
 						w.WriteHeader(http.StatusOK)
-						// ADR-055: target_in_owner_chain removed from HAPI response
+						// ADR-055: target_in_owner_chain removed from KA response
 						_, _ = w.Write([]byte(`{
 							"incident_id": "test-incident-001",
 							"analysis": "Root cause: OOM",

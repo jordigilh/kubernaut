@@ -29,7 +29,7 @@ import (
 func boolPtr(v bool) *bool       { return &v }
 func floatPtr(v float64) *float64 { return &v }
 
-var _ = Describe("Remediation History Prompt Builder — HAPI Parity (#433)", func() {
+var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func() {
 
 	Describe("UT-KA-433-HP-001: EffectivenessLevel classification", func() {
 		It("should return 'good' for score >= 0.7", func() {

@@ -51,15 +51,15 @@ type TestWorkflow struct {
 //
 // Pattern: Test data alignment between Mock LLM and DataStorage
 //   - Mock LLM returns workflow IDs (e.g., "oomkill-increase-memory-v1")
-//   - HAPI validates workflows via DataStorage API
+//   - KA validates workflows via DataStorage API
 //   - Tests fail if workflows don't exist in catalog
 //   - Workflows created for BOTH staging and production environments
 //     (tests use staging by default, but some use production)
 func GetAIAnalysisTestWorkflows() []TestWorkflow {
 	// BR-HAPI-191: SchemaParameters MUST match Mock LLM scenario parameters
 	// Mock LLM scenarios defined in test/services/mock-llm/scenarios/
-	// HAPI validates LLM response parameters against workflow schema from DataStorage
-	// If parameters don't match, HAPI returns parameter_validation_failed BEFORE confidence check
+	// KA validates LLM response parameters against workflow schema from DataStorage
+	// If parameters don't match, KA returns parameter_validation_failed BEFORE confidence check
 	// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
 	// Actual schema comes from OCI image via pullspec-only registration.
 	baseWorkflows := []TestWorkflow{
@@ -186,7 +186,7 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 // Pattern: DD-TEST-010 Multi-Controller Pattern - Shared Infrastructure Setup
 // - Process 1 seeds workflows in DataStorage (shared resource)
 // - All processes can reference these workflows during tests
-// - Prevents "workflow not found" errors during HAPI validation
+// - Prevents "workflow not found" errors during KA validation
 //
 // Returns: map[workflow_name]workflow_id (UUID) for Mock LLM configuration
 // DD-WORKFLOW-002 v3.0: DataStorage generates UUIDs (cannot be specified by client)
@@ -207,7 +207,7 @@ func SeedTestWorkflowsInDataStorage(client *ogenclient.Client, output io.Writer)
 			Environment:      wf.Environment,
 			Priority:         wf.Priority,
 			SchemaImage:     "", // AIAnalysis uses default pattern (empty = auto-generate)
-			SchemaParameters: wf.SchemaParameters, // BR-HAPI-191: Pass through for HAPI validation
+			SchemaParameters: wf.SchemaParameters, // BR-HAPI-191: Pass through for KA validation
 		}
 	}
 

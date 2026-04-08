@@ -88,7 +88,7 @@ func countEventsByType(events []ogenclient.AuditEvent) map[string]int {
 // 1. Audit events use buffered writes (100ms flush interval, DD-PERF-001)
 // 2. Tests use explicit auditStore.Flush() calls before querying to eliminate race conditions
 // 3. No FlakeAttempts needed - deterministic test execution with proper synchronization
-// 4. Infrastructure startup takes 70-90s (PostgreSQL, Redis, DataStorage, HAPI)
+// 4. Infrastructure startup takes 70-90s (PostgreSQL, Redis, DataStorage, KA)
 //
 // RELIABILITY DATA:
 // - Serial execution:   100% pass rate (54/54)
@@ -219,9 +219,9 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
 				"Controller should generate complete audit trail")
 
-			// Filter to ONLY AIAnalysis events (exclude HAPI events like llm_request, llm_response, etc.)
+			// Filter to ONLY AIAnalysis events (exclude KA events like llm_request, llm_response, etc.)
 			// AIAnalysis events have event_type prefix "aianalysis."
-			// HAPI events have event_type: llm_request, llm_response, llm_tool_call, workflow_validation_attempt
+			// KA events have event_type: llm_request, llm_response, llm_tool_call, workflow_validation_attempt
 			var events []ogenclient.AuditEvent
 			for _, event := range allEvents {
 				// Only include events with "aianalysis." prefix
@@ -230,7 +230,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				}
 			}
 
-			GinkgoWriter.Printf("🔍 Filtered: %d total events → %d AIAnalysis events (excluding HAPI)\n",
+			GinkgoWriter.Printf("🔍 Filtered: %d total events → %d AIAnalysis events (excluding KA)\n",
 				len(allEvents), len(events))
 
 			// DEBUG: Output all events to identify the extra event (AA-BUG-002 investigation)
@@ -367,7 +367,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 
 			// AI agent calls: 1 call (v1.x single analysis type behavior per DD-AIANALYSIS-005)
 			// Test spec requests AnalysisTypes: ["investigation"]
-			// v1.x controller makes exactly 1 HAPI call regardless of array length
+			// v1.x controller makes exactly 1 KA call regardless of array length
 			Expect(eventTypeCounts[aiaudit.EventTypeAIAgentCall]).To(Equal(1),
 				"Expected exactly 1 AI agent API call (v1.x single-type behavior)")
 
@@ -380,7 +380,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				"Should have exactly 1 analysis completion event")
 
 		// Total events: DD-TESTING-001 Pattern 4 (lines 256-299): Validate exact expected count
-		// Per DD-AUDIT-003: AIAnalysis Controller audit trail (filtered to exclude HAPI events)
+		// Per DD-AUDIT-003: AIAnalysis Controller audit trail (filtered to exclude KA events)
 		//
 		// AIAnalysis Controller events (9):
 		// - 3 phase transitions (Pending→Investigating→Analyzing→Completed)
@@ -392,7 +392,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 		// - 1 Analysis completion
 		//
 		// Note: HolmesGPT-API events (llm_request, llm_response, llm_tool_call, workflow_validation_attempt)
-		//       are EXCLUDED from this test. HAPI integration tests validate those separately.
+		//       are EXCLUDED from this test. KA integration tests validate those separately.
 		//       This test focuses ONLY on AIAnalysis controller audit behavior.
 		//
 		// Total: 9 AIAnalysis events (deterministic per DD-AIANALYSIS-005 v1.x + BR-AA-HAPI-064 session audit)
@@ -926,16 +926,16 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			By("Creating AIAnalysis that will trigger AI agent error (using invalid signal type)")
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("test-hapi-error-%s", uuid.New().String()[:8]),
+					Name:      fmt.Sprintf("test-ka-error-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-hapi-error-%s", uuid.New().String()[:8]),
+					RemediationID: fmt.Sprintf("rr-ka-error-%s", uuid.New().String()[:8]),
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      fmt.Sprintf("fp-hapi-error-%s", uuid.New().String()[:8]),
+							Fingerprint:      fmt.Sprintf("fp-ka-error-%s", uuid.New().String()[:8]),
 							Severity:         "critical",
-							SignalName:       "InvalidSignalType", // This may cause HAPI to error
+							SignalName:       "InvalidSignalType", // This may cause KA to error
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1.TargetResource{
@@ -954,7 +954,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				Expect(k8sClient.Delete(ctx, analysis)).To(Succeed())
 			}()
 
-			By("Waiting for controller to call HAPI and audit event")
+			By("Waiting for controller to call KA and audit event")
 
 			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
 			correlationID := analysis.Spec.RemediationID
@@ -996,7 +996,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				EventCategory: ogenclient.AuditEventEventCategoryAnalysis,
 				EventAction:   aiaudit.EventActionAIAgentCall,
 				CorrelationID: correlationID,
-				// Note: EventOutcome intentionally omitted - may vary based on HAPI response
+				// Note: EventOutcome intentionally omitted - may vary based on KA response
 			})
 
 			// DD-TESTING-001: Validate strongly-typed payload (DD-AUDIT-004)

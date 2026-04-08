@@ -321,7 +321,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 }
 
 // enrichFromCatalog backfills execution metadata from the workflow catalog
-// into the InvestigationResult, replicating HAPI's behavior of including
+// into the InvestigationResult, replicating KA's behavior of including
 // execution_engine, execution_bundle, execution_bundle_digest, and
 // service_account_name so downstream controllers (WE) can use them.
 func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator) {
@@ -727,7 +727,7 @@ func attachDetectedLabels(result *katypes.InvestigationResult, enrichData *enric
 	result.DetectedLabels = detectedLabelsToResult(enrichData.DetectedLabels)
 }
 
-// injectRemediationTarget replicates HAPI's _inject_target_resource behavior.
+// injectRemediationTarget replicates KA's _inject_target_resource behavior.
 //
 // Logic:
 //   - If the LLM did not provide a remediation_target (Kind==""), inject the
@@ -769,7 +769,7 @@ func injectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 
 // injectTargetResourceParameters merges TARGET_RESOURCE_NAME, TARGET_RESOURCE_KIND,
 // and TARGET_RESOURCE_NAMESPACE into result.Parameters from the final
-// RemediationTarget. HAPI injected these so that WorkflowExecution Jobs receive
+// RemediationTarget. KA injected these so that WorkflowExecution Jobs receive
 // the correct target identity as environment variables.
 func injectTargetResourceParameters(result *katypes.InvestigationResult) {
 	if result == nil || result.RemediationTarget.Kind == "" {

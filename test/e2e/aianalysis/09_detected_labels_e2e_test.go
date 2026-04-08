@@ -41,15 +41,15 @@ import (
 // in the AIAnalysis full 4-phase reconciliation (Kind cluster).
 //
 // Business Requirements:
-//   - ADR-056, BR-AI-056: DetectedLabels in PostRCAContext after HAPI
+//   - ADR-056, BR-AI-056: DetectedLabels in PostRCAContext after KA
 //   - BR-AI-013: Rego policy uses detected_labels for approval gating
 //   - BR-SP-101: Infrastructure label detection from real K8s resources
 //
 // Infrastructure: Kind cluster with full stack
-//   (AA controller, HAPI, Mock LLM 3-step, DataStorage)
+//   (AA controller, KA, Mock LLM 3-step, DataStorage)
 //
 // Unlike integration tests (envtest), E2E tests in Kind provide real K8s resources
-// (Deployments, PDBs, HPAs) that HAPI can discover during label detection.
+// (Deployments, PDBs, HPAs) that KA can discover during label detection.
 
 var _ = Describe("E2E-AA ADR-056 DetectedLabels", Label("e2e", "adr-056", "detected-labels"), func() {
 	const (
@@ -177,7 +177,7 @@ var _ = Describe("E2E-AA ADR-056 DetectedLabels", Label("e2e", "adr-056", "detec
 			By("Verifying postRCAContext is populated with detected labels")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 
-			// ADR-056 + BR-AI-056: PostRCAContext should be populated after HAPI
+			// ADR-056 + BR-AI-056: PostRCAContext should be populated after KA
 			// computes labels from real K8s resources in the Kind cluster.
 			if analysis.Status.PostRCAContext != nil {
 				Expect(analysis.Status.PostRCAContext.DetectedLabels).NotTo(BeNil(),
@@ -214,7 +214,7 @@ var _ = Describe("E2E-AA ADR-056 DetectedLabels", Label("e2e", "adr-056", "detec
 			By("Verifying pdbProtected in postRCAContext.detectedLabels")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 
-			// BR-SP-101 + ADR-056: With a real PDB in the Kind cluster, HAPI should
+			// BR-SP-101 + ADR-056: With a real PDB in the Kind cluster, KA should
 			// detect pdbProtected=true and include it in PostRCAContext.
 			if analysis.Status.PostRCAContext != nil &&
 				analysis.Status.PostRCAContext.DetectedLabels != nil {

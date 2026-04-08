@@ -100,12 +100,12 @@ var _ = Describe("E2E-SP-106-001: Proactive Signal Mode Classification", Label("
 						Namespace:  rr.Namespace,
 						UID:        string(rr.UID),
 					},
-				Signal: signalprocessingv1alpha1.SignalData{
-					Fingerprint:  rr.Spec.SignalFingerprint,
-					Name:         "PredictedOOMKill",
-					Severity:     "critical",
-					Type:         "alert",
-					Source:       "prometheus",
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint:  rr.Spec.SignalFingerprint,
+						Name:         "PredictedOOMKill",
+						Severity:     "critical",
+						Type:         "alert",
+						Source:       "prometheus",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -169,12 +169,12 @@ var _ = Describe("E2E-SP-106-001: Proactive Signal Mode Classification", Label("
 						Namespace:  rr.Namespace,
 						UID:        string(rr.UID),
 					},
-				Signal: signalprocessingv1alpha1.SignalData{
-					Fingerprint:  rr.Spec.SignalFingerprint,
-					Name:         "OOMKilled",
-					Severity:     "critical",
-					Type:         "alert",
-					Source:       "kubernetes",
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint:  rr.Spec.SignalFingerprint,
+						Name:         "OOMKilled",
+						Severity:     "critical",
+						Type:         "alert",
+						Source:       "kubernetes",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -219,13 +219,13 @@ func createProactiveTestRR(rrNamespace, targetResourceNamespace, name string) *r
 				h := sha256.Sum256([]byte("e2e-proactive-" + name))
 				return hex.EncodeToString(h[:]) // Always exactly 64 hex chars
 			}(),
-			SignalName:        "E2EProactiveAlert",
-			Severity:          "critical",
-			SignalType:        "alert",
-			SignalSource:      "test-e2e-source",
-			TargetType:        "kubernetes",
-			FiringTime:        metav1.Now(),
-			ReceivedTime:      metav1.Now(),
+			SignalName:   "E2EProactiveAlert",
+			Severity:     "critical",
+			SignalType:   "alert",
+			SignalSource: "test-e2e-source",
+			TargetType:   "kubernetes",
+			FiringTime:   metav1.Now(),
+			ReceivedTime: metav1.Now(),
 			TargetResource: remediationv1alpha1.ResourceIdentifier{
 				Kind:      "Pod",
 				Name:      "test-e2e-pod",

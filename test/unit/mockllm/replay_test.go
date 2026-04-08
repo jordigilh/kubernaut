@@ -197,12 +197,12 @@ var _ = Describe("BR-TESTING-001: Golden Transcript Replay — Phase 5a", func()
 		})
 	})
 
-	Describe("UT-REPLAY-004: HAPI transcript backward compatibility", func() {
+	Describe("UT-REPLAY-004: KA transcript backward compatibility", func() {
 		var goldenDir string
 
 		BeforeEach(func() {
 			var err error
-			goldenDir, err = os.MkdirTemp("", "golden-hapi-*")
+			goldenDir, err = os.MkdirTemp("", "golden-ka-*")
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -210,8 +210,8 @@ var _ = Describe("BR-TESTING-001: Golden Transcript Replay — Phase 5a", func()
 			os.RemoveAll(goldenDir)
 		})
 
-		It("UT-REPLAY-004-001: loads HAPI transcript with hapiDialog (no kaDialog)", func() {
-			hapiJSON := `{
+		It("UT-REPLAY-004-001: loads KA transcript with hapiDialog (no kaDialog)", func() {
+			kaJSON := `{
 				"scenario": "crashloop",
 				"signalName": "KubePodCrashLooping",
 				"kubernautVersion": "1.2.0-rc8",
@@ -243,7 +243,7 @@ var _ = Describe("BR-TESTING-001: Golden Transcript Replay — Phase 5a", func()
 					"llmCallCount": 28
 				}
 			}`
-			err := os.WriteFile(filepath.Join(goldenDir, "crashloop.json"), []byte(hapiJSON), 0644)
+			err := os.WriteFile(filepath.Join(goldenDir, "crashloop.json"), []byte(kaJSON), 0644)
 			Expect(err).NotTo(HaveOccurred())
 
 			replays, errs := scenarios.LoadReplayScenarios(goldenDir)
@@ -253,11 +253,11 @@ var _ = Describe("BR-TESTING-001: Golden Transcript Replay — Phase 5a", func()
 			cfg := replays[0].Config()
 			Expect(cfg.ScenarioName).To(Equal("replay:crashloop"))
 			Expect(cfg.SignalName).To(Equal("KubePodCrashLooping"))
-			Expect(cfg.ExactAnalysisText).NotTo(BeEmpty(), "should synthesize ExactAnalysisText from HAPI analysis")
+			Expect(cfg.ExactAnalysisText).NotTo(BeEmpty(), "should synthesize ExactAnalysisText from KA analysis")
 		})
 
 		It("UT-REPLAY-004-002: synthesized text uses snake_case field names", func() {
-			hapiJSON := `{
+			kaJSON := `{
 				"scenario": "cert-failure",
 				"signalName": "CertManagerCertNotReady",
 				"capturedAt": "2026-04-07T18:00:00Z",
@@ -281,7 +281,7 @@ var _ = Describe("BR-TESTING-001: Golden Transcript Replay — Phase 5a", func()
 					"llmCallCount": 15
 				}
 			}`
-			err := os.WriteFile(filepath.Join(goldenDir, "cert.json"), []byte(hapiJSON), 0644)
+			err := os.WriteFile(filepath.Join(goldenDir, "cert.json"), []byte(kaJSON), 0644)
 			Expect(err).NotTo(HaveOccurred())
 
 			replays, _ := scenarios.LoadReplayScenarios(goldenDir)
@@ -308,7 +308,7 @@ var _ = Describe("BR-TESTING-001: Golden Transcript Replay — Phase 5a", func()
 		})
 
 		It("UT-REPLAY-004-003: synthesized JSON is parseable by KA ResultParser", func() {
-			hapiJSON := `{
+			kaJSON := `{
 				"scenario": "crashloop",
 				"signalName": "KubePodCrashLooping",
 				"capturedAt": "2026-04-07T17:41:26Z",
@@ -338,7 +338,7 @@ var _ = Describe("BR-TESTING-001: Golden Transcript Replay — Phase 5a", func()
 					"llmCallCount": 20
 				}
 			}`
-			err := os.WriteFile(filepath.Join(goldenDir, "crashloop.json"), []byte(hapiJSON), 0644)
+			err := os.WriteFile(filepath.Join(goldenDir, "crashloop.json"), []byte(kaJSON), 0644)
 			Expect(err).NotTo(HaveOccurred())
 
 			replays, _ := scenarios.LoadReplayScenarios(goldenDir)
@@ -356,7 +356,7 @@ var _ = Describe("BR-TESTING-001: Golden Transcript Replay — Phase 5a", func()
 			Expect(result.AlternativeWorkflows[0].WorkflowID).To(Equal("alt-001"))
 		})
 
-		It("UT-REPLAY-004-004: prefers kaDialog.rawResponses over HAPI synthesis when both present", func() {
+		It("UT-REPLAY-004-004: prefers kaDialog.rawResponses over KA synthesis when both present", func() {
 			transcript := scenarios.GoldenTranscript{
 				Scenario:   "dual",
 				SignalName: "OOMKilled",
@@ -370,7 +370,7 @@ var _ = Describe("BR-TESTING-001: Golden Transcript Replay — Phase 5a", func()
 		})
 	})
 
-	Describe("UT-REPLAY-005: Real HAPI transcript integration", func() {
+	Describe("UT-REPLAY-005: Real KA transcript integration", func() {
 		It("UT-REPLAY-005-001: crashloop transcript loads and matches KubePodCrashLooping", func() {
 			goldenDir := realGoldenDir()
 			replays, errs := scenarios.LoadReplayScenarios(goldenDir)

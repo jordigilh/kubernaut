@@ -178,7 +178,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Initializing Data Storage OpenAPI client with authentication (DD-API-001 + DD-AUTH-014)")
 	// DD-AUTH-014: Use authenticated client for audit queries
-	// Pattern: test/shared/integration/datastorage_auth.go (validated in Gateway, AIAnalysis, HAPI, DataStorage)
+	// Pattern: test/shared/integration/datastorage_auth.go (validated in Gateway, AIAnalysis, KA, DataStorage)
 	var err error
 	dsClients := integration.NewAuthenticatedDataStorageClients(
 		dataStorageURL,

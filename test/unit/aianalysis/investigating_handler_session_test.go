@@ -166,7 +166,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 	Describe("Session Submit Flow", func() {
 		// UT-AA-064-001: Submit investigation when InvestigationSession is nil
 		Context("UT-AA-064-001: Submit investigation when InvestigationSession is nil", func() {
-			It("should create a HAPI session and record it in CRD status", func() {
+			It("should create a KA session and record it in CRD status", func() {
 				analysis := createSessionTestAnalysis()
 				// InvestigationSession is nil (first time)
 				Expect(analysis.Status.InvestigationSession).To(BeNil())
@@ -179,7 +179,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 
 				// CRD status: InvestigationSession populated
 				Expect(analysis.Status.InvestigationSession).NotTo(BeNil(), "InvestigationSession should be populated after submit")
-				Expect(analysis.Status.InvestigationSession.ID).To(Equal("session-uuid-001"), "Session ID should match HAPI response")
+				Expect(analysis.Status.InvestigationSession.ID).To(Equal("session-uuid-001"), "Session ID should match KA response")
 				Expect(analysis.Status.InvestigationSession.Generation).To(Equal(int32(0)), "Generation should be 0 for first session")
 				Expect(analysis.Status.InvestigationSession.CreatedAt).NotTo(BeNil(), "CreatedAt should be set")
 
@@ -330,7 +330,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 
 		// UT-AA-064-006: Poll session -- status "failed"
 		Context("UT-AA-064-006: Poll session -- failed, investigation terminates", func() {
-			It("should surface HAPI-side failure to operators via CRD status", func() {
+			It("should surface KA-side failure to operators via CRD status", func() {
 				analysis := createSessionTestAnalysis()
 				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
 					ID:         "session-failed-001",

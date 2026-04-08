@@ -477,7 +477,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	}
 
 	// DD-WORKFLOW-017: Resolve engineConfig from DS catalog when not present on the WFE spec.
-	// Execution details like engineConfig come from the workflow catalog entry, not the HAPI pipeline.
+	// Execution details like engineConfig come from the workflow catalog entry, not the KA pipeline.
 	if wfe.Spec.WorkflowRef.EngineConfig == nil && wfe.Spec.WorkflowRef.WorkflowID != "" && r.WorkflowQuerier != nil {
 		ecRaw, ecErr := r.WorkflowQuerier.GetWorkflowEngineConfig(ctx, wfe.Spec.WorkflowRef.WorkflowID)
 		if ecErr != nil {
