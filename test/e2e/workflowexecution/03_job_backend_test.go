@@ -304,8 +304,8 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			By("Verifying Job container image")
 			Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
 			container := job.Spec.Template.Spec.Containers[0]
-			Expect(container.Image).To(Equal(wfe.Spec.WorkflowRef.ExecutionBundle),
-				"Job container image should match WFE spec")
+			Expect(container.Image).To(HavePrefix(wfe.Spec.WorkflowRef.ExecutionBundle),
+				"Job container image should start with WFE spec bundle (DS resolution may append @sha256: digest)")
 
 			By("Verifying environment variables include parameters")
 			envNames := make(map[string]string)
