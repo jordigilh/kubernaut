@@ -618,9 +618,9 @@
         "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
-    "holmesgptApi": {
+    "kubernautAgent": {
       "type": "object",
-      "description": "HolmesGPT API (LLM integration service)",
+      "description": "Kubernaut Agent (LLM integration service)",
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
@@ -650,12 +650,12 @@
         "sdkConfigContent": {
           "type": "string",
           "default": "",
-          "description": "Raw SDK config YAML. When set (e.g. via --set-file), replaces auto-generated SDK config in the holmesgpt-sdk-config ConfigMap."
+          "description": "Raw SDK config YAML. When set (e.g. via --set-file), replaces auto-generated SDK config in the kubernaut-agent-sdk-config ConfigMap."
         },
         "existingSdkConfigMap": {
           "type": "string",
           "default": "",
-          "description": "Use a pre-existing ConfigMap for SDK config instead of chart-generated. When set, holmesgpt-sdk-config is not created. Takes priority over sdkConfigContent."
+          "description": "Use a pre-existing ConfigMap for SDK config instead of chart-generated. When set, kubernaut-agent-sdk-config is not created. Takes priority over sdkConfigContent."
         },
         "prometheus": {
           "type": "object",

@@ -300,30 +300,30 @@ Usage: {{ include "kubernaut.podSecurityContext" .Values.gateway | nindent 6 }}
 {{- end }}
 
 {{/*
-HAPI TLS CA mount directory (single source of truth).
+KA TLS CA mount directory (single source of truth).
 Used by both the volume mount and the config ca_file path so they cannot diverge.
 */}}
-{{- define "kubernaut.hapi.tlsCaDir" -}}/etc/ssl/hapi{{- end -}}
+{{- define "kubernaut.agent.tlsCaDir" -}}/etc/ssl/kubernaut-agent{{- end -}}
 
 {{/*
-Whether HAPI TLS CA trust is enabled.
+Whether KA TLS CA trust is enabled.
 True when either explicit tls.enabled is set or OCP monitoring RBAC is requested
 (OCP Thanos/Prometheus always requires TLS).
 */}}
-{{- define "kubernaut.hapi.tlsEnabled" -}}
-{{- if or (and .Values.holmesgptApi.prometheus.tls .Values.holmesgptApi.prometheus.tls.enabled) .Values.holmesgptApi.prometheus.ocpMonitoringRbac -}}true{{- end -}}
+{{- define "kubernaut.agent.tlsEnabled" -}}
+{{- if or (and .Values.kubernautAgent.prometheus.tls .Values.kubernautAgent.prometheus.tls.enabled) .Values.kubernautAgent.prometheus.ocpMonitoringRbac -}}true{{- end -}}
 {{- end -}}
 
 {{/*
-Name of the ConfigMap containing the CA certificate for HAPI Prometheus TLS.
+Name of the ConfigMap containing the CA certificate for KA Prometheus TLS.
 Uses user-provided caConfigMapName if set, otherwise falls back to the
 chart-created OCP service-CA ConfigMap when ocpMonitoringRbac is enabled.
 */}}
-{{- define "kubernaut.hapi.tlsCaConfigMapName" -}}
-{{- if and .Values.holmesgptApi.prometheus.tls .Values.holmesgptApi.prometheus.tls.caConfigMapName -}}
-{{- .Values.holmesgptApi.prometheus.tls.caConfigMapName -}}
+{{- define "kubernaut.agent.tlsCaConfigMapName" -}}
+{{- if and .Values.kubernautAgent.prometheus.tls .Values.kubernautAgent.prometheus.tls.caConfigMapName -}}
+{{- .Values.kubernautAgent.prometheus.tls.caConfigMapName -}}
 {{- else -}}
-holmesgpt-api-service-ca
+kubernaut-agent-service-ca
 {{- end -}}
 {{- end -}}
 
@@ -331,9 +331,9 @@ holmesgpt-api-service-ca
 Key inside the CA ConfigMap that holds the PEM certificate.
 Defaults to "service-ca.crt" (OCP convention).
 */}}
-{{- define "kubernaut.hapi.tlsCaKey" -}}
-{{- if and .Values.holmesgptApi.prometheus.tls .Values.holmesgptApi.prometheus.tls.caConfigMapKey -}}
-{{- .Values.holmesgptApi.prometheus.tls.caConfigMapKey -}}
+{{- define "kubernaut.agent.tlsCaKey" -}}
+{{- if and .Values.kubernautAgent.prometheus.tls .Values.kubernautAgent.prometheus.tls.caConfigMapKey -}}
+{{- .Values.kubernautAgent.prometheus.tls.caConfigMapKey -}}
 {{- else -}}
 service-ca.crt
 {{- end -}}

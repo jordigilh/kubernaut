@@ -8,17 +8,17 @@ Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Na
 
 2. Verify LLM credentials secret exists:
 
-   kubectl get secret {{ .Values.holmesgptApi.llm.credentialsSecretName }} -n {{ .Release.Namespace }}
+   kubectl get secret {{ .Values.kubernautAgent.llm.credentialsSecretName }} -n {{ .Release.Namespace }}
 
    If missing, create it with your LLM provider API key:
 
-   kubectl create secret generic {{ .Values.holmesgptApi.llm.credentialsSecretName }} \
+   kubectl create secret generic {{ .Values.kubernautAgent.llm.credentialsSecretName }} \
      --from-literal=OPENAI_API_KEY=sk-... \
      -n {{ .Release.Namespace }}
 
-   Then restart HAPI to pick it up:
+   Then restart KA to pick it up:
 
-   kubectl rollout restart deployment/holmesgpt-api -n {{ .Release.Namespace }}
+   kubectl rollout restart deployment/kubernaut-agent -n {{ .Release.Namespace }}
 
 3. Check the workflow catalog:
 
@@ -56,11 +56,11 @@ Check seed job results:
   kubectl logs -l app=demo-content-seed -n {{ .Release.Namespace }}
 {{- end }}
 
-{{- if and .Values.holmesgptApi.prometheus.enabled (or .Values.holmesgptApi.existingSdkConfigMap .Values.holmesgptApi.sdkConfigContent) }}
+{{- if and .Values.kubernautAgent.prometheus.enabled (or .Values.kubernautAgent.existingSdkConfigMap .Values.kubernautAgent.sdkConfigContent) }}
 === IMPORTANT: Prometheus Toolset Configuration ===
 
-You have enabled holmesgptApi.prometheus but are using a custom SDK config
-({{ if .Values.holmesgptApi.existingSdkConfigMap }}existingSdkConfigMap: {{ .Values.holmesgptApi.existingSdkConfigMap }}{{ else }}sdkConfigContent{{ end }}).
+You have enabled kubernautAgent.prometheus but are using a custom SDK config
+({{ if .Values.kubernautAgent.existingSdkConfigMap }}existingSdkConfigMap: {{ .Values.kubernautAgent.existingSdkConfigMap }}{{ else }}sdkConfigContent{{ end }}).
 
 The chart has created the RBAC bindings and CA volume mounts, but the
 prometheus/metrics toolset is NOT auto-injected into custom SDK configs.
@@ -70,12 +70,12 @@ You must manually add it to your SDK configuration:
     prometheus/metrics:
       enabled: true
       config:
-        prometheus_url: "{{ .Values.holmesgptApi.prometheus.url }}"
-{{- if include "kubernaut.hapi.tlsEnabled" . }}
-        prometheus_ssl_ca_file: "{{ include "kubernaut.hapi.tlsCaDir" . }}/{{ include "kubernaut.hapi.tlsCaKey" . }}"
+        prometheus_url: "{{ .Values.kubernautAgent.prometheus.url }}"
+{{- if include "kubernaut.agent.tlsEnabled" . }}
+        prometheus_ssl_ca_file: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
 {{- end }}
 
-Without this, HAPI's LLM cannot query cluster metrics during investigations.
+Without this, KA's LLM cannot query cluster metrics during investigations.
 
 {{- end }}
 === Monitoring ===

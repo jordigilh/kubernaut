@@ -275,8 +275,8 @@ effectivenessmonitor:
       memory: 256Mi
       cpu: 500m
 
-# -- HolmesGPT API (LLM integration service)
-holmesgptApi:
+# -- Kubernaut Agent (LLM integration service)
+kubernautAgent:
   replicas: 1
   pdb:
     enabled: false
@@ -314,12 +314,12 @@ holmesgptApi:
       credentialsSecretRef: ""  # K8s Secret containing keys: client-id, client-secret
       scopes: ""                # Space-separated scopes, e.g., "openid llm-gateway"
   # -- Raw SDK config YAML content. When set, used verbatim in the
-  # holmesgpt-sdk-config ConfigMap. Takes priority over llm.provider/model.
-  # Usage: helm install --set-file holmesgptApi.sdkConfigContent=my-sdk-config.yaml
+  # kubernaut-agent-sdk-config ConfigMap. Takes priority over llm.provider/model.
+  # Usage: helm install --set-file kubernautAgent.sdkConfigContent=my-sdk-config.yaml
   sdkConfigContent: ""
   # -- Use a pre-existing ConfigMap for SDK config instead of chart-generated.
-  # When set, the chart does NOT create holmesgpt-sdk-config and mounts
-  # this ConfigMap at /etc/holmesgpt/sdk/ instead.
+  # When set, the chart does NOT create kubernaut-agent-sdk-config and mounts
+  # this ConfigMap at /etc/kubernaut-agent/sdk/ instead.
   # Takes priority over sdkConfigContent and llm.provider/model.
   existingSdkConfigMap: ""
   # -- Prometheus integration for LLM investigation context.

@@ -40,7 +40,7 @@ effectivenessmonitor:
     tlsCaFile: "/etc/ssl/em/service-ca.crt"
     ocpMonitoringRbac: true
 
-holmesgptApi:
+kubernautAgent:
   prometheus:
     enabled: true
     url: "https://prometheus-k8s.openshift-monitoring.svc:9091"
