@@ -112,7 +112,7 @@ func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName strin
 	_, _ = fmt.Fprintf(writer, "   Cluster: %s | Namespace: %s | Service: %s\n", clusterName, namespace, serviceName)
 	_, _ = fmt.Fprintf(writer, "═══════════════════════════════════════════════════════════\n\n")
 
-	mustGatherDir := fmt.Sprintf("/tmp/kubernaut-must-gather/%s", serviceName)
+	mustGatherDir := fmt.Sprintf("/tmp/kubernaut-must-gather/%s/%s", serviceName, namespace)
 	if err := os.MkdirAll(mustGatherDir, 0755); err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ Failed to create must-gather directory %s: %v\n", mustGatherDir, err)
 		return
@@ -208,6 +208,24 @@ func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName strin
 		_ = os.WriteFile(statusFile, statusOutput, 0644)
 	}
 
+	// Collect Job status and descriptions (captures BackoffLimitExceeded and
+	// other failure reasons that disappear after TTL-based garbage collection).
+	jobsFile := filepath.Join(mustGatherDir, "jobs.txt")
+	jobsArgs := append(kubeconfigArgs, "get", "jobs", "-n", namespace, "-o", "wide")
+	jobsCmd := exec.Command("kubectl", jobsArgs...)
+	jobsOutput, jobsErr := jobsCmd.CombinedOutput()
+	if jobsErr == nil && len(jobsOutput) > 0 {
+		_ = os.WriteFile(jobsFile, jobsOutput, 0644)
+	}
+
+	jobDescribeFile := filepath.Join(mustGatherDir, "jobs_describe.txt")
+	jobDescArgs := append(kubeconfigArgs, "describe", "jobs", "-n", namespace)
+	jobDescCmd := exec.Command("kubectl", jobDescArgs...)
+	jobDescOutput, jobDescErr := jobDescCmd.CombinedOutput()
+	if jobDescErr == nil && len(jobDescOutput) > 0 {
+		_ = os.WriteFile(jobDescribeFile, jobDescOutput, 0644)
+	}
+
 	// Collect pod JSON for termination reason diagnostics (lastState.terminated.reason)
 	podJSONFile := filepath.Join(mustGatherDir, "pod_status.json")
 	podJSONArgs := append(kubeconfigArgs, "get", "pods", "-n", namespace, "-o", "json")
@@ -239,7 +257,7 @@ func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName strin
 	}
 
 	_, _ = fmt.Fprintf(writer, "✅ Must-gather collected %d log files to %s\n", collectedCount, mustGatherDir)
-	_, _ = fmt.Fprintf(writer, "   (Events, pod status, deployments, replicasets, SP CRs also captured)\n\n")
+	_, _ = fmt.Fprintf(writer, "   (Events, pod status, jobs, deployments, replicasets, SP CRs also captured)\n\n")
 }
 
 // DeleteCluster deletes a Kind cluster and optionally exports logs on test failure
