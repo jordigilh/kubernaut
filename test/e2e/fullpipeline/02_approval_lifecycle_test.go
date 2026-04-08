@@ -316,21 +316,26 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		// Step 10: Wait for K8s Job completion
 		// ================================================================
 		By("Step 10: Waiting for K8s Job to complete")
-		Eventually(func() bool {
+		Eventually(func(g Gomega) {
+			// Early-exit: if WE already reached Failed, the Job won't recover.
+			we := &workflowexecutionv1.WorkflowExecution{}
+			if getErr := apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, we); getErr == nil {
+				g.Expect(we.Status.Phase).NotTo(Equal("Failed"),
+					fmt.Sprintf("WorkflowExecution %s reached Failed phase (reason: %s) — Job will not recover", weName, we.Status.FailureReason))
+			}
+
 			jobList := &batchv1.JobList{}
-			if err := apiReader.List(ctx, jobList,
+			g.Expect(apiReader.List(ctx, jobList,
 				client.InNamespace("kubernaut-workflows"),
-				client.MatchingLabels{"kubernaut.ai/workflow-execution": weName}); err != nil {
-				return false
-			}
-			for _, job := range jobList.Items {
-				if job.Status.Succeeded > 0 {
-					GinkgoWriter.Printf("  ✅ Job completed: %s\n", job.Name)
-					return true
-				}
-			}
-			return false
-		}, timeout, interval).Should(BeTrue(), "K8s Job should complete")
+				client.MatchingLabels{"kubernaut.ai/workflow-execution": weName})).To(Succeed())
+			g.Expect(jobList.Items).NotTo(BeEmpty(), "No Jobs found for WorkflowExecution %s", weName)
+
+			job := jobList.Items[0]
+			g.Expect(job.Status.Failed).To(BeZero(),
+				fmt.Sprintf("Job %s has %d failed pod(s) — check pod logs for details", job.Name, job.Status.Failed))
+			g.Expect(job.Status.Succeeded).To(BeNumerically(">", 0),
+				fmt.Sprintf("Job %s has not succeeded yet (active=%d)", job.Name, job.Status.Active))
+		}, timeout, interval).Should(Succeed(), "K8s Job should complete successfully")
 
 		// ================================================================
 		// Step 11: Wait for WorkflowExecution completion

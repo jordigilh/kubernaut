@@ -279,6 +279,13 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 
 		By("Step 6b: Waiting for K8s Job to complete")
 		Eventually(func(g Gomega) {
+			// Early-exit: if WE already reached Failed, the Job won't recover.
+			we := &workflowexecutionv1.WorkflowExecution{}
+			if getErr := apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, we); getErr == nil {
+				g.Expect(we.Status.Phase).NotTo(Equal("Failed"),
+					fmt.Sprintf("WorkflowExecution %s reached Failed phase (reason: %s) — Job will not recover", weName, we.Status.FailureReason))
+			}
+
 			jobList := &batchv1.JobList{}
 			g.Expect(apiReader.List(ctx, jobList,
 				client.InNamespace("kubernaut-workflows"),
@@ -286,7 +293,7 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 			g.Expect(jobList.Items).NotTo(BeEmpty(), "No Jobs found for WorkflowExecution %s", weName)
 
 			job := jobList.Items[0]
-			Expect(job.Status.Failed).To(BeZero(),
+			g.Expect(job.Status.Failed).To(BeZero(),
 				fmt.Sprintf("Job %s has %d failed pod(s) — check pod logs for details", job.Name, job.Status.Failed))
 			g.Expect(job.Status.Succeeded).To(BeNumerically(">", 0),
 				fmt.Sprintf("Job %s has not succeeded yet (active=%d)", job.Name, job.Status.Active))

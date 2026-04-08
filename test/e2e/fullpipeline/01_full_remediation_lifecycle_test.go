@@ -246,6 +246,14 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// ================================================================
 		By("Step 7: Waiting for K8s Job to complete")
 		Eventually(func(g Gomega) {
+			// Early-exit: if WE already reached Failed, the Job won't recover.
+			// Fail fast with diagnostic info instead of waiting for TTL garbage collection.
+			we := &workflowexecutionv1.WorkflowExecution{}
+			if getErr := apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, we); getErr == nil {
+				g.Expect(we.Status.Phase).NotTo(Equal("Failed"),
+					fmt.Sprintf("WorkflowExecution %s reached Failed phase (reason: %s) — Job will not recover", weName, we.Status.FailureReason))
+			}
+
 			jobList := &batchv1.JobList{}
 			g.Expect(apiReader.List(ctx, jobList,
 				client.InNamespace("kubernaut-workflows"),
@@ -1050,6 +1058,14 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// ================================================================
 		By("AM Step 7: Waiting for K8s Job to complete")
 		Eventually(func(g Gomega) {
+			// Early-exit: if WE already reached Failed, the Job won't recover.
+			// Fail fast with diagnostic info instead of waiting for TTL garbage collection.
+			we := &workflowexecutionv1.WorkflowExecution{}
+			if getErr := apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, we); getErr == nil {
+				g.Expect(we.Status.Phase).NotTo(Equal("Failed"),
+					fmt.Sprintf("WorkflowExecution %s reached Failed phase (reason: %s) — Job will not recover", weName, we.Status.FailureReason))
+			}
+
 			jobList := &batchv1.JobList{}
 			g.Expect(apiReader.List(ctx, jobList,
 				client.InNamespace("kubernaut-workflows"),
