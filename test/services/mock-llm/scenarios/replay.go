@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -36,13 +36,13 @@ const replayConfidence = 1.1
 //
 // When kaDialog.rawResponses is populated, the last entry becomes ExactAnalysisText.
 // When only hapiDialog is present, ExactAnalysisText is synthesized from the
-// analysis fields, converting camelCase HAPI format to the snake_case JSON
+// analysis fields, converting camelCase legacy (v1.2) format to the snake_case JSON
 // that KA's ResultParser expects.
 type GoldenTranscript struct {
-	Scenario         string `json:"scenario"`
-	SignalName       string `json:"signalName"`
-	KubernautVersion string `json:"kubernautVersion"`
-	CapturedAt       string `json:"capturedAt"`
+	Scenario         string       `json:"scenario"`
+	SignalName       string       `json:"signalName"`
+	KubernautVersion string       `json:"kubernautVersion"`
+	CapturedAt       string       `json:"capturedAt"`
 	Analysis         HAPIAnalysis `json:"analysis"`
 	KADialog         struct {
 		RawResponses []string `json:"rawResponses"`
@@ -56,6 +56,11 @@ type GoldenTranscript struct {
 	} `json:"kaDialog"`
 	HAPIDialog *HAPIDialog `json:"hapiDialog,omitempty"`
 }
+
+// HAPI v1.2 backward compatibility types.
+// Golden transcripts were captured from the Python HAPI service (v1.2).
+// These types and the "hapiDialog" JSON key must be preserved to
+// deserialize existing golden transcript files.
 
 // HAPIDialog holds the HAPI v1.2 conversation format captured from pod logs.
 type HAPIDialog struct {
@@ -72,14 +77,14 @@ type HAPIDialog struct {
 }
 
 // HAPIAnalysis is a superset that captures both KA-native fields (json.RawMessage)
-// and HAPI's typed analysis fields for backward-compatible synthesis.
+// and legacy v1.2 typed analysis fields for backward-compatible synthesis.
 type HAPIAnalysis struct {
-	Signal            json.RawMessage    `json:"signal,omitempty"`
-	RootCauseAnalysis json.RawMessage    `json:"rootCauseAnalysis"`
-	SelectedWorkflow  json.RawMessage    `json:"selectedWorkflow,omitempty"`
-	AlternativeWFs    json.RawMessage    `json:"alternativeWorkflows,omitempty"`
-	NeedsHumanReview  *bool              `json:"needsHumanReview,omitempty"`
-	Actionability     string             `json:"actionability,omitempty"`
+	Signal            json.RawMessage `json:"signal,omitempty"`
+	RootCauseAnalysis json.RawMessage `json:"rootCauseAnalysis"`
+	SelectedWorkflow  json.RawMessage `json:"selectedWorkflow,omitempty"`
+	AlternativeWFs    json.RawMessage `json:"alternativeWorkflows,omitempty"`
+	NeedsHumanReview  *bool           `json:"needsHumanReview,omitempty"`
+	Actionability     string          `json:"actionability,omitempty"`
 }
 
 // replayScenario matches on signalName from a golden transcript and returns
@@ -182,9 +187,9 @@ func LoadReplayScenarios(goldenDir string) ([]*replayScenario, []error) {
 	return scenarios, errs
 }
 
-// synthesizeFromHAPI converts HAPI's camelCase analysis fields to the snake_case
+// synthesizeFromHAPI converts legacy camelCase analysis fields to the snake_case
 // JSON format that KA's ResultParser expects. This bridges the gap between
-// HAPI v1.2 golden transcripts and KA's structured output contract.
+// v1.2 golden transcripts and KA's structured output contract.
 func synthesizeFromHAPI(analysis HAPIAnalysis) (string, error) {
 	result := make(map[string]interface{})
 
