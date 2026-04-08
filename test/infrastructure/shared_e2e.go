@@ -31,9 +31,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// createHAPIKindCluster creates a Kind cluster using the HAPI/KA Kind config.
-// Reused by both HAPI and Kubernaut Agent E2E suites (same port layout).
-func createHAPIKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+// createKAKindCluster creates a Kind cluster using the KA Kind config.
+// Reused by both KA and AIAnalysis E2E suites (same port layout).
+func createKAKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
 	if os.Getenv("E2E_COVERAGE") == "true" {
 		projectRoot := getProjectRoot()
 		coverdataPath := filepath.Join(projectRoot, "coverdata")
@@ -63,7 +63,7 @@ func createHAPIKindCluster(clusterName, kubeconfigPath string, writer io.Writer)
 
 // createHolmesGPTAPIE2EServiceAccount creates the E2E ServiceAccount with
 // RBAC for calling the agent API and accessing DataStorage.
-// Used by Kubernaut Agent and legacy HAPI E2E suites.
+// Used by Kubernaut Agent and legacy AIAnalysis/KA E2E suites.
 func createHolmesGPTAPIE2EServiceAccount(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	saName := "kubernaut-agent-e2e-sa"
 
@@ -302,7 +302,7 @@ spec:
 }
 
 // BuildKubernautAgentImage builds the Go Kubernaut Agent container image for
-// integration and E2E tests. Replaces the deprecated BuildHAPIImage (Python).
+// integration and E2E tests. Replaces the deprecated Python-era HolmesGPT image build path.
 //
 // The Dockerfile at docker/kubernautagent.Dockerfile uses a multi-stage build:
 //   - builder stage: compiles the Go binary from cmd/kubernautagent

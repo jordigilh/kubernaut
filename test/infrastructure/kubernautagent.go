@@ -26,10 +26,10 @@ import (
 )
 
 // SetupKubernautAgentInfrastructure provisions a complete E2E environment for the
-// Kubernaut Agent (Go), reusing the same DataStorage + Mock LLM stack as HAPI but
+// Kubernaut Agent (Go), reusing the same DataStorage + Mock LLM stack as AIAnalysis E2E but
 // deploying the Go binary from docker/kubernautagent.Dockerfile.
 //
-// Port allocations (same as HAPI per DD-TEST-001 v2.9):
+// Port allocations (same as AIAnalysis/KA E2E per DD-TEST-001 v2.9):
 //   - Kubernaut Agent: 30088 (NodePort) → 8080 (container, Host Port 8088)
 //   - Data Storage:    30089 (NodePort) → 8080 (container, Host Port 8089)
 //   - PostgreSQL:      30439 (NodePort) → 5432 (container)
@@ -102,10 +102,10 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 2: Create Kind cluster (reuse HAPI Kind config — same ports)
+	// PHASE 2: Create Kind cluster (reuse AIAnalysis E2E Kind config — same ports)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🏗️  PHASE 2: Creating Kind cluster...")
-	if err := createHAPIKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+	if err := createKAKindCluster(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -126,7 +126,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy DataStorage stack (PostgreSQL + Redis + DS + Migrations)
-	// Reuses the same inline pattern as SetupHAPIInfrastructure.
+	// Reuses the same inline pattern as CreateAIAnalysisClusterHybrid.
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🗄️  PHASE 4: Deploying DataStorage stack...")
 	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
@@ -180,7 +180,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 5: Seed workflows + deploy Mock LLM (same as HAPI Phase 4c/4d)
+	// PHASE 5: Seed workflows + deploy Mock LLM (same as AIAnalysis E2E Phase 4c/4d)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🌱 PHASE 5: Seeding workflows and deploying Mock LLM...")
 	if err := createHolmesGPTAPIE2EServiceAccount(ctx, namespace, kubeconfigPath, writer); err != nil {
@@ -207,7 +207,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 
-	testWorkflows := GetHAPIE2ETestWorkflows()
+	testWorkflows := GetKAE2ETestWorkflows()
 	workflowUUIDs, err := SeedWorkflowsInDataStorage(seedClient, testWorkflows, "KA E2E (via infrastructure)", writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed workflows: %w", err)
@@ -283,7 +283,7 @@ subjects:
 }
 
 // deployKubernautAgentServiceRBAC creates the ServiceAccount and RBAC for KA pods.
-// Mirrors the HAPI RBAC pattern (DD-AUTH-014) with KA-specific names.
+// Mirrors the HolmesGPT/KA RBAC pattern (DD-AUTH-014) with KA-specific names.
 func deployKubernautAgentServiceRBAC(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	rbacManifest := fmt.Sprintf(`---
 apiVersion: v1
@@ -404,7 +404,7 @@ subjects:
 }
 
 // deployKubernautAgentOnly deploys the Go Kubernaut Agent as a Deployment + NodePort Service.
-// Same port mapping as HAPI (30088 → 8080, host 8088) for API contract parity.
+// Same port mapping as legacy HolmesGPT API / KA (30088 → 8080, host 8088) for API contract parity.
 func deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
 	imagePullPolicy := GetImagePullPolicy()
 

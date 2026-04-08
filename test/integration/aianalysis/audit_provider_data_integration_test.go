@@ -35,7 +35,7 @@ limitations under the License.
 // - AIAnalysis Controller: Real controller with real audit client
 //
 // Test Pattern:
-// - Create AIAnalysis CRD → Controller reconciles → HAPI is called → Both services emit audit events
+// - Create AIAnalysis CRD → Controller reconciles → KA is called → Both services emit audit events
 // - Query Data Storage API for BOTH event types
 // - Validate complete audit trail for SOC2 compliance
 package aianalysis
@@ -173,10 +173,10 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 	// ========================================
 	// TEST 1: Hybrid Capture Validation
-	// Validates that BOTH HAPI and AA emit audit events
+	// Validates that BOTH KA and AA emit audit events
 	// ========================================
 	Context("Hybrid Audit Event Emission", func() {
-		It("should capture Holmes response in BOTH HAPI and AA audit events", func() {
+		It("should capture Holmes response in BOTH KA and AA audit events", func() {
 			// ========================================
 			// TEST OBJECTIVE:
 			// Verify that BOTH services emit audit events with correct structure:
@@ -210,7 +210,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-hybrid-%s", uuid.New().String()[:8]),
 							Severity:         "critical",
-							SignalName:       "CrashLoopBackOff", // HAPI mock will return deterministic response
+							SignalName:       "CrashLoopBackOff", // KA mock will return deterministic response
 							Environment:      "production",
 							BusinessPriority: "P0",
 							TargetResource: aianalysisv1.TargetResource{
@@ -220,7 +220,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						// Single analysis type for hybrid audit test (focused on HAPI+AA event validation)
+						// Single analysis type for hybrid audit test (focused on KA+AA event validation)
 						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
@@ -232,7 +232,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 				_ = k8sClient.Delete(ctx, analysis)
 			}()
 
-			By("Waiting for controller to complete analysis (calls HAPI)")
+			By("Waiting for controller to complete analysis (calls KA)")
 			Eventually(func() string {
 				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
 				if err != nil {
@@ -248,16 +248,16 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			GinkgoWriter.Printf("📋 Testing hybrid audit for correlation_id: %s\n", correlationID)
 
 			// ========================================
-			// STEP 1: Verify HAPI audit event (provider perspective)
+			// STEP 1: Verify KA audit event (provider perspective)
 			// ========================================
 			// NT Pattern: No preliminary flush needed - waitForAuditEvents helper flushes on each retry
-			By("Waiting for HAPI audit event (aiagent.response.complete)")
-			hapiEvents := waitForAuditEvents(correlationID, string(ogenclient.AIAgentResponsePayloadAuditEventEventData), 1)
-			hapiEvent := hapiEvents[0]
+			By("Waiting for KA audit event (aiagent.response.complete)")
+			kaEvents := waitForAuditEvents(correlationID, string(ogenclient.AIAgentResponsePayloadAuditEventEventData), 1)
+			kaEvent := kaEvents[0]
 
 		By("Validating KA event metadata with testutil")
 		actorID := "kubernaut-agent"
-		validators.ValidateAuditEvent(hapiEvent, validators.ExpectedAuditEvent{
+		validators.ValidateAuditEvent(kaEvent, validators.ExpectedAuditEvent{
 			EventType:     string(ogenclient.AIAgentResponsePayloadAuditEventEventData),
 			EventCategory: ogenclient.AuditEventEventCategoryAiagent, // ADR-034 v1.6: HolmesGPT API uses "aiagent" category
 			EventAction:   "response_sent",
@@ -266,22 +266,22 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			ActorID:       &actorID,
 		})
 
-			By("Validating HAPI event_data structure (provider perspective - full response)")
-			validators.ValidateAuditEventHasRequiredFields(hapiEvent)
+			By("Validating KA event_data structure (provider perspective - full response)")
+			validators.ValidateAuditEventHasRequiredFields(kaEvent)
 
 			// DD-AUDIT-004: Use strongly-typed payload (no map[string]interface{})
-			hapiPayload := hapiEvent.EventData.AIAgentResponsePayload
-			Expect(hapiPayload.EventID).ToNot(BeEmpty(), "EventData should have event_id")
-			Expect(hapiPayload.IncidentID).ToNot(BeEmpty(), "EventData should have incident_id")
+			kaPayload := kaEvent.EventData.AIAgentResponsePayload
+			Expect(kaPayload.EventID).ToNot(BeEmpty(), "EventData should have event_id")
+			Expect(kaPayload.IncidentID).ToNot(BeEmpty(), "EventData should have incident_id")
 
 			// DD-AUDIT-005: Validate response_data contains complete IncidentResponse
-			responseData := hapiPayload.ResponseData
+			responseData := kaPayload.ResponseData
 			Expect(responseData.IncidentId).ToNot(BeEmpty(), "response_data should have incident_id")
 			Expect(responseData.Analysis).ToNot(BeEmpty(), "response_data should have analysis text")
 			Expect(responseData.RootCauseAnalysis.Summary).ToNot(BeEmpty(), "Should have root_cause_analysis.summary")
 			Expect(responseData.Confidence).To(BeNumerically(">", 0), "Should have confidence > 0")
 			Expect(responseData.Timestamp).ToNot(BeZero(), "Should have timestamp")
-			GinkgoWriter.Println("✅ HAPI event contains complete IncidentResponse structure")
+			GinkgoWriter.Println("✅ KA event contains complete IncidentResponse structure")
 
 			// ========================================
 			// STEP 2: Verify AA audit event (consumer perspective)
@@ -326,20 +326,20 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			By("Validating hybrid approach benefits")
 
 			// Benefit 1: Both events share correlation_id for linkage
-			Expect(hapiEvent.CorrelationID).To(Equal(aaEvent.CorrelationID),
+			Expect(kaEvent.CorrelationID).To(Equal(aaEvent.CorrelationID),
 				"Both events should share correlation_id")
 
-			// Benefit 2: HAPI has authoritative full response
+			// Benefit 2: KA has authoritative full response
 			Expect(responseData.Analysis).ToNot(BeEmpty(),
-				"HAPI should have complete analysis response")
+				"KA should have complete analysis response")
 
-			// Benefit 3: AA has business context not in HAPI
+			// Benefit 3: AA has business context not in KA
 			Expect(aaPayload.Phase).ToNot(BeZero(), "AA should have 'phase' (business context)")
-			GinkgoWriter.Println("✅ Hybrid approach validated: HAPI has full response, AA has business context")
+			GinkgoWriter.Println("✅ Hybrid approach validated: KA has full response, AA has business context")
 
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			GinkgoWriter.Println("✅ HYBRID AUDIT VALIDATION PASSED")
-			GinkgoWriter.Printf("   • HAPI event: Provider perspective (full response)\n")
+			GinkgoWriter.Printf("   • KA event: Provider perspective (full response)\n")
 			GinkgoWriter.Printf("   • AA event: Consumer perspective (summary + business context)\n")
 			GinkgoWriter.Printf("   • Correlation: Both linked via %s\n", correlationID)
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -348,13 +348,13 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 	// ========================================
 	// TEST 2: RR Reconstruction Completeness
-	// Validates that HAPI event contains complete data for RR reconstruction
+	// Validates that KA event contains complete data for RR reconstruction
 	// ========================================
 	Context("RemediationRequest Reconstruction Capability", func() {
-		It("should capture complete IncidentResponse in HAPI event for RR reconstruction", func() {
+		It("should capture complete IncidentResponse in KA event for RR reconstruction", func() {
 			// ========================================
 			// TEST OBJECTIVE:
-			// Verify that HAPI audit event contains COMPLETE IncidentResponse
+			// Verify that KA audit event contains COMPLETE IncidentResponse
 			// structure with all fields required for RemediationRequest reconstruction
 			// per SOC2 Type II compliance requirements.
 			// ========================================
@@ -411,13 +411,13 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			// and shorter timeout (30s vs 90s) compared to successful tests.
 			// KA BufferedAuditStore flush can lag under load (batch_size triggers, not timer).
 			// SOLUTION: Use same pattern as successful "Hybrid Audit Event Emission" test (line 259)
-			By("Querying HAPI event for RR reconstruction validation (with Eventually for async buffer)")
-			hapiEventType := string(ogenclient.AIAgentResponsePayloadAuditEventEventData)
-			hapiEvents := waitForAuditEvents(correlationID, hapiEventType, 1)
+			By("Querying KA event for RR reconstruction validation (with Eventually for async buffer)")
+			kaEventType := string(ogenclient.AIAgentResponsePayloadAuditEventEventData)
+			kaEvents := waitForAuditEvents(correlationID, kaEventType, 1)
 
 			// Extract strongly-typed response_data (DD-AUDIT-004)
-			hapiPayload := hapiEvents[0].EventData.AIAgentResponsePayload
-			responseData := hapiPayload.ResponseData
+			kaPayload := kaEvents[0].EventData.AIAgentResponsePayload
+			responseData := kaPayload.ResponseData
 
 			By("Validating COMPLETE IncidentResponse structure for RR reconstruction")
 
@@ -453,7 +453,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			GinkgoWriter.Println("✅ RR RECONSTRUCTION VALIDATION PASSED")
-			GinkgoWriter.Printf("   • Complete IncidentResponse captured in HAPI event\n")
+			GinkgoWriter.Printf("   • Complete IncidentResponse captured in KA event\n")
 			GinkgoWriter.Printf("   • All fields required for RR reconstruction present\n")
 			GinkgoWriter.Printf("   • SOC2 Type II compliance: PASS\n")
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -465,7 +465,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 	// Validates that both events use same correlation_id
 	// ========================================
 	Context("Audit Event Correlation", func() {
-		It("should use same correlation_id in both HAPI and AA events for audit trail linkage", func() {
+		It("should use same correlation_id in both KA and AA events for audit trail linkage", func() {
 			// ========================================
 			// TEST OBJECTIVE:
 			// Verify that BOTH audit events use the SAME correlation_id
@@ -474,7 +474,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 			By("Creating AIAnalysis resource for correlation validation")
 			// DD-AUDIT-CORRELATION-001: RemediationID must match RemediationRequestRef.Name
-			// for HAPI and AA audit events to use same correlation_id
+			// for KA and AA audit events to use same correlation_id
 			rrName := fmt.Sprintf("test-rr-corr-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
@@ -521,8 +521,8 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 		// This matches the correlation_id that AIAnalysis audit client records
 		correlationID := analysis.Spec.RemediationRequestRef.Name
 
-			// NT Pattern: Use Eventually() with Flush() to wait for HAPI events to be written
-			By("Querying ALL events by correlation_id and waiting for HAPI events")
+			// NT Pattern: Use Eventually() with Flush() to wait for KA events to be written
+			By("Querying ALL events by correlation_id and waiting for KA events")
 			var allEvents []ogenclient.AuditEvent
 			Eventually(func() int {
 				// NT Pattern: Flush audit buffer on each retry
@@ -540,30 +540,30 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 				}
 				allEvents = allResp.Data
 				
-				// Count HAPI events specifically - don't exit until we have at least 1
-				hapiEventType := ogenclient.AIAgentResponsePayloadAuditEventEventData
-				hapiCount := 0
+				// Count KA events specifically - don't exit until we have at least 1
+				kaEventType := ogenclient.AIAgentResponsePayloadAuditEventEventData
+				kaCount := 0
 				for _, event := range allEvents {
-					if event.EventData.Type == hapiEventType {
-						hapiCount++
+					if event.EventData.Type == kaEventType {
+						kaCount++
 					}
 				}
-				if hapiCount == 0 {
-					GinkgoWriter.Printf("⏳ Waiting for HAPI events (found %d total events, 0 HAPI)\n", len(allEvents))
+				if kaCount == 0 {
+					GinkgoWriter.Printf("⏳ Waiting for KA events (found %d total events, 0 KA)\n", len(allEvents))
 				}
-				return hapiCount
+				return kaCount
 			}, 90*time.Second, 500*time.Millisecond).Should(Equal(1),
-				"Should find exactly 1 HAPI audit event after buffer flush")
+				"Should find exactly 1 KA audit event after buffer flush")
 
 			By("Counting events by type")
 			eventCounts := countEventsByType(allEvents)
 
 			// DD-TESTING-001 §256-300: MANDATORY deterministic count validation
-			hapiCount := eventCounts[string(ogenclient.AIAgentResponsePayloadAuditEventEventData)]
+			kaCount := eventCounts[string(ogenclient.AIAgentResponsePayloadAuditEventEventData)]
 			aaCompletedCount := eventCounts["aianalysis.analysis.completed"]
 
-			Expect(hapiCount).To(Equal(1),
-				"DD-TESTING-001 violation: Should have EXACTLY 1 HAPI event (controller idempotency)")
+			Expect(kaCount).To(Equal(1),
+				"DD-TESTING-001 violation: Should have EXACTLY 1 KA event (controller idempotency)")
 			Expect(aaCompletedCount).To(Equal(1),
 				"DD-TESTING-001 violation: Should have EXACTLY 1 AA completion event (controller idempotency)")
 
@@ -579,21 +579,21 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			}
 
 			By("Validating both hybrid events present")
-			var foundHAPI, foundAA bool
+			var foundKA, foundAA bool
 			for _, event := range allEvents {
 				if event.EventType == string(ogenclient.AIAgentResponsePayloadAuditEventEventData) {
-					foundHAPI = true
+					foundKA = true
 				}
 				if event.EventType == aianalysisaudit.EventTypeAnalysisCompleted {
 					foundAA = true
 				}
 			}
-			Expect(foundHAPI).To(BeTrue(), "Should find HAPI hybrid event")
+			Expect(foundKA).To(BeTrue(), "Should find KA hybrid event")
 			Expect(foundAA).To(BeTrue(), "Should find AA hybrid event")
 
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			GinkgoWriter.Println("✅ CORRELATION VALIDATION PASSED")
-			GinkgoWriter.Printf("   • Both HAPI and AA events use correlation_id: %s\n", correlationID)
+			GinkgoWriter.Printf("   • Both KA and AA events use correlation_id: %s\n", correlationID)
 			GinkgoWriter.Printf("   • Audit trail linkage: VERIFIED\n")
 			GinkgoWriter.Printf("   • Defense-in-depth validation: ENABLED\n")
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
