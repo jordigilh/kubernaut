@@ -31,15 +31,15 @@ spec:
     - name: TARGET_RESOURCE_NAME
       type: string
       required: true
-      description: "Name of the root managing resource (HAPI-injected from root_owner)"
+      description: "Name of the root managing resource (KA-injected from root_owner)"
     - name: TARGET_RESOURCE_KIND
       type: string
       required: true
-      description: "Kind of the root managing resource (HAPI-injected from root_owner)"
+      description: "Kind of the root managing resource (KA-injected from root_owner)"
     - name: TARGET_RESOURCE_NAMESPACE
       type: string
       required: true
-      description: "Namespace of the root managing resource (HAPI-injected from root_owner)"
+      description: "Namespace of the root managing resource (KA-injected from root_owner)"
     - name: MEMORY_LIMIT_NEW
       type: string
       required: true

@@ -26,13 +26,13 @@ make push-test-workflows WORKFLOW_REGISTRY=ghcr.io/jordigilh/kubernaut/test-work
 
 | Directory | Image Name | ActionType | Used By |
 |-----------|-----------|------------|---------|
-| `oomkill-increase-memory/` | oomkill-increase-memory | IncreaseMemoryLimits | AA, HAPI |
-| `crashloop-config-fix/` | crashloop-config-fix | RestartDeployment | AA, HAPI |
-| `node-drain-reboot/` | node-drain-reboot | DrainNode | AA, HAPI |
-| `memory-optimize/` | memory-optimize | ScaleReplicas | AA, HAPI |
-| `generic-restart/` | generic-restart | RestartPod | AA, HAPI |
+| `oomkill-increase-memory/` | oomkill-increase-memory | IncreaseMemoryLimits | AA, KA |
+| `crashloop-config-fix/` | crashloop-config-fix | RestartDeployment | AA, KA |
+| `node-drain-reboot/` | node-drain-reboot | DrainNode | AA, KA |
+| `memory-optimize/` | memory-optimize | ScaleReplicas | AA, KA |
+| `generic-restart/` | generic-restart | RestartPod | AA, KA |
 | `test-signal-handler/` | test-signal-handler | DeletePod | AA |
-| `imagepull-fix-creds/` | imagepull-fix-creds | RollbackDeployment | HAPI |
+| `imagepull-fix-creds/` | imagepull-fix-creds | RollbackDeployment | KA |
 | `hello-world/` | hello-world | RestartPod | WE |
 | `failing/` | failing | RestartPod | WE |
 | `oomkill-increase-memory-job/` | oomkill-increase-memory-job | IncreaseMemoryLimits | FullPipeline |
