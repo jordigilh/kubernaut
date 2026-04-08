@@ -27,6 +27,12 @@
 - Description: {{ if .Description }}{{ .Description }}{{ else }}N/A{{ end }}
 - Firing Time: {{ .FiringTime }}
 - Received Time: {{ .ReceivedTime }}
+{{- if .SignalAnnotations }}
+
+## Alert Annotations (from signal author)
+{{ range $key, $value := .SignalAnnotations }}- {{ $key }}: {{ $value }}
+{{ end }}
+{{- end }}
 {{ if eq .SignalMode "proactive" }}
 ## Proactive Signal Mode (ADR-054)
 

@@ -132,4 +132,8 @@ type SignalContext struct {
 	ReceivedTime    string `json:"received_time,omitempty"`
 	IsDuplicate     *bool  `json:"is_duplicate,omitempty"`
 	OccurrenceCount *int   `json:"occurrence_count,omitempty"`
+
+	// #462: Alert-author annotations and signal labels from IncidentRequest
+	SignalAnnotations map[string]string `json:"signal_annotations,omitempty"`
+	SignalLabels      map[string]string `json:"signal_labels,omitempty"`
 }

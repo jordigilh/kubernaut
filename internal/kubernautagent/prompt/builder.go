@@ -51,6 +51,7 @@ type SignalData struct {
 	ReceivedTime     string
 	IsDuplicate      *bool
 	OccurrenceCount  *int
+	SignalAnnotations map[string]string
 }
 
 // EnrichmentData contains enrichment context injected into the prompt.
@@ -94,6 +95,7 @@ type investigationTemplateData struct {
 	BusinessCategory            string
 	RiskTolerance               string
 	StructuredOutput            bool
+	SignalAnnotations           map[string]string
 }
 
 // workflowTemplateData maps to fields expected by phase3_workflow_selection.tmpl.
@@ -201,6 +203,7 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentD
 		RiskTolerance:       sanitized.RiskTolerance,
 		IsDuplicate:         sanitized.IsDuplicate != nil && *sanitized.IsDuplicate,
 		OccurrenceCount:     derefIntOr(sanitized.OccurrenceCount, 0),
+		SignalAnnotations:   sanitized.SignalAnnotations,
 	}
 
 	if enrichData != nil {
@@ -313,25 +316,37 @@ func derefIntOr(p *int, fallback int) int {
 
 func sanitizeSignal(signal SignalData) SignalData {
 	return SignalData{
-		Name:             sanitizeField(signal.Name),
-		Namespace:        sanitizeField(signal.Namespace),
-		Severity:         sanitizeField(signal.Severity),
-		Message:          sanitizeField(signal.Message),
-		ResourceKind:     sanitizeField(signal.ResourceKind),
-		ResourceName:     sanitizeField(signal.ResourceName),
-		ClusterName:      sanitizeField(signal.ClusterName),
-		Environment:      sanitizeField(signal.Environment),
-		Priority:         sanitizeField(signal.Priority),
-		RiskTolerance:    sanitizeField(signal.RiskTolerance),
-		SignalSource:     sanitizeField(signal.SignalSource),
-		BusinessCategory: sanitizeField(signal.BusinessCategory),
-		Description:      sanitizeField(signal.Description),
-		SignalMode:       sanitizeField(signal.SignalMode),
-		FiringTime:       sanitizeField(signal.FiringTime),
-		ReceivedTime:     sanitizeField(signal.ReceivedTime),
-		IsDuplicate:      signal.IsDuplicate,
-		OccurrenceCount:  signal.OccurrenceCount,
+		Name:              sanitizeField(signal.Name),
+		Namespace:         sanitizeField(signal.Namespace),
+		Severity:          sanitizeField(signal.Severity),
+		Message:           sanitizeField(signal.Message),
+		ResourceKind:      sanitizeField(signal.ResourceKind),
+		ResourceName:      sanitizeField(signal.ResourceName),
+		ClusterName:       sanitizeField(signal.ClusterName),
+		Environment:       sanitizeField(signal.Environment),
+		Priority:          sanitizeField(signal.Priority),
+		RiskTolerance:     sanitizeField(signal.RiskTolerance),
+		SignalSource:      sanitizeField(signal.SignalSource),
+		BusinessCategory:  sanitizeField(signal.BusinessCategory),
+		Description:       sanitizeField(signal.Description),
+		SignalMode:        sanitizeField(signal.SignalMode),
+		FiringTime:        sanitizeField(signal.FiringTime),
+		ReceivedTime:      sanitizeField(signal.ReceivedTime),
+		IsDuplicate:       signal.IsDuplicate,
+		OccurrenceCount:   signal.OccurrenceCount,
+		SignalAnnotations: sanitizeMapValues(signal.SignalAnnotations),
 	}
+}
+
+func sanitizeMapValues(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[sanitizeField(k)] = sanitizeField(v)
+	}
+	return out
 }
 
 func sanitizeField(s string) string {

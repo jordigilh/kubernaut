@@ -238,6 +238,12 @@ func MapIncidentRequestToSignal(req *agentclient.IncidentRequest) katypes.Signal
 	if v, ok := req.OccurrenceCount.Get(); ok {
 		sc.OccurrenceCount = &v
 	}
+	if v, ok := req.SignalAnnotations.Get(); ok {
+		sc.SignalAnnotations = map[string]string(v)
+	}
+	if v, ok := req.SignalLabels.Get(); ok {
+		sc.SignalLabels = map[string]string(v)
+	}
 	return sc
 }
 
