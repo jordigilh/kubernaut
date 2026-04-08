@@ -155,12 +155,16 @@ func analysisJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 	}
 
 	if cfg.WorkflowID != "" {
-		obj["selected_workflow"] = map[string]interface{}{
+		sw := map[string]interface{}{
 			"workflow_id":      cfg.WorkflowID,
 			"confidence":       cfg.Confidence,
 			"rationale":        workflowRationale(cfg),
 			"execution_engine": executionEngine(cfg),
 		}
+		if len(cfg.Parameters) > 0 {
+			sw["parameters"] = cfg.Parameters
+		}
+		obj["selected_workflow"] = sw
 	}
 
 	if len(cfg.Alternatives) > 0 {
