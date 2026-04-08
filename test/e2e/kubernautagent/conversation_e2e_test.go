@@ -255,34 +255,9 @@ var _ = Describe("E2E-CS-592: Conversation API", Label("e2e", "kubernautagent", 
 			"RFC 7807 problem detail status should be 401")
 	})
 
-	// =====================================================================
-	// E2E-CS-592-005: Rate limiting enforced
-	// BR-CONV-006
-	// =====================================================================
-	It("E2E-CS-592-005: enforces per-user rate limit (10/min default) — 11th request returns 429", func() {
-		session, resp := createConversationSession(authHTTPClient, sharedNamespace, "e2e-test-rar-ratelimit")
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated))
-
-		rateLimitHit := false
-		for i := 0; i < 12; i++ {
-			msgResp, err := postConversationMessage(authHTTPClient, session.SessionID, fmt.Sprintf("message %d", i))
-			Expect(err).ToNot(HaveOccurred())
-			if msgResp.StatusCode == http.StatusTooManyRequests {
-				rateLimitHit = true
-				var problemDetail rfc7807Error
-				Expect(json.NewDecoder(msgResp.Body).Decode(&problemDetail)).To(Succeed())
-				Expect(problemDetail.Status).To(Equal(http.StatusTooManyRequests),
-					"RFC 7807 status should be 429 when rate limit is exceeded")
-				_ = msgResp.Body.Close()
-				break
-			}
-			_, _ = io.ReadAll(msgResp.Body)
-			_ = msgResp.Body.Close()
-		}
-
-		Expect(rateLimitHit).To(BeTrue(),
-			"Per-user rate limit (10/min) should be enforced — at least one request out of 12 should return 429")
-	})
+	// E2E-CS-592-005 (rate limit exhaustion) is covered by unit tests
+	// UT-CS-592-016 and UT-CS-592-017 — not suitable for E2E because
+	// exhausting the rate limit poisons other tests in non-deterministic order.
 
 	// =====================================================================
 	// E2E-CS-592-006: Investigation-seeded conversation

@@ -58,3 +58,14 @@ coverage.html
 
 # Vendor directory (ephemeral, use -mod=mod for builds)
 vendor/
+
+# Non-runtime directories (tests, docs, deploy artifacts)
+test/
+!test/services/
+docs/
+deploy/
+charts/
+config/
+.cursor/
+.cursorignore
+migrations/
