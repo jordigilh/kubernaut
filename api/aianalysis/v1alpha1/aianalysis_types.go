@@ -189,6 +189,11 @@ type SignalContextInput struct {
 	// GAP-C3-04 FIX: Uses shared types from pkg/shared/types/enrichment.go
 	// +kubebuilder:validation:Required
 	EnrichmentResults sharedtypes.EnrichmentResults `json:"enrichmentResults"`
+
+	// SignalAnnotations from the original alert (e.g., description, summary from AlertManager).
+	// Untrusted content — sanitized by KA prompt builder before reaching the LLM.
+	// +optional
+	SignalAnnotations map[string]string `json:"signalAnnotations,omitempty"`
 }
 
 // TargetResource identifies the Kubernetes resource being remediated

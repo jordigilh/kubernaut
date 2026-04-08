@@ -1658,6 +1658,7 @@ _Appears in:_
 | `businessPriority`| _string_| Business priority<br />Best practice examples: P0 (critical), P1 (high), P2 (normal), P3 (low)|
 | `targetResource`| _[TargetResource](#targetresource)_| Target resource identification|
 | `enrichmentResults`| _EnrichmentResults_| Complete enrichment results from SignalProcessing|
+| `signalAnnotations`| _object (keys:string, values:string)_| SignalAnnotations from the original alert (e.g., description, summary from AlertManager).<br />Untrusted content — sanitized by KA prompt builder before reaching the LLM.|
 
 
 ### SignalData

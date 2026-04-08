@@ -949,6 +949,21 @@
             "title": "Signal Labels",
             "description": "Signal labels"
           },
+          "signal_annotations": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal Annotations",
+            "description": "Alert-author annotations from the original signal (e.g., description, summary from AlertManager)"
+          },
           "enrichment_results": {
             "anyOf": [
               {

@@ -882,6 +882,8 @@ type IncidentRequest struct {
 	LastSeen OptNilString `json:"last_seen"`
 	// Signal labels.
 	SignalLabels OptNilIncidentRequestSignalLabels `json:"signal_labels"`
+	// Alert-author annotations from the original signal (e.g., description, summary from AlertManager).
+	SignalAnnotations OptNilIncidentRequestSignalAnnotations `json:"signal_annotations"`
 	// Enriched context from SignalProcessing.
 	EnrichmentResults OptNilEnrichmentResults `json:"enrichment_results"`
 	// Signal mode: 'reactive' or 'proactive'. Controls prompt strategy (ADR-054).
@@ -1001,6 +1003,11 @@ func (s *IncidentRequest) GetLastSeen() OptNilString {
 // GetSignalLabels returns the value of SignalLabels.
 func (s *IncidentRequest) GetSignalLabels() OptNilIncidentRequestSignalLabels {
 	return s.SignalLabels
+}
+
+// GetSignalAnnotations returns the value of SignalAnnotations.
+func (s *IncidentRequest) GetSignalAnnotations() OptNilIncidentRequestSignalAnnotations {
+	return s.SignalAnnotations
 }
 
 // GetEnrichmentResults returns the value of EnrichmentResults.
@@ -1128,6 +1135,11 @@ func (s *IncidentRequest) SetSignalLabels(val OptNilIncidentRequestSignalLabels)
 	s.SignalLabels = val
 }
 
+// SetSignalAnnotations sets the value of SignalAnnotations.
+func (s *IncidentRequest) SetSignalAnnotations(val OptNilIncidentRequestSignalAnnotations) {
+	s.SignalAnnotations = val
+}
+
 // SetEnrichmentResults sets the value of EnrichmentResults.
 func (s *IncidentRequest) SetEnrichmentResults(val OptNilEnrichmentResults) {
 	s.EnrichmentResults = val
@@ -1136,6 +1148,17 @@ func (s *IncidentRequest) SetEnrichmentResults(val OptNilEnrichmentResults) {
 // SetSignalMode sets the value of SignalMode.
 func (s *IncidentRequest) SetSignalMode(val OptNilSignalMode) {
 	s.SignalMode = val
+}
+
+type IncidentRequestSignalAnnotations map[string]string
+
+func (s *IncidentRequestSignalAnnotations) init() IncidentRequestSignalAnnotations {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 type IncidentRequestSignalLabels map[string]string
@@ -1799,6 +1822,69 @@ func (o OptNilHumanReviewReason) Get() (v HumanReviewReason, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilHumanReviewReason) Or(d HumanReviewReason) HumanReviewReason {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilIncidentRequestSignalAnnotations returns new OptNilIncidentRequestSignalAnnotations with value set to v.
+func NewOptNilIncidentRequestSignalAnnotations(v IncidentRequestSignalAnnotations) OptNilIncidentRequestSignalAnnotations {
+	return OptNilIncidentRequestSignalAnnotations{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilIncidentRequestSignalAnnotations is optional nullable IncidentRequestSignalAnnotations.
+type OptNilIncidentRequestSignalAnnotations struct {
+	Value IncidentRequestSignalAnnotations
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilIncidentRequestSignalAnnotations was set.
+func (o OptNilIncidentRequestSignalAnnotations) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilIncidentRequestSignalAnnotations) Reset() {
+	var v IncidentRequestSignalAnnotations
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilIncidentRequestSignalAnnotations) SetTo(v IncidentRequestSignalAnnotations) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilIncidentRequestSignalAnnotations) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilIncidentRequestSignalAnnotations) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v IncidentRequestSignalAnnotations
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilIncidentRequestSignalAnnotations) Get() (v IncidentRequestSignalAnnotations, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilIncidentRequestSignalAnnotations) Or(d IncidentRequestSignalAnnotations) IncidentRequestSignalAnnotations {
 	if v, ok := o.Get(); ok {
 		return v
 	}

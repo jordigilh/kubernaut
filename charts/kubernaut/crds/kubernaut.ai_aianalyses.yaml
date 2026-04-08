@@ -254,6 +254,13 @@ spec:
                         - low
                         - unknown
                         type: string
+                      signalAnnotations:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          SignalAnnotations from the original alert (e.g., description, summary from AlertManager).
+                          Untrusted content — sanitized by KA prompt builder before reaching the LLM.
+                        type: object
                       signalMode:
                         description: |-
                           SignalMode indicates whether this is a reactive or proactive signal.
