@@ -31,7 +31,7 @@ Kubernaut bridges that gap. It uses an LLM to investigate the actual root cause 
 ## What It Does
 
 - **Detects** — Ingests Prometheus AlertManager alerts and Kubernetes Events, validates resource scope, and deduplicates by fingerprint
-- **Investigates** — HolmesGPT performs live root cause analysis using Kubernetes inspection tools, configurable observability toolsets (Prometheus, etc.), and remediation history
+- **Investigates** — Performs live root cause analysis using Kubernetes inspection tools, configurable observability toolsets (Prometheus, etc.), and remediation history
 - **Remediates** — Selects and executes a workflow from a searchable catalog via Tekton Pipelines, Kubernetes Jobs, or Ansible (AWX/AAP), with optional human approval gates
 - **Closes the loop** — Notifies the team (Slack, console), evaluates whether the fix worked via health checks, alert resolution, and spec hash drift detection, and feeds effectiveness scores back into future investigations
 
@@ -46,7 +46,7 @@ Kubernaut bridges that gap. It uses an LLM to investigate the actual root cause 
 
 ## Roadmap
 
-### v1.2 — Operational Resilience and Security Hardening (current)
+### v1.2 — Operational Resilience and Security Hardening (latest)
 
 - **Per-workflow ServiceAccount** — Each remediation workflow runs under its own SA with least-privilege RBAC, replacing the shared default
 - **Short-lived token injection** — Ansible executor uses Kubernetes TokenRequest API with configurable TTL instead of long-lived secrets
@@ -59,7 +59,11 @@ See [CHANGELOG.md](CHANGELOG.md) for the complete list.
 
 ### v1.3 — Go Unification and Enterprise Distribution (next)
 
-- **HAPI Go rewrite** — Full reimplementation of the HolmesGPT-API service in Go, eliminating the Python runtime dependency
+- **Kubernaut Agent (KA)** — Ground-up rewrite of the HolmesGPT-API (HAPI) service in Go,
+  designed for security-first operation and agentic investigation flow with
+  layered prompt-injection defenses; architecture enables shadow-agent audit
+  (v1.4) and multi-agent consensus investigation (v1.5)
+  ([#433](https://github.com/jordigilh/kubernaut/issues/433))
 - **Mock LLM Go rewrite** — DAG-based conversation engine with declarative YAML scenarios and fault injection for resilience testing
 - **Kubernaut Operator** — OLM-packaged operator for OperatorHub distribution on OpenShift and vanilla Kubernetes
 - **Inter-pod TLS** — Encrypted communication between all internal services
