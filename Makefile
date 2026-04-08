@@ -668,9 +668,16 @@ test-e2e-kubernautagent: ginkgo ensure-coverage-dirs generate-agentclient ## Run
 	@echo "⏱️  Expected Duration: ~10 minutes"
 	@echo ""
 	@echo "🧪 Running KA E2E tests (test/e2e/kubernautagent/)..."
-	@cd test/e2e/kubernautagent && $(GINKGO) -v --timeout=15m ./...
-	@echo ""
-	@echo "✅ All Kubernaut Agent E2E tests completed"
+	@$(GINKGO) -v --timeout=15m --coverprofile=coverage_e2e_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/e2e/kubernautagent/...
+	@if [ -f coverage_e2e_kubernautagent_binary.out ]; then \
+		echo "📊 Using GOCOVERDIR binary coverage (deployed service instrumentation)"; \
+		cp coverage_e2e_kubernautagent_binary.out coverage_e2e_kubernautagent.out; \
+	fi
+	@if [ -f coverage_e2e_kubernautagent.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_e2e_kubernautagent.out"; \
+		go tool cover -func=coverage_e2e_kubernautagent.out | grep total || echo "No coverage data"; \
+	fi
 
 ##@ Special Cases - Authentication Webhook
 
