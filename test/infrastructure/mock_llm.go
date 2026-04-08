@@ -35,7 +35,7 @@ import (
 // Pattern: DD-INTEGRATION-001 v2.0 - Programmatic Podman Setup using Go
 // Image Naming: DD-TEST-004 - Unique Resource Naming (GenerateInfraImageName)
 // Port Allocation: DD-TEST-001 v2.5
-//   HAPI Integration: 18140
+//   KA Integration: 18140
 //   AIAnalysis Integration: 18141
 //   E2E (Kind ClusterIP): No external port (internal: http://mock-llm:8080)
 //
@@ -44,9 +44,9 @@ import (
 //   Replaces embedded mock logic in HolmesGPT-API business code
 //
 // Dependencies:
-//   HAPI Integration Tests → Mock LLM (localhost:18140)
+//   KA Integration Tests → Mock LLM (localhost:18140)
 //   AIAnalysis Integration Tests → Mock LLM (localhost:18141)
-//   HAPI E2E Tests → Mock LLM (Kind ClusterIP in kubernaut-system)
+//   KA E2E Tests → Mock LLM (Kind ClusterIP in kubernaut-system)
 //   AIAnalysis E2E Tests → Mock LLM (Kind ClusterIP in kubernaut-system)
 //
 // Created: January 11, 2026
@@ -57,25 +57,24 @@ import (
 // Port allocation per DD-TEST-001 v2.5 (Mock LLM Service)
 // Integration Tests (Podman): Per-service isolation
 //
-//	HAPI: 18140
+//	KA: 18140
 //	AIAnalysis: 18141
 //
 // E2E Tests (Kind): ClusterIP only (no NodePort)
 const (
-	MockLLMPortHAPI       = 18140 // HAPI integration tests (Podman)
+	MockLLMPortKA         = 18140 // KA integration tests (Podman)
 	MockLLMPortAIAnalysis = 18141 // AIAnalysis integration tests (Podman)
-	// E2E tests use ClusterIP in Kind (no external port needed)
 )
 
 // Container configuration (per-service naming)
 const (
-	MockLLMContainerNameHAPI       = "mock-llm-hapi"
+	MockLLMContainerNameKA         = "mock-llm-ka"
 	MockLLMContainerNameAIAnalysis = "mock-llm-aianalysis"
 )
 
 // MockLLMConfig specifies configuration for starting a Mock LLM container
 type MockLLMConfig struct {
-	ServiceName    string // "hapi" or "aianalysis" (for container naming)
+	ServiceName    string // "ka" or "aianalysis" (for container naming)
 	Port           int    // Host port to expose (per DD-TEST-001 v1.8)
 	ContainerName  string // Unique container name per service
 	ImageTag       string // Unique image tag per DD-TEST-004 (use GenerateInfraImageName)
@@ -94,7 +93,7 @@ type MockLLMConfig struct {
 //   - Otherwise: Build locally (existing behavior for local dev)
 //   - Automatic fallback to local build if registry pull fails
 //
-// Returns: Full image name with tag (e.g., "localhost/mock-llm:hapi-abc123")
+// Returns: Full image name with tag (e.g., "localhost/mock-llm:ka-abc123")
 func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer) (string, error) {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Building Mock LLM Image (%s Integration Tests)\n", serviceName)
@@ -157,17 +156,6 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	return uniqueImageName, nil
 }
 
-// GetMockLLMConfigForHAPI returns the Mock LLM configuration for HAPI integration tests
-// Uses GenerateInfraImageName per DD-TEST-004 for unique image tags
-func GetMockLLMConfigForHAPI() MockLLMConfig {
-	return MockLLMConfig{
-		ServiceName:   "hapi",
-		Port:          MockLLMPortHAPI,
-		ContainerName: MockLLMContainerNameHAPI,
-		ImageTag:      GenerateInfraImageName("mock-llm", "hapi"),
-	}
-}
-
 // GetMockLLMConfigForAIAnalysis returns the Mock LLM configuration for AIAnalysis integration tests
 // Uses GenerateInfraImageName per DD-TEST-004 for unique image tags
 func GetMockLLMConfigForAIAnalysis() MockLLMConfig {
@@ -188,8 +176,8 @@ func GetMockLLMConfigForAIAnalysis() MockLLMConfig {
 //
 // Prerequisites:
 //   - Mock LLM image built with unique tag per DD-TEST-004
-//     Example: localhost/mock-llm:hapi-a3b5c7d9 (generated via GenerateInfraImageName)
-//   - Ports per DD-TEST-001 v2.5: HAPI=18140, AIAnalysis=18141
+//     Example: localhost/mock-llm:ka-a3b5c7d9 (generated via GenerateInfraImageName)
+//   - Ports per DD-TEST-001 v2.5: KA=18140, AIAnalysis=18141
 //
 // Returns:
 // - containerID: Container ID for cleanup
@@ -371,7 +359,7 @@ func StopMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.W
 //
 // Usage in tests:
 //
-//	config := infrastructure.GetMockLLMConfigForHAPI()
+//	config := infrastructure.GetMockLLMConfigForAIAnalysis()
 //	endpoint := infrastructure.GetMockLLMEndpoint(config)
 //	os.Setenv("LLM_ENDPOINT", endpoint)
 //
@@ -383,7 +371,7 @@ func GetMockLLMEndpoint(config MockLLMConfig) string {
 }
 
 // GetMockLLMContainerEndpoint returns the Mock LLM endpoint for container-to-container communication
-// Use this when configuring services running in containers (e.g., HAPI LLM_ENDPOINT)
+// Use this when configuring services running in containers (e.g., KA LLM_ENDPOINT)
 // Example: "http://mock-llm-aianalysis:8080"
 func GetMockLLMContainerEndpoint(config MockLLMConfig) string {
 	return fmt.Sprintf("http://%s:8080", config.ContainerName)
@@ -417,7 +405,7 @@ func GetMockLLMContainerInfo(containerID string, config MockLLMConfig) MockLLMCo
 
 // UpdateMockLLMConfigMap updates the Mock LLM's ConfigMap with workflow UUIDs
 // and restarts the deployment so it picks up the new scenarios mapping.
-// Originally in holmesgpt_api.go, ported here during the HAPI→KA migration.
+// Originally in holmesgpt_api.go, ported here during KA test infrastructure consolidation.
 func UpdateMockLLMConfigMap(ctx context.Context, namespace, kubeconfigPath string, workflowUUIDs map[string]string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "   🔄 Updating Mock LLM ConfigMap with %d workflow UUIDs...\n", len(workflowUUIDs))
 

@@ -878,7 +878,6 @@ func findProjectRoot() (string, error) {
 // Used by:
 // - datastorage_bootstrap.go (building DataStorage images, running migrations)
 // - gateway_e2e.go (loading CRDs, building Gateway images)
-// - holmesgpt_integration.go (building HolmesGPT images)
 // - notification_integration.go (building Notification images)
 func getProjectRoot() string {
 	_, currentFile, _, ok := runtime.Caller(0)
