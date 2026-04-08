@@ -775,8 +775,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				"target_resource should match")
 			Expect(string(eventData.Phase)).ToNot(BeEmpty(),
 				"phase should be present")
-			Expect(eventData.ContainerImage).To(Equal(wfe.Spec.WorkflowRef.ExecutionBundle),
-				"container_image should match")
+			Expect(eventData.ContainerImage).To(HavePrefix(wfe.Spec.WorkflowRef.ExecutionBundle),
+				"container_image should match (HavePrefix: resolveExecutionBundle may append digest)")
 			Expect(eventData.ExecutionName).To(Equal(wfe.Name),
 				"execution_name should match")
 

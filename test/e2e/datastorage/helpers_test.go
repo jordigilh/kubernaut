@@ -32,7 +32,7 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // Ginkgo/Gomega convention
 )
 
-const e2eBundleRef = "quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:c7583414d1d027de60adb1bd0fac2f1550c3c449365c480fc39a4cab7e39f190"
+const e2eBundleRef = "quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:2a07b572d7c2d16845da11ea01ff24198bd2ff366580c81a8d2fbc6ae6b78389"
 
 // e2eTestWorkflowStubContent is valid YAML content for CreateWorkflowInlineRequest.
 // Aligns with DS E2E test expectations: discovery queries (ScaleReplicas, critical/production/P0),
