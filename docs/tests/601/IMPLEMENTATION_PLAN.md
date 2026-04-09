@@ -1,4 +1,6 @@
-# Implementation Plan: Shadow Agent — Prompt Injection Guardrails
+> **DEPRECATED**: This plan (v1.0) is superseded by the [Audit Remediation Plan v2.0](../../../.cursor/plans/601_audit_remediation_plan.md) and [TEST_PLAN_v2.md](TEST_PLAN_v2.md). Do not use for new development.
+
+# Implementation Plan: Shadow Agent — Prompt Injection Guardrails (SUPERSEDED)
 
 **Issue**: #601
 **Test Plan**: [TP-601-v1.0](TEST_PLAN.md)
