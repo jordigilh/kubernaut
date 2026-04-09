@@ -61,10 +61,12 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 			Entry("aiagent.response.failed", audit.EventTypeResponseFailed),
 			Entry("aiagent.enrichment.completed", audit.EventTypeEnrichmentCompleted),
 			Entry("aiagent.enrichment.failed", audit.EventTypeEnrichmentFailed),
+			Entry("aiagent.alignment.step", audit.EventTypeAlignmentStep),
+			Entry("aiagent.alignment.verdict", audit.EventTypeAlignmentVerdict),
 		)
 
-		It("should define exactly 9 event types", func() {
-			Expect(audit.AllEventTypes).To(HaveLen(9))
+		It("should define exactly 11 event types", func() {
+			Expect(audit.AllEventTypes).To(HaveLen(11))
 		})
 	})
 
