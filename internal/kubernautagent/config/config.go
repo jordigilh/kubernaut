@@ -29,18 +29,19 @@ import (
 // Nested sub-configs support forward-compatibility with Phases 2-6
 // without breaking Phase 1 tests.
 type Config struct {
-	LLM           LLMConfig           `yaml:"llm"`
-	DataStorage   DataStorageConfig   `yaml:"data_storage"`
-	Server        ServerConfig        `yaml:"server"`
-	Session       SessionConfig       `yaml:"session"`
-	Audit         AuditConfig         `yaml:"audit"`
-	MCP           MCPConfig           `yaml:"mcp"`
-	Investigator  InvestigatorConfig  `yaml:"investigator"`
-	Tools         ToolsConfig         `yaml:"tools"`
-	Sanitization  SanitizationConfig  `yaml:"sanitization"`
-	Anomaly       AnomalyConfig       `yaml:"anomaly"`
-	Summarizer    SummarizerConfig    `yaml:"summarizer"`
-	Conversation  ConversationConfig  `yaml:"conversation"`
+	LLM            LLMConfig            `yaml:"llm"`
+	DataStorage    DataStorageConfig    `yaml:"data_storage"`
+	Server         ServerConfig         `yaml:"server"`
+	Session        SessionConfig        `yaml:"session"`
+	Audit          AuditConfig          `yaml:"audit"`
+	MCP            MCPConfig            `yaml:"mcp"`
+	Investigator   InvestigatorConfig   `yaml:"investigator"`
+	Tools          ToolsConfig          `yaml:"tools"`
+	Sanitization   SanitizationConfig   `yaml:"sanitization"`
+	Anomaly        AnomalyConfig        `yaml:"anomaly"`
+	Summarizer     SummarizerConfig     `yaml:"summarizer"`
+	Conversation   ConversationConfig   `yaml:"conversation"`
+	AlignmentCheck AlignmentCheckConfig `yaml:"alignment_check"`
 }
 
 type LLMConfig struct {
@@ -152,39 +153,55 @@ type RateLimitConfig struct {
 	PerSession       int `yaml:"per_session"`
 }
 
-// EffectiveLLM returns a merged LLM config: fields set in conversation.llm
-// override the base investigation config; unset fields inherit the base value.
-func (c *ConversationConfig) EffectiveLLM(base LLMConfig) LLMConfig {
-	if c.LLM == nil {
+// AlignmentCheckConfig holds settings for the shadow agent alignment checker (#601).
+type AlignmentCheckConfig struct {
+	Enabled       bool          `yaml:"enabled"`
+	LLM           *LLMConfig    `yaml:"llm"`
+	Timeout       time.Duration `yaml:"timeout"`
+	MaxStepTokens int           `yaml:"max_step_tokens"`
+}
+
+// mergeLLMConfig overlays non-zero fields from override onto base and returns the result.
+func mergeLLMConfig(base LLMConfig, override *LLMConfig) LLMConfig {
+	if override == nil {
 		return base
 	}
 	merged := base
-	ov := c.LLM
-	if ov.Provider != "" {
-		merged.Provider = ov.Provider
+	if override.Provider != "" {
+		merged.Provider = override.Provider
 	}
-	if ov.Endpoint != "" {
-		merged.Endpoint = ov.Endpoint
+	if override.Endpoint != "" {
+		merged.Endpoint = override.Endpoint
 	}
-	if ov.Model != "" {
-		merged.Model = ov.Model
+	if override.Model != "" {
+		merged.Model = override.Model
 	}
-	if ov.APIKey != "" {
-		merged.APIKey = ov.APIKey
+	if override.APIKey != "" {
+		merged.APIKey = override.APIKey
 	}
-	if ov.AzureAPIVersion != "" {
-		merged.AzureAPIVersion = ov.AzureAPIVersion
+	if override.AzureAPIVersion != "" {
+		merged.AzureAPIVersion = override.AzureAPIVersion
 	}
-	if ov.VertexProject != "" {
-		merged.VertexProject = ov.VertexProject
+	if override.VertexProject != "" {
+		merged.VertexProject = override.VertexProject
 	}
-	if ov.VertexLocation != "" {
-		merged.VertexLocation = ov.VertexLocation
+	if override.VertexLocation != "" {
+		merged.VertexLocation = override.VertexLocation
 	}
-	if ov.BedrockRegion != "" {
-		merged.BedrockRegion = ov.BedrockRegion
+	if override.BedrockRegion != "" {
+		merged.BedrockRegion = override.BedrockRegion
 	}
 	return merged
+}
+
+// EffectiveLLM returns a merged LLM config for the alignment checker.
+func (c *AlignmentCheckConfig) EffectiveLLM(base LLMConfig) LLMConfig {
+	return mergeLLMConfig(base, c.LLM)
+}
+
+// EffectiveLLM returns a merged LLM config for the conversation subsystem.
+func (c *ConversationConfig) EffectiveLLM(base LLMConfig) LLMConfig {
+	return mergeLLMConfig(base, c.LLM)
 }
 
 // Load parses configuration from YAML bytes and applies defaults.
@@ -264,6 +281,27 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("llm.oauth2.client_secret is required when oauth2.enabled=true")
 		}
 	}
+	if c.AlignmentCheck.Enabled {
+		if c.AlignmentCheck.Timeout <= 0 {
+			return fmt.Errorf("alignment_check.timeout must be positive when enabled, got %v", c.AlignmentCheck.Timeout)
+		}
+		if c.AlignmentCheck.MaxStepTokens <= 0 {
+			return fmt.Errorf("alignment_check.max_step_tokens must be positive when enabled, got %d", c.AlignmentCheck.MaxStepTokens)
+		}
+		if c.AlignmentCheck.LLM != nil {
+			merged := c.AlignmentCheck.EffectiveLLM(c.LLM)
+			switch merged.Provider {
+			case "bedrock", "huggingface", "anthropic", "openai":
+			default:
+				if merged.Endpoint == "" {
+					return fmt.Errorf("alignment_check.llm.endpoint is required for provider %q", merged.Provider)
+				}
+			}
+			if merged.Model == "" {
+				return fmt.Errorf("alignment_check.llm.model is required when alignment_check.llm is set")
+			}
+		}
+	}
 	return nil
 }
 
@@ -292,6 +330,11 @@ func DefaultConfig() *Config {
 		},
 		Summarizer: SummarizerConfig{
 			Threshold: 8000,
+		},
+		AlignmentCheck: AlignmentCheckConfig{
+			Enabled:       false,
+			Timeout:       10 * time.Second,
+			MaxStepTokens: 500,
 		},
 	}
 }

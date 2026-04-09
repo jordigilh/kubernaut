@@ -49,6 +49,8 @@ import (
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
+	alignprompt "github.com/jordigilh/kubernaut/internal/kubernautagent/alignment/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/conversation"
@@ -171,8 +173,41 @@ func main() {
 		slogger.Info("workflow catalog fetcher disabled (no DataStorage — dev mode)")
 	}
 
+	var effectiveLLM llm.Client = instrumentedLLM
+	var effectiveReg registry.ToolRegistry = reg
+	var alignEvaluator *alignment.Evaluator
+
+	if cfg.AlignmentCheck.Enabled {
+		var shadowClient llm.Client
+		if cfg.AlignmentCheck.LLM == nil {
+			shadowClient = instrumentedLLM
+			slogger.Info("shadow agent shares investigation LLM client")
+		} else {
+			alignLLMCfg := cfg.AlignmentCheck.EffectiveLLM(cfg.LLM)
+			raw, alignErr := langchaingo.New(
+				alignLLMCfg.Provider, alignLLMCfg.Endpoint, alignLLMCfg.Model, alignLLMCfg.APIKey,
+				buildLLMProviderOptionsFromConfig(alignLLMCfg)...)
+			if alignErr != nil {
+				slogger.Warn("alignment check LLM client failed, disabled", "error", alignErr)
+			} else {
+				shadowClient = llm.NewInstrumentedClient(raw)
+				slogger.Info("shadow agent using dedicated LLM client", "model", alignLLMCfg.Model)
+			}
+		}
+		if shadowClient != nil {
+			alignEvaluator = alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
+				Timeout:       cfg.AlignmentCheck.Timeout,
+				MaxStepTokens: cfg.AlignmentCheck.MaxStepTokens,
+				MaxRetries:    1,
+			}).WithSystemPrompt(alignprompt.SystemPrompt())
+			effectiveLLM = alignment.NewLLMProxy(instrumentedLLM)
+			effectiveReg = alignment.NewToolProxy(reg)
+			slogger.Info("shadow agent alignment check enabled")
+		}
+	}
+
 	inv := investigator.New(investigator.Config{
-		Client:       instrumentedLLM,
+		Client:       effectiveLLM,
 		Builder:      promptBuilder,
 		ResultParser: resultParser,
 		Enricher:     enricher,
@@ -180,7 +215,7 @@ func main() {
 		Logger:       slogger,
 		MaxTurns:     cfg.Investigator.MaxTurns,
 		PhaseTools:   phaseTools,
-		Registry:     reg,
+		Registry:     effectiveReg,
 		ModelName:    cfg.LLM.Model,
 		Pipeline: investigator.Pipeline{
 			Sanitizer:       sanitizer,
@@ -190,10 +225,21 @@ func main() {
 		},
 	})
 
+	var investigationRunner kaserver.InvestigationRunner = inv
+	if alignEvaluator != nil {
+		investigationRunner = alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			Inner:          inv,
+			Evaluator:      alignEvaluator,
+			VerdictTimeout: 30 * time.Second,
+			AuditStore:     auditStore,
+			Logger:         slogger,
+		})
+	}
+
 	store := session.NewStore(cfg.Session.TTL)
 	mgr := session.NewManager(store, slogger)
 
-	handler := kaserver.NewHandler(mgr, inv, slogger)
+	handler := kaserver.NewHandler(mgr, investigationRunner, slogger)
 
 	ogenSrv, err := agentclient.NewServer(handler)
 	if err != nil {
@@ -225,12 +271,13 @@ func main() {
 					PromptBuilder: promptBuilder,
 					RARReader:     rarReader,
 				}).WithLLMClient(conversation.LLMAdapterDeps{
-					Client:       llm.NewInstrumentedClient(convLLMClient),
-					ToolRegistry: reg,
-					AuditStore:   auditStore,
-					Logger:       slogger,
-					MaxToolTurns: cfg.Conversation.MaxToolTurns,
-					ModelName:    convLLMCfg.Model,
+					Client:             llm.NewInstrumentedClient(convLLMClient),
+					ToolRegistry:       effectiveReg,
+					AuditStore:         auditStore,
+					Logger:             slogger,
+					MaxToolTurns:       cfg.Conversation.MaxToolTurns,
+					ModelName:          convLLMCfg.Model,
+					AlignmentEvaluator: alignEvaluator,
 				})
 				slogger.Info("conversation API enabled", "model", convLLMCfg.Model)
 			}

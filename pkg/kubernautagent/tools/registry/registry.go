@@ -33,6 +33,14 @@ func (e *ErrToolNotFound) Error() string {
 	return "tool not found: " + e.Name
 }
 
+// ToolRegistry abstracts tool execution and lookup so that decorators
+// (e.g. alignment.ToolProxy) can intercept calls transparently.
+type ToolRegistry interface {
+	Execute(ctx context.Context, name string, args json.RawMessage) (string, error)
+	ToolsForPhase(phase katypes.Phase, phaseTools katypes.PhaseToolMap) []tools.Tool
+	All() []tools.Tool
+}
+
 // Registry holds registered tools and resolves them by name and phase.
 type Registry struct {
 	byName map[string]tools.Tool

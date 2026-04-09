@@ -133,6 +133,27 @@ data:
       flush_interval_seconds: 0.1
       buffer_size: 10000
       batch_size: 50
+{{- if .Values.kubernautAgent.alignmentCheck.enabled }}
+    alignment_check:
+      enabled: true
+      timeout: {{ .Values.kubernautAgent.alignmentCheck.timeout | default "10s" }}
+      max_step_tokens: {{ .Values.kubernautAgent.alignmentCheck.maxStepTokens | default 500 }}
+{{- with .Values.kubernautAgent.alignmentCheck.llm }}
+      llm:
+{{- if .provider }}
+        provider: {{ .provider }}
+{{- end }}
+{{- if .model }}
+        model: {{ .model }}
+{{- end }}
+{{- if .endpoint }}
+        endpoint: {{ .endpoint }}
+{{- end }}
+{{- if .apiKey }}
+        api_key: {{ .apiKey }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- if and .Values.kubernautAgent.prometheus.ocpMonitoringRbac (not (and .Values.kubernautAgent.prometheus.tls .Values.kubernautAgent.prometheus.tls.caConfigMapName)) }}
 ---
 apiVersion: v1

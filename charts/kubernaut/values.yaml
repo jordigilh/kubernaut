@@ -344,6 +344,18 @@ kubernautAgent:
     # llm:
     #   provider: "openai"
     #   model: "gpt-4o-mini"
+  # -- Shadow agent alignment check (#601): parallel audit for prompt injection detection.
+  alignmentCheck:
+    enabled: false
+    timeout: "10s"
+    maxStepTokens: 500
+    # Optional separate LLM config for alignment evaluation.
+    # If omitted, reuses the investigation LLM client.
+    llm: {}
+    #   provider: "openai"
+    #   model: "gpt-4o-mini"
+    #   endpoint: ""
+    #   apiKey: ""
 
 # -- AuthWebhook admission controller
 authwebhook:

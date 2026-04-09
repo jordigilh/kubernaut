@@ -695,7 +695,36 @@
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "tolerations": { "$ref": "#/definitions/tolerations" },
+        "conversations": {
+          "type": "object",
+          "description": "Conversational API (#592) configuration.",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false }
+          }
+        },
+        "alignmentCheck": {
+          "type": "object",
+          "description": "Shadow agent alignment check (#601): parallel audit for prompt injection detection.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false, "description": "Enable the shadow alignment agent." },
+            "timeout": { "type": "string", "default": "10s", "description": "Per-step evaluation timeout." },
+            "maxStepTokens": { "type": "integer", "default": 500, "description": "Max evaluator response tokens per step." },
+            "llm": {
+              "type": "object",
+              "description": "Optional separate LLM config for alignment evaluation. Omit to reuse investigation LLM.",
+              "additionalProperties": false,
+              "properties": {
+                "provider": { "type": "string", "default": "" },
+                "model": { "type": "string", "default": "" },
+                "endpoint": { "type": "string", "default": "" },
+                "apiKey": { "type": "string", "default": "" }
+              }
+            }
+          }
+        }
       }
     },
     "authwebhook": {

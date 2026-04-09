@@ -22,7 +22,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
@@ -35,24 +37,26 @@ var ErrMaxToolTurnsExceeded = errors.New("max tool turns exceeded")
 
 // LLMAdapterDeps bundles dependencies for NewLLMAdapter.
 type LLMAdapterDeps struct {
-	Client       llm.Client
-	Sessions     *SessionManager
-	ToolRegistry *registry.Registry
-	AuditStore   audit.AuditStore
-	Logger       *slog.Logger
-	MaxToolTurns int
-	ModelName    string
+	Client             llm.Client
+	Sessions           *SessionManager
+	ToolRegistry       registry.ToolRegistry
+	AuditStore         audit.AuditStore
+	Logger             *slog.Logger
+	MaxToolTurns       int
+	ModelName          string
+	AlignmentEvaluator *alignment.Evaluator // nil = alignment disabled for conversations
 }
 
 // LLMAdapter bridges llm.Client to ConversationLLM with a bounded tool-call loop (DD-CONV-001).
 type LLMAdapter struct {
-	client       llm.Client
-	sessions     *SessionManager
-	toolRegistry *registry.Registry
-	auditStore   audit.AuditStore
-	logger       *slog.Logger
-	maxToolTurns int
-	modelName    string
+	client             llm.Client
+	sessions           *SessionManager
+	toolRegistry       registry.ToolRegistry
+	auditStore         audit.AuditStore
+	logger             *slog.Logger
+	maxToolTurns       int
+	modelName          string
+	alignmentEvaluator *alignment.Evaluator
 }
 
 // NewLLMAdapter creates an LLMAdapter from the given deps.
@@ -62,13 +66,14 @@ func NewLLMAdapter(deps LLMAdapterDeps) *LLMAdapter {
 		maxTurns = 0
 	}
 	return &LLMAdapter{
-		client:       deps.Client,
-		sessions:     deps.Sessions,
-		toolRegistry: deps.ToolRegistry,
-		auditStore:   deps.AuditStore,
-		logger:       deps.Logger,
-		maxToolTurns: maxTurns,
-		modelName:    deps.ModelName,
+		client:             deps.Client,
+		sessions:           deps.Sessions,
+		toolRegistry:       deps.ToolRegistry,
+		auditStore:         deps.AuditStore,
+		logger:             deps.Logger,
+		maxToolTurns:       maxTurns,
+		modelName:          deps.ModelName,
+		alignmentEvaluator: deps.AlignmentEvaluator,
 	}
 }
 
@@ -82,6 +87,13 @@ func toolToDefinition(t tools.Tool) llm.ToolDefinition {
 
 // Respond implements ConversationLLM with a bounded tool-call loop.
 func (a *LLMAdapter) Respond(ctx context.Context, sessionID, message string, emit func(ConversationEvent)) error {
+	var alignObserver *alignment.Observer
+	alignEmitted := make(map[int]bool)
+	if a.alignmentEvaluator != nil {
+		alignObserver = alignment.NewObserver(a.alignmentEvaluator)
+		ctx = alignment.WithObserver(ctx, alignObserver)
+	}
+
 	session, err := a.sessions.Get(sessionID)
 	if err != nil {
 		return fmt.Errorf("session lookup: %w", err)
@@ -265,6 +277,8 @@ func (a *LLMAdapter) Respond(ctx context.Context, sessionID, message string, emi
 				"tool_result":        result,
 				"tool_result_preview": truncatePreview(result, 500),
 			})
+
+			a.checkAlignmentWarning(ctx, alignObserver, tc.Name, emit, alignEmitted)
 		}
 	}
 
@@ -301,6 +315,31 @@ func toolNames(defs []llm.ToolDefinition) []string {
 		names[i] = d.Name
 	}
 	return names
+}
+
+// checkAlignmentWarning polls the observer for recently completed suspicious
+// observations after a tool call and emits a non-blocking SSE alignment_warning.
+// emitted tracks observation step indices that have already been warned about
+// to avoid duplicate emissions when the same tool is called multiple times.
+func (a *LLMAdapter) checkAlignmentWarning(_ context.Context, observer *alignment.Observer, toolName string, emit func(ConversationEvent), emitted map[int]bool) {
+	if observer == nil {
+		return
+	}
+	recent := observer.WaitForCompletion(100 * time.Millisecond)
+	for _, obs := range recent {
+		if obs.Suspicious && obs.Step.Tool == toolName && !emitted[obs.Step.Index] {
+			emitted[obs.Step.Index] = true
+			emit(ConversationEvent{
+				Type: "alignment_warning",
+				Data: mustMarshal(map[string]string{
+					"tool":        toolName,
+					"explanation": obs.Explanation,
+				}),
+			})
+			a.logger.Warn("alignment warning in conversation tool call",
+				"tool", toolName, "explanation", obs.Explanation)
+		}
+	}
 }
 
 func (a *LLMAdapter) emitAudit(ctx context.Context, correlationID, eventType, action, outcome string, data map[string]interface{}) {

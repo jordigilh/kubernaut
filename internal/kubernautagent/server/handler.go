@@ -29,10 +29,15 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 )
+
+// InvestigationRunner abstracts the investigation entry point so that
+// decorators (e.g. alignment.InvestigatorWrapper) can wrap it transparently.
+type InvestigationRunner interface {
+	Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error)
+}
 
 // Handler implements the ogen-generated Handler interface for the 3 business
 // endpoints. Operational endpoints (/health, /ready, /config, /metrics) are
@@ -41,14 +46,14 @@ type Handler struct {
 	agentclient.UnimplementedHandler
 
 	sessions     *session.Manager
-	investigator *investigator.Investigator
+	investigator InvestigationRunner
 	logger       *slog.Logger
 }
 
 var _ agentclient.Handler = (*Handler)(nil)
 
 // NewHandler creates a Kubernaut Agent ogen handler.
-func NewHandler(sessions *session.Manager, inv *investigator.Investigator, logger *slog.Logger) *Handler {
+func NewHandler(sessions *session.Manager, inv InvestigationRunner, logger *slog.Logger) *Handler {
 	return &Handler{
 		sessions:     sessions,
 		investigator: inv,
@@ -437,6 +442,8 @@ func mapHumanReviewReason(reason string) (agentclient.HumanReviewReason, bool) {
 		return agentclient.HumanReviewReasonLowConfidence, false
 	case "llm_parsing_error":
 		return agentclient.HumanReviewReasonLlmParsingError, false
+	case "alignment_check_failed":
+		return agentclient.HumanReviewReasonInvestigationInconclusive, false
 	}
 
 	switch {

@@ -66,7 +66,7 @@ type Config struct {
 	Logger       *slog.Logger
 	MaxTurns     int
 	PhaseTools   katypes.PhaseToolMap
-	Registry     *registry.Registry
+	Registry     registry.ToolRegistry
 	Pipeline     Pipeline
 	ModelName    string
 }
@@ -83,7 +83,7 @@ type Investigator struct {
 	logger       *slog.Logger
 	maxTurns     int
 	phaseTools   katypes.PhaseToolMap
-	registry     *registry.Registry
+	registry     registry.ToolRegistry
 	pipeline     Pipeline
 	modelName    string
 }
