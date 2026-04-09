@@ -245,19 +245,15 @@ var _ = Describe("Issue #573: ADR-EM-001 Implementation Gaps", func() {
 				correlationID := r.URL.Query().Get("correlation_id")
 				w.Header().Set("Content-Type", "application/json")
 
-				var events []map[string]interface{}
+				events := make([]map[string]interface{}, 0)
 				switch eventType {
 				case "workflowexecution.execution.started":
 					if started {
-						events = []map[string]interface{}{
-							ogenCompliantEvent(eventType, correlationID),
-						}
+						events = append(events, ogenCompliantEvent(eventType, correlationID))
 					}
 				case "workflowexecution.workflow.completed":
 					if completed {
-						events = []map[string]interface{}{
-							ogenCompliantEvent(eventType, correlationID),
-						}
+						events = append(events, ogenCompliantEvent(eventType, correlationID))
 					}
 				}
 				envelope := map[string]interface{}{"data": events}
