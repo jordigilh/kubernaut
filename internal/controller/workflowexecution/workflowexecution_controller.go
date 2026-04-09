@@ -424,6 +424,8 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	exec, err := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
 	if err != nil {
 		logger.Error(err, "Unsupported execution engine", "engine", wfe.Status.ExecutionEngine)
+		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
+			fmt.Sprintf("Unsupported execution engine %q: %v", wfe.Status.ExecutionEngine, err))
 		markErr := r.MarkFailedWithReason(ctx, wfe, "UnsupportedEngine", err.Error())
 		return ctrl.Result{}, markErr
 	}
@@ -443,6 +445,8 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 				if valErr := r.DependencyValidator.ValidateDependencies(ctx, r.ExecutionNamespace, catalogMeta.Dependencies); valErr != nil {
 					logger.Error(valErr, "Workflow dependency validation failed",
 						"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+					r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
+						fmt.Sprintf("Dependency validation failed: %v", valErr))
 					markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", valErr.Error())
 					return ctrl.Result{}, markErr
 				}
