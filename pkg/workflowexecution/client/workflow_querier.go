@@ -113,6 +113,23 @@ func NewOgenWorkflowQuerierFromConfig(baseURL string, timeout time.Duration) (*O
 	return &OgenWorkflowQuerier{client: ogenClient}, nil
 }
 
+// classifyGetWorkflowResponse maps the polymorphic ogen response to either the
+// successful workflow object or a properly classified error. This eliminates the
+// misleading "not found" message that was previously returned for all non-200
+// responses including HTTP 500 (Issue #658).
+func classifyGetWorkflowResponse(res ogenclient.GetWorkflowByIDRes, workflowID string) (*ogenclient.RemediationWorkflow, error) {
+	switch r := res.(type) {
+	case *ogenclient.RemediationWorkflow:
+		return r, nil
+	case *ogenclient.GetWorkflowByIDNotFound:
+		return nil, fmt.Errorf("workflow %s not found in catalog", workflowID)
+	case *ogenclient.GetWorkflowByIDInternalServerError:
+		return nil, fmt.Errorf("DS internal server error for workflow %s", workflowID)
+	default:
+		return nil, fmt.Errorf("unexpected DS response type %T for workflow %s", res, workflowID)
+	}
+}
+
 // GetWorkflowDependencies fetches the workflow from DS by ID and extracts
 // schema-declared dependencies from the Content field (raw YAML).
 // Returns nil if the workflow has no dependencies declared.
@@ -129,9 +146,9 @@ func (q *OgenWorkflowQuerier) GetWorkflowDependencies(ctx context.Context, workf
 		return nil, fmt.Errorf("DS query failed for workflow %s: %w", workflowID, err)
 	}
 
-	wf, ok := res.(*ogenclient.RemediationWorkflow)
-	if !ok {
-		return nil, fmt.Errorf("workflow %s not found in catalog", workflowID)
+	wf, err := classifyGetWorkflowResponse(res, workflowID)
+	if err != nil {
+		return nil, err
 	}
 
 	if wf.Content == "" {
@@ -163,9 +180,9 @@ func (q *OgenWorkflowQuerier) GetWorkflowEngineConfig(ctx context.Context, workf
 		return nil, fmt.Errorf("DS query failed for workflow %s: %w", workflowID, err)
 	}
 
-	wf, ok := res.(*ogenclient.RemediationWorkflow)
-	if !ok {
-		return nil, fmt.Errorf("workflow %s not found in catalog", workflowID)
+	wf, err := classifyGetWorkflowResponse(res, workflowID)
+	if err != nil {
+		return nil, err
 	}
 
 	if wf.Content == "" {
@@ -201,9 +218,9 @@ func (q *OgenWorkflowQuerier) GetWorkflowExecutionEngine(ctx context.Context, wo
 		return "", "", fmt.Errorf("DS query failed for workflow %s: %w", workflowID, err)
 	}
 
-	wf, ok := res.(*ogenclient.RemediationWorkflow)
-	if !ok {
-		return "", "", fmt.Errorf("workflow %s not found in catalog", workflowID)
+	wf, err := classifyGetWorkflowResponse(res, workflowID)
+	if err != nil {
+		return "", "", err
 	}
 
 	return wf.ExecutionEngine, wf.WorkflowName, nil
@@ -225,9 +242,9 @@ func (q *OgenWorkflowQuerier) GetWorkflowExecutionBundle(ctx context.Context, wo
 		return "", "", fmt.Errorf("DS query failed for workflow %s: %w", workflowID, err)
 	}
 
-	wf, ok := res.(*ogenclient.RemediationWorkflow)
-	if !ok {
-		return "", "", fmt.Errorf("workflow %s not found in catalog", workflowID)
+	wf, err := classifyGetWorkflowResponse(res, workflowID)
+	if err != nil {
+		return "", "", err
 	}
 
 	var bundle, digest string
@@ -255,9 +272,9 @@ func (q *OgenWorkflowQuerier) ResolveWorkflowCatalogMetadata(ctx context.Context
 		return nil, fmt.Errorf("DS query failed for workflow %s: %w", workflowID, err)
 	}
 
-	wf, ok := res.(*ogenclient.RemediationWorkflow)
-	if !ok {
-		return nil, fmt.Errorf("workflow %s not found in catalog", workflowID)
+	wf, err := classifyGetWorkflowResponse(res, workflowID)
+	if err != nil {
+		return nil, err
 	}
 
 	meta := &WorkflowCatalogMetadata{
