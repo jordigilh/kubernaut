@@ -223,4 +223,83 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 			Expect(err.Error()).To(ContainSubstring("DS query failed"))
 		})
 	})
+
+	// ========================================
+	// Issue #650: Consolidated querier — single DS call for all metadata
+	// ========================================
+	Context("ResolveWorkflowCatalogMetadata (Issue #650)", func() {
+		It("UT-WE-650-003: should return all metadata from single DS call", func() {
+			content := buildTestSchema(&models.WorkflowDependencies{
+				Secrets: []models.ResourceDependency{{Name: "my-secret"}},
+			})
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{
+					ExecutionEngine:       "tekton",
+					WorkflowName:          "cert-renewal",
+					ExecutionBundle:       ogenclient.NewOptString("ghcr.io/test/exec:v1"),
+					ExecutionBundleDigest: ogenclient.NewOptString("sha256:abc123"),
+					ServiceAccountName:    ogenclient.NewOptString("workflow-sa"),
+					Content:               content,
+				},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			meta, err := querier.ResolveWorkflowCatalogMetadata(ctx, uuid.New().String())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(meta.ExecutionEngine).To(Equal("tekton"))
+			Expect(meta.WorkflowName).To(Equal("cert-renewal"))
+			Expect(meta.ExecutionBundle).To(Equal("ghcr.io/test/exec:v1"))
+			Expect(meta.ExecutionBundleDigest).To(Equal("sha256:abc123"))
+			Expect(meta.ServiceAccountName).To(Equal("workflow-sa"))
+			Expect(meta.Dependencies.Secrets).To(HaveLen(1))
+			Expect(meta.Dependencies.Secrets[0].Name).To(Equal("my-secret"))
+		})
+
+		It("UT-WE-650-002: should return empty SA when catalog entry has no SA", func() {
+			content := buildTestSchema(nil)
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{
+					ExecutionEngine: "job",
+					WorkflowName:    "restart-pod",
+					Content:         content,
+				},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			meta, err := querier.ResolveWorkflowCatalogMetadata(ctx, uuid.New().String())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(meta.ServiceAccountName).To(BeEmpty())
+			Expect(meta.ExecutionEngine).To(Equal("job"))
+		})
+
+		It("UT-WE-650-004: should return error when DS is unreachable", func() {
+			mock := &mockWorkflowCatalogClient{
+				err: fmt.Errorf("connection refused"),
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			_, err := querier.ResolveWorkflowCatalogMetadata(ctx, uuid.New().String())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("DS query failed"))
+		})
+
+		It("UT-WE-650-010: should extract dependencies and engineConfig from Content", func() {
+			content := buildTestSchema(&models.WorkflowDependencies{
+				Secrets:    []models.ResourceDependency{{Name: "secret-a"}},
+				ConfigMaps: []models.ResourceDependency{{Name: "config-b"}},
+			})
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{
+					ExecutionEngine: "tekton",
+					Content:         content,
+				},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			meta, err := querier.ResolveWorkflowCatalogMetadata(ctx, uuid.New().String())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(meta.Dependencies.Secrets).To(HaveLen(1))
+			Expect(meta.Dependencies.ConfigMaps).To(HaveLen(1))
+		})
+	})
 })

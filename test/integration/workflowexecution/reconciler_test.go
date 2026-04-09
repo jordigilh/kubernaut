@@ -261,18 +261,18 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty())
 		})
 
-		// DD-WE-005 v2 / Issue #501: SA at spec top level.
-		It("should use Spec.ServiceAccountName on PipelineRun when set", func() {
-			By("Creating a WorkflowExecution with custom ServiceAccount in spec")
+		// DD-WE-005 v2 / Issue #501: SA resolved to status (Issue #650).
+		It("should use Status.ServiceAccountName on PipelineRun when set", func() {
+			By("Creating a WorkflowExecution with custom ServiceAccount in status")
 			wfe = createUniqueWFE("sa-custom", "default/deployment/sa-custom-test")
-			wfe.Spec.ServiceAccountName = "custom-workflow-sa"
+			wfe.Status.ServiceAccountName = "custom-workflow-sa"
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
 			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying WFE spec service account is propagated to TaskRunTemplate")
+			By("Verifying WFE status service account is propagated to TaskRunTemplate")
 			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(Equal("custom-workflow-sa"))
 		})
 	})
