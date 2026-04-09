@@ -223,7 +223,7 @@ func (j *JobExecutor) buildJob(wfe *workflowexecutionv1alpha1.WorkflowExecution,
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy:      corev1.RestartPolicyNever,
-					ServiceAccountName: wfe.Spec.ServiceAccountName,
+					ServiceAccountName: wfe.Status.ServiceAccountName,
 					Volumes:            volumes,
 					Containers: []corev1.Container{
 						{
