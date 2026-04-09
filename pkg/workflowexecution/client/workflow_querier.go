@@ -89,6 +89,12 @@ type SchemaMetadata struct {
 	//   nil   → no schema content, no filtering (backward compatible)
 	//   empty → schema exists but declares no params, strip all
 	DeclaredParameterNames map[string]bool
+	// ExecutionBundle is the OCI image reference for the workflow's execution bundle.
+	// Empty when the catalog entry does not specify a bundle.
+	ExecutionBundle string
+	// ExecutionBundleDigest is the sha256 digest of the execution bundle image.
+	// Empty when the catalog entry does not specify a digest.
+	ExecutionBundleDigest string
 }
 
 // OgenWorkflowQuerier implements WorkflowQuerier using the ogen-generated DS client.
@@ -296,9 +302,19 @@ func (q *OgenWorkflowQuerier) GetWorkflowSchemaMetadata(ctx context.Context, wor
 		return nil, err
 	}
 
+	var bundle, digest string
+	if wf.ExecutionBundle.IsSet() {
+		bundle = wf.ExecutionBundle.Value
+	}
+	if wf.ExecutionBundleDigest.IsSet() {
+		digest = wf.ExecutionBundleDigest.Value
+	}
+
 	meta := &SchemaMetadata{
-		Engine:       wf.ExecutionEngine,
-		WorkflowName: wf.WorkflowName,
+		Engine:                wf.ExecutionEngine,
+		WorkflowName:         wf.WorkflowName,
+		ExecutionBundle:      bundle,
+		ExecutionBundleDigest: digest,
 	}
 
 	if wf.Content == "" {

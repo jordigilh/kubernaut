@@ -569,6 +569,10 @@ type SelectedWorkflow struct {
 	// +optional
 	EngineConfig *apiextensionsv1.JSON `json:"engineConfig,omitempty"`
 
+	// ServiceAccountName is the pre-existing ServiceAccount resolved from the
+	// DS workflow catalog (Issue #650). Propagated to the WFE for pod execution.
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 }
 
 // AlternativeWorkflow contains alternative workflows considered but not selected.

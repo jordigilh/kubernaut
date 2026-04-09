@@ -1760,6 +1760,41 @@ func (r *WorkflowExecutionReconciler) resolveExecutionEngine(_ context.Context, 
 	return "", fmt.Errorf("execution engine not resolved for WFE %s/%s — expected to be set during Pending phase", wfe.Namespace, wfe.Name)
 }
 
+// resolveExecutionBundle overrides wfe.Spec.WorkflowRef.ExecutionBundle with the
+// authoritative value from the DS catalog (defense-in-depth). Non-fatal: if the
+// querier is nil, the workflow ID is empty, or the catalog entry has no bundle,
+// the existing spec value is preserved.
+func (r *WorkflowExecutionReconciler) resolveExecutionBundle(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
+	if r.WorkflowQuerier == nil || wfe.Spec.WorkflowRef.WorkflowID == "" {
+		return nil
+	}
+
+	logger := log.FromContext(ctx)
+
+	meta, err := r.WorkflowQuerier.GetWorkflowSchemaMetadata(ctx, wfe.Spec.WorkflowRef.WorkflowID)
+	if err != nil {
+		return fmt.Errorf("failed to resolve execution bundle from DS for workflow %s: %w", wfe.Spec.WorkflowRef.WorkflowID, err)
+	}
+
+	if meta.ExecutionBundle == "" {
+		return nil
+	}
+
+	if wfe.Spec.WorkflowRef.ExecutionBundle != meta.ExecutionBundle {
+		logger.Info("Overriding execution bundle from DS catalog",
+			"specBundle", wfe.Spec.WorkflowRef.ExecutionBundle,
+			"catalogBundle", meta.ExecutionBundle,
+			"workflowID", wfe.Spec.WorkflowRef.WorkflowID,
+		)
+	}
+	wfe.Spec.WorkflowRef.ExecutionBundle = meta.ExecutionBundle
+	if meta.ExecutionBundleDigest != "" {
+		wfe.Spec.WorkflowRef.ExecutionBundleDigest = meta.ExecutionBundleDigest
+	}
+
+	return nil
+}
+
 // ========================================
 // Day 8: Spec Validation
 // Per controller-implementation.md

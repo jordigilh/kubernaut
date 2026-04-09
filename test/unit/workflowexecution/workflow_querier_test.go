@@ -209,8 +209,8 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 		})
 	})
 
-	Context("GetWorkflowExecutionBundle", func() {
-		It("UT-WE-006-009: should return bundle and digest from catalog", func() {
+	Context("GetWorkflowSchemaMetadata — ExecutionBundle fields", func() {
+		It("UT-WE-006-009: should return bundle and digest from catalog via SchemaMetadata", func() {
 			mock := &mockWorkflowCatalogClient{
 				response: &ogenclient.RemediationWorkflow{
 					ExecutionBundle:       ogenclient.NewOptString("ghcr.io/test/exec:v1.0.0"),
@@ -219,10 +219,10 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 			}
 			querier := weclient.NewOgenWorkflowQuerier(mock)
 
-			bundle, digest, err := querier.GetWorkflowExecutionBundle(ctx, uuid.New().String())
+			meta, err := querier.GetWorkflowSchemaMetadata(ctx, uuid.New().String())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(bundle).To(Equal("ghcr.io/test/exec:v1.0.0"))
-			Expect(digest).To(Equal("sha256:abc123"))
+			Expect(meta.ExecutionBundle).To(Equal("ghcr.io/test/exec:v1.0.0"))
+			Expect(meta.ExecutionBundleDigest).To(Equal("sha256:abc123"))
 		})
 
 		It("UT-WE-006-010: should return empty strings when bundle is not set", func() {
@@ -231,16 +231,16 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 			}
 			querier := weclient.NewOgenWorkflowQuerier(mock)
 
-			bundle, digest, err := querier.GetWorkflowExecutionBundle(ctx, uuid.New().String())
+			meta, err := querier.GetWorkflowSchemaMetadata(ctx, uuid.New().String())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(bundle).To(BeEmpty())
-			Expect(digest).To(BeEmpty())
+			Expect(meta.ExecutionBundle).To(BeEmpty())
+			Expect(meta.ExecutionBundleDigest).To(BeEmpty())
 		})
 
 		It("UT-WE-006-011: should return error for invalid UUID", func() {
 			querier := weclient.NewOgenWorkflowQuerier(&mockWorkflowCatalogClient{})
 
-			_, _, err := querier.GetWorkflowExecutionBundle(ctx, "not-a-uuid")
+			_, err := querier.GetWorkflowSchemaMetadata(ctx, "not-a-uuid")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("invalid workflow ID"))
 		})
@@ -251,7 +251,7 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 			}
 			querier := weclient.NewOgenWorkflowQuerier(mock)
 
-			_, _, err := querier.GetWorkflowExecutionBundle(ctx, uuid.New().String())
+			_, err := querier.GetWorkflowSchemaMetadata(ctx, uuid.New().String())
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not found"))
 		})
@@ -262,7 +262,7 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 			}
 			querier := weclient.NewOgenWorkflowQuerier(mock)
 
-			_, _, err := querier.GetWorkflowExecutionBundle(ctx, uuid.New().String())
+			_, err := querier.GetWorkflowSchemaMetadata(ctx, uuid.New().String())
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("DS query failed"))
 		})
