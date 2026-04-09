@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/security/boundary"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
@@ -40,31 +41,53 @@ type Evaluator struct {
 }
 
 type evalResponse struct {
-	Suspicious  bool   `json:"suspicious"`
+	Suspicious  *bool  `json:"suspicious"`
 	Explanation string `json:"explanation"`
 }
 
-// NewEvaluator creates an Evaluator with the given shadow LLM client and config.
-func NewEvaluator(client llm.Client, cfg EvaluatorConfig) *Evaluator {
-	return &Evaluator{client: client, config: cfg}
-}
-
-// WithSystemPrompt sets the system prompt used for each evaluation call.
-func (e *Evaluator) WithSystemPrompt(prompt string) *Evaluator {
-	e.prompt = prompt
-	return e
+// NewEvaluator creates an Evaluator with the given shadow LLM client, config,
+// and system prompt. The prompt is immutable after construction.
+func NewEvaluator(client llm.Client, cfg EvaluatorConfig, prompt string) *Evaluator {
+	return &Evaluator{client: client, config: cfg, prompt: prompt}
 }
 
 // EvaluateStep sends a step to the shadow LLM and returns an observation.
-// Respects Timeout and MaxRetries. Content is truncated to MaxStepTokens runes.
+// Fail-closed: all error paths return Suspicious=true. Content is truncated
+// to MaxStepTokens runes using head+tail strategy.
 func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
-	content := truncateRunes(step.Content, e.config.MaxStepTokens)
+	if ctx.Err() != nil {
+		return Observation{
+			Step:        step,
+			Suspicious:  true,
+			Explanation: fmt.Sprintf("evaluator_unavailable (fail-closed): context cancelled: %v", ctx.Err()),
+		}
+	}
+
+	rawContent := step.Content
+
+	// Step 1: Generate boundary token
+	token := boundary.Generate()
+
+	// Step 2: Pre-scan raw content for escape attempt (fail-closed)
+	if boundary.ContainsEscape(rawContent, token) {
+		return Observation{
+			Step:        step,
+			Suspicious:  true,
+			Explanation: "boundary escape detected in raw content (fail-closed): content contains closing boundary marker",
+		}
+	}
+
+	// Step 3: Truncate
+	content := truncateHeadTail(rawContent, e.config.MaxStepTokens)
+
+	// Step 4: Wrap in boundary
+	wrapped := boundary.Wrap(content, token)
 
 	userMsg := fmt.Sprintf("Step %d [%s]", step.Index, step.Kind)
 	if step.Tool != "" {
 		userMsg += fmt.Sprintf(" tool=%s", step.Tool)
 	}
-	userMsg += fmt.Sprintf("\n\n%s", content)
+	userMsg += fmt.Sprintf("\n\n%s", wrapped)
 
 	messages := []llm.Message{
 		{Role: "user", Content: userMsg},
@@ -100,21 +123,31 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 			continue
 		}
 
+		if parsed.Suspicious == nil {
+			return Observation{
+				Step:        step,
+				Suspicious:  true,
+				Explanation: "evaluator_unavailable (fail-closed): shadow LLM response missing 'suspicious' field",
+			}
+		}
+
 		return Observation{
 			Step:        step,
-			Suspicious:  parsed.Suspicious,
+			Suspicious:  *parsed.Suspicious,
 			Explanation: parsed.Explanation,
 		}
 	}
 
 	return Observation{
 		Step:        step,
-		Suspicious:  false,
-		Explanation: fmt.Sprintf("evaluator_unavailable: %v", lastErr),
+		Suspicious:  true,
+		Explanation: fmt.Sprintf("evaluator_unavailable (fail-closed): %v", lastErr),
 	}
 }
 
-func truncateRunes(s string, max int) string {
+const truncationMarker = "…[truncated]…"
+
+func truncateHeadTail(s string, max int) string {
 	if max <= 0 {
 		return s
 	}
@@ -122,5 +155,12 @@ func truncateRunes(s string, max int) string {
 	if len(runes) <= max {
 		return s
 	}
-	return string(runes[:max])
+	head := max / 2
+	tail := max - head
+	return string(runes[:head]) + truncationMarker + string(runes[len(runes)-tail:])
+}
+
+// TruncateHeadTail is the exported version for testing.
+func TruncateHeadTail(s string, max int) string {
+	return truncateHeadTail(s, max)
 }

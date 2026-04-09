@@ -40,25 +40,29 @@ func NewToolProxy(inner registry.ToolRegistry) *ToolProxy {
 	return &ToolProxy{inner: inner}
 }
 
-// Execute delegates to the inner registry, then submits the result
+// Execute delegates to the inner registry, then submits the result (or error)
 // for alignment evaluation via the context-scoped Observer.
+// Error content is also submitted: injection can occur in error paths.
 func (p *ToolProxy) Execute(ctx context.Context, name string, args json.RawMessage) (string, error) {
 	result, err := p.inner.Execute(ctx, name, args)
-	if err != nil {
-		return result, err
-	}
 
-	if obs := ObserverFromContext(ctx); obs != nil && result != "" {
-		step := Step{
-			Index:   obs.NextStepIndex(),
-			Kind:    StepKindToolResult,
-			Tool:    name,
-			Content: result,
+	if obs := ObserverFromContext(ctx); obs != nil {
+		content := result
+		if err != nil {
+			content = err.Error()
 		}
-		obs.SubmitAsync(ctx, step)
+		if content != "" {
+			step := Step{
+				Index:   obs.NextStepIndex(),
+				Kind:    StepKindToolResult,
+				Tool:    name,
+				Content: content,
+			}
+			obs.SubmitAsync(ctx, step)
+		}
 	}
 
-	return result, nil
+	return result, err
 }
 
 // ToolsForPhase delegates directly to the inner registry.

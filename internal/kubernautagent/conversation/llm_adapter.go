@@ -142,6 +142,7 @@ func (a *LLMAdapter) Respond(ctx context.Context, sessionID, message string, emi
 				"error":      chatErr.Error(),
 				"session_id": sessionID,
 			})
+			a.finalizeAlignment(ctx, alignObserver, emit, alignEmitted)
 			return fmt.Errorf("LLM chat: %w", chatErr)
 		}
 
@@ -157,6 +158,7 @@ func (a *LLMAdapter) Respond(ctx context.Context, sessionID, message string, emi
 			messages = append(messages, resp.Message)
 			session.AppendMessages(messages[newMsgStart:]...)
 			emit(ConversationEvent{Type: "message", Data: mustMarshal(map[string]string{"content": resp.Message.Content})})
+			a.finalizeAlignment(ctx, alignObserver, emit, alignEmitted)
 			return nil
 		}
 
@@ -166,6 +168,7 @@ func (a *LLMAdapter) Respond(ctx context.Context, sessionID, message string, emi
 				Data: mustMarshal(map[string]string{"error": fmt.Sprintf("max tool turns (%d) exceeded", a.maxToolTurns)}),
 			})
 			session.AppendMessages(messages[newMsgStart:]...)
+			a.finalizeAlignment(ctx, alignObserver, emit, alignEmitted)
 			return ErrMaxToolTurnsExceeded
 		}
 
@@ -282,6 +285,7 @@ func (a *LLMAdapter) Respond(ctx context.Context, sessionID, message string, emi
 		}
 	}
 
+	a.finalizeAlignment(ctx, alignObserver, emit, alignEmitted)
 	return nil
 }
 
@@ -321,12 +325,41 @@ func toolNames(defs []llm.ToolDefinition) []string {
 // observations after a tool call and emits a non-blocking SSE alignment_warning.
 // emitted tracks observation step indices that have already been warned about
 // to avoid duplicate emissions when the same tool is called multiple times.
+// finalizeAlignment runs the final WaitForCompletion on all pending evaluations
+// and emits alignment_warning for any suspicious observations not yet reported.
+func (a *LLMAdapter) finalizeAlignment(_ context.Context, observer *alignment.Observer, emit func(ConversationEvent), emitted map[int]bool) {
+	if observer == nil {
+		return
+	}
+	wr := observer.WaitForCompletion(5 * time.Second)
+	for _, obs := range wr.Observations {
+		if obs.Suspicious && !emitted[obs.Step.Index] {
+			emitted[obs.Step.Index] = true
+			emit(ConversationEvent{
+				Type: "alignment_warning",
+				Data: mustMarshal(map[string]string{
+					"tool":        obs.Step.Tool,
+					"explanation": obs.Explanation,
+				}),
+			})
+		}
+	}
+	if wr.Pending > 0 {
+		emit(ConversationEvent{
+			Type: "alignment_warning",
+			Data: mustMarshal(map[string]string{
+				"explanation": fmt.Sprintf("verdict_timeout: %d pending evaluations (fail-closed)", wr.Pending),
+			}),
+		})
+	}
+}
+
 func (a *LLMAdapter) checkAlignmentWarning(_ context.Context, observer *alignment.Observer, toolName string, emit func(ConversationEvent), emitted map[int]bool) {
 	if observer == nil {
 		return
 	}
-	recent := observer.WaitForCompletion(100 * time.Millisecond)
-	for _, obs := range recent {
+	wr := observer.WaitForCompletion(100 * time.Millisecond)
+	for _, obs := range wr.Observations {
 		if obs.Suspicious && obs.Step.Tool == toolName && !emitted[obs.Step.Index] {
 			emitted[obs.Step.Index] = true
 			emit(ConversationEvent{

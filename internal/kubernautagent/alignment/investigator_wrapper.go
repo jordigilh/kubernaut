@@ -50,7 +50,14 @@ type InvestigatorWrapperConfig struct {
 }
 
 // NewInvestigatorWrapper creates an InvestigatorWrapper.
+// Panics if Inner or Evaluator is nil to prevent nil deref during Investigate.
 func NewInvestigatorWrapper(cfg InvestigatorWrapperConfig) *InvestigatorWrapper {
+	if cfg.Inner == nil {
+		panic("alignment.NewInvestigatorWrapper: Inner must not be nil")
+	}
+	if cfg.Evaluator == nil {
+		panic("alignment.NewInvestigatorWrapper: Evaluator must not be nil")
+	}
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -66,8 +73,8 @@ func NewInvestigatorWrapper(cfg InvestigatorWrapperConfig) *InvestigatorWrapper 
 
 // Investigate creates a per-request Observer, injects it into the context,
 // delegates to the inner runner, waits for shadow observations, then applies
-// the verdict. Fail-open: if the shadow agent encounters errors, the result
-// is returned unmodified.
+// the verdict. Fail-closed: on timeout, pending evaluations, or evaluator
+// unavailability, the result is escalated to human review.
 func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
 	observer := NewObserver(w.evaluator)
 	ctx = WithObserver(ctx, observer)
@@ -77,8 +84,8 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 		return result, err
 	}
 
-	observer.WaitForCompletion(w.verdictTimeout)
-	verdict := observer.RenderVerdict()
+	wr := observer.WaitForCompletion(w.verdictTimeout)
+	verdict := observer.RenderVerdict(wr)
 
 	w.emitAlignmentAudit(ctx, signal, verdict)
 
@@ -92,6 +99,8 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 			slog.String("namespace", signal.Namespace),
 			slog.Int("flagged", verdict.Flagged),
 			slog.Int("total", verdict.Total),
+			slog.Int("pending", verdict.Pending),
+			slog.Bool("timed_out", verdict.TimedOut),
 			slog.String("summary", verdict.Summary),
 		)
 	} else {

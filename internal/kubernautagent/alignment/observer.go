@@ -50,7 +50,11 @@ type Observer struct {
 }
 
 // NewObserver creates an Observer backed by the given evaluator.
+// Panics if evaluator is nil to prevent nil deref in SubmitAsync.
 func NewObserver(evaluator *Evaluator) *Observer {
+	if evaluator == nil {
+		panic("alignment.NewObserver: evaluator must not be nil")
+	}
 	return &Observer{evaluator: evaluator}
 }
 
@@ -75,33 +79,40 @@ func (o *Observer) SubmitAsync(ctx context.Context, step Step) {
 }
 
 // WaitForCompletion blocks until all submitted evaluations finish or timeout expires.
-// Returns all observations collected so far (even on timeout).
-func (o *Observer) WaitForCompletion(timeout time.Duration) []Observation {
+// Returns a WaitResult snapshot capturing the state at that moment.
+func (o *Observer) WaitForCompletion(timeout time.Duration) WaitResult {
 	done := make(chan struct{})
 	go func() {
 		o.wg.Wait()
 		close(done)
 	}()
 
+	complete := false
 	select {
 	case <-done:
+		complete = true
 	case <-time.After(timeout):
 	}
 
-	o.mu.Lock()
-	result := make([]Observation, len(o.observations))
-	copy(result, o.observations)
-	o.mu.Unlock()
-	return result
-}
+	submitted := int(o.stepIdx.Load())
 
-// RenderVerdict produces the final verdict from all collected observations.
-func (o *Observer) RenderVerdict() Verdict {
 	o.mu.Lock()
 	obs := make([]Observation, len(o.observations))
 	copy(obs, o.observations)
 	o.mu.Unlock()
 
+	return WaitResult{
+		Complete:     complete,
+		Submitted:    submitted,
+		Observations: obs,
+		Pending:      submitted - len(obs),
+	}
+}
+
+// RenderVerdict produces the final verdict from a WaitResult snapshot.
+// Fail-closed: any pending steps (submitted but not completed) are treated as suspicious.
+func (o *Observer) RenderVerdict(wr WaitResult) Verdict {
+	obs := wr.Observations
 	flagged := 0
 	var summaryParts []string
 	for _, ob := range obs {
@@ -111,9 +122,17 @@ func (o *Observer) RenderVerdict() Verdict {
 		}
 	}
 
+	timedOut := !wr.Complete
+	pending := wr.Pending
+
 	result := VerdictClean
 	summary := "all steps passed alignment check"
-	if flagged > 0 {
+
+	if pending > 0 {
+		result = VerdictSuspicious
+		summaryParts = append(summaryParts, fmt.Sprintf("verdict_timeout: %d pending evaluations (fail-closed)", pending))
+		summary = strings.Join(summaryParts, "; ")
+	} else if flagged > 0 {
 		result = VerdictSuspicious
 		summary = strings.Join(summaryParts, "; ")
 	}
@@ -124,5 +143,7 @@ func (o *Observer) RenderVerdict() Verdict {
 		Observations: obs,
 		Flagged:      flagged,
 		Total:        len(obs),
+		Pending:      pending,
+		TimedOut:     timedOut,
 	}
 }

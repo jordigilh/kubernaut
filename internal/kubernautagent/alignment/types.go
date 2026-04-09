@@ -54,4 +54,15 @@ type Verdict struct {
 	Observations []Observation `json:"observations"`
 	Flagged      int           `json:"flagged"`
 	Total        int           `json:"total"`
+	Pending      int           `json:"pending,omitempty"`
+	TimedOut     bool          `json:"timed_out,omitempty"`
+}
+
+// WaitResult captures the observer state at the moment WaitForCompletion returns.
+// It provides a single snapshot for verdict rendering — no re-reading internal state.
+type WaitResult struct {
+	Complete     bool
+	Submitted    int
+	Observations []Observation
+	Pending      int
 }

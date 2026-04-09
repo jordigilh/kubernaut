@@ -188,7 +188,8 @@ func main() {
 				alignLLMCfg.Provider, alignLLMCfg.Endpoint, alignLLMCfg.Model, alignLLMCfg.APIKey,
 				buildLLMProviderOptionsFromConfig(alignLLMCfg)...)
 			if alignErr != nil {
-				slogger.Warn("alignment check LLM client failed, disabled", "error", alignErr)
+				slogger.Error("alignment check LLM client failed (fail-closed): alignment is enabled but shadow client unavailable", "error", alignErr)
+				os.Exit(1)
 			} else {
 				shadowClient = llm.NewInstrumentedClient(raw)
 				slogger.Info("shadow agent using dedicated LLM client", "model", alignLLMCfg.Model)
@@ -199,7 +200,7 @@ func main() {
 				Timeout:       cfg.AlignmentCheck.Timeout,
 				MaxStepTokens: cfg.AlignmentCheck.MaxStepTokens,
 				MaxRetries:    1,
-			}).WithSystemPrompt(alignprompt.SystemPrompt())
+			}, alignprompt.SystemPrompt())
 			effectiveLLM = alignment.NewLLMProxy(instrumentedLLM)
 			effectiveReg = alignment.NewToolProxy(reg)
 			slogger.Info("shadow agent alignment check enabled")
