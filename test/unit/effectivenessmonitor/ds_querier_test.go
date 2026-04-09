@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -28,23 +29,49 @@ import (
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
 )
 
-// dsEnvelope mirrors the AuditEventsQueryResponse returned by DS
-// (see api/openapi/data-storage-v1.yaml, Issue #575).
-type dsEnvelope struct {
-	Data       []map[string]interface{} `json:"data"`
-	Pagination map[string]interface{}   `json:"pagination,omitempty"`
+// testAuditEvent builds a schema-compliant AuditEvent JSON map with all 8 required
+// fields populated. Callers supply the event_type, correlation_id, and an eventData
+// map that is merged into the required event_data structure.
+//
+// Required by ogen's AuditEvent.Decode() bitmask validation (F9).
+func testAuditEvent(eventType, correlationID string, eventData map[string]interface{}) map[string]interface{} {
+	ed := map[string]interface{}{
+		"event_type": eventType,
+	}
+	for k, v := range eventData {
+		ed[k] = v
+	}
+
+	return map[string]interface{}{
+		"version":         "1.0",
+		"event_type":      eventType,
+		"event_timestamp": "2026-01-01T00:00:00Z",
+		"event_category":  categoryForEventType(eventType),
+		"event_action":    "test_action",
+		"event_outcome":   "success",
+		"correlation_id":  correlationID,
+		"event_data":      ed,
+	}
 }
 
-func serveDSEnvelope(w http.ResponseWriter, events []map[string]interface{}) {
+// categoryForEventType derives event_category from the event_type prefix.
+func categoryForEventType(eventType string) string {
+	switch {
+	case len(eventType) > 12 && eventType[:12] == "remediation.":
+		return "orchestration"
+	case len(eventType) > 18 && eventType[:18] == "workflowexecution.":
+		return "workflowexecution"
+	default:
+		return "unknown"
+	}
+}
+
+// serveOgenCompliantResponse writes a schema-compliant AuditEventsQueryResponse
+// JSON envelope that satisfies ogen's strict decoder.
+func serveOgenCompliantResponse(w http.ResponseWriter, events []map[string]interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	resp := dsEnvelope{
-		Data: events,
-		Pagination: map[string]interface{}{
-			"limit":    100,
-			"offset":   0,
-			"total":    len(events),
-			"has_more": false,
-		},
+	resp := map[string]interface{}{
+		"data": events,
 	}
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -52,10 +79,10 @@ func serveDSEnvelope(w http.ResponseWriter, events []map[string]interface{}) {
 }
 
 // ========================================
-// DataStorageQuerier Tests (DD-EM-002, Issue #575)
+// DataStorageQuerier Tests (DD-EM-002, DD-API-001, Issue #236)
 //
-// All mock servers return the production-matching envelope:
-//   {"data": [...], "pagination": {...}}
+// All mock servers return ogen-compliant AuditEvent JSON with the 8
+// required fields per F9 and event_type discriminator inside event_data per F4.
 // ========================================
 var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 
@@ -81,18 +108,17 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 			expectedHash := "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				Expect(r.URL.Query().Get("event_type")).To(Equal("remediation.workflow_created"))
-				serveDSEnvelope(w, []map[string]interface{}{
-					{
-						"event_type":     "remediation.workflow_created",
-						"correlation_id": "test-correlation-001",
-						"event_data": map[string]interface{}{
-							"pre_remediation_spec_hash": expectedHash,
-						},
-					},
+				serveOgenCompliantResponse(w, []map[string]interface{}{
+					testAuditEvent("remediation.workflow_created", "test-correlation-001", map[string]interface{}{
+						"rr_name":                   "test-rr",
+						"namespace":                 "test-ns",
+						"pre_remediation_spec_hash": expectedHash,
+					}),
 				})
 			}))
 
-			querier := emclient.NewDataStorageHTTPQuerier(server.URL)
+			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
 			hash, err := querier.QueryPreRemediationHash(ctx, "test-correlation-001")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(hash).To(Equal(expectedHash))
@@ -100,10 +126,11 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 
 		It("UT-EM-DSQ-002: should return empty string when no events found", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				serveDSEnvelope(w, []map[string]interface{}{})
+				serveOgenCompliantResponse(w, []map[string]interface{}{})
 			}))
 
-			querier := emclient.NewDataStorageHTTPQuerier(server.URL)
+			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
 			hash, err := querier.QueryPreRemediationHash(ctx, "no-events-correlation")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(hash).To(BeEmpty())
@@ -111,16 +138,16 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 
 		It("UT-EM-DSQ-003: should return empty string when event has no hash field", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				serveDSEnvelope(w, []map[string]interface{}{
-					{
-						"event_type":     "remediation.workflow_created",
-						"correlation_id": "test-correlation-003",
-						"event_data":     map[string]interface{}{},
-					},
+				serveOgenCompliantResponse(w, []map[string]interface{}{
+					testAuditEvent("remediation.workflow_created", "test-correlation-003", map[string]interface{}{
+						"rr_name":   "test-rr",
+						"namespace": "test-ns",
+					}),
 				})
 			}))
 
-			querier := emclient.NewDataStorageHTTPQuerier(server.URL)
+			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
 			hash, err := querier.QueryPreRemediationHash(ctx, "test-correlation-003")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(hash).To(BeEmpty())
@@ -131,14 +158,16 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 			}))
 
-			querier := emclient.NewDataStorageHTTPQuerier(server.URL)
-			_, err := querier.QueryPreRemediationHash(ctx, "test-correlation-004")
+			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = querier.QueryPreRemediationHash(ctx, "test-correlation-004")
 			Expect(err).To(HaveOccurred())
 		})
 
 		It("UT-EM-DSQ-005: should return error when DS is unreachable", func() {
-			querier := emclient.NewDataStorageHTTPQuerier("http://localhost:1")
-			_, err := querier.QueryPreRemediationHash(ctx, "test-correlation-005")
+			querier, err := emclient.NewOgenDataStorageQuerier("http://localhost:1", 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = querier.QueryPreRemediationHash(ctx, "test-correlation-005")
 			Expect(err).To(HaveOccurred())
 		})
 	})
@@ -149,15 +178,20 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 		It("UT-EM-DSQ-006: should return true when execution.started event exists", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				Expect(r.URL.Query().Get("event_type")).To(Equal("workflowexecution.execution.started"))
-				serveDSEnvelope(w, []map[string]interface{}{
-					{
-						"event_type":     "workflowexecution.execution.started",
-						"correlation_id": "corr-started",
-					},
+				serveOgenCompliantResponse(w, []map[string]interface{}{
+					testAuditEvent("workflowexecution.execution.started", "corr-started", map[string]interface{}{
+						"workflow_id":      "test-wf",
+						"workflow_version": "1.0.0",
+						"target_resource":  "test-ns/Deployment/test",
+						"phase":            "Running",
+						"container_image":  "test:latest",
+						"execution_name":   "test-exec",
+					}),
 				})
 			}))
 
-			querier := emclient.NewDataStorageHTTPQuerier(server.URL)
+			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
 			started, err := querier.HasWorkflowStarted(ctx, "corr-started")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(started).To(BeTrue())
@@ -165,10 +199,11 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 
 		It("UT-EM-DSQ-007: should return false when no execution.started event exists", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				serveDSEnvelope(w, []map[string]interface{}{})
+				serveOgenCompliantResponse(w, []map[string]interface{}{})
 			}))
 
-			querier := emclient.NewDataStorageHTTPQuerier(server.URL)
+			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
 			started, err := querier.HasWorkflowStarted(ctx, "corr-not-started")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(started).To(BeFalse())
@@ -179,14 +214,16 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 			}))
 
-			querier := emclient.NewDataStorageHTTPQuerier(server.URL)
-			_, err := querier.HasWorkflowStarted(ctx, "corr-error")
+			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = querier.HasWorkflowStarted(ctx, "corr-error")
 			Expect(err).To(HaveOccurred())
 		})
 
 		It("UT-EM-DSQ-009: should return error when DS is unreachable", func() {
-			querier := emclient.NewDataStorageHTTPQuerier("http://localhost:1")
-			_, err := querier.HasWorkflowStarted(ctx, "corr-unreachable")
+			querier, err := emclient.NewOgenDataStorageQuerier("http://localhost:1", 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = querier.HasWorkflowStarted(ctx, "corr-unreachable")
 			Expect(err).To(HaveOccurred())
 		})
 	})
@@ -196,15 +233,20 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 		It("UT-EM-573-009: should return true when workflow.completed event exists", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				Expect(r.URL.Query().Get("event_type")).To(Equal("workflowexecution.workflow.completed"))
-				serveDSEnvelope(w, []map[string]interface{}{
-					{
-						"event_type":     "workflowexecution.workflow.completed",
-						"correlation_id": "rr-completed",
-					},
+				serveOgenCompliantResponse(w, []map[string]interface{}{
+					testAuditEvent("workflowexecution.workflow.completed", "rr-completed", map[string]interface{}{
+						"workflow_id":      "test-wf",
+						"workflow_version": "1.0.0",
+						"target_resource":  "test-ns/Deployment/test",
+						"phase":            "Completed",
+						"container_image":  "test:latest",
+						"execution_name":   "test-exec",
+					}),
 				})
 			}))
 
-			querier := emclient.NewDataStorageHTTPQuerier(server.URL)
+			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
 			completed, err := querier.HasWorkflowCompleted(ctx, "rr-completed")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(completed).To(BeTrue(),
@@ -213,10 +255,11 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 
 		It("UT-EM-573-009: should return false when only started event exists", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				serveDSEnvelope(w, []map[string]interface{}{})
+				serveOgenCompliantResponse(w, []map[string]interface{}{})
 			}))
 
-			querier := emclient.NewDataStorageHTTPQuerier(server.URL)
+			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
 			completed, err := querier.HasWorkflowCompleted(ctx, "rr-only-started")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(completed).To(BeFalse(),

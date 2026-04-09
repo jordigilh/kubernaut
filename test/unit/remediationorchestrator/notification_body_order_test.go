@@ -49,7 +49,7 @@ var _ = Describe("Issue #627: Notification Body Field Reordering", func() {
 		_ = eav1.AddToScheme(scheme)
 	})
 
-	It("UT-RO-627-001: Completion body has Outcome before Signal", func() {
+	It("UT-RO-627-001: Completion body has Status and Outcome before Signal", func() {
 		cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 		nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
@@ -64,10 +64,14 @@ var _ = Describe("Issue #627: Notification Body Field Reordering", func() {
 		nr := &notificationv1.NotificationRequest{}
 		Expect(cl.Get(context.Background(), types.NamespacedName{Name: name, Namespace: "default"}, nr)).To(Succeed())
 
+		statusIdx := strings.Index(nr.Spec.Body, "**Status**:")
 		outcomeIdx := strings.Index(nr.Spec.Body, "**Outcome**:")
 		signalIdx := strings.Index(nr.Spec.Body, "**Signal**:")
-		Expect(outcomeIdx).To(BeNumerically(">=", 0), "Outcome field must be present")
+		Expect(statusIdx).To(BeNumerically(">=", 0), "#628: Status field must be present")
+		Expect(outcomeIdx).To(BeNumerically(">=", 0), "Outcome field must be present (deprecated, retained one release)")
 		Expect(signalIdx).To(BeNumerically(">=", 0), "Signal field must be present")
+		Expect(statusIdx).To(BeNumerically("<", outcomeIdx),
+			"#628: Status must appear before deprecated Outcome")
 		Expect(outcomeIdx).To(BeNumerically("<", signalIdx),
 			"Outcome must appear before Signal for faster operator triage")
 	})

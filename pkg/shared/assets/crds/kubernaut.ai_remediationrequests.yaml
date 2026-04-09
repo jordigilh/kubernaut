@@ -23,45 +23,37 @@ spec:
     - jsonPath: .status.outcome
       name: Outcome
       type: string
+    - jsonPath: .spec.signalName
+      name: Alert
+      type: string
+    - jsonPath: .status.targetDisplay
+      name: RCA Target
+      type: string
+    - jsonPath: .status.workflowDisplayName
+      name: Workflow
+      type: string
+    - jsonPath: .status.confidence
+      name: Confidence
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
     - jsonPath: .spec.signalSource
       name: Source
       priority: 1
       type: string
-    - jsonPath: .spec.targetResource.name
-      name: Target
-      priority: 1
-      type: string
     - jsonPath: .spec.targetResource.namespace
-      name: Target NS
+      name: Signal NS
       priority: 1
       type: string
-    - jsonPath: .spec.targetResource.kind
-      name: Target Kind
-      priority: 1
-      type: string
-    - jsonPath: .status.remediationTarget.name
-      name: RCA Target
+    - jsonPath: .status.signalTargetDisplay
+      name: Signal Target
       priority: 1
       type: string
     - jsonPath: .status.remediationTarget.namespace
       name: RCA NS
       priority: 1
       type: string
-    - jsonPath: .status.remediationTarget.kind
-      name: RCA Kind
-      priority: 1
-      type: string
-    - jsonPath: .status.selectedWorkflowRef.workflowId
-      name: Workflow
-      priority: 1
-      type: string
-    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
-      name: Reason
-      priority: 1
-      type: string
-    - jsonPath: .metadata.creationTimestamp
-      name: Age
-      type: date
     name: v1alpha1
     schema:
       openAPIV3Schema:
@@ -417,6 +409,11 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              confidence:
+                description: |-
+                  Confidence is the AI analysis confidence score as a display string
+                  (e.g., "0.97"). Populated from AIAnalysis.SelectedWorkflow.Confidence.
+                type: string
               consecutiveFailureCount:
                 description: |-
                   ConsecutiveFailureCount tracks how many times this fingerprint has failed consecutively.
@@ -940,6 +937,11 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              signalTargetDisplay:
+                description: |-
+                  SignalTargetDisplay is the Kubernetes-idiomatic Kind/Name of the signal target
+                  (e.g., "Pod/web-frontend-cdbdbc4f8-6kn6j"). Populated from Spec.TargetResource.
+                type: string
               skipMessage:
                 description: |-
                   SkipMessage provides human-readable details about why remediation was skipped
@@ -970,6 +972,11 @@ spec:
               startTime:
                 description: Timestamps
                 format: date-time
+                type: string
+              targetDisplay:
+                description: |-
+                  TargetDisplay is the Kubernetes-idiomatic Kind/Name of the RCA target
+                  (e.g., "Deployment/web-frontend"). Populated when RemediationTarget is set.
                 type: string
               timeoutConfig:
                 description: |-
@@ -1039,6 +1046,11 @@ spec:
                   If exceeded, RR transitions to Completed with Outcome "VerificationTimedOut".
                   Reference: #280 (Verifying phase timeout)
                 format: date-time
+                type: string
+              workflowDisplayName:
+                description: |-
+                  WorkflowDisplayName is the human-readable workflow identifier
+                  (e.g., "GitRevertCommit:git-revert-v2"). Populated from AIAnalysis.SelectedWorkflow.
                 type: string
               workflowExecutionRef:
                 description: ObjectReference contains enough information to let you

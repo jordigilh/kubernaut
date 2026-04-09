@@ -168,14 +168,6 @@ type WorkflowExecutionSpec struct {
 	// +optional
 	Rationale string `json:"rationale,omitempty"`
 
-	// ServiceAccountName is the pre-existing ServiceAccount for the execution
-	// resource (Job, PipelineRun, or Ansible TokenRequest). DD-WE-005 v2.0:
-	// Operators pre-create SAs with appropriate RBAC in the execution namespace.
-	// If absent, K8s assigns the namespace's default SA (Job/Tekton) or the
-	// Ansible executor falls back to the controller's in-cluster credentials.
-	// +optional
-	ServiceAccountName string `json:"serviceAccountName,omitempty"`
-
 	// ExecutionConfig contains minimal execution settings
 	// +optional
 	ExecutionConfig *ExecutionConfig `json:"executionConfig,omitempty"`
@@ -206,7 +198,7 @@ type WorkflowRef struct {
 }
 
 // ExecutionConfig contains minimal execution settings.
-// Issue #501: ServiceAccountName moved to Spec.ServiceAccountName (engine-agnostic).
+// Issue #650: ServiceAccountName resolved at runtime from DS into Status.
 type ExecutionConfig struct {
 	// Timeout for the entire workflow (Tekton PipelineRun timeout)
 	// Default: use global timeout from RemediationRequest or 30m
@@ -326,6 +318,14 @@ type WorkflowExecutionStatus struct {
 	// Values: "tekton", "job", "ansible".
 	// +optional
 	ExecutionEngine string `json:"executionEngine,omitempty"`
+
+	// ServiceAccountName is the pre-existing ServiceAccount resolved from the
+	// DS workflow catalog at runtime by the WE controller (Issue #650).
+	// Set once during Pending phase via ResolveWorkflowCatalogMetadata; immutable
+	// thereafter. If empty, K8s assigns the namespace's default SA (Job/Tekton)
+	// or the Ansible executor falls back to the controller's in-cluster credentials.
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
 	// Conditions provide detailed status information
 	// +optional

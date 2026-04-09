@@ -682,6 +682,13 @@ data:
         - receiver: console-slack-failure
           match:
             test-channel-set: console-slack-failure
+        - receiver: fanout-console
+          match:
+            test-channel-set: e2e-fanout
+          continue: true
+        - receiver: fanout-file-log
+          match:
+            test-channel-set: e2e-fanout
     receivers:
       - name: default-console
         consoleConfigs:
@@ -724,6 +731,14 @@ data:
         slackConfigs:
           - channel: "#test-failure"
             credentialRef: slack-failure
+      - name: fanout-console
+        consoleConfigs:
+          - enabled: true
+      - name: fanout-file-log
+        fileConfigs:
+          - enabled: true
+        logConfigs:
+          - enabled: true
 ---
 apiVersion: v1
 kind: Secret

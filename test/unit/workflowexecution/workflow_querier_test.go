@@ -223,4 +223,191 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 			Expect(err.Error()).To(ContainSubstring("DS query failed"))
 		})
 	})
+
+	// ========================================
+	// Issue #658: Error classification — distinguish 404 vs 500 vs unexpected
+	// ========================================
+	Context("Error classification (Issue #658)", func() {
+		It("UT-WE-658-001: ResolveWorkflowCatalogMetadata should classify DS 500 as server error, not 'not found'", func() {
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.GetWorkflowByIDInternalServerError{},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			_, err := querier.ResolveWorkflowCatalogMetadata(ctx, uuid.New().String())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).ToNot(ContainSubstring("not found"),
+				"DS 500 must not be misclassified as 'not found'")
+			Expect(err.Error()).To(SatisfyAny(
+				ContainSubstring("server error"),
+				ContainSubstring("internal server error"),
+				ContainSubstring("500"),
+			), "error should indicate a Data Storage server failure")
+		})
+
+		It("UT-WE-658-002: ResolveWorkflowCatalogMetadata should classify DS 404 as 'not found'", func() {
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.GetWorkflowByIDNotFound{},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			_, err := querier.ResolveWorkflowCatalogMetadata(ctx, uuid.New().String())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+
+		It("UT-WE-658-003: GetWorkflowExecutionEngine should classify DS 500 as server error", func() {
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.GetWorkflowByIDInternalServerError{},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			_, _, err := querier.GetWorkflowExecutionEngine(ctx, uuid.New().String())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).ToNot(ContainSubstring("not found"))
+			Expect(err.Error()).To(SatisfyAny(
+				ContainSubstring("server error"),
+				ContainSubstring("internal server error"),
+				ContainSubstring("500"),
+			))
+		})
+
+		It("UT-WE-658-004: GetWorkflowExecutionBundle should classify DS 500 as server error", func() {
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.GetWorkflowByIDInternalServerError{},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			_, _, err := querier.GetWorkflowExecutionBundle(ctx, uuid.New().String())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).ToNot(ContainSubstring("not found"))
+			Expect(err.Error()).To(SatisfyAny(
+				ContainSubstring("server error"),
+				ContainSubstring("internal server error"),
+				ContainSubstring("500"),
+			))
+		})
+
+		It("UT-WE-658-005: GetWorkflowDependencies should classify DS 500 as server error", func() {
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.GetWorkflowByIDInternalServerError{},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			_, err := querier.GetWorkflowDependencies(ctx, uuid.New().String())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).ToNot(ContainSubstring("not found"))
+			Expect(err.Error()).To(SatisfyAny(
+				ContainSubstring("server error"),
+				ContainSubstring("internal server error"),
+				ContainSubstring("500"),
+			))
+		})
+
+		It("UT-WE-658-006: GetWorkflowEngineConfig should classify DS 500 as server error", func() {
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.GetWorkflowByIDInternalServerError{},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			_, err := querier.GetWorkflowEngineConfig(ctx, uuid.New().String())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).ToNot(ContainSubstring("not found"))
+			Expect(err.Error()).To(SatisfyAny(
+				ContainSubstring("server error"),
+				ContainSubstring("internal server error"),
+				ContainSubstring("500"),
+			))
+		})
+
+		It("UT-WE-658-007: 404 regression guard — type switch still classifies correctly", func() {
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.GetWorkflowByIDNotFound{},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			_, err := querier.GetWorkflowDependencies(ctx, uuid.New().String())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
+
+	// ========================================
+	// Issue #650: Consolidated querier — single DS call for all metadata
+	// ========================================
+	Context("ResolveWorkflowCatalogMetadata (Issue #650)", func() {
+		It("UT-WE-650-003: should return all metadata from single DS call", func() {
+			content := buildTestSchema(&models.WorkflowDependencies{
+				Secrets: []models.ResourceDependency{{Name: "my-secret"}},
+			})
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{
+					ExecutionEngine:       "tekton",
+					WorkflowName:          "cert-renewal",
+					ExecutionBundle:       ogenclient.NewOptString("ghcr.io/test/exec:v1"),
+					ExecutionBundleDigest: ogenclient.NewOptString("sha256:abc123"),
+					ServiceAccountName:    ogenclient.NewOptString("workflow-sa"),
+					Content:               content,
+				},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			meta, err := querier.ResolveWorkflowCatalogMetadata(ctx, uuid.New().String())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(meta.ExecutionEngine).To(Equal("tekton"))
+			Expect(meta.WorkflowName).To(Equal("cert-renewal"))
+			Expect(meta.ExecutionBundle).To(Equal("ghcr.io/test/exec:v1"))
+			Expect(meta.ExecutionBundleDigest).To(Equal("sha256:abc123"))
+			Expect(meta.ServiceAccountName).To(Equal("workflow-sa"))
+			Expect(meta.Dependencies.Secrets).To(HaveLen(1))
+			Expect(meta.Dependencies.Secrets[0].Name).To(Equal("my-secret"))
+		})
+
+		It("UT-WE-650-002: should return empty SA when catalog entry has no SA", func() {
+			content := buildTestSchema(nil)
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{
+					ExecutionEngine: "job",
+					WorkflowName:    "restart-pod",
+					Content:         content,
+				},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			meta, err := querier.ResolveWorkflowCatalogMetadata(ctx, uuid.New().String())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(meta.ServiceAccountName).To(BeEmpty())
+			Expect(meta.ExecutionEngine).To(Equal("job"))
+		})
+
+		It("UT-WE-650-004: should return error when DS is unreachable", func() {
+			mock := &mockWorkflowCatalogClient{
+				err: fmt.Errorf("connection refused"),
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			_, err := querier.ResolveWorkflowCatalogMetadata(ctx, uuid.New().String())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("DS query failed"))
+		})
+
+		It("UT-WE-650-010: should extract dependencies and engineConfig from Content", func() {
+			content := buildTestSchema(&models.WorkflowDependencies{
+				Secrets:    []models.ResourceDependency{{Name: "secret-a"}},
+				ConfigMaps: []models.ResourceDependency{{Name: "config-b"}},
+			})
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{
+					ExecutionEngine: "tekton",
+					Content:         content,
+				},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			meta, err := querier.ResolveWorkflowCatalogMetadata(ctx, uuid.New().String())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(meta.Dependencies.Secrets).To(HaveLen(1))
+			Expect(meta.Dependencies.ConfigMaps).To(HaveLen(1))
+		})
+	})
 })

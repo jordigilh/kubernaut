@@ -131,9 +131,8 @@ func (c *WorkflowExecutionCreator) Create(
 			Rationale:  ai.Status.SelectedWorkflow.Rationale,
 			// Issue #518: ExecutionEngine removed from spec — resolved at runtime by
 			// the WE controller from the DS catalog via WorkflowQuerier.
-			// Issue #501: ServiceAccountName is now top-level, engine-agnostic
-			ServiceAccountName: ai.Status.SelectedWorkflow.ServiceAccountName,
-			ExecutionConfig:    c.buildExecutionConfig(rr),
+			// Issue #650: ServiceAccountName is not on WFE spec; resolved at runtime from DS.
+			ExecutionConfig: c.buildExecutionConfig(rr),
 		},
 	}
 
@@ -206,7 +205,7 @@ func resolveTargetResource(rr *remediationv1.RemediationRequest, ai *aianalysisv
 }
 
 // buildExecutionConfig builds ExecutionConfig from RemediationRequest timeouts.
-// Issue #501: ServiceAccountName moved to Spec.ServiceAccountName.
+// Issue #650: Service account is not part of ExecutionConfig or WFE spec.
 func (c *WorkflowExecutionCreator) buildExecutionConfig(rr *remediationv1.RemediationRequest) *workflowexecutionv1.ExecutionConfig {
 	if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Executing != nil && rr.Status.TimeoutConfig.Executing.Duration > 0 {
 		return &workflowexecutionv1.ExecutionConfig{

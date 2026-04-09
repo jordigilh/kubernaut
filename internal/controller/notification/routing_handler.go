@@ -84,15 +84,21 @@ func (r *NotificationRequestReconciler) resolveChannelsFromRoutingWithDetails(
 	routingAttrs := routing.RoutingAttributesFromSpec(notification)
 	logger.V(1).Info("Routing attributes from spec", "attributes", routingAttrs)
 
-	receiver := r.Router.FindReceiver(routingAttrs)
-	channels := r.receiverToChannels(receiver)
+	receivers := r.Router.FindReceivers(routingAttrs)
+
+	var channels []notificationv1alpha1.Channel
+	var receiverNames []string
+	for _, recv := range receivers {
+		receiverNames = append(receiverNames, recv.Name)
+		channels = append(channels, r.receiverToChannels(recv)...)
+	}
 
 	logger.Info("Resolved channels from routing",
 		"notification", notification.Name,
-		"receiver", receiver.Name,
+		"receivers", receiverNames,
 		"channels", channels)
 
-	isFallback := receiver.Name == "console-fallback" || len(channels) == 0
+	isFallback := len(receivers) == 1 && receivers[0].Name == "default-console-fallback" || len(channels) == 0
 	var routingReason, routingMessage string
 	if isFallback {
 		routingReason = kubernautnotif.ReasonRoutingFallback
@@ -102,8 +108,8 @@ func (r *NotificationRequestReconciler) resolveChannelsFromRoutingWithDetails(
 		routingReason = kubernautnotif.ReasonRoutingRuleMatched
 		attrsPart := r.formatAttributesForCondition(routingAttrs)
 		channelsPart := r.formatChannelsForCondition(channels)
-		routingMessage = fmt.Sprintf("Matched rule '%s' %s → channels: %s",
-			receiver.Name, attrsPart, channelsPart)
+		routingMessage = fmt.Sprintf("Matched rules [%s] %s → channels: %s",
+			strings.Join(receiverNames, ", "), attrsPart, channelsPart)
 	}
 
 	return channels, routingReason, routingMessage

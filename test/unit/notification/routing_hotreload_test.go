@@ -344,6 +344,74 @@ receivers:
 })
 
 // =============================================================================
+// BR-NOT-068: Route Fanout Router-Level Tests — Issue #597
+// =============================================================================
+
+var _ = Describe("Route Fanout Router (BR-NOT-068, #597)", func() {
+
+	Context("Router.FindReceivers nil/empty config handling", func() {
+
+		It("[UT-NOT-597-008] should return console fallback receiver when no routes match unloaded config", func() {
+			router := routing.NewRouter(testLogger)
+
+			receivers := router.FindReceivers(map[string]string{"team": "sre"})
+			Expect(receivers).To(HaveLen(1),
+				"Unmatched attributes should resolve to exactly one fallback receiver")
+			Expect(receivers[0].GetChannels()).To(ContainElement("console"),
+				"Fallback receiver should deliver via console channel (BR-NOT-068 safety)")
+		})
+	})
+
+	Context("Router.FindReceivers name-to-receiver resolution", func() {
+
+		It("[UT-NOT-597-010] should resolve receiver names to Receiver objects and aggregate channels", func() {
+			router := routing.NewRouter(testLogger)
+
+			err := router.LoadConfig([]byte(`
+route:
+  receiver: default
+  routes:
+    - receiver: console-recv
+      match:
+        team: sre
+      continue: true
+    - receiver: file-recv
+      match:
+        team: sre
+receivers:
+  - name: default
+    consoleConfigs:
+      - enabled: true
+  - name: console-recv
+    consoleConfigs:
+      - enabled: true
+  - name: file-recv
+    fileConfigs:
+      - enabled: true
+`))
+			Expect(err).NotTo(HaveOccurred())
+
+			receivers := router.FindReceivers(map[string]string{"team": "sre"})
+			Expect(receivers).To(HaveLen(2))
+
+			// Verify resolved Receiver objects have correct names and channels
+			Expect(receivers[0].Name).To(Equal("console-recv"))
+			Expect(receivers[0].GetChannels()).To(ContainElement("console"))
+
+			Expect(receivers[1].Name).To(Equal("file-recv"))
+			Expect(receivers[1].GetChannels()).To(ContainElement("file"))
+
+			// Verify channel aggregation across receivers
+			var allChannels []string
+			for _, recv := range receivers {
+				allChannels = append(allChannels, recv.GetChannels()...)
+			}
+			Expect(allChannels).To(ContainElements("console", "file"))
+		})
+	})
+})
+
+// =============================================================================
 // Integration Test: Controller ConfigMap Watch
 // =============================================================================
 

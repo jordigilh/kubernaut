@@ -18,6 +18,7 @@ package remediationorchestrator
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -33,14 +34,14 @@ import (
 )
 
 // ========================================
-// RO CREATOR SA PROPAGATION TESTS (#501)
+// RO CREATOR WFE SPEC TESTS (#501 / #650)
 // ========================================
-// Authority: DD-WE-005 v2.0, Issue #501
-// Validates that ServiceAccountName from AIAnalysis.Status.SelectedWorkflow
-// is propagated to WorkflowExecution.Spec.ServiceAccountName (top-level).
+// Authority: DD-WE-005, Issue #501 (ExecutionConfig from RR timeouts),
+// Issue #650 (ServiceAccountName removed from WFE spec and AIAnalysis
+// SelectedWorkflow; SA resolved from DS at runtime in WE controller).
 // ========================================
 
-var _ = Describe("WorkflowExecution Creator SA Propagation [DD-WE-005] (#501)", func() {
+var _ = Describe("WorkflowExecution Creator WFE spec [DD-WE-005] (#501/#650)", func() {
 
 	var scheme *runtime.Scheme
 
@@ -68,8 +69,8 @@ var _ = Describe("WorkflowExecution Creator SA Propagation [DD-WE-005] (#501)", 
 		}
 	}
 
-	buildAI := func(saName string) *aianalysisv1.AIAnalysis {
-		ai := &aianalysisv1.AIAnalysis{
+	buildAI := func() *aianalysisv1.AIAnalysis {
+		return &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "aa-test",
 				Namespace: "kubernaut-system",
@@ -82,22 +83,24 @@ var _ = Describe("WorkflowExecution Creator SA Propagation [DD-WE-005] (#501)", 
 				},
 			},
 		}
-		if saName != "" {
-			ai.Status.SelectedWorkflow.ServiceAccountName = saName
-		}
-		return ai
 	}
 
-	Context("ServiceAccountName propagation (Issue #501)", func() {
+	Context("WorkflowExecution spec (Issue #650: no SA on spec; #501 timeouts)", func() {
 		var ctx context.Context
 
 		BeforeEach(func() {
 			ctx = context.Background()
 		})
 
-		It("UT-WE-501-010: should set Spec.ServiceAccountName and ExecutionConfig with only Timeout", func() {
+		It("UT-WE-501-010: should set ExecutionConfig.Timeout from RR Status.TimeoutConfig.Executing", func() {
 			rr := buildRR()
-			ai := buildAI("my-workflow-sa")
+			execTimeout := &metav1.Duration{Duration: 45 * time.Minute}
+			rr.Status = remediationv1.RemediationRequestStatus{
+				TimeoutConfig: &remediationv1.TimeoutConfig{
+					Executing: execTimeout,
+				},
+			}
+			ai := buildAI()
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr).Build()
 			wec := creator.NewWorkflowExecutionCreator(k8sClient, scheme, nil)
 
@@ -108,15 +111,15 @@ var _ = Describe("WorkflowExecution Creator SA Propagation [DD-WE-005] (#501)", 
 			created := &workflowexecutionv1.WorkflowExecution{}
 			err = k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.ServiceAccountName).To(Equal("my-workflow-sa"),
-				"SA should be at Spec top level, not inside ExecutionConfig")
-			Expect(created.Spec.ExecutionConfig).To(BeNil(),
-				"ExecutionConfig should be nil when no timeout is configured")
+			Expect(created.Spec.ExecutionConfig.Timeout.Duration).To(Equal(execTimeout.Duration))
+			Expect(created.Spec.WorkflowRef.WorkflowID).To(Equal("wf-uuid-123"))
+			Expect(created.Spec.WorkflowRef.Version).To(Equal("1.0.0"))
+			Expect(created.Spec.WorkflowRef.ExecutionBundle).To(Equal("quay.io/test:v1@sha256:abc123"))
 		})
 
-		It("UT-RO-481-002: should leave ExecutionConfig nil and SA empty when no SA and no timeout", func() {
+		It("UT-RO-481-002: should leave ExecutionConfig nil when no executing timeout (WFE spec has no SA per #650)", func() {
 			rr := buildRR()
-			ai := buildAI("")
+			ai := buildAI()
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr).Build()
 			wec := creator.NewWorkflowExecutionCreator(k8sClient, scheme, nil)
 
@@ -126,9 +129,9 @@ var _ = Describe("WorkflowExecution Creator SA Propagation [DD-WE-005] (#501)", 
 			created := &workflowexecutionv1.WorkflowExecution{}
 			err = k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.ServiceAccountName).To(Equal(""),
-				"SA should be empty when no SA specified")
 			Expect(created.Spec.ExecutionConfig).To(BeNil())
+			Expect(created.Spec.WorkflowRef.WorkflowID).To(Equal("wf-uuid-123"))
+			Expect(created.Spec.TargetResource).To(Equal("default/Deployment/nginx"))
 		})
 	})
 })

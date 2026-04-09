@@ -330,10 +330,16 @@ func main() {
 	setupLog.Info("EM audit manager initialized (DD-AUDIT-003, Pattern 2)")
 
 	// ========================================
-	// DS QUERIER INITIALIZATION (DD-EM-002: pre-remediation hash lookup)
+	// DS QUERIER INITIALIZATION (DD-EM-002, DD-API-001: ogen OpenAPI client)
 	// ========================================
-	dsQuerier := emclient.NewDataStorageHTTPQuerierWithTimeout(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
-	setupLog.Info("DataStorage querier initialized for pre-remediation hash lookup (DD-AUTH-005: SA auth)",
+	dsQuerier, err := emclient.NewOgenDataStorageQuerier(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
+	if err != nil {
+		setupLog.Error(err, "Failed to create DataStorage querier",
+			"url", cfg.DataStorage.URL,
+			"timeout", cfg.DataStorage.Timeout)
+		os.Exit(1)
+	}
+	setupLog.Info("DataStorage querier initialized (DD-API-001: ogen, DD-AUTH-005: SA auth)",
 		"url", cfg.DataStorage.URL)
 
 	// ========================================

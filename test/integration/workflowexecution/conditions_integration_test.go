@@ -29,8 +29,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	workflowexecution "github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
+	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 )
 
 // ========================================
@@ -92,7 +92,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 			// Verify PipelineRun was actually created
 			var pr tektonv1.PipelineRun
 			Eventually(func() error {
-				prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+				prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 				return k8sClient.Get(ctx, client.ObjectKey{
 					Name:      prName,
 					Namespace: WorkflowExecutionNS,
@@ -147,7 +147,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 			// Get the created PipelineRun
 			var pr tektonv1.PipelineRun
-			prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+			prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 			Eventually(func() error {
 				return k8sClient.Get(ctx, client.ObjectKey{
 					Name:      prName,
@@ -211,7 +211,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 			// Get PipelineRun and mark as succeeded
 			var pr tektonv1.PipelineRun
-			prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+			prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 			Eventually(func() error {
 				return k8sClient.Get(ctx, client.ObjectKey{
 					Name:      prName,
@@ -360,7 +360,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 			// 3. Complete the PipelineRun
 			var pr tektonv1.PipelineRun
-			prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+			prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 			Eventually(func() error {
 				return k8sClient.Get(ctx, client.ObjectKey{
 					Name:      prName,

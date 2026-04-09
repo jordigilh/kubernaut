@@ -43,8 +43,6 @@ package workflowexecution
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -186,40 +184,6 @@ type WorkflowExecutionReconciler struct {
 	// with non-empty data in the execution namespace (defense in depth).
 	// Optional: nil disables execution-time validation.
 	DependencyValidator dsvalidation.DependencyValidator
-}
-
-// resolveDependencies fetches schema-declared dependencies from DS and validates
-// them against the execution namespace. Returns empty CreateOptions when no
-// querier is configured, or when the workflow has no dependencies.
-// Returns a hard error only when validation explicitly fails (missing Secret/ConfigMap).
-// DS fetch failures are treated as non-fatal (graceful degradation).
-func (r *WorkflowExecutionReconciler) resolveDependencies(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (weexecutor.CreateOptions, error) {
-	opts := weexecutor.CreateOptions{}
-	if r.WorkflowQuerier == nil {
-		return opts, nil
-	}
-
-	logger := log.FromContext(ctx)
-	deps, err := r.WorkflowQuerier.GetWorkflowDependencies(ctx, wfe.Spec.WorkflowRef.WorkflowID)
-	if err != nil {
-		logger.Error(err, "Failed to fetch workflow dependencies from DS (non-fatal, continuing without deps)",
-			"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-		return opts, nil
-	}
-	if deps == nil {
-		return opts, nil
-	}
-
-	if r.DependencyValidator != nil {
-		if valErr := r.DependencyValidator.ValidateDependencies(ctx, r.ExecutionNamespace, deps); valErr != nil {
-			logger.Error(valErr, "Workflow dependency validation failed",
-				"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-			return opts, valErr
-		}
-	}
-
-	opts.Dependencies = deps
-	return opts, nil
 }
 
 // ========================================
@@ -364,26 +328,20 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		fmt.Sprintf("Workflow spec validated: %s (target: %s)", wfe.Spec.WorkflowRef.WorkflowID, wfe.Spec.TargetResource))
 
 	// ========================================
-	// Step 1.2: Resolve execution engine from DS catalog (Issue #518)
+	// Step 1.2: Resolve all workflow catalog metadata from DS (Issue #650)
+	// Consolidates engine, bundle, SA, deps, engineConfig into single DS call.
 	// ========================================
-	engine, engineErr := r.resolveExecutionEngine(ctx, wfe)
-	if engineErr != nil {
-		logger.Error(engineErr, "Execution engine resolution failed")
+	catalogMeta, catalogErr := r.resolveWorkflowCatalog(ctx, wfe)
+	if catalogErr != nil {
+		logger.Error(catalogErr, "Workflow catalog resolution failed")
 		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
-			fmt.Sprintf("Execution engine resolution failed: %v", engineErr))
-		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", engineErr.Error()); markErr != nil {
+			fmt.Sprintf("Workflow catalog resolution failed: %v", catalogErr))
+		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", catalogErr.Error()); markErr != nil {
 			return ctrl.Result{}, markErr
 		}
 		return ctrl.Result{}, nil
 	}
-	logger.Info("Resolved execution engine from catalog", "engine", engine, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-
-	// ========================================
-	// Step 1.3: Resolve execution bundle from DS catalog (defense-in-depth)
-	// ========================================
-	if resolveErr := r.resolveExecutionBundle(ctx, wfe); resolveErr != nil {
-		logger.Error(resolveErr, "Failed to resolve execution bundle from DS (non-fatal)")
-	}
+	logger.Info("Resolved workflow catalog metadata", "engine", wfe.Status.ExecutionEngine, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
 
 	// ========================================
 	// Step 1.5: Check if cooldown is active for target resource (BR-WE-009)
@@ -466,6 +424,8 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	exec, err := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
 	if err != nil {
 		logger.Error(err, "Unsupported execution engine", "engine", wfe.Status.ExecutionEngine)
+		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
+			fmt.Sprintf("Unsupported execution engine %q: %v", wfe.Status.ExecutionEngine, err))
 		markErr := r.MarkFailedWithReason(ctx, wfe, "UnsupportedEngine", err.Error())
 		return ctrl.Result{}, markErr
 	}
@@ -476,25 +436,22 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		"namespace", r.ExecutionNamespace,
 	)
 
-	// DD-WE-006: Fetch workflow dependencies from DS and validate before execution.
-	createOpts, depErr := r.resolveDependencies(ctx, wfe)
-	if depErr != nil {
-		markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", depErr.Error())
-		return ctrl.Result{}, markErr
-	}
-
-	// DD-WORKFLOW-017: Resolve engineConfig from DS catalog when not present on the WFE spec.
-	// Execution details like engineConfig come from the workflow catalog entry, not the KA pipeline.
-	if wfe.Spec.WorkflowRef.EngineConfig == nil && wfe.Spec.WorkflowRef.WorkflowID != "" && r.WorkflowQuerier != nil {
-		ecRaw, ecErr := r.WorkflowQuerier.GetWorkflowEngineConfig(ctx, wfe.Spec.WorkflowRef.WorkflowID)
-		if ecErr != nil {
-			logger.Error(ecErr, "Failed to resolve engineConfig from DS (non-fatal)",
-				"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-		} else if ecRaw != nil {
-			logger.Info("Resolved engineConfig from DS catalog",
-				"workflowID", wfe.Spec.WorkflowRef.WorkflowID,
-				"engine", wfe.Status.ExecutionEngine)
-			wfe.Spec.WorkflowRef.EngineConfig = &apiextensionsv1.JSON{Raw: ecRaw}
+	// DD-WE-006 / Issue #650: Dependencies and engineConfig already resolved
+	// by catalogMeta above. Build CreateOptions from catalog metadata.
+	createOpts := weexecutor.CreateOptions{}
+	if catalogMeta != nil {
+		if catalogMeta.Dependencies != nil {
+			if r.DependencyValidator != nil {
+				if valErr := r.DependencyValidator.ValidateDependencies(ctx, r.ExecutionNamespace, catalogMeta.Dependencies); valErr != nil {
+					logger.Error(valErr, "Workflow dependency validation failed",
+						"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+					r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
+						fmt.Sprintf("Dependency validation failed: %v", valErr))
+					markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", valErr.Error())
+					return ctrl.Result{}, markErr
+				}
+			}
+			createOpts.Dependencies = catalogMeta.Dependencies
 		}
 	}
 
@@ -503,8 +460,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		if apierrors.IsAlreadyExists(createErr) {
 			// DD-WE-003 Layer 2: Execution-time collision handling
 			if wfe.Status.ExecutionEngine == "tekton" {
-				pr := r.BuildPipelineRun(wfe)
-				return r.HandleAlreadyExists(ctx, wfe, pr, createErr)
+				return r.HandleAlreadyExists(ctx, wfe, resourceName, createErr)
 			}
 			// Issue #374 / DD-WE-003: Pre-execution cleanup of completed Jobs.
 			// If the existing Job is in a terminal state (Succeeded/Failed), clean it up
@@ -746,7 +702,7 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 		}
 	} else {
 		// Fallback: inline Tekton cleanup when ExecutorRegistry is not configured
-		prName := PipelineRunName(wfe.Spec.TargetResource)
+		prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 		var existing tektonv1.PipelineRun
 		if err := r.Get(ctx, client.ObjectKey{Name: prName, Namespace: r.ExecutionNamespace}, &existing); err != nil {
 			if !apierrors.IsNotFound(err) {
@@ -884,7 +840,7 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 		}
 	} else {
 		// Fallback: inline Tekton cleanup when ExecutorRegistry is not configured
-		prName := PipelineRunName(wfe.Spec.TargetResource)
+		prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 		pr := &tektonv1.PipelineRun{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      prName,
@@ -1038,16 +994,6 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrlBuilder.Complete(r)
 }
 
-// ========================================
-// PipelineRunName generates deterministic name from targetResource
-// DD-WE-003: Lock Persistence via Deterministic Name
-// Format: wfe-<sha256(targetResource)[:16]>
-// ========================================
-func PipelineRunName(targetResource string) string {
-	h := sha256.Sum256([]byte(targetResource))
-	return fmt.Sprintf("wfe-%s", hex.EncodeToString(h[:])[:16])
-}
-
 // sanitizeLabelValue makes a string safe for use as a Kubernetes label value
 // Label values must consist of alphanumeric characters, '-', '_' or '.'
 // and must start and end with an alphanumeric character
@@ -1127,50 +1073,38 @@ func (r *WorkflowExecutionReconciler) handleJobAlreadyExists(
 // DD-WE-003: Layer 2 - Execution-time collision handling (not routing)
 // V1.0: Fails WFE if race condition detected (RO should have prevented this)
 // ========================================
-func (r *WorkflowExecutionReconciler) HandleAlreadyExists(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, pr *tektonv1.PipelineRun, err error) (ctrl.Result, error) {
+func (r *WorkflowExecutionReconciler) HandleAlreadyExists(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, err error) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	// PipelineRun already exists - check if it's ours
-	prName := pr.Name
 	existingPR := &tektonv1.PipelineRun{}
 	if getErr := r.Get(ctx, client.ObjectKey{
-		Name:      prName,
+		Name:      resourceName,
 		Namespace: r.ExecutionNamespace,
 	}, existingPR); getErr != nil {
-		logger.Error(getErr, "Failed to get existing PipelineRun", "name", prName)
+		logger.Error(getErr, "Failed to get existing PipelineRun", "name", resourceName)
 		markErr := r.MarkFailedWithReason(ctx, wfe, "RaceConditionError", fmt.Sprintf("PipelineRun already exists but failed to verify ownership: %v", getErr))
 		return ctrl.Result{}, markErr
 	}
 
-	// Check if the existing PipelineRun was created by this WFE
 	if existingPR.Labels != nil &&
 		existingPR.Labels["kubernaut.ai/workflow-execution"] == wfe.Name &&
 		existingPR.Labels["kubernaut.ai/source-namespace"] == wfe.Namespace {
-		// It's ours - we must have lost a race with ourselves (unlikely but safe)
-		// Continue with normal flow
-		logger.Info("PipelineRun already exists and is ours, continuing", "name", prName)
+		logger.Info("PipelineRun already exists and is ours, continuing", "name", resourceName)
 
-		// ========================================
-		// P1: ATOMIC STATUS UPDATE with retry logic
-		// Consolidates phase transition + conditions into single API call
-		// ========================================
 		now := metav1.Now()
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, wfe, func() error {
-			// Set phase (P0: Phase State Machine)
 			if err := r.PhaseManager.TransitionTo(wfe, wephase.Running); err != nil {
 				return fmt.Errorf("failed to transition to Running in HandleAlreadyExists: %w", err)
 			}
 
-			// Set start time and PipelineRun reference
 			wfe.Status.StartTime = &now
 			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{
-				Name: pr.Name,
+				Name: resourceName,
 			}
 
-			// Set ExecutionCreated condition (consistency with main flow)
 			weconditions.SetExecutionCreated(wfe, true,
 				weconditions.ReasonExecutionCreated,
-				fmt.Sprintf("PipelineRun %s already exists (race condition)", prName))
+				fmt.Sprintf("PipelineRun %s already exists (race condition)", resourceName))
 
 			return nil
 		}); err != nil {
@@ -1178,100 +1112,21 @@ func (r *WorkflowExecutionReconciler) HandleAlreadyExists(ctx context.Context, w
 		}
 
 		r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonPipelineRunCreated,
-			fmt.Sprintf("PipelineRun %s/%s (already exists, ours)", pr.Namespace, pr.Name))
+			fmt.Sprintf("PipelineRun %s/%s (already exists, ours)", r.ExecutionNamespace, resourceName))
 
-		// Requeue to check PipelineRun status
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
-	// V1.0: Another WFE created this PipelineRun - execution-time race condition
-	// This should be rare (RO handles routing), but handle gracefully
 	logger.Error(err, "Race condition at execution time: PipelineRun created by another WFE",
-		"prName", prName,
+		"prName", resourceName,
 		"existingWFE", existingPR.Labels["kubernaut.ai/workflow-execution"],
 		"targetResource", wfe.Spec.TargetResource,
 	)
 
-	// Note: Using "Unknown" reason as "ExecutionRaceCondition" is not in CRD enum
 	markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
 		fmt.Sprintf("Race condition: PipelineRun '%s' already exists for target resource (created by %s). This indicates RO routing may have failed.",
-			prName, existingPR.Labels["kubernaut.ai/workflow-execution"]))
+			resourceName, existingPR.Labels["kubernaut.ai/workflow-execution"]))
 	return ctrl.Result{}, markErr
-}
-
-// ========================================
-// BuildPipelineRun creates a PipelineRun with bundle resolver
-// DD-WE-002: PipelineRuns created in dedicated execution namespace
-// DD-WE-003: Deterministic name for atomic locking
-// ========================================
-func (r *WorkflowExecutionReconciler) BuildPipelineRun(wfe *workflowexecutionv1alpha1.WorkflowExecution) *tektonv1.PipelineRun {
-	// Convert parameters to Tekton format
-	params := r.ConvertParameters(wfe.Spec.Parameters)
-
-	// Add TARGET_RESOURCE parameter (required by all pipelines)
-	params = append(params, tektonv1.Param{
-		Name:  "TARGET_RESOURCE",
-		Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.TargetResource},
-	})
-
-	// DD-WE-005 v2.0 / Issue #501: SA at spec top level, engine-agnostic.
-	saName := wfe.Spec.ServiceAccountName
-
-	return &tektonv1.PipelineRun{
-		ObjectMeta: metav1.ObjectMeta{
-			// CRITICAL: Deterministic name = atomic lock (DD-WE-003)
-			Name:      PipelineRunName(wfe.Spec.TargetResource),
-			Namespace: r.ExecutionNamespace, // Always "kubernaut-workflows" (DD-WE-002)
-			Labels: map[string]string{
-				"kubernaut.ai/workflow-execution": wfe.Name,
-				"kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
-				// Sanitize for label (slashes not allowed, replace with __)
-				"kubernaut.ai/target-resource": sanitizeLabelValue(wfe.Spec.TargetResource),
-				// Source tracking for cross-namespace lookup
-				"kubernaut.ai/source-namespace": wfe.Namespace,
-			},
-			Annotations: map[string]string{
-				// Store original target resource value (with slashes) in annotation
-				"kubernaut.ai/target-resource": wfe.Spec.TargetResource,
-			},
-			// NOTE: No OwnerReference - cross-namespace not supported
-			// Cleanup handled via finalizer in ReconcileDelete()
-		},
-		Spec: tektonv1.PipelineRunSpec{
-			PipelineRef: &tektonv1.PipelineRef{
-				ResolverRef: tektonv1.ResolverRef{
-					Resolver: "bundles",
-					Params: []tektonv1.Param{
-						{Name: "bundle", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.WorkflowRef.ExecutionBundle}},
-						{Name: "name", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: "workflow"}},
-						{Name: "kind", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: "pipeline"}},
-					},
-				},
-			},
-			Params: params,
-			TaskRunTemplate: tektonv1.PipelineTaskRunTemplate{
-				ServiceAccountName: saName,
-			},
-		},
-	}
-}
-
-// ========================================
-// ConvertParameters converts map[string]string to Tekton params
-// ========================================
-func (r *WorkflowExecutionReconciler) ConvertParameters(params map[string]string) []tektonv1.Param {
-	if len(params) == 0 {
-		return []tektonv1.Param{}
-	}
-
-	tektonParams := make([]tektonv1.Param, 0, len(params))
-	for key, value := range params {
-		tektonParams = append(tektonParams, tektonv1.Param{
-			Name:  key,
-			Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: value},
-		})
-	}
-	return tektonParams
 }
 
 // ========================================
@@ -1728,6 +1583,66 @@ func (r *WorkflowExecutionReconciler) updateStatus(
 
 // resolveExecutionEngine ensures wfe.Status.ExecutionEngine is populated.
 // On the first call (Pending phase), it queries the DS catalog via WorkflowQuerier.
+// resolveWorkflowCatalog fetches all workflow metadata from the DS catalog in a
+// single GetWorkflowByID call (Issue #650). Consolidates resolveExecutionEngine,
+// resolveExecutionBundle, resolveDependencies, and GetWorkflowEngineConfig.
+// Idempotent: returns nil immediately if the engine is already resolved.
+func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.WorkflowCatalogMetadata, error) {
+	if wfe.Status.ExecutionEngine != "" {
+		return nil, nil
+	}
+
+	if r.WorkflowQuerier == nil {
+		return nil, fmt.Errorf("DataStorage workflow querier not available — cannot resolve workflow catalog for %s", wfe.Spec.WorkflowRef.WorkflowID)
+	}
+
+	workflowID := wfe.Spec.WorkflowRef.WorkflowID
+	if workflowID == "" {
+		return nil, fmt.Errorf("workflowRef.workflowId is empty — cannot resolve workflow catalog")
+	}
+
+	logger := log.FromContext(ctx)
+
+	meta, err := r.WorkflowQuerier.ResolveWorkflowCatalogMetadata(ctx, workflowID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve workflow catalog from DS for workflow %s: %w", workflowID, err)
+	}
+
+	if meta.ExecutionEngine == "" {
+		label := workflowID
+		if meta.WorkflowName != "" {
+			label = fmt.Sprintf("%s - %s", meta.WorkflowName, workflowID)
+		}
+		return nil, fmt.Errorf("no engine defined in remediation workflow %s", label)
+	}
+
+	wfe.Status.ExecutionEngine = meta.ExecutionEngine
+	wfe.Status.ServiceAccountName = meta.ServiceAccountName
+
+	if meta.ExecutionBundle != "" {
+		if wfe.Spec.WorkflowRef.ExecutionBundle != meta.ExecutionBundle {
+			logger.Info("Overriding execution bundle from DS catalog",
+				"specBundle", wfe.Spec.WorkflowRef.ExecutionBundle,
+				"catalogBundle", meta.ExecutionBundle,
+				"workflowID", workflowID,
+			)
+		}
+		wfe.Spec.WorkflowRef.ExecutionBundle = meta.ExecutionBundle
+		if meta.ExecutionBundleDigest != "" {
+			wfe.Spec.WorkflowRef.ExecutionBundleDigest = meta.ExecutionBundleDigest
+		}
+	}
+
+	if wfe.Spec.WorkflowRef.EngineConfig == nil && meta.EngineConfig != nil {
+		logger.Info("Resolved engineConfig from DS catalog",
+			"workflowID", workflowID,
+			"engine", meta.ExecutionEngine)
+		wfe.Spec.WorkflowRef.EngineConfig = &apiextensionsv1.JSON{Raw: meta.EngineConfig}
+	}
+
+	return meta, nil
+}
+
 // On subsequent calls (Running/Terminal/Delete), it returns the already-persisted value.
 // Returns the engine string or an error if resolution fails.
 func (r *WorkflowExecutionReconciler) resolveExecutionEngine(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, error) {
@@ -1759,41 +1674,6 @@ func (r *WorkflowExecutionReconciler) resolveExecutionEngine(ctx context.Context
 
 	wfe.Status.ExecutionEngine = engine
 	return engine, nil
-}
-
-// resolveExecutionBundle overrides wfe.Spec.WorkflowRef.ExecutionBundle with the
-// authoritative value from the DS catalog (defense-in-depth). Non-fatal: if the
-// querier is nil, the workflow ID is empty, or the catalog entry has no bundle,
-// the existing spec value is preserved.
-func (r *WorkflowExecutionReconciler) resolveExecutionBundle(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
-	if r.WorkflowQuerier == nil || wfe.Spec.WorkflowRef.WorkflowID == "" {
-		return nil
-	}
-
-	logger := log.FromContext(ctx)
-
-	bundle, digest, err := r.WorkflowQuerier.GetWorkflowExecutionBundle(ctx, wfe.Spec.WorkflowRef.WorkflowID)
-	if err != nil {
-		return fmt.Errorf("failed to resolve execution bundle from DS for workflow %s: %w", wfe.Spec.WorkflowRef.WorkflowID, err)
-	}
-
-	if bundle == "" {
-		return nil
-	}
-
-	if wfe.Spec.WorkflowRef.ExecutionBundle != bundle {
-		logger.Info("Overriding execution bundle from DS catalog",
-			"specBundle", wfe.Spec.WorkflowRef.ExecutionBundle,
-			"catalogBundle", bundle,
-			"workflowID", wfe.Spec.WorkflowRef.WorkflowID,
-		)
-	}
-	wfe.Spec.WorkflowRef.ExecutionBundle = bundle
-	if digest != "" {
-		wfe.Spec.WorkflowRef.ExecutionBundleDigest = digest
-	}
-
-	return nil
 }
 
 // ========================================

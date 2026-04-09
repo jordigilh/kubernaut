@@ -90,13 +90,28 @@ func ResolveChannelsForNotification(config *Config, notification *notificationv1
 
 	attrs := RoutingAttributesFromSpec(notification)
 
-	receiverName := config.Route.FindReceiver(attrs)
-
-	receiver := config.GetReceiver(receiverName)
-	if receiver == nil {
+	receiverNames := config.Route.FindReceivers(attrs)
+	if len(receiverNames) == 0 {
 		return []string{"console"}
 	}
 
-	return receiver.GetChannels()
+	seen := make(map[string]bool)
+	var channels []string
+	for _, name := range receiverNames {
+		receiver := config.GetReceiver(name)
+		if receiver == nil {
+			continue
+		}
+		for _, ch := range receiver.GetChannels() {
+			if !seen[ch] {
+				channels = append(channels, ch)
+				seen[ch] = true
+			}
+		}
+	}
+	if len(channels) == 0 {
+		return []string{"console"}
+	}
+	return channels
 }
 

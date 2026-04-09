@@ -284,28 +284,69 @@ func (c *Config) GetReceiver(name string) *Receiver {
 	return c.receiverMap[name]
 }
 
-// FindReceiver finds the matching receiver for the given routing attributes.
-// BR-NOT-065: First matching route wins (ordered evaluation)
-func (r *Route) FindReceiver(attrs map[string]string) string {
+// FindReceivers finds all matching receivers for the given routing attributes,
+// respecting the Continue flag for multi-receiver fanout.
+// BR-NOT-068: Multi-Channel Fanout support
+//
+// Routing follows Alertmanager semantics:
+//   - Routes are evaluated depth-first in declaration order.
+//   - When Continue is false (default), evaluation stops at the first match.
+//   - When Continue is true, evaluation continues to sibling routes.
+//   - Children take over from their parent: if a child route has sub-routes
+//     and those sub-routes match, the sub-route receivers are collected
+//     instead of the child's own Receiver field.
+//   - If no children match, the parent's Receiver is used as fallback.
+//
+// Deduplication by receiver name is performed here (canonical location).
+func (r *Route) FindReceivers(attrs map[string]string) []string {
 	if attrs == nil {
 		attrs = make(map[string]string)
 	}
-
-	// Check child routes first (depth-first)
+	var matched []string
+	seen := make(map[string]bool)
 	for _, childRoute := range r.Routes {
 		if childRoute.matchesAttributes(attrs) {
 			if len(childRoute.Routes) > 0 {
-				result := childRoute.FindReceiver(attrs)
-				if result != "" {
-					return result
+				sub := childRoute.FindReceivers(attrs)
+				if len(sub) > 0 {
+					for _, s := range sub {
+						if !seen[s] {
+							matched = append(matched, s)
+							seen[s] = true
+						}
+					}
+					if !childRoute.Continue {
+						return matched
+					}
+					continue
 				}
 			}
-			if childRoute.Receiver != "" {
-				return childRoute.Receiver
+			if childRoute.Receiver != "" && !seen[childRoute.Receiver] {
+				matched = append(matched, childRoute.Receiver)
+				seen[childRoute.Receiver] = true
+			}
+			if !childRoute.Continue {
+				return matched
 			}
 		}
 	}
+	if len(matched) == 0 && r.Receiver != "" {
+		return []string{r.Receiver}
+	}
+	return matched
+}
 
+// FindReceiver finds the first matching receiver for the given routing attributes.
+// BR-NOT-065: First matching route wins (ordered evaluation)
+//
+// This is a backward-compatible wrapper that delegates to FindReceivers and
+// returns only the first matched receiver. Callers that need multi-receiver
+// fanout should use FindReceivers directly.
+func (r *Route) FindReceiver(attrs map[string]string) string {
+	receivers := r.FindReceivers(attrs)
+	if len(receivers) > 0 {
+		return receivers[0]
+	}
 	return r.Receiver
 }
 
