@@ -96,8 +96,8 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 				"Behavior: Blocked/DuplicateInProgress RR must inherit Completed when original RR completes")
-			Expect(updated.Status.Outcome).To(Equal("InheritedCompleted"),
-				"Behavior: Outcome must be InheritedCompleted for audit provenance")
+			Expect(updated.Status.Outcome).To(Equal("Remediated"),
+				"Behavior: Outcome must be Remediated (lineage tracked via DuplicateOf + K8s events)")
 			Expect(updated.Status.CompletedAt).NotTo(BeNil(),
 				"Behavior: CompletedAt must be set for terminal transition")
 			Expect(updated.Status.BlockReason).To(BeEmpty(),

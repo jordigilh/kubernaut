@@ -22258,6 +22258,8 @@ const (
 	WorkflowExecutionAuditPayloadFailureReasonConfigurationError WorkflowExecutionAuditPayloadFailureReason = "ConfigurationError"
 	WorkflowExecutionAuditPayloadFailureReasonResourceExhausted  WorkflowExecutionAuditPayloadFailureReason = "ResourceExhausted"
 	WorkflowExecutionAuditPayloadFailureReasonTaskFailed         WorkflowExecutionAuditPayloadFailureReason = "TaskFailed"
+	WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine  WorkflowExecutionAuditPayloadFailureReason = "UnsupportedEngine"
+	WorkflowExecutionAuditPayloadFailureReasonDeduplicated       WorkflowExecutionAuditPayloadFailureReason = "Deduplicated"
 	WorkflowExecutionAuditPayloadFailureReasonUnknown            WorkflowExecutionAuditPayloadFailureReason = "Unknown"
 )
 
@@ -22271,6 +22273,8 @@ func (WorkflowExecutionAuditPayloadFailureReason) AllValues() []WorkflowExecutio
 		WorkflowExecutionAuditPayloadFailureReasonConfigurationError,
 		WorkflowExecutionAuditPayloadFailureReasonResourceExhausted,
 		WorkflowExecutionAuditPayloadFailureReasonTaskFailed,
+		WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine,
+		WorkflowExecutionAuditPayloadFailureReasonDeduplicated,
 		WorkflowExecutionAuditPayloadFailureReasonUnknown,
 	}
 }
@@ -22291,6 +22295,10 @@ func (s WorkflowExecutionAuditPayloadFailureReason) MarshalText() ([]byte, error
 	case WorkflowExecutionAuditPayloadFailureReasonResourceExhausted:
 		return []byte(s), nil
 	case WorkflowExecutionAuditPayloadFailureReasonTaskFailed:
+		return []byte(s), nil
+	case WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine:
+		return []byte(s), nil
+	case WorkflowExecutionAuditPayloadFailureReasonDeduplicated:
 		return []byte(s), nil
 	case WorkflowExecutionAuditPayloadFailureReasonUnknown:
 		return []byte(s), nil
@@ -22322,6 +22330,12 @@ func (s *WorkflowExecutionAuditPayloadFailureReason) UnmarshalText(data []byte) 
 		return nil
 	case WorkflowExecutionAuditPayloadFailureReasonTaskFailed:
 		*s = WorkflowExecutionAuditPayloadFailureReasonTaskFailed
+		return nil
+	case WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine:
+		*s = WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine
+		return nil
+	case WorkflowExecutionAuditPayloadFailureReasonDeduplicated:
+		*s = WorkflowExecutionAuditPayloadFailureReasonDeduplicated
 		return nil
 	case WorkflowExecutionAuditPayloadFailureReasonUnknown:
 		*s = WorkflowExecutionAuditPayloadFailureReasonUnknown

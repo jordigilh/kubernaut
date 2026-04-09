@@ -130,7 +130,8 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 		originalWFEName := "original-wfe-it-001"
 		we.Status.Phase = workflowexecutionv1.PhaseFailed
 		we.Status.FailureDetails = &workflowexecutionv1.FailureDetails{
-			Reason: workflowexecutionv1.FailureReasonDeduplicated,
+			Reason:   workflowexecutionv1.FailureReasonDeduplicated,
+			FailedAt: metav1.Now(),
 		}
 		we.Status.DeduplicatedBy = originalWFEName
 		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
@@ -169,8 +170,8 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
 
-		Expect(rr.Status.Outcome).To(Equal("InheritedCompleted"),
-			"Behavior: outcome must indicate inherited completion")
+		Expect(rr.Status.Outcome).To(Equal("Remediated"),
+			"Behavior: outcome must be Remediated (lineage tracked via DeduplicatedByWE + K8s events)")
 		Expect(rr.Status.CompletedAt).NotTo(BeNil())
 	})
 
@@ -187,7 +188,8 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 		originalWFEName := "original-wfe-it-002"
 		we.Status.Phase = workflowexecutionv1.PhaseFailed
 		we.Status.FailureDetails = &workflowexecutionv1.FailureDetails{
-			Reason: workflowexecutionv1.FailureReasonDeduplicated,
+			Reason:   workflowexecutionv1.FailureReasonDeduplicated,
+			FailedAt: metav1.Now(),
 		}
 		we.Status.DeduplicatedBy = originalWFEName
 		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
@@ -242,7 +244,8 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 
 		we.Status.Phase = workflowexecutionv1.PhaseFailed
 		we.Status.FailureDetails = &workflowexecutionv1.FailureDetails{
-			Reason: workflowexecutionv1.FailureReasonDeduplicated,
+			Reason:   workflowexecutionv1.FailureReasonDeduplicated,
+			FailedAt: metav1.Now(),
 		}
 		we.Status.DeduplicatedBy = "deleted-wfe-it-003"
 		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
@@ -270,7 +273,8 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 		originalWFEName := "original-wfe-it-004"
 		we.Status.Phase = workflowexecutionv1.PhaseFailed
 		we.Status.FailureDetails = &workflowexecutionv1.FailureDetails{
-			Reason: workflowexecutionv1.FailureReasonDeduplicated,
+			Reason:   workflowexecutionv1.FailureReasonDeduplicated,
+			FailedAt: metav1.Now(),
 		}
 		we.Status.DeduplicatedBy = originalWFEName
 		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
@@ -320,7 +324,7 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
 
-		Expect(rr.Status.Outcome).To(Equal("InheritedCompleted"))
+		Expect(rr.Status.Outcome).To(Equal("Remediated"))
 	})
 
 	It("IT-RO-190-006: Inherited failure does NOT increment ConsecutiveFailureCount", func() {
@@ -335,7 +339,8 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 
 		we.Status.Phase = workflowexecutionv1.PhaseFailed
 		we.Status.FailureDetails = &workflowexecutionv1.FailureDetails{
-			Reason: workflowexecutionv1.FailureReasonDeduplicated,
+			Reason:   workflowexecutionv1.FailureReasonDeduplicated,
+			FailedAt: metav1.Now(),
 		}
 		we.Status.DeduplicatedBy = "nonexistent-wfe-it-006"
 		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())

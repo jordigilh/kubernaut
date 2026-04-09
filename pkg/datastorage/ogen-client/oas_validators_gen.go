@@ -6611,6 +6611,10 @@ func (s WorkflowExecutionAuditPayloadFailureReason) Validate() error {
 		return nil
 	case "TaskFailed":
 		return nil
+	case "UnsupportedEngine":
+		return nil
+	case "Deduplicated":
+		return nil
 	case "Unknown":
 		return nil
 	default:

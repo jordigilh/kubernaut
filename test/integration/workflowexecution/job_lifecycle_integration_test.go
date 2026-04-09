@@ -684,10 +684,10 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 
 			failedWFE2, err := getWFE(wfe2.Name, wfe2.Namespace)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(failedWFE2.Status.FailureDetails.Reason).To(Equal("Unknown"),
-				"Failure reason should be 'Unknown' (CRD enum constraint; details in message)")
-			Expect(failedWFE2.Status.FailureDetails.Message).To(ContainSubstring("already exists"),
-				"Failure message should mention resource already exists")
+			Expect(failedWFE2.Status.FailureDetails.Reason).To(Equal("Deduplicated"),
+				"Failure reason should be 'Deduplicated' (Issue #190: collision with labeled Job)")
+			Expect(failedWFE2.Status.DeduplicatedBy).To(Equal(wfe1.Name),
+				"DeduplicatedBy should reference the first WFE")
 
 			GinkgoWriter.Printf("✅ IT-WE-014-016: Second WFE failed with ExecutionResourceExists\n")
 		})

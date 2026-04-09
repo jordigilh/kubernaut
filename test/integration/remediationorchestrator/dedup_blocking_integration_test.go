@@ -159,8 +159,8 @@ var _ = Describe("Issue #614: DuplicateInProgress Outcome Inheritance Integratio
 			return dupRR.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
 
-		Expect(dupRR.Status.Outcome).To(Equal("InheritedCompleted"),
-			"Behavior: outcome must indicate inherited completion from original RR")
+		Expect(dupRR.Status.Outcome).To(Equal("Remediated"),
+			"Behavior: outcome must be Remediated (lineage tracked via DuplicateOf + K8s events)")
 		Expect(dupRR.Status.CompletedAt).NotTo(BeNil(),
 			"Behavior: CompletedAt must be set for terminal transition")
 	})

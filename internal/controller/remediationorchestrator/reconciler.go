@@ -1737,8 +1737,11 @@ func (r *Reconciler) handleDedupResultPropagation(ctx context.Context, rr *remed
 	}
 }
 
-// transitionToInheritedCompleted transitions the RR to Completed with outcome "InheritedCompleted".
+// transitionToInheritedCompleted transitions the RR to Completed with outcome "Remediated".
 // Used when an original resource (WFE or RR) that caused deduplication completes successfully.
+// The outcome is "Remediated" (not a separate "InheritedCompleted") because the CRD enum
+// only allows Remediated|NoActionRequired|ManualReviewRequired|VerificationTimedOut, and
+// the dedup lineage is already preserved via DeduplicatedByWE/DuplicateOf fields + K8s events.
 // sourceRef identifies the original resource name; sourceKind is "WorkflowExecution" or "RemediationRequest".
 func (r *Reconciler) transitionToInheritedCompleted(ctx context.Context, rr *remediationv1.RemediationRequest, sourceRef, sourceKind string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
@@ -1747,7 +1750,7 @@ func (r *Reconciler) transitionToInheritedCompleted(ctx context.Context, rr *rem
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		now := metav1.Now()
 		rr.Status.OverallPhase = phase.Completed
-		rr.Status.Outcome = "InheritedCompleted"
+		rr.Status.Outcome = "Remediated"
 		rr.Status.CompletedAt = &now
 		rr.Status.ObservedGeneration = rr.Generation
 		if sourceKind == "RemediationRequest" {

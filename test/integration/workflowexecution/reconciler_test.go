@@ -625,10 +625,10 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				}, 15*time.Second, 500*time.Millisecond).Should(BeTrue(),
 					"Second WFE should fail due to resource lock")
 
-				// Validate failure reason is Unknown (ExecutionRaceCondition not in CRD enum)
-				Expect(wfe2Status.Status.FailureDetails.Reason).To(Equal("Unknown"))
-				Expect(wfe2Status.Status.FailureDetails.Message).To(ContainSubstring("PipelineRun"))
-				Expect(wfe2Status.Status.FailureDetails.Message).To(ContainSubstring("already exists"))
+				// Issue #190: Collision with labeled PipelineRun → Deduplicated
+				Expect(wfe2Status.Status.FailureDetails.Reason).To(Equal("Deduplicated"))
+				Expect(wfe2Status.Status.DeduplicatedBy).To(Equal(wfe1.Name),
+					"DeduplicatedBy should reference the first WFE")
 
 				GinkgoWriter.Println("✅ BR-WE-009: Resource locking prevents parallel execution")
 			})

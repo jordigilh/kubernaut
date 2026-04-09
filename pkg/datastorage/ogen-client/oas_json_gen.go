@@ -35141,6 +35141,10 @@ func (s *WorkflowExecutionAuditPayloadFailureReason) Decode(d *jx.Decoder) error
 		*s = WorkflowExecutionAuditPayloadFailureReasonResourceExhausted
 	case WorkflowExecutionAuditPayloadFailureReasonTaskFailed:
 		*s = WorkflowExecutionAuditPayloadFailureReasonTaskFailed
+	case WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine:
+		*s = WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine
+	case WorkflowExecutionAuditPayloadFailureReasonDeduplicated:
+		*s = WorkflowExecutionAuditPayloadFailureReasonDeduplicated
 	case WorkflowExecutionAuditPayloadFailureReasonUnknown:
 		*s = WorkflowExecutionAuditPayloadFailureReasonUnknown
 	default:
