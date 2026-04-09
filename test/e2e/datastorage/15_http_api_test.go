@@ -58,7 +58,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 			RemediationID:   "test-remediation-1",
 			NotificationID:  fmt.Sprintf("test-notification-%d", time.Now().UnixNano()),
 			Recipient:       "test@example.com",
-			Channel:         "email",
+			Channel:         "slack",
 			MessageSummary:  "Test notification message",
 			Status:          "sent",
 			SentAt:          fixedPastTime, // Fixed timestamp in the past to avoid any clock skew issues
@@ -102,7 +102,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 			invalidAudit := &models.NotificationAudit{
 				// Missing required fields: remediation_id, notification_id
 				Recipient: "invalid-test@example.com", // Unique recipient to avoid collision with valid test
-				Channel:   "email",
+				Channel:   "slack",
 			}
 
 			// ✅ BEHAVIOR TEST: HTTP 400 Bad Request using typed OpenAPI client
