@@ -168,6 +168,62 @@ var _ = Describe("Response Builders", func() {
 		})
 	})
 
+	Describe("UT-MOCK-657-006: buildToolArguments for kubectl_get_yaml", func() {
+		It("should return kind, name, namespace arguments", func() {
+			kubectlCfg := scenarios.MockScenarioConfig{
+				ResourceKind: "ConfigMap",
+				ResourceNS:   "default",
+				ResourceName: "poisoned-cm",
+			}
+			resp := response.BuildToolCallResponse("mock-model", openai.ToolKubectlGetYAML, kubectlCfg)
+			Expect(resp.Choices).To(HaveLen(1))
+			Expect(resp.Choices[0].Message.ToolCalls).To(HaveLen(1))
+
+			var args map[string]interface{}
+			Expect(json.Unmarshal([]byte(resp.Choices[0].Message.ToolCalls[0].Function.Arguments), &args)).To(Succeed())
+			Expect(args).To(HaveKeyWithValue("kind", "ConfigMap"))
+			Expect(args).To(HaveKeyWithValue("name", "poisoned-cm"))
+			Expect(args).To(HaveKeyWithValue("namespace", "default"))
+		})
+	})
+
+	Describe("UT-MOCK-657-007: buildToolArguments for kubectl_get_by_name", func() {
+		It("should return kind, name, namespace arguments", func() {
+			kubectlCfg := scenarios.MockScenarioConfig{
+				ResourceKind: "Secret",
+				ResourceNS:   "kube-system",
+				ResourceName: "tls-cert",
+			}
+			resp := response.BuildToolCallResponse("mock-model", openai.ToolKubectlGetByName, kubectlCfg)
+			Expect(resp.Choices).To(HaveLen(1))
+
+			var args map[string]interface{}
+			Expect(json.Unmarshal([]byte(resp.Choices[0].Message.ToolCalls[0].Function.Arguments), &args)).To(Succeed())
+			Expect(args).To(HaveKeyWithValue("kind", "Secret"))
+			Expect(args).To(HaveKeyWithValue("name", "tls-cert"))
+			Expect(args).To(HaveKeyWithValue("namespace", "kube-system"))
+		})
+	})
+
+	Describe("UT-MOCK-657-008: BuildToolCallResponse with kubectl tool produces valid response", func() {
+		It("should produce valid OpenAI response with tool_calls finish reason", func() {
+			kubectlCfg := scenarios.MockScenarioConfig{
+				ResourceKind: "ConfigMap",
+				ResourceNS:   "default",
+				ResourceName: "poisoned-cm",
+			}
+			resp := response.BuildToolCallResponse("mock-model", openai.ToolKubectlGetYAML, kubectlCfg)
+			Expect(resp.Object).To(Equal("chat.completion"))
+			Expect(resp.Choices[0].FinishReason).To(Equal("tool_calls"))
+			Expect(resp.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal("kubectl_get_yaml"))
+			Expect(resp.Choices[0].Message.ToolCalls[0].ID).To(HavePrefix("call_"))
+
+			data, err := json.Marshal(resp)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(data).NotTo(BeEmpty(), "response should be serializable to JSON")
+		})
+	})
+
 	Describe("UT-MOCK-001: Error response builder", func() {
 		It("should produce error response matching Python format", func() {
 			resp := response.BuildErrorResponse("Mock permanent LLM error for testing")
