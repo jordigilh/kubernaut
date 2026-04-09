@@ -42,8 +42,6 @@ receivers:
 `
 				config, err := routing.ParseConfig([]byte(configYAML))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(config).ToNot(BeNil())
-				Expect(config.Route).ToNot(BeNil())
 				Expect(config.Route.Receiver).To(Equal("default-receiver"))
 				Expect(config.Receivers).To(HaveLen(1))
 				Expect(config.Receivers[0].Name).To(Equal("default-receiver"))
@@ -113,7 +111,7 @@ receivers:
 				config, err := routing.ParseConfig([]byte(configYAML))
 				Expect(err).ToNot(HaveOccurred())
 				receiver := config.GetReceiver("multi-channel")
-				Expect(receiver).ToNot(BeNil())
+				Expect(receiver.Name).To(Equal("multi-channel"))
 				Expect(receiver.SlackConfigs).To(HaveLen(1))
 				Expect(receiver.EmailConfigs).To(HaveLen(1))
 				Expect(receiver.WebhookConfigs).To(HaveLen(1))
@@ -317,7 +315,6 @@ receivers:
 
 		It("should resolve existing receiver by name", func() {
 			receiver := config.GetReceiver("default")
-			Expect(receiver).ToNot(BeNil())
 			Expect(receiver.Name).To(Equal("default"))
 		})
 
@@ -416,8 +413,6 @@ receivers:
 
 		It("should provide sensible defaults when loading from empty ConfigMap", func() {
 			config := routing.DefaultConfig()
-			Expect(config).ToNot(BeNil())
-			Expect(config.Route).ToNot(BeNil())
 			Expect(config.Route.Receiver).To(Equal("console-fallback"))
 			Expect(config.Receivers).To(HaveLen(1))
 			Expect(config.Receivers[0].Name).To(Equal("console-fallback"))
@@ -580,6 +575,304 @@ receivers:
 	// Purpose: Verify investigation-outcome based routing for HolmesGPT-API results
 	// Cross-Team: KA→NOT (2025-12-07)
 	// =============================================================================
+
+	// =============================================================================
+	// BR-NOT-068: Multi-Channel Fanout (Route Continue Flag) — Issue #597
+	// =============================================================================
+
+	Describe("Route Fanout (BR-NOT-068, #597)", func() {
+
+		Context("FindReceivers with continue flag", func() {
+
+			It("[UT-NOT-597-001] should collect all matching receivers when continue is true", func() {
+				configYAML := `
+route:
+  receiver: default
+  routes:
+    - receiver: fanout-A
+      match:
+        team: sre
+      continue: true
+    - receiver: fanout-B
+      match:
+        team: sre
+      continue: true
+    - receiver: fanout-C
+      match:
+        team: sre
+receivers:
+  - name: default
+    consoleConfigs:
+      - enabled: true
+  - name: fanout-A
+    consoleConfigs:
+      - enabled: true
+  - name: fanout-B
+    fileConfigs:
+      - enabled: true
+  - name: fanout-C
+    logConfigs:
+      - enabled: true
+`
+				config, err := routing.ParseConfig([]byte(configYAML))
+				Expect(err).ToNot(HaveOccurred())
+
+				receivers := config.Route.FindReceivers(map[string]string{"team": "sre"})
+				Expect(receivers).To(HaveLen(3))
+				Expect(receivers).To(Equal([]string{"fanout-A", "fanout-B", "fanout-C"}))
+			})
+
+			It("[UT-NOT-597-002] should stop at first match when continue is false (regression)", func() {
+				configYAML := `
+route:
+  receiver: default
+  routes:
+    - receiver: first-match
+      match:
+        team: sre
+    - receiver: second-match
+      match:
+        team: sre
+    - receiver: third-match
+      match:
+        team: sre
+receivers:
+  - name: default
+    consoleConfigs:
+      - enabled: true
+  - name: first-match
+    consoleConfigs:
+      - enabled: true
+  - name: second-match
+    fileConfigs:
+      - enabled: true
+  - name: third-match
+    logConfigs:
+      - enabled: true
+`
+				config, err := routing.ParseConfig([]byte(configYAML))
+				Expect(err).ToNot(HaveOccurred())
+
+				receivers := config.Route.FindReceivers(map[string]string{"team": "sre"})
+				Expect(receivers).To(HaveLen(1))
+				Expect(receivers).To(Equal([]string{"first-match"}))
+			})
+
+			It("[UT-NOT-597-003] should stop at first continue:false after collecting continue:true", func() {
+				configYAML := `
+route:
+  receiver: default
+  routes:
+    - receiver: collected-A
+      match:
+        team: sre
+      continue: true
+    - receiver: collected-B
+      match:
+        team: sre
+    - receiver: skipped-C
+      match:
+        team: sre
+      continue: true
+receivers:
+  - name: default
+    consoleConfigs:
+      - enabled: true
+  - name: collected-A
+    consoleConfigs:
+      - enabled: true
+  - name: collected-B
+    fileConfigs:
+      - enabled: true
+  - name: skipped-C
+    logConfigs:
+      - enabled: true
+`
+				config, err := routing.ParseConfig([]byte(configYAML))
+				Expect(err).ToNot(HaveOccurred())
+
+				receivers := config.Route.FindReceivers(map[string]string{"team": "sre"})
+				Expect(receivers).To(HaveLen(2))
+				Expect(receivers).To(Equal([]string{"collected-A", "collected-B"}))
+			})
+
+			It("[UT-NOT-597-004] should handle nested routes with continue at different levels", func() {
+				// Alertmanager semantic: children take over from parent receiver
+				configYAML := `
+route:
+  receiver: root
+  routes:
+    - receiver: parent-A
+      match:
+        team: sre
+      continue: true
+      routes:
+        - receiver: child-A1
+          match:
+            severity: critical
+    - receiver: parent-B
+      match:
+        team: sre
+receivers:
+  - name: root
+    consoleConfigs:
+      - enabled: true
+  - name: parent-A
+    consoleConfigs:
+      - enabled: true
+  - name: child-A1
+    fileConfigs:
+      - enabled: true
+  - name: parent-B
+    logConfigs:
+      - enabled: true
+`
+				config, err := routing.ParseConfig([]byte(configYAML))
+				Expect(err).ToNot(HaveOccurred())
+
+				// team=sre, severity=critical: child-A1 matches under parent-A (continue), parent-B matches
+				receivers := config.Route.FindReceivers(map[string]string{
+					"team":     "sre",
+					"severity": "critical",
+				})
+				Expect(receivers).To(HaveLen(2))
+				Expect(receivers).To(Equal([]string{"child-A1", "parent-B"}))
+			})
+
+			It("[UT-NOT-597-005] should deduplicate when same receiver appears in multiple routes", func() {
+				configYAML := `
+route:
+  receiver: default
+  routes:
+    - receiver: shared-receiver
+      match:
+        team: sre
+      continue: true
+    - receiver: shared-receiver
+      match:
+        team: sre
+receivers:
+  - name: default
+    consoleConfigs:
+      - enabled: true
+  - name: shared-receiver
+    consoleConfigs:
+      - enabled: true
+`
+				config, err := routing.ParseConfig([]byte(configYAML))
+				Expect(err).ToNot(HaveOccurred())
+
+				receivers := config.Route.FindReceivers(map[string]string{"team": "sre"})
+				Expect(receivers).To(HaveLen(1))
+				Expect(receivers).To(Equal([]string{"shared-receiver"}))
+			})
+
+			It("[UT-NOT-597-006] should fall back to parent receiver when no children match", func() {
+				configYAML := `
+route:
+  receiver: parent-fallback
+  routes:
+    - receiver: child-only
+      match:
+        team: does-not-exist
+receivers:
+  - name: parent-fallback
+    consoleConfigs:
+      - enabled: true
+  - name: child-only
+    fileConfigs:
+      - enabled: true
+`
+				config, err := routing.ParseConfig([]byte(configYAML))
+				Expect(err).ToNot(HaveOccurred())
+
+				receivers := config.Route.FindReceivers(map[string]string{"team": "sre"})
+				Expect(receivers).To(HaveLen(1))
+				Expect(receivers).To(Equal([]string{"parent-fallback"}))
+			})
+		})
+
+		Context("FindReceiver backward compatibility", func() {
+
+			It("[UT-NOT-597-007] should return first matched receiver (backward compat wrapper)", func() {
+				configYAML := `
+route:
+  receiver: default
+  routes:
+    - receiver: fanout-A
+      match:
+        team: sre
+      continue: true
+    - receiver: fanout-B
+      match:
+        team: sre
+receivers:
+  - name: default
+    consoleConfigs:
+      - enabled: true
+  - name: fanout-A
+    consoleConfigs:
+      - enabled: true
+  - name: fanout-B
+    fileConfigs:
+      - enabled: true
+`
+				config, err := routing.ParseConfig([]byte(configYAML))
+				Expect(err).ToNot(HaveOccurred())
+
+				// FindReceiver (singular) should still return first match only
+				receiver := config.Route.FindReceiver(map[string]string{"team": "sre"})
+				Expect(receiver).To(Equal("fanout-A"))
+			})
+		})
+
+		Context("Multi-channel delivery plan from fanout", func() {
+
+			It("[UT-NOT-597-009] should produce a complete multi-channel delivery plan from continue:true routing (BR-NOT-068, BR-NOT-069)", func() {
+				configYAML := `
+route:
+  receiver: default
+  routes:
+    - receiver: console-recv
+      match:
+        team: sre
+      continue: true
+    - receiver: file-recv
+      match:
+        team: sre
+receivers:
+  - name: default
+    consoleConfigs:
+      - enabled: true
+  - name: console-recv
+    consoleConfigs:
+      - enabled: true
+  - name: file-recv
+    fileConfigs:
+      - enabled: true
+`
+				config, err := routing.ParseConfig([]byte(configYAML))
+				Expect(err).ToNot(HaveOccurred())
+
+				receiverNames := config.Route.FindReceivers(map[string]string{"team": "sre"})
+				Expect(receiverNames).To(HaveLen(2),
+					"Fanout should resolve 2 receivers for a single notification")
+
+				// Verify that the resolved receivers produce distinct channels,
+				// confirming the business outcome: one notification → multiple channels
+				var allChannels []string
+				for _, name := range receiverNames {
+					recv := config.GetReceiver(name)
+					Expect(recv.Name).To(Equal(name),
+						"Each resolved name should map to a valid receiver in the config")
+					allChannels = append(allChannels, recv.GetChannels()...)
+				}
+
+				Expect(allChannels).To(ConsistOf("console", "file"),
+					"Fanout should produce delivery to console (from console-recv) and file (from file-recv)")
+			})
+		})
+	})
 
 	Describe("Investigation-Outcome Attribute Routing (BR-HAPI-200)", func() {
 
