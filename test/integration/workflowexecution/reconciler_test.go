@@ -261,11 +261,14 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty())
 		})
 
-		// DD-WE-005 v2 / Issue #501: SA resolved to status (Issue #650).
+		// DD-WE-005 v2 / Issue #501: SA resolved from DS via querier (Issue #650).
 		It("should use Status.ServiceAccountName on PipelineRun when set", func() {
-			By("Creating a WorkflowExecution with custom ServiceAccount in status")
+			By("Configuring mock querier to return custom SA from Data Storage")
+			testWorkflowQuerier.ServiceAccountName = "custom-workflow-sa"
+			DeferCleanup(func() { testWorkflowQuerier.ServiceAccountName = "" })
+
+			By("Creating a WorkflowExecution")
 			wfe = createUniqueWFE("sa-custom", "default/deployment/sa-custom-test")
-			wfe.Status.ServiceAccountName = "custom-workflow-sa"
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
