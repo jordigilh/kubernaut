@@ -667,7 +667,7 @@ _Appears in:_
 
 
 ExecutionConfig contains minimal execution settings.
- ServiceAccountName moved to Spec.ServiceAccountName (engine-agnostic).
+ ServiceAccountName resolved at runtime from DS into Status.
 
 _Appears in:_
 - [WorkflowExecutionSpec](#workflowexecutionspec)
@@ -1634,7 +1634,6 @@ _Appears in:_
 | `rationale`| _string_| Rationale explaining why this workflow was selected|
 | `executionEngine`| _string_| ExecutionEngine specifies the backend engine for workflow execution.<br />Populated from HolmesGPT-API workflow recommendation.<br />When empty, defaults to "tekton" for backwards compatibility.|
 | `engineConfig`| _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_| EngineConfig holds engine-specific configuration .<br />For ansible: \{"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."\}.|
-| `serviceAccountName`| _string_| ServiceAccountName is the pre-existing ServiceAccount for the execution<br />resource (Job, PipelineRun, or Ansible TokenRequest).<br /> Operators pre-create SAs with appropriate RBAC in the<br />execution namespace. If absent, K8s assigns the namespace's default SA<br />(Job/Tekton) or the Ansible executor uses the controller's in-cluster<br />credentials (#500 fallback).|
 
 
 ### SignalContextInput
@@ -1937,7 +1936,6 @@ _Appears in:_
 | `parameters`| _object (keys:string, values:string)_| Parameters from LLM selection <br />Keys are UPPER_SNAKE_CASE for Tekton PipelineRun params|
 | `confidence`| _float_| Confidence score from LLM (for audit trail)|
 | `rationale`| _string_| Rationale from LLM (for audit trail)|
-| `serviceAccountName`| _string_| ServiceAccountName is the pre-existing ServiceAccount for the execution<br />resource (Job, PipelineRun, or Ansible TokenRequest). <br />Operators pre-create SAs with appropriate RBAC in the execution namespace.<br />If absent, K8s assigns the namespace's default SA (Job/Tekton) or the<br />Ansible executor falls back to the controller's in-cluster credentials.|
 | `executionConfig`| _[ExecutionConfig](#executionconfig)_| ExecutionConfig contains minimal execution settings|
 
 
@@ -1963,6 +1961,7 @@ _Appears in:_
 | `blockClearance`| _[BlockClearanceDetails](#blockclearancedetails)_| BlockClearance tracks the clearing of PreviousExecutionFailed blocks<br />When set, allows new executions despite previous execution failure<br />Preserves audit trail of WHO cleared the block and WHY|
 | `ephemeralCredentialIDs`| _integer array_| EphemeralCredentialIDs stores AWX credential IDs created by the ansible<br />executor for cleanup after execution . Written via the status<br />subresource to avoid violating spec immutability .|
 | `executionEngine`| _string_| ExecutionEngine is the backend engine resolved from the DS workflow catalog<br />at runtime by the WE controller. Set once during Pending phase via<br />WorkflowQuerier.GetWorkflowExecutionEngine; immutable thereafter.<br />Values: "tekton", "job", "ansible".|
+| `serviceAccountName`| _string_| ServiceAccountName is the pre-existing ServiceAccount resolved from the<br />DS workflow catalog at runtime by the WE controller .<br />Set once during Pending phase via ResolveWorkflowCatalogMetadata; immutable<br />thereafter. If empty, K8s assigns the namespace's default SA (Job/Tekton)<br />or the Ansible executor falls back to the controller's in-cluster credentials.|
 | `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions provide detailed status information|
 
 

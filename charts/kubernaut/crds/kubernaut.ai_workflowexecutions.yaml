@@ -138,14 +138,6 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
-              serviceAccountName:
-                description: |-
-                  ServiceAccountName is the pre-existing ServiceAccount for the execution
-                  resource (Job, PipelineRun, or Ansible TokenRequest). DD-WE-005 v2.0:
-                  Operators pre-create SAs with appropriate RBAC in the execution namespace.
-                  If absent, K8s assigns the namespace's default SA (Job/Tekton) or the
-                  Ansible executor falls back to the controller's in-cluster credentials.
-                type: string
               targetResource:
                 description: |-
                   TargetResource identifies the K8s resource being remediated
@@ -450,6 +442,14 @@ spec:
                 - Running
                 - Completed
                 - Failed
+                type: string
+              serviceAccountName:
+                description: |-
+                  ServiceAccountName is the pre-existing ServiceAccount resolved from the
+                  DS workflow catalog at runtime by the WE controller (Issue #650).
+                  Set once during Pending phase via ResolveWorkflowCatalogMetadata; immutable
+                  thereafter. If empty, K8s assigns the namespace's default SA (Job/Tekton)
+                  or the Ansible executor falls back to the controller's in-cluster credentials.
                 type: string
               startTime:
                 description: StartTime when execution started
