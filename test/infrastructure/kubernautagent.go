@@ -286,6 +286,11 @@ spec:
 		return fmt.Errorf("failed to deploy Mock LLM: %w", err)
 	}
 
+	// Deploy shadow alignment evaluation instance (same image, mode: shadow)
+	if err := deployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, images["mock-llm"], writer); err != nil {
+		return fmt.Errorf("failed to deploy Mock LLM Shadow: %w", err)
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 6: Deploy Kubernaut Agent
 	// ═══════════════════════════════════════════════════════════════════════
@@ -522,6 +527,15 @@ data:
         per_user_per_minute: 10
         per_session: 30
       max_tool_turns: 15
+    alignment_check:
+      enabled: true
+      timeout: "10s"
+      max_step_tokens: 500
+      llm:
+        provider: "openai"
+        model: "shadow-eval"
+        endpoint: "http://mock-llm-shadow:8080"
+        api_key: "mock-shadow-key"
 ---
 apiVersion: apps/v1
 kind: Deployment

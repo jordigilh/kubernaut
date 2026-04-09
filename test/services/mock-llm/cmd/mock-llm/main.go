@@ -42,7 +42,7 @@ func main() {
 	registry := scenarios.DefaultRegistryFull(overrides, cfg.GoldenDir)
 	m := mockmetrics.NewMetrics()
 
-	router := handlers.NewFullRouterWithMetrics(registry, cfg.ForceText, cfg.RecordHeaders, nil, m)
+	router := handlers.NewFullRouterWithMetrics(registry, cfg.ForceText, cfg.RecordHeaders, nil, m, overrides)
 
 	srv := &http.Server{
 		Handler:      router,
@@ -56,7 +56,7 @@ func main() {
 		log.Fatalf("Failed to listen on %s: %v", cfg.ListenAddr(), err)
 	}
 
-	log.Printf("Mock LLM server starting on %s (force_text=%v)", cfg.ListenAddr(), cfg.ForceText)
+	log.Printf("Mock LLM server starting on %s (force_text=%v, mode=%q)", cfg.ListenAddr(), cfg.ForceText, overrides.Mode)
 
 	errCh := make(chan error, 1)
 	go func() {

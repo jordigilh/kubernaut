@@ -31,6 +31,7 @@ type ScenarioOverride struct {
 
 // Overrides holds the parsed YAML override configuration.
 type Overrides struct {
+	Mode      string                      `yaml:"mode"`
 	Scenarios map[string]ScenarioOverride `yaml:"scenarios"`
 }
 
