@@ -18,78 +18,92 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"time"
 
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/ogenx"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
-// dataStorageHTTPQuerier implements DataStorageQuerier via HTTP calls to DataStorage.
-type dataStorageHTTPQuerier struct {
-	baseURL    string
-	httpClient *http.Client
+// ========================================
+// DD-API-001: ogen-backed DataStorageQuerier (Issue #236)
+//
+// MIGRATION FROM dataStorageHTTPQuerier:
+//
+//   // OLD (deprecated - violates DD-API-001)
+//   querier := emclient.NewDataStorageHTTPQuerierWithTimeout(url, timeout)
+//
+//   // NEW (DD-API-001 compliant)
+//   querier, err := emclient.NewOgenDataStorageQuerier(url, timeout)
+//
+// Authority: DD-API-001 (OpenAPI Generated Client MANDATORY)
+// ========================================
+
+// ogenDataStorageQuerier implements DataStorageQuerier using the ogen-generated
+// OpenAPI client for type-safe DS queries (DD-API-001).
+type ogenDataStorageQuerier struct {
+	client *ogenclient.Client
 }
 
-// NewDataStorageHTTPQuerier creates a new DS querier with default timeout and
-// ServiceAccount authentication (DD-AUTH-005).
-func NewDataStorageHTTPQuerier(baseURL string) DataStorageQuerier {
-	return NewDataStorageHTTPQuerierWithTransport(baseURL, 10*time.Second, nil)
+// NewOgenDataStorageQuerier creates a DD-API-001 compliant DataStorageQuerier.
+// Production transport uses ServiceAccount token authentication (DD-AUTH-005).
+func NewOgenDataStorageQuerier(baseURL string, timeout time.Duration) (DataStorageQuerier, error) {
+	return NewOgenDataStorageQuerierWithTransport(baseURL, timeout, nil)
 }
 
-// NewDataStorageHTTPQuerierWithTimeout creates a new DS querier with custom timeout
-// and ServiceAccount authentication (DD-AUTH-005).
-func NewDataStorageHTTPQuerierWithTimeout(baseURL string, timeout time.Duration) DataStorageQuerier {
-	return NewDataStorageHTTPQuerierWithTransport(baseURL, timeout, nil)
-}
+// NewOgenDataStorageQuerierWithTransport creates a DataStorageQuerier with custom transport.
+// When transport is nil, ServiceAccount token auth is used (DD-AUTH-005).
+// Integration tests use this to inject mock transports.
+func NewOgenDataStorageQuerierWithTransport(baseURL string, timeout time.Duration, transport http.RoundTripper) (DataStorageQuerier, error) {
+	if baseURL == "" {
+		return nil, fmt.Errorf("baseURL cannot be empty")
+	}
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
 
-// NewDataStorageHTTPQuerierWithTransport creates a DS querier with explicit transport.
-// When transport is nil, ServiceAccount token auth is used automatically
-// (same pattern as audit.NewOpenAPIClientAdapter -- DD-AUTH-005).
-func NewDataStorageHTTPQuerierWithTransport(baseURL string, timeout time.Duration, transport http.RoundTripper) DataStorageQuerier {
 	if transport == nil {
-		transport = auth.NewServiceAccountTransport()
+		baseTransport := &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 100,
+			IdleConnTimeout:     90 * time.Second,
+		}
+		transport = auth.NewServiceAccountTransportWithBase(baseTransport)
 	}
-	return &dataStorageHTTPQuerier{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout:   timeout,
-			Transport: transport,
-		},
+
+	httpClient := &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
 	}
-}
 
-// auditEventsResponse matches the AuditEventsQueryResponse envelope returned by
-// GET /api/v1/audit/events (see api/openapi/data-storage-v1.yaml).
-// Issue #575: EM was decoding the bare array, but DS wraps events in this object.
-type auditEventsResponse struct {
-	Data []auditEvent `json:"data"`
-}
+	client, err := ogenclient.NewClient(baseURL, ogenclient.WithClient(httpClient))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ogen DS client: %w", err)
+	}
 
-// auditEvent carries the subset of fields EM needs from each audit event.
-type auditEvent struct {
-	EventType string         `json:"event_type"`
-	EventData auditEventData `json:"event_data"`
-}
-
-type auditEventData struct {
-	PreRemediationSpecHash string `json:"pre_remediation_spec_hash,omitempty"`
+	return &ogenDataStorageQuerier{client: client}, nil
 }
 
 // QueryPreRemediationHash queries DataStorage for audit events matching the
 // correlation ID and extracts the pre_remediation_spec_hash from the
 // remediation.workflow_created event (DD-EM-002).
-func (q *dataStorageHTTPQuerier) QueryPreRemediationHash(ctx context.Context, correlationID string) (string, error) {
-	events, err := q.queryAuditEvents(ctx, correlationID, "remediation.workflow_created")
+func (q *ogenDataStorageQuerier) QueryPreRemediationHash(ctx context.Context, correlationID string) (string, error) {
+	resp, err := q.client.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+		CorrelationID: ogenclient.NewOptString(correlationID),
+		EventType:     ogenclient.NewOptString("remediation.workflow_created"),
+	})
+	err = ogenx.ToError(resp, err)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("DS query failed for correlation_id=%s: %w", correlationID, err)
 	}
 
-	for _, event := range events {
-		if hash := event.EventData.PreRemediationSpecHash; hash != "" {
-			return hash, nil
+	for _, event := range resp.Data {
+		if payload, ok := event.EventData.GetRemediationOrchestratorAuditPayload(); ok {
+			if hash, ok := payload.PreRemediationSpecHash.Get(); ok && hash != "" {
+				return hash, nil
+			}
 		}
 	}
 
@@ -104,13 +118,8 @@ func (q *dataStorageHTTPQuerier) QueryPreRemediationHash(ctx context.Context, co
 // Note: The WE controller emits "workflowexecution.execution.started" (Gap #6,
 // BR-AUDIT-005) when a PipelineRun is created. The ADR references the higher-level
 // "workflowexecution.workflow.started" but that event type is never emitted.
-func (q *dataStorageHTTPQuerier) HasWorkflowStarted(ctx context.Context, correlationID string) (bool, error) {
-	events, err := q.queryAuditEvents(ctx, correlationID, "workflowexecution.execution.started")
-	if err != nil {
-		return false, err
-	}
-
-	return len(events) > 0, nil
+func (q *ogenDataStorageQuerier) HasWorkflowStarted(ctx context.Context, correlationID string) (bool, error) {
+	return q.hasEvent(ctx, correlationID, "workflowexecution.execution.started")
 }
 
 // HasWorkflowCompleted checks if a workflowexecution.workflow.completed event
@@ -119,47 +128,21 @@ func (q *dataStorageHTTPQuerier) HasWorkflowStarted(ctx context.Context, correla
 //
 // Note: Unlike execution.started (#575), the WE controller emits the higher-level
 // "workflowexecution.workflow.completed" event type (see pkg/workflowexecution/audit/manager.go).
-func (q *dataStorageHTTPQuerier) HasWorkflowCompleted(ctx context.Context, correlationID string) (bool, error) {
-	events, err := q.queryAuditEvents(ctx, correlationID, "workflowexecution.workflow.completed")
-	if err != nil {
-		return false, err
-	}
-
-	return len(events) > 0, nil
+func (q *ogenDataStorageQuerier) HasWorkflowCompleted(ctx context.Context, correlationID string) (bool, error) {
+	return q.hasEvent(ctx, correlationID, "workflowexecution.workflow.completed")
 }
 
-// queryAuditEvents calls GET /api/v1/audit/events with the given filters and
-// decodes the paginated envelope response.
-func (q *dataStorageHTTPQuerier) queryAuditEvents(ctx context.Context, correlationID, eventType string) ([]auditEvent, error) {
-	u, err := url.Parse(q.baseURL)
+// hasEvent queries DS for audit events matching correlation ID and event type,
+// returning true if at least one event exists.
+func (q *ogenDataStorageQuerier) hasEvent(ctx context.Context, correlationID, eventType string) (bool, error) {
+	resp, err := q.client.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+		CorrelationID: ogenclient.NewOptString(correlationID),
+		EventType:     ogenclient.NewOptString(eventType),
+	})
+	err = ogenx.ToError(resp, err)
 	if err != nil {
-		return nil, fmt.Errorf("invalid DS base URL: %w", err)
-	}
-	u.Path = "/api/v1/audit/events"
-	params := url.Values{}
-	params.Set("correlation_id", correlationID)
-	params.Set("event_type", eventType)
-	u.RawQuery = params.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create DS request: %w", err)
+		return false, fmt.Errorf("DS query failed for correlation_id=%s: %w", correlationID, err)
 	}
 
-	resp, err := q.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("DS query failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("DS returned HTTP %d for correlation_id=%s", resp.StatusCode, correlationID)
-	}
-
-	var envelope auditEventsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-		return nil, fmt.Errorf("failed to decode DS response: %w", err)
-	}
-
-	return envelope.Data, nil
+	return len(resp.Data) > 0, nil
 }
