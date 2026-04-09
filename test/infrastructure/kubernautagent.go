@@ -527,10 +527,10 @@ data:
         per_user_per_minute: 10
         per_session: 30
       max_tool_turns: 15
-    alignment_check:
+    alignmentCheck:
       enabled: true
       timeout: "10s"
-      max_step_tokens: 500
+      maxStepTokens: 500
       llm:
         provider: "openai"
         model: "shadow-eval"

@@ -134,10 +134,10 @@ data:
       buffer_size: 10000
       batch_size: 50
 {{- if .Values.kubernautAgent.alignmentCheck.enabled }}
-    alignment_check:
+    alignmentCheck:
       enabled: true
       timeout: {{ .Values.kubernautAgent.alignmentCheck.timeout | default "10s" }}
-      max_step_tokens: {{ .Values.kubernautAgent.alignmentCheck.maxStepTokens | default 500 }}
+      maxStepTokens: {{ .Values.kubernautAgent.alignmentCheck.maxStepTokens | default 500 }}
 {{- with .Values.kubernautAgent.alignmentCheck.llm }}
       llm:
 {{- if .provider }}

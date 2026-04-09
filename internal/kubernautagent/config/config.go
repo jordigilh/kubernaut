@@ -41,7 +41,7 @@ type Config struct {
 	Anomaly        AnomalyConfig        `yaml:"anomaly"`
 	Summarizer     SummarizerConfig     `yaml:"summarizer"`
 	Conversation   ConversationConfig   `yaml:"conversation"`
-	AlignmentCheck AlignmentCheckConfig `yaml:"alignment_check"`
+	AlignmentCheck AlignmentCheckConfig `yaml:"alignmentCheck"`
 }
 
 type LLMConfig struct {
@@ -158,7 +158,7 @@ type AlignmentCheckConfig struct {
 	Enabled       bool          `yaml:"enabled"`
 	LLM           *LLMConfig    `yaml:"llm"`
 	Timeout       time.Duration `yaml:"timeout"`
-	MaxStepTokens int           `yaml:"max_step_tokens"`
+	MaxStepTokens int           `yaml:"maxStepTokens"`
 }
 
 // mergeLLMConfig overlays non-zero fields from override onto base and returns the result.
@@ -283,10 +283,10 @@ func (c *Config) Validate() error {
 	}
 	if c.AlignmentCheck.Enabled {
 		if c.AlignmentCheck.Timeout <= 0 {
-			return fmt.Errorf("alignment_check.timeout must be positive when enabled, got %v", c.AlignmentCheck.Timeout)
+			return fmt.Errorf("alignmentCheck.timeout must be positive when enabled, got %v", c.AlignmentCheck.Timeout)
 		}
 		if c.AlignmentCheck.MaxStepTokens <= 0 {
-			return fmt.Errorf("alignment_check.max_step_tokens must be positive when enabled, got %d", c.AlignmentCheck.MaxStepTokens)
+			return fmt.Errorf("alignmentCheck.maxStepTokens must be positive when enabled, got %d", c.AlignmentCheck.MaxStepTokens)
 		}
 		if c.AlignmentCheck.LLM != nil {
 			merged := c.AlignmentCheck.EffectiveLLM(c.LLM)
@@ -294,11 +294,11 @@ func (c *Config) Validate() error {
 			case "bedrock", "huggingface", "anthropic", "openai":
 			default:
 				if merged.Endpoint == "" {
-					return fmt.Errorf("alignment_check.llm.endpoint is required for provider %q", merged.Provider)
+					return fmt.Errorf("alignmentCheck.llm.endpoint is required for provider %q", merged.Provider)
 				}
 			}
 			if merged.Model == "" {
-				return fmt.Errorf("alignment_check.llm.model is required when alignment_check.llm is set")
+				return fmt.Errorf("alignmentCheck.llm.model is required when alignmentCheck.llm is set")
 			}
 		}
 	}
