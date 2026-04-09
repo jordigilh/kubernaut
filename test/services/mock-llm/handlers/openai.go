@@ -94,8 +94,19 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	scenarioName := cfg.ScenarioName
 	h.recordScenarioMetric(scenarioName, result.Method)
 
-	if h.forceText || len(req.Tools) == 0 {
+	effectiveForceText := h.forceText
+	if cfg.ForceText != nil {
+		effectiveForceText = *cfg.ForceText
+	}
+	if effectiveForceText || len(req.Tools) == 0 {
 		writeJSON(w, http.StatusOK, response.BuildForceTextResponse(model, cfg, req.Tools))
+		h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
+		return
+	}
+
+	if cfg.ToolCallName != "" && !hasToolResults(req.Messages) {
+		h.trackToolCall(cfg.ToolCallName)
+		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, cfg.ToolCallName, cfg))
 		h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
 		return
 	}
@@ -128,6 +139,15 @@ func (h *handler) trackToolCall(name string) {
 	if h.tracker != nil {
 		h.tracker.RecordToolCall(name, "")
 	}
+}
+
+func hasToolResults(messages []openai.Message) bool {
+	for _, m := range messages {
+		if m.Role == "tool" {
+			return true
+		}
+	}
+	return false
 }
 
 func buildDetectionContext(ctx *conversation.Context) *scenarios.DetectionContext {

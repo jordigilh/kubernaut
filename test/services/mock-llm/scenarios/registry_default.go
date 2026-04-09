@@ -41,6 +41,13 @@ func applyOverride(cs *configScenario, ov config.ScenarioOverride) {
 	if ov.Confidence != nil {
 		cs.config.Confidence = *ov.Confidence
 	}
+	if ov.ForceText != nil {
+		cs.config.ForceText = ov.ForceText
+	}
+	if ov.ToolCall != nil {
+		cs.config.ToolCallName = ov.ToolCall.Name
+		cs.config.ToolCallArgs = ov.ToolCall.Arguments
+	}
 }
 
 // findOverrideByWorkflowName searches override keys for entries matching the
@@ -134,6 +141,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(signalScenario("node_not_ready", []string{"nodenotready"}, nodeNotReadyConfig()))
 	r.Register(signalScenario("oomkilled", []string{"memoryexceedslimit", "memoryexceeds", "oomkilled", "oomkill"}, oomkilledConfig()))
 	r.Register(signalScenario("crashloop", []string{"crashloop", "backoff"}, crashloopConfig()))
+	r.Register(signalScenario("injection_configmap_read", []string{"injection_configmap_read"}, injectionConfigmapReadConfig()))
 
 	// Default fallback (lowest priority = 0.01)
 	r.Register(defaultFallbackScenario())

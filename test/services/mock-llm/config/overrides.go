@@ -23,10 +23,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ToolCallOverride specifies a tool call that the mock-LLM should return
+// for a given scenario instead of following the normal DAG path.
+type ToolCallOverride struct {
+	Name      string            `yaml:"name"`
+	Arguments map[string]string `yaml:"arguments,omitempty"`
+}
+
 // ScenarioOverride defines optional per-scenario overrides from a YAML config file.
 type ScenarioOverride struct {
 	WorkflowID string   `yaml:"workflow_id,omitempty"`
 	Confidence *float64 `yaml:"confidence,omitempty"`
+	ForceText  *bool    `yaml:"force_text,omitempty"`
+	ToolCall   *ToolCallOverride `yaml:"tool_call,omitempty"`
 }
 
 // Overrides holds the parsed YAML override configuration.

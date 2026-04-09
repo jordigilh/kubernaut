@@ -100,6 +100,13 @@ func BuildErrorResponse(message string) openai.ErrorResponse {
 }
 
 func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[string]interface{} {
+	if len(cfg.ToolCallArgs) > 0 {
+		args := make(map[string]interface{}, len(cfg.ToolCallArgs))
+		for k, v := range cfg.ToolCallArgs {
+			args[k] = v
+		}
+		return args
+	}
 	switch toolName {
 	case openai.ToolSearchWorkflowCatalog:
 		return map[string]interface{}{
@@ -120,6 +127,10 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 	case openai.ToolGetResourceContext:
 		return map[string]interface{}{
 			"kind": cfg.ResourceKind, "namespace": cfg.ResourceNS, "name": cfg.ResourceName,
+		}
+	case openai.ToolKubectlGetYAML, openai.ToolKubectlGetByName:
+		return map[string]interface{}{
+			"kind": cfg.ResourceKind, "name": cfg.ResourceName, "namespace": cfg.ResourceNS,
 		}
 	default:
 		return map[string]interface{}{}
