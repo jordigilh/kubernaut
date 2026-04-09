@@ -19,6 +19,7 @@ package authwebhook
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ import (
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -130,6 +132,8 @@ func (r *RemediationWorkflowReconciler) reconcileDelete(ctx context.Context, log
 
 // refreshActionTypeWorkflowCount queries DS for the authoritative active
 // workflow count and patches the matching ActionType CRD's status.
+// Uses RetryOnConflict to handle races with the webhook's concurrent
+// status update goroutine (fixes E2E-AT-300-003 flake).
 // Best-effort: errors are logged but do not block finalizer removal.
 func (r *RemediationWorkflowReconciler) refreshActionTypeWorkflowCount(ctx context.Context, logger logr.Logger, actionType, namespace string) {
 	if r.ATCounter == nil || actionType == "" {
@@ -142,29 +146,42 @@ func (r *RemediationWorkflowReconciler) refreshActionTypeWorkflowCount(ctx conte
 		return
 	}
 
-	atList := &atv1alpha1.ActionTypeList{}
-	if err := r.List(ctx, atList, client.InNamespace(namespace)); err != nil {
-		logger.Error(err, "Failed to list ActionType CRDs")
+	atKey, err := r.findActionTypeKey(ctx, actionType, namespace)
+	if err != nil {
+		logger.Error(err, "Failed to find ActionType CRD", "actionType", actionType)
+		return
+	}
+	if atKey == nil {
 		return
 	}
 
-	for i := range atList.Items {
-		at := &atList.Items[i]
-		if at.Spec.Name != actionType {
-			continue
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		at := &atv1alpha1.ActionType{}
+		if err := r.Get(ctx, *atKey, at); err != nil {
+			return fmt.Errorf("get ActionType: %w", err)
 		}
 		at.Status.ActiveWorkflowCount = count
-		if err := r.Status().Update(ctx, at); err != nil {
-			if apierrors.IsConflict(err) {
-				logger.V(1).Info("AT status update conflict (will be corrected on next reconcile)", "crd", at.Name)
-			} else {
-				logger.Error(err, "Failed to update AT activeWorkflowCount", "crd", at.Name, "count", count)
-			}
-		} else {
-			logger.Info("ActionType activeWorkflowCount updated", "crd", at.Name, "count", count)
-		}
-		return
+		return r.Status().Update(ctx, at)
+	}); err != nil {
+		logger.Error(err, "Failed to update AT activeWorkflowCount", "actionType", actionType, "count", count)
+	} else {
+		logger.Info("ActionType activeWorkflowCount updated", "actionType", actionType, "count", count)
 	}
+}
+
+// findActionTypeKey locates the ActionType CRD whose spec.name matches actionType.
+func (r *RemediationWorkflowReconciler) findActionTypeKey(ctx context.Context, actionType, namespace string) (*client.ObjectKey, error) {
+	atList := &atv1alpha1.ActionTypeList{}
+	if err := r.List(ctx, atList, client.InNamespace(namespace)); err != nil {
+		return nil, err
+	}
+	for i := range atList.Items {
+		if atList.Items[i].Spec.Name == actionType {
+			key := client.ObjectKeyFromObject(&atList.Items[i])
+			return &key, nil
+		}
+	}
+	return nil, nil
 }
 
 func (r *RemediationWorkflowReconciler) SetupWithManager(mgr ctrl.Manager) error {
