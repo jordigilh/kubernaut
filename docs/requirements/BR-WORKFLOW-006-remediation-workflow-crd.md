@@ -66,7 +66,7 @@ Workflow registration in Kubernaut must be Kubernetes-native to support GitOps w
 
 ### Spec Fields
 
-The `.spec` maps to the workflow-schema.yaml content per BR-WORKFLOW-004, structured as a Kubernetes resource. The workflow name is provided by `metadata.name`; the DS-assigned UUID is in `status.workflowId`.
+The `.spec` is the declarative specification of the `RemediationWorkflow` resource. Field names and types originate from BR-WORKFLOW-004. The workflow name is provided by `metadata.name`; the DS-assigned UUID is in `status.workflowId`.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|

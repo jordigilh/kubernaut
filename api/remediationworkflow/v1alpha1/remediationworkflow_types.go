@@ -24,7 +24,7 @@ import (
 )
 
 // RemediationWorkflowSpec defines the desired state of RemediationWorkflow.
-// Maps to the spec content of a workflow-schema.yaml file per BR-WORKFLOW-004.
+// Declared as a Kubernetes resource; registered via kubectl apply (BR-WORKFLOW-006).
 // Workflow name is derived from the CRD's metadata.name (not duplicated in spec).
 type RemediationWorkflowSpec struct {
 	// Version is the semantic version (e.g., "1.0.0")

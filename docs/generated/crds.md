@@ -1494,7 +1494,7 @@ _Appears in:_
 
 
 RemediationWorkflowSpec defines the desired state of RemediationWorkflow.
-Maps to the spec content of a workflow-schema.yaml file per .
+Declared as a Kubernetes resource; registered via kubectl apply .
 Workflow name is derived from the CRD's metadata.name (not duplicated in spec).
 
 _Appears in:_
