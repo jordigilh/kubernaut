@@ -376,8 +376,8 @@ common_install_flags() {
   if [[ -n "$PULL_SECRET" ]]; then
     flags+=" --set global.imagePullSecrets[0].name=${PULL_SECRET}"
   fi
-  flags+=" --set effectivenessmonitor.external.prometheusEnabled=false"
-  flags+=" --set effectivenessmonitor.external.alertManagerEnabled=false"
+  flags+=" --set monitoring.prometheus.enabled=false"
+  flags+=" --set monitoring.alertManager.enabled=false"
   if [[ "$PLATFORM" == "kind" ]]; then
     flags+=" --set global.image.pullPolicy=IfNotPresent"
   fi
@@ -1245,6 +1245,122 @@ for d in docs:
 
   # Note: Vertex AI / GCP-specific fields (gcpProjectId, gcpRegion) are configured
   # via sdkConfigContent or existingSdkConfigMap, not auto-generated quickstart config.
+
+  echo "# --- Template Tests: Unified Monitoring Config (Issue #463) ---"
+
+  # UT-MON-463-001: monitoring.prometheus.enabled+url configures both EM and KA
+  local mon_output
+  mon_output=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    --set monitoring.prometheus.enabled=true \
+    --set monitoring.prometheus.url=http://prom:9090 2>&1)
+  if echo "$mon_output" | grep -q 'prometheusUrl: "http://prom:9090"' && \
+     echo "$mon_output" | grep -q 'prometheusEnabled: true' && \
+     echo "$mon_output" | grep -A3 "tools:" | grep -q 'url: "http://prom:9090"'; then
+    tap_ok "UT-MON-463-001: monitoring.prometheus.enabled+url configures both EM and KA"
+  else
+    tap_not_ok "UT-MON-463-001: monitoring.prometheus.enabled+url configures both EM and KA" \
+      "EM or KA ConfigMap missing monitoring.prometheus.url"
+  fi
+
+  # UT-MON-463-002: EM ConfigMap reads monitoring.prometheus.url
+  if echo "$mon_output" | grep -q 'prometheusUrl: "http://prom:9090"'; then
+    tap_ok "UT-MON-463-002: EM ConfigMap prometheusUrl from monitoring.prometheus.url"
+  else
+    tap_not_ok "UT-MON-463-002: EM ConfigMap prometheusUrl" \
+      "EM ConfigMap does not contain prometheusUrl from monitoring.prometheus.url"
+  fi
+
+  # UT-MON-463-003: KA config.yaml has tools.prometheus.url (not SDK toolsets)
+  if echo "$mon_output" | grep -A3 "tools:" | grep -q 'url: "http://prom:9090"'; then
+    tap_ok "UT-MON-463-003: KA config.yaml tools.prometheus.url from monitoring"
+  else
+    tap_not_ok "UT-MON-463-003: KA config.yaml tools.prometheus.url" \
+      "KA config.yaml does not contain tools.prometheus.url"
+  fi
+
+  # UT-MON-463-004: monitoring.prometheus.enabled=false disables in both
+  local mon_off
+  mon_off=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    --set monitoring.prometheus.enabled=false 2>&1)
+  if echo "$mon_off" | grep -q 'prometheusEnabled: false' && \
+     ! echo "$mon_off" | grep -A3 "tools:" | grep -q 'url:'; then
+    tap_ok "UT-MON-463-004: monitoring.prometheus.enabled=false disables both EM and KA"
+  else
+    tap_not_ok "UT-MON-463-004: monitoring disabled" \
+      "Prometheus not fully disabled when monitoring.prometheus.enabled=false"
+  fi
+
+  # UT-MON-463-005: both Prometheus and AlertManager enabled
+  local mon_both
+  mon_both=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    --set monitoring.prometheus.enabled=true \
+    --set monitoring.prometheus.url=http://prom:9090 \
+    --set monitoring.alertManager.enabled=true \
+    --set monitoring.alertManager.url=http://am:9093 2>&1)
+  if echo "$mon_both" | grep -q 'prometheusUrl: "http://prom:9090"' && \
+     echo "$mon_both" | grep -q 'alertManagerUrl: "http://am:9093"' && \
+     echo "$mon_both" | grep -q 'alertManagerEnabled: true'; then
+    tap_ok "UT-MON-463-005: both Prometheus and AlertManager enabled"
+  else
+    tap_not_ok "UT-MON-463-005: both monitoring endpoints" \
+      "Missing one or both monitoring endpoints in ConfigMaps"
+  fi
+
+  # UT-MON-463-008: OCP auto-detection applies defaults
+  local mon_ocp
+  mon_ocp=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    --api-versions route.openshift.io/v1 \
+    --set monitoring.prometheus.enabled=true \
+    --set monitoring.alertManager.enabled=true 2>&1)
+  if echo "$mon_ocp" | grep -q 'prometheusUrl: "https://prometheus-k8s.openshift-monitoring.svc:9091"' && \
+     echo "$mon_ocp" | grep -q 'alertManagerUrl: "https://alertmanager-main.openshift-monitoring.svc:9094"'; then
+    tap_ok "UT-MON-463-008: OCP auto-detection applies default URLs"
+  else
+    tap_not_ok "UT-MON-463-008: OCP auto-detection" \
+      "OCP-detected template does not contain expected OCP monitoring URLs"
+  fi
+
+  # UT-MON-463-009: TLS CA volume mounted on both EM and KA when tlsCaFile set
+  local mon_tls
+  mon_tls=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    --set monitoring.prometheus.enabled=true \
+    --set monitoring.prometheus.url=https://prom:9091 \
+    --set monitoring.prometheus.tlsCaFile=/etc/ssl/certs/service-ca.crt 2>&1)
+  if echo "$mon_tls" | grep -q "service-ca" && \
+     echo "$mon_tls" | grep -q "/etc/ssl"; then
+    tap_ok "UT-MON-463-009: TLS CA volume mounted when tlsCaFile set"
+  else
+    tap_not_ok "UT-MON-463-009: TLS CA volume" \
+      "service-ca volume or mount not found when tlsCaFile is set"
+  fi
+
+  # UT-MON-463-010: OCP RBAC created when monitoring enabled on OCP
+  local mon_rbac
+  mon_rbac=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    --api-versions route.openshift.io/v1 \
+    --set monitoring.prometheus.enabled=true 2>&1)
+  if echo "$mon_rbac" | grep -q "cluster-monitoring-view"; then
+    tap_ok "UT-MON-463-010: OCP RBAC ClusterRoleBinding for cluster-monitoring-view"
+  else
+    tap_not_ok "UT-MON-463-010: OCP RBAC" \
+      "cluster-monitoring-view ClusterRoleBinding not found on OCP with monitoring enabled"
+  fi
+
+  # UT-MON-463-013: helm lint passes with monitoring block
+  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) \
+    --set monitoring.prometheus.enabled=true \
+    --set monitoring.prometheus.url=http://prom:9090 >/dev/null 2>&1; then
+    tap_ok "UT-MON-463-013: helm lint passes with monitoring block"
+  else
+    tap_not_ok "UT-MON-463-013: helm lint with monitoring" \
+      "helm lint failed with monitoring values"
+  fi
 }
 
 # ---------------------------------------------------------------------------

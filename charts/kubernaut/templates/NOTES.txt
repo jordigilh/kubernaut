@@ -56,26 +56,15 @@ Check seed job results:
   kubectl logs -l app=demo-content-seed -n {{ .Release.Namespace }}
 {{- end }}
 
-{{- if and .Values.kubernautAgent.prometheus.enabled (or .Values.kubernautAgent.existingSdkConfigMap .Values.kubernautAgent.sdkConfigContent) }}
-=== IMPORTANT: Prometheus Toolset Configuration ===
+{{- if and (include "kubernaut.monitoring.prometheus.enabled" .) (or .Values.kubernautAgent.existingSdkConfigMap .Values.kubernautAgent.sdkConfigContent) }}
+=== IMPORTANT: Prometheus Configuration ===
 
-You have enabled kubernautAgent.prometheus but are using a custom SDK config
+You have enabled monitoring.prometheus but are using a custom SDK config
 ({{ if .Values.kubernautAgent.existingSdkConfigMap }}existingSdkConfigMap: {{ .Values.kubernautAgent.existingSdkConfigMap }}{{ else }}sdkConfigContent{{ end }}).
 
-The chart has created the RBAC bindings and CA volume mounts, but the
-prometheus/metrics toolset is NOT auto-injected into custom SDK configs.
-You must manually add it to your SDK configuration:
-
-  toolsets:
-    prometheus/metrics:
-      enabled: true
-      config:
-        prometheus_url: "{{ .Values.kubernautAgent.prometheus.url }}"
-{{- if include "kubernaut.agent.tlsEnabled" . }}
-        prometheus_ssl_ca_file: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
-{{- end }}
-
-Without this, the Kubernaut Agent's LLM cannot query cluster metrics during investigations.
+The chart has created the RBAC bindings and TLS CA volume mounts, and has
+configured Prometheus in the agent's config.yaml (tools.prometheus.url).
+No additional SDK config changes are needed for Prometheus access.
 
 {{- end }}
 === Monitoring ===

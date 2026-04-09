@@ -257,14 +257,6 @@ effectivenessmonitor:
     assessment:
       stabilizationWindow: "30s"
       validityWindow: "120s"
-  external:
-    # To enable monitoring integration, install kube-prometheus-stack and set both to true.
-    prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
-    prometheusEnabled: false
-    alertManagerUrl: "http://kube-prometheus-stack-alertmanager.monitoring.svc:9093"
-    alertManagerEnabled: false
-    # tlsCaFile: ""  # Path to PEM CA bundle for HTTPS (OCP: /etc/ssl/em/service-ca.crt)
-    # ocpMonitoringRbac: false  # OCP: cluster-monitoring-view CRB + alertmanagers/api ClusterRole (Issue #576)
   # initImage: "registry.access.redhat.com/ubi10/ubi-minimal:latest"  # Init container image for wait-for-service-ca (Issue #484)
   resources:
     requests:
@@ -320,15 +312,6 @@ kubernautAgent:
   # this ConfigMap at /etc/kubernaut-agent/sdk/ instead.
   # Takes priority over sdkConfigContent and llm.provider/model.
   existingSdkConfigMap: ""
-  # -- Prometheus integration for LLM investigation context.
-  prometheus:
-    enabled: false
-    url: ""
-    ocpMonitoringRbac: false
-    tls:
-      enabled: false
-      caConfigMapName: ""
-      caConfigMapKey: "service-ca.crt"
   # -- Conversational API (#592): interactive follow-up on investigation results.
   conversations:
     enabled: false
@@ -433,6 +416,19 @@ hooks:
     # Shared kubectl image for all hook Jobs (TLS cert gen, CRD upgrade).
     # Both hooks need kubectl — a single pinned image avoids duplication.
     image: docker.io/bitnami/kubectl:latest@sha256:6e2cdb22d6ab7264ea198c717f555e30536b54029d26c8781b9f25f78951b564
+
+# -- Unified monitoring configuration (Issue #463).
+# Single source of truth for Prometheus/AlertManager endpoints.
+# Propagated to both EffectivenessMonitor and Kubernaut Agent.
+monitoring:
+  prometheus:
+    enabled: false
+    url: ""
+    tlsCaFile: ""
+  alertManager:
+    enabled: false
+    url: ""
+    tlsCaFile: ""
 
 # -- NetworkPolicies: default-deny with explicit allow rules (Issue #285)
 networkPolicies:
