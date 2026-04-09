@@ -110,6 +110,13 @@ func FormatRemediationLine(rrName string) string {
 	return fmt.Sprintf("**Remediation**: %s\n\n", rrName)
 }
 
+// FormatStatusLine returns a formatted status line for notification bodies.
+// Issue #628: Single standardized **Status** label across all notification types.
+// Display enum: Remediated | Pending Approval | Timed Out | Manual Review Required | Self-Resolved | Duplicate Handled
+func FormatStatusLine(status string) string {
+	return fmt.Sprintf("**Status**: %s\n\n", status)
+}
+
 // FormatClusterLine returns a formatted cluster identification line for notification bodies.
 // Returns empty string when both name and uuid are empty (graceful degradation).
 func FormatClusterLine(clusterName, clusterUUID string) string {
@@ -262,9 +269,9 @@ func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationReq
 		workflowLabel = fmt.Sprintf("%s (%s)", ai.Status.SelectedWorkflow.ActionType, ai.Status.SelectedWorkflow.WorkflowID)
 	}
 
-	body := fmt.Sprintf(`Remediation requires approval:
-
-**Signal**: %s
+	body := "Remediation requires approval:\n\n" +
+		FormatStatusLine("Pending Approval") +
+		fmt.Sprintf(`**Signal**: %s
 **Severity**: %s
 
 **Affected Resource**:
@@ -428,9 +435,10 @@ func (c *NotificationCreator) buildCompletionBody(
 		workflowLabel = fmt.Sprintf("%s (%s)", actionType, workflowID)
 	}
 
-	body := fmt.Sprintf(`Remediation Completed Successfully
-
-**Outcome**: %s
+	// Deprecated: **Outcome** retained for one release (Issue #628). Use **Status** for canonical status.
+	body := "Remediation Completed Successfully\n\n" +
+		FormatStatusLine(string(rr.Status.Outcome)) +
+		fmt.Sprintf(`**Outcome**: %s
 
 **Signal**: %s
 **Severity**: %s
@@ -550,9 +558,11 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 
 // buildBulkDuplicateBody builds the bulk duplicate notification body.
 func (c *NotificationCreator) buildBulkDuplicateBody(rr *remediationv1.RemediationRequest) string {
-	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) + fmt.Sprintf(`Remediation completed successfully.
-
-**Signal**: %s
+	// Deprecated: **Result** retained for one release (Issue #628). Use **Status** for canonical status.
+	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) +
+		"Remediation completed successfully.\n\n" +
+		FormatStatusLine("Duplicate Handled") +
+		fmt.Sprintf(`**Signal**: %s
 **Result**: %s
 
 **Affected Resource**:
@@ -781,9 +791,9 @@ func (c *NotificationCreator) buildManualReviewContext(rr *remediationv1.Remedia
 
 // buildManualReviewBody builds the manual review notification body.
 func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.RemediationRequest, ctx *ManualReviewContext) string {
-	body := fmt.Sprintf(`⚠️ **Manual Review Required**
-
-**Signal**: %s
+	body := "⚠️ **Manual Review Required**\n\n" +
+		FormatStatusLine("Manual Review Required") +
+		fmt.Sprintf(`**Signal**: %s
 **Severity**: %s
 
 **Affected Resource**:
@@ -937,9 +947,9 @@ func (c *NotificationCreator) buildSelfResolvedBody(
 	rootCause string,
 	target remediationv1.ResourceIdentifier,
 ) string {
-	body := fmt.Sprintf(`Signal was investigated but no remediation was needed.
-
-**Signal**: %s
+	body := "Signal was investigated but no remediation was needed.\n\n" +
+		FormatStatusLine("Self-Resolved") +
+		fmt.Sprintf(`**Signal**: %s
 **Severity**: %s
 
 **Affected Resource**:
@@ -972,9 +982,9 @@ func (c *NotificationCreator) buildSelfResolvedBody(
 func (c *NotificationCreator) BuildGlobalTimeoutBody(
 	signalName, rrName, timeoutPhase, timeoutDuration, startTime, timeoutTime string,
 ) string {
-	body := fmt.Sprintf(`Remediation request has exceeded the global timeout and requires manual intervention.
-
-**Signal**: %s
+	body := "Remediation request has exceeded the global timeout and requires manual intervention.\n\n" +
+		FormatStatusLine("Timed Out") +
+		fmt.Sprintf(`**Signal**: %s
 **Timeout Phase**: %s
 **Timeout Duration**: %s
 **Started**: %s
@@ -991,9 +1001,9 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 func (c *NotificationCreator) BuildPhaseTimeoutBody(
 	signalName, rrName, phase, phaseTimeout, startTime, timeoutTime string,
 ) string {
-	body := fmt.Sprintf(`Remediation phase has exceeded timeout and requires investigation.
-
-**Signal**: %s
+	body := "Remediation phase has exceeded timeout and requires investigation.\n\n" +
+		FormatStatusLine("Timed Out") +
+		fmt.Sprintf(`**Signal**: %s
 **Phase**: %s
 **Phase Timeout**: %s
 **Started**: %s
