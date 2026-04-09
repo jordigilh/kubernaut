@@ -566,6 +566,27 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 
 	cfg := &AWXConfig{APIURL: awxBaseURL}
 
+	// 0. Authenticated API gate: ensure basic auth works before making any calls.
+	// AWX pods may report Ready before Django has fully applied the admin secret.
+	_, _ = fmt.Fprintf(writer, "   Waiting for AWX API authentication to be ready...\n")
+	authDeadline := time.Now().Add(2 * time.Minute)
+	authReady := false
+	for attempt := 0; time.Now().Before(authDeadline); attempt++ {
+		_, meStatus, meErr := awxAPIRequest("GET", awxBaseURL+"/api/v2/me/", nil, "")
+		if meErr == nil && meStatus == http.StatusOK {
+			authReady = true
+			break
+		}
+		if attempt%3 == 0 {
+			_, _ = fmt.Fprintf(writer, "   ⏳ AWX auth not ready yet (HTTP %d), retrying...\n", meStatus)
+		}
+		time.Sleep(5 * time.Second)
+	}
+	if !authReady {
+		return nil, fmt.Errorf("AWX API authentication not ready after 2 minutes")
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ AWX API authentication is ready\n")
+
 	// 1. Get default organization (always exists as ID 1)
 	// Retry on 401: the AWX operator may not have finished creating the admin
 	// superuser even after pods report Ready (initialize_django.yml race).
@@ -595,8 +616,10 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 		cfg.OrganizationID = int(orgResult["id"].(float64))
 	} else if orgStatus == http.StatusUnauthorized {
 		return nil, fmt.Errorf("AWX authentication failed after 12 attempts (HTTP 401) — admin superuser was never created by the operator")
-	} else {
+	} else if orgStatus == http.StatusBadRequest || orgStatus == http.StatusConflict {
 		cfg.OrganizationID = 1
+	} else {
+		return nil, fmt.Errorf("failed to create organization: HTTP %d (expected 201 or 400/409)", orgStatus)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Organization ID: %d\n", cfg.OrganizationID)
 
@@ -640,12 +663,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 			}
 			return nil, fmt.Errorf("failed to create project: HTTP %d (and could not find existing)", projectStatus)
 		}
-		if projectStatus == http.StatusUnauthorized {
-			_, _ = fmt.Fprintf(writer, "   ⚠️  Project creation returned HTTP 401 (attempt %d/6), retrying in 10s...\n", attempt+1)
-			time.Sleep(10 * time.Second)
-			continue
-		}
-		if projectStatus >= 500 {
+		if projectStatus >= 500 || projectStatus == http.StatusUnauthorized || projectStatus == http.StatusForbidden {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Project creation returned HTTP %d (attempt %d/6), retrying in 10s...\n", projectStatus, attempt+1)
 			time.Sleep(10 * time.Second)
 			continue
