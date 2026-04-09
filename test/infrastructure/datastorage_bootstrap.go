@@ -122,7 +122,7 @@ const (
 // Format: {consumer}-{uuid}
 // Example: gateway-a1b2c3d4 (used as datastorage:gateway-a1b2c3d4)
 //
-// This simplified format is used for shared infrastructure images (DataStorage, HAPI) because:
+// This simplified format is used for shared infrastructure images (DataStorage, KA) because:
 // - Consumer service name provides clear isolation (gateway vs aianalysis vs ro)
 // - UUID ensures zero collision risk (no timestamp needed - UUID is sufficient)
 // - Simplest possible format while maintaining uniqueness
@@ -579,7 +579,6 @@ func waitForDSBootstrapRedisReady(infra *DSBootstrapInfra, writer io.Writer) err
 // DD-AUTH-014: Platform-specific network configuration (per DD_AUTH_014_MACOS_PODMAN_LIMITATION.md)
 //   - Linux CI/CD: --network=host (Option D) - Container can reach localhost directly
 //   - macOS: Bridge network (Option A) - Requires IPv6 disabled + kubeconfig rewrite to IPv4
-//
 func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectRoot string, writer io.Writer) error {
 	cfg := infra.Config
 	configDir := filepath.Join(projectRoot, cfg.ConfigDir)

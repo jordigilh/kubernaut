@@ -127,8 +127,8 @@ get_dockerfile_path() {
         datastorage)
             echo "docker/data-storage.Dockerfile"
             ;;
-        hapi)
-            echo "holmesgpt-api/Dockerfile"
+        kubernautagent)
+            echo "docker/kubernautagent.Dockerfile"
             ;;
         *)
             return 1

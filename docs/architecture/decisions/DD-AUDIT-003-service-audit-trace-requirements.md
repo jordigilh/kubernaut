@@ -915,3 +915,35 @@ context_api:
 **Last Updated**: March 9, 2026
 **Review Cycle**: Annually or when new services are added
 
+---
+
+## v1.3 Update: Kubernaut Agent Audit Traces
+
+In v1.3 (issue [#433](https://github.com/jordigilh/kubernaut/issues/433), Kubernaut Agent Go rewrite), documentation and operational context that referred to **HolmesGPT API (HAPI)** as the runtime for `aiagent.*` events should be read as **Kubernaut Agent (KA)** unless the text explicitly describes the legacy Python HAPI service. KA is the **authoritative emitter** for the `aiagent` category in v1.3.
+
+**Actor fields (KA)**:
+
+| Field | Value |
+|-------|--------|
+| `ActorType` | `Service` |
+| `ActorID` | `kubernaut-agent` |
+
+(Previously documented as `holmesgpt-api` for HAPI-emitted events.)
+
+**`EventAction` / `EventOutcome` by event type** (KA sets both on every event; `event_id` is a **UUID** generated per event):
+
+| Event type | EventAction (representative) | EventOutcome |
+|------------|------------------------------|--------------|
+| `aiagent.llm.request` | `llm_request` | `pending` |
+| `aiagent.llm.response` | `llm_response` | `success` |
+| `aiagent.llm.tool_call` | `tool_call` | `success` or `failure` (per call) |
+| `aiagent.workflow.validation_attempt` | `validation_attempt` | `success` or `failure` |
+| `aiagent.response.complete` | `response_complete` | `success` |
+| `aiagent.response.failed` | `response_failed` | `failure` |
+| `aiagent.enrichment.completed` | `enrichment` | `success` |
+| `aiagent.enrichment.failed` | `enrichment` | `failure` |
+
+**Granularity**: `aiagent.llm.tool_call` is emitted **once per tool call**. `aiagent.workflow.validation_attempt` is emitted per validation attempt and includes `workflow_id` and `is_final_attempt` where applicable.
+
+**Reference**: [TP-433-AUDIT-SOC2](../../tests/433/TP-433-AUDIT-SOC2.md).
+

@@ -144,7 +144,7 @@ var _ = Describe("BR-NOT-083: Markdown to Slack mrkdwn Converter", func() {
 
 		// Issue #588: Fenced code block edge cases for Slack rendering
 		Context("Issue #588: fenced code block Slack compatibility", func() {
-			It("UT-NOT-588-001: unbalanced triple backticks from HAPI errors render without empty code blocks", func() {
+			It("UT-NOT-588-001: unbalanced triple backticks from KA errors render without empty code blocks", func() {
 				input := "LLM did not produce structured JSON output. Expected ```json code block or # section_header format."
 				result := formatting.MarkdownToMrkdwn(input)
 

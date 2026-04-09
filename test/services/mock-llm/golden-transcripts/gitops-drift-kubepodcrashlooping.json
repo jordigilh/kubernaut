@@ -1,0 +1,1008 @@
+{
+  "scenario": "gitops",
+  "signalName": "KubePodCrashLooping",
+  "kubernautVersion": "1.2.0-rc8",
+  "capturedAt": "2026-04-07T18:33:09Z",
+  "remediationRequest": {
+    "name": "rr-375dabb6be76-f314e5ea",
+    "phase": "Verifying",
+    "outcome": "Remediated"
+  },
+  "analysis": {
+    "remediationId": "rr-375dabb6be76-f314e5ea",
+    "signal": {
+      "signalName": "KubePodCrashLooping",
+      "severity": "critical",
+      "environment": "Staging",
+      "targetResource": {
+        "kind": "Pod",
+        "name": "web-frontend-cdbdbc4f8-4ks7g",
+        "namespace": "demo-gitops"
+      },
+      "businessPriority": "P1"
+    },
+    "investigation": {
+      "sessionId": "edb0de9f-382b-410a-8fe8-0369f0d161ba",
+      "durationMs": 106349,
+      "pollCount": 7
+    },
+    "rootCauseAnalysis": {
+      "contributingFactors": [
+        "Invalid nginx configuration directive in ConfigMap",
+        "GitOps commit introduced breaking change",
+        "Configuration validation not performed before deployment"
+      ],
+      "remediationTarget": {
+        "kind": "ConfigMap",
+        "name": "nginx-config",
+        "namespace": "demo-gitops"
+      },
+      "severity": "critical",
+      "signalType": "",
+      "summary": "Pod web-frontend-cdbdbc4f8-4ks7g is in CrashLoopBackOff due to invalid nginx configuration. The nginx-config ConfigMap contains an invalid directive 'invalid_directive_that_breaks_nginx on;' on line 11, causing nginx to fail startup with error 'unknown directive'. This appears to be from a recent commit in the GitOps-managed repository."
+    },
+    "rootCauseSummary": "Pod web-frontend-cdbdbc4f8-4ks7g is in CrashLoopBackOff due to invalid nginx configuration. The nginx-config ConfigMap contains an invalid directive 'invalid_directive_that_breaks_nginx on;' on line 11, causing nginx to fail startup with error 'unknown directive'. This appears to be from a recent commit in the GitOps-managed repository.",
+    "postRCAContext": {
+      "gitOpsManaged": true,
+      "gitOpsTool": "argocd",
+      "helmManaged": false,
+      "hpaEnabled": false,
+      "networkIsolated": false,
+      "pdbProtected": false,
+      "resourceQuotaConstrained": false,
+      "stateful": false
+    },
+    "selectedWorkflow": {
+      "confidence": 0.95,
+      "executionBundle": "quay.io/kubernaut-cicd/test-workflows/git-revert-job@sha256:44a9d4afab2d959852755b6f1d3544a0bd27c4eac017e553a5a39020930bfde8",
+      "parameters": {
+        "TARGET_RESOURCE_KIND": "ConfigMap",
+        "TARGET_RESOURCE_NAME": "nginx-config",
+        "TARGET_RESOURCE_NAMESPACE": "demo-gitops"
+      },
+      "rationale": "Perfect match for GitOps-managed environment where a recent commit introduced invalid nginx configuration. The git-revert-v2 workflow will revert the bad commit and ArgoCD will reconcile the corrected state, fixing the ConfigMap and allowing the pod to start successfully.",
+      "serviceAccountName": "git-revert-v2-runner",
+      "version": "",
+      "workflowId": "71700ba5-dfde-560c-8fb6-5bbc7d1e6c00"
+    },
+    "alternativeWorkflows": [
+      {
+        "confidence": 0.2,
+        "rationale": "fix-certificate-gitops-v1 is also a GitOps revert workflow but specifically designed for cert-manager Certificate issues, not nginx configuration problems",
+        "workflowId": "390d954a-c1c7-5f0e-a48c-887b05e896a4"
+      }
+    ],
+    "actionability": "Actionable",
+    "approvalRequired": false,
+    "approvalReason": "Auto-approved",
+    "needsHumanReview": false
+  },
+  "hapiDialog": {
+    "toolCalls": [
+      {
+        "index": 1,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'in_progress'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'in_progress'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'in_progress'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'pending'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'pending'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'pending'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.02,
+        "outputChars": 667
+      },
+      {
+        "index": 2,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe pod worker-77784c6cf7-drrnt -n demo-crashloop",
+        "durationSec": 0.59,
+        "outputChars": 3374
+      },
+      {
+        "index": 3,
+        "tool": "kubectl_events",
+        "description": "kubectl events --for pod/worker-77784c6cf7-drrnt -n demo-crashloop",
+        "durationSec": 0.57,
+        "outputChars": 807
+      },
+      {
+        "index": 4,
+        "tool": "fetch_pod_logs",
+        "description": "Fetch Logs (pod=worker-77784c6cf7-drrnt, namespace=demo-crashloop)",
+        "durationSec": 0.6,
+        "outputChars": 747
+      },
+      {
+        "index": 5,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'completed'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'completed'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'completed'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'in_progress'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'in_progress'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'pending'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.02,
+        "outputChars": 667
+      },
+      {
+        "index": 6,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe deployment worker -n demo-crashloop",
+        "durationSec": 0.36,
+        "outputChars": 1996
+      },
+      {
+        "index": 7,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe configmap worker-config-bad -n demo-crashloop",
+        "durationSec": 0.32,
+        "outputChars": 348
+      },
+      {
+        "index": 8,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'completed'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'completed'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'completed'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'completed'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'completed'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'in_progress'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.02,
+        "outputChars": 667
+      },
+      {
+        "index": 9,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe node kubernaut-demo-worker -n demo-crashloop",
+        "durationSec": 0.31,
+        "outputChars": 5715
+      },
+      {
+        "index": 10,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide pod -n demo-crashloop",
+        "durationSec": 0.29,
+        "outputChars": 722
+      },
+      {
+        "index": 11,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'completed'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'completed'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'completed'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'completed'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'completed'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'completed'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'completed'}] investigation tasks",
+        "durationSec": 0.0,
+        "outputChars": 667
+      },
+      {
+        "index": 12,
+        "tool": "get_namespaced_resource_context",
+        "description": "Get resource context for Pod/demo-crashloop/worker-77784c6cf7-drrnt",
+        "durationSec": 0.2,
+        "outputChars": 463
+      },
+      {
+        "index": 13,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Pod, env=Production)",
+        "durationSec": 0.08,
+        "outputChars": 6936
+      },
+      {
+        "index": 14,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Pod, env=Production)",
+        "durationSec": 0.02,
+        "outputChars": 3611
+      },
+      {
+        "index": 15,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'RollbackDeployment'",
+        "durationSec": 0.02,
+        "outputChars": 4937
+      },
+      {
+        "index": 16,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '749c768b-221c-5262-ace4-6eb9b0c7b470'",
+        "durationSec": 0.01,
+        "outputChars": 3254
+      },
+      {
+        "index": 1,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Deployment, env=Production)",
+        "durationSec": 0.02,
+        "outputChars": 7408
+      },
+      {
+        "index": 2,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Deployment, env=Production)",
+        "durationSec": 0.02,
+        "outputChars": 4083
+      },
+      {
+        "index": 3,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'RollbackDeployment'",
+        "durationSec": 0.02,
+        "outputChars": 4937
+      },
+      {
+        "index": 4,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '749c768b-221c-5262-ace4-6eb9b0c7b470'",
+        "durationSec": 0.02,
+        "outputChars": 3254
+      },
+      {
+        "index": 1,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check deployment status and basic health', 'status': 'in_progress'}, {'id': '2', 'content': 'Examine certificate resources and their status', 'status': 'in_progress'}, {'id': '3', 'content': 'Check cert-manager pods and logs', 'status': 'pending'}, {'id': '4', 'content': 'Investigate certificate issuance process', 'status': 'pending'}, {'id': '5', 'content': 'Check ingress/service configuration', 'status': 'pending'}, {'id': '6', 'content': 'Analyze events for certificate-related issues', 'status': 'pending'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 688
+      },
+      {
+        "index": 2,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe deployment demo-app -n demo-cert-failure",
+        "durationSec": 0.31,
+        "outputChars": 1615
+      },
+      {
+        "index": 3,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide certificate -n demo-cert-failure",
+        "durationSec": 0.22,
+        "outputChars": 243
+      },
+      {
+        "index": 4,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe certificate demo-app-cert -n demo-cert-failure",
+        "durationSec": 0.48,
+        "outputChars": 2373
+      },
+      {
+        "index": 5,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide issuer -n demo-cert-failure",
+        "durationSec": 0.47,
+        "outputChars": 230
+      },
+      {
+        "index": 6,
+        "tool": "kubectl_get_by_kind_in_cluster",
+        "description": "kubectl get -A --show-labels -o wide pod",
+        "durationSec": 0.61,
+        "outputChars": 20111
+      },
+      {
+        "index": 7,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check deployment status and basic health', 'status': 'completed'}, {'id': '2', 'content': 'Examine certificate resources and their status', 'status': 'completed'}, {'id': '3', 'content': 'Check cert-manager pods and logs', 'status': 'in_progress'}, {'id': '4', 'content': 'Investigate certificate issuance process', 'status': 'in_progress'}, {'id': '5', 'content': 'Check ingress/service configuration', 'status': 'pending'}, {'id': '6', 'content': 'Analyze events for certificate-related issues', 'status': 'pending'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 688
+      },
+      {
+        "index": 8,
+        "tool": "kubectl_get_by_kind_in_cluster",
+        "description": "kubectl get -A --show-labels -o wide clusterissuer",
+        "durationSec": 0.66,
+        "outputChars": 235
+      },
+      {
+        "index": 9,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide certificaterequest -n demo-cert-failure",
+        "durationSec": 0.64,
+        "outputChars": 572
+      },
+      {
+        "index": 10,
+        "tool": "fetch_pod_logs",
+        "description": "Fetch Logs (pod=cert-manager-5f885f9c55-qljjs, namespace=cert-manager)",
+        "durationSec": 0.76,
+        "outputChars": 14912
+      },
+      {
+        "index": 11,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe clusterissuer demo-selfsigned-ca -n cert-manager",
+        "durationSec": 0.49,
+        "outputChars": 1250
+      },
+      {
+        "index": 12,
+        "tool": "kubectl_find_resource",
+        "description": "kubectl get -A --show-labels -o wide secret | grep demo-ca-key-pair",
+        "durationSec": 0.59,
+        "outputChars": 0
+      },
+      {
+        "index": 13,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide secret -n demo-cert-failure",
+        "durationSec": 0.49,
+        "outputChars": 172
+      },
+      {
+        "index": 14,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check deployment status and basic health', 'status': 'completed'}, {'id': '2', 'content': 'Examine certificate resources and their status', 'status': 'completed'}, {'id': '3', 'content': 'Check cert-manager pods and logs', 'status': 'completed'}, {'id': '4', 'content': 'Investigate certificate issuance process', 'status': 'completed'}, {'id': '5', 'content': 'Check ingress/service configuration', 'status': 'in_progress'}, {'id': '6', 'content': 'Analyze events for certificate-related issues', 'status': 'in_progress'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.03,
+        "outputChars": 688
+      },
+      {
+        "index": 15,
+        "tool": "kubectl_events",
+        "description": "kubectl events --for certificate/demo-app-cert -n demo-cert-failure",
+        "durationSec": 0.43,
+        "outputChars": 865
+      },
+      {
+        "index": 16,
+        "tool": "kubectl_events",
+        "description": "kubectl events --for clusterissuer/demo-selfsigned-ca -n cert-manager",
+        "durationSec": 0.52,
+        "outputChars": 42
+      },
+      {
+        "index": 17,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide service -n demo-cert-failure",
+        "durationSec": 0.43,
+        "outputChars": 245
+      },
+      {
+        "index": 18,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide ingress -n demo-cert-failure",
+        "durationSec": 0.43,
+        "outputChars": 238
+      },
+      {
+        "index": 19,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide secret -n cert-manager",
+        "durationSec": 0.43,
+        "outputChars": 346
+      },
+      {
+        "index": 20,
+        "tool": "kubectl_find_resource",
+        "description": "kubectl get -A --show-labels -o wide secret | grep demo-app-tls",
+        "durationSec": 0.43,
+        "outputChars": 0
+      },
+      {
+        "index": 21,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check deployment status and basic health', 'status': 'completed'}, {'id': '2', 'content': 'Examine certificate resources and their status', 'status': 'completed'}, {'id': '3', 'content': 'Check cert-manager pods and logs', 'status': 'completed'}, {'id': '4', 'content': 'Investigate certificate issuance process', 'status': 'completed'}, {'id': '5', 'content': 'Check ingress/service configuration', 'status': 'completed'}, {'id': '6', 'content': 'Analyze events for certificate-related issues', 'status': 'completed'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'in_progress'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 688
+      },
+      {
+        "index": 22,
+        "tool": "get_namespaced_resource_context",
+        "description": "Get resource context for Certificate/demo-cert-failure/demo-app-cert",
+        "durationSec": 0.05,
+        "outputChars": 147
+      },
+      {
+        "index": 23,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Deployment, env=Staging)",
+        "durationSec": 0.02,
+        "outputChars": 6936
+      },
+      {
+        "index": 24,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Deployment, env=Staging)",
+        "durationSec": 0.02,
+        "outputChars": 3611
+      },
+      {
+        "index": 25,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'FixCertificate'",
+        "durationSec": 0.02,
+        "outputChars": 1138
+      },
+      {
+        "index": 26,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '335fa6f1-2563-5b7a-874a-ec9ef7a2864d'",
+        "durationSec": 0.01,
+        "outputChars": 4611
+      },
+      {
+        "index": 27,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check deployment status and basic health', 'status': 'completed'}, {'id': '2', 'content': 'Examine certificate resources and their status', 'status': 'completed'}, {'id': '3', 'content': 'Check cert-manager pods and logs', 'status': 'completed'}, {'id': '4', 'content': 'Investigate certificate issuance process', 'status': 'completed'}, {'id': '5', 'content': 'Check ingress/service configuration', 'status': 'completed'}, {'id': '6', 'content': 'Analyze events for certificate-related issues', 'status': 'completed'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'completed'}] investigation tasks",
+        "durationSec": 0.0,
+        "outputChars": 688
+      },
+      {
+        "index": 1,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Certificate, env=Staging)",
+        "durationSec": 0.02,
+        "outputChars": 7408
+      },
+      {
+        "index": 2,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Certificate, env=Staging)",
+        "durationSec": 0.02,
+        "outputChars": 4083
+      },
+      {
+        "index": 3,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'FixCertificate'",
+        "durationSec": 0.01,
+        "outputChars": 1138
+      },
+      {
+        "index": 4,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '335fa6f1-2563-5b7a-874a-ec9ef7a2864d'",
+        "durationSec": 0.01,
+        "outputChars": 4611
+      },
+      {
+        "index": 1,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Inspect the PodDisruptionBudget payment-service-pdb in demo-pdb namespace', 'status': 'in_progress'}, {'id': '2', 'content': 'Check pods matched by the PDB selector', 'status': 'in_progress'}, {'id': '3', 'content': 'Examine deployment/replicaset status for payment service', 'status': 'pending'}, {'id': '4', 'content': 'Check for any node drain operations or scheduling issues', 'status': 'pending'}, {'id': '5', 'content': 'Analyze PDB constraints vs current replica availability', 'status': 'pending'}, {'id': '6', 'content': 'Get resource context for remediation target identification', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 734
+      },
+      {
+        "index": 2,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe PodDisruptionBudget payment-service-pdb -n demo-pdb",
+        "durationSec": 0.32,
+        "outputChars": 410
+      },
+      {
+        "index": 3,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide pod -n demo-pdb",
+        "durationSec": 0.23,
+        "outputChars": 534
+      },
+      {
+        "index": 4,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Inspect the PodDisruptionBudget payment-service-pdb in demo-pdb namespace', 'status': 'completed'}, {'id': '2', 'content': 'Check pods matched by the PDB selector', 'status': 'completed'}, {'id': '3', 'content': 'Examine deployment/replicaset status for payment service', 'status': 'in_progress'}, {'id': '4', 'content': 'Check for any node drain operations or scheduling issues', 'status': 'in_progress'}, {'id': '5', 'content': 'Analyze PDB constraints vs current replica availability', 'status': 'pending'}, {'id': '6', 'content': 'Get resource context for remediation target identification', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 734
+      },
+      {
+        "index": 5,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe deployment payment-service -n demo-pdb",
+        "durationSec": 0.32,
+        "outputChars": 1696
+      },
+      {
+        "index": 6,
+        "tool": "kubectl_get_by_kind_in_cluster",
+        "description": "kubectl get -A --show-labels -o wide node",
+        "durationSec": 0.28,
+        "outputChars": 1449
+      },
+      {
+        "index": 7,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Inspect the PodDisruptionBudget payment-service-pdb in demo-pdb namespace', 'status': 'completed'}, {'id': '2', 'content': 'Check pods matched by the PDB selector', 'status': 'completed'}, {'id': '3', 'content': 'Examine deployment/replicaset status for payment service', 'status': 'completed'}, {'id': '4', 'content': 'Check for any node drain operations or scheduling issues', 'status': 'completed'}, {'id': '5', 'content': 'Analyze PDB constraints vs current replica availability', 'status': 'in_progress'}, {'id': '6', 'content': 'Get resource context for remediation target identification', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.02,
+        "outputChars": 734
+      },
+      {
+        "index": 8,
+        "tool": "kubectl_events",
+        "description": "kubectl events --for node/kubernaut-demo-control-plane -n default",
+        "durationSec": 0.27,
+        "outputChars": 37
+      },
+      {
+        "index": 9,
+        "tool": "kubectl_get_yaml",
+        "description": "kubectl get -o yaml PodDisruptionBudget payment-service-pdb -n demo-pdb",
+        "durationSec": 0.29,
+        "outputChars": 907
+      },
+      {
+        "index": 10,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Inspect the PodDisruptionBudget payment-service-pdb in demo-pdb namespace', 'status': 'completed'}, {'id': '2', 'content': 'Check pods matched by the PDB selector', 'status': 'completed'}, {'id': '3', 'content': 'Examine deployment/replicaset status for payment service', 'status': 'completed'}, {'id': '4', 'content': 'Check for any node drain operations or scheduling issues', 'status': 'completed'}, {'id': '5', 'content': 'Analyze PDB constraints vs current replica availability', 'status': 'completed'}, {'id': '6', 'content': 'Get resource context for remediation target identification', 'status': 'in_progress'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 734
+      },
+      {
+        "index": 11,
+        "tool": "get_namespaced_resource_context",
+        "description": "Get resource context for PodDisruptionBudget/demo-pdb/payment-service-pdb",
+        "durationSec": 0.09,
+        "outputChars": 652
+      },
+      {
+        "index": 12,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Inspect the PodDisruptionBudget payment-service-pdb in demo-pdb namespace', 'status': 'completed'}, {'id': '2', 'content': 'Check pods matched by the PDB selector', 'status': 'completed'}, {'id': '3', 'content': 'Examine deployment/replicaset status for payment service', 'status': 'completed'}, {'id': '4', 'content': 'Check for any node drain operations or scheduling issues', 'status': 'completed'}, {'id': '5', 'content': 'Analyze PDB constraints vs current replica availability', 'status': 'completed'}, {'id': '6', 'content': 'Get resource context for remediation target identification', 'status': 'completed'}] investigation tasks",
+        "durationSec": 0.0,
+        "outputChars": 734
+      },
+      {
+        "index": 13,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=medium, component=PodDisruptionBudget, env=Production)",
+        "durationSec": 0.02,
+        "outputChars": 3151
+      },
+      {
+        "index": 14,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'RelaxPDB'",
+        "durationSec": 0.02,
+        "outputChars": 1190
+      },
+      {
+        "index": 15,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '2f3eebe4-2c83-55fb-b6d4-d13a95284f86'",
+        "durationSec": 0.02,
+        "outputChars": 3363
+      },
+      {
+        "index": 1,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=medium, component=PodDisruptionBudget, env=Production)",
+        "durationSec": 0.01,
+        "outputChars": 3623
+      },
+      {
+        "index": 2,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'RelaxPDB'",
+        "durationSec": 0.02,
+        "outputChars": 1190
+      },
+      {
+        "index": 3,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '2f3eebe4-2c83-55fb-b6d4-d13a95284f86'",
+        "durationSec": 0.01,
+        "outputChars": 3363
+      },
+      {
+        "index": 1,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check api-gateway deployment status and configuration', 'status': 'in_progress'}, {'id': '2', 'content': 'Examine api-gateway pods status and events', 'status': 'in_progress'}, {'id': '3', 'content': 'Fetch api-gateway pod logs for error analysis', 'status': 'pending'}, {'id': '4', 'content': 'Check service and ingress configuration for api-gateway', 'status': 'pending'}, {'id': '5', 'content': 'Analyze resource usage and limits', 'status': 'pending'}, {'id': '6', 'content': 'Investigate any recent changes or deployments', 'status': 'pending'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}, {'id': '8', 'content': 'Get resource context for remediation planning', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 777
+      },
+      {
+        "index": 2,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe deployment api-gateway -n demo-slo",
+        "durationSec": 0.26,
+        "outputChars": 2390
+      },
+      {
+        "index": 3,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide pod -n demo-slo",
+        "durationSec": 0.24,
+        "outputChars": 926
+      },
+      {
+        "index": 4,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe pod api-gateway-655d66f876-8njq4 -n demo-slo",
+        "durationSec": 0.52,
+        "outputChars": 2946
+      },
+      {
+        "index": 5,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe pod api-gateway-655d66f876-frdvc -n demo-slo",
+        "durationSec": 0.53,
+        "outputChars": 2944
+      },
+      {
+        "index": 6,
+        "tool": "kubectl_events",
+        "description": "kubectl events --for deployment/api-gateway -n demo-slo",
+        "durationSec": 0.53,
+        "outputChars": 692
+      },
+      {
+        "index": 7,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check api-gateway deployment status and configuration', 'status': 'completed'}, {'id': '2', 'content': 'Examine api-gateway pods status and events', 'status': 'completed'}, {'id': '3', 'content': 'Fetch api-gateway pod logs for error analysis', 'status': 'in_progress'}, {'id': '4', 'content': 'Check service and ingress configuration for api-gateway', 'status': 'in_progress'}, {'id': '5', 'content': 'Analyze resource usage and limits', 'status': 'pending'}, {'id': '6', 'content': 'Investigate any recent changes or deployments', 'status': 'pending'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}, {'id': '8', 'content': 'Get resource context for remediation planning', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.02,
+        "outputChars": 777
+      },
+      {
+        "index": 8,
+        "tool": "fetch_pod_logs",
+        "description": "Fetch Logs (pod=api-gateway-655d66f876-frdvc, namespace=demo-slo)",
+        "durationSec": 0.59,
+        "outputChars": 695
+      },
+      {
+        "index": 9,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe configmap api-config-bad -n demo-slo",
+        "durationSec": 0.58,
+        "outputChars": 374
+      },
+      {
+        "index": 10,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide service -n demo-slo",
+        "durationSec": 0.46,
+        "outputChars": 434
+      },
+      {
+        "index": 11,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide configmap -n demo-slo",
+        "durationSec": 0.73,
+        "outputChars": 241
+      },
+      {
+        "index": 12,
+        "tool": "fetch_pod_logs",
+        "description": "Fetch Logs (pod=traffic-gen-558b9f8754-x6rvx, namespace=demo-slo)",
+        "durationSec": 0.82,
+        "outputChars": 960
+      },
+      {
+        "index": 13,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe service api-gateway -n demo-slo",
+        "durationSec": 0.84,
+        "outputChars": 683
+      },
+      {
+        "index": 14,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe configmap api-config -n demo-slo",
+        "durationSec": 0.44,
+        "outputChars": 360
+      },
+      {
+        "index": 15,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe pod traffic-gen-558b9f8754-x6rvx -n demo-slo",
+        "durationSec": 0.54,
+        "outputChars": 2704
+      },
+      {
+        "index": 16,
+        "tool": "kubectl_get_yaml",
+        "description": "kubectl get -o yaml endpoints api-gateway -n demo-slo",
+        "durationSec": 0.52,
+        "outputChars": 924
+      },
+      {
+        "index": 17,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check api-gateway deployment status and configuration', 'status': 'completed'}, {'id': '2', 'content': 'Examine api-gateway pods status and events', 'status': 'completed'}, {'id': '3', 'content': 'Fetch api-gateway pod logs for error analysis', 'status': 'completed'}, {'id': '4', 'content': 'Check service and ingress configuration for api-gateway', 'status': 'completed'}, {'id': '5', 'content': 'Analyze resource usage and limits', 'status': 'in_progress'}, {'id': '6', 'content': 'Investigate any recent changes or deployments', 'status': 'in_progress'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}, {'id': '8', 'content': 'Get resource context for remediation planning', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.02,
+        "outputChars": 777
+      },
+      {
+        "index": 18,
+        "tool": "kubectl_memory_requests_namespace",
+        "description": "kubectl get pods -n demo-slo -o custom-columns=\"NAMESPACE:.metadata.namespace,NAME:.metadata.name,MEMORY_REQUEST:.spec.containers[*].resources.requests.memory\" --no-headers | \\",
+        "durationSec": 0.42,
+        "outputChars": 180
+      },
+      {
+        "index": 19,
+        "tool": "kubectl_get_yaml",
+        "description": "kubectl get -o yaml deployment api-gateway -n demo-slo",
+        "durationSec": 0.31,
+        "outputChars": 3802
+      },
+      {
+        "index": 20,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check api-gateway deployment status and configuration', 'status': 'completed'}, {'id': '2', 'content': 'Examine api-gateway pods status and events', 'status': 'completed'}, {'id': '3', 'content': 'Fetch api-gateway pod logs for error analysis', 'status': 'completed'}, {'id': '4', 'content': 'Check service and ingress configuration for api-gateway', 'status': 'completed'}, {'id': '5', 'content': 'Analyze resource usage and limits', 'status': 'completed'}, {'id': '6', 'content': 'Investigate any recent changes or deployments', 'status': 'completed'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'in_progress'}, {'id': '8', 'content': 'Get resource context for remediation planning', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 777
+      },
+      {
+        "index": 21,
+        "tool": "get_namespaced_resource_context",
+        "description": "Get resource context for Deployment/demo-slo/api-gateway",
+        "durationSec": 0.19,
+        "outputChars": 461
+      },
+      {
+        "index": 22,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check api-gateway deployment status and configuration', 'status': 'completed'}, {'id': '2', 'content': 'Examine api-gateway pods status and events', 'status': 'completed'}, {'id': '3', 'content': 'Fetch api-gateway pod logs for error analysis', 'status': 'completed'}, {'id': '4', 'content': 'Check service and ingress configuration for api-gateway', 'status': 'completed'}, {'id': '5', 'content': 'Analyze resource usage and limits', 'status': 'completed'}, {'id': '6', 'content': 'Investigate any recent changes or deployments', 'status': 'completed'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'completed'}, {'id': '8', 'content': 'Get resource context for remediation planning', 'status': 'completed'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 777
+      },
+      {
+        "index": 23,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Deployment, env=Production)",
+        "durationSec": 0.03,
+        "outputChars": 6936
+      },
+      {
+        "index": 24,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Deployment, env=Production)",
+        "durationSec": 0.02,
+        "outputChars": 3611
+      },
+      {
+        "index": 25,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'RollbackDeployment'",
+        "durationSec": 0.02,
+        "outputChars": 4937
+      },
+      {
+        "index": 26,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '48a145c1-107e-5976-9fce-3ed912071943'",
+        "durationSec": 0.01,
+        "outputChars": 3250
+      },
+      {
+        "index": 27,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'ProactiveRollback'",
+        "durationSec": 0.02,
+        "outputChars": 1192
+      },
+      {
+        "index": 28,
+        "tool": "get_workflow",
+        "description": "Get workflow details for 'e5de4d4b-1f03-54b2-98b1-3a4fe24cba4e'",
+        "durationSec": 0.01,
+        "outputChars": 3270
+      },
+      {
+        "index": 1,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Deployment, env=Production)",
+        "durationSec": 0.01,
+        "outputChars": 7408
+      },
+      {
+        "index": 2,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Deployment, env=Production)",
+        "durationSec": 0.04,
+        "outputChars": 4083
+      },
+      {
+        "index": 3,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'RollbackDeployment'",
+        "durationSec": 0.01,
+        "outputChars": 4937
+      },
+      {
+        "index": 4,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '48a145c1-107e-5976-9fce-3ed912071943'",
+        "durationSec": 0.02,
+        "outputChars": 3250
+      },
+      {
+        "index": 1,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'in_progress'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'in_progress'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'in_progress'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'pending'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'pending'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'pending'}, {'id': '7', 'content': 'Get resource context for remediation target', 'status': 'pending'}, {'id': '8', 'content': 'Discover available remediation workflows', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.02,
+        "outputChars": 716
+      },
+      {
+        "index": 2,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe pod web-frontend-cdbdbc4f8-4ks7g -n demo-gitops",
+        "durationSec": 0.64,
+        "outputChars": 3319
+      },
+      {
+        "index": 3,
+        "tool": "kubectl_events",
+        "description": "kubectl events --for pod/web-frontend-cdbdbc4f8-4ks7g -n demo-gitops",
+        "durationSec": 0.64,
+        "outputChars": 798
+      },
+      {
+        "index": 4,
+        "tool": "fetch_pod_logs",
+        "description": "Fetch Logs (pod=web-frontend-cdbdbc4f8-4ks7g, namespace=demo-gitops)",
+        "durationSec": 0.65,
+        "outputChars": 2533
+      },
+      {
+        "index": 5,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'completed'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'completed'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'completed'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'in_progress'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'in_progress'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'pending'}, {'id': '7', 'content': 'Get resource context for remediation target', 'status': 'pending'}, {'id': '8', 'content': 'Discover available remediation workflows', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 716
+      },
+      {
+        "index": 6,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe deployment web-frontend -n demo-gitops",
+        "durationSec": 0.28,
+        "outputChars": 2165
+      },
+      {
+        "index": 7,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe configmap nginx-config -n demo-gitops",
+        "durationSec": 0.25,
+        "outputChars": 766
+      },
+      {
+        "index": 8,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'completed'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'completed'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'completed'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'completed'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'completed'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'in_progress'}, {'id': '7', 'content': 'Get resource context for remediation target', 'status': 'pending'}, {'id': '8', 'content': 'Discover available remediation workflows', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 716
+      },
+      {
+        "index": 9,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe node kubernaut-demo-worker -n demo-gitops",
+        "durationSec": 0.19,
+        "outputChars": 5564
+      },
+      {
+        "index": 10,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'completed'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'completed'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'completed'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'completed'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'completed'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'completed'}, {'id': '7', 'content': 'Get resource context for remediation target', 'status': 'in_progress'}, {'id': '8', 'content': 'Discover available remediation workflows', 'status': 'in_progress'}] investigation tasks",
+        "durationSec": 0.01,
+        "outputChars": 716
+      },
+      {
+        "index": 11,
+        "tool": "get_namespaced_resource_context",
+        "description": "Get resource context for ConfigMap/demo-gitops/nginx-config",
+        "durationSec": 0.06,
+        "outputChars": 644
+      },
+      {
+        "index": 12,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Pod, env=Staging)",
+        "durationSec": 0.03,
+        "outputChars": 6936
+      },
+      {
+        "index": 13,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Pod, env=Staging)",
+        "durationSec": 0.02,
+        "outputChars": 3611
+      },
+      {
+        "index": 14,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'GitRevertCommit'",
+        "durationSec": 0.02,
+        "outputChars": 2184
+      },
+      {
+        "index": 15,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '71700ba5-dfde-560c-8fb6-5bbc7d1e6c00'",
+        "durationSec": 0.01,
+        "outputChars": 3245
+      },
+      {
+        "index": 16,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'completed'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'completed'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'completed'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'completed'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'completed'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'completed'}, {'id': '7', 'content': 'Get resource context for remediation target', 'status': 'completed'}, {'id': '8', 'content': 'Discover available remediation workflows', 'status': 'completed'}] investigation tasks",
+        "durationSec": 0.0,
+        "outputChars": 716
+      },
+      {
+        "index": 1,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=ConfigMap, env=Staging)",
+        "durationSec": 0.01,
+        "outputChars": 7549
+      },
+      {
+        "index": 2,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=ConfigMap, env=Staging)",
+        "durationSec": 0.01,
+        "outputChars": 4224
+      },
+      {
+        "index": 3,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'GitRevertCommit'",
+        "durationSec": 0.02,
+        "outputChars": 2184
+      },
+      {
+        "index": 4,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '71700ba5-dfde-560c-8fb6-5bbc7d1e6c00'",
+        "durationSec": 0.02,
+        "outputChars": 3245
+      }
+    ],
+    "aiMessages": [
+      "I'll investigate this KubePodCrashLooping incident for pod `worker-77784c6cf7-drrnt` in the `demo-crashloop` namespace. Let me start by creating an investigation plan and gathering information about the affected pod.",
+      "Now let me complete the first three tasks and continue with the investigation by checking the deployment and ConfigMap.",
+      "Now let me check the node health and complete the remaining tasks.",
+      "Now let me complete the investigation and determine the root cause and remediation target.",
+      "Now let me proceed with workflow discovery to find appropriate remediation options.",
+      "Let me get the remaining action types to see all available options.",
+      "Based on my investigation, the root cause is an invalid configuration in the ConfigMap `worker-config-bad`. The pod logs show `[emerg] invalid directive found in /etc/demo-http-server/config.yaml \u2014 aborting`, and the ConfigMap contains an invalid directive `invalid_directive_that_breaks_nginx on;`.",
+      "Based on the investigation, the most appropriate workflow is `crashloop-rollback-v1` since this is specifically a CrashLoopBackOff caused by a bad configuration change (invalid directive in the ConfigMap). Let me get the full workflow details.",
+      "I need to follow the three-step workflow discovery protocol to select the most appropriate remediation workflow for this KubePodCrashLooping incident.",
+      "I need to see all available action types since there are more. Let me get the remaining ones:",
+      "Now I have all available action types. Based on the RCA findings, this is a case where:",
+      "Perfect! I have 4 workflows to choose from. Based on the incident context and RCA findings:",
+      "I'll investigate this CertManagerCertNotReady incident for the demo-app deployment in the demo-cert-failure namespace. Let me start by creating an investigation plan and gathering information about the certificate issue.",
+      "Now let me get more details about the certificate and check the cert-manager components:",
+      "Let me check the ClusterIssuer and CertificateRequest resources to understand the certificate issuance process:",
+      "Now let me check the ClusterIssuer details and look for the missing secret:",
+      "Let me check events and continue the investigation:",
+      "Let me check if there are any ingress resources and look for the missing secret in the cert-manager namespace:",
+      "Now let me complete the investigation and determine the root cause:",
+      "Now let me discover available remediation workflows:",
+      "Let me get the remaining action types:",
+      "Based on my investigation, I can see that the `FixCertificate` action type is the most appropriate. Let me get the workflows for this action:",
+      "Now let me get the full workflow details:",
+      "Now let me complete the investigation:",
+      "I'll help you select the appropriate remediation workflow for this CertManagerCertNotReady incident. Based on the RCA, the issue is a missing CA Secret that's preventing certificate issuance. Let me follow the three-step workflow discovery protocol.",
+      "Perfect! I can see that `FixCertificate` is exactly what we need for this incident. The description matches our RCA findings perfectly - it's designed to \"Recreate a missing or corrupted CA Secret backing a cert-manager ClusterIssuer to restore certificate issuance\" which is exactly our issue. Let me get the remaining action types to ensure I'm not missing anything, then proceed to Step 2.",
+      "Now I have all available action types. The `FixCertificate` action type is clearly the best match for our RCA findings. The cluster context shows `gitOpsManaged: false`, so we don't need to prefer git-based actions. Let me proceed to Step 2 to get the specific workflows for the FixCertificate action type.",
+      "Perfect! There's exactly one workflow for the FixCertificate action type, and it matches our needs perfectly. Now let me get the full workflow details including the parameter schema in Step 3.",
+      "I'll investigate this KubePodDisruptionBudgetAtLimit incident following the structured approach. Let me start by creating an investigation plan and gathering information about the PDB and related resources.",
+      "Now let me examine the deployment and check for any scheduling or node issues:",
+      "Let me check for any events related to node draining or eviction attempts, and analyze the PDB constraints:",
+      "Now let me get the resource context for the PDB to understand the remediation target:",
+      "Now let me proceed with workflow discovery to find appropriate remediation options:",
+      "Based on my investigation, the `RelaxPDB` action type is most appropriate for this situation. Let me get the specific workflows for this action:",
+      "Now let me get the full workflow details to understand the parameters:",
+      "I need to follow the three-step workflow discovery protocol to find the most appropriate remediation workflow for this PodDisruptionBudget issue.",
+      "Based on the RCA findings, the issue is that the PodDisruptionBudget has `minAvailable=2` for exactly 2 replicas, which blocks all voluntary disruptions. The `RelaxPDB` action type is the perfect match for this scenario. Let me get the available workflows for this action type.",
+      "Perfect! There's exactly one workflow for the RelaxPDB action type. Let me get the full workflow details including its parameter schema.",
+      "I'll investigate this ErrorBudgetBurn incident for the api-gateway deployment in the demo-slo namespace. Let me start by creating an investigation plan and gathering information about the affected resource.",
+      "Now let me examine the pod events and get more details about the api-gateway pods:",
+      "I notice the deployment is using a ConfigMap named `api-config-bad` which suggests there might be a configuration issue. Let me fetch the pod logs and examine the ConfigMap:",
+      "I notice there's a good ConfigMap (`api-config`) available. Let me examine it and check the traffic generator more closely:",
+      "Now I have a clear picture. Let me complete the remaining investigation tasks:",
+      "Perfect! Now I can see the issue clearly. The deployment YAML shows that the original configuration was supposed to use `api-config` ConfigMap, but the current deployment is using `api-config-bad`. This indicates a configuration change that introduced the error. Let me complete the investigation:",
+      "Now let me proceed with workflow discovery to find the appropriate remediation:",
+      "Let me get the remaining action types:",
+      "Based on my investigation, the root cause is a configuration issue where the deployment is using the wrong ConfigMap (`api-config-bad` instead of `api-config`). This is causing all API requests to return HTTP 500 errors, which is burning through the error budget. The best action type would be `RollbackDeployment` since this appears to be a recent deployment change that introduced the regression.",
+      "The `rollback-deployment-v1` workflow seems most appropriate for this situation since the deployment is not in CrashLoopBackOff but has a configuration issue. Let me get the full workflow details:",
+      "I notice the parameters schema is empty, but from the content I can see the required parameters. Let me also check the `ProactiveRollback` action type since this is specifically an ErrorBudgetBurn incident:",
+      "Perfect! The `ProactiveRollback` action type is specifically designed for ErrorBudgetBurn incidents. Let me get the full workflow details:",
+      "I'll help you select the appropriate remediation workflow for this ErrorBudgetBurn incident. Based on the RCA, the api-gateway deployment is using the wrong ConfigMap (api-config-bad) causing 100% error rate. Let me follow the three-step workflow discovery protocol.",
+      "Let me get the remaining action types to see all available options:",
+      "Based on the RCA findings and available action types, I can see that:",
+      "Now I need to select the most appropriate workflow. Based on the RCA:",
+      "I'll investigate this KubePodCrashLooping incident for the `web-frontend-cdbdbc4f8-4ks7g` pod in the `demo-gitops` namespace. Let me start by creating an investigation plan and gathering information about the pod's current state.",
+      "Now I can see the root cause! The pod is crashing because of an invalid nginx configuration. Let me complete the first three tasks and continue with the investigation.",
+      "Perfect! I've found the root cause. Let me complete the remaining tasks to get a full picture and then proceed with remediation discovery.",
+      "Now let me get the resource context for the remediation target and discover available workflows.",
+      "I need to see more action types since this is a GitOps-managed environment and I need to find the appropriate action for fixing configuration issues.",
+      "Perfect! Since this is a GitOps-managed environment (detected as `gitOpsManaged: true` with `gitOpsTool: argocd`), I should use `GitRevertCommit` to fix the invalid nginx configuration. Let me get the workflows for this action type.",
+      "The `git-revert-v2` workflow is perfect for this situation. Let me get its full details and complete the investigation.",
+      "I need to follow the three-step workflow discovery protocol to select the most appropriate remediation workflow for this KubePodCrashLooping incident. The RCA shows that the pod is crashing due to an invalid nginx configuration in a GitOps-managed environment.",
+      "I need to see all available action types since there are more. Let me get the remaining ones:",
+      "Now I have all available action types. Based on the RCA findings and the cluster context, I need to select the most appropriate action type:",
+      "Perfect! I have 2 workflows available. Let me analyze them:"
+    ],
+    "llmModel": "claude-sonnet-4 (vertex_ai)",
+    "llmCallCount": 152
+  },
+  "effectivenessAssessment": {
+    "metricsScore": 0.32538000450161425,
+    "alertScore": 1,
+    "healthScore": null,
+    "metricsAssessed": true,
+    "alertAssessed": true,
+    "healthAssessed": true
+  }
+}

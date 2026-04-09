@@ -363,13 +363,38 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			initialFailedCount := extractMetricValue(initialMetricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed)
 			GinkgoWriter.Printf("Initial %s{outcome=%s}: %.0f\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed, initialFailedCount)
 
-			// Run a workflow with invalid image (will fail)
+			// Run a workflow that intentionally fails (tekton-bundles/failing exits non-zero)
 			testName := fmt.Sprintf("e2e-metrics-failed-%s", uuid.New().String()[:8])
 			targetResource := fmt.Sprintf("default/deployment/metrics-failed-%s", uuid.New().String()[:8])
-			wfe := createTestWFE(testName, targetResource)
 
-			// Use invalid workflow image to trigger failure
-			wfe.Spec.WorkflowRef.ExecutionBundle = "ghcr.io/invalid/nonexistent:latest"
+			failureUUID := infrastructure.RegisteredWorkflowUUIDs["test-intentional-failure"]
+			Expect(failureUUID).ToNot(BeEmpty(),
+				"test-intentional-failure UUID should have been captured during workflow registration")
+
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testName,
+					Namespace: controllerNamespace,
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-" + testName,
+						Namespace:  controllerNamespace,
+					},
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:      failureUUID,
+						Version:         "v1.0.0",
+						ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
+					},
+					TargetResource: targetResource,
+					Parameters: map[string]string{
+						"FAILURE_MODE":    "exit",
+						"FAILURE_MESSAGE": "E2E metrics failure test",
+					},
+				},
+			}
 
 			defer func() {
 				_ = deleteWFE(wfe)
@@ -775,8 +800,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				"target_resource should match")
 			Expect(string(eventData.Phase)).ToNot(BeEmpty(),
 				"phase should be present")
-			Expect(eventData.ContainerImage).To(Equal(wfe.Spec.WorkflowRef.ExecutionBundle),
-				"container_image should match")
+			Expect(eventData.ContainerImage).To(HavePrefix(wfe.Spec.WorkflowRef.ExecutionBundle),
+				"container_image should match (HavePrefix: resolveExecutionBundle may append digest)")
 			Expect(eventData.ExecutionName).To(Equal(wfe.Name),
 				"execution_name should match")
 

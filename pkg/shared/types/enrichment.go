@@ -26,8 +26,8 @@
 // Operational details (replicas, conditions, ports) removed -- LLM fetches on demand.
 //
 // ADR-056: DetectedLabels and OwnerChain removed from EnrichmentResults.
-// DetectedLabels are now computed by HAPI post-RCA (see PostRCAContext).
-// OwnerChain is resolved by HAPI via get_namespaced_resource_context / get_cluster_resource_context (ADR-055).
+// DetectedLabels are now computed by KA post-RCA (see PostRCAContext).
+// OwnerChain is resolved by KA via get_namespaced_resource_context / get_cluster_resource_context (ADR-055).
 //
 // Design Decision: DD-WORKFLOW-001 v2.2, DD-CONTRACT-002
 // See: docs/architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md
@@ -217,7 +217,7 @@ type WorkloadDetails struct {
 // Only stores data needed for Rego classification (labels, annotations, ownership).
 // Operational details (replicas, conditions, ports) are fetched by the LLM on demand.
 //
-// DD-CONTRACT-002: Type-safe structured data shared across SP, AA, and HAPI.
+// DD-CONTRACT-002: Type-safe structured data shared across SP, AA, and KA.
 type KubernetesContext struct {
 	// Namespace context (nil for cluster-scoped resources like Node)
 	Namespace *NamespaceContext `json:"namespace,omitempty"`
@@ -239,7 +239,7 @@ type KubernetesContext struct {
 // ========================================
 // These types are no longer part of KubernetesContext (Issue #113) but are
 // retained as standalone definitions for any code that needs rich workload details
-// (e.g., HAPI investigation context built during RCA).
+// (e.g., KA investigation context built during RCA).
 
 // PodDetails contains pod-level context.
 type PodDetails struct {

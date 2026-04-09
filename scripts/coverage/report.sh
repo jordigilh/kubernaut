@@ -240,7 +240,7 @@ calculate_go_service_coverage() {
     esac
 }
 
-# Calculate Python service coverage (holmesgpt-api)
+# Calculate Python service coverage (kubernautagent)
 # When CI only has summary data it creates a file with a single TOTAL line; AWK returns 0.0%.
 # Fallback: if result is 0.0% and file has TOTAL line, use that percentage instead.
 calculate_python_service_coverage() {
@@ -248,7 +248,7 @@ calculate_python_service_coverage() {
     
     case "$tier" in
         unit)
-            local covfile="coverage_unit_holmesgpt-api.txt"
+            local covfile="coverage_unit_kubernautagent.txt"
             if [[ ! -f "$covfile" ]]; then
                 echo "-"
                 return
@@ -262,7 +262,7 @@ calculate_python_service_coverage() {
             fi
             ;;
         integration)
-            local covfile="coverage_integration_holmesgpt-api_python.txt"
+            local covfile="coverage_integration_kubernautagent_python.txt"
             if [[ ! -f "$covfile" ]]; then
                 echo "-"
                 return
@@ -276,11 +276,11 @@ calculate_python_service_coverage() {
             fi
             ;;
         e2e)
-            # holmesgpt-api E2E is Go-based (Ginkgo tests)
-            local covfile="coverage_e2e_holmesgpt-api.out"
+            # kubernautagent E2E is Go-based (Ginkgo tests)
+            local covfile="coverage_e2e_kubernautagent.out"
             if [[ ! -f "$covfile" ]] || [[ ! -s "$covfile" ]]; then
                 # CI fallback: check for .pct summary percentage
-                local pctfile="coverage_e2e_holmesgpt-api.pct"
+                local pctfile="coverage_e2e_kubernautagent.pct"
                 if [[ -f "$pctfile" ]]; then
                     local pct
                     pct=$(tr -d '[:space:]' < "$pctfile")
@@ -303,7 +303,7 @@ calculate_python_service_coverage() {
         all)
             # For Python, we can't easily merge Python and Go coverage
             # So just return unit test total
-            local covfile="coverage_unit_holmesgpt-api.txt"
+            local covfile="coverage_unit_kubernautagent.txt"
             if [[ ! -f "$covfile" ]]; then
                 echo "-"
                 return
@@ -322,7 +322,7 @@ output_table() {
     echo "───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────"
     
     # Python service first
-    local svc="holmesgpt-api"
+    local svc="kubernautagent"
     if [[ -z "$FILTER_SERVICE" ]] || [[ "$FILTER_SERVICE" == "$svc" ]]; then
         local unit_cov=$(calculate_python_service_coverage "unit")
         local int_cov=$(calculate_python_service_coverage "integration")
@@ -365,9 +365,9 @@ output_table() {
     echo "   - All Tiers: ≥80% (overall coverage goal)"
     echo ""
     echo "📋 SERVICE-SPECIFIC NOTES:"
-    echo "   • holmesgpt-api (Hybrid): Unit/Integration are Python (pytest-cov), E2E is Go (Ginkgo)"
+    echo "   • kubernautagent (Hybrid): Unit/Integration are Python (pytest-cov), E2E is Go (Ginkgo)"
     echo "     - 'All Tiers' shows Python unit total (Python tiers can't merge with Go E2E easily)"
-    echo "     - E2E column shows Go coverage from test/e2e/holmesgpt-api/ (Ginkgo tests)"
+    echo "     - E2E column shows Go coverage from test/e2e/kubernautagent/ (Ginkgo tests)"
     echo "   • Go services: 'All Tiers' merges line-by-line coverage from all test tiers"
     echo ""
     echo "📈 Run 'make test-tier-unit test-tier-integration test-tier-e2e' to update all coverage files."
@@ -381,9 +381,9 @@ output_json() {
     local first=true
     
     # Python service
-    if [[ -z "$FILTER_SERVICE" ]] || [[ "$FILTER_SERVICE" == "holmesgpt-api" ]]; then
+    if [[ -z "$FILTER_SERVICE" ]] || [[ "$FILTER_SERVICE" == "kubernautagent" ]]; then
         echo "    {"
-        echo '      "name": "holmesgpt-api",'
+        echo '      "name": "kubernautagent",'
         echo '      "language": "python",'
         echo "      \"unit_testable\": \"$(calculate_python_service_coverage unit)\","
         echo "      \"integration\": \"$(calculate_python_service_coverage integration)\","
@@ -423,12 +423,12 @@ output_markdown() {
     echo "|---------|---------------|----------------------|-----|-----------|"
     
     # Python service
-    if [[ -z "$FILTER_SERVICE" ]] || [[ "$FILTER_SERVICE" == "holmesgpt-api" ]]; then
+    if [[ -z "$FILTER_SERVICE" ]] || [[ "$FILTER_SERVICE" == "kubernautagent" ]]; then
         local unit_cov=$(calculate_python_service_coverage "unit")
         local int_cov=$(calculate_python_service_coverage "integration")
         local e2e_cov=$(calculate_python_service_coverage "e2e")
         local all_cov=$(calculate_python_service_coverage "all")
-        echo "| holmesgpt-api | $unit_cov | $int_cov | $e2e_cov | $all_cov |"
+        echo "| kubernautagent | $unit_cov | $int_cov | $e2e_cov | $all_cov |"
     fi
     
     # Go services

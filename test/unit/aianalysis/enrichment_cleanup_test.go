@@ -90,7 +90,7 @@ var _ = Describe("EnrichmentResults Cleanup (ADR-056 Phase 4)", func() {
 			Expect(kc).To(HaveKey("customLabels"))
 		})
 
-		It("UT-AA-056-015: RequestBuilder should produce valid HAPI request without DetectedLabels", func() {
+		It("UT-AA-056-015: RequestBuilder should produce valid KA request without DetectedLabels", func() {
 			builder := handlers.NewRequestBuilder(logr.Discard())
 
 			analysis := helpers.NewAIAnalysis("ai-cleanup-test", "default")
@@ -105,9 +105,9 @@ var _ = Describe("EnrichmentResults Cleanup (ADR-056 Phase 4)", func() {
 			req := builder.BuildIncidentRequest(analysis)
 
 			Expect(req.EnrichmentResults.Set).To(BeTrue(),
-				"EnrichmentResults should be set in HAPI request")
+				"EnrichmentResults should be set in KA request")
 			Expect(req.EnrichmentResults.Value.CustomLabels.Set).To(BeTrue(),
-				"CustomLabels should be forwarded to HAPI")
+				"CustomLabels should be forwarded to KA")
 		})
 
 		It("UT-AA-056-016: incident request builds without removed fields", func() {
@@ -135,7 +135,7 @@ var _ = Describe("EnrichmentResults Cleanup (ADR-056 Phase 4)", func() {
 
 	Context("Cycle 4.2: Old propagation paths removed", func() {
 
-		It("UT-AA-056-017: HAPI request should not contain DetectedLabels from EnrichmentResults", func() {
+		It("UT-AA-056-017: KA request should not contain DetectedLabels from EnrichmentResults", func() {
 			builder := handlers.NewRequestBuilder(logr.Discard())
 
 			analysis := helpers.NewAIAnalysis("ai-no-old-labels", "default")

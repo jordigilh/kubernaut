@@ -1,0 +1,340 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernaut-agent-sa
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernaut-agent-investigator
+  labels:
+    app: kubernaut-agent
+    component: investigation
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  # ── Core Kubernetes ──────────────────────────────────────────────────────
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - events
+      - services
+      - endpoints
+      - configmaps
+      - secrets
+      - nodes
+      - namespaces
+      - replicationcontrollers
+      - persistentvolumeclaims
+      - resourcequotas
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  # ── cert-manager ─────────────────────────────────────────────────────────
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "clusterissuers", "certificaterequests"]
+    verbs: ["get", "list", "watch"]
+  # ── ArgoCD ───────────────────────────────────────────────────────────────
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch"]
+  # ── Linkerd ──────────────────────────────────────────────────────────────
+  - apiGroups: ["policy.linkerd.io"]
+    resources: ["servers", "authorizationpolicies", "meshtlsauthentications"]
+    verbs: ["get", "list", "watch"]
+  # ── Istio ───────────────────────────────────────────────────────────────
+  - apiGroups: ["security.istio.io"]
+    resources: ["authorizationpolicies", "peerauthentications", "requestauthentications"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.istio.io"]
+    resources: ["virtualservices", "destinationrules", "gateways", "serviceentries"]
+    verbs: ["get", "list", "watch"]
+  # ── Prometheus Operator ──────────────────────────────────────────────────
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["prometheusrules", "servicemonitors", "podmonitors", "probes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-agent-investigator-binding
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-agent-investigator
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-agent-sa
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-agent-auth-middleware
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-auth-middleware
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-agent-sa
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernaut-agent-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    logging:
+      level: "INFO"
+    data_storage:
+      url: "{{ include "kubernaut.datastorage.url" . }}"
+{{- if include "kubernaut.agent.tlsEnabled" . }}
+    tls:
+      ca_file: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
+{{- end }}
+    audit:
+      flush_interval_seconds: 0.1
+      buffer_size: 10000
+      batch_size: 50
+{{- if and .Values.kubernautAgent.prometheus.ocpMonitoringRbac (not (and .Values.kubernautAgent.prometheus.tls .Values.kubernautAgent.prometheus.tls.caConfigMapName)) }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernaut-agent-service-ca
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+data: {}
+{{- end }}
+{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+{{- if not .Values.kubernautAgent.llm.oauth2.tokenURL }}
+{{- fail "kubernautAgent.llm.oauth2.tokenURL is required when oauth2.enabled=true" }}
+{{- end }}
+{{- if not .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
+{{- fail "kubernautAgent.llm.oauth2.credentialsSecretRef is required when oauth2.enabled=true" }}
+{{- end }}
+{{- end }}
+{{- if not .Values.kubernautAgent.existingSdkConfigMap }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernaut-agent-sdk-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    component: sdk-config
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  sdk-config.yaml: |
+{{- if .Values.kubernautAgent.sdkConfigContent }}
+{{ .Values.kubernautAgent.sdkConfigContent | indent 4 }}
+{{- else if and .Values.kubernautAgent.llm.provider .Values.kubernautAgent.llm.model }}
+    llm:
+      provider: {{ .Values.kubernautAgent.llm.provider | quote }}
+      model: {{ .Values.kubernautAgent.llm.model | quote }}
+      max_retries: 3
+      timeout_seconds: 120
+      temperature: 0.7
+{{- if .Values.kubernautAgent.llm.structuredOutput }}
+      structured_output: true
+{{- end }}
+{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+      oauth2:
+        enabled: true
+        token_url: {{ .Values.kubernautAgent.llm.oauth2.tokenURL | quote }}
+{{- if .Values.kubernautAgent.llm.oauth2.scopes }}
+        scopes:
+{{- range (splitList " " .Values.kubernautAgent.llm.oauth2.scopes) }}
+          - {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if and .Values.kubernautAgent.prometheus.enabled .Values.kubernautAgent.prometheus.url }}
+    toolsets:
+      prometheus/metrics:
+        enabled: true
+        config:
+          prometheus_url: {{ .Values.kubernautAgent.prometheus.url | quote }}
+{{- else }}
+    toolsets: {}
+{{- end }}
+    mcp_servers: {}
+{{- else }}
+{{- fail "LLM configuration required. Choose one:\n  1) --set kubernautAgent.llm.provider=openai --set kubernautAgent.llm.model=gpt-4o  (quickstart)\n  2) --set-file kubernautAgent.sdkConfigContent=sdk-config.yaml  (full config)\n  3) --set kubernautAgent.existingSdkConfigMap=my-configmap  (pre-existing)" }}
+{{- end }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernaut-agent
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.kubernautAgent.replicas }}
+  selector:
+    matchLabels:
+      app: kubernaut-agent
+  template:
+    metadata:
+      labels:
+        app: kubernaut-agent
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: kubernaut-agent-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.kubernautAgent | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.kubernautAgent | nindent 6 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.kubernautAgent "global" .Values.global) | nindent 6 }}
+      containers:
+        - name: kubernaut-agent
+          image: {{ include "kubernaut.image" (dict "service" "kubernautagent" "global" .Values.global "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.kubernautAgent | nindent 12 }}
+          ports:
+            - containerPort: 8080
+{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+          env:
+            - name: OAUTH2_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
+                  key: client-id
+            - name: OAUTH2_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
+                  key: client-secret
+{{- end }}
+          args:
+            - "-config"
+            - "/etc/kubernaut-agent/config.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/kubernaut-agent
+              readOnly: true
+            - name: sdk-config
+              mountPath: /etc/kubernaut-agent/sdk
+              readOnly: true
+            - name: llm-credentials-file
+              mountPath: /etc/kubernaut-agent/credentials
+              readOnly: true
+            {{- if include "kubernaut.agent.tlsEnabled" . }}
+            - name: service-ca
+              mountPath: {{ include "kubernaut.agent.tlsCaDir" . }}
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml (.Values.kubernautAgent.resources | default dict) | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: kubernaut-agent-config
+        - name: sdk-config
+          configMap:
+            name: {{ .Values.kubernautAgent.existingSdkConfigMap | default "kubernaut-agent-sdk-config" }}
+        - name: llm-credentials-file
+          secret:
+            secretName: {{ .Values.kubernautAgent.llm.credentialsSecretName }}
+        {{- if include "kubernaut.agent.tlsEnabled" . }}
+        - name: service-ca
+          configMap:
+            name: {{ include "kubernaut.agent.tlsCaConfigMapName" . }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Mi
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernaut-agent
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.kubernautAgent.service.type }}
+  ports:
+    - port: 8080
+      targetPort: 8080
+  selector:
+    app: kubernaut-agent
+{{- if and .Values.kubernautAgent.prometheus.enabled .Values.kubernautAgent.prometheus.ocpMonitoringRbac }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-agent-monitoring-view
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-monitoring-view
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-agent-sa
+    namespace: {{ .Release.Namespace }}
+{{- end }}

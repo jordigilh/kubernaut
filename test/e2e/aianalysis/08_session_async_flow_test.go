@@ -35,7 +35,7 @@ import (
 // Business Requirements: BR-AA-HAPI-064.1 through .8
 //
 // Purpose: Validate that the AA controller completes a full async investigation
-// lifecycle (submit -> poll -> result) in a real K8s environment with deployed HAPI.
+// lifecycle (submit -> poll -> result) in a real K8s environment with deployed KA.
 
 var _ = Describe("E2E-AA-064: Session-Based Async Flow", Label("e2e", "session", "aa-064"), func() {
 	const (
@@ -85,7 +85,7 @@ var _ = Describe("E2E-AA-064: Session-Based Async Flow", Label("e2e", "session",
 			// Scenario ID: E2E-AA-064-001
 			// Business Outcome: AA controller completes an async investigation in a real K8s environment
 			// BR: BR-AA-HAPI-064.1 through .8
-			// Flow: AA submits to HAPI (202) -> polls session -> fetches result -> completes analysis
+			// Flow: AA submits to KA (202) -> polls session -> fetches result -> completes analysis
 
 			defer func() { _ = k8sClient.Delete(ctx, analysis) }()
 
@@ -104,7 +104,7 @@ var _ = Describe("E2E-AA-064: Session-Based Async Flow", Label("e2e", "session",
 			// BR-AA-HAPI-064.4: InvestigationSession tracking
 			session := analysis.Status.InvestigationSession
 			Expect(session).NotTo(BeNil(), "InvestigationSession must be populated in CRD status")
-			// Session ID should be set (from HAPI's 202 response)
+			// Session ID should be set (from KA's 202 response)
 			// Note: After result retrieval, the session may be cleared or retained depending on implementation.
 			// We verify Generation = 0 (no regeneration needed in happy path)
 			Expect(session.Generation).To(Equal(int32(0)),

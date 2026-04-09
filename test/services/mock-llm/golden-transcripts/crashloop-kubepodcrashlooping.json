@@ -1,0 +1,252 @@
+{
+  "scenario": "crashloop",
+  "signalName": "KubePodCrashLooping",
+  "kubernautVersion": "1.2.0-rc8",
+  "capturedAt": "2026-04-07T17:41:26Z",
+  "remediationRequest": {
+    "name": "rr-9e1b7bf4140b-18449902",
+    "phase": "Verifying",
+    "outcome": "Remediated"
+  },
+  "analysis": {
+    "remediationId": "rr-9e1b7bf4140b-18449902",
+    "signal": {
+      "signalName": "KubePodCrashLooping",
+      "severity": "critical",
+      "environment": "Production",
+      "targetResource": {
+        "kind": "Pod",
+        "name": "worker-77784c6cf7-drrnt",
+        "namespace": "demo-crashloop"
+      },
+      "businessPriority": "P0"
+    },
+    "investigation": {
+      "sessionId": "7ea4f7ee-86f9-4126-b6f6-7285064e26e9",
+      "durationMs": 105703,
+      "pollCount": 7
+    },
+    "rootCauseAnalysis": {
+      "contributingFactors": [
+        "Invalid configuration directive in ConfigMap worker-config-bad",
+        "Recent deployment rollout introduced bad configuration",
+        "Application fails config validation on startup"
+      ],
+      "remediationTarget": {
+        "kind": "Deployment",
+        "name": "worker",
+        "namespace": "demo-crashloop"
+      },
+      "severity": "critical",
+      "signalType": "",
+      "summary": "Pod crashes immediately on startup due to invalid configuration directive 'invalid_directive_that_breaks_nginx on;' in ConfigMap worker-config-bad. The demo-http-server application fails to parse the config file and exits with code 1. This is a deployment rollout issue where the new revision (worker-77784c6cf7) contains a bad configuration while the previous revision (worker-5ccfd4c787) remains healthy."
+    },
+    "rootCauseSummary": "Pod crashes immediately on startup due to invalid configuration directive 'invalid_directive_that_breaks_nginx on;' in ConfigMap worker-config-bad. The demo-http-server application fails to parse the config file and exits with code 1. This is a deployment rollout issue where the new revision (worker-77784c6cf7) contains a bad configuration while the previous revision (worker-5ccfd4c787) remains healthy.",
+    "postRCAContext": {
+      "gitOpsManaged": false,
+      "helmManaged": false,
+      "hpaEnabled": false,
+      "networkIsolated": false,
+      "pdbProtected": false,
+      "resourceQuotaConstrained": false,
+      "stateful": false
+    },
+    "selectedWorkflow": {
+      "confidence": 0.95,
+      "executionBundle": "quay.io/kubernaut-cicd/test-workflows/crashloop-rollback-job@sha256:5a370816acd91ffa0781c89f5df20b56650f2eeedc53469610cecea6bb8a5c14",
+      "parameters": {
+        "TARGET_RESOURCE_KIND": "Deployment",
+        "TARGET_RESOURCE_NAME": "worker",
+        "TARGET_RESOURCE_NAMESPACE": "demo-crashloop"
+      },
+      "rationale": "Perfect match for CrashLoopBackOff caused by bad configuration change. The RCA confirms a recent deployment rollout introduced invalid configuration in ConfigMap worker-config-bad, causing immediate pod crashes. The previous revision (worker-5ccfd4c787) was healthy. This workflow specifically targets this exact scenario: 'When a deployment enters CrashLoopBackOff immediately after a config or image change, and the previous revision was healthy'.",
+      "serviceAccountName": "crashloop-rollback-v1-runner",
+      "version": "",
+      "workflowId": "749c768b-221c-5262-ace4-6eb9b0c7b470"
+    },
+    "alternativeWorkflows": [
+      {
+        "confidence": 0.75,
+        "rationale": "crashloop-rollback-risk-v1 is designed for risk_tolerance=low scenarios, but this incident has risk_tolerance=medium, making the standard crashloop-rollback-v1 more appropriate",
+        "workflowId": "04bf9792-caa1-5a76-995d-24113481a4ad"
+      },
+      {
+        "confidence": 0.3,
+        "rationale": "restart-pods-v1 only resets pod state without rollback, but the RCA clearly shows a persistent configuration error that will recur after restart",
+        "workflowId": "a86ba602-f578-5a1b-a117-f37d97713cb2"
+      }
+    ],
+    "actionability": "Actionable",
+    "approvalRequired": false,
+    "approvalReason": "Auto-approved",
+    "needsHumanReview": false
+  },
+  "hapiDialog": {
+    "toolCalls": [
+      {
+        "index": 1,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'in_progress'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'in_progress'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'in_progress'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'pending'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'pending'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'pending'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.02,
+        "outputChars": 667
+      },
+      {
+        "index": 2,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe pod worker-77784c6cf7-drrnt -n demo-crashloop",
+        "durationSec": 0.59,
+        "outputChars": 3374
+      },
+      {
+        "index": 3,
+        "tool": "kubectl_events",
+        "description": "kubectl events --for pod/worker-77784c6cf7-drrnt -n demo-crashloop",
+        "durationSec": 0.57,
+        "outputChars": 807
+      },
+      {
+        "index": 4,
+        "tool": "fetch_pod_logs",
+        "description": "Fetch Logs (pod=worker-77784c6cf7-drrnt, namespace=demo-crashloop)",
+        "durationSec": 0.6,
+        "outputChars": 747
+      },
+      {
+        "index": 5,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'completed'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'completed'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'completed'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'in_progress'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'in_progress'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'pending'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.02,
+        "outputChars": 667
+      },
+      {
+        "index": 6,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe deployment worker -n demo-crashloop",
+        "durationSec": 0.36,
+        "outputChars": 1996
+      },
+      {
+        "index": 7,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe configmap worker-config-bad -n demo-crashloop",
+        "durationSec": 0.32,
+        "outputChars": 348
+      },
+      {
+        "index": 8,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'completed'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'completed'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'completed'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'completed'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'completed'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'in_progress'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'pending'}] investigation tasks",
+        "durationSec": 0.02,
+        "outputChars": 667
+      },
+      {
+        "index": 9,
+        "tool": "kubectl_describe",
+        "description": "kubectl describe node kubernaut-demo-worker -n demo-crashloop",
+        "durationSec": 0.31,
+        "outputChars": 5715
+      },
+      {
+        "index": 10,
+        "tool": "kubectl_get_by_kind_in_namespace",
+        "description": "kubectl get --show-labels -o wide pod -n demo-crashloop",
+        "durationSec": 0.29,
+        "outputChars": 722
+      },
+      {
+        "index": 11,
+        "tool": "TodoWrite",
+        "description": "Write [{'id': '1', 'content': 'Check pod status and basic information', 'status': 'completed'}, {'id': '2', 'content': 'Examine pod events for crash details', 'status': 'completed'}, {'id': '3', 'content': 'Fetch pod logs to identify crash cause', 'status': 'completed'}, {'id': '4', 'content': 'Check deployment and replicaset status', 'status': 'completed'}, {'id': '5', 'content': 'Analyze resource limits and requests', 'status': 'completed'}, {'id': '6', 'content': 'Verify node health and capacity', 'status': 'completed'}, {'id': '7', 'content': 'Determine root cause and remediation target', 'status': 'completed'}] investigation tasks",
+        "durationSec": 0.0,
+        "outputChars": 667
+      },
+      {
+        "index": 12,
+        "tool": "get_namespaced_resource_context",
+        "description": "Get resource context for Pod/demo-crashloop/worker-77784c6cf7-drrnt",
+        "durationSec": 0.2,
+        "outputChars": 463
+      },
+      {
+        "index": 13,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Pod, env=Production)",
+        "durationSec": 0.08,
+        "outputChars": 6936
+      },
+      {
+        "index": 14,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Pod, env=Production)",
+        "durationSec": 0.02,
+        "outputChars": 3611
+      },
+      {
+        "index": 15,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'RollbackDeployment'",
+        "durationSec": 0.02,
+        "outputChars": 4937
+      },
+      {
+        "index": 16,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '749c768b-221c-5262-ace4-6eb9b0c7b470'",
+        "durationSec": 0.01,
+        "outputChars": 3254
+      },
+      {
+        "index": 1,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Deployment, env=Production)",
+        "durationSec": 0.02,
+        "outputChars": 7408
+      },
+      {
+        "index": 2,
+        "tool": "list_available_actions",
+        "description": "List available actions (severity=critical, component=Deployment, env=Production)",
+        "durationSec": 0.02,
+        "outputChars": 4083
+      },
+      {
+        "index": 3,
+        "tool": "list_workflows",
+        "description": "List workflows for action type 'RollbackDeployment'",
+        "durationSec": 0.02,
+        "outputChars": 4937
+      },
+      {
+        "index": 4,
+        "tool": "get_workflow",
+        "description": "Get workflow details for '749c768b-221c-5262-ace4-6eb9b0c7b470'",
+        "durationSec": 0.02,
+        "outputChars": 3254
+      }
+    ],
+    "aiMessages": [
+      "I'll investigate this KubePodCrashLooping incident for pod `worker-77784c6cf7-drrnt` in the `demo-crashloop` namespace. Let me start by creating an investigation plan and gathering information about the affected pod.",
+      "Now let me complete the first three tasks and continue with the investigation by checking the deployment and ConfigMap.",
+      "Now let me check the node health and complete the remaining tasks.",
+      "Now let me complete the investigation and determine the root cause and remediation target.",
+      "Now let me proceed with workflow discovery to find appropriate remediation options.",
+      "Let me get the remaining action types to see all available options.",
+      "Based on my investigation, the root cause is an invalid configuration in the ConfigMap `worker-config-bad`. The pod logs show `[emerg] invalid directive found in /etc/demo-http-server/config.yaml \u2014 aborting`, and the ConfigMap contains an invalid directive `invalid_directive_that_breaks_nginx on;`.",
+      "Based on the investigation, the most appropriate workflow is `crashloop-rollback-v1` since this is specifically a CrashLoopBackOff caused by a bad configuration change (invalid directive in the ConfigMap). Let me get the full workflow details.",
+      "I need to follow the three-step workflow discovery protocol to select the most appropriate remediation workflow for this KubePodCrashLooping incident.",
+      "I need to see all available action types since there are more. Let me get the remaining ones:",
+      "Now I have all available action types. Based on the RCA findings, this is a case where:",
+      "Perfect! I have 4 workflows to choose from. Based on the incident context and RCA findings:"
+    ],
+    "llmModel": "claude-sonnet-4 (vertex_ai)",
+    "llmCallCount": 28
+  },
+  "effectivenessAssessment": {
+    "metricsScore": 0.005081548198636807,
+    "alertScore": 1,
+    "healthScore": 1,
+    "metricsAssessed": true,
+    "alertAssessed": true,
+    "healthAssessed": true
+  }
+}

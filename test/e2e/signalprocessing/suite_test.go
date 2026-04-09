@@ -35,7 +35,7 @@ limitations under the License.
 // - BR-SP-051: Environment classification
 // - BR-SP-070: Priority assignment
 // - BR-SP-100: Owner chain traversal
-// - BR-SP-101: Detected labels (removed - ADR-056: relocated to HAPI)
+// - BR-SP-101: Detected labels (removed - ADR-056: relocated to KA)
 // - BR-SP-102: CustomLabels from Rego
 package signalprocessing
 
@@ -68,9 +68,9 @@ var (
 	k8sClient      client.Client
 	clientset      *kubernetes.Clientset
 	kubeconfigPath string
-	metricsURL    string
-	coverageMode  bool  // E2E coverage capture mode (per E2E_COVERAGE_COLLECTION.md)
-	anyTestFailed bool  // Track test failures for cluster cleanup decision
+	metricsURL     string
+	coverageMode   bool   // E2E coverage capture mode (per E2E_COVERAGE_COLLECTION.md)
+	anyTestFailed  bool   // Track test failures for cluster cleanup decision
 	e2eAuthToken   string // DD-AUTH-014: ServiceAccount token for DataStorage authentication
 )
 

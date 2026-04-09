@@ -164,4 +164,63 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 			))
 		})
 	})
+
+	Context("GetWorkflowExecutionBundle", func() {
+		It("UT-WE-006-009: should return bundle and digest from catalog", func() {
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{
+					ExecutionBundle:       ogenclient.NewOptString("ghcr.io/test/exec:v1.0.0"),
+					ExecutionBundleDigest: ogenclient.NewOptString("sha256:abc123"),
+				},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			bundle, digest, err := querier.GetWorkflowExecutionBundle(ctx, uuid.New().String())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(bundle).To(Equal("ghcr.io/test/exec:v1.0.0"))
+			Expect(digest).To(Equal("sha256:abc123"))
+		})
+
+		It("UT-WE-006-010: should return empty strings when bundle is not set", func() {
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			bundle, digest, err := querier.GetWorkflowExecutionBundle(ctx, uuid.New().String())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(bundle).To(BeEmpty())
+			Expect(digest).To(BeEmpty())
+		})
+
+		It("UT-WE-006-011: should return error for invalid UUID", func() {
+			querier := weclient.NewOgenWorkflowQuerier(&mockWorkflowCatalogClient{})
+
+			_, _, err := querier.GetWorkflowExecutionBundle(ctx, "not-a-uuid")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid workflow ID"))
+		})
+
+		It("UT-WE-006-012: should return error when workflow not found", func() {
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.GetWorkflowByIDNotFound{},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			_, _, err := querier.GetWorkflowExecutionBundle(ctx, uuid.New().String())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+
+		It("UT-WE-006-013: should return error when DS query fails", func() {
+			mock := &mockWorkflowCatalogClient{
+				err: fmt.Errorf("connection refused"),
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			_, _, err := querier.GetWorkflowExecutionBundle(ctx, uuid.New().String())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("DS query failed"))
+		})
+	})
 })

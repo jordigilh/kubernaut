@@ -2364,9 +2364,9 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, webhook, effectiveness, actiontype]
+          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, approval, effectiveness, actiontype]
           description: |
-            Domain-level event category (ADR-034 v1.8).
+            Domain-level event category (ADR-034 v1.8, Issue #306).
             Per convention: event_category identifies the business domain of the event.
             The emitter/service is captured in the event_type first segment.
             Values:
@@ -2378,7 +2378,7 @@ components:
             - workflow: Workflow catalog and discovery events
             - workflowexecution: Workflow execution lifecycle events
             - orchestration: Remediation orchestration lifecycle events
-            - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
+            - approval: Remediation approval request decision events
             - effectiveness: Effectiveness assessment and monitoring events
             - actiontype: ActionType taxonomy lifecycle events (Issue #300)
           example: gateway
@@ -5254,6 +5254,23 @@ components:
               items:
                 type: string
               description: List of contributing factors
+            remediationTarget:
+              type: object
+              description: Target resource for remediation (kind/name/namespace from KA investigation)
+              properties:
+                kind:
+                  type: string
+                  description: Kubernetes resource kind
+                  example: "Deployment"
+                name:
+                  type: string
+                  description: Resource name
+                  example: "api-server"
+                namespace:
+                  type: string
+                  description: Resource namespace (empty for cluster-scoped)
+                  example: "production"
+              additionalProperties: false
           additionalProperties: false
         selectedWorkflow:
           type: object
@@ -5311,6 +5328,15 @@ components:
                 type: string
               rationale:
                 type: string
+              executionBundle:
+                type: string
+                description: Execution bundle for the alternative workflow
+              confidence:
+                type: number
+                format: float
+                minimum: 0.0
+                maximum: 1.0
+                description: Confidence score for the alternative workflow
             additionalProperties: false
           description: Other workflows considered but not selected
 
@@ -5380,6 +5406,9 @@ components:
         analysis_preview:
           type: string
           description: First 500 characters of response for audit
+        analysis_full:
+          type: string
+          description: Full LLM response content for golden transcript capture and parser fidelity testing (BR-TESTING-001)
         tokens_used:
           type: integer
           minimum: 0

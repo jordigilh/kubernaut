@@ -373,7 +373,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 
 			event := mockAudit.StoredEvents[0]
 			Expect(event.EventType).To(Equal("remediationworkflow.admitted.create"))
-			Expect(string(event.EventCategory)).To(Equal("webhook"))
+			Expect(string(event.EventCategory)).To(Equal("workflow"))
 			Expect(event.EventAction).To(Equal("admitted"))
 			Expect(string(event.EventOutcome)).To(Equal("success"))
 			Expect(event.ActorID.Value).To(Equal(testUserEmail))
@@ -400,7 +400,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 
 			event := mockAudit.StoredEvents[0]
 			Expect(event.EventType).To(Equal("remediationworkflow.admitted.delete"))
-			Expect(string(event.EventCategory)).To(Equal("webhook"))
+			Expect(string(event.EventCategory)).To(Equal("workflow"))
 			Expect(event.EventAction).To(Equal("admitted"))
 			Expect(string(event.EventOutcome)).To(Equal("success"))
 			Expect(event.ActorID.Value).To(Equal(testUserEmail))

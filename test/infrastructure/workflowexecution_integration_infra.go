@@ -59,7 +59,7 @@ const (
 
 	// Redis port for WorkflowExecution integration tests
 	// Changed from 16389 (ad-hoc "+10") to 16387 (DD-TEST-001 sequential) on Dec 22, 2025
-	// Changed from 16387 (conflicted with HAPI) to 16388 (unique) on Dec 25, 2025 per DD-TEST-001 v1.9
+	// Changed from 16387 (conflicted with KA port allocation) to 16388 (unique) on Dec 25, 2025 per DD-TEST-001 v1.9
 	WEIntegrationRedisPort = 16388
 
 	// DataStorage HTTP API port for WorkflowExecution integration tests

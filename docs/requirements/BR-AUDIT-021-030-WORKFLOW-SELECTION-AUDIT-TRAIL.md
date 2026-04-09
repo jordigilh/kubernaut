@@ -430,3 +430,21 @@ Audit Query
 
 *This document extends the audit requirements from 11_SECURITY_ACCESS_CONTROL.md (BR-AUDIT-001-020) with specific requirements for the workflow discovery audit trail. V2.0 aligns with the three-step discovery protocol (DD-WORKFLOW-016) and DD-WORKFLOW-014 v3.0 step-specific audit events. All implementations should align with these requirements to ensure comprehensive audit coverage for workflow catalog operations.*
 
+---
+
+## v1.3 Implementation Status: Kubernaut Agent
+
+Issue [#433](https://github.com/jordigilh/kubernaut/issues/433) (Kubernaut Agent Go rewrite): **Kubernaut Agent (KA)** is the component that performs workflow discovery against Data Storage and drives post-selection validation. For **workflow catalog** audit events (`workflow.catalog.*`), behavior and BR mapping are unchanged: **Data Storage** remains the audit generator; **KA** replaces **HolmesGPT API** as the caller that propagates `remediationId` and triggers DS endpoints.
+
+| BR | v1.3 status (KA) |
+|----|------------------|
+| **BR-AUDIT-021** | **Met by KA**: `remediationId` propagated on all three discovery steps and validation re-query (same contract as HAPI; implementation in KA). |
+| **BR-AUDIT-022** | **Unchanged**: HolmesGPT API / HAPI still MUST NOT emit `workflow.catalog.*` events; **KA** also does not generate those events (DS does). |
+| **BR-AUDIT-023**–**BR-AUDIT-024** | **Unchanged**: DS owns step events and async non-blocking audit. |
+| **BR-AUDIT-025**–**BR-AUDIT-028** | **Unchanged**: Payload requirements for the four V3.0 event types remain DS responsibilities. |
+| **BR-AUDIT-029**–**BR-AUDIT-030** | **Unchanged**: Retention and audit query API. |
+
+**Granularity (related `aiagent.*` trail, #433)**: KA emits `aiagent.llm.tool_call` **per tool call** (not per turn) and `aiagent.workflow.validation_attempt` **per attempt**, including `workflow_id` and `is_final_attempt` where applicable. This complements the DS `workflow.catalog.*` events for end-to-end forensics.
+
+**Verification**: [TP-433-AUDIT-SOC2](../tests/433/TP-433-AUDIT-SOC2.md) — 19 unit tests, 8 integration tests, 3 E2E tests.
+

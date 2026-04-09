@@ -422,7 +422,7 @@ sequenceDiagram
     participant DS as DataStorage
     participant CM as ConfigMap
     participant ML as Mock LLM
-    participant HAPI as HolmesGPT-API
+    participant KA as Kubernaut Agent
 
     Note over TS: PHASE 7a: Deploy DataStorage
     TS->>DS: Deploy + Wait for ready
@@ -444,14 +444,14 @@ sequenceDiagram
     ML-->>TS: Ready (HTTP 200 on /health)
 
     Note over TS: Tests execute
-    TS->>HAPI: Analyze OOMKilled incident
-    HAPI->>ML: POST /v1/chat/completions
-    ML-->>HAPI: Tool call: search_workflow_catalog(signal_type=OOMKilled)
-    HAPI->>DS: GET /api/workflows?signal_type=OOMKilled
-    DS-->>HAPI: [{"workflow_id": "42b90a37-..."}]
-    HAPI->>ML: Tool result with workflow
-    ML-->>HAPI: Final analysis with workflow_id=42b90a37-...
-    HAPI-->>TS: Analysis complete
+    TS->>KA: Analyze OOMKilled incident
+    KA->>ML: POST /v1/chat/completions
+    ML-->>KA: Tool call: search_workflow_catalog(signal_type=OOMKilled)
+    KA->>DS: GET /api/workflows?signal_type=OOMKilled
+    DS-->>KA: [{"workflow_id": "42b90a37-..."}]
+    KA->>ML: Tool result with workflow
+    ML-->>KA: Final analysis with workflow_id=42b90a37-...
+    KA-->>TS: Analysis complete
 ```
 
 ---

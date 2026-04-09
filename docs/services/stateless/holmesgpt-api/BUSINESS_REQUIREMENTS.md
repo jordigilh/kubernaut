@@ -1,5 +1,7 @@
 # HolmesGPT API Service - Business Requirements
 
+> **Deprecation Notice (v1.3)**: HAPI is replaced by the Kubernaut Agent (KA) in v1.3. See [TP-433-AUDIT-SOC2](../../../tests/433/TP-433-AUDIT-SOC2.md) for the KA audit parity test plan.
+
 **Service**: HolmesGPT API Service
 **Service Type**: Stateless HTTP API (Python)
 **Version**: v3.0 (Minimal Internal Service)

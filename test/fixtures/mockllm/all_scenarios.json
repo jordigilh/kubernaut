@@ -1,0 +1,1350 @@
+{
+  "cert_not_ready": {
+    "legacy_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"query\": \"CertManagerCertNotReady critical\", \"rca_resource\": {\"signal_name\": \"CertManagerCertNotReady\", \"kind\": \"Certificate\", \"namespace\": \"default\", \"name\": \"demo-app-cert\"}}",
+                    "name": "search_workflow_catalog"
+                  },
+                  "id": "call_f86f72f1b394",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-f4a89746",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    },
+    "text_only": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\ncert-manager Certificate stuck in NotReady state due to missing or corrupted CA Secret backing the ClusterIssuer\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"cert-manager Certificate stuck in NotReady state due to missing or corrupted CA Secret backing the ClusterIssuer\",\n    \"severity\": \"critical\",\n    \"contributing_factors\": [\"traffic_spike\", \"resource_limits\"]\n  },\n  \"selected_workflow\": {\n    \"workflow_id\": \"21053597-2865-572b-89bf-de49b5b685da\",\n    \"version\": \"1.0.0\",\n    \"confidence\": 0.92,\n    \"rationale\": \"Selected based on signal analysis\",\n    \"execution_engine\": \"job\"\n  }\n}\n```\n",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-44a23e59",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 100,
+          "total_tokens": 150
+        }
+      },
+      "status_code": 200
+    },
+    "three_step_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"limit\": 100}",
+                    "name": "list_available_actions"
+                  },
+                  "id": "call_cb7578d2c87f",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-73772018",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    }
+  },
+  "crashloop": {
+    "legacy_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"query\": \"CrashLoopBackOff high\", \"rca_resource\": {\"signal_name\": \"CrashLoopBackOff\", \"kind\": \"Deployment\", \"namespace\": \"staging\", \"name\": \"worker\"}}",
+                    "name": "search_workflow_catalog"
+                  },
+                  "id": "call_6765fac2e811",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-685f9065",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    },
+    "text_only": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\nContainer failing due to missing configuration\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"Container failing due to missing configuration\",\n    \"severity\": \"high\",\n    \"contributing_factors\": [\"traffic_spike\", \"resource_limits\"]\n  },\n  \"selected_workflow\": {\n    \"workflow_id\": \"42b90a37-0d1b-5561-911a-2939ed9e1c30\",\n    \"version\": \"1.0.0\",\n    \"confidence\": 0.88,\n    \"rationale\": \"Selected based on signal analysis\",\n    \"execution_engine\": \"tekton\"\n  }\n}\n```\n",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-81ebfb56",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 100,
+          "total_tokens": 150
+        }
+      },
+      "status_code": 200
+    },
+    "three_step_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"limit\": 100}",
+                    "name": "list_available_actions"
+                  },
+                  "id": "call_9b206b48fe5d",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-b20e4474",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    }
+  },
+  "low_confidence": {
+    "legacy_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"query\": \"MOCK_LOW_CONFIDENCE critical\", \"rca_resource\": {\"signal_name\": \"MOCK_LOW_CONFIDENCE\", \"kind\": \"Pod\", \"namespace\": \"production\", \"name\": \"ambiguous-pod\"}}",
+                    "name": "search_workflow_catalog"
+                  },
+                  "id": "call_d0a2403c10e7",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-eb74df41",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    },
+    "text_only": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\nMultiple possible root causes identified, requires human judgment\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"Multiple possible root causes identified, requires human judgment\",\n    \"severity\": \"critical\",\n    \"contributing_factors\": [\"traffic_spike\", \"resource_limits\"]\n  },\n  \"selected_workflow\": {\n    \"workflow_id\": \"d2c84d90-55ba-5ae1-b48d-6cc16e0edb5c\",\n    \"version\": \"1.0.0\",\n    \"confidence\": 0.35,\n    \"rationale\": \"Selected based on signal analysis\",\n    \"execution_engine\": \"tekton\"\n  }\n}\n```\n",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-0b02b614",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 100,
+          "total_tokens": 150
+        }
+      },
+      "status_code": 200
+    },
+    "three_step_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"limit\": 100}",
+                    "name": "list_available_actions"
+                  },
+                  "id": "call_949fd64e6c7c",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-fbc83566",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    }
+  },
+  "max_retries_exhausted": {
+    "legacy_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"query\": \"MOCK_MAX_RETRIES_EXHAUSTED high\", \"rca_resource\": {\"signal_name\": \"MOCK_MAX_RETRIES_EXHAUSTED\", \"kind\": \"Pod\", \"namespace\": \"production\", \"name\": \"failed-analysis-pod\"}}",
+                    "name": "search_workflow_catalog"
+                  },
+                  "id": "call_e277be40b229",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-9dae86b7",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    },
+    "text_only": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\nLLM analysis completed but failed validation after maximum retry attempts. Response format was unparseable or contained invalid data.\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"LLM analysis completed but failed validation after maximum retry attempts. Response format was unparseable or contained invalid data.\",\n    \"severity\": \"high\",\n    \"contributing_factors\": []\n  },\n  \"selected_workflow\": null\n}\n```\n",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-77c7823d",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 100,
+          "total_tokens": 150
+        }
+      },
+      "status_code": 200
+    },
+    "three_step_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"limit\": 100}",
+                    "name": "list_available_actions"
+                  },
+                  "id": "call_4e2cc00ca9fa",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-26025350",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    }
+  },
+  "no_workflow_found": {
+    "legacy_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"query\": \"MOCK_NO_WORKFLOW_FOUND critical\", \"rca_resource\": {\"signal_name\": \"MOCK_NO_WORKFLOW_FOUND\", \"kind\": \"Pod\", \"namespace\": \"production\", \"name\": \"failing-pod\"}}",
+                    "name": "search_workflow_catalog"
+                  },
+                  "id": "call_00feb8956de2",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-3738e09f",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    },
+    "text_only": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\nNo suitable workflow found in catalog for this signal type\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"No suitable workflow found in catalog for this signal type\",\n    \"severity\": \"critical\",\n    \"contributing_factors\": []\n  },\n  \"selected_workflow\": null\n}\n```\n",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-0bb942b2",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 100,
+          "total_tokens": 150
+        }
+      },
+      "status_code": 200
+    },
+    "three_step_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"limit\": 100}",
+                    "name": "list_available_actions"
+                  },
+                  "id": "call_0562a9cb74ef",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-8c8b04bc",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    }
+  },
+  "node_not_ready": {
+    "legacy_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"query\": \"NodeNotReady critical\", \"rca_resource\": {\"signal_name\": \"NodeNotReady\", \"kind\": \"Node\", \"namespace\": \"\", \"name\": \"worker-node-1\"}}",
+                    "name": "search_workflow_catalog"
+                  },
+                  "id": "call_4727936ef5c9",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-5316847b",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    },
+    "text_only": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\nNode experiencing disk pressure\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"Node experiencing disk pressure\",\n    \"severity\": \"critical\",\n    \"contributing_factors\": [\"traffic_spike\", \"resource_limits\"]\n  },\n  \"selected_workflow\": {\n    \"workflow_id\": \"node-drain-reboot-v1\",\n    \"version\": \"1.0.0\",\n    \"confidence\": 0.9,\n    \"rationale\": \"Selected based on signal analysis\",\n    \"execution_engine\": \"tekton\"\n  }\n}\n```\n",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-2ea62e85",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 100,
+          "total_tokens": 150
+        }
+      },
+      "status_code": 200
+    },
+    "three_step_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"limit\": 100}",
+                    "name": "list_available_actions"
+                  },
+                  "id": "call_94cef4eea4c3",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-27a8af8b",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    }
+  },
+  "not_reproducible": {
+    "legacy_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"query\": \"MOCK_PROBLEM_RESOLVED low\", \"rca_resource\": {\"signal_name\": \"MOCK_PROBLEM_RESOLVED\", \"kind\": \"Pod\", \"namespace\": \"production\", \"name\": \"recovered-pod\"}}",
+                    "name": "search_workflow_catalog"
+                  },
+                  "id": "call_7f266aefa53d",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-d88068d5",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    },
+    "text_only": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\nProblem self-resolved through auto-scaling or transient condition cleared\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"Problem self-resolved through auto-scaling or transient condition cleared\",\n    \"severity\": \"low\",\n    \"contributing_factors\": []\n  },\n  \"selected_workflow\": null\n}\n```\n",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-5dffdb47",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 100,
+          "total_tokens": 150
+        }
+      },
+      "status_code": 200
+    },
+    "three_step_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"limit\": 100}",
+                    "name": "list_available_actions"
+                  },
+                  "id": "call_3bc9d2d08f51",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-781e4bec",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    }
+  },
+  "oomkilled": {
+    "legacy_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"query\": \"OOMKilled critical\", \"rca_resource\": {\"signal_name\": \"OOMKilled\", \"kind\": \"Deployment\", \"namespace\": \"production\", \"name\": \"api-server\"}}",
+                    "name": "search_workflow_catalog"
+                  },
+                  "id": "call_b9901f737712",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-f0028bcb",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    },
+    "text_only": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\nContainer exceeded memory limits due to traffic spike\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"Container exceeded memory limits due to traffic spike\",\n    \"severity\": \"critical\",\n    \"contributing_factors\": [\"traffic_spike\", \"resource_limits\"]\n  },\n  \"selected_workflow\": {\n    \"workflow_id\": \"21053597-2865-572b-89bf-de49b5b685da\",\n    \"version\": \"1.0.0\",\n    \"confidence\": 0.95,\n    \"rationale\": \"Selected based on signal analysis\",\n    \"execution_engine\": \"job\"\n  }\n}\n```\n",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-4a2308b6",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 100,
+          "total_tokens": 150
+        }
+      },
+      "status_code": 200
+    },
+    "three_step_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"limit\": 100}",
+                    "name": "list_available_actions"
+                  },
+                  "id": "call_4d8eb7f1c4a8",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-e07fb876",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    }
+  },
+  "oomkilled_predictive": {
+    "legacy_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"query\": \"OOMKilled critical\", \"rca_resource\": {\"signal_name\": \"OOMKilled\", \"kind\": \"Deployment\", \"namespace\": \"production\", \"name\": \"api-server\"}}",
+                    "name": "search_workflow_catalog"
+                  },
+                  "id": "call_f42e422d67dd",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-5f1838ee",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    },
+    "text_only": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\nPredicted OOMKill based on memory utilization trend analysis (predict_linear). Current memory usage is 85% of limit and growing at 50MB/min. Preemptive action recommended to increase memory limits before the predicted OOMKill event occurs.\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"Predicted OOMKill based on memory utilization trend analysis (predict_linear). Current memory usage is 85% of limit and growing at 50MB/min. Preemptive action recommended to increase memory limits before the predicted OOMKill event occurs.\",\n    \"severity\": \"critical\",\n    \"contributing_factors\": [\"traffic_spike\", \"resource_limits\"]\n  },\n  \"selected_workflow\": {\n    \"workflow_id\": \"21053597-2865-572b-89bf-de49b5b685da\",\n    \"version\": \"1.0.0\",\n    \"confidence\": 0.88,\n    \"rationale\": \"Selected based on signal analysis\",\n    \"execution_engine\": \"job\"\n  }\n}\n```\n",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-17c699ba",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 100,
+          "total_tokens": 150
+        }
+      },
+      "status_code": 200
+    },
+    "three_step_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"limit\": 100}",
+                    "name": "list_available_actions"
+                  },
+                  "id": "call_8ecdef77c6fa",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-48db107b",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    }
+  },
+  "permanent_error": {
+    "legacy_turn1": {
+      "body": {
+        "error": {
+          "code": "internal_error",
+          "message": "Mock permanent LLM error for testing",
+          "type": "server_error"
+        }
+      },
+      "status_code": 500
+    },
+    "text_only": {
+      "body": {
+        "error": {
+          "code": "internal_error",
+          "message": "Mock permanent LLM error for testing",
+          "type": "server_error"
+        }
+      },
+      "status_code": 500
+    },
+    "three_step_turn1": {
+      "body": {
+        "error": {
+          "code": "internal_error",
+          "message": "Mock permanent LLM error for testing",
+          "type": "server_error"
+        }
+      },
+      "status_code": 500
+    }
+  },
+  "predictive_no_action": {
+    "legacy_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"query\": \"OOMKilled medium\", \"rca_resource\": {\"signal_name\": \"OOMKilled\", \"kind\": \"Pod\", \"namespace\": \"production\", \"name\": \"api-server-def456\"}}",
+                    "name": "search_workflow_catalog"
+                  },
+                  "id": "call_eb7475cc40a8",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-29a90b2c",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    },
+    "text_only": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\nPredicted OOMKill based on trend analysis, but current assessment shows the trend is reversing. Memory usage has stabilized at 60% of limit after recent deployment rollout. No preemptive action needed \u2014 the prediction is unlikely to materialize.\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"Predicted OOMKill based on trend analysis, but current assessment shows the trend is reversing. Memory usage has stabilized at 60% of limit after recent deployment rollout. No preemptive action needed \u2014 the prediction is unlikely to materialize.\",\n    \"severity\": \"medium\",\n    \"contributing_factors\": []\n  },\n  \"selected_workflow\": null\n}\n```\n",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-764a7163",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 100,
+          "total_tokens": 150
+        }
+      },
+      "status_code": 200
+    },
+    "three_step_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"limit\": 100}",
+                    "name": "list_available_actions"
+                  },
+                  "id": "call_5d28bbfc598c",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-72526b1a",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    }
+  },
+  "problem_resolved": {
+    "legacy_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"query\": \"MOCK_PROBLEM_RESOLVED low\", \"rca_resource\": {\"signal_name\": \"MOCK_PROBLEM_RESOLVED\", \"kind\": \"Pod\", \"namespace\": \"production\", \"name\": \"recovered-pod\"}}",
+                    "name": "search_workflow_catalog"
+                  },
+                  "id": "call_96c8dd67bf6a",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-0943d714",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    },
+    "text_only": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\nProblem self-resolved through auto-scaling or transient condition cleared\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"Problem self-resolved through auto-scaling or transient condition cleared\",\n    \"severity\": \"low\",\n    \"contributing_factors\": []\n  },\n  \"selected_workflow\": null\n}\n```\n",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-cbf9bc07",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 100,
+          "total_tokens": 150
+        }
+      },
+      "status_code": 200
+    },
+    "three_step_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"limit\": 100}",
+                    "name": "list_available_actions"
+                  },
+                  "id": "call_20a2b95b36cd",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-0df3c40a",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    }
+  },
+  "problem_resolved_contradiction": {
+    "legacy_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"query\": \"MOCK_PROBLEM_RESOLVED_CONTRADICTION low\", \"rca_resource\": {\"signal_name\": \"MOCK_PROBLEM_RESOLVED_CONTRADICTION\", \"kind\": \"Pod\", \"namespace\": \"production\", \"name\": \"recovered-pod\"}}",
+                    "name": "search_workflow_catalog"
+                  },
+                  "id": "call_df344207b58c",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-2bdb2964",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    },
+    "text_only": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\nProblem self-resolved. Transient OOM cleared after pod restart\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"Problem self-resolved. Transient OOM cleared after pod restart\",\n    \"severity\": \"low\",\n    \"contributing_factors\": []\n  },\n  \"selected_workflow\": null\n}\n```\n",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-52a6bd8b",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 100,
+          "total_tokens": 150
+        }
+      },
+      "status_code": 200
+    },
+    "three_step_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"limit\": 100}",
+                    "name": "list_available_actions"
+                  },
+                  "id": "call_331755f812f0",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-18444792",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    }
+  },
+  "rca_incomplete": {
+    "legacy_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"query\": \"MOCK_RCA_INCOMPLETE critical\", \"rca_resource\": {\"signal_name\": \"MOCK_RCA_INCOMPLETE\", \"kind\": \"Pod\", \"namespace\": \"production\", \"name\": \"ambiguous-pod\"}}",
+                    "name": "search_workflow_catalog"
+                  },
+                  "id": "call_f301000e40b5",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-0b12316d",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    },
+    "text_only": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\nRoot cause identified but affected resource could not be determined from signal context\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"Root cause identified but affected resource could not be determined from signal context\",\n    \"severity\": \"critical\",\n    \"contributing_factors\": [\"traffic_spike\", \"resource_limits\"]\n  },\n  \"selected_workflow\": {\n    \"workflow_id\": \"d2c84d90-55ba-5ae1-b48d-6cc16e0edb5c\",\n    \"version\": \"1.0.0\",\n    \"confidence\": 0.88,\n    \"rationale\": \"Selected based on signal analysis\",\n    \"execution_engine\": \"tekton\"\n  }\n}\n```\n",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-d26cb959",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 100,
+          "total_tokens": 150
+        }
+      },
+      "status_code": 200
+    },
+    "three_step_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"limit\": 100}",
+                    "name": "list_available_actions"
+                  },
+                  "id": "call_a873f3cac1d2",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-b59208bb",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    }
+  },
+  "test_signal": {
+    "legacy_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"query\": \"TestSignal critical\", \"rca_resource\": {\"signal_name\": \"TestSignal\", \"kind\": \"Pod\", \"namespace\": \"test\", \"name\": \"test-pod\"}}",
+                    "name": "search_workflow_catalog"
+                  },
+                  "id": "call_9bc61ef9e106",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-e1610ee3",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    },
+    "text_only": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Based on my investigation of the incident:\n\n## Root Cause Analysis\n\nTest signal for graceful shutdown validation\n\n```json\n{\n  \"root_cause_analysis\": {\n    \"summary\": \"Test signal for graceful shutdown validation\",\n    \"severity\": \"critical\",\n    \"contributing_factors\": [\"traffic_spike\", \"resource_limits\"]\n  },\n  \"selected_workflow\": {\n    \"workflow_id\": \"2faf3306-1d6c-5d2f-9e9f-2e1a4844ca70\",\n    \"version\": \"1.0.0\",\n    \"confidence\": 0.9,\n    \"rationale\": \"Selected based on signal analysis\",\n    \"execution_engine\": \"tekton\"\n  }\n}\n```\n",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-5646c16e",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 100,
+          "total_tokens": 150
+        }
+      },
+      "status_code": 200
+    },
+    "three_step_turn1": {
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+              "content": null,
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"limit\": 100}",
+                    "name": "list_available_actions"
+                  },
+                  "id": "call_304741147b41",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1701388800,
+        "id": "chatcmpl-18c3b8c7",
+        "model": "mock-model",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 50,
+          "prompt_tokens": 500,
+          "total_tokens": 550
+        }
+      },
+      "status_code": 200
+    }
+  }
+}

@@ -53,7 +53,7 @@ import (
 // - Create RAR via RO controller (no mocks)
 // - Approve RAR via AuthWebhook (authenticated user)
 // - Validate TWO audit events exist:
-//   1. Webhook event (event_category="webhook")
+//   1. Webhook event (event_category="approval")
 //   2. RO approval event (event_category="orchestration")
 // - Validate complete audit trail (WHO, WHAT, WHEN, WHY)
 //
@@ -203,7 +203,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				// All 3 filters ensure we find the CORRECT event (BR-AUDIT-006)
 				webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 					CorrelationID: dsgen.NewOptString(correlationID),
-					EventCategory: dsgen.NewOptString(authwebhook.EventCategoryWebhook),
+					EventCategory: dsgen.NewOptString(authwebhook.EventCategoryApproval),
 					EventType:     dsgen.NewOptString(authwebhook.EventTypeRARDecided),
 					Limit:         dsgen.NewOptInt(100),
 				})
@@ -541,7 +541,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				// All 3 filters ensure we find the CORRECT event (BR-AUDIT-006)
 			webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(correlationID),
-				EventCategory: dsgen.NewOptString(authwebhook.EventCategoryWebhook),
+				EventCategory: dsgen.NewOptString(authwebhook.EventCategoryApproval),
 				EventType:     dsgen.NewOptString(authwebhook.EventTypeRARDecided),
 				Limit:         dsgen.NewOptInt(100),
 			})
@@ -627,7 +627,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			// Prevents pagination overhead - ensures efficient query (BR-AUDIT-006)
 		webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 			CorrelationID: dsgen.NewOptString(correlationID),
-			EventCategory: dsgen.NewOptString(authwebhook.EventCategoryWebhook),
+			EventCategory: dsgen.NewOptString(authwebhook.EventCategoryApproval),
 			EventType:     dsgen.NewOptString(authwebhook.EventTypeRARDecided),
 			Limit:         dsgen.NewOptInt(100),
 		})

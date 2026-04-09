@@ -572,7 +572,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "APIError"
 				ai.Status.SubReason = "MaxRetriesExceeded"
-				ai.Status.Message = "Transient error exceeded max retries (5 attempts): HAPI request timeout"
+				ai.Status.Message = "Transient error exceeded max retries (5 attempts): KA request timeout"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -598,7 +598,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "APIError"
 				ai.Status.SubReason = "MaxRetriesExceeded"
-				ai.Status.Message = "HAPI timeout after 5 retries"
+				ai.Status.Message = "KA timeout after 5 retries"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -622,7 +622,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "APIError"
 				ai.Status.SubReason = "TransientError"
-				ai.Status.Message = "Network timeout calling HAPI"
+				ai.Status.Message = "Network timeout calling KA"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -649,7 +649,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "APIError"
 				ai.Status.SubReason = "TransientError"
-				ai.Status.Message = "HAPI returned 503 Service Unavailable"
+				ai.Status.Message = "KA returned 503 Service Unavailable"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -673,7 +673,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "APIError"
 				ai.Status.SubReason = "PermanentError"
-				ai.Status.Message = "HAPI returned 401 Unauthorized"
+				ai.Status.Message = "KA returned 401 Unauthorized"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -697,7 +697,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "APIError"
 				ai.Status.SubReason = "MaxRetriesExceeded"
-				ai.Status.Message = "HAPI timeout after 5 retries"
+				ai.Status.Message = "KA timeout after 5 retries"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())

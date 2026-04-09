@@ -95,7 +95,7 @@ type WorkflowSchema struct {
 	CustomLabels map[string]string `yaml:"customLabels,omitempty" json:"customLabels,omitempty"`
 
 	// DetectedLabels contains author-declared infrastructure requirements (OPTIONAL)
-	// ADR-043 v1.3: Matched against incident DetectedLabels from HAPI LabelDetector
+	// ADR-043 v1.3: Matched against incident DetectedLabels from KA LabelDetector
 	// DD-WORKFLOW-001 v2.0: Boolean fields accept only "true"; string fields accept
 	// specific values or "*" wildcard.
 	// nil = section absent from YAML; non-nil empty = explicit empty section

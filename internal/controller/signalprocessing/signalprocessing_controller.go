@@ -265,7 +265,7 @@ func (r *SignalProcessingReconciler) reconcilePending(ctx context.Context, sp *s
 //
 // BR-SP-001: K8s Context Enrichment
 // BR-SP-100: Owner Chain Traversal
-// ADR-056: BR-SP-101 (Detected Labels) relocated to HAPI post-RCA
+// ADR-056: BR-SP-101 (Detected Labels) relocated to KA post-RCA
 //
 // ========================================
 // V2.0 EXTENSIBILITY POINT: Multi-Provider Support
@@ -690,7 +690,7 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		}
 		// BR-SP-106: Set signal mode and normalized signal name (ADR-054)
 		// SignalType is set for ALL signals (not just proactive) — it is the
-		// authoritative signal name for all downstream consumers (RO, AA, HAPI).
+		// authoritative signal name for all downstream consumers (RO, AA, KA).
 		sp.Status.SignalMode = signalModeResult.SignalMode
 		sp.Status.SignalName = signalModeResult.SignalName
 		sp.Status.SourceSignalName = signalModeResult.SourceSignalName

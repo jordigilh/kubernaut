@@ -750,7 +750,7 @@ func createTestDeployment(namespace, name string, labels map[string]string) *app
 }
 
 // ADR-056: createTestPDB, createTestHPA, createTestNetworkPolicy removed
-// — BR-SP-101 detection tests relocated to HAPI
+// — BR-SP-101 detection tests relocated to KA
 
 // createSignalProcessingCR creates a SignalProcessing CR for testing.
 // createSignalProcessingCR creates a SignalProcessing CR with proper parent RemediationRequest.

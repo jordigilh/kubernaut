@@ -227,7 +227,7 @@ SELECT
     event_data->>'confidence' AS confidence
 FROM audit_events
 WHERE correlation_id = 'rr-production-cpu-spike-2026-02-03'
-  AND (event_category = 'webhook' OR event_category = 'orchestration')
+  AND (event_category = 'approval' OR event_category = 'orchestration')
   AND (event_type LIKE '%approval%')
 ORDER BY event_timestamp;
 
@@ -756,6 +756,12 @@ This ADR establishes the following subdocument as authoritative for specific imp
 **Approved By**: Architecture Team
 **Date**: 2025-11-08
 **Implementation Target**: Post-current-branch (Day 21 for Data Storage, Day 22 for Gateway)
+
+---
+
+## v1.3 Update
+
+In v1.3 (issue [#433](https://github.com/jordigilh/kubernaut/issues/433)), the **Kubernaut Agent (KA)** replaces **HolmesGPT API (HAPI)** as the runtime emitter of **`aiagent`** category events. **`event_category = 'aiagent'`** and the unified **`audit_events`** schema are **unchanged**; only the producing service and payload completeness/granularity change. See [TP-433-AUDIT-SOC2](../../tests/433/TP-433-AUDIT-SOC2.md).
 
 ---
 

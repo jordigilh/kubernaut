@@ -554,7 +554,8 @@ Value: "test"
 - `"workflow"` - Workflow Catalog Service
 - `"workflowexecution"` - WorkflowExecution Controller
 - `"orchestration"` - Remediation Orchestrator Service
-- `"webhook"` - Authentication Webhook Service
+- `"approval"` - Remediation approval request decisions
+- `"notification"` - Notification delivery and escalation events
 
 **Correct Pattern**:
 ```go
@@ -667,7 +668,8 @@ Unit tests that create audit events **MUST** use valid `event_category` values f
 - `"workflow"` - Workflow Catalog Service
 - `"workflowexecution"` - WorkflowExecution Controller
 - `"orchestration"` - Remediation Orchestrator Service
-- `"webhook"` - Authentication Webhook Service
+- `"approval"` - Remediation approval request decisions
+- `"notification"` - Notification delivery and escalation events
 
 **❌ FORBIDDEN**: Using placeholder values like `"test"` will cause OpenAPI validation failures.
 

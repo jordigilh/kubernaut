@@ -444,7 +444,7 @@ func determineNeedsHumanReview(analysis *aianalysisv1.AIAnalysis) bool {
 // Stubs for async submit/poll audit events - implementation in GREEN phase
 // ========================================
 
-// RecordAIAgentSubmit records an async HAPI submit event with session ID.
+// RecordAIAgentSubmit records an async KA submit event with session ID.
 // BR-AA-HAPI-064: Audit trail for session creation
 func (c *AuditClient) RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
 	payload := ogenclient.AIAnalysisAIAgentCallPayload{
@@ -470,12 +470,12 @@ func (c *AuditClient) RecordAIAgentSubmit(ctx context.Context, analysis *aianaly
 	}
 }
 
-// RecordAIAgentResult records an async HAPI result retrieval with investigation time.
+// RecordAIAgentResult records an async KA result retrieval with investigation time.
 // BR-AA-HAPI-064: Audit trail for result retrieval.
 //
 // For backward compatibility with existing audit tests (DD-AUDIT-003), this also
 // emits an EventTypeAIAgentCall event, which is the sync-era equivalent of
-// "HAPI was called and returned a result." This ensures tests that expect
+// "KA was called and returned a result." This ensures tests that expect
 // aianalysis.aiagent.call events continue to pass in session mode.
 func (c *AuditClient) RecordAIAgentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
 	// Emit the session-specific result event

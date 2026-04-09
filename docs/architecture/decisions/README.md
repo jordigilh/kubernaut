@@ -51,6 +51,7 @@
 || DD-AUDIT-001 | [Audit Responsibility Pattern](./DD-AUDIT-001-audit-responsibility-pattern.md) | All Services | ✅ Approved | 2025-11-02 | Distributed audit pattern (services write their own traces) |
 || DD-AUDIT-002 | [Audit Shared Library Design](./DD-AUDIT-002-audit-shared-library-design.md) | All Services | ✅ Approved | 2025-11-08 | Shared library (`pkg/audit/`) for async buffered writes |
 || DD-AUDIT-003 | [Service Audit Trace Requirements](./DD-AUDIT-003-service-audit-trace-requirements.md) | All Services | ✅ Approved | 2025-11-08 | Defines which 8 of 11 services must generate audit traces |
+|| DD-AUDIT-004 | [Structured Types for Audit Event Payloads](./DD-AUDIT-004-structured-types-for-audit-event-payloads.md) | All Services | ✅ Approved | 2025-12-16 | Type-safe audit event data (eliminates `map[string]interface{}`) |
 
 #### **Service-Specific Decisions**
 
@@ -81,6 +82,20 @@
 || DD-WORKFLOW-017 | [Workflow Lifecycle Component Interactions](./DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) | DS / HAPI / RO / WE | ✅ Approved | 2026-02-05 | End-to-end workflow lifecycle (creation, discovery, execution, disable/enable). Supersedes DD-WORKFLOW-005, DD-WORKFLOW-007. |
 || DD-HOLMESGPT-013 | [Vendor Local SDK Copy](./DD-HOLMESGPT-013-Vendor-Local-SDK-Copy.md) | HolmesGPT API | ✅ Approved | 2025-10-18 | Stability through vendored SDK |
 || DD-HOLMESGPT-014 | [MinimalDAL Stateless Architecture](./DD-HOLMESGPT-014-MinimalDAL-Stateless-Architecture.md) | HolmesGPT API | ✅ Approved | 2025-10-20 | Stateless architecture, no Robusta Platform |
+
+#### **Authentication & Authorization Decisions**
+
+|| ID | Title | Service/Component | Status | Date | Impact |
+||---|-------|-------------------|--------|------|--------|
+|| DD-AUTH-001 | [Shared Authentication Webhook](./DD-AUTH-001-shared-authentication-webhook.md) | All Services | ✅ Approved | 2026-01 | Shared auth webhook design |
+|| DD-AUTH-003 | [Externalized Authorization via Sidecar](./DD-AUTH-003-externalized-authorization-sidecar.md) | All HTTP Services | ✅ Approved | 2026-01-06 | Zero-trust sidecar auth pattern |
+|| DD-AUTH-004 | [OpenShift OAuth-Proxy Legal Hold](./DD-AUTH-004-openshift-oauth-proxy-legal-hold.md) | DataStorage | ✅ Approved | 2026-01 | OCP-specific oauth-proxy |
+|| DD-AUTH-005 | [DataStorage Client Authentication Pattern](./DD-AUTH-005-datastorage-client-authentication-pattern.md) | All Services | ✅ Approved | 2026-01-07 | Transport-layer auth injection for DS clients |
+|| DD-AUTH-008 | [Secret Management: Kustomize → Helm](./DD-AUTH-008-secret-management-kustomize-helm.md) | All Services | ✅ Approved | 2026-01 | Secret lifecycle in Helm charts |
+|| DD-AUTH-009 | [OAuth2-Proxy Workflow Attribution](./DD-AUTH-009-oauth2-proxy-workflow-attribution-implementation.md) | WorkflowExecution | ✅ Approved | 2026-01 | User identity for SOC2 attribution |
+|| DD-AUTH-010 | [E2E Real Authentication Mandate](./DD-AUTH-010-e2e-real-authentication-mandate.md) | All Services | ✅ Approved | 2026-01 | Real K8s auth in E2E tests |
+|| DD-AUTH-014 | [Middleware-Based SAR Authentication](./DD-AUTH-014-middleware-based-sar-authentication.md) | DataStorage, Gateway, KA | ✅ Approved | 2026-01-31 | Interface-driven SAR/TokenReview middleware |
+|| DD-AUTH-015 | [Outbound LLM Authentication Transport](./DD-AUTH-015-outbound-llm-authentication-transport.md) | Kubernaut Agent | ✅ Approved | 2026-04-06 | Composable transport chain for LLM auth: custom headers + OAuth2 client credentials |
 
 **Note**: DD-* prefix is used for detailed design decisions with comprehensive alternatives analysis, implementation strategy, and validation plans. ADR-* prefix is used for architectural records.
 
@@ -171,5 +186,4 @@ What other options did we evaluate?
 ---
 
 **Maintained By**: Kubernaut Architecture Team
-**Last Updated**: October 16, 2025
-||| DD-AUDIT-004 | [Structured Types for Audit Event Payloads](./DD-AUDIT-004-structured-types-for-audit-event-payloads.md) | All Services | ✅ Approved | 2025-12-16 | Type-safe audit event data (eliminates \`map[string]interface{}\`) |
+**Last Updated**: April 6, 2026

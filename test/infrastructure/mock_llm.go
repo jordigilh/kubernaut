@@ -23,6 +23,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -33,7 +35,7 @@ import (
 // Pattern: DD-INTEGRATION-001 v2.0 - Programmatic Podman Setup using Go
 // Image Naming: DD-TEST-004 - Unique Resource Naming (GenerateInfraImageName)
 // Port Allocation: DD-TEST-001 v2.5
-//   HAPI Integration: 18140
+//   KA Integration: 18140
 //   AIAnalysis Integration: 18141
 //   E2E (Kind ClusterIP): No external port (internal: http://mock-llm:8080)
 //
@@ -42,9 +44,9 @@ import (
 //   Replaces embedded mock logic in HolmesGPT-API business code
 //
 // Dependencies:
-//   HAPI Integration Tests → Mock LLM (localhost:18140)
+//   KA Integration Tests → Mock LLM (localhost:18140)
 //   AIAnalysis Integration Tests → Mock LLM (localhost:18141)
-//   HAPI E2E Tests → Mock LLM (Kind ClusterIP in kubernaut-system)
+//   KA E2E Tests → Mock LLM (Kind ClusterIP in kubernaut-system)
 //   AIAnalysis E2E Tests → Mock LLM (Kind ClusterIP in kubernaut-system)
 //
 // Created: January 11, 2026
@@ -55,30 +57,30 @@ import (
 // Port allocation per DD-TEST-001 v2.5 (Mock LLM Service)
 // Integration Tests (Podman): Per-service isolation
 //
-//	HAPI: 18140
+//	KA: 18140
 //	AIAnalysis: 18141
 //
 // E2E Tests (Kind): ClusterIP only (no NodePort)
 const (
-	MockLLMPortHAPI       = 18140 // HAPI integration tests (Podman)
+	MockLLMPortKA         = 18140 // KA integration tests (Podman)
 	MockLLMPortAIAnalysis = 18141 // AIAnalysis integration tests (Podman)
-	// E2E tests use ClusterIP in Kind (no external port needed)
 )
 
 // Container configuration (per-service naming)
 const (
-	MockLLMContainerNameHAPI       = "mock-llm-hapi"
+	MockLLMContainerNameKA         = "mock-llm-ka"
 	MockLLMContainerNameAIAnalysis = "mock-llm-aianalysis"
 )
 
 // MockLLMConfig specifies configuration for starting a Mock LLM container
 type MockLLMConfig struct {
-	ServiceName    string // "hapi" or "aianalysis" (for container naming)
+	ServiceName    string // "ka" or "aianalysis" (for container naming)
 	Port           int    // Host port to expose (per DD-TEST-001 v1.8)
 	ContainerName  string // Unique container name per service
 	ImageTag       string // Unique image tag per DD-TEST-004 (use GenerateInfraImageName)
 	Network        string // Podman network for container-to-container communication (e.g., "aianalysis_test_network")
 	ConfigFilePath string // Optional: Host path to scenarios.yaml file (DD-TEST-011 v2.0)
+	GoldenDirPath  string // Optional: Host path to golden transcripts directory (BR-TESTING-001 Phase 7)
 }
 
 // BuildMockLLMImage builds the Mock LLM container image for integration tests
@@ -91,7 +93,7 @@ type MockLLMConfig struct {
 //   - Otherwise: Build locally (existing behavior for local dev)
 //   - Automatic fallback to local build if registry pull fails
 //
-// Returns: Full image name with tag (e.g., "localhost/mock-llm:hapi-abc123")
+// Returns: Full image name with tag (e.g., "localhost/mock-llm:ka-abc123")
 func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer) (string, error) {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Building Mock LLM Image (%s Integration Tests)\n", serviceName)
@@ -122,16 +124,14 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	_, _ = fmt.Fprintf(writer, "🔨 Building Mock LLM image locally: %s (--no-cache for fresh code)\n", baseImageName)
 	_, _ = fmt.Fprintf(writer, "   Will tag as: %s (DD-TEST-004 unique)\n", uniqueImageName)
 
-	// Build context is test/services/mock-llm/
 	projectRoot := getProjectRoot()
-	buildContext := fmt.Sprintf("%s/test/services/mock-llm", projectRoot)
 
 	// Build with --no-cache to ensure fresh code (addresses recurring cache issues)
 	buildCmd := exec.CommandContext(ctx, "podman", "build",
 		"--no-cache",
 		"-t", baseImageName,
-		"-f", fmt.Sprintf("%s/Dockerfile", buildContext),
-		buildContext,
+		"-f", fmt.Sprintf("%s/test/services/mock-llm/go.Dockerfile", projectRoot),
+		projectRoot,
 	)
 
 	output, err := buildCmd.CombinedOutput()
@@ -156,17 +156,6 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	return uniqueImageName, nil
 }
 
-// GetMockLLMConfigForHAPI returns the Mock LLM configuration for HAPI integration tests
-// Uses GenerateInfraImageName per DD-TEST-004 for unique image tags
-func GetMockLLMConfigForHAPI() MockLLMConfig {
-	return MockLLMConfig{
-		ServiceName:   "hapi",
-		Port:          MockLLMPortHAPI,
-		ContainerName: MockLLMContainerNameHAPI,
-		ImageTag:      GenerateInfraImageName("mock-llm", "hapi"),
-	}
-}
-
 // GetMockLLMConfigForAIAnalysis returns the Mock LLM configuration for AIAnalysis integration tests
 // Uses GenerateInfraImageName per DD-TEST-004 for unique image tags
 func GetMockLLMConfigForAIAnalysis() MockLLMConfig {
@@ -187,8 +176,8 @@ func GetMockLLMConfigForAIAnalysis() MockLLMConfig {
 //
 // Prerequisites:
 //   - Mock LLM image built with unique tag per DD-TEST-004
-//     Example: localhost/mock-llm:hapi-a3b5c7d9 (generated via GenerateInfraImageName)
-//   - Ports per DD-TEST-001 v2.5: HAPI=18140, AIAnalysis=18141
+//     Example: localhost/mock-llm:ka-a3b5c7d9 (generated via GenerateInfraImageName)
+//   - Ports per DD-TEST-001 v2.5: KA=18140, AIAnalysis=18141
 //
 // Returns:
 // - containerID: Container ID for cleanup
@@ -231,7 +220,7 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 		"-p", fmt.Sprintf("%d:%d", config.Port, internalPort), // Port mapping (ignored on host network)
 		"-e", "MOCK_LLM_HOST=0.0.0.0",
 		"-e", fmt.Sprintf("MOCK_LLM_PORT=%d", internalPort),
-		"-e", "MOCK_LLM_FORCE_TEXT=false",
+		"-e", "MOCK_LLM_FORCE_TEXT=true",
 	}
 
 	// Mount config file if specified (DD-TEST-011 v2.0)
@@ -239,6 +228,13 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 		args = append(args, "-v", fmt.Sprintf("%s:/config/scenarios.yaml:ro", config.ConfigFilePath))
 		args = append(args, "-e", "MOCK_LLM_CONFIG_PATH=/config/scenarios.yaml")
 		_, _ = fmt.Fprintf(writer, "📋 Mounting config file: %s → /config/scenarios.yaml\n", config.ConfigFilePath)
+	}
+
+	// Mount golden transcripts directory if specified (BR-TESTING-001 Phase 7)
+	if config.GoldenDirPath != "" {
+		args = append(args, "-v", fmt.Sprintf("%s:/golden-transcripts:ro", config.GoldenDirPath))
+		args = append(args, "-e", "MOCK_LLM_GOLDEN_DIR=/golden-transcripts")
+		_, _ = fmt.Fprintf(writer, "📋 Mounting golden transcripts: %s → /golden-transcripts\n", config.GoldenDirPath)
 	}
 
 	// Add network if specified (for container-to-container communication)
@@ -363,7 +359,7 @@ func StopMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.W
 //
 // Usage in tests:
 //
-//	config := infrastructure.GetMockLLMConfigForHAPI()
+//	config := infrastructure.GetMockLLMConfigForAIAnalysis()
 //	endpoint := infrastructure.GetMockLLMEndpoint(config)
 //	os.Setenv("LLM_ENDPOINT", endpoint)
 //
@@ -375,7 +371,7 @@ func GetMockLLMEndpoint(config MockLLMConfig) string {
 }
 
 // GetMockLLMContainerEndpoint returns the Mock LLM endpoint for container-to-container communication
-// Use this when configuring services running in containers (e.g., HAPI LLM_ENDPOINT)
+// Use this when configuring services running in containers (e.g., KA LLM_ENDPOINT)
 // Example: "http://mock-llm-aianalysis:8080"
 func GetMockLLMContainerEndpoint(config MockLLMConfig) string {
 	return fmt.Sprintf("http://%s:8080", config.ContainerName)
@@ -405,4 +401,139 @@ func GetMockLLMContainerInfo(containerID string, config MockLLMConfig) MockLLMCo
 		HealthURL:     fmt.Sprintf("http://127.0.0.1:%d/health", config.Port),
 		MetricsURL:    fmt.Sprintf("http://127.0.0.1:%d/metrics", config.Port),
 	}
+}
+
+// UpdateMockLLMConfigMap updates the Mock LLM's ConfigMap with workflow UUIDs
+// and restarts the deployment so it picks up the new scenarios mapping.
+// Originally in holmesgpt_api.go, ported here during KA test infrastructure consolidation.
+func UpdateMockLLMConfigMap(ctx context.Context, namespace, kubeconfigPath string, workflowUUIDs map[string]string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "   🔄 Updating Mock LLM ConfigMap with %d workflow UUIDs...\n", len(workflowUUIDs))
+
+	scenariosYAML := "scenarios:\n"
+	for _, key := range SortedWorkflowUUIDKeys(workflowUUIDs) {
+		scenariosYAML += fmt.Sprintf("      %s:\n        workflow_id: \"%s\"\n", key, workflowUUIDs[key])
+	}
+
+	configMap := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mock-llm-scenarios
+  namespace: %s
+  labels:
+    app: mock-llm
+    component: test-infrastructure
+data:
+  scenarios.yaml: |
+    %s
+`, namespace, scenariosYAML)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	cmd.Stdin = strings.NewReader(configMap)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to update Mock LLM ConfigMap: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ ConfigMap updated with workflow UUIDs\n")
+
+	_, _ = fmt.Fprintf(writer, "   🔄 Restarting Mock LLM deployment to reload config...\n")
+	var restartErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			_, _ = fmt.Fprintf(writer, "   ⏳ Retry %d/2: waiting before rollout restart...\n", attempt)
+			time.Sleep(2 * time.Second)
+		}
+		restartCmd := exec.CommandContext(ctx, "kubectl", "rollout", "restart",
+			"deployment/mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath)
+		restartCmd.Stdout = writer
+		restartCmd.Stderr = writer
+		restartErr = restartCmd.Run()
+		if restartErr == nil {
+			break
+		}
+	}
+	if restartErr != nil {
+		return fmt.Errorf("failed to restart Mock LLM deployment after retries: %w", restartErr)
+	}
+
+	// Force-terminate old Mock LLM pods to avoid rollout stalls from slow termination.
+	_, _ = fmt.Fprintf(writer, "   🗑️  Force-deleting old Mock LLM pods to prevent rollout stall...\n")
+	deleteCmd := exec.CommandContext(ctx, "kubectl", "delete", "pod",
+		"-l", "app=mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath,
+		"--grace-period=5")
+	deleteCmd.Stdout = writer
+	deleteCmd.Stderr = writer
+	_ = deleteCmd.Run() // Ignore errors — pods may already be gone
+
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Mock LLM rollout to complete...\n")
+	rolloutCmd := exec.CommandContext(ctx, "kubectl", "rollout", "status",
+		"deployment/mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath, "--timeout=180s")
+	rolloutCmd.Stdout = writer
+	rolloutCmd.Stderr = writer
+	if err := rolloutCmd.Run(); err != nil {
+		return fmt.Errorf("mock LLM rollout failed: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Mock LLM restarted with workflow UUIDs\n")
+
+	return nil
+}
+
+// CreateGoldenTranscriptsConfigMap creates a ConfigMap containing golden
+// transcript JSON files for the mock LLM replay mode (BR-TESTING-001 Phase 7).
+// goldenDir is the local directory containing .json golden transcript files.
+// The ConfigMap is mounted at /golden-transcripts in the mock LLM deployment.
+//
+// Prerequisite: golden transcripts captured per kubernaut-demo-scenarios#300.
+func CreateGoldenTranscriptsConfigMap(ctx context.Context, namespace, kubeconfigPath, goldenDir string, writer io.Writer) error {
+	if goldenDir == "" {
+		return nil
+	}
+
+	entries, err := os.ReadDir(goldenDir)
+	if err != nil {
+		return fmt.Errorf("reading golden transcripts dir %s: %w", goldenDir, err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   📋 Creating golden transcripts ConfigMap from %s...\n", goldenDir)
+
+	args := []string{
+		"create", "configmap", "mock-llm-golden-transcripts",
+		"-n", namespace,
+		"--kubeconfig", kubeconfigPath,
+		"--dry-run=client", "-o", "yaml",
+	}
+
+	fileCount := 0
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		args = append(args, fmt.Sprintf("--from-file=%s=%s",
+			entry.Name(), filepath.Join(goldenDir, entry.Name())))
+		fileCount++
+	}
+
+	if fileCount == 0 {
+		_, _ = fmt.Fprintf(writer, "   ℹ️  No .json files found in golden dir, skipping ConfigMap\n")
+		return nil
+	}
+
+	// Generate the ConfigMap YAML via dry-run, then apply
+	genCmd := exec.CommandContext(ctx, "kubectl", args...)
+	yamlBytes, err := genCmd.Output()
+	if err != nil {
+		return fmt.Errorf("generating golden transcripts ConfigMap: %w", err)
+	}
+
+	applyCmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-",
+		"--kubeconfig", kubeconfigPath)
+	applyCmd.Stdin = strings.NewReader(string(yamlBytes))
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+	if err := applyCmd.Run(); err != nil {
+		return fmt.Errorf("applying golden transcripts ConfigMap: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ✅ Golden transcripts ConfigMap created (%d files)\n", fileCount)
+	return nil
 }

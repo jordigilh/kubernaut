@@ -149,7 +149,7 @@ func (c *AIAnalysisCreator) Create(
 // buildSignalContext constructs the SignalContextInput from RemediationRequest and SignalProcessing.
 // NOTE: Environment, Priority, and SignalType are now owned by SignalProcessing (per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md)
 // BR-SP-106: SignalType is read from sp.Status.SignalType (normalized) instead of rr.Spec.SignalType
-// BR-AI-084: SignalMode is copied from sp.Status.SignalMode to allow HAPI prompt switching
+// BR-AI-084: SignalMode is copied from sp.Status.SignalMode to allow KA prompt switching
 func (c *AIAnalysisCreator) buildSignalContext(
 	rr *remediationv1.RemediationRequest,
 	sp *signalprocessingv1.SignalProcessing,
@@ -177,7 +177,7 @@ func (c *AIAnalysisCreator) buildSignalContext(
 		Fingerprint:      rr.Spec.SignalFingerprint,
 		Severity:         sp.Status.Severity, // DD-SEVERITY-001: Use normalized severity from SignalProcessing Rego (not external rr.Spec.Severity)
 		SignalName:       signalType,          // BR-SP-106: Normalized by SP (not raw from RR)
-		SignalMode:       sp.Status.SignalMode, // BR-AI-084: Proactive signal mode for HAPI prompt switching
+		SignalMode:       sp.Status.SignalMode, // BR-AI-084: Proactive signal mode for KA prompt switching
 		Environment:      environment,
 		BusinessPriority: priority,
 		TargetResource: aianalysisv1.TargetResource{

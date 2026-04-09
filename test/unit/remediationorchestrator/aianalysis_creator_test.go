@@ -296,7 +296,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 
 			It("should not propagate OwnerChain from SP to AIAnalysis (ADR-055)", func() {
 				// ADR-055: OwnerChain is no longer propagated from SP to AIAnalysis.
-				// HAPI resolves its own chain post-RCA via get_namespaced_resource_context / get_cluster_resource_context.
+				// KA resolves its own chain post-RCA via get_namespaced_resource_context / get_cluster_resource_context.
 				completedSP := helpers.NewSignalProcessing("sp-test-remediation", "default", helpers.SignalProcessingOpts{
 					Phase: signalprocessingv1.PhaseCompleted,
 					KubernetesContext: &signalprocessingv1.KubernetesContext{

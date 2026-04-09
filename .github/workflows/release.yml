@@ -63,10 +63,9 @@ jobs:
   # Helm smoke tests depend on this stage completing (Issue #569).
   #
   # Services (12):
-  #   Go (10): gateway, signalprocessing, aianalysis, authwebhook,
+  #   Go (11): gateway, signalprocessing, aianalysis, authwebhook,
   #            remediationorchestrator, workflowexecution, notification,
-  #            datastorage, effectivenessmonitor, db-migrate
-  #   Python (1): holmesgpt-api
+  #            datastorage, effectivenessmonitor, db-migrate, kubernautagent
   #   Bash (1): must-gather
   #
   # Strategy:
@@ -92,7 +91,7 @@ jobs:
           - notification
           - datastorage
           - effectivenessmonitor
-          - holmesgpt-api
+          - kubernautagent
           - must-gather
           - db-migrate
     steps:
@@ -168,7 +167,7 @@ jobs:
           - notification
           - datastorage
           - effectivenessmonitor
-          - holmesgpt-api
+          - kubernautagent
           - must-gather
           - db-migrate
     steps:
@@ -289,7 +288,7 @@ jobs:
         run: |
           for svc in gateway signalprocessing aianalysis authwebhook \
                      remediationorchestrator workflowexecution notification \
-                     datastorage effectivenessmonitor holmesgpt-api \
+                     datastorage effectivenessmonitor kubernautagent \
                      must-gather db-migrate; do
             IMAGE="${IMAGE_REGISTRY}/${svc}:${IMAGE_TAG}-amd64"
             echo "Pulling ${IMAGE}..."
@@ -379,7 +378,7 @@ jobs:
         run: |
           for svc in datastorage gateway aianalysis authwebhook notification \
                      remediationorchestrator signalprocessing workflowexecution \
-                     effectivenessmonitor holmesgpt-api must-gather db-migrate; do
+                     effectivenessmonitor kubernautagent must-gather db-migrate; do
             echo "  Tagging $svc:latest..."
             podman manifest rm ${IMAGE_REGISTRY}/$svc:latest 2>/dev/null || true
             podman manifest create ${IMAGE_REGISTRY}/$svc:latest \

@@ -1,7 +1,7 @@
 {{- range $name, $component := dict
   "gateway" $.Values.gateway
   "datastorage" $.Values.datastorage
-  "holmesgpt-api" $.Values.holmesgptApi
+  "kubernaut-agent" $.Values.kubernautAgent
   "notification-controller" $.Values.notification
   "authwebhook" $.Values.authwebhook
   "signalprocessing-controller" $.Values.signalprocessing

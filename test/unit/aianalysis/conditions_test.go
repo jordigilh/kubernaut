@@ -117,13 +117,13 @@ var _ = Describe("AIAnalysis Conditions", func() {
 		})
 
 		It("should set failed with default reason", func() {
-			aianalysis.SetInvestigationComplete(analysis, false, "HAPI session lost")
+			aianalysis.SetInvestigationComplete(analysis, false, "KA session lost")
 
 			c := aianalysis.GetCondition(analysis, aianalysis.ConditionInvestigationComplete)
 			Expect(c).NotTo(BeNil())
 			Expect(c.Status).To(Equal(metav1.ConditionFalse))
 			Expect(c.Reason).To(Equal(aianalysis.ReasonInvestigationFailed))
-			Expect(c.Message).To(Equal("HAPI session lost"))
+			Expect(c.Message).To(Equal("KA session lost"))
 		})
 	})
 

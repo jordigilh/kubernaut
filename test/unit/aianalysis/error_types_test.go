@@ -51,7 +51,7 @@ var _ = Describe("Error Classification for Retry Strategy", func() {
 		It("should preserve root cause for operator troubleshooting after retry exhaustion", func() {
 			By("Simulating transient error that persists beyond max retries")
 			rootCause := errors.New("503 Service Unavailable")
-			err := aianalysis.NewTransientError("HAPI unavailable", rootCause)
+			err := aianalysis.NewTransientError("KA unavailable", rootCause)
 
 			By("Verifying root cause is preserved for troubleshooting")
 			Expect(errors.Unwrap(err)).To(Equal(rootCause),
@@ -59,7 +59,7 @@ var _ = Describe("Error Classification for Retry Strategy", func() {
 
 			By("Verifying error classification prevents infinite retries")
 			// Business value: After max retries, transient errors are escalated to operators
-			Expect(err.Message).To(Equal("HAPI unavailable"),
+			Expect(err.Message).To(Equal("KA unavailable"),
 				"Clear message context guides operator intervention after retries exhausted")
 		})
 

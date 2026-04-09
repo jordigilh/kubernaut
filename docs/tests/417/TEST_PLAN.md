@@ -1,0 +1,991 @@
+# Test Plan: Custom Authentication Headers for LLM Proxy Endpoints (#417)
+
+> **Template**: IEEE 829-2008 + Kubernaut Hybrid v2.0
+
+**Test Plan Identifier**: TP-417-v1.2
+**Feature**: Kubernaut Agent (KA) injects configurable custom HTTP headers (Authorization, API keys, sidecar-rotated JWTs) into all outbound LLM API requests via an `http.RoundTripper` wrapper, **and optionally acquires/refreshes OAuth2 JWT tokens via the client credentials grant** (RFC 6749 s4.4), enabling enterprise proxy/gateway authentication without coupling KA to any specific identity provider or token lifecycle.
+**Version**: 1.2
+**Created**: 2026-03-04
+**Author**: AI Assistant
+**Status**: Draft
+**Branch**: `development/v1.3`
+
+---
+
+## 1. Introduction
+
+### 1.1 Purpose
+
+This test plan validates that Kubernaut Agent (KA) (#433) correctly injects custom authentication headers into all outbound LLM requests. Enterprise deployments route LLM traffic through API gateways (Azure APIM, Kong, Apigee, AWS API Gateway) or SSO-fronted proxies that require authentication headers. KA must support arbitrary headers from three value sources (`secretKeyRef`, `filePath`, `value`) without hardcoding any auth scheme.
+
+**v1.2 addition**: This plan also validates the **OAuth2 client credentials transport** — an optional transport layer that automatically acquires, caches, and refreshes JWTs via the OAuth2 client credentials grant (RFC 6749 s4.4). This enables KA to authenticate against enterprise identity providers (Keycloak, Azure AD, Okta) without requiring an external sidecar for token lifecycle management. The OAuth2 transport uses `golang.org/x/oauth2/clientcredentials` and composes into the existing `buildTransportChain` as an inner layer beneath custom headers and structured output.
+
+The test plan also validates that sensitive header values are never leaked into logs, metrics, or error messages (DD-HAPI-019-003, G4: Credential Scrubbing). Header values are injected at the `http.Transport` layer below prompt assembly, so they should never appear in LLM-bound content — but a defense-in-depth test validates this assumption.
+
+### 1.2 Objectives
+
+1. **Header injection correctness**: All configured headers are present in every outbound LLM request, with the correct values from all three sources
+2. **Token rotation support**: `filePath`-sourced headers reflect the current file content on each request, supporting sidecar-rotated tokens without restart
+3. **Backward compatibility**: Kubernaut Agent without custom headers configured behaves identically to a default installation
+4. **Credential safety**: Sensitive header values from `secretKeyRef` and `filePath` are redacted from all logs, metrics labels, and LLM-bound prompt content
+5. **End-to-end verification**: Mock LLM (#570) receives and records the injected headers, verifiable via the verification API
+6. **OAuth2 token acquisition**: When `oauth2.enabled=true`, KA acquires a JWT from the configured token endpoint using the client credentials grant and injects `Authorization: Bearer <token>` into every outbound LLM request
+7. **OAuth2 token refresh**: Expired tokens are automatically refreshed by the `oauth2.Transport` without KA restart, producing no gap in authentication
+8. **OAuth2 config validation**: Missing or incomplete OAuth2 configuration (`token_url`, `client_id`, `client_secret`) is rejected at startup with actionable error messages
+9. **OAuth2 transport composability**: OAuth2 transport composes correctly with custom headers and structured output in the `buildTransportChain` — custom headers can override or supplement the OAuth2-injected `Authorization` header
+
+### 1.3 Success Metrics
+
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| Unit test pass rate | 100% | `go test ./test/unit/kubernautagent/...` |
+| Integration test pass rate | 100% | `go test ./test/integration/kubernautagent/...` |
+| Unit-testable code coverage | >=80% | `go test -coverprofile` on `pkg/kubernautagent/llm/transport/`, `pkg/kubernautagent/config/` |
+| Integration-testable code coverage | >=80% | `go test -coverprofile` on handler/client wiring |
+| Existing test regressions | 0 | Existing Kubernaut Agent test suites pass with auth headers feature merged |
+
+---
+
+## 2. References
+
+### 2.1 Authority (governing documents)
+
+- BR-HAPI-433: Go Language Migration (parent BR)
+- DD-HAPI-019-001: Framework Selection — LangChainGo adapter
+- DD-HAPI-019-003 (G4): Credential Scrubbing — Go reimplementation of DD-005 patterns for log/error redaction
+- Issue #417: Support custom authentication headers for LLM proxy endpoints
+- Issue #570: Mock LLM auth header passthrough and verification (companion)
+- RFC 6749 Section 4.4: OAuth2 Client Credentials Grant
+- `golang.org/x/oauth2/clientcredentials`: Go standard-library OAuth2 client credentials transport
+- DD-AUTH-015: Outbound LLM Authentication Transport Architecture (authoritative design document)
+
+### 2.2 Cross-References
+
+- [Testing Strategy](../../../.cursor/rules/03-testing-strategy.mdc)
+- [Test Case Specification Template](../../testing/TEST_CASE_SPECIFICATION_TEMPLATE.md)
+- [Integration/E2E No-Mocks Policy](../../testing/INTEGRATION_E2E_NO_MOCKS_POLICY.md)
+- [Testing Guidelines](../../development/business-requirements/TESTING_GUIDELINES.md)
+- Issue #433: Kubernaut Agent Go rewrite (parent)
+- Issue #531: Mock LLM Go rewrite (provides test verification infrastructure)
+- Issue #493: TLS for all inter-pod HTTP communication (transport layer, orthogonal)
+
+---
+
+## 3. Risks & Mitigations
+
+| ID | Risk | Impact | Probability | Affected Tests | Mitigation |
+|----|------|--------|-------------|----------------|------------|
+| R1 | **`filePath` race condition** — sidecar writes token while the Kubernaut Agent reads it | Partial read produces garbled token; LLM gateway rejects request | Medium | UT-KA-417-007, IT-KA-417-005 | Atomic file read (read into buffer, not streaming). UT-KA-417-007 tests concurrent read-during-write. |
+| R2 | **Secret not mounted** — `secretKeyRef` references a Secret that doesn't exist in the Pod | Kubernaut Agent fails to start or sends empty header value | High | UT-KA-417-004, UT-KA-417-010 | Fail-fast at startup: validate all `secretKeyRef` sources resolve to non-empty values. UT-KA-417-010 tests startup validation. |
+| R3 | **Credential leakage via logs** — header value appears in HTTP debug logs or error messages | Security incident — API keys exposed in cluster logs | High | UT-KA-417-009 | RoundTripper redacts header values from all log output. UT-KA-417-009 validates no sensitive values in structured log fields. |
+| R4 | **Mock LLM #570 not landed** — auth header verification API unavailable | IT-KA-417-006 (end-to-end verification) blocked | Medium | IT-KA-417-006 | Use `httptest.Server` with custom handler that captures headers as a fallback. Migrate to Mock LLM verification API when #570 lands. |
+| R5 | **LangChainGo transport override** — LangChainGo replaces or wraps the custom `http.Transport` | Headers silently dropped; LLM gateway rejects unauthenticated requests | Medium | IT-KA-417-001, IT-KA-417-002 | Integration tests verify headers arrive at a real HTTP server, not just that the RoundTripper is configured. |
+| R6 | **Header name collision** — custom header overwrites a standard header (Content-Type, Accept) | Malformed requests to LLM provider | Low | UT-KA-417-011 | Validate header names against a deny list at config parse time. UT-KA-417-011 tests rejection of reserved names. |
+| R7 | **`filePath` missing at request time** — sidecar hasn't started or file deleted between requests | Request fails (blocking remediation) or proceeds without auth (security issue) | Medium | UT-KA-417-014 | Return error from `RoundTrip` with clear message identifying the missing file path. |
+| R8 | **Request mutation violates RoundTripper contract** — implementation modifies original `*http.Request` instead of cloning | Data race: concurrent callers see each other's injected headers | Medium | UT-KA-417-016 | Clone request via `req.Clone(req.Context())` before adding headers. UT-KA-417-016 validates original is unchanged. |
+| R9 | **IdP token endpoint unreachable** — enterprise IdP down, DNS misconfigured, or firewall blocks the token endpoint | All LLM requests fail with opaque error; remediation pipeline stalls | High | IT-KA-417-012 | `oauth2.Transport` surfaces connection errors. IT-KA-417-012 validates actionable error message, not a panic or silent 401. |
+| R10 | **Token expires during long investigation** — JWT expires mid-conversation, next tool call gets 401 | Investigation fails after partial completion; operator must restart | Medium | IT-KA-417-011 | `oauth2.ReuseTokenSource` auto-refreshes before expiry. IT-KA-417-011 uses 1s tokens to verify. |
+| R11 | **OAuth2 credentials in ConfigMap** — `client_secret` written to non-Secret resource | Credential leak in etcd | High | — | Helm chart projects `client_id`/`client_secret` from `credentialsSecretRef` (K8s Secret) as env vars. ConfigMap only stores `token_url` and `scopes`. |
+
+### 3.1 Risk-to-Test Traceability
+
+| Risk | Primary Tests | Secondary Tests |
+|------|--------------|-----------------|
+| R1 (filePath race) | UT-KA-417-007 | IT-KA-417-005 |
+| R2 (secret not mounted) | UT-KA-417-010 | UT-KA-417-004 |
+| R3 (credential leakage) | UT-KA-417-009 | IT-KA-417-004 |
+| R5 (transport override) | IT-KA-417-001 | IT-KA-417-002 |
+| R7 (filePath missing at runtime) | UT-KA-417-014 | UT-KA-417-015 |
+| R8 (request mutation) | UT-KA-417-016 | — |
+| R9 (IdP unreachable) | IT-KA-417-012 | — |
+| R10 (token expiry) | IT-KA-417-011 | — |
+| R11 (creds in ConfigMap) | — | Helm chart review |
+
+---
+
+## 4. Scope
+
+### 4.1 Features to be Tested
+
+- **RoundTripper wrapper** (`pkg/kubernautagent/llm/transport/auth_headers.go`): Custom `http.RoundTripper` that injects configured headers into every outbound request before delegating to the inner transport
+- **Header value resolver** (`pkg/kubernautagent/llm/transport/resolver.go`): Resolves header values from three sources — `value` (literal), `secretKeyRef` (env var or mounted file), `filePath` (re-read per request)
+- **Config parser** (`pkg/kubernautagent/config/headers.go`): Parses Helm-provided header configuration into typed header definitions with validation
+- **Credential scrubbing** (`pkg/kubernautagent/llm/transport/scrub.go`): Ensures sensitive header values are redacted from logs, error messages, and any LLM-bound content
+- **Startup validation** (`cmd/kubernautagent/main.go`): Fail-fast validation that all configured header sources are resolvable at startup
+- **OAuth2 client credentials transport** (`pkg/kubernautagent/llm/transport/oauth2_credentials.go`): Thin wrapper around `golang.org/x/oauth2/clientcredentials` that creates an `oauth2.Transport` RoundTripper for automatic JWT acquisition, caching, and refresh via the client credentials grant (RFC 6749 s4.4)
+- **OAuth2 config parsing and validation** (`internal/kubernautagent/config/config.go`): `OAuth2Config` struct embedded in `LLMConfig` with `Validate()` rules requiring `token_url`, `client_id`, and `client_secret` when `enabled=true`
+- **OAuth2 transport chain wiring** (`cmd/kubernautagent/main.go`): Inserts OAuth2 transport as the innermost auth layer in `buildTransportChain` — beneath custom headers and structured output — so that custom headers can override or supplement the OAuth2-injected `Authorization` header
+- **Helm chart OAuth2 support** (`charts/kubernaut/`): `values.yaml` OAuth2 section, ConfigMap rendering of `token_url`/`scopes`, Secret projection of `client_id`/`client_secret` as env vars, and fail guards for required fields
+
+### 4.2 Features Not to be Tested
+
+- **OAuth2 authorization code flow / PKCE / device flow**: Only the client credentials grant (RFC 6749 s4.4) is supported. Interactive browser-based flows are out of scope — KA is a server-side agent, not a user-facing application.
+- **OAuth2 token introspection / revocation**: KA trusts the IdP-issued token. Validation is the LLM gateway's responsibility.
+- **Helm chart templating internals**: Helm `values.yaml` → ConfigMap/Secret rendering is validated via `helm template` in Checkpoint 8. Go unit tests do not test Helm.
+- **TLS transport** (#493): Orthogonal to auth headers. TLS encrypts the transport; auth headers authenticate the request. Tested separately.
+- **LLM provider authentication logic**: KA doesn't validate tokens against the provider. It injects headers; the provider decides if they're valid.
+- **Mock LLM header recording internals**: Tested by TP-531 (Mock LLM test plan). This plan only verifies that Mock LLM *receives* the headers.
+
+> **Note (v1.2)**: Prior versions stated "KA does NOT handle OAuth token lifecycle." This is no longer accurate. When `oauth2.enabled=true`, KA acquires and refreshes tokens via the standard `golang.org/x/oauth2/clientcredentials` library. The `filePath` source remains available for sidecars that manage tokens externally.
+
+### 4.3 Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| RoundTripper pattern (not middleware) | Headers must be injected at the `http.Transport` layer to work with any LangChainGo backend (OpenAI, Ollama, custom). Middleware would only work for the Kubernaut Agent's own HTTP server, not outbound LLM client calls. |
+| `filePath` re-read on every request (no cache) | Sidecar-rotated tokens have unpredictable rotation schedules. Caching risks serving an expired token. File reads are <1ms for small token files. |
+| Fail-fast on missing `secretKeyRef` | A misconfigured Secret is a deployment error, not a runtime error. Better to fail at startup than to silently send unauthenticated requests. |
+| Reserved header deny list | Prevents accidental override of `Content-Type`, `Accept`, `User-Agent`, `Host` which would break the LLM request. |
+| Sensitive sources (`secretKeyRef`, `filePath`) redacted; `value` source not redacted | `value` is for non-sensitive data (tenant IDs, correlation headers) explicitly placed in plaintext config. Only secret-sourced and file-sourced values need redaction. |
+| OAuth2 via `golang.org/x/oauth2/clientcredentials` (not sidecar) | Go stdlib provides battle-tested token lifecycle (acquisition, caching, thread-safe refresh). ~20 lines of wrapper code vs. deploying a sidecar container (`oauth2-proxy` does not support client credentials grant for outbound token injection). |
+| OAuth2 as innermost auth layer in transport chain | Custom headers (AuthHeaders) sit above OAuth2 so operators can override the `Authorization` header if needed. Structured output sits outermost as it mutates the request body, not headers. Chain: `StructuredOutput → AuthHeaders → OAuth2 → DefaultTransport`. |
+| OAuth2 credentials via K8s Secret env vars (not ConfigMap) | `client_id` and `client_secret` are sensitive. Helm chart projects them from `credentialsSecretRef` as env vars `OAUTH2_CLIENT_ID` / `OAUTH2_CLIENT_SECRET`. ConfigMap only stores `token_url` and `scopes` (non-sensitive). |
+| OAuth2 disabled by default | Zero overhead when not configured. `OAuth2Config.Enabled` defaults to `false`. No token endpoint calls, no `oauth2.Transport` in the chain. |
+
+### 4.4 Authentication Modes Summary (for documentation team)
+
+Kubernaut Agent supports **two complementary** outbound LLM authentication modes. They compose in a layered transport chain and can be used independently or together.
+
+#### Mode 1: Static/Sidecar-Managed Custom Headers (v1.0)
+
+| Aspect | Detail |
+|--------|--------|
+| **Use case** | API key injection, tenant headers, sidecar-rotated JWTs (Vault Agent, cert-manager) |
+| **Config** | `llm.custom_headers` in SDK config YAML — list of `{name, value/secretKeyRef/filePath}` |
+| **Token lifecycle** | External — KA reads the header value from config, env, or file; a sidecar handles rotation |
+| **Helm config** | `kubernautAgent.sdkConfigContent` (or `existingSdkConfigMap`) with `custom_headers` section |
+| **Example** | `Authorization: Bearer <sidecar-written-jwt>`, `X-Api-Key: <from-secret>`, `X-Tenant-Id: prod` |
+
+#### Mode 2: OAuth2 Client Credentials Grant (v1.2)
+
+| Aspect | Detail |
+|--------|--------|
+| **Use case** | Enterprise IdP (Keycloak, Azure AD, Okta) — machine-to-machine JWT authentication |
+| **Config** | `llm.oauth2.enabled: true` + `token_url`, `client_id`, `client_secret`, `scopes` |
+| **Token lifecycle** | Internal — KA acquires, caches, and refreshes JWTs via `golang.org/x/oauth2/clientcredentials` |
+| **Helm config** | `kubernautAgent.llm.oauth2.enabled`, `tokenURL`, `credentialsSecretRef` (K8s Secret for client creds), `scopes` |
+| **Example** | KA → POST `token_url` with `grant_type=client_credentials` → receives JWT → injects `Authorization: Bearer <jwt>` into every LLM request |
+
+#### Composability
+
+Both modes compose in the transport chain: `StructuredOutput → Custom Headers → OAuth2 → DefaultTransport`. If both are enabled, custom headers can override the OAuth2-injected `Authorization` header (custom headers sit above OAuth2 in the chain). This allows operators to use OAuth2 for base authentication and add supplementary headers (tenant ID, correlation headers) on top.
+
+---
+
+## 5. Approach
+
+### 5.1 Coverage Policy
+
+**Authority**: `03-testing-strategy.mdc` — Per-Tier Testable Code Coverage.
+
+- **Unit**: >=80% of unit-testable code (RoundTripper logic, resolver, config parser, scrubbing, validation)
+- **Integration**: >=80% of integration-testable code (full HTTP round trip, file I/O, startup wiring, Mock LLM verification)
+
+### 5.2 Two-Tier Minimum
+
+Every acceptance criterion from #417 is covered by at least 2 tiers:
+- **Unit tests**: Validate resolver logic, config parsing, scrubbing, validation in isolation
+- **Integration tests**: Validate headers arrive at a real HTTP server and are verifiable via the Mock LLM API
+
+### 5.3 Business Outcome Quality Bar
+
+Tests validate **business outcomes**:
+1. **Enterprise gateways authenticate Kubernaut Agent requests** — correct headers arrive at the LLM endpoint
+2. **Sidecar token rotation works without restart** — `filePath` headers reflect current file content
+3. **API keys never leak** — logs and metrics contain redacted values, not plaintext secrets
+4. **Operators can configure any header** — arbitrary names and values from any of the three sources
+
+### 5.4 Pass/Fail Criteria
+
+**PASS** — all of the following:
+
+1. All P0 tests pass (0 failures)
+2. All P1 tests pass or have documented exceptions
+3. Per-tier coverage >=80%
+4. No regressions in existing Kubernaut Agent test suites
+5. All three value sources (`secretKeyRef`, `filePath`, `value`) inject correct header values in integration tests
+6. No sensitive header values appear in any log output (verified by UT-KA-417-009)
+
+**FAIL** — any of the following:
+
+1. Any P0 test fails
+2. Per-tier coverage below 80%
+3. Sensitive header value found in log output
+4. `filePath` source does not reflect updated file content (stale token)
+5. Original `*http.Request` mutated by `RoundTrip` (violates transport contract, risks data races)
+
+### 5.5 Suspension & Resumption Criteria
+
+**Suspend testing when**:
+
+- **Kubernaut Agent (KA) #433 base not buildable**: Auth headers depend on the Kubernaut Agent LLM client infrastructure. If the base HTTP client isn't implemented, header injection tests are meaningless.
+- **Mock LLM #570 not available**: IT-KA-417-006 (end-to-end verification) is blocked. Other integration tests can proceed using `httptest.Server`.
+- **Build broken**: `go build ./cmd/kubernautagent/...` fails.
+
+**Resume testing when**:
+
+- Kubernaut Agent base LLM client compiles and can make outbound HTTP calls
+- Mock LLM #570 merged → unblock end-to-end verification test
+- Build fixed
+
+---
+
+## 6. Test Items
+
+### 6.1 Unit-Testable Code (pure logic, no I/O)
+
+| File | Functions/Methods | Lines (approx) |
+|------|-------------------|-----------------|
+| `pkg/kubernautagent/llm/transport/auth_headers.go` | `NewAuthHeadersTransport`, `RoundTrip` | ~50 |
+| `pkg/kubernautagent/llm/transport/resolver.go` | `ResolveValue`, `ResolveSecretKeyRef`, `ResolveFilePath`, `ResolveAll` | ~80 |
+| `pkg/kubernautagent/llm/transport/scrub.go` | `RedactHeaderValue`, `IsSensitiveSource` | ~30 |
+| `pkg/kubernautagent/config/headers.go` | `ParseCustomHeaders`, `ValidateHeaderName`, `ValidateSource` | ~60 |
+| `internal/kubernautagent/config/config.go` | `OAuth2Config` struct, `Validate()` additions | ~25 |
+| `pkg/kubernautagent/llm/transport/oauth2_credentials.go` | `NewOAuth2ClientCredentialsTransport` | ~30 |
+| **Total unit-testable** | | **~275** |
+
+### 6.2 Integration-Testable Code (I/O, wiring)
+
+| File | Functions/Methods | Lines (approx) |
+|------|-------------------|-----------------|
+| `pkg/kubernautagent/llm/transport/resolver.go` | `ResolveFilePath` (actual file read) | ~20 |
+| `pkg/kubernautagent/llm/client.go` | `NewLLMClient` (wires transport with auth headers) | ~30 |
+| `cmd/kubernautagent/main.go` | Startup validation of header sources + OAuth2 layer in `buildTransportChain` | ~25 |
+| Token endpoint HTTP call (via `oauth2.Transport`) | `RoundTrip` token acquisition | ~0 (stdlib) |
+| **Total integration-testable** | | **~75** |
+
+### 6.3 Version Identification
+
+| Item | Version/Commit | Notes |
+|------|----------------|-------|
+| Code under test | `development/v1.3` HEAD | Kubernaut Agent auth headers implementation |
+| Dependency: Kubernaut Agent base client | #433 (In progress) | Must have working `http.Client` with configurable transport |
+| Dependency: Mock LLM verification | #570 (Open) | For IT-KA-417-006. Fallback: `httptest.Server` |
+
+---
+
+## 7. BR Coverage Matrix
+
+| BR / AC | Description | Priority | Tier | Test ID | Status |
+|---------|-------------|----------|------|---------|--------|
+| AC-417-01 | Arbitrary key-value headers configurable | P0 | Unit | UT-KA-417-001 | Pending |
+| AC-417-01 | Arbitrary headers — over HTTP | P0 | Integration | IT-KA-417-001 | Pending |
+| AC-417-02 | `secretKeyRef` source resolves from env/volume | P0 | Unit | UT-KA-417-002..003 | Pending |
+| AC-417-02 | `secretKeyRef` — over HTTP | P0 | Integration | IT-KA-417-002 | Pending |
+| AC-417-03 | `filePath` source re-reads on each request | P0 | Unit | UT-KA-417-005..006 | Pending |
+| AC-417-03 | `filePath` re-read — file rotation | P0 | Integration | IT-KA-417-005 | Pending |
+| AC-417-04 | `value` source inlines from config | P0 | Unit | UT-KA-417-004 | Pending |
+| AC-417-04 | `value` — over HTTP | P0 | Integration | IT-KA-417-001 | Pending |
+| AC-417-05 | Headers at transport layer (provider-agnostic) | P0 | Integration | IT-KA-417-001..002 | Pending |
+| AC-417-06 | Sensitive values from Secrets/files only | P0 | Unit | UT-KA-417-009 | Pending |
+| AC-417-07 | No token lifecycle management | P1 | Unit | UT-KA-417-005 | Pending |
+| AC-417-08 | Unit tests for RoundTripper (all 3 sources) | P0 | Unit | UT-KA-417-001..008 | Pending |
+| AC-417-09 | Integration test with Mock LLM | P0 | Integration | IT-KA-417-006 | Pending |
+| — | Startup validation (fail-fast on missing source) | P1 | Unit | UT-KA-417-010 | Pending |
+| — | Reserved header name rejection | P1 | Unit | UT-KA-417-011 | Pending |
+| — | Backward compat (no headers configured) | P0 | Integration | IT-KA-417-003 | Pending |
+| — | Config parse error handling | P1 | Unit | UT-KA-417-012 | Pending |
+| — | Concurrent filePath reads thread-safe | P1 | Unit | UT-KA-417-007 | Pending |
+| — | filePath missing at request time returns clear error | P1 | Unit | UT-KA-417-014 | Pending |
+| — | filePath empty file content rejected | P1 | Unit | UT-KA-417-015 | Pending |
+| — | RoundTripper request cloning contract | P0 | Unit | UT-KA-417-016 | Pending |
+| — | Header values absent from request body (defense-in-depth) | P2 | Unit | UT-KA-417-017 | Pending |
+| AC-OAUTH2-01 | OAuth2 client credentials config parseable from YAML | P0 | Unit | UT-KA-417-020, UT-KA-417-021 | Pass |
+| AC-OAUTH2-02 | Required OAuth2 fields validated at startup | P0 | Unit | UT-KA-417-022..025 | Pass |
+| AC-OAUTH2-03 | Token acquired via client credentials grant | P0 | Integration | IT-KA-417-010 | Pass |
+| AC-OAUTH2-04 | Token refreshed automatically before expiry | P0 | Integration | IT-KA-417-011 | Pass |
+| AC-OAUTH2-05 | Transport chain composable (OAuth2 + custom headers + structured output) | P0 | Unit | UT-KA-417-028 | Pass |
+| AC-OAUTH2-06 | IdP failure produces actionable error | P0 | Integration | IT-KA-417-012 | Pass |
+| AC-OAUTH2-07 | OAuth2 disabled by default, no overhead when off | P0 | Unit | UT-KA-417-021, UT-KA-417-025 | Pass |
+
+### Status Legend
+
+- **Pending**: Specification complete, implementation not started
+- **RED**: Failing test written (TDD RED phase)
+- **GREEN**: Minimal implementation passes (TDD GREEN phase)
+- **REFACTORED**: Code cleaned up (TDD REFACTOR phase)
+- **Pass**: Implemented and passing
+
+---
+
+## 8. Test Scenarios
+
+### Test ID Naming Convention
+
+Format: `{TIER}-KA-417-{SEQUENCE}`
+
+- **TIER**: `UT` (Unit), `IT` (Integration)
+- **SERVICE**: `KA` (Kubernaut Agent)
+- **ISSUE**: `417`
+
+### Tier 1: Unit Tests
+
+**Testable code scope**: `pkg/kubernautagent/llm/transport/`, `pkg/kubernautagent/config/headers.go`. Target: >=80% of ~220 lines.
+
+#### 8.1.1 RoundTripper — Header Injection
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `UT-KA-417-001` | RoundTripper injects all configured headers into outbound request before delegating to inner transport | Pending |
+| `UT-KA-417-002` | `secretKeyRef` source resolves header value from environment variable | Pending |
+| `UT-KA-417-003` | `secretKeyRef` source resolves header value from mounted file (volume mount simulated as env) | Pending |
+| `UT-KA-417-004` | `value` source inlines the literal string as header value | Pending |
+| `UT-KA-417-005` | `filePath` source reads file content as header value (simulated via temp file) | Pending |
+| `UT-KA-417-006` | `filePath` source returns updated content when file is overwritten between requests (token rotation) | Pending |
+| `UT-KA-417-007` | Concurrent `filePath` reads from multiple goroutines do not panic or produce garbled values | Pending |
+| `UT-KA-417-008` | Multiple headers from mixed sources (secretKeyRef + filePath + value) all injected in a single request | Pending |
+
+#### 8.1.2 Credential Safety
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `UT-KA-417-009` | Sensitive header values (`secretKeyRef`, `filePath` sources) are redacted in log output; `value` source is not redacted | Pending |
+
+#### 8.1.3 Config Validation
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `UT-KA-417-010` | Startup validation fails fast with clear error when `secretKeyRef` env var is empty or unset | Pending |
+| `UT-KA-417-011` | Config rejects reserved header names (`Content-Type`, `Accept`, `Host`, `User-Agent`) with descriptive error | Pending |
+| `UT-KA-417-012` | Config rejects malformed header definitions (missing name, missing source, both `value` and `secretKeyRef` set, duplicate header names) | Pending |
+| `UT-KA-417-013` | Config accepts zero custom headers (empty list) — no-op RoundTripper, no overhead | Pending |
+
+#### 8.1.4 OAuth2 Config Parsing and Validation (v1.2)
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `UT-KA-417-020` | `OAuth2Config` parses correctly from YAML (`enabled`, `token_url`, `client_id`, `client_secret`, `scopes`) | Pass |
+| `UT-KA-417-021` | `OAuth2Config` defaults to disabled when omitted from YAML | Pass |
+| `UT-KA-417-022` | `Validate()` rejects missing `token_url` when `oauth2.enabled=true` | Pass |
+| `UT-KA-417-023` | `Validate()` rejects missing `client_id` when `oauth2.enabled=true` | Pass |
+| `UT-KA-417-024` | `Validate()` rejects missing `client_secret` when `oauth2.enabled=true` | Pass |
+| `UT-KA-417-025` | `Validate()` accepts `oauth2.enabled=false` with empty fields (no-op) | Pass |
+
+#### 8.1.5 OAuth2 Transport Construction (v1.2)
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `UT-KA-417-026` | `NewOAuth2ClientCredentialsTransport` returns an `http.RoundTripper` that wraps the provided base transport | Pass |
+| `UT-KA-417-027` | `NewOAuth2ClientCredentialsTransport` with nil base defaults to `http.DefaultTransport` | Pass |
+| `UT-KA-417-028` | Transport chain order: OAuth2 wraps DefaultTransport, AuthHeaders wraps OAuth2, StructuredOutput wraps AuthHeaders (verify layering via `httptest.Server`) | Pass |
+
+#### 8.1.6 Runtime Safety
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `UT-KA-417-014` | `filePath` file missing at request time returns clear error identifying the missing path (not a panic or empty value) | Pending |
+| `UT-KA-417-015` | `filePath` file exists but is empty returns error (empty auth token is worse than no auth) | Pending |
+| `UT-KA-417-016` | Original `*http.Request` headers unchanged after `RoundTrip` returns — request cloned before mutation (RoundTripper contract) | Pending |
+| `UT-KA-417-017` | Header values injected at transport layer do NOT appear in the request body (defense-in-depth: headers never leak into LLM prompt content) | Pending |
+
+---
+
+### Tier 2: Integration Tests
+
+**Testable code scope**: Full HTTP round trip through `NewLLMClient` with configured auth headers to a real HTTP server. Target: >=80% of ~70 lines.
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `IT-KA-417-001` | Full round trip: Kubernaut Agent LLM client with 3 headers (one per source type) sends request to `httptest.Server` — all 3 headers present with correct values | Pending |
+| `IT-KA-417-002` | Headers injected for both OpenAI and Ollama endpoints (provider-agnostic transport layer) | Pending |
+| `IT-KA-417-003` | Kubernaut Agent with zero custom headers configured sends request without any extra headers (backward compat) | Pending |
+| `IT-KA-417-004` | Error log from a failed LLM request does NOT contain the `Authorization` header value (credential scrubbing in error path) | Pending |
+| `IT-KA-417-005` | Token file updated between two consecutive requests — second request carries new token value (rotation without restart) | Pending |
+| `IT-KA-417-006` | End-to-end: Kubernaut Agent sends request with `Authorization: Bearer test-token` to Mock LLM → `GET /api/test/headers` returns recorded header | Pending |
+| `IT-KA-417-010` | Full round trip: OAuth2 transport acquires token from mock IdP (`httptest.Server`), injects `Authorization: Bearer <token>`, forwards to mock LLM. Token and grant_type verified at both servers. | Pass |
+| `IT-KA-417-011` | Token refresh: First request acquires token with 1s expiry. After expiry, second request automatically re-acquires a fresh token from IdP. Both tokens verified at LLM server. | Pass |
+| `IT-KA-417-012` | IdP unavailable: OAuth2 transport returns clear error when token endpoint is unreachable. LLM request fails with actionable error message, not a panic or silent 401. | Pass |
+
+### Tier Skip Rationale
+
+- **E2E**: Deferred. The full pipeline (signal → AA → Kubernaut Agent → LLM) is tested by existing E2E suites. Adding auth headers to E2E would require provisioning Secrets and sidecars in Kind, which adds infrastructure cost for marginal coverage beyond unit + integration. Can be added when Helm chart tests (#239) are implemented.
+
+---
+
+## 9. Test Cases
+
+### UT-KA-417-001: RoundTripper injects all configured headers
+
+**BR**: AC-417-01, AC-417-05, AC-417-08
+**Priority**: P0
+**Type**: Unit
+**File**: `test/unit/kubernautagent/transport/auth_headers_test.go`
+
+**Preconditions**:
+- Three header definitions: `x-api-key` (value: `"test-key"`), `x-tenant-id` (value: `"prod"`), `Authorization` (value: `"Bearer abc123"`)
+- A mock inner `http.RoundTripper` that captures the outbound request
+
+**Test Steps**:
+1. **Given**: An `AuthHeadersTransport` wrapping a capturing inner transport, configured with 3 headers
+2. **When**: `RoundTrip` is called with an `http.Request` to `https://llm.example.com/v1/chat/completions`
+3. **Then**: The inner transport receives the request with all 3 headers present
+
+**Expected Results**:
+1. `request.Header.Get("x-api-key")` == `"test-key"`
+2. `request.Header.Get("x-tenant-id")` == `"prod"`
+3. `request.Header.Get("Authorization")` == `"Bearer abc123"`
+4. Original request headers (Content-Type, etc.) are preserved
+
+**Acceptance Criteria**:
+- **Behavior**: All configured headers are injected before the inner transport sees the request
+- **Correctness**: Header values match the configured sources exactly
+- **Accuracy**: Pre-existing headers on the request are not removed or modified
+
+**Dependencies**: None (foundational test)
+
+---
+
+### UT-KA-417-006: filePath re-read on token rotation
+
+**BR**: AC-417-03
+**Priority**: P0
+**Type**: Unit
+**File**: `test/unit/kubernautagent/transport/resolver_test.go`
+
+**Preconditions**:
+- Temporary file containing `"token-v1"`
+- Header definition with `filePath` pointing to the temp file
+
+**Test Steps**:
+1. **Given**: A `filePath` resolver pointing to a temp file containing `"token-v1"`
+2. **When**: `ResolveFilePath()` is called → returns `"token-v1"` → file is overwritten with `"token-v2"` → `ResolveFilePath()` is called again
+3. **Then**: Second call returns `"token-v2"`
+
+**Expected Results**:
+1. First resolution: `"token-v1"`
+2. After file overwrite: `"token-v2"`
+3. No caching — file is re-read on every call
+
+**Acceptance Criteria**:
+- **Behavior**: Sidecar-rotated token is picked up on the next LLM request without Kubernaut Agent restart
+- **Correctness**: No stale token served after file update
+- **Accuracy**: Trailing newlines/whitespace stripped from file content (sidecar may write `token\n`)
+
+**Dependencies**: None
+
+---
+
+### UT-KA-417-009: Credential scrubbing in logs
+
+**BR**: AC-417-06, DD-HAPI-005
+**Priority**: P0
+**Type**: Unit
+**File**: `test/unit/kubernautagent/transport/scrub_test.go`
+
+**Preconditions**:
+- Header definitions: `Authorization` (secretKeyRef → `"Bearer secret-key"`), `x-tenant-id` (value → `"prod"`)
+- Structured logger capturing output to buffer
+
+**Test Steps**:
+1. **Given**: An `AuthHeadersTransport` with one sensitive header (secretKeyRef) and one non-sensitive header (value), logger writing to a buffer
+2. **When**: A request is made and the transport logs the header injection event
+3. **Then**: Log output contains `Authorization: [REDACTED]` and `x-tenant-id: prod`
+
+**Expected Results**:
+1. `"Bearer secret-key"` does NOT appear anywhere in the log buffer
+2. `"[REDACTED]"` appears in place of the secret value
+3. `"prod"` appears as-is (non-sensitive `value` source)
+
+**Acceptance Criteria**:
+- **Behavior**: Operators see that auth headers were injected without seeing the secret values
+- **Correctness**: Only `secretKeyRef` and `filePath` sourced values are redacted; `value` source is visible
+- **Accuracy**: Redaction applies to all log levels (debug, info, error)
+
+**Dependencies**: None
+
+---
+
+### UT-KA-417-010: Startup fail-fast on missing secret
+
+**BR**: AC-417-06, R2
+**Priority**: P1
+**Type**: Unit
+**File**: `test/unit/kubernautagent/config/headers_test.go`
+
+**Preconditions**:
+- Header definition with `secretKeyRef` pointing to env var `LLM_API_KEY`
+- Env var is NOT set
+
+**Test Steps**:
+1. **Given**: A header config with `secretKeyRef: {name: llm-secret, key: api-key}` and the corresponding env var unset
+2. **When**: `ValidateHeaderSources()` is called during startup
+3. **Then**: Returns an error with a message identifying the missing secret
+
+**Expected Results**:
+1. Error returned (not nil)
+2. Error message contains the secret name and key for operator debugging
+3. Error message does NOT suggest a default value (fail-fast, not fail-soft)
+
+**Acceptance Criteria**:
+- **Behavior**: Kubernaut Agent refuses to start with a misconfigured Secret rather than silently sending unauthenticated requests
+- **Correctness**: Error is actionable — operator knows which Secret to fix
+- **Accuracy**: Non-secret sources (`value`, existing `filePath`) do not trigger this validation
+
+**Dependencies**: None
+
+---
+
+### IT-KA-417-001: Full round trip with all three source types
+
+**BR**: AC-417-01..05, AC-417-08
+**Priority**: P0
+**Type**: Integration
+**File**: `test/integration/kubernautagent/auth_headers_test.go`
+
+**Preconditions**:
+- `httptest.Server` that captures all received request headers
+- Temp file containing `"jwt-token-xyz"` for `filePath` source
+- Env var `TEST_API_KEY=secret-key-123` for `secretKeyRef` source
+
+**Test Steps**:
+1. **Given**: A Kubernaut Agent LLM client configured with:
+   - `x-api-key` from `secretKeyRef` (env: `TEST_API_KEY`)
+   - `Authorization` from `filePath` (temp file: `"jwt-token-xyz"`)
+   - `x-tenant-id` from `value` (`"kubernaut-prod"`)
+2. **When**: Client sends a `POST /v1/chat/completions` to the `httptest.Server`
+3. **Then**: Server receives all 3 headers with correct values
+
+**Expected Results**:
+1. `x-api-key: secret-key-123`
+2. `Authorization: jwt-token-xyz`
+3. `x-tenant-id: kubernaut-prod`
+4. Standard headers (Content-Type: application/json) also present
+
+**Acceptance Criteria**:
+- **Behavior**: Enterprise gateway would authenticate this request
+- **Correctness**: All three source types resolve correctly over real HTTP
+- **Accuracy**: Headers are injected at the transport layer — the `httptest.Server` sees them, proving they're on the wire
+
+**Dependencies**: None (uses `httptest.Server`, no external dependencies)
+
+---
+
+### IT-KA-417-005: Token rotation without restart
+
+**BR**: AC-417-03
+**Priority**: P0
+**Type**: Integration
+**File**: `test/integration/kubernautagent/auth_headers_test.go`
+
+**Preconditions**:
+- `httptest.Server` capturing headers
+- Temp file initially containing `"token-v1"`
+- Kubernaut Agent LLM client with `Authorization` header from `filePath`
+
+**Test Steps**:
+1. **Given**: Client configured with `filePath` source pointing to temp file with `"token-v1"`
+2. **When**: Client sends request → server captures `Authorization: token-v1` → file overwritten with `"token-v2"` → client sends another request
+3. **Then**: Second request carries `Authorization: token-v2`
+
+**Expected Results**:
+1. First request: `Authorization: token-v1`
+2. Second request (after file update): `Authorization: token-v2`
+3. No Kubernaut Agent restart between requests
+
+**Acceptance Criteria**:
+- **Behavior**: Vault Agent / cert-manager sidecar rotates token → KA picks it up on next LLM call
+- **Correctness**: No stale token served
+- **Accuracy**: File is re-read per request, not cached
+
+**Dependencies**: None
+
+---
+
+### IT-KA-417-006: End-to-end with Mock LLM verification API
+
+**BR**: AC-417-09, BR-MOCK-006, BR-MOCK-007
+**Priority**: P0
+**Type**: Integration
+**File**: `test/integration/kubernautagent/auth_headers_mockllm_test.go`
+
+**Preconditions**:
+- Mock LLM Go server running (httptest.Server or container)
+- Mock LLM #570 verification API available
+- Kubernaut Agent LLM client configured with `Authorization: Bearer test-token-e2e`
+
+**Test Steps**:
+1. **Given**: Mock LLM server running with auth header recording enabled
+2. **When**: Kubernaut Agent sends `POST /v1/chat/completions` with `Authorization: Bearer test-token-e2e`
+3. **Then**: `GET /api/test/headers` on Mock LLM returns the recorded `Authorization` header
+
+**Expected Results**:
+1. Mock LLM returns valid chat completion response (request not rejected)
+2. `GET /api/test/headers` response includes `Authorization: Bearer test-token-e2e`
+3. Request sequence and conversation ID are populated
+
+**Acceptance Criteria**:
+- **Behavior**: The acceptance criterion from #417 — "Integration test with mock LLM verifying headers are received" — is satisfied
+- **Correctness**: Header value matches what KA was configured to send
+- **Accuracy**: Mock LLM processes the request normally (auth headers don't interfere with scenario routing)
+
+**Dependencies**: Mock LLM #570 (fallback: `httptest.Server` with custom handler)
+
+---
+
+### UT-KA-417-014: filePath missing at request time
+
+**BR**: R7 (filePath missing at runtime)
+**Priority**: P1
+**Type**: Unit
+**File**: `test/unit/kubernautagent/transport/resolver_test.go`
+
+**Preconditions**:
+- Header definition with `filePath` pointing to `/tmp/nonexistent-token.txt`
+- File does NOT exist on disk
+
+**Test Steps**:
+1. **Given**: A `filePath` resolver pointing to a non-existent file path
+2. **When**: `ResolveFilePath()` is called during `RoundTrip`
+3. **Then**: Returns an error containing the file path and a clear description
+
+**Expected Results**:
+1. `RoundTrip` returns a non-nil error
+2. Error message contains the file path (`/tmp/nonexistent-token.txt`)
+3. Error message indicates the file is missing (not a generic I/O error)
+4. No panic, no empty header value sent silently
+
+**Acceptance Criteria**:
+- **Behavior**: Missing file at runtime produces an actionable error, not a silent failure
+- **Correctness**: Remediation request is blocked rather than sent without authentication
+
+**Dependencies**: None
+
+---
+
+### UT-KA-417-015: filePath empty file content rejected
+
+**BR**: R7 (filePath missing at runtime)
+**Priority**: P1
+**Type**: Unit
+**File**: `test/unit/kubernautagent/transport/resolver_test.go`
+
+**Preconditions**:
+- Temporary file exists but is empty (0 bytes)
+- Header definition with `filePath` pointing to the empty file
+
+**Test Steps**:
+1. **Given**: A `filePath` resolver pointing to an empty file
+2. **When**: `ResolveFilePath()` is called during `RoundTrip`
+3. **Then**: Returns an error indicating the file is empty
+
+**Expected Results**:
+1. `RoundTrip` returns a non-nil error
+2. Error message indicates the file exists but contains no content
+3. An empty string is NOT injected as the header value (empty auth token is worse than no auth)
+
+**Acceptance Criteria**:
+- **Behavior**: Empty token file is treated as an error, not a valid value
+- **Correctness**: Prevents requests with empty `Authorization: ` headers
+
+**Dependencies**: None
+
+---
+
+### UT-KA-417-016: RoundTripper request cloning contract
+
+**BR**: R8 (request mutation)
+**Priority**: P0
+**Type**: Unit
+**File**: `test/unit/kubernautagent/transport/auth_headers_test.go`
+
+**Preconditions**:
+- An `AuthHeadersTransport` configured with `Authorization: Bearer test`
+- An original `http.Request` with no `Authorization` header
+- A capturing inner transport that records the forwarded request
+
+**Test Steps**:
+1. **Given**: An original request with `Content-Type: application/json` and NO `Authorization` header
+2. **When**: `RoundTrip` is called
+3. **Then**: The inner transport receives a request with `Authorization: Bearer test`, but the ORIGINAL request still has no `Authorization` header
+
+**Expected Results**:
+1. Inner transport sees `Authorization: Bearer test`
+2. Original request's `Header` map does NOT contain `Authorization`
+3. Original request's `Content-Type` is unchanged
+4. Both requests share the same `Body` (clone preserves body reference)
+
+**Acceptance Criteria**:
+- **Behavior**: `RoundTrip` does not mutate the caller's `*http.Request` (per `http.RoundTripper` contract)
+- **Correctness**: Concurrent callers are safe from header cross-contamination
+
+**Dependencies**: None (foundational safety test)
+
+---
+
+### UT-KA-417-017: Header values absent from request body
+
+**BR**: I3 (defense-in-depth)
+**Priority**: P2
+**Type**: Unit
+**File**: `test/unit/kubernautagent/transport/auth_headers_test.go`
+
+**Preconditions**:
+- An `AuthHeadersTransport` configured with a sensitive header `Authorization: Bearer secret-token-xyz`
+- A JSON request body with a chat completion payload
+- A capturing inner transport
+
+**Test Steps**:
+1. **Given**: A request body `{"model":"gpt-4","messages":[{"role":"user","content":"analyze pod crash"}]}`
+2. **When**: `RoundTrip` is called with the `AuthHeadersTransport`
+3. **Then**: The request body forwarded to the inner transport does NOT contain the header value
+
+**Expected Results**:
+1. Read the captured request body from the inner transport
+2. Body does NOT contain `"secret-token-xyz"` anywhere
+3. Body is unchanged from the original (transport layer does not modify body)
+
+**Acceptance Criteria**:
+- **Behavior**: Header values never leak into the LLM prompt/request body (defense-in-depth)
+- **Correctness**: Transport-layer injection is isolated from content-layer data
+
+**Dependencies**: None
+
+---
+
+### UT-KA-417-020: OAuth2Config parses correctly from YAML
+
+**BR**: AC-OAUTH2-01
+**Priority**: P0
+**Type**: Unit
+**File**: `test/unit/kubernautagent/config/config_test.go`
+
+**Preconditions**:
+- YAML config with `llm.oauth2` section containing all fields
+
+**Test Steps**:
+1. **Given**: A YAML config with `oauth2.enabled: true`, `token_url`, `client_id`, `client_secret`, and `scopes`
+2. **When**: `config.Load()` is called
+3. **Then**: All OAuth2 fields are populated in the resulting config struct
+
+**Expected Results**:
+1. `cfg.LLM.OAuth2.Enabled` == `true`
+2. `cfg.LLM.OAuth2.TokenURL` == the configured URL
+3. `cfg.LLM.OAuth2.ClientID` == the configured client ID
+4. `cfg.LLM.OAuth2.ClientSecret` == the configured client secret
+5. `cfg.LLM.OAuth2.Scopes` == the configured scopes list
+
+**Dependencies**: None
+
+---
+
+### UT-KA-417-022: Validate rejects missing token_url when oauth2 enabled
+
+**BR**: AC-OAUTH2-02
+**Priority**: P0
+**Type**: Unit
+**File**: `test/unit/kubernautagent/config/config_test.go`
+
+**Preconditions**:
+- YAML config with `oauth2.enabled: true` but `token_url` omitted
+
+**Test Steps**:
+1. **Given**: A config with `oauth2.enabled: true`, `client_id` and `client_secret` present, `token_url` empty
+2. **When**: `cfg.Validate()` is called
+3. **Then**: Returns an error containing `"token_url"`
+
+**Expected Results**:
+1. Error is non-nil
+2. Error message identifies `token_url` as the missing field
+3. Operator can fix the issue without reading source code
+
+**Dependencies**: None
+
+---
+
+### IT-KA-417-010: Full OAuth2 round trip with token acquisition from IdP
+
+**BR**: AC-OAUTH2-03, AC-OAUTH2-05
+**Priority**: P0
+**Type**: Integration
+**File**: `test/integration/kubernautagent/oauth2_credentials_test.go`
+
+**Preconditions**:
+- Two `httptest.Server` instances: one as mock IdP token endpoint, one as mock LLM
+- IdP returns `{"access_token":"integration-jwt-abc123", "token_type":"Bearer", "expires_in":3600}`
+
+**Test Steps**:
+1. **Given**: An OAuth2 transport configured with a mock IdP and real `http.DefaultTransport`
+2. **When**: A POST request is sent to the mock LLM server through the OAuth2 transport
+3. **Then**: The mock LLM server receives `Authorization: Bearer integration-jwt-abc123`
+
+**Expected Results**:
+1. IdP receives a POST with `grant_type=client_credentials`
+2. LLM server receives the correct Bearer token
+3. Response status is 200
+
+**Dependencies**: None (uses `httptest.Server`)
+
+---
+
+### IT-KA-417-011: Token refresh on expiry
+
+**BR**: AC-OAUTH2-04
+**Priority**: P0
+**Type**: Integration
+**File**: `test/integration/kubernautagent/oauth2_credentials_test.go`
+
+**Preconditions**:
+- Mock IdP issues tokens with `expires_in: 1` (1 second)
+- IdP returns incremented token versions (`token-v1`, `token-v2`)
+
+**Test Steps**:
+1. **Given**: OAuth2 transport with 1s token expiry
+2. **When**: First request is sent, token expires (2s wait for wall-clock expiry), second request is sent
+3. **Then**: Second request carries a fresh token, different from the first
+
+**Expected Results**:
+1. First request: `Authorization: Bearer token-v1`
+2. Second request (after expiry): `Authorization: Bearer token-v2`
+3. No KA restart between requests
+
+**Note**: The 2s `time.Sleep` is required to allow real wall-clock time to pass for the `oauth2.ReuseTokenSource` cache to expire. This is NOT an async polling scenario — `Eventually()` would not help because the token is synchronous.
+
+**Dependencies**: None
+
+---
+
+### IT-KA-417-012: IdP unavailable produces actionable error
+
+**BR**: AC-OAUTH2-06
+**Priority**: P0
+**Type**: Integration
+**File**: `test/integration/kubernautagent/oauth2_credentials_test.go`
+
+**Preconditions**:
+- OAuth2 transport configured with `token_url: http://127.0.0.1:1/nonexistent-idp/token` (unreachable)
+
+**Test Steps**:
+1. **Given**: OAuth2 transport pointing to an unreachable IdP
+2. **When**: `RoundTrip` is called
+3. **Then**: Returns a non-nil error with connection/oauth2 details
+
+**Expected Results**:
+1. `RoundTrip` returns an error (not nil)
+2. Error message contains "connection refused", "connect", or "oauth2"
+3. No panic, no nil pointer dereference, no silent 401
+
+**Dependencies**: None
+
+---
+
+## 10. Environmental Needs
+
+### 10.1 Unit Tests
+
+- **Framework**: Ginkgo/Gomega BDD (mandatory)
+- **Mocks**: Mock `http.RoundTripper` (`capturingTransport`) for header inspection; `httptest.Server` for mock IdP token endpoints (OAuth2 tests)
+- **Test data**: Temporary files for `filePath` tests, env vars for `secretKeyRef` tests
+- **Location**: `test/unit/kubernautagent/transport/`, `test/unit/kubernautagent/config/`
+- **Helpers**: `newMockIdPServer(accessToken)` — shared helper for OAuth2 unit tests
+- **Anti-patterns avoided**: No `time.Sleep()` — use `Eventually()` for async assertions. No `Skip()`. No direct audit store testing.
+
+### 10.2 Integration Tests
+
+- **Framework**: Ginkgo/Gomega BDD (mandatory)
+- **Mocks**: ZERO mocks — real HTTP via `httptest.NewServer`
+- **Infrastructure**: `httptest.Server` (header capturing), temp files (token rotation), Mock LLM Go server (IT-KA-417-006), mock IdP `httptest.Server` (IT-KA-417-010..012)
+- **Helpers**: `newMockIdPServerWithExpiry(accessToken, expiresIn)` — shared helper for OAuth2 integration tests
+- **Location**: `test/integration/kubernautagent/`
+- **Anti-patterns avoided**: No mocks of business logic. No HTTP endpoint tests for pure logic. IT-KA-417-011 uses a 2s `time.Sleep` for real wall-clock token expiry (not an async polling scenario — documented rationale in test).
+
+### 10.3 Tools & Versions
+
+| Tool | Minimum Version | Purpose |
+|------|-----------------|---------|
+| Go | 1.22+ | Build and test |
+| Ginkgo CLI | v2.x | Test runner |
+
+---
+
+## 11. Dependencies & Schedule
+
+### 11.1 Blocking Dependencies
+
+| Dependency | Type | Status | Impact if Not Available | Workaround |
+|------------|------|--------|-------------------------|------------|
+| Kubernaut Agent base LLM client (#433) | Code | In progress | All tests blocked — no `http.Client` to wrap | Implement auth headers transport standalone; wire into the Kubernaut Agent client when available |
+| Mock LLM #570 | Code | Open | IT-KA-417-006 blocked | Use `httptest.Server` with custom handler that records headers |
+
+### 11.2 Execution Order
+
+1. **Phase 1 — Config & resolver (Unit)**: UT-KA-417-010..013 (config validation), UT-KA-417-002..006 (resolver logic)
+2. **Phase 2 — RoundTripper & scrubbing (Unit)**: UT-KA-417-001 (injection), UT-KA-417-008 (mixed sources), UT-KA-417-009 (scrubbing), UT-KA-417-007 (concurrency)
+3. **Phase 3 — HTTP round trips (Integration)**: IT-KA-417-001..005 (httptest-based)
+4. **Phase 4 — Mock LLM verification (Integration)**: IT-KA-417-006 (when #570 lands)
+
+---
+
+## 12. Test Deliverables
+
+| Deliverable | Location | Description |
+|-------------|----------|-------------|
+| This test plan | `docs/tests/417/TEST_PLAN.md` | Strategy, risk analysis, and test design |
+| Unit test suite (custom headers) | `test/unit/kubernautagent/transport/`, `test/unit/kubernautagent/config/` | 17 Ginkgo BDD tests for resolver, RoundTripper, scrubbing, config |
+| Unit test suite (OAuth2) | `test/unit/kubernautagent/transport/oauth2_credentials_test.go`, `test/unit/kubernautagent/config/config_test.go` | 9 Ginkgo BDD tests for OAuth2 config + transport construction |
+| Integration test suite (custom headers) | `test/integration/kubernautagent/auth_headers_test.go`, `auth_headers_mockllm_test.go` | 6 Ginkgo BDD tests for full HTTP round trips and Mock LLM verification |
+| Integration test suite (OAuth2) | `test/integration/kubernautagent/oauth2_credentials_test.go` | 3 Ginkgo BDD tests for OAuth2 token acquisition, refresh, and error handling |
+| Coverage report | CI artifact | Per-tier coverage percentages |
+
+---
+
+## 13. Execution
+
+```bash
+# Unit tests
+go test ./test/unit/kubernautagent/... -ginkgo.v
+
+# Integration tests
+go test ./test/integration/kubernautagent/... -ginkgo.v
+
+# Specific test by ID
+go test ./test/unit/kubernautagent/... -ginkgo.focus="UT-KA-417-006"
+
+# Coverage — unit tier
+go test ./test/unit/kubernautagent/... -coverprofile=unit_coverage.out
+go tool cover -func=unit_coverage.out
+```
+
+---
+
+## 14. Test Count Summary
+
+| Tier | Custom Headers | OAuth2 (v1.2) | Total | Coverage Target |
+|------|---------------|---------------|-------|-----------------|
+| Unit | 17 | 9 | 26 | >=80% of ~275 lines (RoundTripper, resolver, config, scrubbing, runtime safety, OAuth2 config + transport) |
+| Integration | 6 | 3 | 9 | >=80% of ~75 lines (HTTP round trip, file I/O, startup, Mock LLM, OAuth2 token flow) |
+| **Total** | **23** | **12** | **35** | |
+
+**AC Coverage**: All 9 acceptance criteria from #417 + 7 OAuth2 acceptance criteria covered by >=2 tiers. Defensive tests beyond the AC list: startup validation (P1), reserved header rejection (P1), concurrent filePath safety (P1), filePath missing/empty at runtime (P1), RoundTripper request cloning contract (P0), header value isolation from request body (P2), and IdP failure resilience (P0).
+
+---
+
+## 14b. Audit Findings (v1.1)
+
+### Gaps Closed
+
+| # | Finding | Severity | Resolution |
+|---|---------|----------|------------|
+| G1 | FR-HAPI-433-10 referenced in v1.0 but no FR document exists | Medium | Removed reference; #417 acceptance criteria are the authoritative source |
+| G2 | No test for `filePath` absent at request time (sidecar race) | High | Added UT-KA-417-014 |
+| G3 | No test for empty file content from sidecar | Medium | Added UT-KA-417-015 |
+| G4 | No test for `http.RoundTripper` contract (request cloning) | High | Added UT-KA-417-016 |
+| G5 | Duplicate header names in config not tested | Medium | Extended UT-KA-417-012 to reject duplicate names |
+| G6 | Scrubbing scope only covered logs/errors, not LLM-bound content | Low | Added UT-KA-417-017 (defense-in-depth: header values absent from request body) |
+
+### Inconsistencies Resolved
+
+| # | Finding | Severity | Resolution |
+|---|---------|----------|------------|
+| I1 | #417 issue body says "HAPI SHALL support..." but v1.3 work targets Kubernaut Agent | Medium | Noted in test plan; issue title is provider-agnostic. A comment will be added to #417 clarifying KA is the consumer. |
+| I2 | DD-HAPI-005 cited for credential scrubbing — but that DD covers LLM input sanitization, not HTTP header redaction | High | Fixed: now cites DD-HAPI-019-003 (G4: Credential Scrubbing) |
+| I3 | #417 says "redacted from any LLM-bound content" but header values are injected at transport layer below prompt assembly | Low | Clarified in plan: real risk is logs/metrics/errors. UT-KA-417-017 provides defense-in-depth validation. |
+
+---
+
+## 15. Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2026-03-04 | Initial test plan (IEEE 829 hybrid). 19 tests across 2 tiers covering 9 acceptance criteria + 4 defensive tests. 6 risks with traceability. Suspension criteria for #433 base client and #570 Mock LLM dependencies. |
+| 1.1 | 2026-03-04 | Audit: added 4 unit tests (UT-KA-417-014..017) for runtime safety — filePath missing/empty at request time, RoundTripper request cloning contract, header value isolation from request body. Added risks R7 (filePath missing), R8 (request mutation). Fixed DD reference: DD-HAPI-019-003 G4 replaces DD-HAPI-005. Clarified scrubbing scope (logs/errors, not LLM prompts). Total: 23 tests (17 unit + 6 integration). |
+| 1.2 | 2026-04-06 | **OAuth2 client credentials transport**: Added 12 new tests (9 unit: UT-KA-417-020..028, 3 integration: IT-KA-417-010..012) for OAuth2 client credentials grant support. Added `OAuth2Config` struct and `Validate()` rules, `NewOAuth2ClientCredentialsTransport` wrapper around `golang.org/x/oauth2/clientcredentials`, and `buildTransportChain` wiring. Added risks R9 (IdP unreachable), R10 (token expiry), R11 (creds in ConfigMap). Added 7 new acceptance criteria (AC-OAUTH2-01..07). Updated scope: OAuth2 transport, config, Helm chart. Updated "Features Not to be Tested" to reflect that KA now handles OAuth2 token lifecycle natively. Helm chart: `values.yaml` oauth2 section, ConfigMap rendering, Secret env var projection, fail guards. Total: 35 tests (26 unit + 9 integration). All 12 new tests passing. |

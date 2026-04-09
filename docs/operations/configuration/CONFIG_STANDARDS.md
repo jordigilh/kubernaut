@@ -1,7 +1,7 @@
 # Kubernaut Configuration Standards
 
-**Version**: 1.1
-**Last Updated**: 2026-03-21
+**Version**: 1.3
+**Last Updated**: 2026-04-03
 **Status**: ✅ Authoritative Reference
 
 ---
@@ -53,7 +53,7 @@ Services MUST crash at startup if:
 | Service | ConfigMap Name | Required Dependencies | Crash-if-Missing |
 |---------|----------------|----------------------|------------------|
 | **SignalProcessing** | `signalprocessing-config` | None | No (uses defaults) |
-| **AIAnalysis** | `aianalysis-config` | HolmesGPT-API | Yes |
+| **AIAnalysis** | `aianalysis-config` | Kubernaut Agent | Yes |
 | **WorkflowExecution** | `workflowexecution-config` | Tekton Pipelines | Yes |
 | **RemediationOrchestrator** | `remediationorchestrator-config` | None | No (uses defaults) |
 | **Notification** | `notification-config` | None | No (uses defaults) |
@@ -63,7 +63,7 @@ Services MUST crash at startup if:
 | Service | ConfigMap Name | Required Dependencies | Crash-if-Missing |
 |---------|----------------|----------------------|------------------|
 | **Gateway** | `gateway-config` | Redis | Yes |
-| **HolmesGPT-API** | `holmesgpt-api-config` | LLM Provider | Yes |
+| **Kubernaut Agent** | `kubernaut-agent-config` | LLM Provider | Yes |
 | **Data Storage** | `data-storage-config` | PostgreSQL | Yes |
 | **Dynamic Toolset** | `dynamic-toolset-config` | None | No (uses defaults) |
 | **Effectiveness Monitor** | `effectiveness-monitor-config` | Data Storage | Yes |
@@ -144,25 +144,47 @@ metrics:
 
 ---
 
-### 3. HolmesGPT-API Service
+### 3. Kubernaut Agent Service
 
-**ConfigMap**: `holmesgpt-api-config`
+**ConfigMap**: `kubernaut-agent-config`
+
+> **Note**: This service was renamed from HolmesGPT-API as part of #433 (Go rewrite).
+> The Python HolmesGPT SDK dependency has been eliminated.
 
 ```yaml
 llm:
-  provider: "openai"                # REQUIRED: openai, azure, anthropic
+  provider: "openai"                # REQUIRED: openai, ollama, azure, vertex, anthropic, bedrock, huggingface, mistral
+  endpoint: "https://api.openai.com" # Provider-specific base URL (required for openai, ollama, azure, vertex, mistral; optional for anthropic; unused by bedrock, huggingface)
   model: "gpt-4"                    # Default: "gpt-4"
-  api_key: ""                       # Use env var LLM_API_KEY
-  timeout: 60s                      # Default: 60s
-  max_tokens: 4096                  # Default: 4096
+  api_key: ""                       # Use env var LLM_API_KEY (required for openai, azure, anthropic, huggingface, mistral; unused by bedrock, vertex, ollama)
+  azure_api_version: ""             # Required when provider=azure (e.g. "2024-02-15-preview")
+  vertex_project: ""                # Required when provider=vertex (GCP project ID)
+  vertex_location: "us-central1"    # Default: "us-central1" (for provider=vertex)
+  bedrock_region: ""                # Optional when provider=bedrock (overrides AWS_REGION env / SDK default credential chain)
 
 data_storage:
   url: "http://data-storage:8080"   # REQUIRED - no default
-  timeout: 30s                      # Default: 30s
 
-mcp:
-  enabled: true                     # Default: true
-  workflow_search_endpoint: "/api/v1/workflows/search"
+investigator:
+  max_turns: 15                     # Default: 15 — max LLM tool-call turns per investigation
+
+sanitization:
+  g4_credentials: true              # Default: true — G4 credential scrubbing
+  i1_injection: true                # Default: true — I1 injection stripping
+
+anomaly:
+  max_tool_calls_per_tool: 5        # Default: 5 — I7 per-tool call limit
+  max_total_tool_calls: 30          # Default: 30 — I7 total tool call limit
+  max_repeated_failures: 3          # Default: 3 — I7 consecutive failure limit
+
+summarizer:
+  threshold: 8000                   # Default: 8000 chars — above this, tool output is LLM-summarized
+
+audit:
+  enabled: true                     # Default: true — sends audit events to DataStorage
+
+session:
+  ttl: 10m                          # Default: 10m — async session expiry
 
 logging:
   level: "info"                     # Default: "info"
@@ -174,6 +196,15 @@ health:
 metrics:
   listen_addr: ":9090"              # Default: ":9090"
 ```
+
+#### Air-gapped / On-prem LLM Guidance
+
+For environments without internet access (air-gapped, on-prem, classified networks), the recommended approach is:
+
+- **Ollama** (`provider: "ollama"`): Run any GGUF model locally. Set `endpoint` to the Ollama server URL.
+- **OpenAI-compatible** (`provider: "openai"`): Many on-prem inference servers (vLLM, LocalAI, TGI) expose an OpenAI-compatible API. Set `endpoint` to the server URL.
+
+The LangChainGo `local` provider (subprocess execution) is **not supported** — it violates BR-HAPI-433 security requirements (no shell execution, no subprocess calls).
 
 ---
 
@@ -216,8 +247,8 @@ metrics:
 **ConfigMap**: `aianalysis-config`
 
 ```yaml
-holmesgpt_api:
-  url: "http://holmesgpt-api:8080"  # REQUIRED - no default
+kubernaut_agent:
+  url: "http://kubernaut-agent:8080"  # REQUIRED - no default
   timeout: 120s                     # Default: 120s
 
 timeouts:

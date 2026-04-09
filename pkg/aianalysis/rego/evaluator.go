@@ -51,7 +51,7 @@ type PolicyInput struct {
 	// Target resource
 	TargetResource TargetResourceInput `json:"target_resource"`
 
-	// Detected labels (ADR-056: computed by HAPI post-RCA)
+	// Detected labels (ADR-056: computed by KA post-RCA)
 	DetectedLabels map[string]interface{} `json:"detected_labels"`
 
 	// Custom labels (customer-defined via Rego)

@@ -24,7 +24,7 @@ import (
 	"github.com/go-logr/logr"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -32,7 +32,7 @@ import (
 // P1.2 Refactoring: Extracted from InvestigatingHandler for single responsibility.
 //
 // Responsibilities:
-// - Map AIAnalysis CRD spec to HAPI OpenAPI generated types
+// - Map AIAnalysis CRD spec to KA OpenAPI generated types
 // - Handle optional field population with generated opt types
 // - Provide consistent request enrichment patterns
 type RequestBuilder struct {
@@ -48,18 +48,18 @@ func NewRequestBuilder(log logr.Logger) *RequestBuilder {
 
 // ========================================
 // INCIDENT REQUEST CONSTRUCTION
-// BR-AI-080: Build request with all required HAPI fields
+// BR-AI-080: Build request with all required KA fields
 // ========================================
 
 // BuildIncidentRequest constructs an IncidentRequest from AIAnalysis CRD spec.
-// Uses generated OpenAPI types for type-safe HAPI contract compliance.
+// Uses generated OpenAPI types for type-safe KA contract compliance.
 //
 // Parameters:
 // - analysis: AIAnalysis CRD containing signal context and enrichment
 //
 // Returns:
-// - *client.IncidentRequest: Type-safe request for HAPI /incident/analyze endpoint
-func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis) *client.IncidentRequest {
+// - *client.IncidentRequest: Type-safe request for KA /incident/analyze endpoint
+func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis) *agentclient.IncidentRequest {
 	spec := analysis.Spec.AnalysisRequest.SignalContext
 	enrichment := spec.EnrichmentResults
 
@@ -70,15 +70,15 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 		correlationID = analysis.Spec.RemediationRequestRef.Name // Preferred
 	}
 
-	// BR-AI-080: Build request with all required HAPI fields using generated types
+	// BR-AI-080: Build request with all required KA fields using generated types
 	// Issue #113: CustomLabels now on enrichment.KubernetesContext
 	customLabels := getCustomLabels(enrichment)
-	req := &client.IncidentRequest{
-		// REQUIRED fields per HAPI OpenAPI spec
+	req := &agentclient.IncidentRequest{
+		// REQUIRED fields per KA OpenAPI spec
 		IncidentID:        analysis.Name,    // Q1: Use CR name
 		RemediationID:     correlationID,    // DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name for audit correlation
 		SignalName:        spec.SignalName,
-		Severity:          client.Severity(spec.Severity),
+		Severity:          agentclient.Severity(spec.Severity),
 		SignalSource:      "kubernaut",
 		ResourceNamespace: spec.TargetResource.Namespace,
 		ResourceKind:      spec.TargetResource.Kind,
@@ -94,10 +94,10 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 	// Map enrichment results for richer HolmesGPT-API context
 	req.EnrichmentResults.SetTo(b.buildEnrichmentResults(enrichment))
 
-	// BR-AI-084: Pass signal mode to HAPI for prompt strategy switching (ADR-054)
+	// BR-AI-084: Pass signal mode to KA for prompt strategy switching (ADR-054)
 	// "reactive" triggers RCA investigation; "proactive" triggers proactive prevention strategy
 	if spec.SignalMode != "" {
-		req.SignalMode.SetTo(client.SignalMode(spec.SignalMode))
+		req.SignalMode.SetTo(agentclient.SignalMode(spec.SignalMode))
 	}
 
 	return req
@@ -108,16 +108,16 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 // ========================================
 
 // buildEnrichmentResults maps shared EnrichmentResults to client.EnrichmentResults
-func (b *RequestBuilder) buildEnrichmentResults(enrichment sharedtypes.EnrichmentResults) client.EnrichmentResults {
-	result := client.EnrichmentResults{}
+func (b *RequestBuilder) buildEnrichmentResults(enrichment sharedtypes.EnrichmentResults) agentclient.EnrichmentResults {
+	result := agentclient.EnrichmentResults{}
 
 	// ADR-056: DetectedLabels removed from EnrichmentResults.
-	// DetectedLabels are now computed by HAPI post-RCA and returned
+	// DetectedLabels are now computed by KA post-RCA and returned
 	// in the response (stored in PostRCAContext).
 
 	// Map CustomLabels if present (Issue #113: CustomLabels now on KubernetesContext)
 	if enrichment.KubernetesContext != nil && len(enrichment.KubernetesContext.CustomLabels) > 0 {
-		customLabels := client.EnrichmentResultsCustomLabels(enrichment.KubernetesContext.CustomLabels)
+		customLabels := agentclient.EnrichmentResultsCustomLabels(enrichment.KubernetesContext.CustomLabels)
 		result.CustomLabels.SetTo(customLabels)
 	}
 
@@ -134,7 +134,7 @@ func (b *RequestBuilder) buildEnrichmentResults(enrichment sharedtypes.Enrichmen
 	// Map BusinessClassification if present (BR-SP-002, BR-SP-080, BR-SP-081)
 	if enrichment.BusinessClassification != nil {
 		bc := enrichment.BusinessClassification
-		clientBC := client.BusinessClassification{}
+		clientBC := agentclient.BusinessClassification{}
 		if bc.BusinessUnit != "" {
 			clientBC.BusinessUnit.SetTo(bc.BusinessUnit)
 		}

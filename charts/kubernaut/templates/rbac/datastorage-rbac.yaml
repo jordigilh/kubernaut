@@ -136,11 +136,11 @@ subjects:
     name: workflowexecution-controller
     namespace: {{ .Release.Namespace }}
 ---
-# HolmesGPT API
+# Kubernaut Agent
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: holmesgpt-api-data-storage-client
+  name: kubernaut-agent-data-storage-client
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
@@ -150,7 +150,7 @@ roleRef:
   name: data-storage-client
 subjects:
   - kind: ServiceAccount
-    name: holmesgpt-api-sa
+    name: kubernaut-agent-sa
     namespace: {{ .Release.Namespace }}
 ---
 # EffectivenessMonitor

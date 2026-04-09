@@ -998,8 +998,6 @@ spec:
 `, imageName, imagePullPolicy)
 }
 
-
-
 func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName string, writer io.Writer) error {
 	// Per Consolidated API Migration (January 2026):
 	// Accept dynamic image name as parameter (built by BuildImageForKind)

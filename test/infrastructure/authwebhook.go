@@ -71,13 +71,13 @@ func (i *AuthWebhookInfrastructure) SetupWithAuth(authConfig *IntegrationAuthCon
 // Kept for backward compatibility during migration
 func (i *AuthWebhookInfrastructure) SetupWithKubeconfig(kubeconfigPath string, writer io.Writer) error {
 	cfg := DSBootstrapConfig{
-		ServiceName:        "authwebhook",
-		PostgresPort:       15442, // DD-TEST-001 v2.2
-		RedisPort:          16386, // DD-TEST-001 v2.2
-		DataStoragePort:    18099, // DD-TEST-001 v2.2
-		MetricsPort:        19099, // DD-TEST-001 v2.2
-		ConfigDir:          "test/integration/authwebhook/config",
-		EnvtestKubeconfig:  kubeconfigPath, // DD-AUTH-014: Enable DataStorage SAR auth
+		ServiceName:       "authwebhook",
+		PostgresPort:      15442, // DD-TEST-001 v2.2
+		RedisPort:         16386, // DD-TEST-001 v2.2
+		DataStoragePort:   18099, // DD-TEST-001 v2.2
+		MetricsPort:       19099, // DD-TEST-001 v2.2
+		ConfigDir:         "test/integration/authwebhook/config",
+		EnvtestKubeconfig: kubeconfigPath, // DD-AUTH-014: Enable DataStorage SAR auth
 		// WARNING: DataStorageServiceTokenPath not set - health check won't validate auth
 	}
 

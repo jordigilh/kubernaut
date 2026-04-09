@@ -5702,8 +5702,8 @@ func (s *AuditEventEventCategory) Decode(d *jx.Decoder) error {
 		*s = AuditEventEventCategoryWorkflowexecution
 	case AuditEventEventCategoryOrchestration:
 		*s = AuditEventEventCategoryOrchestration
-	case AuditEventEventCategoryWebhook:
-		*s = AuditEventEventCategoryWebhook
+	case AuditEventEventCategoryApproval:
+		*s = AuditEventEventCategoryApproval
 	case AuditEventEventCategoryEffectiveness:
 		*s = AuditEventEventCategoryEffectiveness
 	case AuditEventEventCategoryActiontype:
@@ -7225,6 +7225,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.AnalysisPreview)
 			}
 			{
+				if s.AnalysisFull.Set {
+					e.FieldStart("analysis_full")
+					s.AnalysisFull.Encode(e)
+				}
+			}
+			{
 				if s.TokensUsed.Set {
 					e.FieldStart("tokens_used")
 					s.TokensUsed.Encode(e)
@@ -8711,8 +8717,8 @@ func (s *AuditEventRequestEventCategory) Decode(d *jx.Decoder) error {
 		*s = AuditEventRequestEventCategoryWorkflowexecution
 	case AuditEventRequestEventCategoryOrchestration:
 		*s = AuditEventRequestEventCategoryOrchestration
-	case AuditEventRequestEventCategoryWebhook:
-		*s = AuditEventRequestEventCategoryWebhook
+	case AuditEventRequestEventCategoryApproval:
+		*s = AuditEventRequestEventCategoryApproval
 	case AuditEventRequestEventCategoryEffectiveness:
 		*s = AuditEventRequestEventCategoryEffectiveness
 	case AuditEventRequestEventCategoryActiontype:
@@ -10232,6 +10238,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("analysis_preview")
 				e.Str(s.AnalysisPreview)
+			}
+			{
+				if s.AnalysisFull.Set {
+					e.FieldStart("analysis_full")
+					s.AnalysisFull.Encode(e)
+				}
 			}
 			{
 				if s.TokensUsed.Set {
@@ -17909,11 +17921,25 @@ func (s *IncidentResponseDataAlternativeWorkflowsItem) encodeFields(e *jx.Encode
 			s.Rationale.Encode(e)
 		}
 	}
+	{
+		if s.ExecutionBundle.Set {
+			e.FieldStart("executionBundle")
+			s.ExecutionBundle.Encode(e)
+		}
+	}
+	{
+		if s.Confidence.Set {
+			e.FieldStart("confidence")
+			s.Confidence.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfIncidentResponseDataAlternativeWorkflowsItem = [2]string{
+var jsonFieldsNameOfIncidentResponseDataAlternativeWorkflowsItem = [4]string{
 	0: "workflowId",
 	1: "rationale",
+	2: "executionBundle",
+	3: "confidence",
 }
 
 // Decode decodes IncidentResponseDataAlternativeWorkflowsItem from json.
@@ -17943,6 +17969,26 @@ func (s *IncidentResponseDataAlternativeWorkflowsItem) Decode(d *jx.Decoder) err
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"rationale\"")
+			}
+		case "executionBundle":
+			if err := func() error {
+				s.ExecutionBundle.Reset()
+				if err := s.ExecutionBundle.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"executionBundle\"")
+			}
+		case "confidence":
+			if err := func() error {
+				s.Confidence.Reset()
+				if err := s.Confidence.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"confidence\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -18045,12 +18091,19 @@ func (s *IncidentResponseDataRootCauseAnalysis) encodeFields(e *jx.Encoder) {
 		}
 		e.ArrEnd()
 	}
+	{
+		if s.RemediationTarget.Set {
+			e.FieldStart("remediationTarget")
+			s.RemediationTarget.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfIncidentResponseDataRootCauseAnalysis = [3]string{
+var jsonFieldsNameOfIncidentResponseDataRootCauseAnalysis = [4]string{
 	0: "summary",
 	1: "severity",
 	2: "contributingFactors",
+	3: "remediationTarget",
 }
 
 // Decode decodes IncidentResponseDataRootCauseAnalysis from json.
@@ -18104,6 +18157,16 @@ func (s *IncidentResponseDataRootCauseAnalysis) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"contributingFactors\"")
 			}
+		case "remediationTarget":
+			if err := func() error {
+				s.RemediationTarget.Reset()
+				if err := s.RemediationTarget.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"remediationTarget\"")
+			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -18156,6 +18219,103 @@ func (s *IncidentResponseDataRootCauseAnalysis) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *IncidentResponseDataRootCauseAnalysis) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *IncidentResponseDataRootCauseAnalysisRemediationTarget) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *IncidentResponseDataRootCauseAnalysisRemediationTarget) encodeFields(e *jx.Encoder) {
+	{
+		if s.Kind.Set {
+			e.FieldStart("kind")
+			s.Kind.Encode(e)
+		}
+	}
+	{
+		if s.Name.Set {
+			e.FieldStart("name")
+			s.Name.Encode(e)
+		}
+	}
+	{
+		if s.Namespace.Set {
+			e.FieldStart("namespace")
+			s.Namespace.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfIncidentResponseDataRootCauseAnalysisRemediationTarget = [3]string{
+	0: "kind",
+	1: "name",
+	2: "namespace",
+}
+
+// Decode decodes IncidentResponseDataRootCauseAnalysisRemediationTarget from json.
+func (s *IncidentResponseDataRootCauseAnalysisRemediationTarget) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentResponseDataRootCauseAnalysisRemediationTarget to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "kind":
+			if err := func() error {
+				s.Kind.Reset()
+				if err := s.Kind.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"kind\"")
+			}
+		case "name":
+			if err := func() error {
+				s.Name.Reset()
+				if err := s.Name.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"name\"")
+			}
+		case "namespace":
+			if err := func() error {
+				s.Namespace.Reset()
+				if err := s.Namespace.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"namespace\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode IncidentResponseDataRootCauseAnalysisRemediationTarget")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *IncidentResponseDataRootCauseAnalysisRemediationTarget) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentResponseDataRootCauseAnalysisRemediationTarget) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -18724,6 +18884,12 @@ func (s *LLMResponsePayload) encodeFields(e *jx.Encoder) {
 		e.Str(s.AnalysisPreview)
 	}
 	{
+		if s.AnalysisFull.Set {
+			e.FieldStart("analysis_full")
+			s.AnalysisFull.Encode(e)
+		}
+	}
+	{
 		if s.TokensUsed.Set {
 			e.FieldStart("tokens_used")
 			s.TokensUsed.Encode(e)
@@ -18737,15 +18903,16 @@ func (s *LLMResponsePayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfLLMResponsePayload = [8]string{
+var jsonFieldsNameOfLLMResponsePayload = [9]string{
 	0: "event_type",
 	1: "event_id",
 	2: "incident_id",
 	3: "has_analysis",
 	4: "analysis_length",
 	5: "analysis_preview",
-	6: "tokens_used",
-	7: "tool_call_count",
+	6: "analysis_full",
+	7: "tokens_used",
+	8: "tool_call_count",
 }
 
 // Decode decodes LLMResponsePayload from json.
@@ -18753,7 +18920,7 @@ func (s *LLMResponsePayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode LLMResponsePayload to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 	s.setDefaults()
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
@@ -18828,6 +18995,16 @@ func (s *LLMResponsePayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"analysis_preview\"")
 			}
+		case "analysis_full":
+			if err := func() error {
+				s.AnalysisFull.Reset()
+				if err := s.AnalysisFull.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"analysis_full\"")
+			}
 		case "tokens_used":
 			if err := func() error {
 				s.TokensUsed.Reset()
@@ -18857,8 +19034,9 @@ func (s *LLMResponsePayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
+	for i, mask := range [2]uint8{
 		0b00111111,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -23002,6 +23180,39 @@ func (s OptIncidentResponseDataHumanReviewReason) MarshalJSON() ([]byte, error) 
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptIncidentResponseDataHumanReviewReason) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IncidentResponseDataRootCauseAnalysisRemediationTarget as json.
+func (o OptIncidentResponseDataRootCauseAnalysisRemediationTarget) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes IncidentResponseDataRootCauseAnalysisRemediationTarget from json.
+func (o *OptIncidentResponseDataRootCauseAnalysisRemediationTarget) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptIncidentResponseDataRootCauseAnalysisRemediationTarget to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptIncidentResponseDataRootCauseAnalysisRemediationTarget) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptIncidentResponseDataRootCauseAnalysisRemediationTarget) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

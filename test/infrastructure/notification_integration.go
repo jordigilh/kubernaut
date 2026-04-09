@@ -50,7 +50,7 @@ import (
 // Sequential allocation after AIAnalysis (15438/16384/18095/19095)
 const (
 	// PostgreSQL port for Notification integration tests
-	// Changed from 15439 to 15440 to resolve HAPI conflict (DD-TEST-001 v2.0) on Jan 1, 2026
+	// Changed from 15439 to 15440 to resolve port conflict with KA (DD-TEST-001 v2.0) on Jan 1, 2026
 	NTIntegrationPostgresPort = 15440
 
 	// Redis port for Notification integration tests
@@ -132,7 +132,7 @@ const (
 // - Parallel-safe with unique ports (DD-TEST-001)
 //
 // Infrastructure Components:
-// - PostgreSQL (port 15440): DataStorage backend (unique, no longer shared with HAPI)
+// - PostgreSQL (port 15440): DataStorage backend (unique, no longer shared with KA)
 // - Redis (port 16385): DataStorage DLQ
 // - DataStorage API (port 18096): Audit events
 //

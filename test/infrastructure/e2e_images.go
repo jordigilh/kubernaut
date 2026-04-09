@@ -220,7 +220,7 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 
 	// DD-TEST-009: Add 15-minute timeout to prevent infinite hangs
 	// Context: E2E tests were hanging indefinitely when Podman build processes stalled
-	// during dependency downloads (especially Python packages in HAPI)
+	// during dependency downloads (especially Python packages in legacy HolmesGPT stacks)
 	buildCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
@@ -266,12 +266,19 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 //	imageName, _ := BuildImageForKind(cfg, writer)
 //	err := LoadImageToKind(imageName, "datastorage", "gateway-e2e", writer)
 func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Writer) error {
-	// Skip loading if using registry image (Kind will pull on-demand)
+	// In CI mode (IMAGE_REGISTRY set), pull the image onto the runner first
+	// then load it into Kind. Kind nodes lack GHCR credentials so on-demand
+	// pulling fails with ErrImagePull for private packages.
 	registry := os.Getenv("IMAGE_REGISTRY")
 	if registry != "" && strings.Contains(imageName, registry) {
-		_, _ = fmt.Fprintf(writer, "⏭️  Skipping load for registry image: %s\n", imageName)
-		_, _ = fmt.Fprintf(writer, "   Kind will pull from registry on-demand (imagePullPolicy: IfNotPresent)\n")
-		return nil
+		_, _ = fmt.Fprintf(writer, "📦 CI mode: Pulling registry image for Kind load: %s\n", imageName)
+		pullCmd := exec.Command("podman", "pull", imageName)
+		pullCmd.Stdout = writer
+		pullCmd.Stderr = writer
+		if err := pullCmd.Run(); err != nil {
+			_, _ = fmt.Fprintf(writer, "⚠️  Pull failed, falling back to on-demand: %v\n", err)
+			return nil
+		}
 	}
 
 	_, _ = fmt.Fprintf(writer, "📦 Loading image to Kind cluster: %s\n", clusterName)
@@ -432,7 +439,7 @@ func CleanupE2EImage(imageName string, writer io.Writer) error {
 // Example:
 //
 //	var _ = AfterSuite(func() {
-//	    images := []string{gatewayImage, dataStorageImage, hapiImage}
+//	    images := []string{gatewayImage, dataStorageImage, kaImage}
 //	    _ = infrastructure.CleanupE2EImages(images, GinkgoWriter)
 //	})
 func CleanupE2EImages(imageNames []string, writer io.Writer) error {

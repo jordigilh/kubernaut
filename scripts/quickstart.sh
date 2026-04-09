@@ -68,8 +68,8 @@ echo "--- Installing Kubernaut ---"
 
 helm install "$RELEASE_NAME" "$CHART" \
   --namespace "$NAMESPACE" \
-  --set "holmesgptApi.llm.provider=$LLM_PROVIDER" \
-  --set "holmesgptApi.llm.model=$LLM_MODEL" \
+  --set "kubernautAgent.llm.provider=$LLM_PROVIDER" \
+  --set "kubernautAgent.llm.model=$LLM_MODEL" \
   "${HELM_SLACK_ARGS[@]}"
 
 echo ""

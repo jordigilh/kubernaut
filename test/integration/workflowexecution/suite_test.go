@@ -66,8 +66,10 @@ import (
 // When Deps is nil, GetWorkflowDependencies returns nil (no dependencies).
 // Engine defaults to "tekton" via testWorkflowQuerier initialization; createUniqueJobWFE sets "job".
 type configurableWorkflowQuerier struct {
-	Deps   *models.WorkflowDependencies
-	Engine string
+	Deps         *models.WorkflowDependencies
+	Engine       string
+	Bundle       string
+	BundleDigest string
 }
 
 func (q *configurableWorkflowQuerier) GetWorkflowDependencies(_ context.Context, _ string) (*models.WorkflowDependencies, error) {
@@ -80,6 +82,10 @@ func (q *configurableWorkflowQuerier) GetWorkflowEngineConfig(_ context.Context,
 
 func (q *configurableWorkflowQuerier) GetWorkflowExecutionEngine(_ context.Context, _ string) (string, string, error) {
 	return q.Engine, "", nil
+}
+
+func (q *configurableWorkflowQuerier) GetWorkflowExecutionBundle(_ context.Context, _ string) (string, string, error) {
+	return q.Bundle, q.BundleDigest, nil
 }
 
 // WorkflowExecution Integration Test Suite

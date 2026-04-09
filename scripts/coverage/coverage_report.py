@@ -4,9 +4,7 @@ Kubernaut Coverage Report Generator
 
 Replaces the bash+awk coverage reporting with a single Python script that:
 - Parses Go coverage profiles (.out files) for line-by-line analysis
-- Parses Python coverage reports (.txt files) with --show-missing for line-level data
 - Performs proper cross-tier line-by-line merging for "All Tiers" column
-  (Go: block-level key merge; Python: missing-line intersection)
 - Falls back to .pct summary files when full .out data isn't available
 - Outputs markdown, table, or json formats
 
@@ -22,7 +20,7 @@ import json
 import os
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -85,6 +83,16 @@ GO_SERVICE_CONFIG = {
         "unit_exclude": r"/(audit|status)/",
         "int_include": r"/(audit|status)/",
     },
+    "kubernautagent": {
+        "pkg_pattern": "/pkg/kubernautagent/",
+        # KA uses internal/kubernautagent/ (not internal/controller/).
+        # internal_pattern is treated like pkg_pattern for filtering
+        # (subject to exclude/include), unlike controller_pattern which
+        # is always included for integration tests.
+        "internal_pattern": "/internal/kubernautagent/",
+        "unit_exclude": r"/(enrichment/enricher\.go:|investigator/investigator\.go:|server/handler\.go:|session/manager\.go:|tools/k8s/tools\.go:|tools/prometheus/client\.go:|tools/mcp/provider\.go:|llm/client\.go:)",
+        "int_include": r"/(enrichment/enricher\.go:|investigator/investigator\.go:|server/handler\.go:|session/manager\.go:|tools/k8s/tools\.go:|tools/prometheus/client\.go:|tools/mcp/provider\.go:|llm/client\.go:)",
+    },
     "effectivenessmonitor": {
         "pkg_pattern": "/pkg/effectivenessmonitor/",
         "controller_pattern": "/internal/controller/effectivenessmonitor/",
@@ -95,19 +103,6 @@ GO_SERVICE_CONFIG = {
         "int_include": r"/(client|status|reconciler)/",
     },
 }
-
-# Python holmesgpt-api: module patterns for unit vs integration
-PYTHON_UNIT_PATTERNS = [
-    r"src/(models|validation|sanitization|toolsets|config)/",
-    r"src/audit/buffered_store\.py",
-    r"src/errors\.py",
-]
-PYTHON_INTEGRATION_PATTERNS = [
-    r"src/(extensions|middleware|auth|clients)/",
-    r"src/main\.py",
-    r"src/audit/(events|factory)\.py",
-    r"src/metrics/instrumentation\.py",
-]
 
 
 # ============================================================================
@@ -186,12 +181,15 @@ def calculate_coverage(entries: list[CoverageEntry]) -> str:
 
 
 def _matches_service_pkg(
-    key: str, pkg_pattern: str, controller_pattern: Optional[str] = None
+    key: str, pkg_pattern: str, controller_pattern: Optional[str] = None,
+    internal_pattern: Optional[str] = None,
 ) -> bool:
-    """Check if a coverage entry key matches the service's package or controller patterns."""
+    """Check if a coverage entry key matches the service's package, controller, or internal patterns."""
     if pkg_pattern in key:
         return True
     if controller_pattern and controller_pattern in key:
+        return True
+    if internal_pattern and internal_pattern in key:
         return True
     return False
 
@@ -200,17 +198,24 @@ def filter_go_entries(
     entries: list[CoverageEntry],
     pkg_pattern: str,
     controller_pattern: Optional[str] = None,
+    internal_pattern: Optional[str] = None,
     exclude_pattern: Optional[str] = None,
     include_pattern: Optional[str] = None,
 ) -> list[CoverageEntry]:
     """Filter Go coverage entries by package and inclusion/exclusion patterns.
 
-    For unit tests: only pkg_pattern entries are considered (controller code
-    requires k8s API and cannot be unit-tested).
+    For unit tests: pkg_pattern and internal_pattern entries are considered,
+    subject to exclude/include filtering. Controller code requires k8s API
+    and cannot be unit-tested.
 
-    For integration/E2E: both pkg_pattern and controller_pattern entries are
-    included. The exclude/include filters apply to pkg entries; controller
-    entries are always included (all controller code is integration-testable).
+    For integration/E2E: pkg_pattern, internal_pattern, and controller_pattern
+    entries are included. The exclude/include filters apply to pkg and internal
+    entries; controller entries are always included (all controller code is
+    integration-testable).
+
+    internal_pattern is for services like kubernautagent where internal code
+    lives at internal/<service>/ instead of internal/controller/<service>/ and
+    contains both unit-testable and integration-testable code.
     """
     filtered = []
     for e in entries:
@@ -219,9 +224,10 @@ def filter_go_entries(
             continue
 
         is_pkg = pkg_pattern in e.key
+        is_internal = internal_pattern is not None and internal_pattern in e.key
         is_controller = controller_pattern is not None and controller_pattern in e.key
 
-        if not is_pkg and not is_controller:
+        if not is_pkg and not is_internal and not is_controller:
             continue
 
         # Controller entries: always include (no exclude/include filtering)
@@ -229,7 +235,7 @@ def filter_go_entries(
             filtered.append(e)
             continue
 
-        # Package entries: apply exclude/include patterns
+        # Package and internal entries: apply exclude/include patterns
         if exclude_pattern and re.search(exclude_pattern, e.key):
             continue
         if include_pattern and not re.search(include_pattern, e.key):
@@ -297,25 +303,28 @@ def calc_go_service_tier(service: str, tier: str) -> str:
 
     pkg_pattern = config["pkg_pattern"]
     controller_pattern = config.get("controller_pattern")
+    internal_pattern = config.get("internal_pattern")
 
     if tier == "unit":
-        # Unit tests: only pkg code — controllers need k8s API
+        # Unit tests: pkg + internal code (subject to exclude), controllers excluded
         filtered = filter_go_entries(
-            entries, pkg_pattern, exclude_pattern=config["unit_exclude"]
+            entries, pkg_pattern, internal_pattern=internal_pattern,
+            exclude_pattern=config["unit_exclude"],
         )
         return calculate_coverage(filtered)
     elif tier == "integration":
-        # Integration tests: pkg integration code + ALL controller code
+        # Integration tests: pkg + internal integration code + ALL controller code
         filtered = filter_go_entries(
             entries, pkg_pattern, controller_pattern=controller_pattern,
-            include_pattern=config["int_include"]
+            internal_pattern=internal_pattern,
+            include_pattern=config["int_include"],
         )
         return calculate_coverage(filtered)
     elif tier == "e2e":
-        # E2E uses full service coverage (pkg + controller, no sub-tier filtering)
+        # E2E uses full service coverage (pkg + controller + internal, no sub-tier filtering)
         filtered = [
             e for e in entries
-            if _matches_service_pkg(e.key, pkg_pattern, controller_pattern)
+            if _matches_service_pkg(e.key, pkg_pattern, controller_pattern, internal_pattern)
             and not is_generated_code(e.key)
         ]
         return calculate_coverage(filtered)
@@ -337,6 +346,8 @@ def calc_go_service_all_tiers(service: str) -> str:
     pkg_pattern = config["pkg_pattern"]
     controller_pattern = config.get("controller_pattern")
 
+    internal_pattern = config.get("internal_pattern")
+
     # Collect entries from all available tiers
     all_entries = []
     has_real_data = False
@@ -346,10 +357,10 @@ def calc_go_service_all_tiers(service: str) -> str:
         entries = parse_go_coverage_file(covfile)
         if entries:
             has_real_data = True
-            # Filter to service's package + controller and exclude generated code
+            # Filter to service's package + controller + internal and exclude generated code
             filtered = [
                 e for e in entries
-                if _matches_service_pkg(e.key, pkg_pattern, controller_pattern)
+                if _matches_service_pkg(e.key, pkg_pattern, controller_pattern, internal_pattern)
                 and not is_generated_code(e.key)
             ]
             all_entries.append(filtered)
@@ -379,333 +390,6 @@ def calc_go_service_all_tiers(service: str) -> str:
     return "-"
 
 
-# ============================================================================
-# Python (holmesgpt-api) coverage calculation
-# ============================================================================
-
-@dataclass
-class PythonModuleCoverage:
-    """Coverage data for a single Python module.
-
-    When the report includes --show-missing, missing_lines contains the
-    specific line numbers that were NOT executed.  This enables true
-    line-by-line cross-tier merging (same approach Go services use).
-    """
-    name: str
-    total_stmts: int
-    missed_stmts: int
-    missing_lines: set[int] = field(default_factory=set)
-
-    @property
-    def covered_stmts(self) -> int:
-        return self.total_stmts - self.missed_stmts
-
-    @property
-    def has_line_data(self) -> bool:
-        """Whether this module has line-level missing data (vs just counts).
-
-        True when we parsed the Missing column (even if the set is empty,
-        which just means 100 % coverage — no lines missing).
-        """
-        return len(self.missing_lines) > 0 or self.missed_stmts == 0
-
-
-def parse_missing_lines(missing_str: str) -> set[int]:
-    """Parse a coverage.py Missing column value into a set of line numbers.
-
-    Handles individual lines, ranges, and branch indicators:
-        "45-60, 75-80"       → {45, 46, …, 60, 75, 76, …, 80}
-        "45, 47, 50-52"      → {45, 47, 50, 51, 52}
-        "45->48, 50-52"      → {50, 51, 52}   (branch indicators skipped)
-        ""                   → set()
-    """
-    lines: set[int] = set()
-    if not missing_str or not missing_str.strip():
-        return lines
-
-    for part in missing_str.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        # Skip branch-coverage indicators like "45->48"
-        if "->" in part:
-            continue
-        if "-" in part:
-            try:
-                start_s, end_s = part.split("-", 1)
-                lines.update(range(int(start_s.strip()), int(end_s.strip()) + 1))
-            except (ValueError, TypeError):
-                continue
-        else:
-            try:
-                lines.add(int(part))
-            except ValueError:
-                continue
-    return lines
-
-
-def parse_python_coverage_file(filepath: str) -> list[PythonModuleCoverage]:
-    """Parse a Python coverage text report into module coverage data.
-
-    Supports both plain reports (Name / Stmts / Miss / Cover) and
-    --show-missing reports (Name / Stmts / Miss / Cover / Missing).
-    When the Missing column is present the per-line data is stored in
-    PythonModuleCoverage.missing_lines for line-level cross-tier merging.
-
-    Files may contain pytest output, headers, separators, and multiple
-    coverage tables (e.g. pytest-cov ``term-missing`` + ``coverage report``).
-    The parser extracts all matching rows and deduplicates by module name,
-    preferring entries that carry line-level data.
-    """
-    seen: dict[str, PythonModuleCoverage] = {}
-    path = Path(filepath)
-    if not path.exists() or path.stat().st_size == 0:
-        return []
-
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            # Skip headers, separators, summary, and blank lines
-            if (line.startswith("Name") or line.startswith("---") or
-                    line.startswith("==") or line.startswith("TOTAL") or
-                    not line):
-                continue
-
-            parts = line.split()
-            if len(parts) >= 3:
-                try:
-                    name = parts[0]
-                    total_stmts = int(parts[1])
-                    missed_stmts = int(parts[2])
-                except (ValueError, IndexError):
-                    continue
-
-                # Normalize path: E2E coverage.py reports use
-                # "holmesgpt-api/src/..." while unit/integration pytest
-                # reports use "src/...". Normalize to "src/" prefix.
-                if name.startswith("holmesgpt-api/"):
-                    name = name[len("holmesgpt-api/"):]
-
-                # Only include Python source modules
-                if not name.startswith("src/"):
-                    continue
-
-                # Parse Missing column if present.
-                # Format: Name  Stmts  Miss  Cover%  [Missing…]
-                # parts[3] is the Cover percentage (e.g. "80%"),
-                # parts[4:] contain the missing line ranges.
-                missing_lines: set[int] = set()
-                if len(parts) > 4:
-                    missing_str = " ".join(parts[4:])
-                    missing_lines = parse_missing_lines(missing_str)
-
-                entry = PythonModuleCoverage(
-                    name=name,
-                    total_stmts=total_stmts,
-                    missed_stmts=missed_stmts,
-                    missing_lines=missing_lines,
-                )
-
-                # Deduplicate: prefer entries with line-level data over
-                # plain entries (the same file may contain both formats).
-                if name in seen:
-                    existing = seen[name]
-                    if entry.has_line_data and not existing.has_line_data:
-                        seen[name] = entry
-                    # Otherwise keep first (or existing with line data)
-                else:
-                    seen[name] = entry
-
-    return list(seen.values())
-
-
-def filter_python_modules(
-    modules: list[PythonModuleCoverage], patterns: list[str]
-) -> list[PythonModuleCoverage]:
-    """Filter Python modules matching any of the given regex patterns."""
-    filtered = []
-    for m in modules:
-        for pat in patterns:
-            if re.search(pat, m.name):
-                filtered.append(m)
-                break
-    return filtered
-
-
-def calc_python_coverage(modules: list[PythonModuleCoverage]) -> str:
-    """Calculate coverage percentage from Python module data."""
-    total = sum(m.total_stmts for m in modules)
-    covered = sum(m.covered_stmts for m in modules)
-    if total == 0:
-        return "0.0%"
-    return f"{(covered / total) * 100:.1f}%"
-
-
-def merge_python_coverage_by_lines(
-    *module_lists: list[PythonModuleCoverage],
-) -> dict[str, PythonModuleCoverage]:
-    """Merge Python coverage across tiers using line-level data.
-
-    For each module present in multiple tiers, a line is considered
-    "missed" only if it is missed in **every** tier that reports it
-    (i.e. the intersection of the per-tier missing-line sets).
-    This mirrors Go's ``merge_go_coverage_entries`` block-level merge
-    and gives true accumulated coverage.
-
-    Falls back to module-level "best miss count" when line data is
-    unavailable for a module (e.g. legacy reports without --show-missing).
-    """
-    # Collect all entries per module across all tiers
-    module_data: dict[str, list[PythonModuleCoverage]] = {}
-    for modules in module_lists:
-        for m in modules:
-            module_data.setdefault(m.name, []).append(m)
-
-    merged: dict[str, PythonModuleCoverage] = {}
-    for name, entries in module_data.items():
-        entries_with_lines = [e for e in entries if e.has_line_data]
-
-        if entries_with_lines:
-            # ── Line-level merge ──────────────────────────────────
-            # Start with the missing lines from the first entry and
-            # intersect with every subsequent entry.  A line survives
-            # the intersection only if ALL tiers missed it.
-            intersected_missing = entries_with_lines[0].missing_lines.copy()
-            for e in entries_with_lines[1:]:
-                intersected_missing &= e.missing_lines
-
-            max_stmts = max(e.total_stmts for e in entries)
-
-            # Filter out line numbers beyond the valid statement range.
-            # Different tiers may report different statement counts for
-            # the same module (e.g., code changes between test runs).
-            # Without this filter, len(intersected_missing) can exceed
-            # max_stmts, producing negative covered_stmts.
-            intersected_missing = {
-                line for line in intersected_missing if 1 <= line <= max_stmts
-            }
-
-            merged[name] = PythonModuleCoverage(
-                name=name,
-                total_stmts=max_stmts,
-                missed_stmts=len(intersected_missing),
-                missing_lines=intersected_missing,
-            )
-        else:
-            # ── Fallback: module-level merge (best miss count) ────
-            best = min(entries, key=lambda e: e.missed_stmts)
-            merged[name] = PythonModuleCoverage(
-                name=name,
-                total_stmts=max(e.total_stmts for e in entries),
-                missed_stmts=best.missed_stmts,
-            )
-
-    return merged
-
-
-def get_python_total_from_file(filepath: str) -> Optional[str]:
-    """Extract TOTAL percentage from a pytest-cov report."""
-    path = Path(filepath)
-    if not path.exists():
-        return None
-    with open(path) as f:
-        for line in f:
-            if line.strip().startswith("TOTAL"):
-                parts = line.strip().split()
-                if parts:
-                    last = parts[-1].replace("%", "")
-                    try:
-                        return f"{float(last):.1f}%"
-                    except ValueError:
-                        pass
-    return None
-
-
-def calc_python_service() -> ServiceCoverage:
-    """Calculate all coverage tiers for holmesgpt-api (Python service)."""
-    svc = ServiceCoverage(name="holmesgpt-api", language="python")
-
-    # Unit coverage
-    unit_file = "coverage_unit_holmesgpt-api.txt"
-    unit_modules = parse_python_coverage_file(unit_file)
-    if unit_modules:
-        filtered = filter_python_modules(unit_modules, PYTHON_UNIT_PATTERNS)
-        svc.unit = calc_python_coverage(filtered)
-    else:
-        # Fallback to TOTAL line
-        total = get_python_total_from_file(unit_file)
-        svc.unit = total if total else "-"
-
-    # Integration coverage
-    int_file = "coverage_integration_holmesgpt-api_python.txt"
-    int_modules = parse_python_coverage_file(int_file)
-    if int_modules:
-        filtered = filter_python_modules(int_modules, PYTHON_INTEGRATION_PATTERNS)
-        svc.integration = calc_python_coverage(filtered)
-    else:
-        total = get_python_total_from_file(int_file)
-        svc.integration = total if total else "-"
-
-    # E2E coverage (Python coverage.py - DD-TEST-007)
-    # The E2E test collects Python service coverage via coverage.py inside the container.
-    # The report is in standard `coverage report` text format (same as unit/integration).
-    e2e_file = "coverage_e2e_holmesgpt-api_python.txt"
-    e2e_modules = parse_python_coverage_file(e2e_file)
-    if e2e_modules:
-        svc.e2e = calc_python_coverage(e2e_modules)
-    else:
-        # Fallback: try TOTAL line from the file
-        total = get_python_total_from_file(e2e_file)
-        if total:
-            svc.e2e = total
-        else:
-            # Legacy fallback: check .pct file
-            pct = read_pct_file("coverage_e2e_holmesgpt-api.pct")
-            svc.e2e = pct if pct else "-"
-
-    # All Tiers: line-level merge across all tier files.
-    # For each Python module, intersect the per-tier missing-line sets so
-    # that a line is "missed" only if ALL tiers missed it.  This is the
-    # true Python equivalent of Go's block-level merge_go_coverage_entries.
-    #
-    # NOTE: We do NOT apply unit/integration pattern filters here — All Tiers
-    # considers ALL modules. Each tier's per-module data may cover different
-    # modules; merging gives us the best coverage per module from any tier.
-    all_tier_files = [
-        unit_file,
-        int_file,
-        e2e_file,
-    ]
-    all_module_lists: list[list[PythonModuleCoverage]] = []
-    has_module_data = False
-    for tf in all_tier_files:
-        modules = parse_python_coverage_file(tf)
-        if modules:
-            has_module_data = True
-            all_module_lists.append(modules)
-
-    if has_module_data and all_module_lists:
-        merged_modules = merge_python_coverage_by_lines(*all_module_lists)
-        svc.all_tiers = calc_python_coverage(list(merged_modules.values()))
-    else:
-        # Fallback: use best percentage if no module data available
-        best_pct = 0.0
-        for tier_val in [svc.unit, svc.integration, svc.e2e]:
-            if tier_val and tier_val != "-":
-                try:
-                    val = float(tier_val.replace("%", ""))
-                    if val > best_pct:
-                        best_pct = val
-                except ValueError:
-                    pass
-        if best_pct > 0:
-            svc.all_tiers = f"{best_pct:.1f}%"
-        else:
-            total = get_python_total_from_file(unit_file)
-            svc.all_tiers = total if total else svc.unit
-
-    return svc
-
 
 # ============================================================================
 # Full report generation
@@ -714,10 +398,6 @@ def calc_python_service() -> ServiceCoverage:
 def generate_all_service_coverage(filter_service: Optional[str] = None) -> list[ServiceCoverage]:
     """Generate coverage data for all services."""
     results = []
-
-    # Python service
-    if not filter_service or filter_service == "holmesgpt-api":
-        results.append(calc_python_service())
 
     # Go services
     for service in GO_SERVICE_CONFIG:

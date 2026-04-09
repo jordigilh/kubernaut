@@ -1,0 +1,151 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: actiontypes.kubernaut.ai
+spec:
+  group: kubernaut.ai
+  names:
+    kind: ActionType
+    listKind: ActionTypeList
+    plural: actiontypes
+    shortNames:
+    - at
+    singular: actiontype
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.name
+      name: Action Type
+      type: string
+    - jsonPath: .status.activeWorkflowCount
+      name: Workflows
+      type: integer
+    - jsonPath: .status.registered
+      name: Registered
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.description.what
+      name: Description
+      priority: 1
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ActionType is the Schema for the actiontypes API.
+          BR-WORKFLOW-007: Kubernetes-native action type taxonomy definition.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              ActionTypeSpec defines the desired state of ActionType.
+              BR-WORKFLOW-007: ActionType CRD lifecycle management.
+            properties:
+              description:
+                description: |-
+                  Description provides structured information about the action type.
+                  Only this field is mutable after creation.
+                properties:
+                  preconditions:
+                    description: Preconditions describes conditions that must be verified
+                      before use.
+                    type: string
+                  what:
+                    description: What describes what this action type concretely does.
+                    type: string
+                  whenNotToUse:
+                    description: WhenNotToUse describes specific exclusion conditions.
+                    type: string
+                  whenToUse:
+                    description: WhenToUse describes conditions under which this action
+                      type is appropriate.
+                    type: string
+                required:
+                - what
+                - whenToUse
+                type: object
+              name:
+                description: |-
+                  Name is the PascalCase action type identifier (e.g., RestartPod, ScaleReplicas).
+                  Immutable after creation.
+                maxLength: 255
+                minLength: 1
+                type: string
+            required:
+            - description
+            - name
+            type: object
+          status:
+            description: ActionTypeStatus defines the observed state of ActionType.
+            properties:
+              activeWorkflowCount:
+                description: |-
+                  ActiveWorkflowCount is the number of active RemediationWorkflows referencing this action type.
+                  Best-effort, updated asynchronously by the RW admission webhook handler.
+                type: integer
+              catalogStatus:
+                allOf:
+                - enum:
+                  - Active
+                  - Invalid
+                  - Pending
+                  - Deprecated
+                  - Archived
+                  - Disabled
+                  - Superseded
+                - enum:
+                  - Active
+                  - Invalid
+                  - Pending
+                  - Deprecated
+                  - Archived
+                  - Disabled
+                  - Superseded
+                description: CatalogStatus reflects the DS catalog lifecycle state.
+                type: string
+              previouslyExisted:
+                description: PreviouslyExisted indicates if this action type was re-enabled
+                  after being disabled.
+                type: boolean
+              registered:
+                description: Registered indicates whether the action type has been
+                  successfully registered in the DS catalog.
+                type: boolean
+              registeredAt:
+                description: RegisteredAt is the timestamp of initial registration
+                  in the catalog.
+                format: date-time
+                type: string
+              registeredBy:
+                description: RegisteredBy is the identity of the registrant (K8s SA
+                  or user).
+                type: string
+            type: object
+        type: object
+    selectableFields:
+    - jsonPath: .spec.name
+    served: true
+    storage: true
+    subresources:
+      status: {}

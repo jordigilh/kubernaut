@@ -49,7 +49,7 @@ import (
 //
 // Pipeline:
 //
-//	CertManagerCertNotReady alert → AlertManager → Gateway → RR → RO → SP → AA → HAPI(MockLLM) → WE(Job) → EA
+//	CertManagerCertNotReady alert → AlertManager → Gateway → RR → RO → SP → AA → KA(MockLLM) → WE(Job) → EA
 //
 // Key validations:
 //  1. RO detects Certificate (cert-manager.io/v1) as non-built-in CRD via REST mapper
@@ -207,22 +207,22 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 			if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
 				return false
 			}
-		for i := range rrList.Items {
-			rr := &rrList.Items[i]
-			if rr.Spec.TargetResource.Namespace != testNamespace {
-				continue
+			for i := range rrList.Items {
+				rr := &rrList.Items[i]
+				if rr.Spec.TargetResource.Namespace != testNamespace {
+					continue
+				}
+				sig := strings.ToLower(rr.Spec.SignalName)
+				if sig == "certmanagercertnotready" || strings.Contains(sig, "cert") {
+					remediationRequest = rr
+					GinkgoWriter.Printf("  ✅ RemediationRequest found: %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
+					return true
+				}
+				GinkgoWriter.Printf("  ⏳ Skipping RR %s with signal %q (waiting for CertManagerCertNotReady)\n", rr.Name, rr.Spec.SignalName)
 			}
-			sig := strings.ToLower(rr.Spec.SignalName)
-			if sig == "certmanagercertnotready" || strings.Contains(sig, "cert") {
-				remediationRequest = rr
-				GinkgoWriter.Printf("  ✅ RemediationRequest found: %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
-				return true
-			}
-			GinkgoWriter.Printf("  ⏳ Skipping RR %s with signal %q (waiting for CertManagerCertNotReady)\n", rr.Name, rr.Spec.SignalName)
-		}
-		return false
-	}, 2*time.Minute, 3*time.Second).Should(BeTrue(),
-		"RemediationRequest should be created by Gateway from CertManagerCertNotReady alert")
+			return false
+		}, 2*time.Minute, 3*time.Second).Should(BeTrue(),
+			"RemediationRequest should be created by Gateway from CertManagerCertNotReady alert")
 
 		// ================================================================
 		// Step 5: Wait for AIAnalysis to complete
@@ -279,6 +279,13 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 
 		By("Step 6b: Waiting for K8s Job to complete")
 		Eventually(func(g Gomega) {
+			// Early-exit: if WE already reached Failed, the Job won't recover.
+			we := &workflowexecutionv1.WorkflowExecution{}
+			if getErr := apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, we); getErr == nil {
+				g.Expect(we.Status.Phase).NotTo(Equal("Failed"),
+					fmt.Sprintf("WorkflowExecution %s reached Failed phase (reason: %s) — Job will not recover", weName, we.Status.FailureReason))
+			}
+
 			jobList := &batchv1.JobList{}
 			g.Expect(apiReader.List(ctx, jobList,
 				client.InNamespace("kubernaut-workflows"),
@@ -286,7 +293,7 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 			g.Expect(jobList.Items).NotTo(BeEmpty(), "No Jobs found for WorkflowExecution %s", weName)
 
 			job := jobList.Items[0]
-			Expect(job.Status.Failed).To(BeZero(),
+			g.Expect(job.Status.Failed).To(BeZero(),
 				fmt.Sprintf("Job %s has %d failed pod(s) — check pod logs for details", job.Name, job.Status.Failed))
 			g.Expect(job.Status.Succeeded).To(BeNumerically(">", 0),
 				fmt.Sprintf("Job %s has not succeeded yet (active=%d)", job.Name, job.Status.Active))

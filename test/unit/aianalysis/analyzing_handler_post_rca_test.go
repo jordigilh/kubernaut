@@ -17,7 +17,7 @@ limitations under the License.
 // Package aianalysis contains unit tests for AnalyzingHandler's PostRCAContext
 // integration with Rego policy evaluation.
 //
-// ADR-056: AnalyzingHandler reads PostRCAContext.DetectedLabels (from HAPI,
+// ADR-056: AnalyzingHandler reads PostRCAContext.DetectedLabels (from KA,
 // computed at runtime) when building Rego policy input. This ensures Rego
 // policies evaluate against the actual cluster state at RCA time.
 //
@@ -116,7 +116,7 @@ var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", f
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// UT-AA-056-009: DetectedLabels from PostRCAContext populate Rego input
-	// ADR-056: HAPI's runtime-computed labels take precedence for Rego
+	// ADR-056: KA's runtime-computed labels take precedence for Rego
 	// ═══════════════════════════════════════════════════════════════════════
 
 	It("UT-AA-056-009: should read DetectedLabels from PostRCAContext for Rego input", func() {

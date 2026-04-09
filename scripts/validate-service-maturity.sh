@@ -76,12 +76,7 @@ discover_services() {
         fi
     done
 
-    # Discover Python services (holmesgpt-api)
-    # Main entry point is at holmesgpt-api/src/main.py
-    if [ -d "holmesgpt-api" ] && [ -f "holmesgpt-api/src/main.py" ]; then
-        PYTHON_SERVICES="${PYTHON_SERVICES} holmesgpt-api"
-        echo "  Found: holmesgpt-api (stateless-python)"
-    fi
+    # All services are now Go-based (HAPI retired in v1.3)
 
     echo ""
 }
@@ -532,7 +527,7 @@ check_stateless_health() {
 }
 
 # ============================================================================
-# Python Service Checks (holmesgpt-api)
+# Python Service Checks (retired — all services are now Go)
 # ============================================================================
 
 check_python_metrics() {

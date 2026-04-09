@@ -275,8 +275,8 @@ effectivenessmonitor:
       memory: 256Mi
       cpu: 500m
 
-# -- HolmesGPT API (LLM integration service)
-holmesgptApi:
+# -- Kubernaut Agent (LLM integration service)
+kubernautAgent:
   replicas: 1
   pdb:
     enabled: false
@@ -299,13 +299,27 @@ holmesgptApi:
     # For Vertex AI, Azure, or advanced setups (toolsets, MCP), use sdkConfigContent or existingSdkConfigMap.
     provider: ""   # e.g., "openai", "anthropic"
     model: ""      # e.g., "gpt-4o", "claude-sonnet-4-20250514"
+    # -- Enable structured JSON output via provider-native schema enforcement.
+    # When true, the LLM HTTP transport injects response format constraints
+    # (e.g., Anthropic output_config.format) so the model returns pure JSON
+    # instead of section-header format. Requires a provider that supports it.
+    structuredOutput: false
+    # -- OAuth2 client credentials grant for enterprise LLM gateway authentication.
+    # When enabled, KA automatically acquires, caches, and refreshes JWTs via
+    # the client credentials grant (RFC 6749 s4.4) and injects
+    # Authorization: Bearer <token> into every outbound LLM request.
+    oauth2:
+      enabled: false
+      tokenURL: ""              # e.g., "https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"
+      credentialsSecretRef: ""  # K8s Secret containing keys: client-id, client-secret
+      scopes: ""                # Space-separated scopes, e.g., "openid llm-gateway"
   # -- Raw SDK config YAML content. When set, used verbatim in the
-  # holmesgpt-sdk-config ConfigMap. Takes priority over llm.provider/model.
-  # Usage: helm install --set-file holmesgptApi.sdkConfigContent=my-sdk-config.yaml
+  # kubernaut-agent-sdk-config ConfigMap. Takes priority over llm.provider/model.
+  # Usage: helm install --set-file kubernautAgent.sdkConfigContent=my-sdk-config.yaml
   sdkConfigContent: ""
   # -- Use a pre-existing ConfigMap for SDK config instead of chart-generated.
-  # When set, the chart does NOT create holmesgpt-sdk-config and mounts
-  # this ConfigMap at /etc/holmesgpt/sdk/ instead.
+  # When set, the chart does NOT create kubernaut-agent-sdk-config and mounts
+  # this ConfigMap at /etc/kubernaut-agent/sdk/ instead.
   # Takes priority over sdkConfigContent and llm.provider/model.
   existingSdkConfigMap: ""
   # -- Prometheus integration for LLM investigation context.

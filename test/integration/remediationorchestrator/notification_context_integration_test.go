@@ -24,6 +24,7 @@ package remediationorchestrator
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"time"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -179,9 +180,15 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 	It("IT-NOT-453B-006 [BR-ORCH-045] should populate typed Context on completion NotificationRequest", func() {
 		rr := newRR("rr-it-453b-006")
 
-		// Set status Outcome via status subresource (not settable at create time)
-		rr.Status.Outcome = "Remediated"
-		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+		// Re-read + update in Eventually to handle optimistic concurrency conflicts
+		// when the RO controller reconciles the RR between our read and write.
+		Eventually(func() error {
+			if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+				return err
+			}
+			rr.Status.Outcome = "Remediated"
+			return k8sClient.Status().Update(ctx, rr)
+		}, 5*time.Second, 200*time.Millisecond).Should(Succeed())
 
 		ai := &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{
@@ -217,10 +224,16 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 	It("IT-NOT-453B-007 [BR-ORCH-034] should populate Lineage and Dedup on bulk duplicate NotificationRequest", func() {
 		rr := newRR("rr-it-453b-007")
 
-		// Set status DuplicateCount via status subresource
-		rr.Status.DuplicateCount = 5
-		rr.Status.OverallPhase = remediationv1.PhaseCompleted
-		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+		// Re-read + update in Eventually to handle optimistic concurrency conflicts
+		// when the RO controller reconciles the RR between our read and write.
+		Eventually(func() error {
+			if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+				return err
+			}
+			rr.Status.DuplicateCount = 5
+			rr.Status.OverallPhase = remediationv1.PhaseCompleted
+			return k8sClient.Status().Update(ctx, rr)
+		}, 5*time.Second, 200*time.Millisecond).Should(Succeed())
 
 		name, err := nc.CreateBulkDuplicateNotification(ctx, rr)
 		Expect(err).NotTo(HaveOccurred())

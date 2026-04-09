@@ -1,0 +1,542 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: notificationrequests.kubernaut.ai
+spec:
+  group: kubernaut.ai
+  names:
+    kind: NotificationRequest
+    listKind: NotificationRequestList
+    plural: notificationrequests
+    shortNames:
+    - notif
+    - notifs
+    singular: notificationrequest
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .spec.priority
+      name: Priority
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.totalAttempts
+      name: Attempts
+      type: integer
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NotificationRequest is the Schema for the notificationrequests
+          API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              NotificationRequestSpec defines the desired state of NotificationRequest
+
+              DD-NOT-005: Spec Immutability
+              ALL spec fields are immutable after CRD creation. Users cannot update
+              notification content once created. To change a notification, delete
+              and recreate the CRD.
+
+              Rationale: Notifications are immutable events, not mutable resources.
+              This prevents race conditions, simplifies controller logic, and provides
+              perfect audit trail.
+
+              Cancellation: Delete the NotificationRequest CRD to cancel delivery.
+            properties:
+              actionLinks:
+                description: Action links to external services
+                items:
+                  description: ActionLink represents an external service action link
+                  properties:
+                    label:
+                      description: Human-readable label for the link
+                      type: string
+                    service:
+                      description: Service name (github, grafana, prometheus, kubernetes-dashboard,
+                        etc.)
+                      type: string
+                    url:
+                      description: Action link URL
+                      type: string
+                  required:
+                  - label
+                  - service
+                  - url
+                  type: object
+                type: array
+              body:
+                description: Notification body content
+                minLength: 1
+                type: string
+              context:
+                description: |-
+                  Context provides typed, structured notification context replacing the
+                  former unstructured Metadata map. Each sub-struct is optional (nil means
+                  not applicable for this notification type).
+                properties:
+                  analysis:
+                    description: Analysis captures AI analysis results (approval/completion
+                      notifications).
+                    properties:
+                      approvalReason:
+                        description: ApprovalReason explains why approval was required.
+                        type: string
+                      outcome:
+                        description: Outcome is the remediation outcome (e.g., "Success",
+                          "Failed").
+                        type: string
+                      rootCause:
+                        description: RootCause is the AI-determined root cause summary.
+                        type: string
+                    type: object
+                  dedup:
+                    description: Dedup captures deduplication context (bulk duplicate
+                      notifications).
+                    properties:
+                      duplicateCount:
+                        description: DuplicateCount is the number of duplicate signals.
+                        type: string
+                    type: object
+                  execution:
+                    description: Execution captures execution and retry context (manual-review
+                      WE source, timeout notifications).
+                    properties:
+                      lastExitCode:
+                        description: LastExitCode is the last exit code from the workflow
+                          execution.
+                        type: string
+                      maxRetries:
+                        description: MaxRetries is the maximum number of retries allowed.
+                        type: string
+                      phaseTimeout:
+                        description: PhaseTimeout is the duration string for the phase
+                          timeout.
+                        type: string
+                      previousExecution:
+                        description: PreviousExecution is the name of the previous
+                          WorkflowExecution.
+                        type: string
+                      retryCount:
+                        description: RetryCount is the number of retries attempted.
+                        type: string
+                      timeoutPhase:
+                        description: TimeoutPhase is the phase that timed out.
+                        type: string
+                    type: object
+                  lineage:
+                    description: Lineage tracks parent resource references for audit
+                      correlation.
+                    properties:
+                      aiAnalysis:
+                        description: AIAnalysis is the name of the parent AIAnalysis.
+                        type: string
+                      remediationRequest:
+                        description: RemediationRequest is the name of the parent
+                          RemediationRequest.
+                        type: string
+                    type: object
+                  review:
+                    description: Review captures manual review context (manual-review
+                      notifications).
+                    properties:
+                      humanReviewReason:
+                        description: HumanReviewReason from HAPI when needs_human_review=true
+                          (BR-HAPI-197).
+                        type: string
+                      reason:
+                        description: Reason is the high-level failure reason (e.g.,
+                          "WorkflowResolutionFailed").
+                        type: string
+                      rootCauseAnalysis:
+                        description: RootCauseAnalysis from AIAnalysis if available.
+                        type: string
+                      subReason:
+                        description: SubReason provides granular detail (e.g., "WorkflowNotFound").
+                        type: string
+                    type: object
+                  target:
+                    description: Target captures target resource context (timeout
+                      notifications).
+                    properties:
+                      targetResource:
+                        description: TargetResource in "Kind/Name" format.
+                        type: string
+                    type: object
+                  verification:
+                    description: |-
+                      Verification captures EA verification results (completion notifications, #318).
+                      Enables routing rules to match on verification outcome (e.g., inconclusive -> escalation).
+                    properties:
+                      assessed:
+                        description: Assessed indicates whether verification was performed
+                          at all.
+                        type: boolean
+                      degraded:
+                        description: |-
+                          Degraded indicates that the EA was unable to reliably compare pre- and
+                          post-remediation state because hash capture failed (Issue #546).
+                          Routing rules can match on this to escalate degraded notifications.
+                        type: boolean
+                      degradedReason:
+                        description: |-
+                          DegradedReason describes why the EA is degraded (e.g., RBAC Forbidden for
+                          the target CRD). Empty when Degraded is false.
+                        type: string
+                      outcome:
+                        description: |-
+                          Outcome is the high-level result: "passed", "completed", "partial", "inconclusive", "unavailable".
+                          "completed" indicates all components were assessed but some scores < 1.0 (Issue #596).
+                        type: string
+                      reason:
+                        description: Reason maps to EffectivenessAssessment.Status.AssessmentReason.
+                        type: string
+                      summary:
+                        description: Summary is the operator-facing human-readable
+                          message.
+                        type: string
+                    required:
+                    - assessed
+                    type: object
+                  workflow:
+                    description: Workflow captures selected workflow details (approval/completion
+                      notifications).
+                    properties:
+                      confidence:
+                        description: Confidence is the AI confidence score (as string,
+                          e.g. "0.95").
+                        type: string
+                      executionEngine:
+                        description: ExecutionEngine is the engine used to execute
+                          the workflow.
+                        type: string
+                      selectedWorkflow:
+                        description: SelectedWorkflow is the ID of the workflow selected
+                          by AI.
+                        type: string
+                      workflowId:
+                        description: WorkflowID is the ID of the executed workflow.
+                        type: string
+                    type: object
+                type: object
+              extensions:
+                additionalProperties:
+                  type: string
+                description: |-
+                  Extensions holds arbitrary key-value pairs for routing and custom data
+                  that don't fit the typed Context schema (e.g., test routing overrides,
+                  vendor-specific tags). Routing rules can match on these keys.
+                type: object
+              phase:
+                description: |-
+                  Phase that triggered this notification (for phase-timeout notifications)
+                  Issue #91: promoted from mutable label to immutable spec field
+                type: string
+              priority:
+                default: medium
+                description: Priority of notification (critical, high, medium, low)
+                enum:
+                - critical
+                - high
+                - medium
+                - low
+                type: string
+              remediationRequestRef:
+                description: |-
+                  Reference to parent RemediationRequest (if applicable)
+                  Used for audit correlation and lineage tracking (BR-NOT-064)
+                  Optional: NotificationRequest can be standalone (e.g., system-generated alerts)
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: |-
+                      If referring to a piece of an object instead of an entire object, this string
+                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within a pod, this would take on a value like:
+                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]" (container with
+                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                      referencing a part of an object.
+                    type: string
+                  kind:
+                    description: |-
+                      Kind of the referent.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                    type: string
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                    type: string
+                  resourceVersion:
+                    description: |-
+                      Specific resourceVersion to which this reference is made, if any.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                    type: string
+                  uid:
+                    description: |-
+                      UID of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              retentionDays:
+                default: 7
+                description: Retention period in days after completion
+                maximum: 90
+                minimum: 1
+                type: integer
+              retryPolicy:
+                description: Retry policy for delivery
+                properties:
+                  backoffMultiplier:
+                    default: 2
+                    description: Backoff multiplier (exponential backoff)
+                    maximum: 10
+                    minimum: 1
+                    type: integer
+                  initialBackoffSeconds:
+                    default: 30
+                    description: Initial backoff duration in seconds
+                    maximum: 300
+                    minimum: 1
+                    type: integer
+                  maxAttempts:
+                    default: 5
+                    description: Maximum number of delivery attempts
+                    maximum: 10
+                    minimum: 1
+                    type: integer
+                  maxBackoffSeconds:
+                    default: 480
+                    description: Maximum backoff duration in seconds
+                    maximum: 3600
+                    minimum: 60
+                    type: integer
+                type: object
+              reviewSource:
+                description: |-
+                  ReviewSource indicates what triggered manual review (for manual-review notifications)
+                  Issue #91: promoted from mutable label to immutable spec field
+                enum:
+                - AIAnalysis
+                - WorkflowExecution
+                type: string
+              severity:
+                description: |-
+                  Severity from the originating signal (used for routing)
+                  Issue #91: promoted from mutable label to immutable spec field
+                type: string
+              subject:
+                description: Subject line for notification
+                maxLength: 500
+                minLength: 1
+                type: string
+              type:
+                description: Type of notification (escalation, simple, status-update)
+                enum:
+                - escalation
+                - simple
+                - status-update
+                - approval
+                - manual-review
+                - completion
+                type: string
+            required:
+            - body
+            - priority
+            - subject
+            - type
+            type: object
+            x-kubernetes-validations:
+            - message: spec is immutable after creation (DD-NOT-005)
+              rule: self == oldSelf
+          status:
+            description: NotificationRequestStatus defines the observed state of NotificationRequest
+            properties:
+              completionTime:
+                description: Time when all deliveries completed (success or failure)
+                format: date-time
+                type: string
+              conditions:
+                description: Conditions represent the latest available observations
+                  of the notification's state
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              deliveryAttempts:
+                description: List of all delivery attempts across all channels
+                items:
+                  description: DeliveryAttempt records a single delivery attempt to
+                    a channel
+                  properties:
+                    attempt:
+                      description: Attempt number (1-based)
+                      type: integer
+                    channel:
+                      description: Channel name
+                      type: string
+                    durationSeconds:
+                      description: Duration of delivery attempt in seconds
+                      type: number
+                    error:
+                      description: Error message if failed
+                      type: string
+                    status:
+                      description: Status of this attempt (success, failed, timeout,
+                        invalid)
+                      enum:
+                      - success
+                      - failed
+                      - timeout
+                      - invalid
+                      type: string
+                    timestamp:
+                      description: Timestamp of this attempt
+                      format: date-time
+                      type: string
+                  required:
+                  - attempt
+                  - channel
+                  - status
+                  - timestamp
+                  type: object
+                type: array
+              failedDeliveries:
+                description: Number of failed deliveries
+                type: integer
+              message:
+                description: Human-readable message about current state
+                type: string
+              observedGeneration:
+                description: Observed generation from spec
+                format: int64
+                type: integer
+              phase:
+                description: Phase of notification lifecycle (Pending, Sending, Sent,
+                  PartiallySent, Failed)
+                enum:
+                - Pending
+                - Sending
+                - Retrying
+                - Sent
+                - PartiallySent
+                - Failed
+                type: string
+              processingStartedAt:
+                description: Time when processing started
+                format: date-time
+                type: string
+              queuedAt:
+                description: Time when notification was queued for processing
+                format: date-time
+                type: string
+              reason:
+                description: Reason for current phase
+                type: string
+              successfulDeliveries:
+                description: Number of successful deliveries
+                type: integer
+              totalAttempts:
+                description: Total number of delivery attempts across all channels
+                type: integer
+            type: object
+        type: object
+    selectableFields:
+    - jsonPath: .spec.remediationRequestRef.name
+    - jsonPath: .spec.type
+    - jsonPath: .spec.severity
+    served: true
+    storage: true
+    subresources:
+      status: {}

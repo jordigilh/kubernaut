@@ -29,7 +29,7 @@ import "time"
 
 const (
 	// MaxRetries for transient errors before marking as Failed
-	// BR-AI-009: Maximum retry attempts for transient HAPI errors
+	// BR-AI-009: Maximum retry attempts for transient KA errors
 	// After 5 attempts with exponential backoff, transition to permanent failure
 	MaxRetries = 5
 
@@ -40,7 +40,7 @@ const (
 
 	// MaxDelay caps the backoff delay (maximum wait between retries)
 	// Ensures retries don't become too slow for time-sensitive analysis
-	// Note: Set to 8 minutes vs. backoff default 5 minutes for HAPI analysis tolerance
+	// Note: Set to 8 minutes vs. backoff default 5 minutes for KA analysis tolerance
 	MaxDelay = 480 * time.Second // 8 minutes
 )
 
@@ -68,7 +68,7 @@ const (
 	MaxSessionRegenerations int32 = 5
 
 	// DefaultSessionPollInterval is the constant polling interval for session status checks.
-	// BR-AA-HAPI-064.8: Polling is not error recovery -- HAPI is healthy, just not done yet.
+	// BR-AA-HAPI-064.8: Polling is not error recovery -- KA is healthy, just not done yet.
 	// A constant interval is simpler, predictable, and sufficient for async LLM investigations.
 	// Configurable via WithSessionPollInterval option or --session-poll-interval flag.
 	DefaultSessionPollInterval = 15 * time.Second

@@ -50,18 +50,18 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 	Context("AI Agent API Error Audit - BR-AI-050", func() {
 		It("should audit AI agent calls even when API returns HTTP 500", func() {
-			By("Creating AIAnalysis with signal type that might trigger HAPI error")
+			By("Creating AIAnalysis with signal type that might trigger KA error")
 			suffix := randomSuffix()
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-error-audit-hapi-" + suffix,
+					Name:      "e2e-error-audit-ka-" + suffix,
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: "e2e-error-audit-hapi-" + suffix,
+					RemediationID: "e2e-error-audit-ka-" + suffix,
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      "e2e-error-hapi-fingerprint",
+							Fingerprint:      "e2e-error-ka-fingerprint",
 							Severity:         "critical",
 							SignalName:       "UnknownError", // Potentially problematic signal type
 							Environment:      "production",
@@ -83,25 +83,25 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			By("Querying Data Storage for AI agent call audit events")
 			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
-			// Wait for at least one HAPI call event (success or failure)
-		// waitForSpecificAuditEvent already uses Eventually() internally
-		hapiEventType := aianalysisaudit.EventTypeAIAgentCall
-		hapiEvents := waitForSpecificAuditEvent(remediationID, hapiEventType, 1)
+			// Wait for at least one KA call event (success or failure)
+			// waitForSpecificAuditEvent already uses Eventually() internally
+			kaEventType := aianalysisaudit.EventTypeAIAgentCall
+			kaEvents := waitForSpecificAuditEvent(remediationID, kaEventType, 1)
 
 			By("Validating AI agent call was audited regardless of success/failure")
-			Expect(hapiEvents).ToNot(BeEmpty(),
+			Expect(kaEvents).ToNot(BeEmpty(),
 				"Controller MUST audit AI agent calls even when they fail (ADR-032 §1)")
 
 			By("Verifying HTTP status code is captured in audit event")
-			event := hapiEvents[0]
+			event := kaEvents[0]
 			// Access strongly-typed payload via discriminated union
 			payload := event.EventData.AIAnalysisAIAgentCallPayload
 			Expect(payload).ToNot(BeNil(), "Should have AIAnalysisAIAgentCallPayload")
 			Expect(payload.HTTPStatusCode).ToNot(BeZero(),
-				"HTTP status code MUST be captured for all HAPI calls")
+				"HTTP status code MUST be captured for all KA calls")
 
 			statusCode := payload.HTTPStatusCode
-			GinkgoWriter.Printf("📊 HAPI call status code: %d\n", statusCode)
+			GinkgoWriter.Printf("📊 KA call status code: %d\n", statusCode)
 
 			// Status code could be 200 (success), 500 (error), or timeout
 			// The key is that it's captured, not necessarily what it is
@@ -127,7 +127,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-error-retry-fp",
-							Severity:        "medium",
+							Severity:         "medium",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P1",
@@ -150,11 +150,11 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
 			// Per DD-API-001: Use OpenAPI client, NOT raw HTTP
 			var events []dsgen.AuditEvent
-		Eventually(func() []dsgen.AuditEvent {
-			var err error
-			events, err = queryAllAuditEventTypes(remediationID) // Query all AI Analysis event types
-			if err != nil {
-				GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
+			Eventually(func() []dsgen.AuditEvent {
+				var err error
+				events, err = queryAllAuditEventTypes(remediationID) // Query all AI Analysis event types
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
 					return nil
 				}
 				return events
@@ -216,15 +216,15 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			remediationID := analysis.Spec.RemediationID
 
-		By("Verifying audit trail exists for this AIAnalysis (DD-API-001)")
-		// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
-		// Per DD-API-001: Use OpenAPI client, NOT raw HTTP
-		var events []dsgen.AuditEvent
-		Eventually(func() []dsgen.AuditEvent {
-			var err error
-			events, err = queryAllAuditEventTypes(remediationID) // Query all types to find error events
-			if err != nil {
-				GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
+			By("Verifying audit trail exists for this AIAnalysis (DD-API-001)")
+			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
+			// Per DD-API-001: Use OpenAPI client, NOT raw HTTP
+			var events []dsgen.AuditEvent
+			Eventually(func() []dsgen.AuditEvent {
+				var err error
+				events, err = queryAllAuditEventTypes(remediationID) // Query all types to find error events
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
 					return nil
 				}
 				return events
@@ -272,7 +272,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-restart-fp",
-							Severity:        "medium",
+							Severity:         "medium",
 							SignalName:       "HighMemoryUsage",
 							Environment:      "staging",
 							BusinessPriority: "P2",
@@ -292,16 +292,16 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			remediationID := analysis.Spec.RemediationID
 
-		By("Capturing initial audit event count (DD-API-001)")
-		// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
-		// Per DD-API-001: Use OpenAPI client, NOT raw HTTP
-		// Query phase transitions (first events always created)
-		var initialEvents []dsgen.AuditEvent
-		Eventually(func() []dsgen.AuditEvent {
-			var err error
-			initialEvents, err = querySpecificAuditEvent(remediationID, aianalysisaudit.EventTypePhaseTransition)
-			if err != nil {
-				GinkgoWriter.Printf("⏳ Waiting for initial audit events (error: %v)\n", err)
+			By("Capturing initial audit event count (DD-API-001)")
+			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
+			// Per DD-API-001: Use OpenAPI client, NOT raw HTTP
+			// Query phase transitions (first events always created)
+			var initialEvents []dsgen.AuditEvent
+			Eventually(func() []dsgen.AuditEvent {
+				var err error
+				initialEvents, err = querySpecificAuditEvent(remediationID, aianalysisaudit.EventTypePhaseTransition)
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Waiting for initial audit events (error: %v)\n", err)
 					return nil
 				}
 				return initialEvents
@@ -315,10 +315,10 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 			// we would restart the controller pod here. For now, we validate
 			// that events persist in DataStorage (PostgreSQL) by querying again
 
-		By("Verifying audit events persist in DataStorage (PostgreSQL durability)")
-		// Query phase transitions (first events always created)
-		persistedEvents, err := querySpecificAuditEvent(remediationID, aianalysisaudit.EventTypePhaseTransition)
-		Expect(err).ToNot(HaveOccurred())
+			By("Verifying audit events persist in DataStorage (PostgreSQL durability)")
+			// Query phase transitions (first events always created)
+			persistedEvents, err := querySpecificAuditEvent(remediationID, aianalysisaudit.EventTypePhaseTransition)
+			Expect(err).ToNot(HaveOccurred())
 
 			persistedEventCount := len(persistedEvents)
 			GinkgoWriter.Printf("📊 Persisted audit events: %d\n", persistedEventCount)
@@ -367,16 +367,16 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			remediationID := analysis.Spec.RemediationID
 
-		By("Querying all audit events for metadata validation (DD-API-001)")
-		// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
-		// Per DD-API-001: Use OpenAPI client, NOT raw HTTP
-		// Query all AI Analysis event types to validate metadata on each
-		var events []dsgen.AuditEvent
-		Eventually(func() []dsgen.AuditEvent {
-			var err error
-			events, err = queryAllAuditEventTypes(remediationID)
-			if err != nil {
-				GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
+			By("Querying all audit events for metadata validation (DD-API-001)")
+			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
+			// Per DD-API-001: Use OpenAPI client, NOT raw HTTP
+			// Query all AI Analysis event types to validate metadata on each
+			var events []dsgen.AuditEvent
+			Eventually(func() []dsgen.AuditEvent {
+				var err error
+				events, err = queryAllAuditEventTypes(remediationID)
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
 					return nil
 				}
 				return events

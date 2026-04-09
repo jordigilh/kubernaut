@@ -20,7 +20,7 @@ limitations under the License.
 // METRIC SELECTION CRITERIA (v1.13):
 // - Only BUSINESS VALUE metrics are included (throughput, SLA, quality, failures)
 // - Operational/debugging metrics removed (phase transitions, latency breakdowns)
-// - Client-side HAPI metrics removed (HAPI tracks its own server-side metrics)
+// - Client-side KA metrics removed (KA tracks its own server-side metrics)
 // - See: IMPLEMENTATION_PLAN_V1.0.md v1.13 for rationale
 package metrics
 

@@ -1,0 +1,46 @@
+{{- /* Remediation History Section for LLM Prompt Enrichment
+     Source: holmesgpt-api/src/extensions/remediation_history_prompt.py
+     BRs: BR-HAPI-016
+     DDs: DD-HAPI-016 v1.1, ADR-EM-001 v1.3, DD-EM-002 v1.1
+     Formatting of tier1/tier2 entries is done in Go code; this template
+     assembles the rendered sections into the final prompt block.
+*/ -}}
+### REMEDIATION HISTORY for {{ .TargetResource }}
+{{ if .RegressionDetected }}
+**WARNING: CONFIGURATION REGRESSION DETECTED**
+The current resource spec matches a pre-remediation state (preRemediation hash match).
+This indicates the resource has reverted to a previously remediated configuration.
+Consider a different remediation approach.
+{{ end }}
+{{ if .Tier1Entries -}}
+#### Recent Remediations (last {{ .Tier1Window }})
+
+{{ range .Tier1Entries }}{{ . }}
+{{ end }}
+{{ end -}}
+{{ if .Tier2Entries -}}
+#### Historical Remediations (last {{ .Tier2Window }})
+
+{{ range .Tier2Entries }}{{ . }}
+{{ end }}
+{{ end -}}
+{{ range .DecliningEffectivenessWarnings -}}
+{{ . }}
+
+{{ end -}}
+{{ range .RecurringRemediationWarnings -}}
+{{ . }}
+
+{{ end -}}
+**Reasoning Guidance:**
+Use the above remediation history to inform your workflow selection.
+Avoid repeating workflows that previously failed or had poor effectiveness.
+If a workflow completed successfully multiple times but the same signal keeps
+recurring, escalate to human review — the workflow is not addressing the root cause.
+If regression is detected, consider alternative approaches.
+{{ if .HasSpecDrift }}
+**Note on spec drift entries:** Some remediation assessments were inconclusive
+because the target resource spec was modified during the assessment window. Do not
+treat these as failed remediations. Investigate what modified the spec — it may
+be the root cause or a contributing factor.
+{{ end -}}

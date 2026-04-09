@@ -22,21 +22,21 @@ spec:
   
   execution:
     engine: job
-    bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec@sha256:cd6eaac93dfdec5acd6f68daf15016439bbfc2f9b56d0efc8556c23165438f37
+    bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec@sha256:d494cc91e966e75107727360df8515a79ae7b5191f67ac1e580eb69b9d361884
   
   parameters:
     - name: TARGET_RESOURCE_NAME
       type: string
       required: true
-      description: "Name of the root managing resource (HAPI-injected)"
+      description: "Name of the root managing resource (KA-injected)"
     - name: TARGET_RESOURCE_KIND
       type: string
       required: true
-      description: "Kind of the root managing resource (HAPI-injected)"
+      description: "Kind of the root managing resource (KA-injected)"
     - name: TARGET_RESOURCE_NAMESPACE
       type: string
       required: true
-      description: "Namespace of the root managing resource (HAPI-injected)"
+      description: "Namespace of the root managing resource (KA-injected)"
     - name: NAMESPACE
       type: string
       required: true

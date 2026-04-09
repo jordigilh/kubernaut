@@ -49,7 +49,7 @@ import (
 //
 // Pipeline:
 //
-//	OOMKill Event → Gateway → RemediationRequest → RO → SP → AA → HAPI(MockLLM) → WE(Job) → Notification
+//	OOMKill Event → Gateway → RemediationRequest → RO → SP → AA → KA(MockLLM) → WE(Job) → Notification
 //
 // This test uses the memory-eater pod to generate a real OOMKill event.
 // The kubernetes-event-exporter watches for this event and POSTs to Gateway.
@@ -153,23 +153,23 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
 				return false
 			}
-		for i := range rrList.Items {
-			rr := &rrList.Items[i]
-			if rr.Spec.TargetResource.Namespace != testNamespace {
-				continue
+			for i := range rrList.Items {
+				rr := &rrList.Items[i]
+				if rr.Spec.TargetResource.Namespace != testNamespace {
+					continue
+				}
+				sig := strings.ToLower(rr.Spec.SignalName)
+				if sig == "backoff" || sig == "oomkilled" || sig == "oomkill" ||
+					sig == "memoryexceedslimit" ||
+					strings.Contains(sig, "oom") || strings.Contains(sig, "memory") {
+					remediationRequest = rr
+					GinkgoWriter.Printf("  ✅ RemediationRequest found: %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
+					return true
+				}
+				GinkgoWriter.Printf("  ⏳ Skipping RR %s with signal %q (waiting for OOMKill/BackOff)\n", rr.Name, rr.Spec.SignalName)
 			}
-			sig := strings.ToLower(rr.Spec.SignalName)
-			if sig == "backoff" || sig == "oomkilled" || sig == "oomkill" ||
-				sig == "failedmount" || sig == "memoryexceedslimit" ||
-				strings.Contains(sig, "oom") || strings.Contains(sig, "memory") {
-				remediationRequest = rr
-				GinkgoWriter.Printf("  ✅ RemediationRequest found: %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
-				return true
-			}
-			GinkgoWriter.Printf("  ⏳ Skipping RR %s with signal %q (waiting for OOMKill/BackOff/FailedMount)\n", rr.Name, rr.Spec.SignalName)
-		}
-		return false
-	}, timeout, interval).Should(BeTrue(), "RemediationRequest should be created by Gateway")
+			return false
+		}, timeout, interval).Should(BeTrue(), "RemediationRequest should be created by Gateway")
 
 		// ================================================================
 		// Step 4: Verify SignalProcessing enriched the signal
@@ -246,6 +246,14 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// ================================================================
 		By("Step 7: Waiting for K8s Job to complete")
 		Eventually(func(g Gomega) {
+			// Early-exit: if WE already reached Failed, the Job won't recover.
+			// Fail fast with diagnostic info instead of waiting for TTL garbage collection.
+			we := &workflowexecutionv1.WorkflowExecution{}
+			if getErr := apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, we); getErr == nil {
+				g.Expect(we.Status.Phase).NotTo(Equal("Failed"),
+					fmt.Sprintf("WorkflowExecution %s reached Failed phase (reason: %s) — Job will not recover", weName, we.Status.FailureReason))
+			}
+
 			jobList := &batchv1.JobList{}
 			g.Expect(apiReader.List(ctx, jobList,
 				client.InNamespace("kubernaut-workflows"),
@@ -253,9 +261,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			g.Expect(jobList.Items).NotTo(BeEmpty(), "No Jobs found for WorkflowExecution %s", weName)
 
 			job := jobList.Items[0]
-			// Global Expect() — fails the test immediately instead of letting
-			// Eventually retry for the full 600s timeout.
-			Expect(job.Status.Failed).To(BeZero(),
+			g.Expect(job.Status.Failed).To(BeZero(),
 				fmt.Sprintf("Job %s has %d failed pod(s) — check pod logs for details", job.Name, job.Status.Failed))
 			g.Expect(job.Status.Succeeded).To(BeNumerically(">", 0),
 				fmt.Sprintf("Job %s has not succeeded yet (active=%d)", job.Name, job.Status.Active))
@@ -347,8 +353,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// These are lifecycle boundary events — one per RR by definition.
 		exactlyOnceEvents := []string{
 			// Gateway: signal ingestion and CRD creation
-			"gateway.signal.received",   // pkg/gateway/server.go: emitSignalReceivedAudit
-			"gateway.crd.created",       // pkg/gateway/server.go: emitCRDCreatedAudit
+			"gateway.signal.received", // pkg/gateway/server.go: emitSignalReceivedAudit
+			"gateway.crd.created",     // pkg/gateway/server.go: emitCRDCreatedAudit
 			// Remediation Orchestrator: lifecycle boundaries
 			"orchestrator.lifecycle.created",                // pkg/remediationorchestrator/audit: emitRemediationCreatedAudit
 			"orchestrator.lifecycle.started",                // pkg/remediationorchestrator/audit: emitLifecycleStartedAudit
@@ -360,12 +366,12 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			// for the stabilization window (30s default), then runs all 4 component
 			// checks in a single reconcile, emitting one audit event per component.
 			// Each event is guarded by its component flag (emitted exactly once per EA).
-			"effectiveness.assessment.scheduled",  // pkg/effectivenessmonitor/audit: RecordAssessmentScheduled
-			"effectiveness.health.assessed",       // pkg/effectivenessmonitor/audit: RecordHealthAssessed
-			"effectiveness.hash.computed",          // pkg/effectivenessmonitor/audit: RecordHashComputed
-			"effectiveness.alert.assessed",         // pkg/effectivenessmonitor/audit: RecordAlertAssessed
-			"effectiveness.metrics.assessed",       // pkg/effectivenessmonitor/audit: RecordMetricsAssessed (cAdvisor data from Prometheus)
-			"effectiveness.assessment.completed",   // pkg/effectivenessmonitor/audit: RecordAssessmentCompleted
+			"effectiveness.assessment.scheduled", // pkg/effectivenessmonitor/audit: RecordAssessmentScheduled
+			"effectiveness.health.assessed",      // pkg/effectivenessmonitor/audit: RecordHealthAssessed
+			"effectiveness.hash.computed",        // pkg/effectivenessmonitor/audit: RecordHashComputed
+			"effectiveness.alert.assessed",       // pkg/effectivenessmonitor/audit: RecordAlertAssessed
+			"effectiveness.metrics.assessed",     // pkg/effectivenessmonitor/audit: RecordMetricsAssessed (cAdvisor data from Prometheus)
+			"effectiveness.assessment.completed", // pkg/effectivenessmonitor/audit: RecordAssessmentCompleted
 		}
 
 		// === Events that MUST appear at least once ===
@@ -375,23 +381,23 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"orchestrator.lifecycle.transitioned", // pkg/remediationorchestrator/audit: emitPhaseTransitionAudit
 			// Signal Processing
 			"signalprocessing.enrichment.completed",    // pkg/signalprocessing/audit: RecordEnrichmentComplete
-			"signalprocessing.classification.decision",  // pkg/signalprocessing/audit: RecordClassificationDecision
-			"signalprocessing.signal.processed",         // pkg/signalprocessing/audit: RecordSignalProcessed
-			"signalprocessing.phase.transition",          // pkg/signalprocessing/audit: RecordPhaseTransition
+			"signalprocessing.classification.decision", // pkg/signalprocessing/audit: RecordClassificationDecision
+			"signalprocessing.signal.processed",        // pkg/signalprocessing/audit: RecordSignalProcessed
+			"signalprocessing.phase.transition",        // pkg/signalprocessing/audit: RecordPhaseTransition
 			// AI Analysis
-			"aianalysis.phase.transition",    // pkg/aianalysis/audit: RecordPhaseTransition
-			"aianalysis.aiagent.call",        // pkg/aianalysis/audit: RecordAIAgentCall
-			"aianalysis.rego.evaluation",     // pkg/aianalysis/audit: RecordRegoEvaluation
-			"aianalysis.analysis.completed",  // pkg/aianalysis/audit: RecordAnalysisComplete
+			"aianalysis.phase.transition",   // pkg/aianalysis/audit: RecordPhaseTransition
+			"aianalysis.aiagent.call",       // pkg/aianalysis/audit: RecordAIAgentCall
+			"aianalysis.rego.evaluation",    // pkg/aianalysis/audit: RecordRegoEvaluation
+			"aianalysis.analysis.completed", // pkg/aianalysis/audit: RecordAnalysisComplete
 			// HolmesGPT API (event_category: "aiagent" per ADR-034 v1.2)
-			string(ogenclient.LLMRequestPayloadAuditEventEventData),            // holmesgpt-api/src/audit/events.py: create_llm_request_event
-			string(ogenclient.LLMResponsePayloadAuditEventEventData),           // holmesgpt-api/src/audit/events.py: create_llm_response_event
-			string(ogenclient.WorkflowValidationPayloadAuditEventEventData),    // holmesgpt-api/src/audit/events.py: create_validation_attempt_event
-			string(ogenclient.AIAgentResponsePayloadAuditEventEventData),       // holmesgpt-api/src/audit/events.py: create_aiagent_response_complete_event
+			string(ogenclient.LLMRequestPayloadAuditEventEventData),         // holmesgpt-api/src/audit/events.py: create_llm_request_event
+			string(ogenclient.LLMResponsePayloadAuditEventEventData),        // holmesgpt-api/src/audit/events.py: create_llm_response_event
+			string(ogenclient.WorkflowValidationPayloadAuditEventEventData), // holmesgpt-api/src/audit/events.py: create_validation_attempt_event
+			string(ogenclient.AIAgentResponsePayloadAuditEventEventData),    // holmesgpt-api/src/audit/events.py: create_aiagent_response_complete_event
 			// Workflow Execution
 			"workflowexecution.selection.completed", // pkg/workflowexecution/audit: RecordWorkflowSelectionCompleted
 			"workflowexecution.execution.started",   // pkg/workflowexecution/audit: RecordExecutionWorkflowStarted
-			"workflowexecution.workflow.completed",   // pkg/workflowexecution/audit: RecordWorkflowCompleted
+			"workflowexecution.workflow.completed",  // pkg/workflowexecution/audit: RecordWorkflowCompleted
 			// Notification
 			"notification.message.sent", // pkg/notification/audit: CreateMessageSentEvent
 		}
@@ -652,8 +658,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"EA remediationTarget.namespace should be set (RO must populate)")
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0),
 			"EA stabilizationWindow should be positive (set by RO config)")
-	Expect(ea.Spec.RemediationRequestPhase).To(Equal("Verifying"),
-		"#280: EA is created when RR enters Verifying, not Completed")
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Verifying"),
+			"#280: EA is created when RR enters Verifying, not Completed")
 		Expect(ea.Spec.RemediationCreatedAt).ToNot(BeNil(),
 			"EA remediationCreatedAt should be set (RO copies from RR.CreationTimestamp)")
 		Expect(ea.Spec.SignalName).ToNot(BeEmpty(),
@@ -828,7 +834,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("✅ FULL REMEDIATION LIFECYCLE COMPLETE (with audit verification)")
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		GinkgoWriter.Println("  Event → Gateway → RO → SP → AA → HAPI → WE(Job) → Notification → EM ✅")
+		GinkgoWriter.Println("  Event → Gateway → RO → SP → AA → KA → WE(Job) → Notification → EM ✅")
 		GinkgoWriter.Println("  Audit Trail: complete, non-duplicated, temporally ordered ✅")
 		GinkgoWriter.Println("  RR Reconstruction: valid, high completeness ✅")
 		GinkgoWriter.Println("  EA CRD: created by RO, assessed by EM ✅")
@@ -950,19 +956,19 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
 				return false
 			}
-		for i := range rrList.Items {
-			rr := &rrList.Items[i]
-			if rr.Spec.TargetResource.Namespace != testNamespaceAM {
-				continue
+			for i := range rrList.Items {
+				rr := &rrList.Items[i]
+				if rr.Spec.TargetResource.Namespace != testNamespaceAM {
+					continue
+				}
+				sig := strings.ToLower(rr.Spec.SignalName)
+				if sig == "memoryexceedslimit" || strings.Contains(sig, "oom") {
+					remediationRequest = rr
+					GinkgoWriter.Printf("  ✅ RemediationRequest found (from AlertManager): %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
+					return true
+				}
+				GinkgoWriter.Printf("  ⏳ Skipping RR %s with signal %q (waiting for MemoryExceedsLimit)\n", rr.Name, rr.Spec.SignalName)
 			}
-			sig := strings.ToLower(rr.Spec.SignalName)
-			if sig == "memoryexceedslimit" || strings.Contains(sig, "oom") {
-				remediationRequest = rr
-				GinkgoWriter.Printf("  ✅ RemediationRequest found (from AlertManager): %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
-				return true
-			}
-			GinkgoWriter.Printf("  ⏳ Skipping RR %s with signal %q (waiting for MemoryExceedsLimit)\n", rr.Name, rr.Spec.SignalName)
-		}
 			// Periodic diagnostic output every 10 polls (~30s)
 			if pollCount%10 == 0 {
 				GinkgoWriter.Printf("  ⏳ Still waiting for RR from AlertManager webhook (poll #%d)...\n", pollCount)
@@ -1052,6 +1058,14 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// ================================================================
 		By("AM Step 7: Waiting for K8s Job to complete")
 		Eventually(func(g Gomega) {
+			// Early-exit: if WE already reached Failed, the Job won't recover.
+			// Fail fast with diagnostic info instead of waiting for TTL garbage collection.
+			we := &workflowexecutionv1.WorkflowExecution{}
+			if getErr := apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, we); getErr == nil {
+				g.Expect(we.Status.Phase).NotTo(Equal("Failed"),
+					fmt.Sprintf("WorkflowExecution %s reached Failed phase (reason: %s) — Job will not recover", weName, we.Status.FailureReason))
+			}
+
 			jobList := &batchv1.JobList{}
 			g.Expect(apiReader.List(ctx, jobList,
 				client.InNamespace("kubernaut-workflows"),
@@ -1059,7 +1073,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			g.Expect(jobList.Items).NotTo(BeEmpty(), "No Jobs found for WorkflowExecution %s", weName)
 
 			job := jobList.Items[0]
-			Expect(job.Status.Failed).To(BeZero(),
+			g.Expect(job.Status.Failed).To(BeZero(),
 				fmt.Sprintf("Job %s has %d failed pod(s) — check pod logs for details", job.Name, job.Status.Failed))
 			g.Expect(job.Status.Succeeded).To(BeNumerically(">", 0),
 				fmt.Sprintf("Job %s has not succeeded yet (active=%d)", job.Name, job.Status.Active))
@@ -1224,7 +1238,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// keeps re-firing the alert after remediation). Accept either.
 		alertAssessed := eventTypeCounts["effectiveness.alert.assessed"]
 		alertDecayDetected := eventTypeCounts["effectiveness.alert_decay.detected"]
-		Expect(alertAssessed + alertDecayDetected).To(BeNumerically(">=", 1),
+		Expect(alertAssessed+alertDecayDetected).To(BeNumerically(">=", 1),
 			"Either effectiveness.alert.assessed or effectiveness.alert_decay.detected must be present (BR-EM-012)")
 
 		// ================================================================
@@ -1360,10 +1374,9 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("✅ ALERTMANAGER SIGNAL SOURCE TEST COMPLETE")
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		GinkgoWriter.Println("  AlertManager → Gateway → RO → SP → AA → HAPI → WE(Job) → Notification → EM ✅")
+		GinkgoWriter.Println("  AlertManager → Gateway → RO → SP → AA → KA → WE(Job) → Notification → EM ✅")
 		GinkgoWriter.Println("  Audit Trail: complete, non-duplicated ✅")
 		GinkgoWriter.Println("  EA CRD: created by RO, assessed by EM ✅")
 		GinkgoWriter.Println("  CRD Status Fields: all populated [E2E-FP-118-002] ✅")
 	})
 })
-

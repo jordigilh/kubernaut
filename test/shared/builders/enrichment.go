@@ -25,8 +25,8 @@ import (
 // EnrichmentBuilder provides a fluent API for building EnrichmentResults test fixtures.
 //
 // ADR-056: DetectedLabels and OwnerChain removed from EnrichmentResults.
-// DetectedLabels are now computed by HAPI post-RCA (see PostRCAContext).
-// OwnerChain is resolved by HAPI via get_namespaced_resource_context / get_cluster_resource_context (ADR-055).
+// DetectedLabels are now computed by KA post-RCA (see PostRCAContext).
+// OwnerChain is resolved by KA via get_namespaced_resource_context / get_cluster_resource_context (ADR-055).
 //
 // Usage:
 //

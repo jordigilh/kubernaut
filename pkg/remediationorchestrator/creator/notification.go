@@ -572,7 +572,7 @@ All duplicate signals have been handled by this remediation.`,
 // MANUAL REVIEW NOTIFICATIONS (BR-ORCH-036)
 // ========================================
 
-// rcaSentinels lists known sentinel values that HAPI's result_parser.py generates
+// rcaSentinels lists known sentinel values that KA's result_parser.py generates
 // when RCA extraction fails. These are not meaningful for operators and should be
 // omitted from notification bodies. Issue #588.
 var rcaSentinels = []string{
@@ -582,7 +582,7 @@ var rcaSentinels = []string{
 
 // isRCASentinel returns true if the given RCA summary is a known sentinel value
 // that should not be displayed to operators. Issue #588.
-// Case-insensitive with whitespace trimming for resilience against HAPI formatting changes.
+// Case-insensitive with whitespace trimming for resilience against KA formatting changes.
 func isRCASentinel(rca string) bool {
 	trimmed := strings.TrimSpace(rca)
 	for _, sentinel := range rcaSentinels {
@@ -602,7 +602,7 @@ type ManualReviewContext struct {
 	Reason string
 	// SubReason provides granular detail (e.g., "WorkflowNotFound", "LowConfidence")
 	SubReason string
-	// HumanReviewReason (BR-HAPI-197): Explicit reason from HAPI when needs_human_review=true
+	// HumanReviewReason (BR-HAPI-197): Explicit reason from KA when needs_human_review=true
 	// Maps to AIAnalysis.Status.HumanReviewReason enum (workflow_not_found, rca_incomplete, etc.)
 	HumanReviewReason string
 	// Message is a human-readable description of the failure

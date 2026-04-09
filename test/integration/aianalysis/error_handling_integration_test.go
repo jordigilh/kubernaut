@@ -103,7 +103,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							// Use Mock LLM's no_workflow_found scenario
-							// This triggers HAPI to return needs_human_review=true with
+							// This triggers KA to return needs_human_review=true with
 							// human_review_reason="workflow_not_found"
 							SignalName:       "MOCK_NO_WORKFLOW_FOUND",
 							Severity:         "critical",
@@ -154,13 +154,13 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			correlationID := analysis.Spec.RemediationRequestRef.Name
 			GinkgoWriter.Printf("🔍 Querying audit events for correlation_id=%s\n", correlationID)
 
-		// Verify aiagent.response.complete event exists (HAPI returned needs_human_review=true)
+		// Verify aiagent.response.complete event exists (KA returned needs_human_review=true)
 		Eventually(func() bool {
 			// NT Pattern: Flush audit buffer on each retry
 			_ = auditStore.Flush(testCtx)
 			
 			// Query audit events via OpenAPI client (DD-API-001)
-			eventCategory := ogenclient.NewOptString("aiagent") // ADR-034 v1.6: HAPI events use "aiagent" category
+			eventCategory := ogenclient.NewOptString("aiagent") // ADR-034 v1.6: KA events use "aiagent" category
 			eventType := ogenclient.NewOptString(string(ogenclient.AIAgentResponsePayloadAuditEventEventData))
 
 				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
@@ -182,10 +182,10 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 
 				GinkgoWriter.Printf("  ✅ Found %d aiagent.response.complete event(s)\n", len(resp.Data))
 
-				// Verify event outcome (should be success - HTTP 200 from HAPI perspective)
-				// Per holmesgpt-api/src/audit/events.py:413 - HAPI always returns outcome="success"
+				// Verify event outcome (should be success - HTTP 200 from KA perspective)
+				// Per holmesgpt-api/src/audit/events.py:413 - KA always returns outcome="success"
 				// because the API request succeeded (HTTP 200), even when needs_human_review=true.
-				// The "failure" is captured in the AIAnalysis audit event (analysis.failed), not the HAPI event.
+				// The "failure" is captured in the AIAnalysis audit event (analysis.failed), not the KA event.
 				for _, event := range resp.Data {
 					GinkgoWriter.Printf("    Event ID: %s, Outcome: %s\n",
 						event.EventID, event.EventOutcome)
@@ -197,7 +197,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 
 				return true
 			}, 90*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"Controller should emit aiagent.response.complete audit event when HAPI returns needs_human_review=true")
+				"Controller should emit aiagent.response.complete audit event when KA returns needs_human_review=true")
 
 			// Verify analysis.failed event exists (AIAnalysis failed due to workflow resolution failure)
 			Eventually(func() bool {
@@ -265,7 +265,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 	// Coverage Target: handleProblemResolvedFromIncident() (response_processor.go:401) - currently 0.0%
 	// ========================================
 	Context("Problem resolved path - BR-HAPI-200", func() {
-		It("should handle problem_resolved from HAPI (no workflow needed)", func() {
+		It("should handle problem_resolved from KA (no workflow needed)", func() {
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// Given: AIAnalysis with signal that triggers problem_resolved response
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -284,7 +284,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							// Use Mock LLM's problem_resolved scenario
-							// This triggers HAPI to return investigation_outcome="resolved"
+							// This triggers KA to return investigation_outcome="resolved"
 							// with confidence >= 0.7 and selected_workflow=null
 							SignalName:       "MOCK_PROBLEM_RESOLVED",
 							Severity:         "low", // DD-SEVERITY-001 v1.1: Use normalized severity (critical, high, medium, low, unknown)
@@ -306,7 +306,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			Expect(k8sClient.Create(testCtx, analysis)).To(Succeed())
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-			// When: Controller processes and HAPI returns problem_resolved
+			// When: Controller processes and KA returns problem_resolved
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			GinkgoWriter.Printf("⏳ Waiting for AIAnalysis to reach Completed phase...\n")
 
@@ -359,7 +359,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			// NT Pattern: Flush audit buffer on each retry
 			_ = auditStore.Flush(testCtx)
 			
-			eventCategory := ogenclient.NewOptString("aiagent") // ADR-034 v1.6: HAPI events use "aiagent" category
+			eventCategory := ogenclient.NewOptString("aiagent") // ADR-034 v1.6: KA events use "aiagent" category
 			eventType := ogenclient.NewOptString(string(ogenclient.AIAgentResponsePayloadAuditEventEventData))
 
 				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
@@ -392,7 +392,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 
 				return true
 			}, 90*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"Controller should emit aiagent.response.complete audit event when HAPI returns problem_resolved")
+				"Controller should emit aiagent.response.complete audit event when KA returns problem_resolved")
 
 			// Verify analysis.complete event exists
 			Eventually(func() bool {
@@ -443,7 +443,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 		})
 
 		// #301: Contradiction case — investigation_outcome=resolved + needs_human_review=true
-		// HAPI parser Layer 1 fix should override contradictory needs_human_review to false,
+		// KA parser Layer 1 fix should override contradictory needs_human_review to false,
 		// and Go processor Layer 3 should bypass hasSubstantiveRCA via hasProblemResolvedSignal.
 		It("should handle problem_resolved even when LLM contradicts with needs_human_review=true (#301)", func() {
 			shortID := fmt.Sprintf("%d", time.Now().UnixNano()%1000000)

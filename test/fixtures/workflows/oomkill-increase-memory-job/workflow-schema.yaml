@@ -22,7 +22,7 @@ spec:
   
   execution:
     engine: job
-    bundle: quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec@sha256:d8c87f9e8b9692309863be7e06a1ec90feb711210982ecf31748c5fbfb513a6a
+    bundle: quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec@sha256:6343779228f380aa2ed8f1584b98f0bafb7f6063dbb8c0de1581a5fd5172a395
     # DD-WE-005 v2.0: Pre-created SA with cross-namespace RBAC so remediate.sh
     # can kubectl get/patch Deployments in any namespace.
     serviceAccountName: workflow-job-executor
@@ -31,15 +31,15 @@ spec:
     - name: TARGET_RESOURCE_NAME
       type: string
       required: true
-      description: "Name of the root managing resource (HAPI-injected from root_owner)"
+      description: "Name of the root managing resource (KA-injected from root_owner)"
     - name: TARGET_RESOURCE_KIND
       type: string
       required: true
-      description: "Kind of the root managing resource (HAPI-injected from root_owner)"
+      description: "Kind of the root managing resource (KA-injected from root_owner)"
     - name: TARGET_RESOURCE_NAMESPACE
       type: string
       required: true
-      description: "Namespace of the root managing resource (HAPI-injected from root_owner)"
+      description: "Namespace of the root managing resource (KA-injected from root_owner)"
     - name: MEMORY_LIMIT_NEW
       type: string
       required: true

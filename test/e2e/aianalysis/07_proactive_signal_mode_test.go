@@ -29,15 +29,15 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// E2E-AA-084-001: Proactive Signal Mode Pass-Through to HAPI
+// E2E-AA-084-001: Proactive Signal Mode Pass-Through to KA
 //
 // Business Requirement: BR-AI-084 (Proactive Signal Mode Prompt Strategy)
 // Architecture: ADR-054 (Proactive Signal Mode Classification)
 //
-// Tests that AA correctly passes signalMode from its CRD spec to HAPI
+// Tests that AA correctly passes signalMode from its CRD spec to KA
 // and that the Mock LLM returns a proactive-aware response.
 //
-// Data Flow: AA.Spec.SignalContext.SignalMode="proactive" → HAPI → Mock LLM → AA.Status
+// Data Flow: AA.Spec.SignalContext.SignalMode="proactive" → KA → Mock LLM → AA.Status
 
 var _ = Describe("E2E-AA-084-001: Proactive Signal Mode Investigation", Label("e2e", "signalmode", "aianalysis"), func() {
 	const (
@@ -49,10 +49,10 @@ var _ = Describe("E2E-AA-084-001: Proactive Signal Mode Investigation", Label("e
 		It("should complete analysis with proactive signal mode context", func() {
 			// BUSINESS CONTEXT:
 			// AA receives signalMode=proactive from RO (copied from SP.Status).
-			// AA passes this to HAPI, which adapts the prompt for preemptive analysis.
+			// AA passes this to KA, which adapts the prompt for preemptive analysis.
 			// Mock LLM detects proactive keywords and returns the oomkilled_predictive scenario.
 			//
-			// This E2E test validates the full AA → HAPI → Mock LLM pipeline with
+			// This E2E test validates the full AA → KA → Mock LLM pipeline with
 			// proactive signal mode context flowing through all components.
 
 			analysis := &aianalysisv1.AIAnalysis{
@@ -70,8 +70,8 @@ var _ = Describe("E2E-AA-084-001: Proactive Signal Mode Investigation", Label("e
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-proactive-fingerprint-001",
 							Severity:         "critical",
-							SignalName:       "OOMKilled",    // Normalized by SP from PredictedOOMKill
-							SignalMode:       "proactive",   // BR-AI-084: Proactive signal mode
+							SignalName:       "OOMKilled", // Normalized by SP from PredictedOOMKill
+							SignalMode:       "proactive", // BR-AI-084: Proactive signal mode
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -104,7 +104,7 @@ var _ = Describe("E2E-AA-084-001: Proactive Signal Mode Investigation", Label("e
 			By("Verifying analysis completed successfully")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 
-			// The AA controller should have passed signalMode=proactive to HAPI,
+			// The AA controller should have passed signalMode=proactive to KA,
 			// which should have adapted the prompt for preemptive analysis.
 			// The Mock LLM returns a workflow for the proactive scenario.
 			Expect(analysis.Status.CompletedAt).ToNot(BeZero(),
@@ -136,7 +136,7 @@ var _ = Describe("E2E-AA-084-001: Proactive Signal Mode Investigation", Label("e
 							Fingerprint:      "e2e-reactive-fingerprint-001",
 							Severity:         "critical",
 							SignalName:       "OOMKilled",
-							SignalMode:       "reactive",   // Explicit reactive mode
+							SignalMode:       "reactive", // Explicit reactive mode
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{

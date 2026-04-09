@@ -22,21 +22,21 @@ spec:
   
   execution:
     engine: tekton
-    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+    bundle: quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0@sha256:c4fc636f28d46f94c3f4a211f4dc07f60545891818ee45262e860b0825296ba0
   
   parameters:
     - name: TARGET_RESOURCE_NAME
       type: string
       required: true
-      description: "Name of the root managing resource (HAPI-injected)"
+      description: "Name of the root managing resource (KA-injected)"
     - name: TARGET_RESOURCE_KIND
       type: string
       required: true
-      description: "Kind of the root managing resource (HAPI-injected)"
+      description: "Kind of the root managing resource (KA-injected)"
     - name: TARGET_RESOURCE_NAMESPACE
       type: string
       required: true
-      description: "Namespace of the root managing resource (HAPI-injected)"
+      description: "Namespace of the root managing resource (KA-injected)"
     - name: TARGET_RESOURCE
       type: string
       required: true

@@ -153,6 +153,7 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 			"error", err)
 		return fmt.Errorf("failed to create workflow: %w", err)
 	}
+	workflow.WorkflowID = confirmedID
 
 	// Commit transaction
 	if err = tx.Commit(); err != nil {
@@ -161,8 +162,6 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 			"version", workflow.Version)
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
-
-	workflow.WorkflowID = confirmedID
 
 	r.logger.Info("workflow created",
 		"workflow_id", workflow.WorkflowID,

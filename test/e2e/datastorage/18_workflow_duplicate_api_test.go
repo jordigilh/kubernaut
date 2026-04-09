@@ -32,7 +32,7 @@ import (
 
 // DS-BUG-001: Duplicate Workflow Returns 500 Instead of 409
 // RFC 9110 Section 15.5.10: Duplicate resources must return 409 Conflict, not 500 Internal Server Error
-// This test validates the fix for HAPI team's bug report
+// This test validates the fix for KA team's bug report
 
 var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", Ordered, func() {
 	Context("DS-BUG-001: Duplicate workflow creation", func() {

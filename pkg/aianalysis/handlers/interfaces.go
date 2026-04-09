@@ -25,7 +25,7 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
-	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // ========================================
@@ -34,7 +34,7 @@ import (
 // ========================================
 
 // HolmesGPTClientInterface defines the contract for calling HolmesGPT-API.
-// Uses generated OpenAPI types for type-safe HAPI contract compliance.
+// Uses generated OpenAPI types for type-safe KA contract compliance.
 //
 // Methods:
 // - Investigate: (Legacy sync) Analyzes incidents via /incident/analyze endpoint
@@ -43,12 +43,12 @@ import (
 // - GetSessionResult: (Async) Retrieves incident investigation result (BR-AA-HAPI-064.3)
 type HolmesGPTClientInterface interface {
 	// Legacy synchronous methods (will be deprecated)
-	Investigate(ctx context.Context, req *client.IncidentRequest) (*client.IncidentResponse, error)
+	Investigate(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error)
 
 	// Async session methods (BR-AA-HAPI-064)
-	SubmitInvestigation(ctx context.Context, req *client.IncidentRequest) (string, error)
-	PollSession(ctx context.Context, sessionID string) (*client.SessionStatus, error)
-	GetSessionResult(ctx context.Context, sessionID string) (*client.IncidentResponse, error)
+	SubmitInvestigation(ctx context.Context, req *agentclient.IncidentRequest) (string, error)
+	PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error)
+	GetSessionResult(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error)
 }
 
 // ========================================

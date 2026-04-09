@@ -308,7 +308,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			ai.Status.Phase = "Failed"
 			ai.Status.Reason = "APIError"
 			ai.Status.SubReason = "MaxRetriesExceeded"
-			ai.Status.Message = "Transient error exceeded max retries (5 attempts): HAPI request timeout"
+			ai.Status.Message = "Transient error exceeded max retries (5 attempts): KA request timeout"
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
 			By("Waiting for escalation NotificationRequest to be created (BR-ORCH-036 v3.0)")

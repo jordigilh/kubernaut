@@ -1,0 +1,34 @@
+{{- /* Self-Correction Feedback: Resource Context Mismatch (Issue #516)
+     Source: holmesgpt-api/src/extensions/incident/prompt_builder.py build_resource_context_mismatch_feedback
+     Appended when LLM's remediationTarget doesn't match the last get_resource_context call.
+*/ -}}
+{{ if .IsMissing }}
+## ⚠️ RESOURCE CONTEXT MISSING — CORRECTION REQUIRED
+
+You did not call `get_resource_context` during your investigation. This tool is **REQUIRED**
+to resolve the root owner and retrieve remediation history for your RCA target.
+
+Your remediationTarget is **{{ .RemediationTargetDescription }}**.
+
+**You MUST**:
+1. Call `get_resource_context` for your RCA target ({{ .RemediationTargetDescription }})
+2. Review the `root_owner` and `remediation_history` returned
+3. Re-run the three-step workflow discovery protocol (the detected infrastructure labels
+   from this call determine which workflows are available in `list_workflows`)
+4. Re-submit your JSON response with the corrected workflow selection
+{{ else }}
+## ⚠️ RESOURCE CONTEXT MISMATCH — CORRECTION REQUIRED
+
+Your `remediationTarget` is **{{ .RemediationTargetDescription }}** but `get_resource_context` was last called for
+**{{ .LastTargetDescription }}**.
+
+Calling `get_resource_context` for a different resource changes the **detected infrastructure
+labels** (gitOpsManaged, stateful, pdbProtected, hpaEnabled, etc.) which affect which workflows
+are returned by `list_workflows`.
+
+**You MUST**:
+1. Call `get_resource_context` for your actual RCA target ({{ .RemediationTargetDescription }})
+2. Review the updated `root_owner`, `remediation_history`, and detected labels
+3. Re-run the three-step workflow discovery protocol with the updated context
+4. Re-submit your JSON response with the corrected workflow selection
+{{ end -}}

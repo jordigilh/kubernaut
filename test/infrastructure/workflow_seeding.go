@@ -31,7 +31,6 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
-
 // workflowIDToImageName maps WorkflowID to fixture directory name.
 // WorkflowIDs include version suffix (e.g., oomkill-increase-memory-v1) but fixture
 // directories and built images use base names (oomkill-increase-memory). Makefile
@@ -43,7 +42,7 @@ func workflowIDToImageName(workflowID string) string {
 }
 
 // TestWorkflow represents a workflow for test seeding in DataStorage
-// Pattern: Shared data structure for AIAnalysis integration tests and HAPI E2E tests
+// Pattern: Shared data structure for AIAnalysis integration tests and KA E2E tests
 // This struct consolidates workflow definitions from both test suites
 //
 // ADR-058: Registration uses inline CRD YAML content read from fixture files.
@@ -52,7 +51,7 @@ func workflowIDToImageName(workflowID string) string {
 // NOT sent to the API; they serve as human-readable documentation and as key
 // components for workflowUUIDs map lookups (key format: "workflowID:environment").
 type TestWorkflow struct {
-	WorkflowID      string // Must match Mock LLM workflow_id or Python fixture workflow_name
+	WorkflowID      string // Must match Mock LLM workflow_id in scenarios registry
 	Name            string
 	Description     string
 	ActionType      string // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "ScaleReplicas", "RestartPod")
@@ -64,7 +63,7 @@ type TestWorkflow struct {
 	ExecutionEngine string // "tekton" or "job" - defaults to "tekton" if empty (BR-WE-014)
 	// SchemaParameters defines workflow input parameters per ADR-043 (BR-HAPI-191)
 	// Used to generate valid workflow-schema.yaml content that DataStorage will parse
-	// and store in the parameters JSONB column for HAPI validation and MCP tool results
+	// and store in the parameters JSONB column for KA validation and MCP tool results
 	SchemaParameters []models.WorkflowParameter
 }
 
@@ -74,7 +73,7 @@ type TestWorkflow struct {
 // Pattern: DD-TEST-010 Multi-Controller Pattern - Shared Infrastructure Setup
 // - Process 1 seeds workflows in DataStorage (shared resource)
 // - All processes can reference these workflows during tests
-// - Prevents "workflow not found" errors during HAPI validation
+// - Prevents "workflow not found" errors during KA validation
 //
 // Pattern: DD-TEST-011 v2.0 - Go-based workflow seeding
 // - Prevents pytest-xdist race conditions (BR-TEST-008)
@@ -166,6 +165,9 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 	}
 }
 
+// Deprecated: SortedWorkflowUUIDKeys is part of the legacy ConfigMap sync infrastructure.
+// The Go Mock LLM uses deterministic UUIDs and no longer requires external UUID synchronization.
+//
 // SortedWorkflowUUIDKeys returns the keys of a workflowUUIDs map sorted so that
 // ":production" entries come after all other environments for the same workflow name.
 // This is critical because the Mock LLM's load_scenarios_from_file does last-write-wins

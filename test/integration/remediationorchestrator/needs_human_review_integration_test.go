@@ -87,7 +87,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: aiName, Namespace: ROControllerNamespace}, analysis)
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed(), "AIAnalysis should be created by RO")
 
-			// Step 5: Update AIAnalysis status with needsHumanReview=true (simulating HAPI response)
+			// Step 5: Update AIAnalysis status with needsHumanReview=true (simulating KA response)
 			analysis.Status = aianalysisv1.AIAnalysisStatus{
 				Phase:             "Failed",
 				Reason:            "WorkflowResolutionFailed",
@@ -257,7 +257,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Step 5: Update AIAnalysis status with needsHumanReview=true (rca_incomplete reason)
-			// This simulates HAPI returning needs_human_review=true due to missing remediationTarget (BR-HAPI-212)
+			// This simulates KA returning needs_human_review=true due to missing remediationTarget (BR-HAPI-212)
 			analysis.Status = aianalysisv1.AIAnalysisStatus{
 				Phase:             "Failed",
 				Reason:            "WorkflowResolutionFailed",

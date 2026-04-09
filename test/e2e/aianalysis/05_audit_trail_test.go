@@ -351,14 +351,14 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 			suffix := randomSuffix()
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-audit-hapi-" + suffix,
+					Name:      "e2e-audit-ka-" + suffix,
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: "e2e-audit-hapi-" + suffix,
+					RemediationID: "e2e-audit-ka-" + suffix,
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      "e2e-audit-hapi",
+							Fingerprint:      "e2e-audit-ka",
 							Severity:        "medium",
 							SignalName:       "HighMemory",
 							Environment:      "development",
@@ -386,10 +386,10 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 			remediationID := analysis.Spec.RemediationID
 
 		By("Waiting for AI agent call events to appear in Data Storage")
-		hapiEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeAIAgentCall, 1)
+		kaEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeAIAgentCall, 1)
 
 			By("Validating AI agent API call event_data structure")
-			for _, event := range hapiEvents {
+			for _, event := range kaEvents {
 				// Access strongly-typed payload via discriminated union
 				payload := event.EventData.AIAnalysisAIAgentCallPayload
 				Expect(payload).ToNot(BeNil(), "Should have AIAnalysisAIAgentCallPayload")

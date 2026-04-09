@@ -92,7 +92,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 			// "Predicted" prefix. SP must classify these as proactive and normalize
 			// the signal type for downstream workflow catalog matching.
 			//
-			// ADR-054: Separation of concerns — SP normalizes, HAPI adapts prompt.
+			// ADR-054: Separation of concerns — SP normalizes, KA adapts prompt.
 			//
 			// DATA FLOW: SP.Spec.Signal.Name="PredictedOOMKill"
 			//   → Status.SignalMode="proactive"

@@ -762,7 +762,7 @@ type otlpScope struct {
 }
 
 type otlpMetric struct {
-	Name  string   `json:"name"`
+	Name  string     `json:"name"`
 	Gauge *otlpGauge `json:"gauge,omitempty"`
 	Sum   *otlpSum   `json:"sum,omitempty"`
 }

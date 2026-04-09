@@ -923,7 +923,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 	{
 		Service:       "webhooks",
 		EventType:     "webhook.notification.cancelled",
-		EventCategory: ogenclient.AuditEventRequestEventCategoryWebhook,
+		EventCategory: ogenclient.AuditEventRequestEventCategoryNotification,
 		EventAction:   "cancelled",
 		CreateEvent: func() ogenclient.AuditEventRequest {
 			notifName := fmt.Sprintf("notif-test-cancelled-%s", uuid.New().String()[:8])
@@ -932,7 +932,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				Version:        "1.0",
 				EventType:      "webhook.notification.cancelled",
 				EventTimestamp: time.Now().UTC(),
-				EventCategory:  ogenclient.AuditEventRequestEventCategoryWebhook,
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryNotification,
 				EventAction:    "cancelled",
 				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
 				ActorType:      ogenclient.NewOptString("user"),
@@ -954,7 +954,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 	{
 		Service:       "webhooks",
 		EventType:     "webhook.notification.acknowledged",
-		EventCategory: ogenclient.AuditEventRequestEventCategoryWebhook,
+		EventCategory: ogenclient.AuditEventRequestEventCategoryNotification,
 		EventAction:   "acknowledged",
 		CreateEvent: func() ogenclient.AuditEventRequest {
 			notifName := fmt.Sprintf("notif-test-acked-%s", uuid.New().String()[:8])
@@ -963,7 +963,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				Version:        "1.0",
 				EventType:      "webhook.notification.acknowledged",
 				EventTimestamp: time.Now().UTC(),
-				EventCategory:  ogenclient.AuditEventRequestEventCategoryWebhook,
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryNotification,
 				EventAction:    "acknowledged",
 				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
 				ActorType:      ogenclient.NewOptString("user"),
@@ -985,7 +985,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 	{
 		Service:       "webhooks",
 		EventType:     "workflowexecution.block.cleared",
-		EventCategory: ogenclient.AuditEventRequestEventCategoryWebhook,
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
 		EventAction:   "block_cleared",
 		CreateEvent: func() ogenclient.AuditEventRequest {
 			wfeName := fmt.Sprintf("wfe-test-unblocked-%s", uuid.New().String()[:8])
@@ -994,7 +994,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				Version:        "1.0",
 				EventType:      "workflowexecution.block.cleared",
 				EventTimestamp: time.Now().UTC(),
-				EventCategory:  ogenclient.AuditEventRequestEventCategoryWebhook,
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
 				EventAction:    "block_cleared",
 				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
 				ActorType:      ogenclient.NewOptString("user"),
@@ -1020,7 +1020,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 	{
 		Service:       "webhooks",
 		EventType:     "webhook.remediationapprovalrequest.decided",
-		EventCategory: ogenclient.AuditEventRequestEventCategoryWebhook,
+		EventCategory: ogenclient.AuditEventRequestEventCategoryApproval,
 		EventAction:   "decided",
 		CreateEvent: func() ogenclient.AuditEventRequest {
 			approvalName := fmt.Sprintf("approval-test-%s", uuid.New().String()[:8])
@@ -1029,7 +1029,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				Version:        "1.0",
 				EventType:      "webhook.remediationapprovalrequest.decided",
 				EventTimestamp: time.Now().UTC(),
-				EventCategory:  ogenclient.AuditEventRequestEventCategoryWebhook,
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryApproval,
 				EventAction:    "decided",
 				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
 				ActorType:      ogenclient.NewOptString("user"),
@@ -1055,7 +1055,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 	{
 		Service:       "webhooks",
 		EventType:     "webhook.remediationrequest.timeout_modified",
-		EventCategory: ogenclient.AuditEventRequestEventCategoryWebhook,
+		EventCategory: ogenclient.AuditEventRequestEventCategoryOrchestration,
 		EventAction:   "timeout_modified",
 		CreateEvent: func() ogenclient.AuditEventRequest {
 			rrName := fmt.Sprintf("rr-test-timeout-modified-%s", uuid.New().String()[:8])
@@ -1064,7 +1064,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				Version:        "1.0",
 				EventType:      "webhook.remediationrequest.timeout_modified",
 				EventTimestamp: time.Now().UTC(),
-				EventCategory:  ogenclient.AuditEventRequestEventCategoryWebhook,
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryOrchestration,
 				EventAction:    "timeout_modified",
 				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
 				ActorType:      ogenclient.NewOptString("user"),

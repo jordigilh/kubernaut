@@ -34,7 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
-	hgptclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // P2.2 Refactoring: Constants moved to constants.go
@@ -159,8 +159,8 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		return h.handleError(ctx, analysis, err)
 	}
 
-	// AA-HAPI-001: Set ObservedGeneration immediately after successful HAPI call
-	// This prevents duplicate HAPI calls when controller reconciles before status persists
+	// AA-HAPI-001: Set ObservedGeneration immediately after successful KA call
+	// This prevents duplicate KA calls when controller reconciles before status persists
 	// DD-CONTROLLER-001 v3.0 Pattern C: Set before phase transition
 	analysis.Status.ObservedGeneration = analysis.Generation
 
@@ -181,7 +181,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 }
 
 // buildRequest constructs the HolmesGPT-API request from AIAnalysis spec using generated types
-// BR-AI-080: Updated with all required HAPI fields per NOTICE_AIANALYSIS_HAPI_CONTRACT_MISMATCH.md
+// BR-AI-080: Updated with all required KA fields per NOTICE_AIANALYSIS_KA_CONTRACT_MISMATCH.md
 // Per crd-schema.md: Include enrichment data (owner chain, detected labels) for AI context
 // P1.2 Refactoring: Request building methods moved to request_builder.go
 // - BuildIncidentRequest (was buildRequest)
@@ -325,11 +325,11 @@ func mapErrorTypeToSubReason(errorType ErrorType) string {
 
 // ========================================
 // SESSION-BASED FLOW (BR-AA-HAPI-064)
-// Async submit/poll/result pattern for HAPI communication
+// Async submit/poll/result pattern for KA communication
 // ========================================
 
 // handleSessionBased routes the session-based flow based on InvestigationSession state.
-// BR-AA-HAPI-064: Non-blocking communication with HAPI via submit/poll/result
+// BR-AA-HAPI-064: Non-blocking communication with KA via submit/poll/result
 func (h *InvestigatingHandler) handleSessionBased(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	session := analysis.Status.InvestigationSession
 
@@ -342,16 +342,16 @@ func (h *InvestigatingHandler) handleSessionBased(ctx context.Context, analysis 
 	return h.handleSessionPoll(ctx, analysis)
 }
 
-// handleSessionSubmit submits a new investigation to HAPI and records the session ID.
+// handleSessionSubmit submits a new investigation to KA and records the session ID.
 // BR-AA-HAPI-064.1: Submit returns session ID for subsequent polling
-// BR-AA-HAPI-064.9: Submit incident investigation to HAPI
+// BR-AA-HAPI-064.9: Submit incident investigation to KA
 func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	// Detect if this is a regeneration (session exists but ID was cleared after 404)
 	isRegeneration := analysis.Status.InvestigationSession != nil &&
 		analysis.Status.InvestigationSession.ID == "" &&
 		analysis.Status.InvestigationSession.Generation > 0
 
-	h.log.Info("Submitting incident investigation to HAPI (session mode)",
+	h.log.Info("Submitting incident investigation to KA (session mode)",
 		"isRegeneration", isRegeneration,
 	)
 	req := h.builder.BuildIncidentRequest(analysis)
@@ -392,10 +392,10 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 	// DD-EVENT-001: Emit SessionCreated K8s event for observability
 	if h.recorder != nil {
 		h.recorder.Event(analysis, corev1.EventTypeNormal, events.EventReasonSessionCreated,
-			fmt.Sprintf("HAPI investigation session created (ID: %s, generation: %d)", sessionID, analysis.Status.InvestigationSession.Generation))
+			fmt.Sprintf("KA investigation session created (ID: %s, generation: %d)", sessionID, analysis.Status.InvestigationSession.Generation))
 	}
 
-	h.log.Info("HAPI session created",
+	h.log.Info("KA session created",
 		"sessionID", sessionID,
 		"generation", analysis.Status.InvestigationSession.Generation,
 		"isRegeneration", isRegeneration,
@@ -405,7 +405,7 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 	return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
 }
 
-// handleSessionPoll polls the status of an active HAPI session.
+// handleSessionPoll polls the status of an active KA session.
 // BR-AA-HAPI-064.2: Poll session status (pending/investigating/completed/failed)
 //
 // Poll-tracking status writes (PollCount, LastPolled) are filtered by the
@@ -414,7 +414,7 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	session := analysis.Status.InvestigationSession
 
-	h.log.V(1).Info("Polling HAPI session",
+	h.log.V(1).Info("Polling KA session",
 		"sessionID", session.ID,
 		"pollCount", session.PollCount,
 	)
@@ -444,7 +444,7 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 // Updates PollCount and LastPolled in the CRD status for observability.
 // The aiAnalysisUpdatePredicate filters PollCount/LastPolled-only status writes
 // so they don't trigger re-reconciles. Only RequeueAfter controls the next poll.
-func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *hgptclient.SessionStatus) (ctrl.Result, error) {
+func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatus) (ctrl.Result, error) {
 	session := analysis.Status.InvestigationSession
 
 	// Update poll tracking fields for observability
@@ -466,7 +466,7 @@ func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, ana
 func (h *InvestigatingHandler) handleSessionPollCompleted(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	session := analysis.Status.InvestigationSession
 
-	h.log.Info("HAPI session completed, fetching result",
+	h.log.Info("KA session completed, fetching result",
 		"sessionID", session.ID,
 	)
 
@@ -507,10 +507,10 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 	return result, err
 }
 
-// handleSessionPollFailed handles poll results where investigation has failed on HAPI side.
-// BR-AA-HAPI-064: Surface HAPI-side failure to operators via CRD status
-func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *hgptclient.SessionStatus) (ctrl.Result, error) {
-	h.log.Info("HAPI session failed",
+// handleSessionPollFailed handles poll results where investigation has failed on KA side.
+// BR-AA-HAPI-064: Surface KA-side failure to operators via CRD status
+func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatus) (ctrl.Result, error) {
+	h.log.Info("KA session failed",
 		"sessionID", analysis.Status.InvestigationSession.ID,
 		"error", status.Error,
 	)
@@ -521,18 +521,18 @@ func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, anal
 	analysis.Status.ObservedGeneration = analysis.Generation
 	analysis.Status.Message = status.Error
 	if analysis.Status.Message == "" {
-		analysis.Status.Message = "Investigation failed on HAPI side"
+		analysis.Status.Message = "Investigation failed on KA side"
 	}
 
 	// Record failure audit
-	failureErr := fmt.Errorf("HAPI session failed: %s", status.Error)
+	failureErr := fmt.Errorf("KA session failed: %s", status.Error)
 	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
 		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 	}
 
 	msg := status.Error
 	if msg == "" {
-		msg = "Investigation failed on HAPI side"
+		msg = "Investigation failed on KA side"
 	}
 	aianalysis.SetInvestigationComplete(analysis, false, msg)
 	return ctrl.Result{}, nil
@@ -542,7 +542,7 @@ func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, anal
 // BR-AA-HAPI-064.5: 404 triggers session regeneration, not standard retry
 func (h *InvestigatingHandler) handleSessionPollError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
 	// Check for 404 (session lost) - triggers regeneration logic
-	var apiErr *hgptclient.APIError
+	var apiErr *agentclient.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
 		return h.handleSessionLost(ctx, analysis)
 	}
@@ -561,7 +561,7 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 	session.PollCount = 0
 	session.LastPolled = nil
 
-	h.log.Info("HAPI session lost, regenerating",
+	h.log.Info("KA session lost, regenerating",
 		"generation", session.Generation,
 		"maxRegenerations", MaxSessionRegenerations,
 	)
@@ -572,7 +572,7 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 	// DD-EVENT-001: Emit SessionLost K8s event for observability
 	if h.recorder != nil {
 		h.recorder.Event(analysis, corev1.EventTypeWarning, events.EventReasonSessionLost,
-			fmt.Sprintf("HAPI session lost (generation %d), attempting regeneration", session.Generation))
+			fmt.Sprintf("KA session lost (generation %d), attempting regeneration", session.Generation))
 	}
 
 	// BR-AA-HAPI-064.6: Check if regeneration cap exceeded
@@ -620,7 +620,7 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 // BR-AA-HAPI-064: 409 Conflict treated as transient (re-poll gracefully at standard interval)
 func (h *InvestigatingHandler) handleSessionGetResultError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
 	// Check for 409 Conflict - treat as transient, re-poll at standard interval
-	var apiErr *hgptclient.APIError
+	var apiErr *agentclient.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode == 409 {
 		h.log.Info("GetSessionResult returned 409 Conflict, treating as transient",
 			"sessionID", analysis.Status.InvestigationSession.ID,

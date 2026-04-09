@@ -37,7 +37,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -66,7 +66,7 @@ func NewResponseProcessor(log logr.Logger, m *metrics.Metrics, auditClient Audit
 // ProcessIncidentResponse processes the IncidentResponse from generated client
 // BR-AI-009: Reset failure counter on successful API call
 // BR-HAPI-197: Check needs_human_review before proceeding
-func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	// BR-AI-009: Reset failure counter on successful API call
 	analysis.Status.ConsecutiveFailures = 0
 
@@ -88,8 +88,8 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	// BR-AI-OBSERVABILITY-004: Record confidence score for AI quality tracking
 	p.metrics.RecordConfidenceScore(analysis.Spec.AnalysisRequest.SignalContext.SignalName, resp.Confidence)
 
-	// BR-HAPI-197: Check if HAPI explicitly requires human review (Layer 1 - Primary)
-	// CRITICAL: This MUST be checked FIRST. HAPI's explicit needs_human_review=true
+	// BR-HAPI-197: Check if KA explicitly requires human review (Layer 1 - Primary)
+	// CRITICAL: This MUST be checked FIRST. KA's explicit needs_human_review=true
 	// takes priority over all other classification logic.
 	if needsHumanReview {
 		return p.handleWorkflowResolutionFailureFromIncident(ctx, analysis, resp)
@@ -99,23 +99,26 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	// Detection per BR-HAPI-200.6: needs_human_review=false AND selected_workflow=null AND confidence >= 0.7
 	// Defense-in-depth (Layer 2): also verify no warning signals that indicate an active
 	// problem (inconclusive investigation, no matching workflows). This catches edge cases
-	// where the LLM incorrectly overrides needs_human_review=false but HAPI still appends
+	// where the LLM incorrectly overrides needs_human_review=false but KA still appends
 	// diagnostic warnings from its investigation_outcome parsing.
 	// #208 (Layer 3): If the LLM provided a substantive RCA (with contributing factors),
 	// it identified a real problem. Route to human review since no workflow was selected,
 	// rather than silently closing as "no action required."
-	// #301: When HAPI's "Problem self-resolved" signal is present (from investigation_outcome=resolved),
+	// #301: When KA's "Problem self-resolved" signal is present (from investigation_outcome=resolved),
 	// bypass the hasSubstantiveRCA check — the RCA documents the transient condition for audit,
 	// not an ongoing problem requiring intervention.
+	// #607: When agent explicitly says "not actionable", Outcome D must win over Outcome A.
+	// This matches Python KA's precedence where actionable=false is evaluated first.
 	isResolved := hasProblemResolvedSignal(resp.Warnings)
-	if !hasSelectedWorkflow && resp.Confidence >= 0.7 && !hasNoWorkflowWarningSignal(resp.Warnings) && (isResolved || !hasSubstantiveRCA(resp.RootCauseAnalysis)) {
+	if !hasSelectedWorkflow && resp.Confidence >= 0.7 && !hasNoWorkflowWarningSignal(resp.Warnings) && !hasNotActionableSignal(resp.Warnings) && (isResolved || !hasSubstantiveRCA(resp.RootCauseAnalysis)) {
 		return p.handleProblemResolvedFromIncident(ctx, analysis, resp)
 	}
 
-	// #607: Alert not actionable — confidence gate removed.
-	// actionable=false is an explicit LLM determination (like needs_human_review=true)
-	// and should not be gated by a quality threshold. HAPI only emits both the warning
-	// signal AND is_actionable=false when the LLM explicitly sets actionable: false.
+	// #388 + #607 Outcome D: Alert not actionable — benign condition, no remediation warranted.
+	// When the agent signals actionable=false (via warning + is_actionable field), this is an
+	// authoritative LLM determination — same trust pattern as needs_human_review (line 94).
+	// #607: Removed confidence >= 0.7 gate. The LLM's explicit actionable=false is trusted
+	// regardless of confidence. The agent applies a confidence floor of 0.8 as defense-in-depth.
 	isNotActionable := hasNotActionableSignal(resp.Warnings)
 	isActionablePtr := GetOptNilBoolValue(resp.IsActionable)
 	if !hasSelectedWorkflow && isNotActionable && isActionablePtr != nil && !*isActionablePtr {
@@ -130,18 +133,18 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	}
 
 	// BR-HAPI-197 AC-4 + Issue #28: AIAnalysis applies confidence threshold (V1.0: 70%)
-	// HAPI returns confidence but does NOT enforce thresholds - AIAnalysis owns this logic
+	// KA returns confidence but does NOT enforce thresholds - AIAnalysis owns this logic
 	const confidenceThreshold = 0.7 // TODO V1.1: Make configurable per BR-HAPI-198
 
 	if hasSelectedWorkflow && resp.Confidence < confidenceThreshold {
 		return p.handleLowConfidenceFailure(ctx, analysis, resp)
 	}
 
-	// All checks passed - store HAPI response metadata and continue processing
+	// All checks passed - store KA response metadata and continue processing
 	analysis.Status.Warnings = resp.Warnings
 	analysis.Status.InvestigationID = resp.IncidentID
 
-	// ADR-056: Extract detected_labels from HAPI response into PostRCAContext
+	// ADR-056: Extract detected_labels from KA response into PostRCAContext
 	p.populatePostRCAContext(analysis, resp.DetectedLabels.Value, resp.DetectedLabels.Set, resp.DetectedLabels.Null)
 
 	// ADR-055: TargetInOwnerChain removed. remediationTarget is now a first-class
@@ -221,9 +224,9 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	return ctrl.Result{Requeue: true}, nil
 }
 
-// populatePostRCAContext extracts detected_labels from the HAPI response raw map
+// populatePostRCAContext extracts detected_labels from the KA response raw map
 // and sets PostRCAContext on the AIAnalysis status.
-// ADR-056: DetectedLabels flow from HAPI → PostRCAContext for Rego policy input.
+// ADR-056: DetectedLabels flow from KA → PostRCAContext for Rego policy input.
 func (p *ResponseProcessor) populatePostRCAContext(analysis *aianalysisv1.AIAnalysis, detectedLabelsRaw interface{}, isSet bool, isNull bool) {
 	if !isSet || isNull {
 		return
@@ -241,14 +244,14 @@ func (p *ResponseProcessor) populatePostRCAContext(analysis *aianalysisv1.AIAnal
 		SetAt:          &now,
 	}
 
-	p.log.Info("Populated PostRCAContext from HAPI detected_labels",
+	p.log.Info("Populated PostRCAContext from KA detected_labels",
 		"gitOpsManaged", dl.GitOpsManaged,
 		"stateful", dl.Stateful,
 		"failedDetections", dl.FailedDetections,
 	)
 }
 
-// extractDetectedLabels converts a raw map from the HAPI response into the
+// extractDetectedLabels converts a raw map from the KA response into the
 // strongly-typed DetectedLabels struct. Fields not present default to zero values.
 func extractDetectedLabels(m map[string]interface{}) *sharedtypes.DetectedLabels {
 	return &sharedtypes.DetectedLabels{
@@ -267,7 +270,7 @@ func extractDetectedLabels(m map[string]interface{}) *sharedtypes.DetectedLabels
 
 // handleWorkflowResolutionFailureFromIncident handles workflow resolution failure from IncidentResponse
 // BR-HAPI-197: Workflow resolution failed, human must intervene
-func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	hasSelectedWorkflow := resp.SelectedWorkflow.Set && !resp.SelectedWorkflow.Null
 	humanReviewReason := ""
 	if resp.HumanReviewReason.Set && !resp.HumanReviewReason.Null {
@@ -383,7 +386,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 
 // handleProblemResolvedFromIncident handles problem self-resolved from IncidentResponse
 // BR-HAPI-200: Problem confirmed resolved, no workflow needed
-func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	p.log.Info("Problem confirmed resolved, no workflow needed",
 		"confidence", resp.Confidence,
 		"warnings", resp.Warnings,
@@ -434,7 +437,7 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 // #388: Alert is benign — condition may be present but is harmless (e.g., orphaned PVCs).
 // Routes to Completed/WorkflowNotNeeded/NotActionable, analogous to handleProblemResolvedFromIncident
 // but semantically distinct: resolved = problem went away, not-actionable = problem is harmless.
-func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	p.log.Info("Alert not actionable, no workflow needed",
 		"confidence", resp.Confidence,
 		"warnings", resp.Warnings,
@@ -482,7 +485,7 @@ func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context,
 
 // handleNoWorkflowTerminalFailure handles terminal failure when no workflow selected with low confidence
 // Issue #29: BR-AI-050 - AIAnalysis must detect terminal failure per BR-HAPI-197 AC-4
-func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	p.log.Info("No workflow selected, terminal failure",
 		"confidence", resp.Confidence,
 		"warnings", resp.Warnings,
@@ -534,8 +537,8 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 }
 
 // handleLowConfidenceFailure handles workflow selection with confidence below threshold
-// Issue #28: BR-HAPI-197 AC-4 - AIAnalysis applies confidence threshold (not HAPI)
-func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+// Issue #28: BR-HAPI-197 AC-4 - AIAnalysis applies confidence threshold (not KA)
+func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	const confidenceThreshold = 0.7 // V1.0: global 70% default
 
 	p.log.Info("Low confidence workflow, requires human review",
@@ -638,7 +641,7 @@ func setTotalAnalysisTime(analysis *aianalysisv1.AIAnalysis, now metav1.Time) {
 	}
 }
 
-// mapEnumToSubReason maps HAPI HumanReviewReason enum to CRD SubReason
+// mapEnumToSubReason maps KA HumanReviewReason enum to CRD SubReason
 // This is the preferred method - direct enum-to-enum mapping (Dec 6, 2025)
 // Updated Dec 7, 2025: Added investigation_inconclusive per BR-HAPI-200
 func (p *ResponseProcessor) mapEnumToSubReason(reason string) string {
@@ -659,18 +662,18 @@ func (p *ResponseProcessor) mapEnumToSubReason(reason string) string {
 	return "WorkflowNotFound"
 }
 
-// hasNoWorkflowWarningSignal checks if HAPI's warnings contain signals that indicate
+// hasNoWorkflowWarningSignal checks if KA's warnings contain signals that indicate
 // the absence of a selected workflow is due to an active problem (inconclusive investigation
 // or no matching workflows in the catalog), NOT because the problem self-resolved.
 //
 // This is a defense-in-depth check (Layer 2) for BR-HAPI-200.6. It catches edge cases
-// where the LLM incorrectly sets needs_human_review=false but HAPI's result_parser
+// where the LLM incorrectly sets needs_human_review=false but KA's result_parser
 // still appends diagnostic warnings from investigation_outcome processing.
 //
-// Warning signals checked (from HAPI result_parser.py):
+// Warning signals checked (from KA result_parser.py):
 //   - "inconclusive": investigation_outcome == "inconclusive"
 //   - "no workflows matched": selected_workflow is None and outcome is not "resolved"
-//   - "human review recommended": general HAPI safety signal
+//   - "human review recommended": general KA safety signal
 func hasNoWorkflowWarningSignal(warnings []string) bool {
 	for _, w := range warnings {
 		lower := strings.ToLower(w)
@@ -683,7 +686,7 @@ func hasNoWorkflowWarningSignal(warnings []string) bool {
 	return false
 }
 
-// hasProblemResolvedSignal checks if HAPI emitted the "Problem self-resolved" warning.
+// hasProblemResolvedSignal checks if KA emitted the "Problem self-resolved" warning.
 // This warning is only produced when investigation_outcome == "resolved" (result_parser.py),
 // making it an authoritative signal that the problem is no longer occurring.
 // #301: Used to bypass hasSubstantiveRCA when the RCA documents a resolved transient
@@ -697,7 +700,7 @@ func hasProblemResolvedSignal(warnings []string) bool {
 	return false
 }
 
-// hasNotActionableSignal checks if HAPI emitted the "Alert not actionable" warning.
+// hasNotActionableSignal checks if KA emitted the "Alert not actionable" warning.
 // This warning is only produced when actionable == false (result_parser.py),
 // making it an authoritative signal that the alert is benign.
 // #388: Used to route to Completed/WorkflowNotNeeded/NotActionable, bypassing
@@ -716,7 +719,7 @@ func hasNotActionableSignal(warnings []string) bool {
 // with contributing factors, indicating a real problem was identified.
 // #208: When no workflow is selected but a real problem exists, the system should
 // escalate to human review rather than silently completing as "NoActionRequired."
-func hasSubstantiveRCA(rca client.IncidentResponseRootCauseAnalysis) bool {
+func hasSubstantiveRCA(rca agentclient.IncidentResponseRootCauseAnalysis) bool {
 	if len(rca) == 0 {
 		return false
 	}
@@ -727,9 +730,9 @@ func hasSubstantiveRCA(rca client.IncidentResponseRootCauseAnalysis) bool {
 	return extracted.Summary != "" && len(extracted.ContributingFactors) > 0
 }
 
-// mapWarningsToSubReason extracts SubReason from HAPI warnings
+// mapWarningsToSubReason extracts SubReason from KA warnings
 // DEPRECATED: Use mapEnumToSubReason when HumanReviewReason is available
-// Kept for backward compatibility with older HAPI versions
+// Kept for backward compatibility with older KA versions
 func mapWarningsToSubReason(warnings []string) string {
 	warningsStr := strings.ToLower(strings.Join(warnings, " "))
 
@@ -753,8 +756,8 @@ func mapWarningsToSubReason(warnings []string) string {
 
 // ExtractRootCauseAnalysis extracts RCA from an IncidentResponse, including remediationTarget.
 // Issue #97: Centralizes RCA extraction (was duplicated in 5 handler functions).
-// BR-496 v2: remediationTarget is HAPI-injected from K8s-verified root_owner, not LLM-provided.
-// #542: HAPI emits "remediationTarget" in JSON; CRD stores it as RemediationTarget.
+// BR-496 v2: remediationTarget is KA-injected from K8s-verified root_owner, not LLM-provided.
+// #542: KA emits "remediationTarget" in JSON; CRD stores it as RemediationTarget.
 func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalysis {
 	rcaMap := GetMapFromOptNil(rcaData)
 	if rcaMap == nil {
@@ -767,7 +770,7 @@ func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalys
 		ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
 	}
 
-	// #542: HAPI emits "remediationTarget"; maps to CRD's RemediationTarget field.
+	// #542: KA emits "remediationTarget"; maps to CRD's RemediationTarget field.
 	if arRaw, ok := rcaMap["remediationTarget"]; ok {
 		if arMap, ok := arRaw.(map[string]interface{}); ok {
 			kind, _ := arMap["kind"].(string)

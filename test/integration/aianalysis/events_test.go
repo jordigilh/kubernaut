@@ -24,7 +24,7 @@ limitations under the License.
 // by involvedObject.name → assert expected event reasons.
 //
 // IMPORTANT: These tests require the full integration environment (CRDs,
-// Mock HAPI, DataStorage, etc.) to run. Structure compiles; execution
+// Mock KA, DataStorage, etc.) to run. Structure compiles; execution
 // depends on `make test-integration-aianalysis`.
 package aianalysis
 
@@ -150,9 +150,9 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 	})
 
 	Context("IT-AA-095-02: Investigation failure event trail", func() {
-		It("should emit AIAnalysisCreated and AnalysisFailed when HAPI returns permanent error", func() {
+		It("should emit AIAnalysisCreated and AnalysisFailed when KA returns permanent error", func() {
 			// This test uses MOCK_RCA_PERMANENT_ERROR signal type, which triggers
-			// the Mock LLM to return HTTP 500, causing HAPI session to fail.
+			// the Mock LLM to return HTTP 500, causing KA session to fail.
 			// The AA controller detects the failed session and moves to Failed phase.
 			rrName := helpers.UniqueTestName("test-remediation-fail")
 			analysisName := helpers.UniqueTestName("integration-events-fail")
@@ -191,7 +191,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 			By("Creating AIAnalysis CRD")
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for Failed phase (requires Mock HAPI permanent error scenario)")
+			By("Waiting for Failed phase (requires Mock KA permanent error scenario)")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
 				return string(analysis.Status.Phase)
@@ -217,8 +217,8 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 	})
 
 	Context("IT-AA-095-03: Human review event trail", func() {
-		It("should emit AIAnalysisCreated and HumanReviewRequired when HAPI flags needs_human_review=true", func() {
-			// NOTE: This test requires Mock HAPI configured with a scenario that returns
+		It("should emit AIAnalysisCreated and HumanReviewRequired when KA flags needs_human_review=true", func() {
+			// NOTE: This test requires Mock KA configured with a scenario that returns
 			// needs_human_review=true. SignalType "MOCK_NO_WORKFLOW_FOUND" in production
 			// environment triggers the human review flow.
 			rrName := helpers.UniqueTestName("test-remediation-hr")
@@ -258,7 +258,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 			By("Creating AIAnalysis CRD")
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for reconciliation (Completed or Failed depending on HAPI response)")
+			By("Waiting for reconciliation (Completed or Failed depending on KA response)")
 			Eventually(func() bool {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
 				phase := string(analysis.Status.Phase)
@@ -290,7 +290,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 	// ========================================
 
 	Context("IT-AA-064-01a: SessionCreated on happy path", Label("session"), func() {
-		It("should emit SessionCreated event when HAPI investigation session is submitted", func() {
+		It("should emit SessionCreated event when KA investigation session is submitted", func() {
 			rrName := helpers.UniqueTestName("test-remediation-session")
 			analysisName := helpers.UniqueTestName("integration-events-session-created")
 			analysis := &aianalysisv1.AIAnalysis{

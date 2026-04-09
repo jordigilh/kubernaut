@@ -37,7 +37,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	hgptclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 )
 
@@ -69,7 +69,7 @@ const (
 	// ErrorTypePermanent indicates permanent failure (bad request, etc.)
 	ErrorTypePermanent ErrorType = "Permanent"
 
-	// ErrorTypeSessionLost indicates HAPI session was lost (404 on poll)
+	// ErrorTypeSessionLost indicates KA session was lost (404 on poll)
 	// BR-AA-HAPI-064.5: Triggers session regeneration, not standard retry
 	ErrorTypeSessionLost ErrorType = "SessionLost"
 )
@@ -211,7 +211,7 @@ func (ec *ErrorClassifier) ClassifyError(err error) ErrorClassification {
 	}
 
 	// Check for API errors (HTTP status codes)
-	var apiErr *hgptclient.APIError
+	var apiErr *agentclient.APIError
 	if errors.As(err, &apiErr) {
 		return ec.classifyHTTPError(apiErr)
 	}
@@ -240,7 +240,7 @@ func (ec *ErrorClassifier) ClassifyError(err error) ErrorClassification {
 }
 
 // classifyHTTPError classifies HTTP status code errors
-func (ec *ErrorClassifier) classifyHTTPError(apiErr *hgptclient.APIError) ErrorClassification {
+func (ec *ErrorClassifier) classifyHTTPError(apiErr *agentclient.APIError) ErrorClassification {
 	switch apiErr.StatusCode {
 	// 401 Unauthorized - Authentication error
 	case 401:

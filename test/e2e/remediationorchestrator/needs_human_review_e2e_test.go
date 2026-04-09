@@ -37,15 +37,15 @@ import (
 // Business Requirement: BR-HAPI-197
 // Documentation: docs/testing/BR-HAPI-197/remediationorchestrator_test_plan_v1.0.md
 //
-// These tests validate the complete remediation flow when HAPI returns `needs_human_review=true`,
+// These tests validate the complete remediation flow when KA returns `needs_human_review=true`,
 // ensuring that automatic remediation is blocked and NotificationRequest is created instead.
 //
 // Test Strategy (per TESTING_GUIDELINES.md):
 // - E2E tests validate complete user journeys with all real services
 // - Mock LLM is configured to return specific scenarios via signal keywords
-// - Focus: Routing logic from HAPI response → RO decision → CRD creation
+// - Focus: Routing logic from KA response → RO decision → CRD creation
 //
-// Mock LLM Scenario Triggers (test/services/mock-llm/src/server.py):
+// Mock LLM Scenario Triggers (test/services/mock-llm/scenarios/):
 // - "mock_rca_incomplete" → needs_human_review=true, reason="rca_incomplete"
 // - "mock_low_confidence" → needs_human_review=true, reason="low_confidence"
 // - "oomkilled" → needs_human_review=false (normal workflow selection)
@@ -64,7 +64,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 	// E2E-RO-197-001: Complete flow with needsHumanReview=true
 	// ========================================
 	Describe("E2E-RO-197-001: Complete remediation flow blocked by needsHumanReview", func() {
-		It("should create NotificationRequest and block WorkflowExecution when HAPI returns needs_human_review=true", func() {
+		It("should create NotificationRequest and block WorkflowExecution when KA returns needs_human_review=true", func() {
 			By("Creating RemediationRequest with signal that triggers needs_human_review=true")
 			now := metav1.Now()
 			// Valid 64-char hex fingerprint (SHA256 format)
@@ -146,7 +146,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				return false
 			}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
 
-			By("Manually updating AIAnalysis status with needsHumanReview=true (simulating HAPI response)")
+			By("Manually updating AIAnalysis status with needsHumanReview=true (simulating KA response)")
 			analysis.Status.Phase = aianalysisv1.PhaseFailed
 			analysis.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 			analysis.Status.NeedsHumanReview = true
@@ -297,7 +297,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				return false
 			}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
 
-			By("Manually updating AIAnalysis status with needsHumanReview=false (simulating HAPI response)")
+			By("Manually updating AIAnalysis status with needsHumanReview=false (simulating KA response)")
 			analysis.Status.Phase = aianalysisv1.PhaseCompleted
 			analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 			analysis.Status.NeedsHumanReview = false

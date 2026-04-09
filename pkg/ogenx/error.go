@@ -146,7 +146,7 @@ func getStatusCode(resp any) int {
 		return v.GetStatus()
 	}
 
-	// Pattern 3: Status field (HAPI uses this)
+	// Pattern 3: Status field (KA uses this)
 	// Use reflection to access struct fields when method doesn't exist
 	val := reflect.ValueOf(resp)
 
@@ -229,7 +229,7 @@ func extractErrorDetail(resp any) string {
 		}
 	}
 
-	// Pattern 2: Detail field (HAPI uses this)
+	// Pattern 2: Detail field (KA uses this)
 	// Use reflection to access struct fields when GetDetail() method doesn't exist
 	val := reflect.ValueOf(resp)
 
@@ -244,7 +244,7 @@ func extractErrorDetail(resp any) string {
 	if val.Kind() == reflect.Struct {
 		detailField := val.FieldByName("Detail")
 		if detailField.IsValid() {
-			// HAPI RFC 7807: Detail can be plain string (not OptString)
+			// KA RFC 7807: Detail can be plain string (not OptString)
 			if detailField.Kind() == reflect.String {
 				return detailField.String()
 			}
@@ -283,7 +283,7 @@ func extractErrorDetail(resp any) string {
 //
 // Tries common field patterns:
 //  1. GetTitle() string (RFC 7807)
-//  2. Title string field (HAPI uses this)
+//  2. Title string field (KA uses this)
 func extractErrorTitle(resp any) string {
 	// Pattern 1: RFC 7807 GetTitle() string (method-based)
 	type titleGetter interface {
@@ -295,7 +295,7 @@ func extractErrorTitle(resp any) string {
 		}
 	}
 
-	// Pattern 2: Title field (HAPI uses this)
+	// Pattern 2: Title field (KA uses this)
 	// Use reflection to access struct fields when GetTitle() method doesn't exist
 	val := reflect.ValueOf(resp)
 
