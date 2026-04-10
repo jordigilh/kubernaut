@@ -379,8 +379,23 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		return ctrl.Result{}, markErr
 	}
 
-	// Resolve execution engine from schema metadata (Issue #518)
-	if schemaMeta != nil && schemaMeta.Engine != "" {
+	// DD-WORKFLOW-017: Resolve engineConfig from schema before catalog (schema takes precedence).
+	if wfe.Spec.WorkflowRef.EngineConfig == nil && schemaMeta != nil && schemaMeta.EngineConfig != nil {
+		logger.Info("Resolved engineConfig from DS schema metadata",
+			"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+		wfe.Spec.WorkflowRef.EngineConfig = &apiextensionsv1.JSON{Raw: schemaMeta.EngineConfig}
+	}
+
+	// Step 1.3: Resolve execution bundle, SA, and engine from DS catalog (Issue #650).
+	// Called BEFORE setting engine from schema so the idempotency guard in
+	// resolveWorkflowCatalog doesn't skip the SA and bundle resolution that
+	// only the catalog provides.
+	if _, catalogErr := r.resolveWorkflowCatalog(ctx, wfe); catalogErr != nil {
+		logger.Error(catalogErr, "Failed to resolve workflow catalog from DS (non-fatal)")
+	}
+
+	// Resolve execution engine: prefer catalog (includes SA + bundle), schema fallback (Issue #518).
+	if wfe.Status.ExecutionEngine == "" && schemaMeta != nil && schemaMeta.Engine != "" {
 		wfe.Status.ExecutionEngine = schemaMeta.Engine
 	}
 	engine := wfe.Status.ExecutionEngine
@@ -399,21 +414,6 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		return ctrl.Result{}, nil
 	}
 	logger.Info("Resolved execution engine from catalog", "engine", engine, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-
-	// DD-WORKFLOW-017: Resolve engineConfig from metadata when not present on the WFE spec.
-	if wfe.Spec.WorkflowRef.EngineConfig == nil && schemaMeta != nil && schemaMeta.EngineConfig != nil {
-		logger.Info("Resolved engineConfig from DS catalog",
-			"workflowID", wfe.Spec.WorkflowRef.WorkflowID,
-			"engine", engine)
-		wfe.Spec.WorkflowRef.EngineConfig = &apiextensionsv1.JSON{Raw: schemaMeta.EngineConfig}
-	}
-
-	// Step 1.3: Resolve execution bundle and SA from DS catalog (Issue #650).
-	// resolveWorkflowCatalog handles bundle, SA, and engineConfig in one call.
-	// It's idempotent (no-ops if engine is already set by resolveSchemaMetadata).
-	if _, catalogErr := r.resolveWorkflowCatalog(ctx, wfe); catalogErr != nil {
-		logger.Error(catalogErr, "Failed to resolve workflow catalog from DS (non-fatal)")
-	}
 
 	// ========================================
 	// Step 1.5: Check if cooldown is active for target resource (BR-WE-009)
