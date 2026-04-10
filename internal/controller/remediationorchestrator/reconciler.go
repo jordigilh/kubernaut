@@ -1708,8 +1708,12 @@ func (r *Reconciler) handleDedupResultPropagation(ctx context.Context, rr *remed
 		"originalWFE", rr.Status.DeduplicatedByWE,
 	)
 
+	// Use apiReader (uncached) to get the original WFE. The informer cache is
+	// eventually consistent and may return a stale object with Phase="" even
+	// after the WFE has been updated to Completed/Failed in etcd, causing the
+	// RR to requeue indefinitely on the default branch.
 	originalWFE := &workflowexecutionv1.WorkflowExecution{}
-	err := r.client.Get(ctx, client.ObjectKey{
+	err := r.apiReader.Get(ctx, client.ObjectKey{
 		Name:      rr.Status.DeduplicatedByWE,
 		Namespace: rr.Namespace,
 	}, originalWFE)
