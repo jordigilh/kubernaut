@@ -506,3 +506,166 @@ go tool cover -func=coverage.out
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-04-09 | Initial test plan for Issues #235 / #620 |
+
+---
+
+## 15. Preflight Findings (2026-04-10)
+
+### 15.1 Path Corrections
+
+- `cmd/data-storage/main.go` → **`cmd/datastorage/main.go`** (no hyphen)
+- Package paths: `pkg/datastorage/partition` (or `pkg/datastorage/partition/ensure.go`)
+
+### 15.2 Lookahead Precision
+
+Current `createDynamicPartitions` uses `i < 3` (three months). Plan says "current month + 3 months" which could mean 3 or 4 total. **Resolution**: Define as **M0 through M+3 inclusive = 4 partitions** (current month + 3 future months). Align code constant and test assertions.
+
+### 15.3 UTC Alignment
+
+- `create_monthly_partitions()` uses `CURRENT_DATE` (session timezone, not UTC)
+- `createDynamicPartitions` uses `time.Now()` (local time)
+- **Resolution**: All partition boundary computation must use **UTC**. Go code uses `time.Now().UTC()`. SQL uses `CURRENT_DATE AT TIME ZONE 'UTC'` or equivalent.
+
+### 15.4 Startup Hook Placement
+
+- DS binary does NOT run migrations (goose is external)
+- Natural hook: inside `NewServer` after successful DB `Ping()`, before building repositories
+- **Decision**: Call `partition.EnsureMonthlyPartitions(ctx, db, time.Now().UTC(), 3, parents...)` from `NewServer`
+- Integration test helper must delegate to the same function
+
+### 15.5 audit_events Coverage
+
+Current `createDynamicPartitions` only covers `resource_action_traces`. **Resolution**: Extend Ensure to cover both `resource_action_traces` AND `audit_events` with correct naming (`audit_events_YYYY_MM`).
+
+### 15.6 Updated Confidence: 87%
+
+Schema and naming are clear; startup hook placement identified; only residual risk is exact BR-AUDIT-009 wording for retention eligibility field choice.
+
+---
+
+## 16. Adversarial Audit Findings & Resolutions (2026-04-10)
+
+### 16.1 RESOLVED: `_default` partition removal (fail-loud strategy)
+
+**Finding**: PostgreSQL does NOT move rows from `_default` to a newly created named partition. Data stays in `_default` forever, invisible to retention/partition-drop logic and compliance queries.
+
+**Decision**: Remove `_default` partitions entirely. This is the standard enterprise approach (aligned with `pg_partman`):
+- Ensure runs at startup, creating partitions for M0..M+3 (4 months)
+- If Ensure fails, DS refuses to start (fail-fast)
+- If a row arrives with no matching partition, `INSERT` fails loudly → operators know immediately
+- No silent data silos; all data lives in named month partitions
+- Since all Kubernaut installations are fresh, no legacy data to drain
+
+**Impact on schema**: Migration drops `audit_events_default` and `resource_action_traces_default` partitions.
+
+**Impact on tests**:
+- IT-DS-235-003 (boundary insert): Assert INSERT fails when partition is missing (negative case)
+- Remove any references to `_default` routing in test expectations
+
+### 16.2 RESOLVED: UTC enforcement for `event_date` trigger
+
+**Finding**: `set_audit_event_date` does `NEW.event_timestamp::DATE` which uses **session TimeZone**, not UTC. Partition boundaries computed in UTC could disagree with `event_date` values near midnight.
+
+**Decision**: Fix trigger to explicitly use UTC:
+```sql
+NEW.event_date := (NEW.event_timestamp AT TIME ZONE 'UTC')::DATE;
+```
+
+**Impact on schema**: New migration alters trigger function.
+
+**Impact on tests**:
+- UT-DS-235-001: Add boundary case for timestamp at UTC midnight
+- IT-DS-235-003: Insert with timestamp near midnight UTC, verify correct partition routing
+
+### 16.3 RESOLVED: `createDynamicPartitions` uses local time
+
+**Finding**: Integration test helper uses `time.Now()` (local timezone), which can disagree with UTC partition definitions near month boundaries.
+
+**Decision**: Fix to `time.Now().UTC()` and extend to cover both `audit_events` and `resource_action_traces` with 4-month window (M0..M+3). Helper delegates to the same production `EnsureMonthlyPartitions` function.
+
+### 16.4 RESOLVED: Fresh installations only
+
+**Decision**: All Kubernaut installations are fresh (no production deployments yet). This means:
+- No backward-compatible migration paths needed
+- Schema can be "correct from day one" 
+- No data drain from `_default` partitions
+- `create_monthly_partitions()` dead code can be removed in REFACTOR
+
+### 16.5 RESOLVED: Concurrent Ensure (two pods)
+
+**Finding**: `CREATE TABLE IF NOT EXISTS ... PARTITION OF ...` under concurrent DDL can produce serialization errors or deadlocks.
+
+**Decision**: Accept as low risk for v1.3 (single DS replica is the default). Document that concurrent startup is not guaranteed safe. Add a warning log if Ensure encounters a serialization error, and retry once.
+
+**Impact on tests**: Add IT-DS-235-005 (P2): Two sequential Ensure calls from different connections, assert no fatal error.
+
+### 16.6 RESOLVED: Deprecate `create_monthly_partitions()`
+
+**Finding**: SQL function `create_monthly_partitions()` is dead code, RAT-only, uses wrong timezone (`CURRENT_DATE` = session TZ), and +1 month lookahead.
+
+**Decision**: Remove in REFACTOR phase. Single partition management path via Go `EnsureMonthlyPartitions`.
+
+### 16.7 RESOLVED: Ensure failure mode
+
+**Decision**: Fail-fast. If `EnsureMonthlyPartitions` fails at startup, DS logs the error and exits with non-zero status. Kubernetes restartPolicy handles retry. This ensures no writes arrive at a DB without proper partitions.
+
+### 16.8 New Test: IT-DS-235-005 — Ensure failure behavior
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `IT-DS-235-005` (P2) | Ensure from two sequential connections: no fatal error, partitions exist | Pending |
+
+### 16.9 Updated Confidence: 92%
+
+All critical findings resolved. Remaining risks:
+- DDL privilege in production (operational, not code) — documented
+- Concurrent DDL edge case accepted for single-replica default
+- Integration test helper upgrade is mechanical
+
+---
+
+## 17. Targeted Preflight Verification (2026-04-10)
+
+### 17.1 VERIFIED: `set_audit_event_date` trigger uses session TZ
+
+```sql
+-- pkg/shared/assets/migrations/001_v1_schema.sql:507-513
+CREATE OR REPLACE FUNCTION set_audit_event_date()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.event_date := NEW.event_timestamp::DATE;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+Confirmed: `::DATE` cast uses session TimeZone. Fix to `(NEW.event_timestamp AT TIME ZONE 'UTC')::DATE` is required.
+
+### 17.2 VERIFIED: `_default` partitions exist for both tables
+
+- `resource_action_traces_default` at line 308
+- `audit_events_default` at line 405
+
+Both use `DEFAULT` keyword. Confirmed: must be dropped in new migration (fresh installs only).
+
+### 17.3 VERIFIED: `NewServer` calls `db.Ping()` — hook point identified
+
+`server.go:160-164` — `db.Ping()` succeeds. Ensure call goes immediately after (before pool configuration at ~186 or before Redis at ~195). `NewServer` is the correct place — fail-fast before any repository construction.
+
+### 17.4 VERIFIED: DLQ worker pattern is clean precedent
+
+`dlq_retry_worker.go:121-157` — `Start()` → goroutine → `retryLoop(ctx)` → `ticker.C` → `processRetryBatch`. Cancel via `context.Cancel` + `doneCh`. Default 30s poll. Retention worker mirrors this exactly.
+
+### 17.5 VERIFIED: `createDynamicPartitions` is RAT-only with local time
+
+`suite_test.go:970-1018` — only creates `resource_action_traces` partitions, uses `time.Now()` (not UTC), 3-month window. Must be refactored to: both tables, `time.Now().UTC()`, 4-month window (M0..M+3), delegate to production `EnsureMonthlyPartitions`.
+
+### 17.6 VERIFIED: `retention_operations` FK to `action_histories`
+
+Line 147: `action_history_id BIGINT NOT NULL REFERENCES action_histories(id) ON DELETE CASCADE`. Confirmed redesign needed (fresh install: clean table replacement).
+
+### 17.7 Updated Confidence: 96%
+
+All code paths verified. Trigger TZ issue confirmed and fix is mechanical. Hook point precisely identified. Worker pattern is a clean copy. Fresh installation simplifies schema changes.
+
+---

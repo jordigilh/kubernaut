@@ -198,7 +198,7 @@ Return the Valkey data directory mount path.
 upstream: /data   ocp: /var/lib/valkey/data
 */}}
 {{- define "kubernaut.valkey.dataDir" -}}
-{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}/var/lib/valkey/data{{- else -}}/data{{- end -}}
+/data
 {{- end }}
 
 {{/*

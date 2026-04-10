@@ -626,3 +626,219 @@ go tool cover -func=coverage-shared.out
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-04-09 | Initial test plan for Issue #189 |
+
+---
+
+## 15. Preflight Findings (2026-04-10)
+
+### 15.1 Design Decisions Resolved
+
+| Decision | Resolution | Rationale |
+|----------|-----------|-----------|
+| Shared `pkg/shared` vs RO-local lock | **RO-local** `pkg/remediationorchestrator/locking/` | Aligns with ADR-052 which rejects shared library; extract only `GenerateLeaseName` if needed |
+| Lock scope: creation-only vs WE lifecycle | **Creation-only** (acquire before `Create`, release after) | Matches Gateway pattern; existing `CheckResourceBusy` handles post-creation dedup; avoids complex renewal/terminal-phase release |
+| Contention signaling | **`(false, nil)`** — caller requeues | Matches Gateway `AcquireLock` contract; no typed error for contention |
+| Lease namespace | **Controller namespace** (`kubernaut-system`) | Per ADR-057 and Gateway pattern |
+
+### 15.2 Gaps Identified and Mitigated
+
+| # | Gap | Mitigation | Status |
+|---|-----|------------|--------|
+| G1 | No RO Lease implementation exists | Create `pkg/remediationorchestrator/locking/distributed_lock.go` adapted from Gateway | Open |
+| G2 | Helm ClusterRole missing Lease RBAC | Add `coordination.k8s.io` `leases` verbs to RO ClusterRole | Open |
+| G3 | No holder ID wired in RO main | Add `POD_NAME` env / hostname resolution in `cmd/remediationorchestrator/main.go` | Open |
+| G4 | Reconciler struct has no lock manager field | Add field + constructor parameter in `NewReconciler` | Open |
+| G5 | Two `weCreator.Create` call sites (normal + post-approval) | Apply lock acquire/release around BOTH paths | Open |
+| G6 | Integration suite missing `coordinationv1.AddToScheme` | Add scheme registration in `suite_test.go` | Open |
+| G7 | IT-RO-189-001 needs two distinct holder IDs | Use two `DistributedLockManager` instances with different holder IDs | Open |
+
+### 15.3 Inconsistencies Resolved
+
+| # | Inconsistency | Resolution |
+|---|--------------|------------|
+| I1 | Test plan says `pkg/shared/...` but ADR-052 rejects shared library | Changed to RO-local `pkg/remediationorchestrator/locking/` |
+| I2 | UT-RO-189-002 says "explicit error" but `AcquireLock` returns `(false, nil)` | Updated: expect `acquired == false && err == nil`; caller requeues |
+| I3 | UT-RO-189-001 says "TTL parameters" but Gateway uses fixed 30s | Updated: use fixed lease duration (30s) matching Gateway |
+| I4 | IT-RO-189-003 assumes terminal-phase release | Updated: Lease deleted after successful Create; post-creation dedup via `CheckResourceBusy` |
+| I5 | BR mapping cites BR-ORCH-025/031 but ADR-052 cites BR-ORCH-050 | Verify all three BRs are traceable |
+
+### 15.4 Execution Plan
+
+| Step | File | Action | Est. LOC |
+|------|------|--------|----------|
+| 1 | `pkg/remediationorchestrator/locking/distributed_lock.go` | Create: adapt Gateway lock with `ro-lock-` prefix | ~200 |
+| 2 | `internal/controller/remediationorchestrator/reconciler.go` | Modify: add lock field, inject around both Create paths | ~100 |
+| 3 | `cmd/remediationorchestrator/main.go` | Modify: resolve holder ID, construct lock manager | ~30 |
+| 4 | `charts/kubernaut/templates/remediationorchestrator/remediationorchestrator.yaml` | Modify: add Lease RBAC | ~8 |
+| 5 | `test/unit/remediationorchestrator/locking/distributed_lock_test.go` | Create: contention, expiry, key derivation tests | ~250 |
+| 6 | `test/integration/remediationorchestrator/suite_test.go` | Modify: add coordination scheme | ~15 |
+| 7 | `test/integration/remediationorchestrator/distributed_lock_we_test.go` | Create: concurrent RR integration tests | ~300 |
+
+### 15.5 Updated Confidence: 78%
+
+Lock scope resolved to creation-only (matching Gateway); ADR-052 alignment confirmed for RO-local package. Main risk: multi-replica IT faithfulness with two holder IDs.
+
+---
+
+## 16. Adversarial Audit Findings & Resolutions (2026-04-10)
+
+### 16.1 RESOLVED: Test plan §9 contradicts §15 preflight
+
+**Finding**: UT-RO-189-002 in §9 says "Error is non-nil" for contention; preflight §15.3 I2 says contention is `(false, nil)`. UT-RO-189-001 says "TTL parameters"; preflight says fixed 30s.
+
+**Resolution**: §9 test cases must be reconciled with §15 preflight during RED phase. Assertions use:
+- Contention: `Expect(acquired).To(BeFalse())` + `Expect(err).ToNot(HaveOccurred())` (matches Gateway contract)
+- TTL: Fixed 30s, no configurable parameter
+
+### 16.2 RESOLVED: IT-RO-189-003 wrong scenario
+
+**Finding**: §9 IT-RO-189-003 narrative is "terminal WE phase / cleanup path" but design is creation-only (Lease deleted after successful Create).
+
+**Resolution**: Rewrite IT-RO-189-003 to test: "After successful WFE creation, Lease is deleted. Second RR immediately acquires lock without contention." This validates the creation-only lifecycle, not terminal-phase cleanup.
+
+### 16.3 RESOLVED: Duplicate §15 heading
+
+**Resolution**: Fix heading numbering (§15 appears twice).
+
+### 16.4 RESOLVED: 64-bit truncation in lease naming
+
+**Finding**: `generateLeaseName` uses only first 16 hex chars of fingerprint (64 bits).
+
+**Resolution**: Document acceptance of 64-bit collision risk in UT-RO-189-004. For RO's use case (lock on `namespace/Kind/name` targets), the collision surface is negligible. Add UT for very long target resource strings → stable hash within DNS limits.
+
+### 16.5 RESOLVED: Expired lease with nil fields
+
+**Finding**: If a Lease exists with `HolderIdentity ≠ us` but `RenewTime` or `LeaseDurationSeconds` is nil, the code falls through to `return false, nil` — permanent contention until manual delete.
+
+**Resolution**: Add defensive code: if `RenewTime` or `LeaseDurationSeconds` is nil on a stale Lease, treat it as expired (same as Gateway pattern). Add UT for this edge case.
+
+### 16.6 RESOLVED: Target key normalization
+
+**Finding**: Lock key must use the same canonical string as `CheckResourceBusy` routing: `namespace/Kind/name` from `RemediationTarget`.
+
+**Resolution**: Lock key helper uses the same `resolveTargetResource` function (or identical logic) to ensure lock keys and routing keys are aligned. Add UT with case variants and namespace/no-namespace permutations.
+
+### 16.7 RESOLVED: RBAC/API failure handling
+
+**Finding**: If `AcquireLock` returns `(false, err)` on API failure (e.g., 403 Forbidden), the reconciler must not misclassify it as contention.
+
+**Resolution**: Reconciler explicitly checks `err != nil` first → log error + requeue with backoff. Only when `err == nil && !acquired` → requeue as contention. Add UT for API error path.
+
+### 16.8 New Test Scenarios from Audit
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `UT-RO-189-005` | Stale Lease with nil RenewTime treated as expired → lock acquired | Pending |
+| `UT-RO-189-006` | AcquireLock API error (403) → reconciler requeues with error, not as contention | Pending |
+| `UT-RO-189-007` | Very long target resource string → stable lease name within DNS limits | Pending |
+| `IT-RO-189-004` | Post-approval Create with concurrent RRs → only one WFE created | Pending |
+
+### 16.9 RESOLVED: All three design decisions (GW-aligned)
+
+**Q1 — Post-create cache lag → GW `defer` pattern (accepted residual risk)**
+
+**Decision**: Use GW's `defer ReleaseLock` pattern. Lock is held through the entire operation (CheckResourceBusy → Create → UpdateRemediationRequestStatus → return → defer releases). The lock serialization gives the informer extra sync time. Residual window is sub-second and bounded.
+
+GW reference: `pkg/gateway/server.go:1212-1248` — acquire → `defer ReleaseLock` → ShouldDeduplicate → Create → status update → return.
+
+**Q2 — Approval path → Full routing checks + lock (GW-aligned)**
+
+**Decision**: Run `CheckResourceBusy` (and other routing checks) inside the locked section for BOTH Create sites (normal + approval). The Gateway never skips its dedup check regardless of signal source.
+
+GW reference: `pkg/gateway/server.go:1251-1275` — `ShouldDeduplicate` always runs after lock acquisition, no skip paths.
+
+**Q3 — Status update failure → Owner reference self-detection in `CheckResourceBusy` (Option B)**
+
+**Decision**: After `FindActiveWFEForTarget` returns an active WFE, check if its controller owner reference UID matches the current RR's UID. If so, skip the block — the WFE belongs to this RR.
+
+```go
+// In CheckResourceBusy, after FindActiveWFEForTarget returns activeWFE:
+for _, ref := range activeWFE.GetOwnerReferences() {
+    if ref.UID == rr.UID && ref.Controller != nil && *ref.Controller {
+        return nil, nil // WFE owned by this RR — not busy
+    }
+}
+```
+
+**Recovery flow**:
+1. Status update fails after Create → lock released via defer
+2. Retry: lock acquired → `CheckResourceBusy` → finds `we-rr1` → owner UID matches RR1 → **not busy**
+3. Proceeds to `weCreator.Create` → creator's `Get-before-Create` finds existing WFE → returns `(name, nil)` transparently
+4. Reconciler proceeds with name → `UpdateRemediationRequestStatus` sets ref → transitions to Executing
+
+**Note**: `HandleAlreadyExists` does NOT exist on the RO reconciler (it's on the WE controller for PipelineRun races). Recovery works via the creator's built-in idempotency (`Get` before `Create` at `creator/workflowexecution.go:84-90`).
+
+**Impact on tests**:
+- Add UT-RO-189-008: `CheckResourceBusy` skips WFE owned by current RR (owner UID match)
+- Add UT-RO-189-009: `CheckResourceBusy` blocks on WFE owned by different RR (UID mismatch)
+- Add IT-RO-189-005: Status update failure recovery — RR1 creates WFE, status update fails, retry recovers via creator idempotency (Get-before-Create)
+
+**Impact on execution plan** (updates to §15.4):
+
+| Step | File | Action | Est. LOC |
+|------|------|--------|----------|
+| 2b | `pkg/remediationorchestrator/routing/blocking.go` | Modify: add owner UID check in `CheckResourceBusy` | ~15 |
+
+### 16.10 New Test Scenarios (complete audit + decisions)
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `UT-RO-189-005` | Stale Lease with nil RenewTime treated as expired → lock acquired | Pending |
+| `UT-RO-189-006` | AcquireLock API error (403) → reconciler requeues with error, not as contention | Pending |
+| `UT-RO-189-007` | Very long target resource string → stable lease name within DNS limits | Pending |
+| `UT-RO-189-008` | `CheckResourceBusy` skips WFE owned by current RR (owner UID match) | Pending |
+| `UT-RO-189-009` | `CheckResourceBusy` blocks on WFE owned by different RR (UID mismatch) | Pending |
+| `IT-RO-189-004` | Post-approval Create with concurrent RRs → only one WFE created | Pending |
+| `IT-RO-189-005` | Status update failure recovery: RR creates WFE, status fails, retry recovers via HandleAlreadyExists | Pending |
+
+### 16.11 Updated BR Coverage Matrix Additions
+
+| BR ID | Description | Priority | Tier | Test ID | Status |
+|-------|-------------|----------|------|---------|--------|
+| BR-ORCH-050 | Lock contention with stale Lease | P1 | Unit | UT-RO-189-005 | Pending |
+| BR-ORCH-050 | Lock API error handling | P1 | Unit | UT-RO-189-006 | Pending |
+| BR-ORCH-050 | Lease name DNS compliance | P1 | Unit | UT-RO-189-007 | Pending |
+| BR-ORCH-025 | Self-owned WFE not treated as busy | P0 | Unit | UT-RO-189-008, UT-RO-189-009 | Pending |
+| BR-ORCH-025 | Approval path locking | P0 | Integration | IT-RO-189-004 | Pending |
+| BR-ORCH-025 | Status update failure recovery | P0 | Integration | IT-RO-189-005 | Pending |
+
+### 16.12 Updated Confidence: 91%
+
+All critical findings resolved with GW-aligned decisions:
+- `defer ReleaseLock` pattern holds lock through full operation (Check → Create → Status Update)
+- Both Create sites (normal + approval) run full routing checks inside lock
+- Owner reference self-detection prevents RR from blocking on its own WFE
+- Recovery path uses existing `HandleAlreadyExists` — no new control flow
+- 7 new test scenarios cover all audit findings
+- Lock implementation follows established Gateway pattern (ADR-052)
+
+Remaining risks:
+- Multi-replica IT faithfulness with envtest (accepted; deferred to production soak)
+- Owner reference check adds ~5 lines to `CheckResourceBusy` (minimal blast radius)
+- Approval path routing checks add latency to approval flow (acceptable for correctness)
+
+---
+
+## 17. Targeted Preflight Verification (2026-04-10)
+
+### 17.1 VERIFIED: Creator idempotency replaces HandleAlreadyExists
+
+`HandleAlreadyExists` does NOT exist on the RO reconciler — it's on `WorkflowExecutionReconciler` for PipelineRun races. The creator (`creator/workflowexecution.go:84-90`) uses Get-before-Create: if WFE exists, returns `(name, nil)` without error. This transparently handles the retry-after-status-failure scenario. No new code needed for recovery.
+
+### 17.2 VERIFIED: Approval path has no routing checks
+
+`handleAwaitingApprovalPhase` (reconciler.go ~1242-1354) calls `weCreator.Create` at line 1294 with NO `CheckPostAnalysisConditions`, `CheckResourceBusy`, or `CheckDuplicateInProgress`. Lock + routing checks must be injected between the pre-hash persistence block (~1288) and `emitWorkflowCreatedAudit` (~1290). Must derive `targetResource` from `ai.Status.RootCauseAnalysis.RemediationTarget` (same logic as analyzing path at lines 991-999).
+
+### 17.3 VERIFIED: Normal path lock injection point
+
+`CheckPostAnalysisConditions` at line 1047. Lock acquire + defer release should wrap lines 1060-1110 (after routing checks pass, through Create + status update). The `defer` scope requires either an inner function or wrapping the lock lifecycle around the entire post-routing block.
+
+### 17.4 VERIFIED: CheckResourceBusy has both `rr` and `activeWFE` in scope
+
+`blocking.go:495-519` — `rr` is a parameter, `activeWFE` is returned by `FindActiveWFEForTarget` at line 503. Owner-ref check inserts between `activeWFE == nil` guard (line 508) and the `BlockingCondition` return (line 513).
+
+### 17.5 Updated Confidence: 95%
+
+All verifiable unknowns confirmed. Creator idempotency eliminates the HandleAlreadyExists gap. Lock injection points precisely identified for both Create sites. Owner-ref check verified feasible at the exact code location.
+
+---

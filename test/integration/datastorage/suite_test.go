@@ -46,6 +46,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	dsconfig "github.com/jordigilh/kubernaut/pkg/datastorage/config"
@@ -967,52 +968,17 @@ type DBExecutor interface {
 	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
 }
 
-// createDynamicPartitions creates partitions for the current month and next month
-// This ensures tests don't fail due to time-based partition issues
+// createDynamicPartitions creates partitions for the current month and next months
+// for BOTH audit_events and resource_action_traces.
 // DD-TEST-001: Dynamic partition creation for time-independent tests
+// BR-AUDIT-029: Delegates to production EnsureMonthlyPartitions (UTC, 4-month window)
 func createDynamicPartitions(ctx context.Context, targetDB DBExecutor) {
-	now := time.Now()
-
-	// Create partitions for current month and next 2 months
-	for i := 0; i < 3; i++ {
-		month := now.AddDate(0, i, 0)
-		year := month.Year()
-		monthNum := int(month.Month())
-
-		// Calculate partition boundaries
-		startDate := time.Date(year, time.Month(monthNum), 1, 0, 0, 0, 0, time.UTC)
-		endDate := startDate.AddDate(0, 1, 0)
-
-		partitionName := fmt.Sprintf("resource_action_traces_%d_%02d", year, monthNum)
-		startStr := startDate.Format("2006-01-02")
-		endStr := endDate.Format("2006-01-02")
-
-		// Check if partition already exists
-		var exists bool
-		checkQuery := `SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1)`
-		err := targetDB.QueryRowContext(ctx, checkQuery, partitionName).Scan(&exists)
-		if err != nil {
-			GinkgoWriter.Printf("  ⚠️  Failed to check partition %s: %v\n", partitionName, err)
-			continue
-		}
-
-		if exists {
-			GinkgoWriter.Printf("  ✅ Partition %s already exists\n", partitionName)
-			continue
-		}
-
-		// Create partition
-		createQuery := fmt.Sprintf(`
-			CREATE TABLE %s
-			PARTITION OF resource_action_traces
-			FOR VALUES FROM ('%s') TO ('%s')
-		`, partitionName, startStr, endStr)
-
-		_, err = targetDB.ExecContext(ctx, createQuery)
-		if err != nil {
-			GinkgoWriter.Printf("  ⚠️  Failed to create partition %s: %v\n", partitionName, err)
-		} else {
-			GinkgoWriter.Printf("  ✅ Created partition %s (%s to %s)\n", partitionName, startStr, endStr)
-		}
+	err := partition.EnsureMonthlyPartitions(
+		ctx, targetDB, time.Now().UTC(), partition.DefaultLookaheadMonths, partition.AllTables(),
+	)
+	if err != nil {
+		GinkgoWriter.Printf("  ⚠️  Failed to ensure monthly partitions: %v\n", err)
+		return
 	}
+	GinkgoWriter.Println("  ✅ Monthly partitions ensured for audit_events + resource_action_traces (M0..M+3, UTC)")
 }

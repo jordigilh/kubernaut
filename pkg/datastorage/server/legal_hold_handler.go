@@ -218,15 +218,37 @@ func (s *Server) HandleReleaseLegalHold(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// 5. Release legal hold
+	// 5. Release legal hold within a transaction that authorizes the SOC2 trigger bypass
 	releasedAt := time.Now()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		s.logger.Error(err, "Failed to begin transaction for legal hold release",
+			"correlation_id", correlationID)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error",
+			"Failed to release legal hold", s.logger)
+		return
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.ExecContext(ctx, "SET LOCAL kubernaut.legal_hold_release = 'authorized'"); err != nil {
+		s.logger.Error(err, "Failed to set legal hold release authorization",
+			"correlation_id", correlationID)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error",
+			"Failed to release legal hold", s.logger)
+		return
+	}
+
 	updateQuery := `
 		UPDATE audit_events
 		SET legal_hold = FALSE,
 		    legal_hold_reason = legal_hold_reason || ' [Released: ' || $1 || ']'
 		WHERE correlation_id = $2 AND legal_hold = TRUE
 	`
-	result, err := s.db.ExecContext(ctx, updateQuery, req.ReleaseReason, correlationID)
+	result, err := tx.ExecContext(ctx, updateQuery, req.ReleaseReason, correlationID)
 	if err != nil {
 		s.logger.Error(err, "Failed to release legal hold",
 			"correlation_id", correlationID,
@@ -239,6 +261,14 @@ func (s *Server) HandleReleaseLegalHold(w http.ResponseWriter, r *http.Request) 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		s.logger.Error(err, "Failed to get rows affected", "correlation_id", correlationID)
+	}
+
+	if err = tx.Commit(); err != nil {
+		s.logger.Error(err, "Failed to commit legal hold release",
+			"correlation_id", correlationID)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error",
+			"Failed to release legal hold", s.logger)
+		return
 	}
 
 	// 6. Log success

@@ -29,6 +29,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -67,6 +68,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/locking"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/status"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
@@ -74,6 +76,14 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
 	k8sutil "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 	canonicalhash "github.com/jordigilh/kubernaut/pkg/shared/hash"
+)
+
+// Sentinel errors for phase-conflict detection during status updates.
+// These are non-retryable: RetryOnConflict only retries k8s Conflict errors,
+// so these propagate immediately to the caller for graceful handling.
+var (
+	errPhaseAlreadySet = errors.New("phase already initialized by concurrent reconcile")
+	errPhaseConflict   = errors.New("phase changed by concurrent reconcile")
 )
 
 // Reconciler reconciles RemediationRequest objects.
@@ -116,6 +126,11 @@ type Reconciler struct {
 	// Used by createEffectivenessAssessmentIfNeeded to compute HashComputeDelay
 	// from gitOpsSyncDelay/operatorReconcileDelay instead of stabilization window.
 	asyncPropagation roconfig.AsyncPropagationConfig
+
+	// BR-ORCH-025: Distributed lock manager for WFE creation safety.
+	// Prevents duplicate WFEs when concurrent reconciles target the same resource.
+	// nil = locking disabled (single-replica deployments).
+	lockManager *locking.DistributedLockManager
 
 	// ========================================
 	// STATUS MANAGER (DD-PERF-001)
@@ -504,6 +519,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// REFACTOR: Use extracted helper method for timeout initialization
 		// ========================================
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
+			// TOCTOU guard: AtomicStatusUpdate refetches the RR internally.
+			// Between the apiReader check above and this refetch, a concurrent
+			// reconcile or status update may have already set the phase.
+			if rr.Status.OverallPhase != "" {
+				return errPhaseAlreadySet
+			}
 			rr.Status.OverallPhase = phase.Pending
 			rr.Status.StartTime = &metav1.Time{Time: startTime}
 
@@ -513,6 +534,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 		return nil
 	}); err != nil {
+		if errors.Is(err, errPhaseAlreadySet) {
+			logger.V(1).Info("Initialization aborted (phase set during TOCTOU window)",
+				"name", rr.Name, "phase", rr.Status.OverallPhase)
+			return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+		}
 		logger.Error(err, "Failed to initialize RemediationRequest status")
 		return ctrl.Result{}, err
 	}
@@ -992,11 +1018,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			workflowID = ai.Status.SelectedWorkflow.WorkflowID
 			actionType = ai.Status.SelectedWorkflow.ActionType
 		}
-		ar := ai.Status.RootCauseAnalysis.RemediationTarget
-		targetResource := ar.Kind + "/" + ar.Name
-		if ar.Namespace != "" {
-			targetResource = ar.Namespace + "/" + targetResource
-		}
+		targetResource := formatRemediationTargetString(ai)
 		// Issue #214: Capture pre-remediation hash BEFORE routing so CheckIneffectiveRemediationChain can use it.
 		// DD-EM-002 + DD-EM-003: Hash must match the resource the workflow patches.
 		remTarget := resolveDualTargets(rr, ai).Remediation
@@ -1042,6 +1064,26 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 					"hash", preHash[:min(23, len(preHash))]+"...",
 					"target", fmt.Sprintf("%s/%s", remTarget.Kind, remTarget.Name))
 			}
+		}
+
+		// BR-ORCH-025: Acquire distributed lock before routing checks + WFE creation.
+		// Lock key is based on targetResource so concurrent reconciles for the same
+		// target are serialized. Lock is released via defer after Create completes.
+		if r.lockManager != nil {
+			acquired, lockErr := r.lockManager.AcquireLock(ctx, targetResource)
+			if lockErr != nil {
+				logger.Error(lockErr, "Distributed lock acquisition failed", "target", targetResource)
+				return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
+			}
+			if !acquired {
+				logger.V(1).Info("Lock contention on target resource, requeuing", "target", targetResource)
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+			defer func() {
+				if releaseErr := r.lockManager.ReleaseLock(ctx, targetResource); releaseErr != nil {
+					logger.Error(releaseErr, "Failed to release distributed lock", "target", targetResource)
+				}
+			}()
 		}
 
 		blocked, err := r.routingEngine.CheckPostAnalysisConditions(ctx, rr, workflowID, targetResource, preHash, actionType)
@@ -1284,6 +1326,43 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 				return nil
 			}); updateErr != nil {
 				logger.Error(updateErr, "Failed to persist pre-remediation hash on RR status (non-fatal)")
+			}
+		}
+
+		// BR-ORCH-025: Derive targetResource and acquire distributed lock before
+		// WFE creation on the approval path. This closes the gap where the approval
+		// path could create a duplicate WFE for a target that already has one active.
+		approvalTargetResource := formatRemediationTargetString(ai)
+
+		if r.lockManager != nil && approvalTargetResource != "" {
+			acquired, lockErr := r.lockManager.AcquireLock(ctx, approvalTargetResource)
+			if lockErr != nil {
+				logger.Error(lockErr, "Distributed lock acquisition failed (approval path)", "target", approvalTargetResource)
+				return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
+			}
+			if !acquired {
+				logger.V(1).Info("Lock contention on target resource (approval path), requeuing", "target", approvalTargetResource)
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+			defer func() {
+				if releaseErr := r.lockManager.ReleaseLock(ctx, approvalTargetResource); releaseErr != nil {
+					logger.Error(releaseErr, "Failed to release distributed lock (approval path)", "target", approvalTargetResource)
+				}
+			}()
+		}
+
+		// BR-ORCH-025: Run CheckResourceBusy on the approval path (same as normal path).
+		if approvalTargetResource != "" {
+			busyBlock, busyErr := r.routingEngine.CheckResourceBusy(ctx, rr, approvalTargetResource)
+			if busyErr != nil {
+				logger.Error(busyErr, "Failed to check resource busy (approval path)")
+				return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
+			}
+			if busyBlock != nil {
+				logger.Info("Target resource busy after approval - blocking",
+					"target", approvalTargetResource,
+					"blockingWFE", busyBlock.BlockingWorkflowExecution)
+				return r.handleBlocked(ctx, rr, busyBlock, string(remediationv1.PhaseAwaitingApproval), "")
 			}
 		}
 
@@ -1653,6 +1732,15 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 	}
 
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+		// Phase conflict guard: the reconcile loop selects a phase handler based on
+		// the informer cache (potentially stale). This updateFn runs after
+		// UpdateRemediationRequestStatus refetches the actual etcd state. If the
+		// phase has diverged, another reconcile already changed it — abort to
+		// avoid overwriting a legitimate state change (e.g., Blocked → Processing).
+		if rr.Status.OverallPhase != oldPhase {
+			return fmt.Errorf("%w: expected %s, got %s", errPhaseConflict,
+				oldPhase, rr.Status.OverallPhase)
+		}
 		// Update only RO-owned fields (preserves Gateway fields per DD-GATEWAY-011)
 		rr.Status.OverallPhase = newPhase
 		rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track processed generation
@@ -1684,6 +1772,13 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, errPhaseConflict) {
+			logger.Info("Phase conflict detected — requeueing for fresh state",
+				"expectedPhase", oldPhase,
+				"actualPhase", rr.Status.OverallPhase,
+				"targetPhase", newPhase)
+			return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+		}
 		logger.Error(err, "Failed to transition phase")
 		return ctrl.Result{}, fmt.Errorf("failed to transition phase: %w", err)
 	}
@@ -3459,6 +3554,13 @@ func (r *Reconciler) SetClusterIdentity(name, uuid string) {
 	r.notificationCreator.SetClusterIdentity(name, uuid)
 }
 
+// SetLockManager configures the distributed lock manager for WFE creation safety.
+// BR-ORCH-025: Called from cmd/remediationorchestrator/main.go.
+// nil = locking disabled (single-replica deployments).
+func (r *Reconciler) SetLockManager(lm *locking.DistributedLockManager) {
+	r.lockManager = lm
+}
+
 // resolveDualTargets resolves both signal and remediation targets for the EA (DD-EM-003).
 //
 // Signal target: Always from RR.Spec.TargetResource (the resource that triggered the alert).
@@ -3488,6 +3590,22 @@ func resolveDualTargets(
 	}
 
 	return &creator.DualTarget{Signal: signal, Remediation: remediation}
+}
+
+// formatRemediationTargetString builds a "namespace/kind/name" or "kind/name"
+// string from an AIAnalysis RemediationTarget. Returns "" if the target is nil.
+func formatRemediationTargetString(ai *aianalysisv1.AIAnalysis) string {
+	if ai == nil || ai.Status.RootCauseAnalysis == nil || ai.Status.RootCauseAnalysis.RemediationTarget == nil {
+		return ""
+	}
+	ar := ai.Status.RootCauseAnalysis.RemediationTarget
+	if ar.Kind == "" || ar.Name == "" {
+		return ""
+	}
+	if ar.Namespace != "" {
+		return ar.Namespace + "/" + ar.Kind + "/" + ar.Name
+	}
+	return ar.Kind + "/" + ar.Name
 }
 
 // CapturePreRemediationHash fetches the target resource via an uncached reader,

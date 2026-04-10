@@ -592,3 +592,212 @@ go tool cover -func=coverage.out
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-04-09 | Initial test plan for Issue #485 |
+
+---
+
+## 15. Preflight Findings (2026-04-10)
+
+### 15.1 retention_operations FK Resolution
+
+Current: `action_history_id BIGINT NOT NULL REFERENCES action_histories(id) ON DELETE CASCADE`
+
+**Problem**: Purge jobs are batch operations over `audit_events`, not tied to individual `action_histories` rows. FK is semantically wrong and `ON DELETE CASCADE` would erase retention audit logs.
+
+**Resolution**: New migration (`006_retention_operations_redesign.sql`) that:
+- Drops FK constraint on `action_history_id`
+- Makes `action_history_id` nullable (or removes it)
+- Adds: `run_id UUID`, `scope VARCHAR(50)`, `period_start DATE`, `period_end DATE`, `rows_scanned INT`, `rows_deleted INT`, `partitions_dropped TEXT[]`, `status VARCHAR(20)`, `error_message TEXT`
+- Preserves existing rows if any
+
+### 15.2 Eligibility Field
+
+- Schema has both `event_timestamp` (timestamptz) and `event_date` (date, from trigger)
+- **Resolution**: Use `event_date` for eligibility (partition-aligned). Rule: `event_date + retention_days < CURRENT_DATE AT TIME ZONE 'UTC'`
+- Partition drop uses same `event_date` boundary alignment
+
+### 15.3 Path Corrections
+
+- `cmd/data-storage/main.go` → **`cmd/datastorage/main.go`** (no hyphen)
+
+### 15.4 Dependency on #235
+
+- IT-DS-485-004 (partition drop) requires #235's Ensure to be landed first
+- IT-DS-485-001 through 003 and 006 can proceed independently
+
+### 15.5 Worker Pattern
+
+Mirror existing DLQ retry worker in `server.go`: goroutine + shutdown hook + injected clock/ticker for testing.
+
+### 15.6 Helm Integration
+
+Add to `values.yaml` / `values.schema.json`:
+- `datastorage.config.retention.enabled` (default: false)
+- `datastorage.config.retention.intervalMinutes` (default: 1440)
+- `datastorage.config.retention.batchSize` (default: 1000)
+- `datastorage.config.retention.partitionDropEnabled` (default: false)
+
+### 15.7 Updated Confidence: 87%
+
+Schema redesign path is clear; eligibility field resolved to `event_date`; worker pattern established (DLQ precedent). Main risk: exact BR-AUDIT-009 policy merge precedence wording.
+
+---
+
+## 16. Adversarial Audit Findings & Resolutions (2026-04-10)
+
+### 16.1 RESOLVED: `retention_days` constraints
+
+**Finding**: Schema has no `CHECK` constraint on `retention_days`. Value `0` is ambiguous (instant purge? disabled?). No maximum enforced.
+
+**Decision**:
+- Minimum: **1 day** (no zero, no negative)
+- Default: **1 day** when not explicitly provided (`NOT NULL DEFAULT 1`)
+- Maximum: **2555 days** (7 years)
+- Schema: `CHECK (retention_days >= 1 AND retention_days <= 2555)`
+
+**Impact on schema**: New migration adds constraint and default.
+
+**Impact on tests**:
+- UT-DS-485-001: Add table-driven cases for boundary values (1, 2555)
+- Add UT-DS-485-004: `retention_days = 0` rejected by constraint (negative test)
+- Add UT-DS-485-005: `retention_days = 2556` rejected by constraint (negative test)
+
+### 16.2 RESOLVED: Legal hold SOC2 compliance — immutable once true
+
+**Finding**: `enforce_legal_hold` trigger is `BEFORE DELETE` only. An `UPDATE` setting `legal_hold = FALSE` is unconstrained and unaudited. This violates SOC2 CC6.1 (logical access controls) — a hold can be silently circumvented.
+
+**Decision**: Make `legal_hold` append-only (immutable once true):
+```sql
+CREATE OR REPLACE FUNCTION prevent_legal_hold_removal()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF OLD.legal_hold = TRUE AND NEW.legal_hold = FALSE THEN
+    RAISE EXCEPTION 'SOC2 CC6.1: legal_hold cannot be removed via UPDATE. Use the legal hold release API with audit trail.';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER enforce_legal_hold_immutability
+  BEFORE UPDATE ON audit_events
+  FOR EACH ROW EXECUTE FUNCTION prevent_legal_hold_removal();
+```
+
+A dedicated release API (with audit trail) is a follow-up issue, not in #485 scope.
+
+**Impact on tests**:
+- Add IT-DS-485-008: Attempt `UPDATE audit_events SET legal_hold = FALSE WHERE legal_hold = TRUE` → assert error raised
+- IT-DS-485-003: Already covers DELETE path; add assertion that UPDATE path is also blocked
+
+### 16.3 RESOLVED: Policy precedence — hierarchical floor enforcement
+
+**Finding**: No defined precedence between per-event `retention_days` and category policy `audit_retention_policies.min_retention_days`.
+
+**Decision**: `effective_retention = MAX(event.retention_days, COALESCE(category.min_retention_days, 1))`
+
+| Scenario | Event `retention_days` | Category policy | Effective | Rationale |
+|----------|----------------------|-----------------|-----------|-----------|
+| Event longer than org policy | 90 | 30 | **90** | Event needs longer |
+| Event shorter than org policy | 30 | 365 | **365** | Category floor prevents early deletion |
+| No category policy | 1 (default) | NULL | **1** | Default applies |
+| Legal investigation | 730 | 365 | **730** | Event override for investigation |
+
+SOC2-aligned: data is never deleted earlier than organizational category policy allows.
+
+**Impact on tests**:
+- UT-DS-485-003: Update table-driven cases to assert `MAX()` semantics
+- Add UT-DS-485-006: Category floor overrides shorter per-event value
+- Add UT-DS-485-007: NULL category → default 1 day applies
+
+### 16.4 RESOLVED: `event_date` vs `event_timestamp` eligibility alignment
+
+**Finding**: UT-DS-485-001 wording says `event_timestamp + retention_days < now`. Actual SQL uses `event_date` (date type, partition-aligned). These diverge near UTC midnight.
+
+**Decision**: Align all eligibility to `event_date` (date, UTC-derived per #235 trigger fix):
+```sql
+WHERE event_date + (retention_days * INTERVAL '1 day') < CURRENT_DATE AT TIME ZONE 'UTC'
+  AND legal_hold = FALSE
+```
+
+**Impact on tests**:
+- UT-DS-485-001: Fix wording and assertions to use `event_date` semantics
+- IT-DS-485-002: Use `event_date` in setup and verification
+
+### 16.5 RESOLVED: Fresh installations only
+
+**Decision**: All Kubernaut installations are fresh. This means:
+- `retention_operations` schema can be redesigned cleanly (no preserving existing rows)
+- New migration can use `CREATE TABLE` instead of `ALTER TABLE`
+- No backward-compatibility constraints on FK changes
+
+### 16.6 RESOLVED: `legal_hold_override` in `audit_retention_policies`
+
+**Finding**: Column exists in schema but behavior not defined in test plan or preflight.
+
+**Decision**: Out of scope for #485. Document as deferred. The per-row `legal_hold` flag and its SOC2-compliant trigger are the enforcement mechanism.
+
+### 16.7 New Test Scenarios
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `UT-DS-485-004` | `retention_days = 0` rejected by CHECK constraint | Pending |
+| `UT-DS-485-005` | `retention_days = 2556` rejected by CHECK constraint (max 2555 = 7 years) | Pending |
+| `UT-DS-485-006` | Category floor overrides shorter per-event retention (`MAX()` semantics) | Pending |
+| `UT-DS-485-007` | NULL category policy → default 1 day effective retention | Pending |
+| `IT-DS-485-008` | `UPDATE legal_hold = FALSE` blocked by SOC2 trigger | Pending |
+
+### 16.8 Updated BR Coverage Matrix Additions
+
+| BR ID | Description | Priority | Tier | Test ID | Status |
+|-------|-------------|----------|------|---------|--------|
+| BR-AUDIT-004 | SOC2 CC6.1: legal_hold immutability | P0 | Integration | IT-DS-485-008 | Pending |
+| BR-AUDIT-009 | retention_days CHECK constraint | P1 | Unit | UT-DS-485-004, UT-DS-485-005 | Pending |
+| BR-AUDIT-009 | Policy floor enforcement (MAX semantics) | P0 | Unit | UT-DS-485-006, UT-DS-485-007 | Pending |
+
+### 16.9 Updated Confidence: 93%
+
+All critical findings resolved:
+- `retention_days` bounded [1, 2555] with default 1
+- Legal hold is SOC2-compliant (immutable once true, DELETE blocked, UPDATE blocked)
+- Policy precedence defined as `MAX(event, category)` — floor enforcement
+- Eligibility aligned to `event_date` (UTC) across tests and SQL
+- Fresh installations simplify schema changes
+- 5 new test scenarios added covering audit gaps
+
+Remaining risks:
+- `legal_hold_override` column deferred (not blocking)
+- Release API for legal holds is a follow-up issue (SOC2 CC6.1 trigger is defense-in-depth)
+- Clock injection pattern for worker TBD (DLQ precedent exists)
+
+---
+
+## 17. Targeted Preflight Verification (2026-04-10)
+
+### 17.1 VERIFIED: `prevent_legal_hold_deletion` is DELETE-only
+
+```sql
+-- 001_v1_schema.sql:515-524
+CREATE OR REPLACE FUNCTION prevent_legal_hold_deletion()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.legal_hold = TRUE THEN
+        RAISE EXCEPTION 'Cannot delete audit event with legal hold...';
+    END IF;
+    RETURN OLD;
+END;
+```
+
+Confirmed DELETE-only. SOC2-compliant `BEFORE UPDATE` trigger needed (as designed in §16.2).
+
+### 17.2 VERIFIED: DLQ worker pattern for retention worker
+
+`dlq_retry_worker.go:121-157` provides exact pattern: `Start()` → goroutine → ticker loop → `processRetryBatch`. Retention worker replicates this with injected clock/ticker for testing. `Server.Start()` at line 550 calls `s.dlqRetryWorker.Start()` — retention worker `.Start()` hooks alongside.
+
+### 17.3 VERIFIED: `retention_operations` schema requires redesign
+
+Current: `action_history_id BIGINT NOT NULL REFERENCES action_histories(id) ON DELETE CASCADE` (line 147). Fresh install allows clean replacement with new schema per §16.1 design.
+
+### 17.4 Updated Confidence: 96%
+
+DLQ worker pattern verified as clean precedent. Legal hold trigger confirmed DELETE-only. Schema redesign path confirmed for fresh installs.
+
+---

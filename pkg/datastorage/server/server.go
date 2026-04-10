@@ -36,6 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/cert"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/adapter"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
@@ -162,6 +163,20 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		_ = db.Close() // Best effort close on failed ping
 		return nil, fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}
+
+	// BR-AUDIT-029: Ensure monthly partitions for audit_events and resource_action_traces.
+	// Fail-fast: if partitions cannot be created, DS must not start (writes would fail).
+	clock := partition.UTCClock{}
+	if err := partition.EnsureMonthlyPartitions(
+		context.Background(), db, clock.Now(), partition.DefaultLookaheadMonths, partition.AllTables(),
+	); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to ensure monthly partitions at startup: %w", err)
+	}
+	logger.Info("Monthly partitions ensured",
+		"lookahead", partition.DefaultLookaheadMonths,
+		"tables", []string{"audit_events", "resource_action_traces"},
+	)
 
 	// Configure connection pool from config (not hardcoded)
 	// Bug fix: Use appCfg.Database values instead of hardcoded 25/5
