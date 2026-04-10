@@ -1,5 +1,5 @@
 -- +goose Up
--- Migration 006: Partition cleanup for Issue #235 / #620
+-- Migration 007: Partition cleanup for Issue #235 / #620
 -- BR-AUDIT-029: Automatic partition management
 --
 -- 1. Drop _default catch-all partitions (fail-loud strategy: inserts without

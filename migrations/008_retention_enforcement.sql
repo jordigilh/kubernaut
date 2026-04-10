@@ -1,5 +1,5 @@
 -- +goose Up
--- Migration 007: Retention enforcement infrastructure for Issue #485
+-- Migration 008: Retention enforcement infrastructure for Issue #485
 -- BR-AUDIT-009: Retention policies for audit data
 -- BR-AUDIT-004: Immutability / integrity of audit records
 --
