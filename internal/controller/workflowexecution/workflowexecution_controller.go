@@ -373,6 +373,8 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	// ========================================
 	schemaMeta, createOpts, schemaErr := r.resolveSchemaMetadata(ctx, wfe)
 	if schemaErr != nil {
+		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
+			fmt.Sprintf("Workflow dependency validation failed: %v", schemaErr))
 		markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", schemaErr.Error())
 		return ctrl.Result{}, markErr
 	}
