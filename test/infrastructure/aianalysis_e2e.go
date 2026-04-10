@@ -389,6 +389,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 7c: Deploying remaining services in parallel...")
 	_, _ = fmt.Fprintln(writer, "  ├── Mock LLM service (with ConfigMap)")
+	_, _ = fmt.Fprintln(writer, "  ├── Mock LLM Shadow (alignment evaluation)")
 	_, _ = fmt.Fprintln(writer, "  ├── Kubernaut Agent")
 	_, _ = fmt.Fprintln(writer, "  └── AIAnalysis controller")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Kubernetes will handle dependencies via readiness probes")
@@ -398,11 +399,16 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		err  error
 	}
 
-	deployResults := make(chan deployResult, 3)
+	deployResults := make(chan deployResult, 4)
 
 	go func() {
 		err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], workflowUUIDs, writer)
 		deployResults <- deployResult{"Mock LLM", err}
+	}()
+
+	go func() {
+		err := deployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], writer)
+		deployResults <- deployResult{"Mock LLM Shadow", err}
 	}()
 
 	go func() {
@@ -420,7 +426,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}()
 
 	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for manifest applications...")
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		result := <-deployResults
 		if result.err != nil {
 			return fmt.Errorf("failed to deploy %s: %w", result.name, result.err)
