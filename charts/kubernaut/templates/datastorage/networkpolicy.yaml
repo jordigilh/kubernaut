@@ -46,6 +46,9 @@ spec:
         - podSelector:
             matchLabels:
               app: authwebhook
+        - podSelector:
+            matchLabels:
+              app: kubernaut-agent
     {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}

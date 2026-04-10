@@ -1140,16 +1140,17 @@ SDKEOF
 
   echo "# --- Template Tests: NetworkPolicy (Issue #285) ---"
 
-  # ST-NP-001: Default renders 12 NetworkPolicies (enabled by default)
+  # ST-NP-001: Default renders 13 NetworkPolicies (enabled by default)
+  # Count: 13 after Issue #592 added kubernaut-agent conversation API NP.
   output=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 2>&1)
   local np_count
   np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
-  if [[ "$np_count" -eq 12 ]]; then
-    tap_ok "ST-NP-001: default renders 12 NetworkPolicies (enabled by default)"
+  if [[ "$np_count" -eq 13 ]]; then
+    tap_ok "ST-NP-001: default renders 13 NetworkPolicies (enabled by default)"
   else
-    tap_not_ok "ST-NP-001: default should render 12 NetworkPolicies" \
+    tap_not_ok "ST-NP-001: default should render 13 NetworkPolicies" \
       "Found ${np_count}"
   fi
 
@@ -1188,7 +1189,7 @@ for d in docs:
     fi
   done < <(echo "$output" | grep -A1 "kind: NetworkPolicy" | grep "name:" | awk '{print $2}')
   if [[ "$np_without_dns" -eq 0 ]]; then
-    tap_ok "ST-NP-003: all 12 NetworkPolicies include DNS egress (port 53)"
+    tap_ok "ST-NP-003: all 13 NetworkPolicies include DNS egress (port 53)"
   else
     tap_not_ok "ST-NP-003: DNS egress in all policies" \
       "${np_without_dns} policies missing DNS egress"
@@ -1208,18 +1209,22 @@ for d in docs:
   fi
 
   # ST-NP-005: PostgreSQL/Valkey conditional on their enabled flags (F-7)
+  # postgresql.host is required when postgresql.enabled=false (migration-job validation).
+  # Count: 11 = 13 total - PG - VK after Issue #592.
   output=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) \
     --set networkPolicies.enabled=true \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
     --set postgresql.enabled=false \
-    --set valkey.enabled=false 2>&1)
+    --set postgresql.host=external-pg.example.com \
+    --set valkey.enabled=false \
+    --set valkey.host=external-valkey.example.com 2>&1)
   np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
-  if [[ "$np_count" -eq 10 ]]; then
-    tap_ok "ST-NP-005: postgresql/valkey disabled = 10 NetworkPolicies (no PG/VK)"
+  if [[ "$np_count" -eq 11 ]]; then
+    tap_ok "ST-NP-005: postgresql/valkey disabled = 11 NetworkPolicies (no PG/VK)"
   else
     tap_not_ok "ST-NP-005: infra conditional rendering" \
-      "Expected 10 policies without PG/VK, got ${np_count}"
+      "Expected 11 policies without PG/VK, got ${np_count}"
   fi
 
   # ST-NP-006: helm lint passes with NetworkPolicies enabled
@@ -1254,9 +1259,9 @@ for d in docs:
     $(template_common_args) $(template_llm_args) \
     --set monitoring.prometheus.enabled=true \
     --set monitoring.prometheus.url=http://prom:9090 2>&1)
-  if echo "$mon_output" | grep -q 'prometheusUrl: "http://prom:9090"' && \
-     echo "$mon_output" | grep -q 'prometheusEnabled: true' && \
-     echo "$mon_output" | grep -A3 "tools:" | grep -q 'url: "http://prom:9090"'; then
+  if grep -q 'prometheusUrl: "http://prom:9090"' <<< "$mon_output" && \
+     grep -q 'prometheusEnabled: true' <<< "$mon_output" && \
+     grep -A3 "tools:" <<< "$mon_output" | grep -q 'url: "http://prom:9090"'; then
     tap_ok "UT-MON-463-001: monitoring.prometheus.enabled+url configures both EM and KA"
   else
     tap_not_ok "UT-MON-463-001: monitoring.prometheus.enabled+url configures both EM and KA" \
@@ -1264,7 +1269,7 @@ for d in docs:
   fi
 
   # UT-MON-463-002: EM ConfigMap reads monitoring.prometheus.url
-  if echo "$mon_output" | grep -q 'prometheusUrl: "http://prom:9090"'; then
+  if grep -q 'prometheusUrl: "http://prom:9090"' <<< "$mon_output"; then
     tap_ok "UT-MON-463-002: EM ConfigMap prometheusUrl from monitoring.prometheus.url"
   else
     tap_not_ok "UT-MON-463-002: EM ConfigMap prometheusUrl" \
@@ -1272,7 +1277,7 @@ for d in docs:
   fi
 
   # UT-MON-463-003: KA config.yaml has tools.prometheus.url (not SDK toolsets)
-  if echo "$mon_output" | grep -A3 "tools:" | grep -q 'url: "http://prom:9090"'; then
+  if grep -A3 "tools:" <<< "$mon_output" | grep -q 'url: "http://prom:9090"'; then
     tap_ok "UT-MON-463-003: KA config.yaml tools.prometheus.url from monitoring"
   else
     tap_not_ok "UT-MON-463-003: KA config.yaml tools.prometheus.url" \
@@ -1284,8 +1289,8 @@ for d in docs:
   mon_off=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) \
     --set monitoring.prometheus.enabled=false 2>&1)
-  if echo "$mon_off" | grep -q 'prometheusEnabled: false' && \
-     ! echo "$mon_off" | grep -A3 "tools:" | grep -q 'url:'; then
+  if grep -q 'prometheusEnabled: false' <<< "$mon_off" && \
+     ! grep -A3 "tools:" <<< "$mon_off" | grep -q 'url:'; then
     tap_ok "UT-MON-463-004: monitoring.prometheus.enabled=false disables both EM and KA"
   else
     tap_not_ok "UT-MON-463-004: monitoring disabled" \
@@ -1300,9 +1305,9 @@ for d in docs:
     --set monitoring.prometheus.url=http://prom:9090 \
     --set monitoring.alertManager.enabled=true \
     --set monitoring.alertManager.url=http://am:9093 2>&1)
-  if echo "$mon_both" | grep -q 'prometheusUrl: "http://prom:9090"' && \
-     echo "$mon_both" | grep -q 'alertManagerUrl: "http://am:9093"' && \
-     echo "$mon_both" | grep -q 'alertManagerEnabled: true'; then
+  if grep -q 'prometheusUrl: "http://prom:9090"' <<< "$mon_both" && \
+     grep -q 'alertManagerUrl: "http://am:9093"' <<< "$mon_both" && \
+     grep -q 'alertManagerEnabled: true' <<< "$mon_both"; then
     tap_ok "UT-MON-463-005: both Prometheus and AlertManager enabled"
   else
     tap_not_ok "UT-MON-463-005: both monitoring endpoints" \
@@ -1316,8 +1321,8 @@ for d in docs:
     --api-versions route.openshift.io/v1 \
     --set monitoring.prometheus.enabled=true \
     --set monitoring.alertManager.enabled=true 2>&1)
-  if echo "$mon_ocp" | grep -q 'prometheusUrl: "https://prometheus-k8s.openshift-monitoring.svc:9091"' && \
-     echo "$mon_ocp" | grep -q 'alertManagerUrl: "https://alertmanager-main.openshift-monitoring.svc:9094"'; then
+  if grep -q 'prometheusUrl: "https://prometheus-k8s.openshift-monitoring.svc:9091"' <<< "$mon_ocp" && \
+     grep -q 'alertManagerUrl: "https://alertmanager-main.openshift-monitoring.svc:9094"' <<< "$mon_ocp"; then
     tap_ok "UT-MON-463-008: OCP auto-detection applies default URLs"
   else
     tap_not_ok "UT-MON-463-008: OCP auto-detection" \
@@ -1331,8 +1336,8 @@ for d in docs:
     --set monitoring.prometheus.enabled=true \
     --set monitoring.prometheus.url=https://prom:9091 \
     --set monitoring.prometheus.tlsCaFile=/etc/ssl/certs/service-ca.crt 2>&1)
-  if echo "$mon_tls" | grep -q "service-ca" && \
-     echo "$mon_tls" | grep -q "/etc/ssl"; then
+  if grep -q "service-ca" <<< "$mon_tls" && \
+     grep -q "/etc/ssl" <<< "$mon_tls"; then
     tap_ok "UT-MON-463-009: TLS CA volume mounted when tlsCaFile set"
   else
     tap_not_ok "UT-MON-463-009: TLS CA volume" \
@@ -1345,7 +1350,7 @@ for d in docs:
     $(template_common_args) $(template_llm_args) \
     --api-versions route.openshift.io/v1 \
     --set monitoring.prometheus.enabled=true 2>&1)
-  if echo "$mon_rbac" | grep -q "cluster-monitoring-view"; then
+  if grep -q "cluster-monitoring-view" <<< "$mon_rbac"; then
     tap_ok "UT-MON-463-010: OCP RBAC ClusterRoleBinding for cluster-monitoring-view"
   else
     tap_not_ok "UT-MON-463-010: OCP RBAC" \
