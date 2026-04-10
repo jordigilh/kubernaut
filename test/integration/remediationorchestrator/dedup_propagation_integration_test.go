@@ -140,6 +140,7 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 		}
 		Expect(k8sClient.Create(ctx, originalWFE)).To(Succeed())
 		completionTime := metav1.Now()
+		originalWFE.Status.Phase = workflowexecutionv1.PhaseCompleted
 		originalWFE.Status.CompletionTime = &completionTime
 		Expect(k8sClient.Status().Update(ctx, originalWFE)).To(Succeed())
 
