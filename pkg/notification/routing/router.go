@@ -188,49 +188,6 @@ func (r *Router) FindReceiver(attrs map[string]string) *Receiver {
 	return receiver
 }
 
-// FindReceivers finds all matching receivers for the given routing attributes.
-// BR-NOT-068: Multi-Channel Fanout support — returns multiple receivers when continue is set.
-// Thread-safe read access.
-func (r *Router) FindReceivers(attrs map[string]string) []*Receiver {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	if r.config == nil || r.config.Route == nil {
-		r.logger.V(1).Info("No routing configuration, using default console fallback")
-		return []*Receiver{defaultConsoleReceiver()}
-	}
-
-	receiverNames := r.config.Route.FindReceivers(attrs)
-	if len(receiverNames) == 0 {
-		r.logger.V(1).Info("No matching route found, using default console fallback",
-			"attributes", attrs)
-		return []*Receiver{defaultConsoleReceiver()}
-	}
-
-	receivers := make([]*Receiver, 0, len(receiverNames))
-	for _, name := range receiverNames {
-		recv := r.config.GetReceiver(name)
-		if recv == nil {
-			r.logger.Error(nil, "Receiver not found in config",
-				"receiverName", name,
-				"attributes", attrs)
-			continue
-		}
-		receivers = append(receivers, recv)
-	}
-
-	if len(receivers) == 0 {
-		return []*Receiver{defaultConsoleReceiver()}
-	}
-
-	r.logger.V(1).Info("Resolved receivers from routing rules",
-		"attributes", attrs,
-		"receiverCount", len(receivers),
-	)
-
-	return receivers
-}
-
 // GetConfigSummary returns a human-readable summary of the current configuration.
 // BR-NOT-067: Config reload logged with before/after diff
 func (r *Router) GetConfigSummary() string {

@@ -24,6 +24,7 @@ package routing
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -54,8 +55,12 @@ type Route struct {
 	// Match is the exact match criteria for routing attributes
 	Match map[string]string `yaml:"match,omitempty" json:"match,omitempty"`
 
-	// MatchRE is the regex match criteria for routing attributes (not implemented in V1.0)
+	// MatchRE is the regex match criteria for routing attributes.
+	// Issue #416: Patterns are compiled at ParseConfig time; invalid patterns are rejected.
 	MatchRE map[string]string `yaml:"matchRe,omitempty" json:"matchRe,omitempty"`
+
+	// compiledRE holds compiled regexp patterns from MatchRE, keyed by attribute name.
+	compiledRE map[string]*regexp.Regexp
 
 	// Continue indicates whether to continue to sibling routes after matching
 	// BR-NOT-068: Multi-Channel Fanout support
@@ -198,10 +203,39 @@ func ParseConfig(data []byte) (*Config, error) {
 		return nil, err
 	}
 
+	// Issue #416: Compile matchRe patterns at parse time
+	if err := config.compileRouteRegexes(config.Route); err != nil {
+		return nil, err
+	}
+
 	// Build receiver lookup map
 	config.buildReceiverMap()
 
 	return &config, nil
+}
+
+// compileRouteRegexes recursively compiles MatchRE patterns on all routes.
+// Issue #416: Invalid regex patterns are rejected at parse time.
+func (c *Config) compileRouteRegexes(route *Route) error {
+	if route == nil {
+		return nil
+	}
+	if len(route.MatchRE) > 0 {
+		route.compiledRE = make(map[string]*regexp.Regexp, len(route.MatchRE))
+		for key, pattern := range route.MatchRE {
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				return fmt.Errorf("invalid matchRe pattern for key %q: %q: %w", key, pattern, err)
+			}
+			route.compiledRE[key] = re
+		}
+	}
+	for _, child := range route.Routes {
+		if err := c.compileRouteRegexes(child); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Validate validates the configuration.
@@ -350,14 +384,18 @@ func (r *Route) FindReceiver(attrs map[string]string) string {
 	return r.Receiver
 }
 
-// matchesAttributes checks if the route's match criteria match the given routing attributes.
+// matchesAttributes checks if the route's match and matchRe criteria both match.
+// Issue #416: match + matchRe have AND semantics — both must satisfy.
 func (r *Route) matchesAttributes(attrs map[string]string) bool {
-	if len(r.Match) == 0 {
-		return true
-	}
-
 	for key, value := range r.Match {
 		if attrs[key] != value {
+			return false
+		}
+	}
+
+	for key, re := range r.compiledRE {
+		val, exists := attrs[key]
+		if !exists || !re.MatchString(val) {
 			return false
 		}
 	}
