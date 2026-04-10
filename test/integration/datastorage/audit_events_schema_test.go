@@ -282,7 +282,7 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 		// Use unique correlation ID per test run for parallel execution safety
 		correlationID := fmt.Sprintf("test-aes-date-check-%s", uuid.New().String()[:8])
 		eventID := uuid.New().String()
-		testTimestamp := time.Date(2025, 11, 15, 10, 30, 0, 0, time.UTC)
+		testTimestamp := time.Now().UTC().Truncate(time.Microsecond)
 		testDate := testTimestamp.Truncate(24 * time.Hour)
 
 		_, err := db.Exec(`

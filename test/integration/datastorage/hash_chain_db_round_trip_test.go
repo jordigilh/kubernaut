@@ -56,7 +56,7 @@ var _ = Describe("Hash Chain DB Round-Trip Investigation", func() {
 		// ========================================
 		// STEP 1: Create event WITH specific timestamp
 		// ========================================
-		originalTimestamp := time.Date(2026, 1, 24, 10, 30, 45, 123456789, time.UTC)
+		originalTimestamp := time.Now().UTC().Truncate(time.Microsecond)
 
 		eventBeforeDB := &repository.AuditEvent{
 			EventID:        uuid.New(),
@@ -89,7 +89,7 @@ var _ = Describe("Hash Chain DB Round-Trip Investigation", func() {
 		// ========================================
 		created, err := auditRepo.Create(ctx, eventBeforeDB)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(created).ToNot(BeNil())
+		Expect(created.EventHash).ToNot(BeEmpty(), "created event must have a hash")
 
 		GinkgoWriter.Printf("\nEvent created with hash: %s\n", created.EventHash)
 
