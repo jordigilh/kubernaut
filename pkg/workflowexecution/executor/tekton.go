@@ -159,7 +159,7 @@ func (t *TektonExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1al
 func (t *TektonExecutor) BuildPipelineRun(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) *tektonv1.PipelineRun {
 	logger := log.FromContext(ctx).WithValues("wfe", wfe.Name, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
 	filteredParams := FilterDeclaredParameters(wfe.Spec.Parameters, opts.DeclaredParameterNames, logger)
-	params := convertParameters(filteredParams)
+	params := ConvertParameters(filteredParams)
 
 	params = append(params, tektonv1.Param{
 		Name:  "TARGET_RESOURCE",
@@ -281,8 +281,8 @@ func ExecutionResourceName(targetResource string) string {
 	return fmt.Sprintf("wfe-%s", hex.EncodeToString(h[:])[:16])
 }
 
-// convertParameters converts map[string]string to Tekton params.
-func convertParameters(params map[string]string) []tektonv1.Param {
+// ConvertParameters converts map[string]string to Tekton params.
+func ConvertParameters(params map[string]string) []tektonv1.Param {
 	if len(params) == 0 {
 		return []tektonv1.Param{}
 	}

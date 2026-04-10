@@ -274,13 +274,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				AuditManager:       auditManager,
 			}
 
-			pr := &tektonv1.PipelineRun{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      prName,
-					Namespace: "kubernaut-workflows",
-				},
-			}
-
 			// AlreadyExists error but PR doesn't actually exist (race condition)
 			alreadyExistsErr := apierrors.NewAlreadyExists(tektonv1.Resource("pipelineruns"), prName)
 			result, err := reconciler.HandleAlreadyExists(ctx, wfe, prName, alreadyExistsErr)
@@ -331,13 +324,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				AuditManager:       auditManager,
 			}
 
-			pr := &tektonv1.PipelineRun{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      prName,
-					Namespace: "kubernaut-workflows",
-				},
-			}
-
 			// AlreadyExists error
 			alreadyExistsErr := apierrors.NewAlreadyExists(tektonv1.Resource("pipelineruns"), prName)
 			result, err := reconciler.HandleAlreadyExists(ctx, wfe, prName, alreadyExistsErr)
@@ -384,13 +370,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				AuditStore:         auditStore,
 				StatusManager:      statusManager,
 				AuditManager:       auditManager,
-			}
-
-			pr := &tektonv1.PipelineRun{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      prName,
-					Namespace: "kubernaut-workflows",
-				},
 			}
 
 			alreadyExistsErr := apierrors.NewAlreadyExists(tektonv1.Resource("pipelineruns"), prName)
@@ -540,9 +519,9 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(pr.Spec.Params[0].Value.StringVal).To(Equal(wfe.Spec.TargetResource))
 		})
 
-		// DD-WE-005 v2.0 / Issue #501: SA at spec top level
-		It("should use SA from WFE Spec.ServiceAccountName", func() {
-			wfe.Spec.ServiceAccountName = "custom-sa"
+		// DD-WE-005 v2.0 / Issue #501: SA resolved into Status at runtime
+		It("should use SA from WFE Status.ServiceAccountName", func() {
+			wfe.Status.ServiceAccountName = "custom-sa"
 
 			pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
 
@@ -556,7 +535,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				ExecutionNamespace: "kubernaut-workflows",
 			}
 
-			pr := reconcilerNoSA.BuildPipelineRun(wfe)
+			pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconcilerNoSA.ExecutionNamespace, weexecutor.CreateOptions{})
 
 			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty(),
 				"DD-WE-005: No SA in WFE spec -> K8s assigns namespace default")
@@ -568,23 +547,13 @@ var _ = Describe("WorkflowExecution Controller", func() {
 	// ========================================
 
 	Describe("ConvertParameters", func() {
-		var reconciler *workflowexecution.WorkflowExecutionReconciler
-
-		BeforeEach(func() {
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			reconciler = &workflowexecution.WorkflowExecutionReconciler{
-				Client: fakeClient,
-				Scheme: scheme,
-			}
-		})
-
 		It("should convert map to Tekton params", func() {
 			params := map[string]string{
 				"KEY1": "value1",
 				"KEY2": "value2",
 			}
 
-			tektonParams := reconciler.ConvertParameters(params)
+			tektonParams := weexecutor.ConvertParameters(params)
 
 			Expect(tektonParams).To(HaveLen(2))
 
@@ -598,18 +567,18 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		})
 
 		It("should return empty slice for nil params", func() {
-			tektonParams := reconciler.ConvertParameters(nil)
+			tektonParams := weexecutor.ConvertParameters(nil)
 			Expect(tektonParams).To(BeEmpty())
 		})
 
 		It("should return empty slice for empty map", func() {
-			tektonParams := reconciler.ConvertParameters(map[string]string{})
+			tektonParams := weexecutor.ConvertParameters(map[string]string{})
 			Expect(tektonParams).To(BeEmpty())
 		})
 
 		It("should set param type to string", func() {
 			params := map[string]string{"KEY": "value"}
-			tektonParams := reconciler.ConvertParameters(params)
+			tektonParams := weexecutor.ConvertParameters(params)
 
 			Expect(tektonParams[0].Value.Type).To(Equal(tektonv1.ParamTypeString))
 		})
@@ -5443,7 +5412,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					AuditStore: as, StatusManager: sm, AuditManager: am,
 				}
 
-				pr := &tektonv1.PipelineRun{ObjectMeta: metav1.ObjectMeta{Name: prName, Namespace: "kubernaut-workflows"}}
 				alreadyExistsErr := apierrors.NewAlreadyExists(tektonv1.Resource("pipelineruns"), prName)
 
 				result, err := r.HandleAlreadyExists(ctx, wfe, prName, alreadyExistsErr)
@@ -5494,7 +5462,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					AuditStore: as, StatusManager: sm, AuditManager: am,
 				}
 
-				pr := &tektonv1.PipelineRun{ObjectMeta: metav1.ObjectMeta{Name: prName, Namespace: "kubernaut-workflows"}}
 				alreadyExistsErr := apierrors.NewAlreadyExists(tektonv1.Resource("pipelineruns"), prName)
 
 				result, err := r.HandleAlreadyExists(ctx, wfe, prName, alreadyExistsErr)
@@ -5540,7 +5507,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					AuditStore: as, StatusManager: sm, AuditManager: am,
 				}
 
-				pr := &tektonv1.PipelineRun{ObjectMeta: metav1.ObjectMeta{Name: prName, Namespace: "kubernaut-workflows"}}
 				alreadyExistsErr := apierrors.NewAlreadyExists(tektonv1.Resource("pipelineruns"), prName)
 
 				result, err := r.HandleAlreadyExists(ctx, wfe, prName, alreadyExistsErr)
