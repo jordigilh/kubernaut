@@ -116,7 +116,7 @@ func createTerminalRR(ns, name string, phase remediationv1.RemediationPhase) *re
 
 	rr.Status.OverallPhase = phase
 	if phase == remediationv1.PhaseCompleted {
-		rr.Status.Outcome = "Completed"
+		rr.Status.Outcome = "Remediated"
 		rr.Status.CompletedAt = &now
 	} else if phase == remediationv1.PhaseFailed {
 		failPhase := remediationv1.FailurePhaseWorkflowExecution
