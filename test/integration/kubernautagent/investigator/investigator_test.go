@@ -36,6 +36,16 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
 
+// staticCatalogFetcher returns a pre-built validator for tests that need
+// workflow validation without a real DataStorage backend (#665).
+type staticCatalogFetcher struct {
+	validator *parser.Validator
+}
+
+func (f *staticCatalogFetcher) FetchValidator(_ context.Context) (*parser.Validator, error) {
+	return f.validator, nil
+}
+
 type recordingAuditStore struct {
 	events []*audit.AuditEvent
 }
