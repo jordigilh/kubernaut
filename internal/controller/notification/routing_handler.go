@@ -84,15 +84,21 @@ func (r *NotificationRequestReconciler) resolveChannelsFromRoutingWithDetails(
 	routingAttrs := routing.RoutingAttributesFromSpec(notification)
 	logger.V(1).Info("Routing attributes from spec", "attributes", routingAttrs)
 
-	receiver := r.Router.FindReceiver(routingAttrs)
-	channels := r.receiverToChannels(receiver)
+	// BR-NOT-068: Use FindReceivers for multi-channel fanout via continue routes
+	receivers := r.Router.FindReceivers(routingAttrs)
+	channels := r.receiversToChannels(receivers)
+
+	receiverNames := make([]string, len(receivers))
+	for i, recv := range receivers {
+		receiverNames[i] = recv.Name
+	}
 
 	logger.Info("Resolved channels from routing",
 		"notification", notification.Name,
-		"receiver", receiver.Name,
+		"receivers", receiverNames,
 		"channels", channels)
 
-	isFallback := receiver.Name == "console-fallback" || len(channels) == 0
+	isFallback := (len(receivers) == 1 && receivers[0].Name == "default-console-fallback") || len(channels) == 0
 	var routingReason, routingMessage string
 	if isFallback {
 		routingReason = kubernautnotif.ReasonRoutingFallback
@@ -102,8 +108,8 @@ func (r *NotificationRequestReconciler) resolveChannelsFromRoutingWithDetails(
 		routingReason = kubernautnotif.ReasonRoutingRuleMatched
 		attrsPart := r.formatAttributesForCondition(routingAttrs)
 		channelsPart := r.formatChannelsForCondition(channels)
-		routingMessage = fmt.Sprintf("Matched rule '%s' %s → channels: %s",
-			receiver.Name, attrsPart, channelsPart)
+		routingMessage = fmt.Sprintf("Matched rules %v %s → channels: %s",
+			receiverNames, attrsPart, channelsPart)
 	}
 
 	return channels, routingReason, routingMessage
@@ -155,6 +161,35 @@ func (r *NotificationRequestReconciler) receiverToChannels(receiver *routing.Rec
 	channels := make([]notificationv1alpha1.Channel, len(qualified))
 	for i, q := range qualified {
 		channels[i] = notificationv1alpha1.Channel(q)
+	}
+	return channels
+}
+
+// receiversToChannels merges channels from multiple receivers with deduplication.
+// BR-NOT-068: Multi-channel fanout — channels from all matched receivers are merged
+// and deduplicated by qualified channel name to prevent duplicate deliveries.
+func (r *NotificationRequestReconciler) receiversToChannels(receivers []*routing.Receiver) []notificationv1alpha1.Channel {
+	if len(receivers) == 0 {
+		return []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole}
+	}
+
+	if len(receivers) == 1 {
+		return r.receiverToChannels(receivers[0])
+	}
+
+	seen := make(map[string]bool)
+	var channels []notificationv1alpha1.Channel
+	for _, recv := range receivers {
+		for _, q := range recv.QualifiedChannels() {
+			if !seen[q] {
+				seen[q] = true
+				channels = append(channels, notificationv1alpha1.Channel(q))
+			}
+		}
+	}
+
+	if len(channels) == 0 {
+		return []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole}
 	}
 	return channels
 }
