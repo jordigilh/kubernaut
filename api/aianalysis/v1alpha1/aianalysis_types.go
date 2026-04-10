@@ -564,14 +564,6 @@ type SelectedWorkflow struct {
 	// +optional
 	EngineConfig *apiextensionsv1.JSON `json:"engineConfig,omitempty"`
 
-	// ServiceAccountName is the pre-existing ServiceAccount for the execution
-	// resource (Job, PipelineRun, or Ansible TokenRequest).
-	// DD-WE-005 v2.0: Operators pre-create SAs with appropriate RBAC in the
-	// execution namespace. If absent, K8s assigns the namespace's default SA
-	// (Job/Tekton) or the Ansible executor uses the controller's in-cluster
-	// credentials (#500 fallback).
-	// +optional
-	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 }
 
 // AlternativeWorkflow contains alternative workflows considered but not selected.

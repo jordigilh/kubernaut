@@ -183,7 +183,8 @@ var _ = Describe("Issue #573: ADR-EM-001 Implementation Gaps", func() {
 		newLocalReconciler := func(dsURL string, initObjects ...client.Object) (*controller.Reconciler, client.Client) {
 			localMetrics = emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 			fakeRecorder = record.NewFakeRecorder(20)
-			dsQuerier := emclient.NewDataStorageHTTPQuerier(dsURL)
+			dsQuerier, err := emclient.NewOgenDataStorageQuerier(dsURL, 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
 
 			s := runtime.NewScheme()
 			Expect(eav1.AddToScheme(s)).To(Succeed())
@@ -213,26 +214,46 @@ var _ = Describe("Issue #573: ADR-EM-001 Implementation Gaps", func() {
 			return r, fc
 		}
 
+		// ogenCompliantEvent builds a schema-compliant AuditEvent JSON map with
+		// all 8 required fields plus event_type discriminator inside event_data.
+		ogenCompliantEvent := func(eventType, correlationID string) map[string]interface{} {
+			return map[string]interface{}{
+				"version":         "1.0",
+				"event_type":      eventType,
+				"event_timestamp": "2026-01-01T00:00:00Z",
+				"event_category":  "workflowexecution",
+				"event_action":    "test_action",
+				"event_outcome":   "success",
+				"correlation_id":  correlationID,
+				"event_data": map[string]interface{}{
+					"event_type":       eventType,
+					"workflow_id":      "test-wf",
+					"workflow_version": "1.0.0",
+					"target_resource":  "default/Deployment/test-app",
+					"phase":            "Running",
+					"container_image":  "test:latest",
+					"execution_name":   "test-exec",
+				},
+			}
+		}
+
 		// mockDSHandler creates an HTTP handler that responds to HasWorkflowStarted
-		// and HasWorkflowCompleted queries based on the provided flags.
+		// and HasWorkflowCompleted queries with ogen-compliant AuditEvent JSON.
 		mockDSHandler := func(started, completed bool) http.HandlerFunc {
 			return func(w http.ResponseWriter, r *http.Request) {
 				eventType := r.URL.Query().Get("event_type")
+				correlationID := r.URL.Query().Get("correlation_id")
 				w.Header().Set("Content-Type", "application/json")
 
-				var events []map[string]interface{}
+				events := make([]map[string]interface{}, 0)
 				switch eventType {
 				case "workflowexecution.execution.started":
 					if started {
-						events = []map[string]interface{}{
-							{"event_type": eventType, "correlation_id": r.URL.Query().Get("correlation_id")},
-						}
+						events = append(events, ogenCompliantEvent(eventType, correlationID))
 					}
 				case "workflowexecution.workflow.completed":
 					if completed {
-						events = []map[string]interface{}{
-							{"event_type": eventType, "correlation_id": r.URL.Query().Get("correlation_id")},
-						}
+						events = append(events, ogenCompliantEvent(eventType, correlationID))
 					}
 				}
 				envelope := map[string]interface{}{"data": events}

@@ -46,6 +46,7 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
+	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
 )
@@ -125,35 +126,35 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		It("should generate deterministic name from targetResource", func() {
 			// Same input should always produce same output
 			targetResource := "default/deployment/my-app"
-			name1 := workflowexecution.PipelineRunName(targetResource)
-			name2 := workflowexecution.PipelineRunName(targetResource)
+			name1 := weexecutor.ExecutionResourceName(targetResource)
+			name2 := weexecutor.ExecutionResourceName(targetResource)
 			Expect(name1).To(Equal(name2))
 		})
 
 		It("should prefix name with 'wfe-'", func() {
 			targetResource := "default/deployment/my-app"
-			name := workflowexecution.PipelineRunName(targetResource)
+			name := weexecutor.ExecutionResourceName(targetResource)
 			Expect(name).To(HavePrefix("wfe-"))
 		})
 
 		It("should generate valid Kubernetes name (max 63 chars)", func() {
 			// Very long targetResource should still produce valid name
 			targetResource := "very-long-namespace/deployment/very-long-deployment-name-that-exceeds-normal-limits"
-			name := workflowexecution.PipelineRunName(targetResource)
+			name := weexecutor.ExecutionResourceName(targetResource)
 			Expect(len(name)).To(BeNumerically("<=", 63))
 		})
 
 		It("should generate 20-character name (wfe- + 16 hex chars)", func() {
 			targetResource := "default/deployment/my-app"
-			name := workflowexecution.PipelineRunName(targetResource)
+			name := weexecutor.ExecutionResourceName(targetResource)
 			// "wfe-" (4 chars) + 16 hex chars = 20 chars
 			Expect(len(name)).To(Equal(20))
 		})
 
 		It("should generate different names for different targetResources", func() {
-			name1 := workflowexecution.PipelineRunName("ns1/deployment/app1")
-			name2 := workflowexecution.PipelineRunName("ns1/deployment/app2")
-			name3 := workflowexecution.PipelineRunName("ns2/deployment/app1")
+			name1 := weexecutor.ExecutionResourceName("ns1/deployment/app1")
+			name2 := weexecutor.ExecutionResourceName("ns1/deployment/app2")
+			name3 := weexecutor.ExecutionResourceName("ns2/deployment/app1")
 			Expect(name1).ToNot(Equal(name2))
 			Expect(name1).ToNot(Equal(name3))
 			Expect(name2).ToNot(Equal(name3))
@@ -161,7 +162,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 		It("should use only lowercase hex characters", func() {
 			targetResource := "default/deployment/my-app"
-			name := workflowexecution.PipelineRunName(targetResource)
+			name := weexecutor.ExecutionResourceName(targetResource)
 			// Remove "wfe-" prefix and check hex chars
 			hexPart := name[4:]
 			for _, c := range hexPart {
@@ -182,8 +183,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		DescribeTable("determinism and uniqueness edge cases",
 			func(targetResource string, description string) {
 				// Test determinism: Same input → same output
-				name1 := workflowexecution.PipelineRunName(targetResource)
-				name2 := workflowexecution.PipelineRunName(targetResource)
+				name1 := weexecutor.ExecutionResourceName(targetResource)
+				name2 := weexecutor.ExecutionResourceName(targetResource)
 				Expect(name1).To(Equal(name2), "Should be deterministic for: %s", description)
 
 				// Test format
@@ -248,7 +249,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		It("should handle case when PipelineRun doesn't exist (not AlreadyExists)", func() {
 			// V1.0: HandleAlreadyExists now always tries to get PR to check ownership
 			// This test verifies it handles the case where PR doesn't exist
-			prName := workflowexecution.PipelineRunName(targetResource)
+			prName := weexecutor.ExecutionResourceName(targetResource)
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-wfe", Namespace: "default"},
 				Spec:       workflowexecutionv1alpha1.WorkflowExecutionSpec{TargetResource: targetResource},
@@ -273,16 +274,9 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				AuditManager:       auditManager,
 			}
 
-			pr := &tektonv1.PipelineRun{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      prName,
-					Namespace: "kubernaut-workflows",
-				},
-			}
-
 			// AlreadyExists error but PR doesn't actually exist (race condition)
 			alreadyExistsErr := apierrors.NewAlreadyExists(tektonv1.Resource("pipelineruns"), prName)
-			result, err := reconciler.HandleAlreadyExists(ctx, wfe, pr, alreadyExistsErr)
+			result, err := reconciler.HandleAlreadyExists(ctx, wfe, prName, alreadyExistsErr)
 			// Should fail to get PR and mark WFE as Failed
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero())
@@ -295,7 +289,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		})
 
 		It("should update to Running when PipelineRun is ours (race with self)", func() {
-			prName := workflowexecution.PipelineRunName(targetResource)
+			prName := weexecutor.ExecutionResourceName(targetResource)
 			existingPR := &tektonv1.PipelineRun{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      prName,
@@ -330,16 +324,9 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				AuditManager:       auditManager,
 			}
 
-			pr := &tektonv1.PipelineRun{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      prName,
-					Namespace: "kubernaut-workflows",
-				},
-			}
-
 			// AlreadyExists error
 			alreadyExistsErr := apierrors.NewAlreadyExists(tektonv1.Resource("pipelineruns"), prName)
-			result, err := reconciler.HandleAlreadyExists(ctx, wfe, pr, alreadyExistsErr)
+			result, err := reconciler.HandleAlreadyExists(ctx, wfe, prName, alreadyExistsErr)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(10 * time.Second))
 
@@ -351,7 +338,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		})
 
 		It("should mark Failed when PipelineRun belongs to another WFE (execution race)", func() {
-			prName := workflowexecution.PipelineRunName(targetResource)
+			prName := weexecutor.ExecutionResourceName(targetResource)
 			existingPR := &tektonv1.PipelineRun{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      prName,
@@ -386,16 +373,9 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				AuditManager:       auditManager,
 			}
 
-			pr := &tektonv1.PipelineRun{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      prName,
-					Namespace: "kubernaut-workflows",
-				},
-			}
-
 			// AlreadyExists error
 			alreadyExistsErr := apierrors.NewAlreadyExists(tektonv1.Resource("pipelineruns"), prName)
-			result, err := reconciler.HandleAlreadyExists(ctx, wfe, pr, alreadyExistsErr)
+			result, err := reconciler.HandleAlreadyExists(ctx, wfe, prName, alreadyExistsErr)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero())
 
@@ -416,205 +396,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 	// V1.0: MarkSkipped tests removed - routing moved to RO (DD-RO-002)
 	// WFE no longer has skip logic; RO blocks creation before WFE exists
 	// ========================================
-
-	// ========================================
-	// Day 4: BuildPipelineRun() Tests
-	// TDD RED Phase: Tests written, implementation pending
-	// ========================================
-
-	Describe("BuildPipelineRun", func() {
-		var (
-			wfe        *workflowexecutionv1alpha1.WorkflowExecution
-			reconciler *workflowexecution.WorkflowExecutionReconciler
-		)
-
-		BeforeEach(func() {
-			wfe = &workflowexecutionv1alpha1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-wfe",
-					Namespace: "payment",
-				},
-				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					TargetResource: "payment/deployment/payment-api",
-					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "restart-deployment",
-						Version:        "1.0.0",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-deployment:v1.0.0",
-					},
-					Parameters: map[string]string{
-						"NAMESPACE":       "payment",
-						"DEPLOYMENT_NAME": "payment-api",
-					},
-				},
-			}
-
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			reconciler = &workflowexecution.WorkflowExecutionReconciler{
-				Client:             fakeClient,
-				Scheme:             scheme,
-				Recorder:           recorder,
-				ExecutionNamespace: "kubernaut-workflows",
-				CooldownPeriod:     5 * time.Minute,
-			}
-		})
-
-		It("should create PipelineRun with deterministic name", func() {
-			pr := reconciler.BuildPipelineRun(wfe)
-
-			// Name should be deterministic based on targetResource
-			expectedName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
-			Expect(pr.Name).To(Equal(expectedName))
-		})
-
-		It("should create PipelineRun in execution namespace", func() {
-			pr := reconciler.BuildPipelineRun(wfe)
-
-			// DD-WE-002: PipelineRuns always in kubernaut-workflows
-			Expect(pr.Namespace).To(Equal("kubernaut-workflows"))
-		})
-
-		It("should set cross-namespace tracking labels", func() {
-			pr := reconciler.BuildPipelineRun(wfe)
-
-			Expect(pr.Labels).To(HaveKeyWithValue("kubernaut.ai/workflow-execution", "test-wfe"))
-			Expect(pr.Labels).To(HaveKeyWithValue("kubernaut.ai/source-namespace", "payment"))
-			Expect(pr.Labels).To(HaveKeyWithValue("kubernaut.ai/workflow-id", "restart-deployment"))
-			// Label value is sanitized (slashes replaced with __)
-			// Original value stored in annotation
-			Expect(pr.Labels).To(HaveKeyWithValue("kubernaut.ai/target-resource", "payment__deployment__payment-api"))
-			// Verify annotation contains original value
-			Expect(pr.Annotations).To(HaveKeyWithValue("kubernaut.ai/target-resource", "payment/deployment/payment-api"))
-		})
-
-		It("should use bundle resolver with correct params", func() {
-			pr := reconciler.BuildPipelineRun(wfe)
-
-			Expect(pr.Spec.PipelineRef).To(Not(BeNil()))
-			Expect(string(pr.Spec.PipelineRef.Resolver)).To(Equal("bundles"))
-
-			// Check bundle param
-			var bundleParam, nameParam, kindParam *tektonv1.Param
-			for i := range pr.Spec.PipelineRef.Params {
-				p := &pr.Spec.PipelineRef.Params[i]
-				switch p.Name {
-				case "bundle":
-					bundleParam = p
-				case "name":
-					nameParam = p
-				case "kind":
-					kindParam = p
-				}
-			}
-
-			Expect(bundleParam).To(And(Not(BeNil()), HaveField("Value.StringVal", Equal("ghcr.io/kubernaut/workflows/restart-deployment:v1.0.0"))))
-			Expect(nameParam).To(And(Not(BeNil()), HaveField("Value.StringVal", Equal("workflow"))))
-			Expect(kindParam).To(And(Not(BeNil()), HaveField("Value.StringVal", Equal("pipeline"))))
-		})
-
-		It("should pass workflow parameters to PipelineRun", func() {
-			pr := reconciler.BuildPipelineRun(wfe)
-
-			// Check params are passed
-			paramMap := make(map[string]string)
-			for _, p := range pr.Spec.Params {
-				paramMap[p.Name] = p.Value.StringVal
-			}
-
-			Expect(paramMap).To(HaveKeyWithValue("NAMESPACE", "payment"))
-			Expect(paramMap).To(HaveKeyWithValue("DEPLOYMENT_NAME", "payment-api"))
-		})
-
-		It("should leave SA empty when WFE has no ExecutionConfig (DD-WE-005 v2.0)", func() {
-			pr := reconciler.BuildPipelineRun(wfe)
-
-			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty(),
-				"DD-WE-005: SA from WFE spec, empty when not set")
-		})
-
-		It("should handle empty parameters", func() {
-			wfe.Spec.Parameters = nil
-			pr := reconciler.BuildPipelineRun(wfe)
-
-			// Even with empty spec parameters, TARGET_RESOURCE is always added
-			Expect(pr.Spec.Params).To(HaveLen(1))
-			Expect(pr.Spec.Params[0].Name).To(Equal("TARGET_RESOURCE"))
-			Expect(pr.Spec.Params[0].Value.StringVal).To(Equal(wfe.Spec.TargetResource))
-		})
-
-		// DD-WE-005 v2.0 / Issue #501: SA at spec top level
-		It("should use SA from WFE Spec.ServiceAccountName", func() {
-			wfe.Spec.ServiceAccountName = "custom-sa"
-
-			pr := reconciler.BuildPipelineRun(wfe)
-
-			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(Equal("custom-sa"))
-		})
-
-		It("should use empty SA when WFE spec has no ExecutionConfig (DD-WE-005 v2.0)", func() {
-			reconcilerNoSA := &workflowexecution.WorkflowExecutionReconciler{
-				Client:             fake.NewClientBuilder().WithScheme(scheme).Build(),
-				Scheme:             scheme,
-				ExecutionNamespace: "kubernaut-workflows",
-			}
-
-			pr := reconcilerNoSA.BuildPipelineRun(wfe)
-
-			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty(),
-				"DD-WE-005: No SA in WFE spec -> K8s assigns namespace default")
-		})
-	})
-
-	// ========================================
-	// Day 4: ConvertParameters() Tests
-	// ========================================
-
-	Describe("ConvertParameters", func() {
-		var reconciler *workflowexecution.WorkflowExecutionReconciler
-
-		BeforeEach(func() {
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			reconciler = &workflowexecution.WorkflowExecutionReconciler{
-				Client: fakeClient,
-				Scheme: scheme,
-			}
-		})
-
-		It("should convert map to Tekton params", func() {
-			params := map[string]string{
-				"KEY1": "value1",
-				"KEY2": "value2",
-			}
-
-			tektonParams := reconciler.ConvertParameters(params)
-
-			Expect(tektonParams).To(HaveLen(2))
-
-			paramMap := make(map[string]string)
-			for _, p := range tektonParams {
-				paramMap[p.Name] = p.Value.StringVal
-			}
-
-			Expect(paramMap).To(HaveKeyWithValue("KEY1", "value1"))
-			Expect(paramMap).To(HaveKeyWithValue("KEY2", "value2"))
-		})
-
-		It("should return empty slice for nil params", func() {
-			tektonParams := reconciler.ConvertParameters(nil)
-			Expect(tektonParams).To(BeEmpty())
-		})
-
-		It("should return empty slice for empty map", func() {
-			tektonParams := reconciler.ConvertParameters(map[string]string{})
-			Expect(tektonParams).To(BeEmpty())
-		})
-
-		It("should set param type to string", func() {
-			params := map[string]string{"KEY": "value"}
-			tektonParams := reconciler.ConvertParameters(params)
-
-			Expect(tektonParams[0].Value.Type).To(Equal(tektonv1.ParamTypeString))
-		})
-	})
 
 	// ========================================
 	// Day 4: FindWFEForOwnedResource() Tests
@@ -928,7 +709,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			pr = &tektonv1.PipelineRun{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      workflowexecution.PipelineRunName(wfe.Spec.TargetResource),
+					Name:      weexecutor.ExecutionResourceName(wfe.Spec.TargetResource),
 					Namespace: "kubernaut-workflows",
 				},
 				Status: tektonv1.PipelineRunStatus{
@@ -1073,7 +854,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			pr = &tektonv1.PipelineRun{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      workflowexecution.PipelineRunName(wfe.Spec.TargetResource),
+					Name:      weexecutor.ExecutionResourceName(wfe.Spec.TargetResource),
 					Namespace: "kubernaut-workflows",
 				},
 			}
@@ -2129,7 +1910,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}
 
 			// And: PipelineRun exists with deterministic name and matching ownership label
-			prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+			prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 			pr := &tektonv1.PipelineRun{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      prName,
@@ -2289,7 +2070,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
 				// And: PipelineRun exists with deterministic name (NOT ExecutionRef.Name)
-				prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+				prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 				pr := &tektonv1.PipelineRun{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      prName,
@@ -2331,7 +2112,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
 				// And: PipelineRun exists (created but ref not set yet)
-				prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+				prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 				pr := &tektonv1.PipelineRun{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      prName,
@@ -2442,7 +2223,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
 				// And: Active PipelineRun exists
-				prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+				prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 				pr := &tektonv1.PipelineRun{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      prName,
@@ -2616,7 +2397,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				// And: PipelineRun completed
 				pr := &tektonv1.PipelineRun{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      workflowexecution.PipelineRunName(wfe.Spec.TargetResource),
+						Name:      weexecutor.ExecutionResourceName(wfe.Spec.TargetResource),
 						Namespace: "kubernaut-workflows",
 					},
 				}
@@ -5135,163 +4916,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				// Then: Should succeed (operation is just for logging)
 				Expect(err).ToNot(HaveOccurred())
-			})
-		})
-	})
-
-	// ========================================
-	// P3: sanitizeLabelValue - Edge Cases (Unit Test Plan v1.0.0)
-	// Target: 75.0% → 85%+ coverage
-	// Note: Testing indirectly through BuildPipelineRun (sanitizeLabelValue is private)
-	// ========================================
-
-	Describe("P3: Label Sanitization via BuildPipelineRun - Edge Cases", func() {
-		var (
-			fakeClient client.Client
-			reconciler *workflowexecution.WorkflowExecutionReconciler
-		)
-
-		BeforeEach(func() {
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				Build()
-
-			reconciler = &workflowexecution.WorkflowExecutionReconciler{
-				Client:             fakeClient,
-				Scheme:             scheme,
-				ExecutionNamespace: "kubernaut-workflows",
-			}
-		})
-
-		Context("CTRL-LABEL-01: Forward slash replacement in target-resource label", func() {
-			It("should replace forward slashes with double underscores in PipelineRun labels", func() {
-				// Given: WFE with target resource containing slashes
-				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-label-slash",
-						Namespace: "default",
-					},
-					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-							WorkflowID:     "test-workflow",
-							Version:        "v1",
-							ExecutionBundle: "registry.example.com/workflows/test:v1",
-						},
-						TargetResource: "namespace/deployment/app-name",
-					},
-				}
-
-				// When: BuildPipelineRun is called
-				pr := reconciler.BuildPipelineRun(wfe)
-
-				// Then: Label should have slashes replaced
-				Expect(pr.Labels["kubernaut.ai/target-resource"]).To(Equal("namespace__deployment__app-name"))
-			})
-
-			It("should handle multiple consecutive slashes", func() {
-				// Given: WFE with multiple slashes
-				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-multiple-slash",
-						Namespace: "default",
-					},
-					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-							WorkflowID:     "test-workflow",
-							Version:        "v1",
-							ExecutionBundle: "registry.example.com/workflows/test:v1",
-						},
-						TargetResource: "path//to///resource",
-					},
-				}
-
-				// When: BuildPipelineRun is called
-				pr := reconciler.BuildPipelineRun(wfe)
-
-				// Then: Each slash should be replaced
-				Expect(pr.Labels["kubernaut.ai/target-resource"]).To(Equal("path____to______resource"))
-			})
-		})
-
-		Context("CTRL-LABEL-02: Truncation at 63 characters", func() {
-			It("should truncate label value at exactly 63 characters", func() {
-				// Given: WFE with very long target resource (>63 chars after sanitization)
-				longResource := strings.Repeat("a", 64)
-				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-truncate",
-						Namespace: "default",
-					},
-					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-							WorkflowID:     "test-workflow",
-							Version:        "v1",
-							ExecutionBundle: "registry.example.com/workflows/test:v1",
-						},
-						TargetResource: longResource,
-					},
-				}
-
-				// When: BuildPipelineRun is called
-				pr := reconciler.BuildPipelineRun(wfe)
-
-				// Then: Label should be truncated to 63 characters
-				labelValue := pr.Labels["kubernaut.ai/target-resource"]
-				Expect(len(labelValue)).To(Equal(63))
-				Expect(labelValue).To(Equal(strings.Repeat("a", 63)))
-			})
-
-			It("should not truncate values under 63 characters", func() {
-				// Given: WFE with target resource exactly 63 chars
-				resource63 := strings.Repeat("b", 63)
-				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-no-truncate",
-						Namespace: "default",
-					},
-					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-							WorkflowID:     "test-workflow",
-							Version:        "v1",
-							ExecutionBundle: "registry.example.com/workflows/test:v1",
-						},
-						TargetResource: resource63,
-					},
-				}
-
-				// When: BuildPipelineRun is called
-				pr := reconciler.BuildPipelineRun(wfe)
-
-				// Then: Label should remain unchanged
-				labelValue := pr.Labels["kubernaut.ai/target-resource"]
-				Expect(len(labelValue)).To(Equal(63))
-				Expect(labelValue).To(Equal(resource63))
-			})
-		})
-
-		Context("CTRL-LABEL-03: Edge case combinations", func() {
-			It("should handle target resource with only slashes", func() {
-				// Given: WFE with target resource of only slashes
-				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-only-slashes",
-						Namespace: "default",
-					},
-					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-							WorkflowID:     "test-workflow",
-							Version:        "v1",
-							ExecutionBundle: "registry.example.com/workflows/test:v1",
-						},
-						TargetResource: "///",
-					},
-				}
-
-				// When: BuildPipelineRun is called
-				pr := reconciler.BuildPipelineRun(wfe)
-
-				// Then: Label should be all underscores
-				Expect(pr.Labels["kubernaut.ai/target-resource"]).To(Equal("______"))
 			})
 		})
 	})

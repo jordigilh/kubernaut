@@ -192,7 +192,7 @@ func (t *TektonExecutor) buildPipelineRun(wfe *workflowexecutionv1alpha1.Workflo
 			Params:     params,
 			Workspaces: workspaces,
 			TaskRunTemplate: tektonv1.PipelineTaskRunTemplate{
-				ServiceAccountName: wfe.Spec.ServiceAccountName,
+				ServiceAccountName: wfe.Status.ServiceAccountName,
 			},
 		},
 	}

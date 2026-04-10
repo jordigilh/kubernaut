@@ -239,11 +239,11 @@ func (a *AnsibleExecutor) Create(
 	}
 
 	// Issue #501: injectK8sCredential now uses TokenRequest when
-	// Spec.ServiceAccountName is set, falling back to in-cluster creds.
+	// Status.ServiceAccountName is set, falling back to in-cluster creds.
 	var warnings []Warning
 	k8sCredID, k8sWarnings, k8sErr := a.injectK8sCredential(ctx, wfe, namespace)
 	if k8sErr != nil {
-		if wfe.Spec.ServiceAccountName != "" {
+		if wfe.Status.ServiceAccountName != "" {
 			// Hard failure: operator explicitly requested per-workflow credentials.
 			return nil, fmt.Errorf("inject per-workflow K8s credential: %w", k8sErr)
 		}
@@ -505,7 +505,7 @@ func (i k8sCredentialInputs) toMap() map[string]string {
 // When the CA cert is empty (e.g. in dev clusters), the ssl_ca_cert input is
 // omitted so the kubeconfig template falls back to insecure-skip-tls-verify (#552).
 // injectK8sCredential obtains K8s API credentials and creates an ephemeral AWX
-// credential. Issue #501: When wfe.Spec.ServiceAccountName is set, a short-lived
+// credential. Issue #501: When wfe.Status.ServiceAccountName is set, a short-lived
 // token is obtained via the TokenRequest API scoped to that SA. When empty, the
 // controller's own in-cluster credentials are used (backward-compatible fallback
 // from Issue #500).
@@ -517,10 +517,10 @@ func (a *AnsibleExecutor) injectK8sCredential(
 	var creds *InClusterCredentials
 	var warnings []Warning
 
-	if wfe.Spec.ServiceAccountName != "" {
+	if wfe.Status.ServiceAccountName != "" {
 		tokenCreds, tokenWarnings, err := a.requestTokenForSA(ctx, wfe, namespace)
 		if err != nil {
-			return 0, nil, fmt.Errorf("TokenRequest for SA %q in %q: %w", wfe.Spec.ServiceAccountName, namespace, err)
+			return 0, nil, fmt.Errorf("TokenRequest for SA %q in %q: %w", wfe.Status.ServiceAccountName, namespace, err)
 		}
 		creds = tokenCreds
 		warnings = tokenWarnings
@@ -554,7 +554,7 @@ func (a *AnsibleExecutor) injectK8sCredential(
 
 	a.Logger.Info("Created ephemeral K8s credential",
 		"credentialID", credID, "credentialType", typeID, "wfe", wfe.Name,
-		"source", credSourceLabel(wfe.Spec.ServiceAccountName))
+		"source", credSourceLabel(wfe.Status.ServiceAccountName))
 	return credID, warnings, nil
 }
 
@@ -585,14 +585,14 @@ func (a *AnsibleExecutor) requestTokenForSA(
 	}
 
 	tokenResp, err := a.Clientset.CoreV1().ServiceAccounts(namespace).CreateToken(
-		ctx, wfe.Spec.ServiceAccountName, treq, metav1.CreateOptions{},
+		ctx, wfe.Status.ServiceAccountName, treq, metav1.CreateOptions{},
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("create token for SA %q: %w", wfe.Spec.ServiceAccountName, err)
+		return nil, nil, fmt.Errorf("create token for SA %q: %w", wfe.Status.ServiceAccountName, err)
 	}
 
 	if tokenResp.Status.Token == "" {
-		return nil, nil, fmt.Errorf("TokenRequest returned empty token for SA %q/%q", namespace, wfe.Spec.ServiceAccountName)
+		return nil, nil, fmt.Errorf("TokenRequest returned empty token for SA %q/%q", namespace, wfe.Status.ServiceAccountName)
 	}
 
 	// TTL validation: compare granted expiration against execution timeout
@@ -602,7 +602,7 @@ func (a *AnsibleExecutor) requestTokenForSA(
 		msg := fmt.Sprintf("granted token TTL %s is shorter than execution timeout %s — playbook may receive 401 errors if it outlives the token",
 			grantedTTL, executionTimeout)
 		a.Logger.Info("WARNING: "+msg,
-			"wfe", wfe.Name, "sa", wfe.Spec.ServiceAccountName,
+			"wfe", wfe.Name, "sa", wfe.Status.ServiceAccountName,
 			"grantedTTL", grantedTTL, "executionTimeout", executionTimeout)
 		warnings = append(warnings, Warning{
 			Type:    workflowexecutionv1alpha1.ConditionTokenTTLInsufficient,

@@ -171,7 +171,6 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 				Confidence:            GetFloat64FromMap(swMap, "confidence"),
 				Rationale:             GetStringFromMap(swMap, "rationale"),
 				ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
-				ServiceAccountName:    GetStringFromMap(swMap, "service_account_name"),
 			}
 			// Map parameters if present (map[string]string)
 			if paramsRaw, ok := swMap["parameters"]; ok {
@@ -365,7 +364,6 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 				Confidence:         GetFloat64FromMap(swMap, "confidence"),
 				Rationale:          GetStringFromMap(swMap, "rationale"),
 				ExecutionEngine:    GetStringFromMap(swMap, "execution_engine"),
-				ServiceAccountName: GetStringFromMap(swMap, "service_account_name"),
 			}
 		}
 	}
@@ -580,7 +578,6 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 				Confidence:            GetFloat64FromMap(swMap, "confidence"),
 				Rationale:             GetStringFromMap(swMap, "rationale"),
 				ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
-				ServiceAccountName:    GetStringFromMap(swMap, "service_account_name"),
 			}
 			// Map parameters if present
 			if paramsRaw, ok := swMap["parameters"]; ok {

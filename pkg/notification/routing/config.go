@@ -24,7 +24,6 @@ package routing
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -55,12 +54,8 @@ type Route struct {
 	// Match is the exact match criteria for routing attributes
 	Match map[string]string `yaml:"match,omitempty" json:"match,omitempty"`
 
-	// MatchRE is the regex match criteria for routing attributes
-	// Issue #416: Patterns are compiled at ParseConfig time; invalid patterns are rejected.
+	// MatchRE is the regex match criteria for routing attributes (not implemented in V1.0)
 	MatchRE map[string]string `yaml:"matchRe,omitempty" json:"matchRe,omitempty"`
-
-	// compiledRE holds compiled regex patterns (populated by compileRegexes)
-	compiledRE map[string]*regexp.Regexp
 
 	// Continue indicates whether to continue to sibling routes after matching
 	// BR-NOT-068: Multi-Channel Fanout support
@@ -203,38 +198,10 @@ func ParseConfig(data []byte) (*Config, error) {
 		return nil, err
 	}
 
-	// Issue #416: Compile matchRe patterns at parse time
-	if err := config.compileRouteRegexes(config.Route); err != nil {
-		return nil, err
-	}
-
 	// Build receiver lookup map
 	config.buildReceiverMap()
 
 	return &config, nil
-}
-
-// compileRouteRegexes recursively compiles MatchRE patterns on all routes.
-func (c *Config) compileRouteRegexes(route *Route) error {
-	if route == nil {
-		return nil
-	}
-	if len(route.MatchRE) > 0 {
-		route.compiledRE = make(map[string]*regexp.Regexp, len(route.MatchRE))
-		for key, pattern := range route.MatchRE {
-			re, err := regexp.Compile(pattern)
-			if err != nil {
-				return fmt.Errorf("invalid matchRe pattern for key %q: %q: %w", key, pattern, err)
-			}
-			route.compiledRE[key] = re
-		}
-	}
-	for _, child := range route.Routes {
-		if err := c.compileRouteRegexes(child); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // Validate validates the configuration.
@@ -317,9 +284,64 @@ func (c *Config) GetReceiver(name string) *Receiver {
 	return c.receiverMap[name]
 }
 
-// FindReceiver finds the matching receiver for the given routing attributes.
+// FindReceivers finds all matching receivers for the given routing attributes,
+// respecting the Continue flag for multi-receiver fanout.
+// BR-NOT-068: Multi-Channel Fanout support
+//
+// Routing follows Alertmanager semantics:
+//   - Routes are evaluated depth-first in declaration order.
+//   - When Continue is false (default), evaluation stops at the first match.
+//   - When Continue is true, evaluation continues to sibling routes.
+//   - Children take over from their parent: if a child route has sub-routes
+//     and those sub-routes match, the sub-route receivers are collected
+//     instead of the child's own Receiver field.
+//   - If no children match, the parent's Receiver is used as fallback.
+//
+// Deduplication by receiver name is performed here (canonical location).
+func (r *Route) FindReceivers(attrs map[string]string) []string {
+	if attrs == nil {
+		attrs = make(map[string]string)
+	}
+	var matched []string
+	seen := make(map[string]bool)
+	for _, childRoute := range r.Routes {
+		if childRoute.matchesAttributes(attrs) {
+			if len(childRoute.Routes) > 0 {
+				sub := childRoute.FindReceivers(attrs)
+				if len(sub) > 0 {
+					for _, s := range sub {
+						if !seen[s] {
+							matched = append(matched, s)
+							seen[s] = true
+						}
+					}
+					if !childRoute.Continue {
+						return matched
+					}
+					continue
+				}
+			}
+			if childRoute.Receiver != "" && !seen[childRoute.Receiver] {
+				matched = append(matched, childRoute.Receiver)
+				seen[childRoute.Receiver] = true
+			}
+			if !childRoute.Continue {
+				return matched
+			}
+		}
+	}
+	if len(matched) == 0 && r.Receiver != "" {
+		return []string{r.Receiver}
+	}
+	return matched
+}
+
+// FindReceiver finds the first matching receiver for the given routing attributes.
 // BR-NOT-065: First matching route wins (ordered evaluation)
-// Convenience wrapper over FindReceivers that returns the first match.
+//
+// This is a backward-compatible wrapper that delegates to FindReceivers and
+// returns only the first matched receiver. Callers that need multi-receiver
+// fanout should use FindReceivers directly.
 func (r *Route) FindReceiver(attrs map[string]string) string {
 	receivers := r.FindReceivers(attrs)
 	if len(receivers) > 0 {
@@ -328,83 +350,14 @@ func (r *Route) FindReceiver(attrs map[string]string) string {
 	return r.Receiver
 }
 
-// FindReceivers collects all matching receiver names, honoring the Continue flag.
-// BR-NOT-068: When continue is true on a matching child route, evaluation
-// continues to subsequent siblings instead of stopping at the first match.
-// Receivers are deduplicated by name (stable order, first occurrence wins).
-func (r *Route) FindReceivers(attrs map[string]string) []string {
-	if attrs == nil {
-		attrs = make(map[string]string)
-	}
-
-	results := r.collectReceivers(attrs)
-	if len(results) == 0 && r.Receiver != "" {
-		return []string{r.Receiver}
-	}
-	return results
-}
-
-// collectReceivers performs depth-first sibling traversal with continue semantics.
-func (r *Route) collectReceivers(attrs map[string]string) []string {
-	var results []string
-	seen := make(map[string]bool, len(r.Routes))
-
-	for _, child := range r.Routes {
-		if !child.matchesAttributes(attrs) {
-			continue
-		}
-
-		// Depth-first: check child's sub-routes first
-		if len(child.Routes) > 0 {
-			nested := child.collectReceivers(attrs)
-			for _, name := range nested {
-				if name != "" && !seen[name] {
-					seen[name] = true
-					results = append(results, name)
-				}
-			}
-		}
-
-		// If no nested match, use this child's receiver
-		if len(child.Routes) == 0 || !hasNestedMatch(child, attrs) {
-			if child.Receiver != "" && !seen[child.Receiver] {
-				seen[child.Receiver] = true
-				results = append(results, child.Receiver)
-			}
-		}
-
-		if !child.Continue {
-			break
-		}
-	}
-
-	return results
-}
-
-// hasNestedMatch checks if any nested sub-route matched.
-func hasNestedMatch(route *Route, attrs map[string]string) bool {
-	for _, child := range route.Routes {
-		if child.matchesAttributes(attrs) {
-			return true
-		}
-	}
-	return false
-}
-
-// matchesAttributes checks if the route's match and matchRe criteria both match.
-// Issue #416: match + matchRe have AND semantics — both must satisfy.
+// matchesAttributes checks if the route's match criteria match the given routing attributes.
 func (r *Route) matchesAttributes(attrs map[string]string) bool {
-	// Check exact match criteria
+	if len(r.Match) == 0 {
+		return true
+	}
+
 	for key, value := range r.Match {
 		if attrs[key] != value {
-			return false
-		}
-	}
-
-	// Check regex match criteria (Issue #416)
-	for key, re := range r.compiledRE {
-		val, exists := attrs[key]
-		if !exists || !re.MatchString(val) {
 			return false
 		}
 	}

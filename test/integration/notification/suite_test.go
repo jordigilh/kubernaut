@@ -486,6 +486,13 @@ route:
     - receiver: all-channels
       match:
         test-channel-set: all-channels
+    - receiver: fanout-console
+      match:
+        test-channel-set: fanout-test
+      continue: true
+    - receiver: fanout-file
+      match:
+        test-channel-set: fanout-test
 receivers:
   - name: console-default
     consoleConfigs:
@@ -521,6 +528,12 @@ receivers:
     fileConfigs:
       - enabled: true
     logConfigs:
+      - enabled: true
+  - name: fanout-console
+    consoleConfigs:
+      - enabled: true
+  - name: fanout-file
+    fileConfigs:
       - enabled: true
 `))).To(Succeed())
 	GinkgoWriter.Println("  ✅ Routing configured with test-channel-set routing rules (#261)")

@@ -19,7 +19,7 @@ ARG TARGETARCH
 ARG GOOS=linux
 ARG GOARCH=${TARGETARCH:-amd64}
 ARG GOFLAGS=""
-ARG APP_VERSION=v1.3.0-dev
+ARG APP_VERSION=v1.2.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
@@ -64,7 +64,7 @@ USER 65534
 EXPOSE 8080
 ENTRYPOINT ["/kubernautagent"]
 
-ARG APP_VERSION=v1.3.0-dev
+ARG APP_VERSION=v1.2.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
@@ -100,7 +100,7 @@ USER 1001
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/kubernautagent"]
 
-ARG APP_VERSION=v1.3.0-dev
+ARG APP_VERSION=v1.2.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \

@@ -680,6 +680,10 @@ func (m *MockBlockingRoutingEngine) CheckPostAnalysisConditions(ctx context.Cont
 	return nil, nil
 }
 
+func (m *MockBlockingRoutingEngine) CheckResourceBusy(ctx context.Context, rr *remediationv1.RemediationRequest, targetResource string) (*routing.BlockingCondition, error) {
+	return nil, nil
+}
+
 func (m *MockBlockingRoutingEngine) CheckUnmanagedResource(ctx context.Context, rr *remediationv1.RemediationRequest) *routing.BlockingCondition {
 	return nil
 }

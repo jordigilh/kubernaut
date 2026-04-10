@@ -28,7 +28,7 @@ import (
 func emReconcilerPath() string {
 	_, filename, _, _ := runtime.Caller(0)
 	return filepath.Join(filepath.Dir(filename), "..", "..", "..",
-		"internal", "controller", "effectivenessmonitor", "reconciler.go")
+		"internal", "controller", "effectivenessmonitor", "assess_components.go")
 }
 
 var _ = Describe("Issue #639: EM Metrics Query Definitions (BR-EM-003)", func() {

@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	workflowexecution "github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
+	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 )
 
 // Comprehensive Audit Trail Integration Tests
@@ -206,7 +206,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)).To(Succeed())
 
 			// Get the PipelineRun using deterministic name
-			prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+			prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 			var pr tektonv1.PipelineRun
 			Eventually(func() error {
 				return k8sClient.Get(ctx, client.ObjectKey{
@@ -362,7 +362,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			GinkgoWriter.Println("✅ Step 2: execution.workflow.started audit event emitted")
 
 			By("Step 3: Complete PipelineRun and verify workflow.completed")
-			prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+			prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 			var pr tektonv1.PipelineRun
 			Eventually(func() error {
 				return k8sClient.Get(ctx, client.ObjectKey{Name: prName, Namespace: WorkflowExecutionNS}, &pr)

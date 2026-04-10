@@ -567,16 +567,35 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 	cfg := &AWXConfig{APIURL: awxBaseURL}
 
 	// 1. Get default organization (always exists as ID 1)
+	// Retry on 401: the AWX operator may not have finished creating the admin
+	// superuser even after pods report Ready (initialize_django.yml race).
 	_, _ = fmt.Fprintf(writer, "   Creating organization...\n")
 	orgBody := map[string]interface{}{"name": "Kubernaut E2E", "description": "E2E test organization"}
-	orgResult, orgStatus, err := awxAPIRequest("POST", awxBaseURL+"/api/v2/organizations/", orgBody, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create organization: %w", err)
+	var orgResult map[string]interface{}
+	var orgStatus int
+	orgCreated := false
+	for attempt := 0; attempt < 12; attempt++ {
+		var orgErr error
+		orgResult, orgStatus, orgErr = awxAPIRequest("POST", awxBaseURL+"/api/v2/organizations/", orgBody, "")
+		if orgErr != nil {
+			return nil, fmt.Errorf("failed to create organization: %w", orgErr)
+		}
+		if orgStatus == http.StatusCreated {
+			orgCreated = true
+			break
+		}
+		if orgStatus == http.StatusUnauthorized {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  AWX returned HTTP 401 (attempt %d/12) — admin user may not exist yet, retrying in 10s...\n", attempt+1)
+			time.Sleep(10 * time.Second)
+			continue
+		}
+		break
 	}
-	if orgStatus == http.StatusCreated {
+	if orgCreated {
 		cfg.OrganizationID = int(orgResult["id"].(float64))
+	} else if orgStatus == http.StatusUnauthorized {
+		return nil, fmt.Errorf("AWX authentication failed after 12 attempts (HTTP 401) — admin superuser was never created by the operator")
 	} else {
-		// Organization might already exist; use default (ID 1)
 		cfg.OrganizationID = 1
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Organization ID: %d\n", cfg.OrganizationID)
@@ -597,9 +616,10 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 	var projectStatus int
 	projectCreated := false
 	for attempt := 0; attempt < 6; attempt++ {
-		projectResult, projectStatus, err = awxAPIRequest("POST", awxBaseURL+"/api/v2/projects/", projectBody, "")
-		if err != nil {
-			return nil, fmt.Errorf("failed to create project: %w", err)
+		var projErr error
+		projectResult, projectStatus, projErr = awxAPIRequest("POST", awxBaseURL+"/api/v2/projects/", projectBody, "")
+		if projErr != nil {
+			return nil, fmt.Errorf("failed to create project: %w", projErr)
 		}
 		if projectStatus == http.StatusCreated {
 			projectCreated = true
@@ -619,6 +639,11 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 				}
 			}
 			return nil, fmt.Errorf("failed to create project: HTTP %d (and could not find existing)", projectStatus)
+		}
+		if projectStatus == http.StatusUnauthorized {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Project creation returned HTTP 401 (attempt %d/6), retrying in 10s...\n", attempt+1)
+			time.Sleep(10 * time.Second)
+			continue
 		}
 		if projectStatus >= 500 {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Project creation returned HTTP %d (attempt %d/6), retrying in 10s...\n", projectStatus, attempt+1)
@@ -931,9 +956,17 @@ func SetupAWXPostDeployment(ctx context.Context, namespace, kubeconfigPath strin
 	_, _ = fmt.Fprintln(writer, "🤖 AWX Post-Deployment Configuration (BR-WE-015)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Step 1: Wait for AWX to be ready
+	// Step 1: Wait for AWX pods to be ready
 	if err := WaitForAWXReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return nil, fmt.Errorf("AWX not ready: %w", err)
+	}
+
+	// Step 1b: Wait for AWX API to accept authenticated requests.
+	// Pod readiness does not guarantee the admin superuser exists — the AWX
+	// operator's initialize_django.yml may still be running or may need a
+	// re-reconciliation loop to create it.
+	if err := WaitForAWXAPIReady(ctx, writer); err != nil {
+		return nil, fmt.Errorf("AWX API not responsive to auth: %w", err)
 	}
 
 	// Step 2: Configure AWX (project, inventory, job templates, token)

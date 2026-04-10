@@ -945,15 +945,6 @@ spec:
                   rationale:
                     description: Rationale explaining why this workflow was selected
                     type: string
-                  serviceAccountName:
-                    description: |-
-                      ServiceAccountName is the pre-existing ServiceAccount for the execution
-                      resource (Job, PipelineRun, or Ansible TokenRequest).
-                      DD-WE-005 v2.0: Operators pre-create SAs with appropriate RBAC in the
-                      execution namespace. If absent, K8s assigns the namespace's default SA
-                      (Job/Tekton) or the Ansible executor uses the controller's in-cluster
-                      credentials (#500 fallback).
-                    type: string
                   version:
                     description: Workflow version
                     type: string

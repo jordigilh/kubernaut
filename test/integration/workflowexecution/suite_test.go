@@ -52,6 +52,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
+	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	westatus "github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
@@ -66,10 +67,11 @@ import (
 // When Deps is nil, GetWorkflowDependencies returns nil (no dependencies).
 // Engine defaults to "tekton" via testWorkflowQuerier initialization; createUniqueJobWFE sets "job".
 type configurableWorkflowQuerier struct {
-	Deps         *models.WorkflowDependencies
-	Engine       string
-	Bundle       string
-	BundleDigest string
+	Deps               *models.WorkflowDependencies
+	Engine             string
+	Bundle             string
+	BundleDigest       string
+	ServiceAccountName string
 }
 
 func (q *configurableWorkflowQuerier) GetWorkflowDependencies(_ context.Context, _ string) (*models.WorkflowDependencies, error) {
@@ -86,6 +88,16 @@ func (q *configurableWorkflowQuerier) GetWorkflowExecutionEngine(_ context.Conte
 
 func (q *configurableWorkflowQuerier) GetWorkflowExecutionBundle(_ context.Context, _ string) (string, string, error) {
 	return q.Bundle, q.BundleDigest, nil
+}
+
+func (q *configurableWorkflowQuerier) ResolveWorkflowCatalogMetadata(_ context.Context, _ string) (*weclient.WorkflowCatalogMetadata, error) {
+	return &weclient.WorkflowCatalogMetadata{
+		ExecutionEngine:       q.Engine,
+		ExecutionBundle:       q.Bundle,
+		ExecutionBundleDigest: q.BundleDigest,
+		ServiceAccountName:    q.ServiceAccountName,
+		Dependencies:          q.Deps,
+	}, nil
 }
 
 // WorkflowExecution Integration Test Suite

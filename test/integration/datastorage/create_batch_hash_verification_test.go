@@ -138,8 +138,7 @@ var _ = Describe("CreateBatch Hash Chain Verification", func() {
 	It("should NOT overwrite EventTimestamp after batch insert", func() {
 		correlationID := fmt.Sprintf("batch-hash-%s-ts", testID)
 
-		// Use a specific timestamp truncated to microseconds (matching PostgreSQL precision)
-		originalTimestamp := time.Date(2026, 2, 5, 14, 30, 45, 123456000, time.UTC)
+		originalTimestamp := time.Now().UTC().Truncate(time.Microsecond)
 
 		event := &repository.AuditEvent{
 			EventID:        uuid.New(),
@@ -168,11 +167,9 @@ var _ = Describe("CreateBatch Hash Chain Verification", func() {
 	It("should produce valid hash when caller provides non-UTC timestamp", func() {
 		correlationID := fmt.Sprintf("batch-hash-%s-utc", testID)
 
-		// Simulate a caller providing a timestamp in a non-UTC timezone (e.g., EST = UTC-5).
-		// Before the H-1 fix, Create()/CreateBatch() did NOT call .UTC() on caller-provided
-		// timestamps, but Export/Verify DID — causing hash mismatch on verification.
 		est := time.FixedZone("EST", -5*60*60)
-		nonUTCTimestamp := time.Date(2026, 2, 5, 10, 30, 45, 123456000, est)
+		now := time.Now().In(est).Truncate(time.Microsecond)
+		nonUTCTimestamp := now
 
 		event := &repository.AuditEvent{
 			EventID:        uuid.New(),
@@ -215,9 +212,8 @@ var _ = Describe("CreateBatch Hash Chain Verification", func() {
 	It("should produce valid hash when Create() receives non-UTC timestamp", func() {
 		correlationID := fmt.Sprintf("batch-hash-%s-create-utc", testID)
 
-		// Same test but via Create() (single event path)
 		cet := time.FixedZone("CET", 1*60*60)
-		nonUTCTimestamp := time.Date(2026, 2, 5, 16, 30, 45, 123456000, cet)
+		nonUTCTimestamp := time.Now().In(cet).Truncate(time.Microsecond)
 
 		event := &repository.AuditEvent{
 			EventID:        uuid.New(),

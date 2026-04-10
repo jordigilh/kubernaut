@@ -113,6 +113,46 @@ func (r *Router) GetConfig() *Config {
 	return r.config
 }
 
+// FindReceivers finds all matching receivers for the given routing attributes,
+// respecting the Continue flag for multi-receiver fanout (BR-NOT-068).
+// Returns resolved []*Receiver objects (not just names).
+// Falls back to default console receiver when config is nil, no routes match,
+// or resolved receiver names don't exist in the config.
+// Thread-safe: acquires RLock for the duration of the call.
+func (r *Router) FindReceivers(attrs map[string]string) []*Receiver {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if r.config == nil || r.config.Route == nil {
+		r.logger.V(1).Info("No routing configuration, using default console fallback")
+		return []*Receiver{defaultConsoleReceiver()}
+	}
+
+	names := r.config.Route.FindReceivers(attrs)
+	if len(names) == 0 {
+		r.logger.V(1).Info("No matching routes found, using default console fallback",
+			"attributes", attrs)
+		return []*Receiver{defaultConsoleReceiver()}
+	}
+
+	var receivers []*Receiver
+	for _, name := range names {
+		if recv := r.config.GetReceiver(name); recv != nil {
+			receivers = append(receivers, recv)
+		}
+	}
+	if len(receivers) == 0 {
+		return []*Receiver{defaultConsoleReceiver()}
+	}
+
+	r.logger.V(1).Info("Resolved receivers from routing rules",
+		"attributes", attrs,
+		"receivers", names,
+	)
+
+	return receivers
+}
+
 // FindReceiver finds the matching receiver for the given routing attributes.
 // BR-NOT-065: Attribute-based routing with ordered evaluation
 // Thread-safe read access.

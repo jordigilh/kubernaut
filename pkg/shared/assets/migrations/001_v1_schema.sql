@@ -523,6 +523,21 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION prevent_parent_event_deletion()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM audit_events
+        WHERE parent_event_id = OLD.event_id AND parent_event_date = OLD.event_date
+    ) THEN
+        RAISE EXCEPTION 'update or delete on table "audit_events" violates foreign key constraint "fk_audit_events_parent": event_id=%, event_date=%', OLD.event_id, OLD.event_date
+            USING HINT = 'Cannot delete parent event that has child events (immutability enforced)',
+                  ERRCODE = '23503';
+    END IF;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE OR REPLACE FUNCTION audit_event_lock_id(correlation_id_param TEXT)
 RETURNS BIGINT AS $$
 DECLARE
@@ -794,6 +809,7 @@ $$ LANGUAGE plpgsql;
 -- =============================================================================
 CREATE TRIGGER trg_set_audit_event_date BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION set_audit_event_date();
 CREATE TRIGGER enforce_legal_hold BEFORE DELETE ON audit_events FOR EACH ROW EXECUTE FUNCTION prevent_legal_hold_deletion();
+CREATE TRIGGER enforce_parent_immutability BEFORE DELETE ON audit_events FOR EACH ROW EXECUTE FUNCTION prevent_parent_event_deletion();
 CREATE TRIGGER update_action_histories_updated_at BEFORE UPDATE ON action_histories FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_resource_action_traces_updated_at BEFORE UPDATE ON resource_action_traces FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_oscillation_patterns_updated_at BEFORE UPDATE ON oscillation_patterns FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -1091,6 +1107,7 @@ DROP FUNCTION IF EXISTS detect_ineffective_loops(VARCHAR, VARCHAR, VARCHAR, INTE
 DROP FUNCTION IF EXISTS detect_resource_thrashing(VARCHAR, VARCHAR, VARCHAR, INTEGER);
 DROP FUNCTION IF EXISTS detect_scale_oscillation(VARCHAR, VARCHAR, VARCHAR, INTEGER);
 DROP FUNCTION IF EXISTS audit_event_lock_id(TEXT);
+DROP FUNCTION IF EXISTS prevent_parent_event_deletion();
 DROP FUNCTION IF EXISTS prevent_legal_hold_deletion();
 DROP FUNCTION IF EXISTS set_audit_event_date();
 DROP FUNCTION IF EXISTS update_workflow_catalog_updated_at();

@@ -264,13 +264,13 @@ spec:
                   Issue #91: promoted from mutable label to immutable spec field
                 type: string
               priority:
-                default: medium
+                default: Medium
                 description: Priority of notification (critical, high, medium, low)
                 enum:
-                - critical
-                - high
-                - medium
-                - low
+                - Critical
+                - High
+                - Medium
+                - Low
                 type: string
               remediationRequestRef:
                 description: |-
@@ -373,12 +373,12 @@ spec:
               type:
                 description: Type of notification (escalation, simple, status-update)
                 enum:
-                - escalation
-                - simple
-                - status-update
-                - approval
-                - manual-review
-                - completion
+                - Escalation
+                - Simple
+                - StatusUpdate
+                - Approval
+                - ManualReview
+                - Completion
                 type: string
             required:
             - body
