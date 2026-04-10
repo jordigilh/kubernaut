@@ -34,12 +34,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -87,6 +90,8 @@ func createBlockedDuplicateRR(ns, name, duplicateOf string) *remediationv1.Remed
 }
 
 // createTerminalRR creates an RR with a given terminal phase.
+// Waits for the RO controller's initial reconcile (Pending) so status updates use a
+// fresh resourceVersion and do not race with init; uses retry-on-conflict for updates.
 func createTerminalRR(ns, name string, phase remediationv1.RemediationPhase) *remediationv1.RemediationRequest {
 	now := metav1.Now()
 	rr := &remediationv1.RemediationRequest{
@@ -114,19 +119,38 @@ func createTerminalRR(ns, name string, phase remediationv1.RemediationPhase) *re
 	}
 	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-	rr.Status.OverallPhase = phase
-	if phase == remediationv1.PhaseCompleted {
-		rr.Status.Outcome = "Remediated"
-		rr.Status.CompletedAt = &now
-	} else if phase == remediationv1.PhaseFailed {
-		failPhase := remediationv1.FailurePhaseWorkflowExecution
-		failReason := "original failure"
-		rr.Status.FailurePhase = &failPhase
-		rr.Status.FailureReason = &failReason
-		rr.Status.CompletedAt = &now
-	}
-	rr.Status.ObservedGeneration = rr.Generation
-	Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+	key := types.NamespacedName{Name: name, Namespace: ROControllerNamespace}
+	// Poll faster than suite interval: RO requeues after ~100ms and may advance Pending→Processing quickly.
+	// Accept either phase: we only need the controller to have touched status (fresh RV) before our terminal write.
+	Eventually(func() remediationv1.RemediationPhase {
+		fetched := &remediationv1.RemediationRequest{}
+		if err := k8sManager.GetAPIReader().Get(ctx, key, fetched); err != nil {
+			return ""
+		}
+		return fetched.Status.OverallPhase
+	}, timeout, 25*time.Millisecond).Should(Or(Equal(remediationv1.PhasePending), Equal(remediationv1.PhaseProcessing)),
+		"RO should initialize %s/%s (Pending or Processing) before injecting terminal status", ROControllerNamespace, name)
+
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		fetched := &remediationv1.RemediationRequest{}
+		if err := k8sClient.Get(ctx, key, fetched); err != nil {
+			return err
+		}
+		fetched.Status.OverallPhase = phase
+		if phase == remediationv1.PhaseCompleted {
+			fetched.Status.Outcome = "Remediated"
+			fetched.Status.CompletedAt = &now
+		} else if phase == remediationv1.PhaseFailed {
+			failPhase := remediationv1.FailurePhaseWorkflowExecution
+			failReason := "original failure"
+			fetched.Status.FailurePhase = &failPhase
+			fetched.Status.FailureReason = &failReason
+			fetched.Status.CompletedAt = &now
+		}
+		fetched.Status.ObservedGeneration = fetched.Generation
+		return k8sClient.Status().Update(ctx, fetched)
+	})
+	Expect(err).To(Succeed())
 
 	GinkgoWriter.Printf("✅ Created terminal RR: %s (phase: %s)\n", name, phase)
 	return rr
