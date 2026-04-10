@@ -112,14 +112,6 @@ test-integration-workflowexecution: install-envtest
 - Captures rollback info from Job logs
 - Validates Rego policies with real Job behavior
 
-**Make Target**:
-```makefile
-test-integration-kubernetesexecutor: bootstrap-integration-env-kubernetesexecutor
-	go test -v -timeout 10m \
-		-tags=integration \
-		./test/integration/kubernetesexecution/...
-```
-
 ---
 
 ## Complete Makefile Targets
@@ -220,47 +212,6 @@ test-integration-workflowexecution: install-envtest
 # No bootstrap/cleanup needed - Envtest handles CRDs in test setup
 
 # ==========================================
-# Service 3: Kubernetes Executor (Kind) (DEPRECATED - ADR-025)
-# ==========================================
-
-.PHONY: test-unit-kubernetesexecutor
-test-unit-kubernetesexecutor:
-	@echo "Running unit tests for Kubernetes Executor..."
-	go test -v -race -coverprofile=coverage-unit-executor.out \
-		./pkg/kubernetesexecution/... \
-		./test/unit/kubernetesexecution/...
-
-.PHONY: test-integration-kubernetesexecutor
-test-integration-kubernetesexecutor: bootstrap-integration-env-kubernetesexecutor
-	@echo "Running integration tests for Kubernetes Executor (Kind)..."
-	go test -v -race -timeout 10m \
-		-tags=integration \
-		-coverprofile=coverage-integration-executor.out \
-		./test/integration/kubernetesexecution/...
-	$(MAKE) cleanup-integration-env-kubernetesexecutor
-
-.PHONY: bootstrap-integration-env-kubernetesexecutor
-bootstrap-integration-env-kubernetesexecutor:
-	@echo "Setting up Kind cluster for Kubernetes Executor..."
-	@if ! kind get clusters | grep -q kubernaut-test; then \
-		$(MAKE) create-test-cluster; \
-	fi
-	@kubectl apply -f api/kubernetesexecution/v1alpha1/kubernetesexecution_crd.yaml
-	@kubectl create namespace test-executor || true
-	@kubectl apply -f test/integration/kubernetesexecution/fixtures/test-resources.yaml
-	@kubectl create configmap rego-policies \
-		--from-file=pkg/kubernetesexecution/policies/ \
-		-n test-executor \
-		--dry-run=client -o yaml | kubectl apply -f -
-	@echo "✅ Kind environment ready for Kubernetes Executor"
-
-.PHONY: cleanup-integration-env-kubernetesexecutor
-cleanup-integration-env-kubernetesexecutor:
-	@echo "Cleaning up Kind environment..."
-	@kubectl delete namespace test-executor --ignore-not-found=true
-	@echo "✅ Cleanup complete"
-
-# ==========================================
 # Shared Infrastructure
 # ==========================================
 
@@ -296,10 +247,10 @@ force-cleanup-all-test-containers:
 # ==========================================
 
 .PHONY: test-unit-all-phase3
-test-unit-all-phase3: test-unit-remediationprocessor test-unit-workflowexecution test-unit-kubernetesexecutor
+test-unit-all-phase3: test-unit-remediationprocessor test-unit-workflowexecution
 
 .PHONY: test-integration-all-phase3
-test-integration-all-phase3: test-integration-remediationprocessor test-integration-workflowexecution test-integration-kubernetesexecutor
+test-integration-all-phase3: test-integration-remediationprocessor test-integration-workflowexecution
 
 .PHONY: test-all-phase3
 test-all-phase3: test-unit-all-phase3 test-integration-all-phase3
@@ -568,7 +519,7 @@ var _ = AfterSuite(func() {
 ### Service 2: Workflow Execution (30 minutes)
 
 - [ ] **Create suite_test.go**: Envtest setup with CRD paths
-- [ ] **Test CRD creation**: Verify WorkflowExecution + KubernetesExecution CRDs
+- [ ] **Test CRD creation**: Verify WorkflowExecution CRDs
 - [ ] **Test watch mechanism**: Verify status propagation
 - [ ] **Run integration tests**: Verify Envtest orchestration
 - [ ] **Document no external deps**: Note simplicity
@@ -596,7 +547,6 @@ on:
     paths:
       - 'pkg/remediationprocessing/**'
       - 'pkg/workflowexecution/**'
-      - 'pkg/kubernetesexecution/**'
       - 'test/integration/**'
 
 jobs:
@@ -654,32 +604,6 @@ jobs:
         with:
           files: ./coverage-integration-workflow.out
           flags: integration-workflow
-
-  test-executor-kind:
-    name: Kubernetes Executor (Kind) (DEPRECATED - ADR-025)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Setup Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.22'
-
-      - name: Install Kind
-        run: |
-          curl -Lo ./kind https://github.com/kubernetes-sigs/kind/releases/download/v0.30.0/kind-linux-amd64
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
-
-      - name: Run Integration Tests
-        run: make test-integration-kubernetesexecutor
-
-      - name: Upload Coverage
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./coverage-integration-executor.out
-          flags: integration-executor
 ```
 
 ---

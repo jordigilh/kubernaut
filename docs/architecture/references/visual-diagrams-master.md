@@ -263,10 +263,10 @@ graph TB
         AR[RemediationRequest CRD<br/>Parent]
     end
 
-    subgraph "Child CRDs"
-        KE1[KubernetesExecution<br/>Step 1]
-        KE2[KubernetesExecution<br/>Step 2]
-        KE3[KubernetesExecution<br/>Step 3]
+    subgraph "Tekton execution"
+        TR1[TaskRun<br/>Step 1]
+        TR2[TaskRun<br/>Step 2]
+        TR3[TaskRun<br/>Step 3]
     end
 
     subgraph "Data Sources"
@@ -277,12 +277,12 @@ graph TB
     Controller -->|Watches| WE
     Controller -->|Resolve Dependencies| DependencyGraph
     Controller -->|Orchestrate Steps| Orchestrator
-    Orchestrator -->|Create & Own| KE1
-    Orchestrator -->|Create & Own| KE2
-    Orchestrator -->|Create & Own| KE3
-    Controller -->|Watch for Completion| KE1
-    Controller -->|Watch for Completion| KE2
-    Controller -->|Watch for Completion| KE3
+    Orchestrator -->|Create / reconcile| TR1
+    Orchestrator -->|Create / reconcile| TR2
+    Orchestrator -->|Create / reconcile| TR3
+    Controller -->|Watch for Completion| TR1
+    Controller -->|Watch for Completion| TR2
+    Controller -->|Watch for Completion| TR3
     Controller -->|Update Status| WE
     Controller -->|Audit Trail| DB
     WE -->|Triggers| AR
@@ -290,9 +290,9 @@ graph TB
     style WE fill:#e1f5ff
     style Controller fill:#fff4e1
     style AR fill:#ffe1e1
-    style KE1 fill:#e1ffe1
-    style KE2 fill:#e1ffe1
-    style KE3 fill:#e1ffe1
+    style TR1 fill:#e1ffe1
+    style TR2 fill:#e1ffe1
+    style TR3 fill:#e1ffe1
 ```
 
 ### Sequence Diagram - Step Orchestration
@@ -301,10 +301,10 @@ sequenceDiagram
     participant AR as RemediationRequest
     participant WE as WorkflowExecution<br/>CRD
     participant Ctrl as WorkflowExecution<br/>Reconciler
-    participant KE1 as KubernetesExecution<br/>Step 1
-    participant KE2 as KubernetesExecution<br/>Step 2 (parallel)
-    participant KE3 as KubernetesExecution<br/>Step 3 (parallel)
-    participant KE4 as KubernetesExecution<br/>Step 4 (depends on 2,3)
+    participant TR1 as TaskRun<br/>Step 1
+    participant TR2 as TaskRun<br/>Step 2 (parallel)
+    participant TR3 as TaskRun<br/>Step 3 (parallel)
+    participant TR4 as TaskRun<br/>Step 4 (depends on 2,3)
 
     AR->>WE: Create WorkflowExecution CRD<br/>(with workflow definition)
     activate WE
@@ -314,39 +314,39 @@ sequenceDiagram
     Note over Ctrl: Phase: Executing
     Note over Ctrl: Resolve step dependencies
 
-    Ctrl->>KE1: Create Step 1 KubernetesExecution
-    activate KE1
-    KE1-->>Ctrl: Watch for completion
-    KE1->>KE1: Execute (restart pod)
-    KE1->>KE1: Status = "Completed"
-    deactivate KE1
+    Ctrl->>TR1: Create / reconcile Step 1 TaskRun
+    activate TR1
+    TR1-->>Ctrl: Watch for completion
+    TR1->>TR1: Execute (restart pod)
+    TR1->>TR1: Status = "Completed"
+    deactivate TR1
 
     Note over Ctrl: Step 1 completed, start parallel steps
 
     par Parallel Execution
-        Ctrl->>KE2: Create Step 2 KubernetesExecution
-        activate KE2
-        KE2-->>Ctrl: Watch for completion
-        KE2->>KE2: Execute (scale deployment)
-        KE2->>KE2: Status = "Completed"
-        deactivate KE2
+        Ctrl->>TR2: Create Step 2 TaskRun
+        activate TR2
+        TR2-->>Ctrl: Watch for completion
+        TR2->>TR2: Execute (scale deployment)
+        TR2->>TR2: Status = "Completed"
+        deactivate TR2
     and
-        Ctrl->>KE3: Create Step 3 KubernetesExecution
-        activate KE3
-        KE3-->>Ctrl: Watch for completion
-        KE3->>KE3: Execute (patch configmap)
-        KE3->>KE3: Status = "Completed"
-        deactivate KE3
+        Ctrl->>TR3: Create Step 3 TaskRun
+        activate TR3
+        TR3-->>Ctrl: Watch for completion
+        TR3->>TR3: Execute (patch configmap)
+        TR3->>TR3: Status = "Completed"
+        deactivate TR3
     end
 
     Note over Ctrl: Steps 2 & 3 completed, start Step 4
 
-    Ctrl->>KE4: Create Step 4 KubernetesExecution
-    activate KE4
-    KE4-->>Ctrl: Watch for completion
-    KE4->>KE4: Execute (verify deployment)
-    KE4->>KE4: Status = "Completed"
-    deactivate KE4
+    Ctrl->>TR4: Create Step 4 TaskRun
+    activate TR4
+    TR4-->>Ctrl: Watch for completion
+    TR4->>TR4: Execute (verify deployment)
+    TR4->>TR4: Status = "Completed"
+    deactivate TR4
 
     Note over Ctrl: All steps completed
     Ctrl->>WE: Update Status.Phase = "Completed"
@@ -369,12 +369,12 @@ stateDiagram-v2
 
     note right of Executing
         Resolve step dependencies
-        Create KubernetesExecution CRDs
+        Create / reconcile Tekton TaskRuns
         for ready steps
     end note
 
     note right of WaitingForSteps
-        Watch child CRDs
+        Watch TaskRuns / PipelineRun
         Track: pending, running,
         completed, failed
     end note
@@ -382,133 +382,6 @@ stateDiagram-v2
     note right of Completed
         All steps Status = "Completed"
         Workflow successful
-    end note
-```
-
----
-
-## 04-kubernetesexecutor/ Diagrams
-
-### Architecture Diagram
-```mermaid
-graph TB
-    subgraph "Kubernetes Executor Service"
-        KE[KubernetesExecution CRD]
-        Controller[KubernetesExecutionReconciler]
-        ActionCatalog[Predefined Action Catalog]
-        JobManager[Kubernetes Job Manager]
-        RBACManager[Per-Action RBAC]
-    end
-
-    subgraph "External Services"
-        WE[WorkflowExecution CRD<br/>Parent]
-    end
-
-    subgraph "Kubernetes Resources"
-        Job[Kubernetes Job<br/>Isolated Execution]
-        SA[ServiceAccount<br/>Per-Action]
-        Role[Role/RoleBinding<br/>Least Privilege]
-    end
-
-    subgraph "Data Sources"
-        K8S[Kubernetes API<br/>Target Cluster]
-        DB[Data Storage Service<br/>Audit Trail]
-    end
-
-    WE -->|Creates & Owns| KE
-    Controller -->|Watches| KE
-    Controller -->|Lookup Action| ActionCatalog
-    Controller -->|Create Job| JobManager
-    JobManager -->|Create| Job
-    Controller -->|Create| SA
-    Controller -->|Create| Role
-    Job -->|Use| SA
-    Job -->|Apply Action| K8S
-    Controller -->|Watch Job Status| Job
-    Controller -->|Update Status| KE
-    Controller -->|Audit Trail| DB
-    KE -->|Triggers| WE
-
-    style KE fill:#e1f5ff
-    style Controller fill:#fff4e1
-    style WE fill:#ffe1e1
-    style Job fill:#e1ffe1
-```
-
-### Sequence Diagram - Job Execution Flow
-```mermaid
-sequenceDiagram
-    participant WE as WorkflowExecution
-    participant KE as KubernetesExecution<br/>CRD
-    participant Ctrl as KubernetesExecution<br/>Reconciler
-    participant SA as ServiceAccount
-    participant Job as Kubernetes Job
-    participant K8S as Kubernetes API
-
-    WE->>KE: Create KubernetesExecution CRD<br/>(action: restart-pod)
-    activate KE
-    KE-->>Ctrl: Watch triggers reconciliation
-    activate Ctrl
-
-    Note over Ctrl: Phase: Validating
-    Ctrl->>Ctrl: Validate action exists<br/>in predefined catalog
-    Ctrl->>Ctrl: Validate target resource<br/>exists
-
-    Note over Ctrl: Phase: Preparing
-    Ctrl->>SA: Create ServiceAccount<br/>(for "restart-pod" action)
-    activate SA
-    Ctrl->>SA: Create Role + RoleBinding<br/>(pods/delete permission only)
-    deactivate SA
-
-    Note over Ctrl: Phase: Executing
-    Ctrl->>Job: Create Kubernetes Job<br/>(with action script)
-    activate Job
-    Job->>Job: Pod starts with SA
-    Job->>K8S: Delete target pod<br/>(using SA permissions)
-    K8S-->>Job: Pod deleted successfully
-    Job->>Job: Exit code 0 (success)
-    deactivate Job
-
-    Ctrl->>Job: Watch Job status
-    Job-->>Ctrl: Job Completed
-
-    Note over Ctrl: Phase: Completed
-    Ctrl->>KE: Update Status.Phase = "Completed"<br/>Update Status.Result
-    deactivate Ctrl
-    KE-->>WE: Status change triggers parent
-    deactivate KE
-```
-
-### State Machine - Job Execution Phases
-```mermaid
-stateDiagram-v2
-    [*] --> Pending
-    Pending --> Validating: Reconcile triggered
-    Validating --> Preparing: Action valid
-    Validating --> Failed: Invalid action
-    Preparing --> Executing: RBAC configured
-    Executing --> Completed: Job succeeded
-    Executing --> Failed: Job failed
-    Completed --> [*]: WorkflowExecution proceeds
-    Failed --> [*]: Step failed
-
-    note right of Validating
-        Check: action exists
-        Check: target resource exists
-        Dry-run validation
-        Timeout: 5s
-    end note
-
-    note right of Preparing
-        Create ServiceAccount
-        Create Role + RoleBinding
-        (per-action RBAC isolation)
-    end note
-
-    note right of Executing
-        Create Kubernetes Job
-        Watch Job completion
-        Timeout: action-specific
     end note
 ```
 
@@ -676,7 +549,6 @@ graph TB
         AP[RemediationProcessing]
         AIA[AIAnalysis]
         WE[WorkflowExecution]
-        KE[KubernetesExecution]
     end
 
     TD --> Alert
@@ -687,7 +559,6 @@ graph TB
     AP -->|Reads| TD
     AIA -->|Reads| TD
     WE -->|Reads| TD
-    KE -->|Reads| TD
 
     Note[Immutable: Never changes<br/>after RemediationRequest creation]
     TD -.->|Design Pattern| Note

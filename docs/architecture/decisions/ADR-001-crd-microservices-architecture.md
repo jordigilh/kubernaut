@@ -95,7 +95,7 @@ Separate Kubernetes controllers, each managing its own Custom Resource Definitio
 3. Workflow Execution → WorkflowExecution CRD
    - Orchestrates multi-step workflows
    - Manages step dependencies (DAG)
-   - Creates KubernetesExecution children
+   - Creates Tekton PipelineRun / TaskRun resources for execution (ADR-023/025)
 
 4. ~~Kubernetes Executor~~ (DEPRECATED - ADR-025) → KubernetesExecution CRD
    - Executes remediation actions via Jobs
@@ -104,13 +104,13 @@ Separate Kubernetes controllers, each managing its own Custom Resource Definitio
 
 5. Remediation Orchestrator → RemediationRequest CRD
    - Orchestrates end-to-end lifecycle
-   - Creates and owns all 4 child CRDs
+   - Creates and owns phase CRDs (SignalProcessing, AIAnalysis, WorkflowExecution)
    - Monitors phases and timeouts
 ```
 
 **Coordination Model**:
-- **Centralized Orchestration**: RemediationRequest (Remediation Orchestrator) creates and owns all child CRDs
-- **Flat Sibling Hierarchy**: Child CRDs (1-4) are siblings, not chained
+- **Centralized Orchestration**: RemediationRequest (Remediation Orchestrator) creates and owns phase CRDs
+- **Flat Sibling Hierarchy**: Phase CRDs (SignalProcessing, AIAnalysis, WorkflowExecution) are siblings, not chained
 - **Watch-Based Status Updates**: Controllers watch their CRDs and update status
 - **Owner References**: Parent CRD owns children, automatic cascade deletion
 
@@ -214,25 +214,20 @@ graph TB
         AP[SignalProcessing CRD<br/>Remediation Processor]
         AI[AIAnalysis CRD<br/>AI Analysis]
         WE[WorkflowExecution CRD<br/>Workflow Execution]
-        KE[KubernetesExecution CRD<br/>Kubernetes Executor]
     end
 
     AR -->|Creates & Owns| AP
     AR -->|Creates & Owns| AI
     AR -->|Creates & Owns| WE
-    AR -->|Creates & Owns| KE
 
     AP -->|Updates Status| AR
     AI -->|Updates Status| AR
     WE -->|Updates Status| AR
-    KE -->|Updates Status| AR
-
-    WE -->|Creates & Owns| KE
 
     classDef central fill:#e1f5ff,stroke:#333,stroke-width:2px
     classDef child fill:#fff4e1,stroke:#333,stroke-width:1px
     class AR central
-    class AP,AI,WE,KE child
+    class AP,AI,WE child
 ```
 
 **Coordination Flow**:
@@ -243,10 +238,9 @@ graph TB
 4. Remediation Orchestrator watches status → creates AIAnalysis CRD
 5. AI Analysis investigates → updates AIAnalysis status
 6. Remediation Orchestrator watches status → creates WorkflowExecution CRD
-7. Workflow Execution orchestrates → creates KubernetesExecution CRDs
-8. Kubernetes Executor executes actions → updates KubernetesExecution status
-9. Workflow Execution watches children → updates WorkflowExecution status
-10. Remediation Orchestrator watches all children → updates RemediationRequest status
+7. Workflow Execution orchestrates → creates Tekton PipelineRun / TaskRuns (ADR-023/025)
+8. Workflow Execution watches PipelineRun / TaskRun status → updates WorkflowExecution status
+9. Remediation Orchestrator watches service CRDs → updates RemediationRequest status
 ```
 
 **Pros**:
@@ -489,7 +483,7 @@ Example: End-to-End Alert Remediation
   6. Remediation Orchestrator detects status (watch) → ~0-10s (avg: 5s)
   7. AIAnalysis created                        → +0s
   8. AI Analysis detects (watch)               → ~0-10s (avg: 5s)
-  ... (similar for WorkflowExecution, KubernetesExecution)
+  ... (similar for WorkflowExecution)
 
 Total Watch Overhead: ~20-40s (avg: 25s) for 5 watch cycles
 
@@ -579,12 +573,11 @@ Monolithic Controller:
   Total: ~2 watches
 
 CRD Microservices:
-  - Remediation Orchestrator: 5 watches (RemediationRequest + 4 child CRDs)
+  - Remediation Orchestrator: 4 watches (RemediationRequest + RemediationProcessing + AIAnalysis + WorkflowExecution)
   - Remediation Processor: 2 watches (RemediationProcessing + RemediationRequest)
   - AI Analysis: 2 watches (AIAnalysis + RemediationRequest)
-  - Workflow Execution: 3 watches (WorkflowExecution + KubernetesExecution + RemediationRequest)
-  - Kubernetes Executor: 2 watches (KubernetesExecution + WorkflowExecution)
-  Total: ~14 watches
+  - Workflow Execution: 2 watches (WorkflowExecution + RemediationRequest)
+  Total: ~10 watches
 
 API Load Increase: 7× watch load
 ```
@@ -726,14 +719,12 @@ API Load Increase: 7× watch load
   - `api/alertprocessor/v1/alertprocessing_types.go`
   - `api/aianalysis/v1/aianalysis_types.go`
   - `api/workflowexecution/v1/workflowexecution_types.go`
-  - `api/kubernetesexecution/v1/kubernetesexecution_types.go`
 
 - **Controllers**:
   - `pkg/alertremediation/controller.go`
   - `pkg/alertprocessor/controller.go`
   - `pkg/ai/analysis/controller.go`
   - `pkg/workflowexecution/controller.go`
-  - `pkg/kubernetesexecutor/controller.go`
 
 ### **Testing**:
 - **Integration Tests**: `test/integration/cross-crd-coordination_test.go`

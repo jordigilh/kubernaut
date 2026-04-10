@@ -161,9 +161,8 @@ bootstrap-integration-env-workflowexecution:
 		$(MAKE) create-test-cluster; \
 	fi
 
-	# Install CRDs (WorkflowExecution + KubernetesExecution (DEPRECATED - ADR-025) for child CRDs)
+	# Install CRDs (WorkflowExecution)
 	kubectl apply -f api/workflowexecution/v1alpha1/workflowexecution_crd.yaml
-	kubectl apply -f api/kubernetesexecution/v1alpha1/kubernetesexecution_crd.yaml
 
 	# Create test namespace
 	kubectl create namespace test-workflow || true
@@ -181,54 +180,6 @@ cleanup-integration-env-workflowexecution:
 ```bash
 export KUBE_CONTEXT=kind-kubernaut-test
 export TEST_NAMESPACE=test-workflow
-```
-
----
-
-### 3. Kubernetes Executor
-
-**External Dependencies**:
-- None (uses Kind cluster with real Kubernetes Jobs)
-
-**Make Targets**:
-```makefile
-.PHONY: bootstrap-integration-env-kubernetesexecutor
-bootstrap-integration-env-kubernetesexecutor:
-	@echo "Setting up integration test environment for Kubernetes Executor..."
-
-	# Ensure Kind cluster exists with CRDs
-	@if ! kind get clusters | grep -q kubernaut-test; then \
-		$(MAKE) create-test-cluster; \
-	fi
-
-	# Install CRDs
-	kubectl apply -f api/kubernetesexecution/v1alpha1/kubernetesexecution_crd.yaml
-
-	# Create test namespace
-	kubectl create namespace test-executor || true
-
-	# Create test fixtures (deployments, pods for testing)
-	kubectl apply -f test/integration/kubernetesexecution/fixtures/test-resources.yaml
-
-	# Install Rego policies
-	kubectl create configmap rego-policies \
-		--from-file=pkg/kubernetesexecution/policies/ \
-		-n test-executor \
-		--dry-run=client -o yaml | kubectl apply -f -
-
-	@echo "✅ Integration environment ready"
-
-.PHONY: cleanup-integration-env-kubernetesexecutor
-cleanup-integration-env-kubernetesexecutor:
-	@echo "Cleaning up integration test environment..."
-	@kubectl delete namespace test-executor --ignore-not-found=true
-	@echo "✅ Cleanup complete"
-```
-
-**Environment Variables**:
-```bash
-export KUBE_CONTEXT=kind-kubernaut-test
-export TEST_NAMESPACE=test-executor
 ```
 
 ---
@@ -332,54 +283,6 @@ CREATE INDEX IF NOT EXISTS idx_remediation_embedding ON remediation_audit USING 
 
 ---
 
-## Test Resource Fixtures
-
-### Kubernetes Executor Test Resources
-
-**File**: `test/integration/kubernetesexecution/fixtures/test-resources.yaml`
-
-```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: test-executor
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test-deployment
-  namespace: test-executor
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: test-app
-  template:
-    metadata:
-      labels:
-        app: test-app
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:1.25-alpine
-        ports:
-        - containerPort: 80
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: test-pod
-  namespace: test-executor
-  labels:
-    app: test-pod
-spec:
-  containers:
-  - name: nginx
-    image: nginx:1.25-alpine
-```
-
----
-
 ## Environment Setup Checklist
 
 ### Pre-Implementation (Phase 0: 8 hours)
@@ -408,15 +311,6 @@ spec:
 - [ ] Add `bootstrap-integration-env-workflowexecution` target
 - [ ] Add `cleanup-integration-env-workflowexecution` target
 - [ ] Create test namespace
-- [ ] Test bootstrap script works
-
-#### Kubernetes Executor:
-- [ ] Add `test-unit-kubernetesexecutor` target
-- [ ] Add `test-integration-kubernetesexecutor` target
-- [ ] Add `bootstrap-integration-env-kubernetesexecutor` target
-- [ ] Add `cleanup-integration-env-kubernetesexecutor` target
-- [ ] Create test fixtures YAML
-- [ ] Install Rego policies ConfigMap
 - [ ] Test bootstrap script works
 
 ---
@@ -506,7 +400,6 @@ on:
     paths:
       - 'pkg/remediationprocessing/**'
       - 'pkg/workflowexecution/**'
-      - 'pkg/kubernetesexecution/**'
       - 'test/integration/**'
 
 jobs:
@@ -558,25 +451,6 @@ jobs:
 
       - name: Run Integration Tests
         run: make test-integration-workflowexecution
-
-  test-kubernetes-executor:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Setup Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.22'
-
-      - name: Install Kind
-        run: |
-          curl -Lo ./kind https://github.com/kubernetes-sigs/kind/releases/download/v0.30.0/kind-linux-amd64
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
-
-      - name: Run Integration Tests
-        run: make test-integration-kubernetesexecutor
 ```
 
 ---

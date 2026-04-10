@@ -83,7 +83,7 @@ These documents are the **single source of truth** for V1. All other documents m
 
 These documents define **how to implement** services according to Tier 1 architecture.
 
-### **Tier 2A: CRD Controller Services** (5 services × 13 documents each = 65 documents)
+### **Tier 2A: CRD Controller Services** (4 services × 13 documents each = 52 documents)
 
 #### **Structure**:
 Each CRD controller service has 13 standardized documents:
@@ -116,9 +116,8 @@ Tier 2: <service>/crd-schema.md (Implementation Detail)
 #### **Services**:
 1. **01-signalprocessing/** - Alert ingestion, enrichment, routing
 2. **02-aianalysis/** - HolmesGPT investigation orchestration
-3. **03-workflowexecution/** - Workflow orchestration and step execution
-4. **04-kubernetesexecutor/** - Safe Kubernetes action execution
-5. **05-remediationorchestrator/** - Central CRD orchestration
+3. **03-workflowexecution/** - Workflow orchestration and step execution (Tekton TaskRun-based execution per ADR-025)
+4. **05-remediationorchestrator/** - Central CRD orchestration
 
 ---
 
@@ -158,7 +157,7 @@ These documents define **data structures and contracts** that implement Tier 1 a
 | **[02_REMEDIATION_PROCESSING_CRD.md](design/CRD/02_REMEDIATION_PROCESSING_CRD.md)** | SignalProcessing CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
 | **[03_AI_ANALYSIS_CRD.md](design/CRD/03_AI_ANALYSIS_CRD.md)** | AIAnalysis CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
 | **[04_WORKFLOW_EXECUTION_CRD.md](design/CRD/04_WORKFLOW_EXECUTION_CRD.md)** | WorkflowExecution CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
-| **[05_KUBERNETES_EXECUTION_CRD.md](design/CRD/05_KUBERNETES_EXECUTION_CRD.md)** | KubernetesExecution (DEPRECATED - ADR-025) CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
+| ~~05_KUBERNETES_EXECUTION_CRD.md~~ | KubernetesExecution CRD (removed - ADR-025) | Eliminated; see ADR-025 |
 
 **Authority Relationship**:
 ```
@@ -234,7 +233,7 @@ Tier 3: docs/design/CRD/*.md
 ```
 Tier 1: CANONICAL_ACTION_TYPES.md (AUTHORITATIVE)
   ↓ referenced by
-Tier 2: docs/services/crd-controllers/04-kubernetesexecutor/predefined-actions.md
+Tier 2: Workflow execution and action validation (KubernetesExecutor service and docs/services/crd-controllers/04-kubernetesexecutor/ removed per ADR-025)
 Tier 3: docs/design/ACTION_PARAMETER_SCHEMAS.md
 ```
 

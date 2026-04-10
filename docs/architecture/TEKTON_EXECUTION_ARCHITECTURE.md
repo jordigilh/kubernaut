@@ -783,7 +783,7 @@ kubectl logs -n kubernaut-system -l tekton.dev/taskRun=remediate-payment-oom-res
 
 - **[ADR-023: Tekton from V1](decisions/ADR-023-tekton-from-v1.md)** - Architectural decision
 - **[WorkflowExecution Controller](../services/crd-controllers/03-workflowexecution/)** - Controller specification
-- **[ActionExecution Controller](../services/crd-controllers/04-kubernetesexecutor/)** - Tracking layer specification
+- **KubernetesExecutor / 04-kubernetesexecutor**: Documentation removed with ADR-025; execution is specified here and in WorkflowExecution docs.
 - **[Action Container Registry](../services/action-execution/ACTION_REGISTRY.md)** - Action catalog
 - **[Cosign Verification Guide](../security/COSIGN_VERIFICATION.md)** - Image signing
 

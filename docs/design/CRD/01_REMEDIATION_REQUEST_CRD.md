@@ -671,7 +671,7 @@ rules:
   resources: ["alertremediations/status"]
   verbs: ["get", "update", "patch"]
 - apiGroups: ["kubernaut.io"]
-  resources: ["alertprocessings", "aianalyses", "workflowexecutions", "kubernetesexecutions"]
+  resources: ["alertprocessings", "aianalyses", "workflowexecutions"]
   verbs: ["get", "list", "watch"]
 ```
 
@@ -712,7 +712,7 @@ rules:
 - [AlertProcessing CRD Design](./02_ALERT_PROCESSING_CRD.md) *(Next)*
 - [AIAnalysis CRD Design](./03_AI_ANALYSIS_CRD.md) *(Planned)*
 - [WorkflowExecution CRD Design](./04_WORKFLOW_EXECUTION_CRD.md) *(Planned)*
-- [KubernetesExecution CRD Design](./05_KUBERNETES_EXECUTION_CRD.md) *(DEPRECATED - ADR-025)*
+- ~~KubernetesExecution CRD Design~~ *(removed - ADR-025)*
 
 ---
 

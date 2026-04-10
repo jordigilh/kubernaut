@@ -254,9 +254,9 @@ func (pt *PolicyTester) ValidatePolicyCompilation() error {
 }
 ```
 
-**Reference**: See `docs/services/crd-controllers/04-kubernetesexecutor/implementation/REGO_POLICY_INTEGRATION.md` for complete specification
+**Reference**: Rego and safety validation for execution now align with WorkflowExecution and Tekton TaskRun patterns (see ADR-025).
 
-**Status**: Pattern documented, to be implemented in Kubernetes Executor Day 2-3
+**Status**: Obsolete for the removed Kubernetes Executor service; track policy integration under WorkflowExecution / platform safety docs.
 
 ---
 
@@ -566,7 +566,6 @@ validate-test-infrastructure:
 validate-edge-case-coverage:
 	@./test/scripts/validate_edge_case_coverage.sh remediationprocessor
 	@./test/scripts/validate_edge_case_coverage.sh workflowexecution
-	@./test/scripts/validate_edge_case_coverage.sh kubernetesexecutor
 
 # Run flakiness check (for race condition tests)
 .PHONY: test-flakiness-check

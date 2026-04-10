@@ -160,7 +160,7 @@ WorkflowExecution:
       reason: "restart-deployment is low-risk imperative operation"
 
   Step 2: Execute immediately (no human approval needed)
-    KubernetesExecution: restart-deployment
+    Tekton TaskRun / action step: restart-deployment
 
 Result: ✅ Deployment restarted in 3-5 minutes (auto-approved)
 ```
@@ -195,7 +195,7 @@ WorkflowExecution:
         reason: "restart-deployment is low-risk"
 
     Step 2a: Execute immediately
-      KubernetesExecution: restart-deployment
+      Tekton TaskRun / action step: restart-deployment
       Status: ✅ Pod restarted (T+2min)
 
   Track 2 (Permanent - Declarative):
@@ -299,7 +299,7 @@ WorkflowExecution:
     Status: ✅ Approved by alice@company.com (T+5min)
 
   Step 4: Execute drain operation
-    KubernetesExecution: drain-node
+    Tekton TaskRun / action step: drain-node
     Status: ✅ Node drained, pods migrated (T+12min)
 
 Result:

@@ -17,6 +17,7 @@ limitations under the License.
 package workflowexecution
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	workflowexecution "github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
+	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 )
 
 // ========================================
@@ -89,7 +91,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 
 					// Each goroutine tries to create a PipelineRun with the same deterministic name
 					// This simulates concurrent reconcile loops attempting creation
-					pr := reconciler.BuildPipelineRun(wfe)
+					pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
 
 					// Attempt creation (should fail with AlreadyExists for all but one)
 					err := k8sClient.Create(ctx, pr)
@@ -152,7 +154,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 
 			By("Manually creating PipelineRun BEFORE WFE reconciliation")
 			// This simulates external creation (operator, CI/CD, or race with another controller)
-			pr := reconciler.BuildPipelineRun(wfe)
+			pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
 
 			// Add labels to identify this as "our" PipelineRun
 			pr.Labels["kubernaut.ai/workflow-execution"] = wfe.Name
@@ -247,11 +249,11 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			targetResource := "test-namespace/deployment/deterministic-test"
 
 			wfe1 := createUniqueWFE("deterministic-wfe1", targetResource)
-			pr1 := reconciler.BuildPipelineRun(wfe1)
+			pr1 := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe1, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
 			pr1Name := pr1.Name
 
 			wfe2 := createUniqueWFE("deterministic-wfe2", targetResource)
-			pr2 := reconciler.BuildPipelineRun(wfe2)
+			pr2 := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe2, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
 			pr2Name := pr2.Name
 
 			By("Verifying both WFEs generate identical PipelineRun names")
@@ -262,10 +264,10 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			Expect(pr1Name).To(HavePrefix("wfe-"),
 				"PipelineRun name should follow wfe-* pattern (WorkflowExecution prefix)")
 
-			By("Verifying name is deterministic via PipelineRunName()")
-			expectedName := workflowexecution.PipelineRunName(targetResource)
+			By("Verifying name is deterministic via ExecutionResourceName()")
+			expectedName := weexecutor.ExecutionResourceName(targetResource)
 			Expect(pr1Name).To(Equal(expectedName),
-				"BuildPipelineRun should use PipelineRunName() for deterministic naming")
+				"BuildPipelineRun should use ExecutionResourceName() for deterministic naming")
 
 			GinkgoWriter.Printf("✅ BR-WE-002: PipelineRun name determinism validated - %s\n", pr1Name)
 		})

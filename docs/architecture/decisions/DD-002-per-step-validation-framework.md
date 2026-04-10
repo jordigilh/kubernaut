@@ -97,7 +97,7 @@ The current remediation system performs validation only at the **workflow level*
 
 **Rationale**:
 1. **Strong Business Case**: 15-20% improvement in remediation effectiveness justifies 5-6 weeks development
-2. **Leverages Existing Infrastructure**: Rego policy engine (BR-REGO-001 to BR-REGO-010) already integrated in KubernetesExecutor
+2. **Leverages Existing Infrastructure**: Rego policy engine (BR-REGO-001 to BR-REGO-010) already integrated across Kubernaut services (Gateway, processors, WorkflowExecution validation paths)
 3. **Manageable Risk**: Phased implementation (Phase 1: top 5 actions → Phase 2: next 10 → Phase 3: all 27) reduces false positive risk
 4. **Favorable ROI**: 3-month payback period (10 hours/month saved × $100/hr = $1000/month benefit, $10K investment)
 5. **Architectural Fit**: Natural extension of APDC methodology (preconditions = DO validation, postconditions = CHECK verification)
@@ -110,25 +110,22 @@ The current remediation system performs validation only at the **workflow level*
 - [STEP_VALIDATION_BUSINESS_REQUIREMENTS.md](../requirements/STEP_VALIDATION_BUSINESS_REQUIREMENTS.md) - BR-WF-016, BR-WF-052, BR-WF-053, BR-EXEC-016, BR-EXEC-036
 - [Precondition/Postcondition Framework](../services/crd-controllers/standards/precondition-postcondition-framework.md) - Implementation guide
 - [03-workflowexecution/crd-schema.md](../services/crd-controllers/03-workflowexecution/crd-schema.md) - StepCondition type
-- [04-kubernetesexecutor/crd-schema.md](../services/crd-controllers/04-kubernetesexecutor/crd-schema.md) - ActionCondition type
 - [03-workflowexecution/reconciliation-phases.md](../services/crd-controllers/03-workflowexecution/reconciliation-phases.md) - Precondition/postcondition evaluation logic
-- [04-kubernetesexecutor/reconciliation-phases.md](../services/crd-controllers/04-kubernetesexecutor/reconciliation-phases.md) - Action validation integration
+- [TEKTON_EXECUTION_ARCHITECTURE.md](../TEKTON_EXECUTION_ARCHITECTURE.md) - Tekton TaskRun / action execution (replaces eliminated KubernetesExecutor; ADR-025)
 
 **Data Flow**:
-1. **WorkflowExecution Controller** evaluates `step.preConditions[]` before creating KubernetesExecution CRD
+1. **WorkflowExecution Controller** evaluates `step.preConditions[]` before starting a step (e.g. creating or admitting a Tekton TaskRun)
    - Rego policy evaluation using current cluster state
    - Block execution if required=true condition fails
    - Record results in `status.stepStatuses[].preConditionResults`
-2. **KubernetesExecutor Controller** evaluates `spec.preConditions[]` during validating phase
-   - Additional action-specific validation before Job creation
-   - Integrated with existing dry-run validation (BR-EXEC-059)
-3. **KubernetesExecutor** executes action via Kubernetes Job
-4. **KubernetesExecutor Controller** evaluates `spec.postConditions[]` after Job completion
+2. **Tekton TaskRun / action container** performs action-specific validation (including dry-run where applicable, BR-EXEC-059)
+3. **Action execution** runs in the Task pod (Kubernetes Job behind Tekton)
+4. **Post-step validation** verifies intended cluster state after the task completes
    - Query cluster state to verify intended outcome
    - Wait up to `condition.timeout` for async verification (e.g., pods starting)
-   - Mark execution failed if required=true postcondition fails
+   - Mark step failed if required=true postcondition fails
 5. **WorkflowExecution Controller** evaluates `step.postConditions[]` during monitoring phase
-   - Workflow-level verification after all steps complete
+   - Workflow-level verification after steps complete
    - Update `status.stepStatuses[].postConditionResults`
 
 **CRD Schema Extensions**:
@@ -140,7 +137,7 @@ type WorkflowStep struct {
     PostConditions []StepCondition `json:"postConditions,omitempty"`
 }
 
-// StepCondition (also ActionCondition for KubernetesExecution)
+// StepCondition (workflow step; mirrored at execution via Task spec / container contract)
 type StepCondition struct {
     Type        string `json:"type"`        // "resource_state", "metric_threshold", "pod_count"
     Description string `json:"description"` // Human-readable explanation
@@ -245,7 +242,7 @@ postConditions:
 ### Related Decisions
 - **Builds On**: DD-001 (self-contained CRD pattern - conditions are part of CRD spec)
 - **Supports**: BR-WF-015, BR-WF-016 (workflow validation requirements)
-- **Supports**: BR-EXEC-059, BR-EXEC-060 (dry-run validation in KubernetesExecutor)
+- **Supports**: BR-EXEC-059, BR-EXEC-060 (dry-run validation in action execution / Tekton tasks)
 - **Introduces**: BR-WF-016 (step preconditions), BR-WF-052 (step postconditions), BR-EXEC-016 (action preconditions), BR-EXEC-036 (action postconditions)
 
 ### Review & Evolution

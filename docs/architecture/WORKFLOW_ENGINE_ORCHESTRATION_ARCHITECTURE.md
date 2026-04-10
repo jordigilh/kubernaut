@@ -305,7 +305,7 @@ func (ao *AdaptiveOrchestrator) ExecuteWorkflow(ctx context.Context, workflow *W
 **Implementation** (`pkg/workflow/engine/advanced_step_execution.go`):
 ```go
 type AdvancedStepExecutor struct {
-    kubernetesExecutor  *KubernetesActionExecutor
+    tektonExecutor      *TektonActionExecutor
     customExecutor      *CustomActionExecutor
     monitoringExecutor  *MonitoringActionExecutor
     validationEngine    *ValidationEngine
@@ -330,7 +330,7 @@ func (ase *AdvancedStepExecutor) ExecuteStep(ctx context.Context, step *Workflow
 
     switch step.Action.Type {
     case "kubernetes":
-        result, err = ase.kubernetesExecutor.Execute(ctx, step.Action, context)
+        result, err = ase.tektonExecutor.Execute(ctx, step.Action, context)
     case "custom":
         result, err = ase.customExecutor.Execute(ctx, step.Action, context)
     case "monitoring":

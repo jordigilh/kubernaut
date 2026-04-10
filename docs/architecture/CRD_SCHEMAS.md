@@ -776,7 +776,6 @@ For schemas of CRDs created by Central Controller:
 - **RemediationProcessing**: See `01-signalprocessing/crd-schema.md`
 - **AIAnalysis**: See `02-aianalysis/crd-schema.md`
 - **WorkflowExecution**: See `03-workflowexecution/crd-schema.md`
-- **KubernetesExecution** (DEPRECATED - ADR-025): See `04-kubernetesexecutor/crd-schema.md`
 
 ---
 

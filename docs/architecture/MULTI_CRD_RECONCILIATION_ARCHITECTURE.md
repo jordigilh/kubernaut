@@ -1074,12 +1074,6 @@ sequenceDiagram
     AR->>AR: Reconcile triggered by watch event
     AR->>K8S: Query all service CRD statuses
     AR->>K8S: Update RemediationRequest aggregated status
-
-    EX->>K8S: Updates KubernetesExecution CRD status
-    K8S->>AR: Watch event: KubernetesExecution changed
-    AR->>AR: Reconcile triggered by watch event
-    AR->>K8S: Query all service CRD statuses
-    AR->>K8S: Update RemediationRequest aggregated status
 ```
 
 ### Cross-Service Communication Flow
@@ -1122,17 +1116,15 @@ sequenceDiagram
     AR->>+WF: Creates WorkflowExecution CRD
 
     Note over WF: Has CRD - Reconciles
-    WF->>WF: Orchestrates workflow steps
-    WF->>WF: Updates status to "completed"
+    WF->>TEK: Create / reconcile PipelineRun / TaskRuns
+    TEK->>K8S: Run task workloads
+    WF->>WF: Updates status from Tekton / step results
     WF->>K8S: Status update triggers watch
 
     Note over AR: Watches WorkflowExecution completion
     K8S->>AR: Watch event: WorkflowExecution completed
-    AR->>+EX: Creates KubernetesExecution CRD
-
-    Note over EX: Has CRD - Reconciles
-    EX->>NOT: Send notifications (stateless)
-    EX->>ST: Store data (stateless)
+    AR->>NOT: Send notifications (stateless)
+    AR->>ST: Store data (stateless)
 
     Note over ST: No CRD - Infrastructure operation
     ST->>ST: Store data and patterns
@@ -1307,42 +1299,7 @@ Persistent Query Layer (Database - Permanent):
 
 ### Integration Between Systems
 
-```go
-// Executor Service: Updates both CRD status AND database audit trail
-func (r *KubernetesExecutionReconciler) reconcileCompleted(ctx context.Context, execution *executorv1.KubernetesExecution) (ctrl.Result, error) {
-    // 1. Update CRD status for real-time coordination
-    execution.Status.Phase = "completed"
-    execution.Status.ActionResults = actionResults
-    execution.Status.ExecutionMetrics = executionMetrics
-
-    if err := r.Status().Update(ctx, execution); err != nil {
-        return ctrl.Result{RequeueAfter: time.Second * 15}, err
-    }
-
-    // 2. Store persistent audit record in database (SEPARATE PURPOSE)
-    auditRecord := &storage.RemediationAuditRecord{
-        AlertFingerprint:    execution.Spec.SignalContext.Fingerprint,
-        RemediationID:      execution.Spec.RemediationRequestRef.Name,
-        ActionsExecuted:    execution.Status.ActionResults,
-        ExecutionMetrics:   execution.Status.ExecutionMetrics,
-        SafetyValidation:   execution.Status.SafetyValidation,
-        BusinessContext:    execution.Spec.SignalContext.BusinessContext,
-        ComplianceData:     execution.Status.ComplianceData,
-        Timestamp:          time.Now(),
-        RetentionPolicy:    "7_years", // Compliance-driven retention
-    }
-
-    // Store in database for post-mortem and compliance (async, non-blocking)
-    go func() {
-        if err := r.storageService.StoreAuditRecord(ctx, auditRecord); err != nil {
-            r.logger.Error("Failed to store audit record", "error", err, "remediationID", execution.Spec.RemediationRequestRef.Name)
-            // Note: CRD reconciliation continues even if audit storage fails
-        }
-    }()
-
-    return ctrl.Result{}, nil
-}
-```
+After ADR-025, step execution is **not** a separate `KubernetesExecution` CRD. The WorkflowExecution controller updates **WorkflowExecution** status and writes audit data (e.g. via Data Storage) when Tekton **TaskRun** / **PipelineRun** results are observed. The pattern is the same—CRD status for coordination, database for long-lived audit—but the reconciler type is WorkflowExecution, not a dedicated executor CRD.
 
 ### CRD Lifecycle Management and Cleanup
 
@@ -1419,17 +1376,6 @@ func (r *RemediationRequestController) cleanupServiceCRDs(ctx context.Context, a
     }, workflowExecution); err == nil {
         if err := r.Delete(ctx, workflowExecution); err != nil {
             return fmt.Errorf("failed to delete WorkflowExecution CRD: %w", err)
-        }
-    }
-
-    // Cleanup KubernetesExecution CRD
-    k8sExecution := &executorv1.KubernetesExecution{}
-    if err := r.Get(ctx, types.NamespacedName{
-        Name: fmt.Sprintf("k8s-execution-%s", remediationName),
-        Namespace: namespace,
-    }, k8sExecution); err == nil {
-        if err := r.Delete(ctx, k8sExecution); err != nil {
-            return fmt.Errorf("failed to delete KubernetesExecution CRD: %w", err)
         }
     }
 

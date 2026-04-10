@@ -18,7 +18,7 @@
 - Includes complete code examples, EOD templates, production readiness
 
 **Step 2: Documentation** - Use this guide to structure your documentation:
-- Copy from existing similar service (Services 1-5 are complete)
+- Copy from existing similar service (completed CRD docs: `01-signalprocessing/`, `02-aianalysis/`, `03-workflowexecution/`, `05-remediationorchestrator/`)
 - Follow the standard document structure below
 - Validate against quality checklist
 
@@ -81,7 +81,6 @@
 **Key Patterns**:
 - Step orchestration
 - Dependency resolution (DAG)
-- Child CRD creation (KubernetesExecution)
 - Parallel vs. sequential execution
 
 **Special Files**:
@@ -90,25 +89,7 @@
 
 ---
 
-### **Service 4: Kubernetes Executor** (`04-kubernetesexecutor/`)
-**Use as template for**: Services that execute actions via Kubernetes
-
-**Directory**: `docs/services/crd-controllers/04-kubernetesexecutor/`
-
-**Key Patterns**:
-- Native Kubernetes Jobs for execution
-- Per-action RBAC isolation
-- Dry-run validation
-- kubectl command execution
-- GitOps-aware remediation
-
-**Special Files**:
-- `action-catalog.md` - Predefined action definitions
-- `job-execution-patterns.md` - Job creation and monitoring
-
----
-
-### **Service 5: Alert Remediation (Remediation Orchestrator)** (`05-remediationorchestrator/`)
+### **Service 4: Alert Remediation (Remediation Orchestrator)** (`05-remediationorchestrator/`)
 **Use as template for**: Central orchestrators that coordinate multiple services
 
 **Directory**: `docs/services/crd-controllers/05-remediationorchestrator/`
@@ -693,8 +674,7 @@ Pick the service most similar to yours:
 - **Data processing?** → Use Service 1 (Remediation Processor)
 - **AI/ML integration?** → Use Service 2 (AI Analysis)
 - **Multi-step orchestration?** → Use Service 3 (Workflow Execution)
-- **Action execution?** → Use Service 4 (Kubernetes Executor)
-- **Central orchestrator?** → Use Service 5 (Alert Remediation)
+- **Central orchestrator?** → Use Service 4 (Alert Remediation)
 
 ### **Step 2: Copy Directory Structure** (10 minutes)
 
@@ -1149,10 +1129,9 @@ var (
 | 1 | Remediation Processor | RemediationProcessing | `01-signalprocessing/` | ✅ 100% | 8 files |
 | 2 | AI Analysis | AIAnalysis | `02-aianalysis/` | ✅ 100% | 9 files |
 | 3 | Workflow Execution | WorkflowExecution | `03-workflowexecution/` | ✅ 100% | 8 files |
-| 4 | Kubernetes Executor | KubernetesExecution | `04-kubernetesexecutor/` | ✅ 100% | 8 files |
-| 5 | Alert Remediation | RemediationRequest | `05-remediationorchestrator/` | ✅ 100% | 9 files |
-| 6 | Notification Service | N/A (stateless) | `../stateless/06-notification/` | ✅ 100% | 7 files |
-| 7-11 | Future Services | TBD | TBD | 🔴 TODO | - |
+| 4 | Alert Remediation | RemediationRequest | `05-remediationorchestrator/` | ✅ 100% | 9 files |
+| 5 | Notification Service | N/A (stateless) | `../stateless/06-notification/` | ✅ 100% | 7 files |
+| 6-10 | Future Services | TBD | TBD | 🔴 TODO | - |
 
 **Total Documentation**: 9,469 lines across 78 files
 
@@ -1347,7 +1326,7 @@ Documentation is complete when:
 
 ## 📚 **Enhanced Testing Strategy Reference**
 
-**All 11 services now include comprehensive testing guidance** (as of October 2025):
+**All active service docs include comprehensive testing guidance** (as of October 2025):
 
 ### **Core Testing Strategy Rule**
 - [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) - Foundational testing strategy with pyramid approach and defense-in-depth
@@ -1358,18 +1337,17 @@ Documentation is complete when:
 1. [01-signalprocessing/testing-strategy.md](mdc:docs/services/crd-controllers/01-signalprocessing/testing-strategy.md) - Alert classification testing
 2. [02-aianalysis/testing-strategy.md](mdc:docs/services/crd-controllers/02-aianalysis/testing-strategy.md) - AI/ML and Rego policy testing
 3. [03-workflowexecution/testing-strategy.md](mdc:docs/services/crd-controllers/03-workflowexecution/testing-strategy.md) - Orchestration and dependency testing
-4. [04-kubernetesexecutor/testing-strategy.md](mdc:docs/services/crd-controllers/04-kubernetesexecutor/testing-strategy.md) - Action validation and Job testing
-5. [05-remediationorchestrator/testing-strategy.md](mdc:docs/services/crd-controllers/05-remediationorchestrator/testing-strategy.md) - CRD lifecycle testing
+4. [05-remediationorchestrator/testing-strategy.md](mdc:docs/services/crd-controllers/05-remediationorchestrator/testing-strategy.md) - CRD lifecycle testing
 
 **Gateway Service** (HIGH priority):
-6. [gateway-service/testing-strategy.md](mdc:docs/services/stateless/gateway-service/testing-strategy.md) - HTTP routing and webhook testing
+5. [gateway-service/testing-strategy.md](mdc:docs/services/stateless/gateway-service/testing-strategy.md) - HTTP routing and webhook testing
 
 **Stateless Services** (MEDIUM priority):
-7. [context-api/testing-strategy.md](mdc:docs/services/stateless/context-api/testing-strategy.md) - Query and caching testing
-8. [data-storage/testing-strategy.md](mdc:docs/services/stateless/data-storage/testing-strategy.md) - Vector DB and persistence testing
-9. [holmesgpt-api/testing-strategy.md](mdc:docs/services/stateless/holmesgpt-api/testing-strategy.md) - LLM and prompt testing (Python)
-10. [notification-service/testing-strategy.md](mdc:docs/services/stateless/notification-service/testing-strategy.md) - Multi-channel notification testing
-11. [dynamic-toolset/testing-strategy.md](mdc:docs/services/stateless/dynamic-toolset/testing-strategy.md) - Service discovery testing
+6. [context-api/testing-strategy.md](mdc:docs/services/stateless/context-api/testing-strategy.md) - Query and caching testing
+7. [data-storage/testing-strategy.md](mdc:docs/services/stateless/data-storage/testing-strategy.md) - Vector DB and persistence testing
+8. [holmesgpt-api/testing-strategy.md](mdc:docs/services/stateless/holmesgpt-api/testing-strategy.md) - LLM and prompt testing (Python)
+9. [notification-service/testing-strategy.md](mdc:docs/services/stateless/notification-service/testing-strategy.md) - Multi-channel notification testing
+10. [dynamic-toolset/testing-strategy.md](mdc:docs/services/stateless/dynamic-toolset/testing-strategy.md) - Service discovery testing
 
 ### **What Each Service Contains**
 Each service testing strategy includes:

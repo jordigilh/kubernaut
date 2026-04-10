@@ -5,6 +5,8 @@
 **Design Decision**: [DD-002 - Per-Step Validation Framework](../architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2)
 **Last Updated**: 2025-10-14
 
+> **⚠️ Execution model (ADR-025)**: The **KubernetesExecutor** service and **KubernetesExecution** CRD were eliminated and replaced by **Tekton TaskRun** orchestration via **WorkflowExecution** ([ADR-025](../architecture/decisions/ADR-025-kubernetesexecutor-service-elimination.md)). **WorkflowExecution** requirements below describe the Tekton-based flow. Former **BR-EXEC-016** / **BR-EXEC-036** (KubernetesExecutor-only) sections have been removed.
+
 ---
 
 ## Overview
@@ -39,7 +41,7 @@ The WorkflowExecution service MUST validate preconditions before executing each 
 Prevent cascade failures where steps execute based on invalid state assumptions from previous steps. For example, if Step 2 "scale deployment from 3 to 5 replicas" assumes Step 1 successfully set replicas to 3, but Step 1 failed silently, the precondition check will halt execution before making invalid changes.
 
 **Acceptance Criteria**:
-1. MUST evaluate all `step.preConditions[]` before creating KubernetesExecution CRD for that step
+1. MUST evaluate all `step.preConditions[]` before dispatching that step for execution (e.g., Tekton TaskRun per ADR-025)
 2. MUST use Rego policy engine for condition evaluation (reuse BR-REGO-001 to BR-REGO-010)
 3. MUST query current cluster state for condition input (e.g., deployment current replicas, pod status)
 4. MUST block step execution if `condition.required=true` and condition fails
@@ -52,7 +54,7 @@ Prevent cascade failures where steps execute based on invalid state assumptions 
 - **Rego Policy Engine**: Reuses existing policy evaluation infrastructure (BR-REGO-001)
 - **Kubernetes API**: Queries cluster state for condition input
 - **RemediationOrchestrator**: Receives status updates when precondition fails
-- **KubernetesExecutor**: Only created after preconditions pass
+- **Tekton / TaskRun**: Step execution is only dispatched after preconditions pass (ADR-025)
 
 **Example**:
 ```yaml
@@ -128,7 +130,7 @@ The WorkflowExecution service MUST verify postconditions after each workflow ste
 Verify that step execution achieved its intended effect. For example, after "scale deployment to 5 replicas", verify that 5 pods are actually running (not just that the kubectl command succeeded). This prevents "successful" workflows that didn't actually remediate the issue.
 
 **Acceptance Criteria**:
-1. MUST evaluate all `step.postConditions[]` after KubernetesExecution completes
+1. MUST evaluate all `step.postConditions[]` after the step’s execution completes (e.g., Tekton TaskRun completion per ADR-025)
 2. MUST use Rego policy engine for condition evaluation
 3. MUST query cluster state after step execution for verification
 4. MUST mark step as failed if `condition.required=true` and postcondition fails
@@ -139,7 +141,7 @@ Verify that step execution achieved its intended effect. For example, after "sca
 9. MUST trigger rollback if step marked failed and `rollbackStrategy=automatic`
 
 **Integration Points**:
-- **KubernetesExecutor**: Watches for completion before evaluating postconditions
+- **Tekton / TaskRun**: Completion is observed before evaluating postconditions (ADR-025)
 - **Kubernetes API**: Queries cluster state for verification
 - **RemediationOrchestrator**: Receives status updates when postcondition fails
 - **Rollback Logic**: Triggered when required postcondition fails
@@ -295,235 +297,33 @@ spec:
 
 ---
 
-## KubernetesExecutor Service Requirements
-
-### BR-EXEC-016: Action Precondition Framework
-
-**Category**: Action Validation
-**Priority**: P1 (High Value)
-**Service**: KubernetesExecutor
-**Design Decision**: DD-002 Alternative 2
-
-**Description**:
-The KubernetesExecutor service MUST validate action-specific preconditions before creating Kubernetes Jobs for action execution. This provides an additional validation layer beyond WorkflowExecution step preconditions.
-
-**Rationale**:
-Provide action-specific validation that's more detailed than workflow-level checks. For example, WorkflowExecution might check "deployment exists", but KubernetesExecutor can check "deployment has valid image pull secrets" before attempting to scale.
-
-**Acceptance Criteria**:
-1. MUST evaluate all `spec.preConditions[]` during validating phase (after parameter validation, before Job creation)
-2. MUST use existing Rego policy engine (BR-REGO-001 to BR-REGO-010)
-3. MUST integrate with existing dry-run validation (BR-EXEC-059, BR-EXEC-060)
-4. MUST support action-specific condition types (resource_state, RBAC_permissions, capacity_check)
-5. MUST block Job creation if required precondition fails
-6. MUST record precondition results in `status.validationResults.preConditionResults[]`
-7. MUST provide detailed failure reason for troubleshooting
-
-**Integration Points**:
-- **Existing Validation**: Extends current 5-step validation phase (BR-EXEC-001 to BR-EXEC-015)
-- **Dry-Run Validation**: Preconditions evaluated before dry-run (BR-EXEC-059)
-- **Rego Policy Engine**: Reuses existing policy infrastructure
-- **WorkflowExecution**: Receives status updates when precondition blocks execution
-
-**Example**:
-```yaml
-# KubernetesExecution with action preconditions
-apiVersion: execution.kubernaut.ai/v1alpha1
-kind: KubernetesExecution
-metadata:
-  name: scale-web-app-step-2
-spec:
-  action: "scale_deployment"
-  parameters:
-    deployment: "web-app"
-    namespace: "production"
-    replicas: 5
-  preConditions:
-    - type: sufficient_cluster_capacity
-      description: "Cluster must have capacity for additional pods"
-      rego: |
-        package precondition
-        import future.keywords.if
-        allow if {
-          input.available_cpu >= input.required_cpu * input.new_replicas
-          input.available_memory >= input.required_memory * input.new_replicas
-        }
-      required: true
-      timeout: "10s"
-
-    - type: image_pull_secrets_valid
-      description: "Deployment must have valid image pull secrets"
-      rego: |
-        package precondition
-        import future.keywords.if
-        allow if { count(input.invalid_secrets) == 0 }
-      required: true
-      timeout: "5s"
-
-status:
-  phase: failed
-  validationResults:
-    preConditionResults:
-      - conditionType: sufficient_cluster_capacity
-        evaluated: true
-        passed: false
-        errorMessage: "Insufficient CPU: need 2 cores, have 0.5 cores available"
-        evaluationTime: "2025-10-14T10:00:15Z"
-```
-
-**Testing Requirements**:
-- Unit: Condition evaluation with various cluster states
-- Integration: Real cluster capacity checks
-- E2E: Precondition blocking Job creation
-
-**Related BRs**:
-- BR-EXEC-001 to BR-EXEC-015: Existing validation phase (preconditions extend this)
-- BR-EXEC-059: Dry-run validation (preconditions evaluated first)
-- BR-REGO-001 to BR-REGO-010: Rego policy evaluation
-
----
-
-### BR-EXEC-036: Action Postcondition Verification
-
-**Category**: Action Validation
-**Priority**: P1 (High Value)
-**Service**: KubernetesExecutor
-**Design Decision**: DD-002 Alternative 2
-
-**Description**:
-The KubernetesExecutor service MUST verify action-specific postconditions after Kubernetes Job completes. This confirms that the action achieved its intended effect on cluster state.
-
-**Rationale**:
-Kubernetes Jobs can succeed even if the desired outcome wasn't achieved (e.g., `kubectl scale` succeeds but pods don't start). Postcondition verification catches these scenarios and marks the execution as failed, triggering appropriate workflow handling.
-
-**Acceptance Criteria**:
-1. MUST evaluate all `spec.postConditions[]` after `Job.status.succeeded = 1`
-2. MUST query cluster state to validate intended outcome
-3. MUST support async verification with configurable timeout (default 2 minutes)
-4. MUST wait up to `condition.timeout` for state convergence
-5. MUST mark execution as failed if required postcondition fails
-6. MUST record verification results in `status.validationResults.postConditionResults[]`
-7. MUST capture rollback information when postcondition fails
-8. MUST transition to `rollback_ready` phase with postcondition failure details
-
-**Integration Points**:
-- **Job Monitoring**: Evaluates postconditions after Job completion
-- **Kubernetes API**: Queries cluster state for verification
-- **WorkflowExecution**: Receives status updates with postcondition results
-- **Rollback Logic**: Captures rollback information on postcondition failure
-
-**Example**:
-```yaml
-# KubernetesExecution with action postconditions
-apiVersion: execution.kubernaut.ai/v1alpha1
-kind: KubernetesExecution
-metadata:
-  name: scale-web-app-step-2
-spec:
-  action: "scale_deployment"
-  parameters:
-    deployment: "web-app"
-    namespace: "production"
-    replicas: 5
-  postConditions:
-    - type: desired_replicas_running
-      description: "All desired replicas must be running"
-      rego: |
-        package postcondition
-        import future.keywords.if
-        allow if {
-          input.running_pods >= input.target_replicas
-          input.ready_pods >= input.target_replicas
-        }
-      required: true
-      timeout: "2m"
-
-    - type: deployment_health_check
-      description: "Deployment must be Available and Progressing"
-      rego: |
-        package postcondition
-        import future.keywords.if
-        allow if {
-          input.conditions.Available == true
-          input.conditions.Progressing == true
-        }
-      required: true
-      timeout: "1m"
-
-status:
-  phase: failed
-  executionResults:
-    success: true  # Job succeeded
-    jobName: "scale-web-app-job"
-    duration: "15s"
-  validationResults:
-    postConditionResults:
-      - conditionType: desired_replicas_running
-        evaluated: true
-        passed: false
-        errorMessage: "Only 2 of 5 desired pods running (insufficient resources)"
-        evaluationTime: "2025-10-14T10:02:45Z"
-      - conditionType: deployment_health_check
-        evaluated: true
-        passed: false
-        errorMessage: "Deployment condition 'Available' is False"
-        evaluationTime: "2025-10-14T10:02:46Z"
-  rollbackInformation:
-    available: true
-    rollbackAction: "scale_deployment"
-    rollbackParameters:
-      deployment: "web-app"
-      namespace: "production"
-      replicas: 3  # original value
-```
-
-**Testing Requirements**:
-- Unit: Async verification with timeout scenarios
-- Integration: Real pod startup and failure scenarios
-- E2E: Postcondition failure triggering workflow rollback
-
-**Related BRs**:
-- BR-EXEC-070: Rollback information extraction (enhanced with postcondition failure details)
-- BR-WF-052: Workflow postcondition verification (receives results from action postconditions)
-- BR-REGO-001: Rego policy evaluation
-
----
-
 ## Cross-Service Integration
 
-### Validation Flow
+Execution is performed via Tekton **TaskRun** resources orchestrated by WorkflowExecution ([ADR-025](../architecture/decisions/ADR-025-kubernetesexecutor-service-elimination.md)), not via a KubernetesExecution CRD or KubernetesExecutor controller.
+
+### Validation Flow (current model)
 
 ```
 1. WorkflowExecution evaluates step.preConditions[]
    ↓ (if pass)
-2. WorkflowExecution creates KubernetesExecution CRD
+2. WorkflowExecution dispatches step execution (e.g., Tekton TaskRun for the step)
    ↓
-3. KubernetesExecutor evaluates spec.preConditions[]
-   ↓ (if pass)
-4. KubernetesExecutor creates Kubernetes Job
+3. Tekton runs the task / kubectl action in the cluster
+   ↓ (TaskRun succeeds)
+4. WorkflowExecution observes TaskRun completion
    ↓
-5. Job executes kubectl action
-   ↓ (Job succeeds)
-6. KubernetesExecutor evaluates spec.postConditions[]
-   ↓ (if pass)
-7. KubernetesExecutor updates status.phase = "completed"
+5. WorkflowExecution evaluates step.postConditions[]
    ↓
-8. WorkflowExecution detects completion
-   ↓
-9. WorkflowExecution evaluates step.postConditions[]
-   ↓
-10. WorkflowExecution updates status with overall verification results
+6. WorkflowExecution updates status with overall verification results
 ```
 
 ### Failure Handling
 
 **Precondition Failure**:
-- WorkflowExecution: Halt workflow, mark step as blocked, don't create KubernetesExecution
-- KubernetesExecutor: Mark execution as failed, don't create Job
+- WorkflowExecution: Halt workflow, mark step as blocked; do not dispatch execution for that step
 
 **Postcondition Failure**:
-- KubernetesExecutor: Mark execution as failed, capture rollback information
-- WorkflowExecution: Mark step as failed, trigger rollback if `rollbackStrategy=automatic`
+- WorkflowExecution: Mark step as failed; trigger rollback if `rollbackStrategy=automatic`
 
 ---
 
@@ -578,5 +378,4 @@ Complete coverage for all 27 canonical actions (100%):
 - **Design Decision**: [DD-002 - Per-Step Validation Framework](../architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2)
 - **Implementation Plan**: [Precondition/Postcondition Framework](../services/crd-controllers/standards/precondition-postcondition-framework.md)
 - **APDC Methodology**: [.cursor/rules/00-core-development-methodology.mdc](../../.cursor/rules/00-core-development-methodology.mdc)
-- **Rego Policy Guidelines**: [04-kubernetesexecutor/implementation/REGO_POLICY_INTEGRATION.md](../services/crd-controllers/04-kubernetesexecutor/implementation/REGO_POLICY_INTEGRATION.md)
 

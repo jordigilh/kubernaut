@@ -60,7 +60,7 @@ func (t *TektonExecutor) Engine() string {
 // DD-WE-003: Deterministic name for atomic locking
 // DD-WE-006: opts.Dependencies are added as workspace bindings.
 func (t *TektonExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) (*CreateResult, error) {
-	pr := t.buildPipelineRun(ctx, wfe, namespace, opts)
+	pr := t.BuildPipelineRun(ctx, wfe, namespace, opts)
 
 	if err := t.Client.Create(ctx, pr); err != nil {
 		return nil, err // Preserve original error for IsAlreadyExists checks
@@ -153,10 +153,10 @@ func (t *TektonExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1al
 	return nil
 }
 
-// buildPipelineRun creates a PipelineRun with bundle resolver.
+// BuildPipelineRun creates a PipelineRun with bundle resolver.
 // DD-WE-006: deps are added as workspace bindings when non-nil.
 // #243: Parameters are filtered against DeclaredParameterNames before conversion.
-func (t *TektonExecutor) buildPipelineRun(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) *tektonv1.PipelineRun {
+func (t *TektonExecutor) BuildPipelineRun(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) *tektonv1.PipelineRun {
 	logger := log.FromContext(ctx).WithValues("wfe", wfe.Name, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
 	filteredParams := FilterDeclaredParameters(wfe.Spec.Parameters, opts.DeclaredParameterNames, logger)
 	params := convertParameters(filteredParams)

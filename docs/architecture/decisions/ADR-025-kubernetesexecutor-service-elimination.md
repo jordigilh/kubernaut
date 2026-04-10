@@ -494,7 +494,7 @@ spec:
 - **[ADR-024: Eliminate ActionExecution Layer](./ADR-024-eliminate-actionexecution-layer.md)** - Architectural simplification
 - **[KubernetesExecutor Elimination Assessment](./KUBERNETES_EXECUTOR_ELIMINATION_ASSESSMENT.md)** - 98% confidence comprehensive analysis
 - **[Tekton Execution Architecture](../TEKTON_EXECUTION_ARCHITECTURE.md)** - Complete architecture guide
-- **[04-kubernetesexecutor/DEPRECATED.md](../../services/crd-controllers/04-kubernetesexecutor/DEPRECATED.md)** - Service deprecation notice
+- **KubernetesExecutor service docs**: The `docs/services/crd-controllers/04-kubernetesexecutor/` directory was removed with the service (ADR-025); see this ADR and Tekton execution architecture for the replacement model.
 
 ---
 

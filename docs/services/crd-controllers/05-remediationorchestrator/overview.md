@@ -258,7 +258,6 @@ graph TB
         AP[RemediationProcessing]
         AIA[AIAnalysis]
         WE[WorkflowExecution]
-        KE[KubernetesExecution]
     end
 
     TD --> Alert
@@ -269,7 +268,6 @@ graph TB
     AP -->|Reads| TD
     AIA -->|Reads| TD
     WE -->|Reads| TD
-    KE -->|Reads| TD
 
     Note[Immutable: Never changes<br/>after RemediationRequest creation]
     TD -.->|Design Pattern| Note
@@ -289,7 +287,7 @@ Coordinates end-to-end alert remediation workflow through watch-based state aggr
 
 ### Key Architectural Decisions
 1. **Watch-Based Event-Driven Coordination** - Kubernetes watches trigger reconciliation on service CRD status changes (<1s latency)
-2. **Sequential CRD Creation** - One service CRD at a time: RemediationProcessing → AIAnalysis → WorkflowExecution → KubernetesExecution
+2. **Sequential CRD Creation** - One service CRD at a time: RemediationProcessing → AIAnalysis → WorkflowExecution
 3. **Data Snapshot Pattern** - Copy complete data from service status to next service spec (no cross-CRD dependencies)
 4. **Owner References for Cascade Deletion** - All service CRDs owned by RemediationRequest (automatic cleanup)
 5. **Finalizer Pattern for 24-Hour Retention** - CRD persists for review window after completion
@@ -302,8 +300,8 @@ Gateway Service → RemediationRequest CRD (this controller)
                        ↓
         (creates & watches service CRDs)
                        ↓
-    RemediationProcessing → AIAnalysis → WorkflowExecution → KubernetesExecution
-         (watch)        (watch)         (watch)           (watch)
+    RemediationProcessing → AIAnalysis → WorkflowExecution
+         (watch)        (watch)         (watch)
                        ↓
     Sequential phase progression based on completion events
                        ↓

@@ -122,10 +122,11 @@ Add to `overview.md`:
 
 ### Step 4: Validate
 ```bash
-# After migration, verify no BR-KE-* remain
-grep -r "BR-KE-" docs/services/crd-controllers/04-kubernetesexecutor/ \
-  --include="*.md" --exclude="*MAPPING*.md"
-# Expected: 0 matches
+# After migration, verify no BR-KE-* remain in documentation.
+# Note: The KubernetesExecutor service directory (04-kubernetesexecutor/) was removed (ADR-025).
+# Search the repo for lingering BR-KE-* references, e.g.:
+# rg "BR-KE-" docs/ --glob "*.md"
+# Expected: 0 matches in active specs (historical ADRs may still mention migration).
 ```
 
 ---

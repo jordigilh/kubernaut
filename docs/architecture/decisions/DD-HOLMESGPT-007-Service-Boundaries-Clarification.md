@@ -67,14 +67,14 @@
 ├────────────────────────────────────────────────────────────────┤
 │                                                                │
 │  1. EXECUTION FAILS                                           │
-│     KubernetesExecution Controller:                           │
+│     Tekton TaskRun / action step:                             │
 │     • Executes action → FAILS (e.g., OOMKilled)               │
-│     • Updates KubernetesExecution CRD status = "failed"       │
+│     • TaskRun / step status = failed                          │
 │                                                                │
 │  2. WORKFLOW DETECTS FAILURE                                  │
 │     WorkflowExecution Controller:                             │
-│     • Watches KubernetesExecution CRD status                  │
-│     • Detects "failed" status                                 │
+│     • Watches Tekton TaskRun / PipelineRun status             │
+│     • Detects failed step                                     │
 │     • Updates WorkflowExecution CRD status = "failed"         │
 │     • Includes failure details (step 3, reason: OOMKilled)    │
 │                                                                │
@@ -232,7 +232,7 @@
 ### Step-by-Step Data Flow
 
 ```
-1. KubernetesExecution CRD status:
+1. Tekton TaskRun / step result (aggregated into workflow):
    {
      "phase": "failed",
      "actionType": "restart_pods",
@@ -244,7 +244,7 @@
      "phase": "failed",
      "failedStep": 3,
      "failureReason": "OOMKilled",
-     "kubernetesExecutionRef": "ke-001"
+     "taskRunRef": "wf-001-step-3-xxxxx"
    }
 
 3. SignalProcessing CRD spec (created by RemediationOrchestrator):
@@ -362,7 +362,7 @@ async def analyze_recovery(request: RecoveryRequest, user=Depends(require_auth))
 ---
 
 ### ❌ **WRONG**: "HolmesGPT API executes workflow steps"
-### ✅ **CORRECT**: "KubernetesExecution controller executes steps; HolmesGPT API only provides recommendations"
+### ✅ **CORRECT**: "WorkflowExecution + Tekton execute steps; HolmesGPT API only provides recommendations"
 
 ---
 

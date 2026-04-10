@@ -805,12 +805,14 @@ metadata:
     app: kubernetes-executor
     prometheus: kubernaut
 spec:
+  # DEPRECATED (ADR-025): The kubernetes-executor service was eliminated.
+  # These alert rules are retained as reference for Tekton-based equivalents.
   groups:
-  - name: kubernetes-executor
+  - name: kubernetes-executor  # DEPRECATED - ADR-025
     interval: 30s
     rules:
 
-    # High action failure rate
+    # High action failure rate (DEPRECATED - ADR-025)
     - alert: KubernetesExecutorHighActionFailureRate
       expr: rate(kubernetes_executor_action_failed_total[5m]) / rate(kubernetes_executor_action_started_total[5m]) > 0.1
       for: 10m

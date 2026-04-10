@@ -81,11 +81,11 @@ Use Tekton Pipelines for GitOps-aware remediation execution.
 - ✅ **Retry Handling** - Built-in backoffLimit for retries
 - ✅ **TTL Management** - ttlSecondsAfterFinished for automatic cleanup
 
-**Architecture Overview**:
+**Architecture Overview** (execution delegated to Tekton per ADR-023/025; Jobs remain the Kubernetes primitive for action pods):
 ```mermaid
 graph TB
-    subgraph "Kubernetes Executor Controller"
-        KEC[KubernetesExecution<br/>Reconciler]
+    subgraph "Workflow Execution / Tekton"
+        WEC[WorkflowExecution<br/>Reconciler + Tekton TaskRuns]
     end
 
     subgraph "Remediation Execution"
@@ -100,9 +100,9 @@ graph TB
         GIT[GitHub API]
     end
 
-    KEC -->|Creates with specific SA| J1
-    KEC -->|Creates with specific SA| J2
-    KEC -->|Creates with specific SA| J3
+    WEC -->|Creates with specific SA| J1
+    WEC -->|Creates with specific SA| J2
+    WEC -->|Creates with specific SA| J3
 
     J1 -->|Patch| CM
     J2 -->|Rollout Restart| DEP
@@ -111,7 +111,7 @@ graph TB
     classDef controller fill:#e1f5ff,stroke:#333,stroke-width:2px
     classDef job fill:#fff4e1,stroke:#333,stroke-width:1px
     classDef resource fill:#e8f5e9,stroke:#333,stroke-width:1px
-    class KEC controller
+    class WEC controller
     class J1,J2,J3 job
     class CM,DEP,GIT resource
 ```
@@ -203,20 +203,20 @@ spec:
 **Example Architecture**:
 ```mermaid
 sequenceDiagram
-    participant KEC as Kubernetes Executor
+    participant WF as WorkflowExecution / Tekton
     participant K8S as Kubernetes API
     participant JOB as Job Controller
     participant POD as Pod
 
-    KEC->>K8S: Create Job (patch-configmap)
+    WF->>K8S: Create Job (patch-configmap)
     K8S->>JOB: Job created
     JOB->>K8S: Create Pod
     K8S->>POD: Pod starts
     POD->>POD: Execute kubectl patch
     POD->>K8S: Success
     JOB->>K8S: Update Job status (Complete)
-    K8S->>KEC: Watch event (Job complete)
-    Note over KEC: Update KubernetesExecution status
+    K8S->>WF: Watch event (Job complete)
+    Note over WF: Update WorkflowExecution / TaskRun status
 
     Note over K8S: TTL controller deletes Job after 300s
 ```
@@ -440,7 +440,7 @@ kubectl logs job/patch-configmap-abc123
 **Performance Analysis**:
 ```
 Job Creation Flow:
-  1. KubernetesExecution controller creates Job     → 0.2s
+  1. WorkflowExecution / Tekton creates Job (via TaskRun)     → 0.2s
   2. Job controller detects new Job                 → 0.5s (watch delay)
   3. Job controller creates Pod                     → 0.3s
   4. Pod starts                                     → 2-5s (image pull)
@@ -662,18 +662,14 @@ spec:
   - Fulfilled: ✅ Job-level resource limits
 
 ### **Design Documents**:
-- **Kubernetes Executor**: `docs/services/crd-controllers/04-kubernetesexecutor/overview.md`
-- **Predefined Actions**: `docs/services/crd-controllers/04-kubernetesexecutor/predefined-actions.md`
-- **Controller Implementation**: `docs/services/crd-controllers/04-kubernetesexecutor/controller-implementation.md`
+- **Tekton execution**: [TEKTON_EXECUTION_ARCHITECTURE.md](../TEKTON_EXECUTION_ARCHITECTURE.md)
+- **KubernetesExecutor service docs**: Removed with ADR-025 (see [ADR-025](./ADR-025-kubernetesexecutor-service-elimination.md))
 
 ### **Implementation References**:
-- **API Definition**: `api/kubernetesexecution/v1/kubernetesexecution_types.go`
-- **Controller**: `pkg/kubernetes/execution/controller.go`
-- **Job Factory**: `pkg/kubernetes/execution/job_factory.go`
+- **Workflow execution types**: `api/workflowexecution/...` (controller creates Tekton PipelineRun / TaskRun)
+- **Tekton integration**: See WorkflowExecution controller and [ADR-023](./ADR-023-tekton-from-v1.md)
 
 ### **Testing**:
-- **Unit Tests**: `test/unit/kubernetesexecutor/job_creation_test.go`
-- **Integration Tests**: `test/integration/kubernetesexecutor/job_execution_test.go`
 - **E2E Tests**: `test/e2e/end-to-end-remediation_test.go`
 
 ---

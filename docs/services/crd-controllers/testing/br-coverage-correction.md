@@ -226,13 +226,6 @@ The BR Coverage Matrices created for Phase 3 services show a **simple pyramid** 
    - Document overlapping coverage
    - **File**: `docs/services/crd-controllers/02-signalprocessing/implementation/testing/BR_COVERAGE_MATRIX_V2.md`
 
-3. **Kubernetes Executor** (DEPRECATED - ADR-025) **BR Coverage Matrix**
-   - Add 4-11 unit tests to reach 72%+ minimum
-   - Add 9-15 integration tests to reach 56%+ minimum
-   - Add 2-4 E2E tests to reach 10%+ minimum
-   - Document overlapping coverage
-   - **File**: `docs/services/crd-controllers/04-kubernetesexecutor/implementation/testing/BR_COVERAGE_MATRIX_V2.md`
-
 ### Priority 2: Update Implementation Plans (3 hours)
 
 Update each implementation plan to clarify:

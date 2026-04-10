@@ -69,7 +69,7 @@ graph TB
     end
 
     subgraph "Execution Layer"
-        KE[~~Kubernetes Executor~~ (DEPRECATED - ADR-025)<br/>Port 9090]
+        TektonExec[Tekton PipelineRun / TaskRun<br/>ADR-023 / ADR-025]
     end
 
     subgraph "Support Services"
@@ -110,9 +110,9 @@ graph TB
     AI -->|HTTP GET /api/v1/context/historical| Context
     WE -->|HTTP GET /api/v1/context/success-rates| Context
 
-    %% Execution Layer (DEPRECATED - ADR-025: KE replaced by Tekton TaskRun)
-    WE -->|Create KubernetesExecution CRD| KE
-    KE -->|kubectl apply/patch| K8sAPI[Kubernetes API]
+    %% Execution via Tekton (ADR-023/025)
+    WE -->|Create / reconcile PipelineRun| TektonExec
+    TektonExec -->|Task pods / Jobs| K8sAPI[Kubernetes API]
 
     %% Notifications (CRD-based, 2025-10-12)
     RO -->|Create NotificationRequest CRD| Notification
@@ -126,7 +126,6 @@ graph TB
     RP -->|HTTP POST /api/v1/audit| DataStorage
     AI -->|HTTP POST /api/v1/audit| DataStorage
     WE -->|HTTP POST /api/v1/audit| DataStorage
-    KE -->|HTTP POST /api/v1/audit| DataStorage
     DataStorage -->|Store| PostgreSQL
     DataStorage -->|Store embeddings| VectorDB
 
@@ -139,7 +138,7 @@ graph TB
     style RP fill:#DDA0DD
     style AI fill:#DDA0DD
     style WE fill:#DDA0DD
-    style KE fill:#FFB6C1
+    style TektonExec fill:#FFB6C1
     style Notification fill:#F0E68C
     style HolmesGPT fill:#F0E68C
     style Context fill:#F0E68C
@@ -159,7 +158,6 @@ graph LR
         RP[Remediation<br/>Processor]
         AI[AI Analysis]
         WE[Workflow<br/>Execution]
-        KE[Kubernetes<br/>Executor]
     end
 
     subgraph "HTTP Services"
@@ -202,15 +200,11 @@ graph LR
     AI -->|Audit| DS
     AI -->|Notify| NS
 
-    %% Workflow Execution dependencies (KE DEPRECATED - ADR-025)
-    WE -->|Create CRD| KE
+    %% Workflow Execution dependencies (Tekton execution; ADR-023/025)
+    WE -->|PipelineRun / TaskRun| K8
     WE -->|Context| CA
     WE -->|Audit| DS
     WE -->|Notify| NS
-
-    %% Kubernetes Executor dependencies
-    KE -->|Execute| K8
-    KE -->|Audit| DS
 
     %% Support service dependencies
     CA -->|Read| PG
@@ -223,7 +217,6 @@ graph LR
     style RP fill:#DDA0DD
     style AI fill:#DDA0DD
     style WE fill:#DDA0DD
-    style KE fill:#FFB6C1
 ```
 
 ---
@@ -255,7 +248,7 @@ graph TD
     HolmesGPT --> Phase3
     Notification --> Phase3
 
-    Phase3 --> CRDs[Create all CRDs:<br/>- RemediationRequest<br/>- RemediationProcessing<br/>- AIAnalysis<br/>- WorkflowExecution<br/>- ~~KubernetesExecution~~ (DEPRECATED - ADR-025)]
+    Phase3 --> CRDs[Create all CRDs:<br/>- RemediationRequest<br/>- RemediationProcessing<br/>- AIAnalysis<br/>- WorkflowExecution]
 
     CRDs --> Phase4[Phase 4: Controllers]
 
@@ -267,15 +260,11 @@ graph TD
     Phase5 --> AIAnalysis[AI Analysis]
     Phase5 --> WorkflowExecution[Workflow Execution]
 
-    RemediationProcessor --> Phase6[Phase 6: Executor]
+    RemediationProcessor --> Phase6[Phase 6: Entry Point]
     AIAnalysis --> Phase6
     WorkflowExecution --> Phase6
 
-    Phase6 --> KubernetesExecutor[Kubernetes Executor]
-
-    KubernetesExecutor --> Phase7[Phase 7: Entry Point]
-
-    Phase7 --> Gateway[Gateway Service]
+    Phase6 --> Gateway[Gateway Service]
 
     Gateway --> Complete([Deployment Complete])
 
@@ -284,8 +273,7 @@ graph TD
     style Phase3 fill:#E0E0FF
     style Phase4 fill:#FFE0E0
     style Phase5 fill:#FFE0FF
-    style Phase6 fill:#E0FFFF
-    style Phase7 fill:#90EE90
+    style Phase6 fill:#90EE90
 ```
 
 ---
@@ -305,9 +293,8 @@ graph TD
 | **4** | 9 | Remediation Orchestrator | CRD Controller | CRDs | Child controllers |
 | **5** | 10 | Remediation Processor | CRD Controller | Context API, Data Storage | None (parallel) |
 | **5** | 11 | AI Analysis | CRD Controller | HolmesGPT, Context API, Data Storage | None (parallel) |
-| **5** | 12 | Workflow Execution | CRD Controller | Context API, Data Storage | ~~Kubernetes Executor~~ (DEPRECATED - ADR-025) |
-| **6** | 13 | ~~Kubernetes Executor~~ (DEPRECATED - ADR-025) | CRD Controller | Kubernetes API, Data Storage | None |
-| **7** | 14 | Gateway | HTTP | Redis, Remediation Orchestrator | None (entry point) |
+| **5** | 12 | Workflow Execution | CRD Controller | Context API, Data Storage, Kubernetes API (Tekton) | None (parallel) |
+| **6** | 13 | Gateway | HTTP | Redis, Remediation Orchestrator | None (entry point) |
 
 ---
 
@@ -326,8 +313,8 @@ graph TD
 - **AI Analysis** - Root cause analysis
 - **Workflow Execution** - Multi-step orchestration
 
-#### Execution Services (1)
-- ~~**Kubernetes Executor**~~ (DEPRECATED - ADR-025) - Action execution
+#### Execution (platform)
+- **Tekton Pipelines / TaskRun** - Workflow step execution (used by Workflow Execution controller; ADR-023/025)
 
 #### Support Services (4)
 - **Notification Controller** - CRD-based multi-channel delivery with zero data loss (CRD, migrated 2025-10-12)
@@ -339,7 +326,7 @@ graph TD
 
 ### By Runtime Type
 
-#### CRD Controllers (5)
+#### CRD Controllers (4)
 **Port**: 9090 (metrics only)
 **Deployment**: StatefulSet with leader election
 
@@ -347,7 +334,6 @@ graph TD
 2. Remediation Processor
 3. AI Analysis
 4. Workflow Execution
-5. ~~Kubernetes Executor~~ (DEPRECATED - ADR-025)
 
 ---
 
@@ -408,11 +394,9 @@ sequenceDiagram
             RO->>WE: Create WorkflowExecution CRD
             WE->>CA: GET /api/v1/context/success-rates
             CA-->>WE: Success rate data
-            WE->>KE: Create KubernetesExecution CRD  # DEPRECATED - ADR-025
-            KE->>K8: kubectl apply
-            K8-->>KE: Result
-            KE->>DS: POST /api/v1/audit
-            KE->>KE: Update status
+            WE->>TEK: Create / reconcile PipelineRun / TaskRuns
+            TEK->>K8: Schedule task pods / Jobs
+            K8-->>TEK: Workload status
             WE->>DS: POST /api/v1/audit
             WE->>WE: Update status
         else Manual approval
@@ -434,7 +418,6 @@ graph LR
         RP[Remediation<br/>Processor]
         AI[AI Analysis]
         WE[Workflow<br/>Execution]
-        KE[Kubernetes<br/>Executor]
     end
 
     subgraph "Data Storage"
@@ -449,7 +432,6 @@ graph LR
     RP -->|POST /api/v1/audit/remediation| DS
     AI -->|POST /api/v1/audit/aianalysis| DS
     WE -->|POST /api/v1/audit/workflow| DS
-    KE -->|POST /api/v1/audit/execution| DS
 
     DS -->|Write structured data| PG
     DS -->|Write embeddings| VD
@@ -469,7 +451,7 @@ graph TB
         GW[Gateway Service]
         NS[Notification Service]
         HG[HolmesGPT API]
-        KE[Kubernetes Executor]
+        WE[Workflow Execution]
     end
 
     subgraph "External Signal Sources"
@@ -509,13 +491,13 @@ graph TB
     HG -.->|API call| ANT
     HG -.->|HTTP| LOC
 
-    %% Kubernetes
-    KE -.->|kubectl| K8API
+    %% Kubernetes (workflow + Tekton task workloads)
+    WE -.->|PipelineRun / TaskRun| K8API
 
     style GW fill:#90EE90
     style NS fill:#F0E68C
     style HG fill:#F0E68C
-    style KE fill:#FFB6C1
+    style WE fill:#FFB6C1
 ```
 
 ---
@@ -533,7 +515,7 @@ graph TB
 | **HolmesGPT API** | OpenAI API | HTTPS | LLM inference | Optional (one required) |
 | **HolmesGPT API** | Anthropic Claude | HTTPS | LLM inference | Optional (one required) |
 | **HolmesGPT API** | Local LLM | HTTP | LLM inference | Optional (one required) |
-| ~~**Kubernetes Executor**~~ (DEPRECATED - ADR-025) | Kubernetes API | K8s API | Action execution | Yes |
+| **Workflow Execution** | Kubernetes API | K8s API | Tekton PipelineRun / TaskRun, CRD operations | Yes |
 | **All CRD Controllers** | Kubernetes API | K8s API | CRD operations | Yes |
 
 ---
@@ -551,7 +533,6 @@ graph TB
         RP[Remediation Processor]
         AI[AI Analysis]
         WE[Workflow Execution]
-        KE[Kubernetes Executor]
     end
 
     subgraph "Databases"
@@ -576,7 +557,6 @@ graph TB
     RP -.->|Audit API| DS
     AI -.->|Audit API| DS
     WE -.->|Audit API| DS
-    KE -.->|Audit API| DS
 
     style Redis fill:#FF6B6B
     style PostgreSQL fill:#4ECDC4
@@ -644,7 +624,6 @@ graph TB
 | Remediation Processor | Data Storage | `/api/v1/audit/remediation` | POST | Audit trail |
 | AI Analysis | Data Storage | `/api/v1/audit/aianalysis` | POST | Audit trail |
 | Workflow Execution | Data Storage | `/api/v1/audit/workflow` | POST | Audit trail |
-| Kubernetes Executor | Data Storage | `/api/v1/audit/execution` | POST | Audit trail |
 | Remediation Orchestrator | Notification | Create NotificationRequest CRD | K8s API | Escalation (CRD-based) |
 | AI Analysis | Notification | Create NotificationRequest CRD | K8s API | Escalation (CRD-based) |
 | Workflow Execution | Notification | Create NotificationRequest CRD | K8s API | Escalation (CRD-based) |
@@ -658,8 +637,7 @@ graph TB
 | **Remediation Orchestrator** | RemediationRequest | RemediationProcessing, AIAnalysis, WorkflowExecution | RemediationRequest.status |
 | **Remediation Processor** | RemediationProcessing | None | RemediationProcessing.status |
 | **AI Analysis** | AIAnalysis | None | AIAnalysis.status |
-| **Workflow Execution** | WorkflowExecution | KubernetesExecution | WorkflowExecution.status |
-| ~~**Kubernetes Executor**~~ (DEPRECATED - ADR-025) | KubernetesExecution | None | KubernetesExecution.status |
+| **Workflow Execution** | WorkflowExecution | PipelineRun / TaskRun (Tekton) | WorkflowExecution.status |
 
 ---
 
@@ -681,7 +659,6 @@ graph TD
     RP[Remediation Processor Failure] --> P1A[P1: No enrichment]
     AI[AI Analysis Failure] --> P1B[P1: No AI recommendations]
     WE[Workflow Execution Failure] --> P1C[P1: No automated remediation]
-    KE[Kubernetes Executor Failure] --> P1D[P1: No actions executed]
 
     Redis[Redis Failure] --> P1E[P1: Duplicate alerts]
     PostgreSQL[PostgreSQL Failure] --> P1F[P1: No audit trail]
@@ -695,7 +672,6 @@ graph TD
     style P1A fill:#FFA500
     style P1B fill:#FFA500
     style P1C fill:#FFA500
-    style P1D fill:#FFA500
     style P1E fill:#FFA500
     style P1F fill:#FFA500
     style P2A fill:#FFFF00
@@ -716,16 +692,15 @@ graph TD
 **P1 - Degraded Operation** (Should be available):
 4. Remediation Processor - Enrichment
 5. AI Analysis - Recommendations
-6. Workflow Execution - Automation
-7. Kubernetes Executor - Actions
-8. Redis - Deduplication
-9. PostgreSQL - Audit
+6. Workflow Execution - Automation (includes Tekton-backed step execution)
+7. Redis - Deduplication
+8. PostgreSQL - Audit
 
 **P2 - Feature Loss** (Nice to have):
-10. HolmesGPT API - AI investigation
-11. Context API - Historical intelligence
-12. Data Storage - Audit persistence
-13. Notification Service - Escalations
+9. HolmesGPT API - AI investigation
+10. Context API - Historical intelligence
+11. Data Storage - Audit persistence
+12. Notification Service - Escalations
 
 ---
 
@@ -739,8 +714,7 @@ graph TD
 | **Remediation Orchestrator** | K8s API | Gateway, All child controllers | P0 (Critical) |
 | **Remediation Processor** | Data Storage | Remediation Orchestrator | P1 (High) |
 | **AI Analysis** | HolmesGPT, Data Storage | Remediation Orchestrator | P1 (High) |
-| **Workflow Execution** | Data Storage | Remediation Orchestrator | P1 (High) |
-| ~~**Kubernetes Executor**~~ (DEPRECATED - ADR-025) | K8s API, Data Storage | Workflow Execution | P1 (High) |
+| **Workflow Execution** | K8s API (Tekton), Data Storage, Context API | Remediation Orchestrator | P1 (High) |
 | **Notification** | External channels | All controllers | P2 (Medium) |
 | **HolmesGPT API** | External LLM | AI Analysis | P2 (Medium) |
 | **Data Storage** | PostgreSQL, Vector DB | All controllers | P2 (Medium) |
@@ -752,7 +726,7 @@ graph TD
 - **Services**: 10 (4 CRD controllers + 6 HTTP services)
 - **Databases**: 3 (Redis, PostgreSQL, Vector DB)
 - **External Systems**: 8+ (Prometheus, K8s, Slack, etc.)
-- **CRDs**: 5 (RemediationRequest + 4 child CRDs)
+- **CRDs**: 4 core kinds (RemediationRequest + RemediationProcessing + AIAnalysis + WorkflowExecution)
 - **HTTP Endpoints**: 12+ documented
 
 ---
