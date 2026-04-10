@@ -73,7 +73,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 			ImageName:        "kubernautagent",
 			DockerfilePath:   "docker/kubernautagent.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   false,
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
 		buildResults <- imageBuildResult{"kubernautagent", imageName, err}
@@ -408,6 +408,11 @@ subjects:
 func deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
 	imagePullPolicy := GetImagePullPolicy()
 
+	// DD-TEST-007: Build GOCOVERDIR YAML snippets for binary coverage instrumentation
+	covEnv := coverageEnvYAML("kubernautagent")
+	covMount := coverageVolumeMountYAML()
+	covVol := coverageVolumeYAML()
+
 	manifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: ConfigMap
@@ -466,10 +471,12 @@ spec:
           value: "openai"
         - name: DATA_STORAGE_URL
           value: "http://data-storage-service:8080"
+        %s
         volumeMounts:
         - name: config
           mountPath: /etc/kubernautagent
           readOnly: true
+        %s
         readinessProbe:
           httpGet:
             path: /ready
@@ -486,6 +493,7 @@ spec:
       - name: config
         configMap:
           name: kubernaut-agent-config
+      %s
 ---
 apiVersion: v1
 kind: Service
@@ -500,7 +508,7 @@ spec:
     nodePort: 30088
   selector:
     app: kubernaut-agent
-`, namespace, namespace, imageTag, imagePullPolicy, namespace)
+`, namespace, namespace, imageTag, imagePullPolicy, covEnv, covMount, covVol, namespace)
 
 	cmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)

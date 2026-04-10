@@ -231,6 +231,19 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
+		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
+		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
+			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
+				ServiceName:    "kubernautagent",
+				ClusterName:    clusterName,
+				DeploymentName: "kubernaut-agent",
+				Namespace:      sharedNamespace,
+				KubeconfigPath: kubeconfigPath,
+			}, GinkgoWriter); err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to collect E2E binary coverage (non-fatal): %v\n", err)
+			}
+		}
+
 		logger.Info("🧹 Deleting Kind cluster...")
 		err := infrastructure.DeleteCluster(clusterName, "kubernaut-agent", anyFailure, GinkgoWriter, sharedNamespace)
 		if err != nil {
