@@ -61,6 +61,27 @@ const (
 	// Maps to spec.extensions["investigation-outcome"].
 	// Values: resolved, inconclusive, workflow_selected
 	AttrInvestigationOutcome = "investigation-outcome"
+
+	// AttrNotificationTarget is the routing attribute key for notification target scope.
+	// Maps to spec.extensions["notification-target"].
+	// Values: signal, rca, both
+	// Issue #416: Label-based notification routing
+	AttrNotificationTarget = "notification-target"
+
+	// AttrTeam is the routing attribute key for owning team.
+	// Maps to spec.extensions["team"], populated from kubernaut.ai/team label.
+	// Issue #416: Label-based notification routing
+	AttrTeam = "team"
+
+	// AttrOwner is the routing attribute key for resource owner.
+	// Maps to spec.extensions["owner"], populated from kubernaut.ai/owner label.
+	// Issue #416: Label-based notification routing
+	AttrOwner = "owner"
+
+	// AttrTargetKind is the routing attribute key for target resource kind.
+	// Maps to spec.extensions["target-kind"].
+	// Issue #416: Label-based notification routing
+	AttrTargetKind = "target-kind"
 )
 
 // NotificationTypeValues are the standard notification type routing values.
