@@ -456,6 +456,11 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 	})
 })
 
+// buildTestSchema builds a minimal valid workflow schema YAML with the given dependencies.
+func buildTestSchema(deps *models.WorkflowDependencies) string {
+	return buildTestSchemaWithParams(deps, nil)
+}
+
 // buildTestSchemaWithParams builds a minimal valid workflow schema YAML with
 // configurable dependencies and parameters.
 func buildTestSchemaWithParams(deps *models.WorkflowDependencies, params []models.WorkflowParameter) string {
