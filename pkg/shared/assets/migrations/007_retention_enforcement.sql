@@ -38,12 +38,15 @@ CREATE INDEX idx_retention_ops_run_id ON retention_operations (run_id);
 CREATE INDEX idx_retention_ops_start ON retention_operations (operation_start DESC);
 CREATE INDEX idx_retention_ops_status ON retention_operations (status);
 
--- 3. SOC2 CC6.1: prevent legal_hold removal via UPDATE
+-- 3. SOC2 CC6.1: prevent legal_hold removal via UPDATE unless authorized
 -- +goose StatementBegin
 CREATE OR REPLACE FUNCTION prevent_legal_hold_removal()
 RETURNS TRIGGER AS $$
 BEGIN
     IF OLD.legal_hold = TRUE AND NEW.legal_hold = FALSE THEN
+        IF current_setting('kubernaut.legal_hold_release', TRUE) = 'authorized' THEN
+            RETURN NEW;
+        END IF;
         RAISE EXCEPTION 'SOC2 CC6.1: legal_hold cannot be removed via UPDATE. Use the legal hold release API with audit trail.'
             USING ERRCODE = '23514';
     END IF;
