@@ -29,6 +29,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -75,6 +76,14 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
 	k8sutil "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 	canonicalhash "github.com/jordigilh/kubernaut/pkg/shared/hash"
+)
+
+// Sentinel errors for phase-conflict detection during status updates.
+// These are non-retryable: RetryOnConflict only retries k8s Conflict errors,
+// so these propagate immediately to the caller for graceful handling.
+var (
+	errPhaseAlreadySet = errors.New("phase already initialized by concurrent reconcile")
+	errPhaseConflict   = errors.New("phase changed by concurrent reconcile")
 )
 
 // Reconciler reconciles RemediationRequest objects.
@@ -510,6 +519,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// REFACTOR: Use extracted helper method for timeout initialization
 		// ========================================
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
+			// TOCTOU guard: AtomicStatusUpdate refetches the RR internally.
+			// Between the apiReader check above and this refetch, a concurrent
+			// reconcile or status update may have already set the phase.
+			if rr.Status.OverallPhase != "" {
+				return errPhaseAlreadySet
+			}
 			rr.Status.OverallPhase = phase.Pending
 			rr.Status.StartTime = &metav1.Time{Time: startTime}
 
@@ -519,6 +534,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 		return nil
 	}); err != nil {
+		if errors.Is(err, errPhaseAlreadySet) {
+			logger.V(1).Info("Initialization aborted (phase set during TOCTOU window)",
+				"name", rr.Name, "phase", rr.Status.OverallPhase)
+			return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+		}
 		logger.Error(err, "Failed to initialize RemediationRequest status")
 		return ctrl.Result{}, err
 	}
@@ -1712,6 +1732,15 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 	}
 
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+		// Phase conflict guard: the reconcile loop selects a phase handler based on
+		// the informer cache (potentially stale). This updateFn runs after
+		// UpdateRemediationRequestStatus refetches the actual etcd state. If the
+		// phase has diverged, another reconcile already changed it — abort to
+		// avoid overwriting a legitimate state change (e.g., Blocked → Processing).
+		if rr.Status.OverallPhase != oldPhase {
+			return fmt.Errorf("%w: expected %s, got %s", errPhaseConflict,
+				oldPhase, rr.Status.OverallPhase)
+		}
 		// Update only RO-owned fields (preserves Gateway fields per DD-GATEWAY-011)
 		rr.Status.OverallPhase = newPhase
 		rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track processed generation
@@ -1743,6 +1772,13 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, errPhaseConflict) {
+			logger.Info("Phase conflict detected — requeueing for fresh state",
+				"expectedPhase", oldPhase,
+				"actualPhase", rr.Status.OverallPhase,
+				"targetPhase", newPhase)
+			return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+		}
 		logger.Error(err, "Failed to transition phase")
 		return ctrl.Result{}, fmt.Errorf("failed to transition phase: %w", err)
 	}
