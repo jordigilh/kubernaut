@@ -489,3 +489,324 @@ If any existing file must change during implementation, update this table in the
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-04-09 | Initial test plan for Issue #239 (Helm-based FullPipeline E2E) |
+
+---
+
+## 16. Preflight Findings (2026-04-10)
+
+### 16.1 Critical Gaps Identified
+
+| # | Gap | Impact | Mitigation |
+|---|-----|--------|------------|
+| G1 | `values-e2e.yaml` does not exist | Blocks TP-239-001 | Create as GREEN deliverable |
+| G2 | Chart templates lack NodePort field support | Gateway/DS stuck on ClusterIP | Add `nodePort` to service templates + schema |
+| G3 | `demoContent.enabled: true` default conflicts with E2E fixture seeding | Duplicate/conflicting catalog | Set `demoContent.enabled: false` in values-e2e |
+| G4 | Helm applies workloads before post-install hooks complete | Migration/seed vs KA race | Design hook ordering or initContainer waits |
+| G5 | EM defaults have Prometheus/AlertManager disabled | EM won't assess health/alerts | Override in values-e2e with E2E service URLs |
+| G6 | Coverage instrumentation not in chart templates | E2E coverage 0% for Helm-deployed controllers | Add optional `e2e.coverage.enabled` flag |
+| G7 | Phase 4 CRD list may be incomplete (7 vs 9 CRDs) | ActionType/RemediationWorkflow CRDs missing? | Verify on clean Kind before Helm work |
+
+### 16.2 Incremental Migration Strategy
+
+**Recommended**: Replace **product stack** with Helm while keeping **test-only components** programmatic:
+- **Helm manages**: PostgreSQL, Valkey, DataStorage, AuthWebhook, Gateway, all 5 controllers, KA, RBAC
+- **Stays programmatic**: Mock LLM, Prometheus, AlertManager, event-exporter, mock-slack, memory-eater, Gateway SA token, CRD application (until chart CRDs verified)
+- **Hybrid**: Phase 6b seeding runs AFTER Helm install completes + DS HTTP ready
+
+### 16.3 Install Ordering Resolution
+
+Current E2E enforces: PG/Redis → migrations → DS → seed → KA. Helm hooks:
+- pre-install: TLS certs (weight 5)
+- post-install: migrations (weight 1-2), demo content (weight 8)
+
+**Risk**: DS Deployment starts before migration Job completes.
+**Mitigation options** (pick one):
+1. DS `initContainer` that waits for schema version
+2. DS startup retry loop (already exists in `main.go` with 5 retries)
+3. Helm hook weight for DS Deployment (non-standard)
+
+Recommend option 2 (leverage existing retry) + ensure migration hook weight < DS readiness probe initial delay.
+
+### 16.4 NodePort Requirements
+
+| Service | Port | Kind Config Mapping |
+|---------|------|-------------------|
+| Gateway HTTP | 30080 | host 30080 ✓ |
+| DataStorage HTTP | 30081 | host 30081 ✓ |
+| Gateway Metrics | 30090 | NOT mapped in Kind config |
+| Prometheus | 30190 | host 9190 ✓ |
+| AlertManager | 30193 | host 9193 ✓ |
+
+### 16.5 Updated Confidence: 72%
+
+Chart exists and covers product stack. Main risks: install ordering (migrations vs DS), NodePort template gaps, and CRD bootstrap verification needed. Incremental migration strategy reduces blast radius.
+
+---
+
+## 17. Adversarial Audit Findings & Resolutions (2026-04-10)
+
+### 17.1 RESOLVED: KA deployment ordering (C1 — no drift from current platform)
+
+**Finding**: Helm post-install hooks run AFTER main manifests are applied. KA's Deployment is in the main release, so pods start BEFORE migrations and catalog seed hooks complete. KA retries 6 times (~80s) then `os.Exit(1)`.
+
+**Triage result**: HAPI is **not deployed** in FullPipeline E2E — KA already replaced it. KA is deployed **programmatically** in Phase 7 Wave B (after Mock LLM + after Phase 6b seed). The chart already has KA as a first-class deployment with readiness/liveness probes (`/ready`, `/health`).
+
+**Decision**: KA deploys as part of the Helm chart — no special treatment, no drift from how the platform deploys. The chart already models KA identically to other services. KA's existing retry mechanism (6 attempts, 5+10+15+20+30s backoff = ~80s window) handles the timing gap while post-install hooks (migrations weight 2, demo content weight 8/10) complete.
+
+**Current E2E ordering** (preserved via Helm):
+1. PostgreSQL + Valkey (chart main release)
+2. Migrations (post-install hook weight 2)
+3. DataStorage starts with 10-retry, 2s backoff (~20s window for migrations)
+4. Catalog seed (post-install hook weight 8/10, or programmatic Phase 6b after DS ready)
+5. KA retries catalog validation (6 attempts, ~80s window)
+
+**Risk mitigation**: KA's `readinessProbe` (`/ready`, initialDelaySeconds: 10) means Kubernetes won't route traffic until KA has validated its catalog. If retries are exhausted, KA crashes and Kubernetes restarts it — eventually converging. In Kind CI, migrations + seed typically complete in <30s, well within KA's 80s window.
+
+**Impact on plan**: Remove initContainer/multi-release options. KA deploys as part of the single Helm release, same as all other services.
+
+### 17.2 RESOLVED: Secrets strategy (C3/C4 — existing programmatic pattern)
+
+**Finding**: Chart does NOT auto-generate secrets. Current E2E creates `postgresql-secret` programmatically but uses Redis (not Valkey).
+
+**Triage result**:
+- **`postgresql-secret`**: Already aligned between E2E and chart (same name, same 4 keys: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `db-secrets.yaml`)
+- **`redis-secret`**: Created in E2E with `redis-secrets.yaml` key (password: "")
+- **Chart expects**: `valkey-secret` with `valkey-secrets.yaml` key
+- **`authwebhook-tls`**: Created programmatically via `generateWebhookCerts` (TLS cert/key)
+
+**Decision**: Keep programmatic secret creation (existing pattern, no drift). Add `valkey-secret` creation alongside existing secrets:
+
+```go
+// In deployPostgreSQLInNamespace or similar:
+// postgresql-secret: already created (no change)
+// valkey-secret: new, mirrors redis-secret shape with chart-expected name/key
+valkey-secret:
+  valkey-secrets.yaml: |
+    password: ""
+```
+
+**Two options for cache backend**:
+- **(A) Override chart to use Redis**: Set `valkey.existingSecret: redis-secret` + custom mount path. Requires chart template changes to support alternate key names.
+- **(B) Create valkey-secret alongside redis-secret**: Keep Redis infrastructure, create `valkey-secret` with `valkey-secrets.yaml` key pointing at same empty password. Chart mounts `valkey-secrets.yaml` → works with Redis backend (wire-compatible).
+
+**Recommendation**: Option (B) — simplest, no chart template changes needed. Redis and Valkey are wire-compatible. The chart's `valkey.addr` can be overridden to `redis.<ns>.svc.cluster.local:6379` in `values-e2e.yaml`.
+
+### 17.3 RESOLVED: CRD management (C5 — chart handles it)
+
+**Finding**: Phase 4 applies 7 of 9 CRDs via `kubectl apply`. Missing: `actiontypes` and `remediationworkflows`.
+
+**Triage result**: The chart already manages all 9 CRDs via two mechanisms:
+1. **`charts/kubernaut/crds/`** (9 files): Helm applies these on `helm install` BEFORE any other resources
+2. **`pre-upgrade` hook** (`crd-upgrade-job.yaml`): Applies CRDs from `charts/kubernaut/files/crds/` on upgrades
+3. **`make manifests`** syncs CRDs from `config/crd/bases` to both chart locations
+
+**Decision**: Let Helm manage all CRDs. Remove Phase 4 programmatic CRD application from `fullpipeline_e2e.go`. Helm's built-in `crds/` directory installs all 9 CRDs before the main release, which is the correct ordering.
+
+**Benefits**:
+- All 9 CRDs installed (fixes the 7-of-9 gap)
+- Single source of truth (chart, synced from `config/crd/bases` via `make manifests`)
+- CRDs installed before any workloads (Helm guarantee)
+- No drift between E2E and operator installation path
+
+### 17.4 RESOLVED: NodePort templates (C2)
+
+**Finding**: Chart defaults to ClusterIP. Suite hardcodes `localhost:30081`. No NodePort fields in chart Service templates.
+
+**Decision**: Add NodePort support to chart Service templates for Gateway and DataStorage (conditional on `service.type: NodePort` + `service.nodePort` value). Override in `values-e2e.yaml`:
+
+```yaml
+gateway:
+  service:
+    type: NodePort
+    nodePort: 30080
+datastorage:
+  service:
+    type: NodePort
+    nodePort: 30081
+```
+
+### 17.5 RESOLVED: demoContent default (C6)
+
+**Decision**: Set `demoContent.enabled: false` in `values-e2e.yaml`. E2E uses its own fixture seeding (Phase 6b) via `SeedWorkflowsViaKubectlApply` and `SeedActionTypesViaKubectlApply`.
+
+### 17.6 RESOLVED: DS retry math correction (C7)
+
+**Finding**: Preflight §16.3 says "5 retries". Actual code: `maxRetries = 10`, `retryDelay = 2s` (~20s total window).
+
+**Correction**: DS has 10 retries × 2s = ~20s for PostgreSQL connectivity. KA has 6 retries with 5+10+15+20+30s backoff = ~80s for catalog validation.
+
+### 17.7 RESOLVED: EM monitoring URLs (preflight G5)
+
+**Decision**: Override in `values-e2e.yaml`:
+```yaml
+effectivenessmonitor:
+  config:
+    prometheusEnabled: true
+    prometheusUrl: "http://prometheus-svc:9090"
+    alertManagerEnabled: true
+    alertManagerUrl: "http://alertmanager-svc:9093"
+```
+
+### 17.8 RESOLVED: Image references
+
+**Finding**: Chart uses `global.image.registry` / `namespace` / `separator` pattern. CI `BuildImageForKind` uses `{IMAGE_REGISTRY}/{lastSegment}:{IMAGE_TAG}`.
+
+**Decision**: Override all image references in `values-e2e.yaml` via `global.image` to match CI's Kind-loaded image naming convention. Exact values depend on CI env vars (`IMAGE_REGISTRY`, `IMAGE_TAG`), set dynamically in `SetupFullPipelineInfrastructure`.
+
+### 17.9 Updated values-e2e.yaml Specification
+
+```yaml
+# charts/kubernaut/values-e2e.yaml — E2E-specific overrides
+global:
+  image:
+    registry: ""  # Overridden dynamically by CI
+    tag: ""       # Overridden dynamically by CI
+
+gateway:
+  service:
+    type: NodePort
+    nodePort: 30080
+
+datastorage:
+  service:
+    type: NodePort
+    nodePort: 30081
+
+valkey:
+  existingSecret: "valkey-secret"  # Pre-created programmatically
+
+demoContent:
+  enabled: false
+
+effectivenessmonitor:
+  config:
+    prometheusEnabled: true
+    prometheusUrl: "http://prometheus-svc:9090"
+    alertManagerEnabled: true
+    alertManagerUrl: "http://alertmanager-svc:9093"
+
+# Optional: E2E coverage instrumentation
+e2e:
+  coverage:
+    enabled: false  # Set via --set e2e.coverage.enabled=true in CI
+```
+
+### 17.10 Updated Migration Scope for SetupFullPipelineInfrastructure
+
+| Phase | Current (programmatic) | After Helm migration |
+|-------|----------------------|---------------------|
+| Phase 1-3 | Kind cluster, images, namespace | **Keep** (not Helm's job) |
+| Phase 4 | CRD kubectl apply (7 of 9) | **Remove** — Helm `crds/` handles all 9 |
+| Phase 5 | Audit RoleBindings, Service Account | **Keep** programmatic (E2E-specific RBAC) |
+| Phase 6 | PostgreSQL, Redis, migrations, DS, AuthWebhook | **Replace with** `helm install` (chart manages all) |
+| Phase 6b | Wait DS + seed workflows/action-types | **Keep** programmatic (after `helm install` completes) |
+| Phase 7 Wave A | Controllers, Gateway, Mock LLM, Prometheus, AM | **Split**: product services via Helm; test-only (Mock LLM, Prom, AM, event-exporter, mock-slack) stay programmatic |
+| Phase 7 Wave B | KA (after Mock LLM) | **Via Helm** (part of chart release); Mock LLM deployed programmatically before `helm install` |
+| Phase 8 | Readiness wait | **Keep** (poll deployments for readiness) |
+
+### 17.11 Revised Risk Table
+
+| Risk | Pre-audit | Post-audit | Status |
+|------|-----------|------------|--------|
+| R1: Ordering | High | **Medium** | KA retry (80s) covers hook timing; DS retry (20s) covers migrations |
+| R2: Secrets | Medium | **Low** | postgresql-secret aligned; valkey-secret added programmatically |
+| R3: EM URLs | Medium | **Low** | Overridden in values-e2e.yaml |
+| R4: Coverage | High | **Medium** | Optional chart flag; P1 priority |
+| R5: CRD drift | Medium | **Low** | Helm manages all 9 CRDs; `make manifests` syncs |
+
+### 17.12 Updated Confidence: 85%
+
+All critical findings resolved:
+- KA deploys via Helm with no drift (existing retry mechanism sufficient)
+- Secrets follow existing programmatic pattern + new `valkey-secret`
+- CRDs fully managed by Helm (all 9, installed before workloads)
+- NodePort, demoContent, EM URLs all addressed in `values-e2e.yaml`
+- Phase 6b seeding stays programmatic (after Helm install + DS ready)
+
+Remaining risks:
+- Image naming convention alignment (dynamic, CI-dependent) — needs verification on helios08
+- KA 80s retry window vs. slow migrations (low risk in Kind, monitor in CI)
+
+---
+
+## 18. Targeted Preflight Verification (2026-04-10)
+
+### 18.1 VERIFIED: No `nodePort` fields in chart Service templates
+
+**Gateway** (`gateway.yaml:176-196`): `spec.type` from values, ports have `port` and `targetPort` only — no `nodePort` field.
+**DataStorage** (`datastorage.yaml:155-175`): Same pattern — no `nodePort`.
+**`values.schema.json`** (lines 39-50): `serviceConfig` only allows `type` — no `nodePort` property.
+
+**Impact**: Setting `type: NodePort` alone causes Kubernetes to assign random NodePorts, not 30080/30081. Templates, values, AND schema must be updated to support explicit `nodePort` fields. This is mechanical but required.
+
+**Template fix** (example for Gateway):
+```yaml
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+      {{- if and (eq .Values.gateway.service.type "NodePort") .Values.gateway.service.nodePort }}
+      nodePort: {{ .Values.gateway.service.nodePort }}
+      {{- end }}
+```
+
+### 18.2 VERIFIED: Mock LLM must deploy BEFORE `helm install`
+
+**Current ordering** (fullpipeline_e2e.go): Phase 7 Wave A deploys Mock LLM in a goroutine (`deployMockLLMInNamespace` blocks until pod Ready, ~2min timeout). Wave B KA waits on `mockLLMReady` channel before deploying.
+
+**For Helm migration**: Mock LLM is test-only (not in chart). KA is in the chart. If `helm install` starts KA before Mock LLM is ready, KA can't validate its LLM endpoint during startup. KA retries ~80s — but Mock LLM deploy + readiness can take up to 2 minutes.
+
+**Resolution**: Deploy Mock LLM **before** `helm install`:
+1. Phase 6c (new): Deploy Mock LLM programmatically, wait for Ready
+2. Phase 7: `helm install` (KA starts, retries LLM endpoint — Mock LLM already up)
+
+This aligns with the existing seed ordering (Phase 6b seeds catalog before KA).
+
+### 18.3 VERIFIED: Image naming requires reconciliation
+
+| Context | Pattern | Example |
+|---------|---------|---------|
+| Chart default | `{registry}/{namespace}{sep}{service}:{tag}` | `quay.io/kubernaut-ai/gateway:v1.3.0` |
+| CI registry | `{IMAGE_REGISTRY}/{lastSegment}:{IMAGE_TAG}` | `ghcr.io/kubernaut/gateway:sha-abc123` |
+| Local dev | `localhost/{ImageName}:{service}-{8hex}` | `localhost/kubernaut/gateway:gateway-a1b2c3d4` |
+
+**`values-e2e.yaml` override for local dev**:
+```yaml
+global:
+  image:
+    registry: localhost
+    namespace: kubernaut
+    separator: "/"
+    tag: ""  # Set dynamically per service
+```
+
+**Decision**: Reuse the existing `BuildImageForKind` pipeline as-is — do not change the image build/load mechanism. The Helm install must consume the exact image references that `BuildImageForKind` produces.
+
+**Implementation**: `SetupFullPipelineInfrastructure` already collects `builtImages` (map of service name → full image reference). Pass these to `helm install` via `--set` flags or generate `values-e2e.yaml` dynamically with per-service image overrides. The chart's `kubernaut.image` helper supports `global.image` but individual service templates can be extended with an optional `image` override that takes precedence when set (standard Helm pattern).
+
+In CI mode (`IMAGE_REGISTRY` + `IMAGE_TAG` set): all services share the same tag pattern (`REGISTRY/<service>:TAG`), so `global.image` works directly.
+In local dev mode: per-service dynamic tags require per-service `--set` overrides from the `builtImages` map.
+
+### 18.4 VERIFIED: Phase 7 comment is wrong
+
+Line 366 says Wave B includes "KA → MockLLM" — code shows Mock LLM is Wave A, KA is Wave B (depends on Mock LLM). Fix comment in REFACTOR phase.
+
+### 18.5 Updated Migration Ordering (revised)
+
+| Phase | Action |
+|-------|--------|
+| 1-3 | Kind cluster, images, namespace (keep) |
+| 4 | **Remove** — Helm `crds/` handles all 9 CRDs |
+| 5 | Audit RoleBindings, SA (keep programmatic) |
+| 6 | **Remove** PG/Redis/DS/AuthWebhook — Helm manages |
+| 6b | **Keep** — Wait DS + seed (after `helm install` completes) |
+| **6c (new)** | **Deploy Mock LLM** programmatically, wait for Ready |
+| 7 | **`helm install`** — product stack including KA |
+| 7-test | Deploy Prometheus, AlertManager, event-exporter, mock-slack (programmatic) |
+| 8 | Readiness wait (keep) |
+
+### 18.6 Updated Confidence: 95%
+
+NodePort template fix is mechanical (identified exact template locations). Mock LLM ordering resolved (deploy before Helm). Image naming resolved: reuse existing `BuildImageForKind` pipeline, pass `builtImages` to Helm via `--set` or dynamic values. Comment fix is trivial.
+
+---
