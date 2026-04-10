@@ -22,6 +22,9 @@ spec:
         - podSelector:
             matchLabels:
               app: datastorage
+        - podSelector:
+            matchLabels:
+              app: db-migration
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
 {{- end }}
