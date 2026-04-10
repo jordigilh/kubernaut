@@ -603,3 +603,234 @@ go tool cover -func=coverage-em.out
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-04-09 | Initial test plan for Issue #254 |
+
+---
+
+## 16. Preflight Findings (2026-04-10)
+
+### 16.1 Test File Count Corrections
+
+| Location | Plan Said | Actual | Action |
+|----------|----------|--------|--------|
+| `test/unit/effectivenessmonitor/` | 35 | **34** | Corrected |
+| `test/integration/effectivenessmonitor/` | 19 | **23** | Corrected |
+
+### 16.2 Status().Update Invariant Clarification
+
+The plan's UT-EM-254-003 ("single Status().Update per reconcile") is **overstated**. The reconciler has multiple `Status().Update` sites across different code paths:
+- WFP persist (~line 320)
+- Stabilizing phase transitions (~line 360, ~396)
+- Alert deferral persist (~line 713)
+- Main Step 9 Assessing pipeline (~line 739)
+- Completion/fail helpers (~line 1498, 1528, 1551)
+
+**Mitigation**: Redefine UT-EM-254-003 as a **per-path matrix**: e.g. "Assessing path with component changes → exactly one Step 9 update" rather than a global single-update claim. Document pre-refactor update counts per path as the source of truth.
+
+### 16.3 Golden Snapshot Strategy
+
+- **Clock injection**: Use controlled `metav1.Time` for `CreationTimestamp`; set EA creation to a fixed past time
+- **Normalize**: Strip `resourceVersion`, `generation`; fix `CompletedAt`, `LastTransitionTime`, `ValidityDeadline` to stable values or assert inequalities
+- **`RequeueAfter`**: Assert against expected duration from frozen anchor or use bounded assertions
+- **Events**: Assert with deterministic branching; sort by reason if order varies
+- **Testdata path**: `test/unit/effectivenessmonitor/testdata/254/`
+
+### 16.4 Key Risk: Phase Local Semantics
+
+`currentPhase` is captured once at Reconcile entry (~line 264) and **not refreshed** after in-memory status changes. Extraction must preserve this "read-once" semantics. If validity phase code is refactored into a function that re-reads phase from the EA object, behavior drifts silently.
+
+**Mitigation**: Add UT-EM-254-007 (characterization test) that asserts `currentPhase` is the entry-time value throughout the reconcile cycle.
+
+### 16.5 Validated File Layout
+
+All 12 proposed files stay under 500 lines. Largest is `assess_components.go` (~350-420 LOC). Extraction order (leaf-first):
+
+1. `scope.go` — no dependencies
+2. `pod_health.go` — pure functions
+3. `target_resources.go` — needs Reconciler receiver
+4. `assess_components.go` — depends on target_resources + pod_health
+5. `events.go` — depends on assess result types
+6. `completion.go` — depends on events
+7. `reconcile_spec_drift.go` — depends on target_resources, completion
+8. `reconcile_validity_phase.go` — depends on completion, events
+9. `reconcile_components.go` — depends on assess, events, completion, scope
+10. `reconcile_status.go` — depends on events
+11. `reconcile_orchestrate.go` — wires context + calls above
+12. `reconciler.go` — shrink to types, DI, thin Reconcile, manager setup
+
+### 16.6 Updated Confidence: 78%
+
+Structurally feasible; all files under 500 lines. Main risks: Status().Update invariant was overstated (corrected), time-dependent golden snapshots need clock strategy, and phase-local semantics must be preserved.
+
+---
+
+## 17. Adversarial Audit Findings & Resolutions (2026-04-10)
+
+### 17.1 RESOLVED: §1.2/§5.4 single Status().Update claim
+
+**Finding**: §1.2 and §5.4 still claim a single `Status().Update` on the happy path. Reality: multiple per-path updates (WFP ~320, Stabilizing ~360/396, alert deferral ~713, Step 9 ~739, completions ~1498/1528/1551). No two execute in the same Reconcile invocation, but the "single update" wording is misleading.
+
+**Resolution**: Rewrite §1.2, §3 R1, §5.4 to say "single update **per code path**" with a per-path matrix documenting expected update count for each branch:
+
+| Path | Status().Update site | Count per Reconcile |
+|------|---------------------|---------------------|
+| WFP persist | ~320 | 1 (then return) |
+| Stabilizing (from WFP) | ~360 | 1 (then return) |
+| Stabilizing + timing | ~396 | 1 (then return) |
+| Alert deferral (Step 7b) | ~713 | 1 (then return at ~721) |
+| Step 9 (Assessing pipeline) | ~739 | 1 (then return) |
+| completeAssessment | ~1498 | 1 (separate call stack) |
+| failAssessment | ~1528 | 1 (separate call stack) |
+
+**Confirmed**: No two `Status().Update()` calls execute in the same Reconcile invocation.
+
+### 17.2 RESOLVED: `currentPhase` behavioral landmine
+
+**Finding**: `currentPhase` is read once from `ea.Status.Phase` at entry (~line 264) and never updated. Later mutations to `ea.Status.Phase` in memory don't affect `currentPhase`. Extraction that replaces `currentPhase` with fresh reads of `ea.Status.Phase` would change which branches run.
+
+**Resolution**: 
+- `reconcileContext` struct defines `EntryPhase` as **immutable** (set once at construction, never updated)
+- All branch decisions that currently use `currentPhase` use `ctx.EntryPhase` instead
+- UT-EM-254-007 (characterization test) asserts entry-phase semantics are preserved
+- Code review checklist item: "Does any extracted method read `ea.Status.Phase` directly instead of `ctx.EntryPhase`?"
+
+### 17.3 RESOLVED: Hash deferral exits without Status().Update
+
+**Finding**: If Step 6 sets `ea.Status.Phase = Assessing` in memory, then hash deferral at ~553 returns without any `Status().Update`. The phase transition is lost until the next reconcile.
+
+**Resolution**: This is **intentional behavior** — the hash hasn't been computed yet, so persisting "Assessing" prematurely would be incorrect. Document this as an invariant in the extraction:
+- Add comment: "Hash deferral intentionally skips status persist; phase transition is persisted only after all components are evaluated"
+- Add UT: Assert no `Status().Update` on hash deferral return path (golden snapshot must match baseline)
+- Extraction guard: the hash deferral method must NOT add a "helpful flush"
+
+### 17.4 RESOLVED: UT-EM-254-007 missing from §8
+
+**Finding**: Proposed in preflight §16.4 but not added to the §8 scenario table.
+
+**Resolution**: Add to §8:
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `UT-EM-254-007` | `currentPhase` (EntryPhase) immutability: branch decisions match monolith when `ea.Status.Phase` is mutated in memory but entry phase was X | Pending |
+
+### 17.5 RESOLVED: `resolutionTimeSeconds` non-determinism in golden snapshots
+
+**Finding**: `resolutionTimeSeconds` uses `time.Since(ea.Spec.RemediationCreatedAt.Time)` — non-deterministic.
+
+**Resolution**: Golden harness must:
+1. Freeze `RemediationCreatedAt` to a known past time
+2. Either mock `time.Now` at the reconciler boundary or normalize `resolutionTimeSeconds` in the snapshot comparison (replace with `<RESOLUTION_TIME>` placeholder)
+3. Similarly normalize `RequeueAfter` durations to bounded assertions (e.g., `> 0 && < maxDeadline`)
+
+### 17.6 CORRECTED: Alert deferral fall-through (audit claim was wrong)
+
+**Original audit claim**: If `alertDeferred.ShouldDefer` is true but `componentsChanged || pendingTransition` is false, execution falls through to Step 9.
+
+**Preflight verification (lines 706-721)**: This is **incorrect**. If the Step 7b compound condition (lines 709-711: `alertDeferred.ShouldDefer && health && hash && (metrics || !prometheusEnabled)`) is **true**, execution **always returns at line 721** — the inner `Status().Update` (712-716) is optional but the return is unconditional.
+
+Fall-through to Step 9 only occurs when the compound condition is **false** — e.g., `ShouldDefer` is true but metrics aren't yet assessed. In that case, the alert section set `alertDeferred` but 7b didn't trigger, and execution continues normally to Step 8-9. This is a **narrower** edge case than claimed.
+
+**Resolution**: Document the corrected control flow. The UT for this edge case should test: alert deferred + metrics not yet assessed → Step 7b compound condition false → execution continues to Step 9 (components may change from other sections).
+
+### 17.7 Hidden Wires: Complete Cross-Section Local Variable Map
+
+For extraction reference, the audit identified 12 cross-section local variables:
+
+| Variable | Set at | Used later by | Immutable? |
+|----------|--------|---------------|------------|
+| `logger` | After fetch | All logging | No (WithValues) |
+| `ea` | Fetch | All mutations; single object pointer | No (mutated) |
+| `currentPhase` | ~264 | WFP, Stabilizing, Assessing gates | **Yes** (must be) |
+| `stabilizationAnchor` | After terminal check | Validity, WFP hash deadline | Yes |
+| `isAsync` | After terminal check | Validity, WFP, stabilizing | Yes |
+| `windowState` | Validity/stabilization | Branches Steps 4-6 | Yes |
+| `hashDeadline` | Alias of stabilizationAnchor | WFP requeue | Yes |
+| `pendingTransition` | Step 6 | Steps 7b, 9 | Progressive |
+| `scope` | After spec drift | Partial grace, early completion | Yes |
+| `componentsChanged` | Component pipeline | Steps 7b, 9 | Progressive |
+| `alertDeferred` | Alert branch | Step 7b | Yes (after set) |
+| `completing` | After allComponentsDone | Step 9, events | Yes (after set) |
+
+### 17.8 Ordering Constraints (10 documented)
+
+1. Fetch → validate → terminal → validity/WFP/expired/stabilizing → active
+2. Expired `completeAssessment` before stabilizing/active (mutually exclusive)
+3. WFP persist → emit → return (no fall-through)
+4. Stabilizing persist → optional emit → requeue return
+5. Step 6 in-memory Assessing before Step 6.5 drift
+6. Component order: hash → health → partial-grace → alert → metrics
+7. `componentsChanged` reflects all mutations before Steps 7b/9
+8. Step 7b: optional update at ~713 then return (never reaches Step 9)
+9. Step 8 (completing) before Step 9
+10. Step 9 update success before emit events
+
+### 17.9 Early Returns (17 documented)
+
+Lines ~244, 247, 259, 269, 330, 340, 362-363, 397-398, 405, 418, 500, 519, 553, 620, 622, 715-716, 721, 744-745, 757, 762.
+
+Each is a potential control flow break if extraction changes the return path. Extraction methods must return `(ctrl.Result, error)` to preserve early-return semantics.
+
+### 17.10 Test Regression Risk Assessment
+
+- **Low risk**: Tests use package `effectivenessmonitor` — only exported identifiers. Moving methods between files in the same package doesn't change receivers or exports.
+- **No line-number references** in tests.
+- **No gomock/monkey patching** of Reconciler methods.
+- **File-name-based test runners**: `go test ./test/unit/effectivenessmonitor/...` is path-based; splitting `reconciler.go` doesn't affect discovery.
+
+### 17.11 Updated Confidence: 86%
+
+All critical findings resolved without requiring user input:
+- Status update invariant corrected to per-path matrix
+- `currentPhase` immutability documented and test-guarded
+- Hash deferral "no persist" behavior documented as intentional
+- Golden snapshot normalization strategy for time-dependent fields
+- Complete hidden wire map (12 variables) and ordering constraints (10) documented
+- 17 early returns cataloged for extraction safety
+- UT-EM-254-007 added to scenario table
+- Low regression risk confirmed
+
+Remaining risks:
+- Golden snapshot setup complexity (clock injection, field normalization)
+- Extraction of ~1868 lines into 12 files is mechanically complex (but leaf-first order mitigates)
+
+---
+
+## 18. Targeted Preflight Verification (2026-04-10)
+
+### 18.1 VERIFIED: `currentPhase` exact line numbers
+
+- Declaration: **line 263** (`currentPhase := ea.Status.Phase`)
+- Normalization: **line 265** (`currentPhase = eav1.PhasePending`)
+- Read sites: **lines 264, 267, 302, 356, 368, 415, 416, 417-418** (8 total)
+- All reads gate branch decisions; no reads after Step 6 mutations
+
+### 18.2 VERIFIED: `ea.Status.Phase` write sites
+
+In-memory mutations: **lines 308, 357, 384, 439, 1521, 1572**. Confirms `currentPhase` diverges from `ea.Status.Phase` after any write — extraction must preserve read-once semantics.
+
+### 18.3 VERIFIED: All flag assignments and reads
+
+| Variable | Assignment lines | Read lines |
+|----------|-----------------|------------|
+| `pendingTransition` | 414, 454 | 416-418, 712, 732, 738, 748 |
+| `componentsChanged` | 527, 562, 593, 676, 681, 703 | 712, 731-732, 738, 741 |
+| `completing` | 725, 727 | 738, 741, 751 |
+| `scope` | 515 | 516-519, 521-524, 612 |
+| `alertDeferred` | 528 (decl), 631 (assign) | 632, 635, 709, 718-719 |
+
+### 18.4 VERIFIED: completion/fail methods call Status().Update internally
+
+- `completeAssessment` (line 1492): calls `setCompletionFields` → `Status().Update` at 1498-1502
+- `failAssessment` (line 1517): sets `PhaseFailed` at 1521 → `Status().Update` at 1528-1532
+- `completeAssessmentWithReason` (line 1546): calls `setCompletionFields` → `Status().Update` at 1551-1555
+
+All return `(ctrl.Result, error)`, not the updated object.
+
+### 18.5 VERIFIED: Hash deferral returns without Status().Update
+
+Line 553: `return ctrl.Result{RequeueAfter: ...}, nil` — confirmed no Status().Update in this path.
+
+### 18.6 Updated Confidence: 95%
+
+All hidden wires verified against exact line numbers. Alert deferral fall-through corrected (narrower than claimed). Completion methods confirmed as self-contained (internal Status().Update). Extraction safety validated.
+
+---
