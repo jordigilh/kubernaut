@@ -60,7 +60,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 
 				createdEvent, err := auditRepo.Create(ctx, event1)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(createdEvent).ToNot(BeNil())
+				Expect(createdEvent.EventHash).ToNot(BeEmpty(), "created event must have a hash")
 
 				// 2. Place legal hold via direct database update (simulating API)
 				query := `
@@ -120,10 +120,14 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				_, err := auditRepo.Create(ctx, event1)
 				Expect(err).ToNot(HaveOccurred())
 
-				// 2. Release legal hold
-				releaseQuery := `UPDATE audit_events SET legal_hold = FALSE WHERE correlation_id = $1`
-				_, err = testDB.ExecContext(ctx, releaseQuery, correlationID)
-				Expect(err).ToNot(HaveOccurred())
+			// 2. Release legal hold (requires session variable to bypass SOC2 trigger)
+			tx, err := testDB.BeginTx(ctx, nil)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = tx.ExecContext(ctx, "SET LOCAL kubernaut.legal_hold_release = 'authorized'")
+			Expect(err).ToNot(HaveOccurred())
+			_, err = tx.ExecContext(ctx, "UPDATE audit_events SET legal_hold = FALSE WHERE correlation_id = $1", correlationID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(tx.Commit()).To(Succeed())
 
 				// 3. Delete event (should succeed now)
 				deleteQuery := `DELETE FROM audit_events WHERE correlation_id = $1`
