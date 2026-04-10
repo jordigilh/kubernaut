@@ -8,8 +8,9 @@
 -- 3. Remove dead create_monthly_partitions() function (RAT-only, never called).
 
 -- 1. Drop default partitions (fresh installs only — no data to drain)
-DROP TABLE IF EXISTS audit_events_default;
-DROP TABLE IF EXISTS resource_action_traces_default;
+-- CASCADE needed: inherited triggers from parent table create dependencies
+DROP TABLE IF EXISTS audit_events_default CASCADE;
+DROP TABLE IF EXISTS resource_action_traces_default CASCADE;
 
 -- 2. Fix trigger to use UTC for event_date derivation
 CREATE OR REPLACE FUNCTION set_audit_event_date()
