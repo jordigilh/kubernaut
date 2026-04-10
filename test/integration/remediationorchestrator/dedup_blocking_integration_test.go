@@ -110,8 +110,10 @@ func createBlockedDuplicateRR(ns, name, duplicateOf string) *remediationv1.Remed
 }
 
 // createTerminalRR creates an RR with a given terminal phase.
-// Waits for the RO controller's initial reconcile (Pending) so status updates use a
-// fresh resourceVersion and do not race with init; uses retry-on-conflict for updates.
+// Waits for the RO controller to reach Processing (SP created, Pending→Processing
+// transition complete) before injecting terminal status. This prevents the v1.3
+// TOCTOU phase guards from overwriting the injected phase during the
+// Pending→Processing AtomicStatusUpdate window.
 func createTerminalRR(ns, name string, phase remediationv1.RemediationPhase) *remediationv1.RemediationRequest {
 	now := metav1.Now()
 	rr := &remediationv1.RemediationRequest{
@@ -140,16 +142,18 @@ func createTerminalRR(ns, name string, phase remediationv1.RemediationPhase) *re
 	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 	key := types.NamespacedName{Name: name, Namespace: ROControllerNamespace}
-	// Poll faster than suite interval: RO requeues after ~100ms and may advance Pending→Processing quickly.
-	// Accept either phase: we only need the controller to have touched status (fresh RV) before our terminal write.
+	// Wait for Processing: the controller must complete the Pending→Processing
+	// transition (which creates SP via AtomicStatusUpdate) before we inject terminal
+	// status. Injecting during the transition window risks the AtomicStatusUpdate
+	// overwriting our terminal phase with Processing.
 	Eventually(func() remediationv1.RemediationPhase {
 		fetched := &remediationv1.RemediationRequest{}
 		if err := k8sManager.GetAPIReader().Get(ctx, key, fetched); err != nil {
 			return ""
 		}
 		return fetched.Status.OverallPhase
-	}, timeout, 25*time.Millisecond).Should(Or(Equal(remediationv1.PhasePending), Equal(remediationv1.PhaseProcessing)),
-		"RO should initialize %s/%s (Pending or Processing) before injecting terminal status", ROControllerNamespace, name)
+	}, timeout, 25*time.Millisecond).Should(Equal(remediationv1.PhaseProcessing),
+		"RO should reach Processing before injecting terminal status for %s/%s", ROControllerNamespace, name)
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		fetched := &remediationv1.RemediationRequest{}
