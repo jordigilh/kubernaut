@@ -112,6 +112,10 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
+  # BR-ORCH-025: Distributed locking via coordination.k8s.io Leases
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "delete"]
   - apiGroups: [""]
     resources: ["pods", "nodes", "services", "namespaces", "persistentvolumes", "configmaps"]
     verbs: ["get", "list", "watch"]
@@ -204,6 +208,15 @@ spec:
             {{- include "kubernaut.containerSecurityContext" .Values.remediationorchestrator | nindent 12 }}
           args:
             - "--config=/etc/config/remediationorchestrator.yaml"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: KUBERNAUT_CONTROLLER_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           ports:
             - name: health
               containerPort: 8081

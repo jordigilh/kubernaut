@@ -48,6 +48,7 @@ import (
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/locking"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	//+kubebuilder:scaffold:imports
@@ -319,6 +320,22 @@ func main() {
 	}
 	setupLog.Info("Cluster identity discovered", "name", clusterIdentity.Name, "uuid", clusterIdentity.UUID)
 	roReconciler.SetClusterIdentity(clusterIdentity.Name, clusterIdentity.UUID)
+
+	// BR-ORCH-025: Configure distributed lock manager for WFE creation safety.
+	// Uses POD_NAME as holder ID for lease ownership tracking.
+	podName := os.Getenv("POD_NAME")
+	if podName == "" {
+		setupLog.Info("POD_NAME not set, distributed locking disabled (single-replica mode)")
+	} else {
+		controllerNS := os.Getenv("KUBERNAUT_CONTROLLER_NAMESPACE")
+		if controllerNS == "" {
+			controllerNS = "kubernaut-system"
+		}
+		lockMgr := locking.NewDistributedLockManager(mgr.GetClient(), controllerNS, podName)
+		roReconciler.SetLockManager(lockMgr)
+		setupLog.Info("Distributed lock manager configured", "holderID", podName, "namespace", controllerNS)
+	}
+
 	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)

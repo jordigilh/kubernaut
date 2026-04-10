@@ -67,6 +67,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/locking"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/status"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
@@ -116,6 +117,11 @@ type Reconciler struct {
 	// Used by createEffectivenessAssessmentIfNeeded to compute HashComputeDelay
 	// from gitOpsSyncDelay/operatorReconcileDelay instead of stabilization window.
 	asyncPropagation roconfig.AsyncPropagationConfig
+
+	// BR-ORCH-025: Distributed lock manager for WFE creation safety.
+	// Prevents duplicate WFEs when concurrent reconciles target the same resource.
+	// nil = locking disabled (single-replica deployments).
+	lockManager *locking.DistributedLockManager
 
 	// ========================================
 	// STATUS MANAGER (DD-PERF-001)
@@ -992,11 +998,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			workflowID = ai.Status.SelectedWorkflow.WorkflowID
 			actionType = ai.Status.SelectedWorkflow.ActionType
 		}
-		ar := ai.Status.RootCauseAnalysis.RemediationTarget
-		targetResource := ar.Kind + "/" + ar.Name
-		if ar.Namespace != "" {
-			targetResource = ar.Namespace + "/" + targetResource
-		}
+		targetResource := formatRemediationTargetString(ai)
 		// Issue #214: Capture pre-remediation hash BEFORE routing so CheckIneffectiveRemediationChain can use it.
 		// DD-EM-002 + DD-EM-003: Hash must match the resource the workflow patches.
 		remTarget := resolveDualTargets(rr, ai).Remediation
@@ -1042,6 +1044,26 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 					"hash", preHash[:min(23, len(preHash))]+"...",
 					"target", fmt.Sprintf("%s/%s", remTarget.Kind, remTarget.Name))
 			}
+		}
+
+		// BR-ORCH-025: Acquire distributed lock before routing checks + WFE creation.
+		// Lock key is based on targetResource so concurrent reconciles for the same
+		// target are serialized. Lock is released via defer after Create completes.
+		if r.lockManager != nil {
+			acquired, lockErr := r.lockManager.AcquireLock(ctx, targetResource)
+			if lockErr != nil {
+				logger.Error(lockErr, "Distributed lock acquisition failed", "target", targetResource)
+				return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
+			}
+			if !acquired {
+				logger.V(1).Info("Lock contention on target resource, requeuing", "target", targetResource)
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+			defer func() {
+				if releaseErr := r.lockManager.ReleaseLock(ctx, targetResource); releaseErr != nil {
+					logger.Error(releaseErr, "Failed to release distributed lock", "target", targetResource)
+				}
+			}()
 		}
 
 		blocked, err := r.routingEngine.CheckPostAnalysisConditions(ctx, rr, workflowID, targetResource, preHash, actionType)
@@ -1284,6 +1306,43 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 				return nil
 			}); updateErr != nil {
 				logger.Error(updateErr, "Failed to persist pre-remediation hash on RR status (non-fatal)")
+			}
+		}
+
+		// BR-ORCH-025: Derive targetResource and acquire distributed lock before
+		// WFE creation on the approval path. This closes the gap where the approval
+		// path could create a duplicate WFE for a target that already has one active.
+		approvalTargetResource := formatRemediationTargetString(ai)
+
+		if r.lockManager != nil && approvalTargetResource != "" {
+			acquired, lockErr := r.lockManager.AcquireLock(ctx, approvalTargetResource)
+			if lockErr != nil {
+				logger.Error(lockErr, "Distributed lock acquisition failed (approval path)", "target", approvalTargetResource)
+				return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
+			}
+			if !acquired {
+				logger.V(1).Info("Lock contention on target resource (approval path), requeuing", "target", approvalTargetResource)
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+			defer func() {
+				if releaseErr := r.lockManager.ReleaseLock(ctx, approvalTargetResource); releaseErr != nil {
+					logger.Error(releaseErr, "Failed to release distributed lock (approval path)", "target", approvalTargetResource)
+				}
+			}()
+		}
+
+		// BR-ORCH-025: Run CheckResourceBusy on the approval path (same as normal path).
+		if approvalTargetResource != "" {
+			busyBlock, busyErr := r.routingEngine.CheckResourceBusy(ctx, rr, approvalTargetResource)
+			if busyErr != nil {
+				logger.Error(busyErr, "Failed to check resource busy (approval path)")
+				return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
+			}
+			if busyBlock != nil {
+				logger.Info("Target resource busy after approval - blocking",
+					"target", approvalTargetResource,
+					"blockingWFE", busyBlock.BlockingWorkflowExecution)
+				return r.handleBlocked(ctx, rr, busyBlock, string(remediationv1.PhaseAwaitingApproval), "")
 			}
 		}
 
@@ -3459,6 +3518,13 @@ func (r *Reconciler) SetClusterIdentity(name, uuid string) {
 	r.notificationCreator.SetClusterIdentity(name, uuid)
 }
 
+// SetLockManager configures the distributed lock manager for WFE creation safety.
+// BR-ORCH-025: Called from cmd/remediationorchestrator/main.go.
+// nil = locking disabled (single-replica deployments).
+func (r *Reconciler) SetLockManager(lm *locking.DistributedLockManager) {
+	r.lockManager = lm
+}
+
 // resolveDualTargets resolves both signal and remediation targets for the EA (DD-EM-003).
 //
 // Signal target: Always from RR.Spec.TargetResource (the resource that triggered the alert).
@@ -3488,6 +3554,22 @@ func resolveDualTargets(
 	}
 
 	return &creator.DualTarget{Signal: signal, Remediation: remediation}
+}
+
+// formatRemediationTargetString builds a "namespace/kind/name" or "kind/name"
+// string from an AIAnalysis RemediationTarget. Returns "" if the target is nil.
+func formatRemediationTargetString(ai *aianalysisv1.AIAnalysis) string {
+	if ai == nil || ai.Status.RootCauseAnalysis == nil || ai.Status.RootCauseAnalysis.RemediationTarget == nil {
+		return ""
+	}
+	ar := ai.Status.RootCauseAnalysis.RemediationTarget
+	if ar.Kind == "" || ar.Name == "" {
+		return ""
+	}
+	if ar.Namespace != "" {
+		return ar.Namespace + "/" + ar.Kind + "/" + ar.Name
+	}
+	return ar.Kind + "/" + ar.Name
 }
 
 // CapturePreRemediationHash fetches the target resource via an uncached reader,

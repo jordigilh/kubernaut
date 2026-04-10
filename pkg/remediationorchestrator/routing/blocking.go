@@ -40,6 +40,7 @@ import (
 type Engine interface {
 	CheckPreAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest) (*BlockingCondition, error)
 	CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string, actionType string) (*BlockingCondition, error)
+	CheckResourceBusy(ctx context.Context, rr *remediationv1.RemediationRequest, targetResource string) (*BlockingCondition, error)
 	CheckUnmanagedResource(ctx context.Context, rr *remediationv1.RemediationRequest) *BlockingCondition
 	Config() Config
 	CalculateExponentialBackoff(consecutiveFailures int32) time.Duration
@@ -507,6 +508,15 @@ func (r *RoutingEngine) CheckResourceBusy(
 
 	if activeWFE == nil {
 		return nil, nil // Resource not busy
+	}
+
+	// BR-ORCH-050: Skip WFE owned by the requesting RR (self-detection).
+	// When a reconcile retries after a partial failure, the RR's own WFE
+	// should not block itself.
+	for _, ownerRef := range activeWFE.GetOwnerReferences() {
+		if ownerRef.UID == rr.UID {
+			return nil, nil // Our own WFE, not a conflict
+		}
 	}
 
 	// Resource is busy - block this RR

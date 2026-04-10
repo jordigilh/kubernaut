@@ -36,6 +36,10 @@ func (m *MockRoutingEngine) CheckPostAnalysisConditions(ctx context.Context, rr 
 	return nil, nil // Always return not blocked for unit tests
 }
 
+func (m *MockRoutingEngine) CheckResourceBusy(ctx context.Context, rr *remediationv1.RemediationRequest, targetResource string) (*routing.BlockingCondition, error) {
+	return nil, nil
+}
+
 func (m *MockRoutingEngine) CheckUnmanagedResource(ctx context.Context, rr *remediationv1.RemediationRequest) *routing.BlockingCondition {
 	return nil // Always return managed for unit tests
 }
