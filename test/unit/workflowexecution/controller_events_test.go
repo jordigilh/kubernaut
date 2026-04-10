@@ -573,6 +573,18 @@ func (m *mockCatalogQuerier) ResolveWorkflowCatalogMetadata(_ context.Context, _
 	return m.meta, m.err
 }
 
+func (m *mockCatalogQuerier) GetWorkflowSchemaMetadata(_ context.Context, _ string) (*weclient.SchemaMetadata, error) {
+	if m.meta != nil {
+		return &weclient.SchemaMetadata{
+			Engine:       m.meta.ExecutionEngine,
+			WorkflowName: m.meta.WorkflowName,
+			Dependencies: m.meta.Dependencies,
+			EngineConfig: m.meta.EngineConfig,
+		}, m.err
+	}
+	return nil, m.err
+}
+
 // mockDependencyValidator implements dsvalidation.DependencyValidator for testing.
 type mockDependencyValidator struct {
 	err error

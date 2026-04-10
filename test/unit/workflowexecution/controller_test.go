@@ -46,6 +46,7 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
+	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
 )
@@ -125,35 +126,35 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		It("should generate deterministic name from targetResource", func() {
 			// Same input should always produce same output
 			targetResource := "default/deployment/my-app"
-			name1 := workflowexecution.PipelineRunName(targetResource)
-			name2 := workflowexecution.PipelineRunName(targetResource)
+			name1 := weexecutor.ExecutionResourceName(targetResource)
+			name2 := weexecutor.ExecutionResourceName(targetResource)
 			Expect(name1).To(Equal(name2))
 		})
 
 		It("should prefix name with 'wfe-'", func() {
 			targetResource := "default/deployment/my-app"
-			name := workflowexecution.PipelineRunName(targetResource)
+			name := weexecutor.ExecutionResourceName(targetResource)
 			Expect(name).To(HavePrefix("wfe-"))
 		})
 
 		It("should generate valid Kubernetes name (max 63 chars)", func() {
 			// Very long targetResource should still produce valid name
 			targetResource := "very-long-namespace/deployment/very-long-deployment-name-that-exceeds-normal-limits"
-			name := workflowexecution.PipelineRunName(targetResource)
+			name := weexecutor.ExecutionResourceName(targetResource)
 			Expect(len(name)).To(BeNumerically("<=", 63))
 		})
 
 		It("should generate 20-character name (wfe- + 16 hex chars)", func() {
 			targetResource := "default/deployment/my-app"
-			name := workflowexecution.PipelineRunName(targetResource)
+			name := weexecutor.ExecutionResourceName(targetResource)
 			// "wfe-" (4 chars) + 16 hex chars = 20 chars
 			Expect(len(name)).To(Equal(20))
 		})
 
 		It("should generate different names for different targetResources", func() {
-			name1 := workflowexecution.PipelineRunName("ns1/deployment/app1")
-			name2 := workflowexecution.PipelineRunName("ns1/deployment/app2")
-			name3 := workflowexecution.PipelineRunName("ns2/deployment/app1")
+			name1 := weexecutor.ExecutionResourceName("ns1/deployment/app1")
+			name2 := weexecutor.ExecutionResourceName("ns1/deployment/app2")
+			name3 := weexecutor.ExecutionResourceName("ns2/deployment/app1")
 			Expect(name1).ToNot(Equal(name2))
 			Expect(name1).ToNot(Equal(name3))
 			Expect(name2).ToNot(Equal(name3))
@@ -161,7 +162,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 		It("should use only lowercase hex characters", func() {
 			targetResource := "default/deployment/my-app"
-			name := workflowexecution.PipelineRunName(targetResource)
+			name := weexecutor.ExecutionResourceName(targetResource)
 			// Remove "wfe-" prefix and check hex chars
 			hexPart := name[4:]
 			for _, c := range hexPart {
@@ -182,8 +183,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		DescribeTable("determinism and uniqueness edge cases",
 			func(targetResource string, description string) {
 				// Test determinism: Same input → same output
-				name1 := workflowexecution.PipelineRunName(targetResource)
-				name2 := workflowexecution.PipelineRunName(targetResource)
+				name1 := weexecutor.ExecutionResourceName(targetResource)
+				name2 := weexecutor.ExecutionResourceName(targetResource)
 				Expect(name1).To(Equal(name2), "Should be deterministic for: %s", description)
 
 				// Test format
@@ -248,7 +249,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		It("should handle case when PipelineRun doesn't exist (not AlreadyExists)", func() {
 			// V1.0: HandleAlreadyExists now always tries to get PR to check ownership
 			// This test verifies it handles the case where PR doesn't exist
-			prName := workflowexecution.PipelineRunName(targetResource)
+			prName := weexecutor.ExecutionResourceName(targetResource)
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-wfe", Namespace: "default"},
 				Spec:       workflowexecutionv1alpha1.WorkflowExecutionSpec{TargetResource: targetResource},
@@ -295,7 +296,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		})
 
 		It("should update to Running when PipelineRun is ours (race with self)", func() {
-			prName := workflowexecution.PipelineRunName(targetResource)
+			prName := weexecutor.ExecutionResourceName(targetResource)
 			existingPR := &tektonv1.PipelineRun{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      prName,
@@ -351,7 +352,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		})
 
 		It("should mark Failed/Deduplicated when PipelineRun belongs to another WFE (Issue #190)", func() {
-			prName := workflowexecution.PipelineRunName(targetResource)
+			prName := weexecutor.ExecutionResourceName(targetResource)
 			existingPR := &tektonv1.PipelineRun{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      prName,
@@ -461,7 +462,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			pr := reconciler.BuildPipelineRun(wfe)
 
 			// Name should be deterministic based on targetResource
-			expectedName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+			expectedName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 			Expect(pr.Name).To(Equal(expectedName))
 		})
 
@@ -927,7 +928,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			pr = &tektonv1.PipelineRun{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      workflowexecution.PipelineRunName(wfe.Spec.TargetResource),
+					Name:      weexecutor.ExecutionResourceName(wfe.Spec.TargetResource),
 					Namespace: "kubernaut-workflows",
 				},
 				Status: tektonv1.PipelineRunStatus{
@@ -1072,7 +1073,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			pr = &tektonv1.PipelineRun{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      workflowexecution.PipelineRunName(wfe.Spec.TargetResource),
+					Name:      weexecutor.ExecutionResourceName(wfe.Spec.TargetResource),
 					Namespace: "kubernaut-workflows",
 				},
 			}
@@ -2128,7 +2129,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}
 
 			// And: PipelineRun exists with deterministic name and matching ownership label
-			prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+			prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 			pr := &tektonv1.PipelineRun{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      prName,
@@ -2288,7 +2289,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
 				// And: PipelineRun exists with deterministic name (NOT ExecutionRef.Name)
-				prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+				prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 				pr := &tektonv1.PipelineRun{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      prName,
@@ -2330,7 +2331,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
 				// And: PipelineRun exists (created but ref not set yet)
-				prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+				prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 				pr := &tektonv1.PipelineRun{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      prName,
@@ -2441,7 +2442,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
 				// And: Active PipelineRun exists
-				prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
+				prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 				pr := &tektonv1.PipelineRun{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      prName,
@@ -2615,7 +2616,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				// And: PipelineRun completed
 				pr := &tektonv1.PipelineRun{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      workflowexecution.PipelineRunName(wfe.Spec.TargetResource),
+						Name:      weexecutor.ExecutionResourceName(wfe.Spec.TargetResource),
 						Namespace: "kubernaut-workflows",
 					},
 				}
@@ -5412,7 +5413,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			It("UT-WE-190-005: should set Deduplicated when PipelineRun from another WFE", func() {
 				targetResource := "default/deployment/my-app"
-				prName := workflowexecution.PipelineRunName(targetResource)
+				prName := weexecutor.ExecutionResourceName(targetResource)
 
 				existingPR := &tektonv1.PipelineRun{
 					ObjectMeta: metav1.ObjectMeta{
@@ -5463,7 +5464,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			It("UT-WE-190-006: should continue with Running when PipelineRun is ours (regression guard)", func() {
 				targetResource := "default/deployment/my-app"
-				prName := workflowexecution.PipelineRunName(targetResource)
+				prName := weexecutor.ExecutionResourceName(targetResource)
 
 				existingPR := &tektonv1.PipelineRun{
 					ObjectMeta: metav1.ObjectMeta{
@@ -5510,7 +5511,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			It("UT-WE-190-007: should fall back to Unknown when PipelineRun label missing", func() {
 				targetResource := "default/deployment/my-app"
-				prName := workflowexecution.PipelineRunName(targetResource)
+				prName := weexecutor.ExecutionResourceName(targetResource)
 
 				existingPR := &tektonv1.PipelineRun{
 					ObjectMeta: metav1.ObjectMeta{
