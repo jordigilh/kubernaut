@@ -18,6 +18,7 @@ package investigator_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -28,6 +29,18 @@ import (
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
+
+type stubCatalogFetcher struct {
+	validator *parser.Validator
+	fetchErr  error
+}
+
+func (s *stubCatalogFetcher) FetchValidator(_ context.Context) (*parser.Validator, error) {
+	if s.fetchErr != nil {
+		return nil, s.fetchErr
+	}
+	return s.validator, nil
+}
 
 type stubLLMClient struct {
 	called bool
@@ -72,67 +85,80 @@ var _ = Describe("TP-433-ADV P1: Critical Wiring — GAP-006/GAP-007", func() {
 		})
 	})
 
-	Describe("UT-KA-433-WIR-003: Pipeline.Validator is non-nil when workflow names provided (GAP-007)", func() {
-		It("should create a non-nil validator with workflow names from catalog", func() {
-			allowedWorkflows := []string{"oom-recovery", "crashloop-config-fix", "node-drain-reboot"}
-			validator := parser.NewValidator(allowedWorkflows)
-			Expect(validator).NotTo(BeNil())
-
-			pipeline := investigator.Pipeline{
-				Validator: validator,
+	Describe("UT-KA-433-WIR-003: Pipeline.CatalogFetcher is non-nil when DS available (GAP-007, #665)", func() {
+		It("should accept a CatalogFetcher in the Pipeline", func() {
+			fetcher := &stubCatalogFetcher{
+				validator: parser.NewValidator([]string{"oom-recovery", "crashloop-config-fix", "node-drain-reboot"}),
 			}
-			Expect(pipeline.Validator).NotTo(BeNil())
+			pipeline := investigator.Pipeline{
+				CatalogFetcher: fetcher,
+			}
+			Expect(pipeline.CatalogFetcher).NotTo(BeNil())
 		})
 
-		It("should reject unknown workflow IDs through the validator", func() {
-			allowedWorkflows := []string{"oom-recovery", "crashloop-config-fix"}
-			validator := parser.NewValidator(allowedWorkflows)
+		It("should reject unknown workflow IDs through the fetched validator", func() {
+			fetcher := &stubCatalogFetcher{
+				validator: parser.NewValidator([]string{"oom-recovery", "crashloop-config-fix"}),
+			}
+			v, err := fetcher.FetchValidator(context.Background())
+			Expect(err).NotTo(HaveOccurred())
 
 			result := &katypes.InvestigationResult{
 				WorkflowID: "unknown-workflow",
 				Confidence: 0.8,
 			}
-			err := validator.Validate(result)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not in session allowlist"))
+			Expect(v.Validate(result)).To(HaveOccurred())
 		})
 
-		It("should accept known workflow IDs through the validator", func() {
-			allowedWorkflows := []string{"oom-recovery", "crashloop-config-fix"}
-			validator := parser.NewValidator(allowedWorkflows)
+		It("should accept known workflow IDs through the fetched validator", func() {
+			fetcher := &stubCatalogFetcher{
+				validator: parser.NewValidator([]string{"oom-recovery", "crashloop-config-fix"}),
+			}
+			v, err := fetcher.FetchValidator(context.Background())
+			Expect(err).NotTo(HaveOccurred())
 
 			result := &katypes.InvestigationResult{
 				WorkflowID: "oom-recovery",
 				Confidence: 0.8,
 			}
-			err := validator.Validate(result)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(v.Validate(result)).NotTo(HaveOccurred())
 		})
 	})
 
-	Describe("UT-KA-433-WIR-004: Fail-closed — nil validator means no self-correction (DD-HAPI-002 v1.5)", func() {
-		It("should skip validation when Pipeline.Validator is nil", func() {
+	Describe("UT-KA-433-WIR-004: nil CatalogFetcher means no validation — graceful skip (#665)", func() {
+		It("should have nil CatalogFetcher when no DS is configured (dev mode)", func() {
 			pipeline := investigator.Pipeline{}
-			Expect(pipeline.Validator).To(BeNil(),
-				"nil Validator means self-correction loop is skipped — "+
-					"KA must refuse to start when DS is configured but validator creation fails (DD-HAPI-002 v1.5)")
+			Expect(pipeline.CatalogFetcher).To(BeNil(),
+				"nil CatalogFetcher means validation is skipped — "+
+					"KA still starts and serves /health without DS (dev mode, #665)")
 		})
 
-		It("should trigger self-correction when Pipeline.Validator is non-nil and workflow is invalid", func() {
-			allowedWorkflows := []string{"oom-recovery"}
-			validator := parser.NewValidator(allowedWorkflows)
-
-			pipeline := investigator.Pipeline{
-				Validator: validator,
+		It("should trigger self-correction when CatalogFetcher returns a validator and workflow is invalid", func() {
+			fetcher := &stubCatalogFetcher{
+				validator: parser.NewValidator([]string{"oom-recovery"}),
 			}
-			Expect(pipeline.Validator).NotTo(BeNil())
+			pipeline := investigator.Pipeline{
+				CatalogFetcher: fetcher,
+			}
+			Expect(pipeline.CatalogFetcher).NotTo(BeNil())
+
+			v, err := fetcher.FetchValidator(context.Background())
+			Expect(err).NotTo(HaveOccurred())
 
 			result := &katypes.InvestigationResult{
 				WorkflowID: "hallucinated-workflow",
 				Confidence: 0.9,
 			}
-			err := pipeline.Validator.Validate(result)
-			Expect(err).To(HaveOccurred(), "Validator must reject hallucinated workflows")
+			Expect(v.Validate(result)).To(HaveOccurred(), "Validator must reject hallucinated workflows")
+		})
+
+		It("should flag human review when CatalogFetcher returns an error", func() {
+			fetcher := &stubCatalogFetcher{
+				fetchErr: fmt.Errorf("DS unavailable"),
+			}
+			_, err := fetcher.FetchValidator(context.Background())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("DS unavailable"))
 		})
 	})
 })
