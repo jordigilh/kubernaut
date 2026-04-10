@@ -23,7 +23,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -122,14 +121,12 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 				},
 			}
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID: "wf-test-001",
-				ActionType: "restart",
-				ExecutionBundle: aianalysisv1.ExecutionBundle{
-					BundleType: "tekton",
-					BundleRef:  "test-pipeline",
-				},
-				Confidence: 0.95,
-				Rationale:  "Test rationale",
+				WorkflowID:      "wf-test-001",
+				ActionType:      "restart",
+				Version:         "v1",
+				ExecutionBundle: "test-image:latest",
+				Confidence:      0.95,
+				Rationale:       "Test rationale",
 			}
 			return k8sClient.Status().Update(ctx, ai)
 		}, timeout, interval).Should(Succeed())
@@ -349,29 +346,28 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 						if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(ai), ai); err != nil {
 							return err
 						}
-						ai.Status.Phase = "Completed"
-						now := metav1.Now()
-						ai.Status.CompletedAt = &now
-						ai.Status.Reason = aianalysisv1.AIAnalysisReasonApprovalRequired
-						ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-							Summary:  "Test root cause - approval required",
-							Severity: "critical",
-							RemediationTarget: &aianalysisv1.RemediationTarget{
-								Kind:      "Deployment",
-								Name:      "test-app",
-								Namespace: ns,
-							},
-						}
-						ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-							WorkflowID: "wf-test-001",
-							ActionType: "restart",
-							ExecutionBundle: aianalysisv1.ExecutionBundle{
-								BundleType: "tekton",
-								BundleRef:  "test-pipeline",
-							},
-							Confidence: 0.95,
-							Rationale:  "Test rationale - approval required",
-						}
+					ai.Status.Phase = "Completed"
+					now := metav1.Now()
+					ai.Status.CompletedAt = &now
+					ai.Status.ApprovalRequired = true
+					ai.Status.ApprovalReason = "Confidence below threshold"
+					ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+						Summary:  "Test root cause - approval required",
+						Severity: "critical",
+						RemediationTarget: &aianalysisv1.RemediationTarget{
+							Kind:      "Deployment",
+							Name:      "test-app",
+							Namespace: ns,
+						},
+					}
+					ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+						WorkflowID:      "wf-test-001",
+						ActionType:      "restart",
+						Version:         "v1",
+						ExecutionBundle: "test-image:latest",
+						Confidence:      0.65,
+						Rationale:       "Test rationale - approval required",
+					}
 						return k8sClient.Status().Update(ctx, ai)
 					}, timeout, interval).Should(Succeed())
 					break
@@ -387,23 +383,22 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 			}, timeout, interval).Should(Equal(string(remediationv1.PhaseAwaitingApproval)),
 				"RR2 should reach AwaitingApproval phase")
 
-			// Approve RR2 by creating a RemediationApprovalRequest
-			rar := &remediationv1.RemediationApprovalRequest{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "rar-lock-approval",
-					Namespace: ROControllerNamespace,
-				},
-				Spec: remediationv1.RemediationApprovalRequestSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						Name:      rr2.Name,
-						Namespace: rr2.Namespace,
-					},
-					Decision: remediationv1.ApprovalDecisionApproved,
-					Approver: "test-user",
-					Reason:   "Testing locking on approval path",
-				},
-			}
-			Expect(k8sClient.Create(ctx, rar)).To(Succeed())
+		// Approve RR2 by updating the Status of the RO-created RAR
+		rar := &remediationv1.RemediationApprovalRequest{}
+		rarName := fmt.Sprintf("rar-%s", rr2.Name)
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{
+				Name:      rarName,
+				Namespace: ROControllerNamespace,
+			}, rar)
+		}, timeout, interval).Should(Succeed(), "RAR should be created by the RO controller")
+
+		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
+		rar.Status.DecidedBy = "test-user@kubernaut.ai"
+		rar.Status.DecisionMessage = "Testing locking on approval path"
+		decidedAt := metav1.Now()
+		rar.Status.DecidedAt = &decidedAt
+		Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())
 
 			// Wait for RR2 to be processed after approval
 			Eventually(func() string {
