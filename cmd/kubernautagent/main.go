@@ -160,18 +160,13 @@ func main() {
 	sum := buildSummarizer(llmClient, cfg, slogger)
 
 	instrumentedLLM := llm.NewInstrumentedClient(llmClient)
-	validator, validatorErr := buildWorkflowValidator(ds, slogger)
-	if validatorErr != nil {
-		slogger.Error("workflow validator required but unavailable (DD-HAPI-002: KA is sole validator)", "error", validatorErr)
-		os.Exit(1)
-	}
-	// C2-fix: fail-closed when DS is configured but client init failed (ds == nil).
-	// buildWorkflowValidator returns (nil, nil) for ds==nil (dev mode), but production
-	// with a DS URL must never start without a working validator.
-	if validator == nil && cfg.DataStorage.URL != "" {
-		slogger.Error("DataStorage configured but workflow validator unavailable — fail-closed (DD-HAPI-002)",
-			"ds_url", cfg.DataStorage.URL)
-		os.Exit(1)
+
+	var catalogFetcher investigator.CatalogFetcher
+	if ds != nil {
+		catalogFetcher = newDSCatalogFetcher(ds, slogger)
+		slogger.Info("workflow catalog fetcher enabled (per-request, DD-HAPI-002)")
+	} else {
+		slogger.Info("workflow catalog fetcher disabled (no DataStorage — dev mode)")
 	}
 
 	inv := investigator.New(investigator.Config{
@@ -188,7 +183,7 @@ func main() {
 		Pipeline: investigator.Pipeline{
 			Sanitizer:       sanitizer,
 			AnomalyDetector: anomalyDetector,
-			Validator:       validator,
+			CatalogFetcher:  catalogFetcher,
 			Summarizer:      sum,
 		},
 	})
@@ -667,88 +662,71 @@ func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger *slog.Logg
 	}
 }
 
-// buildWorkflowValidator creates a parser.Validator from the DataStorage workflow catalog.
+// dsCatalogFetcher implements investigator.CatalogFetcher by querying
+// DataStorage on every call. This removes the boot-time blocking fetch
+// that caused #665 (CrashLoopBackOff when the catalog was not yet seeded).
 //
-// Per DD-HAPI-002 (v1.1+), KA is the SOLE VALIDATOR for workflow selections.
-// The Workflow Engine performs NO validation and trusts KA completely.
-// Therefore, when DataStorage is configured, the validator MUST be created
-// successfully or KA refuses to start (fail-closed). Without a validator,
-// the self-correction loop in investigator.runWorkflowSelection is skipped,
-// allowing hallucinated workflow IDs to flow unchecked to Tekton execution.
-//
-// Returns (nil, nil) when DS is not configured (dev/local mode).
-// Returns (nil, error) when DS is configured but workflows cannot be fetched.
-func buildWorkflowValidator(ds *dsClients, logger *slog.Logger) (*parser.Validator, error) {
-	if ds == nil {
-		logger.Info("workflow validator disabled (no DataStorage — dev mode)")
-		return nil, nil
+// Per DD-HAPI-002 (v1.1+), KA is the sole workflow validator. The catalog
+// is fetched per-request so KA always validates against the current catalog
+// without needing a restart when workflows are added/removed.
+type dsCatalogFetcher struct {
+	ds     *dsClients
+	logger *slog.Logger
+}
+
+func newDSCatalogFetcher(ds *dsClients, logger *slog.Logger) *dsCatalogFetcher {
+	return &dsCatalogFetcher{ds: ds, logger: logger}
+}
+
+func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validator, error) {
+	fetchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	resp, err := f.ds.ogenClient.ListWorkflows(fetchCtx, ogenclient.ListWorkflowsParams{})
+	if err != nil {
+		return nil, fmt.Errorf("ListWorkflows call failed: %w", err)
 	}
 
-	retryDelays := []time.Duration{5 * time.Second, 10 * time.Second, 15 * time.Second, 20 * time.Second, 30 * time.Second}
-	var lastErr error
+	wlr, ok := resp.(*ogenclient.WorkflowListResponse)
+	if !ok {
+		return nil, fmt.Errorf("unexpected ListWorkflows response type %T", resp)
+	}
 
-	for attempt := 0; attempt <= len(retryDelays); attempt++ {
-		if attempt > 0 {
-			delay := retryDelays[attempt-1]
-			logger.Warn("retrying workflow catalog fetch",
-				"attempt", attempt+1, "delay", delay, "previous_error", lastErr)
-			time.Sleep(delay)
+	ids := make([]string, 0, len(wlr.Workflows))
+	for _, w := range wlr.Workflows {
+		if w.WorkflowId.Set {
+			ids = append(ids, w.WorkflowId.Value.String())
 		}
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("workflow catalog returned 0 workflows")
+	}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		resp, err := ds.ogenClient.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{})
-		cancel()
-
-		if err != nil {
-			lastErr = err
+	validator := parser.NewValidator(ids)
+	for _, w := range wlr.Workflows {
+		if !w.WorkflowId.Set {
 			continue
 		}
-
-		switch v := resp.(type) {
-		case *ogenclient.WorkflowListResponse:
-			ids := make([]string, 0, len(v.Workflows))
-			for _, w := range v.Workflows {
-				if w.WorkflowId.Set {
-					ids = append(ids, w.WorkflowId.Value.String())
-				}
-			}
-			if len(ids) == 0 {
-				lastErr = fmt.Errorf("workflow catalog returned 0 workflows (not ready)")
-				logger.Warn("workflow catalog empty, will retry",
-					"attempt", attempt+1, "max_attempts", len(retryDelays)+1)
-				continue
-			}
-			validator := parser.NewValidator(ids)
-			for _, w := range v.Workflows {
-				if !w.WorkflowId.Set {
-					continue
-				}
-				wfID := w.WorkflowId.Value.String()
-			meta := parser.WorkflowMeta{
-				ExecutionEngine: w.ExecutionEngine,
-				Version:         w.Version,
-			}
-			if w.ExecutionBundle.Set {
-				meta.ExecutionBundle = w.ExecutionBundle.Value
-			}
-			if w.ExecutionBundleDigest.Set {
-				meta.ExecutionBundleDigest = w.ExecutionBundleDigest.Value
-			}
-			if w.ServiceAccountName.Set {
-				meta.ServiceAccountName = w.ServiceAccountName.Value
-			}
-				validator.SetWorkflowMeta(wfID, meta)
-			}
-			logger.Info("workflow validator enabled (DD-HAPI-002: sole validator)",
-				"allowed_workflows", len(ids), "attempts", attempt+1)
-			return validator, nil
-		default:
-			lastErr = fmt.Errorf("unexpected ListWorkflows response type %T", resp)
+		wfID := w.WorkflowId.Value.String()
+		meta := parser.WorkflowMeta{
+			ExecutionEngine: w.ExecutionEngine,
+			Version:         w.Version,
 		}
+		if w.ExecutionBundle.Set {
+			meta.ExecutionBundle = w.ExecutionBundle.Value
+		}
+		if w.ExecutionBundleDigest.Set {
+			meta.ExecutionBundleDigest = w.ExecutionBundleDigest.Value
+		}
+		if w.ServiceAccountName.Set {
+			meta.ServiceAccountName = w.ServiceAccountName.Value
+		}
+		validator.SetWorkflowMeta(wfID, meta)
 	}
 
-	return nil, fmt.Errorf("failed to fetch workflow catalog after %d attempts: %w",
-		len(retryDelays)+1, lastErr)
+	f.logger.Info("workflow catalog fetched (DD-HAPI-002: per-request validation)",
+		"allowed_workflows", len(ids))
+	return validator, nil
 }
 
 // newAuthMiddleware creates the DD-AUTH-014 auth middleware using in-cluster K8s config.
