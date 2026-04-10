@@ -50,6 +50,9 @@ import (
 
 // createBlockedDuplicateRR creates an RR and manually sets its status to
 // Blocked/DuplicateInProgress, referencing the given original RR name.
+// Waits for the RO controller's initial reconcile (Pending/Processing) so
+// status updates use a fresh resourceVersion and do not race with init;
+// uses retry-on-conflict for the Blocked status injection.
 func createBlockedDuplicateRR(ns, name, duplicateOf string) *remediationv1.RemediationRequest {
 	now := metav1.Now()
 	rr := &remediationv1.RemediationRequest{
@@ -77,13 +80,30 @@ func createBlockedDuplicateRR(ns, name, duplicateOf string) *remediationv1.Remed
 	}
 	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-	rr.Status.OverallPhase = remediationv1.PhaseBlocked
-	rr.Status.BlockReason = remediationv1.BlockReasonDuplicateInProgress
-	rr.Status.BlockMessage = fmt.Sprintf("Duplicate of active remediation %s", duplicateOf)
-	rr.Status.DuplicateOf = duplicateOf
-	rr.Status.StartTime = &now
-	rr.Status.ObservedGeneration = rr.Generation
-	Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+	key := types.NamespacedName{Name: name, Namespace: ROControllerNamespace}
+	Eventually(func() remediationv1.RemediationPhase {
+		fetched := &remediationv1.RemediationRequest{}
+		if err := k8sManager.GetAPIReader().Get(ctx, key, fetched); err != nil {
+			return ""
+		}
+		return fetched.Status.OverallPhase
+	}, timeout, 25*time.Millisecond).Should(Or(Equal(remediationv1.PhasePending), Equal(remediationv1.PhaseProcessing)),
+		"RO should initialize %s/%s before injecting Blocked status", ROControllerNamespace, name)
+
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		fetched := &remediationv1.RemediationRequest{}
+		if err := k8sClient.Get(ctx, key, fetched); err != nil {
+			return err
+		}
+		fetched.Status.OverallPhase = remediationv1.PhaseBlocked
+		fetched.Status.BlockReason = remediationv1.BlockReasonDuplicateInProgress
+		fetched.Status.BlockMessage = fmt.Sprintf("Duplicate of active remediation %s", duplicateOf)
+		fetched.Status.DuplicateOf = duplicateOf
+		fetched.Status.StartTime = &now
+		fetched.Status.ObservedGeneration = fetched.Generation
+		return k8sClient.Status().Update(ctx, fetched)
+	})
+	Expect(err).To(Succeed())
 
 	GinkgoWriter.Printf("✅ Created Blocked/DuplicateInProgress RR: %s (duplicateOf: %s)\n", name, duplicateOf)
 	return rr
