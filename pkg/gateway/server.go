@@ -1015,8 +1015,12 @@ func (s *Server) sendSuccessResponse(
 //	    }
 //	}()
 func (s *Server) Start(ctx context.Context) error {
-	// DD-GATEWAY-012: Redis health monitor REMOVED - Gateway is Redis-free
 	s.logger.Info("Starting Gateway server", "addr", s.httpServer.Addr)
+	// Issue #493: Conditional TLS — serve HTTPS when TLSConfig is set
+	if s.httpServer.TLSConfig != nil {
+		s.logger.Info("TLS enabled, starting HTTPS server")
+		return s.httpServer.ListenAndServeTLS("", "")
+	}
 	return s.httpServer.ListenAndServe()
 }
 

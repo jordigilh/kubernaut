@@ -21,6 +21,7 @@ import (
 	"time"
 
 	pkgconfig "github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"gopkg.in/yaml.v3"
 )
 
@@ -67,13 +68,15 @@ type OAuth2Config struct {
 }
 
 type DataStorageConfig struct {
-	URL         string `yaml:"url"`
-	SATokenPath string `yaml:"sa_token_path"`
+	URL         string              `yaml:"url"`
+	SATokenPath string              `yaml:"sa_token_path"`
+	TLS         sharedtls.TLSConfig `yaml:"tls,omitempty"`
 }
 
 type ServerConfig struct {
-	Address string `yaml:"address"`
-	Port    int    `yaml:"port"`
+	Address string              `yaml:"address"`
+	Port    int                 `yaml:"port"`
+	TLS     sharedtls.TLSConfig `yaml:"tls,omitempty"`
 }
 
 type SessionConfig struct {

@@ -538,10 +538,8 @@ func (s *Server) Handler() http.Handler {
 	return r
 }
 
-// Start starts the HTTP server
+// Start starts the HTTP server, with conditional TLS (#493).
 func (s *Server) Start() error {
-	// DS-FLAKY-003 FIX: Handler is now assigned in NewServer(), so just start the server
-	// Previously: Handler was assigned here, causing httptest tests to fail graceful shutdown
 	s.logger.Info("Starting Data Storage Service server",
 		"addr", s.httpServer.Addr,
 	)
@@ -549,6 +547,10 @@ func (s *Server) Start() error {
 	// DD-009 V1.0: Start DLQ retry worker before accepting HTTP traffic
 	s.dlqRetryWorker.Start()
 
+	if s.httpServer.TLSConfig != nil {
+		s.logger.Info("TLS enabled, starting HTTPS server")
+		return s.httpServer.ListenAndServeTLS("", "")
+	}
 	return s.httpServer.ListenAndServe()
 }
 

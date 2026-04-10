@@ -315,6 +315,23 @@ test-unit-datastorage: ginkgo ensure-coverage-dirs ## Run datastorage unit tests
 		go tool cover -func=coverage_unit_datastorage.out | grep total || echo "No coverage data"; \
 	fi
 
+# Shared packages integration tests: tests for pkg/shared (TLS, etc.)
+# These packages are not standalone services (no cmd/ entry or internal/controller/),
+# so the generic test-integration-% pattern generates a bogus coverpkg path.
+# This dedicated target uses the correct coverpkg for shared packages only.
+.PHONY: test-integration-shared
+test-integration-shared: ginkgo ensure-coverage-dirs ## Run integration tests for shared infrastructure packages (TLS, etc.)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 shared - Integration Tests ($(TEST_PROCS) procs)"
+	@echo "   Packages: pkg/shared (TLS)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_shared.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/shared/... ./test/integration/shared/...
+	@if [ -f coverage_integration_shared.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_integration_shared.out"; \
+		go tool cover -func=coverage_integration_shared.out | grep total || echo "No coverage data"; \
+	fi
+
 # Integration Tests
 .PHONY: test-integration-%
 test-integration-%: generate ginkgo setup-envtest ensure-coverage-dirs ## Run integration tests for specified service (e.g., make test-integration-gateway)

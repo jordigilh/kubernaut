@@ -47,6 +47,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
@@ -228,6 +229,18 @@ func main() {
 		ReadHeaderTimeout: 30 * time.Second,
 	}
 
+	// Issue #493: Conditional TLS for the HTTP server
+	if cfg.Server.TLS.Enabled() {
+		isTLS, tlsErr := sharedtls.ConfigureConditionalTLS(httpServer, cfg.Server.TLS.CertDir)
+		if tlsErr != nil {
+			slogger.Error("Failed to configure TLS", "error", tlsErr)
+			os.Exit(1)
+		}
+		if isTLS {
+			slogger.Info("TLS configured for HTTP server", "certDir", cfg.Server.TLS.CertDir)
+		}
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -235,7 +248,13 @@ func main() {
 
 	go func() {
 		slogger.Info("HTTP server listening", "addr", addr)
-		if listenErr := httpServer.ListenAndServe(); listenErr != nil && listenErr != http.ErrServerClosed {
+		var listenErr error
+		if httpServer.TLSConfig != nil {
+			listenErr = httpServer.ListenAndServeTLS("", "")
+		} else {
+			listenErr = httpServer.ListenAndServe()
+		}
+		if listenErr != nil && listenErr != http.ErrServerClosed {
 			slogger.Error("HTTP server error", "error", listenErr)
 			os.Exit(1)
 		}

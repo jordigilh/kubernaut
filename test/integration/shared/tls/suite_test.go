@@ -14,18 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package server
+package tls
 
 import (
-	"time"
+	"testing"
 
-	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// Config contains server configuration
-type Config struct {
-	Port         int
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
-	TLS          sharedtls.TLSConfig
+func TestSharedTLSIntegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Shared TLS Integration Test Suite")
 }
