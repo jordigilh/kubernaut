@@ -27,7 +27,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	workflowexecution "github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 )
 

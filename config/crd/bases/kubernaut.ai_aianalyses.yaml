@@ -952,6 +952,11 @@ spec:
                   rationale:
                     description: Rationale explaining why this workflow was selected
                     type: string
+                  serviceAccountName:
+                    description: |-
+                      ServiceAccountName is the pre-existing ServiceAccount resolved from the
+                      DS workflow catalog (Issue #650). Propagated to the WFE for pod execution.
+                    type: string
                   version:
                     description: Workflow version
                     type: string
