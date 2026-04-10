@@ -39,6 +39,7 @@ CREATE INDEX idx_retention_ops_start ON retention_operations (operation_start DE
 CREATE INDEX idx_retention_ops_status ON retention_operations (status);
 
 -- 3. SOC2 CC6.1: prevent legal_hold removal via UPDATE
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION prevent_legal_hold_removal()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -49,6 +50,7 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TRIGGER enforce_legal_hold_immutability
     BEFORE UPDATE ON audit_events

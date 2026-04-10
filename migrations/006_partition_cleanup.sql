@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS audit_events_default CASCADE;
 DROP TABLE IF EXISTS resource_action_traces_default CASCADE;
 
 -- 2. Fix trigger to use UTC for event_date derivation
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION set_audit_event_date()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -20,6 +21,7 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 -- 3. Remove dead SQL function (replaced by Go EnsureMonthlyPartitions)
 DROP FUNCTION IF EXISTS create_monthly_partitions();
@@ -30,6 +32,7 @@ CREATE TABLE IF NOT EXISTS audit_events_default PARTITION OF audit_events DEFAUL
 CREATE TABLE IF NOT EXISTS resource_action_traces_default PARTITION OF resource_action_traces DEFAULT;
 
 -- Restore original trigger (session TZ)
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION set_audit_event_date()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -37,8 +40,10 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 -- Restore dead function
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION create_monthly_partitions()
 RETURNS void AS $$
 DECLARE
@@ -53,3 +58,4 @@ BEGIN
     RAISE NOTICE 'Created partition: %', table_name;
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
