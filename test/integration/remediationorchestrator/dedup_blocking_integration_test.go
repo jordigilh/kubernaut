@@ -18,11 +18,15 @@ limitations under the License.
 // These tests validate that the RO controller inherits outcomes from original RRs
 // when a duplicate-blocked RR's original reaches terminal phase.
 //
-// Test Strategy:
+// Test Strategy (revised per TOCTOU fix):
 //   - Real envtest with RO controller running
-//   - Create RR, manually set status to Blocked/DuplicateInProgress
-//   - Create original RR in various terminal states
-//   - Verify the duplicate RR inherits the correct outcome
+//   - Use the NATURAL routing flow: create original (active), then duplicate
+//     with the same fingerprint so the routing engine blocks it automatically
+//   - Inject terminal status on the original AFTER the duplicate is blocked
+//   - Verify the duplicate inherits the correct outcome
+//
+// This eliminates the TOCTOU race from manual Blocked status injection, where
+// the controller's cached-client status updates could overwrite the injected phase.
 //
 // Defense-in-Depth:
 //   - Unit tests: Mock client, isolated recheckDuplicateBlock logic (dedup_blocking_test.go)
@@ -31,8 +35,6 @@ limitations under the License.
 package remediationorchestrator
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -48,104 +50,9 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
-// createBlockedDuplicateRR creates an RR and manually sets its status to
-// Blocked/DuplicateInProgress, referencing the given original RR name.
-// Waits for the RO controller's initial reconcile (Pending/Processing) so
-// status updates use a fresh resourceVersion and do not race with init;
-// uses retry-on-conflict for the Blocked status injection.
-func createBlockedDuplicateRR(ns, name, duplicateOf string) *remediationv1.RemediationRequest {
-	now := metav1.Now()
-	rr := &remediationv1.RemediationRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: ROControllerNamespace,
-		},
-		Spec: remediationv1.RemediationRequestSpec{
-			SignalFingerprint: func() string {
-				h := sha256.Sum256([]byte(uuid.New().String()))
-				return hex.EncodeToString(h[:])
-			}(),
-			SignalName: "TestDupBlockAlert",
-			Severity:   "critical",
-			SignalType: "alert",
-			TargetType: "kubernetes",
-			TargetResource: remediationv1.ResourceIdentifier{
-				Kind:      "Deployment",
-				Name:      "test-app",
-				Namespace: ns,
-			},
-			FiringTime:   now,
-			ReceivedTime: now,
-		},
-	}
-	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-
+// waitForProcessing waits until the RR reaches Processing via apiReader.
+func waitForProcessing(name string) {
 	key := types.NamespacedName{Name: name, Namespace: ROControllerNamespace}
-	Eventually(func() remediationv1.RemediationPhase {
-		fetched := &remediationv1.RemediationRequest{}
-		if err := k8sManager.GetAPIReader().Get(ctx, key, fetched); err != nil {
-			return ""
-		}
-		return fetched.Status.OverallPhase
-	}, timeout, 25*time.Millisecond).Should(Or(Equal(remediationv1.PhasePending), Equal(remediationv1.PhaseProcessing)),
-		"RO should initialize %s/%s before injecting Blocked status", ROControllerNamespace, name)
-
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		fetched := &remediationv1.RemediationRequest{}
-		if err := k8sClient.Get(ctx, key, fetched); err != nil {
-			return err
-		}
-		fetched.Status.OverallPhase = remediationv1.PhaseBlocked
-		fetched.Status.BlockReason = remediationv1.BlockReasonDuplicateInProgress
-		fetched.Status.BlockMessage = fmt.Sprintf("Duplicate of active remediation %s", duplicateOf)
-		fetched.Status.DuplicateOf = duplicateOf
-		fetched.Status.StartTime = &now
-		fetched.Status.ObservedGeneration = fetched.Generation
-		return k8sClient.Status().Update(ctx, fetched)
-	})
-	Expect(err).To(Succeed())
-
-	GinkgoWriter.Printf("✅ Created Blocked/DuplicateInProgress RR: %s (duplicateOf: %s)\n", name, duplicateOf)
-	return rr
-}
-
-// createTerminalRR creates an RR with a given terminal phase.
-// Waits for the RO controller to reach Processing (SP created, Pending→Processing
-// transition complete) before injecting terminal status. This prevents the v1.3
-// TOCTOU phase guards from overwriting the injected phase during the
-// Pending→Processing AtomicStatusUpdate window.
-func createTerminalRR(ns, name string, phase remediationv1.RemediationPhase) *remediationv1.RemediationRequest {
-	now := metav1.Now()
-	rr := &remediationv1.RemediationRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: ROControllerNamespace,
-		},
-		Spec: remediationv1.RemediationRequestSpec{
-			SignalFingerprint: func() string {
-				h := sha256.Sum256([]byte(uuid.New().String()))
-				return hex.EncodeToString(h[:])
-			}(),
-			SignalName: "TestOriginalAlert",
-			Severity:   "critical",
-			SignalType: "alert",
-			TargetType: "kubernetes",
-			TargetResource: remediationv1.ResourceIdentifier{
-				Kind:      "Deployment",
-				Name:      "test-app",
-				Namespace: ns,
-			},
-			FiringTime:   now,
-			ReceivedTime: now,
-		},
-	}
-	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-
-	key := types.NamespacedName{Name: name, Namespace: ROControllerNamespace}
-	// Wait for Processing: the controller must complete the Pending→Processing
-	// transition (which creates SP via AtomicStatusUpdate) before we inject terminal
-	// status. Injecting during the transition window risks the AtomicStatusUpdate
-	// overwriting our terminal phase with Processing.
 	Eventually(func() remediationv1.RemediationPhase {
 		fetched := &remediationv1.RemediationRequest{}
 		if err := k8sManager.GetAPIReader().Get(ctx, key, fetched); err != nil {
@@ -153,8 +60,31 @@ func createTerminalRR(ns, name string, phase remediationv1.RemediationPhase) *re
 		}
 		return fetched.Status.OverallPhase
 	}, timeout, 25*time.Millisecond).Should(Equal(remediationv1.PhaseProcessing),
-		"RO should reach Processing before injecting terminal status for %s/%s", ROControllerNamespace, name)
+		"RO should reach Processing for %s/%s", ROControllerNamespace, name)
+}
 
+// waitForBlocked waits until the RR is naturally blocked by the routing engine
+// as DuplicateInProgress, confirming the controller set the status (not the test).
+func waitForBlocked(name string) {
+	key := types.NamespacedName{Name: name, Namespace: ROControllerNamespace}
+	Eventually(func() remediationv1.BlockReason {
+		fetched := &remediationv1.RemediationRequest{}
+		if err := k8sManager.GetAPIReader().Get(ctx, key, fetched); err != nil {
+			return ""
+		}
+		if fetched.Status.OverallPhase != remediationv1.PhaseBlocked {
+			return ""
+		}
+		return fetched.Status.BlockReason
+	}, timeout, 25*time.Millisecond).Should(Equal(remediationv1.BlockReasonDuplicateInProgress),
+		"RO should naturally block %s/%s as DuplicateInProgress", ROControllerNamespace, name)
+}
+
+// injectTerminalStatus injects a terminal phase on an RR that is already in Processing.
+// Uses retry-on-conflict to handle concurrent controller updates.
+func injectTerminalStatus(name string, phase remediationv1.RemediationPhase) {
+	key := types.NamespacedName{Name: name, Namespace: ROControllerNamespace}
+	now := metav1.Now()
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		fetched := &remediationv1.RemediationRequest{}
 		if err := k8sClient.Get(ctx, key, fetched); err != nil {
@@ -175,9 +105,7 @@ func createTerminalRR(ns, name string, phase remediationv1.RemediationPhase) *re
 		return k8sClient.Status().Update(ctx, fetched)
 	})
 	Expect(err).To(Succeed())
-
-	GinkgoWriter.Printf("✅ Created terminal RR: %s (phase: %s)\n", name, phase)
-	return rr
+	GinkgoWriter.Printf("✅ Injected terminal status: %s/%s → %s\n", ROControllerNamespace, name, phase)
 }
 
 var _ = Describe("Issue #614: DuplicateInProgress Outcome Inheritance Integration", Label("integration", "dedup-blocking"), func() {
@@ -192,14 +120,20 @@ var _ = Describe("Issue #614: DuplicateInProgress Outcome Inheritance Integratio
 	})
 
 	It("IT-RO-614-001: Blocked/DuplicateInProgress RR inherits Completed from original RR", func() {
+		fingerprint := GenerateTestFingerprint(ns, "614-001")
 		originalName := fmt.Sprintf("original-614-001-%s", uuid.New().String()[:8])
 		dupName := fmt.Sprintf("dup-614-001-%s", uuid.New().String()[:8])
 
-		By("Creating the original RR in Completed state")
-		createTerminalRR(ns, originalName, remediationv1.PhaseCompleted)
+		By("Creating the original RR and waiting for it to reach Processing (active)")
+		createRemediationRequestWithFingerprint(ns, originalName, fingerprint)
+		waitForProcessing(originalName)
 
-		By("Creating the duplicate RR in Blocked/DuplicateInProgress state")
-		dupRR := createBlockedDuplicateRR(ns, dupName, originalName)
+		By("Creating the duplicate RR with the same fingerprint — routing blocks it naturally")
+		dupRR := createRemediationRequestWithFingerprint(ns, dupName, fingerprint)
+		waitForBlocked(dupName)
+
+		By("Injecting Completed status on the original RR")
+		injectTerminalStatus(originalName, remediationv1.PhaseCompleted)
 
 		By("Waiting for the duplicate to inherit Completed")
 		Eventually(func() remediationv1.RemediationPhase {
@@ -214,14 +148,20 @@ var _ = Describe("Issue #614: DuplicateInProgress Outcome Inheritance Integratio
 	})
 
 	It("IT-RO-614-002: Blocked/DuplicateInProgress RR inherits Failed from original RR with FailurePhaseDeduplicated", func() {
+		fingerprint := GenerateTestFingerprint(ns, "614-002")
 		originalName := fmt.Sprintf("original-614-002-%s", uuid.New().String()[:8])
 		dupName := fmt.Sprintf("dup-614-002-%s", uuid.New().String()[:8])
 
-		By("Creating the original RR in Failed state")
-		createTerminalRR(ns, originalName, remediationv1.PhaseFailed)
+		By("Creating the original RR and waiting for it to reach Processing (active)")
+		createRemediationRequestWithFingerprint(ns, originalName, fingerprint)
+		waitForProcessing(originalName)
 
-		By("Creating the duplicate RR in Blocked/DuplicateInProgress state")
-		dupRR := createBlockedDuplicateRR(ns, dupName, originalName)
+		By("Creating the duplicate RR with the same fingerprint — routing blocks it naturally")
+		dupRR := createRemediationRequestWithFingerprint(ns, dupName, fingerprint)
+		waitForBlocked(dupName)
+
+		By("Injecting Failed status on the original RR")
+		injectTerminalStatus(originalName, remediationv1.PhaseFailed)
 
 		By("Waiting for the duplicate to inherit Failed")
 		Eventually(func() remediationv1.RemediationPhase {
@@ -241,14 +181,20 @@ var _ = Describe("Issue #614: DuplicateInProgress Outcome Inheritance Integratio
 	})
 
 	It("IT-RO-614-003: inherited failure from RR-level dedup is excluded from countConsecutiveFailures", func() {
+		fingerprint := GenerateTestFingerprint(ns, "614-003")
 		originalName := fmt.Sprintf("original-614-003-%s", uuid.New().String()[:8])
 		dupName := fmt.Sprintf("dup-614-003-%s", uuid.New().String()[:8])
 
-		By("Creating the original RR in Failed state")
-		createTerminalRR(ns, originalName, remediationv1.PhaseFailed)
+		By("Creating the original RR and waiting for it to reach Processing (active)")
+		createRemediationRequestWithFingerprint(ns, originalName, fingerprint)
+		waitForProcessing(originalName)
 
-		By("Creating the duplicate RR in Blocked/DuplicateInProgress state")
-		dupRR := createBlockedDuplicateRR(ns, dupName, originalName)
+		By("Creating the duplicate RR with the same fingerprint — routing blocks it naturally")
+		dupRR := createRemediationRequestWithFingerprint(ns, dupName, fingerprint)
+		waitForBlocked(dupName)
+
+		By("Injecting Failed status on the original RR")
+		injectTerminalStatus(originalName, remediationv1.PhaseFailed)
 
 		By("Waiting for the duplicate to inherit Failed")
 		Eventually(func() remediationv1.RemediationPhase {
@@ -263,7 +209,7 @@ var _ = Describe("Issue #614: DuplicateInProgress Outcome Inheritance Integratio
 
 		By("Creating a new RR with same fingerprint to verify it is NOT blocked")
 		newRRName := fmt.Sprintf("new-614-003-%s", uuid.New().String()[:8])
-		newRR := createRemediationRequestWithFingerprint(ns, newRRName, dupRR.Spec.SignalFingerprint)
+		newRR := createRemediationRequestWithFingerprint(ns, newRRName, fingerprint)
 
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(newRR), newRR)
