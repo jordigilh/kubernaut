@@ -22,6 +22,7 @@ type StepKind string
 const (
 	StepKindLLMReasoning StepKind = "llm_reasoning"
 	StepKindToolResult   StepKind = "tool_result"
+	StepKindSignalInput  StepKind = "signal_input"
 )
 
 // Step represents a single piece of content to be evaluated by the shadow agent.

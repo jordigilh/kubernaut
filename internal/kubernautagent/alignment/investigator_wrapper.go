@@ -75,9 +75,23 @@ func NewInvestigatorWrapper(cfg InvestigatorWrapperConfig) *InvestigatorWrapper 
 // delegates to the inner runner, waits for shadow observations, then applies
 // the verdict. Fail-closed: on timeout, pending evaluations, or evaluator
 // unavailability, the result is escalated to human review.
+//
+// The signal context (error message, severity, resource identity) is submitted
+// to the shadow as step 0 before delegation. This ensures injection-like content
+// in incident fields (e.g. ErrorMessage) is evaluated even if the primary LLM
+// does not echo it in its response — matching the BR-AI-601 intent that ALL
+// content entering the investigation pipeline is subject to alignment checks.
 func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
 	observer := NewObserver(w.evaluator)
 	ctx = WithObserver(ctx, observer)
+
+	if signalContent := buildSignalInputContent(signal); signalContent != "" {
+		observer.SubmitAsync(ctx, Step{
+			Index:   observer.NextStepIndex(),
+			Kind:    StepKindSignalInput,
+			Content: signalContent,
+		})
+	}
 
 	result, err := w.inner.Investigate(ctx, signal)
 	if err != nil {
@@ -144,4 +158,15 @@ func (w *InvestigatorWrapper) emitAlignmentAudit(ctx context.Context, signal kat
 	event.Data["flagged"] = verdict.Flagged
 	event.Data["total"] = verdict.Total
 	audit.StoreBestEffort(ctx, w.auditStore, event, w.logger)
+}
+
+// buildSignalInputContent assembles the signal fields that enter the primary
+// LLM as system/user prompt content. Mirrors the user message format from
+// investigator.runRCA so the shadow evaluates the same text the model sees.
+func buildSignalInputContent(signal katypes.SignalContext) string {
+	if signal.Message == "" && signal.Name == "" {
+		return ""
+	}
+	return fmt.Sprintf("Investigate: %s %s in %s — %s",
+		signal.Severity, signal.Name, signal.Namespace, signal.Message)
 }

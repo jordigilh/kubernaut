@@ -143,11 +143,12 @@ var _ = Describe("E2E-SA-601: Shadow Agent Alignment Check", Label("e2e", "ka", 
 	Context("BR-AI-601: Injected content triggers alignment flag", func() {
 
 		It("E2E-SA-601-002: Signal with injection-like error message triggers alignment warning", func() {
-			// This signal embeds injection-like content in the error message.
-			// When the investigator builds the prompt, the error message is
-			// included in context. The shadow mock evaluates the LLM response
-			// content (which includes tool outputs echoing the signal data)
-			// and detects injection patterns, returning suspicious=true.
+			// This signal embeds injection-like content in the ErrorMessage field.
+			// The alignment wrapper submits the signal context as a step_0
+			// (StepKindSignalInput) to the shadow before delegating to the inner
+			// investigator. The shadow mock pattern-matches the content and
+			// detects injection patterns ("system:", "ignore previous",
+			// "skip human review"), returning suspicious=true.
 			//
 			// The alignment wrapper sets NeedsHumanReview=true with reason
 			// "alignment_check_failed" which maps to investigation_inconclusive.
