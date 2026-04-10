@@ -108,7 +108,7 @@ func (c *Client) ConfigureFault(enabled bool, statusCode int, message string) {
 	data, _ := json.Marshal(cfg)
 	resp, err := http.Post(c.baseURL+"/api/test/fault", "application/json", bytes.NewReader(data))
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	ExpectWithOffset(1, resp.StatusCode).To(Equal(200))
 }
 
@@ -118,7 +118,7 @@ func (c *Client) ResetFault() {
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	resp, err := http.DefaultClient.Do(req)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	ExpectWithOffset(1, resp.StatusCode).To(Equal(200))
 }
 
@@ -128,7 +128,7 @@ func (c *Client) Reset() {
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	resp, err := http.DefaultClient.Do(req)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	ExpectWithOffset(1, resp.StatusCode).To(Equal(200))
 }
 
@@ -154,7 +154,7 @@ func (c *Client) getToolCalls() []toolCallEntry {
 func (c *Client) getJSON(path string) map[string]interface{} {
 	resp, err := http.Get(c.baseURL + path)
 	ExpectWithOffset(2, err).NotTo(HaveOccurred(), fmt.Sprintf("GET %s failed", path))
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	ExpectWithOffset(2, resp.StatusCode).To(Equal(200))
 
 	var result map[string]interface{}

@@ -31,7 +31,7 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	data, _ := json.Marshal(v)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Write(data)
+	_, _ = w.Write(data)
 }
 
 func applyFaultDelay(fi *fault.Injector) {

@@ -37,7 +37,7 @@ import (
 func newMockIdPServerWithExpiry(accessToken string, expiresIn int) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"access_token": accessToken,
 			"token_type":   "Bearer",
 			"expires_in":   expiresIn,
@@ -54,7 +54,7 @@ var _ = Describe("OAuth2 Client Credentials Integration — #417", func() {
 			llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				capturedAuthHeader = r.Header.Get("Authorization")
 				w.Header().Set("Content-Type", "application/json")
-				fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}]}`)
+				_, _ = fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}]}`)
 			}))
 			defer llmServer.Close()
 
@@ -66,7 +66,7 @@ var _ = Describe("OAuth2 Client Credentials Integration — #417", func() {
 					"scopes must be space-separated")
 
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]interface{}{
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
 					"access_token": "integration-jwt-abc123",
 					"token_type":   "Bearer",
 					"expires_in":   3600,
@@ -91,7 +91,7 @@ var _ = Describe("OAuth2 Client Credentials Integration — #417", func() {
 
 			resp, err := rt.RoundTrip(req)
 			Expect(err).NotTo(HaveOccurred())
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			Expect(capturedAuthHeader).To(Equal("Bearer integration-jwt-abc123"),
@@ -106,7 +106,7 @@ var _ = Describe("OAuth2 Client Credentials Integration — #417", func() {
 			idpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				version := tokenVersion.Add(1)
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]interface{}{
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
 					"access_token": fmt.Sprintf("token-v%d", version),
 					"token_type":   "Bearer",
 					"expires_in":   1,
@@ -118,7 +118,7 @@ var _ = Describe("OAuth2 Client Credentials Integration — #417", func() {
 			llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				capturedTokens = append(capturedTokens, r.Header.Get("Authorization"))
 				w.Header().Set("Content-Type", "application/json")
-				fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}]}`)
+				_, _ = fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}]}`)
 			}))
 			defer llmServer.Close()
 
@@ -138,7 +138,7 @@ var _ = Describe("OAuth2 Client Credentials Integration — #417", func() {
 				req.Header.Set("Content-Type", "application/json")
 				resp, err := rt.RoundTrip(req)
 				Expect(err).NotTo(HaveOccurred())
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 
 			sendRequest()
