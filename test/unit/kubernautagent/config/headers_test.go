@@ -99,7 +99,7 @@ var _ = Describe("Custom Header Config — #417", func() {
 	// UT-KA-417-010: Startup validation fails fast on missing secretKeyRef
 	Describe("UT-KA-417-010: Startup fail-fast on missing secret", func() {
 		It("should return error when secretKeyRef env var is unset", func() {
-			os.Unsetenv("KA_TEST_MISSING_SECRET")
+			Expect(os.Unsetenv("KA_TEST_MISSING_SECRET")).To(Succeed())
 			defs := []config.HeaderDefinition{
 				{Name: "Authorization", SecretKeyRef: "KA_TEST_MISSING_SECRET"},
 			}
@@ -109,8 +109,8 @@ var _ = Describe("Custom Header Config — #417", func() {
 		})
 
 		It("should return error when secretKeyRef env var is empty string", func() {
-			os.Setenv("KA_TEST_EMPTY_SECRET", "")
-			defer os.Unsetenv("KA_TEST_EMPTY_SECRET")
+			Expect(os.Setenv("KA_TEST_EMPTY_SECRET", "")).To(Succeed())
+			DeferCleanup(os.Unsetenv, "KA_TEST_EMPTY_SECRET")
 
 			defs := []config.HeaderDefinition{
 				{Name: "Authorization", SecretKeyRef: "KA_TEST_EMPTY_SECRET"},
@@ -121,8 +121,8 @@ var _ = Describe("Custom Header Config — #417", func() {
 		})
 
 		It("should succeed when secretKeyRef env var has a value", func() {
-			os.Setenv("KA_TEST_VALID_SECRET", "my-api-key")
-			defer os.Unsetenv("KA_TEST_VALID_SECRET")
+			Expect(os.Setenv("KA_TEST_VALID_SECRET", "my-api-key")).To(Succeed())
+			DeferCleanup(os.Unsetenv, "KA_TEST_VALID_SECRET")
 
 			defs := []config.HeaderDefinition{
 				{Name: "Authorization", SecretKeyRef: "KA_TEST_VALID_SECRET"},
