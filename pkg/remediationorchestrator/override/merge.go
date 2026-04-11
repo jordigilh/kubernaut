@@ -51,6 +51,11 @@ func (e *overrideNotFoundError) Unwrap() error {
 	return e.cause
 }
 
+// NewOverrideNotFoundError creates a permanent override-not-found error for testing.
+func NewOverrideNotFoundError(workflowName, namespace string, cause error) error {
+	return &overrideNotFoundError{workflowName: workflowName, namespace: namespace, cause: cause}
+}
+
 // IsOverrideNotFoundError returns true if the error is a permanent override-not-found error.
 // R10: The reconciler uses this to decide between transitionToFailed (permanent) and requeue (transient).
 func IsOverrideNotFoundError(err error) bool {
