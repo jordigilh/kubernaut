@@ -266,7 +266,7 @@ effectivenessmonitor:
       memory: 256Mi
       cpu: 500m
 
-# -- Kubernaut Agent (Go LLM investigation service, replaces Python HAPI)
+# -- Kubernaut Agent (Go LLM investigation service)
 kubernautAgent:
   replicas: 1
   pdb:
@@ -441,7 +441,7 @@ networkPolicies:
   externalWebhooks:
     cidr: "0.0.0.0/0"
     port: 443
-  externalLLM:
+  externalRegistry:
     cidr: "0.0.0.0/0"
     port: 443
   gateway:
@@ -450,8 +450,6 @@ networkPolicies:
   datastorage:
     enabled: true
   aianalysis:
-    enabled: true
-  holmesgptApi:
     enabled: true
   kubernautAgent:
     enabled: true

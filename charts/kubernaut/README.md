@@ -232,7 +232,7 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 |---|---|---|
 | `demoContent.enabled` | Deploy bundled ActionTypes + RemediationWorkflows | `true` |
 
-### HolmesGPT API (LLM)
+### Kubernaut Agent (LLM)
 
 | Parameter | Description | Default |
 |---|---|---|
@@ -337,14 +337,13 @@ For Vertex AI, Azure, or advanced setups (toolsets, MCP servers), use `sdkConfig
 | `networkPolicies.monitoring.prometheusPort` | Prometheus port (9090 vanilla, 9091 OCP) | `9090` |
 | `networkPolicies.monitoring.alertManagerPort` | AlertManager port (9093 vanilla, 9094 OCP) | `9093` |
 | `networkPolicies.externalWebhooks.cidr` | CIDR for Slack/PagerDuty/Teams webhook egress | `0.0.0.0/0` |
-| `networkPolicies.externalLLM.cidr` | CIDR for LLM provider API egress | `0.0.0.0/0` |
+| `networkPolicies.externalRegistry.cidr` | CIDR for OCI registry egress (datastorage bundle validation) | `0.0.0.0/0` |
 | `networkPolicies.<service>.enabled` | Per-service toggle (gateway, datastorage, etc.) | `true` |
 
 When enabled, each service gets a NetworkPolicy with:
-- **Default-deny** posture (both Ingress and Egress)
-- **DNS egress** (UDP/TCP 53 to kube-system)
-- **K8s API server egress** (TCP 443 to configured CIDR)
-- **Service-specific rules** matching the inter-service traffic matrix
+- **Default-deny ingress** with service-specific allow rules
+- **Egress**: most services restrict egress to DNS, K8s API, and known peers; **Kubernaut Agent uses an ingress-only policy** (unrestricted egress) because it must reach arbitrary LLM providers, MCP servers, and tool endpoints
+- **Datastorage**: allows egress to PostgreSQL, Valkey, and external container registries (configurable CIDR for OCI bundle validation)
 
 Example:
 
