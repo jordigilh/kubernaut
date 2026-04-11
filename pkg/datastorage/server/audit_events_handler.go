@@ -472,12 +472,25 @@ type queryFilters struct {
 
 // knownEventCategories bounds the set of values used as Prometheus label values
 // to prevent unbounded cardinality from user-supplied input (Issue #674 Bug 9).
+// Aligned with AuditEventRequestEventCategory enum in the OpenAPI spec.
 var knownEventCategories = map[string]bool{
-	"remediation": true,
-	"workflow":    true,
-	"security":   true,
-	"system":     true,
-	"alert":      true,
+	"gateway":           true,
+	"notification":      true,
+	"analysis":          true,
+	"aiagent":           true,
+	"signalprocessing":  true,
+	"workflow":          true,
+	"workflowexecution": true,
+	"orchestration":     true,
+	"orchestrator":      true,
+	"approval":          true,
+	"effectiveness":     true,
+	"actiontype":        true,
+	"remediation":       true,
+	"security":          true,
+	"system":            true,
+	"alert":             true,
+	"aianalysis":        true,
 }
 
 // normalizeEventCategory maps request-supplied event categories to a bounded
