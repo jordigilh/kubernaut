@@ -40,12 +40,12 @@ var _ = Describe("SQL Query Builder - BR-STORAGE-021, BR-STORAGE-022", func() {
 			// Args always include limit and offset at the end, so filter values are at the beginning
 			Expect(args[filterArgIndex]).To(Equal(expectedFilterValue))
 		},
-		Entry("namespace filter", query.QueryParams{Namespace: "production"}, "namespace = ?", 0, "production"),
-		Entry("severity filter", query.QueryParams{Severity: "high"}, "signal_severity = ?", 0, "high"),
-		Entry("multiple filters", query.QueryParams{Namespace: "prod", Severity: "high"}, "namespace = ? AND signal_severity = ?", 0, "prod"),
-		Entry("cluster filter", query.QueryParams{Cluster: "us-east-1"}, "cluster_name = ?", 0, "us-east-1"),
-		Entry("environment filter", query.QueryParams{Environment: "production"}, "environment = ?", 0, "production"),
-		Entry("action_type filter", query.QueryParams{ActionType: "scale_deployment"}, "action_type = ?", 0, "scale_deployment"),
+		Entry("namespace filter", query.QueryParams{Namespace: "production"}, "namespace = $1", 0, "production"),
+		Entry("severity filter", query.QueryParams{Severity: "high"}, "signal_severity = $1", 0, "high"),
+		Entry("multiple filters", query.QueryParams{Namespace: "prod", Severity: "high"}, "namespace = $1 AND signal_severity = $2", 0, "prod"),
+		Entry("cluster filter", query.QueryParams{Cluster: "us-east-1"}, "cluster_name = $1", 0, "us-east-1"),
+		Entry("environment filter", query.QueryParams{Environment: "production"}, "environment = $1", 0, "production"),
+		Entry("action_type filter", query.QueryParams{ActionType: "scale_deployment"}, "action_type = $1", 0, "scale_deployment"),
 	)
 
 	// BR-STORAGE-023: Pagination
@@ -76,8 +76,8 @@ var _ = Describe("SQL Query Builder - BR-STORAGE-021, BR-STORAGE-022", func() {
 			sql, args, err := builder.Build()
 
 			Expect(err).ToNot(HaveOccurred())
-			// Parameterized query should use placeholders, not inject SQL
-			Expect(sql).To(ContainSubstring("?"))
+			// Parameterized query should use $N placeholders, not inject SQL
+			Expect(sql).To(ContainSubstring("$1"))
 			Expect(sql).ToNot(ContainSubstring("DROP"))
 			Expect(sql).ToNot(ContainSubstring("--"))
 			Expect(args[0]).To(Equal(maliciousInput)) // Value in args, not SQL
