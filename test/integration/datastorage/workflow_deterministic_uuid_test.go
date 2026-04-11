@@ -75,7 +75,7 @@ var _ = Describe("Deterministic UUID Integration (#548)", Ordered, func() {
 			Logger:        logr.Discard(),
 			AppConfig:     appCfg,
 			ServerConfig: &server.Config{
-				Port:         18098,
+				Port:         18090,
 				ReadTimeout:  30 * time.Second,
 				WriteTimeout: 30 * time.Second,
 			},

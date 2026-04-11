@@ -156,6 +156,7 @@ func newBatchLimitTestServer(maxBatchSize int) *httptest.Server {
 
 	appCfg := &dsconfig.Config{
 		Server: dsconfig.ServerConfig{
+			Port:         18090,
 			MaxBatchSize: maxBatchSize,
 		},
 		Database: dsconfig.DatabaseConfig{
@@ -176,7 +177,7 @@ func newBatchLimitTestServer(maxBatchSize int) *httptest.Server {
 		Logger:        logger,
 		AppConfig:     appCfg,
 		ServerConfig: &server.Config{
-			Port:         18092,
+			Port:         18090,
 			ReadTimeout:  30 * time.Second,
 			WriteTimeout: 30 * time.Second,
 		},
@@ -202,21 +203,27 @@ func buildAuditEventBatch(testID string, count int) []map[string]interface{} {
 	events := make([]map[string]interface{}, count)
 	for i := 0; i < count; i++ {
 		events[i] = map[string]interface{}{
-			"event_id":       uuid.New().String(),
-			"event_type":     "gateway.signal.received",
-			"event_version":  "1.0",
-			"event_category": "gateway",
-			"event_action":   "received",
-			"event_outcome":  "success",
-			"correlation_id": fmt.Sprintf("batch-limit-%s-%d", testID, i),
-			"resource_type":  "Signal",
-			"resource_id":    fmt.Sprintf("fp-%d", i),
-			"actor_id":       "gateway-service",
-			"actor_type":     "service",
-			"retention_days": 30,
+			"event_id":        uuid.New().String(),
+			"event_type":      "gateway.signal.received",
+			"version":         "1.0",
+			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
+			"event_category":  "gateway",
+			"event_action":    "received",
+			"event_outcome":   "success",
+			"correlation_id":  fmt.Sprintf("batch-limit-%s-%d", testID, i),
+			"resource_type":   "Signal",
+			"resource_id":     fmt.Sprintf("fp-%d", i),
+			"actor_id":        "gateway-service",
+			"actor_type":      "service",
+			"retention_days":  30,
 			"event_data": map[string]interface{}{
-				"event_type":  "gateway.signal.received",
-				"signal_name": fmt.Sprintf("test-signal-%d", i),
+				"event_type":    "gateway.signal.received",
+				"signal_name":   fmt.Sprintf("test-signal-%d", i),
+				"signal_type":   "alert",
+				"fingerprint":   fmt.Sprintf("fp-batch-%s-%d", testID, i),
+				"resource_kind": "Deployment",
+				"resource_name": fmt.Sprintf("test-deploy-%d", i),
+				"namespace":     "default",
 			},
 		}
 	}

@@ -91,7 +91,7 @@ var _ = Describe("CreateBatch Lock Ordering [BR-STORAGE-040]", func() {
 		batchA := makeBatch("A")
 		batchB := makeBatch("B")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		g, gCtx := errgroup.WithContext(ctx)

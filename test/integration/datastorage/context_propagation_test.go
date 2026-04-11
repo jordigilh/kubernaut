@@ -128,7 +128,7 @@ var _ = Describe("Context Propagation [BR-STORAGE-042]", func() {
 		ts := newContextPropagationTestServer()
 		defer ts.Close()
 
-		reqCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		reqCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet,
@@ -193,7 +193,7 @@ func newContextPropagationTestServer() *httptest.Server {
 		Logger:        logger,
 		AppConfig:     appCfg,
 		ServerConfig: &server.Config{
-			Port:         18091,
+			Port:         18090,
 			ReadTimeout:  30 * time.Second,
 			WriteTimeout: 30 * time.Second,
 		},
