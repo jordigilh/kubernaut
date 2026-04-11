@@ -147,58 +147,8 @@ func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint s
 	return consecutiveFailures
 }
 
-// handleBlockedPhase handles the Blocked phase.
-// Checks if cooldown has expired and transitions to terminal Failed if so.
-// Gateway sees Blocked as "active" so won't create new RRs until expiry.
-//
-// Reference: BR-ORCH-042.3
-func (r *Reconciler) handleBlockedPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-
-	// Blocks without auto-expiry: event-based blocks need periodic rechecks,
-	// manual blocks stay until explicitly cleared.
-	if rr.Status.BlockedUntil == nil {
-		switch remediationv1.BlockReason(rr.Status.BlockReason) {
-		case remediationv1.BlockReasonResourceBusy:
-			return r.recheckResourceBusyBlock(ctx, rr)
-		case remediationv1.BlockReasonDuplicateInProgress:
-			return r.recheckDuplicateBlock(ctx, rr)
-		default:
-			logger.V(1).Info("RR is manually blocked, no auto-expiry")
-			return ctrl.Result{}, nil
-		}
-	}
-
-	// Check if cooldown has expired
-	if time.Now().After(rr.Status.BlockedUntil.Time) {
-		// BR-SCOPE-010: UnmanagedResource blocks re-validate scope instead of failing.
-		// Bug #266: Previously all timed blocks went to Failed on expiry.
-		if remediationv1.BlockReason(rr.Status.BlockReason) == remediationv1.BlockReasonUnmanagedResource {
-			return r.handleUnmanagedResourceExpiry(ctx, rr)
-		}
-
-		logger.Info("Blocked cooldown expired, transitioning to terminal Failed")
-
-		// BR-ORCH-042: Record cooldown expiry (CurrentBlockedGauge decrement)
-		r.Metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
-
-		blockReason := "unknown"
-		if rr.Status.BlockReason != "" {
-			blockReason = string(rr.Status.BlockReason)
-		}
-
-		return r.transitionToFailedTerminal(ctx, rr, remediationv1.FailurePhaseBlocked,
-			fmt.Errorf("cooldown expired after blocking due to %s", blockReason))
-	}
-
-	// Still in cooldown - requeue at exact expiry time
-	requeueAfter := time.Until(rr.Status.BlockedUntil.Time)
-	logger.V(1).Info("Still blocked, requeueing at expiry",
-		"blockedUntil", rr.Status.BlockedUntil.Format(time.RFC3339),
-		"requeueAfter", requeueAfter,
-	)
-	return ctrl.Result{RequeueAfter: requeueAfter}, nil
-}
+// handleBlockedPhase is now handled by BlockedHandler via the phase registry.
+// See blocked_handler.go (Issue #666, TP-666-v1 §8.2).
 
 // transitionToFailedTerminal is the terminal Failed transition that skips blocking check.
 // Used when transitioning from Blocked after cooldown expiry.
