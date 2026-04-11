@@ -17,6 +17,7 @@ package audit
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/google/uuid"
 
@@ -58,6 +59,10 @@ const (
 // BR-STORAGE-183: Audit workflow creation (business logic operation)
 // DD-AUDIT-004 V2.0: Uses OpenAPI-generated typed schemas (no unstructured data)
 func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogenclient.AuditEventRequest, error) {
+	if workflow == nil {
+		return nil, fmt.Errorf("workflow must not be nil")
+	}
+
 	// Create OpenAPI audit event
 	auditEvent := pkgaudit.NewAuditEventRequest()
 	pkgaudit.SetEventType(auditEvent, EventTypeWorkflowCreated)

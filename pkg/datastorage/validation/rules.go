@@ -41,10 +41,11 @@ func DefaultRules() *ValidationRules {
 
 // NewValidatorWithRules creates a validator with custom rules
 func NewValidatorWithRules(logger logr.Logger, rules *ValidationRules) *Validator {
-	// For now, we use default rules internally
-	// This allows future extension without breaking existing code
-	_ = rules // Will be used in future enhancement
+	if rules == nil {
+		rules = DefaultRules()
+	}
 	return &Validator{
 		logger: logger,
+		rules:  rules,
 	}
 }

@@ -66,7 +66,7 @@ var _ = Describe("Kubernaut Agent Validator Wiring — TP-433-WIR Phase 5", func
 				},
 			}
 
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Pipeline: investigator.Pipeline{Validator: validator}})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: validator}}})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
 			})

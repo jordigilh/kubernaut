@@ -29,7 +29,7 @@ from typing import Optional
 # Configuration: Service patterns (mirrors .coverage-patterns.yaml)
 # ============================================================================
 
-GENERATED_CODE_PATTERNS = ["/ogen-client/", "/mocks/", "/test/"]
+GENERATED_CODE_PATTERNS = ["/ogen-client/", "/mocks/", "/test/", "/zz_generated"]
 
 # Go services: package pattern, unit-exclude regex, integration-include regex
 # File exclusions use `.go:` (Go coverage format: file.go:line)
@@ -101,6 +101,12 @@ GO_SERVICE_CONFIG = {
         # Unit-excluded (I/O-dependent): clients that talk to Prom/AM/DS, status updaters
         "unit_exclude": r"/(client|status|reconciler)/",
         "int_include": r"/(client|status|reconciler)/",
+    },
+    "shared-packages": {
+        "pkg_pattern": "/pkg/shared/|/pkg/audit/|/pkg/cache/|/pkg/k8sutil/",
+        # Unit-excluded: middleware that requires K8s TokenReview/SAR, k8sutil client, SA transport
+        "unit_exclude": r"/(auth/middleware\.go:|auth/transport\.go:|k8sutil/client\.go:)",
+        "int_include": r"/(auth/middleware\.go:|auth/transport\.go:|k8sutil/client\.go:)",
     },
 }
 
@@ -184,9 +190,13 @@ def _matches_service_pkg(
     key: str, pkg_pattern: str, controller_pattern: Optional[str] = None,
     internal_pattern: Optional[str] = None,
 ) -> bool:
-    """Check if a coverage entry key matches the service's package, controller, or internal patterns."""
-    if pkg_pattern in key:
-        return True
+    """Check if a coverage entry key matches the service's package, controller, or internal patterns.
+
+    pkg_pattern may contain '|' to match any of multiple substrings.
+    """
+    for pat in pkg_pattern.split("|"):
+        if pat and pat in key:
+            return True
     if controller_pattern and controller_pattern in key:
         return True
     if internal_pattern and internal_pattern in key:

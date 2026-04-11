@@ -312,6 +312,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})
 	GinkgoWriter.Println("   ✅ Registered RemediationApprovalRequest webhook handler")
 
+	// Register RemediationRequest status mutating webhook (DD-WEBHOOK-003: Gap #8 TimeoutConfig audit)
+	rrHandler := authwebhook.NewRemediationRequestStatusHandler(auditStore)
+	err = rrHandler.InjectDecoder(decoder)
+	Expect(err).ToNot(HaveOccurred())
+	webhookServer.Register("/mutate-remediationrequest", &webhook.Admission{Handler: rrHandler})
+	GinkgoWriter.Println("   ✅ Registered RemediationRequest webhook handler")
+
 	// Register NotificationRequest DELETE validator (DD-WEBHOOK-003: Complete audit events)
 	nrValidator := authwebhook.NewNotificationRequestValidator(auditStore)
 	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{

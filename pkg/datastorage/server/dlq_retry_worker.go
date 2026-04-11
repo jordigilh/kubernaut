@@ -119,8 +119,11 @@ func NewDLQRetryWorker(
 }
 
 // Start begins the retry loop in a background goroutine.
-func (w *DLQRetryWorker) Start() {
-	ctx, cancel := context.WithCancel(context.Background())
+// Issue #667/M4: Accepts a parent context so the worker lifecycle is
+// bound to the caller (typically the server) rather than using an
+// unbounded context.Background().
+func (w *DLQRetryWorker) Start(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
 	w.cancel = cancel
 	go w.retryLoop(ctx)
 	w.logger.Info("DLQ retry worker started (DD-009 V1.0)",

@@ -543,6 +543,259 @@ logging:
 				"Zero-config deployment should get standard metrics port 9090")
 		})
 
+		// Issue #667: BR-STORAGE-043 — HTTP batch API must enforce max batch size
+		It("UT-DS-043-001: applies default MaxBatchSize (500) when field is zero", func() {
+			configPath := filepath.Join(tempDir, "config.yaml")
+			yamlContent := `
+server:
+  port: 8080
+  host: "0.0.0.0"
+  readTimeout: 30s
+  writeTimeout: 30s
+database:
+  host: localhost
+  port: 5432
+  name: testdb
+  user: testuser
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
+redis:
+  addr: localhost:6379
+  db: 0
+logging:
+  level: info
+  format: json
+`
+			err := os.WriteFile(configPath, []byte(yamlContent), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			cfg, err := config.LoadFromFile(configPath)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Server.MaxBatchSize).To(Equal(0), "zero value before validation")
+
+			err = cfg.Validate()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Server.MaxBatchSize).To(Equal(500),
+				"zero-config deployment gets safe default batch size of 500")
+		})
+
+		It("UT-DS-043-002: rejects negative MaxBatchSize with descriptive error", func() {
+			configPath := filepath.Join(tempDir, "config.yaml")
+			yamlContent := `
+server:
+  port: 8080
+  host: "0.0.0.0"
+  maxBatchSize: -1
+  readTimeout: 30s
+  writeTimeout: 30s
+database:
+  host: localhost
+  port: 5432
+  name: testdb
+  user: testuser
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
+redis:
+  addr: localhost:6379
+  db: 0
+logging:
+  level: info
+  format: json
+`
+			err := os.WriteFile(configPath, []byte(yamlContent), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			cfg, err := config.LoadFromFile(configPath)
+			Expect(err).ToNot(HaveOccurred())
+
+			err = cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("maxBatchSize"),
+				"error should name the invalid field for operator troubleshooting")
+		})
+
+		// Issue #667/M3: MaxOpenConns defaults to 25 when omitted
+		It("UT-DS-040-M3-001: applies default MaxOpenConns (25) when field is zero", func() {
+			configPath := filepath.Join(tempDir, "config.yaml")
+			yamlContent := `
+server:
+  port: 8080
+  host: "0.0.0.0"
+  readTimeout: 30s
+  writeTimeout: 30s
+database:
+  host: localhost
+  port: 5432
+  name: testdb
+  user: testuser
+  sslMode: disable
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
+redis:
+  addr: localhost:6379
+  db: 0
+logging:
+  level: info
+  format: json
+`
+			err := os.WriteFile(configPath, []byte(yamlContent), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			cfg, err := config.LoadFromFile(configPath)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Database.MaxOpenConns).To(Equal(0), "zero value before validation")
+
+			err = cfg.Validate()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Database.MaxOpenConns).To(Equal(25),
+				"zero-config deployment gets safe default of 25 max open connections")
+		})
+
+		It("UT-DS-040-M3-002: rejects negative MaxOpenConns with descriptive error", func() {
+			configPath := filepath.Join(tempDir, "config.yaml")
+			yamlContent := `
+server:
+  port: 8080
+  host: "0.0.0.0"
+  readTimeout: 30s
+  writeTimeout: 30s
+database:
+  host: localhost
+  port: 5432
+  name: testdb
+  user: testuser
+  sslMode: disable
+  maxOpenConns: -5
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
+redis:
+  addr: localhost:6379
+  db: 0
+logging:
+  level: info
+  format: json
+`
+			err := os.WriteFile(configPath, []byte(yamlContent), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			cfg, err := config.LoadFromFile(configPath)
+			Expect(err).ToNot(HaveOccurred())
+
+			err = cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("maxOpenConns"),
+				"error should name the invalid field for operator troubleshooting")
+		})
+
+		// Issue #667/M1: statement_timeout and lock_timeout defaults
+		It("UT-DS-040-M1-001: applies default StatementTimeout (30s) and LockTimeout (10s) when omitted", func() {
+			configPath := filepath.Join(tempDir, "config.yaml")
+			yamlContent := `
+server:
+  port: 8080
+  host: "0.0.0.0"
+  readTimeout: 30s
+  writeTimeout: 30s
+database:
+  host: localhost
+  port: 5432
+  name: testdb
+  user: testuser
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
+redis:
+  addr: localhost:6379
+  db: 0
+logging:
+  level: info
+  format: json
+`
+			err := os.WriteFile(configPath, []byte(yamlContent), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			cfg, err := config.LoadFromFile(configPath)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Database.StatementTimeout).To(BeEmpty(), "empty before validation")
+			Expect(cfg.Database.LockTimeout).To(BeEmpty(), "empty before validation")
+
+			err = cfg.Validate()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Database.StatementTimeout).To(Equal("30s"),
+				"zero-config deployment gets safe 30s statement timeout")
+			Expect(cfg.Database.LockTimeout).To(Equal("10s"),
+				"zero-config deployment gets safe 10s lock timeout")
+		})
+
+		It("UT-DS-040-M1-002: rejects invalid StatementTimeout with descriptive error", func() {
+			configPath := filepath.Join(tempDir, "config.yaml")
+			yamlContent := `
+server:
+  port: 8080
+  host: "0.0.0.0"
+  readTimeout: 30s
+  writeTimeout: 30s
+database:
+  host: localhost
+  port: 5432
+  name: testdb
+  user: testuser
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
+  statementTimeout: "not-a-duration"
+redis:
+  addr: localhost:6379
+  db: 0
+logging:
+  level: info
+  format: json
+`
+			err := os.WriteFile(configPath, []byte(yamlContent), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			cfg, err := config.LoadFromFile(configPath)
+			Expect(err).ToNot(HaveOccurred())
+
+			err = cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("statementTimeout"),
+				"error should name the invalid field")
+		})
+
+		It("UT-DS-040-M1-003: GetConnectionString includes statement_timeout and lock_timeout", func() {
+			dbCfg := config.DatabaseConfig{
+				Host:             "localhost",
+				Port:             5432,
+				Name:             "testdb",
+				User:             "testuser",
+				Password:         "secret",
+				SSLMode:          "disable",
+				StatementTimeout: "30s",
+				LockTimeout:      "10s",
+			}
+
+			dsn := dbCfg.GetConnectionString()
+			Expect(dsn).To(ContainSubstring("statement_timeout=30000"),
+				"DSN should contain statement_timeout in milliseconds")
+			Expect(dsn).To(ContainSubstring("lock_timeout=10000"),
+				"DSN should contain lock_timeout in milliseconds")
+			Expect(dsn).To(ContainSubstring("options='"),
+				"PG options should be wrapped in options=''")
+		})
+
 		It("UT-DS-283-003: should reject invalid metricsPort with actionable error", func() {
 			configPath := filepath.Join(tempDir, "config.yaml")
 			yamlBadPort := `

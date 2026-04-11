@@ -90,12 +90,28 @@ var _ = Describe("Shared Conditions Utilities", func() {
 		})
 	})
 
+	Describe("SetWithGeneration (BR-SHARED-001)", func() {
+		It("sets ObservedGeneration on a new condition (BR-SHARED-001)", func() {
+			conditions.SetWithGeneration(&conditionsList, "Reconciled", metav1.ConditionTrue, "Reason", "msg", 7)
+			Expect(conditionsList).To(HaveLen(1))
+			Expect(conditionsList[0].ObservedGeneration).To(Equal(int64(7)))
+			Expect(conditionsList[0].Type).To(Equal("Reconciled"))
+		})
+
+		It("updates ObservedGeneration when the same condition type is set again (BR-SHARED-001)", func() {
+			conditions.SetWithGeneration(&conditionsList, "Reconciled", metav1.ConditionTrue, "R1", "m1", 3)
+			conditions.SetWithGeneration(&conditionsList, "Reconciled", metav1.ConditionFalse, "R2", "m2", 9)
+			Expect(conditionsList).To(HaveLen(1))
+			Expect(conditionsList[0].ObservedGeneration).To(Equal(int64(9)))
+			Expect(conditionsList[0].Status).To(Equal(metav1.ConditionFalse))
+		})
+	})
+
 	Describe("Get", func() {
 		It("should return existing condition", func() {
 			conditions.Set(&conditionsList, "ValidationComplete", metav1.ConditionTrue, "ValidationSucceeded", "Validation passed")
 
 			condition := conditions.Get(conditionsList, "ValidationComplete")
-			Expect(condition).ToNot(BeNil())
 			Expect(condition.Type).To(Equal("ValidationComplete"))
 			Expect(condition.Status).To(Equal(metav1.ConditionTrue))
 		})

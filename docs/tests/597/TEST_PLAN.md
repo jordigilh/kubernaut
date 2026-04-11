@@ -34,6 +34,7 @@ behavior is preserved when `continue` is false or absent.
 4. **Controller integration**: The production controller path (`routing_handler.go`) correctly resolves multi-receiver channels and formats the `RoutingResolved` condition
 5. **End-to-end delivery**: Multi-receiver fanout produces actual delivery to all matched channels in a Kind cluster
 6. **Coverage**: >=80% of unit-testable code per tier
+7. **Thread safety**: `Router.FindReceivers` operates under `mu.RLock()` — this is a design property validated by code inspection, not a runtime stress test objective
 
 ### 1.3 Success Metrics
 

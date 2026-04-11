@@ -210,24 +210,26 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 7: Audit workflow creation (async, best-effort)
+	// Copy workflow to avoid data race with JSON encoding in the main goroutine (Issue #674 Bug 11)
 	if h.auditStore != nil {
+		wfCopy := *workflow
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			auditEvent, err := dsaudit.NewWorkflowCreatedAuditEvent(workflow)
+			auditEvent, err := dsaudit.NewWorkflowCreatedAuditEvent(&wfCopy)
 			if err != nil {
 				h.logger.Error(err, "Failed to create workflow creation audit event",
-					"workflow_id", workflow.WorkflowID,
-					"workflow_name", workflow.WorkflowName,
+					"workflow_id", wfCopy.WorkflowID,
+					"workflow_name", wfCopy.WorkflowName,
 				)
 				return
 			}
 
 			if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
 				h.logger.Error(err, "Failed to audit workflow creation",
-					"workflow_id", workflow.WorkflowID,
-					"workflow_name", workflow.WorkflowName,
+					"workflow_id", wfCopy.WorkflowID,
+					"workflow_name", wfCopy.WorkflowName,
 				)
 			}
 		}()
@@ -848,25 +850,30 @@ func (h *Handler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	// BR-STORAGE-183: Audit workflow update (business logic operation)
 	// DD-AUDIT-002 V2.0.1: Workflow state changes are business logic
+	// Copy values before goroutine to avoid data race (Issue #674 Bug 11)
 	if h.auditStore != nil {
+		wfStatus := workflow.Status
+		wfID := workflow.WorkflowID
+		wfDisabledBy := getStringValue(workflow.DisabledBy)
+		wfDisabledReason := getStringValue(workflow.DisabledReason)
+		isDisabling := updateReq.Status != nil && *updateReq.Status == "Disabled"
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			// Build structured updated fields (ogen type - no more map[string]interface{}!)
 			updatedFields := api.WorkflowCatalogUpdatedFields{}
-			updatedFields.Status.SetTo(workflow.Status)
+			updatedFields.Status.SetTo(wfStatus)
 
-			if updateReq.Status != nil && *updateReq.Status == "Disabled" {
-				if disabledBy := getStringValue(workflow.DisabledBy); disabledBy != "" {
-					updatedFields.DisabledBy.SetTo(disabledBy)
+			if isDisabling {
+				if wfDisabledBy != "" {
+					updatedFields.DisabledBy.SetTo(wfDisabledBy)
 				}
-				if disabledReason := getStringValue(workflow.DisabledReason); disabledReason != "" {
-					updatedFields.DisabledReason.SetTo(disabledReason)
+				if wfDisabledReason != "" {
+					updatedFields.DisabledReason.SetTo(wfDisabledReason)
 				}
 			}
 
-			auditEvent, err := dsaudit.NewWorkflowUpdatedAuditEvent(workflow.WorkflowID, updatedFields)
+			auditEvent, err := dsaudit.NewWorkflowUpdatedAuditEvent(wfID, updatedFields)
 			if err != nil {
 				h.logger.Error(err, "Failed to create workflow update audit event",
 					"workflow_id", workflowID,

@@ -96,6 +96,16 @@ type Server struct {
 	authenticator auth.Authenticator
 	authorizer    auth.Authorizer
 	authNamespace string // Namespace for SAR checks (dynamically determined from pod)
+
+	// Issue #667 / BR-STORAGE-043: Maximum events per batch API request
+	maxBatchSize int
+}
+
+func defaultMaxBatchSize(v int) int {
+	if v <= 0 {
+		return 500
+	}
+	return v
 }
 
 // DD-007 + DD-008 graceful shutdown constants
@@ -166,9 +176,12 @@ func NewServer(deps ServerDeps) (*Server, error) {
 
 	// BR-AUDIT-029: Ensure monthly partitions for audit_events and resource_action_traces.
 	// Fail-fast: if partitions cannot be created, DS must not start (writes would fail).
+	// Issue #667/M5: Bound startup DDL with a 30s deadline to prevent indefinite hangs.
 	clock := partition.UTCClock{}
+	partitionCtx, partitionCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer partitionCancel()
 	if err := partition.EnsureMonthlyPartitions(
-		context.Background(), db, clock.Now(), partition.DefaultLookaheadMonths, partition.AllTables(),
+		partitionCtx, db, clock.Now(), partition.DefaultLookaheadMonths, partition.AllTables(),
 	); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to ensure monthly partitions at startup: %w", err)
@@ -374,6 +387,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		authenticator:   deps.Authenticator, // DD-AUTH-014: Injected at runtime
 		authorizer:      deps.Authorizer,    // DD-AUTH-014: Injected at runtime
 		authNamespace:   deps.AuthNamespace,  // DD-AUTH-014: Dynamic namespace for SAR checks
+		maxBatchSize:    defaultMaxBatchSize(appCfg.Server.MaxBatchSize), // Issue #667 / BR-STORAGE-043
 	}
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
@@ -553,17 +567,20 @@ func (s *Server) Handler() http.Handler {
 	return r
 }
 
-// Start starts the HTTP server
+// Start starts the HTTP server, with conditional TLS (#493).
 func (s *Server) Start() error {
-	// DS-FLAKY-003 FIX: Handler is now assigned in NewServer(), so just start the server
-	// Previously: Handler was assigned here, causing httptest tests to fail graceful shutdown
 	s.logger.Info("Starting Data Storage Service server",
 		"addr", s.httpServer.Addr,
 	)
 
 	// DD-009 V1.0: Start DLQ retry worker before accepting HTTP traffic
-	s.dlqRetryWorker.Start()
+	// Issue #667/M4: Use a server-scoped context instead of context.Background()
+	s.dlqRetryWorker.Start(context.Background())
 
+	if s.httpServer.TLSConfig != nil {
+		s.logger.Info("TLS enabled, starting HTTPS server")
+		return s.httpServer.ListenAndServeTLS("", "")
+	}
 	return s.httpServer.ListenAndServe()
 }
 

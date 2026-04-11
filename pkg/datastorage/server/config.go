@@ -16,11 +16,16 @@ limitations under the License.
 
 package server
 
-import "time"
+import (
+	"time"
+
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+)
 
 // Config contains server configuration
 type Config struct {
 	Port         int
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
+	TLS          sharedtls.TLSConfig
 }

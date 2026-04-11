@@ -36,13 +36,20 @@ import (
 
 const maxSelfCorrectionAttempts = 3
 
+// CatalogFetcher retrieves a fresh workflow validator from the catalog.
+// Implementations query DataStorage at request time so KA always sees the
+// current catalog without boot-time prefetch or caching (see #665).
+type CatalogFetcher interface {
+	FetchValidator(ctx context.Context) (*parser.Validator, error)
+}
+
 // Pipeline groups the optional tool-output processing stages that the
 // Investigator applies inside executeTool and runWorkflowSelection.
 // All fields may be nil; nil fields are skipped.
 type Pipeline struct {
 	Sanitizer       *sanitization.Pipeline
 	AnomalyDetector *AnomalyDetector
-	Validator       *parser.Validator
+	CatalogFetcher  CatalogFetcher
 	Summarizer      *summarizer.Summarizer
 }
 
@@ -276,7 +283,17 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		}, nil
 	}
 
-	if inv.pipeline.Validator != nil {
+	if inv.pipeline.CatalogFetcher != nil {
+		validator, fetchErr := inv.pipeline.CatalogFetcher.FetchValidator(ctx)
+		if fetchErr != nil {
+			inv.logger.Warn("workflow catalog unavailable, requiring human review",
+				slog.String("error", fetchErr.Error()))
+			result.HumanReviewNeeded = true
+			result.HumanReviewReason = "catalog_unavailable"
+			result.Reason = fmt.Sprintf("workflow catalog unavailable: %s", fetchErr)
+			return result, nil
+		}
+
 		attempt := 0
 		correctionFn := func(r *katypes.InvestigationResult, validationErr error) (*katypes.InvestigationResult, error) {
 			attempt++
@@ -303,7 +320,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			return inv.resultParser.Parse(correctedContent)
 		}
 
-		corrected, corrErr := inv.pipeline.Validator.SelfCorrect(result, maxSelfCorrectionAttempts, correctionFn)
+		corrected, corrErr := validator.SelfCorrect(result, maxSelfCorrectionAttempts, correctionFn)
 		if corrErr != nil {
 			return nil, fmt.Errorf("validation self-correction failed: %w", corrErr)
 		}
@@ -313,7 +330,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			finalErrors = []string{"validation exhausted all attempts"}
 		}
 		inv.emitValidationEvent(ctx, attempt+1, maxSelfCorrectionAttempts, isValid, finalErrors, corrected.WorkflowID, correlationID)
-		enrichFromCatalog(corrected, inv.pipeline.Validator)
+		enrichFromCatalog(corrected, validator)
 		return corrected, nil
 	}
 

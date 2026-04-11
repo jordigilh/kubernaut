@@ -29,7 +29,7 @@ data:
       healthProbeAddr: ":8081"
       leaderElection: false
       leaderElectionId: "aianalysis.kubernaut.ai"
-    holmesgpt:
+    agent:
       url: "http://kubernaut-agent:8080"
       timeout: "180s"
       sessionPollInterval: "15s"

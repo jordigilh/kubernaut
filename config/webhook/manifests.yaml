@@ -40,6 +40,24 @@ webhooks:
     sideEffects: None
     timeoutSeconds: 10
 
+  - name: remediationrequest.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: default
+        path: /mutate-remediationrequest
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["remediationrequests/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration

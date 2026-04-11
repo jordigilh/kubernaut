@@ -45,7 +45,7 @@ import (
 // for content integrity integration tests. Uses correct ports (15433/16379).
 func createIntegrityTestServer(schemaYAML string) (*httptest.Server, *server.Server) {
 	serverCfg := &server.Config{
-		Port:         18091,
+		Port:         18090,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}

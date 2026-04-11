@@ -30,12 +30,14 @@ import (
 // BR-STORAGE-011: Input sanitization
 type Validator struct {
 	logger logr.Logger
+	rules  *ValidationRules
 }
 
-// NewValidator creates a new validator
+// NewValidator creates a new validator with default rules
 func NewValidator(logger logr.Logger) *Validator {
 	return &Validator{
 		logger: logger,
+		rules:  DefaultRules(),
 	}
 }
 
@@ -62,15 +64,19 @@ func (v *Validator) ValidateRemediationAudit(audit *models.RemediationAudit) err
 		return fmt.Errorf("action_type is required")
 	}
 
-	// Field length validation
-	if len(audit.Name) > 255 {
-		return fmt.Errorf("name exceeds maximum length of 255")
+	if audit.Status != "" && !v.isValidStatus(audit.Status) {
+		return fmt.Errorf("invalid status: %s", audit.Status)
 	}
-	if len(audit.Namespace) > 255 {
-		return fmt.Errorf("namespace exceeds maximum length of 255")
+
+	// Field length validation using configurable rules
+	if len(audit.Name) > v.rules.MaxNameLength {
+		return fmt.Errorf("name exceeds maximum length of %d", v.rules.MaxNameLength)
 	}
-	if len(audit.ActionType) > 100 {
-		return fmt.Errorf("action_type exceeds maximum length of 100")
+	if len(audit.Namespace) > v.rules.MaxNamespaceLength {
+		return fmt.Errorf("namespace exceeds maximum length of %d", v.rules.MaxNamespaceLength)
+	}
+	if len(audit.ActionType) > v.rules.MaxActionTypeLength {
+		return fmt.Errorf("action_type exceeds maximum length of %d", v.rules.MaxActionTypeLength)
 	}
 
 	v.logger.V(1).Info("Validation passed",
@@ -112,12 +118,20 @@ func (v *Validator) SanitizeString(input string) string {
 	return strings.TrimSpace(result)
 }
 
-// isValidPhase checks if a phase value is valid
-// Valid phases: pending, processing, completed, failed
+// isValidPhase checks if a phase value is valid against configured rules
 func (v *Validator) isValidPhase(phase string) bool {
-	validPhases := []string{"pending", "processing", "completed", "failed"}
-	for _, valid := range validPhases {
+	for _, valid := range v.rules.ValidPhases {
 		if phase == valid {
+			return true
+		}
+	}
+	return false
+}
+
+// isValidStatus checks if a status value is valid against configured rules
+func (v *Validator) isValidStatus(status string) bool {
+	for _, valid := range v.rules.ValidStatuses {
+		if status == valid {
 			return true
 		}
 	}

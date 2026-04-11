@@ -53,7 +53,7 @@ TEST_TIMEOUT_E2E ?= 30m
 # DataStorage coverage packages (hand-written only, excludes generated)
 # DATASTORAGE_COVERPKG: Comma-separated list of packages for coverage instrumentation.
 # IMPORTANT: No spaces after commas — Go's --coverpkg treats spaces as part of the package name.
-DATASTORAGE_COVERPKG = github.com/jordigilh/kubernaut/pkg/datastorage/adapter/...,github.com/jordigilh/kubernaut/pkg/datastorage/audit/...,github.com/jordigilh/kubernaut/pkg/datastorage/config/...,github.com/jordigilh/kubernaut/pkg/datastorage/dlq/...,github.com/jordigilh/kubernaut/pkg/datastorage/metrics/...,github.com/jordigilh/kubernaut/pkg/datastorage/models/...,github.com/jordigilh/kubernaut/pkg/datastorage/query/...,github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/sql/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/sqlutil/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow/...,github.com/jordigilh/kubernaut/pkg/datastorage/schema/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/response/...,github.com/jordigilh/kubernaut/pkg/datastorage/validation/...
+DATASTORAGE_COVERPKG = github.com/jordigilh/kubernaut/pkg/datastorage/adapter/...,github.com/jordigilh/kubernaut/pkg/datastorage/audit/...,github.com/jordigilh/kubernaut/pkg/datastorage/config/...,github.com/jordigilh/kubernaut/pkg/datastorage/dlq/...,github.com/jordigilh/kubernaut/pkg/datastorage/metrics/...,github.com/jordigilh/kubernaut/pkg/datastorage/models/...,github.com/jordigilh/kubernaut/pkg/datastorage/partition/...,github.com/jordigilh/kubernaut/pkg/datastorage/query/...,github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/sql/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/sqlutil/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow/...,github.com/jordigilh/kubernaut/pkg/datastorage/schema/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/response/...,github.com/jordigilh/kubernaut/pkg/datastorage/validation/...
 
 # Unit-testable package patterns (pure logic: config, validators, builders, formatters, metrics, classifiers)
 # Integration-testable patterns (I/O-dependent: handlers, servers, DB adapters, K8s clients, workers)
@@ -313,6 +313,23 @@ test-unit-datastorage: ginkgo ensure-coverage-dirs ## Run datastorage unit tests
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_datastorage.out"; \
 		go tool cover -func=coverage_unit_datastorage.out | grep total || echo "No coverage data"; \
+	fi
+
+# Shared packages integration tests: tests for pkg/shared (TLS, etc.)
+# These packages are not standalone services (no cmd/ entry or internal/controller/),
+# so the generic test-integration-% pattern generates a bogus coverpkg path.
+# This dedicated target uses the correct coverpkg for shared packages only.
+.PHONY: test-integration-shared
+test-integration-shared: ginkgo ensure-coverage-dirs ## Run integration tests for shared infrastructure packages (TLS, etc.)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 shared - Integration Tests ($(TEST_PROCS) procs)"
+	@echo "   Packages: pkg/shared (TLS)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_shared.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/shared/... ./test/integration/shared/...
+	@if [ -f coverage_integration_shared.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_integration_shared.out"; \
+		go tool cover -func=coverage_integration_shared.out | grep total || echo "No coverage data"; \
 	fi
 
 # Integration Tests

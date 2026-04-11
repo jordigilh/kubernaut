@@ -39,7 +39,9 @@ func ParseTimeParam(param string) (time.Time, error) {
 		daysStr := strings.TrimSuffix(param, "d")
 		duration, err := time.ParseDuration(daysStr + "h")
 		if err == nil {
-			// Convert days to hours (1d = 24h)
+			if duration < 0 {
+				return time.Time{}, fmt.Errorf("negative day duration not allowed: %s", param)
+			}
 			duration = duration * 24
 			return time.Now().Add(-duration), nil
 		}

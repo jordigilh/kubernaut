@@ -24,6 +24,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // DefaultConfigPath is the standard Kubernetes ConfigMap mount path for this service.
@@ -49,11 +50,12 @@ type ServerConfig struct {
 // ServerSettings contains HTTP server configuration.
 // Single Responsibility: HTTP server behavior
 type ServerSettings struct {
-	ListenAddr            string        `yaml:"listenAddr"`              // Default: ":8080"
-	MaxConcurrentRequests int           `yaml:"maxConcurrentRequests"`   // Default: 100 (0 = unlimited)
-	ReadTimeout           time.Duration `yaml:"readTimeout"`             // Default: 30s
-	WriteTimeout          time.Duration `yaml:"writeTimeout"`            // Default: 30s
-	IdleTimeout           time.Duration `yaml:"idleTimeout"`             // Default: 120s
+	ListenAddr            string              `yaml:"listenAddr"`              // Default: ":8080"
+	MaxConcurrentRequests int                 `yaml:"maxConcurrentRequests"`   // Default: 100 (0 = unlimited)
+	ReadTimeout           time.Duration       `yaml:"readTimeout"`             // Default: 30s
+	WriteTimeout          time.Duration       `yaml:"writeTimeout"`            // Default: 30s
+	IdleTimeout           time.Duration       `yaml:"idleTimeout"`             // Default: 120s
+	TLS                   sharedtls.TLSConfig `yaml:"tls,omitempty"`           // Issue #493: Optional TLS
 }
 
 // MiddlewareSettings contains middleware configuration.
@@ -258,11 +260,11 @@ func LoadFromFile(path string) (*ServerConfig, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return cfg, nil
+		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return cfg, nil
+		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
 
 	// Apply retry defaults if not configured

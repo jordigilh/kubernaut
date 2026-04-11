@@ -69,25 +69,18 @@ var _ = Describe("AuthWebhook Config - Unit Tests", Label("config", "validation"
 			Expect(cfg.Webhook.Port).To(Equal(9443))
 		})
 
-		It("should return defaults gracefully when file does not exist", func() {
-			// ADR-030: Graceful degradation on file-not-found
-			// RED: This test will FAIL with current AuthWebhook LoadFromFile
-			// which returns (nil, error) instead of (defaults, nil)
-			cfg, err := awconfig.LoadFromFile("/nonexistent/path/config.yaml")
-			Expect(err).NotTo(HaveOccurred(), "LoadFromFile should gracefully fall back to defaults")
-			Expect(cfg).NotTo(BeNil())
-			Expect(cfg.Webhook.Port).To(Equal(9443))
+		It("should return error when file does not exist (Issue #674 Bug 4 fix)", func() {
+			_, err := awconfig.LoadFromFile("/nonexistent/path/config.yaml")
+			Expect(err).To(HaveOccurred(), "LoadFromFile should return error for nonexistent file")
 		})
 
-		It("should return defaults gracefully when YAML is malformed", func() {
+		It("should return error when YAML is malformed (Issue #674 Bug 4 fix)", func() {
 			tmpDir := GinkgoT().TempDir()
 			malformedPath := filepath.Join(tmpDir, "malformed.yaml")
 			Expect(os.WriteFile(malformedPath, []byte("{{invalid yaml:::"), 0644)).To(Succeed())
 
-			// RED: Current LoadFromFile returns (nil, error) for malformed YAML
-			cfg, err := awconfig.LoadFromFile(malformedPath)
-			Expect(err).NotTo(HaveOccurred(), "LoadFromFile should gracefully fall back to defaults")
-			Expect(cfg).NotTo(BeNil())
+			_, err := awconfig.LoadFromFile(malformedPath)
+			Expect(err).To(HaveOccurred(), "LoadFromFile should return error for malformed YAML")
 		})
 	})
 
