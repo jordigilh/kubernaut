@@ -915,19 +915,19 @@
             }
           }
         },
-        "externalLLM": {
+        "externalRegistry": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "cidr": {
               "type": "string",
               "default": "0.0.0.0/0",
-              "description": "CIDR for LLM provider API endpoints"
+              "description": "CIDR for OCI container registry egress (datastorage bundle validation)"
             },
             "port": {
               "type": "integer",
               "default": 443,
-              "description": "Port for LLM provider API"
+              "description": "Port for OCI container registry"
             }
           }
         },
@@ -952,13 +952,6 @@
           }
         },
         "aianalysis": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        },
-        "holmesgptApi": {
           "type": "object",
           "additionalProperties": false,
           "properties": {

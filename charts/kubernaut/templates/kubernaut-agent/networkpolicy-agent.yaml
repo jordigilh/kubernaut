@@ -13,7 +13,6 @@ spec:
       app: kubernaut-agent
   policyTypes:
     - Ingress
-    - Egress
   ingress:
     # Investigation traffic from aianalysis-controller
     - ports:
@@ -38,15 +37,4 @@ spec:
         {{- end }}
     {{- end }}
     {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
-  egress:
-    {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
-    {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
-    {{- if .Values.networkPolicies.externalLLM.cidr }}
-    - ports:
-        - port: {{ .Values.networkPolicies.externalLLM.port | default 443 }}
-          protocol: TCP
-      to:
-        - ipBlock:
-            cidr: {{ .Values.networkPolicies.externalLLM.cidr }}
-    {{- end }}
 {{- end }}

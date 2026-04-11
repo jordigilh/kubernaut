@@ -20,10 +20,10 @@ spec:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
     {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
     - ports:
-        - port: 8080
+        - port: 8443
           protocol: TCP
       to:
         - podSelector:
             matchLabels:
-              app: holmesgpt-api
+              app: kubernaut-agent
 {{- end }}

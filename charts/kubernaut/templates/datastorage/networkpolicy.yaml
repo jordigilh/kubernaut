@@ -27,9 +27,6 @@ spec:
               app: aianalysis-controller
         - podSelector:
             matchLabels:
-              app: holmesgpt-api
-        - podSelector:
-            matchLabels:
               app: signalprocessing-controller
         - podSelector:
             matchLabels:
@@ -66,4 +63,12 @@ spec:
         - podSelector:
             matchLabels:
               app: valkey
+    {{- if .Values.networkPolicies.externalRegistry.cidr }}
+    - ports:
+        - port: {{ .Values.networkPolicies.externalRegistry.port | default 443 }}
+          protocol: TCP
+      to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicies.externalRegistry.cidr }}
+    {{- end }}
 {{- end }}
