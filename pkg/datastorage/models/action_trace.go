@@ -18,6 +18,7 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -174,8 +175,18 @@ func (a *ActionTrace) TableName() string {
 
 // Validate performs business logic validation on the ActionTrace struct
 func (a *ActionTrace) Validate() error {
-	// Validation is handled by struct tags and the validator package
-	// Additional business logic validation can be added here if needed
+	if a.ActionID == "" {
+		return fmt.Errorf("action_id is required")
+	}
+	if a.ActionType == "" {
+		return fmt.Errorf("action_type is required")
+	}
+	if a.ActionTimestamp.IsZero() {
+		return fmt.Errorf("action_timestamp is required")
+	}
+	if a.Status == "" {
+		return fmt.Errorf("status is required")
+	}
 	return nil
 }
 

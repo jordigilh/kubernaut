@@ -174,12 +174,14 @@ func (v *VersionValidator) parsePostgreSQLSize(size string) (int64, error) {
 		return value * 1024 * 1024 * 1024 * 1024, nil
 	case "GB":
 		return value * 1024 * 1024 * 1024, nil
-	case "MB", "":
+	case "MB":
 		return value * 1024 * 1024, nil
 	case "KB":
 		return value * 1024, nil
-	default:
-		// PostgreSQL default unit is 8kB blocks
+	case "":
+		// PostgreSQL default unit for shared_buffers is 8kB blocks
 		return value * 8192, nil
+	default:
+		return 0, fmt.Errorf("unknown unit: %s", unit)
 	}
 }

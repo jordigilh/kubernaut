@@ -215,7 +215,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	// 7. Record metrics (BR-STORAGE-019: Logging and metrics)
 	// Record audit lag (time between event occurrence and write)
 	lag := time.Since(req.EventTimestamp).Seconds()
-	s.metrics.AuditLagSeconds.WithLabelValues(string(req.EventCategory)).Observe(lag)
+	s.metrics.AuditLagSeconds.WithLabelValues(normalizeEventCategory(string(req.EventCategory))).Observe(lag)
 
 	// 7. Success - return 201 Created with event_id and created_at
 	s.logger.Info("Audit event created successfully",
@@ -464,8 +464,27 @@ type queryFilters struct {
 // - datastorage.dlq.fallback (DLQ record IS proof of fallback)
 //
 // Operational visibility maintained through:
-// - ✅ Prometheus metrics (audit_writes_total)
-// - ✅ Structured logs (all operations logged)
-// - ✅ DLQ records (failed writes captured)
+// - Prometheus metrics (audit_writes_total)
+// - Structured logs (all operations logged)
+// - DLQ records (failed writes captured)
 //
 // ========================================
+
+// knownEventCategories bounds the set of values used as Prometheus label values
+// to prevent unbounded cardinality from user-supplied input (Issue #674 Bug 9).
+var knownEventCategories = map[string]bool{
+	"remediation": true,
+	"workflow":    true,
+	"security":   true,
+	"system":     true,
+	"alert":      true,
+}
+
+// normalizeEventCategory maps request-supplied event categories to a bounded
+// set for safe use as Prometheus label values.
+func normalizeEventCategory(category string) string {
+	if knownEventCategories[category] {
+		return category
+	}
+	return "other"
+}

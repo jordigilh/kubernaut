@@ -18,7 +18,6 @@ package query
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/go-logr/logr"
 )
@@ -247,10 +246,6 @@ func (b *Builder) Build() (string, []interface{}, error) {
 	sql += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
 	args = append(args, b.limit, b.offset)
 
-	// Convert PostgreSQL placeholders ($1, $2) to standard placeholders (?)
-	// This makes tests portable across different SQL drivers
-	standardSQL := convertToStandardPlaceholders(sql)
-
 	// REFACTOR: Log successful query construction
 	b.logger.V(1).Info("SQL query built successfully",
 		"filter_count", filterCount,
@@ -259,7 +254,7 @@ func (b *Builder) Build() (string, []interface{}, error) {
 		"offset", b.offset,
 	)
 
-	return standardSQL, args, nil
+	return sql, args, nil
 }
 
 // BuildCount builds a COUNT(*) SQL query with filters (no pagination, ordering)
@@ -342,26 +337,13 @@ func (b *Builder) BuildCount() (string, []interface{}, error) {
 		// argIndex++ // Not used after this point
 	}
 
-	// Convert PostgreSQL placeholders ($1, $2) to standard placeholders (?)
-	// This makes tests portable across different SQL drivers
-	standardSQL := convertToStandardPlaceholders(sql)
-
 	// REFACTOR: Log successful count query construction
 	b.logger.V(1).Info("COUNT(*) query built successfully",
 		"filter_count", filterCount,
 		"arg_count", len(args),
 	)
 
-	return standardSQL, args, nil
+	return sql, args, nil
 }
 
-// convertToStandardPlaceholders converts PostgreSQL-style $1, $2 to ? placeholders
-// This is for test compatibility - production code uses PostgreSQL directly
-func convertToStandardPlaceholders(sql string) string {
-	result := sql
-	// Simple replacement for testing - production code uses PostgreSQL driver directly
-	for i := 10; i >= 1; i-- {
-		result = strings.ReplaceAll(result, fmt.Sprintf("$%d", i), "?")
-	}
-	return result
-}
+

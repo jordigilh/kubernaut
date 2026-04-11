@@ -85,11 +85,11 @@ func LoadFromFile(path string) (*Config, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return cfg, nil
+		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return cfg, nil
+		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
 
 	return cfg, nil

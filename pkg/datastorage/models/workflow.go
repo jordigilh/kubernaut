@@ -18,6 +18,7 @@ package models
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -446,24 +447,24 @@ type WorkflowSearchResult struct {
 // HELPER METHODS
 // ========================================
 
-// IsActive returns true if the workflow is active
+// IsActive returns true if the workflow is active (case-insensitive)
 func (w *RemediationWorkflow) IsActive() bool {
-	return w.Status == "Active"
+	return strings.EqualFold(w.Status, "Active")
 }
 
-// IsDisabled returns true if the workflow is disabled
+// IsDisabled returns true if the workflow is disabled (case-insensitive)
 func (w *RemediationWorkflow) IsDisabled() bool {
-	return w.Status == "Disabled"
+	return strings.EqualFold(w.Status, "Disabled")
 }
 
-// IsDeprecated returns true if the workflow is deprecated
+// IsDeprecated returns true if the workflow is deprecated (case-insensitive)
 func (w *RemediationWorkflow) IsDeprecated() bool {
-	return w.Status == "Deprecated"
+	return strings.EqualFold(w.Status, "Deprecated")
 }
 
-// IsArchived returns true if the workflow is archived
+// IsArchived returns true if the workflow is archived (case-insensitive)
 func (w *RemediationWorkflow) IsArchived() bool {
-	return w.Status == "Archived"
+	return strings.EqualFold(w.Status, "Archived")
 }
 
 // V1.0: Removed GetLabelsMap() and SetLabelsFromMap() methods
