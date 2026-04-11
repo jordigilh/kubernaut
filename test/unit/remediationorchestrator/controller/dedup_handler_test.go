@@ -37,7 +37,6 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	prodcontroller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
-	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/handler"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 )
 
@@ -75,140 +74,10 @@ var _ = Describe("Issue #190: Deduplication CRD Types", func() {
 	})
 })
 
-var _ = Describe("Issue #190: HandleStatus Dedup Branching", func() {
-	var (
-		ctx              context.Context
-		scheme           = setupScheme()
-		transitionCalled bool
-	)
-
-	BeforeEach(func() {
-		ctx = context.Background()
-		transitionCalled = false
-	})
-
-	Context("UT-RO-190: HandleStatus with deduplicated WFE", func() {
-
-		It("UT-RO-190-001: should NOT call transitionToFailed for deduplicated WFE", func() {
-			rr := newRemediationRequest("dedup-rr-001", "default", remediationv1.PhaseExecuting)
-			setWERef(rr, "dedup-wfe-001", "default")
-
-			wfe := newWorkflowExecution("dedup-wfe-001", "default", "dedup-rr-001", workflowexecutionv1.PhaseFailed)
-			wfe.Status.FailureDetails = &workflowexecutionv1.FailureDetails{
-				Reason:  workflowexecutionv1.FailureReasonDeduplicated,
-				Message: "Execution resource already exists, owned by WorkflowExecution original-wfe",
-			}
-			wfe.Status.DeduplicatedBy = "original-wfe"
-
-			c := fake.NewClientBuilder().WithScheme(scheme).
-				WithObjects(rr).WithStatusSubresource(rr).Build()
-
-			h := handler.NewWorkflowExecutionHandler(
-				c, scheme, nil,
-				func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
-					transitionCalled = true
-					return ctrl.Result{}, nil
-				},
-				func(_ context.Context, _ *remediationv1.RemediationRequest, _ string) (ctrl.Result, error) {
-					return ctrl.Result{}, nil
-				},
-			)
-
-			result, err := h.HandleStatus(ctx, rr, wfe)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(transitionCalled).To(BeFalse(),
-				"transitionToFailed must NOT be called for deduplicated WFE failures")
-			Expect(result.RequeueAfter).To(BeNumerically(">", 0),
-				"Handler must requeue to wait for original WFE outcome")
-		})
-
-		It("UT-RO-190-002: should set DeduplicatedByWE from WFE.Status.DeduplicatedBy", func() {
-			rr := newRemediationRequest("dedup-rr-002", "default", remediationv1.PhaseExecuting)
-			setWERef(rr, "dedup-wfe-002", "default")
-
-			wfe := newWorkflowExecution("dedup-wfe-002", "default", "dedup-rr-002", workflowexecutionv1.PhaseFailed)
-			wfe.Status.FailureDetails = &workflowexecutionv1.FailureDetails{
-				Reason:  workflowexecutionv1.FailureReasonDeduplicated,
-				Message: "Execution resource already exists, owned by WorkflowExecution original-wfe",
-			}
-			wfe.Status.DeduplicatedBy = "original-wfe"
-
-			c := fake.NewClientBuilder().WithScheme(scheme).
-				WithObjects(rr).WithStatusSubresource(rr).Build()
-
-			h := handler.NewWorkflowExecutionHandler(c, scheme, nil,
-				func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
-					return ctrl.Result{}, nil
-				},
-				func(_ context.Context, _ *remediationv1.RemediationRequest, _ string) (ctrl.Result, error) {
-					return ctrl.Result{}, nil
-				},
-			)
-
-			_, err := h.HandleStatus(ctx, rr, wfe)
-			Expect(err).ToNot(HaveOccurred())
-
-			updated := &remediationv1.RemediationRequest{}
-			Expect(c.Get(ctx, types.NamespacedName{Name: "dedup-rr-002", Namespace: "default"}, updated)).To(Succeed())
-			Expect(updated.Status.DeduplicatedByWE).To(Equal("original-wfe"),
-				"DeduplicatedByWE must be set from WFE.Status.DeduplicatedBy")
-		})
-
-		It("UT-RO-190-003: should requeue after setting DeduplicatedByWE", func() {
-			rr := newRemediationRequest("dedup-rr-003", "default", remediationv1.PhaseExecuting)
-			setWERef(rr, "dedup-wfe-003", "default")
-
-			wfe := newWorkflowExecution("dedup-wfe-003", "default", "dedup-rr-003", workflowexecutionv1.PhaseFailed)
-			wfe.Status.FailureDetails = &workflowexecutionv1.FailureDetails{
-				Reason:  workflowexecutionv1.FailureReasonDeduplicated,
-				Message: "Execution resource already exists",
-			}
-			wfe.Status.DeduplicatedBy = "original-wfe"
-
-			c := fake.NewClientBuilder().WithScheme(scheme).
-				WithObjects(rr).WithStatusSubresource(rr).Build()
-
-			h := handler.NewWorkflowExecutionHandler(c, scheme, nil,
-				func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
-					return ctrl.Result{}, nil
-				},
-				func(_ context.Context, _ *remediationv1.RemediationRequest, _ string) (ctrl.Result, error) {
-					return ctrl.Result{}, nil
-				},
-			)
-
-			result, err := h.HandleStatus(ctx, rr, wfe)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(BeNumerically(">", 0),
-				"Must requeue to check original WFE status on next reconcile")
-		})
-
-		It("UT-RO-190-004: should still call transitionToFailed for non-dedup WFE failure (regression guard)", func() {
-			rr := newRemediationRequest("dedup-rr-004", "default", remediationv1.PhaseExecuting)
-			setWERef(rr, "normal-wfe-004", "default")
-
-			wfe := newWorkflowExecutionFailed("normal-wfe-004", "default", "dedup-rr-004", "some-failure")
-
-			c := fake.NewClientBuilder().WithScheme(scheme).
-				WithObjects(rr).WithStatusSubresource(rr).Build()
-
-			h := handler.NewWorkflowExecutionHandler(c, scheme, nil,
-				func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
-					transitionCalled = true
-					return ctrl.Result{}, nil
-				},
-				func(_ context.Context, _ *remediationv1.RemediationRequest, _ string) (ctrl.Result, error) {
-					return ctrl.Result{}, nil
-				},
-			)
-
-			_, err := h.HandleStatus(ctx, rr, wfe)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(transitionCalled).To(BeTrue(),
-				"transitionToFailed MUST be called for non-deduplicated WFE failures")
-		})
-	})
-})
+// NOTE: UT-RO-190-001 through UT-RO-190-004 (HandleStatus Dedup Branching) were removed
+// as part of Issue #666 (Phase Handler Registry). That handler-level dedup logic is now
+// internalized in ExecutingHandler and covered by UT-EXE-* tests + the reconciler-level
+// tests below (UT-RO-190-005+).
 
 var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 	var (

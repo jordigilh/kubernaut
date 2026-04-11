@@ -93,8 +93,6 @@ type Reconciler struct {
 	scheme              *runtime.Scheme
 	statusAggregator    *aggregator.StatusAggregator
 	aiAnalysisHandler   *handler.AIAnalysisHandler
-	spHandler           *handler.SignalProcessingHandler     // Handler Consistency Refactoring (2026-01-22)
-	weHandler           *handler.WorkflowExecutionHandler    // Handler Consistency Refactoring (2026-01-22)
 	notificationCreator *creator.NotificationCreator
 	spCreator           *creator.SignalProcessingCreator
 	aiAnalysisCreator   *creator.AIAnalysisCreator
@@ -154,6 +152,9 @@ type Reconciler struct {
 	// WIRED IN: cmd/remediationorchestrator/main.go
 	// USAGE: r.StatusManager.AtomicStatusUpdate(ctx, rr, func() { ... })
 	StatusManager *status.Manager
+
+	// Issue #666: Phase Handler Registry for incremental handler extraction
+	phaseRegistry *phase.Registry
 }
 
 // TimeoutConfig holds all timeout configuration for the controller.
@@ -255,6 +256,7 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 		StatusManager:       statusManager,       // DD-PERF-001: Atomic status updates
 		apiReader:           apiReader,            // DD-EM-002: Uncached reader for pre-remediation hash
 		retentionPeriod:     24 * time.Hour,       // #265: Default CRD TTL
+		phaseRegistry:       phase.NewRegistry(),  // Issue #666: Phase handler registry
 	}
 
 	// ADR-EM-001: Wire optional EA creator (variadic for backward compatibility)
@@ -267,15 +269,173 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	// Initialize handlers with transition callbacks for audit emission (BR-AUDIT-005, DD-AUDIT-003)
 	// ========================================
 
-	// SignalProcessingHandler: delegates phase transitions
-	r.spHandler = handler.NewSignalProcessingHandler(c, s, r.transitionPhase)
-
 	// AIAnalysisHandler: delegates failure transitions
 	noActionDelay := time.Duration(r.routingEngine.Config().NoActionRequiredDelayHours) * time.Hour
 	r.aiAnalysisHandler = handler.NewAIAnalysisHandler(c, s, nc, m, r.transitionToFailed, noActionDelay)
 
-	// WorkflowExecutionHandler: delegates verifying and failure transitions
-	r.weHandler = handler.NewWorkflowExecutionHandler(c, s, m, r.transitionToFailed, r.transitionToVerifying)
+	// Issue #666: Register phase handlers in the registry
+	r.phaseRegistry.MustRegister(NewPendingHandler(c, routingEngine, r.spCreator, statusManager, m))
+	r.phaseRegistry.MustRegister(NewProcessingHandler(c, r.aiAnalysisCreator, statusManager, m))
+	r.phaseRegistry.MustRegister(NewExecutingHandler(c, apiReader, r.statusAggregator, statusManager, m))
+	r.phaseRegistry.MustRegister(NewBlockedHandler(m, BlockedCallbacks{
+		RecheckResourceBusyBlock:      r.recheckResourceBusyBlock,
+		RecheckDuplicateBlock:         r.recheckDuplicateBlock,
+		HandleUnmanagedResourceExpiry: r.handleUnmanagedResourceExpiry,
+		TransitionToFailedTerminal:    r.transitionToFailedTerminal,
+	}))
+	wfeCallbacks := WFECreationCallbacks{
+		EmitWorkflowCreatedAudit: r.emitWorkflowCreatedAudit,
+		CreateWFE:                func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error) { return r.weCreator.Create(ctx, rr, ai) },
+		ResolveWorkflowName:      r.resolveWorkflowName,
+	}
+	r.phaseRegistry.MustRegister(NewAnalyzingHandler(c, m, AnalyzingCallbacks{
+		AtomicStatusUpdate: func(ctx context.Context, rr *remediationv1.RemediationRequest, fn func() error) error {
+			return r.StatusManager.AtomicStatusUpdate(ctx, rr, fn)
+		},
+		IsWorkflowNotNeeded:            handler.IsWorkflowNotNeeded,
+		HandleWorkflowNotNeeded:        r.aiAnalysisHandler.HandleAIAnalysisStatus,
+		CreateApproval:                 func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error) { return r.approvalCreator.Create(ctx, rr, ai) },
+		HandleAIAnalysisStatus:         r.aiAnalysisHandler.HandleAIAnalysisStatus,
+		HandleRemediationTargetMissing: r.aiAnalysisHandler.HandleRemediationTargetMissing,
+		EmitApprovalRequestedAudit:     r.emitApprovalRequestedAudit,
+		RecordEvent: func(rr *remediationv1.RemediationRequest, eventType, reason, message string) {
+			if r.Recorder != nil {
+				r.Recorder.Event(rr, eventType, reason, message)
+			}
+		},
+		FetchFreshRR: func(ctx context.Context, key client.ObjectKey) (*remediationv1.RemediationRequest, error) {
+			freshRR := &remediationv1.RemediationRequest{}
+			err := r.apiReader.Get(ctx, key, freshRR)
+			return freshRR, err
+		},
+		CheckPostAnalysisConditions: r.routingEngine.CheckPostAnalysisConditions,
+		HandleBlocked:               r.handleBlocked,
+		AcquireLock: func(ctx context.Context, target string) (bool, error) {
+			if r.lockManager == nil {
+				return true, nil
+			}
+			return r.lockManager.AcquireLock(ctx, target)
+		},
+		ReleaseLock: func(ctx context.Context, target string) error {
+			if r.lockManager == nil {
+				return nil
+			}
+			return r.lockManager.ReleaseLock(ctx, target)
+		},
+		CapturePreRemediationHash: func(ctx context.Context, kind, name, namespace string) (string, string, error) {
+			return CapturePreRemediationHash(ctx, r.apiReader, r.restMapper, kind, name, namespace)
+		},
+		ResolveDualTargets: func(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) DualTargetResult {
+			dt := resolveDualTargets(rr, ai)
+			return DualTargetResult{Remediation: TargetRef{Kind: dt.Remediation.Kind, Name: dt.Remediation.Name, Namespace: dt.Remediation.Namespace}}
+		},
+		PersistPreHash: func(ctx context.Context, rr *remediationv1.RemediationRequest, preHash string) error {
+			return helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.PreRemediationSpecHash = preHash
+				remediationrequest.SetPreRemediationHashCaptured(rr, true,
+					fmt.Sprintf("Pre-remediation hash captured"), r.Metrics)
+				return nil
+			})
+		},
+		WFECallbacks: wfeCallbacks,
+	}))
+	r.phaseRegistry.MustRegister(NewAwaitingApprovalHandler(c, m, AwaitingApprovalCallbacks{
+		RecordEvent: func(rr *remediationv1.RemediationRequest, eventType, reason, message string) {
+			if r.Recorder != nil {
+				r.Recorder.Event(rr, eventType, reason, message)
+			}
+		},
+		UpdateRARConditions: func(ctx context.Context, _ *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest, decision string) error {
+			return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+				if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
+					return err
+				}
+				remediationapprovalrequest.SetApprovalPending(rar, false, "Decision received", r.Metrics)
+				switch decision {
+				case "approved":
+					remediationapprovalrequest.SetApprovalDecided(rar, true,
+						remediationapprovalrequest.ReasonApproved,
+						fmt.Sprintf("Approved by %s", rar.Status.DecidedBy), r.Metrics)
+				case "rejected":
+					remediationapprovalrequest.SetApprovalDecided(rar, true,
+						remediationapprovalrequest.ReasonRejected,
+						fmt.Sprintf("Rejected by %s: %s", rar.Status.DecidedBy, rar.Status.DecisionMessage), r.Metrics)
+				}
+				remediationapprovalrequest.SetReady(rar, true, remediationapprovalrequest.ReasonReady, "Approval decided", r.Metrics)
+				return r.client.Status().Update(ctx, rar)
+			})
+		},
+		ResolveWorkflow: func(ctx context.Context, wo *remediationv1.WorkflowOverride, sw *aianalysisv1.SelectedWorkflow, ns string) (*aianalysisv1.SelectedWorkflow, bool, error) {
+			return override.ResolveWorkflow(ctx, r.apiReader, wo, sw, ns)
+		},
+		CheckResourceBusy: r.routingEngine.CheckResourceBusy,
+		HandleBlocked:     r.handleBlocked,
+		AcquireLock: func(ctx context.Context, target string) (bool, error) {
+			if r.lockManager == nil {
+				return true, nil
+			}
+			return r.lockManager.AcquireLock(ctx, target)
+		},
+		ReleaseLock: func(ctx context.Context, target string) error {
+			if r.lockManager == nil {
+				return nil
+			}
+			return r.lockManager.ReleaseLock(ctx, target)
+		},
+		CapturePreRemediationHash: func(ctx context.Context, kind, name, namespace string) (string, string, error) {
+			return CapturePreRemediationHash(ctx, r.apiReader, r.restMapper, kind, name, namespace)
+		},
+		ResolveDualTargets: func(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) DualTargetResult {
+			dt := resolveDualTargets(rr, ai)
+			return DualTargetResult{Remediation: TargetRef{Kind: dt.Remediation.Kind, Name: dt.Remediation.Name, Namespace: dt.Remediation.Namespace}}
+		},
+		PersistPreHash: func(ctx context.Context, rr *remediationv1.RemediationRequest, preHash string) error {
+			return helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.PreRemediationSpecHash = preHash
+				remediationrequest.SetPreRemediationHashCaptured(rr, true,
+					fmt.Sprintf("Pre-remediation hash captured"), r.Metrics)
+				return nil
+			})
+		},
+		TransitionToFailed: r.transitionToFailed,
+		ExpireRAR: func(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) error {
+			return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+				if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
+					return err
+				}
+				remediationapprovalrequest.SetApprovalPending(rar, false, "Expired without decision", r.Metrics)
+				remediationapprovalrequest.SetApprovalExpired(rar, true,
+					fmt.Sprintf("Expired after %v without decision",
+						time.Since(rar.ObjectMeta.CreationTimestamp.Time).Round(time.Minute)), r.Metrics)
+				remediationapprovalrequest.SetReady(rar, false, remediationapprovalrequest.ReasonNotReady, "Approval expired", r.Metrics)
+				rar.Status.Decision = remediationv1.ApprovalDecisionExpired
+				rar.Status.DecidedBy = "system"
+				rar.Status.Expired = true
+				rar.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(rar.Spec.RequiredBy.Time, time.Now())
+				now := metav1.Now()
+				rar.Status.DecidedAt = &now
+				return r.client.Status().Update(ctx, rar)
+			})
+		},
+		UpdateRARTimeRemaining: func(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) error {
+			return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+				if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
+					return err
+				}
+				rar.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(rar.Spec.RequiredBy.Time, time.Now())
+				return r.client.Status().Update(ctx, rar)
+			})
+		},
+		WFECallbacks:       wfeCallbacks,
+	}))
+	r.phaseRegistry.MustRegister(NewVerifyingHandler(c, m, timeouts, VerifyingCallbacks{
+		EnsureNotificationsCreated:            r.ensureNotificationsCreated,
+		CreateEffectivenessAssessmentIfNeeded: r.createEffectivenessAssessmentIfNeeded,
+		TrackEffectivenessStatus:              r.trackEffectivenessStatus,
+		EmitVerificationTimedOutAudit:         r.emitVerificationTimedOutAudit,
+		EmitVerificationCompletedAudit:        r.emitVerificationCompletedAudit,
+		EmitCompletionAudit:                   r.emitCompletionAudit,
+	}))
 
 	return r
 }
@@ -685,13 +845,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	// Aggregate status from child CRDs
-	aggregatedStatus, err := r.statusAggregator.AggregateStatus(ctx, rr)
-	if err != nil {
-		logger.Error(err, "Failed to aggregate status")
-		return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil // REFACTOR-RO-003
-	}
-
 	// Track notification status (BR-ORCH-029/030)
 	// Updates RR status based on NotificationRequest phase changes
 	if err := r.trackNotificationStatus(ctx, rr); err != nil {
@@ -699,1046 +852,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// Non-fatal: Continue with reconciliation
 	}
 
-	// Handle based on current phase
-	switch phase.Phase(rr.Status.OverallPhase) {
-	case phase.Pending:
-		return r.handlePendingPhase(ctx, rr)
-	case phase.Processing:
-		return r.handleProcessingPhase(ctx, rr, aggregatedStatus)
-	case phase.Analyzing:
-		return r.handleAnalyzingPhase(ctx, rr, aggregatedStatus)
-	case phase.AwaitingApproval:
-		return r.handleAwaitingApprovalPhase(ctx, rr)
-	case phase.Executing:
-		return r.handleExecutingPhase(ctx, rr, aggregatedStatus)
-	case phase.Verifying:
-		return r.handleVerifyingPhase(ctx, rr)
-	case phase.Blocked:
-		// BR-ORCH-042: Handle blocked phase (cooldown expiry check)
-		return r.handleBlockedPhase(ctx, rr)
-	default:
-		logger.Info("Unknown phase", "phase", rr.Status.OverallPhase)
-		return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil // REFACTOR-RO-003
-	}
-}
-
-// handlePendingPhase handles the initial Pending phase.
-// Creates SignalProcessing CRD and transitions to Processing.
-// Per DD-AUDIT-003: Emits orchestrator.lifecycle.started (P1)
-// Per BR-ORCH-025: Pass-through data to SignalProcessing CRD.
-// Per BR-ORCH-031: Sets owner reference for cascade deletion.
-func (r *Reconciler) handlePendingPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-	logger.Info("Handling Pending phase - checking routing conditions")
-
-	// Note: lifecycle.started audit event is emitted during phase initialization (line ~207)
-	// This function handles the business logic of the Pending phase
-
-	// Pre-AA routing checks: fingerprint-based only (no AI data available yet).
-	// Primary check: DuplicateInProgress (same fingerprint, active RR exists).
-	// Issue #165: Split from CheckBlockingConditions to avoid sentinel empty strings.
-	blocked, err := r.routingEngine.CheckPreAnalysisConditions(ctx, rr)
-	if err != nil {
-		logger.Error(err, "Failed to check routing conditions")
-		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
-	}
-
-	// If blocked, update status and requeue (DO NOT create SignalProcessing)
-	if blocked != nil {
-		logger.Info("Routing blocked - will not create SignalProcessing",
-			"reason", blocked.Reason,
-			"message", blocked.Message,
-			"requeueAfter", blocked.RequeueAfter)
-		return r.handleBlocked(ctx, rr, blocked, string(remediationv1.PhasePending), "")
-	}
-
-	// Routing checks passed - create SignalProcessing
-	logger.Info("Routing checks passed, creating SignalProcessing")
-
-	// Create SignalProcessing CRD (BR-ORCH-025, BR-ORCH-031)
-	// DD-CRD-002-RR: Creator sets SignalProcessingReady condition in-memory
-	spName, err := r.spCreator.Create(ctx, rr)
-	if err != nil {
-		// Check if namespace is terminating (async deletion in progress)
-		// This is a benign race condition - namespace is being cleaned up
-		if k8serrors.IsNamespaceTerminating(err) {
-			logger.V(1).Info("Namespace is terminating, skipping reconciliation",
-				"namespace", rr.Namespace, "reason", "async_cleanup")
-			return ctrl.Result{}, nil // Don't requeue - namespace will be deleted
-		}
-
-		logger.Error(err, "Failed to create SignalProcessing CRD")
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Persist SignalProcessingReady=False condition
-		// Creator set condition in-memory, but refetch wipes it
-		// Re-set condition AFTER refetch to preserve it
-		// ========================================
-		if updateErr := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-			// Re-set condition after refetch (creator set it before, but refetch wiped it)
-			remediationrequest.SetSignalProcessingReady(rr, false,
-				fmt.Sprintf("Failed to create SignalProcessing: %v", err), r.Metrics)
-			return nil
-		}); updateErr != nil {
-			logger.Error(updateErr, "Failed to update SignalProcessingReady condition")
-		}
-		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-	}
-	logger.Info("Created SignalProcessing CRD", "spName", spName)
-
-	// BR-ORCH-044: Track child CRD creation
-	r.Metrics.ChildCRDCreationsTotal.WithLabelValues("SignalProcessing", rr.Namespace).Inc()
-
-	// Set SignalProcessingRef in status for aggregator (BR-ORCH-029)
-	// REFACTOR-RO-001: Using retry helper
-	// DD-CRD-002-RR: Also persists SignalProcessingReady=True condition set by creator
-	err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.SignalProcessingRef = &corev1.ObjectReference{
-			APIVersion: signalprocessingv1.GroupVersion.String(),
-			Kind:       "SignalProcessing",
-			Name:       spName,
-			Namespace:  rr.Namespace,
-		}
-		// Preserve SignalProcessingReady condition from creator
-		// (UpdateRemediationRequestStatus fetches fresh RR, so we need to re-set the condition)
-		remediationrequest.SetSignalProcessingReady(rr, true, fmt.Sprintf("SignalProcessing CRD %s created successfully", spName), r.Metrics)
-		return nil
-	})
-	if err != nil {
-		logger.Error(err, "Failed to set SignalProcessingRef in status")
-		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-	}
-	logger.V(1).Info("Set SignalProcessingRef in status", "spName", spName)
-
-	// Transition to Processing phase
-	return r.transitionPhase(ctx, rr, phase.Processing)
-}
-
-// handleProcessingPhase handles the Processing phase.
-// Waits for SignalProcessing to complete, then creates AIAnalysis.
-func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv1.RemediationRequest, agg *aggregator.AggregatedStatus) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name, "spPhase", agg.SignalProcessingPhase)
-
-	// First, check if we're in Processing but have no SP ref (corrupted state)
-	if rr.Status.SignalProcessingRef == nil {
-		logger.Error(nil, "Processing phase but no SignalProcessingRef - corrupted state")
-		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseSignalProcessing, fmt.Errorf("SignalProcessing not found"))
-	}
-
-	// Fetch SignalProcessing CRD via informer (cached client).
-	// No correctness requirement for apiReader here — this is a status poll. If the
-	// informer is a few seconds stale, the 5s requeue catches it on the next cycle.
-	// apiReader is reserved for cases that prevent reconciliation bugs or duplicate
-	// audit events (e.g., the initialization dedup check at the top of Reconcile).
-	sp := &signalprocessingv1.SignalProcessing{}
-	err := r.client.Get(ctx, client.ObjectKey{
-		Name:      rr.Status.SignalProcessingRef.Name,
-		Namespace: rr.Status.SignalProcessingRef.Namespace,
-	}, sp)
-	if err != nil {
-		logger.Error(err, "Failed to fetch SignalProcessing CRD")
-		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-	}
-
-	// Special handling for Completed status: create AIAnalysis before transitioning
-	// This is unique to SP because AIAnalysis creation requires SP enrichment data
-	if sp.Status.Phase == signalprocessingv1.PhaseCompleted {
-		logger.Info("SignalProcessing completed, creating AIAnalysis")
-
-		// Create AIAnalysis CRD (BR-ORCH-025, BR-ORCH-031)
-		// DD-CRD-002-RR: Creator sets AIAnalysisReady condition in-memory
-		aiName, err := r.aiAnalysisCreator.Create(ctx, rr, sp)
+	// Issue #666: Check phase handler registry first
+	currentPhase := phase.Phase(rr.Status.OverallPhase)
+	if h, ok := r.phaseRegistry.Lookup(currentPhase); ok {
+		intent, err := h.Handle(ctx, rr)
 		if err != nil {
-			logger.Error(err, "Failed to create AIAnalysis CRD")
-			// ========================================
-			// DD-PERF-001: ATOMIC STATUS UPDATE
-			// Persist AIAnalysisReady=False condition
-			// ========================================
-			if updateErr := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-				// Re-set condition after refetch (creator set it before, but refetch wiped it)
-				remediationrequest.SetAIAnalysisReady(rr, false,
-					fmt.Sprintf("Failed to create AIAnalysis: %v", err), r.Metrics)
-				return nil
-			}); updateErr != nil {
-				logger.Error(updateErr, "Failed to update AIAnalysisReady condition")
-			}
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
+			return ctrl.Result{}, fmt.Errorf("phase handler %s: %w", currentPhase, err)
 		}
-		logger.Info("Created AIAnalysis CRD", "aiName", aiName)
-
-		// BR-ORCH-044: Track child CRD creation
-		r.Metrics.ChildCRDCreationsTotal.WithLabelValues("AIAnalysis", rr.Namespace).Inc()
-
-		// Set AIAnalysisRef in status for aggregator (BR-ORCH-029)
-		// REFACTOR-RO-001: Using retry helper
-		// DD-CRD-002-RR: Also persists AIAnalysisReady=True condition set by creator
-		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-			rr.Status.AIAnalysisRef = &corev1.ObjectReference{
-				APIVersion: aianalysisv1.GroupVersion.String(),
-				Kind:       "AIAnalysis",
-				Name:       aiName,
-				Namespace:  rr.Namespace,
-			}
-			// Preserve AIAnalysisReady condition from creator
-			remediationrequest.SetAIAnalysisReady(rr, true, fmt.Sprintf("AIAnalysis CRD %s created successfully", aiName), r.Metrics)
-			return nil
-		})
-		if err != nil {
-			logger.Error(err, "Failed to set AIAnalysisRef in status")
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-		}
-		logger.V(1).Info("Set AIAnalysisRef in status", "aiName", aiName)
-
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Set SignalProcessingComplete condition
-		// ========================================
-		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-			remediationrequest.SetSignalProcessingComplete(rr, true,
-				remediationrequest.ReasonSignalProcessingSucceeded,
-				"SignalProcessing completed successfully", r.Metrics)
-			return nil
-		}); err != nil {
-			logger.Error(err, "Failed to update SignalProcessingComplete condition")
-			// Continue - condition update is best-effort
-		}
+		return r.ApplyTransition(ctx, rr, intent)
 	}
 
-	// Handle SignalProcessing failure before delegating
-	if sp.Status.Phase == signalprocessingv1.PhaseFailed {
-		logger.Info("SignalProcessing failed, transitioning to Failed")
-		// Set SignalProcessingComplete condition (false)
-		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-			remediationrequest.SetSignalProcessingComplete(rr, false,
-				remediationrequest.ReasonSignalProcessingFailed,
-				"SignalProcessing failed", r.Metrics)
-			return nil
-		}); err != nil {
-			logger.Error(err, "Failed to update SignalProcessingComplete condition")
-			// Continue - condition update is best-effort
-		}
-		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseSignalProcessing, fmt.Errorf("SignalProcessing failed"))
-	}
-
-	// Delegate to SignalProcessingHandler for status-based transitions
-	// Handler Consistency Refactoring (2026-01-22): Extract status handling logic
-	return r.spHandler.HandleStatus(ctx, rr, sp)
-}
-
-// handleAnalyzingPhase handles the Analyzing phase.
-// Waits for AIAnalysis to complete, then handles the result.
-// Reference: BR-ORCH-036 (manual review), BR-ORCH-037 (workflow not needed)
-func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1.RemediationRequest, agg *aggregator.AggregatedStatus) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name, "aiPhase", agg.AIAnalysisPhase)
-
-	// Check if AIAnalysis exists
-	if rr.Status.AIAnalysisRef == nil {
-		logger.V(1).Info("AIAnalysis not created yet, waiting")
-		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-	}
-
-	// Fetch the AIAnalysis CRD for detailed status
-	ai := &aianalysisv1.AIAnalysis{}
-	err := r.client.Get(ctx, client.ObjectKey{
-		Name:      rr.Status.AIAnalysisRef.Name,
-		Namespace: rr.Status.AIAnalysisRef.Namespace,
-	}, ai)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.Info("AIAnalysis CRD not found, waiting for creation")
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-		}
-		logger.Error(err, "Failed to fetch AIAnalysis CRD")
-		return ctrl.Result{}, err
-	}
-
-	// Delegate to AIAnalysisHandler for Completed/Failed phases
-	// This handles BR-ORCH-036 (manual review), BR-ORCH-037 (workflow not needed)
-	// Phase values per api/aianalysis/v1alpha1: Pending|Investigating|Analyzing|Completed|Failed
-	switch ai.Status.Phase {
-	case "Completed":
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Set AIAnalysisComplete condition
-		// ========================================
-		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-			remediationrequest.SetAIAnalysisComplete(rr, true,
-				remediationrequest.ReasonAIAnalysisSucceeded,
-				"AIAnalysis completed successfully", r.Metrics)
-			return nil
-		}); err != nil {
-			logger.Error(err, "Failed to update AIAnalysisComplete condition")
-			// Continue - condition update is best-effort
-		}
-
-		// Check for WorkflowNotNeeded (BR-ORCH-037)
-		if handler.IsWorkflowNotNeeded(ai) {
-			logger.Info("AIAnalysis: WorkflowNotNeeded - delegating to handler")
-			return r.aiAnalysisHandler.HandleAIAnalysisStatus(ctx, rr, ai)
-		}
-
-		// Check for approval required (BR-ORCH-026)
-		if ai.Status.ApprovalRequired {
-			logger.Info("AIAnalysis completed with approval required")
-
-			// Create RemediationApprovalRequest (BR-ORCH-026)
-			rarName, err := r.approvalCreator.Create(ctx, rr, ai)
-			if err != nil {
-				logger.Error(err, "Failed to create RemediationApprovalRequest")
-				return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-			}
-			logger.Info("Created RemediationApprovalRequest", "rarName", rarName)
-
-			// DD-EVENT-001: Emit K8s event for approval required (BR-ORCH-095)
-			if r.Recorder != nil {
-				r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonApprovalRequired,
-					fmt.Sprintf("Human approval required (confidence %.0f%%): %s", ai.Status.SelectedWorkflow.Confidence*100, ai.Status.ApprovalReason))
-			}
-
-			// Create approval notification (BR-ORCH-001)
-			result, err := r.aiAnalysisHandler.HandleAIAnalysisStatus(ctx, rr, ai)
-			if err != nil {
-				return result, err
-			}
-
-			// Per DD-AUDIT-003: Emit approval requested event
-			// BUSINESS OUTCOME (BR-ORCH-001 AC-001-6): Exactly 1 audit event per approval request
-			// Idempotency: Capture old phase, only emit if actually transitioning
-			// This prevents duplicate emissions on reconcile retries
-			oldPhaseBeforeTransition := rr.Status.OverallPhase
-
-			// Transition to AwaitingApproval (RAR will be found by deterministic name)
-			transitionResult, transitionErr := r.transitionPhase(ctx, rr, phase.AwaitingApproval)
-
-			// Emit audit only if transition actually happened (wasn't already in AwaitingApproval)
-			if transitionErr == nil && oldPhaseBeforeTransition != phase.AwaitingApproval {
-				r.emitApprovalRequestedAudit(ctx, rr, ai.Status.SelectedWorkflow.Confidence, ai.Status.SelectedWorkflow.WorkflowID)
-			}
-
-			return transitionResult, transitionErr
-		}
-
-		// Normal completion - check routing conditions before creating WorkflowExecution
-		logger.Info("AIAnalysis completed, checking routing conditions")
-
-		// Idempotency guard: refetch RR from API server to detect stale-cache replays.
-		// Without this, a stale informer cache can cause re-entry into handleAnalyzingPhase
-		// after a WFE was already created in a prior reconcile, triggering a false
-		// ResourceBusy block from CheckPostAnalysisConditions.
-		freshRR := &remediationv1.RemediationRequest{}
-		if err := r.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), freshRR); err == nil {
-			if freshRR.Status.OverallPhase != phase.Analyzing {
-				logger.Info("Phase already advanced past Analyzing (stale cache), no-op",
-					"freshPhase", freshRR.Status.OverallPhase)
-				return ctrl.Result{}, nil
-			}
-			if freshRR.Status.WorkflowExecutionRef != nil {
-				logger.Info("WFE already created but phase still Analyzing, completing transition",
-					"wfeName", freshRR.Status.WorkflowExecutionRef.Name)
-				return r.transitionPhase(ctx, freshRR, phase.Executing)
-			}
-		}
-
-		// DD-HAPI-006 v1.2 defense-in-depth: RemediationTarget MUST be present for routing.
-		// This is the RO layer of the three-layer chain (KA -> AA -> RO).
-		// WorkflowNotNeeded and ApprovalRequired are already handled above.
-		// Reaching here with empty RemediationTarget means a data integrity issue.
-		if ai.Status.RootCauseAnalysis == nil ||
-			ai.Status.RootCauseAnalysis.RemediationTarget == nil ||
-			ai.Status.RootCauseAnalysis.RemediationTarget.Kind == "" ||
-			ai.Status.RootCauseAnalysis.RemediationTarget.Name == "" {
-			logger.Error(fmt.Errorf("RCA RemediationTarget missing on completed AIAnalysis"),
-				"Failing RR with ManualReviewRequired per DD-HAPI-006 v1.2 / BR-ORCH-036 v4.0",
-				"aianalysis", ai.Name)
-			if r.Recorder != nil {
-				r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonEscalatedToManualReview,
-					"RemediationTarget missing on completed AIAnalysis - manual investigation required")
-			}
-			return r.aiAnalysisHandler.HandleRemediationTargetMissing(ctx, rr, ai)
-		}
-
-		// Post-AA routing checks: all checks including resource-level (issue #165).
-		// Target is the AI-identified RemediationTarget, NOT rr.Spec.TargetResource.
-		var workflowID, actionType string
-		if ai.Status.SelectedWorkflow != nil {
-			workflowID = ai.Status.SelectedWorkflow.WorkflowID
-			actionType = ai.Status.SelectedWorkflow.ActionType
-		}
-		targetResource := formatRemediationTargetString(ai)
-		// Issue #214: Capture pre-remediation hash BEFORE routing so CheckIneffectiveRemediationChain can use it.
-		// DD-EM-002 + DD-EM-003: Hash must match the resource the workflow patches.
-		remTarget := resolveDualTargets(rr, ai).Remediation
-		preHash, degradedReason, hashErr := CapturePreRemediationHash(
-			ctx, r.apiReader, r.restMapper,
-			remTarget.Kind, remTarget.Name, remTarget.Namespace,
-		)
-		if hashErr != nil {
-			// Hard errors (NestedMap/CanonicalSpecHash) are terminal
-			logger.Error(hashErr, "Failed to capture pre-remediation hash (terminal)")
-			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-				rr.Status.OverallPhase = remediationv1.PhaseFailed
-				reason := fmt.Sprintf("Cannot determine target resource state: %v", hashErr)
-				rr.Status.FailureReason = &reason
-				return nil
-			}); updateErr != nil {
-				logger.Error(updateErr, "Failed to update RR to Failed after hash error")
-				return ctrl.Result{}, updateErr
-			}
-			return ctrl.Result{}, nil
-		}
-		if degradedReason != "" {
-			// Issue #545: Soft-fail — EA will be degraded but pipeline continues
-			logger.Info("Pre-remediation hash capture degraded, EA may be non-functional",
-				"degradedReason", degradedReason, "target", fmt.Sprintf("%s/%s", remTarget.Kind, remTarget.Name))
-			r.Recorder.Eventf(rr, corev1.EventTypeWarning, "HashCaptureDegraded",
-				"Pre-remediation hash unavailable for %s/%s: %s — effectiveness assessment will be degraded",
-				remTarget.Kind, remTarget.Name, degradedReason)
-			// Issue #546: Persist degradation as RR condition for notification visibility
-			remediationrequest.SetPreRemediationHashCaptured(rr, false, degradedReason, r.Metrics)
-		}
-		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
-			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-				rr.Status.PreRemediationSpecHash = preHash
-				// Issue #546: Persist success as RR condition
-				remediationrequest.SetPreRemediationHashCaptured(rr, true,
-					fmt.Sprintf("Pre-remediation hash captured for %s/%s", remTarget.Kind, remTarget.Name), r.Metrics)
-				return nil
-			}); updateErr != nil {
-				logger.Error(updateErr, "Failed to persist pre-remediation hash on RR status (non-fatal)")
-			} else {
-				logger.Info("Pre-remediation spec hash stored on RR status",
-					"hash", preHash[:min(23, len(preHash))]+"...",
-					"target", fmt.Sprintf("%s/%s", remTarget.Kind, remTarget.Name))
-			}
-		}
-
-		// BR-ORCH-025: Acquire distributed lock before routing checks + WFE creation.
-		// Lock key is based on targetResource so concurrent reconciles for the same
-		// target are serialized. Lock is released via defer after Create completes.
-		if r.lockManager != nil {
-			acquired, lockErr := r.lockManager.AcquireLock(ctx, targetResource)
-			if lockErr != nil {
-				logger.Error(lockErr, "Distributed lock acquisition failed", "target", targetResource)
-				return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
-			}
-			if !acquired {
-				logger.V(1).Info("Lock contention on target resource, requeuing", "target", targetResource)
-				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-			}
-			defer func() {
-				if releaseErr := r.lockManager.ReleaseLock(ctx, targetResource); releaseErr != nil {
-					logger.Error(releaseErr, "Failed to release distributed lock", "target", targetResource)
-				}
-			}()
-		}
-
-		blocked, err := r.routingEngine.CheckPostAnalysisConditions(ctx, rr, workflowID, targetResource, preHash, actionType)
-		if err != nil {
-			logger.Error(err, "Failed to check routing conditions")
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
-		}
-
-		if blocked != nil {
-			logger.Info("Routing blocked - will not create WorkflowExecution",
-				"reason", blocked.Reason,
-				"message", blocked.Message,
-				"requeueAfter", blocked.RequeueAfter)
-			return r.handleBlocked(ctx, rr, blocked, string(remediationv1.PhaseAnalyzing), workflowID)
-		}
-
-		// Routing checks passed - create WorkflowExecution
-		logger.Info("Routing checks passed, creating WorkflowExecution")
-
-		// ADR-EM-001, GAP-RO-1: Emit remediation.workflow_created audit event
-		r.emitWorkflowCreatedAudit(ctx, rr, ai, preHash)
-
-		// Create WorkflowExecution CRD (BR-ORCH-025, BR-ORCH-031)
-		// DD-CRD-002-RR: Creator sets WorkflowExecutionReady condition in-memory
-		weName, err := r.weCreator.Create(ctx, rr, ai)
-		if err != nil {
-			logger.Error(err, "Failed to create WorkflowExecution CRD")
-			// ========================================
-			// DD-PERF-001: ATOMIC STATUS UPDATE
-			// Persist WorkflowExecutionReady=False condition
-			// ========================================
-			if updateErr := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-				// Re-set condition after refetch (creator set it before, but refetch wiped it)
-				remediationrequest.SetWorkflowExecutionReady(rr, false,
-					fmt.Sprintf("Failed to create WorkflowExecution: %v", err), r.Metrics)
-				return nil
-			}); updateErr != nil {
-				logger.Error(updateErr, "Failed to update WorkflowExecutionReady condition")
-			}
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-		}
-		logger.Info("Created WorkflowExecution CRD", "weName", weName)
-
-		// BR-ORCH-044: Track child CRD creation
-		r.Metrics.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
-
-		// Issue #643: Resolve workflow UUID outside the retry callback — the name
-		// is immutable between retries and the API call should not repeat on conflicts.
-		var workflowDisplayName, confidence string
-		if ai.Status.SelectedWorkflow != nil {
-			workflowName := r.resolveWorkflowName(ctx, ai.Status.SelectedWorkflow.WorkflowID)
-			workflowDisplayName = remediationrequest.FormatWorkflowDisplay(
-				ai.Status.SelectedWorkflow.ActionType, workflowName)
-			confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
-		}
-
-		// Set WorkflowExecutionRef + SelectedWorkflowRef in status (BR-ORCH-029, Issue #118 Gap 5)
-		// REFACTOR-RO-001: Using retry helper
-		// DD-CRD-002-RR: Also persists WorkflowExecutionReady=True condition set by creator
-		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
-				APIVersion: workflowexecutionv1.GroupVersion.String(),
-				Kind:       "WorkflowExecution",
-				Name:       weName,
-				Namespace:  rr.Namespace,
-			}
-			if ai.Status.SelectedWorkflow != nil {
-				rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
-					WorkflowID:            ai.Status.SelectedWorkflow.WorkflowID,
-					Version:               ai.Status.SelectedWorkflow.Version,
-					ExecutionBundle:        ai.Status.SelectedWorkflow.ExecutionBundle,
-					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
-				}
-			rr.Status.WorkflowDisplayName = workflowDisplayName
-			rr.Status.Confidence = confidence
-		}
-		// Issue #387: Capture LLM-identified remediation target for operational triage (kubectl -o wide)
-		if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
-			ar := ai.Status.RootCauseAnalysis.RemediationTarget
-			rr.Status.RemediationTarget = &remediationv1.ResourceIdentifier{
-				Kind:      ar.Kind,
-				Name:      ar.Name,
-				Namespace: ar.Namespace,
-			}
-			rr.Status.TargetDisplay = remediationrequest.FormatResourceDisplay(ar.Kind, ar.Name)
-		}
-		// Issue #635: Signal target display from spec
-		rr.Status.SignalTargetDisplay = remediationrequest.FormatResourceDisplay(
-			rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name)
-		remediationrequest.SetWorkflowExecutionReady(rr, true, fmt.Sprintf("WorkflowExecution CRD %s created successfully", weName), r.Metrics)
-		return nil
-	})
-	if err != nil {
-		logger.Error(err, "Failed to set WorkflowExecutionRef in status")
-		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-	}
-	logger.V(1).Info("Set WorkflowExecutionRef in status", "weName", weName)
-
-		// Transition to Executing phase
-		return r.transitionPhase(ctx, rr, phase.Executing)
-
-	case "Failed":
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Set AIAnalysisComplete condition
-		// ========================================
-		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-			remediationrequest.SetAIAnalysisComplete(rr, false,
-				remediationrequest.ReasonAIAnalysisFailed,
-				"AIAnalysis failed", r.Metrics)
-			return nil
-		}); err != nil {
-			logger.Error(err, "Failed to update AIAnalysisComplete condition")
-			// Continue - condition update is best-effort
-		}
-
-		// DD-EVENT-001: Emit EscalatedToManualReview if AI needs human review (BR-ORCH-095)
-		// Emitted from reconciler (handler doesn't have access to Recorder)
-		if ai.Status.NeedsHumanReview && r.Recorder != nil {
-			r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonEscalatedToManualReview,
-				fmt.Sprintf("AI analysis requires manual review: %s", ai.Status.Message))
-		}
-
-		// Handle all failure scenarios (BR-ORCH-036: manual review)
-		logger.Info("AIAnalysis failed - delegating to handler")
-		return r.aiAnalysisHandler.HandleAIAnalysisStatus(ctx, rr, ai)
-
-	case "Pending", "Investigating", "Analyzing":
-		// Still in progress
-		logger.V(1).Info("AIAnalysis in progress", "phase", ai.Status.Phase)
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-
-	default:
-		logger.Info("Unknown AIAnalysis phase", "phase", ai.Status.Phase)
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-	}
-}
-
-// handleAwaitingApprovalPhase handles the AwaitingApproval phase.
-// Waits for human approval before proceeding.
-// V1.0: Operator approves via `kubectl patch rar <name> --subresource=status -p '{"status":{"decision":"Approved"}}'`
-// Audit trail: K8s audit log captures who made the patch.
-// V1.1: Will add CEL validation requiring decidedBy when decision is set.
-// Reference: ADR-040, BR-ORCH-026
-func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-
-	// Check if RemediationApprovalRequest exists
-	rarName := fmt.Sprintf("rar-%s", rr.Name)
-	rar := &remediationv1.RemediationApprovalRequest{}
-	err := r.client.Get(ctx, client.ObjectKey{Name: rarName, Namespace: rr.Namespace}, rar)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// RAR should have been created when transitioning to AwaitingApproval
-			// This is unexpected - log warning and requeue
-			logger.Info("RemediationApprovalRequest not found, will be created by approval handler")
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-		}
-		logger.Error(err, "Failed to get RemediationApprovalRequest")
-		return ctrl.Result{}, err
-	}
-
-	// Check the decision
-	switch rar.Status.Decision {
-	case remediationv1.ApprovalDecisionApproved:
-		logger.Info("Approval granted via RemediationApprovalRequest",
-			"decidedBy", rar.Status.DecidedBy,
-			"message", rar.Status.DecisionMessage,
-		)
-
-		// DD-EVENT-001: Emit K8s event for approval granted (BR-ORCH-095)
-		if r.Recorder != nil {
-			r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonApprovalGranted,
-				fmt.Sprintf("Approval granted by %s", rar.Status.DecidedBy))
-		}
-
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE (RAR)
-		// Consolidate 2 conditions → 1 API call with retry
-		// ========================================
-		if err := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-			// Refetch RAR for latest resourceVersion
-			if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
-				return err
-			}
-			// Set conditions after refetch
-			remediationapprovalrequest.SetApprovalPending(rar, false, "Decision received", r.Metrics)
-			remediationapprovalrequest.SetApprovalDecided(rar, true,
-				remediationapprovalrequest.ReasonApproved,
-				fmt.Sprintf("Approved by %s", rar.Status.DecidedBy), r.Metrics)
-			remediationapprovalrequest.SetReady(rar, true, remediationapprovalrequest.ReasonReady, "Approval decided", r.Metrics)
-			return r.client.Status().Update(ctx, rar)
-		}); err != nil {
-			logger.Error(err, "Failed to update RAR conditions")
-			// Continue - condition update is best-effort
-		}
-
-		// ADR-040: AIAnalysisRef must be set before AwaitingApproval phase.
-		// Guard defensively: the CRD field is *corev1.ObjectReference (optional pointer).
-		if rr.Status.AIAnalysisRef == nil {
-			logger.Error(nil, "AIAnalysisRef not set on RemediationRequest - cannot create WorkflowExecution (ADR-040 invariant)")
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-		}
-
-		// Fetch AIAnalysis CRD to get workflow details for WorkflowExecution
-		ai := &aianalysisv1.AIAnalysis{}
-		err := r.client.Get(ctx, client.ObjectKey{
-			Name:      rr.Status.AIAnalysisRef.Name,
-			Namespace: rr.Status.AIAnalysisRef.Namespace,
-		}, ai)
-		if err != nil {
-			logger.Error(err, "Failed to fetch AIAnalysis CRD")
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-		}
-
-		// ========================================
-		// #594: Resolve operator override (if any)
-		// R9/I2: Use DeepCopy to avoid mutating the original AIA
-		// ========================================
-		resolvedWorkflow, overrideApplied, resolveErr := override.ResolveWorkflow(
-			ctx, r.apiReader, rar.Status.WorkflowOverride, ai.Status.SelectedWorkflow, rr.Namespace,
-		)
-		if resolveErr != nil {
-			if override.IsOverrideNotFoundError(resolveErr) {
-				// R10: Permanent error — RW deleted between webhook and reconciler
-				logger.Error(resolveErr, "Override workflow not found, failing RR")
-				r.Recorder.Eventf(rr, corev1.EventTypeWarning, events.EventReasonRemediationFailed,
-					"Override workflow not found: %v", resolveErr)
-				return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, resolveErr)
-			}
-			// Transient error → requeue
-			logger.Error(resolveErr, "Failed to resolve operator workflow override")
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
-		}
-		if overrideApplied {
-			r.Recorder.Eventf(rr, corev1.EventTypeNormal, events.EventReasonOperatorOverride,
-				"Operator override applied: workflow=%s rationale=%q",
-				rar.Status.WorkflowOverride.WorkflowName,
-				rar.Status.WorkflowOverride.Rationale)
-
-			// #594: Track override type for operational metrics
-			overrideType := "params"
-			if rar.Status.WorkflowOverride.WorkflowName != "" && rar.Status.WorkflowOverride.Parameters != nil {
-				overrideType = "both"
-			} else if rar.Status.WorkflowOverride.WorkflowName != "" {
-				overrideType = "workflow"
-			}
-			r.Metrics.OverrideAppliedTotal.WithLabelValues(overrideType, rr.Namespace).Inc()
-		}
-
-		// R9/I2: Create a local copy with resolved workflow for WE creation.
-		// SAFETY: Do NOT persist resolvedAI back to API server — AIA must
-		// retain the original AI recommendation for audit trail.
-		resolvedAI := ai.DeepCopy()
-		resolvedAI.Status.SelectedWorkflow = resolvedWorkflow
-
-		// DD-EM-002 + DD-EM-003: Capture pre-remediation spec hash of the remediation target.
-		remTarget := resolveDualTargets(rr, ai).Remediation
-		preHash, degradedReason, hashErr := CapturePreRemediationHash(
-			ctx, r.apiReader, r.restMapper,
-			remTarget.Kind, remTarget.Name, remTarget.Namespace,
-		)
-		if hashErr != nil {
-			logger.Error(hashErr, "Failed to capture pre-remediation hash after approval (non-fatal)")
-		}
-		if degradedReason != "" {
-			logger.Info("Pre-remediation hash capture degraded after approval, EA may be non-functional",
-				"degradedReason", degradedReason, "target", fmt.Sprintf("%s/%s", remTarget.Kind, remTarget.Name))
-			r.Recorder.Eventf(rr, corev1.EventTypeWarning, "HashCaptureDegraded",
-				"Pre-remediation hash unavailable for %s/%s: %s — effectiveness assessment will be degraded",
-				remTarget.Kind, remTarget.Name, degradedReason)
-			// Issue #546: Persist degradation as RR condition for notification visibility
-			remediationrequest.SetPreRemediationHashCaptured(rr, false, degradedReason, r.Metrics)
-		}
-		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
-			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-				rr.Status.PreRemediationSpecHash = preHash
-				// Issue #546: Persist success as RR condition
-				remediationrequest.SetPreRemediationHashCaptured(rr, true,
-					fmt.Sprintf("Pre-remediation hash captured for %s/%s", remTarget.Kind, remTarget.Name), r.Metrics)
-				return nil
-			}); updateErr != nil {
-				logger.Error(updateErr, "Failed to persist pre-remediation hash on RR status (non-fatal)")
-			}
-		}
-
-		// BR-ORCH-025: Derive targetResource and acquire distributed lock before
-		// WFE creation on the approval path. This closes the gap where the approval
-		// path could create a duplicate WFE for a target that already has one active.
-		approvalTargetResource := formatRemediationTargetString(ai)
-
-		if r.lockManager != nil && approvalTargetResource != "" {
-			acquired, lockErr := r.lockManager.AcquireLock(ctx, approvalTargetResource)
-			if lockErr != nil {
-				logger.Error(lockErr, "Distributed lock acquisition failed (approval path)", "target", approvalTargetResource)
-				return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
-			}
-			if !acquired {
-				logger.V(1).Info("Lock contention on target resource (approval path), requeuing", "target", approvalTargetResource)
-				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-			}
-			defer func() {
-				if releaseErr := r.lockManager.ReleaseLock(ctx, approvalTargetResource); releaseErr != nil {
-					logger.Error(releaseErr, "Failed to release distributed lock (approval path)", "target", approvalTargetResource)
-				}
-			}()
-		}
-
-		// BR-ORCH-025: Run CheckResourceBusy on the approval path (same as normal path).
-		if approvalTargetResource != "" {
-			busyBlock, busyErr := r.routingEngine.CheckResourceBusy(ctx, rr, approvalTargetResource)
-			if busyErr != nil {
-				logger.Error(busyErr, "Failed to check resource busy (approval path)")
-				return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
-			}
-			if busyBlock != nil {
-				logger.Info("Target resource busy after approval - blocking",
-					"target", approvalTargetResource,
-					"blockingWFE", busyBlock.BlockingWorkflowExecution)
-				return r.handleBlocked(ctx, rr, busyBlock, string(remediationv1.PhaseAwaitingApproval), "")
-			}
-		}
-
-		// ADR-EM-001, GAP-RO-1: Emit remediation.workflow_created audit event
-		r.emitWorkflowCreatedAudit(ctx, rr, resolvedAI, preHash)
-
-		// Create WorkflowExecution CRD (BR-ORCH-025, BR-ORCH-031)
-		// Uses resolvedAI which contains the final workflow (override or AIA)
-		weName, err := r.weCreator.Create(ctx, rr, resolvedAI)
-		if err != nil {
-			logger.Error(err, "Failed to create WorkflowExecution CRD")
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-		}
-		logger.Info("Created WorkflowExecution CRD after approval", "weName", weName)
-
-		// BR-ORCH-044: Track child CRD creation
-		r.Metrics.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
-
-		// Issue #643: Resolve workflow UUID outside the retry callback.
-		var workflowDisplayName2, confidence2 string
-		if ai.Status.SelectedWorkflow != nil {
-			workflowName := r.resolveWorkflowName(ctx, ai.Status.SelectedWorkflow.WorkflowID)
-			workflowDisplayName2 = remediationrequest.FormatWorkflowDisplay(
-				ai.Status.SelectedWorkflow.ActionType, workflowName)
-			confidence2 = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
-		}
-
-		// Set WorkflowExecutionRef + SelectedWorkflowRef after approval (BR-ORCH-029, Issue #118 Gap 5)
-		// #594: Uses resolvedAI to reflect override workflow in SelectedWorkflowRef
-		// REFACTOR-RO-001: Using retry helper
-		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
-				APIVersion: workflowexecutionv1.GroupVersion.String(),
-				Kind:       "WorkflowExecution",
-				Name:       weName,
-				Namespace:  rr.Namespace,
-			}
-			if resolvedAI.Status.SelectedWorkflow != nil {
-				rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
-					WorkflowID:            resolvedAI.Status.SelectedWorkflow.WorkflowID,
-					Version:               resolvedAI.Status.SelectedWorkflow.Version,
-					ExecutionBundle:        resolvedAI.Status.SelectedWorkflow.ExecutionBundle,
-					ExecutionBundleDigest:  resolvedAI.Status.SelectedWorkflow.ExecutionBundleDigest,
-				}
-			rr.Status.WorkflowDisplayName = workflowDisplayName2
-			rr.Status.Confidence = confidence2
-		}
-		// Issue #387: Capture LLM-identified remediation target for operational triage (kubectl -o wide)
-		if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
-			ar := ai.Status.RootCauseAnalysis.RemediationTarget
-			rr.Status.RemediationTarget = &remediationv1.ResourceIdentifier{
-				Kind:      ar.Kind,
-				Name:      ar.Name,
-				Namespace: ar.Namespace,
-			}
-			rr.Status.TargetDisplay = remediationrequest.FormatResourceDisplay(ar.Kind, ar.Name)
-		}
-		// Issue #635: Signal target display from spec
-		rr.Status.SignalTargetDisplay = remediationrequest.FormatResourceDisplay(
-			rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name)
-		return nil
-	})
-	if err != nil {
-		logger.Error(err, "Failed to set WorkflowExecutionRef in status")
-		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-	}
-	logger.V(1).Info("Set WorkflowExecutionRef in status after approval", "weName", weName)
-
-		// Transition to Executing phase
-		return r.transitionPhase(ctx, rr, phase.Executing)
-
-	case remediationv1.ApprovalDecisionRejected:
-		logger.Info("Approval rejected via RemediationApprovalRequest",
-			"decidedBy", rar.Status.DecidedBy,
-			"message", rar.Status.DecisionMessage,
-		)
-
-		// DD-EVENT-001: Emit K8s event for approval rejected (BR-ORCH-095)
-		if r.Recorder != nil {
-			r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonApprovalRejected,
-				fmt.Sprintf("Approval rejected by %s: %s", rar.Status.DecidedBy, rar.Status.DecisionMessage))
-		}
-
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE (RAR)
-		// Consolidate 2 conditions → 1 API call with retry
-		// ========================================
-		if err := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-			// Refetch RAR for latest resourceVersion
-			if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
-				return err
-			}
-			// Set conditions after refetch
-			remediationapprovalrequest.SetApprovalPending(rar, false, "Decision received", r.Metrics)
-			remediationapprovalrequest.SetApprovalDecided(rar, true,
-				remediationapprovalrequest.ReasonRejected,
-				fmt.Sprintf("Rejected by %s: %s", rar.Status.DecidedBy, rar.Status.DecisionMessage), r.Metrics)
-			remediationapprovalrequest.SetReady(rar, true, remediationapprovalrequest.ReasonReady, "Approval decided", r.Metrics)
-			return r.client.Status().Update(ctx, rar)
-		}); err != nil {
-			logger.Error(err, "Failed to update RAR conditions")
-		}
-
-		reason := "Rejected by operator"
-		if rar.Status.DecisionMessage != "" {
-			reason = rar.Status.DecisionMessage
-		}
-		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, fmt.Errorf("%s", reason))
-
-	case remediationv1.ApprovalDecisionExpired:
-		logger.Info("Approval expired (timeout)")
-
-		// DD-EVENT-001: Emit K8s event for approval expired (BR-ORCH-095)
-		if r.Recorder != nil {
-			r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonApprovalExpired,
-				"Approval request expired without a decision")
-		}
-
-		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, fmt.Errorf("approval request expired (timeout)"))
-
-	default:
-		// Still pending - check if deadline passed (V1.0 timeout handling)
-		if time.Now().After(rar.Spec.RequiredBy.Time) {
-			logger.Info("Approval deadline passed, marking as expired")
-
-			// DD-EVENT-001: Emit K8s event for approval expired (BR-ORCH-095)
-			if r.Recorder != nil {
-				r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonApprovalExpired,
-					fmt.Sprintf("Approval deadline passed after %v without decision",
-						time.Since(rar.ObjectMeta.CreationTimestamp.Time).Round(time.Minute)))
-			}
-
-			// ========================================
-			// DD-PERF-001: ATOMIC STATUS UPDATE (RAR)
-			// Consolidate: 2 conditions + Decision + DecidedBy + DecidedAt → 1 API call with retry
-			// ========================================
-			if updateErr := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				// Refetch RAR for latest resourceVersion
-				if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
-					return err
-				}
-				// Set conditions and status fields after refetch
-				remediationapprovalrequest.SetApprovalPending(rar, false, "Expired without decision", r.Metrics)
-				remediationapprovalrequest.SetApprovalExpired(rar, true,
-					fmt.Sprintf("Expired after %v without decision",
-						time.Since(rar.ObjectMeta.CreationTimestamp.Time).Round(time.Minute)), r.Metrics)
-				remediationapprovalrequest.SetReady(rar, false, remediationapprovalrequest.ReasonNotReady, "Approval expired", r.Metrics)
-				rar.Status.Decision = remediationv1.ApprovalDecisionExpired
-				rar.Status.DecidedBy = "system"
-				// Status.Expired: Denormalized bool for kubectl printer column and API consumers.
-				// Design: We store it explicitly rather than deriving from Decision==Expired at read time
-				// to support efficient field-indexed queries and avoid coupling status shape to condition logic.
-				rar.Status.Expired = true
-				rar.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(rar.Spec.RequiredBy.Time, time.Now())
-				now := metav1.Now()
-				rar.Status.DecidedAt = &now
-				return r.client.Status().Update(ctx, rar)
-			}); updateErr != nil {
-				logger.Error(updateErr, "Failed to update RAR status to Expired")
-			}
-			return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, fmt.Errorf("approval request expired (timeout)"))
-		}
-
-		// Still waiting for approval - update TimeRemaining for operator visibility (Bug Fix 4)
-		if updateErr := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-			if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
-				return err
-			}
-			rar.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(rar.Spec.RequiredBy.Time, time.Now())
-			return r.client.Status().Update(ctx, rar)
-		}); updateErr != nil {
-			logger.Error(updateErr, "Failed to update RAR TimeRemaining (non-fatal)")
-		}
-
-		logger.V(1).Info("Waiting for approval decision",
-			"rarName", rarName,
-			"requiredBy", rar.Spec.RequiredBy.Format(time.RFC3339),
-		)
-		return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil // REFACTOR-RO-003
-	}
-}
-
-// handleExecutingPhase handles the Executing phase.
-// Waits for WorkflowExecution to complete.
-func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1.RemediationRequest, agg *aggregator.AggregatedStatus) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name, "wePhase", agg.WorkflowExecutionPhase)
-
-	// First, check if we're in Executing but have no WE ref (corrupted state)
-	if rr.Status.WorkflowExecutionRef == nil {
-		logger.Error(nil, "Executing phase but no WorkflowExecutionRef - corrupted state")
-		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseWorkflowExecution, fmt.Errorf("WorkflowExecution not found"))
-	}
-
-	// Check if child is missing (AllChildrenHealthy=false)
-	if agg.WorkflowExecutionPhase == "" && !agg.AllChildrenHealthy {
-		logger.Error(nil, "WorkflowExecution CRD not found",
-			"workflowExecutionRef", rr.Status.WorkflowExecutionRef.Name)
-		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseWorkflowExecution, fmt.Errorf("WorkflowExecution not found"))
-	}
-
-	// Fetch WorkflowExecution CRD
-	we := &workflowexecutionv1.WorkflowExecution{}
-	err := r.client.Get(ctx, client.ObjectKey{
-		Name:      rr.Status.WorkflowExecutionRef.Name,
-		Namespace: rr.Status.WorkflowExecutionRef.Namespace,
-	}, we)
-	if err != nil {
-		logger.Error(err, "Failed to fetch WorkflowExecution CRD")
-		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseWorkflowExecution, fmt.Errorf("WorkflowExecution not found: %w", err))
-	}
-
-	// Issue #190 C3: If DeduplicatedByWE is set, short-circuit normal handler
-	// and propagate the original WFE's result directly.
-	if rr.Status.DeduplicatedByWE != "" {
-		return r.handleDedupResultPropagation(ctx, rr)
-	}
-
-	// Set WorkflowExecutionComplete condition before delegating to handler
-	// DD-PERF-001: Atomic status updates with conditions
-	switch we.Status.Phase {
-	case workflowexecutionv1.PhaseCompleted:
-		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-			remediationrequest.SetWorkflowExecutionComplete(rr, true,
-				remediationrequest.ReasonWorkflowSucceeded,
-				"WorkflowExecution completed successfully", r.Metrics)
-			return nil
-		}); err != nil {
-			logger.Error(err, "Failed to update WorkflowExecutionComplete condition")
-			// Continue - condition update is best-effort
-		}
-	case workflowexecutionv1.PhaseFailed:
-		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-			remediationrequest.SetWorkflowExecutionComplete(rr, false,
-				remediationrequest.ReasonWorkflowFailed,
-				"WorkflowExecution failed", r.Metrics)
-			return nil
-		}); err != nil {
-			logger.Error(err, "Failed to update WorkflowExecutionComplete condition")
-			// Continue - condition update is best-effort
-		}
-	}
-
-	// Delegate to WorkflowExecutionHandler for status-based transitions
-	// Handler Consistency Refactoring (2026-01-22): Extract status handling logic
-	return r.weHandler.HandleStatus(ctx, rr, we)
-}
-
-// handleDedupResultPropagation fetches the original WFE referenced by DeduplicatedByWE
-// and propagates its terminal result to the RR, skipping the normal handler path.
-//
-// Issue #190 C3/C4: When a WFE is deduplicated, the RR waits for the original WFE to finish
-// and inherits its outcome (Completed or Failed) without going through Verifying.
-func (r *Reconciler) handleDedupResultPropagation(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues(
-		"remediationRequest", rr.Name,
-		"originalWFE", rr.Status.DeduplicatedByWE,
-	)
-
-	// Use apiReader (uncached) to get the original WFE. The informer cache is
-	// eventually consistent and may return a stale object with Phase="" even
-	// after the WFE has been updated to Completed/Failed in etcd, causing the
-	// RR to requeue indefinitely on the default branch.
-	originalWFE := &workflowexecutionv1.WorkflowExecution{}
-	err := r.apiReader.Get(ctx, client.ObjectKey{
-		Name:      rr.Status.DeduplicatedByWE,
-		Namespace: rr.Namespace,
-	}, originalWFE)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.Error(nil, "Original WFE deleted (dangling DeduplicatedByWE reference)")
-			return r.transitionToInheritedFailed(ctx, rr,
-				fmt.Errorf("original WorkflowExecution %q deleted before completion", rr.Status.DeduplicatedByWE),
-				rr.Status.DeduplicatedByWE, "WorkflowExecution")
-		}
-		return ctrl.Result{}, fmt.Errorf("failed to fetch original WFE %q: %w", rr.Status.DeduplicatedByWE, err)
-	}
-
-	switch originalWFE.Status.Phase {
-	case workflowexecutionv1.PhaseCompleted:
-		return r.transitionToInheritedCompleted(ctx, rr, rr.Status.DeduplicatedByWE, "WorkflowExecution")
-	case workflowexecutionv1.PhaseFailed:
-		return r.transitionToInheritedFailed(ctx, rr,
-			fmt.Errorf("original WorkflowExecution %q failed: %s", originalWFE.Name, originalWFE.Status.FailureReason),
-			rr.Status.DeduplicatedByWE, "WorkflowExecution")
-	default:
-		logger.Info("Original WFE still in progress, requeuing",
-			"phase", originalWFE.Status.Phase)
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-	}
+	// All phase handlers are now registered in the registry. If we reach
+	// here, the phase is genuinely unknown.
+	logger.Info("Unknown phase", "phase", rr.Status.OverallPhase)
+	return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil // REFACTOR-RO-003
 }
 
 // transitionToInheritedCompleted transitions the RR to Completed with outcome "Remediated".
@@ -2136,130 +1263,8 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 	return ctrl.Result{}, nil
 }
 
-// handleVerifyingPhase manages the Verifying phase lifecycle (#280).
-// Responsibilities:
-//   - Step 0 (#281): Retry notification creation if refs are missing (non-blocking)
-//   - Step 1: Retry EA creation if EffectivenessAssessmentRef is nil (transient failure)
-//   - Step 2: Populate VerificationDeadline from EA.Status.ValidityDeadline + buffer
-//   - Step 3: Timeout check when VerificationDeadline expires (Change 4)
-//   - Step 4: EA terminal status triggers Completed transition (Change 3)
-func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-
-	// Step 0 (#281, #304): Retry notification creation only after Outcome is set.
-	// Completion notifications require Outcome for body/metadata (BR-ORCH-045).
-	if rr.Status.Outcome != "" {
-		r.ensureNotificationsCreated(ctx, rr)
-	}
-
-	// Step 1: If EA was not created during transition (transient failure), retry now
-	if rr.Status.EffectivenessAssessmentRef == nil {
-		logger.Info("EffectivenessAssessmentRef is nil in Verifying phase, retrying EA creation")
-		r.createEffectivenessAssessmentIfNeeded(ctx, rr)
-
-		if rr.Status.EffectivenessAssessmentRef == nil {
-			logger.Info("EA creation still pending, requeueing")
-			return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
-		}
-	}
-
-	// Step 2: Populate VerificationDeadline from EA.Status.ValidityDeadline
-	if rr.Status.VerificationDeadline == nil {
-		eaName := rr.Status.EffectivenessAssessmentRef.Name
-		ea := &eav1.EffectivenessAssessment{}
-		if err := r.client.Get(ctx, client.ObjectKey{Name: eaName, Namespace: rr.Namespace}, ea); err != nil {
-			logger.Error(err, "Failed to fetch EA for VerificationDeadline computation", "ea", eaName)
-			return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
-		}
-
-		if ea.Status.ValidityDeadline != nil {
-			deadline := metav1.NewTime(ea.Status.ValidityDeadline.Add(VerificationDeadlineBuffer))
-			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-				rr.Status.VerificationDeadline = &deadline
-				return nil
-			}); err != nil {
-				logger.Error(err, "Failed to persist VerificationDeadline")
-				return ctrl.Result{}, err
-			}
-			logger.Info("VerificationDeadline set", "deadline", deadline.Format(time.RFC3339))
-		} else if time.Since(rr.CreationTimestamp.Time) > r.timeouts.Verifying {
-			logger.Info("Safety-net timeout: VerificationDeadline never set, RR exceeded verifying timeout",
-				"age", time.Since(rr.CreationTimestamp.Time).String(),
-				"verifyingTimeout", r.timeouts.Verifying.String())
-			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-				now := metav1.Now()
-				rr.Status.OverallPhase = phase.Completed
-				rr.Status.Outcome = "VerificationTimedOut"
-				rr.Status.CompletedAt = &now
-				rr.Status.ObservedGeneration = rr.Generation
-				return nil
-			}); err != nil {
-				logger.Error(err, "Failed to transition to Completed on safety-net timeout")
-				return ctrl.Result{}, err
-			}
-			if r.Metrics != nil {
-				r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
-			}
-		// #304: Create notifications AFTER Outcome is set (BR-ORCH-045)
-		r.ensureNotificationsCreated(ctx, rr)
-		r.emitVerificationTimedOutAudit(ctx, rr)
-		if rr.Status.StartTime != nil {
-			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
-		}
-		return ctrl.Result{}, nil
-	} else {
-		logger.V(1).Info("EA.Status.ValidityDeadline not yet set, requeueing")
-			return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
-		}
-	}
-
-	// Step 3: Timeout check — if VerificationDeadline has passed, time out (#280 Change 4)
-	if rr.Status.VerificationDeadline != nil && time.Now().After(rr.Status.VerificationDeadline.Time) {
-		logger.Info("VerificationDeadline expired, timing out verification",
-			"deadline", rr.Status.VerificationDeadline.Time.Format(time.RFC3339))
-		if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-			now := metav1.Now()
-			rr.Status.OverallPhase = phase.Completed
-			rr.Status.Outcome = "VerificationTimedOut"
-			rr.Status.CompletedAt = &now
-			rr.Status.ObservedGeneration = rr.Generation
-			return nil
-		}); err != nil {
-			logger.Error(err, "Failed to transition to Completed on verification timeout")
-			return ctrl.Result{}, err
-		}
-		if r.Metrics != nil {
-			r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
-		}
-		// #304: Create notifications AFTER Outcome is set (BR-ORCH-045)
-		r.ensureNotificationsCreated(ctx, rr)
-		r.emitVerificationTimedOutAudit(ctx, rr)
-		if rr.Status.StartTime != nil {
-			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
-		}
-		return ctrl.Result{}, nil
-	}
-
-	// Step 4: Track EA terminal status -> transition Verifying -> Completed (#280 Change 3)
-	if err := r.trackEffectivenessStatus(ctx, rr); err != nil {
-		logger.Error(err, "Failed to track EA status during Verifying phase")
-	}
-
-	// If trackEffectivenessStatus transitioned to Completed, create notifications and emit audit
-	if rr.Status.OverallPhase == phase.Completed {
-		// #304: Create notifications AFTER Outcome is set (BR-ORCH-045)
-		r.ensureNotificationsCreated(ctx, rr)
-		r.emitVerificationCompletedAudit(ctx, rr)
-		if rr.Status.StartTime != nil {
-			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
-		}
-		return ctrl.Result{}, nil
-	}
-
-	// Step 4: Timeout check added in Change 4
-
-	return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
-}
+// handleVerifyingPhase is now handled by VerifyingHandler via the phase registry.
+// See verifying_handler.go (Issue #666, TP-666-v1 §8.1).
 
 // VerificationDeadlineBuffer is the grace period added to EA.Status.ValidityDeadline
 // when computing VerificationDeadline. Allows for clock skew and final status propagation.
