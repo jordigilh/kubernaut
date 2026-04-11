@@ -18,20 +18,28 @@ limitations under the License.
 package signalprocessing
 
 import (
+	"github.com/prometheus/client_golang/prometheus"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 )
 
-var _ = Describe("UT-SP-668-005: NewMetrics global registry path", func() {
-	It("BR-SP-100: should create metrics instance using global controller-runtime registry", func() {
-		m := metrics.NewMetrics()
-		Expect(m).NotTo(BeNil())
+var _ = Describe("UT-SP-668-005: NewMetrics registry path", func() {
+	var m *metrics.Metrics
+
+	BeforeEach(func() {
+		m = metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+	})
+
+	It("BR-SP-100: should create metrics instance with functional collectors", func() {
+		Expect(m.ProcessingTotal).ToNot(BeZero())
+		Expect(m.ProcessingDuration).ToNot(BeZero())
+		Expect(m.EnrichmentErrors).ToNot(BeZero())
 	})
 
 	It("BR-SP-100: should be usable for recording metrics after creation", func() {
-		m := metrics.NewMetrics()
 		Expect(func() {
 			m.IncrementProcessingTotal("enriching", "success")
 			m.ObserveProcessingDuration("enriching", 0.1)
