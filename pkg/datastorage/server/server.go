@@ -101,6 +101,13 @@ type Server struct {
 	maxBatchSize int
 }
 
+func defaultMaxBatchSize(v int) int {
+	if v <= 0 {
+		return 500
+	}
+	return v
+}
+
 // DD-007 + DD-008 graceful shutdown constants
 const (
 	// endpointRemovalPropagationDelay is the time to wait for Kubernetes to propagate
@@ -380,7 +387,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		authenticator:   deps.Authenticator, // DD-AUTH-014: Injected at runtime
 		authorizer:      deps.Authorizer,    // DD-AUTH-014: Injected at runtime
 		authNamespace:   deps.AuthNamespace,  // DD-AUTH-014: Dynamic namespace for SAR checks
-		maxBatchSize:    appCfg.Server.MaxBatchSize, // Issue #667 / BR-STORAGE-043
+		maxBatchSize:    defaultMaxBatchSize(appCfg.Server.MaxBatchSize), // Issue #667 / BR-STORAGE-043
 	}
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work

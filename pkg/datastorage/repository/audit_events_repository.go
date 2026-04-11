@@ -30,6 +30,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository/sqlutil"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository/txretry"
 )
 
 // DateOnly is a time.Time that serializes to JSON as date-only format (YYYY-MM-DD)
@@ -380,134 +381,122 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 	// ========================================
 	// SOC2 Gap #9: Hash Chain Integration
 	// ========================================
-	// Start transaction to ensure advisory lock and insert are atomic
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
+	// Wrap the transactional portion in a retry loop so that transient
+	// PostgreSQL deadlocks (40P01) are retried transparently. The hash
+	// fields are recalculated on each attempt because they depend on the
+	// current chain head, which may change between retries.
+	err = txretry.WithSerializableRetry(ctx, 3, func() error {
+		event.EventHash = ""
+		event.PreviousEventHash = ""
+
+		tx, txErr := r.db.BeginTx(ctx, nil)
+		if txErr != nil {
+			return fmt.Errorf("failed to begin transaction: %w", txErr)
 		}
-	}()
+		defer func() {
+			if txErr != nil {
+				_ = tx.Rollback()
+			}
+		}()
 
-	// Get previous event hash (with advisory lock)
-	previousHash, err := r.getPreviousEventHash(ctx, tx, event.CorrelationID)
+		previousHash, txErr := r.getPreviousEventHash(ctx, tx, event.CorrelationID)
+		if txErr != nil {
+			return fmt.Errorf("failed to get previous event hash: %w", txErr)
+		}
+
+		eventHash, txErr := calculateEventHash(previousHash, event)
+		if txErr != nil {
+			return fmt.Errorf("failed to calculate event hash: %w", txErr)
+		}
+
+		event.EventHash = eventHash
+		event.PreviousEventHash = previousHash
+
+		query := `
+			INSERT INTO audit_events (
+				event_id, event_version, event_timestamp, event_date, event_type,
+				event_category, event_action, event_outcome,
+				correlation_id, parent_event_id, parent_event_date,
+				resource_type, resource_id, namespace, cluster_name,
+				actor_id, actor_type,
+				severity, duration_ms, error_code, error_message,
+				retention_days, is_sensitive, event_data,
+				event_hash, previous_event_hash,
+				legal_hold, legal_hold_reason, legal_hold_placed_by, legal_hold_placed_at
+			) VALUES (
+				$1, $2, $3, $4, $5,
+				$6, $7, $8,
+				$9, $10, $11,
+				$12, $13, $14, $15,
+				$16, $17,
+				$18, $19, $20, $21,
+				$22, $23, $24,
+				$25, $26,
+				$27, $28, $29, $30
+			)
+			RETURNING event_timestamp
+		`
+
+		parentEventID := sqlutil.ToNullUUID(event.ParentEventID)
+		parentEventDate := sqlutil.ToNullTime(event.ParentEventDate)
+		namespace := sqlutil.ToNullStringValue(event.ResourceNamespace)
+		clusterName := sqlutil.ToNullStringValue(event.ClusterID)
+		errorCode := sqlutil.ToNullStringValue(event.ErrorCode)
+		errorMessage := sqlutil.ToNullStringValue(event.ErrorMessage)
+		severity := sqlutil.ToNullStringValue(event.Severity)
+
+		var durationMs sql.NullInt32
+		if event.DurationMs != 0 {
+			durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
+		}
+		retentionDays := event.RetentionDays
+
+		var ignoredTimestamp time.Time
+		txErr = tx.QueryRowContext(ctx, query,
+			event.EventID,
+			version,
+			event.EventTimestamp,
+			eventDate,
+			event.EventType,
+			event.EventCategory,
+			event.EventAction,
+			event.EventOutcome,
+			event.CorrelationID,
+			parentEventID,
+			parentEventDate,
+			event.ResourceType,
+			event.ResourceID,
+			namespace,
+			clusterName,
+			event.ActorID,
+			event.ActorType,
+			severity,
+			durationMs,
+			errorCode,
+			errorMessage,
+			retentionDays,
+			event.IsSensitive,
+			eventDataJSON,
+			event.EventHash,
+			event.PreviousEventHash,
+			event.LegalHold,
+			sqlutil.ToNullStringValue(event.LegalHoldReason),
+			sqlutil.ToNullStringValue(event.LegalHoldPlacedBy),
+			sqlutil.ToNullTime(event.LegalHoldPlacedAt),
+		).Scan(&ignoredTimestamp)
+
+		if txErr != nil {
+			return fmt.Errorf("failed to insert audit event: %w", txErr)
+		}
+
+		if txErr = tx.Commit(); txErr != nil {
+			return fmt.Errorf("failed to commit transaction: %w", txErr)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get previous event hash: %w", err)
+		return nil, err
 	}
-
-	// Calculate current event hash
-	eventHash, err := calculateEventHash(previousHash, event)
-	if err != nil {
-		return nil, fmt.Errorf("failed to calculate event hash: %w", err)
-	}
-
-	// Store hashes in event struct
-	event.EventHash = eventHash
-	event.PreviousEventHash = previousHash
-	// ========================================
-
-	query := `
-		INSERT INTO audit_events (
-			event_id, event_version, event_timestamp, event_date, event_type,
-			event_category, event_action, event_outcome,
-			correlation_id, parent_event_id, parent_event_date,
-			resource_type, resource_id, namespace, cluster_name,
-			actor_id, actor_type,
-			severity, duration_ms, error_code, error_message,
-			retention_days, is_sensitive, event_data,
-			event_hash, previous_event_hash,
-			legal_hold, legal_hold_reason, legal_hold_placed_by, legal_hold_placed_at
-		) VALUES (
-			$1, $2, $3, $4, $5,
-			$6, $7, $8,
-			$9, $10, $11,
-			$12, $13, $14, $15,
-			$16, $17,
-			$18, $19, $20, $21,
-			$22, $23, $24,
-			$25, $26,
-			$27, $28, $29, $30
-		)
-		RETURNING event_timestamp
-	`
-
-	// Handle optional fields with sql.Null* types (ADR-034 schema)
-	// V1.0 REFACTOR: Use sqlutil helpers to reduce duplication (Opportunity 2.1)
-	parentEventID := sqlutil.ToNullUUID(event.ParentEventID)
-	parentEventDate := sqlutil.ToNullTime(event.ParentEventDate)
-
-	// ADR-034: actor_id, actor_type, resource_type, resource_id are NOT NULL (required fields)
-	// These are passed as regular strings, not sql.NullString
-
-	// V1.0 REFACTOR: Use sqlutil helpers for optional string fields
-	namespace := sqlutil.ToNullStringValue(event.ResourceNamespace)
-	clusterName := sqlutil.ToNullStringValue(event.ClusterID)
-	errorCode := sqlutil.ToNullStringValue(event.ErrorCode)
-	errorMessage := sqlutil.ToNullStringValue(event.ErrorMessage)
-	severity := sqlutil.ToNullStringValue(event.Severity)
-
-	// Note: DurationMs stays as sql.NullInt32 (not int64) - keep manual conversion
-	var durationMs sql.NullInt32
-	if event.DurationMs != 0 {
-		durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
-	}
-
-	// Note: event.RetentionDays is already defaulted to 2555 above (before hash calculation)
-	// so we can use it directly here
-	retentionDays := event.RetentionDays
-
-	// Execute query (ADR-034 schema + Gap #9 hash chain + Gap #8 legal hold - 30 parameters)
-	// Note: We ignore the RETURNING event_timestamp because we already have the timestamp
-	// that was used for hash calculation (modifying it would break hash verification)
-	var ignoredTimestamp time.Time // DB-returned timestamp (not used to preserve hash integrity)
-	err = tx.QueryRowContext(ctx, query,
-		event.EventID,
-		version, // event_version
-		event.EventTimestamp,
-		eventDate,
-		event.EventType,
-		event.EventCategory, // ADR-034
-		event.EventAction,   // ADR-034
-		event.EventOutcome,  // ADR-034
-		event.CorrelationID,
-		parentEventID,
-		parentEventDate,
-		event.ResourceType, // ADR-034 NOT NULL - pass directly
-		event.ResourceID,   // ADR-034 NOT NULL - pass directly
-		namespace,          // ADR-034: namespace column (not resource_namespace)
-		clusterName,        // Renamed from clusterID
-		event.ActorID,      // ADR-034 NOT NULL - pass directly
-		event.ActorType,    // ADR-034 NOT NULL - pass directly
-		severity,
-		durationMs,
-		errorCode,
-		errorMessage,
-		retentionDays,
-		event.IsSensitive,
-		eventDataJSON,
-		event.EventHash,         // Gap #9: SHA256 hash of (previous_hash + event_json)
-		event.PreviousEventHash, // Gap #9: Hash of previous event in chain
-		event.LegalHold,         // Gap #8: legal hold flag
-		sqlutil.ToNullStringValue(event.LegalHoldReason),   // Gap #8: legal hold reason
-		sqlutil.ToNullStringValue(event.LegalHoldPlacedBy), // Gap #8: legal hold placed_by
-		sqlutil.ToNullTime(event.LegalHoldPlacedAt),        // Gap #8: legal hold placed_at
-	).Scan(&ignoredTimestamp)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to insert audit event: %w", err)
-	}
-
-	// Commit transaction (releases advisory lock)
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	// NOTE: We do NOT overwrite event.EventTimestamp with returnedTimestamp
-	// because the hash was calculated using the original timestamp.
-	// Changing it would break hash verification.
-	// The DB should store exactly what we sent (event.EventTimestamp at line 403)
 
 	r.logger.V(1).Info("Audit event created with hash chain",
 		"event_id", event.EventID.String(),
@@ -536,40 +525,52 @@ func SortedCorrelationIDs[V any](m map[string]V) []string {
 }
 
 // BR-AUDIT-001: Complete audit trail with no data loss
-// Uses a single transaction for atomic batch insert (all succeed or all fail)
+// Uses a single transaction for atomic batch insert (all succeed or all fail).
+// Wraps the transaction in a retry loop so that transient PostgreSQL deadlocks
+// (40P01) are retried transparently.
 func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*AuditEvent) ([]*AuditEvent, error) {
 	if len(events) == 0 {
 		return nil, fmt.Errorf("batch cannot be empty")
 	}
 
-	// Start transaction for atomic batch insert
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-
-	// Pre-allocate result slice indexed by original position so the caller
-	// receives events in the same order as the input slice.  The SOC2 Gap #9
-	// hash-chain logic below groups events by correlation_id (using a map with
-	// non-deterministic iteration order), so we must track each event's
-	// original index and write results back into the correct slot.
-	// Fix: https://github.com/jordigilh/kubernaut/issues/42
 	type indexedEvent struct {
 		originalIndex int
 		event         *AuditEvent
 	}
 
-	createdEvents := make([]*AuditEvent, len(events))
+	// Normalize fields that are idempotent across retries (UUID, timestamp,
+	// event_data JSON round-trip, retention defaults). These only need to run
+	// once regardless of how many retry attempts occur.
+	for _, event := range events {
+		if event.EventID == uuid.Nil {
+			event.EventID = uuid.New()
+		}
+		if event.EventTimestamp.IsZero() {
+			event.EventTimestamp = time.Now().UTC()
+		}
+		event.EventTimestamp = event.EventTimestamp.UTC().Truncate(time.Microsecond)
+		event.EventDate = DateOnly(event.EventTimestamp.Truncate(24 * time.Hour))
 
-	// ========================================
-	// SOC2 Gap #9: Hash Chain Integration
-	// Group events by correlation_id to maintain hash chains
-	// ========================================
+		eventDataJSON, marshalErr := json.Marshal(event.EventData)
+		if marshalErr != nil {
+			return nil, fmt.Errorf("failed to marshal event_data for event %s: %w", event.EventID, marshalErr)
+		}
+		var normalizedEventData map[string]interface{}
+		if len(eventDataJSON) > 0 && string(eventDataJSON) != "null" {
+			if unmarshalErr := json.Unmarshal(eventDataJSON, &normalizedEventData); unmarshalErr != nil {
+				return nil, fmt.Errorf("failed to normalize event_data for event %s: %w", event.EventID, unmarshalErr)
+			}
+			event.EventData = normalizedEventData
+		}
+		if event.Version == "" {
+			event.Version = "1.0"
+		}
+		if event.RetentionDays == 0 {
+			event.RetentionDays = 2555
+		}
+	}
+
+	// Group events by correlation_id (stable across retries).
 	eventsByCorrelation := make(map[string][]indexedEvent)
 	for i, event := range events {
 		eventsByCorrelation[event.CorrelationID] = append(
@@ -578,198 +579,153 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 		)
 	}
 
-	// Track last hash for each correlation_id within this batch
-	lastHashByCorrelation := make(map[string]string)
-
-	// Prepare batch insert statement (includes hash chain columns)
-	query := `
-		INSERT INTO audit_events (
-			event_id, event_version, event_timestamp, event_date, event_type,
-			event_category, event_action, event_outcome,
-			correlation_id, parent_event_id, parent_event_date,
-			resource_type, resource_id, namespace, cluster_name,
-			actor_id, actor_type,
-			severity, duration_ms, error_code, error_message,
-			retention_days, is_sensitive, event_data,
-			event_hash, previous_event_hash,
-			legal_hold, legal_hold_reason, legal_hold_placed_by, legal_hold_placed_at
-		) VALUES (
-			$1, $2, $3, $4, $5,
-			$6, $7, $8,
-			$9, $10, $11,
-			$12, $13, $14, $15,
-			$16, $17,
-			$18, $19, $20, $21,
-			$22, $23, $24,
-			$25, $26,
-			$27, $28, $29, $30
-		)
-		RETURNING event_timestamp
-	`
-
-	stmt, err := tx.PrepareContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to prepare statement: %w", err)
-	}
-	defer func() { _ = stmt.Close() }()
-
-	// Issue #667 / BR-STORAGE-040: Acquire advisory locks in sorted order to prevent deadlocks.
+	// Issue #667 / BR-STORAGE-040: sorted order prevents advisory-lock deadlocks.
 	sortedCorrIDs := SortedCorrelationIDs(eventsByCorrelation)
 
-	for _, correlationID := range sortedCorrIDs {
-		correlationEvents := eventsByCorrelation[correlationID]
-		// Get previous hash for this correlation_id (with advisory lock)
-		previousHash, hashErr := r.getPreviousEventHash(ctx, tx, correlationID)
-		if hashErr != nil {
-			err = fmt.Errorf("failed to get previous event hash for correlation_id %s: %w", correlationID, hashErr)
-			return nil, err
+	var createdEvents []*AuditEvent
+
+	err := txretry.WithSerializableRetry(ctx, 3, func() error {
+		// Reset hash fields so they are recalculated from the current chain head.
+		for _, event := range events {
+			event.EventHash = ""
+			event.PreviousEventHash = ""
 		}
 
-		lastHashByCorrelation[correlationID] = previousHash
-
-		// Process events in this correlation sequentially
-		for _, ie := range correlationEvents {
-			event := ie.event
-			// Generate UUID if not provided
-			if event.EventID == uuid.Nil {
-				event.EventID = uuid.New()
+		tx, txErr := r.db.BeginTx(ctx, nil)
+		if txErr != nil {
+			return fmt.Errorf("failed to begin transaction: %w", txErr)
+		}
+		defer func() {
+			if txErr != nil {
+				_ = tx.Rollback()
 			}
+		}()
 
-			// Set event_timestamp if not provided
-			if event.EventTimestamp.IsZero() {
-				event.EventTimestamp = time.Now().UTC()
-			}
+		query := `
+			INSERT INTO audit_events (
+				event_id, event_version, event_timestamp, event_date, event_type,
+				event_category, event_action, event_outcome,
+				correlation_id, parent_event_id, parent_event_date,
+				resource_type, resource_id, namespace, cluster_name,
+				actor_id, actor_type,
+				severity, duration_ms, error_code, error_message,
+				retention_days, is_sensitive, event_data,
+				event_hash, previous_event_hash,
+				legal_hold, legal_hold_reason, legal_hold_placed_by, legal_hold_placed_at
+			) VALUES (
+				$1, $2, $3, $4, $5,
+				$6, $7, $8,
+				$9, $10, $11,
+				$12, $13, $14, $15,
+				$16, $17,
+				$18, $19, $20, $21,
+				$22, $23, $24,
+				$25, $26,
+				$27, $28, $29, $30
+			)
+			RETURNING event_timestamp
+		`
 
-			// Force UTC normalization before hash calculation (see Create() for rationale)
-			event.EventTimestamp = event.EventTimestamp.UTC()
+		stmt, txErr := tx.PrepareContext(ctx, query)
+		if txErr != nil {
+			return fmt.Errorf("failed to prepare statement: %w", txErr)
+		}
+		defer func() { _ = stmt.Close() }()
 
-			// CRITICAL: Truncate to microsecond precision to match PostgreSQL timestamptz
-			// (see Create() function for detailed explanation)
-			event.EventTimestamp = event.EventTimestamp.Truncate(time.Microsecond)
+		result := make([]*AuditEvent, len(events))
+		lastHashByCorrelation := make(map[string]string)
 
-			// Set event_date from event_timestamp (for partitioning)
-			eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
-			event.EventDate = DateOnly(eventDate)
+		for _, correlationID := range sortedCorrIDs {
+			correlationEvents := eventsByCorrelation[correlationID]
 
-			// Marshal event_data to JSONB
-			eventDataJSON, marshalErr := json.Marshal(event.EventData)
-			if marshalErr != nil {
-				err = fmt.Errorf("failed to marshal event_data for event %s: %w", event.EventID, marshalErr)
-				return nil, err
-			}
-
-			// Normalize: unmarshal and remarshal to match PostgreSQL's representation
-			// (same as Create() — ensures hash consistency across insert/read round-trip)
-			var normalizedEventData map[string]interface{}
-			if len(eventDataJSON) > 0 && string(eventDataJSON) != "null" {
-				if unmarshalErr := json.Unmarshal(eventDataJSON, &normalizedEventData); unmarshalErr != nil {
-					err = fmt.Errorf("failed to normalize event_data for event %s: %w", event.EventID, unmarshalErr)
-					return nil, err
-				}
-				event.EventData = normalizedEventData
-				eventDataJSON, _ = json.Marshal(normalizedEventData)
-			}
-
-			// Handle optional fields with sql.Null* types
-			// V1.0 REFACTOR: Use sqlutil helpers to reduce duplication (Opportunity 2.1)
-			parentEventID := sqlutil.ToNullUUID(event.ParentEventID)
-			parentEventDate := sqlutil.ToNullTime(event.ParentEventDate)
-
-			// V1.0 REFACTOR: Use sqlutil helpers for optional string fields
-			namespace := sqlutil.ToNullStringValue(event.ResourceNamespace)
-			clusterName := sqlutil.ToNullStringValue(event.ClusterID)
-			errorCode := sqlutil.ToNullStringValue(event.ErrorCode)
-			errorMessage := sqlutil.ToNullStringValue(event.ErrorMessage)
-			severity := sqlutil.ToNullStringValue(event.Severity)
-
-			// Note: DurationMs stays as sql.NullInt32 (not int64) - keep manual conversion
-			var durationMs sql.NullInt32
-			if event.DurationMs != 0 {
-				durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
-			}
-
-			// Set default version if not specified (ADR-034: current version is "1.0")
-			version := event.Version
-			if version == "" {
-				version = "1.0"
-			}
-
-			// CRITICAL: Set default retention days BEFORE hash calculation
-			// This ensures the hash includes the correct retention_days value (2555)
-			// instead of 0, matching what will be read back from the DB during verification.
-			if event.RetentionDays == 0 {
-				event.RetentionDays = 2555
-			}
-			retentionDays := event.RetentionDays
-
-			// ========================================
-			// SOC2 Gap #9: Calculate hash chain for this event
-			// ========================================
-			previousHash := lastHashByCorrelation[event.CorrelationID]
-
-			eventHash, hashErr := calculateEventHash(previousHash, event)
+			previousHash, hashErr := r.getPreviousEventHash(ctx, tx, correlationID)
 			if hashErr != nil {
-				err = fmt.Errorf("failed to calculate event hash for event %s: %w", event.EventID, hashErr)
-				return nil, err
+				txErr = fmt.Errorf("failed to get previous event hash for correlation_id %s: %w", correlationID, hashErr)
+				return txErr
 			}
+			lastHashByCorrelation[correlationID] = previousHash
 
-			event.EventHash = eventHash
-			event.PreviousEventHash = previousHash
+			for _, ie := range correlationEvents {
+				event := ie.event
 
-			// Update last hash for this correlation_id
-			lastHashByCorrelation[event.CorrelationID] = eventHash
-			// ========================================
+				eventDataJSON, _ := json.Marshal(event.EventData)
+				eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
 
-			// Execute insert (Gap #9: includes hash chain + Gap #8: legal hold - 30 parameters)
-			var returnedTimestamp time.Time
-			execErr := stmt.QueryRowContext(ctx,
-				event.EventID,
-				version, // event_version
-				event.EventTimestamp,
-				eventDate,
-				event.EventType,
-				event.EventCategory,
-				event.EventAction,
-				event.EventOutcome,
-				event.CorrelationID,
-				parentEventID,
-				parentEventDate,
-				event.ResourceType,
-				event.ResourceID,
-				namespace,
-				clusterName,
-				event.ActorID,
-				event.ActorType,
-				severity,
-				durationMs,
-				errorCode,
-				errorMessage,
-				retentionDays,
-				event.IsSensitive,
-				eventDataJSON,
-				event.EventHash,         // Gap #9: SHA256 hash of (previous_hash + event_json)
-				event.PreviousEventHash, // Gap #9: Hash of previous event in chain
-				event.LegalHold,         // Gap #8: legal hold flag
-				sqlutil.ToNullStringValue(event.LegalHoldReason),   // Gap #8: legal hold reason
-				sqlutil.ToNullStringValue(event.LegalHoldPlacedBy), // Gap #8: legal hold placed_by
-				sqlutil.ToNullTime(event.LegalHoldPlacedAt),        // Gap #8: legal hold placed_at
-			).Scan(&returnedTimestamp)
+				previousHash := lastHashByCorrelation[event.CorrelationID]
+				eventHash, hashErr := calculateEventHash(previousHash, event)
+				if hashErr != nil {
+					txErr = fmt.Errorf("failed to calculate event hash for event %s: %w", event.EventID, hashErr)
+					return txErr
+				}
 
-			if execErr != nil {
-				err = fmt.Errorf("failed to insert event %s: %w", event.EventID, execErr)
-				return nil, err
+				event.EventHash = eventHash
+				event.PreviousEventHash = previousHash
+				lastHashByCorrelation[event.CorrelationID] = eventHash
+
+				parentEventID := sqlutil.ToNullUUID(event.ParentEventID)
+				parentEventDate := sqlutil.ToNullTime(event.ParentEventDate)
+				namespace := sqlutil.ToNullStringValue(event.ResourceNamespace)
+				clusterName := sqlutil.ToNullStringValue(event.ClusterID)
+				errorCode := sqlutil.ToNullStringValue(event.ErrorCode)
+				errorMessage := sqlutil.ToNullStringValue(event.ErrorMessage)
+				severity := sqlutil.ToNullStringValue(event.Severity)
+
+				var durationMs sql.NullInt32
+				if event.DurationMs != 0 {
+					durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
+				}
+
+				var returnedTimestamp time.Time
+				txErr = stmt.QueryRowContext(ctx,
+					event.EventID,
+					event.Version,
+					event.EventTimestamp,
+					eventDate,
+					event.EventType,
+					event.EventCategory,
+					event.EventAction,
+					event.EventOutcome,
+					event.CorrelationID,
+					parentEventID,
+					parentEventDate,
+					event.ResourceType,
+					event.ResourceID,
+					namespace,
+					clusterName,
+					event.ActorID,
+					event.ActorType,
+					severity,
+					durationMs,
+					errorCode,
+					errorMessage,
+					event.RetentionDays,
+					event.IsSensitive,
+					eventDataJSON,
+					event.EventHash,
+					event.PreviousEventHash,
+					event.LegalHold,
+					sqlutil.ToNullStringValue(event.LegalHoldReason),
+					sqlutil.ToNullStringValue(event.LegalHoldPlacedBy),
+					sqlutil.ToNullTime(event.LegalHoldPlacedAt),
+				).Scan(&returnedTimestamp)
+
+				if txErr != nil {
+					return fmt.Errorf("failed to insert event %s: %w", event.EventID, txErr)
+				}
+
+				result[ie.originalIndex] = event
 			}
-
-			// NOTE: Do NOT overwrite event.EventTimestamp with returnedTimestamp
-			// because the hash was calculated using the original timestamp.
-			// Changing it would break hash verification. (Same as Create() lines 499-502)
-			createdEvents[ie.originalIndex] = event
 		}
-	}
 
-	// Commit transaction (releases all advisory locks)
-	if err = tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit batch transaction: %w", err)
+		if txErr = tx.Commit(); txErr != nil {
+			return fmt.Errorf("failed to commit batch transaction: %w", txErr)
+		}
+
+		createdEvents = result
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	r.logger.Info("Batch audit events created with hash chains",
