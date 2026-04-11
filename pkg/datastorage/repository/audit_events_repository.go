@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -522,6 +523,18 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 
 // CreateBatch inserts multiple audit events in a single transaction
 // DD-AUDIT-002: StoreBatch interface for batch audit event storage
+// SortedCorrelationIDs returns the keys of a map in lexicographic order.
+// Issue #667 / BR-STORAGE-040: Deterministic ordering prevents advisory lock
+// deadlocks when multiple concurrent transactions lock overlapping correlation IDs.
+func SortedCorrelationIDs[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // BR-AUDIT-001: Complete audit trail with no data loss
 // Uses a single transaction for atomic batch insert (all succeed or all fail)
 func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*AuditEvent) ([]*AuditEvent, error) {
@@ -600,8 +613,11 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 	}
 	defer func() { _ = stmt.Close() }()
 
-	// Process each correlation_id group sequentially to maintain chain
-	for correlationID, correlationEvents := range eventsByCorrelation {
+	// Issue #667 / BR-STORAGE-040: Acquire advisory locks in sorted order to prevent deadlocks.
+	sortedCorrIDs := SortedCorrelationIDs(eventsByCorrelation)
+
+	for _, correlationID := range sortedCorrIDs {
+		correlationEvents := eventsByCorrelation[correlationID]
 		// Get previous hash for this correlation_id (with advisory lock)
 		previousHash, hashErr := r.getPreviousEventHash(ctx, tx, correlationID)
 		if hashErr != nil {

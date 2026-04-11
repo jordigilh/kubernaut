@@ -42,7 +42,7 @@ import (
 // V1.0: All methods use structured types (eliminates map[string]interface{})
 type DBInterface interface {
 	// Query returns audit events matching the filters (structured type)
-	Query(filters map[string]string, limit, offset int) ([]*repository.AuditEvent, error)
+	Query(ctx context.Context, filters map[string]string, limit, offset int) ([]*repository.AuditEvent, error)
 	// Get returns a single audit event by ID (structured type)
 	Get(id int) (*repository.AuditEvent, error)
 	// CountTotal returns the total number of records matching the filters (for pagination metadata)
@@ -325,7 +325,7 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Query database
-	incidents, err := h.db.Query(filters, limit, offset)
+	incidents, err := h.db.Query(r.Context(), filters, limit, offset)
 	if err != nil {
 		h.logger.Error(err, "Database query failed",
 			"request_id", requestID,

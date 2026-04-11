@@ -124,4 +124,63 @@ var _ = Describe("Serializable Transaction Retry [BR-WORKFLOW-007]", func() {
 			Expect(atomic.LoadInt32(&calls)).To(Equal(int32(2)))
 		})
 	})
+
+	// Issue #667: BR-STORAGE-041 — Retryable PostgreSQL errors (40001, 40P01)
+	Describe("WithSerializableRetry — deadlock (40P01) coverage", func() {
+
+		It("UT-DS-041-001: retries on 40P01 deadlock_detected and succeeds on second attempt", func() {
+			var calls int32
+			err := txretry.WithSerializableRetry(ctx, 3, func() error {
+				n := atomic.AddInt32(&calls, 1)
+				if n == 1 {
+					return &pgconn.PgError{Code: "40P01", Message: "deadlock detected"}
+				}
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred(), "should succeed after retry")
+			Expect(atomic.LoadInt32(&calls)).To(Equal(int32(2)),
+				"first call fails with 40P01, second succeeds")
+		})
+
+		It("UT-DS-041-002: retries on 40001 serialization_failure — backward-compatible", func() {
+			var calls int32
+			err := txretry.WithSerializableRetry(ctx, 3, func() error {
+				n := atomic.AddInt32(&calls, 1)
+				if n == 1 {
+					return &pgconn.PgError{Code: "40001", Message: "could not serialize access"}
+				}
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred(), "existing 40001 retry must still work")
+			Expect(atomic.LoadInt32(&calls)).To(Equal(int32(2)))
+		})
+
+		It("UT-DS-041-003: does NOT retry on non-retryable errors like 23505 unique violation", func() {
+			var calls int32
+			err := txretry.WithSerializableRetry(ctx, 3, func() error {
+				atomic.AddInt32(&calls, 1)
+				return &pgconn.PgError{Code: "23505", Message: "unique_violation"}
+			})
+			Expect(err).To(HaveOccurred())
+			var pgErr *pgconn.PgError
+			Expect(errors.As(err, &pgErr)).To(BeTrue(), "error must be a PgError")
+			Expect(pgErr.Code).To(Equal("23505"), "original error code preserved")
+			Expect(atomic.LoadInt32(&calls)).To(Equal(int32(1)),
+				"non-retryable error must not trigger retry")
+		})
+
+		It("UT-DS-041-004: respects maxRetries and returns last error after exhaustion", func() {
+			var calls int32
+			err := txretry.WithSerializableRetry(ctx, 2, func() error {
+				atomic.AddInt32(&calls, 1)
+				return &pgconn.PgError{Code: "40P01", Message: "deadlock detected"}
+			})
+			Expect(err).To(HaveOccurred())
+			var pgErr *pgconn.PgError
+			Expect(errors.As(err, &pgErr)).To(BeTrue(), "error must be a PgError")
+			Expect(pgErr.Code).To(Equal("40P01"), "last error code is 40P01")
+			Expect(atomic.LoadInt32(&calls)).To(Equal(int32(3)),
+				"1 initial + 2 retries = 3 total attempts")
+		})
+	})
 })

@@ -251,7 +251,7 @@ var _ = Describe("DLQ Retry Worker (DD-009 V1.0)", func() {
 			worker := server.NewDLQRetryWorker(dlqClient, nil, workerConfig, logger)
 
 			// ACT: Start the worker (launches goroutine)
-			worker.Start()
+			worker.Start(context.Background())
 
 			// ASSERT: Stop completes within reasonable time (no hang)
 			stopDone := make(chan struct{})

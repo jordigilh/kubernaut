@@ -17,6 +17,7 @@ limitations under the License.
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -297,13 +298,13 @@ func (s *Server) handleGetEffectivenessScore(w http.ResponseWriter, r *http.Requ
 // Convention (#211): All audit_events ORDER BY clauses MUST include event_id
 // as a deterministic tiebreaker. Without it, same-timestamp events return in
 // non-deterministic order, causing flaky tests and wrong assessment status.
-func (s *Server) queryEffectivenessEvents(_ /* ctx */ interface{}, correlationID string) ([]*EffectivenessEvent, error) {
+func (s *Server) queryEffectivenessEvents(ctx context.Context, correlationID string) ([]*EffectivenessEvent, error) {
 	query := `SELECT event_type, event_data FROM audit_events
 		WHERE correlation_id = $1
 		AND event_category = 'effectiveness'
 		ORDER BY event_timestamp ASC, event_id ASC`
 
-	rows, err := s.db.Query(query, correlationID)
+	rows, err := s.db.QueryContext(ctx, query, correlationID)
 	if err != nil {
 		return nil, err
 	}

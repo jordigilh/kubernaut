@@ -1,6 +1,7 @@
 server:
   port: 8080
   host: "0.0.0.0"
+  maxBatchSize: 500    # Issue #667: Max events per batch API request (default: 500)
   readTimeout: "30s"   # CORRECTED: camelCase to match Go struct tag
   writeTimeout: "30s"  # CORRECTED: camelCase to match Go struct tag
 
@@ -19,6 +20,8 @@ database:
   maxIdleConns: 5            # CORRECTED: camelCase to match Go struct tag (was max_idle_conns)
   connMaxLifetime: "5m"      # CORRECTED: camelCase to match Go struct tag (was conn_max_lifetime)
   connMaxIdleTime: "10m"     # CORRECTED: camelCase to match Go struct tag (was conn_max_idle_time)
+  statementTimeout: "30s"    # Issue #667/M1: PG-level statement timeout (default: 30s)
+  lockTimeout: "10s"         # Issue #667/M1: PG-level lock wait timeout (default: 10s)
 
 redis:
   addr: "localhost:6379"

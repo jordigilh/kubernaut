@@ -94,6 +94,20 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Issue #667 / BR-STORAGE-043: Enforce maximum batch size to prevent lock amplification
+	if s.maxBatchSize > 0 && len(requests) > s.maxBatchSize {
+		s.logger.Info("Batch exceeds maximum size",
+			"count", len(requests), "max", s.maxBatchSize)
+		writeValidationRFC7807Error(w, &validation.RFC7807Problem{
+			Type:     "https://kubernaut.ai/problems/batch-size-exceeded",
+			Title:    "Batch Size Exceeded",
+			Status:   http.StatusBadRequest,
+			Detail:   fmt.Sprintf("batch size %d exceeds maximum allowed batch size of %d", len(requests), s.maxBatchSize),
+			Instance: r.URL.Path,
+		}, s)
+		return
+	}
+
 	s.logger.V(1).Info("Parsing batch of audit events", "count", len(requests))
 
 	// 3. Validate and convert ALL events BEFORE persisting any (atomic batch)

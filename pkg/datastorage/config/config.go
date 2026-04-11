@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -56,6 +57,7 @@ type ServerConfig struct {
 	Port         int    `yaml:"port"`
 	Host         string `yaml:"host"`
 	MetricsPort  int    `yaml:"metricsPort"`  // Dedicated Prometheus metrics port (default: 9090, Issue #283)
+	MaxBatchSize int    `yaml:"maxBatchSize"` // Issue #667: Max events per batch API request (default: 500)
 	ReadTimeout  string `yaml:"readTimeout"`  // e.g., "30s"
 	WriteTimeout string `yaml:"writeTimeout"` // e.g., "30s"
 }
@@ -68,16 +70,18 @@ type LoggingConfig struct {
 
 // DatabaseConfig contains PostgreSQL database configuration
 type DatabaseConfig struct {
-	Host            string `yaml:"host"`
-	Port            int    `yaml:"port"`
-	Name            string `yaml:"name"`
-	User            string `yaml:"user"`
-	Password        string `yaml:"-"`               // NOT in YAML - loaded from secret file via LoadSecrets()
-	SSLMode         string `yaml:"sslMode"`         // disable, require, verify-ca, verify-full
-	MaxOpenConns    int    `yaml:"maxOpenConns"`    // Maximum open connections
-	MaxIdleConns    int    `yaml:"maxIdleConns"`    // Maximum idle connections
-	ConnMaxLifetime string `yaml:"connMaxLifetime"` // e.g., "5m"
-	ConnMaxIdleTime string `yaml:"connMaxIdleTime"` // e.g., "10m"
+	Host             string `yaml:"host"`
+	Port             int    `yaml:"port"`
+	Name             string `yaml:"name"`
+	User             string `yaml:"user"`
+	Password         string `yaml:"-"`                // NOT in YAML - loaded from secret file via LoadSecrets()
+	SSLMode          string `yaml:"sslMode"`          // disable, require, verify-ca, verify-full
+	MaxOpenConns     int    `yaml:"maxOpenConns"`     // Maximum open connections (default: 25)
+	MaxIdleConns     int    `yaml:"maxIdleConns"`     // Maximum idle connections
+	ConnMaxLifetime  string `yaml:"connMaxLifetime"`  // e.g., "5m"
+	ConnMaxIdleTime  string `yaml:"connMaxIdleTime"`  // e.g., "10m"
+	StatementTimeout string `yaml:"statementTimeout"` // Issue #667/M1: Per-statement timeout (default: "30s")
+	LockTimeout      string `yaml:"lockTimeout"`      // Issue #667/M1: Per-lock wait timeout (default: "10s")
 
 	// Secret file configuration (ADR-030 Section 6)
 	SecretsFile string `yaml:"secretsFile"` // Full path to secret file, e.g., "/etc/secrets/database/credentials.yaml"
@@ -235,6 +239,28 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("database user required")
 	}
 
+	// Issue #667/M3: Default MaxOpenConns to 25 to prevent unlimited connections
+	if c.Database.MaxOpenConns == 0 {
+		c.Database.MaxOpenConns = 25
+	}
+	if c.Database.MaxOpenConns < 0 {
+		return fmt.Errorf("database maxOpenConns must be positive, got: %d", c.Database.MaxOpenConns)
+	}
+
+	// Issue #667/M1: Default statement_timeout and lock_timeout for PG-level safety
+	if c.Database.StatementTimeout == "" {
+		c.Database.StatementTimeout = "30s"
+	}
+	if _, err := time.ParseDuration(c.Database.StatementTimeout); err != nil {
+		return fmt.Errorf("invalid statementTimeout: %w", err)
+	}
+	if c.Database.LockTimeout == "" {
+		c.Database.LockTimeout = "10s"
+	}
+	if _, err := time.ParseDuration(c.Database.LockTimeout); err != nil {
+		return fmt.Errorf("invalid lockTimeout: %w", err)
+	}
+
 	// Validate server configuration
 	if c.Server.Port == 0 {
 		return fmt.Errorf("server port required")
@@ -246,6 +272,14 @@ func (c *Config) Validate() error {
 	// Issue #283: Default metricsPort to 9090 (Kubernaut standard) when omitted
 	if c.Server.MetricsPort == 0 {
 		c.Server.MetricsPort = 9090
+	}
+
+	// Issue #667 / BR-STORAGE-043: Default MaxBatchSize to 500 when omitted
+	if c.Server.MaxBatchSize == 0 {
+		c.Server.MaxBatchSize = 500
+	}
+	if c.Server.MaxBatchSize < 0 {
+		return fmt.Errorf("server maxBatchSize must be positive, got: %d", c.Server.MaxBatchSize)
 	}
 	if c.Server.MetricsPort < 1024 || c.Server.MetricsPort > 65535 {
 		return fmt.Errorf("server metricsPort must be between 1024 and 65535, got: %d", c.Server.MetricsPort)
@@ -324,8 +358,26 @@ func (c *ServerConfig) GetWriteTimeout() time.Duration {
 	return duration
 }
 
-// GetConnectionString returns the PostgreSQL connection string
+// GetConnectionString returns the PostgreSQL connection string with PG-level timeouts.
+// Issue #667/M1: statement_timeout and lock_timeout are set as DSN options so PostgreSQL
+// itself enforces limits, independent of Go-side context cancellation.
 func (c *DatabaseConfig) GetConnectionString() string {
-	return fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
+	dsn := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
 		c.Host, c.Port, c.Name, c.User, c.Password, c.SSLMode)
+
+	var pgOpts []string
+	if c.StatementTimeout != "" {
+		if d, err := time.ParseDuration(c.StatementTimeout); err == nil {
+			pgOpts = append(pgOpts, fmt.Sprintf("-c statement_timeout=%d", d.Milliseconds()))
+		}
+	}
+	if c.LockTimeout != "" {
+		if d, err := time.ParseDuration(c.LockTimeout); err == nil {
+			pgOpts = append(pgOpts, fmt.Sprintf("-c lock_timeout=%d", d.Milliseconds()))
+		}
+	}
+	if len(pgOpts) > 0 {
+		dsn += fmt.Sprintf(" options='%s'", strings.Join(pgOpts, " "))
+	}
+	return dsn
 }

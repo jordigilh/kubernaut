@@ -17,6 +17,7 @@ limitations under the License.
 package adapter
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -48,7 +49,7 @@ func NewDBAdapter(db *sql.DB, logger logr.Logger) *DBAdapter {
 // BR-STORAGE-022: Apply dynamic filters
 // BR-STORAGE-023: Pagination support
 // V1.0: Returns structured types ([]*repository.AuditEvent) for type safety
-func (d *DBAdapter) Query(filters map[string]string, limit, offset int) ([]*repository.AuditEvent, error) {
+func (d *DBAdapter) Query(ctx context.Context, filters map[string]string, limit, offset int) ([]*repository.AuditEvent, error) {
 	d.logger.V(1).Info("DBAdapter.Query called",
 		"filters", filters,
 		"limit", limit,
@@ -100,7 +101,7 @@ func (d *DBAdapter) Query(filters map[string]string, limit, offset int) ([]*repo
 	)
 
 	// Execute query
-	rows, err := d.db.Query(pgQuery, args...)
+	rows, err := d.db.QueryContext(ctx, pgQuery, args...)
 	if err != nil {
 		d.logger.Error(err, "Failed to execute SQL query",
 			"sql", pgQuery,

@@ -17,6 +17,7 @@ limitations under the License.
 package mocks
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -68,7 +69,7 @@ func (m *MockDB) SetRecordCount(count int) {
 
 // Query simulates a database query
 // V1.0: Returns structured audit events
-func (m *MockDB) Query(filters map[string]string, limit, offset int) ([]*repository.AuditEvent, error) {
+func (m *MockDB) Query(_ context.Context, filters map[string]string, limit, offset int) ([]*repository.AuditEvent, error) {
 	// BR-STORAGE-025: Return empty array for nonexistent namespaces
 	if ns, ok := filters["namespace"]; ok && ns == "nonexistent" {
 		return []*repository.AuditEvent{}, nil
