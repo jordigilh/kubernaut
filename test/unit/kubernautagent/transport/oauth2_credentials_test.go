@@ -35,13 +35,13 @@ import (
 // newMockIdPServer returns an httptest.Server that responds to OAuth2 token
 // requests with the given access token. Caller must defer Close().
 func newMockIdPServer(accessToken string) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		Expect(json.NewEncoder(w).Encode(map[string]interface{}{
 			"access_token": accessToken,
 			"token_type":   "Bearer",
 			"expires_in":   3600,
-		})
+		})).To(Succeed())
 	}))
 }
 
@@ -53,11 +53,11 @@ var _ = Describe("OAuth2 Client Credentials Transport — #417", func() {
 			idpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				tokenRequestCount.Add(1)
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]interface{}{
+				Expect(json.NewEncoder(w).Encode(map[string]interface{}{
 					"access_token": "test-jwt-token",
 					"token_type":   "Bearer",
 					"expires_in":   3600,
-				})
+				})).To(Succeed())
 			}))
 			defer idpServer.Close()
 
@@ -110,7 +110,8 @@ var _ = Describe("OAuth2 Client Credentials Transport — #417", func() {
 			llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				capturedHeaders = r.Header.Clone()
 				w.Header().Set("Content-Type", "application/json")
-				fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"{}"}]}`)
+				_, err := fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"{}"}]}`)
+				Expect(err).NotTo(HaveOccurred())
 			}))
 			defer llmServer.Close()
 

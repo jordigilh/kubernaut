@@ -43,8 +43,8 @@ var _ = Describe("Header Value Resolver — #417", func() {
 	// UT-KA-417-002: secretKeyRef resolves from environment variable
 	Describe("UT-KA-417-002: ResolveSecretKeyRef from env var", func() {
 		It("should return the env var value", func() {
-			os.Setenv("KA_TEST_LLM_API_KEY", "secret-api-key-123")
-			defer os.Unsetenv("KA_TEST_LLM_API_KEY")
+			Expect(os.Setenv("KA_TEST_LLM_API_KEY", "secret-api-key-123")).To(Succeed())
+			DeferCleanup(os.Unsetenv, "KA_TEST_LLM_API_KEY")
 
 			val, err := transport.ResolveSecretKeyRef("KA_TEST_LLM_API_KEY")
 			Expect(err).NotTo(HaveOccurred())
@@ -52,7 +52,7 @@ var _ = Describe("Header Value Resolver — #417", func() {
 		})
 
 		It("should return error for unset env var", func() {
-			os.Unsetenv("KA_TEST_NONEXISTENT_VAR")
+			Expect(os.Unsetenv("KA_TEST_NONEXISTENT_VAR")).To(Succeed())
 
 			_, err := transport.ResolveSecretKeyRef("KA_TEST_NONEXISTENT_VAR")
 			Expect(err).To(HaveOccurred())

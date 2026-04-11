@@ -1140,17 +1140,17 @@ SDKEOF
 
   echo "# --- Template Tests: NetworkPolicy (Issue #285) ---"
 
-  # ST-NP-001: Default renders 13 NetworkPolicies (enabled by default)
-  # Count: 13 after Issue #592 added kubernaut-agent conversation API NP.
+  # ST-NP-001: Default renders 12 NetworkPolicies (enabled by default)
+  # Count: 12 after removing orphaned holmesgpt-api NP in v1.4.
   output=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 2>&1)
   local np_count
   np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
-  if [[ "$np_count" -eq 13 ]]; then
-    tap_ok "ST-NP-001: default renders 13 NetworkPolicies (enabled by default)"
+  if [[ "$np_count" -eq 12 ]]; then
+    tap_ok "ST-NP-001: default renders 12 NetworkPolicies (enabled by default)"
   else
-    tap_not_ok "ST-NP-001: default should render 13 NetworkPolicies" \
+    tap_not_ok "ST-NP-001: default should render 12 NetworkPolicies" \
       "Found ${np_count}"
   fi
 
@@ -1189,7 +1189,7 @@ for d in docs:
     fi
   done < <(echo "$output" | grep -A1 "kind: NetworkPolicy" | grep "name:" | awk '{print $2}')
   if [[ "$np_without_dns" -eq 0 ]]; then
-    tap_ok "ST-NP-003: all 13 NetworkPolicies include DNS egress (port 53)"
+    tap_ok "ST-NP-003: all 12 NetworkPolicies include DNS egress (port 53)"
   else
     tap_not_ok "ST-NP-003: DNS egress in all policies" \
       "${np_without_dns} policies missing DNS egress"
@@ -1210,7 +1210,7 @@ for d in docs:
 
   # ST-NP-005: PostgreSQL/Valkey conditional on their enabled flags (F-7)
   # postgresql.host is required when postgresql.enabled=false (migration-job validation).
-  # Count: 11 = 13 total - PG - VK after Issue #592.
+  # Count: 10 = 12 total - PG - VK after removing holmesgpt-api NP.
   output=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) \
     --set networkPolicies.enabled=true \
@@ -1220,11 +1220,11 @@ for d in docs:
     --set valkey.enabled=false \
     --set valkey.host=external-valkey.example.com 2>&1)
   np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
-  if [[ "$np_count" -eq 11 ]]; then
-    tap_ok "ST-NP-005: postgresql/valkey disabled = 11 NetworkPolicies (no PG/VK)"
+  if [[ "$np_count" -eq 10 ]]; then
+    tap_ok "ST-NP-005: postgresql/valkey disabled = 10 NetworkPolicies (no PG/VK)"
   else
     tap_not_ok "ST-NP-005: infra conditional rendering" \
-      "Expected 11 policies without PG/VK, got ${np_count}"
+      "Expected 10 policies without PG/VK, got ${np_count}"
   fi
 
   # ST-NP-006: helm lint passes with NetworkPolicies enabled
