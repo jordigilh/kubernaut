@@ -158,16 +158,16 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, func() 
 
 		AfterAll(func() {
 			// SOC2 triggers block UPDATE legal_hold=FALSE and DELETE on held rows.
-			// Use session variable to authorize release, then drop DELETE trigger for cleanup.
+			// Use session variable inside a single transaction to bypass triggers
+			// without DROP TRIGGER (which takes AccessExclusiveLock and deadlocks
+			// concurrent test processes on the partitioned table).
 			tx, txErr := db.BeginTx(ctx, nil)
 			if txErr == nil {
 				_, _ = tx.ExecContext(ctx, "SET LOCAL kubernaut.legal_hold_release = 'authorized'")
 				_, _ = tx.ExecContext(ctx, "UPDATE audit_events SET legal_hold = FALSE WHERE correlation_id = $1", corrID)
+				_, _ = tx.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id = $1", corrID)
 				_ = tx.Commit()
 			}
-			_, _ = db.ExecContext(ctx, "DROP TRIGGER IF EXISTS enforce_legal_hold ON audit_events")
-			_, _ = db.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id = $1", corrID)
-			_, _ = db.ExecContext(ctx, "CREATE TRIGGER enforce_legal_hold BEFORE DELETE ON audit_events FOR EACH ROW EXECUTE FUNCTION prevent_legal_hold_deletion()")
 		})
 	})
 
@@ -269,16 +269,16 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, func() 
 		})
 
 		AfterAll(func() {
-			// Use session variable to release legal hold, then drop DELETE trigger for cleanup
+			// Use session variable inside a single transaction to bypass triggers
+			// without DROP TRIGGER (which takes AccessExclusiveLock and deadlocks
+			// concurrent test processes on the partitioned table).
 			tx, txErr := db.BeginTx(ctx, nil)
 			if txErr == nil {
 				_, _ = tx.ExecContext(ctx, "SET LOCAL kubernaut.legal_hold_release = 'authorized'")
 				_, _ = tx.ExecContext(ctx, "UPDATE audit_events SET legal_hold = FALSE WHERE correlation_id LIKE 'test-ret-485-005-%'")
+				_, _ = tx.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id LIKE 'test-ret-485-005-%'")
 				_ = tx.Commit()
 			}
-			_, _ = db.ExecContext(ctx, "DROP TRIGGER IF EXISTS enforce_legal_hold ON audit_events")
-			_, _ = db.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id LIKE 'test-ret-485-005-%'")
-			_, _ = db.ExecContext(ctx, "CREATE TRIGGER enforce_legal_hold BEFORE DELETE ON audit_events FOR EACH ROW EXECUTE FUNCTION prevent_legal_hold_deletion()")
 			_, _ = db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s",
 				partition.FormatPartitionName("audit_events", 2030, time.February)))
 		})
@@ -367,16 +367,16 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, func() 
 		})
 
 		AfterAll(func() {
-			// Use session variable to release legal hold, then drop DELETE trigger for cleanup
+			// Use session variable inside a single transaction to bypass triggers
+			// without DROP TRIGGER (which takes AccessExclusiveLock and deadlocks
+			// concurrent test processes on the partitioned table).
 			tx, txErr := db.BeginTx(ctx, nil)
 			if txErr == nil {
 				_, _ = tx.ExecContext(ctx, "SET LOCAL kubernaut.legal_hold_release = 'authorized'")
 				_, _ = tx.ExecContext(ctx, "UPDATE audit_events SET legal_hold = FALSE WHERE correlation_id = $1", corrID)
+				_, _ = tx.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id = $1", corrID)
 				_ = tx.Commit()
 			}
-			_, _ = db.ExecContext(ctx, "DROP TRIGGER IF EXISTS enforce_legal_hold ON audit_events")
-			_, _ = db.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id = $1", corrID)
-			_, _ = db.ExecContext(ctx, "CREATE TRIGGER enforce_legal_hold BEFORE DELETE ON audit_events FOR EACH ROW EXECUTE FUNCTION prevent_legal_hold_deletion()")
 		})
 	})
 })
