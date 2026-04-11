@@ -121,8 +121,8 @@ var _ = Describe("Issue #614: DuplicateInProgress Outcome Inheritance Integratio
 
 	It("IT-RO-614-001: Blocked/DuplicateInProgress RR inherits Completed from original RR", func() {
 		fingerprint := GenerateTestFingerprint(ns, "614-001")
-		originalName := fmt.Sprintf("original-614-001-%s", uuid.New().String()[:8])
-		dupName := fmt.Sprintf("dup-614-001-%s", uuid.New().String()[:8])
+		originalName := fmt.Sprintf("a-orig-614-001-%s", uuid.New().String()[:8])
+		dupName := fmt.Sprintf("z-dup-614-001-%s", uuid.New().String()[:8])
 
 		By("Creating the original RR and waiting for it to reach Processing (active)")
 		createRemediationRequestWithFingerprint(ns, originalName, fingerprint)
@@ -149,8 +149,8 @@ var _ = Describe("Issue #614: DuplicateInProgress Outcome Inheritance Integratio
 
 	It("IT-RO-614-002: Blocked/DuplicateInProgress RR inherits Failed from original RR with FailurePhaseDeduplicated", func() {
 		fingerprint := GenerateTestFingerprint(ns, "614-002")
-		originalName := fmt.Sprintf("original-614-002-%s", uuid.New().String()[:8])
-		dupName := fmt.Sprintf("dup-614-002-%s", uuid.New().String()[:8])
+		originalName := fmt.Sprintf("a-orig-614-002-%s", uuid.New().String()[:8])
+		dupName := fmt.Sprintf("z-dup-614-002-%s", uuid.New().String()[:8])
 
 		By("Creating the original RR and waiting for it to reach Processing (active)")
 		createRemediationRequestWithFingerprint(ns, originalName, fingerprint)
@@ -182,8 +182,8 @@ var _ = Describe("Issue #614: DuplicateInProgress Outcome Inheritance Integratio
 
 	It("IT-RO-614-003: inherited failure from RR-level dedup is excluded from countConsecutiveFailures", func() {
 		fingerprint := GenerateTestFingerprint(ns, "614-003")
-		originalName := fmt.Sprintf("original-614-003-%s", uuid.New().String()[:8])
-		dupName := fmt.Sprintf("dup-614-003-%s", uuid.New().String()[:8])
+		originalName := fmt.Sprintf("a-orig-614-003-%s", uuid.New().String()[:8])
+		dupName := fmt.Sprintf("z-dup-614-003-%s", uuid.New().String()[:8])
 
 		By("Creating the original RR and waiting for it to reach Processing (active)")
 		createRemediationRequestWithFingerprint(ns, originalName, fingerprint)
@@ -208,7 +208,7 @@ var _ = Describe("Issue #614: DuplicateInProgress Outcome Inheritance Integratio
 			"Invariant: FailurePhase=Deduplicated is the marker that countConsecutiveFailures skips")
 
 		By("Creating a new RR with same fingerprint to verify it is NOT blocked")
-		newRRName := fmt.Sprintf("new-614-003-%s", uuid.New().String()[:8])
+		newRRName := fmt.Sprintf("z-new-614-003-%s", uuid.New().String()[:8])
 		newRR := createRemediationRequestWithFingerprint(ns, newRRName, fingerprint)
 
 		Eventually(func() remediationv1.RemediationPhase {
