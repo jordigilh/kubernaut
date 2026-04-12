@@ -24,7 +24,16 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ . }}
     {{- end }}
-    {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
+    {{- if .Values.networkPolicies.monitoring.namespace }}
+    # Issue #673 H-1: Gateway serves metrics on 8080 (not 9090 like controller-runtime services)
+    - ports:
+        - port: 8080
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicies.monitoring.namespace }}
+    {{- end }}
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
     {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}

@@ -29,6 +29,8 @@ const (
 	ErrorTypeInternalError        = "https://kubernaut.ai/problems/internal-error"
 	ErrorTypeServiceUnavailable   = "https://kubernaut.ai/problems/service-unavailable"
 	ErrorTypeTooManyRequests      = "https://kubernaut.ai/problems/too-many-requests"
+	ErrorTypePayloadTooLarge      = "https://kubernaut.ai/problems/payload-too-large"
+	ErrorTypeGatewayTimeout       = "https://kubernaut.ai/problems/gateway-timeout"
 	ErrorTypeUnknown              = "https://kubernaut.ai/problems/unknown"
 )
 
@@ -41,5 +43,7 @@ const (
 	TitleInternalServerError  = "Internal Server Error"
 	TitleServiceUnavailable   = "Service Unavailable"
 	TitleTooManyRequests      = "Too Many Requests"
+	TitlePayloadTooLarge      = "Request Entity Too Large"
+	TitleGatewayTimeout       = "Gateway Timeout"
 	TitleUnknown              = "Error"
 )

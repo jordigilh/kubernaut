@@ -15,6 +15,12 @@ data:
       readTimeout: {{ .Values.gateway.config.server.readTimeout | default "30s" }}
       writeTimeout: {{ .Values.gateway.config.server.writeTimeout | default "30s" }}
       idleTimeout: 120s
+      k8sRequestTimeout: {{ .Values.gateway.config.server.k8sRequestTimeout | default "15s" }}
+    middleware:
+      trustedProxyCIDRs:
+      {{- range .Values.gateway.config.middleware.trustedProxyCIDRs }}
+        - {{ . | quote }}
+      {{- end }}
     datastorage:
       url: "{{ include "kubernaut.datastorage.url" . }}"
       timeout: 10s
@@ -113,7 +119,7 @@ spec:
         app: gateway
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "9090"
+        prometheus.io/port: "8080"
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: gateway
@@ -134,9 +140,6 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
-            - name: metrics
-              containerPort: 9090
-              protocol: TCP
           env:
             - name: POD_NAME
               valueFrom:
@@ -146,6 +149,11 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            # Issue #673 H-2: Restrictive CORS default for M2M webhook API.
+            # Gateway is not accessed by browsers; CORS is irrelevant but must not default to "*".
+            # Set to "none" to trigger FromEnvironment() to use an explicit deny-all value.
+            - name: CORS_ALLOWED_ORIGINS
+              value: {{ .Values.gateway.config.cors.allowedOrigins | default "https://no-browser-clients.invalid" | quote }}
           volumeMounts:
             - name: config
               mountPath: /etc/gateway
@@ -190,7 +198,3 @@ spec:
       protocol: TCP
       port: 8080
       targetPort: 8080
-    - name: metrics
-      protocol: TCP
-      port: 9090
-      targetPort: 9090
