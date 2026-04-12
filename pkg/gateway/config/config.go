@@ -19,6 +19,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -55,6 +56,7 @@ type ServerSettings struct {
 	ReadTimeout           time.Duration       `yaml:"readTimeout"`             // Default: 30s
 	WriteTimeout          time.Duration       `yaml:"writeTimeout"`            // Default: 30s
 	IdleTimeout           time.Duration       `yaml:"idleTimeout"`             // Default: 120s
+	K8sRequestTimeout     time.Duration       `yaml:"k8sRequestTimeout"`      // Default: 15s -- per-handler deadline for K8s API ops (BR-GATEWAY-102)
 	TLS                   sharedtls.TLSConfig `yaml:"tls,omitempty"`           // Issue #493: Optional TLS
 }
 
@@ -64,7 +66,10 @@ type ServerSettings struct {
 // Note: Redis-based RateLimitSettings removed (2025-12-07, ADR-048).
 // Concurrency limiting is now handled by chi Throttle via ServerSettings.MaxConcurrentRequests (ADR-048-ADDENDUM-001).
 type MiddlewareSettings struct {
-	// Future middleware config can be added here (e.g., auth namespace)
+	// Issue #673 L-1, DD-AUTH-003: Trusted proxy CIDRs for RealIP extraction.
+	// Only connections from these CIDRs will have X-Forwarded-For / X-Real-IP /
+	// True-Client-IP honoured. Empty = fail-closed (proxy headers never trusted).
+	TrustedProxyCIDRs []string `yaml:"trustedProxyCIDRs"`
 }
 
 // ProcessingSettings contains business logic configuration.
@@ -237,6 +242,7 @@ func DefaultServerConfig() *ServerConfig {
 			ReadTimeout:           30 * time.Second,
 			WriteTimeout:          30 * time.Second,
 			IdleTimeout:           120 * time.Second,
+			K8sRequestTimeout:     15 * time.Second,
 		},
 		DataStorage: sharedconfig.DefaultDataStorageConfig(),
 		Processing: ProcessingSettings{
@@ -286,6 +292,15 @@ func (c *ServerConfig) LoadFromEnv() {
 	// ADR-030: DataStorage URL now comes from YAML ConfigMap only (not env vars).
 	// GATEWAY_DATA_STORAGE_URL env override removed -- use datastorage.url in YAML.
 	// GATEWAY_DEDUP_TTL removed (DD-GATEWAY-011: TTL-based deduplication deprecated).
+
+	// Issue #673 L-1: Trusted proxy CIDRs from environment (comma-separated).
+	// Overrides YAML config when set. Empty = fail-closed (proxy headers never trusted).
+	if cidrs := os.Getenv("TRUSTED_PROXY_CIDRS"); cidrs != "" {
+		c.Middleware.TrustedProxyCIDRs = strings.Split(cidrs, ",")
+		for i := range c.Middleware.TrustedProxyCIDRs {
+			c.Middleware.TrustedProxyCIDRs[i] = strings.TrimSpace(c.Middleware.TrustedProxyCIDRs[i])
+		}
+	}
 }
 
 // Validate checks if the configuration is valid.
@@ -363,6 +378,33 @@ func (c *ServerConfig) Validate() error {
 		err.Impact = "May increase connection establishment overhead"
 		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
 		return err
+	}
+
+	// BR-GATEWAY-102: K8s request timeout validation
+	// Must be > 0 (0 disables the safety control) and < WriteTimeout (to allow writing 504 before connection kill)
+	if c.Server.K8sRequestTimeout > 0 {
+		if c.Server.K8sRequestTimeout < 1*time.Second {
+			err := NewConfigError(
+				"server.k8sRequestTimeout",
+				c.Server.K8sRequestTimeout.String(),
+				"is too low (< 1s)",
+				"Use 15s (recommended) to allow K8s API operations to complete",
+			)
+			err.Impact = "K8s operations will fail prematurely with 504"
+			err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+			return err
+		}
+		if c.Server.WriteTimeout > 0 && c.Server.K8sRequestTimeout >= c.Server.WriteTimeout {
+			err := NewConfigError(
+				"server.k8sRequestTimeout",
+				c.Server.K8sRequestTimeout.String(),
+				fmt.Sprintf("must be less than writeTimeout (%s)", c.Server.WriteTimeout),
+				"K8s timeout must leave room for the 504 response to be written",
+			)
+			err.Impact = "Server may kill connection before 504 error reaches client"
+			err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+			return err
+		}
 	}
 
 	// ADR-030: Validate DataStorage section
