@@ -236,7 +236,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: helloWorldUUID,
 						Version:    "v1.0.0",
-						ExecutionBundle: fmt.Sprintf("%s/job-hello-world:%s",
+						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
 							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
 					},
 					TargetResource: targetResource,
