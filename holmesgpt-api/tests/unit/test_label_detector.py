@@ -1291,3 +1291,152 @@ class TestLabelDetectorResourceQuota:
         assert quota_summary is None
         assert labels["resourceQuotaConstrained"] is False
         assert "resourceQuotaConstrained" in labels["failedDetections"]
+
+
+class TestLabelDetectorRootOwnerDetails:
+    """UT-HAPI-676: Helm/GitOps detection via root_owner_details for non-Deployment root owners.
+
+    Issue #676: HAPI does not surface helmManaged=true when root owner is a ConfigMap.
+    Business Requirements: BR-HAPI-250, BR-SP-101
+    """
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_676_001_helm_managed_by_via_root_owner(self):
+        """UT-HAPI-676-001: ConfigMap root owner with managed-by=Helm -> helmManaged=true.
+
+        BR-HAPI-250: When the root owner is a ConfigMap with
+        app.kubernetes.io/managed-by: Helm, helmManaged must be true.
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "default",
+            "root_owner_details": {
+                "kind": "ConfigMap",
+                "name": "worker-config",
+                "labels": {"app.kubernetes.io/managed-by": "Helm"},
+                "annotations": {},
+            },
+        }
+
+        result, _ = await detector.detect_labels(k8s_context, [])
+
+        assert result is not None
+        assert result["helmManaged"] is True
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_676_002_helm_chart_label_via_root_owner(self):
+        """UT-HAPI-676-002: ConfigMap root owner with helm.sh/chart only -> helmManaged=true.
+
+        BR-HAPI-250: helm.sh/chart label without managed-by is sufficient.
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "default",
+            "root_owner_details": {
+                "kind": "ConfigMap",
+                "name": "worker-config",
+                "labels": {"helm.sh/chart": "demo-crashloop-helm-0.1.0"},
+                "annotations": {},
+            },
+        }
+
+        result, _ = await detector.detect_labels(k8s_context, [])
+
+        assert result is not None
+        assert result["helmManaged"] is True
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_676_003_argocd_tracking_id_via_root_owner(self):
+        """UT-HAPI-676-003: ConfigMap root owner with ArgoCD tracking-id -> gitOpsManaged=true.
+
+        BR-SP-101: ArgoCD tracking-id annotation on root owner triggers gitOps detection.
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "default",
+            "root_owner_details": {
+                "kind": "ConfigMap",
+                "name": "worker-config",
+                "labels": {},
+                "annotations": {
+                    "argocd.argoproj.io/tracking-id": "my-app:ConfigMap:default:worker-config",
+                },
+            },
+        }
+
+        result, _ = await detector.detect_labels(k8s_context, [])
+
+        assert result is not None
+        assert result["gitOpsManaged"] is True
+        assert result["gitOpsTool"] == "argocd"
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_676_004_flux_label_via_root_owner(self):
+        """UT-HAPI-676-004: ConfigMap root owner with Flux label -> gitOpsManaged=true, gitOpsTool=flux.
+
+        BR-SP-101: Flux sync-gc-mark label on root owner triggers gitOps detection.
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "default",
+            "root_owner_details": {
+                "kind": "ConfigMap",
+                "name": "worker-config",
+                "labels": {"fluxcd.io/sync-gc-mark": "sha256:abc123"},
+                "annotations": {},
+            },
+        }
+
+        result, _ = await detector.detect_labels(k8s_context, [])
+
+        assert result is not None
+        assert result["gitOpsManaged"] is True
+        assert result["gitOpsTool"] == "flux"
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_676_010_end_to_end_configmap_helm_scenario(self):
+        """UT-HAPI-676-010: End-to-end ConfigMap with exact #676 scenario labels.
+
+        BR-HAPI-250: The exact labels from the crashloop-helm demo scenario
+        (managed-by + chart + name + instance) produce helmManaged=true.
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "demo-crashloop-helm",
+            "root_owner_details": {
+                "kind": "ConfigMap",
+                "name": "worker-config",
+                "labels": {
+                    "app.kubernetes.io/name": "demo-crashloop-helm",
+                    "app.kubernetes.io/instance": "demo-crashloop-helm",
+                    "app.kubernetes.io/managed-by": "Helm",
+                    "helm.sh/chart": "demo-crashloop-helm-0.1.0",
+                },
+                "annotations": {},
+            },
+        }
+
+        result, _ = await detector.detect_labels(k8s_context, [])
+
+        assert result is not None
+        assert result["helmManaged"] is True

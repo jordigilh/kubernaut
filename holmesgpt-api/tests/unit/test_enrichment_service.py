@@ -252,3 +252,46 @@ class TestEnrichmentService:
 
         assert result.root_owner is not None
         assert result.remediation_history is None
+
+
+class TestEnrichmentServiceConfigMapOwner:
+    """UT-HAPI-676: EnrichmentService with non-Deployment root owners.
+
+    Issue #676: When the root owner is a ConfigMap (no owner chain parent),
+    the label_detector must receive the ConfigMap as root_owner.
+    Business Requirement: BR-HAPI-250
+    """
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_676_009_configmap_root_owner_passed_to_label_detector(self):
+        """UT-HAPI-676-009: EnrichmentService passes ConfigMap root owner to label_detector.
+
+        BR-HAPI-250: When remediation target is a ConfigMap with no parents,
+        EnrichmentService must resolve it as root_owner and pass it to the
+        label_detector so Helm/GitOps labels can be detected from ConfigMap labels.
+        """
+        from src.extensions.incident.enrichment_service import EnrichmentService
+
+        mock_k8s = AsyncMock()
+        mock_k8s.resolve_owner_chain.return_value = [
+            {"kind": "ConfigMap", "name": "worker-config", "namespace": "default"},
+        ]
+
+        mock_label_detector = AsyncMock()
+        mock_label_detector.return_value = {"helmManaged": True}
+
+        service = EnrichmentService(
+            k8s_client=mock_k8s,
+            history_fetcher=AsyncMock(return_value=None),
+            label_detector=mock_label_detector,
+        )
+        result = await service.enrich(
+            remediation_target={"kind": "ConfigMap", "name": "worker-config", "namespace": "default"}
+        )
+
+        assert result.detected_labels is not None
+        assert result.detected_labels.get("helmManaged") is True
+        mock_label_detector.assert_called_once()
+        call_args = mock_label_detector.call_args
+        assert call_args[0][0] == {"kind": "ConfigMap", "name": "worker-config", "namespace": "default"}
+        assert len(call_args[0][1]) == 1
