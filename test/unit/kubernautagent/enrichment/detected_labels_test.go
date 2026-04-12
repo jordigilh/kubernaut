@@ -67,7 +67,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector = enrichment.NewLabelDetector(dynClient)
+			detector = enrichment.NewLabelDetector(dynClient, newTestMapper())
 			ctx = context.Background()
 
 			ownerChain := []enrichment.OwnerChainEntry{
@@ -108,7 +108,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, hpa)
-			detector = enrichment.NewLabelDetector(dynClient)
+			detector = enrichment.NewLabelDetector(dynClient, newTestMapper())
 			ctx = context.Background()
 
 			ownerChain := []enrichment.OwnerChainEntry{
@@ -155,7 +155,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, pdb)
-			detector = enrichment.NewLabelDetector(dynClient)
+			detector = enrichment.NewLabelDetector(dynClient, newTestMapper())
 			ctx = context.Background()
 
 			ownerChain := []enrichment.OwnerChainEntry{
@@ -185,7 +185,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector = enrichment.NewLabelDetector(dynClient)
+			detector = enrichment.NewLabelDetector(dynClient, newTestMapper())
 			ctx = context.Background()
 
 			ownerChain := []enrichment.OwnerChainEntry{
@@ -261,7 +261,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, hpa, pdb, netpol, quota)
-			detector = enrichment.NewLabelDetector(dynClient)
+			detector = enrichment.NewLabelDetector(dynClient, newTestMapper())
 			ctx = context.Background()
 
 			ownerChain := []enrichment.OwnerChainEntry{
@@ -296,7 +296,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector = enrichment.NewLabelDetector(dynClient)
+			detector = enrichment.NewLabelDetector(dynClient, newTestMapper())
 			ctx = context.Background()
 
 			ownerChain := []enrichment.OwnerChainEntry{
