@@ -100,6 +100,7 @@ class LabelDetector:
         5. Deployment annotation argocd.argoproj.io/tracking-id (ArgoCD v3)
         6. Namespace labels for ArgoCD/Flux
         7. Namespace annotations for ArgoCD/Flux
+        8. Root owner labels/annotations for non-Deployment owners (#676)
         """
         pod = k8s_context.get("pod_details") or {}
         deploy = k8s_context.get("deployment_details") or {}
@@ -160,6 +161,23 @@ class LabelDetector:
             return
 
         if "fluxcd.io/sync-status" in ns_annotations:
+            result["gitOpsManaged"] = True
+            result["gitOpsTool"] = "flux"
+            return
+
+        root = k8s_context.get("root_owner_details") or {}
+        root_labels = root.get("labels") or {}
+        root_annotations = root.get("annotations") or {}
+
+        if "argocd.argoproj.io/tracking-id" in root_annotations:
+            result["gitOpsManaged"] = True
+            result["gitOpsTool"] = "argocd"
+            return
+        if "argocd.argoproj.io/instance" in root_labels:
+            result["gitOpsManaged"] = True
+            result["gitOpsTool"] = "argocd"
+            return
+        if "fluxcd.io/sync-gc-mark" in root_labels:
             result["gitOpsManaged"] = True
             result["gitOpsTool"] = "flux"
             return
@@ -241,7 +259,11 @@ class LabelDetector:
                 return
 
     def _detect_helm(self, k8s_context: Dict, result: Dict) -> None:
-        """Detect Helm management via deployment labels."""
+        """Detect Helm management via deployment or root owner labels.
+
+        Precedence: deployment_details > root_owner_details.
+        root_owner_details covers non-Deployment root owners (#676).
+        """
         deploy = k8s_context.get("deployment_details") or {}
         deploy_labels = deploy.get("labels") or {}
 
@@ -250,6 +272,15 @@ class LabelDetector:
             return
 
         if "helm.sh/chart" in deploy_labels:
+            result["helmManaged"] = True
+            return
+
+        root = k8s_context.get("root_owner_details") or {}
+        root_labels = root.get("labels") or {}
+        if root_labels.get("app.kubernetes.io/managed-by") == "Helm":
+            result["helmManaged"] = True
+            return
+        if "helm.sh/chart" in root_labels:
             result["helmManaged"] = True
             return
 

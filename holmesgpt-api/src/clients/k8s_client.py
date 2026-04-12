@@ -53,7 +53,11 @@ _API_GROUP_MAP = {
     "ReplicaSet": ("apps", "v1"),
     "Pod": ("", "v1"),
     "Node": ("", "v1"),
+    "ConfigMap": ("", "v1"),
+    "Secret": ("", "v1"),
     "Service": ("", "v1"),
+    "Job": ("batch", "v1"),
+    "CronJob": ("batch", "v1"),
 }
 
 
@@ -71,6 +75,7 @@ class K8sResourceClient:
         """Initialize the K8s client from in-cluster config."""
         self._initialized = False
         self._apps_v1: Optional[k8s_client.AppsV1Api] = None
+        self._batch_v1: Optional[k8s_client.BatchV1Api] = None
         self._core_v1: Optional[k8s_client.CoreV1Api] = None
         self._policy_v1: Optional[k8s_client.PolicyV1Api] = None
         self._autoscaling_v2: Optional[k8s_client.AutoscalingV2Api] = None
@@ -102,6 +107,7 @@ class K8sResourceClient:
     def _init_api_clients(self):
         """Create all K8s API client instances."""
         self._apps_v1 = k8s_client.AppsV1Api()
+        self._batch_v1 = k8s_client.BatchV1Api()
         self._core_v1 = k8s_client.CoreV1Api()
         self._policy_v1 = k8s_client.PolicyV1Api()
         self._autoscaling_v2 = k8s_client.AutoscalingV2Api()
@@ -371,6 +377,9 @@ class K8sResourceClient:
     ) -> Optional[Any]:
         """Synchronous GET of a K8s resource (for metadata/ownerReferences).
 
+        Supports: Deployment, StatefulSet, DaemonSet, ReplicaSet, Pod, Node,
+        ConfigMap, Secret, Service, Job, CronJob (#676).
+
         Returns the full resource object, or None if not found.
         """
         self._ensure_initialized()
@@ -388,6 +397,16 @@ class K8sResourceClient:
                 return self._core_v1.read_namespaced_pod(name, namespace)
             elif kind == "Node":
                 return self._core_v1.read_node(name)
+            elif kind == "ConfigMap":
+                return self._core_v1.read_namespaced_config_map(name, namespace)
+            elif kind == "Secret":
+                return self._core_v1.read_namespaced_secret(name, namespace)
+            elif kind == "Service":
+                return self._core_v1.read_namespaced_service(name, namespace)
+            elif kind == "Job":
+                return self._batch_v1.read_namespaced_job(name, namespace)
+            elif kind == "CronJob":
+                return self._batch_v1.read_namespaced_cron_job(name, namespace)
             else:
                 logger.warning("Unsupported kind %s for metadata lookup", kind)
                 return None

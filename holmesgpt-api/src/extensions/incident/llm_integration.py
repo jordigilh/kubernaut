@@ -794,6 +794,16 @@ async def analyze_incident(
                                                     }
                                 break
 
+                        if "deployment_details" not in k8s_context:
+                            root_obj = await k8s._get_resource_metadata(kind, name, namespace)
+                            if root_obj is not None:
+                                k8s_context["root_owner_details"] = {
+                                    "kind": kind,
+                                    "name": name,
+                                    "labels": dict(root_obj.metadata.labels) if root_obj.metadata.labels else {},
+                                    "annotations": dict(root_obj.metadata.annotations) if root_obj.metadata.annotations else {},
+                                }
+
                         ns_meta = await k8s.get_namespace_metadata(namespace)
                         if ns_meta is not None:
                             k8s_context["namespace_labels"] = ns_meta.get("labels", {})
