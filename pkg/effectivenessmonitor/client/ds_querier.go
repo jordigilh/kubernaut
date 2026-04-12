@@ -25,6 +25,7 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/ogenx"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: Inter-service TLS
 )
 
 // ========================================
@@ -65,10 +66,9 @@ func NewOgenDataStorageQuerierWithTransport(baseURL string, timeout time.Duratio
 	}
 
 	if transport == nil {
-		baseTransport := &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 100,
-			IdleConnTimeout:     90 * time.Second,
+		baseTransport, err := sharedtls.DefaultBaseTransport()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create base transport: %w", err)
 		}
 		transport = auth.NewServiceAccountTransportWithBase(baseTransport)
 	}

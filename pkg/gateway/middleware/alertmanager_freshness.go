@@ -19,6 +19,7 @@ package middleware
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -96,8 +97,15 @@ func AlertManagerFreshnessValidator(tolerance time.Duration) func(http.Handler) 
 			// --- Strategy 2: Body-based (AlertManager compat) ---
 			// AlertManager does not set custom HTTP headers. Extract freshness
 			// from alerts[].startsAt in the webhook body.
-			bodyBytes, err := io.ReadAll(r.Body)
+			// Issue #673 C-ADV-1: Cap body read to prevent unbounded memory allocation.
+			bodyReader := http.MaxBytesReader(nil, r.Body, MaxRequestBodySize)
+			bodyBytes, err := io.ReadAll(bodyReader)
 			if err != nil {
+				var maxBytesErr *http.MaxBytesError
+				if errors.As(err, &maxBytesErr) {
+					respondPayloadTooLarge(w)
+					return
+				}
 				respondFreshnessError(w, "failed to read request body")
 				return
 			}

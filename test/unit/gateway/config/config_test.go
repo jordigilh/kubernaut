@@ -110,6 +110,51 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 		Expect(err.Error()).To(MatchRegexp("retry|attempts"), "Error message must identify business-critical validation failure")
 	})
 
+	// UT-GW-673-017..020: BR-GATEWAY-102 K8sRequestTimeout validation
+	Context("BR-GATEWAY-102: K8sRequestTimeout validation", func() {
+		It("[UT-GW-673-017] should accept valid K8sRequestTimeout (< WriteTimeout)", func() {
+			cfg := config.DefaultServerConfig()
+			cfg.DataStorage = sharedconfig.DefaultDataStorageConfig()
+			cfg.Server.K8sRequestTimeout = 15 * time.Second
+			cfg.Server.WriteTimeout = 30 * time.Second
+
+			err := cfg.Validate()
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("[UT-GW-673-018] should reject K8sRequestTimeout >= WriteTimeout", func() {
+			cfg := config.DefaultServerConfig()
+			cfg.DataStorage = sharedconfig.DefaultDataStorageConfig()
+			cfg.Server.K8sRequestTimeout = 30 * time.Second
+			cfg.Server.WriteTimeout = 30 * time.Second
+
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("k8sRequestTimeout"))
+			Expect(err.Error()).To(ContainSubstring("less than writeTimeout"))
+		})
+
+		It("[UT-GW-673-019] should reject K8sRequestTimeout < 1s", func() {
+			cfg := config.DefaultServerConfig()
+			cfg.DataStorage = sharedconfig.DefaultDataStorageConfig()
+			cfg.Server.K8sRequestTimeout = 500 * time.Millisecond
+
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("k8sRequestTimeout"))
+			Expect(err.Error()).To(ContainSubstring("too low"))
+		})
+
+		It("[UT-GW-673-020] should accept K8sRequestTimeout of 0 (disabled)", func() {
+			cfg := config.DefaultServerConfig()
+			cfg.DataStorage = sharedconfig.DefaultDataStorageConfig()
+			cfg.Server.K8sRequestTimeout = 0
+
+			err := cfg.Validate()
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
 	// GW-UNIT-CFG-006/007: BR-GATEWAY-082 Configuration Management
 	Context("BR-GATEWAY-082: Configuration Management and Hot Reload", func() {
 		It("[GW-UNIT-CFG-006] should rollback to previous config on validation error", func() {

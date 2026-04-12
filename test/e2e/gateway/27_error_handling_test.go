@@ -103,10 +103,9 @@ AfterEach(func() {
 		bodyStr := string(body)
 
 		Expect(bodyStr).To(Or(
-			ContainSubstring("invalid JSON"),
-			ContainSubstring("parse error"),
-			ContainSubstring("malformed"),
-		), "Error message should indicate JSON parsing issue")
+			ContainSubstring("Failed to parse signal"),
+			ContainSubstring("Bad Request"),
+		), "Error response should be generic (no internal parse details per #673 security hardening)")
 
 		// BUSINESS OUTCOME VERIFIED:
 		// ✅ Gateway doesn't crash on invalid input

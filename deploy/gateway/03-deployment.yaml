@@ -33,7 +33,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: quay.io/jordigilh/kubernaut-gateway:latest
+          # Issue #673 M-4: Pin to release tag or digest in production.
+          # Use kustomize image transformer or CI to override with a specific version.
+          image: quay.io/jordigilh/kubernaut-gateway:v1.3.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

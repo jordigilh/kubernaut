@@ -30,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: Inter-service TLS
 )
 
 // WorkflowCatalogMetadata holds all workflow metadata resolved from the DS
@@ -96,11 +97,11 @@ func NewOgenWorkflowQuerierFromConfig(baseURL string, timeout time.Duration) (*O
 		timeout = 10 * time.Second
 	}
 
-	transport := auth.NewServiceAccountTransportWithBase(&http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 100,
-		IdleConnTimeout:     90 * time.Second,
-	})
+	baseTransport, err := sharedtls.DefaultBaseTransport()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create base transport: %w", err)
+	}
+	transport := auth.NewServiceAccountTransportWithBase(baseTransport)
 
 	ogenClient, err := ogenclient.NewClient(baseURL, ogenclient.WithClient(&http.Client{
 		Timeout:   timeout,

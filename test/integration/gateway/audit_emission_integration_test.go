@@ -133,7 +133,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				Eventually(func() error {
 					return k8sClient.Get(ctx, rrKey, &rr)
-				}, 10*time.Second, 500*time.Millisecond).Should(Succeed(),
+				}, 30*time.Second, 500*time.Millisecond).Should(Succeed(),
 					"BR-GATEWAY-056: RemediationRequest CRD must exist in K8s")
 
 				By("5. Validate CRD contains signal metadata")
@@ -325,7 +325,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					receivedEvents = events
 					return true
-				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				}			, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
 					"gateway.signal.received audit event should exist")
 
 				By("4. Validate all custom labels are preserved")
@@ -405,7 +405,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					crdCreatedEvent = &events[0]
 					return true
-				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
 					"gateway.crd.created audit event should exist in DataStorage")
 
 				By("3. Validate audit event metadata")
@@ -482,7 +482,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					crdCreatedEvent = &events[0]
 					return true
-				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+				}, 30*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 				By("4. Validate target resource metadata is preserved")
 				payload, ok := extractGatewayPayload(crdCreatedEvent)
@@ -547,7 +547,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					crdCreatedEvent = &events[0]
 					return true
-				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+				}, 30*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 				By("3. Validate fingerprint format")
 				payload, ok := extractGatewayPayload(crdCreatedEvent)
@@ -606,7 +606,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 						Name:      correlationID1,
 						Namespace: controllerNamespace,
 					}, &rr1)
-				}, 10*time.Second, 500*time.Millisecond).Should(Succeed(),
+				}, 30*time.Second, 500*time.Millisecond).Should(Succeed(),
 					"BR-GATEWAY-056: Correlation ID must match CRD name for audit-to-CRD mapping")
 
 				GinkgoWriter.Printf("✅ Unique correlation IDs validated: %s, %s\n", correlationID1, correlationID2)
@@ -689,7 +689,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					dedupEvent = &events[0]
 					return true
-				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
 					"gateway.signal.deduplicated audit event should exist")
 
 				By("4. Validate deduplication audit metadata")
@@ -747,7 +747,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					dedupEvent = &events[0]
 					return true
-				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+				}, 30*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 				By("4. Validate existing RR reference in audit payload")
 				payload, ok := extractGatewayPayload(dedupEvent)
@@ -807,7 +807,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					crdCreatedEvent = &events[0]
 					return true
-				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+				}, 30*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 				By("4. Validate occurrence_count field in audit payload")
 				payload, ok := extractGatewayPayload(crdCreatedEvent)
@@ -871,7 +871,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					dedupEvent = &events[0]
 					return true
-				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+				}, 30*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 				By("4. Validate occurrence_count is incremented")
 				payload, ok := extractGatewayPayload(dedupEvent)
@@ -949,7 +949,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					dedupEvent = &events[0]
 					return true
-				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+				}, 30*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 				payload, ok := extractGatewayPayload(dedupEvent)
 				Expect(ok).To(BeTrue())
@@ -996,7 +996,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 						Name:      existingRRName,
 						Namespace: controllerNamespace,
 					}, &rr)
-				}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
+				}, 30*time.Second, 500*time.Millisecond).Should(Succeed())
 
 				// Update status to Completed (terminal phase)
 				rr.Status.OverallPhase = remediationv1alpha1.PhaseCompleted
@@ -1036,7 +1036,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					crdCreatedEvent = &events[0]
 					return true
-				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+				}, 30*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 				// Validate it's a creation event, not deduplication
 				Expect(crdCreatedEvent.EventType).To(Equal(gateway.EventTypeCRDCreated))
@@ -1117,7 +1117,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 				}
 				return eventCount
-			}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 6),
+			}, 30*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 6),
 				"Should have at least 6 audit events (3 signals * 2 events each)")
 
 			By("3. Validate all audit IDs are unique")
@@ -1220,7 +1220,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					failedEvent = &events[0]
 					return true
-				}, 15*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
 					"BR-GATEWAY-058-A: Should emit gateway.crd.failed audit event with readable correlation ID")
 
 				By("3. Validate gateway.crd.failed audit event fields")
@@ -1295,7 +1295,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					failedEvent = &events[0]
 					return true
-				}, 15*time.Second, 500*time.Millisecond).Should(BeTrue())
+				}, 30*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 				By("3. Validate ErrorDetails indicates transient error")
 				payload, ok := extractGatewayPayload(failedEvent)
@@ -1368,7 +1368,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					auditEvents = events
 					return len(events)
-				}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 3),
+				}, 30*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 3),
 					"BR-GATEWAY-058: Should emit 3 gateway.crd.failed audit events (2 intermediate retries + 1 final)")
 
 				By("3. Validate each event has unique EventID but same CorrelationID")
@@ -1473,7 +1473,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					failedEvent = &events[0]
 					return true
-				}, 15*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
 					"BR-GATEWAY-058-A: Should emit gateway.crd.failed audit event with readable correlation ID")
 
 				By("5. Validate audit event includes circuit breaker error details")

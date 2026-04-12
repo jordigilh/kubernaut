@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // TLSConfig holds TLS configuration shared across services.
@@ -94,6 +95,35 @@ func LoadCACert(caFile string) (*x509.CertPool, error) {
 	}
 
 	return pool, nil
+}
+
+// DefaultBaseTransport returns an http.Transport pre-configured with the CA
+// certificate at $TLS_CA_FILE (if set). Services inject this into their
+// auth-wrapping transports so inter-service HTTPS calls trust the cluster CA.
+// When TLS_CA_FILE is unset or empty, returns a plain Transport.
+func DefaultBaseTransport() (*http.Transport, error) {
+	caFile := os.Getenv("TLS_CA_FILE")
+	if caFile == "" {
+		return &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 100,
+			IdleConnTimeout:     90 * time.Second,
+		}, nil
+	}
+	return NewTLSTransport(caFile)
+}
+
+// NewInterServiceClient creates an http.Client with optional CA trust for
+// inter-service HTTPS calls. When caFile is empty, returns a plain client.
+func NewInterServiceClient(caFile string, timeout time.Duration) (*http.Client, error) {
+	if caFile == "" {
+		return &http.Client{Timeout: timeout}, nil
+	}
+	transport, err := NewTLSTransport(caFile)
+	if err != nil {
+		return nil, err
+	}
+	return &http.Client{Transport: transport, Timeout: timeout}, nil
 }
 
 // NewTLSTransport creates an http.Transport configured with a custom CA pool

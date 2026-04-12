@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -112,6 +111,10 @@ func NewMiddleware(
 // - 500 Internal Server Error: TokenReview/SAR API call failures
 func (m *Middleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Issue #673 H-2: Strip client-supplied identity header before authentication.
+		// This header is a SOC2 trust anchor used by downstream services (DataStorage).
+		r.Header.Del("X-Auth-Request-User")
+
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Missing Authorization header")
@@ -119,7 +122,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		}
 
 		if !strings.HasPrefix(authHeader, "Bearer ") {
-			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid Authorization header format (expected 'Bearer <token>')")
+			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid Authorization header format")
 			return
 		}
 
@@ -139,7 +142,8 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 				"path", r.URL.Path,
 				"method", r.Method,
 			)
-			m.writeError(w, http.StatusInternalServerError, "Internal Server Error", fmt.Sprintf("Token validation failed: %v", err))
+			// Issue #673 C-2: Generic error message; details logged server-side only
+			m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authentication service unavailable")
 			return
 		}
 
@@ -161,7 +165,8 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 				"user", user,
 				"path", r.URL.Path,
 			)
-			m.writeError(w, http.StatusInternalServerError, "Internal Server Error", fmt.Sprintf("Authorization check failed: %v", err))
+			// Issue #673 C-2: Generic error message; details logged server-side only
+			m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authorization service unavailable")
 			return
 		}
 
@@ -173,7 +178,8 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 				"resourceName", m.config.ResourceName,
 				"verb", m.config.Verb,
 			)
-			m.writeError(w, http.StatusForbidden, "Forbidden", fmt.Sprintf("Insufficient RBAC permissions: %s verb:%s on %s/%s", user, m.config.Verb, m.config.Resource, m.config.ResourceName))
+			// Issue #673 C-2/M-2: Generic 403; RBAC details logged server-side only
+			m.writeError(w, http.StatusForbidden, "Forbidden", "Insufficient permissions")
 			return
 		}
 

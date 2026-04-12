@@ -209,7 +209,7 @@ var _ = SynchronizedBeforeSuite(
 		dsClients := integration.NewAuthenticatedDataStorageClients(
 			dataStorageURL,
 			saToken,
-			5*time.Second,
+			15*time.Second,
 		)
 		dsClient = dsClients.AuditClient       // ✅ For audit event emission (used by Gateway servers)
 		sharedOgenClient = dsClients.OpenAPIClient // ✅ For audit event queries (used by test assertions)

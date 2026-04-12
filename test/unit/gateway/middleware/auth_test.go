@@ -323,4 +323,222 @@ var _ = Describe("Auth Middleware (BR-GATEWAY-036, BR-GATEWAY-037)", func() {
 				"UT-GW-037-006: GetUserFromContext must return empty string for missing user")
 		})
 	})
+
+	// Issue #673: Security hardening tests
+	Context("Issue #673: Generic Error Responses (C-2/M-3)", func() {
+
+		It("UT-GW-673-001: TokenReview API error returns generic detail without internals", func() {
+			authenticator := &auth.MockAuthenticator{
+				ErrorToReturn: fmt.Errorf("connection refused"),
+			}
+			authorizer := &auth.MockAuthorizer{}
+			authMiddleware := auth.NewMiddleware(authenticator, authorizer, authConfig, logger)
+
+			req := httptest.NewRequest("POST", "/api/v1/signals/prometheus", nil)
+			req.Header.Set("Authorization", "Bearer valid-token")
+			rr := httptest.NewRecorder()
+
+			authMiddleware.Handler(nextHandler).ServeHTTP(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusInternalServerError),
+				"UT-GW-673-001: API error must return 500")
+			var problem map[string]interface{}
+			Expect(json.NewDecoder(rr.Body).Decode(&problem)).To(Succeed())
+			Expect(problem["detail"]).To(Equal("Authentication service unavailable"),
+				"UT-GW-673-001: Detail must be generic, not leak internals")
+			Expect(problem["detail"]).NotTo(ContainSubstring("connection refused"),
+				"UT-GW-673-001: Internal error text must not appear in response")
+			Expect(nextHandlerCalled).To(BeFalse())
+		})
+
+		It("UT-GW-673-002: SAR API error returns generic detail without internals", func() {
+			authenticator := &auth.MockAuthenticator{
+				ValidUsers: map[string]string{"sar-error-token": "system:serviceaccount:ns:sa"},
+			}
+			authorizer := &auth.MockAuthorizer{
+				ErrorToReturn: fmt.Errorf("etcd timeout"),
+			}
+			authMiddleware := auth.NewMiddleware(authenticator, authorizer, authConfig, logger)
+
+			req := httptest.NewRequest("POST", "/api/v1/signals/prometheus", nil)
+			req.Header.Set("Authorization", "Bearer sar-error-token")
+			rr := httptest.NewRecorder()
+
+			authMiddleware.Handler(nextHandler).ServeHTTP(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusInternalServerError),
+				"UT-GW-673-002: SAR API error must return 500")
+			var problem map[string]interface{}
+			Expect(json.NewDecoder(rr.Body).Decode(&problem)).To(Succeed())
+			Expect(problem["detail"]).To(Equal("Authorization service unavailable"),
+				"UT-GW-673-002: Detail must be generic")
+			Expect(problem["detail"]).NotTo(ContainSubstring("etcd timeout"),
+				"UT-GW-673-002: Internal error text must not appear in response")
+			Expect(nextHandlerCalled).To(BeFalse())
+		})
+
+		It("UT-GW-673-003: SAR denial returns generic 403 without RBAC details", func() {
+			authenticator := &auth.MockAuthenticator{
+				ValidUsers: map[string]string{"denied-token": "system:serviceaccount:ns:denied-sa"},
+			}
+			authorizer := &auth.MockAuthorizer{
+				AllowedUsers: map[string]bool{},
+			}
+			authMiddleware := auth.NewMiddleware(authenticator, authorizer, authConfig, logger)
+
+			req := httptest.NewRequest("POST", "/api/v1/signals/prometheus", nil)
+			req.Header.Set("Authorization", "Bearer denied-token")
+			rr := httptest.NewRecorder()
+
+			authMiddleware.Handler(nextHandler).ServeHTTP(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusForbidden),
+				"UT-GW-673-003: SAR denial must return 403")
+			var problem map[string]interface{}
+			Expect(json.NewDecoder(rr.Body).Decode(&problem)).To(Succeed())
+			Expect(problem["detail"]).To(Equal("Insufficient permissions"),
+				"UT-GW-673-003: Detail must be generic")
+			detail := problem["detail"].(string)
+			Expect(detail).NotTo(ContainSubstring("verb:"),
+				"UT-GW-673-003: Verb must not appear in response")
+			Expect(detail).NotTo(ContainSubstring("remediationrequests"),
+				"UT-GW-673-003: Resource name must not appear in response")
+			Expect(nextHandlerCalled).To(BeFalse())
+		})
+
+		It("UT-GW-673-006: Invalid auth scheme returns generic format error without hint", func() {
+			authenticator := &auth.MockAuthenticator{}
+			authorizer := &auth.MockAuthorizer{}
+			authMiddleware := auth.NewMiddleware(authenticator, authorizer, authConfig, logger)
+
+			req := httptest.NewRequest("POST", "/api/v1/signals/prometheus", nil)
+			req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
+			rr := httptest.NewRecorder()
+
+			authMiddleware.Handler(nextHandler).ServeHTTP(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusUnauthorized),
+				"UT-GW-673-006: Wrong auth scheme must return 401")
+			var problem map[string]interface{}
+			Expect(json.NewDecoder(rr.Body).Decode(&problem)).To(Succeed())
+			Expect(problem["detail"]).To(Equal("Invalid Authorization header format"),
+				"UT-GW-673-006: Detail must not hint at expected format")
+			Expect(problem["detail"]).NotTo(ContainSubstring("Bearer"),
+				"UT-GW-673-006: 'Bearer' must not appear as format hint")
+			Expect(problem["detail"]).NotTo(ContainSubstring("expected"),
+				"UT-GW-673-006: 'expected' must not appear as format hint")
+		})
+	})
+
+	Context("Issue #673: Identity Header Stripping (H-3)", func() {
+
+		It("UT-GW-673-004: Client-supplied X-Auth-Request-User is replaced with authenticated identity", func() {
+			expectedUser := "system:serviceaccount:ns:legitimate-sa"
+			authenticator := &auth.MockAuthenticator{
+				ValidUsers: map[string]string{"legit-token": expectedUser},
+			}
+			authorizer := &auth.MockAuthorizer{
+				AllowedUsers: map[string]bool{expectedUser: true},
+			}
+			authMiddleware := auth.NewMiddleware(authenticator, authorizer, authConfig, logger)
+
+			var capturedHeader string
+			var capturedContextUser string
+			headerCheckHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedHeader = r.Header.Get("X-Auth-Request-User")
+				capturedContextUser = auth.GetUserFromContext(r.Context())
+				w.WriteHeader(http.StatusOK)
+			})
+
+			req := httptest.NewRequest("POST", "/api/v1/signals/prometheus", nil)
+			req.Header.Set("Authorization", "Bearer legit-token")
+			req.Header.Set("X-Auth-Request-User", "attacker-spoofed")
+			rr := httptest.NewRecorder()
+
+			authMiddleware.Handler(headerCheckHandler).ServeHTTP(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusOK),
+				"UT-GW-673-004: Authorized request must pass through")
+			Expect(capturedHeader).To(Equal(expectedUser),
+				"UT-GW-673-004: X-Auth-Request-User must be authenticated identity, not spoofed value")
+			Expect(capturedHeader).NotTo(Equal("attacker-spoofed"),
+				"UT-GW-673-004: Spoofed header value must not reach next handler")
+			Expect(capturedContextUser).To(Equal(expectedUser),
+				"UT-GW-673-004: Context user must match authenticated identity")
+		})
+
+		It("UT-GW-673-005: Spoofed header not propagated on auth failure", func() {
+			authenticator := &auth.MockAuthenticator{ValidUsers: map[string]string{}}
+			authorizer := &auth.MockAuthorizer{}
+			authMiddleware := auth.NewMiddleware(authenticator, authorizer, authConfig, logger)
+
+			req := httptest.NewRequest("POST", "/api/v1/signals/prometheus", nil)
+			req.Header.Set("X-Auth-Request-User", "attacker-spoofed")
+			rr := httptest.NewRecorder()
+
+			authMiddleware.Handler(nextHandler).ServeHTTP(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusUnauthorized),
+				"UT-GW-673-005: Missing auth must return 401")
+			Expect(nextHandlerCalled).To(BeFalse(),
+				"UT-GW-673-005: Next handler must NOT be called with spoofed header")
+		})
+
+		It("UT-GW-673-015: Multi-value X-Auth-Request-User headers are all removed", func() {
+			expectedUser := "system:serviceaccount:ns:real-sa"
+			authenticator := &auth.MockAuthenticator{
+				ValidUsers: map[string]string{"good-token": expectedUser},
+			}
+			authorizer := &auth.MockAuthorizer{
+				AllowedUsers: map[string]bool{expectedUser: true},
+			}
+			authMiddleware := auth.NewMiddleware(authenticator, authorizer, authConfig, logger)
+
+			var capturedValues []string
+			inspectHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedValues = r.Header.Values("X-Auth-Request-User")
+				w.WriteHeader(http.StatusOK)
+			})
+
+			req := httptest.NewRequest("POST", "/api/v1/signals/prometheus", nil)
+			req.Header.Set("Authorization", "Bearer good-token")
+			req.Header.Add("X-Auth-Request-User", "spoofed-val-1")
+			req.Header.Add("X-Auth-Request-User", "spoofed-val-2")
+			rr := httptest.NewRecorder()
+
+			authMiddleware.Handler(inspectHandler).ServeHTTP(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusOK))
+			Expect(capturedValues).To(HaveLen(1),
+				"UT-GW-673-015: Exactly one header value must survive (the authenticated identity)")
+			Expect(capturedValues[0]).To(Equal(expectedUser),
+				"UT-GW-673-015: Surviving value must be the authenticated identity")
+		})
+	})
+
+	Context("Issue #673 L-ADV-3: Empty Authorization header (BR-GATEWAY-182)", func() {
+
+		It("UT-GW-673-016: Empty Authorization header returns 401", func() {
+			authenticator := &auth.MockAuthenticator{ValidUsers: map[string]string{}}
+			authorizer := &auth.MockAuthorizer{}
+			authMiddleware := auth.NewMiddleware(authenticator, authorizer, authConfig, logger)
+
+			req := httptest.NewRequest("POST", "/api/v1/signals/prometheus", nil)
+			req.Header.Set("Authorization", "")
+			rr := httptest.NewRecorder()
+
+			authMiddleware.Handler(nextHandler).ServeHTTP(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusUnauthorized),
+				"UT-GW-673-016: Empty Authorization header must return 401")
+			Expect(nextHandlerCalled).To(BeFalse(),
+				"UT-GW-673-016: Handler must not be called with empty auth")
+
+			body := rr.Body.Bytes()
+			var problem map[string]interface{}
+			Expect(json.Unmarshal(body, &problem)).To(Succeed())
+			Expect(problem["title"]).To(Equal("Unauthorized"),
+				"UT-GW-673-016: RFC 7807 title must indicate 401")
+		})
+	})
 })

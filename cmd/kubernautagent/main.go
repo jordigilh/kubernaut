@@ -362,11 +362,17 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger *slog.Logger) *
 		return nil
 	}
 
+	dsBase, tlsErr := sharedtls.DefaultBaseTransport()
+	if tlsErr != nil {
+		logger.Error("failed to create TLS-aware transport for DS client", "error", tlsErr)
+		return nil
+	}
+
 	var opts []ogenclient.ClientOption
 	if tokenData, err := os.ReadFile(cfg.DataStorage.SATokenPath); err == nil && len(tokenData) > 0 {
 		token := string(tokenData)
 		opts = append(opts, ogenclient.WithClient(&http.Client{
-			Transport: &bearerTransport{base: http.DefaultTransport, token: token},
+			Transport: &bearerTransport{base: dsBase, token: token},
 		}))
 		logger.Info("DS client auth configured (DD-AUTH-014)", "token_path", cfg.DataStorage.SATokenPath)
 	} else {
@@ -549,9 +555,15 @@ func buildAuditStore(cfg *kaconfig.Config, slogger *slog.Logger, logrLog logr.Lo
 
 	// Use the same auth transport as initDSClients: read SA token from the
 	// configured path and inject as Bearer header on every request.
+	auditBase, tlsErr := sharedtls.DefaultBaseTransport()
+	if tlsErr != nil {
+		slogger.Error("failed to create TLS-aware transport for audit store", "error", tlsErr)
+		return audit.NopAuditStore{}, nop
+	}
+
 	var transport http.RoundTripper
 	if tokenData, err := os.ReadFile(cfg.DataStorage.SATokenPath); err == nil && len(tokenData) > 0 {
-		transport = &bearerTransport{base: http.DefaultTransport, token: string(tokenData)}
+		transport = &bearerTransport{base: auditBase, token: string(tokenData)}
 		slogger.Info("audit store auth configured (same SA token as DS client)",
 			"token_path", cfg.DataStorage.SATokenPath)
 	} else {
