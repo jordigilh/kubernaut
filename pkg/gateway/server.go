@@ -24,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -318,10 +317,11 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 	handler := server.wrapWithMiddleware(router)
 
 	server.httpServer = &http.Server{
-		Addr:         cfg.Server.ListenAddr,
-		Handler:      handler,
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
+		Addr:              cfg.Server.ListenAddr,
+		Handler:           handler,
+		ReadTimeout:       cfg.Server.ReadTimeout,
+		WriteTimeout:      cfg.Server.WriteTimeout,
+		ReadHeaderTimeout: 5 * time.Second, // Issue #673 L-2: Slowloris mitigation (gosec G112)
 	}
 
 	return server, nil
@@ -618,11 +618,12 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	handler := server.wrapWithMiddleware(router)
 
 	server.httpServer = &http.Server{
-		Addr:         cfg.Server.ListenAddr,
-		Handler:      handler,
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
-		IdleTimeout:  cfg.Server.IdleTimeout,
+		Addr:              cfg.Server.ListenAddr,
+		Handler:           handler,
+		ReadTimeout:       cfg.Server.ReadTimeout,
+		WriteTimeout:      cfg.Server.WriteTimeout,
+		IdleTimeout:       cfg.Server.IdleTimeout,
+		ReadHeaderTimeout: 5 * time.Second, // Issue #673 L-2: Slowloris mitigation (gosec G112)
 	}
 
 	return server, nil
@@ -671,7 +672,19 @@ func (s *Server) setupRoutes() chi.Router {
 
 	// Global middleware
 	r.Use(chimiddleware.RequestID) // Chi's built-in request ID
-	r.Use(chimiddleware.RealIP)    // Extract real IP from X-Forwarded-For
+
+	// Issue #673 L-1: Trusted proxy-aware RealIP extraction.
+	// Replaces chimiddleware.RealIP which unconditionally trusts proxy headers.
+	// Fail-closed: empty CIDRs = proxy headers never trusted.
+	trustedCIDRs := s.config.Middleware.TrustedProxyCIDRs
+	if len(trustedCIDRs) > 0 {
+		s.logger.Info("Trusted proxy RealIP enabled",
+			"trusted_cidrs", trustedCIDRs,
+			"authority", "Issue #673 L-1")
+	} else {
+		s.logger.Info("Trusted proxy RealIP: fail-closed (no CIDRs configured, proxy headers ignored)")
+	}
+	r.Use(middleware.TrustedRealIP(trustedCIDRs))
 
 	// BR-GATEWAY-074, BR-GATEWAY-075: Replay prevention middleware
 	// Moved from global to per-adapter in RegisterAdapter() via ReplayValidator().
@@ -883,9 +896,25 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 			return // Error response already sent
 		}
 
+		// BR-GATEWAY-102: Enforce per-handler timeout on K8s API operations.
+		// Must be < WriteTimeout to allow writing 504 JSON before the server kills the connection.
+		k8sTimeout := s.config.Server.K8sRequestTimeout
+		if k8sTimeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, k8sTimeout)
+			defer cancel()
+		}
+
 		// Process signal through pipeline
 		response, err := s.ProcessSignal(ctx, signal)
 		if err != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				logger.Error(err, "K8s request timeout exceeded",
+					"adapter", adapter.Name(),
+					"timeout", k8sTimeout)
+				s.writeJSONError(w, r, "Request processing timed out", http.StatusGatewayTimeout)
+				return
+			}
 			s.handleProcessingError(w, r, err, adapter.Name(), logger)
 			return
 		}
@@ -894,6 +923,10 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 		s.sendSuccessResponse(w, r, response, adapter, start)
 	}
 }
+
+// maxRequestBodySize references the shared constant from middleware.
+// Issue #673 C-1 + C-ADV-1: Single source of truth for the body cap.
+const maxRequestBodySize = middleware.MaxRequestBodySize
 
 // readParseValidateSignal reads, parses, and validates the signal from the request
 // Returns nil signal and writes error response if any step fails
@@ -904,9 +937,16 @@ func (s *Server) readParseValidateSignal(
 	adapter adapters.SignalAdapter,
 	logger logr.Logger,
 ) (*types.NormalizedSignal, error) {
-	// Read request body
+	// Issue #673 C-1: Limit request body size before reading into memory
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			logger.Info("Request body too large", "limit", maxRequestBodySize)
+			s.writeJSONError(w, r, "Request body too large", http.StatusRequestEntityTooLarge)
+			return nil, err
+		}
 		logger.Error(err, "Failed to read request body")
 		s.writeValidationError(w, r, "Failed to read request body")
 		return nil, err
@@ -918,7 +958,7 @@ func (s *Server) readParseValidateSignal(
 		logger.Info("Failed to parse signal",
 			"adapter", adapter.Name(),
 			"error", err)
-		s.writeValidationError(w, r, fmt.Sprintf("Failed to parse signal: %v", err))
+		s.writeValidationError(w, r, "Failed to parse signal")
 		return nil, err
 	}
 
@@ -945,21 +985,9 @@ func (s *Server) handleProcessingError(
 	logger.Error(err, "Signal processing failed",
 		"adapter", adapterName)
 
-	errMsg := err.Error()
-
-	// DD-GATEWAY-012: Redis error handling REMOVED - Gateway is now Redis-free
-	// Deduplication check failures are now K8s API errors (phaseChecker uses K8s client)
-
-	// Kubernetes API errors → HTTP 500 Internal Server Error with details
-	if strings.Contains(errMsg, "kubernetes") || strings.Contains(errMsg, "k8s") ||
-		strings.Contains(errMsg, "failed to create RemediationRequest CRD") ||
-		strings.Contains(errMsg, "deduplication check failed") || // DD-GATEWAY-012: Now a K8s API error
-		strings.Contains(errMsg, "namespaces") {
-		s.writeInternalError(w, r, fmt.Sprintf("Kubernetes API error: %v", err))
-		return
-	}
-
-	// Generic error → HTTP 500
+	// Issue #673 C-ADV-2: All processing errors return a generic message.
+	// Internal details (K8s API addresses, CRD names, namespace names) are
+	// already logged at line 958 via logger.Error -- no observability lost.
 	s.writeInternalError(w, r, "Internal server error")
 }
 
@@ -2004,6 +2032,10 @@ func getErrorTypeAndTitle(statusCode int) (string, string) {
 		return gwerrors.ErrorTypeMethodNotAllowed, gwerrors.TitleMethodNotAllowed
 	case http.StatusInternalServerError:
 		return gwerrors.ErrorTypeInternalError, gwerrors.TitleInternalServerError
+	case http.StatusRequestEntityTooLarge:
+		return gwerrors.ErrorTypePayloadTooLarge, gwerrors.TitlePayloadTooLarge
+	case http.StatusGatewayTimeout:
+		return gwerrors.ErrorTypeGatewayTimeout, gwerrors.TitleGatewayTimeout
 	case http.StatusServiceUnavailable:
 		return gwerrors.ErrorTypeServiceUnavailable, gwerrors.TitleServiceUnavailable
 	default:
