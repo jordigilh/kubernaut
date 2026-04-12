@@ -707,9 +707,6 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
-            - name: metrics
-              containerPort: 9090
-              protocol: TCP
           volumeMounts:
             - name: config
               mountPath: /etc/gateway
@@ -766,11 +763,6 @@ spec:
       port: 8080
       targetPort: 8080
       nodePort: 30080
-    - name: metrics
-      protocol: TCP
-      port: 9090
-      targetPort: 9090
-      nodePort: 30090
 `, coverageSecurityContextYAML, imageName, pullPolicy, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
 }
 
