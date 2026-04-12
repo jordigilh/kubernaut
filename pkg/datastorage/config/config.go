@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: TLS config
 	"gopkg.in/yaml.v3"
 )
 
@@ -54,12 +55,13 @@ type Config struct {
 
 // ServerConfig contains HTTP server configuration
 type ServerConfig struct {
-	Port         int    `yaml:"port"`
-	Host         string `yaml:"host"`
-	MetricsPort  int    `yaml:"metricsPort"`  // Dedicated Prometheus metrics port (default: 9090, Issue #283)
-	MaxBatchSize int    `yaml:"maxBatchSize"` // Issue #667: Max events per batch API request (default: 500)
-	ReadTimeout  string `yaml:"readTimeout"`  // e.g., "30s"
-	WriteTimeout string `yaml:"writeTimeout"` // e.g., "30s"
+	Port         int                 `yaml:"port"`
+	Host         string              `yaml:"host"`
+	MetricsPort  int                 `yaml:"metricsPort"`  // Dedicated Prometheus metrics port (default: 9090, Issue #283)
+	MaxBatchSize int                 `yaml:"maxBatchSize"` // Issue #667: Max events per batch API request (default: 500)
+	ReadTimeout  string              `yaml:"readTimeout"`  // e.g., "30s"
+	WriteTimeout string              `yaml:"writeTimeout"` // e.g., "30s"
+	TLS          sharedtls.TLSConfig `yaml:"tls,omitempty"` // Issue #678: Optional inter-service TLS
 }
 
 // LoggingConfig contains logging configuration

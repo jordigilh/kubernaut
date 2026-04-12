@@ -25,6 +25,7 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/ogenx"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: Inter-service TLS
 )
 
 // ========================================
@@ -145,11 +146,12 @@ func NewOpenAPIClientAdapterWithTransport(baseURL string, timeout time.Duration,
 	// See: docs/architecture/decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md
 	// ========================================
 	if transport == nil {
-		// Production: Use ServiceAccount transport (default)
-		baseTransport := &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 100,
-			IdleConnTimeout:     90 * time.Second,
+		// Production: Use ServiceAccount transport (default).
+		// Issue #678: DefaultBaseTransport picks up TLS_CA_FILE env var
+		// to trust the cluster CA for inter-service HTTPS.
+		baseTransport, err := sharedtls.DefaultBaseTransport()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create base transport: %w", err)
 		}
 		transport = auth.NewServiceAccountTransportWithBase(baseTransport)
 	}

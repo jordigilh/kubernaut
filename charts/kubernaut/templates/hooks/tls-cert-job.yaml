@@ -113,6 +113,46 @@ spec:
               kubectl get secret authwebhook-tls -n "$NAMESPACE" \
                 -o jsonpath='{.data.ca\.crt}' | base64 -d | head -1
 
+              {{- if include "kubernaut.interServiceTLS.enabled" . }}
+              # Issue #678: Generate TLS certificates for Gateway and DataStorage inter-service TLS.
+              # Reuses the same CA generated above for authwebhook.
+              for SVC_NAME in gateway-service data-storage-service; do
+                SECRET_NAME="${SVC_NAME%-service}-tls"
+                [ "$SVC_NAME" = "data-storage-service" ] && SECRET_NAME="datastorage-tls"
+
+                echo "==> Generating TLS certificate for $SVC_NAME ($SECRET_NAME)..."
+                openssl genrsa -out "$TMPDIR/svc-tls.key" 2048 2>/dev/null
+                openssl req -new -key "$TMPDIR/svc-tls.key" \
+                  -out "$TMPDIR/svc-tls.csr" \
+                  -subj "/CN=${SVC_NAME}.${NAMESPACE}.svc" \
+                  -addext "subjectAltName=DNS:${SVC_NAME},DNS:${SVC_NAME}.${NAMESPACE},DNS:${SVC_NAME}.${NAMESPACE}.svc,DNS:${SVC_NAME}.${NAMESPACE}.svc.cluster.local" \
+                  2>/dev/null
+
+                echo "subjectAltName=DNS:${SVC_NAME},DNS:${SVC_NAME}.${NAMESPACE},DNS:${SVC_NAME}.${NAMESPACE}.svc,DNS:${SVC_NAME}.${NAMESPACE}.svc.cluster.local" > "$TMPDIR/svc-san.cnf"
+
+                openssl x509 -req -in "$TMPDIR/svc-tls.csr" \
+                  -CA "$TMPDIR/ca.crt" -CAkey "$TMPDIR/ca.key" -CAcreateserial \
+                  -out "$TMPDIR/svc-tls.crt" -days 365 \
+                  -extfile "$TMPDIR/svc-san.cnf" \
+                  2>/dev/null
+
+                kubectl delete secret "$SECRET_NAME" -n "$NAMESPACE" --ignore-not-found
+                kubectl create secret tls "$SECRET_NAME" \
+                  --cert="$TMPDIR/svc-tls.crt" \
+                  --key="$TMPDIR/svc-tls.key" \
+                  -n "$NAMESPACE"
+                echo "  Created $SECRET_NAME"
+                rm -f "$TMPDIR/svc-tls.key" "$TMPDIR/svc-tls.csr" "$TMPDIR/svc-tls.crt" "$TMPDIR/svc-san.cnf"
+              done
+
+              # Create/update inter-service-ca ConfigMap with the shared CA cert
+              echo "==> Creating inter-service-ca ConfigMap..."
+              kubectl create configmap inter-service-ca \
+                --from-file=ca.crt="$TMPDIR/ca.crt" \
+                -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+              echo "  inter-service-ca ConfigMap ready"
+              {{- end }}
+
               rm -rf "$TMPDIR"
               echo "==> TLS certificates generated and CA embedded in Secret"
 ---
@@ -367,5 +407,10 @@ spec:
               NAMESPACE="{{ .Release.Namespace }}"
               echo "==> Cleaning up hook-created TLS resources..."
               kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
+              {{- if include "kubernaut.interServiceTLS.enabled" . }}
+              kubectl delete secret gateway-tls -n "$NAMESPACE" --ignore-not-found
+              kubectl delete secret datastorage-tls -n "$NAMESPACE" --ignore-not-found
+              kubectl delete configmap inter-service-ca -n "$NAMESPACE" --ignore-not-found
+              {{- end }}
               echo "==> Cleanup complete"
 {{- end }}

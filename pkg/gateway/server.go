@@ -40,6 +40,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"                 // BR-GATEWAY-036/037: Shared auth middleware
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"    // BR-AUDIT-005 Gap #7: Standardized error details
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"              // ADR-052 Addendum 001: Exponential backoff with jitter
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"        // Issue #493/#678: Conditional TLS
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -322,6 +323,16 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		ReadTimeout:       cfg.Server.ReadTimeout,
 		WriteTimeout:      cfg.Server.WriteTimeout,
 		ReadHeaderTimeout: 5 * time.Second, // Issue #673 L-2: Slowloris mitigation (gosec G112)
+	}
+
+	if cfg.Server.TLS.Enabled() {
+		isTLS, tlsErr := sharedtls.ConfigureConditionalTLS(server.httpServer, cfg.Server.TLS.CertDir)
+		if tlsErr != nil {
+			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr)
+		}
+		if isTLS {
+			server.logger.Info("TLS configured for Gateway server", "certDir", cfg.Server.TLS.CertDir)
+		}
 	}
 
 	return server, nil
@@ -624,6 +635,16 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		WriteTimeout:      cfg.Server.WriteTimeout,
 		IdleTimeout:       cfg.Server.IdleTimeout,
 		ReadHeaderTimeout: 5 * time.Second, // Issue #673 L-2: Slowloris mitigation (gosec G112)
+	}
+
+	if cfg.Server.TLS.Enabled() {
+		isTLS, tlsErr := sharedtls.ConfigureConditionalTLS(server.httpServer, cfg.Server.TLS.CertDir)
+		if tlsErr != nil {
+			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr)
+		}
+		if isTLS {
+			server.logger.Info("TLS configured for Gateway server", "certDir", cfg.Server.TLS.CertDir)
+		}
 	}
 
 	return server, nil

@@ -217,6 +217,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            {{- if include "kubernaut.interServiceTLS.enabled" . }}
+            - name: TLS_CA_FILE
+              value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
+            {{- end }}
           ports:
             - name: health
               containerPort: 8081
@@ -244,12 +248,23 @@ spec:
             - name: config
               mountPath: /etc/config
               readOnly: true
+            {{- if include "kubernaut.interServiceTLS.enabled" . }}
+            - name: tls-ca
+              mountPath: /etc/tls-ca
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.remediationorchestrator.resources | nindent 12 }}
       volumes:
         - name: config
           configMap:
             name: remediationorchestrator-config
+        {{- if include "kubernaut.interServiceTLS.enabled" . }}
+        - name: tls-ca
+          configMap:
+            name: inter-service-ca
+            optional: true
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

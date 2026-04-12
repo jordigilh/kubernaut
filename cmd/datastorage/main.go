@@ -257,6 +257,7 @@ func main() {
 		Port:         cfg.Server.Port,
 		ReadTimeout:  cfg.Server.GetReadTimeout(),
 		WriteTimeout: cfg.Server.GetWriteTimeout(),
+		TLS:          cfg.Server.TLS,
 	}
 
 	// Gap 3.3: Pass DLQ max length for capacity monitoring

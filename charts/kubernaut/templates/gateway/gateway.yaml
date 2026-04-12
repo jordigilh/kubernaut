@@ -16,6 +16,10 @@ data:
       writeTimeout: {{ .Values.gateway.config.server.writeTimeout | default "30s" }}
       idleTimeout: 120s
       k8sRequestTimeout: {{ .Values.gateway.config.server.k8sRequestTimeout | default "15s" }}
+      {{- if include "kubernaut.interServiceTLS.enabled" . }}
+      tls:
+        certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
+      {{- end }}
     middleware:
       trustedProxyCIDRs:
       {{- range .Values.gateway.config.middleware.trustedProxyCIDRs }}
@@ -154,10 +158,22 @@ spec:
             # Set to "none" to trigger FromEnvironment() to use an explicit deny-all value.
             - name: CORS_ALLOWED_ORIGINS
               value: {{ .Values.gateway.config.cors.allowedOrigins | default "https://no-browser-clients.invalid" | quote }}
+            {{- if include "kubernaut.interServiceTLS.enabled" . }}
+            - name: TLS_CA_FILE
+              value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
+            {{- end }}
           volumeMounts:
             - name: config
               mountPath: /etc/gateway
               readOnly: true
+            {{- if include "kubernaut.interServiceTLS.enabled" . }}
+            - name: tls-certs
+              mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
+              readOnly: true
+            - name: tls-ca
+              mountPath: /etc/tls-ca
+              readOnly: true
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /health
@@ -180,6 +196,16 @@ spec:
         - name: config
           configMap:
             name: gateway-config
+        {{- if include "kubernaut.interServiceTLS.enabled" . }}
+        - name: tls-certs
+          secret:
+            secretName: gateway-tls
+            optional: true
+        - name: tls-ca
+          configMap:
+            name: inter-service-ca
+            optional: true
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -189,6 +215,10 @@ metadata:
   labels:
     app: gateway
     {{- include "kubernaut.labels" . | nindent 4 }}
+  {{- if include "kubernaut.interServiceTLS.enabled" . }}
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: gateway-tls
+  {{- end }}
 spec:
   type: {{ .Values.gateway.service.type }}
   selector:

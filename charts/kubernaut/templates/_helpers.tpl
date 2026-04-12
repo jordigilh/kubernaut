@@ -216,17 +216,56 @@ valkey.{{ .Release.Namespace }}.svc.cluster.local:6379
 {{/*
 Return the in-cluster DataStorage service URL.
 Derives the FQDN from .Release.Namespace so the chart works in any namespace.
+Issue #678: switches to https:// when tls.interService.enabled is true.
 */}}
 {{- define "kubernaut.datastorage.url" -}}
+{{- if and .Values.tls .Values.tls.interService .Values.tls.interService.enabled -}}
+https://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8080
+{{- else -}}
 http://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8080
+{{- end -}}
 {{- end }}
 
 {{/*
 Return the in-cluster Gateway service URL.
+Issue #678: switches to https:// when tls.interService.enabled is true.
 */}}
 {{- define "kubernaut.gateway.url" -}}
+{{- if and .Values.tls .Values.tls.interService .Values.tls.interService.enabled -}}
+https://gateway-service.{{ .Release.Namespace }}.svc.cluster.local:8080
+{{- else -}}
 http://gateway-service.{{ .Release.Namespace }}.svc.cluster.local:8080
+{{- end -}}
 {{- end }}
+
+{{/*
+Whether inter-service TLS is enabled (Issue #678).
+*/}}
+{{- define "kubernaut.interServiceTLS.enabled" -}}
+{{- if and .Values.tls .Values.tls.interService .Values.tls.interService.enabled -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Inter-service TLS cert directory (server side).
+*/}}
+{{- define "kubernaut.interServiceTLS.certDir" -}}
+{{- if and .Values.tls .Values.tls.interService .Values.tls.interService.certDir -}}
+{{- .Values.tls.interService.certDir -}}
+{{- else -}}
+/etc/tls
+{{- end -}}
+{{- end -}}
+
+{{/*
+Inter-service TLS CA file path (client side).
+*/}}
+{{- define "kubernaut.interServiceTLS.caFile" -}}
+{{- if and .Values.tls .Values.tls.interService .Values.tls.interService.caFile -}}
+{{- .Values.tls.interService.caFile -}}
+{{- else -}}
+/etc/tls-ca/ca.crt
+{{- end -}}
+{{- end -}}
 
 {{/*
 Return the namespace used for workflow execution (Jobs, PipelineRuns).
