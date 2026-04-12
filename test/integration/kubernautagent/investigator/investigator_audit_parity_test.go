@@ -40,8 +40,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
@@ -346,7 +348,19 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, apiServerDeploy)
-			ld := enrichment.NewLabelDetector(dynClient)
+			testMapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+				{Group: "", Version: "v1"},
+				{Group: "apps", Version: "v1"},
+				{Group: "autoscaling", Version: "v2"},
+				{Group: "policy", Version: "v1"},
+				{Group: "networking.k8s.io", Version: "v1"},
+			})
+			testMapper.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, meta.RESTScopeNamespace)
+			testMapper.Add(schema.GroupVersionKind{Group: "autoscaling", Version: "v2", Kind: "HorizontalPodAutoscaler"}, meta.RESTScopeNamespace)
+			testMapper.Add(schema.GroupVersionKind{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}, meta.RESTScopeNamespace)
+			testMapper.Add(schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"}, meta.RESTScopeNamespace)
+			testMapper.Add(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ResourceQuota"}, meta.RESTScopeNamespace)
+			ld := enrichment.NewLabelDetector(dynClient, testMapper)
 
 			k8sClientForLabels := &resourceAwareK8sClient{
 				chains: map[string][]enrichment.OwnerChainEntry{

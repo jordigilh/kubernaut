@@ -414,7 +414,7 @@ func buildEnricher(ds *dsClients, infra *k8sInfra, auditStore audit.AuditStore, 
 	}
 	e := enrichment.NewEnricher(ds.k8sAdapter, ds.dsAdapter, auditStore, logger)
 	if infra != nil && infra.dynClient != nil {
-		e.WithLabelDetector(enrichment.NewLabelDetector(infra.dynClient))
+		e.WithLabelDetector(enrichment.NewLabelDetector(infra.dynClient, infra.mapper))
 		logger.Info("label detector enabled (ADR-056)")
 	}
 	return e
