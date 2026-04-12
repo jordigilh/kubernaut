@@ -158,8 +158,8 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: jobFailureUUID,
 						Version:    "v1.0.0",
-						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
-							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+						ExecutionBundle: fmt.Sprintf("%s/job-failing:v1.0.0-exec",
+							infrastructure.TestWorkflowBundleRegistry),
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
