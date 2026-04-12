@@ -40,13 +40,14 @@ from unittest.mock import MagicMock
 from kubernetes.client.rest import ApiException
 
 
-def _make_client(policy_v1=None, autoscaling_v2=None, networking_v1=None, core_v1=None):
+def _make_client(policy_v1=None, autoscaling_v2=None, networking_v1=None, core_v1=None, batch_v1=None):
     """Create a K8sResourceClient with mocked API clients, bypassing lazy init."""
     from clients.k8s_client import K8sResourceClient
 
     k8s = K8sResourceClient()
     k8s._initialized = True
     k8s._core_v1 = core_v1 or MagicMock()
+    k8s._batch_v1 = batch_v1 or MagicMock()
     k8s._policy_v1 = policy_v1 or MagicMock()
     k8s._autoscaling_v2 = autoscaling_v2 or MagicMock()
     k8s._networking_v1 = networking_v1 or MagicMock()
@@ -333,3 +334,81 @@ class TestListResourceQuotas:
         assert items == []
         assert error is not None
         assert "403" in error or "Forbidden" in error
+
+
+class TestGetResourceMetadataNonWorkload:
+    """UT-HAPI-676: _get_resource_metadata_sync support for non-workload resource kinds.
+
+    Issue #676: _get_resource_metadata_sync only supports workload kinds (Deployment,
+    StatefulSet, etc.) and returns None for ConfigMap, Secret, Service, Job.
+    Business Requirement: BR-HAPI-250
+    """
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_676_005_configmap_metadata(self):
+        """UT-HAPI-676-005: _get_resource_metadata_sync returns ConfigMap (not None).
+
+        BR-HAPI-250: K8s client must resolve ConfigMap metadata to enable
+        label detection on ConfigMap root owners.
+        """
+        mock_core = MagicMock()
+        mock_cm = MagicMock()
+        mock_cm.metadata.labels = {"app.kubernetes.io/managed-by": "Helm"}
+        mock_core.read_namespaced_config_map.return_value = mock_cm
+
+        k8s = _make_client(core_v1=mock_core)
+        result = await k8s._get_resource_metadata("ConfigMap", "worker-config", "default")
+
+        assert result is not None
+        assert result.metadata.labels["app.kubernetes.io/managed-by"] == "Helm"
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_676_006_secret_metadata(self):
+        """UT-HAPI-676-006: _get_resource_metadata_sync returns Secret (not None).
+
+        BR-HAPI-250: K8s client must resolve Secret metadata for label detection.
+        """
+        mock_core = MagicMock()
+        mock_secret = MagicMock()
+        mock_secret.metadata.labels = {"app.kubernetes.io/managed-by": "Helm"}
+        mock_core.read_namespaced_secret.return_value = mock_secret
+
+        k8s = _make_client(core_v1=mock_core)
+        result = await k8s._get_resource_metadata("Secret", "db-creds", "default")
+
+        assert result is not None
+        assert result.metadata.labels["app.kubernetes.io/managed-by"] == "Helm"
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_676_007_service_metadata(self):
+        """UT-HAPI-676-007: _get_resource_metadata_sync returns Service (not None).
+
+        BR-HAPI-250: K8s client must resolve Service metadata for label detection.
+        """
+        mock_core = MagicMock()
+        mock_svc = MagicMock()
+        mock_svc.metadata.labels = {"app.kubernetes.io/managed-by": "Helm"}
+        mock_core.read_namespaced_service.return_value = mock_svc
+
+        k8s = _make_client(core_v1=mock_core)
+        result = await k8s._get_resource_metadata("Service", "api-svc", "default")
+
+        assert result is not None
+        assert result.metadata.labels["app.kubernetes.io/managed-by"] == "Helm"
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_676_008_job_metadata(self):
+        """UT-HAPI-676-008: _get_resource_metadata_sync returns Job (not None).
+
+        BR-HAPI-250: K8s client must resolve Job metadata for label detection.
+        """
+        mock_batch = MagicMock()
+        mock_job = MagicMock()
+        mock_job.metadata.labels = {"app.kubernetes.io/managed-by": "Helm"}
+        mock_batch.read_namespaced_job.return_value = mock_job
+
+        k8s = _make_client(batch_v1=mock_batch)
+        result = await k8s._get_resource_metadata("Job", "data-migration", "default")
+
+        assert result is not None
+        assert result.metadata.labels["app.kubernetes.io/managed-by"] == "Helm"
