@@ -27,4 +27,5 @@ namespace: kubernaut-system
 # Image configuration
 images:
   - name: quay.io/jordigilh/kubernaut-gateway
-    newTag: latest
+    # Issue #673 M-4: Pin to release version. Override via kustomize overlay for specific environments.
+    newTag: v1.3.0

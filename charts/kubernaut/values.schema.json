@@ -230,7 +230,31 @@
               "properties": {
                 "maxConcurrentRequests": { "type": "integer", "default": 100 },
                 "readTimeout": { "type": "string", "default": "30s" },
-                "writeTimeout": { "type": "string", "default": "30s" }
+                "writeTimeout": { "type": "string", "default": "30s" },
+                "k8sRequestTimeout": { "type": "string", "default": "15s", "description": "Per-handler K8s API timeout (BR-GATEWAY-102)" }
+              }
+            },
+            "middleware": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "trustedProxyCIDRs": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "default": [],
+                  "description": "Issue #673 L-1: CIDRs whose proxy headers are trusted"
+                }
+              }
+            },
+            "cors": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "allowedOrigins": {
+                  "type": "string",
+                  "default": "https://no-browser-clients.invalid",
+                  "description": "Issue #673 H-2: CORS allowed origins (M2M API, deny by default)"
+                }
               }
             },
             "deduplication": {

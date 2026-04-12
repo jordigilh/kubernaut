@@ -49,6 +49,19 @@ gateway:
       maxConcurrentRequests: 100
       readTimeout: "30s"
       writeTimeout: "30s"
+      k8sRequestTimeout: "15s"
+    middleware:
+      # Issue #673 L-1: Trusted proxy CIDRs for RealIP extraction.
+      # Only connections from these CIDRs will have X-Forwarded-For honoured.
+      # Empty = fail-closed (proxy headers never trusted).
+      # Example: ["10.0.0.0/8", "172.16.0.0/12"] for internal load balancers.
+      trustedProxyCIDRs: []
+    cors:
+      # Issue #673 H-2: CORS allowed origins. Gateway is an M2M webhook API
+      # and does not serve browser clients, so CORS is irrelevant.
+      # This non-matching origin ensures no browser can pass CORS preflight.
+      # Override only if you have a browser-based client accessing the Gateway directly.
+      allowedOrigins: "https://no-browser-clients.invalid"
     deduplication:
       cooldownPeriod: "5m"
   resources:
