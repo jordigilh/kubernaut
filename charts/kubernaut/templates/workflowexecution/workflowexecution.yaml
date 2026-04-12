@@ -258,16 +258,32 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 6
+          {{- if include "kubernaut.interServiceTLS.enabled" . }}
+          env:
+            - name: TLS_CA_FILE
+              value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
+          {{- end }}
           volumeMounts:
             - name: config
               mountPath: /etc/config
               readOnly: true
+            {{- if include "kubernaut.interServiceTLS.enabled" . }}
+            - name: tls-ca
+              mountPath: /etc/tls-ca
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.workflowexecution.resources | nindent 12 }}
       volumes:
         - name: config
           configMap:
             name: workflowexecution-config
+        {{- if include "kubernaut.interServiceTLS.enabled" . }}
+        - name: tls-ca
+          configMap:
+            name: inter-service-ca
+            optional: true
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

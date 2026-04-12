@@ -46,6 +46,12 @@ networkPolicies:
     prometheusPort: 9091
     alertManagerPort: 9094
 
+# Issue #678: Enable inter-service TLS on OCP.
+# The service-ca operator provisions certs via Service annotations.
+tls:
+  interService:
+    enabled: true
+
 # TLS defaults to hook (self-signed). To use cert-manager instead, uncomment
 # and set issuerRef.name to your ClusterIssuer (requires cert-manager installed):
 #

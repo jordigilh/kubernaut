@@ -24,6 +24,7 @@ import (
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: Inter-service TLS
 )
 
 // HistoryContextClient is a narrow interface for querying remediation history
@@ -64,11 +65,11 @@ func NewDSHistoryAdapterFromConfig(baseURL string, timeout time.Duration) (*DSHi
 		timeout = 5 * time.Second
 	}
 
-	transport := auth.NewServiceAccountTransportWithBase(&http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 100,
-		IdleConnTimeout:     90 * time.Second,
-	})
+	baseTransport, err := sharedtls.DefaultBaseTransport()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create base transport: %w", err)
+	}
+	transport := auth.NewServiceAccountTransportWithBase(baseTransport)
 
 	ogenClient, err := ogenclient.NewClient(baseURL, ogenclient.WithClient(&http.Client{
 		Timeout:   timeout,
