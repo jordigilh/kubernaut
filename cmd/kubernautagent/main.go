@@ -516,6 +516,13 @@ func buildTransportChain(cfg *kaconfig.Config) http.RoundTripper {
 // credentialsSecretName as a volume; each secret key becomes a file.
 // Providers use different env-var names (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.),
 // so we try the provider-specific key first, then fall back to any single file.
+//
+// For GCP providers (vertex, vertex_ai), the file content may be either:
+//   - The actual credentials JSON (service_account or authorized_user)
+//   - A file path pointing to the real credentials JSON (#686)
+//
+// When the content looks like a path rather than JSON, the function follows
+// the indirection and reads the target file.
 func resolveCredentialsFile(provider string, logger *slog.Logger) string {
 	const credDir = "/etc/kubernaut-agent/credentials"
 
@@ -533,6 +540,7 @@ func resolveCredentialsFile(provider string, logger *slog.Logger) string {
 		if data, err := os.ReadFile(path); err == nil {
 			key := strings.TrimSpace(string(data))
 			if key != "" {
+				key = resolveGCPCredentialIndirection(provider, key, logger)
 				logger.Info("resolved LLM API key from credentials file", "path", path)
 				return key
 			}
@@ -557,6 +565,41 @@ func resolveCredentialsFile(provider string, logger *slog.Logger) string {
 		}
 	}
 	return ""
+}
+
+// resolveGCPCredentialIndirection handles the case where the mounted
+// GOOGLE_APPLICATION_CREDENTIALS file contains a path to the real
+// credentials JSON rather than the JSON itself (#686). This happens
+// when the Secret key stores a path string (e.g.
+// "/etc/kubernaut-agent/credentials/application_default_credentials.json") // pre-commit:allow-sensitive (doc example)
+// and the actual credentials (service_account or authorized_user with
+// refresh_token) are in a sibling file.
+func resolveGCPCredentialIndirection(provider, content string, logger *slog.Logger) string {
+	switch provider {
+	case "vertex", "vertex_ai":
+	default:
+		return content
+	}
+
+	if json.Valid([]byte(content)) {
+		return content
+	}
+
+	// Content is not JSON — treat as a file path.
+	target := strings.TrimSpace(content)
+	data, err := os.ReadFile(target)
+	if err != nil {
+		logger.Warn("GCP credentials file contains a path but target is unreadable",
+			"path", target, "error", err)
+		return content
+	}
+
+	resolved := strings.TrimSpace(string(data))
+	if resolved == "" {
+		return content
+	}
+	logger.Info("followed GCP credential path indirection", "target", target)
+	return resolved
 }
 
 // buildAuditStore creates a BufferedDSAuditStore (DD-AUDIT-002 aligned) when audit
