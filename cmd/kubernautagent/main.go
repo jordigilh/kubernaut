@@ -504,10 +504,12 @@ func resolveCredentialsFile(provider string, logger *slog.Logger) string {
 	const credDir = "/etc/kubernaut-agent/credentials"
 
 	providerKeyFiles := map[string]string{
-		"openai":     "OPENAI_API_KEY",
-		"anthropic":  "ANTHROPIC_API_KEY",
-		"mistral":    "MISTRAL_API_KEY",
+		"openai":      "OPENAI_API_KEY",
+		"anthropic":   "ANTHROPIC_API_KEY",
+		"mistral":     "MISTRAL_API_KEY",
 		"huggingface": "HUGGINGFACEHUB_API_TOKEN",
+		"vertex":      "GOOGLE_APPLICATION_CREDENTIALS",
+		"vertex_ai":   "GOOGLE_APPLICATION_CREDENTIALS",
 	}
 
 	if keyFile, ok := providerKeyFiles[provider]; ok {

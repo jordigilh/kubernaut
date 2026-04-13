@@ -81,7 +81,7 @@ type Adapter struct {
 }
 
 // New creates a new LangChainGo adapter for the given provider.
-// Supported providers: "openai", "ollama", "azure", "vertex", "anthropic", "bedrock", "huggingface", "mistral".
+// Supported providers: "openai", "ollama", "azure", "vertex", "vertex_ai", "anthropic", "bedrock", "huggingface", "mistral".
 func New(provider, endpoint, model, apiKey string, opts ...Option) (*Adapter, error) {
 	o := &options{vertexLocation: "us-central1"}
 	for _, fn := range opts {
@@ -127,6 +127,8 @@ func newModel(provider, endpoint, model, apiKey string, o *options) (llms.Model,
 			googleai.WithCloudLocation(o.vertexLocation),
 			googleai.WithDefaultModel(model),
 		)
+	case "vertex_ai":
+		return newVertexAnthropicModel(o.vertexProject, o.vertexLocation, model, endpoint, o.httpClient)
 	case "anthropic":
 		aopts := []anthropic.Option{anthropic.WithModel(model), anthropic.WithToken(apiKey)}
 		if endpoint != "" {
