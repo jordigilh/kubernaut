@@ -60,6 +60,7 @@ var _ = Describe("Vertex AI + Claude httptest round-trips — #684", func() {
 			adapter, err := langchaingo.New("vertex_ai", server.URL, "claude-sonnet-4-6", "",
 				langchaingo.WithVertexProject("my-project"),
 				langchaingo.WithVertexLocation("us-central1"),
+				langchaingo.WithHTTPClient(&http.Client{}),
 			)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -83,6 +84,7 @@ var _ = Describe("Vertex AI + Claude httptest round-trips — #684", func() {
 			adapter, err := langchaingo.New("vertex_ai", server.URL, "claude-sonnet-4-6", "",
 				langchaingo.WithVertexProject("my-project"),
 				langchaingo.WithVertexLocation("us-central1"),
+				langchaingo.WithHTTPClient(&http.Client{}),
 			)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -126,6 +128,7 @@ var _ = Describe("Vertex AI + Claude httptest round-trips — #684", func() {
 			adapter, err := langchaingo.New("vertex_ai", server.URL, "claude-sonnet-4-6", "",
 				langchaingo.WithVertexProject("my-project"),
 				langchaingo.WithVertexLocation("us-central1"),
+				langchaingo.WithHTTPClient(&http.Client{}),
 			)
 			Expect(err).NotTo(HaveOccurred())
 

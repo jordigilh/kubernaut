@@ -17,6 +17,7 @@ limitations under the License.
 package llm_test
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -33,24 +34,10 @@ var _ = Describe("Vertex AI + Claude Adapter — #684", func() {
 	Describe("Bug 2: Provider alias recognition", func() {
 
 		It("UT-KA-684-101: vertex_ai is accepted as a valid provider", func() {
-			_, thisFile, _, _ := runtime.Caller(0)
-			fixturesDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "fixtures")
-			credPath := filepath.Join(fixturesDir, "gcp-mock-credentials.json")
-			Expect(credPath).To(BeAnExistingFile())
-
-			origCreds := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-			os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credPath)
-			DeferCleanup(func() {
-				if origCreds == "" {
-					os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
-				} else {
-					os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", origCreds)
-				}
-			})
-
-			adapter, err := langchaingo.New("vertex_ai", "", "claude-sonnet-4-6", "",
+			adapter, err := langchaingo.New("vertex_ai", "http://localhost:9999", "claude-sonnet-4-6", "",
 				langchaingo.WithVertexProject("my-project"),
 				langchaingo.WithVertexLocation("us-central1"),
+				langchaingo.WithHTTPClient(&http.Client{}),
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(adapter).NotTo(BeNil())
@@ -82,7 +69,9 @@ var _ = Describe("Vertex AI + Claude Adapter — #684", func() {
 		})
 
 		It("UT-KA-684-105: vertex_ai without project returns descriptive error", func() {
-			adapter, err := langchaingo.New("vertex_ai", "", "claude-sonnet-4-6", "")
+			adapter, err := langchaingo.New("vertex_ai", "", "claude-sonnet-4-6", "",
+				langchaingo.WithHTTPClient(&http.Client{}),
+			)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("project"))
 			Expect(adapter).To(BeNil())

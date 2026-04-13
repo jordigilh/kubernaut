@@ -33,6 +33,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
@@ -464,12 +466,26 @@ func buildLLMProviderOptions(cfg *kaconfig.Config) []langchaingo.Option {
 // Layers are applied inside-out: the innermost transport (DefaultTransport)
 // handles the actual HTTP call, and outer layers intercept/decorate.
 //
-// Chain: StructuredOutputTransport? → AuthHeadersTransport? → OAuth2Transport? → http.DefaultTransport
+// Chain: StructuredOutputTransport? → AuthHeadersTransport? → OAuth2Transport? → GCPAuth? → http.DefaultTransport
 //
 // Returns nil when no custom transports are needed (caller uses provider defaults).
 func buildTransportChain(cfg *kaconfig.Config) http.RoundTripper {
 	var base http.RoundTripper = http.DefaultTransport
 	needsCustom := false
+
+	// GCP Bearer-token transport for vertex_ai: reads SA key JSON from config
+	// (populated by resolveCredentialsFile from the Helm-mounted secret).
+	if cfg.LLM.Provider == "vertex_ai" && cfg.LLM.APIKey != "" {
+		creds, err := google.CredentialsFromJSON(
+			context.Background(),
+			[]byte(cfg.LLM.APIKey),
+			"https://www.googleapis.com/auth/cloud-platform",
+		)
+		if err == nil {
+			base = &oauth2.Transport{Source: creds.TokenSource, Base: base}
+			needsCustom = true
+		}
+	}
 
 	if cfg.LLM.OAuth2.Enabled {
 		base = llmtransport.NewOAuth2ClientCredentialsTransport(cfg.LLM.OAuth2, base)

@@ -26,8 +26,6 @@ import (
 	"strings"
 
 	"github.com/tmc/langchaingo/llms"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 )
 
 // vertexAnthropicModel implements llms.Model for Claude models hosted on
@@ -35,7 +33,9 @@ import (
 // to Anthropic Messages API format, sends the request to the Vertex AI
 // rawPredict endpoint, and parses the Anthropic response back.
 //
-// Auth uses Google Cloud Application Default Credentials (ADC).
+// Auth is handled by the caller via the injected http.Client (e.g. GCP
+// OAuth2 transport wired in main.go from config). The shim never resolves
+// credentials itself — it uses whatever client it receives.
 // Endpoint: {baseURL}/v1/projects/{project}/locations/{location}/publishers/anthropic/models/{model}:rawPredict
 type vertexAnthropicModel struct {
 	project  string
@@ -56,15 +56,9 @@ func newVertexAnthropicModel(project, location, model, baseURL string, httpClien
 		baseURL = fmt.Sprintf("https://%s-aiplatform.googleapis.com", location) // pre-commit:allow-sensitive (GCP endpoint pattern)
 	}
 
-	var client *http.Client
+	client := http.DefaultClient
 	if len(httpClient) > 0 && httpClient[0] != nil {
 		client = httpClient[0]
-	} else {
-		var err error
-		client, err = defaultADCClient(context.Background())
-		if err != nil {
-			return nil, fmt.Errorf("vertex_ai: GCP credentials: %w", err)
-		}
 	}
 
 	return &vertexAnthropicModel{
@@ -74,14 +68,6 @@ func newVertexAnthropicModel(project, location, model, baseURL string, httpClien
 		baseURL:  strings.TrimRight(baseURL, "/"),
 		client:   client,
 	}, nil
-}
-
-func defaultADCClient(ctx context.Context) (*http.Client, error) {
-	creds, err := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/cloud-platform")
-	if err != nil {
-		return nil, err
-	}
-	return oauth2.NewClient(ctx, creds.TokenSource), nil
 }
 
 func (m *vertexAnthropicModel) rawPredictURL() string {
