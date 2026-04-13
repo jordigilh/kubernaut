@@ -14,7 +14,7 @@ nameOverride: ""
 fullnameOverride: ""
 
 # -- Demo content: bundled ActionTypes and RemediationWorkflows.
-# When enabled, deploys 25 ActionTypes and 20 RemediationWorkflows
+# When enabled, deploys 26 ActionTypes and 20 RemediationWorkflows
 # from kubernaut-demo-scenarios, allowing immediate end-to-end evaluation.
 # Production: set to false and deploy your own CRs.
 demoContent:

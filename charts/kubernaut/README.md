@@ -67,7 +67,7 @@ This deploys the full platform with:
 
 - Default SignalProcessing Rego policy (environment, severity, priority, custom labels)
 - Default AIAnalysis approval policy (production requires approval, non-production auto-approves)
-- 25 ActionTypes and 20 RemediationWorkflows for common scenarios
+- 26 ActionTypes and 20 RemediationWorkflows for common scenarios
 - Console-only notifications (no external integrations required)
 - Monitoring integrations disabled (enable when kube-prometheus-stack is installed)
 
