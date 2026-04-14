@@ -36,6 +36,11 @@ import (
 
 const maxSelfCorrectionAttempts = 3
 
+// SubmitResultToolName is the sentinel tool name that the LLM calls to deliver
+// its structured investigation result. When detected in runLLMLoop, the tool
+// call arguments are returned as content without executing any real tool.
+const SubmitResultToolName = "submit_result"
+
 // CatalogFetcher retrieves a fresh workflow validator from the catalog.
 // Implementations query DataStorage at request time so KA always sees the
 // current catalog without boot-time prefetch or caching (see #665).
@@ -415,6 +420,13 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.logger)
 
 		if len(resp.ToolCalls) > 0 {
+			for _, tc := range resp.ToolCalls {
+				if tc.Name == SubmitResultToolName {
+					inv.logger.Info("submit_result sentinel detected", slog.String("phase", string(phase)))
+					return tc.Arguments, false, nil
+				}
+			}
+
 			messages = append(messages, resp.Message)
 			for i, tc := range resp.ToolCalls {
 				toolResult := inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments))
@@ -481,18 +493,24 @@ func toolNames(defs []llm.ToolDefinition) []string {
 }
 
 func (inv *Investigator) toolDefinitionsForPhase(phase katypes.Phase) []llm.ToolDefinition {
-	if inv.registry == nil {
-		return nil
+	var defs []llm.ToolDefinition
+	if inv.registry != nil {
+		phaseTools := inv.registry.ToolsForPhase(phase, inv.phaseTools)
+		defs = make([]llm.ToolDefinition, 0, len(phaseTools)+1)
+		for _, t := range phaseTools {
+			defs = append(defs, llm.ToolDefinition{
+				Name:        t.Name(),
+				Description: t.Description(),
+				Parameters:  t.Parameters(),
+			})
+		}
 	}
-	phaseTools := inv.registry.ToolsForPhase(phase, inv.phaseTools)
-	defs := make([]llm.ToolDefinition, 0, len(phaseTools))
-	for _, t := range phaseTools {
-		defs = append(defs, llm.ToolDefinition{
-			Name:        t.Name(),
-			Description: t.Description(),
-			Parameters:  t.Parameters(),
-		})
-	}
+
+	defs = append(defs, llm.ToolDefinition{
+		Name:        SubmitResultToolName,
+		Description: "Submit the final investigation result as structured JSON. Call this tool when your analysis is complete.",
+		Parameters:  parser.InvestigationResultSchema(),
+	})
 	return defs
 }
 

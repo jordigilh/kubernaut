@@ -182,9 +182,10 @@ Set `selected_workflow` to None. Do NOT include `investigation_outcome`.
 Set `selected_workflow` to None, include `actionable: false`.
 
 ## Expected Response Format
-{{ if .StructuredOutput }}
-**CRITICAL**: Respond with a SINGLE JSON object (no markdown, no section headers, no prose):
 
+**CRITICAL**: When your investigation is complete, call the `submit_result` tool with a JSON object containing your findings. Do NOT write the JSON as text — use the `submit_result` tool call.
+
+**submit_result argument schema**:
 ```json
 {
   "root_cause_analysis": {
@@ -216,25 +217,10 @@ Set `selected_workflow` to None, include `actionable: false`.
 ```
 
 **Rules**:
-- Output ONLY the JSON object, no surrounding text
+- Call `submit_result` with the JSON object as the tool argument
 - All fields in root_cause_analysis.summary and selected_workflow are required when actionable
 - Top-level severity must match root_cause_analysis.severity
 - Top-level confidence must match selected_workflow.confidence
 - parameters should only contain workflow-specific values (kind/name/namespace are injected by the system)
 - For non-actionable outcomes, omit selected_workflow and set actionable to false
 - If human review is needed, include "needs_human_review": true and "human_review_reason"
-{{ else }}
-**CRITICAL**: Use section header format (NOT a single JSON block):
-
-# root_cause_analysis
-{"summary": "...", "severity": "critical|high|medium|low|unknown", "contributing_factors": [...], "remediationTarget": {"kind": "...", "name": "...", "namespace": "..."}}
-
-# confidence
-0.95
-
-# selected_workflow
-{"workflow_id": "...", "confidence": 0.95, "rationale": "...", "parameters": {"PARAM_NAME": "value"}}
-
-# alternative_workflows
-[{"workflow_id": "...", "confidence": 0.75, "rationale": "..."}]
-{{ end }}

@@ -132,8 +132,60 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 		})
 	})
 
-	Describe("UT-KA-SO-PROMPT-001: WithStructuredOutput renders pure JSON format section", func() {
-		It("should include SINGLE JSON object instruction when structured output enabled", func() {
+	Describe("UT-KA-686-008: Prompt renders submit_result tool instruction", func() {
+		It("should include submit_result instruction in investigation prompt regardless of StructuredOutput", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name: "test-signal", Namespace: "default", Severity: "high", Message: "Test",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("submit_result"),
+				"investigation prompt must instruct LLM to call submit_result tool")
+		})
+
+		It("should include submit_result instruction in workflow selection prompt", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderWorkflowSelection(prompt.SignalData{
+				Name: "test-signal", Namespace: "default", Severity: "high", Message: "Test",
+			}, "OOMKilled root cause", nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("submit_result"),
+				"workflow selection prompt must instruct LLM to call submit_result tool")
+		})
+	})
+
+	Describe("UT-KA-686-009: Prompt no longer includes section-header format instructions", func() {
+		It("should not contain section header format instructions in investigation prompt", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name: "test-signal", Namespace: "default", Severity: "high", Message: "Test",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).NotTo(ContainSubstring("Use section header format"),
+				"prompt must no longer instruct section header format")
+		})
+
+		It("should not contain section header format instructions in workflow prompt", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderWorkflowSelection(prompt.SignalData{
+				Name: "test-signal", Namespace: "default", Severity: "high", Message: "Test",
+			}, "OOMKilled root cause", nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).NotTo(ContainSubstring("Use section header format"),
+				"workflow prompt must no longer instruct section header format")
+		})
+	})
+
+	Describe("UT-KA-SO-PROMPT-001: Prompt uses unified submit_result tool instruction", func() {
+		It("should include submit_result instruction regardless of structured output setting", func() {
 			builder, err := prompt.NewBuilder(prompt.WithStructuredOutput(true))
 			Expect(err).NotTo(HaveOccurred())
 
@@ -144,13 +196,13 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 				Message:   "Test message",
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rendered).To(ContainSubstring("SINGLE JSON object"),
-				"structured output mode must instruct LLM to return pure JSON")
+			Expect(rendered).To(ContainSubstring("submit_result"),
+				"prompt must instruct LLM to call submit_result tool")
 			Expect(rendered).NotTo(ContainSubstring("Use section header format"),
-				"structured output mode must NOT include legacy section header instructions")
+				"prompt must NOT include legacy section header instructions")
 		})
 
-		It("should include legacy section header format when structured output disabled", func() {
+		It("should include submit_result instruction when structured output is disabled", func() {
 			builder, err := prompt.NewBuilder()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -161,10 +213,10 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 				Message:   "Test message",
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rendered).To(ContainSubstring("Use section header format"),
-				"default mode must use legacy section header instructions")
-			Expect(rendered).NotTo(ContainSubstring("SINGLE JSON object"),
-				"default mode must NOT include structured output instructions")
+			Expect(rendered).To(ContainSubstring("submit_result"),
+				"prompt must instruct LLM to call submit_result tool even without structured output")
+			Expect(rendered).NotTo(ContainSubstring("Use section header format"),
+				"prompt must NOT include legacy section header instructions")
 		})
 	})
 })
