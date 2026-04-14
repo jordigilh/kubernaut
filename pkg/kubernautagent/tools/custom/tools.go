@@ -37,9 +37,7 @@ var listAvailableActionsSchema = json.RawMessage(`{
 var listWorkflowsSchemaJSON = json.RawMessage(`{
 	"type": "object",
 	"properties": {
-		"action_type": {"type": "string", "description": "The action type to filter workflows by"},
-		"offset":      {"type": "integer", "description": "Pagination offset"},
-		"limit":       {"type": "integer", "description": "Maximum number of results to return"}
+		"action_type": {"type": "string", "description": "The action type to filter workflows by"}
 	},
 	"required": ["action_type"]
 }`)
@@ -110,7 +108,7 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 	}
 
 	data, _ := json.Marshal(res)
-	return string(data), nil
+	return string(StripPaginationIfComplete(data)), nil
 }
 
 // --- list_workflows ---
@@ -143,7 +141,7 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 	}
 
 	data, _ := json.Marshal(res)
-	return string(data), nil
+	return string(StripPaginationIfComplete(data)), nil
 }
 
 // --- get_workflow ---
@@ -176,4 +174,39 @@ func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (st
 
 	data, _ := json.Marshal(res)
 	return string(data), nil
+}
+
+// StripPaginationIfComplete removes the "pagination" field from a JSON response
+// when hasMore is false, meaning all results fit in one page. This avoids the
+// LLM wasting tool calls trying to paginate when there are no more pages.
+// When hasMore is true, the pagination metadata is preserved so the LLM knows
+// it is seeing a subset.
+func StripPaginationIfComplete(data json.RawMessage) json.RawMessage {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return data
+	}
+
+	paginationRaw, ok := obj["pagination"]
+	if !ok {
+		return data
+	}
+
+	var pagination struct {
+		HasMore bool `json:"hasMore"`
+	}
+	if err := json.Unmarshal(paginationRaw, &pagination); err != nil {
+		return data
+	}
+
+	if pagination.HasMore {
+		return data
+	}
+
+	delete(obj, "pagination")
+	result, err := json.Marshal(obj)
+	if err != nil {
+		return data
+	}
+	return result
 }

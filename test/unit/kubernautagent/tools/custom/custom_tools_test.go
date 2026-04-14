@@ -25,6 +25,61 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/custom"
 )
 
+var _ = Describe("UT-KA-688: Conditional pagination stripping", func() {
+
+	Describe("UT-KA-688-001: StripPaginationIfComplete removes pagination when all results fit in one page", func() {
+		It("should strip pagination when hasMore is false", func() {
+			input := `{"actionTypes":[{"actionType":"RestartDeployment"},{"actionType":"ScaleReplicas"}],"pagination":{"totalCount":2,"offset":0,"limit":10,"hasMore":false}}`
+			result := custom.StripPaginationIfComplete(json.RawMessage(input))
+
+			var parsed map[string]interface{}
+			Expect(json.Unmarshal(result, &parsed)).To(Succeed())
+			Expect(parsed).NotTo(HaveKey("pagination"))
+			Expect(parsed).To(HaveKey("actionTypes"))
+		})
+
+		It("should preserve pagination when hasMore is true", func() {
+			input := `{"actionTypes":[{"actionType":"RestartDeployment"}],"pagination":{"totalCount":16,"offset":0,"limit":10,"hasMore":true}}`
+			result := custom.StripPaginationIfComplete(json.RawMessage(input))
+
+			var parsed map[string]interface{}
+			Expect(json.Unmarshal(result, &parsed)).To(Succeed())
+			Expect(parsed).To(HaveKey("pagination"))
+			Expect(parsed).To(HaveKey("actionTypes"))
+		})
+	})
+
+	Describe("UT-KA-688-002: StripPaginationIfComplete works for workflow discovery responses", func() {
+		It("should strip pagination from workflow list when complete", func() {
+			input := `{"actionType":"RestartDeployment","workflows":[{"workflowId":"abc-123"}],"pagination":{"totalCount":1,"offset":0,"limit":10,"hasMore":false}}`
+			result := custom.StripPaginationIfComplete(json.RawMessage(input))
+
+			var parsed map[string]interface{}
+			Expect(json.Unmarshal(result, &parsed)).To(Succeed())
+			Expect(parsed).NotTo(HaveKey("pagination"))
+			Expect(parsed).To(HaveKey("workflows"))
+			Expect(parsed).To(HaveKey("actionType"))
+		})
+	})
+
+	Describe("UT-KA-688-003: StripPaginationIfComplete is safe for edge cases", func() {
+		It("should return input unchanged when pagination field is absent", func() {
+			input := `{"actionTypes":[{"actionType":"RestartDeployment"}]}`
+			result := custom.StripPaginationIfComplete(json.RawMessage(input))
+
+			var parsed map[string]interface{}
+			Expect(json.Unmarshal(result, &parsed)).To(Succeed())
+			Expect(parsed).To(HaveKey("actionTypes"))
+		})
+
+		It("should return input unchanged for invalid JSON", func() {
+			input := `not json`
+			result := custom.StripPaginationIfComplete(json.RawMessage(input))
+			Expect(string(result)).To(Equal(input))
+		})
+	})
+})
+
 var _ = Describe("Kubernaut Agent Custom Tool Schemas — #433", func() {
 
 	Describe("UT-KA-433-170: list_available_actions has valid JSON schema", func() {
@@ -52,7 +107,7 @@ var _ = Describe("Kubernaut Agent Custom Tool Schemas — #433", func() {
 			Expect(required).To(ContainElement("action_type"))
 		})
 
-		It("should include offset and limit optional parameters", func() {
+		It("should not expose offset/limit since pagination is handled internally (#688)", func() {
 			schema := custom.ListWorkflowsSchema()
 
 			var parsed map[string]interface{}
@@ -60,8 +115,8 @@ var _ = Describe("Kubernaut Agent Custom Tool Schemas — #433", func() {
 
 			props, ok := parsed["properties"].(map[string]interface{})
 			Expect(ok).To(BeTrue())
-			Expect(props).To(HaveKey("offset"))
-			Expect(props).To(HaveKey("limit"))
+			Expect(props).NotTo(HaveKey("offset"))
+			Expect(props).NotTo(HaveKey("limit"))
 		})
 	})
 
