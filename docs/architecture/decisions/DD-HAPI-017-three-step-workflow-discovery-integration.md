@@ -143,7 +143,7 @@ Each tool:
 
 The existing `SearchWorkflowCatalogTool` and `WorkflowCatalogToolset` classes are removed. A new toolset class registers all three tools for both incident and recovery flows.
 
-The tool specifications (parameters, descriptions, DS endpoint contracts, pagination behavior) are defined authoritatively in DD-WORKFLOW-016. This DD does not redefine them.
+The tool specifications (parameters, descriptions, DS endpoint contracts, pagination behavior) are defined authoritatively in DD-WORKFLOW-016. This DD does not redefine them. As of DD-WORKFLOW-016 v1.4, LLM-facing pagination uses opaque cursor tokens instead of raw offset/limit (Issue #688).
 
 ### 2. Prompt Template Updates
 
@@ -171,8 +171,8 @@ Both prompt builders are updated to reference the three-step protocol:
 HAPI's Python DS client (`holmesgpt-api/src/clients/datastorage/`) is generated from `api/openapi/data-storage-v1.yaml`. After the DS OpenAPI spec is updated to include the three new endpoints (per DD-WORKFLOW-016), the Python client is regenerated.
 
 New client methods (generated):
-- `list_available_actions(severity, component, environment, priority, custom_labels, detected_labels, remediation_id, offset, limit)`
-- `list_workflows(action_type, severity, component, environment, priority, custom_labels, detected_labels, remediation_id, offset, limit)`
+- `list_available_actions(severity, component, environment, priority, custom_labels, detected_labels, remediation_id, page, cursor)` (v1.4: page/cursor replace offset/limit for LLM)
+- `list_workflows(action_type, severity, component, environment, priority, custom_labels, detected_labels, remediation_id, page, cursor)` (v1.4: page/cursor replace offset/limit for LLM)
 - `get_workflow(workflow_id, severity, component, environment, priority, custom_labels, detected_labels, remediation_id)`
 
 **v1.2 note (ADR-056)**: The generated client methods still accept `detected_labels` as a parameter (the DS API requires it for filtering). However, HAPI tool implementations populate this parameter from internal session state, not from LLM input. The LLM tool schemas (`list_available_actions`, `list_workflows`, `get_workflow`) do NOT expose `detected_labels` as an LLM-facing parameter.
@@ -202,7 +202,7 @@ Each new tool handles errors from the DS discovery endpoints:
 | 500 | `internal-error` | Raise exception, fail the tool invocation |
 | 502/503/504 | `service-unavailable` | Raise exception with timeout/connectivity context |
 
-Pagination handling (`hasMore` responses) is built into the `list_available_actions` and `list_workflows` tool implementations. The tool returns the pagination metadata to the LLM so it can request subsequent pages.
+Pagination handling is built into the `list_available_actions` and `list_workflows` tool implementations. As of DD-WORKFLOW-016 v1.4, the tool layer transforms DS pagination into opaque cursor-based navigation (hasNext/nextCursor, hasPrevious/previousCursor) so the LLM can request subsequent pages without seeing raw offsets or total counts.
 
 ### 6. DS-Side Impact
 

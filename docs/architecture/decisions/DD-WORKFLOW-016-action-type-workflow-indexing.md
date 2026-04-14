@@ -6,11 +6,20 @@
 **Authority**: AUTHORITATIVE - This document governs workflow catalog matching strategy
 **Affects**: Data Storage Service, HolmesGPT API, Workflow Catalog, Signal Processing
 **Related**: DD-WORKFLOW-001 (Label Schema), DD-LLM-001 (MCP Search Taxonomy), DD-HAPI-016 (Remediation History Context), DD-017 (Effectiveness Monitor), ADR-054 (Proactive Signal Mode Classification), BR-WORKFLOW-006 (RemediationWorkflow CRD), ADR-058 (Webhook-Driven Registration)
-**Version**: 1.2
+**Version**: 1.4
 
 ---
 
 ## Changelog
+
+### Version 1.4 (2026-04-06)
+- **Issue #688**: LLM-facing pagination replaced from raw `offset`/`limit` to opaque cursor-based navigation.
+- **Motivation**: Prompt templates instructed the LLM to paginate with `offset`, but tool schemas did not expose `offset`/`limit` and Execute methods ignored them. This created a prompt-schema-code mismatch. Cursor-based pagination resolves this by providing functional LLM-driven navigation without exposing implementation details.
+- **Tool schema changes**: Both `list_available_actions` and `list_workflows` schemas gain optional `page` (enum: "next", "previous") and `cursor` (opaque string) properties. `offset`/`limit` are NOT exposed to the LLM.
+- **Response changes**: DS `PaginationMetadata` (totalCount, offset, limit, hasMore) is transformed at the tool layer into LLM-facing format: `hasNext`/`nextCursor` and `hasPrevious`/`previousCursor`. `totalCount` is never exposed. Single-page responses have pagination stripped entirely.
+- **Prompt changes**: Templates updated from "call again with increased `offset`" to "call again with `page: next` and the `cursor` value".
+- **DataStorage unchanged**: DS endpoints, SQL, and ParsePagination remain identical. The cursor-to-offset translation is performed entirely in the KA tool layer.
+- **Security**: Cursor is base64-URL encoded JSON `{"o":offset,"l":limit}`. Not integrity-protected; DS server-side ParsePagination clamps all values (offset<0→0, limit cap 100). Agent-side DecodeCursor mirrors these clamps.
 
 ### Version 1.3 (2026-04-01)
 - **Issue #595**: Severity, environment, and priority array branch SQL filters updated to case-insensitive matching. JSONB `?` operator replaced with `EXISTS/jsonb_array_elements_text/LOWER`. Priority scalar branch now uses `LOWER()` for consistency. Wildcard `'*'` matching unchanged.
@@ -363,10 +372,12 @@ A new HAPI MCP tool that returns the action types available for the current sign
 | `priority` | string | Yes | SP status | Business priority (P0, P1, P2, P3) |
 | `custom_labels` | object | No | SP status (Rego) | Operator-defined labels (e.g., `{"constraint": ["cost-constrained"], "team": ["name=payments"]}`) |
 | `detected_labels` | object | No | SP status | Auto-detected labels (e.g., `{"gitOpsManaged": true, "pdbProtected": true}`) |
-| `offset` | integer | No | LLM | Pagination offset (default: 0). Set to retrieve subsequent pages. |
-| `limit` | integer | No | LLM | Page size (default: 10). |
+| `page` | string | No | LLM | Navigation direction: `"next"` or `"previous"`. Omit on first call. |
+| `cursor` | string | No | LLM | Opaque cursor token from a previous response's `nextCursor` or `previousCursor`. Required when `page` is set. |
 
-**Note**: All parameters except `offset` and `limit` are auto-populated from the SP signal context. The LLM does not need to determine them. The filter set must match the same criteria used by `get_workflow` (minus `action_type`, which is what this tool discovers) to ensure every returned action type has at least one matching workflow when the full filters are applied.
+**Note**: All parameters except `page` and `cursor` are auto-populated from the SP signal context. The LLM does not need to determine them. The filter set must match the same criteria used by `get_workflow` (minus `action_type`, which is what this tool discovers) to ensure every returned action type has at least one matching workflow when the full filters are applied.
+
+**Pagination (v1.4)**: The LLM does not see raw `offset`, `limit`, or `totalCount`. Instead, when more pages exist, the response includes opaque cursor tokens for navigation. The tool layer translates cursors to `offset`/`limit` for the DataStorage API call. On first call, omit `page`/`cursor` to start from the beginning. See "Cursor-Based LLM Pagination" section below.
 
 **Response**:
 
@@ -409,6 +420,34 @@ A new HAPI MCP tool that returns the action types available for the current sign
 }
 ```
 
+**LLM-Facing Response (v1.4)**: The tool layer transforms the above DS response before returning to the LLM. When all results fit in one page (`has_more: false`, `offset: 0`), the `pagination` block is stripped entirely. When multiple pages exist, the response uses cursor-based navigation:
+
+```json
+{
+  "available_actions": [ ... ],
+  "signal_context": { ... },
+  "pagination": {
+    "hasNext": true,
+    "nextCursor": "eyJvIjoxMCwibCI6MTB9"
+  }
+}
+```
+
+On subsequent pages (offset > 0, hasMore still true):
+
+```json
+{
+  "pagination": {
+    "hasNext": true,
+    "nextCursor": "eyJvIjoyMCwibCI6MTB9",
+    "hasPrevious": true,
+    "previousCursor": "eyJvIjowLCJsIjoxMH0"
+  }
+}
+```
+
+`totalCount`, `offset`, and `limit` are never exposed to the LLM.
+
 **Note**: This response contains only action type taxonomy data (static, structured descriptions) and a `workflow_count` indicating how many workflows are available for each type. No workflow-level details are included -- the LLM uses this clean, consistent information to decide which action type fits the root cause. After selecting an action type, the LLM calls `list_workflows` to see the available workflows.
 
 **LLM-Rendered Format** (how the tool presents it to the LLM, optional fields omitted when absent):
@@ -427,14 +466,14 @@ Available actions for severity=critical, component=deployment, environment=produ
    - Requires: Container is actively CPU-throttled, CPU usage consistent with legitimate workload.
 ```
 
-When more action types are available than fit in one page:
+When more action types are available than fit in one page (v1.4 cursor-based):
 
 ```
-Available actions for severity=critical, component=deployment, environment=production (showing 1-10 of 14):
+Available actions for severity=critical, component=deployment, environment=production:
 
 ... (action types with taxonomy descriptions) ...
 
-[4 more action types available - call list_available_actions with offset=10 to see next page]
+[More action types available - call list_available_actions with page="next" and cursor="<nextCursor value>" to see next page]
 ```
 
 ### Action Type Taxonomy Table
@@ -483,6 +522,8 @@ ALTER TABLE remediation_workflow_catalog
 | `detected_labels` | JSON string | No | `{"gitOpsManaged":true,"pdbProtected":true}` |
 | `offset` | integer | No | `0` (default) |
 | `limit` | integer | No | `10` (default) |
+
+**Note (v1.4)**: `offset` and `limit` remain as DS HTTP query parameters. The KA tool layer translates cursor tokens to these values before calling the DS API. The LLM never sees or sets these directly.
 
 **Example request**:
 
@@ -564,10 +605,12 @@ After the LLM selects an action type from `list_available_actions`, it calls `li
 | `priority` | string | Yes | SP status | Business priority (same as list_available_actions) |
 | `custom_labels` | object | No | SP status (Rego) | Operator-defined labels (same as list_available_actions) |
 | `detected_labels` | object | No | SP status | Auto-detected labels (same as list_available_actions) |
-| `offset` | integer | No | LLM | Pagination offset (default: 0) |
-| `limit` | integer | No | LLM | Page size (default: 10) |
+| `page` | string | No | LLM | Navigation direction: `"next"` or `"previous"`. Omit on first call. |
+| `cursor` | string | No | LLM | Opaque cursor token from a previous response's `nextCursor` or `previousCursor`. Required when `page` is set. |
 
-**Note**: All parameters except `action_type`, `offset`, and `limit` are auto-populated from the SP signal context. The same context filters are applied to ensure only workflows matching the current signal context are returned.
+**Note**: All parameters except `action_type`, `page`, and `cursor` are auto-populated from the SP signal context. The same context filters are applied to ensure only workflows matching the current signal context are returned.
+
+**Pagination (v1.4)**: Same cursor-based mechanism as `list_available_actions`. See "Cursor-Based LLM Pagination" section.
 
 **Response**:
 
@@ -593,10 +636,23 @@ After the LLM selects an action type from `list_available_actions`, it calls `li
 }
 ```
 
+**LLM-Facing Response (v1.4)**: Same cursor-based transformation as `list_available_actions`. When all workflows fit in one page, `pagination` is stripped. When more exist:
+
+```json
+{
+  "action_type": "ScaleReplicas",
+  "workflows": [ ... ],
+  "pagination": {
+    "hasNext": true,
+    "nextCursor": "eyJvIjoxMCwibCI6MTB9"
+  }
+}
+```
+
 **LLM-Rendered Format**:
 
 ```
-Workflows for ScaleReplicas (showing 1-2 of 2):
+Workflows for ScaleReplicas:
 
 1. wf-scale-conservative-001
    Percentage-based replica scaling with a configurable upper bound. Conservative approach suitable for stateful workloads where gradual capacity increases are preferred.
@@ -629,6 +685,8 @@ IMPORTANT: Review ALL workflows above before selecting. Do not select the first 
 | `detected_labels` | JSON string | No | `{"gitOpsManaged":true}` |
 | `offset` | integer | No | `0` (default) |
 | `limit` | integer | No | `10` (default) |
+
+**Note (v1.4)**: Same as `list_available_actions` — `offset`/`limit` remain DS query parameters, translated from cursor tokens by the KA tool layer.
 
 **SQL**:
 
@@ -785,6 +843,66 @@ No pagination needed -- this always returns exactly one workflow or an error if 
 
 ---
 
+## Cursor-Based LLM Pagination (v1.4)
+
+### Motivation
+
+Prior to v1.4, the DD specified raw `offset`/`limit` as LLM-facing tool parameters. However:
+1. The tool schemas did not expose `offset`/`limit` to the LLM
+2. The Execute methods did not parse or forward `offset`/`limit` from tool arguments
+3. Prompt templates instructed the LLM to "call again with increased offset"
+
+This created a **prompt-schema-code mismatch** where the LLM was told to paginate but had no mechanism to do so. Cursor-based pagination resolves this by providing a functional, opaque navigation interface.
+
+### Design
+
+**Principles**:
+- The LLM sees `page` ("next" / "previous") and `cursor` (opaque token), never raw offsets or counts
+- `totalCount` is never exposed, preventing the LLM from calculating total pages or over-paginating
+- `hasNext` is omitted on the last page; `hasPrevious` is omitted on the first page — the LLM only sees navigation options that are valid
+- Single-page responses have `pagination` stripped entirely — zero cognitive load for the common case
+- DataStorage endpoints and SQL remain unchanged; cursor-to-offset translation happens in the KA tool layer
+
+**Cursor format**: Base64-URL encoded JSON `{"o": <offset>, "l": <limit>}`. Not integrity-protected; DS server-side `ParsePagination` clamps all values. Agent-side `DecodeCursor` mirrors these clamps for defense-in-depth.
+
+### Tool Schema (LLM-facing)
+
+Both `list_available_actions` and `list_workflows` accept:
+
+```json
+{
+  "page": { "type": "string", "enum": ["next", "previous"], "description": "Navigation direction. Omit on first call." },
+  "cursor": { "type": "string", "description": "Opaque cursor from previous response. Required when page is set." }
+}
+```
+
+### Response Transformation
+
+The tool layer performs the following transformation on DS responses:
+
+| DS Response State | LLM-Facing Output |
+|-------------------|-------------------|
+| offset=0, hasMore=false | Strip `pagination` entirely |
+| offset=0, hasMore=true | `{hasNext: true, nextCursor: encode(offset+limit, limit)}` |
+| offset>0, hasMore=true | `{hasNext: true, nextCursor: ..., hasPrevious: true, previousCursor: encode(max(0, offset-limit), limit)}` |
+| offset>0, hasMore=false | `{hasPrevious: true, previousCursor: encode(max(0, offset-limit), limit)}` |
+
+### Prompt Instructions (v1.4)
+
+Templates updated from:
+> CRITICAL: If `pagination.hasMore` is true, call again with increased `offset` to review ALL workflows.
+
+To:
+> CRITICAL: If the response includes `pagination.hasNext`, call the tool again with `page: "next"` and `cursor` set to the `nextCursor` value to review ALL results.
+
+### Security Considerations
+
+- **Tampered cursors**: LLM may craft arbitrary cursor values. `DecodeCursor` validates and clamps (offset >= 0, 0 < limit <= 100). DS `ParsePagination` provides a second layer of clamping.
+- **DoS via large offsets**: Capped by anomaly detector's `MaxToolCallsPerTool` (default 5), limiting practical max offset to 50 items. Catalog data is small (10 action types, ~10s of workflows per type).
+- **Cursor opacity**: Base64 is encoding, not encryption. Cursor contents are not secret — the trust boundary is server-side validation, not encoding.
+
+---
+
 ## LLM Three-Step Workflow Discovery Protocol
 
 ### Sequence
@@ -798,13 +916,13 @@ No pagination needed -- this always returns exactly one workflow or an error if 
 4. IF problem identified and needs remediation:
    a. LLM calls list_available_actions(severity, component, environment, priority, ...)
       -> HAPI queries DS, returns action types with taxonomy descriptions (clean, static data)
-      -> Paginated (default 10 action types per page)
-      -> If has_more=true and no action fits, LLM may request next page
+      -> Paginated (default 10 action types per page, cursor-based navigation v1.4)
+      -> If response includes hasNext, LLM may call again with page="next" and cursor
    b. LLM selects action_type based on root cause + taxonomy descriptions
       -> MUST select from returned list; if none fit, report no_matching_workflows
    c. LLM calls list_workflows(action_type, severity, component, environment, priority, ...)
       -> HAPI queries DS, returns all matching workflows for that action type
-      -> Paginated (default 10 workflows per page)
+      -> Paginated (default 10 workflows per page, cursor-based navigation v1.4)
       -> LLM MUST read ALL listed workflows before selecting one
    d. LLM selects workflow_id based on root cause + per-workflow descriptions
       -> MUST select from returned list; if none fit, report no_matching_workflows
