@@ -25,16 +25,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
@@ -53,6 +49,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
@@ -110,7 +107,16 @@ func main() {
 	}
 
 	if cfg.LLM.APIKey == "" {
-		cfg.LLM.APIKey = resolveCredentialsFile(cfg.LLM.Provider, slogger)
+		const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
+		cfg.LLM.APIKey = credentials.ResolveCredentialsFile(cfg.LLM.Provider, credDir, slogger)
+	}
+
+	switch cfg.LLM.Provider {
+	case "vertex", "vertex_ai":
+		if cfg.LLM.APIKey == "" {
+			slogger.Warn("GCP provider configured without credentials — requests will use ambient ADC if available",
+				"provider", cfg.LLM.Provider)
+		}
 	}
 
 	if cfg.LLM.OAuth2.Enabled {
@@ -466,26 +472,16 @@ func buildLLMProviderOptions(cfg *kaconfig.Config) []langchaingo.Option {
 // Layers are applied inside-out: the innermost transport (DefaultTransport)
 // handles the actual HTTP call, and outer layers intercept/decorate.
 //
-// Chain: StructuredOutputTransport? → AuthHeadersTransport? → OAuth2Transport? → GCPAuth? → http.DefaultTransport
+// GCP providers (vertex, vertex_ai) handle their own auth internally —
+// credentials are passed via the adapter constructor, not through the shared
+// transport chain. This avoids coupling GCP auth with generic transport layers.
+//
+// Chain: StructuredOutputTransport? → AuthHeadersTransport? → OAuth2Transport? → http.DefaultTransport
 //
 // Returns nil when no custom transports are needed (caller uses provider defaults).
 func buildTransportChain(cfg *kaconfig.Config) http.RoundTripper {
 	var base http.RoundTripper = http.DefaultTransport
 	needsCustom := false
-
-	// GCP Bearer-token transport for vertex_ai: reads SA key JSON from config
-	// (populated by resolveCredentialsFile from the Helm-mounted secret).
-	if cfg.LLM.Provider == "vertex_ai" && cfg.LLM.APIKey != "" {
-		creds, err := google.CredentialsFromJSON(
-			context.Background(),
-			[]byte(cfg.LLM.APIKey),
-			"https://www.googleapis.com/auth/cloud-platform",
-		)
-		if err == nil {
-			base = &oauth2.Transport{Source: creds.TokenSource, Base: base}
-			needsCustom = true
-		}
-	}
 
 	if cfg.LLM.OAuth2.Enabled {
 		base = llmtransport.NewOAuth2ClientCredentialsTransport(cfg.LLM.OAuth2, base)
@@ -511,96 +507,6 @@ func buildTransportChain(cfg *kaconfig.Config) http.RoundTripper {
 	return base
 }
 
-// resolveCredentialsFile reads the LLM API key from the Helm-mounted credentials
-// directory (/etc/kubernaut-agent/credentials/). The Helm chart mounts the
-// credentialsSecretName as a volume; each secret key becomes a file.
-// Providers use different env-var names (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.),
-// so we try the provider-specific key first, then fall back to any single file.
-//
-// For GCP providers (vertex, vertex_ai), the file content may be either:
-//   - The actual credentials JSON (service_account or authorized_user)
-//   - A file path pointing to the real credentials JSON (#686)
-//
-// When the content looks like a path rather than JSON, the function follows
-// the indirection and reads the target file.
-func resolveCredentialsFile(provider string, logger *slog.Logger) string {
-	const credDir = "/etc/kubernaut-agent/credentials"
-
-	providerKeyFiles := map[string]string{
-		"openai":      "OPENAI_API_KEY",
-		"anthropic":   "ANTHROPIC_API_KEY",
-		"mistral":     "MISTRAL_API_KEY",
-		"huggingface": "HUGGINGFACEHUB_API_TOKEN",
-		"vertex":      "GOOGLE_APPLICATION_CREDENTIALS",
-		"vertex_ai":   "GOOGLE_APPLICATION_CREDENTIALS",
-	}
-
-	if keyFile, ok := providerKeyFiles[provider]; ok {
-		path := filepath.Join(credDir, keyFile)
-		if data, err := os.ReadFile(path); err == nil {
-			key := strings.TrimSpace(string(data))
-			if key != "" {
-				key = resolveGCPCredentialIndirection(provider, key, logger)
-				logger.Info("resolved LLM API key from credentials file", "path", path)
-				return key
-			}
-		}
-	}
-
-	entries, err := os.ReadDir(credDir)
-	if err != nil {
-		return ""
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		path := filepath.Join(credDir, e.Name())
-		if data, readErr := os.ReadFile(path); readErr == nil {
-			key := strings.TrimSpace(string(data))
-			if key != "" {
-				logger.Info("resolved LLM API key from credentials file (fallback)", "path", path)
-				return key
-			}
-		}
-	}
-	return ""
-}
-
-// resolveGCPCredentialIndirection handles the case where the mounted
-// GOOGLE_APPLICATION_CREDENTIALS file contains a path to the real
-// credentials JSON rather than the JSON itself (#686). This happens
-// when the Secret key stores a path string (e.g.
-// "/etc/kubernaut-agent/credentials/application_default_credentials.json") // pre-commit:allow-sensitive (doc example)
-// and the actual credentials (service_account or authorized_user with
-// refresh_token) are in a sibling file.
-func resolveGCPCredentialIndirection(provider, content string, logger *slog.Logger) string {
-	switch provider {
-	case "vertex", "vertex_ai":
-	default:
-		return content
-	}
-
-	if json.Valid([]byte(content)) {
-		return content
-	}
-
-	// Content is not JSON — treat as a file path.
-	target := strings.TrimSpace(content)
-	data, err := os.ReadFile(target)
-	if err != nil {
-		logger.Warn("GCP credentials file contains a path but target is unreadable",
-			"path", target, "error", err)
-		return content
-	}
-
-	resolved := strings.TrimSpace(string(data))
-	if resolved == "" {
-		return content
-	}
-	logger.Info("followed GCP credential path indirection", "target", target)
-	return resolved
-}
 
 // buildAuditStore creates a BufferedDSAuditStore (DD-AUDIT-002 aligned) when audit
 // is enabled and DS is available, falling back to NopAuditStore otherwise.

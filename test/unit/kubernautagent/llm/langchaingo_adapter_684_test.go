@@ -44,27 +44,20 @@ var _ = Describe("Vertex AI + Claude Adapter — #684", func() {
 			var _ llm.Client = adapter
 		})
 
-		It("UT-KA-684-102: existing vertex (Gemini) provider still works", func() {
+		It("UT-KA-684-102: existing vertex (Gemini) provider still works with credentials JSON", func() {
 			_, thisFile, _, _ := runtime.Caller(0)
 			fixturesDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "fixtures")
 			credPath := filepath.Join(fixturesDir, "gcp-mock-credentials.json")
 			Expect(credPath).To(BeAnExistingFile())
 
-			origCreds := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-			os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credPath)
-			DeferCleanup(func() {
-				if origCreds == "" {
-					os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
-				} else {
-					os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", origCreds)
-				}
-			})
+			credJSON, err := os.ReadFile(credPath)
+			Expect(err).NotTo(HaveOccurred())
 
-			adapter, err := langchaingo.New("vertex", "", "gemini-1.5-pro", "",
+			adapter, adapterErr := langchaingo.New("vertex", "", "gemini-1.5-pro", string(credJSON),
 				langchaingo.WithVertexProject("my-project"),
 				langchaingo.WithVertexLocation("us-central1"),
 			)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(adapterErr).NotTo(HaveOccurred())
 			Expect(adapter).NotTo(BeNil())
 		})
 

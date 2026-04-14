@@ -68,8 +68,9 @@ func WithBedrockRegion(r string) Option {
 }
 
 // WithHTTPClient sets a custom HTTP client for providers that support it
-// (currently Anthropic). Used to chain transports for structured output
-// injection and auth header passthrough.
+// (Anthropic and vertex_ai). Used to chain transports for structured output
+// injection and auth header passthrough. For vertex_ai, GCP OAuth2 auth is
+// layered on top of the provided transport internally by the shim.
 func WithHTTPClient(c *http.Client) Option {
 	return func(o *options) { o.httpClient = c }
 }
@@ -122,13 +123,18 @@ func newModel(provider, endpoint, model, apiKey string, o *options) (llms.Model,
 		if o.vertexProject == "" {
 			return nil, fmt.Errorf("vertex provider requires project (use WithVertexProject)")
 		}
-		return vertex.New(context.Background(),
+		vopts := []googleai.Option{
 			googleai.WithCloudProject(o.vertexProject),
 			googleai.WithCloudLocation(o.vertexLocation),
 			googleai.WithDefaultModel(model),
-		)
+		}
+		if apiKey != "" {
+			vopts = append(vopts, googleai.WithCredentialsJSON([]byte(apiKey)))
+		}
+		return vertex.New(context.Background(), vopts...)
 	case "vertex_ai":
-		return newVertexAnthropicModel(o.vertexProject, o.vertexLocation, model, endpoint, o.httpClient)
+		return newVertexAnthropicModel(o.vertexProject, o.vertexLocation, model, endpoint,
+			[]byte(apiKey), o.httpClient)
 	case "anthropic":
 		aopts := []anthropic.Option{anthropic.WithModel(model), anthropic.WithToken(apiKey)}
 		if endpoint != "" {

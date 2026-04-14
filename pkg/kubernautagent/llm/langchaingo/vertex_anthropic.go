@@ -26,6 +26,8 @@ import (
 	"strings"
 
 	"github.com/tmc/langchaingo/llms"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 // vertexAnthropicModel implements llms.Model for Claude models hosted on
@@ -33,9 +35,11 @@ import (
 // to Anthropic Messages API format, sends the request to the Vertex AI
 // rawPredict endpoint, and parses the Anthropic response back.
 //
-// Auth is handled by the caller via the injected http.Client (e.g. GCP
-// OAuth2 transport wired in main.go from config). The shim never resolves
-// credentials itself — it uses whatever client it receives.
+// Auth is handled internally: the constructor accepts credentialsJSON (from the
+// resolved GOOGLE_APPLICATION_CREDENTIALS file) and layers a GCP OAuth2 Bearer
+// token transport on top of any base transport provided by httpClient (which
+// may carry StructuredOutputTransport, custom headers, etc.).
+//
 // Endpoint: {baseURL}/v1/projects/{project}/locations/{location}/publishers/anthropic/models/{model}:rawPredict
 type vertexAnthropicModel struct {
 	project  string
@@ -45,7 +49,7 @@ type vertexAnthropicModel struct {
 	client   *http.Client
 }
 
-func newVertexAnthropicModel(project, location, model, baseURL string, httpClient ...*http.Client) (*vertexAnthropicModel, error) {
+func newVertexAnthropicModel(project, location, model, baseURL string, credentialsJSON []byte, httpClient *http.Client) (*vertexAnthropicModel, error) {
 	if project == "" {
 		return nil, fmt.Errorf("vertex_ai provider requires project (use WithVertexProject)")
 	}
@@ -56,9 +60,21 @@ func newVertexAnthropicModel(project, location, model, baseURL string, httpClien
 		baseURL = fmt.Sprintf("https://%s-aiplatform.googleapis.com", location) // pre-commit:allow-sensitive (GCP endpoint pattern)
 	}
 
-	client := http.DefaultClient
-	if len(httpClient) > 0 && httpClient[0] != nil {
-		client = httpClient[0]
+	var base http.RoundTripper = http.DefaultTransport
+	if httpClient != nil && httpClient.Transport != nil {
+		base = httpClient.Transport
+	}
+
+	trimmedCreds := bytes.TrimSpace(credentialsJSON)
+	if len(trimmedCreds) > 0 {
+		creds, err := google.CredentialsFromJSON(
+			context.Background(), trimmedCreds,
+			"https://www.googleapis.com/auth/cloud-platform",
+		)
+		if err != nil {
+			return nil, fmt.Errorf("vertex_ai: invalid credentials JSON: %w", err)
+		}
+		base = &oauth2.Transport{Source: creds.TokenSource, Base: base}
 	}
 
 	return &vertexAnthropicModel{
@@ -66,7 +82,7 @@ func newVertexAnthropicModel(project, location, model, baseURL string, httpClien
 		location: location,
 		model:    model,
 		baseURL:  strings.TrimRight(baseURL, "/"),
-		client:   client,
+		client:   &http.Client{Transport: base},
 	}, nil
 }
 
@@ -107,7 +123,12 @@ func (m *vertexAnthropicModel) GenerateContent(ctx context.Context, messages []l
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("vertex_ai: HTTP %d: %s", httpResp.StatusCode, string(respBytes))
+		body := respBytes
+		const maxErrBody = 512
+		if len(body) > maxErrBody {
+			body = body[:maxErrBody]
+		}
+		return nil, fmt.Errorf("vertex_ai: HTTP %d: %s", httpResp.StatusCode, string(body))
 	}
 
 	return m.parseAnthropicResponse(respBytes)
