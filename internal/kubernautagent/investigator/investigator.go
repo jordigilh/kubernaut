@@ -156,6 +156,10 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		promptEnrichment = toPromptEnrichment(enrichData)
 	}
 
+	if inv.pipeline.AnomalyDetector != nil {
+		inv.pipeline.AnomalyDetector.Reset()
+	}
+
 	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, promptEnrichment, tokens, correlationID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
