@@ -99,8 +99,11 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 		}
 		vertexOpt = vertex.WithCredentials(ctx, location, project, creds)
 	} else {
-		vertexOpt = vertex.WithGoogleAuth(ctx, location, project,
-			"https://www.googleapis.com/auth/cloud-platform")
+		var adcErr error
+		vertexOpt, adcErr = safeWithGoogleAuth(ctx, location, project)
+		if adcErr != nil {
+			return nil, adcErr
+		}
 	}
 
 	sdkOpts := []option.RequestOption{vertexOpt}
@@ -245,6 +248,20 @@ func (c *Client) mapResponse(msg *anthropic.Message) llm.ChatResponse {
 	resp.Message.ToolCalls = resp.ToolCalls
 
 	return resp
+}
+
+// safeWithGoogleAuth wraps vertex.WithGoogleAuth with panic recovery because
+// the SDK panics (rather than returning an error) when GCP Application Default
+// Credentials are unavailable.
+func safeWithGoogleAuth(ctx context.Context, location, project string) (opt option.RequestOption, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("vertexanthropic: GCP ADC unavailable — set GOOGLE_APPLICATION_CREDENTIALS or provide explicit credentials JSON: %v", r)
+		}
+	}()
+	opt = vertex.WithGoogleAuth(ctx, location, project,
+		"https://www.googleapis.com/auth/cloud-platform")
+	return opt, nil
 }
 
 var _ llm.Client = (*Client)(nil)

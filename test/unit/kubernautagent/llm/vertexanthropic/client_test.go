@@ -18,10 +18,17 @@ package vertexanthropic_test
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,9 +39,59 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
 )
 
+// generateFakeServiceAccountJSON builds a GCP service account credential blob
+// with a real RSA-2048 key so that the SDK's JWT-signing transport works in
+// tests. The key is generated fresh each run and never leaves the process.
+func generateFakeServiceAccountJSON() []byte {
+	return generateFakeServiceAccountJSONWithTokenURL("https://oauth2.googleapis.com/token")
+}
+
+func generateFakeServiceAccountJSONWithTokenURL(tokenURL string) []byte {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic(fmt.Sprintf("generate RSA key for test credentials: %v", err))
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	})
+	creds := map[string]string{
+		"type":           "service_account",
+		"project_id":     "test-project",
+		"private_key_id": "key123",
+		"private_key":    string(keyPEM),
+		"client_email":   "test@test-project.iam.gserviceaccount.com",
+		"client_id":      "123456789",
+		"auth_uri":       "https://accounts.google.com/o/oauth2/auth",
+		"token_uri":      tokenURL,
+	}
+	b, _ := json.Marshal(creds)
+	return b
+}
+
 var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 
 	Describe("New() constructor validation", func() {
+		var (
+			fakeCreds []byte
+			origADC   string
+		)
+
+		BeforeEach(func() {
+			fakeCreds = generateFakeServiceAccountJSON()
+			origADC = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+			adcPath := filepath.Join(GinkgoT().TempDir(), "adc.json")
+			Expect(os.WriteFile(adcPath, fakeCreds, 0600)).To(Succeed())
+			Expect(os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", adcPath)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			if origADC != "" {
+				os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", origADC)
+			} else {
+				os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
+			}
+		})
 
 		It("UT-VA-686-001: returns error when project is empty", func() {
 			client, err := vertexanthropic.New(context.Background(),
@@ -60,18 +117,8 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 		})
 
 		It("UT-VA-686-004: accepts valid service account credentials JSON", func() {
-			creds := `{
-				"type": "service_account",
-				"project_id": "test-project",
-				"private_key_id": "key123",
-				"private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA2a2rwplBQXWOijvBPSFsFullGP0mMz2LSBEqkbwC3TVqAzjN\nEBRPNVGGFBOBNkN8eFNSGjmhkqOBEN7eY3aBkDiCJiS5YzFkJp3KLNjZFJnHCbW\nMSCMGzZ5dTBqDEPbRfidYnmy8s4RloGcBOjiMVFLpCn2VK0TJXNB5dJ8xBDCnqO\nNHY6OkOKiYarFBBGbIneWfJcJMOJJa7wC1DRCFPSNM4NjOLVfV9tMMR5pR3HYTQ6\nvQfhipT9PTG0IOAZBjWKFg3HnNpSjvNL4y3/2YN3GBIycT1Bo6fJaSTn3oUEfzMk\nqKsNf6MKbx49mCZbq1UGAsgiVSfbGS2Zpy0w1QIDAQABAoIBADqT1tTjJLp8qlBx\nmYiDAH1fACEaGkuHmIA4FDdYPKJk36pASph7BOjE/5KL6DBRLHP2bLcpBR4NClsM\nR9MUDv8v7RFf+JI2pCLtFa4M+YrGOPfr0v2M32o4FvYGKAnfVnfWxgx3g5m6MPDI\nz6MHxLAileZvy0zLNUWPF/5P/gEB7PdL0z1p1mNqBJiDydOsAW3DxjLj0j5T+HFO\niOYRLiGpRC+NNb9PPXK/0XNaiLIqPzYqcY2YIhnRKvU3hXPBFa7Gf/eMK3XLjJen\nhBs8SbVX2PjQ/Y4T7v7K6/4SJdMh1QW2JqWb/HfFRP3BhClmMp4I6cz+VcaGnGMq\ncMDKRoECgYEA7+THK/xHRPV7R0b+TQ6P5wSBfZcP8KGmjjM3jZmV7i+tnP/NGBM\nRAMSqimqpuyGk4mHFGocLxpJMIDWR/38/M7etsRU9LdI4+BOSVqy6pFM+g2ilt/1\nfJQIFMHJR7QIOHFYnQiNMNQafGV/WzRrp6l0kt6/kklEJ3PKsunMHSUCgYEA6J2W\nSCJzMAbMWP0maYcV/hIJDST6u4sFi2vBbjm+AcXGF7KcNPLqRB/05OgFnyK5FBwn\nzEGqYnkshFJOYQ/c9zBJpAy3UA0NqCVo/aGkZaFo9ql9qhqjkn3BZNkWmzq7zUL\nYDwRfT0mjS4YoNfPqsz5J/g7rl6LMqSP6EVKX0ECgYAPS44w+gJJWJTR9y/Cixbb\nSG8zVPOBZ6UGvZuj8DOmNmq+bgSJPK/a+EIRvwCWKOjf7eP7HBnQXqB88oqXEIF\nkGaJFTqiPkhqrTZ/CLqCB/MsLp7pNr8/QdqOkF3oIfFM3KJ/tIMLDl0uwR6SlCVs\nIQC5GBL/5XT0q3IqJkUfaQKBgG5RAZp+M/QbtVCPXMqFMl03JVE3PavtGP1dUB+j\ncg7h/cYaAYr+3G2cS5LAnGbnmfCWLv7IhmhVzXHRLgFX2uGxGBsOMwJde7z0xU3f\nZ8/rVxleXQRbqVB/GZE8JpfbPTFCw/r15bz3mfPOtv7GP9WLxmnEjVJOxSZ6Gx0f\nxLYBAoGBAMSqcnQeJ+fli/Q9Wx9Mi9F8RvUv/BoN/3iPC0LGK5TlOjfYFdl6QVhi\n6h0tXm7ikLl7Mi4UsPkQSkJLwSe3HKcOwL3qdEOz98gm/REAK+bqoA9fHDSwl0oH\nK1u8/b3Mu7j7FHQKQixWERr6E6OaYG/2RJVsF7j8AKePR3AvLnfM\n-----END RSA PRIVATE KEY-----\n",
-				"client_email": "test@test-project.iam.gserviceaccount.com",
-				"client_id": "123456789",
-				"auth_uri": "https://accounts.google.com/o/oauth2/auth",
-				"token_uri": "https://oauth2.googleapis.com/token"
-			}`
 			client, err := vertexanthropic.New(context.Background(),
-				"claude-sonnet-4-6", []byte(creds), "my-project", "us-central1")
+				"claude-sonnet-4-6", fakeCreds, "my-project", "us-central1")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(client).NotTo(BeNil())
 		})
@@ -100,18 +147,30 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 
 	Describe("Chat() request/response mapping", func() {
 		var (
-			server *httptest.Server
-			client *vertexanthropic.Client
+			server     *httptest.Server
+			tokenSrv   *httptest.Server
+			client     *vertexanthropic.Client
+			fakeCreds  []byte
+			makeClient func(http.HandlerFunc)
 		)
 
-		makeClient := func(handler http.HandlerFunc) {
+		// makeClient spins up an httptest server for the Vertex AI endpoint and a
+		// separate token server that satisfies the OAuth2 JWT exchange. The fake
+		// service account credentials reference the token server's URL so the SDK
+		// obtains a Bearer token without hitting real GCP.
+		makeClient = func(handler http.HandlerFunc) {
+			tokenSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"access_token":"fake-token","token_type":"Bearer","expires_in":3600}`))
+			}))
+			fakeCreds = generateFakeServiceAccountJSONWithTokenURL(tokenSrv.URL)
+
 			server = httptest.NewServer(handler)
 			var err error
 			client, err = vertexanthropic.New(context.Background(),
-				"claude-sonnet-4-6", nil, "my-project", "us-central1",
+				"claude-sonnet-4-6", fakeCreds, "my-project", "us-central1",
 				vertexanthropic.WithSDKOptions(
 					option.WithBaseURL(server.URL),
-					option.WithAPIKey("test-key"),
 				),
 			)
 			Expect(err).NotTo(HaveOccurred())
@@ -120,6 +179,9 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 		AfterEach(func() {
 			if server != nil {
 				server.Close()
+			}
+			if tokenSrv != nil {
+				tokenSrv.Close()
 			}
 		})
 
