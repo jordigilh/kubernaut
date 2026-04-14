@@ -91,7 +91,11 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 
 	trimmed := bytes.TrimSpace(credentialsJSON)
 	if len(trimmed) > 0 {
-		creds, err := google.CredentialsFromJSON(ctx, trimmed,
+		credType, err := validateCredentialType(trimmed)
+		if err != nil {
+			return nil, err
+		}
+		creds, err := google.CredentialsFromJSONWithType(ctx, trimmed, credType,
 			"https://www.googleapis.com/auth/cloud-platform",
 		)
 		if err != nil {
@@ -248,6 +252,32 @@ func (c *Client) mapResponse(msg *anthropic.Message) llm.ChatResponse {
 	resp.Message.ToolCalls = resp.ToolCalls
 
 	return resp
+}
+
+// allowedCredentialTypes lists the GCP credential types that Kubernaut accepts.
+// external_account and similar types are rejected to prevent loading credentials
+// with attacker-controlled token endpoints (SA1019 mitigation).
+var allowedCredentialTypes = map[google.CredentialsType]bool{
+	google.ServiceAccount: true,
+	google.AuthorizedUser: true,
+}
+
+// validateCredentialType parses the "type" field from the credential JSON and
+// rejects any type not in the allow-list. This replaces the deprecated
+// google.CredentialsFromJSON which loaded any credential type without
+// validation (staticcheck SA1019).
+func validateCredentialType(jsonData []byte) (google.CredentialsType, error) {
+	var f struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(jsonData, &f); err != nil {
+		return "", fmt.Errorf("vertexanthropic: invalid credentials JSON: %w", err)
+	}
+	ct := google.CredentialsType(f.Type)
+	if !allowedCredentialTypes[ct] {
+		return "", fmt.Errorf("vertexanthropic: unsupported credential type %q; only service_account and authorized_user are accepted", f.Type)
+	}
+	return ct, nil
 }
 
 // safeWithGoogleAuth wraps vertex.WithGoogleAuth with panic recovery because

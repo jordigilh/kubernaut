@@ -137,6 +137,31 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 			Expect(client).NotTo(BeNil())
 		})
 
+		It("UT-VA-686-008: rejects external_account credentials (SA1019 mitigation)", func() {
+			externalAccountJSON := []byte(`{
+				"type": "external_account",
+				"audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+				"subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+				"token_url": "https://sts.googleapis.com/v1/token",
+				"credential_source": {"url": "https://attacker.example.com/token"}
+			}`)
+			client, err := vertexanthropic.New(context.Background(),
+				"claude-sonnet-4-6", externalAccountJSON, "my-project", "us-central1")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unsupported credential type"))
+			Expect(err.Error()).To(ContainSubstring("external_account"))
+			Expect(client).To(BeNil())
+		})
+
+		It("UT-VA-686-009: rejects credentials with unknown type field", func() {
+			unknownJSON := []byte(`{"type": "weird_unknown_type", "token": "x"}`)
+			client, err := vertexanthropic.New(context.Background(),
+				"claude-sonnet-4-6", unknownJSON, "my-project", "us-central1")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unsupported credential type"))
+			Expect(client).To(BeNil())
+		})
+
 		It("UT-VA-686-007: implements llm.Client interface", func() {
 			client, err := vertexanthropic.New(context.Background(),
 				"claude-sonnet-4-6", nil, "my-project", "us-central1")
