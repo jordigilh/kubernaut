@@ -3,12 +3,12 @@
 # This single file contains all classification rules for the SignalProcessing controller.
 # Deploy via Helm:
 #   helm install kubernaut kubernaut/kubernaut \
-#     --set-file signalprocessing.policy=signalprocessing-policy.rego
+#     --set-file signalprocessing.policies.content=signalprocessing-policy.rego
 #
 # Or create a ConfigMap and reference it:
 #   kubectl create configmap signalprocessing-policy --from-file=policy.rego=signalprocessing-policy.rego
 #   helm install kubernaut kubernaut/kubernaut \
-#     --set signalprocessing.existingPolicyConfigMap=signalprocessing-policy
+#     --set signalprocessing.policies.existingConfigMap=signalprocessing-policy
 #
 # Input schema (type-safe from Go):
 #   input.namespace.name         string

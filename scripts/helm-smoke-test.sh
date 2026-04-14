@@ -33,6 +33,10 @@ TAP_FAIL=0
 # Port-forward PID tracking
 PF_PID=""
 
+# Rego policy temp files (created in setup_policy_files, cleaned in cleanup)
+POLICY_AA_FILE=""
+POLICY_SP_FILE=""
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -392,6 +396,30 @@ tls_flags() {
   fi
 }
 
+setup_policy_files() {
+  POLICY_AA_FILE=$(mktemp)
+  POLICY_SP_FILE=$(mktemp)
+  cat > "$POLICY_AA_FILE" <<'REGOEOF'
+package aianalysis.approval
+default allow = false
+allow { input.environment != "production" }
+REGOEOF
+  cat > "$POLICY_SP_FILE" <<'REGOEOF'
+package signalprocessing
+default severity = "low"
+severity = "high" { input.labels.severity == "critical" }
+REGOEOF
+}
+
+cleanup_policy_files() {
+  rm -f "$POLICY_AA_FILE" "$POLICY_SP_FILE"
+}
+
+policy_flags() {
+  echo "--set-file aianalysis.policies.content=$POLICY_AA_FILE"
+  echo "--set-file signalprocessing.policies.content=$POLICY_SP_FILE"
+}
+
 production_secret_flags() {
   echo "--set postgresql.auth.existingSecret=kubernaut-pg-credentials"
   echo "--set valkey.existingSecret=kubernaut-valkey-credentials"
@@ -401,6 +429,7 @@ production_secret_flags() {
   echo "--set gateway.auth.signalSources[0].name=alertmanager"
   echo "--set gateway.auth.signalSources[0].serviceAccount=alertmanager-kube-prometheus-stack-alertmanager"
   echo "--set gateway.auth.signalSources[0].namespace=monitoring"
+  policy_flags
 }
 
 # ---------------------------------------------------------------------------
@@ -695,7 +724,7 @@ run_upg_001() {
 run_uninst_001() {
   # The chart's pre-delete hook (webhook-cleanup Job) removes admission webhooks
   # before Helm deletes the release resources, preventing failurePolicy=Fail
-  # rejections when the authwebhook pod terminates before demo-content CRs.
+  # rejections when the authwebhook pod terminates before CRs are cleaned up.
   #
   # Capture pre-uninstall state: if the pre-delete hook hangs (e.g. ImagePullBackOff
   # on bitnami/kubectl), the must-gather taken AFTER timeout won't show the hook pod.
@@ -803,26 +832,34 @@ preload_hook_image() {
   fi
 }
 
-run_verify_demo() {
-  local at_count
-  at_count=$(kubectl get actiontypes -n "$NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ')
-  if [[ "$at_count" -eq 26 ]]; then
-    tap_ok "ST-CHART-VERIFY-DEMO-001: 26 ActionTypes seeded by post-install hook"
+run_verify_policies() {
+  local pass=true
+
+  # ST-CHART-VERIFY-POLICY-001: AI Analysis policy ConfigMap exists with approval.rego key
+  local aia_key
+  aia_key=$(kubectl get configmap aianalysis-policies -n "$NAMESPACE" \
+    -o jsonpath='{.data.approval\.rego}' 2>/dev/null || echo "")
+  if [[ -n "$aia_key" ]]; then
+    tap_ok "ST-CHART-VERIFY-POLICY-001: aianalysis-policies ConfigMap exists with approval.rego"
   else
-    tap_not_ok "ST-CHART-VERIFY-DEMO-001: 26 ActionTypes seeded" \
-      "Found ${at_count} ActionTypes, expected 26"
+    tap_not_ok "ST-CHART-VERIFY-POLICY-001: aianalysis-policies ConfigMap" \
+      "ConfigMap missing or approval.rego key empty"
+    pass=false
   fi
 
-  local rw_count
-  rw_count=$(kubectl get remediationworkflows -n "$NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ')
-  # 22 total workflows, 4 need gitea-repo-creds (skipped without secrets),
-  # and 1 may fail CRD validation intermittently -- threshold is 17.
-  if [[ "$rw_count" -ge 17 ]]; then
-    tap_ok "ST-CHART-VERIFY-DEMO-002: RemediationWorkflows seeded (${rw_count}/22, >=17 without secret deps)"
+  # ST-CHART-VERIFY-POLICY-002: Signal Processing policy ConfigMap exists with policy.rego key
+  local sp_key
+  sp_key=$(kubectl get configmap signalprocessing-policy -n "$NAMESPACE" \
+    -o jsonpath='{.data.policy\.rego}' 2>/dev/null || echo "")
+  if [[ -n "$sp_key" ]]; then
+    tap_ok "ST-CHART-VERIFY-POLICY-002: signalprocessing-policy ConfigMap exists with policy.rego"
   else
-    tap_not_ok "ST-CHART-VERIFY-DEMO-002: RemediationWorkflows seeded" \
-      "Found ${rw_count} workflows, expected >= 17 (up to 5 may be skipped due to missing secrets or validation)"
+    tap_not_ok "ST-CHART-VERIFY-POLICY-002: signalprocessing-policy ConfigMap" \
+      "ConfigMap missing or policy.rego key empty"
+    pass=false
   fi
+
+  $pass
 }
 
 run_edge_001() {
@@ -860,7 +897,7 @@ flow_a_production() {
   run_verify_001 || flow_failed=true
   run_verify_002 || flow_failed=true
   run_verify_003 || flow_failed=true
-  run_verify_demo || flow_failed=true
+  run_verify_policies || flow_failed=true
 
   if [[ "$PLATFORM" == "kind" ]]; then
     run_tls_001
@@ -894,7 +931,7 @@ flow_b_quickstart() {
   run_inst_003 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow B tests"; must_gather "$NAMESPACE" "install-failure"; return 1; }
   run_tls_patch
   run_verify_001 || flow_failed=true
-  run_verify_demo || flow_failed=true
+  run_verify_policies || flow_failed=true
   run_edge_001
 
   if $flow_failed; then
@@ -920,19 +957,6 @@ template_llm_args() {
 }
 
 run_template_tests() {
-  echo "# --- Pre-flight: Demo Content Files ---"
-  local at_count wf_count
-  at_count=$(find "$CHART_PATH/files/demo-content/action-types" -name '*.yaml' 2>/dev/null | wc -l | tr -d ' ')
-  wf_count=$(find "$CHART_PATH/files/demo-content/workflows" -name '*.yaml' 2>/dev/null | wc -l | tr -d ' ')
-  if [[ "$at_count" -gt 0 ]] && [[ "$wf_count" -gt 0 ]]; then
-    tap_ok "ST-PREFLIGHT-001: demo content present (${at_count} ActionTypes, ${wf_count} workflows)"
-  else
-    tap_not_ok "ST-PREFLIGHT-001: demo content files missing" \
-      "Found ${at_count} ActionTypes and ${wf_count} workflows in ${CHART_PATH}/files/demo-content/. Run 'make sync-demo-content' first."
-    echo "Bail out! Demo content required for chart packaging. Run: make sync-demo-content"
-    exit 1
-  fi
-
   echo "# --- Template Tests: Issue #390 ConfigMap Split ---"
   local tpl_flag="-s"
   local tpl_path="templates/kubernaut-agent/kubernaut-agent.yaml"
@@ -985,8 +1009,8 @@ SDKEOF
   fi
 
   # IT-HAPI-390-004: helm lint passes
-  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) >/dev/null 2>&1 && \
-     helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) --set kubernautAgent.existingSdkConfigMap=my-custom >/dev/null 2>&1; then
+  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) >/dev/null 2>&1 && \
+     helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) --set kubernautAgent.existingSdkConfigMap=my-custom >/dev/null 2>&1; then
     tap_ok "IT-HAPI-390-004: helm lint passes for default and existingSdkConfigMap modes"
   else
     tap_not_ok "IT-HAPI-390-004: helm lint" "One or more lint modes failed"
@@ -1064,41 +1088,92 @@ SDKEOF
       "Found runAsUser/runAsGroup: 65534 in rendered templates"
   fi
 
-  # ST-HOOK-TPL-003: hook SA ClusterRole includes kubernaut.ai CRD permissions
-  if echo "$hook_tpl" | grep -q 'kubernaut.ai' && \
-     echo "$hook_tpl" | grep -q 'actiontypes' && \
-     echo "$hook_tpl" | grep -q 'remediationworkflows'; then
-    tap_ok "ST-HOOK-TPL-003: hook SA ClusterRole has kubernaut.ai AT/RW permissions"
+  echo "# --- Template Tests: Rego Policy Mandatory Validation ---"
+
+  local aia_tpl sp_tpl
+
+  # ST-POLICY-001: Template fails when no policies are provided
+  aia_tpl=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) 2>&1)
+  if [[ $? -ne 0 ]] && echo "$aia_tpl" | grep -qE "is required"; then
+    tap_ok "ST-POLICY-001: Template fails when no Rego policies are provided"
   else
-    tap_not_ok "ST-HOOK-TPL-003: hook SA kubernaut.ai permissions" \
-      "ClusterRole missing kubernaut.ai apiGroup or AT/RW resources"
+    tap_not_ok "ST-POLICY-001: mandatory policy validation" \
+      "Template should fail when no policies are provided"
   fi
 
-  # ST-HOOK-TPL-004: demo content renders two ConfigMaps and a Job
-  local demo_tpl
-  demo_tpl=$(helm template test "$CHART_PATH" \
+  # ST-POLICY-002: Template fails with AA policy but without SP policy
+  aia_tpl=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) \
-    -s templates/demo-content/demo-content.yaml 2>&1)
-  if grep -q "name: test-kubernaut-demo-action-types" <<< "$demo_tpl" && \
-     grep -q "name: test-kubernaut-demo-workflows" <<< "$demo_tpl" && \
-     grep -q "name: test-kubernaut-demo-content-seed" <<< "$demo_tpl"; then
-    tap_ok "ST-HOOK-TPL-004: demo content renders 2 ConfigMaps + 1 seed Job"
+    --set-file "aianalysis.policies.content=$POLICY_AA_FILE" 2>&1)
+  if [[ $? -ne 0 ]] && echo "$aia_tpl" | grep -q "signalprocessing.policies.content is required"; then
+    tap_ok "ST-POLICY-002: Template fails when SP policy is missing (AA provided)"
   else
-    tap_not_ok "ST-HOOK-TPL-004: demo content template structure" \
-      "Expected demo-action-types CM, demo-workflows CM, and demo-content-seed Job"
+    tap_not_ok "ST-POLICY-002: SP mandatory policy validation" \
+      "Template should fail with SP required message when only AA policy is provided"
   fi
 
-  # ST-HOOK-TPL-005: demo content disabled renders nothing
-  local demo_off
-  demo_off=$(helm template test "$CHART_PATH" \
+  # ST-POLICY-003: Template fails with SP policy but without AA policy
+  aia_tpl=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) \
-    --set demoContent.enabled=false \
-    -s templates/demo-content/demo-content.yaml 2>&1)
-  if [[ -z "$demo_off" ]] || echo "$demo_off" | grep -q "could not find template"; then
-    tap_ok "ST-HOOK-TPL-005: demoContent.enabled=false renders no demo resources"
+    --set-file "signalprocessing.policies.content=$POLICY_SP_FILE" 2>&1)
+  if [[ $? -ne 0 ]] && echo "$aia_tpl" | grep -q "aianalysis.policies.content is required"; then
+    tap_ok "ST-POLICY-003: Template fails when AA policy is missing (SP provided)"
   else
-    tap_not_ok "ST-HOOK-TPL-005: demoContent disabled" \
-      "Demo content still rendered when demoContent.enabled=false"
+    tap_not_ok "ST-POLICY-003: AA mandatory policy validation" \
+      "Template should fail with AA required message when only SP policy is provided"
+  fi
+
+  # ST-POLICY-004: Both --set-file renders AI Analysis approval policy ConfigMap
+  aia_tpl=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    $(policy_flags) \
+    -s templates/aianalysis/aianalysis.yaml 2>&1)
+  if echo "$aia_tpl" | grep -q "name: aianalysis-policies" && \
+     echo "$aia_tpl" | grep -q "approval.rego"; then
+    tap_ok "ST-POLICY-004: --set-file renders aianalysis-policies ConfigMap with approval.rego"
+  else
+    tap_not_ok "ST-POLICY-004: --set-file AA policy render" \
+      "aianalysis-policies ConfigMap or approval.rego key missing"
+  fi
+
+  # ST-POLICY-005: Both --set-file renders Signal Processing policy ConfigMap
+  sp_tpl=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    $(policy_flags) \
+    -s templates/signalprocessing/signalprocessing.yaml 2>&1)
+  if echo "$sp_tpl" | grep -q "name: signalprocessing-policy" && \
+     echo "$sp_tpl" | grep -q "policy.rego"; then
+    tap_ok "ST-POLICY-005: --set-file renders signalprocessing-policy ConfigMap with policy.rego"
+  else
+    tap_not_ok "ST-POLICY-005: --set-file SP policy render" \
+      "signalprocessing-policy ConfigMap or policy.rego key missing"
+  fi
+
+  # ST-POLICY-006: existingConfigMap skips chart-generated AI Analysis policy ConfigMap
+  aia_tpl=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    --set-file "signalprocessing.policies.content=$POLICY_SP_FILE" \
+    --set "aianalysis.policies.existingConfigMap=my-custom-policies" \
+    -s templates/aianalysis/aianalysis.yaml 2>&1)
+  if ! echo "$aia_tpl" | grep -q "name: aianalysis-policies"; then
+    tap_ok "ST-POLICY-006: existingConfigMap skips chart-generated aianalysis-policies ConfigMap"
+  else
+    tap_not_ok "ST-POLICY-006: existingConfigMap skip" \
+      "aianalysis-policies ConfigMap still rendered when existingConfigMap is set"
+  fi
+
+  # ST-POLICY-007: policies.existingConfigMap skips chart-generated SP policy ConfigMap
+  sp_tpl=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) \
+    --set-file "aianalysis.policies.content=$POLICY_AA_FILE" \
+    --set "signalprocessing.policies.existingConfigMap=my-sp-policy" \
+    -s templates/signalprocessing/signalprocessing.yaml 2>&1)
+  if ! echo "$sp_tpl" | grep -q "name: signalprocessing-policy"; then
+    tap_ok "ST-POLICY-007: policies.existingConfigMap skips chart-generated signalprocessing-policy ConfigMap"
+  else
+    tap_not_ok "ST-POLICY-007: policies.existingConfigMap skip" \
+      "signalprocessing-policy ConfigMap still rendered when policies.existingConfigMap is set"
   fi
 
   echo "# --- Template Tests: GCP Conditional Fields ---"
@@ -1128,6 +1203,8 @@ main() {
   echo "# Chart: ${CHART_PATH}"
   echo "# Namespace: ${NAMESPACE}"
   echo "#"
+
+  setup_policy_files
 
   tap_header
 
@@ -1165,5 +1242,10 @@ main() {
   fi
 }
 
-trap cleanup_port_forward EXIT
+cleanup_all() {
+  cleanup_port_forward
+  cleanup_policy_files
+}
+
+trap cleanup_all EXIT
 main

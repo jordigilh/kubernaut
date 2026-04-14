@@ -78,8 +78,9 @@ Single `Evaluator` loads the policy once, prepares 4 queries (`data.signalproces
 
 ```yaml
 signalprocessing:
-  policy: ""                      # --set-file signalprocessing.policy=policy.rego
-  existingPolicyConfigMap: ""     # pre-created ConfigMap with key "policy.rego"
+  policies:
+    content: ""                   # --set-file signalprocessing.policies.content=policy.rego
+    existingConfigMap: ""         # pre-created ConfigMap with key "policy.rego"
   proactiveSignalMappings:
     content: ""                   # --set-file (YAML, not Rego)
     existingConfigMap: ""
