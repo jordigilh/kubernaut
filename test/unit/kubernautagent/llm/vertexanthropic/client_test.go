@@ -159,7 +159,7 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 			Expect(receivedBody).To(HaveKeyWithValue("max_tokens", BeNumerically("==", 200)))
 		})
 
-		It("UT-VA-684-102: maps tool call response", func() {
+		It("UT-VA-684-102: maps tool call response and populates Message.ToolCalls", func() {
 			makeClient(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{
@@ -192,6 +192,10 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 			Expect(resp.ToolCalls[0].ID).To(Equal("toolu_001"))
 			Expect(resp.ToolCalls[0].Name).To(Equal("kubectl_describe"))
 			Expect(resp.ToolCalls[0].Arguments).To(ContainSubstring("Pod"))
+
+			By("Message.ToolCalls must also be populated for conversation history")
+			Expect(resp.Message.ToolCalls).To(HaveLen(1))
+			Expect(resp.Message.ToolCalls[0].ID).To(Equal("toolu_001"))
 		})
 
 		It("UT-VA-684-103: maps tool result messages correctly", func() {
@@ -227,6 +231,63 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 			messages, ok := receivedBody["messages"].([]interface{})
 			Expect(ok).To(BeTrue())
 			Expect(len(messages)).To(BeNumerically(">=", 3))
+		})
+
+		It("UT-VA-686-108: coalesces multiple tool results into a single user message", func() {
+			var receivedBody map[string]interface{}
+			makeClient(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				_ = json.Unmarshal(body, &receivedBody)
+
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{
+					"id": "msg_test_coalesce",
+					"type": "message",
+					"role": "assistant",
+					"model": "claude-sonnet-4-6",
+					"stop_reason": "end_turn",
+					"content": [{"type": "text", "text": "Both pods are crashing."}],
+					"usage": {"input_tokens": 120, "output_tokens": 20}
+				}`))
+			})
+
+			_, err := client.Chat(context.Background(), llm.ChatRequest{
+				Messages: []llm.Message{
+					{Role: "user", Content: "Investigate crash"},
+					{Role: "assistant", Content: "Let me check.", ToolCalls: []llm.ToolCall{
+						{ID: "toolu_001", Name: "kubectl_describe", Arguments: `{"kind":"Pod","name":"pod-a"}`},
+						{ID: "toolu_002", Name: "kubectl_events", Arguments: `{"kind":"Pod","name":"pod-b"}`},
+						{ID: "toolu_003", Name: "kubectl_logs", Arguments: `{"name":"pod-a"}`},
+					}},
+					{Role: "tool", Content: `{"status":"CrashLoopBackOff"}`, ToolCallID: "toolu_001", ToolName: "kubectl_describe"},
+					{Role: "tool", Content: `{"events":["BackOff"]}`, ToolCallID: "toolu_002", ToolName: "kubectl_events"},
+					{Role: "tool", Content: `OOMKilled`, ToolCallID: "toolu_003", ToolName: "kubectl_logs"},
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			messages, ok := receivedBody["messages"].([]interface{})
+			Expect(ok).To(BeTrue())
+
+			By("expecting: user, assistant(tool_use x3), user(tool_result x3) = 3 messages")
+			Expect(messages).To(HaveLen(3))
+
+			By("message[1] should be assistant with 3+1 content blocks (text + 3 tool_use)")
+			assistantMsg := messages[1].(map[string]interface{})
+			Expect(assistantMsg["role"]).To(Equal("assistant"))
+			assistantContent := assistantMsg["content"].([]interface{})
+			Expect(assistantContent).To(HaveLen(4))
+
+			By("message[2] should be a single user message with 3 tool_result blocks")
+			toolResultMsg := messages[2].(map[string]interface{})
+			Expect(toolResultMsg["role"]).To(Equal("user"))
+			toolResultContent := toolResultMsg["content"].([]interface{})
+			Expect(toolResultContent).To(HaveLen(3))
+
+			for _, block := range toolResultContent {
+				b := block.(map[string]interface{})
+				Expect(b["type"]).To(Equal("tool_result"))
+			}
 		})
 
 		It("UT-VA-684-104: uses default MaxTokens when not specified", func() {

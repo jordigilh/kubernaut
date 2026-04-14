@@ -136,7 +136,19 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 		params.Temperature = anthropic.Float(req.Options.Temperature)
 	}
 
+	var pendingToolResults []anthropic.ContentBlockParamUnion
+	flushToolResults := func() {
+		if len(pendingToolResults) > 0 {
+			params.Messages = append(params.Messages,
+				anthropic.NewUserMessage(pendingToolResults...))
+			pendingToolResults = nil
+		}
+	}
+
 	for _, m := range req.Messages {
+		if m.Role != "tool" {
+			flushToolResults()
+		}
 		switch m.Role {
 		case "system":
 			params.System = []anthropic.TextBlockParam{
@@ -167,12 +179,11 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 					anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
 			}
 		case "tool":
-			params.Messages = append(params.Messages,
-				anthropic.NewUserMessage(
-					anthropic.NewToolResultBlock(m.ToolCallID, m.Content, false),
-				))
+			pendingToolResults = append(pendingToolResults,
+				anthropic.NewToolResultBlock(m.ToolCallID, m.Content, false))
 		}
 	}
+	flushToolResults()
 
 	if len(req.Tools) > 0 {
 		var tools []anthropic.ToolUnionParam
@@ -231,6 +242,7 @@ func (c *Client) mapResponse(msg *anthropic.Message) llm.ChatResponse {
 		}
 	}
 	resp.Message.Content = strings.Join(textParts, "")
+	resp.Message.ToolCalls = resp.ToolCalls
 
 	return resp
 }
