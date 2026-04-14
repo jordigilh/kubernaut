@@ -1,0 +1,238 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package vertexanthropic implements llm.Client for Claude models hosted on
+// Google Vertex AI using the official Anthropic Go SDK.
+//
+// The SDK's vertex package handles all Vertex-specific protocol differences
+// automatically: anthropic_version in the request body, model removal from
+// the body, URL rewriting to rawPredict, and global/multi-region endpoints.
+//
+// Structured output (output_config) is NOT supported on Vertex AI per
+// official Anthropic docs — this adapter does not attempt to set it.
+//
+// Reference: https://docs.anthropic.com/en/api/claude-on-vertex-ai
+// Reference: https://github.com/anthropics/anthropic-sdk-go
+package vertexanthropic
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/vertex"
+	"golang.org/x/oauth2/google"
+
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+)
+
+// Option configures the Client.
+type Option func(*clientOpts)
+
+type clientOpts struct {
+	extraSDKOpts []option.RequestOption
+}
+
+// WithSDKOptions injects additional Anthropic SDK request options (e.g. base URL
+// override for testing). Production code should not need this.
+func WithSDKOptions(opts ...option.RequestOption) Option {
+	return func(o *clientOpts) { o.extraSDKOpts = append(o.extraSDKOpts, opts...) }
+}
+
+// Client implements llm.Client for Claude on Vertex AI using the official
+// Anthropic Go SDK with the vertex middleware.
+type Client struct {
+	sdk   anthropic.Client
+	model string
+}
+
+// New creates a Client for Claude on Vertex AI.
+//
+// credentialsJSON holds the GCP service account or authorized_user JSON,
+// resolved at runtime from the Helm-mounted credentials directory.
+// If empty, ambient Application Default Credentials (ADC) are used.
+//
+// The SDK's vertex package automatically handles:
+//   - anthropic_version: "vertex-2023-10-16" in the request body
+//   - model removed from body (placed in the rawPredict URL)
+//   - global/us/eu multi-region endpoint routing
+//   - GCP OAuth2 Bearer token transport
+func New(ctx context.Context, model string, credentialsJSON []byte, project, location string, opts ...Option) (*Client, error) {
+	if project == "" {
+		return nil, fmt.Errorf("vertexanthropic: project is required (vertex_project config)")
+	}
+	if location == "" {
+		location = "us-central1"
+	}
+
+	o := &clientOpts{}
+	for _, fn := range opts {
+		fn(o)
+	}
+
+	var vertexOpt option.RequestOption
+
+	trimmed := bytes.TrimSpace(credentialsJSON)
+	if len(trimmed) > 0 {
+		creds, err := google.CredentialsFromJSON(ctx, trimmed,
+			"https://www.googleapis.com/auth/cloud-platform",
+		)
+		if err != nil {
+			return nil, fmt.Errorf("vertexanthropic: invalid credentials JSON: %w", err)
+		}
+		vertexOpt = vertex.WithCredentials(ctx, location, project, creds)
+	} else {
+		vertexOpt = vertex.WithGoogleAuth(ctx, location, project,
+			"https://www.googleapis.com/auth/cloud-platform")
+	}
+
+	sdkOpts := []option.RequestOption{vertexOpt}
+	sdkOpts = append(sdkOpts, o.extraSDKOpts...)
+	sdk := anthropic.NewClient(sdkOpts...)
+
+	return &Client{sdk: sdk, model: model}, nil
+}
+
+// Chat translates a Kubernaut ChatRequest to the Anthropic Messages API,
+// calls the SDK, and maps the response back.
+func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
+	params := c.buildParams(req)
+
+	msg, err := c.sdk.Messages.New(ctx, params)
+	if err != nil {
+		return llm.ChatResponse{}, fmt.Errorf("vertexanthropic: %w", err)
+	}
+
+	return c.mapResponse(msg), nil
+}
+
+func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
+	params := anthropic.MessageNewParams{
+		Model:     anthropic.Model(c.model),
+		MaxTokens: int64(4096),
+	}
+
+	if req.Options.MaxTokens > 0 {
+		params.MaxTokens = int64(req.Options.MaxTokens)
+	}
+	if req.Options.Temperature > 0 {
+		params.Temperature = anthropic.Float(req.Options.Temperature)
+	}
+
+	for _, m := range req.Messages {
+		switch m.Role {
+		case "system":
+			params.System = []anthropic.TextBlockParam{
+				{Text: m.Content},
+			}
+		case "user":
+			params.Messages = append(params.Messages,
+				anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
+		case "assistant":
+			if len(m.ToolCalls) > 0 {
+				var parts []anthropic.ContentBlockParamUnion
+				if m.Content != "" {
+					parts = append(parts, anthropic.NewTextBlock(m.Content))
+				}
+				for _, tc := range m.ToolCalls {
+					var input any
+					if tc.Arguments != "" {
+						input = json.RawMessage(tc.Arguments)
+					} else {
+						input = json.RawMessage("{}")
+					}
+					parts = append(parts, anthropic.NewToolUseBlock(tc.ID, input, tc.Name))
+				}
+				params.Messages = append(params.Messages,
+					anthropic.NewAssistantMessage(parts...))
+			} else {
+				params.Messages = append(params.Messages,
+					anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
+			}
+		case "tool":
+			params.Messages = append(params.Messages,
+				anthropic.NewUserMessage(
+					anthropic.NewToolResultBlock(m.ToolCallID, m.Content, false),
+				))
+		}
+	}
+
+	if len(req.Tools) > 0 {
+		var tools []anthropic.ToolUnionParam
+		for _, td := range req.Tools {
+			schema := parseInputSchema(td.Parameters)
+			tools = append(tools, anthropic.ToolUnionParam{
+				OfTool: &anthropic.ToolParam{
+					Name:        td.Name,
+					Description: anthropic.String(td.Description),
+					InputSchema: schema,
+				},
+			})
+		}
+		params.Tools = tools
+	}
+
+	return params
+}
+
+func parseInputSchema(raw json.RawMessage) anthropic.ToolInputSchemaParam {
+	var s struct {
+		Properties any      `json:"properties"`
+		Required   []string `json:"required"`
+	}
+	_ = json.Unmarshal(raw, &s)
+	return anthropic.ToolInputSchemaParam{
+		Properties: s.Properties,
+		Required:   s.Required,
+	}
+}
+
+func (c *Client) mapResponse(msg *anthropic.Message) llm.ChatResponse {
+	resp := llm.ChatResponse{
+		Message: llm.Message{
+			Role: "assistant",
+		},
+		Usage: llm.TokenUsage{
+			PromptTokens:     int(msg.Usage.InputTokens),
+			CompletionTokens: int(msg.Usage.OutputTokens),
+			TotalTokens:      int(msg.Usage.InputTokens + msg.Usage.OutputTokens),
+		},
+	}
+
+	var textParts []string
+	for _, block := range msg.Content {
+		switch block.Type {
+		case "text":
+			textParts = append(textParts, block.Text)
+		case "tool_use":
+			tu := block.AsToolUse()
+			resp.ToolCalls = append(resp.ToolCalls, llm.ToolCall{
+				ID:        tu.ID,
+				Name:      tu.Name,
+				Arguments: string(tu.Input),
+			})
+		}
+	}
+	resp.Message.Content = strings.Join(textParts, "")
+
+	return resp
+}
+
+var _ llm.Client = (*Client)(nil)

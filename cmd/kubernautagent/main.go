@@ -44,6 +44,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
@@ -139,8 +140,16 @@ func main() {
 
 	slogger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
 
-	llmClient, err := langchaingo.New(cfg.LLM.Provider, cfg.LLM.Endpoint, cfg.LLM.Model, cfg.LLM.APIKey,
-		buildLLMProviderOptions(cfg)...)
+	var llmClient llm.Client
+	switch cfg.LLM.Provider {
+	case "vertex_ai":
+		llmClient, err = vertexanthropic.New(context.Background(),
+			cfg.LLM.Model, []byte(cfg.LLM.APIKey),
+			cfg.LLM.VertexProject, cfg.LLM.VertexLocation)
+	default:
+		llmClient, err = langchaingo.New(cfg.LLM.Provider, cfg.LLM.Endpoint, cfg.LLM.Model, cfg.LLM.APIKey,
+			buildLLMProviderOptions(cfg)...)
+	}
 	if err != nil {
 		slogger.Error("failed to create LLM client", "provider", cfg.LLM.Provider, "error", err)
 		os.Exit(1)

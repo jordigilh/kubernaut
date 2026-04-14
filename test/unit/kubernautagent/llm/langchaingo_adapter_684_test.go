@@ -17,7 +17,6 @@ limitations under the License.
 package llm_test
 
 import (
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,7 +24,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 )
 
@@ -33,15 +31,11 @@ var _ = Describe("Vertex AI + Claude Adapter — #684", func() {
 
 	Describe("Bug 2: Provider alias recognition", func() {
 
-		It("UT-KA-684-101: vertex_ai is accepted as a valid provider", func() {
-			adapter, err := langchaingo.New("vertex_ai", "http://localhost:9999", "claude-sonnet-4-6", "",
-				langchaingo.WithVertexProject("my-project"),
-				langchaingo.WithVertexLocation("us-central1"),
-				langchaingo.WithHTTPClient(&http.Client{}),
-			)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(adapter).NotTo(BeNil())
-			var _ llm.Client = adapter
+		It("UT-KA-684-101: vertex_ai is no longer routed through langchaingo (uses vertexanthropic package)", func() {
+			adapter, err := langchaingo.New("vertex_ai", "http://localhost:9999", "claude-sonnet-4-6", "")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unsupported"))
+			Expect(adapter).To(BeNil())
 		})
 
 		It("UT-KA-684-102: existing vertex (Gemini) provider still works with credentials JSON", func() {
@@ -59,15 +53,6 @@ var _ = Describe("Vertex AI + Claude Adapter — #684", func() {
 			)
 			Expect(adapterErr).NotTo(HaveOccurred())
 			Expect(adapter).NotTo(BeNil())
-		})
-
-		It("UT-KA-684-105: vertex_ai without project returns descriptive error", func() {
-			adapter, err := langchaingo.New("vertex_ai", "", "claude-sonnet-4-6", "",
-				langchaingo.WithHTTPClient(&http.Client{}),
-			)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("project"))
-			Expect(adapter).To(BeNil())
 		})
 	})
 })

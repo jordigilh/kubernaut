@@ -132,9 +132,6 @@ func newModel(provider, endpoint, model, apiKey string, o *options) (llms.Model,
 			vopts = append(vopts, googleai.WithCredentialsJSON([]byte(apiKey)))
 		}
 		return vertex.New(context.Background(), vopts...)
-	case "vertex_ai":
-		return newVertexAnthropicModel(o.vertexProject, o.vertexLocation, model, endpoint,
-			[]byte(apiKey), o.httpClient)
 	case "anthropic":
 		aopts := []anthropic.Option{anthropic.WithModel(model), anthropic.WithToken(apiKey)}
 		if endpoint != "" {
