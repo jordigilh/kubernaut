@@ -53,6 +53,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: Inter-service TLS
 	"github.com/sony/gobreaker"
 	//+kubebuilder:scaffold:imports
 )
@@ -423,11 +424,16 @@ func main() {
 	// Resolves workflow UUIDs to human-readable names in notification bodies
 	// before delivery. Uses the DataStorage catalog API.
 	// ========================================
+	dsBaseTransport, err := sharedtls.DefaultBaseTransport()
+	if err != nil {
+		logger.Error(err, "Failed to create TLS-aware base transport for DS enrichment client")
+		os.Exit(1)
+	}
 	dsOgenClient, err := ogenclient.NewClient(
 		cfg.DataStorage.URL,
 		ogenclient.WithClient(&http.Client{
 			Timeout:   cfg.DataStorage.Timeout,
-			Transport: auth.NewServiceAccountTransportWithBase(http.DefaultTransport.(*http.Transport).Clone()),
+			Transport: auth.NewServiceAccountTransportWithBase(dsBaseTransport),
 		}),
 	)
 	if err != nil {

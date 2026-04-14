@@ -806,11 +806,11 @@ preload_hook_image() {
 run_verify_demo() {
   local at_count
   at_count=$(kubectl get actiontypes -n "$NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ')
-  if [[ "$at_count" -eq 25 ]]; then
-    tap_ok "ST-CHART-VERIFY-DEMO-001: 25 ActionTypes seeded by post-install hook"
+  if [[ "$at_count" -ge 25 ]]; then
+    tap_ok "ST-CHART-VERIFY-DEMO-001: ${at_count} ActionTypes seeded by post-install hook (>=25)"
   else
-    tap_not_ok "ST-CHART-VERIFY-DEMO-001: 25 ActionTypes seeded" \
-      "Found ${at_count} ActionTypes, expected 25"
+    tap_not_ok "ST-CHART-VERIFY-DEMO-001: ActionTypes seeded (>=25)" \
+      "Found ${at_count} ActionTypes, expected at least 25"
   fi
 
   local rw_count

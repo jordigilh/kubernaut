@@ -47,6 +47,7 @@ import (
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #493/#678: Conditional TLS
 )
 
 // Server is the HTTP server for Data Storage Service
@@ -392,6 +393,17 @@ func NewServer(deps ServerDeps) (*Server, error) {
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
 	srv.httpServer.Handler = srv.Handler()
+
+	if serverCfg.TLS.Enabled() {
+		isTLS, tlsErr := sharedtls.ConfigureConditionalTLS(srv.httpServer, serverCfg.TLS.CertDir)
+		if tlsErr != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr)
+		}
+		if isTLS {
+			logger.Info("TLS configured for DataStorage server", "certDir", serverCfg.TLS.CertDir)
+		}
+	}
 
 	return srv, nil
 }

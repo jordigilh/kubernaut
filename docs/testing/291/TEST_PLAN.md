@@ -311,7 +311,7 @@ These existing tests need auth-aware modifications:
 
 **Acceptance Criteria**:
 - HTTP status code is 500
-- Detail includes "Token validation failed"
+- Detail equals "Authentication service unavailable" (Issue #673 C-2: generic error, no internals)
 - Next handler is NOT called
 
 ---
@@ -363,7 +363,7 @@ These existing tests need auth-aware modifications:
 **Acceptance Criteria**:
 - HTTP status code is 403
 - Content-Type is `application/problem+json`
-- Detail mentions "Insufficient RBAC permissions"
+- Detail equals "Insufficient permissions" (Issue #673 M-3: generic error, no RBAC details)
 - Next handler is NOT called
 
 ---
@@ -380,7 +380,7 @@ These existing tests need auth-aware modifications:
 
 **Acceptance Criteria**:
 - HTTP status code is 500
-- Detail includes "Authorization check failed"
+- Detail equals "Authorization service unavailable" (Issue #673 C-2: generic error, no internals)
 - Next handler is NOT called
 
 ---
