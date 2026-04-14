@@ -68,11 +68,8 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 		It("should return the seeded workflow definition by UUID", func() {
 			Expect(workflowUUIDs).NotTo(BeEmpty(), "workflow UUIDs must be seeded")
 
-			var wfUUID string
-			for _, v := range workflowUUIDs {
-				wfUUID = v
-				break
-			}
+			wfUUID, ok := workflowUUIDs["oom-recovery-v1"]
+			Expect(ok).To(BeTrue(), "oom-recovery-v1 must be seeded")
 			Expect(wfUUID).NotTo(BeEmpty())
 
 			result, err := reg.Execute(context.Background(), "get_workflow",
