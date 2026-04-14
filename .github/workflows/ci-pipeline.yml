@@ -793,9 +793,6 @@ jobs:
           kubectl cluster-info
           kubectl get nodes -o wide
 
-      - name: Sync demo content from kubernaut-demo-scenarios
-        run: make sync-demo-content
-
       - name: Run smoke tests
         env:
           PULL_SECRET_SERVER: ghcr.io
