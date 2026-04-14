@@ -54,7 +54,7 @@ best matches the RCA findings.
 - Cross-reference each action type's `when_to_use` and `when_not_to_use` guidance against the RCA findings.
 
 **Step 2**: Call `list_workflows` with `action_type` set to your chosen action type.
-**CRITICAL**: If `pagination.hasMore` is true, call again with increased `offset` to review ALL workflows.
+**CRITICAL**: If the response includes `pagination.hasNext`, call the tool again with `page: "next"` and `cursor` set to the `nextCursor` value to review ALL workflows.
 
 **Step 3**: Call `get_workflow` with the `workflow_id` of your selected workflow to retrieve its full parameter schema.
 
