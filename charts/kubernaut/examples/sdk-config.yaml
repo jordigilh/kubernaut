@@ -16,9 +16,9 @@ llm:
   provider: ""       # "openai", "azure", "vertex_ai", "bedrock", etc.
   model: ""          # e.g., "gpt-4o", "vertex_ai/claude-sonnet-4"
   endpoint: ""       # API endpoint (required for Azure, optional for others)
-  # GCP Vertex AI specific:
-  # gcp_project_id: ""
-  # gcp_region: ""
+  # GCP Vertex AI specific (required for vertex_ai provider):
+  # vertex_project: ""
+  # vertex_location: ""   # e.g., "us-central1", "europe-west1"
   max_retries: 3
   timeout_seconds: 120
   temperature: 0.7

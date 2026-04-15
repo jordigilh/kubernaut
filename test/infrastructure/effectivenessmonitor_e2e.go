@@ -66,6 +66,10 @@ const (
 
 	// emAlertManagerReadyTimeout is the max time to wait for AlertManager to be ready
 	emAlertManagerReadyTimeout = 60 * time.Second
+
+	// EMTargetPodImage is the workload image used for target pods in EM E2E tests.
+	// UBI9-minimal from the unauthenticated Red Hat registry avoids Docker Hub rate limits.
+	EMTargetPodImage = "registry.access.redhat.com/ubi9/ubi-minimal:9.5"
 )
 
 // DataStorageEMHostPort returns the host port for DataStorage in EM E2E tests.
@@ -203,10 +207,11 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 		}
 	}
 
-	// Load Prometheus and AlertManager images
+	// Load external images (Prometheus, AlertManager, workload base)
 	for _, img := range []struct{ image, name string }{
 		{PrometheusImage, "prometheus"},
 		{AlertManagerImage, "alertmanager"},
+		{EMTargetPodImage, "ubi-minimal"},
 	} {
 		pullCmd := exec.CommandContext(ctx, "podman", "pull", img.image)
 		pullCmd.Stdout = writer

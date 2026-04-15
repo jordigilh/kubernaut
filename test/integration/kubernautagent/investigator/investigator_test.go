@@ -406,6 +406,95 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		})
 	})
 
+	Describe("IT-KA-686-001: submit_result tool call returns structured investigation result", func() {
+		It("should capture submit_result arguments as investigation result instead of executing a tool", func() {
+			submitArgs := `{"root_cause_analysis":{"summary":"OOMKilled due to memory limit exceeded","severity":"critical","remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}},"selected_workflow":{"workflow_id":"oom-increase-memory","confidence":0.95,"rationale":"increase memory limit","parameters":{"MEMORY_LIMIT":"512Mi"}},"confidence":0.95,"severity":"critical"}`
+
+			reg := registry.New()
+			reg.Register(&fakeTool{name: "kubectl_describe", result: `{"kind":"Pod","metadata":{"name":"api-server"},"status":{"phase":"Running"}}`})
+
+			mockClient.responses = []llm.ChatResponse{
+				{
+					Message: llm.Message{Role: "assistant", Content: "Let me investigate"},
+					ToolCalls: []llm.ToolCall{
+						{ID: "tc_1", Name: "kubectl_describe", Arguments: `{"kind":"Pod","name":"api-server","namespace":"production"}`},
+					},
+				},
+				{
+					Message: llm.Message{Role: "assistant", Content: "Found the issue"},
+					ToolCalls: []llm.ToolCall{
+						{ID: "tc_submit", Name: "submit_result", Arguments: submitArgs},
+					},
+				},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.95}`}},
+			}
+
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api-server", Namespace: "production", Severity: "critical", Message: "OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RCASummary).To(ContainSubstring("OOMKilled"))
+			Expect(result.WorkflowID).To(Equal("oom-increase-memory"))
+			Expect(result.Confidence).To(BeNumerically("~", 0.95, 0.01))
+		})
+	})
+
+	Describe("IT-KA-686-002: submit_result in both RCA and workflow discovery phases", func() {
+		It("should include submit_result in tool definitions sent to LLM for both phases", func() {
+			reg := registry.New()
+			reg.Register(&fakeTool{name: "kubectl_describe", result: `{}`})
+			reg.Register(&fakeTool{name: "list_available_actions", result: `[]`})
+
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"found issue"}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+			}
+
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
+			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(mockClient.calls).To(HaveLen(2))
+
+			By("RCA phase includes submit_result")
+			rcaToolNames := toolNamesFromCall(mockClient.calls[0])
+			Expect(rcaToolNames).To(ContainElement("submit_result"),
+				"RCA phase should include submit_result tool definition")
+
+			By("Workflow discovery phase includes submit_result")
+			wdToolNames := toolNamesFromCall(mockClient.calls[1])
+			Expect(wdToolNames).To(ContainElement("submit_result"),
+				"Workflow discovery phase should include submit_result tool definition")
+		})
+	})
+
+	Describe("IT-KA-686-003: submit_result bypasses anomaly detector", func() {
+		It("should not invoke anomaly detector CheckToolCall for submit_result", func() {
+			submitArgs := `{"root_cause_analysis":{"summary":"issue found"},"confidence":0.9}`
+
+			mockClient.responses = []llm.ChatResponse{
+				{
+					Message: llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{
+						{ID: "tc_submit", Name: "submit_result", Arguments: submitArgs},
+					},
+				},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+			}
+
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RCASummary).To(ContainSubstring("issue found"))
+		})
+	})
+
 	Describe("IT-KA-433-009: Investigation emits audit events", func() {
 		It("should emit audit events at correct investigation points", func() {
 			mockClient.responses = []llm.ChatResponse{
@@ -426,6 +515,14 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		})
 	})
 })
+
+func toolNamesFromCall(call llm.ChatRequest) []string {
+	names := make([]string, len(call.Tools))
+	for i, td := range call.Tools {
+		names[i] = td.Name
+	}
+	return names
+}
 
 func allMessageContent(msgs []llm.Message) string {
 	var sb string

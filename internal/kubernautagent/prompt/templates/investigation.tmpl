@@ -157,9 +157,10 @@ best matches your RCA findings.
 - Always cross-reference each action type's `when_to_use` and `when_not_to_use` guidance against your RCA findings before selecting.
 
 **Step 2**: Call `list_workflows` with `action_type` set to your chosen action type.
-**CRITICAL**: If `pagination.hasMore` is true, call again with increased `offset` to
-review ALL workflows. Compare workflow descriptions, version notes, and suitability
-for your RCA findings across ALL workflows before selecting.
+**CRITICAL**: If the response includes `pagination.hasNext`, call the tool again with
+`page: "next"` and `cursor` set to the `nextCursor` value to review ALL workflows.
+Compare workflow descriptions, version notes, and suitability for your RCA findings
+across ALL workflows before selecting.
 
 **Step 3**: Call `get_workflow` with the `workflow_id` of your selected workflow to
 retrieve its full parameter schema. If you get "not found", go back to Step 2
@@ -384,7 +385,7 @@ You have three workflow discovery tools available. Use them in order:
    Each action type includes guidance on when to use it and when not to.
 
 2. **`list_workflows`** with `action_type` — List specific workflows for your chosen action.
-   Review ALL pages (if `hasMore=true`, call again with increased `offset`).
+   Review ALL pages (if `pagination.hasNext` is present, call again with `page: "next"` and `cursor`).
    Compare workflow descriptions and suitability for your RCA findings.
 
 3. **`get_workflow`** with `workflow_id` — Get the full workflow with parameter schema.

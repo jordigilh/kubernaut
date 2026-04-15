@@ -146,41 +146,6 @@ sync-version: ## Propagate VERSION file to Chart.yaml, values, Dockerfiles, and 
 	done && \
 	echo "✅ Version v$$VER synced to all targets"
 
-DEMO_SCENARIOS_REPO ?= https://github.com/jordigilh/kubernaut-demo-scenarios.git
-DEMO_SCENARIOS_LOCAL ?= ../kubernaut-demo-scenarios
-DEMO_CONTENT_DIR := charts/kubernaut/files/demo-content
-CHART_DEFAULTS_DIR := charts/kubernaut/files/defaults
-
-.PHONY: sync-demo-content
-sync-demo-content: ## Copy demo content and default configs from kubernaut-demo-scenarios into the Helm chart
-	@echo "📦 Syncing demo content into $(DEMO_CONTENT_DIR)..."
-	@if [ -d "$(DEMO_SCENARIOS_LOCAL)/deploy" ]; then \
-		echo "  Using local sibling: $(DEMO_SCENARIOS_LOCAL)"; \
-		SRC="$(DEMO_SCENARIOS_LOCAL)"; \
-	else \
-		echo "  Cloning $(DEMO_SCENARIOS_REPO) (shallow)..."; \
-		SRC=$$(mktemp -d); \
-		trap "rm -rf $$SRC" EXIT; \
-		git clone --depth 1 $(DEMO_SCENARIOS_REPO) "$$SRC"; \
-	fi && \
-	mkdir -p $(DEMO_CONTENT_DIR)/action-types $(DEMO_CONTENT_DIR)/workflows && \
-	echo "  Copying action-types..." && \
-	cp "$$SRC"/deploy/action-types/*.yaml $(DEMO_CONTENT_DIR)/action-types/ && \
-	echo "  Copying remediation-workflows..." && \
-	for d in "$$SRC"/deploy/remediation-workflows/*/; do \
-		for f in "$$d"*.yaml; do \
-			[ -f "$$f" ] && cp "$$f" $(DEMO_CONTENT_DIR)/workflows/; \
-		done; \
-	done && \
-	echo "  Copying default configs (Rego policies, proactive mappings)..." && \
-	mkdir -p $(CHART_DEFAULTS_DIR) && \
-	cp "$$SRC"/deploy/defaults/*.rego $(CHART_DEFAULTS_DIR)/ && \
-	cp "$$SRC"/deploy/defaults/*.yaml $(CHART_DEFAULTS_DIR)/ && \
-	AT_COUNT=$$(ls $(DEMO_CONTENT_DIR)/action-types/*.yaml 2>/dev/null | wc -l | tr -d ' ') && \
-	WF_COUNT=$$(ls $(DEMO_CONTENT_DIR)/workflows/*.yaml 2>/dev/null | wc -l | tr -d ' ') && \
-	DEF_COUNT=$$(ls $(CHART_DEFAULTS_DIR)/*.rego $(CHART_DEFAULTS_DIR)/*.yaml 2>/dev/null | wc -l | tr -d ' ') && \
-	echo "✅ Synced $$AT_COUNT ActionTypes, $$WF_COUNT RemediationWorkflows, $$DEF_COUNT default configs"
-
 .PHONY: generate
 generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."

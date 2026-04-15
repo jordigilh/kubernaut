@@ -503,6 +503,90 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 		})
 	})
 
+	Describe("UT-KA-686-001: section-header format from Vertex AI (no structured output)", func() {
+		It("should parse # header format with workflow selection", func() {
+			sectionContent := `I've completed the investigation. Here are my findings:
+
+# root_cause_analysis
+{"summary": "Bad Deployment rollout patched ConfigMap ref from worker-config to worker-config-bad", "severity": "critical", "contributing_factors": ["bad patch", "invalid directive", "no admission webhook"], "remediation_target": {"kind": "Deployment", "name": "worker", "namespace": "demo-crashloop"}}
+
+# confidence
+0.98
+
+# selected_workflow
+{"workflow_id": "f871d3c0-4c88-55aa-a412-7defebe000a3", "confidence": 0.98, "rationale": "crashloop-rollback-v1 is an exact match", "parameters": {"TARGET_RESOURCE_NAMESPACE": "demo-crashloop", "TARGET_RESOURCE_NAME": "worker", "TARGET_RESOURCE_KIND": "Deployment"}}
+
+# alternative_workflows
+[{"workflow_id": "crashloop-rollback-risk-v1", "confidence": 0.90, "rationale": "valid but over-engineered"}]
+`
+			p := parser.NewResultParser()
+			result, err := p.Parse(sectionContent)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			By("RCA fields extracted")
+			Expect(result.RCASummary).To(ContainSubstring("Bad Deployment rollout"))
+			Expect(result.Severity).To(Equal("critical"))
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"))
+			Expect(result.RemediationTarget.Name).To(Equal("worker"))
+			Expect(result.RemediationTarget.Namespace).To(Equal("demo-crashloop"))
+
+			By("Workflow selection extracted")
+			Expect(result.WorkflowID).To(Equal("f871d3c0-4c88-55aa-a412-7defebe000a3"))
+			Expect(result.Confidence).To(BeNumerically("~", 0.98, 0.01))
+			Expect(result.Reason).To(ContainSubstring("exact match"))
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "demo-crashloop"))
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "worker"))
+
+			By("Alternatives extracted")
+			Expect(result.AlternativeWorkflows).To(HaveLen(1))
+			Expect(result.AlternativeWorkflows[0].WorkflowID).To(Equal("crashloop-rollback-risk-v1"))
+		})
+
+		It("should parse section headers with JSON in markdown code blocks", func() {
+			fencedContent := `Here are my findings:
+
+# root_cause_analysis
+` + "```json" + `
+{"summary": "OOMKilled pod", "severity": "high", "remediation_target": {"kind": "Deployment", "name": "api", "namespace": "prod"}}
+` + "```" + `
+
+# confidence
+0.92
+
+# selected_workflow
+` + "```json" + `
+{"workflow_id": "oom-fix-v1", "confidence": 0.92, "rationale": "increase memory", "parameters": {"MEMORY": "512Mi"}}
+` + "```" + `
+`
+			p := parser.NewResultParser()
+			result, err := p.Parse(fencedContent)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RCASummary).To(Equal("OOMKilled pod"))
+			Expect(result.WorkflowID).To(Equal("oom-fix-v1"))
+			Expect(result.Confidence).To(BeNumerically("~", 0.92, 0.01))
+		})
+
+		It("should parse section headers with RCA only (no workflow)", func() {
+			rcaOnly := `# root_cause_analysis
+{"summary": "Transient network issue", "severity": "low"}
+
+# confidence
+0.80
+
+# actionable
+false
+`
+			p := parser.NewResultParser()
+			result, err := p.Parse(rcaOnly)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RCASummary).To(Equal("Transient network issue"))
+			Expect(result.WorkflowID).To(BeEmpty())
+		})
+	})
+
 	Describe("UT-KA-433-AP-021: problem_resolved suppresses not-actionable warning", func() {
 		It("should emit Problem self-resolved but NOT Alert not actionable", func() {
 			p := parser.NewResultParser()

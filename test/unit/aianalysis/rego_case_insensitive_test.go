@@ -43,12 +43,6 @@ var _ = Describe("Rego Case-Insensitive Matching (#604)", func() {
 		return filepath.Join(dir, "testdata", subpath)
 	}
 
-	getHelmDefaultPath := func() string {
-		_, filename, _, _ := runtime.Caller(0)
-		dir := filepath.Dir(filename)
-		return filepath.Join(dir, "..", "..", "..", "charts", "kubernaut", "files", "defaults", "approval.rego")
-	}
-
 	BeforeEach(func() {
 		ctx, cancel = context.WithCancel(context.Background())
 	})
@@ -59,13 +53,13 @@ var _ = Describe("Rego Case-Insensitive Matching (#604)", func() {
 		}
 	})
 
-	// UT-AIA-604-001 through 004: Helm default approval Rego with PascalCase environments
-	Describe("Helm default approval Rego", func() {
+	// UT-AIA-604-001 through 004: Approval Rego with PascalCase environments
+	Describe("Approval Rego case-insensitive environment matching", func() {
 		var evaluator *rego.Evaluator
 
 		BeforeEach(func() {
 			evaluator = rego.NewEvaluator(rego.Config{
-				PolicyPath: getHelmDefaultPath(),
+				PolicyPath: getTestdataPath("policies/approval.rego"),
 			}, logr.Discard())
 
 			err := evaluator.StartHotReload(ctx)

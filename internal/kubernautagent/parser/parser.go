@@ -33,33 +33,43 @@ func NewResultParser() *ResultParser {
 }
 
 // Parse extracts InvestigationResult from raw LLM content.
-// Handles both raw JSON and JSON embedded in markdown code blocks.
+// Handles three formats in priority order:
+//  1. Single JSON object (flat or nested) — structured output or well-behaved LLM
+//  2. Section-header format ("# root_cause_analysis\n{...}\n# confidence\n0.95\n...")
+//     produced when structured output is unavailable (e.g. Vertex AI)
+//  3. JSON embedded in markdown code blocks or prose
 func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, error) {
 	if content == "" {
 		return nil, fmt.Errorf("empty JSON content")
 	}
 
 	jsonStr := extractJSON(content)
+	if jsonStr != "" {
+		var result katypes.InvestigationResult
+		if err := json.Unmarshal([]byte(jsonStr), &result); err == nil && (result.RCASummary != "" || result.WorkflowID != "") {
+			var flat flatLLMFields
+			_ = json.Unmarshal([]byte(jsonStr), &flat)
+			applyFlatFields(&result, flat)
+			mergeNestedRemediationTarget(&result, jsonStr)
+			applyOutcomeRouting(&result)
+			return &result, nil
+		}
+
+		if parsed, err := parseLLMFormat(jsonStr); err == nil {
+			applyOutcomeRouting(parsed)
+			return parsed, nil
+		}
+	}
+
+	if parsed, err := parseSectionHeaders(content); err == nil {
+		applyOutcomeRouting(parsed)
+		return parsed, nil
+	}
+
 	if jsonStr == "" {
 		return nil, fmt.Errorf("no JSON found in response")
 	}
-
-	var result katypes.InvestigationResult
-	if err := json.Unmarshal([]byte(jsonStr), &result); err == nil && (result.RCASummary != "" || result.WorkflowID != "") {
-		var flat flatLLMFields
-		_ = json.Unmarshal([]byte(jsonStr), &flat)
-		applyFlatFields(&result, flat)
-		mergeNestedRemediationTarget(&result, jsonStr)
-		applyOutcomeRouting(&result)
-		return &result, nil
-	}
-
-	parsed, err := parseLLMFormat(jsonStr)
-	if err != nil {
-		return nil, err
-	}
-	applyOutcomeRouting(parsed)
-	return parsed, nil
+	return nil, fmt.Errorf("no recognized fields in LLM JSON response")
 }
 
 // extractJSON finds JSON content using a priority chain:
@@ -291,6 +301,119 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 	}
 
 	return result, nil
+}
+
+// parseSectionHeaders handles the "# header\nvalue" format produced by LLMs when
+// structured output (output_config) is unavailable (e.g. Vertex AI).
+// The prompt instructs:
+//
+//	# root_cause_analysis
+//	{"summary": "...", ...}
+//	# confidence
+//	0.95
+//	# selected_workflow
+//	{"workflow_id": "...", ...}
+//	# alternative_workflows
+//	[{"workflow_id": "...", ...}]
+//
+// This function extracts each section's content, assembles an llmResponse,
+// and maps it to InvestigationResult via parseLLMFormat.
+func parseSectionHeaders(content string) (*katypes.InvestigationResult, error) {
+	sections := extractSections(content)
+	if len(sections) == 0 {
+		return nil, fmt.Errorf("no section headers found")
+	}
+
+	assembled := make(map[string]json.RawMessage)
+
+	for header, body := range sections {
+		body = strings.TrimSpace(body)
+		if body == "" {
+			continue
+		}
+
+		// Arrays (e.g. alternative_workflows) must be preserved as-is.
+		// extractJSON only finds objects, so it would strip the enclosing [].
+		if body[0] == '[' {
+			assembled[header] = json.RawMessage(body)
+			continue
+		}
+
+		jsonBody := extractJSON(body)
+		if jsonBody != "" {
+			assembled[header] = json.RawMessage(jsonBody)
+			continue
+		}
+		// Scalar values: numbers ("0.95"), booleans ("true"/"false"), or strings ("critical")
+		quotedOrRaw := body
+		if quotedOrRaw != "true" && quotedOrRaw != "false" && quotedOrRaw != "null" {
+			if len(quotedOrRaw) > 0 && quotedOrRaw[0] != '"' {
+				if _, err := json.Number(quotedOrRaw).Float64(); err != nil {
+					quotedOrRaw = `"` + strings.ReplaceAll(quotedOrRaw, `"`, `\"`) + `"`
+				}
+			}
+		}
+		assembled[header] = json.RawMessage(quotedOrRaw)
+	}
+
+	if len(assembled) == 0 {
+		return nil, fmt.Errorf("no parseable section content found")
+	}
+
+	compositeJSON, err := json.Marshal(assembled)
+	if err != nil {
+		return nil, fmt.Errorf("assembling section headers: %w", err)
+	}
+
+	return parseLLMFormat(string(compositeJSON))
+}
+
+// extractSections splits content on lines matching "# <header_name>" and returns
+// a map of header → body text. Recognizes headers with and without markdown fencing.
+func extractSections(content string) map[string]string {
+	knownHeaders := map[string]bool{
+		"root_cause_analysis": true,
+		"selected_workflow":   true,
+		"alternative_workflows": true,
+		"confidence":          true,
+		"severity":            true,
+		"actionable":          true,
+		"investigation_outcome": true,
+		"needs_human_review":  true,
+		"human_review_reason": true,
+		"detected_labels":     true,
+	}
+
+	sections := make(map[string]string)
+	lines := strings.Split(content, "\n")
+	var currentHeader string
+	var currentBody strings.Builder
+
+	flush := func() {
+		if currentHeader != "" {
+			sections[currentHeader] = currentBody.String()
+		}
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "# ") {
+			candidate := strings.TrimSpace(trimmed[2:])
+			if knownHeaders[candidate] {
+				flush()
+				currentHeader = candidate
+				currentBody.Reset()
+				continue
+			}
+		}
+		if currentHeader != "" {
+			currentBody.WriteString(line)
+			currentBody.WriteString("\n")
+		}
+	}
+	flush()
+
+	return sections
 }
 
 // mergeNestedRemediationTarget checks for a nested root_cause_analysis.remediation_target
