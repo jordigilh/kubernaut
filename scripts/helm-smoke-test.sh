@@ -401,13 +401,15 @@ setup_policy_files() {
   POLICY_SP_FILE=$(mktemp)
   cat > "$POLICY_AA_FILE" <<'REGOEOF'
 package aianalysis.approval
-default allow = false
-allow { input.environment != "production" }
+import rego.v1
+default allow := false
+allow if { input.environment != "production" }
 REGOEOF
   cat > "$POLICY_SP_FILE" <<'REGOEOF'
 package signalprocessing
-default severity = "low"
-severity = "high" { input.labels.severity == "critical" }
+import rego.v1
+default severity := "low"
+severity := "high" if { input.labels.severity == "critical" }
 REGOEOF
 }
 
