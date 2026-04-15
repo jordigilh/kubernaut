@@ -979,7 +979,7 @@ SDKEOF
 
   # IT-HAPI-390-001: Two ConfigMaps rendered
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) $(template_llm_args) 2>&1)
+    $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
   if echo "$output" | grep -q "name: kubernaut-agent-config" && \
      echo "$output" | grep -q "name: kubernaut-agent-sdk-config"; then
     tap_ok "IT-HAPI-390-001: helm template renders both kubernaut-agent-config and kubernaut-agent-sdk-config"
@@ -989,7 +989,7 @@ SDKEOF
 
   # IT-HAPI-390-002: existingSdkConfigMap skips SDK template
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) $(template_llm_args) \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set kubernautAgent.existingSdkConfigMap=my-custom 2>&1)
   if ! echo "$output" | grep -q "name: kubernaut-agent-sdk-config" && \
      echo "$output" | grep -q 'name: my-custom'; then
@@ -1000,7 +1000,7 @@ SDKEOF
 
   # IT-HAPI-390-003: Deployment has sdk-config volume mount
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) $(template_llm_args) 2>&1)
+    $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
   if echo "$output" | grep -q "mountPath: /etc/kubernaut-agent/sdk" && \
      echo "$output" | grep -q "name: sdk-config"; then
     tap_ok "IT-HAPI-390-003: Deployment has sdk-config volume and /etc/kubernaut-agent/sdk mount"
@@ -1020,7 +1020,7 @@ SDKEOF
 
   # Auto-generated config: toolsets empty by default
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) $(template_llm_args) 2>&1)
+    $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
   if echo "$output" | grep -A1 "toolsets:" | grep -q "{}"; then
     tap_ok "ST-SDK-DEFAULTS-001: auto-generated config renders toolsets: {}"
   else
@@ -1031,7 +1031,7 @@ SDKEOF
 
   # Tier 2: sdkConfigContent renders verbatim via --set-file
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) \
+    $(template_common_args) $(policy_flags) \
     --set-file "kubernautAgent.sdkConfigContent=$tier2_file" 2>&1)
   if echo "$output" | grep -q "provider: anthropic" && \
      echo "$output" | grep -q "model: claude-4"; then
@@ -1049,7 +1049,7 @@ SDKEOF
 
   # Tier 3 wins over Tier 2: existingSdkConfigMap takes priority
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) \
+    $(template_common_args) $(policy_flags) \
     --set-file "kubernautAgent.sdkConfigContent=$tier2_file" \
     --set kubernautAgent.existingSdkConfigMap=external-cm 2>&1)
   if ! echo "$output" | grep -q "name: kubernaut-agent-sdk-config" && \
@@ -1064,11 +1064,11 @@ SDKEOF
   # ST-HOOK-TPL-001: webhook count parsing uses jsonpath (not fragile grep)
   local hook_tpl
   hook_tpl=$(helm template test "$CHART_PATH" \
-    $(template_common_args) $(template_llm_args) \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
     -s templates/hooks/tls-cert-job.yaml 2>&1)
   local webhook_tpl
   webhook_tpl=$(helm template test "$CHART_PATH" \
-    $(template_common_args) $(template_llm_args) \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
     -s templates/authwebhook/authwebhook.yaml 2>&1)
 
   if echo "$hook_tpl" | grep -q "jsonpath='{.webhooks\[\\*\].name}'" && \
@@ -1180,7 +1180,7 @@ SDKEOF
 
   # GCP fields conditional: not rendered for non-vertex providers
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) $(template_llm_args) 2>&1)
+    $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
   if ! echo "$output" | grep -q "gcp_project_id"; then
     tap_ok "ST-SDK-GCP-001: gcp_project_id not rendered for non-vertex provider"
   else
