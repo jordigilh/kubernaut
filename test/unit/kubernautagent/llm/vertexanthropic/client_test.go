@@ -59,7 +59,7 @@ func generateFakeServiceAccountJSONWithTokenURL(tokenURL string) []byte {
 		"type":           "service_account",
 		"project_id":     "test-project",
 		"private_key_id": "key123",
-		"private_key":    string(keyPEM),
+		"private_key":    string(keyPEM), // notsecret — generated at runtime via rsa.GenerateKey
 		"client_email":   "test@test-project.iam.gserviceaccount.com",
 		"client_id":      "123456789",
 		"auth_uri":       "https://accounts.google.com/o/oauth2/auth",
