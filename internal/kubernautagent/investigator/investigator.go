@@ -260,6 +260,17 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 			RCASummary: content,
 		}, nil
 	}
+
+	// Defense-in-depth: RCA phase must never abort the pipeline via
+	// needs_human_review. Only max-turns exhaustion (above) is a valid RCA abort.
+	// Aligned with HAPI v1.2.1 where needs_human_review is parser-driven in Phase 3.
+	if result.HumanReviewNeeded {
+		inv.logger.Info("clearing HumanReviewNeeded set during RCA (parser-driven in Phase 3 only)",
+			slog.String("reason", result.HumanReviewReason))
+		result.HumanReviewNeeded = false
+		result.HumanReviewReason = ""
+	}
+
 	return result, nil
 }
 
@@ -398,7 +409,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		resp, err := inv.client.Chat(ctx, llm.ChatRequest{
 			Messages: messages,
 			Tools:    toolDefs,
-			Options:  llm.ChatOptions{JSONMode: true},
+			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase)},
 		})
 		if err != nil {
 			failEvent := audit.NewEvent(audit.EventTypeResponseFailed, correlationID)
@@ -518,9 +529,19 @@ func (inv *Investigator) toolDefinitionsForPhase(phase katypes.Phase) []llm.Tool
 	defs = append(defs, llm.ToolDefinition{
 		Name:        SubmitResultToolName,
 		Description: "Submit the final investigation result as structured JSON. Call this tool when your analysis is complete.",
-		Parameters:  parser.InvestigationResultSchema(),
+		Parameters:  submitResultSchemaForPhase(phase),
 	})
 	return defs
+}
+
+// submitResultSchemaForPhase returns the phase-appropriate JSON Schema for
+// the submit_result tool. RCA uses a restricted schema without workflow/escalation
+// fields; workflow discovery uses the full InvestigationResultSchema.
+func submitResultSchemaForPhase(phase katypes.Phase) json.RawMessage {
+	if phase == katypes.PhaseRCA {
+		return parser.RCAResultSchema()
+	}
+	return parser.InvestigationResultSchema()
 }
 
 func (inv *Investigator) executeTool(ctx context.Context, name string, args json.RawMessage) string {

@@ -503,10 +503,7 @@ func buildTransportChain(cfg *kaconfig.Config) http.RoundTripper {
 	}
 
 	if cfg.LLM.StructuredOutput {
-		base = llmtransport.NewStructuredOutputTransport(
-			parser.InvestigationResultSchema(),
-			base,
-		)
+		base = llmtransport.NewStructuredOutputTransport(nil, base)
 		needsCustom = true
 	}
 
