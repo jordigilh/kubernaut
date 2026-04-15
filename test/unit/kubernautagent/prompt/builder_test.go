@@ -51,7 +51,7 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 	})
 
 	Describe("UT-KA-433-018: Prompt template includes enrichment data", func() {
-		It("should include owner chain and remediation history when present", func() {
+		It("should include owner chain and labels in RCA prompt (remediation history is Phase 3 only per #700)", func() {
 			builder, err := prompt.NewBuilder()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(builder).NotTo(BeNil())
@@ -74,9 +74,35 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 				Message:   "High memory usage detected",
 			}, enrichData)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rendered).To(ContainSubstring("Deployment/api-server"))
-			Expect(rendered).To(ContainSubstring("oom-increase-memory"))
-			Expect(rendered).To(ContainSubstring("REMEDIATION HISTORY"))
+			Expect(rendered).To(ContainSubstring("Deployment/api-server"),
+				"RCA prompt should include owner chain")
+			Expect(rendered).NotTo(ContainSubstring("oom-increase-memory"),
+				"RCA prompt must NOT include remediation history (Phase 3 only per #700)")
+			Expect(rendered).NotTo(ContainSubstring("REMEDIATION HISTORY"),
+				"RCA prompt must NOT include remediation history section header")
+		})
+
+		It("should include remediation history in workflow selection prompt", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			enrichData := &prompt.EnrichmentData{
+				OwnerChain: []string{"Deployment/api-server"},
+				HistoryResult: &enrichment.RemediationHistoryResult{
+					TargetResource: "production/Pod/api-server-abc",
+					Tier1: []enrichment.Tier1Entry{
+						{RemediationUID: "oom-increase-memory", ActionType: "increase_memory", Outcome: "success", CompletedAt: time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)},
+					},
+					Tier1Window: "24h",
+				},
+			}
+			rendered, err := builder.RenderWorkflowSelection(prompt.SignalData{
+				Name: "api-server-abc", Namespace: "production", Severity: "warning",
+				Message: "High memory usage detected",
+			}, "OOMKilled root cause", enrichData)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("oom-increase-memory"),
+				"workflow selection prompt should include remediation history")
 		})
 	})
 

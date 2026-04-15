@@ -121,9 +121,12 @@ type MetricDeltas struct {
 
 // EnrichmentResult is the combined enrichment data.
 type EnrichmentResult struct {
-	OwnerChain         []OwnerChainEntry        `json:"owner_chain"`
-	DetectedLabels     *DetectedLabels          `json:"detected_labels,omitempty"`
-	QuotaDetails       map[string]string        `json:"quota_details,omitempty"`
+	ResourceKind      string                   `json:"resource_kind,omitempty"`
+	ResourceName      string                   `json:"resource_name,omitempty"`
+	ResourceNamespace string                   `json:"resource_namespace,omitempty"`
+	OwnerChain        []OwnerChainEntry        `json:"owner_chain"`
+	DetectedLabels    *DetectedLabels          `json:"detected_labels,omitempty"`
+	QuotaDetails      map[string]string        `json:"quota_details,omitempty"`
 	RemediationHistory *RemediationHistoryResult `json:"remediation_history,omitempty"`
 }
 
@@ -156,7 +159,11 @@ func (e *Enricher) WithLabelDetector(ld *LabelDetector) *Enricher {
 // Implements partial failure: each sub-call is best-effort.
 // If specHash is empty, auto-computes it via K8sClient.GetSpecHash.
 func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, incidentID string) (*EnrichmentResult, error) {
-	result := &EnrichmentResult{}
+	result := &EnrichmentResult{
+		ResourceKind:      kind,
+		ResourceName:      name,
+		ResourceNamespace: namespace,
+	}
 
 	if specHash == "" {
 		computed, err := e.k8s.GetSpecHash(ctx, kind, name, namespace)

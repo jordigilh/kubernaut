@@ -35,6 +35,7 @@ import (
 	"github.com/tmc/langchaingo/llms/openai"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 )
 
 // Option configures provider-specific settings for the LangChainGo adapter.
@@ -168,7 +169,13 @@ func newModel(provider, endpoint, model, apiKey string, o *options) (llms.Model,
 
 // Chat translates a Kubernaut ChatRequest into LangChainGo's MessageContent
 // format, calls GenerateContent, and maps the response back.
+// Per-session OutputSchema is propagated to the HTTP transport via context,
+// enabling phase-specific structured output for Anthropic (see #700).
 func (a *Adapter) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
+	if len(req.Options.OutputSchema) > 0 {
+		ctx = transport.WithOutputSchema(ctx, req.Options.OutputSchema)
+	}
+
 	msgs := toMessages(req.Messages)
 	opts := buildCallOptions(req)
 

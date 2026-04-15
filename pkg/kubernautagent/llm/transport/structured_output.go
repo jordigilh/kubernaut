@@ -18,11 +18,30 @@ package transport
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 )
+
+type outputSchemaKey struct{}
+
+// WithOutputSchema attaches a per-session JSON Schema to the context.
+// The StructuredOutputTransport reads this in RoundTrip to inject the
+// appropriate output_config.format for each Anthropic API call.
+func WithOutputSchema(ctx context.Context, schema json.RawMessage) context.Context {
+	return context.WithValue(ctx, outputSchemaKey{}, schema)
+}
+
+// OutputSchemaFromContext retrieves the per-session JSON Schema from the context.
+// Returns nil if no schema was set.
+func OutputSchemaFromContext(ctx context.Context) json.RawMessage {
+	if v, ok := ctx.Value(outputSchemaKey{}).(json.RawMessage); ok {
+		return v
+	}
+	return nil
+}
 
 // StructuredOutputTransport implements http.RoundTripper to inject Anthropic's
 // output_config.format into Messages API requests. This enables structured JSON
@@ -43,8 +62,8 @@ type StructuredOutputTransport struct {
 
 // NewStructuredOutputTransport creates a transport that injects
 // output_config.format into Anthropic Messages API requests.
-// The schema parameter is a JSON Schema object that defines the expected
-// response format (e.g., the InvestigationResult schema).
+// The schema parameter is retained for API compatibility but should be nil;
+// per-session schemas are provided via WithOutputSchema on the request context.
 // If base is nil, http.DefaultTransport is used.
 func NewStructuredOutputTransport(schema json.RawMessage, base http.RoundTripper) *StructuredOutputTransport {
 	if base == nil {
@@ -59,8 +78,21 @@ func NewStructuredOutputTransport(schema json.RawMessage, base http.RoundTripper
 // RoundTrip intercepts outgoing requests, and if the body looks like an
 // Anthropic Messages API payload (has a "messages" key), injects the
 // output_config.format field for structured JSON output.
+//
+// Schema resolution order:
+//  1. Context-provided schema (WithOutputSchema) — per-session, authoritative
+//  2. Constructor-provided schema (t.schema) — legacy fallback (should be nil)
+//  3. No schema → pass through unmodified
 func (t *StructuredOutputTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Body == nil || req.Method != http.MethodPost {
+		return t.base.RoundTrip(req)
+	}
+
+	schema := OutputSchemaFromContext(req.Context())
+	if schema == nil {
+		schema = t.schema
+	}
+	if len(schema) == 0 {
 		return t.base.RoundTrip(req)
 	}
 
@@ -91,7 +123,7 @@ func (t *StructuredOutputTransport) RoundTrip(req *http.Request) (*http.Response
 	outputConfig := map[string]interface{}{
 		"format": map[string]interface{}{
 			"type":   "json_schema",
-			"schema": json.RawMessage(t.schema),
+			"schema": json.RawMessage(schema),
 		},
 	}
 

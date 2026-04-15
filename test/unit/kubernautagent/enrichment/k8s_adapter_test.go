@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	fakedynamic "k8s.io/client-go/dynamic/fake"
+	"k8s.io/utils/ptr"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 )
@@ -44,7 +45,7 @@ var _ = Describe("K8s Owner-Chain Adapter — TP-433-WIR Phase 1b", func() {
 			pod.SetName("web-abc123")
 			pod.SetNamespace("default")
 			pod.SetOwnerReferences([]metav1.OwnerReference{
-				{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "rs-abc", UID: "uid-rs"},
+				{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "rs-abc", UID: "uid-rs", Controller: ptr.To(true)},
 			})
 
 			rs := &unstructured.Unstructured{}
@@ -74,7 +75,7 @@ var _ = Describe("K8s Owner-Chain Adapter — TP-433-WIR Phase 1b", func() {
 			pod.SetName("web-abc123")
 			pod.SetNamespace("default")
 			pod.SetOwnerReferences([]metav1.OwnerReference{
-				{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "rs-abc", UID: "uid-rs"},
+				{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "rs-abc", UID: "uid-rs", Controller: ptr.To(true)},
 			})
 
 			rs := &unstructured.Unstructured{}
@@ -82,7 +83,7 @@ var _ = Describe("K8s Owner-Chain Adapter — TP-433-WIR Phase 1b", func() {
 			rs.SetName("rs-abc")
 			rs.SetNamespace("default")
 			rs.SetOwnerReferences([]metav1.OwnerReference{
-				{APIVersion: "apps/v1", Kind: "Deployment", Name: "api-server", UID: "uid-deploy"},
+				{APIVersion: "apps/v1", Kind: "Deployment", Name: "api-server", UID: "uid-deploy", Controller: ptr.To(true)},
 			})
 
 			deploy := &unstructured.Unstructured{}
@@ -128,7 +129,6 @@ var _ = Describe("K8s Owner-Chain Adapter — TP-433-WIR Phase 1b", func() {
 		It("should not exceed maxOwnerChainDepth even with circular references", func() {
 			scheme := runtime.NewScheme()
 
-			// Create a chain of 12 resources that reference each other
 			var resources []runtime.Object
 			for i := 0; i < 12; i++ {
 				obj := &unstructured.Unstructured{}
@@ -137,19 +137,18 @@ var _ = Describe("K8s Owner-Chain Adapter — TP-433-WIR Phase 1b", func() {
 				obj.SetNamespace("default")
 				if i < 11 {
 					obj.SetOwnerReferences([]metav1.OwnerReference{
-						{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: fmt.Sprintf("rs-%d", i+1), UID: "uid"},
+						{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: fmt.Sprintf("rs-%d", i+1), UID: "uid", Controller: ptr.To(true)},
 					})
 				}
 				resources = append(resources, obj)
 			}
 
-			// Start resource (Pod) points to rs-0
 			pod := &unstructured.Unstructured{}
 			pod.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
 			pod.SetName("deep-pod")
 			pod.SetNamespace("default")
 			pod.SetOwnerReferences([]metav1.OwnerReference{
-				{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "rs-0", UID: "uid"},
+				{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "rs-0", UID: "uid", Controller: ptr.To(true)},
 			})
 			resources = append(resources, pod)
 
@@ -172,7 +171,7 @@ var _ = Describe("K8s Owner-Chain Adapter — TP-433-WIR Phase 1b", func() {
 			pod.SetName("web-pod-1")
 			pod.SetNamespace("production")
 			pod.SetOwnerReferences([]metav1.OwnerReference{
-				{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "web-rs-abc", UID: "rs-uid"},
+				{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "web-rs-abc", UID: "rs-uid", Controller: ptr.To(true)},
 			})
 
 			rs := &unstructured.Unstructured{}
@@ -180,7 +179,7 @@ var _ = Describe("K8s Owner-Chain Adapter — TP-433-WIR Phase 1b", func() {
 			rs.SetName("web-rs-abc")
 			rs.SetNamespace("production")
 			rs.SetOwnerReferences([]metav1.OwnerReference{
-				{APIVersion: "apps/v1", Kind: "Deployment", Name: "web-deploy", UID: "deploy-uid"},
+				{APIVersion: "apps/v1", Kind: "Deployment", Name: "web-deploy", UID: "deploy-uid", Controller: ptr.To(true)},
 			})
 
 			deploy := &unstructured.Unstructured{}
@@ -219,6 +218,82 @@ var _ = Describe("K8s Owner-Chain Adapter — TP-433-WIR Phase 1b", func() {
 			chain, err := adapter.GetOwnerChain(context.Background(), "Node", "worker-1", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(chain).To(BeEmpty())
+		})
+	})
+})
+
+var _ = Describe("TP-693: Controller-ref owner chain selection", func() {
+
+	Describe("UT-KA-693-008: Multiple ownerRefs — only controller:true is followed", func() {
+		It("should follow the controller ownerRef, not the first one", func() {
+			scheme := runtime.NewScheme()
+
+			pod := &unstructured.Unstructured{}
+			pod.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
+			pod.SetName("test-pod")
+			pod.SetNamespace("default")
+			pod.SetOwnerReferences([]metav1.OwnerReference{
+				{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "non-controller-rs", UID: "uid-1"},
+				{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "controller-rs", UID: "uid-2", Controller: ptr.To(true)},
+			})
+
+			nonControllerRS := &unstructured.Unstructured{}
+			nonControllerRS.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "ReplicaSet"})
+			nonControllerRS.SetName("non-controller-rs")
+			nonControllerRS.SetNamespace("default")
+
+			controllerRS := &unstructured.Unstructured{}
+			controllerRS.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "ReplicaSet"})
+			controllerRS.SetName("controller-rs")
+			controllerRS.SetNamespace("default")
+			controllerRS.SetOwnerReferences([]metav1.OwnerReference{
+				{APIVersion: "apps/v1", Kind: "Deployment", Name: "my-deploy", UID: "uid-deploy", Controller: ptr.To(true)},
+			})
+
+			deploy := &unstructured.Unstructured{}
+			deploy.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"})
+			deploy.SetName("my-deploy")
+			deploy.SetNamespace("default")
+
+			dynClient := fakedynamic.NewSimpleDynamicClient(scheme, pod, nonControllerRS, controllerRS, deploy)
+			mapper := newSimpleRESTMapper()
+
+			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
+			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "test-pod", "default")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(chain).To(HaveLen(2),
+				"UT-KA-693-008: should follow controller RS → Deployment")
+			Expect(chain[0].Name).To(Equal("controller-rs"),
+				"UT-KA-693-008: first entry must be the controller RS, not non-controller-rs")
+			Expect(chain[1].Name).To(Equal("my-deploy"))
+		})
+	})
+
+	Describe("UT-KA-693-009: No controller:true ownerRef yields empty chain", func() {
+		It("should return empty chain when no ownerRef has controller:true", func() {
+			scheme := runtime.NewScheme()
+
+			pod := &unstructured.Unstructured{}
+			pod.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
+			pod.SetName("orphan-pod")
+			pod.SetNamespace("default")
+			pod.SetOwnerReferences([]metav1.OwnerReference{
+				{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "some-rs", UID: "uid-1"},
+			})
+
+			someRS := &unstructured.Unstructured{}
+			someRS.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "ReplicaSet"})
+			someRS.SetName("some-rs")
+			someRS.SetNamespace("default")
+
+			dynClient := fakedynamic.NewSimpleDynamicClient(scheme, pod, someRS)
+			mapper := newSimpleRESTMapper()
+
+			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
+			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "orphan-pod", "default")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(chain).To(BeEmpty(),
+				"UT-KA-693-009: no controller:true → empty chain (aligned with SP/GW)")
 		})
 	})
 })

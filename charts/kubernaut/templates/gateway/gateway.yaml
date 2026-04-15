@@ -75,9 +75,10 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
     verbs: ["get", "list", "watch"]
+  # controller-runtime leader election requires list+watch for reflector cache sync (#687)
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
-    verbs: ["get", "create", "update", "delete"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # BR-GATEWAY-036/037: TokenReview and SAR for auth middleware
   - apiGroups: ["authentication.k8s.io"]
     resources: ["tokenreviews"]
