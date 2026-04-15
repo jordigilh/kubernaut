@@ -2,9 +2,9 @@
 
 **Status**: ✅ APPROVED
 **Decision Date**: 2026-02-05
-**Version**: 1.3
+**Version**: 1.4
 **Confidence**: 95%
-**Applies To**: HolmesGPT API (HAPI), DataStorage Service (DS)
+**Applies To**: HolmesGPT API (HAPI), Kubernaut Agent (KA), DataStorage Service (DS)
 
 ---
 
@@ -17,6 +17,7 @@
 | 1.2 | 2026-02-12 | Architecture Team | DRIFT-DS-1: Corrected sort order to descending (most recent first) per implementation. DRIFT-HAPI-1: Added spec_drift Assessment Reason Handling section documenting INCONCLUSIVE semantics, declining effectiveness exclusion, causal chain detection, and LLM reasoning guidance. |
 | 1.3 | 2026-03-27 | Architecture Team | Remediation history API and examples: `workflowType` renamed to `actionType`; RO audit skeleton field `workflow_type` renamed to `action_type` (Issue #528, v1.2). |
 | 1.4 | 2026-03-28 | Architecture Team | Issue #586: Corrected Tier 1 query key from `target_resource` to `pre_remediation_spec_hash`. Both tiers now query by spec hash to preserve causal chain integrity for LLM reasoning. Removed `QueryROEventsByTarget` dead code. |
+| 1.5 | 2026-04-15 | Architecture Team | **Issue #700**: Remediation history is now **Phase 3 (Workflow Selection) only** in KA, aligned with HAPI v1.2.1 `PHASE3_SECTIONS`. Previously, `RenderInvestigation()` injected `RemediationHistorySection` into the Phase 1 RCA prompt, causing the LLM to consider escalation/regression language during root cause analysis. `RenderWorkflowSelection()` now receives the full history via `EnrichmentData.HistoryResult` including declining effectiveness detection. See DD-HAPI-017 v1.6, PR #701. |
 
 ---
 

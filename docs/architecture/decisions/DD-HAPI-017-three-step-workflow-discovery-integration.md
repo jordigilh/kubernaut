@@ -2,9 +2,9 @@
 
 **Status**: ✅ APPROVED
 **Decision Date**: 2026-02-05
-**Version**: 1.5
-**Confidence**: 92%
-**Applies To**: HolmesGPT API (HAPI), DataStorage Service (DS)
+**Version**: 1.6
+**Confidence**: 95%
+**Applies To**: HolmesGPT API (HAPI), Kubernaut Agent (KA), DataStorage Service (DS)
 
 ---
 
@@ -18,6 +18,7 @@
 | 1.3 | 2026-02-20 | Architecture Team | Surface detected labels to LLM as read-only `cluster_context` in `list_available_actions` tool response (Step 1). Labels remain HAPI-computed and are NOT LLM-managed parameters. The LLM receives them for informed action type reasoning (e.g., GitOps-managed, HPA-enabled). Add BR-HAPI-017-007. Update Section 8 prompt builder impact. See ADR-056 v1.3. |
 | 1.4 | 2026-02-20 | Architecture Team | Phase 1 implementation: label detection moves from workflow_discovery (signal source) to `get_resource_context` (RCA target). When active labels are detected, `get_resource_context` returns `detected_infrastructure` for one-shot LLM RCA reassessment. Second calls resolve new target but skip label re-detection. Add BR-HAPI-017-008. Update Section 8 enforcement flow. See ADR-056 v1.4. |
 | 1.5 | 2026-03-24 | Architecture Team | **Issue #524**: `get_resource_context` renamed to `get_namespaced_resource_context`; added `get_cluster_resource_context` for cluster-scoped targets. Both tools live in the `resource_context` toolset. Session state records `resource_scope` (`namespaced` / `cluster`). Post-selection validation guard flags **node-scoped** `action_type` paired with **namespaced** resource-context usage. Former mandatory canonical-parameter validator Step 0 removed in HAPI (see DD-HAPI-006 v1.5, docs/tests/524). |
+| 1.6 | 2026-04-15 | Architecture Team | **Issue #700**: KA phase separation aligned with HAPI v1.2.1 baseline. Three-step workflow discovery tools (`list_available_actions`, `list_workflows`, `get_workflow`) are now **Phase 3 only** — excluded from the Phase 1 RCA prompt and toolset. Phase 1 uses `RCAResultSchema()` (no `selected_workflow`, `needs_human_review`); Phase 3 uses `InvestigationResultSchema()`. Remediation history (DD-HAPI-016) injected in Phase 3 prompt only. Per-session structured output via `ChatOptions.OutputSchema` replaces global schema (aligned with HAPI `InvestigateRequest.sections`). Defense-in-depth: `HumanReviewNeeded` cleared after RCA parse — only max-turns exhaustion aborts Phase 1. Dead templates removed: `investigation.tmpl`, `workflow_selection.tmpl`, `workflow_discovery_context.tmpl`. See PR #701, `docs/tests/700/TEST_PLAN.md`. |
 
 ---
 
