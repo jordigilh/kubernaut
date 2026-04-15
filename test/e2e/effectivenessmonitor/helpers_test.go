@@ -28,6 +28,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/jordigilh/kubernaut/test/infrastructure"
+
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
@@ -176,7 +178,7 @@ func createTargetPod(namespace, name string) *corev1.Pod {
 			Containers: []corev1.Container{
 				{
 					Name:    "workload",
-					Image:   "busybox:1.36",
+					Image:   infrastructure.EMTargetPodImage,
 					Command: []string{"sleep", "3600"},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
