@@ -11,8 +11,6 @@ mcp-server
 *.bak
 *.bak2
 
-# HolmesGPT API virtual environments (test venvs with pattern venv-*-test)
-holmesgpt-api/venv-*-test/
 
 # Compiled Go binaries (service executables - root directory only)
 /aianalysis
@@ -208,9 +206,6 @@ test/e2e/gateway/.kube/
 # Kubernetes cache files (generated during E2E tests)
 **/.kube/cache/
 
-# Development scripts with potential secrets
-holmesgpt-api/start-with-anthropic.sh
-holmesgpt-api/start-llm-test.sh
 PR_DESCRIPTION.md
 /junit*.xml
 /coverage-*.out

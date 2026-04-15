@@ -5,7 +5,6 @@
 #   PostgreSQL:       15438 → 5432
 #   Redis:            16384 → 6379
 #   Data Storage API: 18095 → 8080
-#   HolmesGPT API:    18120 → 8080
 #
 # These ports are dedicated to AIAnalysis integration tests to prevent
 # collisions with other services running tests in parallel.
@@ -75,29 +74,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
-    networks:
-      - aianalysis_test_network
-
-  holmesgpt-api:
-    image: kubernaut/holmesgpt-api:latest
-    container_name: aianalysis_holmesgpt_test
-    build:
-      context: ../../..
-      dockerfile: holmesgpt-api/Dockerfile
-    environment:
-      # DataStorage connection (matches src/audit/factory.py expectation)
-      DATA_STORAGE_URL: http://datastorage:8080
-      PORT: 8080
-    ports:
-      - "18120:8080"  # AIAnalysis integration test HolmesGPT API port
-    depends_on:
-      datastorage:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - aianalysis_test_network
 
