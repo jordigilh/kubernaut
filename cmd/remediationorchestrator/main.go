@@ -306,6 +306,15 @@ func main() {
 		routingEngine, // DD-RO-002: Routing engine built from YAML config
 		eaCreator,     // ADR-EM-001: EA creation on terminal phases
 	)
+	// Issue #643 v2: Wire DS-backed workflow display resolver.
+	dsWorkflowAdapter, err := routing.NewDSWorkflowAdapterFromConfig(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
+	if err != nil {
+		setupLog.Error(err, "Failed to create DataStorage workflow adapter",
+			"url", cfg.DataStorage.URL)
+		os.Exit(1)
+	}
+	roReconciler.SetWorkflowResolver(dsWorkflowAdapter)
+
 	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
 	roReconciler.SetRESTMapper(mgr.GetRESTMapper())
 	// DD-EM-004 v2.0, Issue #253: Wire config-driven async propagation delays
