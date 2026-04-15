@@ -71,24 +71,15 @@ disruptions (drain/eviction). Before concluding this is a taint or scheduling is
    SYMPTOM of the PDB blocking eviction, not the root cause.
 4. **RCA target**: The affected resource should be the PDB, not the Node.
 {{ end -}}
-{{ if .RemediationHistorySection }}
-## Remediation History Context (AUTO-DETECTED)
-
-{{ .RemediationHistorySection }}
-
+{{ if or .OwnerChain .DetectedLabels }}
+## Enrichment Context (AUTO-DETECTED)
+{{ if .OwnerChain }}
+**Owner Chain**: {{ .OwnerChain }}
 {{ end -}}
-## Business Context (AUTO-INJECTED INTO WORKFLOW DISCOVERY)
-
-**IMPORTANT**: These fields are automatically injected into all workflow discovery tool calls. They are for context only — you do NOT need to pass them.
-
-- Environment: {{ .Environment }}
-- Priority: {{ .Priority }}
-- Business Category: {{ .BusinessCategory }}
-- Risk Tolerance: {{ .RiskTolerance }}
-
-**Note**: These business context fields are automatically included as signal context filters
-in all workflow discovery tool calls. You do NOT need to pass them manually.
-
+{{ if .DetectedLabels }}
+**Detected Labels**: {{ .DetectedLabels }}
+{{ end -}}
+{{ end -}}
 ## Your Investigation Workflow
 
 **CRITICAL**: Follow this sequence in order. Do NOT search for workflows before investigating.
@@ -148,38 +139,9 @@ Choose the tool based on whether the resource is **namespaced** or **cluster-sco
 - **`get_cluster_resource_context`** — For cluster-scoped resources (Node, PersistentVolume, Namespace, etc.).
   Returns: `root_owner`, `remediation_history`.
 
-**Important**: You **must** call this for your **final** RCA target before starting Phase 4.
+**Important**: You **must** call this for your **final** RCA target before submitting the result.
 
-### Phase 4: Discover and Select Workflow (MANDATORY - Three-Step Protocol)
-
-**Step 1**: Call `list_available_actions` to discover available remediation action types.
-
-**Step 2**: Call `list_workflows` with `action_type` set to your chosen action type.
-**CRITICAL**: If the response includes `pagination.hasNext`, call the tool again with `page: "next"` and `cursor` set to the `nextCursor` value to review ALL workflows.
-
-**Step 3**: Call `get_workflow` with the `workflow_id` of your selected workflow to retrieve its full parameter schema.
-
-### Phase 5: Return Summary + JSON Payload
-{{ if eq .SignalMode "proactive" -}}
-Provide natural language summary of your prediction assessment + structured JSON with preventive workflow and parameters.
-{{ else -}}
-Provide natural language summary + structured JSON with workflow and parameters.
-{{ end }}
-## Special Investigation Outcomes (BR-HAPI-200)
-
-**CRITICAL RULE**: `investigation_outcome: resolved` means the problem is **no longer occurring** and the resource is **currently healthy RIGHT NOW**.
-
-### Outcome A: Problem Self-Resolved
-Set `selected_workflow` to None, `investigation_outcome` to "resolved". Use when confidence >=0.7 that problem is no longer occurring.
-
-### Outcome B: Investigation Inconclusive
-Set `selected_workflow` to None, `investigation_outcome` to "inconclusive". Use when confidence <0.5.
-
-### Outcome C: No Automated Remediation Available
-Set `selected_workflow` to None. Do NOT include `investigation_outcome`.
-
-### Outcome D: Alert Not Actionable
-Set `selected_workflow` to None, include `actionable: false`.
+### Submit Your Findings
 
 ## Expected Response Format
 
@@ -199,16 +161,6 @@ Set `selected_workflow` to None, include `actionable: false`.
       "namespace": "namespace"
     }
   },
-  "selected_workflow": {
-    "workflow_id": "workflow-id-from-catalog",
-    "confidence": 0.95,
-    "rationale": "Why this workflow addresses the root cause",
-    "parameters": {"PARAM_NAME": "value"},
-    "execution_engine": "job"
-  },
-  "alternative_workflows": [
-    {"workflow_id": "alt-id", "confidence": 0.75, "rationale": "Why considered"}
-  ],
   "severity": "high",
   "confidence": 0.95,
   "investigation_outcome": "actionable",
@@ -218,9 +170,7 @@ Set `selected_workflow` to None, include `actionable: false`.
 
 **Rules**:
 - Call `submit_result` with the JSON object as the tool argument
-- All fields in root_cause_analysis.summary and selected_workflow are required when actionable
+- root_cause_analysis.summary is always required
 - Top-level severity must match root_cause_analysis.severity
-- Top-level confidence must match selected_workflow.confidence
-- parameters should only contain workflow-specific values (kind/name/namespace are injected by the system)
-- For non-actionable outcomes, omit selected_workflow and set actionable to false
-- If human review is needed, include "needs_human_review": true and "human_review_reason"
+- confidence indicates your certainty in the root cause analysis (0.0–1.0)
+- For non-actionable outcomes, set actionable to false

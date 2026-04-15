@@ -82,14 +82,12 @@ type investigationTemplateData struct {
 	SignalMode                  string
 	OwnerChain                  string
 	DetectedLabels              string
-	RemediationHistory          string
 	IsDuplicate                 bool
 	OccurrenceCount             int
 	DeduplicationWindowMinutes  int
 	FirstSeen                   string
 	LastSeen                    string
 	PDBSignalGuidance           string
-	RemediationHistorySection   string
 	Priority                    string
 	BusinessCategory            string
 	RiskTolerance               string
@@ -185,25 +183,6 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentD
 		}
 		if len(enrichData.DetectedLabels) > 0 {
 			data.DetectedLabels = sortedLabelString(enrichData.DetectedLabels)
-		}
-
-		var sections []string
-		if data.OwnerChain != "" {
-			sections = append(sections, "**Owner Chain**: "+data.OwnerChain)
-		}
-		if data.DetectedLabels != "" {
-			sections = append(sections, "**Detected Labels**: "+data.DetectedLabels)
-		}
-
-		if enrichData.HistoryResult != nil && (len(enrichData.HistoryResult.Tier1) > 0 || len(enrichData.HistoryResult.Tier2) > 0) {
-			sections = append(sections, BuildRemediationHistorySection(
-				enrichData.HistoryResult, RepeatedRemediationEscalationThreshold))
-		} else if enrichData.HistoryRendered != "" {
-			sections = append(sections, enrichData.HistoryRendered)
-		}
-
-		if len(sections) > 0 {
-			data.RemediationHistorySection = strings.Join(sections, "\n\n")
 		}
 	}
 
