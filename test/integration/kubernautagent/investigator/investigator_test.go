@@ -516,6 +516,153 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 	})
 })
 
+var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() {
+
+	var (
+		logger     *slog.Logger
+		auditStore *recordingAuditStore
+		mockClient *mockLLMClient
+		builder    *prompt.Builder
+		rp         *parser.ResultParser
+		phaseTools katypes.PhaseToolMap
+	)
+
+	BeforeEach(func() {
+		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		auditStore = &recordingAuditStore{}
+		mockClient = &mockLLMClient{}
+		builder, _ = prompt.NewBuilder()
+		rp = parser.NewResultParser()
+		phaseTools = investigator.DefaultPhaseToolMap()
+	})
+
+	Describe("UT-KA-693-005: Workflow selection prompt shows re-enriched target", func() {
+		It("should include the RCA-identified Deployment name in workflow selection prompt", func() {
+			k8s := &resourceAwareK8sClient{
+				chains: map[string][]enrichment.OwnerChainEntry{
+					"worker-77784c6cf7-l27g4": {
+						{Kind: "ReplicaSet", Name: "worker-77784c6cf7", Namespace: "demo-crashloop"},
+						{Kind: "Deployment", Name: "worker", Namespace: "demo-crashloop"},
+					},
+					"worker": {}, // Deployment is root, empty chain
+				},
+			}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled in worker deployment","remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools,
+			})
+
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				ResourceKind: "Pod",
+				ResourceName: "worker-77784c6cf7-l27g4",
+				Name:         "worker-77784c6cf7-l27g4",
+				Namespace:    "demo-crashloop",
+				Severity:     "critical",
+				Message:      "OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			Expect(mockClient.calls).To(HaveLen(2))
+			workflowCallContent := allMessageContent(mockClient.calls[1].Messages)
+			Expect(workflowCallContent).To(ContainSubstring("demo-crashloop/Deployment/worker"),
+				"UT-KA-693-005: workflow selection prompt Resource field must show re-enriched target")
+			Expect(workflowCallContent).NotTo(ContainSubstring("demo-crashloop/Pod/worker-77784c6cf7-l27g4"),
+				"UT-KA-693-005: workflow selection prompt Resource field must NOT show original Pod identity")
+		})
+	})
+
+	Describe("UT-KA-693-006: No re-enrichment leaves signal unchanged", func() {
+		It("should preserve original signal when RCA returns same target", func() {
+			k8s := &fakeK8sClient{
+				ownerChain: []enrichment.OwnerChainEntry{
+					{Kind: "ReplicaSet", Name: "worker-77784c6cf7", Namespace: "demo-crashloop"},
+					{Kind: "Deployment", Name: "worker", Namespace: "demo-crashloop"},
+				},
+			}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"CrashLoop in worker pod"}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart-pod","confidence":0.8}`}},
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools,
+			})
+
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				ResourceKind: "Pod",
+				ResourceName: "worker-77784c6cf7-l27g4",
+				Name:         "worker-77784c6cf7-l27g4",
+				Namespace:    "demo-crashloop",
+				Severity:     "warning",
+				Message:      "CrashLoopBackOff",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"),
+				"UT-KA-693-006: target kind should come from owner chain")
+			Expect(result.RemediationTarget.Name).To(Equal("worker"),
+				"UT-KA-693-006: target name should come from owner chain root")
+		})
+	})
+
+	Describe("UT-KA-693-007: Injection receives same signal identity as prompt", func() {
+		It("should produce remediation target consistent with prompt identity after re-enrichment", func() {
+			k8s := &resourceAwareK8sClient{
+				chains: map[string][]enrichment.OwnerChainEntry{
+					"worker-77784c6cf7-l27g4": {
+						{Kind: "ReplicaSet", Name: "worker-77784c6cf7", Namespace: "demo-crashloop"},
+						{Kind: "Deployment", Name: "worker", Namespace: "demo-crashloop"},
+					},
+					"worker": {}, // Deployment is root, empty chain
+				},
+			}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled targeting Deployment worker","remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.95,"remediation_target":{"kind":"Deployment","name":"worker-77784c6cf7","namespace":"demo-crashloop"}}`}},
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools,
+			})
+
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				ResourceKind: "Pod",
+				ResourceName: "worker-77784c6cf7-l27g4",
+				Name:         "worker-77784c6cf7-l27g4",
+				Namespace:    "demo-crashloop",
+				Severity:     "critical",
+				Message:      "OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"),
+				"UT-KA-693-007: injection must use re-enrichment source kind")
+			Expect(result.RemediationTarget.Name).To(Equal("worker"),
+				"UT-KA-693-007: injection must use re-enrichment source name, not LLM hallucination")
+		})
+	})
+})
+
 func toolNamesFromCall(call llm.ChatRequest) []string {
 	names := make([]string, len(call.Tools))
 	for i, td := range call.Tools {

@@ -329,6 +329,23 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 		})
 	})
 
+	Describe("UT-KA-693-004: Enrich populates resource identity on result", func() {
+		It("should set ResourceKind, ResourceName, ResourceNamespace from input params", func() {
+			k8s := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			result, err := e.Enrich(context.Background(), "Deployment", "worker", "demo-crashloop", "", "inc-1")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.ResourceKind).To(Equal("Deployment"),
+				"UT-KA-693-004: Enrich must populate ResourceKind from input params")
+			Expect(result.ResourceName).To(Equal("worker"),
+				"UT-KA-693-004: Enrich must populate ResourceName from input params")
+			Expect(result.ResourceNamespace).To(Equal("demo-crashloop"),
+				"UT-KA-693-004: Enrich must populate ResourceNamespace from input params")
+		})
+	})
+
 	Describe("UT-KA-433-013: Enricher emits enrichment audit events", func() {
 		It("should emit enrichment.completed with structured EventData on success", func() {
 			k8s := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{

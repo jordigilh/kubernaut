@@ -130,7 +130,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	if rcaResult.HumanReviewNeeded {
 		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, enrichData)
-		injectRemediationTarget(rcaResult, signal, enrichData)
+		InjectRemediationTarget(rcaResult, signal, enrichData)
 		injectTargetResourceParameters(rcaResult)
 		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
 		return rcaResult, nil
@@ -138,6 +138,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	// GAP-001 / ADR-056: Re-enrich using RCA-identified remediation target if different.
 	// H3-fix: retain pre-RCA enrichment if re-enrichment fails.
+	workflowSignal := signal
 	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
 	if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
 		inv.logger.Info("re-enriching with RCA remediation target",
@@ -154,13 +155,17 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			inv.logger.Warn("re-enrichment returned nil, retaining pre-RCA enrichment data")
 		}
 		promptEnrichment = toPromptEnrichment(enrichData)
+
+		workflowSignal.ResourceKind = postRCAKind
+		workflowSignal.ResourceName = postRCAName
+		workflowSignal.Namespace = postRCANS
 	}
 
 	if inv.pipeline.AnomalyDetector != nil {
 		inv.pipeline.AnomalyDetector.Reset()
 	}
 
-	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, promptEnrichment, tokens, correlationID)
+	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, tokens, correlationID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
 	}
@@ -171,7 +176,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	backfillSeverity(workflowResult, signal)
 	attachDetectedLabels(workflowResult, enrichData)
-	injectRemediationTarget(workflowResult, signal, enrichData)
+	InjectRemediationTarget(workflowResult, workflowSignal, enrichData)
 	injectTargetResourceParameters(workflowResult)
 	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID)
 	return workflowResult, nil
@@ -766,19 +771,18 @@ func attachDetectedLabels(result *katypes.InvestigationResult, enrichData *enric
 	result.DetectedLabels = detectedLabelsToResult(enrichData.DetectedLabels)
 }
 
-// injectRemediationTarget replicates KA's _inject_target_resource behavior.
+// InjectRemediationTarget resolves the authoritative remediation target.
 //
-// Logic:
-//   - If the LLM did not provide a remediation_target (Kind==""), inject the
-//     K8s root owner from the owner chain.
-//   - If the LLM provided a target with the SAME Kind as the root owner
-//     (e.g., both Deployment), override with the root owner. K8s identity is
-//     authoritative for same-kind resources — the LLM may return a name that
-//     doesn't exist in the cluster.
-//   - If the LLM provided a target with a DIFFERENT Kind (e.g., Certificate
-//     when the root owner is Deployment), preserve the LLM's target. The LLM
-//     identified a cross-type resource that owner-chain resolution can't reach.
-func injectRemediationTarget(result *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult) {
+// Root owner resolution priority:
+//  1. Owner chain last entry (most common: Pod → RS → Deployment)
+//  2. Enrichment source identity (after re-enrichment, the chain is empty
+//     because the enriched resource IS the root — see #694)
+//  3. Signal identity (fallback when enrichData is nil)
+//
+// LLM target handling:
+//   - Kind == "" or same as root: override with K8s-verified root identity
+//   - Different Kind (cross-type): preserve the LLM's target
+func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult) {
 	if result == nil {
 		return
 	}
@@ -791,6 +795,12 @@ func injectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 		rootName = root.Name
 		if root.Namespace != "" {
 			rootNS = root.Namespace
+		}
+	} else if enrichData != nil && enrichData.ResourceKind != "" {
+		rootKind = enrichData.ResourceKind
+		rootName = enrichData.ResourceName
+		if enrichData.ResourceNamespace != "" {
+			rootNS = enrichData.ResourceNamespace
 		}
 	}
 

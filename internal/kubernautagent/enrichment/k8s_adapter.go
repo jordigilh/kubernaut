@@ -44,6 +44,8 @@ func NewK8sAdapter(dynClient dynamic.Interface, mapper meta.RESTMapper) *K8sAdap
 }
 
 // GetOwnerChain walks ownerReferences from the given resource up to maxOwnerChainDepth.
+// At each level, only the controller ownerReference (Controller: true) is followed,
+// aligning with Gateway and SignalProcessing behavior (see #696).
 // Returns the chain from the immediate owner to the root owner, excluding the starting resource.
 func (a *K8sAdapter) GetOwnerChain(ctx context.Context, kind, name, namespace string) ([]OwnerChainEntry, error) {
 	gvr, err := a.resolveGVR(kind)
@@ -72,7 +74,17 @@ func (a *K8sAdapter) GetOwnerChain(ctx context.Context, kind, name, namespace st
 			break
 		}
 
-		ownerRef := owners[0]
+		var controllerRef *metav1.OwnerReference
+		for i := range owners {
+			if owners[i].Controller != nil && *owners[i].Controller {
+				controllerRef = &owners[i]
+				break
+			}
+		}
+		if controllerRef == nil {
+			break
+		}
+		ownerRef := *controllerRef
 		chain = append(chain, OwnerChainEntry{
 			Kind:      ownerRef.Kind,
 			Name:      ownerRef.Name,

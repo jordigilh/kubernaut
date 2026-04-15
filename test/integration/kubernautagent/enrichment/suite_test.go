@@ -233,14 +233,15 @@ func createK8sFixtures(dynClient dynamic.Interface) {
 			"metadata": map[string]interface{}{
 				"name":      "web-rs-abc",
 				"namespace": "it-enrichment",
-				"ownerReferences": []interface{}{
-					map[string]interface{}{
-						"apiVersion": "apps/v1",
-						"kind":       "Deployment",
-						"name":       "web-deploy",
-						"uid":        deployUID,
-					},
+			"ownerReferences": []interface{}{
+				map[string]interface{}{
+					"apiVersion": "apps/v1",
+					"kind":       "Deployment",
+					"name":       "web-deploy",
+					"uid":        deployUID,
+					"controller": true,
 				},
+			},
 			},
 			"spec": map[string]interface{}{
 				"replicas": int64(1),
@@ -275,14 +276,15 @@ func createK8sFixtures(dynClient dynamic.Interface) {
 			"metadata": map[string]interface{}{
 				"name":      "web-pod-1",
 				"namespace": "it-enrichment",
-				"ownerReferences": []interface{}{
-					map[string]interface{}{
-						"apiVersion": "apps/v1",
-						"kind":       "ReplicaSet",
-						"name":       "web-rs-abc",
-						"uid":        rsUID,
-					},
+			"ownerReferences": []interface{}{
+				map[string]interface{}{
+					"apiVersion": "apps/v1",
+					"kind":       "ReplicaSet",
+					"name":       "web-rs-abc",
+					"uid":        rsUID,
+					"controller": true,
 				},
+			},
 			},
 			"spec": map[string]interface{}{
 				"containers": []interface{}{
