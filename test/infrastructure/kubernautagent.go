@@ -247,6 +247,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 // createEnrichmentFixtures creates namespaces and minimal workloads that mock LLM
 // scenarios reference as remediation_target. Without these, re-enrichment returns
 // NotFound → HardFail → rca_incomplete, breaking tests that expect normal outcomes.
+// Includes Pod/test-pod/default for the default fallback mock scenario.
 // The rca_incomplete scenario targets unreachable-pod which is intentionally NOT
 // created so that it triggers HardFail as expected.
 //
@@ -445,6 +446,26 @@ spec:
   resources:
     requests:
       storage: 1Mi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod
+  namespace: default
+  labels:
+    app: test-pod
+spec:
+  restartPolicy: Never
+  containers:
+  - name: pause
+    image: registry.k8s.io/pause:3.9
+    resources:
+      requests:
+        memory: "8Mi"
+        cpu: "10m"
+      limits:
+        memory: "16Mi"
+        cpu: "50m"
 `
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
@@ -453,7 +474,7 @@ spec:
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("kubectl apply enrichment fixtures: %w", err)
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ Enrichment fixtures created (2 namespaces + 9 resources)")
+	_, _ = fmt.Fprintln(writer, "  ✅ Enrichment fixtures created (2 namespaces + 10 resources)")
 	return nil
 }
 
