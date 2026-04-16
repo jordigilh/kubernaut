@@ -146,6 +146,23 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			"rca_target", postRCAKind+"/"+postRCAName,
 		)
 		reEnriched := inv.resolveEnrichment(ctx, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
+
+		// BR-HAPI-261 AC#7 / #704: check HardFail BEFORE label merge
+		// to prevent the merge from silently dropping the failure signal.
+		if reEnriched != nil && reEnriched.HardFail {
+			inv.logger.Warn("enrichment owner chain hard-failed, triggering rca_incomplete",
+				slog.String("error", reEnriched.OwnerChainError.Error()),
+			)
+			rcaResult.HumanReviewNeeded = true
+			rcaResult.HumanReviewReason = "rca_incomplete"
+			backfillSeverity(rcaResult, signal)
+			attachDetectedLabels(rcaResult, reEnriched)
+			InjectRemediationTarget(rcaResult, workflowSignal, reEnriched)
+			injectTargetResourceParameters(rcaResult)
+			inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
+			return rcaResult, nil
+		}
+
 		if reEnriched != nil && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
 			enrichData = reEnriched
 		} else if reEnriched != nil {
@@ -159,22 +176,6 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		workflowSignal.ResourceKind = postRCAKind
 		workflowSignal.ResourceName = postRCAName
 		workflowSignal.Namespace = postRCANS
-	}
-
-	// BR-HAPI-261 AC#7 / #704: owner chain resolution failure → rca_incomplete.
-	// Gate on the final enrichData before workflow selection.
-	if enrichData != nil && enrichData.OwnerChainError != nil {
-		inv.logger.Warn("enrichment owner chain failed, triggering rca_incomplete",
-			slog.String("error", enrichData.OwnerChainError.Error()),
-		)
-		rcaResult.HumanReviewNeeded = true
-		rcaResult.HumanReviewReason = "rca_incomplete"
-		backfillSeverity(rcaResult, signal)
-		attachDetectedLabels(rcaResult, enrichData)
-		InjectRemediationTarget(rcaResult, workflowSignal, enrichData)
-		injectTargetResourceParameters(rcaResult)
-		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
-		return rcaResult, nil
 	}
 
 	if inv.pipeline.AnomalyDetector != nil {

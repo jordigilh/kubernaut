@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -34,6 +35,8 @@ import (
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // staticCatalogFetcher returns a pre-built validator for tests that need
@@ -671,15 +674,22 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 	Describe("IT-KA-704-001: Owner chain failure triggers rca_incomplete", func() {
 		It("should set needs_human_review=true with rca_incomplete when GetOwnerChain fails", func() {
+			notFoundErr := apierrors.NewNotFound(
+				schema.GroupResource{Resource: "pods"}, "target-pod")
 			k8s := &fakeK8sClient{
 				ownerChain: nil,
-				err:        fmt.Errorf("k8s adapter: get Pod/test-pod in production: not found"),
+				err:        notFoundErr,
 			}
 			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, logger).
+				WithRetryConfig(enrichment.RetryConfig{
+					MaxRetries:  3,
+					BaseBackoff: 1 * time.Millisecond,
+				})
 
+			// RCA names a DIFFERENT target than the signal to trigger re-enrichment.
 			mockClient.responses = []llm.ChatResponse{
-				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit exceeded","remediation_target":{"kind":"Pod","name":"test-pod","namespace":"production"}}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit exceeded","remediation_target":{"kind":"Pod","name":"target-pod","namespace":"production"}}`}},
 				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9}`}},
 			}
 
@@ -691,8 +701,8 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				ResourceKind: "Pod",
-				ResourceName: "test-pod",
-				Name:         "test-pod",
+				ResourceName: "signal-pod",
+				Name:         "signal-pod",
 				Namespace:    "production",
 				Severity:     "critical",
 				Message:      "OOMKilled",

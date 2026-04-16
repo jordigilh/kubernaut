@@ -23,6 +23,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // OwnerChainEntry represents a single entry in a Kubernetes owner chain.
@@ -119,6 +121,15 @@ type MetricDeltas struct {
 	ErrorRateAfter    *float64 `json:"error_rate_after,omitempty"`
 }
 
+// RetryConfig controls retry behavior for infrastructure calls in Enrich().
+// With MaxRetries=0 (default), enrichment is best-effort (current behavior).
+// With MaxRetries>0, transient errors are retried with exponential backoff
+// and permanent failures trigger HardFail on EnrichmentResult.
+type RetryConfig struct {
+	MaxRetries  int
+	BaseBackoff time.Duration
+}
+
 // EnrichmentResult is the combined enrichment data.
 type EnrichmentResult struct {
 	ResourceKind      string                   `json:"resource_kind,omitempty"`
@@ -126,9 +137,14 @@ type EnrichmentResult struct {
 	ResourceNamespace string                   `json:"resource_namespace,omitempty"`
 	OwnerChain        []OwnerChainEntry        `json:"owner_chain"`
 	// OwnerChainError is non-nil when GetOwnerChain fails (resource not found, API error).
-	// The investigator uses this to trigger rca_incomplete (BR-HAPI-261 AC#7, #704).
-	// A nil value with an empty OwnerChain means "no controller owners" (legitimate).
+	// Set for observability regardless of retry mode.
 	OwnerChainError   error                    `json:"-"`
+	// HardFail is true when owner chain resolution fails definitively:
+	// either a permanent error (NotFound, Forbidden) or transient error
+	// after retry exhaustion. The investigator uses this to trigger
+	// rca_incomplete (BR-HAPI-261 AC#7, #704). Only set when RetryConfig
+	// has MaxRetries > 0 (strict enrichment mode).
+	HardFail          bool                     `json:"-"`
 	DetectedLabels    *DetectedLabels          `json:"detected_labels,omitempty"`
 	QuotaDetails      map[string]string        `json:"quota_details,omitempty"`
 	RemediationHistory *RemediationHistoryResult `json:"remediation_history,omitempty"`
@@ -141,6 +157,7 @@ type Enricher struct {
 	auditStore    audit.AuditStore
 	logger        *slog.Logger
 	labelDetector *LabelDetector
+	retryConfig   RetryConfig
 }
 
 // NewEnricher creates an enricher with the given clients.
@@ -157,6 +174,74 @@ func NewEnricher(k8s K8sClient, ds DataStorageClient, auditStore audit.AuditStor
 func (e *Enricher) WithLabelDetector(ld *LabelDetector) *Enricher {
 	e.labelDetector = ld
 	return e
+}
+
+// WithRetryConfig sets the retry policy for infrastructure calls.
+func (e *Enricher) WithRetryConfig(cfg RetryConfig) *Enricher {
+	e.retryConfig = cfg
+	return e
+}
+
+// resolveOwnerChainWithRetry calls GetOwnerChain with optional retry logic.
+// With MaxRetries=0 (default): single call, best-effort.
+// With MaxRetries>0: transient errors are retried with exponential backoff;
+// permanent errors return immediately without retry. The caller sets HardFail
+// on EnrichmentResult based on whether this returns a non-nil error.
+func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, namespace string) ([]OwnerChainEntry, error) {
+	chain, err := e.k8s.GetOwnerChain(ctx, kind, name, namespace)
+	if err == nil {
+		return chain, nil
+	}
+
+	if e.retryConfig.MaxRetries == 0 {
+		return nil, err
+	}
+
+	if !isTransientK8sError(err) {
+		return nil, err
+	}
+
+	boCfg := backoff.Config{
+		BasePeriod: e.retryConfig.BaseBackoff,
+		Multiplier: 2.0,
+		MaxPeriod:  e.retryConfig.BaseBackoff * 4,
+	}
+
+	for attempt := 1; attempt <= e.retryConfig.MaxRetries; attempt++ {
+		wait := boCfg.Calculate(int32(attempt))
+		e.logger.Info("enrichment: retrying GetOwnerChain",
+			slog.Int("attempt", attempt),
+			slog.Duration("backoff", wait),
+		)
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+
+		chain, err = e.k8s.GetOwnerChain(ctx, kind, name, namespace)
+		if err == nil {
+			return chain, nil
+		}
+
+		if !isTransientK8sError(err) {
+			return nil, err
+		}
+	}
+
+	return nil, err
+}
+
+// isTransientK8sError classifies K8s API errors as retryable (transient) or
+// permanent. NotFound, Forbidden, Gone, etc. are permanent. Timeout, 503,
+// 500, and 429 are transient. Non-StatusError types are treated as permanent.
+func isTransientK8sError(err error) bool {
+	return apierrors.IsTimeout(err) ||
+		apierrors.IsServerTimeout(err) ||
+		apierrors.IsServiceUnavailable(err) ||
+		apierrors.IsInternalError(err) ||
+		apierrors.IsTooManyRequests(err)
 }
 
 // Enrich resolves enrichment data for the given resource.
@@ -183,13 +268,15 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 
 	var ownerErr, histErr error
 
-	chain, err := e.k8s.GetOwnerChain(ctx, kind, name, namespace)
-	if err != nil {
-		ownerErr = err
-		result.OwnerChainError = err
+	chain, ownerErr := e.resolveOwnerChainWithRetry(ctx, kind, name, namespace)
+	if ownerErr != nil {
+		result.OwnerChainError = ownerErr
+		if e.retryConfig.MaxRetries > 0 {
+			result.HardFail = true
+		}
 		e.logger.Warn("enrichment: owner chain resolution failed",
 			slog.String("resource", namespace+"/"+kind+"/"+name),
-			slog.String("error", err.Error()),
+			slog.String("error", ownerErr.Error()),
 		)
 	} else {
 		result.OwnerChain = chain
