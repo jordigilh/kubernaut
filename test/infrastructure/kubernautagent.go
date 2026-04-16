@@ -250,6 +250,12 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 // The rca_incomplete scenario targets unreachable-pod which is intentionally NOT
 // created so that it triggers HardFail as expected.
 //
+// Resources created:
+//   production: api-server (Deployment), failing-pod, recovered-pod, api-server-def456,
+//               ambiguous-pod, failed-analysis-pod (Pods), batch-job-pvc-expired (PVC)
+//   staging:    worker (Deployment), worker-pdb (PDB — required so CrashLoopBackOff
+//               re-enrichment to worker/staging preserves pdbProtected detection)
+//
 // Note: an empty enrichment: {} YAML section in the KA ConfigMap will zero out the
 // HAPI defaults (MaxRetries=3 → 0), silently disabling retry+fail-hard. The E2E
 // ConfigMap intentionally omits the enrichment key so DefaultConfig() applies.
@@ -317,6 +323,17 @@ spec:
             memory: "16Mi"
             cpu: "50m"
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker-pdb
+  namespace: staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: worker
+---
 apiVersion: v1
 kind: Pod
 metadata:
@@ -380,6 +397,26 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
+  name: failing-pod
+  namespace: production
+  labels:
+    app: failing-pod
+spec:
+  restartPolicy: Never
+  containers:
+  - name: pause
+    image: registry.k8s.io/pause:3.9
+    resources:
+      requests:
+        memory: "8Mi"
+        cpu: "10m"
+      limits:
+        memory: "16Mi"
+        cpu: "50m"
+---
+apiVersion: v1
+kind: Pod
+metadata:
   name: failed-analysis-pod
   namespace: production
   labels:
@@ -396,6 +433,18 @@ spec:
       limits:
         memory: "16Mi"
         cpu: "50m"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: batch-job-pvc-expired
+  namespace: production
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Mi
 `
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
@@ -404,7 +453,7 @@ spec:
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("kubectl apply enrichment fixtures: %w", err)
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ Enrichment fixtures created (2 namespaces + 6 resources)")
+	_, _ = fmt.Fprintln(writer, "  ✅ Enrichment fixtures created (2 namespaces + 9 resources)")
 	return nil
 }
 

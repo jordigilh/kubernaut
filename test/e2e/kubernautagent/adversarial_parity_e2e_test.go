@@ -321,8 +321,8 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 
 			hrReason, hasReason := result.HumanReviewReason.Get()
 			Expect(hasReason).To(BeTrue(), "M2: human_review_reason must be set when needs_human_review=true")
-			Expect(hrReason).To(Equal("rca_incomplete"),
-				"E2E-KA-433-ADV-016: reason must be rca_incomplete (enrichment HardFail)")
+		Expect(hrReason).To(BeEquivalentTo("rca_incomplete"),
+			"E2E-KA-433-ADV-016: reason must be rca_incomplete (enrichment HardFail)")
 		})
 	})
 })

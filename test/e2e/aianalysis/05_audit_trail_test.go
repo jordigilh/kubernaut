@@ -377,11 +377,13 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 		By("Waiting for reconciliation to complete")
-		// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
+		// Accepts Completed or Failed: when the mock LLM default fallback targets
+		// a resource absent from Kind, #704 HardFail triggers rca_incomplete which
+		// the reconciler maps to Failed. The audit events are recorded regardless.
 		Eventually(func() string {
 			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
 			return string(analysis.Status.Phase)
-		}).Should(Equal("Completed"))
+		}).Should(SatisfyAny(Equal("Completed"), Equal("Failed")))
 
 			remediationID := analysis.Spec.RemediationID
 

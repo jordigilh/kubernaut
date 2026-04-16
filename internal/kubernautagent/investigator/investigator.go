@@ -149,6 +149,10 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 		// BR-HAPI-261 AC#7 / #704: check HardFail BEFORE label merge
 		// to prevent the merge from silently dropping the failure signal.
+		// Use enrichData (initial enrichment) for labels because the failed
+		// re-enrichment has empty/all-failed detections — preserving signal-level
+		// labels (e.g. pdbProtected) matches pre-#704 behaviour where
+		// allLabelDetectionsFailed() fell through to keep initial labels.
 		if reEnriched != nil && reEnriched.HardFail {
 			inv.logger.Warn("enrichment owner chain hard-failed, triggering rca_incomplete",
 				slog.String("error", reEnriched.OwnerChainError.Error()),
@@ -156,8 +160,8 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			rcaResult.HumanReviewNeeded = true
 			rcaResult.HumanReviewReason = "rca_incomplete"
 			backfillSeverity(rcaResult, signal)
-			attachDetectedLabels(rcaResult, reEnriched)
-			InjectRemediationTarget(rcaResult, workflowSignal, reEnriched)
+			attachDetectedLabels(rcaResult, enrichData)
+			InjectRemediationTarget(rcaResult, workflowSignal, enrichData)
 			injectTargetResourceParameters(rcaResult)
 			inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
 			return rcaResult, nil
