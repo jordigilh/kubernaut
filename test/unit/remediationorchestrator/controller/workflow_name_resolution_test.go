@@ -21,7 +21,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -29,35 +28,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	prodcontroller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Issue #643 regression: resolveWorkflowName must resolve UUID → CRD name.
-// The root cause was a missing remediationworkflowv1.AddToScheme(scheme) in
-// cmd/remediationorchestrator/main.go, which caused client.List to silently
-// return empty results and fall back to the UUID.
-var _ = Describe("Issue #643: Workflow Name Resolution", func() {
+// Issue #643 v2: WorkflowDisplayName must be resolved from DataStorage,
+// not from RemediationWorkflow CRD status. DS is the authoritative source
+// and remains available even when the CRD is deleted.
+var _ = Describe("Issue #643 v2: Workflow Name Resolution via DataStorage", func() {
 	const (
-		workflowUUID    = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-		workflowCRDName = "crashloop-rollback-v1"
+		workflowUUID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+		workflowName = "crashloop-rollback-v1"
+		actionType   = "RestartPod"
 	)
 
-	It("UT-RO-643-001: should resolve workflow UUID to CRD name when RemediationWorkflow exists", func() {
+	It("UT-RO-643-001: should resolve workflow UUID to ActionType:WorkflowName from DS", func() {
 		ctx := context.Background()
 		scheme := setupScheme()
-
-		rw := &remediationworkflowv1.RemediationWorkflow{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      workflowCRDName,
-				Namespace: "default",
-			},
-			Status: remediationworkflowv1.RemediationWorkflowStatus{
-				WorkflowID: workflowUUID,
-			},
-		}
 
 		rr := newRemediationRequestWithChildRefs(
 			"test-rr-643", "default", remediationv1.PhaseAnalyzing,
@@ -67,7 +56,7 @@ var _ = Describe("Issue #643: Workflow Name Resolution", func() {
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(rr, ai, sp, rw).
+			WithObjects(rr, ai, sp).
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
@@ -77,6 +66,15 @@ var _ = Describe("Issue #643: Workflow Name Resolution", func() {
 			nil, recorder,
 			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 			prodcontroller.TimeoutConfig{}, &MockRoutingEngine{})
+
+		reconciler.SetWorkflowResolver(&MockWorkflowResolver{
+			Responses: map[string]*routing.WorkflowDisplayInfo{
+				workflowUUID: {
+					WorkflowName: workflowName,
+					ActionType:   actionType,
+				},
+			},
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-643", Namespace: "default"},
@@ -88,14 +86,14 @@ var _ = Describe("Issue #643: Workflow Name Resolution", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(updatedRR.Status.WorkflowDisplayName).To(
-			ContainSubstring(workflowCRDName),
-			"WorkflowDisplayName should contain the CRD name, not the UUID")
+			Equal(actionType+":"+workflowName),
+			"WorkflowDisplayName should be ActionType:WorkflowName from DS")
 		Expect(updatedRR.Status.WorkflowDisplayName).NotTo(
 			ContainSubstring(workflowUUID),
 			"WorkflowDisplayName should NOT contain the raw UUID")
 	})
 
-	It("UT-RO-643-002: should fall back to UUID when no matching RemediationWorkflow exists", func() {
+	It("UT-RO-643-002: should fall back to UUID when DS returns no match", func() {
 		ctx := context.Background()
 		scheme := setupScheme()
 
@@ -118,6 +116,10 @@ var _ = Describe("Issue #643: Workflow Name Resolution", func() {
 			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 			prodcontroller.TimeoutConfig{}, &MockRoutingEngine{})
 
+		reconciler.SetWorkflowResolver(&MockWorkflowResolver{
+			Responses: map[string]*routing.WorkflowDisplayInfo{},
+		})
+
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-643b", Namespace: "default"},
 		})
@@ -129,14 +131,44 @@ var _ = Describe("Issue #643: Workflow Name Resolution", func() {
 
 		Expect(updatedRR.Status.WorkflowDisplayName).To(
 			ContainSubstring(workflowUUID),
-			"WorkflowDisplayName should fall back to UUID when no CRD match exists")
+			"WorkflowDisplayName should fall back to UUID when DS has no match")
 	})
 
-	It("UT-RO-643-003: scheme must include RemediationWorkflow types", func() {
+	It("UT-RO-643-003: should fall back to UUID when resolver is nil (graceful degradation)", func() {
+		ctx := context.Background()
 		scheme := setupScheme()
-		gvk := remediationworkflowv1.GroupVersion.WithKind("RemediationWorkflow")
-		recognized := scheme.Recognizes(gvk)
-		Expect(recognized).To(BeTrue(),
-			"Test scheme must recognize RemediationWorkflow GVK — mirrors cmd/remediationorchestrator/main.go init()")
+
+		rr := newRemediationRequestWithChildRefs(
+			"test-rr-643c", "default", remediationv1.PhaseAnalyzing,
+			"sp-test-rr-643c", "ai-test-rr-643c", "")
+		ai := newAIAnalysisCompleted("ai-test-rr-643c", "default", "test-rr-643c", 0.95, workflowUUID)
+		sp := newSignalProcessingCompleted("sp-test-rr-643c", "default", "test-rr-643c")
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr, ai, sp).
+			WithStatusSubresource(&remediationv1.RemediationRequest{}).
+			Build()
+
+		recorder := record.NewFakeRecorder(20)
+		reconciler := prodcontroller.NewReconciler(
+			fakeClient, fakeClient, scheme,
+			nil, recorder,
+			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			prodcontroller.TimeoutConfig{}, &MockRoutingEngine{})
+		// Do NOT call SetWorkflowResolver — resolver stays nil
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: "test-rr-643c", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var updatedRR remediationv1.RemediationRequest
+		err = fakeClient.Get(ctx, client.ObjectKey{Name: "test-rr-643c", Namespace: "default"}, &updatedRR)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(updatedRR.Status.WorkflowDisplayName).To(
+			ContainSubstring(workflowUUID),
+			"WorkflowDisplayName should fall back to UUID when resolver is nil")
 	})
 })

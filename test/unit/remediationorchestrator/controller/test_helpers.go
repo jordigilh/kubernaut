@@ -86,6 +86,18 @@ func (m *MockRoutingEngine) CalculateExponentialBackoff(consecutiveFailures int3
 	return time.Duration(consecutiveFailures) * time.Minute
 }
 
+// MockWorkflowResolver implements routing.WorkflowDisplayResolver for unit tests.
+type MockWorkflowResolver struct {
+	Responses map[string]*routing.WorkflowDisplayInfo
+}
+
+func (m *MockWorkflowResolver) ResolveWorkflowDisplay(_ context.Context, workflowID string) *routing.WorkflowDisplayInfo {
+	if m == nil || m.Responses == nil {
+		return nil
+	}
+	return m.Responses[workflowID]
+}
+
 // ptr is a helper to get pointer to bool
 func ptr(b bool) *bool {
 	return &b

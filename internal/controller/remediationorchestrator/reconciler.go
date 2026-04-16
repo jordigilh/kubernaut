@@ -52,7 +52,6 @@ import (
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -126,6 +125,11 @@ type Reconciler struct {
 	// Used by createEffectivenessAssessmentIfNeeded to compute HashComputeDelay
 	// from gitOpsSyncDelay/operatorReconcileDelay instead of stabilization window.
 	asyncPropagation roconfig.AsyncPropagationConfig
+
+	// Issue #643 v2: DS-backed workflow display resolver.
+	// Resolves workflow UUID → human-readable WorkflowName + ActionType from DataStorage.
+	// nil = graceful degradation (UUID shown as-is in printer columns).
+	workflowResolver routing.WorkflowDisplayResolver
 
 	// BR-ORCH-025: Distributed lock manager for WFE creation safety.
 	// Prevents duplicate WFEs when concurrent reconciles target the same resource.
@@ -272,6 +276,13 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	r.weHandler = handler.NewWorkflowExecutionHandler(c, s, m, r.transitionToFailed, r.transitionToVerifying)
 
 	return r
+}
+
+// SetWorkflowResolver wires the DS-backed workflow display resolver.
+// Must be called after NewReconciler in production (cmd/remediationorchestrator/main.go).
+// nil is safe — resolveWorkflowDisplay falls back to the raw UUID.
+func (r *Reconciler) SetWorkflowResolver(resolver routing.WorkflowDisplayResolver) {
+	r.workflowResolver = resolver
 }
 
 // SetDSClient wires the DataStorage history querier into the routing engine.
@@ -1130,13 +1141,11 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// BR-ORCH-044: Track child CRD creation
 		r.Metrics.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
 
-		// Issue #643: Resolve workflow UUID outside the retry callback — the name
-		// is immutable between retries and the API call should not repeat on conflicts.
+		// Issue #643 v2: Resolve workflow UUID to human-readable name via DS.
 		var workflowDisplayName, confidence string
 		if ai.Status.SelectedWorkflow != nil {
-			workflowName := r.resolveWorkflowName(ctx, ai.Status.SelectedWorkflow.WorkflowID)
-			workflowDisplayName = remediationrequest.FormatWorkflowDisplay(
-				ai.Status.SelectedWorkflow.ActionType, workflowName)
+			actionType, workflowName := r.resolveWorkflowDisplay(ctx, ai.Status.SelectedWorkflow.WorkflowID)
+			workflowDisplayName = remediationrequest.FormatWorkflowDisplay(actionType, workflowName)
 			confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
 		}
 
@@ -1380,12 +1389,11 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 		// BR-ORCH-044: Track child CRD creation
 		r.Metrics.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
 
-		// Issue #643: Resolve workflow UUID outside the retry callback.
+		// Issue #643 v2: Resolve workflow UUID to human-readable name via DS.
 		var workflowDisplayName2, confidence2 string
 		if ai.Status.SelectedWorkflow != nil {
-			workflowName := r.resolveWorkflowName(ctx, ai.Status.SelectedWorkflow.WorkflowID)
-			workflowDisplayName2 = remediationrequest.FormatWorkflowDisplay(
-				ai.Status.SelectedWorkflow.ActionType, workflowName)
+			actionType, workflowName := r.resolveWorkflowDisplay(ctx, ai.Status.SelectedWorkflow.WorkflowID)
+			workflowDisplayName2 = remediationrequest.FormatWorkflowDisplay(actionType, workflowName)
 			confidence2 = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
 		}
 
@@ -2935,25 +2943,18 @@ func (r *Reconciler) emitTimeoutAudit(ctx context.Context, rr *remediationv1.Rem
 	}
 }
 
-// resolveWorkflowName resolves a workflow UUID to its CRD metadata.name by
-// listing RemediationWorkflow CRDs. Returns the UUID unchanged if no match is
-// found (graceful degradation — the display is still usable, just not ideal).
-// Issue #643: workflowDisplayName should show the human-readable CRD name.
-// Uses apiReader (direct API call) instead of r.client (cached) because
-// RemediationWorkflow is not in the controller's watch list — a cached List
-// would trigger an on-demand informer sync that blocks the reconcile loop.
-func (r *Reconciler) resolveWorkflowName(ctx context.Context, workflowID string) string {
-	var rwList remediationworkflowv1.RemediationWorkflowList
-	if err := r.apiReader.List(ctx, &rwList); err != nil {
-		log.FromContext(ctx).V(1).Info("Failed to list RemediationWorkflows for display name resolution", "error", err)
-		return workflowID
-	}
-	for i := range rwList.Items {
-		if rwList.Items[i].Status.WorkflowID == workflowID {
-			return rwList.Items[i].Name
+// resolveWorkflowDisplay resolves a workflow UUID to human-readable display
+// fields (WorkflowName + ActionType) by querying DataStorage.
+// Returns (actionType, workflowName) for use with FormatWorkflowDisplay.
+// Falls back to ("", workflowID) if the resolver is nil or DS lookup fails.
+// Issue #643 v2: Replaced CRD-based resolution with authoritative DS lookup.
+func (r *Reconciler) resolveWorkflowDisplay(ctx context.Context, workflowID string) (string, string) {
+	if r.workflowResolver != nil {
+		if info := r.workflowResolver.ResolveWorkflowDisplay(ctx, workflowID); info != nil {
+			return info.ActionType, info.WorkflowName
 		}
 	}
-	return workflowID
+	return "", workflowID
 }
 
 // SetupWithManager sets up the controller with the Manager.
