@@ -40,6 +40,7 @@ type Config struct {
 	Sanitization  SanitizationConfig  `yaml:"sanitization"`
 	Anomaly       AnomalyConfig       `yaml:"anomaly"`
 	Summarizer    SummarizerConfig    `yaml:"summarizer"`
+	Enrichment    EnrichmentConfig    `yaml:"enrichment"`
 }
 
 type LLMConfig struct {
@@ -125,6 +126,14 @@ type SanitizationConfig struct {
 
 type SummarizerConfig struct {
 	Threshold int `yaml:"threshold"`
+}
+
+// EnrichmentConfig controls retry behavior for K8s owner chain resolution
+// during enrichment. HAPI-aligned defaults (MaxRetries=3, BaseBackoff=1s)
+// ensure rca_incomplete is triggered on definitive enrichment failure.
+type EnrichmentConfig struct {
+	MaxRetries  int           `yaml:"max_retries"`
+	BaseBackoff time.Duration `yaml:"base_backoff"`
 }
 
 type AnomalyConfig struct {
@@ -271,6 +280,10 @@ func DefaultConfig() *Config {
 		},
 		Summarizer: SummarizerConfig{
 			Threshold: 8000,
+		},
+		Enrichment: EnrichmentConfig{
+			MaxRetries:  3,
+			BaseBackoff: 1 * time.Second,
 		},
 	}
 }

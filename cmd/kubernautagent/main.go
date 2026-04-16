@@ -172,7 +172,7 @@ func main() {
 	ds := initDSClients(cfg, k8sInfra, slogger)
 	auditStore, auditCleanup := buildAuditStore(cfg, slogger, logrLogger)
 	reg := buildToolRegistry(cfg, slogger, k8sInfra, ds)
-	enricher := buildEnricher(ds, k8sInfra, auditStore, slogger)
+	enricher := buildEnricher(cfg, ds, k8sInfra, auditStore, slogger)
 	sanitizer := buildSanitizationPipeline(cfg, slogger)
 	anomalyDetector := buildAnomalyDetector(cfg, slogger)
 	sum := buildSummarizer(llmClient, cfg, slogger)
@@ -425,7 +425,8 @@ func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // buildEnricher creates the enrichment.Enricher when DS clients are available.
 // ADR-056: attaches LabelDetector so detected_labels are populated during enrichment.
-func buildEnricher(ds *dsClients, infra *k8sInfra, auditStore audit.AuditStore, logger *slog.Logger) *enrichment.Enricher {
+// #704: wires RetryConfig from config for HAPI-aligned owner chain retry+fail-hard.
+func buildEnricher(cfg *kaconfig.Config, ds *dsClients, infra *k8sInfra, auditStore audit.AuditStore, logger *slog.Logger) *enrichment.Enricher {
 	if ds == nil {
 		return nil
 	}
@@ -434,6 +435,14 @@ func buildEnricher(ds *dsClients, infra *k8sInfra, auditStore audit.AuditStore, 
 		e.WithLabelDetector(enrichment.NewLabelDetector(infra.dynClient, infra.mapper))
 		logger.Info("label detector enabled (ADR-056)")
 	}
+	e.WithRetryConfig(enrichment.RetryConfig{
+		MaxRetries:  cfg.Enrichment.MaxRetries,
+		BaseBackoff: cfg.Enrichment.BaseBackoff,
+	})
+	logger.Info("enrichment retry config wired (#704)",
+		slog.Int("max_retries", cfg.Enrichment.MaxRetries),
+		slog.Duration("base_backoff", cfg.Enrichment.BaseBackoff),
+	)
 	return e
 }
 
