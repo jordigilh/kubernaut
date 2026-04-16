@@ -236,7 +236,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// for scenarios that are NOT rca_incomplete.
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 7: Creating enrichment fixture resources (#704)...")
-	if err := createEnrichmentFixtures(kubeconfigPath, writer); err != nil {
+	if err := createEnrichmentFixtures(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create enrichment fixtures: %w", err)
 	}
 
@@ -249,7 +249,11 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 // NotFound → HardFail → rca_incomplete, breaking tests that expect normal outcomes.
 // The rca_incomplete scenario targets unreachable-pod which is intentionally NOT
 // created so that it triggers HardFail as expected.
-func createEnrichmentFixtures(kubeconfigPath string, writer io.Writer) error {
+//
+// Note: an empty enrichment: {} YAML section in the KA ConfigMap will zero out the
+// HAPI defaults (MaxRetries=3 → 0), silently disabling retry+fail-hard. The E2E
+// ConfigMap intentionally omits the enrichment key so DefaultConfig() applies.
+func createEnrichmentFixtures(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	manifest := `---
 apiVersion: v1
 kind: Namespace
@@ -393,7 +397,7 @@ spec:
         memory: "16Mi"
         cpu: "50m"
 `
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer

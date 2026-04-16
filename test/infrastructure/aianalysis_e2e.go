@@ -443,7 +443,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	// #704: Create enrichment fixture resources for mock LLM scenario targets
 	_, _ = fmt.Fprintln(writer, "\n📦 Creating enrichment fixture resources (#704)...")
-	if err := createEnrichmentFixtures(kubeconfigPath, writer); err != nil {
+	if err := createEnrichmentFixtures(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create enrichment fixtures: %w", err)
 	}
 

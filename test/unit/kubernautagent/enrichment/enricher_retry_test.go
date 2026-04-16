@@ -161,8 +161,8 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 		})
 	})
 
-	Describe("UT-704-E-004: Best-effort mode (retries=0)", func() {
-		It("should set OwnerChainError but HardFail=false with default config", func() {
+	Describe("UT-704-E-004: Best-effort mode (no WithRetryConfig, MaxRetries=0)", func() {
+		It("should set OwnerChainError but HardFail=false when retries not configured", func() {
 			transientErr := apierrors.NewInternalError(fmt.Errorf("etcd timeout"))
 			k8s := &countingK8sClient{
 				errSeq: []error{transientErr},

@@ -688,9 +688,9 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 				})
 
 			// RCA names a DIFFERENT target than the signal to trigger re-enrichment.
+			// Only one response needed: flow returns at rca_incomplete before workflow selection.
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit exceeded","remediation_target":{"kind":"Pod","name":"target-pod","namespace":"production"}}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9}`}},
 			}
 
 			inv := investigator.New(investigator.Config{
