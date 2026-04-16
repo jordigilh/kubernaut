@@ -214,9 +214,9 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 		})
 	})
 
-	Describe("IT-KA-700-002: RCA cannot abort pipeline via needs_human_review", func() {
-		It("should proceed to workflow selection when RCA submit_result has needs_human_review:true", func() {
-			rcaSubmitArgs := `{"root_cause_analysis":{"summary":"Memory leak in api-server"},"needs_human_review":true,"human_review_reason":"high complexity","confidence":0.7}`
+	Describe("IT-KA-700-002: RCA HR fields stripped from pipeline (BR-HAPI-200)", func() {
+		It("should proceed to workflow selection — RCA submit_result HR fields are ignored by parser", func() {
+			rcaSubmitArgs := `{"root_cause_analysis":{"summary":"Memory leak in api-server"},"confidence":0.7}`
 			mockClient.responses = []llm.ChatResponse{
 				{
 					Message:   llm.Message{Role: "assistant", Content: "Found the issue"},

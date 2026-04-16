@@ -1,14 +1,14 @@
-# Test Plan: Phase Separation — RCA / Workflow Selection
+# Test Plan: Parser-Driven Escalation (Issue #700)
 
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 
 **Test Plan Identifier**: TP-700-v1
-**Feature**: Enforce clean RCA / Workflow Selection phase separation with per-session structured output
+**Feature**: Remove LLM-driven `needs_human_review` / `human_review_reason`; derive exclusively from parser/investigator
 **Version**: 1.0
 **Created**: 2026-04-06
-**Author**: AI Agent (supervised)
-**Status**: Draft
-**Branch**: `fix-700`
+**Author**: AI Assistant
+**Status**: Active
+**Branch**: `fix/700-parser-driven-escalation`
 
 ---
 
@@ -16,44 +16,44 @@
 
 ### 1.1 Purpose
 
-Validate that the KA investigation pipeline enforces clean session separation between RCA (Phase 1) and Workflow Selection (Phase 3), aligned with the HAPI v1.2.1 baseline. The LLM must not be able to set `needs_human_review` or reference workflow selection during RCA, and the structured output schema must be phase-specific — both at the tool level (`submit_result` Parameters) and at the transport level (`output_config.format`).
+Validate that `needs_human_review` and `human_review_reason` are never set by the LLM in any phase. These fields must be derived by the parser/investigator based on `investigation_outcome` and structural signals (RCA present, workflow absent), strictly mirroring HAPI v1.2.1 authoritative behavior.
 
 ### 1.2 Objectives
 
-1. **Phase-specific schemas**: RCA phase uses `RCAResultSchema()` (no workflow/escalation fields); Workflow phase uses `InvestigationResultSchema()` (full schema).
-2. **Focused prompts**: RCA prompt contains only investigation instructions (no Phases 4-5, no workflow references, no `needs_human_review`).
-3. **Per-session structured output**: `StructuredOutputTransport` reads schema from request context, not from a global field. Each LLM call carries its own schema.
-4. **Defense-in-depth**: Investigator clears `HumanReviewNeeded` after RCA parsing. Only max-turns exhaustion can abort during RCA.
-5. **No regressions**: Existing passing scenarios (crashloop, stuck-rollout, orphaned-pvc) continue to pass.
+1. **Schema honesty**: `InvestigationResultSchema()` must NOT expose `needs_human_review` or `human_review_reason` to the LLM
+2. **Parser derivation**: `applyInvestigationOutcome("inconclusive")` derives the correct HR reason from context: `no_matching_workflows` (RCA + no workflow) vs `investigation_inconclusive` (fallback)
+3. **LLM field rejection**: Parser must ignore LLM-provided `needs_human_review` / `human_review_reason` fields
+4. **Mock fidelity**: Mock LLM responses must NOT emit `needs_human_review` / `human_review_reason`
+5. **HAPI parity**: AA integration tests (authoritative) pass without modification
+6. **Defense-in-depth**: `problem_resolved` contradiction override (#301) remains exercisable
 
 ### 1.3 Success Metrics
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| Unit test pass rate | 100% | `go test ./test/unit/kubernautagent/...` |
+| Unit test pass rate | 100% | `go test ./test/unit/kubernautagent/parser/... ./test/unit/mockllm/...` |
 | Integration test pass rate | 100% | `go test ./test/integration/kubernautagent/...` |
-| Unit-testable code coverage | >=80% | `go test -coverprofile` on schema, prompt, transport, investigator |
-| Backward compatibility | 0 regressions | All pre-existing tests pass |
+| E2E test pass rate | 100% | `go test ./test/e2e/kubernautagent/...` |
+| Unit-testable code coverage | >=80% | `go test -coverprofile` on parser package |
+| Backward compatibility | 0 regressions | AA IT tests pass unmodified |
 
 ---
 
 ## 2. References
 
-### 2.1 Authority
+### 2.1 Authority (governing documents)
 
-- Issue #700: v1.3.0 KA: LLM escalates to ManualReview on scenarios that HAPI v1.2.1 remediates successfully
-- HAPI v1.2.1 source: `holmesgpt-api/src/extensions/incident/prompt_builder.py` (PHASE1_SECTIONS, PHASE3_SECTIONS)
-- HAPI v1.2.1 source: `holmesgpt-api/src/extensions/incident/llm_integration.py` (three-phase orchestrator)
-- HAPI v1.2.1 source: `holmesgpt-api/src/extensions/incident/result_parser.py` (parser-driven needs_human_review)
-- BR-HAPI-002: Incident Analysis
-- BR-HAPI-197: needs_human_review field
-- BR-HAPI-200: Investigation inconclusive outcome
+- BR-HAPI-197: `needs_human_review` escalation for no matching workflows
+- BR-HAPI-200: Parser-derived outcome routing (not LLM-driven)
+- DD-HAPI-002 v1.2: Investigation result parsing specification
+- DD-HAPI-006: Enrichment-driven `rca_incomplete` (deferred to follow-up issue)
+- Issue #700: Structural issues between HAPI and KA prompts
+- Issue #701: Two-phase LLM invocation fix (merged, prerequisite)
 
 ### 2.2 Cross-References
 
-- [Testing Strategy](../../.cursor/rules/03-testing-strategy.mdc)
-- [Testing Guidelines](../development/business-requirements/TESTING_GUIDELINES.md)
-- kubernaut-docs#112: Architecture Guide for KA Investigation Pipeline
+- [Testing Strategy](../../../.cursor/rules/03-testing-strategy.mdc)
+- [Testing Guidelines](../../development/business-requirements/TESTING_GUIDELINES.md)
 
 ---
 
@@ -61,97 +61,238 @@ Validate that the KA investigation pipeline enforces clean session separation be
 
 | ID | Risk | Impact | Probability | Affected Tests | Mitigation |
 |----|------|--------|-------------|----------------|------------|
-| R1 | Prompt changes affect passing scenarios | RCA quality degrades for crashloop, stuck-rollout, orphaned-pvc | Low | IT-KA-700-001 | Removed text is workflow/escalation-specific, not RCA-relevant. IT regression tests provide coverage. |
-| R2 | LangChainGo context dropped before transport | OutputSchema not available in RoundTrip | Very Low | UT-KA-700-013 | Preflight verified: LangChainGo v0.1.14 uses `http.NewRequestWithContext(ctx)` throughout. |
-| R3 | Vertex AI path not constrained by OutputSchema | Global schema gap for production provider | Medium | UT-KA-700-007, UT-KA-700-008 | Vertex AI constrained by `submit_result` tool Parameters schema. Transport-level constraint is defense-in-depth. |
-| R4 | Parser fallback paths still set HumanReviewNeeded from RCA | Defense-in-depth bypass | Low | UT-KA-700-009 | Investigator explicitly clears HumanReviewNeeded after RCA parsing. |
-
-### 3.1 Risk-to-Test Traceability
-
-| Risk | Primary Test(s) | Secondary Test(s) |
-|------|----------------|-------------------|
-| R1 | IT-KA-700-001 | UT-KA-700-003, UT-KA-700-004 |
-| R2 | UT-KA-700-013 | UT-KA-700-011 |
-| R3 | UT-KA-700-007, UT-KA-700-008 | UT-KA-700-001, UT-KA-700-002 |
-| R4 | UT-KA-700-009 | IT-KA-700-002 |
+| R1 | Parser derivation rule picks wrong reason due to whitespace-only RCASummary | Incorrect HR reason | Very Low | UT-KA-700-PDE-001 | Go `!= ""` treats whitespace as non-empty; `investigation_inconclusive` fallback is still valid |
+| R2 | `problem_resolved` contradiction override becomes unreachable via mock | Dead code accumulates | Known | UT-KA-700-PDE-003 | Dedicated unit test exercises `applyFlatFields` directly with synthetic contradictory inputs |
+| R3 | E2E ADV-016 temp relaxation masks real regression | False green in CI | Low | E2E-KA-433-ADV-016 | Comment links to enrichment follow-up issue; restored in same PR |
+| R4 | AA IT tests break due to incorrect derivation rule | Release blocker | Medium | Authoritative AA IT tests | Derivation rule verified: `inconclusive` + RCA + no workflow = `no_matching_workflows` |
 
 ---
 
-## 4. Test Items
+## 4. Scope
 
-### 4.1 Components Under Test
+### 4.1 Features to be Tested
 
-| Component | File | What Changes |
-|-----------|------|-------------|
-| RCA schema | `internal/kubernautagent/parser/schema.go` | New `RCAResultSchema()` function |
-| Investigation schema | `internal/kubernautagent/parser/schema.go` | Unchanged (regression guard) |
-| RCA prompt template | `internal/kubernautagent/prompt/templates/incident_investigation.tmpl` | Remove Phases 4-5, workflow refs, needs_human_review, remediation history |
-| Prompt builder | `internal/kubernautagent/prompt/builder.go` | Skip remediation history in RenderInvestigation |
-| Investigator | `internal/kubernautagent/investigator/investigator.go` | Phase-specific submit_result schema, per-session OutputSchema, clear HumanReviewNeeded after RCA |
-| LLM types | `pkg/kubernautagent/llm/types.go` | Add OutputSchema to ChatOptions |
-| Structured output transport | `pkg/kubernautagent/llm/transport/structured_output.go` | Context-based schema, remove global schema field |
-| LangChainGo adapter | `pkg/kubernautagent/llm/langchaingo/adapter.go` | Propagate OutputSchema to context |
-| Main entrypoint | `cmd/kubernautagent/main.go` | Remove global schema from transport constructor |
+- **Schema** (`internal/kubernautagent/parser/schema.go`): `InvestigationResultSchema()` must NOT include `needs_human_review` / `human_review_reason`
+- **Parser derivation** (`internal/kubernautagent/parser/parser.go`): `applyInvestigationOutcome` context-aware HR reason derivation
+- **Parser field rejection** (`internal/kubernautagent/parser/parser.go`): `applyFlatFields` must NOT propagate LLM `needs_human_review`
+- **Prompt template** (`internal/kubernautagent/prompt/templates/phase3_workflow_selection.tmpl`): Must NOT instruct LLM to set HR fields
+- **Mock response builder** (`test/services/mock-llm/response/openai.go`): Must NOT emit `needs_human_review` / `human_review_reason`
+- **Mock scenarios** (`test/services/mock-llm/scenarios/scenario_mock_keywords.go`): All 3 HR scenarios updated
 
----
+### 4.2 Features Not to be Tested
 
-## 5. Test Scenarios
+- **Enrichment-driven `rca_incomplete`**: Deferred to follow-up issue (BR-HAPI-261/264). Same PR, separate TDD cycle.
+- **Self-correction exhaustion** (`UT-KA-433-027`): Unchanged — `SelfCorrect` sets HR independently of LLM fields.
 
-### 5.1 Tier 1: Unit Tests
+### 4.3 Design Decisions
 
-#### Schema & Prompt (6 tests)
-
-| ID | Description | Component | Acceptance Criterion |
-|----|------------|-----------|---------------------|
-| UT-KA-700-001 | RCAResultSchema contains only RCA fields | `parser/schema.go` | Schema JSON has `root_cause_analysis`, `confidence`, `investigation_outcome`, `actionable`, `severity`, `detected_labels`. Does NOT have `selected_workflow`, `alternative_workflows`, `needs_human_review`, `human_review_reason`. |
-| UT-KA-700-002 | InvestigationResultSchema unchanged | `parser/schema.go` | Schema JSON still contains `selected_workflow`, `alternative_workflows`, `needs_human_review`. Byte-for-byte identical to pre-#700 value. |
-| UT-KA-700-003 | RCA prompt excludes workflow discovery | `incident_investigation.tmpl`, `builder.go` | Rendered RCA prompt does NOT contain "list_available_actions", "list_workflows", "get_workflow", "Three-Step Protocol", "Phase 4", "Phase 5". |
-| UT-KA-700-004 | RCA prompt excludes escalation fields | `incident_investigation.tmpl`, `builder.go` | Rendered RCA prompt does NOT contain "selected_workflow", "needs_human_review", "human_review_reason", "alternative_workflows". |
-| UT-KA-700-005 | RCA prompt excludes remediation history | `builder.go` | Rendered RCA prompt does NOT contain "Remediation History Context", "CONFIGURATION REGRESSION DETECTED". Even when enrichment data includes history. |
-| UT-KA-700-006 | Workflow selection prompt retains full content | `phase3_workflow_selection.tmpl`, `builder.go` | Rendered workflow prompt contains "list_available_actions", "list_workflows", "get_workflow", "submit_result", "selected_workflow". |
-
-#### Investigator Phase Separation (4 tests)
-
-| ID | Description | Component | Acceptance Criterion |
-|----|------------|-----------|---------------------|
-| UT-KA-700-007 | RCA phase submit_result uses RCAResultSchema | `investigator.go` | `toolDefinitionsForPhase(PhaseRCA)` returns submit_result with Parameters matching `RCAResultSchema()`. |
-| UT-KA-700-008 | Workflow phase submit_result uses InvestigationResultSchema | `investigator.go` | `toolDefinitionsForPhase(PhaseWorkflowDiscovery)` returns submit_result with Parameters matching `InvestigationResultSchema()`. |
-| UT-KA-700-009 | runRCA clears HumanReviewNeeded after parsing | `investigator.go` | When LLM returns JSON with `needs_human_review: true` during RCA, `runRCA` returns result with `HumanReviewNeeded == false`. |
-| UT-KA-700-010 | Max-turns exhaustion preserves HumanReviewNeeded | `investigator.go` | When RCA exhausts max turns, result has `HumanReviewNeeded == true` with reason containing "max turns". |
-
-#### Per-Session Structured Output Transport (3 tests)
-
-| ID | Description | Component | Acceptance Criterion |
-|----|------------|-----------|---------------------|
-| UT-KA-700-011 | Transport uses schema from context | `structured_output.go` | When request context contains OutputSchema via `WithOutputSchema`, the injected `output_config.format.schema` matches that schema. |
-| UT-KA-700-012 | Transport skips injection when no schema in context | `structured_output.go` | When request context has no OutputSchema, the request body passes through unmodified (no `output_config` added). |
-| UT-KA-700-013 | ChatOptions.OutputSchema propagates through adapter | `adapter.go`, `structured_output.go` | End-to-end: setting `ChatOptions.OutputSchema` on a ChatRequest results in the correct schema being injected into the HTTP request body by the transport. |
-
-### 5.2 Tier 2: Integration Tests
-
-| ID | Description | Component | Acceptance Criterion |
-|----|------------|-----------|---------------------|
-| IT-KA-700-001 | Two-session flow: RCA feeds workflow selection | `investigator.go` | Full `Investigate()` call: RCA session produces summary, workflow session receives it and selects a workflow. Final result has both `RCASummary` and `WorkflowID` populated. |
-| IT-KA-700-002 | RCA cannot abort pipeline via needs_human_review | `investigator.go` | Mock LLM returns `needs_human_review: true` in RCA submit_result. Pipeline does NOT abort — proceeds to workflow selection. Final result has `HumanReviewNeeded` determined by workflow phase. |
-| IT-KA-700-003 | RCA investigation_outcome does not skip workflow selection | `investigator.go` | Mock LLM returns `investigation_outcome: "inconclusive"` in RCA. Pipeline proceeds to workflow selection (does not short-circuit). |
+| Decision | Rationale |
+|----------|-----------|
+| Derive `no_matching_workflows` from `inconclusive` + RCA + no workflow | Matches HAPI behavior; authoritative AA IT tests assert this exact reason |
+| Keep `problem_resolved` contradiction override as defense-in-depth | HAPI-authoritative; exercises via direct unit test |
+| Temp relax E2E ADV-016 for `rca_incomplete` | Enrichment follow-up restores in same PR |
 
 ---
 
-## 6. TDD Phase Mapping
+## 5. Approach
 
-| TDD Phase | Test IDs | Implementation Files |
-|-----------|----------|---------------------|
-| RED | All UT-KA-700-*, IT-KA-700-* | Tests only (no implementation) |
-| GREEN | — | `schema.go`, `incident_investigation.tmpl`, `builder.go`, `investigator.go`, `types.go`, `structured_output.go`, `adapter.go`, `main.go` |
-| REFACTOR | — | Dead template removal, documentation alignment |
+### 5.1 Coverage Policy
+
+- **Unit**: >=80% of parser derivation logic (`applyFlatFields`, `applyInvestigationOutcome`, `extractSections`)
+- **Integration**: >=80% of investigator pipeline (phase separation, HR field handling)
+- **E2E**: Container contract validation for all 3 affected mock scenarios
+
+### 5.2 Two-Tier Minimum
+
+Every business requirement covered by UT + IT minimum. E2E provides additional regression safety.
+
+### 5.3 Pass/Fail Criteria
+
+**PASS**: All P0 tests pass, per-tier coverage >=80%, AA IT tests unmodified and green.
+**FAIL**: Any P0 test fails, coverage below 80%, or AA IT test modified.
 
 ---
 
-## 7. Environment
+## 6. Test Items
 
-| Component | Version |
-|-----------|---------|
-| Go | 1.24+ |
-| LangChainGo | v0.1.14 |
-| Ginkgo/Gomega | v2 |
-| Test runner | `go test` / `ginkgo` |
+### 6.1 Unit-Testable Code
+
+| File | Functions/Methods | Lines (approx) |
+|------|-------------------|-----------------|
+| `internal/kubernautagent/parser/schema.go` | `InvestigationResultSchema()` | ~55 |
+| `internal/kubernautagent/parser/parser.go` | `applyFlatFields`, `applyInvestigationOutcome`, `extractSections` | ~90 |
+
+### 6.2 Integration-Testable Code
+
+| File | Functions/Methods | Lines (approx) |
+|------|-------------------|-----------------|
+| `internal/kubernautagent/investigator/investigator.go` | `Investigate` pipeline | ~200 |
+
+---
+
+## 7. BR Coverage Matrix
+
+| BR ID | Description | Priority | Tier | Test ID | Status |
+|-------|-------------|----------|------|---------|--------|
+| BR-HAPI-200 | Parser derives HR from investigation_outcome, not LLM | P0 | Unit | UT-KA-700-PDE-001 | Pending |
+| BR-HAPI-200 | Parser fallback: investigation_inconclusive when no RCA | P0 | Unit | UT-KA-700-PDE-002 | Pending |
+| BR-HAPI-200 | LLM needs_human_review fields ignored by parser | P0 | Unit | UT-KA-433-PRS-009 (rewrite) | Pending |
+| BR-HAPI-200 | LLM explicit needs_human_review NOT preserved | P0 | Unit | UT-KA-433-OUT-004 (rewrite) | Pending |
+| BR-HAPI-200 | Schema does not expose HR fields to LLM | P0 | Unit | UT-KA-700-002 (flip) | Pending |
+| BR-HAPI-200 | Schema validation in parser_test | P1 | Unit | UT-KA-SCHEMA-001 (update) | Pending |
+| BR-HAPI-197 | no_matching_workflows derived for inconclusive+RCA+no workflow | P0 | Unit | UT-KA-433-OUT-003 (update) | Pending |
+| BR-HAPI-200 | problem_resolved contradiction override | P1 | Unit | UT-KA-700-PDE-003 | Pending |
+| BR-HAPI-200 | Mock response does not emit HR fields | P0 | Unit | UT-MOCK-030-003 (update) | Pending |
+| BR-HAPI-200 | Pipeline does not abort on RCA HR | P0 | Integration | IT-KA-700-002 (update) | Pending |
+| BR-HAPI-200 | E2E rca_incomplete temp relaxation | P1 | E2E | E2E-KA-433-ADV-016 (temp) | Pending |
+
+---
+
+## 8. Test Scenarios
+
+### Tier 1: Unit Tests
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| UT-KA-700-PDE-001 | Parser derives `no_matching_workflows` from `inconclusive` + RCA present + no workflow | Pending |
+| UT-KA-700-PDE-002 | Parser derives `investigation_inconclusive` from `inconclusive` when no RCA context | Pending |
+| UT-KA-700-PDE-003 | `problem_resolved` contradiction override clears HR via `applyFlatFields` directly | Pending |
+| UT-KA-700-002 | Schema does NOT expose `needs_human_review` / `human_review_reason` | Pending |
+| UT-KA-SCHEMA-001 | Schema validation: required keys present, HR keys absent | Pending |
+| UT-KA-433-PRS-009 | Parser ignores LLM-set `needs_human_review`; HR derived from outcome only | Pending |
+| UT-KA-433-OUT-003 | `inconclusive` + RCA summary + no workflow = `no_matching_workflows` | Pending |
+| UT-KA-433-OUT-004 | LLM `needs_human_review=true` with workflow must NOT be preserved | Pending |
+| UT-MOCK-030-003 | Mock response must NOT contain `needs_human_review` / `human_review_reason` | Pending |
+
+### Tier 2: Integration Tests
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| IT-KA-700-002 | Pipeline proceeds to workflow selection when RCA has HR fields (HR stripped) | Pending |
+
+### Tier 3: E2E Tests
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| E2E-KA-433-ADV-016 | `rca_incomplete` scenario: temp expect `needs_human_review=false` (enrichment follow-up restores) | Pending |
+
+---
+
+## 9. Test Cases
+
+### UT-KA-700-PDE-001: Parser derives no_matching_workflows
+
+**BR**: BR-HAPI-197, BR-HAPI-200
+**Priority**: P0
+**Type**: Unit
+**File**: `test/unit/kubernautagent/parser/adversarial_parser_test.go`
+
+**Test Steps**:
+1. **Given**: JSON with `rca_summary` non-empty, no `workflow_id`, `investigation_outcome: "inconclusive"`
+2. **When**: `Parse()` is called
+3. **Then**: `HumanReviewNeeded == true`, `HumanReviewReason == "no_matching_workflows"`
+
+### UT-KA-700-PDE-002: Parser derives investigation_inconclusive fallback
+
+**BR**: BR-HAPI-200
+**Priority**: P0
+**Type**: Unit
+**File**: `test/unit/kubernautagent/parser/adversarial_parser_test.go`
+
+**Test Steps**:
+1. **Given**: JSON with `workflow_id` present, `investigation_outcome: "inconclusive"`, no `rca_summary`
+2. **When**: `Parse()` is called
+3. **Then**: `HumanReviewNeeded == true`, `HumanReviewReason == "investigation_inconclusive"`
+
+### UT-KA-700-PDE-003: problem_resolved contradiction override
+
+**BR**: BR-HAPI-200 (#301)
+**Priority**: P1
+**Type**: Unit
+**File**: `test/unit/kubernautagent/parser/adversarial_parser_test.go`
+
+**Test Steps**:
+1. **Given**: `flatLLMFields` with `InvestigationOutcome: "problem_resolved"`, `NeedsHumanReview: true`, `HumanReviewReason: "contradictory_signals"`
+2. **When**: `applyFlatFields()` is called on a result
+3. **Then**: `HumanReviewNeeded == false`, `HumanReviewReason == ""`
+
+---
+
+## 10. Environmental Needs
+
+### 10.1 Unit Tests
+
+- **Framework**: Ginkgo/Gomega BDD
+- **Mocks**: None (parser is pure logic)
+- **Location**: `test/unit/kubernautagent/parser/`, `test/unit/mockllm/`
+
+### 10.2 Integration Tests
+
+- **Framework**: Ginkgo/Gomega BDD
+- **Mocks**: Mock LLM client (in-process)
+- **Location**: `test/integration/kubernautagent/investigator/`
+
+### 10.3 E2E Tests
+
+- **Framework**: Ginkgo/Gomega BDD
+- **Infrastructure**: Kind cluster with Mock LLM
+- **Location**: `test/e2e/kubernautagent/`
+
+---
+
+## 11. Dependencies & Schedule
+
+### 11.1 Execution Order
+
+1. **Phase 1 (TDD RED)**: Write/update all failing tests
+2. **Checkpoint 1**: Adversarial audit — verify tests fail for the right reason
+3. **Phase 2 (TDD GREEN)**: Implement production changes
+4. **Checkpoint 2**: All tests pass + regression check
+5. **Phase 3 (TDD REFACTOR)**: Clean up dead code, update comments
+6. **Checkpoint 3**: Final regression gate
+
+---
+
+## 12. Existing Tests Requiring Updates
+
+| Test ID / Location | Current Assertion | Required Change | Reason |
+|-------------------|-------------------|-----------------|--------|
+| UT-KA-700-002 (`schema_phase_separation_test.go:78-100`) | Schema HAS `needs_human_review` | Flip: assert ABSENT | Schema honesty |
+| UT-KA-SCHEMA-001 (`parser_test.go:387-408`) | `HaveKey("needs_human_review")` | Remove assertion | Schema honesty |
+| UT-KA-433-PRS-009 (`adversarial_parser_test.go:185-199`) | LLM HR fields extracted | Rewrite: parser ignores LLM fields | LLM field rejection |
+| UT-KA-433-OUT-003 (`adversarial_parser_test.go:233-246`) | Expects `investigation_inconclusive` | Change to `no_matching_workflows` | New derivation rule |
+| UT-KA-433-OUT-004 (`adversarial_parser_test.go:248-263`) | LLM HR preserved | Rewrite: LLM HR NOT preserved | LLM field rejection |
+| UT-MOCK-030-003 (`response_test.go:136-152`) | Response contains HR fields | Assert HR fields absent | Mock fidelity |
+| IT-KA-700-002 (`investigator_phase_separation_test.go:217-241`) | rcaSubmitArgs has HR JSON | Remove HR from fixture | Pipeline behavior |
+| E2E-KA-433-ADV-016 (`adversarial_parity_e2e_test.go:308-324`) | `needs_human_review=true` | Temp: expect `false` | Enrichment deferred |
+
+---
+
+## 13. Execution
+
+```bash
+# Unit tests (parser + mock)
+go test ./test/unit/kubernautagent/parser/... -ginkgo.v
+go test ./test/unit/mockllm/... -ginkgo.v
+
+# Integration tests
+go test ./test/integration/kubernautagent/investigator/... -ginkgo.v
+
+# E2E tests
+go test ./test/e2e/kubernautagent/... -ginkgo.v
+
+# Specific test by ID
+go test ./test/unit/kubernautagent/parser/... -ginkgo.focus="UT-KA-700-PDE"
+
+# Coverage
+go test ./test/unit/kubernautagent/parser/... -coverprofile=coverage.out
+go tool cover -func=coverage.out
+```
+
+---
+
+## 14. Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2026-04-06 | Initial test plan |

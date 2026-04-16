@@ -182,8 +182,8 @@ End of analysis.`
 		})
 	})
 
-	Describe("UT-KA-433-PRS-009: LLM needs_human_review and human_review_reason extracted (GAP-013)", func() {
-		It("should extract needs_human_review and human_review_reason from LLM JSON", func() {
+	Describe("UT-KA-433-PRS-009: Parser ignores LLM needs_human_review (BR-HAPI-200)", func() {
+		It("should NOT propagate LLM-set needs_human_review; HR derived from investigation_outcome only", func() {
 			input := `{
 				"rca_summary": "Unclear root cause — multiple potential issues",
 				"needs_human_review": true,
@@ -193,8 +193,69 @@ End of analysis.`
 
 			result, err := p.Parse(input)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.HumanReviewNeeded).To(BeTrue())
-			Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"))
+			Expect(result.HumanReviewNeeded).To(BeFalse(),
+				"LLM-set needs_human_review must be ignored — HR is parser-derived only")
+			Expect(result.HumanReviewReason).To(BeEmpty(),
+				"LLM-set human_review_reason must be ignored — HR reason is parser-derived only")
+		})
+	})
+
+	// --- BR-HAPI-200: Parser-derived escalation ---
+
+	Describe("UT-KA-700-PDE-001: inconclusive + RCA + no workflow → no_matching_workflows", func() {
+		It("should derive no_matching_workflows from context signals", func() {
+			input := `{
+				"root_cause_analysis": {
+					"summary": "Memory pressure detected but no remediation workflow available"
+				},
+				"investigation_outcome": "inconclusive",
+				"confidence": 0.4
+			}`
+
+			result, err := p.Parse(input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.HumanReviewNeeded).To(BeTrue(),
+				"inconclusive outcome must set HumanReviewNeeded")
+			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
+				"RCA present + no workflow + inconclusive = no_matching_workflows (BR-HAPI-197)")
+		})
+	})
+
+	Describe("UT-KA-700-PDE-002: inconclusive + workflow present → investigation_inconclusive fallback", func() {
+		It("should derive investigation_inconclusive when workflow is present despite inconclusive outcome", func() {
+			input := `{
+				"rca_summary": "",
+				"workflow_id": "restart-pod",
+				"investigation_outcome": "inconclusive",
+				"confidence": 0.3
+			}`
+
+			result, err := p.Parse(input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.HumanReviewNeeded).To(BeTrue(),
+				"inconclusive outcome must set HumanReviewNeeded")
+			Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"),
+				"workflow present + inconclusive → investigation_inconclusive fallback")
+		})
+	})
+
+	Describe("UT-KA-700-PDE-003: problem_resolved contradiction override clears HR (#301)", func() {
+		It("should clear needs_human_review when problem_resolved contradicts LLM-set HR", func() {
+			input := `{
+				"rca_summary": "Problem self-resolved. Transient OOM cleared after pod restart",
+				"investigation_outcome": "problem_resolved",
+				"needs_human_review": true,
+				"human_review_reason": "contradictory_signals",
+				"actionable": false,
+				"confidence": 0.85
+			}`
+
+			result, err := p.Parse(input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.HumanReviewNeeded).To(BeFalse(),
+				"#301: problem_resolved must override needs_human_review=true")
+			Expect(result.HumanReviewReason).To(BeEmpty(),
+				"#301: problem_resolved must clear human_review_reason")
 		})
 	})
 
@@ -230,8 +291,8 @@ End of analysis.`
 		})
 	})
 
-	Describe("UT-KA-433-OUT-003: No workflow + no resolution → needs_human_review=true", func() {
-		It("should set needs_human_review when investigation is inconclusive", func() {
+	Describe("UT-KA-433-OUT-003: inconclusive + RCA + no workflow → no_matching_workflows (BR-HAPI-197)", func() {
+		It("should derive no_matching_workflows when RCA present but no workflow selected", func() {
 			input := `{
 				"rca_summary": "Unable to determine root cause with available data",
 				"investigation_outcome": "inconclusive",
@@ -241,12 +302,13 @@ End of analysis.`
 			result, err := p.Parse(input)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.HumanReviewNeeded).To(BeTrue())
-			Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"))
+			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
+				"inconclusive + RCA present + no workflow = no_matching_workflows per BR-HAPI-197")
 		})
 	})
 
-	Describe("UT-KA-433-OUT-004: LLM explicit needs_human_review=true preserved", func() {
-		It("should preserve LLM-provided human review reason", func() {
+	Describe("UT-KA-433-OUT-004: LLM explicit needs_human_review must NOT be preserved (BR-HAPI-200)", func() {
+		It("should ignore LLM-set needs_human_review when workflow is present", func() {
 			input := `{
 				"rca_summary": "Found issue but confidence too low",
 				"workflow_id": "restart-pod",
@@ -257,8 +319,10 @@ End of analysis.`
 
 			result, err := p.Parse(input)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.HumanReviewNeeded).To(BeTrue())
-			Expect(result.HumanReviewReason).To(Equal("low_confidence"))
+			Expect(result.HumanReviewNeeded).To(BeFalse(),
+				"LLM-set needs_human_review must NOT be preserved — HR is parser-derived only")
+			Expect(result.HumanReviewReason).To(BeEmpty(),
+				"LLM-set human_review_reason must NOT be preserved — HR reason is parser-derived only")
 		})
 	})
 
