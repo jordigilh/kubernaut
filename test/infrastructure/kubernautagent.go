@@ -229,7 +229,178 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to deploy Kubernaut Agent: %w", err)
 	}
 
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 7: Create enrichment fixture resources (#704)
+	// Mock LLM scenarios reference resources in production/staging namespaces.
+	// These must exist so re-enrichment doesn't trigger HardFail (rca_incomplete)
+	// for scenarios that are NOT rca_incomplete.
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 7: Creating enrichment fixture resources (#704)...")
+	if err := createEnrichmentFixtures(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create enrichment fixtures: %w", err)
+	}
+
 	_, _ = fmt.Fprintln(writer, "\n✅ Kubernaut Agent E2E infrastructure ready")
+	return nil
+}
+
+// createEnrichmentFixtures creates namespaces and minimal workloads that mock LLM
+// scenarios reference as remediation_target. Without these, re-enrichment returns
+// NotFound → HardFail → rca_incomplete, breaking tests that expect normal outcomes.
+// The rca_incomplete scenario targets unreachable-pod which is intentionally NOT
+// created so that it triggers HardFail as expected.
+func createEnrichmentFixtures(kubeconfigPath string, writer io.Writer) error {
+	manifest := `---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: staging
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+  namespace: production
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-server
+  template:
+    metadata:
+      labels:
+        app: api-server
+    spec:
+      containers:
+      - name: pause
+        image: registry.k8s.io/pause:3.9
+        resources:
+          requests:
+            memory: "8Mi"
+            cpu: "10m"
+          limits:
+            memory: "16Mi"
+            cpu: "50m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+      - name: pause
+        image: registry.k8s.io/pause:3.9
+        resources:
+          requests:
+            memory: "8Mi"
+            cpu: "10m"
+          limits:
+            memory: "16Mi"
+            cpu: "50m"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: recovered-pod
+  namespace: production
+  labels:
+    app: recovered-pod
+spec:
+  restartPolicy: Never
+  containers:
+  - name: pause
+    image: registry.k8s.io/pause:3.9
+    resources:
+      requests:
+        memory: "8Mi"
+        cpu: "10m"
+      limits:
+        memory: "16Mi"
+        cpu: "50m"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: api-server-def456
+  namespace: production
+  labels:
+    app: api-server-def456
+spec:
+  restartPolicy: Never
+  containers:
+  - name: pause
+    image: registry.k8s.io/pause:3.9
+    resources:
+      requests:
+        memory: "8Mi"
+        cpu: "10m"
+      limits:
+        memory: "16Mi"
+        cpu: "50m"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ambiguous-pod
+  namespace: production
+  labels:
+    app: ambiguous-pod
+spec:
+  restartPolicy: Never
+  containers:
+  - name: pause
+    image: registry.k8s.io/pause:3.9
+    resources:
+      requests:
+        memory: "8Mi"
+        cpu: "10m"
+      limits:
+        memory: "16Mi"
+        cpu: "50m"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: failed-analysis-pod
+  namespace: production
+  labels:
+    app: failed-analysis-pod
+spec:
+  restartPolicy: Never
+  containers:
+  - name: pause
+    image: registry.k8s.io/pause:3.9
+    resources:
+      requests:
+        memory: "8Mi"
+        cpu: "10m"
+      limits:
+        memory: "16Mi"
+        cpu: "50m"
+`
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("kubectl apply enrichment fixtures: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ Enrichment fixtures created (2 namespaces + 6 resources)")
 	return nil
 }
 

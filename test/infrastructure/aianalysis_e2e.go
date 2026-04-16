@@ -441,6 +441,12 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
+	// #704: Create enrichment fixture resources for mock LLM scenario targets
+	_, _ = fmt.Fprintln(writer, "\n📦 Creating enrichment fixture resources (#704)...")
+	if err := createEnrichmentFixtures(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create enrichment fixtures: %w", err)
+	}
+
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ AIAnalysis E2E Infrastructure Ready (DD-TEST-002 + DD-TEST-008)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

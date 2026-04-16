@@ -306,8 +306,9 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 		})
 
 		// BR-HAPI-261 AC#7 / #704: enrichment-driven rca_incomplete.
-		// Target Pods don't exist in Kind cluster → GetOwnerChain fails → rca_incomplete.
-		It("E2E-KA-433-ADV-016: rca_incomplete → needs_human_review=true", func() {
+		// With HAPI-compliant defaults (MaxRetries=3) and E2E fixtures,
+		// unreachable-pod does NOT exist → NotFound → HardFail → rca_incomplete.
+		It("E2E-KA-433-ADV-016: rca_incomplete triggers needs_human_review", func() {
 			req := buildRequest("adv-016", "mock_rca_incomplete", "critical")
 			result, err := sessionClient.Investigate(ctx, req)
 			Expect(err).NotTo(HaveOccurred())
@@ -316,11 +317,12 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			needsHR, hasHR := result.NeedsHumanReview.Get()
 			Expect(hasHR).To(BeTrue(), "M1: needs_human_review must always be set")
 			Expect(needsHR).To(BeTrue(),
-				"rca_incomplete: enrichment owner chain failure must trigger human review")
+				"E2E-KA-433-ADV-016: rca_incomplete must trigger needs_human_review=true")
+
 			hrReason, hasReason := result.HumanReviewReason.Get()
-			Expect(hasReason).To(BeTrue(), "human_review_reason must be set when HR=true")
-			Expect(string(hrReason)).To(Equal("rca_incomplete"),
-				"E2E-KA-433-ADV-016: reason must be rca_incomplete per BR-HAPI-261 AC#7")
+			Expect(hasReason).To(BeTrue(), "M2: human_review_reason must be set when needs_human_review=true")
+			Expect(hrReason).To(Equal("rca_incomplete"),
+				"E2E-KA-433-ADV-016: reason must be rca_incomplete (enrichment HardFail)")
 		})
 	})
 })

@@ -101,9 +101,9 @@ func rcaIncompleteConfig() MockScenarioConfig {
 		WorkflowName: "generic-restart-v1", WorkflowID: uuid.DeterministicUUID("generic-restart-v1"),
 		WorkflowTitle: "Generic Pod Restart", Confidence: 0.88,
 		RootCause:            "Root cause identified but affected resource could not be determined from signal context",
-		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "ambiguous-pod",
+		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "unreachable-pod",
 		APIVersion:           "v1",
-		Parameters:           map[string]string{"NAMESPACE": "production", "POD_NAME": "ambiguous-pod"},
+		Parameters:           map[string]string{"NAMESPACE": "production", "POD_NAME": "unreachable-pod"},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
 	}

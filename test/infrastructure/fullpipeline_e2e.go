@@ -540,6 +540,14 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 9: Create enrichment fixture resources (#704)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 9: Creating enrichment fixture resources (#704)...")
+	if err := createEnrichmentFixtures(kubeconfigPath, writer); err != nil {
+		return builtImages, seededUUIDs, fmt.Errorf("PHASE 9 failed: enrichment fixtures: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// DONE
 	// ═══════════════════════════════════════════════════════════════════════
 	totalDuration := time.Since(startTime).Round(time.Second)
