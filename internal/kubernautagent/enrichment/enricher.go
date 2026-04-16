@@ -123,8 +123,9 @@ type MetricDeltas struct {
 
 // RetryConfig controls retry behavior for infrastructure calls in Enrich().
 // With MaxRetries=0 (default), enrichment is best-effort (current behavior).
-// With MaxRetries>0, transient errors are retried with exponential backoff
-// and permanent failures trigger HardFail on EnrichmentResult.
+// With MaxRetries>0, all errors are retried with exponential backoff and
+// failures after exhaustion trigger HardFail on EnrichmentResult.
+// Matches HAPI v1.2.1 EnrichmentService behavior (BR-HAPI-261 AC#7).
 type RetryConfig struct {
 	MaxRetries  int
 	BaseBackoff time.Duration
@@ -139,11 +140,10 @@ type EnrichmentResult struct {
 	// OwnerChainError is non-nil when GetOwnerChain fails (resource not found, API error).
 	// Set for observability regardless of retry mode.
 	OwnerChainError   error                    `json:"-"`
-	// HardFail is true when owner chain resolution fails definitively:
-	// either a permanent error (NotFound, Forbidden) or transient error
-	// after retry exhaustion. The investigator uses this to trigger
-	// rca_incomplete (BR-HAPI-261 AC#7, #704). Only set when RetryConfig
-	// has MaxRetries > 0 (strict enrichment mode).
+	// HardFail is true when owner chain resolution fails after retry
+	// exhaustion (all errors retried, matching HAPI v1.2.1). The
+	// investigator uses this to trigger rca_incomplete (BR-HAPI-261
+	// AC#7, #704). Only set when RetryConfig has MaxRetries > 0.
 	HardFail          bool                     `json:"-"`
 	DetectedLabels    *DetectedLabels          `json:"detected_labels,omitempty"`
 	QuotaDetails      map[string]string        `json:"quota_details,omitempty"`
@@ -184,9 +184,9 @@ func (e *Enricher) WithRetryConfig(cfg RetryConfig) *Enricher {
 
 // resolveOwnerChainWithRetry calls GetOwnerChain with optional retry logic.
 // With MaxRetries=0 (default): single call, best-effort.
-// With MaxRetries>0: transient errors are retried with exponential backoff;
-// permanent errors return immediately without retry. The caller sets HardFail
-// on EnrichmentResult based on whether this returns a non-nil error.
+// With MaxRetries>0: all errors are retried with exponential backoff,
+// matching HAPI v1.2.1 EnrichmentService._retry (except Exception → retry).
+// The caller sets HardFail on EnrichmentResult when this returns a non-nil error.
 func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, namespace string) ([]OwnerChainEntry, error) {
 	chain, err := e.k8s.GetOwnerChain(ctx, kind, name, namespace)
 	if err == nil {
@@ -194,10 +194,6 @@ func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, n
 	}
 
 	if e.retryConfig.MaxRetries == 0 {
-		return nil, err
-	}
-
-	if !isTransientK8sError(err) {
 		return nil, err
 	}
 
@@ -224,18 +220,14 @@ func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, n
 		if err == nil {
 			return chain, nil
 		}
-
-		if !isTransientK8sError(err) {
-			return nil, err
-		}
 	}
 
 	return nil, err
 }
 
-// isTransientK8sError classifies K8s API errors as retryable (transient) or
-// permanent. NotFound, Forbidden, Gone, etc. are permanent. Timeout, 503,
-// 500, and 429 are transient. Non-StatusError types are treated as permanent.
+// isTransientK8sError classifies K8s API errors for observability purposes.
+// Not used in the retry path (HAPI retries all errors), but kept for logging
+// and future use in metrics/audit classification.
 func isTransientK8sError(err error) bool {
 	return apierrors.IsTimeout(err) ||
 		apierrors.IsServerTimeout(err) ||

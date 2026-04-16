@@ -135,12 +135,12 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 		})
 	})
 
-	Describe("UT-704-E-003: Permanent error triggers immediate HardFail", func() {
-		It("should not retry NotFound and set HardFail=true immediately", func() {
+	Describe("UT-704-E-003: NotFound retried and HardFail after exhaustion (HAPI-aligned)", func() {
+		It("should retry NotFound 3 times and set HardFail=true after exhaustion", func() {
 			notFoundErr := apierrors.NewNotFound(
 				schema.GroupResource{Resource: "pods"}, "test-pod")
 			k8s := &countingK8sClient{
-				errSeq: []error{notFoundErr},
+				errSeq: []error{notFoundErr, notFoundErr, notFoundErr, notFoundErr},
 			}
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
 				WithRetryConfig(enrichment.RetryConfig{
@@ -152,12 +152,38 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
-			Expect(k8s.CallCount()).To(Equal(1),
-				"UT-704-E-003: permanent error must NOT be retried")
+			Expect(k8s.CallCount()).To(Equal(4),
+				"UT-704-E-003: HAPI retries all errors — initial + 3 retries = 4 calls")
 			Expect(result.OwnerChainError).NotTo(BeNil(),
-				"UT-704-E-003: OwnerChainError must be set for permanent error")
+				"UT-704-E-003: OwnerChainError must be set after retry exhaustion")
 			Expect(result.HardFail).To(BeTrue(),
-				"UT-704-E-003: HardFail must be true for permanent error")
+				"UT-704-E-003: HardFail must be true after retry exhaustion")
+		})
+	})
+
+	Describe("UT-704-E-005: Forbidden retried and HardFail after exhaustion (HAPI-aligned)", func() {
+		It("should retry Forbidden 3 times and set HardFail=true after exhaustion", func() {
+			forbiddenErr := apierrors.NewForbidden(
+				schema.GroupResource{Resource: "pods"}, "test-pod", fmt.Errorf("RBAC: access denied"))
+			k8s := &countingK8sClient{
+				errSeq: []error{forbiddenErr, forbiddenErr, forbiddenErr, forbiddenErr},
+			}
+			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
+				WithRetryConfig(enrichment.RetryConfig{
+					MaxRetries:  3,
+					BaseBackoff: 1 * time.Millisecond,
+				})
+
+			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "inc-005")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			Expect(k8s.CallCount()).To(Equal(4),
+				"UT-704-E-005: HAPI retries all errors — initial + 3 retries = 4 calls")
+			Expect(result.OwnerChainError).NotTo(BeNil(),
+				"UT-704-E-005: OwnerChainError must be set after retry exhaustion")
+			Expect(result.HardFail).To(BeTrue(),
+				"UT-704-E-005: HardFail must be true after retry exhaustion (Forbidden)")
 		})
 	})
 
