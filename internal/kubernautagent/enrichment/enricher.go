@@ -125,6 +125,10 @@ type EnrichmentResult struct {
 	ResourceName      string                   `json:"resource_name,omitempty"`
 	ResourceNamespace string                   `json:"resource_namespace,omitempty"`
 	OwnerChain        []OwnerChainEntry        `json:"owner_chain"`
+	// OwnerChainError is non-nil when GetOwnerChain fails (resource not found, API error).
+	// The investigator uses this to trigger rca_incomplete (BR-HAPI-261 AC#7, #704).
+	// A nil value with an empty OwnerChain means "no controller owners" (legitimate).
+	OwnerChainError   error                    `json:"-"`
 	DetectedLabels    *DetectedLabels          `json:"detected_labels,omitempty"`
 	QuotaDetails      map[string]string        `json:"quota_details,omitempty"`
 	RemediationHistory *RemediationHistoryResult `json:"remediation_history,omitempty"`
@@ -182,6 +186,7 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 	chain, err := e.k8s.GetOwnerChain(ctx, kind, name, namespace)
 	if err != nil {
 		ownerErr = err
+		result.OwnerChainError = err
 		e.logger.Warn("enrichment: owner chain resolution failed",
 			slog.String("resource", namespace+"/"+kind+"/"+name),
 			slog.String("error", err.Error()),

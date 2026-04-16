@@ -161,6 +161,22 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		workflowSignal.Namespace = postRCANS
 	}
 
+	// BR-HAPI-261 AC#7 / #704: owner chain resolution failure → rca_incomplete.
+	// Gate on the final enrichData before workflow selection.
+	if enrichData != nil && enrichData.OwnerChainError != nil {
+		inv.logger.Warn("enrichment owner chain failed, triggering rca_incomplete",
+			slog.String("error", enrichData.OwnerChainError.Error()),
+		)
+		rcaResult.HumanReviewNeeded = true
+		rcaResult.HumanReviewReason = "rca_incomplete"
+		backfillSeverity(rcaResult, signal)
+		attachDetectedLabels(rcaResult, enrichData)
+		InjectRemediationTarget(rcaResult, workflowSignal, enrichData)
+		injectTargetResourceParameters(rcaResult)
+		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
+		return rcaResult, nil
+	}
+
 	if inv.pipeline.AnomalyDetector != nil {
 		inv.pipeline.AnomalyDetector.Reset()
 	}
