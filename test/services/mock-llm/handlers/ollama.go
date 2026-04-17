@@ -89,6 +89,14 @@ func (h *handler) handleOllama(w http.ResponseWriter, r *http.Request) {
 		h.recordScenarioMetric(scenarioName, result.Method)
 	}
 
+	if !cfg.OverrideResource {
+		if res := ctx.ExtractResource(); res.Kind != "" && res.Name != "" {
+			cfg.ResourceKind = res.Kind
+			cfg.ResourceName = res.Name
+			cfg.ResourceNS = res.Namespace
+		}
+	}
+
 	writeJSON(w, http.StatusOK, response.BuildOllamaResponse(model, cfg))
 	h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
 }

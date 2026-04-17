@@ -102,6 +102,29 @@ var _ = Describe("Conversation Context Extraction", func() {
 			Expect(res.Name).To(Equal("my-pod-abc123"))
 			Expect(res.SignalName).To(Equal("OOMKilled"))
 		})
+
+		It("should extract resource from KA prompt template format (- Resource: ns/kind/name)", func() {
+			content := "# Incident Analysis\n- Signal Name: BackOff\n- Resource: fp-e2e-496-123/Deployment/memory-eater\n- Error: OOMKilled"
+			ctx := conversation.NewContext([]openai.Message{
+				{Role: "system", Content: stringPtr(content)},
+			})
+			res := ctx.ExtractResource()
+			Expect(res.Kind).To(Equal("Deployment"))
+			Expect(res.Name).To(Equal("memory-eater"))
+			Expect(res.Namespace).To(Equal("fp-e2e-496-123"))
+			Expect(res.SignalName).To(Equal("BackOff"))
+		})
+
+		It("should prefer Resource line over individual Pod/Namespace fields", func() {
+			content := "- Signal Name: OOMKilled\n- Resource: staging/StatefulSet/my-db\n- Pod: some-pod\n- Namespace: other-ns"
+			ctx := conversation.NewContext([]openai.Message{
+				{Role: "user", Content: stringPtr(content)},
+			})
+			res := ctx.ExtractResource()
+			Expect(res.Kind).To(Equal("StatefulSet"))
+			Expect(res.Name).To(Equal("my-db"))
+			Expect(res.Namespace).To(Equal("staging"))
+		})
 	})
 
 	Describe("UT-MOCK-014-005: ExtractRootOwner handles HolmesGPT-prefixed JSON", func() {

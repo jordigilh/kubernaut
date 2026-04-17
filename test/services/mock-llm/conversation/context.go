@@ -74,14 +74,18 @@ type ResourceInfo struct {
 }
 
 var (
-	reSignalName = regexp.MustCompile(`(?i)-\s*Signal Name:\s*(\S+)`)
-	reNamespace  = regexp.MustCompile(`(?i)-\s*Namespace:\s*(\S+)`)
-	rePod        = regexp.MustCompile(`(?i)-\s*Pod:\s*(\S+)`)
-	reNode       = regexp.MustCompile(`(?i)-\s*Node:\s*(\S+)`)
+	reSignalName   = regexp.MustCompile(`(?i)-\s*Signal Name:\s*(\S+)`)
+	reNamespace    = regexp.MustCompile(`(?i)-\s*Namespace:\s*(\S+)`)
+	rePod          = regexp.MustCompile(`(?i)-\s*Pod:\s*(\S+)`)
+	reNode         = regexp.MustCompile(`(?i)-\s*Node:\s*(\S+)`)
+	reResourceLine = regexp.MustCompile(`(?i)-\s*Resource:\s*(\S+)/(\S+)/(\S+)`)
 )
 
 // ExtractResource pulls resource name, namespace, and signal from
 // structured "- Key: Value" lines in message content.
+//
+// Primary: parses "- Resource: ns/kind/name" (KA prompt template format).
+// Fallback: individual "- Pod:" / "- Node:" / "- Namespace:" lines.
 func (c *Context) ExtractResource() ResourceInfo {
 	combined := c.combinedContent()
 	info := ResourceInfo{}
@@ -89,6 +93,14 @@ func (c *Context) ExtractResource() ResourceInfo {
 	if m := reSignalName.FindStringSubmatch(combined); len(m) > 1 {
 		info.SignalName = m[1]
 	}
+
+	if m := reResourceLine.FindStringSubmatch(combined); len(m) > 3 {
+		info.Namespace = m[1]
+		info.Kind = m[2]
+		info.Name = m[3]
+		return info
+	}
+
 	if m := reNamespace.FindStringSubmatch(combined); len(m) > 1 {
 		info.Namespace = m[1]
 	}

@@ -103,6 +103,7 @@ func rcaIncompleteConfig() MockScenarioConfig {
 		RootCause:            "Root cause identified but affected resource could not be determined from signal context",
 		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "unreachable-pod",
 		APIVersion:           "v1",
+		OverrideResource:     true,
 		Parameters:           map[string]string{"NAMESPACE": "production", "POD_NAME": "unreachable-pod"},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
