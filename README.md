@@ -59,9 +59,12 @@ Track progress on the [v1.3 milestone](https://github.com/jordigilh/kubernaut/mi
 
 ### v1.4 — Agentic Integration and AI Safety (next)
 
+- **Kubernaut Console** — Web-based operator dashboard with chat UI, live remediation streaming, and workflow selection. Standalone React app (MVP) evolving into a Backstage plugin ([#713](https://github.com/jordigilh/kubernaut/issues/713))
+- **Natural language investigation** — Operators can trigger investigations by describing the problem in plain text; Kubernaut extracts a structured signal and runs the full remediation pipeline ([#714](https://github.com/jordigilh/kubernaut/issues/714))
 - **MCP interactive mode** — Human operators can investigate, enrich, and select remediation workflows through any MCP-compatible chat interface — IDE copilots, Slack bots, operational consoles, or custom UIs ([#703](https://github.com/jordigilh/kubernaut/issues/703))
 - **A2A protocol support** — External AI agents can delegate remediation to Kubernaut and track task lifecycle via the [Agent-to-Agent](https://a2aproject.github.io/A2A/latest/specification/) standard ([#705](https://github.com/jordigilh/kubernaut/issues/705))
 - **API Frontend service** — Unified external protocol layer hosting MCP and inbound A2A endpoints, with shared CRD watching for live remediation status streaming ([#708](https://github.com/jordigilh/kubernaut/issues/708))
+- **Investigation Prompt Bundles** — Customers inject their SOPs into the investigation pipeline via OCI-packaged prompts and skills, enabling pre/post-investigation hooks and customizable RCA flows ([#711](https://github.com/jordigilh/kubernaut/issues/711))
 - **Prompt injection guardrails** — Shadow agent with a dedicated scanning model to protect the agentic pipeline against prompt injection attacks ([#601](https://github.com/jordigilh/kubernaut/issues/601))
 - **Operator workflow/parameter override** — Allow operators to override workflow selection and parameters during RAR approval
 
