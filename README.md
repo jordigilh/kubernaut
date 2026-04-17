@@ -67,6 +67,8 @@ Track progress on the [v1.3 milestone](https://github.com/jordigilh/kubernaut/mi
 
 ![Interactive console — from alert to fix in a conversational flow](docs/architecture/diagrams/kubernaut-interactive-console-mockup.png)
 
+See the [partner integration deck](docs/presentations/kubernaut-integration-partner-deck.md) for the full visual walkthrough.
+
 Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/milestone/5).
 
 ### v1.5 — Multi-Agent Consensus RCA (planned)
