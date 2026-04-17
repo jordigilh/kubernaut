@@ -17,4 +17,4 @@ We need from you: protocol support, auth model, a test scenario.
 
 ---
 
-[< Previous: Demo flow](10-demo-flow.md) | [Deck Index](../kubernaut-integration-partner-deck.md) | [Next: Closing >](12-closing.md)
+[< Previous: Demo flow](10-demo-flow.md) | [Deck Index](../kubernaut-integration-partner-deck.md) | [Next: Existing personas >](13-personas-existing.md)

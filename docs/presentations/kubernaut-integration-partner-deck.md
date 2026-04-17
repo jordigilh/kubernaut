@@ -16,6 +16,9 @@
 | 9 | [Architecture](slides/09-architecture.md) | System overview |
 | 10 | [Demo flow](slides/10-demo-flow.md) | Joint demo scenario |
 | 11 | [Next steps](slides/11-next-steps.md) | Action items |
-| 12 | [Closing](slides/12-closing.md) | Closing slide |
+| 12 | [Existing personas](slides/13-personas-existing.md) | v1.0 persona catalog |
+| 13 | [Integration personas](slides/14-personas-integration.md) | MCP, A2A inbound, A2A outbound |
+| 14 | [Interaction boundaries](slides/15-personas-boundaries.md) | Kubernaut IS / IS NOT |
+| 15 | [Closing](slides/12-closing.md) | Closing slide |
 
 SVG source files: [`svg/`](svg/)

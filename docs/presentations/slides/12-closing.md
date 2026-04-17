@@ -8,4 +8,4 @@ marp: true
 
 ---
 
-[< Previous: Next steps](11-next-steps.md) | [Deck Index](../kubernaut-integration-partner-deck.md)
+[< Previous: Interaction boundaries](15-personas-boundaries.md) | [Deck Index](../kubernaut-integration-partner-deck.md)
