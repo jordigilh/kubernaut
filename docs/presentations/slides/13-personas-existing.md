@@ -12,7 +12,7 @@ Six personas already served by Kubernaut today:
 - SRE/On-call Responder: receives alerts, reviews outcomes, primary notification consumer
 - Remediation Approver: reviews and decides on RemediationApprovalRequests
 - Workflow Author: publishes and maintains workflow catalog content
-- Security/Compliance Auditor: reviews audit trails for SOC2, needs full attribution
+- Security/Compliance Auditor: reviews audit trails for SOC2-readiness, needs full attribution
 - Notification Recipient: receives events via Slack/PagerDuty, may lack K8s RBAC
 RBAC archetypes (viewer, operator, developer, admin) are authorization tiers, not separate personas.
 -->

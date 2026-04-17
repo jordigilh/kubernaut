@@ -45,7 +45,7 @@
   <text x="88" y="339" text-anchor="middle" font-size="10" font-weight="700" fill="#2563EB">LOG</text>
   <text x="116" y="326" font-size="13" font-weight="700" fill="#1D4ED8">Audit authority</text>
   <text x="116" y="344" font-size="11" fill="#475569">Every decision, tool call, and state transition</text>
-  <text x="116" y="358" font-size="11" fill="#475569">recorded with attribution -- SOC2 compliant</text>
+  <text x="116" y="358" font-size="11" fill="#475569">recorded with attribution -- SOC2-ready design</text>
 
   <!-- Right: Kubernaut is NOT -->
   <g filter="url(#shadow)">

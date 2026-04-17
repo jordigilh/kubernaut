@@ -71,7 +71,7 @@
   <rect x="532" y="250" width="32" height="32" rx="8" fill="#2563EB" opacity="0.15"/>
   <text x="548" y="271" text-anchor="middle" font-size="12" font-weight="700" fill="#2563EB">SEC</text>
   <text x="576" y="258" font-size="14" font-weight="700" fill="#1D4ED8">Security / Compliance Auditor</text>
-  <text x="576" y="276" font-size="11" fill="#475569">Reviews audit trails for SOC2 compliance. Needs</text>
+  <text x="576" y="276" font-size="11" fill="#475569">Reviews audit trails for SOC2-readiness. Needs</text>
   <text x="576" y="290" font-size="11" fill="#475569">attribution (who did what, when) and event reconstruction.</text>
   <text x="576" y="308" font-size="10" fill="#94A3B8">BR-AUDIT-006, authwebhook attribution model</text>
 
