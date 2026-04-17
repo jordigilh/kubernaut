@@ -102,81 +102,35 @@ Kubernaut does the heavy lifting and streams results back.
 
 ## What your user sees
 
-```
-┌──────────────────────────────────────────────────────────┐
-│  Your Platform                                            │
-│                                                           │
-│  [!] Alert: pods crash-looping in namespace payments      │
-│                                                           │
-│  User: "What's going on with payments?"                   │
-│                                                           │
-│  Agent: "Investigating the payments namespace..."         │
-│  > Checked pod status: payments-api-7d4f -- 12 restarts   │
-│  > Pulled logs: OOMKilled at 512Mi limit                  │
-│  > Queried metrics: memory trending up since 14:32 deploy │
-│                                                           │
-│  Agent: "Root cause: memory leak in payments-api caused   │
-│  by unbounded cache growth after the 14:32 deploy."      │
-│                                                           │
-│  User: "Can you fix it?"                                  │
-│                                                           │
-│  Agent: "I found 2 remediation options:"                  │
-│  ┌──────────────────┐  ┌───────────────────────────┐     │
-│  │ [R] Rollback      │  │ [M] Increase memory limit │     │
-│  │ Deploy to v2.3.1 │  │ 512Mi → 1Gi               │     │
-│  │ [Recommended]     │  │                           │     │
-│  └──────────────────┘  └───────────────────────────┘     │
-│                                                           │
-│  User: clicks [Rollback]                                  │
-│                                                           │
-│  Agent: "Executing rollback..."                           │
-│  > Pipeline started ------------------- OK                │
-│  > Health check: pods healthy, 0 restarts                 │
-│  > Alert resolved                                         │
-│                                                           │
-│  Agent: "Done. Payments is healthy."                      │
-└──────────────────────────────────────────────────────────┘
-```
+![What your user sees](svg/02-chat-ui-mockup.svg)
 
 ---
 
 ## What happens behind the scenes
 
-```
-Your UI                Your Agent              Kubernaut
-  │                         │                        │
-  │ "what's going on        │                        │
-  │  with payments?"        │                        │
-  │────────────────────────▶│                        │
-  │                         │  kubernaut_investigate  │
-  │                         │  (MCP tool call)        │
-  │                         │───────────────────────▶│
-  │                         │                        │── inspect pods
-  │                         │                        │── pull logs
-  │                         │                        │── query prometheus
-  │                         │    SSE stream: findings │
-  │                         │◀───────────────────────│
-  │  streamed to user       │                        │
-  │◀────────────────────────│                        │
-  │                         │                        │
-  │ "Can you fix it?"       │                        │
-  │────────────────────────▶│  kubernaut_enrich      │
-  │                         │───────────────────────▶│── gather context
-  │                         │  kubernaut_select_workflow   │
-  │                         │───────────────────────▶│── query catalog
-  │                         │    workflow options     │
-  │                         │◀───────────────────────│
-  │  rendered as cards      │                        │
-  │◀────────────────────────│                        │
-  │                         │                        │
-  │  [clicks Rollback]      │                        │
-  │────────────────────────▶│  kubernaut_select_workflow   │
-  │                         │  (execute=true)        │
-  │                         │───────────────────────▶│── run pipeline
-  │                         │  kubernaut_watch (SSE)  │── verify fix
-  │                         │◀───────────────────────│
-  │  "Done. Healthy."       │                        │
-  │◀────────────────────────│                        │
+```mermaid
+sequenceDiagram
+    participant UI as Your UI
+    participant Agent as Your Agent
+    participant K as Kubernaut
+
+    UI->>Agent: "What's going on with payments?"
+    Agent->>K: kubernaut_investigate
+    Note over K: inspect pods<br/>pull logs<br/>query metrics
+    K-->>Agent: SSE stream: findings
+    Agent-->>UI: Stream investigation updates
+
+    UI->>Agent: "Can you fix it?"
+    Agent->>K: kubernaut_enrich
+    Agent->>K: kubernaut_select_workflow
+    K-->>Agent: workflow options
+    Agent-->>UI: Render remediation choices
+
+    UI->>Agent: Select "Rollback"
+    Agent->>K: kubernaut_select_workflow (execute=true)
+    K-->>Agent: kubernaut_watch (SSE)
+    Note over K: run pipeline<br/>verify fix
+    Agent-->>UI: "Done. Healthy."
 ```
 
 ---

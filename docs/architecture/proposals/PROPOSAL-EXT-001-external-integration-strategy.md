@@ -205,7 +205,7 @@ The API Frontend serves an Agent Card at `/.well-known/agent.json` for A2A disco
   "name": "Kubernaut",
   "description": "AIOps agent for Kubernetes remediation.",
   "url": "https://kubernaut-apifrontend.namespace.svc:8443",
-  "version": "1.5.0",
+  "version": "1.4.0",
   "capabilities": {
     "streaming": true,
     "pushNotifications": false
@@ -409,11 +409,13 @@ Tier 1    Tier 2
 
 ### 7.4 Phased Delivery Option
 
+> **Note**: This phased breakdown is an *integration-first rollout option* for teams that need incremental capability sooner. It does not override the product roadmap (section 8), which targets MCP + A2A + API Frontend together in v1.4. The API Frontend hosting model is still TBD -- the original OCP deployment target is no longer available, and alternatives (Backstage plugin, standalone service, etc.) are under evaluation. Delivery estimates for the API Frontend will be refined once the hosting decision is made.
+
 If an integrating team needs something sooner:
 
 - **Phase 1 -- "MCP Lite" (6-10 weeks)**: Foundations + `kubernaut_investigate` with streaming + `kubernaut_watch` + basic session manager. Enough for a demo and initial integration testing.
 - **Phase 2 -- "Full MCP" (+6-7 weeks)**: Remaining Tier 1 (enrich, select_workflow, audit, AA controller, config). Full interactive lifecycle.
-- **Phase 3 -- "A2A" (+10 weeks)**: API Frontend service, A2A inbound/outbound, natural language extraction.
+- **Phase 3 -- "A2A + API Frontend" (TBD)**: API Frontend service, A2A inbound/outbound, natural language extraction. Estimate pending hosting model decision.
 
 ### 7.5 Design Gates
 
