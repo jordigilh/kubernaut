@@ -23,8 +23,6 @@ func noWorkflowFoundConfig() MockScenarioConfig {
 		Confidence: 0.0,
 		RootCause:            "No suitable workflow found in catalog for this signal type",
 		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "failing-pod",
-		NeedsHumanReview:     BoolPtr(true),
-		HumanReviewReason:    "no_matching_workflows",
 		InvestigationOutcome: "inconclusive",
 	}
 }
@@ -67,8 +65,6 @@ func problemResolvedContradictionConfig() MockScenarioConfig {
 		RootCause:            "Problem self-resolved. Transient OOM cleared after pod restart",
 		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "recovered-pod",
 		Contributing:         []string{"Transient condition", "Auto-recovery"},
-		NeedsHumanReview:     BoolPtr(true),
-		HumanReviewReason:    "contradictory_signals",
 		InvestigationOutcome: "problem_resolved",
 		IsActionable:         BoolPtr(false),
 	}
@@ -105,11 +101,10 @@ func rcaIncompleteConfig() MockScenarioConfig {
 		WorkflowName: "generic-restart-v1", WorkflowID: uuid.DeterministicUUID("generic-restart-v1"),
 		WorkflowTitle: "Generic Pod Restart", Confidence: 0.88,
 		RootCause:            "Root cause identified but affected resource could not be determined from signal context",
-		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "ambiguous-pod",
+		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "unreachable-pod",
 		APIVersion:           "v1",
-		Parameters:           map[string]string{"NAMESPACE": "production", "POD_NAME": "ambiguous-pod"},
-		NeedsHumanReview:     BoolPtr(true),
-		HumanReviewReason:    "investigation_inconclusive",
+		OverrideResource:     true,
+		Parameters:           map[string]string{"NAMESPACE": "production", "POD_NAME": "unreachable-pod"},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
 	}

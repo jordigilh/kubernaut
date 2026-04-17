@@ -47,6 +47,10 @@ func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, erro
 	if jsonStr != "" {
 		var result katypes.InvestigationResult
 		if err := json.Unmarshal([]byte(jsonStr), &result); err == nil && (result.RCASummary != "" || result.WorkflowID != "") {
+			// BR-HAPI-200: Clear any HR fields populated by json.Unmarshal via
+			// the "human_review_reason" tag match. HR is parser-derived only.
+			result.HumanReviewNeeded = false
+			result.HumanReviewReason = ""
 			var flat flatLLMFields
 			_ = json.Unmarshal([]byte(jsonStr), &flat)
 			applyFlatFields(&result, flat)
@@ -176,8 +180,6 @@ type llmResponse struct {
 	Confidence           float64           `json:"confidence,omitempty"`
 	Actionable           *bool             `json:"actionable,omitempty"`
 	InvestigationOutcome string            `json:"investigation_outcome,omitempty"`
-	NeedsHumanReview     *bool             `json:"needs_human_review,omitempty"`
-	HumanReviewReason    string            `json:"human_review_reason,omitempty"`
 	DetectedLabels       map[string]interface{} `json:"detected_labels,omitempty"`
 }
 
@@ -224,8 +226,6 @@ type flatLLMFields struct {
 	Severity             string `json:"severity,omitempty"`
 	Actionable           *bool  `json:"actionable,omitempty"`
 	InvestigationOutcome string `json:"investigation_outcome,omitempty"`
-	NeedsHumanReview     *bool  `json:"needs_human_review,omitempty"`
-	HumanReviewReason    string `json:"human_review_reason,omitempty"`
 }
 
 // parseLLMFormat parses the nested LLM response format and converts
@@ -288,8 +288,6 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 		Severity:             resp.Severity,
 		Actionable:           resp.Actionable,
 		InvestigationOutcome: resp.InvestigationOutcome,
-		NeedsHumanReview:     resp.NeedsHumanReview,
-		HumanReviewReason:    resp.HumanReviewReason,
 	})
 
 	if len(resp.DetectedLabels) > 0 {
@@ -372,16 +370,14 @@ func parseSectionHeaders(content string) (*katypes.InvestigationResult, error) {
 // a map of header → body text. Recognizes headers with and without markdown fencing.
 func extractSections(content string) map[string]string {
 	knownHeaders := map[string]bool{
-		"root_cause_analysis": true,
-		"selected_workflow":   true,
+		"root_cause_analysis":   true,
+		"selected_workflow":     true,
 		"alternative_workflows": true,
-		"confidence":          true,
-		"severity":            true,
-		"actionable":          true,
+		"confidence":            true,
+		"severity":              true,
+		"actionable":            true,
 		"investigation_outcome": true,
-		"needs_human_review":  true,
-		"human_review_reason": true,
-		"detected_labels":     true,
+		"detected_labels":       true,
 	}
 
 	sections := make(map[string]string)
@@ -439,8 +435,7 @@ func mergeNestedRemediationTarget(result *katypes.InvestigationResult, jsonStr s
 
 // applyFlatFields applies LLM-provided flat fields to the result:
 // - actionable: sets IsActionable, synthesizes warning, applies confidence floor
-// - investigation_outcome: maps to outcome routing fields
-// - needs_human_review / human_review_reason: propagates directly
+// - investigation_outcome: maps to outcome routing fields (HR is derived, not propagated)
 func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 	if flat.Severity != "" && result.Severity == "" {
 		result.Severity = flat.Severity
@@ -466,16 +461,9 @@ func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 		applyInvestigationOutcome(result, flat.InvestigationOutcome)
 	}
 
-	if flat.NeedsHumanReview != nil && *flat.NeedsHumanReview {
-		result.HumanReviewNeeded = true
-		if flat.HumanReviewReason != "" {
-			result.HumanReviewReason = flat.HumanReviewReason
-		}
-	}
-
-	// #301: Contradiction override — when the LLM says the problem is resolved
-	// but also sets needs_human_review=true, the resolution takes precedence.
-	// Python KA enforced this; KA must match for AA parity.
+	// #301: Contradiction override — when the outcome is problem_resolved but
+	// the parser-derived HR was set (e.g., via inconclusive outcome fallback),
+	// the resolution takes precedence. Defense-in-depth per HAPI parity.
 	if flat.InvestigationOutcome == "problem_resolved" && result.HumanReviewNeeded {
 		result.HumanReviewNeeded = false
 		result.HumanReviewReason = ""
@@ -506,7 +494,11 @@ func applyInvestigationOutcome(result *katypes.InvestigationResult, outcome stri
 	case "inconclusive":
 		result.HumanReviewNeeded = true
 		if result.HumanReviewReason == "" {
-			result.HumanReviewReason = "investigation_inconclusive"
+			if result.RCASummary != "" && result.WorkflowID == "" {
+				result.HumanReviewReason = "no_matching_workflows"
+			} else {
+				result.HumanReviewReason = "investigation_inconclusive"
+			}
 		}
 	case "actionable":
 		if result.IsActionable == nil {

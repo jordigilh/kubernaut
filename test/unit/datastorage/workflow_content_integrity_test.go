@@ -88,6 +88,13 @@ func (m *mockWorkflowIntegrityRepo) UpdateStatus(_ context.Context, workflowID, 
 	return nil
 }
 
+func (m *mockWorkflowIntegrityRepo) SupersedeAndCreate(ctx context.Context, oldID, oldVersion, reason string, newWorkflow *models.RemediationWorkflow) error {
+	if err := m.UpdateStatus(ctx, oldID, oldVersion, "Superseded", reason, ""); err != nil {
+		return err
+	}
+	return m.Create(ctx, newWorkflow)
+}
+
 // Workflow YAML variants for integrity tests. Same name+version, different content.
 var integrityBaseYAML = func() string {
 	crd := testutil.NewTestWorkflowCRD("integrity-test-wf", "ScaleMemory", "job")
@@ -565,6 +572,13 @@ func (m *raceConditionIntegrityRepo) Create(_ context.Context, workflow *models.
 
 func (m *raceConditionIntegrityRepo) UpdateStatus(_ context.Context, _, _, _, _, _ string) error {
 	return nil
+}
+
+func (m *raceConditionIntegrityRepo) SupersedeAndCreate(ctx context.Context, oldID, oldVersion, reason string, newWorkflow *models.RemediationWorkflow) error {
+	if err := m.UpdateStatus(ctx, oldID, oldVersion, "Superseded", reason, ""); err != nil {
+		return err
+	}
+	return m.Create(ctx, newWorkflow)
 }
 
 // computeTestHash computes SHA-256 for test content comparison.

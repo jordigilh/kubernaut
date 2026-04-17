@@ -116,8 +116,6 @@ const investigationResultSchemaJSON = `{
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
     "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data"] },
     "actionable": { "type": "boolean" },
-    "needs_human_review": { "type": "boolean" },
-    "human_review_reason": { "type": "string" },
     "detected_labels": { "type": "object" }
   },
   "required": ["root_cause_analysis", "confidence"]

@@ -74,14 +74,23 @@ type ResourceInfo struct {
 }
 
 var (
-	reSignalName = regexp.MustCompile(`(?i)-\s*Signal Name:\s*(\S+)`)
-	reNamespace  = regexp.MustCompile(`(?i)-\s*Namespace:\s*(\S+)`)
-	rePod        = regexp.MustCompile(`(?i)-\s*Pod:\s*(\S+)`)
-	reNode       = regexp.MustCompile(`(?i)-\s*Node:\s*(\S+)`)
+	reSignalName      = regexp.MustCompile(`(?i)-\s*Signal Name:\s*(\S+)`)
+	reNamespace       = regexp.MustCompile(`(?i)-\s*Namespace:\s*(\S+)`)
+	rePod             = regexp.MustCompile(`(?i)-\s*Pod:\s*(\S+)`)
+	reNode            = regexp.MustCompile(`(?i)-\s*Node:\s*(\S+)`)
+	reResourceLine    = regexp.MustCompile(`(?i)-\s*Resource:\s*(\S+)/(\S+)/(\S+)`)
+	reOwnerChain      = regexp.MustCompile(`\*\*Owner Chain\*\*:\s*(.+)`)
+	reOwnerChainEntry = regexp.MustCompile(`^(\w+)/([^(]+?)(?:\(([^)]+)\))?$`)
 )
 
 // ExtractResource pulls resource name, namespace, and signal from
-// structured "- Key: Value" lines in message content.
+// structured prompt content, modelling what a real LLM would do:
+// identify the root owner from the enrichment context.
+//
+// Priority:
+//  1. **Owner Chain** — last entry is the root owner (e.g. Deployment/name).
+//  2. - Resource: ns/kind/name — raw signal resource (fallback).
+//  3. Individual "- Pod:" / "- Node:" / "- Namespace:" lines (legacy fallback).
 func (c *Context) ExtractResource() ResourceInfo {
 	combined := c.combinedContent()
 	info := ResourceInfo{}
@@ -89,6 +98,25 @@ func (c *Context) ExtractResource() ResourceInfo {
 	if m := reSignalName.FindStringSubmatch(combined); len(m) > 1 {
 		info.SignalName = m[1]
 	}
+
+	if root := extractRootOwnerFromChain(combined); root.Kind != "" {
+		info.Kind = root.Kind
+		info.Name = root.Name
+		if root.Namespace != "" {
+			info.Namespace = root.Namespace
+		} else if m := reResourceLine.FindStringSubmatch(combined); len(m) > 3 {
+			info.Namespace = m[1]
+		}
+		return info
+	}
+
+	if m := reResourceLine.FindStringSubmatch(combined); len(m) > 3 {
+		info.Namespace = m[1]
+		info.Kind = m[2]
+		info.Name = m[3]
+		return info
+	}
+
 	if m := reNamespace.FindStringSubmatch(combined); len(m) > 1 {
 		info.Namespace = m[1]
 	}
@@ -98,6 +126,29 @@ func (c *Context) ExtractResource() ResourceInfo {
 	} else if m := reNode.FindStringSubmatch(combined); len(m) > 1 {
 		info.Name = m[1]
 		info.Kind = "Node"
+	}
+	return info
+}
+
+// extractRootOwnerFromChain parses "**Owner Chain**: Kind/Name(NS) → Kind/Name(NS)"
+// and returns the last entry (root owner). Returns empty ResourceInfo on parse failure.
+func extractRootOwnerFromChain(content string) ResourceInfo {
+	m := reOwnerChain.FindStringSubmatch(content)
+	if len(m) < 2 {
+		return ResourceInfo{}
+	}
+	entries := strings.Split(m[1], " → ")
+	if len(entries) == 0 {
+		return ResourceInfo{}
+	}
+	last := strings.TrimSpace(entries[len(entries)-1])
+	em := reOwnerChainEntry.FindStringSubmatch(last)
+	if len(em) < 3 {
+		return ResourceInfo{}
+	}
+	info := ResourceInfo{Kind: em[1], Name: em[2]}
+	if len(em) > 3 {
+		info.Namespace = em[3]
 	}
 	return info
 }

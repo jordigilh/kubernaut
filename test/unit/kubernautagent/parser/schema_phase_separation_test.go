@@ -75,8 +75,8 @@ var _ = Describe("Phase Separation: Schema Contracts — #700", func() {
 		})
 	})
 
-	Describe("UT-KA-700-002: InvestigationResultSchema unchanged (regression guard)", func() {
-		It("should still contain selected_workflow, alternative_workflows, needs_human_review", func() {
+	Describe("UT-KA-700-002: InvestigationResultSchema must NOT expose HR fields to LLM (BR-HAPI-200)", func() {
+		It("should contain workflow fields but NOT needs_human_review / human_review_reason", func() {
 			schema := parser.InvestigationResultSchema()
 			Expect(schema).NotTo(BeEmpty())
 
@@ -90,8 +90,12 @@ var _ = Describe("Phase Separation: Schema Contracts — #700", func() {
 			By("retaining all workflow selection fields")
 			Expect(props).To(HaveKey("selected_workflow"))
 			Expect(props).To(HaveKey("alternative_workflows"))
-			Expect(props).To(HaveKey("needs_human_review"))
-			Expect(props).To(HaveKey("human_review_reason"))
+
+			By("excluding HR fields — parser-driven, not LLM-driven (BR-HAPI-200)")
+			Expect(props).NotTo(HaveKey("needs_human_review"),
+				"InvestigationResultSchema must NOT include needs_human_review (parser-derived)")
+			Expect(props).NotTo(HaveKey("human_review_reason"),
+				"InvestigationResultSchema must NOT include human_review_reason (parser-derived)")
 
 			By("retaining all RCA fields")
 			Expect(props).To(HaveKey("root_cause_analysis"))

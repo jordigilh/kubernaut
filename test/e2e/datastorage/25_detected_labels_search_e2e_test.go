@@ -142,29 +142,35 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 
 	It("E2E-DS-043-004: HTTP search with detected_labels query parameter returns filtered results", func() {
 		By("searching with matching detected_labels filter (hpaEnabled=true)")
-		matchResp, err := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
-			ActionType:     "ScaleReplicas",
-			Severity:       dsgen.ListWorkflowsByActionTypeSeverityCritical,
-			Component:      "pod",
-			Environment:    "production",
-			Priority:       dsgen.ListWorkflowsByActionTypePriorityP0,
-			DetectedLabels: dsgen.NewOptString(`{"hpaEnabled":true}`),
-			Limit:          dsgen.NewOptInt(100),
-		})
-		Expect(err).ToNot(HaveOccurred())
-
-		matchWorkflows, ok := matchResp.(*dsgen.WorkflowDiscoveryResponse)
-		Expect(ok).To(BeTrue(), "Expected *WorkflowDiscoveryResponse")
-
+		// Use Eventually to tolerate transient visibility windows during parallel
+		// workflow registration (#707: non-atomic supersede can create brief gaps).
 		var foundMatchingWorkflow bool
-		for _, wf := range matchWorkflows.Workflows {
-			if wf.WorkflowName == "e2e-stub" {
-				foundMatchingWorkflow = true
-				break
+		Eventually(func() bool {
+			matchResp, listErr := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
+				ActionType:     "ScaleReplicas",
+				Severity:       dsgen.ListWorkflowsByActionTypeSeverityCritical,
+				Component:      "pod",
+				Environment:    "production",
+				Priority:       dsgen.ListWorkflowsByActionTypePriorityP0,
+				DetectedLabels: dsgen.NewOptString(`{"hpaEnabled":true}`),
+				Limit:          dsgen.NewOptInt(100),
+			})
+			if listErr != nil {
+				return false
 			}
-		}
-		Expect(foundMatchingWorkflow).To(BeTrue(),
+			matchWorkflows, ok := matchResp.(*dsgen.WorkflowDiscoveryResponse)
+			if !ok {
+				return false
+			}
+			for _, wf := range matchWorkflows.Workflows {
+				if wf.WorkflowName == "e2e-stub" {
+					return true
+				}
+			}
+			return false
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
 			"e2e-stub (hpaEnabled=true) should appear when filtering by hpaEnabled=true")
+		foundMatchingWorkflow = true
 
 		By("searching with non-matching detected_labels filter (networkIsolated=true)")
 		nonMatchResp, err := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{

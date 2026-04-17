@@ -63,10 +63,14 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -310,6 +314,91 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		Expect(err).ToNot(HaveOccurred())
 	}
 	GinkgoWriter.Println("✅ KA ServiceAccount granted DataStorage write permissions")
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// #704: K8s investigation + label detection RBAC for KA
+	// Mirrors kubernaut-agent-investigator ClusterRole from E2E (aianalysis_e2e.go)
+	// Required because HAPI-default enrichment (MaxRetries=3) needs K8s access
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	By("Granting KA ServiceAccount K8s investigation + label detection RBAC (#704)")
+	investigatorRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kubernaut-agent-investigator",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"pods", "pods/log", "events", "services", "configmaps", "nodes", "namespaces", "replicationcontrollers", "persistentvolumeclaims"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"apps"},
+				Resources: []string{"deployments", "replicasets", "statefulsets", "daemonsets"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"batch"},
+				Resources: []string{"jobs", "cronjobs"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"events.k8s.io"},
+				Resources: []string{"events"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"policy"},
+				Resources: []string{"poddisruptionbudgets"},
+				Verbs:     []string{"get", "list"},
+			},
+			{
+				APIGroups: []string{"autoscaling"},
+				Resources: []string{"horizontalpodautoscalers"},
+				Verbs:     []string{"get", "list"},
+			},
+			{
+				APIGroups: []string{"networking.k8s.io"},
+				Resources: []string{"networkpolicies"},
+				Verbs:     []string{"get", "list"},
+			},
+		},
+	}
+	err = k8sClient.Create(context.Background(), investigatorRole)
+	if !apierrors.IsAlreadyExists(err) {
+		Expect(err).ToNot(HaveOccurred())
+	}
+
+	investigatorBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kubernaut-agent-service-investigator",
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "kubernaut-agent-investigator",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "kubernaut-agent-service",
+				Namespace: "default",
+			},
+		},
+	}
+	err = k8sClient.Create(context.Background(), investigatorBinding)
+	if !apierrors.IsAlreadyExists(err) {
+		Expect(err).ToNot(HaveOccurred())
+	}
+	GinkgoWriter.Println("✅ KA ServiceAccount granted K8s investigation RBAC (#704)")
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// #704: Enrichment fixture resources for mock LLM scenario targets
+	// Without these, re-enrichment returns NotFound → HardFail → rca_incomplete
+	// Matches createEnrichmentFixtures() from E2E infrastructure
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	By("Creating enrichment fixture resources in shared envtest (#704)")
+	createITAAEnrichmentFixtures(k8sClient)
+	GinkgoWriter.Println("✅ Enrichment fixtures created in shared envtest (#704)")
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// OPTIMIZATION: Build images in parallel (saves ~100 seconds)
@@ -861,3 +950,108 @@ var _ = AfterEach(func() {
 		GinkgoWriter.Printf("🗑️  [AA] Namespace %s deleted (DD-TEST-002 cleanup)\n", testNamespace)
 	}
 })
+
+// createITAAEnrichmentFixtures creates namespaces and minimal workloads in the
+// shared envtest so that KA's HAPI-default enrichment (MaxRetries=3) can resolve
+// mock LLM remediation_target resources. Without these, re-enrichment returns
+// NotFound → HardFail → rca_incomplete, breaking tests that expect normal outcomes.
+// Mirrors createEnrichmentFixtures() from E2E infrastructure (kubectl-based).
+func createITAAEnrichmentFixtures(c client.Client) {
+	ctx := context.Background()
+	one := int32(1)
+	pauseImage := "registry.k8s.io/pause:3.9"
+	pauseContainer := corev1.Container{
+		Name:  "pause",
+		Image: pauseImage,
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("8Mi"),
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("16Mi"),
+				corev1.ResourceCPU:    resource.MustParse("50m"),
+			},
+		},
+	}
+
+	for _, ns := range []string{"production", "staging"} {
+		nsObj := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}
+		if err := c.Create(ctx, nsObj); err != nil && !apierrors.IsAlreadyExists(err) {
+			Expect(err).ToNot(HaveOccurred())
+		}
+	}
+
+	// Deployment/api-server/production — oomkilled + predictive scenarios
+	apiDeploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-server", Namespace: "production"},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &one,
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "api-server"}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "api-server"}},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{pauseContainer}},
+			},
+		},
+	}
+	Expect(c.Create(ctx, apiDeploy)).To(Succeed())
+
+	// Deployment/worker/staging — crashloop scenario
+	workerDeploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker", Namespace: "staging"},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &one,
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "worker"}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "worker"}},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{pauseContainer}},
+			},
+		},
+	}
+	Expect(c.Create(ctx, workerDeploy)).To(Succeed())
+
+	// PDB for worker — pdbProtected label detection
+	minAvail := intstr.FromInt32(1)
+	workerPDB := &policyv1.PodDisruptionBudget{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker-pdb", Namespace: "staging"},
+		Spec: policyv1.PodDisruptionBudgetSpec{
+			MinAvailable: &minAvail,
+			Selector:     &metav1.LabelSelector{MatchLabels: map[string]string{"app": "worker"}},
+		},
+	}
+	Expect(c.Create(ctx, workerPDB)).To(Succeed())
+
+	pods := []struct{ name, ns string }{
+		{"recovered-pod", "production"},
+		{"api-server-def456", "production"},
+		{"ambiguous-pod", "production"},
+		{"failing-pod", "production"},
+		{"failed-analysis-pod", "production"},
+		{"test-pod", "default"},
+	}
+	for _, p := range pods {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: p.name, Namespace: p.ns,
+				Labels: map[string]string{"app": p.name},
+			},
+			Spec: corev1.PodSpec{
+				RestartPolicy: corev1.RestartPolicyNever,
+				Containers:    []corev1.Container{pauseContainer},
+			},
+		}
+		Expect(c.Create(ctx, pod)).To(Succeed())
+	}
+
+	// PVC/batch-job-pvc-expired/production — not_actionable scenario
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "batch-job-pvc-expired", Namespace: "production"},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Mi")},
+			},
+		},
+	}
+	Expect(c.Create(ctx, pvc)).To(Succeed())
+}

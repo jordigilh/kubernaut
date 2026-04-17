@@ -298,8 +298,83 @@ var _ = Describe("TP-693: Controller-ref owner chain selection", func() {
 	})
 })
 
+var _ = Describe("UT-KA-704-MAPPER: RESTMapper refresh for CRDs installed after startup", func() {
+	Describe("UT-KA-704-MAPPER-001: resolveGVR retries with Reset on resettable mapper", func() {
+		It("should discover a CRD Kind after mapper reset", func() {
+			scheme := runtime.NewScheme()
+
+			cert := &unstructured.Unstructured{}
+			cert.SetGroupVersionKind(schema.GroupVersionKind{
+				Group: "cert-manager.io", Version: "v1", Kind: "Certificate",
+			})
+			cert.SetName("demo-app-cert")
+			cert.SetNamespace("default")
+
+			dynClient := fakedynamic.NewSimpleDynamicClient(scheme, cert)
+			mapper := &lateRegistrationMapper{
+				delegate: newSimpleRESTMapper(),
+			}
+
+			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
+
+			_, errBefore := adapter.GetOwnerChain(context.Background(), "Certificate", "demo-app-cert", "default")
+			Expect(errBefore).To(HaveOccurred(),
+				"should fail before CRD is registered")
+
+			mapper.registerCertificate()
+
+			chain, errAfter := adapter.GetOwnerChain(context.Background(), "Certificate", "demo-app-cert", "default")
+			Expect(errAfter).NotTo(HaveOccurred(),
+				"should succeed after mapper reset discovers the CRD")
+			Expect(chain).To(BeEmpty(), "Certificate has no ownerReferences")
+		})
+	})
+})
+
+// lateRegistrationMapper simulates a DeferredDiscoveryRESTMapper that discovers
+// a CRD after Reset(). The first lookup for "certificates" fails; after
+// registerCertificate() + Reset() it succeeds.
+type lateRegistrationMapper struct {
+	delegate     *meta.DefaultRESTMapper
+	certAdded    bool
+}
+
+func (m *lateRegistrationMapper) Reset() {
+	if m.certAdded {
+		m.delegate.Add(schema.GroupVersionKind{
+			Group: "cert-manager.io", Version: "v1", Kind: "Certificate",
+		}, meta.RESTScopeNamespace)
+	}
+}
+
+func (m *lateRegistrationMapper) registerCertificate() {
+	m.certAdded = true
+}
+
+func (m *lateRegistrationMapper) ResourceFor(input schema.GroupVersionResource) (schema.GroupVersionResource, error) {
+	return m.delegate.ResourceFor(input)
+}
+func (m *lateRegistrationMapper) ResourcesFor(input schema.GroupVersionResource) ([]schema.GroupVersionResource, error) {
+	return m.delegate.ResourcesFor(input)
+}
+func (m *lateRegistrationMapper) KindFor(input schema.GroupVersionResource) (schema.GroupVersionKind, error) {
+	return m.delegate.KindFor(input)
+}
+func (m *lateRegistrationMapper) KindsFor(input schema.GroupVersionResource) ([]schema.GroupVersionKind, error) {
+	return m.delegate.KindsFor(input)
+}
+func (m *lateRegistrationMapper) RESTMapping(gk schema.GroupKind, versions ...string) (*meta.RESTMapping, error) {
+	return m.delegate.RESTMapping(gk, versions...)
+}
+func (m *lateRegistrationMapper) RESTMappings(gk schema.GroupKind, versions ...string) ([]*meta.RESTMapping, error) {
+	return m.delegate.RESTMappings(gk, versions...)
+}
+func (m *lateRegistrationMapper) ResourceSingularizer(resource string) (string, error) {
+	return m.delegate.ResourceSingularizer(resource)
+}
+
 // newSimpleRESTMapper creates a REST mapper that knows about common K8s types.
-func newSimpleRESTMapper() meta.RESTMapper {
+func newSimpleRESTMapper() *meta.DefaultRESTMapper {
 	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{
 		{Group: "", Version: "v1"},
 		{Group: "apps", Version: "v1"},

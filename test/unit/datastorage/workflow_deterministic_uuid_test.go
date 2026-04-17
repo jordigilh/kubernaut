@@ -77,6 +77,13 @@ func (m *deterministicUUIDRepo) UpdateStatus(_ context.Context, workflowID, vers
 	return nil
 }
 
+func (m *deterministicUUIDRepo) SupersedeAndCreate(ctx context.Context, oldID, oldVersion, reason string, newWorkflow *models.RemediationWorkflow) error {
+	if err := m.UpdateStatus(ctx, oldID, oldVersion, "Superseded", reason, ""); err != nil {
+		return err
+	}
+	return m.Create(ctx, newWorkflow)
+}
+
 var deterministicBaseYAML = func() string {
 	crd := testutil.NewTestWorkflowCRD("deterministic-wf", "ScaleMemory", "job")
 	crd.Spec.Description = sharedtypes.StructuredDescription{

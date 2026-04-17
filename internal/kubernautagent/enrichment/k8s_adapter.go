@@ -22,8 +22,8 @@ import (
 	"strings"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/hash"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 )
@@ -150,13 +150,27 @@ func (a *K8sAdapter) GetSpecHash(ctx context.Context, kind, name, namespace stri
 	return h, nil
 }
 
+// resettableMapper is satisfied by restmapper.DeferredDiscoveryRESTMapper
+// and allows resolveGVR to invalidate stale discovery caches when CRDs are
+// installed after the agent starts.
+type resettableMapper interface {
+	Reset()
+}
+
 func (a *K8sAdapter) resolveGVR(kind string) (schema.GroupVersionResource, error) {
 	plural := strings.ToLower(kind) + "s"
 	gvr, err := a.mapper.ResourceFor(schema.GroupVersionResource{Resource: plural})
-	if err != nil {
-		return schema.GroupVersionResource{}, err
+	if err == nil {
+		return gvr, nil
 	}
-	return gvr, nil
+	if rm, ok := a.mapper.(resettableMapper); ok {
+		rm.Reset()
+		gvr, retryErr := a.mapper.ResourceFor(schema.GroupVersionResource{Resource: plural})
+		if retryErr == nil {
+			return gvr, nil
+		}
+	}
+	return schema.GroupVersionResource{}, err
 }
 
 func (a *K8sAdapter) resolveOwnerGVR(ref metav1.OwnerReference) (schema.GroupVersionResource, error) {

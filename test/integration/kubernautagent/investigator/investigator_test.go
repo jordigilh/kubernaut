@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -34,6 +35,8 @@ import (
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // staticCatalogFetcher returns a pre-built validator for tests that need
@@ -71,7 +74,7 @@ func (m *mockLLMClient) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatRe
 	return llm.ChatResponse{
 		Message: llm.Message{
 			Role:    "assistant",
-			Content: `{"rca_summary":"no more responses","human_review_needed":true}`,
+			Content: `{"rca_summary":"no more responses","confidence":0.1}`,
 		},
 	}, nil
 }
@@ -229,9 +232,10 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 	Describe("IT-KA-433-008: Investigation stops at max turns and returns human-review", func() {
 		It("should return HumanReviewNeeded when max turns exhausted", func() {
 			mockClient.responses = []llm.ChatResponse{
-				{Message: llm.Message{Role: "assistant", Content: "I need more information", ToolCalls: []llm.ToolCall{
-					{ID: "tc_1", Name: "kubectl_describe", Arguments: `{"kind":"Pod","name":"api","namespace":"default"}`},
-				}}},
+				{
+					Message:   llm.Message{Role: "assistant", Content: "I need more information"},
+					ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "kubectl_describe", Arguments: `{"kind":"Pod","name":"api","namespace":"default"}`}},
+				},
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 1, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -665,6 +669,54 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 				"UT-KA-693-007: injection must use re-enrichment source kind")
 			Expect(result.RemediationTarget.Name).To(Equal("worker"),
 				"UT-KA-693-007: injection must use re-enrichment source name, not LLM hallucination")
+		})
+	})
+
+	Describe("IT-KA-704-001: Owner chain failure triggers rca_incomplete", func() {
+		It("should set needs_human_review=true with rca_incomplete when GetOwnerChain fails", func() {
+			notFoundErr := apierrors.NewNotFound(
+				schema.GroupResource{Resource: "pods"}, "target-pod")
+			k8s := &fakeK8sClient{
+				ownerChain: nil,
+				err:        notFoundErr,
+			}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, logger).
+				WithRetryConfig(enrichment.RetryConfig{
+					MaxRetries:  3,
+					BaseBackoff: 1 * time.Millisecond,
+				})
+
+			// RCA names a DIFFERENT target than the signal to trigger re-enrichment.
+			// Only one response needed: flow returns at rca_incomplete before workflow selection.
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit exceeded","remediation_target":{"kind":"Pod","name":"target-pod","namespace":"production"}}`}},
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools,
+			})
+
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				ResourceKind: "Pod",
+				ResourceName: "signal-pod",
+				Name:         "signal-pod",
+				Namespace:    "production",
+				Severity:     "critical",
+				Message:      "OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.HumanReviewNeeded).To(BeTrue(),
+				"IT-KA-704-001: owner chain failure must trigger human review")
+			Expect(result.HumanReviewReason).To(Equal("rca_incomplete"),
+				"IT-KA-704-001: reason must be rca_incomplete per BR-HAPI-261 AC#7")
+			Expect(result.RCASummary).NotTo(BeEmpty(),
+				"IT-KA-704-001: RCA phase should complete before enrichment check")
+			Expect(result.WorkflowID).To(BeEmpty(),
+				"IT-KA-704-001: workflow selection should be skipped when rca_incomplete")
 		})
 	})
 })
