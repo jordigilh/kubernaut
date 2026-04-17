@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" font-family="Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="960" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1E293B"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="accentLine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0D9488"/>
+      <stop offset="50%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="titleGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#E2E8F0"/>
+      <stop offset="100%" stop-color="white"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="960" height="540" fill="url(#bgGrad)"/>
+
+  <text x="480" y="160" text-anchor="middle" font-size="14" font-weight="700" fill="#7C3AED" letter-spacing="4">KUBERNAUT</text>
+  <rect x="280" y="178" width="400" height="3" rx="1.5" fill="url(#accentLine)"/>
+
+  <text x="480" y="236" text-anchor="middle" font-size="36" font-weight="700" fill="url(#titleGrad)">Kubernetes Remediation</text>
+  <text x="480" y="280" text-anchor="middle" font-size="36" font-weight="700" fill="url(#titleGrad)">Meets Your Agent</text>
+
+  <rect x="280" y="300" width="400" height="3" rx="1.5" fill="url(#accentLine)"/>
+
+  <text x="480" y="350" text-anchor="middle" font-size="18" fill="#94A3B8">How our two projects combine to deliver</text>
+  <text x="480" y="378" text-anchor="middle" font-size="18" fill="#94A3B8">end-to-end Kubernetes incident response</text>
+
+  <text x="480" y="470" text-anchor="middle" font-size="12" fill="#64748B">AIOps Platform for Intelligent Kubernetes Remediation</text>
+  <text x="480" y="492" text-anchor="middle" font-size="11" fill="#475569">Internal collaboration overview</text>
+</svg>

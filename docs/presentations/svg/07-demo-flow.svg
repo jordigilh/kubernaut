@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" font-family="Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="960" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#EFF6FF"/>
+    </linearGradient>
+    <filter id="shadow" x="-2%" y="-4%" width="104%" height="112%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#1E293B" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="540" fill="url(#bgGrad)"/>
+
+  <text x="480" y="36" text-anchor="middle" font-size="22" font-weight="700" fill="#1E293B">Combined Demo: CrashLoopBackOff Remediation</text>
+  <text x="480" y="56" text-anchor="middle" font-size="13" fill="#64748B">Each step shows which project handles what</text>
+
+  <!-- Column headers -->
+  <rect x="60" y="72" width="40" height="24" rx="4" fill="#94A3B8" opacity="0.15"/>
+  <text x="80" y="89" text-anchor="middle" font-size="10" font-weight="700" fill="#64748B">#</text>
+  <rect x="110" y="72" width="310" height="24" rx="4" fill="#94A3B8" opacity="0.15"/>
+  <text x="265" y="89" text-anchor="middle" font-size="10" font-weight="700" fill="#64748B">WHAT THE USER SEES</text>
+  <rect x="430" y="72" width="240" height="24" rx="4" fill="#0D9488" opacity="0.1"/>
+  <text x="550" y="89" text-anchor="middle" font-size="10" font-weight="700" fill="#0F766E">YOUR PROJECT</text>
+  <rect x="680" y="72" width="240" height="24" rx="4" fill="#2563EB" opacity="0.1"/>
+  <text x="800" y="89" text-anchor="middle" font-size="10" font-weight="700" fill="#1D4ED8">KUBERNAUT</text>
+
+  <!-- Row 1 -->
+  <rect x="40" y="104" width="880" height="48" fill="white"/>
+  <g filter="url(#shadow)"><rect x="60" y="110" width="40" height="36" rx="8" fill="#DC2626"/></g>
+  <text x="80" y="133" text-anchor="middle" font-size="14" font-weight="700" fill="white">1</text>
+  <text x="120" y="127" font-size="12" font-weight="600" fill="#1E293B">Alert appears in the dashboard</text>
+  <text x="120" y="143" font-size="10" fill="#64748B">CrashLoopBackOff detected in namespace payments</text>
+  <rect x="434" y="116" width="56" height="22" rx="6" fill="#0D9488" opacity="0.12"/>
+  <text x="462" y="132" text-anchor="middle" font-size="9" font-weight="600" fill="#0F766E">renders</text>
+
+  <!-- Row 2 -->
+  <rect x="40" y="156" width="880" height="48" fill="#F8FAFC"/>
+  <g filter="url(#shadow)"><rect x="60" y="162" width="40" height="36" rx="8" fill="#0D9488"/></g>
+  <text x="80" y="185" text-anchor="middle" font-size="14" font-weight="700" fill="white">2</text>
+  <text x="120" y="179" font-size="12" font-weight="600" fill="#1E293B">User asks "what's going on with payments?" in chat</text>
+  <text x="120" y="195" font-size="10" fill="#64748B">Natural language -- no special formatting needed</text>
+  <rect x="434" y="168" width="92" height="22" rx="6" fill="#0D9488" opacity="0.12"/>
+  <text x="480" y="184" text-anchor="middle" font-size="9" font-weight="600" fill="#0F766E">parses intent</text>
+
+  <!-- Row 3 -->
+  <rect x="40" y="208" width="880" height="48" fill="white"/>
+  <g filter="url(#shadow)"><rect x="60" y="214" width="40" height="36" rx="8" fill="#2563EB"/></g>
+  <text x="80" y="237" text-anchor="middle" font-size="14" font-weight="700" fill="white">3</text>
+  <text x="120" y="231" font-size="12" font-weight="600" fill="#1E293B">Investigation streams in real-time: pods, logs, metrics</text>
+  <text x="120" y="247" font-size="10" fill="#64748B">Token-by-token via SSE -- feels native in the chat</text>
+  <rect x="434" y="220" width="72" height="22" rx="6" fill="#0D9488" opacity="0.12"/>
+  <text x="470" y="236" text-anchor="middle" font-size="9" font-weight="600" fill="#0F766E">streams</text>
+  <rect x="684" y="220" width="96" height="22" rx="6" fill="#2563EB" opacity="0.12"/>
+  <text x="732" y="236" text-anchor="middle" font-size="9" font-weight="600" fill="#1D4ED8">investigates</text>
+
+  <!-- Row 4 -->
+  <rect x="40" y="260" width="880" height="48" fill="#F8FAFC"/>
+  <g filter="url(#shadow)"><rect x="60" y="266" width="40" height="36" rx="8" fill="#2563EB"/></g>
+  <text x="80" y="289" text-anchor="middle" font-size="14" font-weight="700" fill="white">4</text>
+  <text x="120" y="283" font-size="12" font-weight="600" fill="#1E293B">Root cause: "OOM from cache leak after 14:32 deploy"</text>
+  <text x="120" y="299" font-size="10" fill="#64748B">LLM-diagnosed -- not a rule match</text>
+  <rect x="434" y="272" width="72" height="22" rx="6" fill="#0D9488" opacity="0.12"/>
+  <text x="470" y="288" text-anchor="middle" font-size="9" font-weight="600" fill="#0F766E">formats</text>
+  <rect x="684" y="272" width="96" height="22" rx="6" fill="#2563EB" opacity="0.12"/>
+  <text x="732" y="288" text-anchor="middle" font-size="9" font-weight="600" fill="#1D4ED8">diagnosed</text>
+
+  <!-- Row 5 -->
+  <rect x="40" y="312" width="880" height="48" fill="white"/>
+  <g filter="url(#shadow)"><rect x="60" y="318" width="40" height="36" rx="8" fill="#7C3AED"/></g>
+  <text x="80" y="341" text-anchor="middle" font-size="14" font-weight="700" fill="white">5</text>
+  <text x="120" y="335" font-size="12" font-weight="600" fill="#1E293B">Remediation options shown as clickable cards</text>
+  <text x="120" y="351" font-size="10" fill="#64748B">Rollback [recommended] | Increase memory</text>
+  <rect x="434" y="324" width="72" height="22" rx="6" fill="#0D9488" opacity="0.12"/>
+  <text x="470" y="340" text-anchor="middle" font-size="9" font-weight="600" fill="#0F766E">renders</text>
+  <rect x="684" y="324" width="96" height="22" rx="6" fill="#2563EB" opacity="0.12"/>
+  <text x="732" y="340" text-anchor="middle" font-size="9" font-weight="600" fill="#1D4ED8">cataloged</text>
+
+  <!-- Row 6 -->
+  <rect x="40" y="364" width="880" height="48" fill="#F8FAFC"/>
+  <g filter="url(#shadow)"><rect x="60" y="370" width="40" height="36" rx="8" fill="#0D9488"/></g>
+  <text x="80" y="393" text-anchor="middle" font-size="14" font-weight="700" fill="white">6</text>
+  <text x="120" y="387" font-size="12" font-weight="600" fill="#1E293B">User clicks "Rollback" -- approval triggered if needed</text>
+  <text x="120" y="403" font-size="10" fill="#64748B">Policy gates from both projects can apply</text>
+  <rect x="434" y="376" width="92" height="22" rx="6" fill="#0D9488" opacity="0.12"/>
+  <text x="480" y="392" text-anchor="middle" font-size="9" font-weight="600" fill="#0F766E">user action</text>
+
+  <!-- Row 7 -->
+  <rect x="40" y="416" width="880" height="48" fill="white"/>
+  <g filter="url(#shadow)"><rect x="60" y="422" width="40" height="36" rx="8" fill="#2563EB"/></g>
+  <text x="80" y="445" text-anchor="middle" font-size="14" font-weight="700" fill="white">7</text>
+  <text x="120" y="439" font-size="12" font-weight="600" fill="#1E293B">Execution progress streams live -- pipeline, health check</text>
+  <text x="120" y="455" font-size="10" fill="#64748B">CRD state changes pushed as SSE events</text>
+  <rect x="434" y="428" width="72" height="22" rx="6" fill="#0D9488" opacity="0.12"/>
+  <text x="470" y="444" text-anchor="middle" font-size="9" font-weight="600" fill="#0F766E">streams</text>
+  <rect x="684" y="428" width="96" height="22" rx="6" fill="#2563EB" opacity="0.12"/>
+  <text x="732" y="444" text-anchor="middle" font-size="9" font-weight="600" fill="#1D4ED8">executes</text>
+
+  <!-- Row 8 -->
+  <rect x="40" y="468" width="880" height="48" fill="#F0FDF4"/>
+  <g filter="url(#shadow)"><rect x="60" y="474" width="40" height="36" rx="8" fill="#16A34A"/></g>
+  <text x="80" y="497" text-anchor="middle" font-size="14" font-weight="700" fill="white">8</text>
+  <text x="120" y="491" font-size="12" font-weight="700" fill="#166534">"Fixed. Pods healthy. Alert resolved."</text>
+  <text x="120" y="507" font-size="10" fill="#166534">Effectiveness verified -- not just "command ran successfully"</text>
+  <rect x="434" y="480" width="72" height="22" rx="6" fill="#16A34A" opacity="0.12"/>
+  <text x="470" y="496" text-anchor="middle" font-size="9" font-weight="600" fill="#166534">displays</text>
+  <rect x="684" y="480" width="96" height="22" rx="6" fill="#16A34A" opacity="0.12"/>
+  <text x="732" y="496" text-anchor="middle" font-size="9" font-weight="600" fill="#166534">verified</text>
+</svg>

@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" font-family="Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="960" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#EFF6FF"/>
+    </linearGradient>
+    <linearGradient id="tealGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0D9488"/>
+      <stop offset="100%" stop-color="#0F766E"/>
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </linearGradient>
+    <filter id="shadow" x="-2%" y="-4%" width="104%" height="112%">
+      <feDropShadow dx="0" dy="2" stdDeviation="5" flood-color="#1E293B" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="540" fill="url(#bgGrad)"/>
+
+  <text x="480" y="40" text-anchor="middle" font-size="22" font-weight="700" fill="#1E293B">Integration Protocols</text>
+  <text x="480" y="62" text-anchor="middle" font-size="14" fill="#64748B">MCP for collaboration | A2A for delegation</text>
+
+  <!-- MCP Section -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="84" width="420" height="370" rx="16" fill="white"/>
+  </g>
+  <rect x="40" y="84" width="420" height="50" rx="16" fill="url(#tealGrad)"/>
+  <rect x="40" y="118" width="420" height="16" fill="url(#tealGrad)"/>
+  <text x="250" y="114" text-anchor="middle" font-size="16" font-weight="700" fill="white">MCP -- Interactive Collaboration</text>
+
+  <text x="64" y="156" font-size="12" fill="#475569">Your agent calls Kubernaut tools directly:</text>
+
+  <g font-size="11">
+    <rect x="56" y="168" width="388" height="24" rx="4" fill="#F0FDFA"/>
+    <text x="72" y="184" font-weight="700" fill="#0F766E">Tool</text>
+    <text x="232" y="184" font-weight="700" fill="#0F766E">Purpose</text>
+
+    <line x1="56" y1="194" x2="444" y2="194" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="72" y="212" font-weight="600" fill="#334155" font-size="10">kubernaut_investigate</text>
+    <text x="232" y="212" fill="#475569">Interactive RCA with streaming</text>
+
+    <line x1="56" y1="222" x2="444" y2="222" stroke="#F1F5F9" stroke-width="1"/>
+    <text x="72" y="240" font-weight="600" fill="#334155" font-size="10">kubernaut_enrich</text>
+    <text x="232" y="240" fill="#475569">Gather live cluster context</text>
+
+    <line x1="56" y1="250" x2="444" y2="250" stroke="#F1F5F9" stroke-width="1"/>
+    <text x="72" y="268" font-weight="600" fill="#334155" font-size="10">kubernaut_select_workflow</text>
+    <text x="232" y="268" fill="#475569">Browse catalog, select, execute</text>
+
+    <line x1="56" y1="278" x2="444" y2="278" stroke="#F1F5F9" stroke-width="1"/>
+    <text x="72" y="296" font-weight="600" fill="#334155" font-size="10">kubernaut_watch</text>
+    <text x="232" y="296" fill="#475569">Live status via SSE stream</text>
+
+    <line x1="56" y1="306" x2="444" y2="306" stroke="#F1F5F9" stroke-width="1"/>
+    <text x="72" y="324" font-weight="600" fill="#334155" font-size="10">submit_signal</text>
+    <text x="232" y="324" fill="#475569">Submit alert or natural language</text>
+
+    <line x1="56" y1="334" x2="444" y2="334" stroke="#F1F5F9" stroke-width="1"/>
+    <text x="72" y="352" font-weight="600" fill="#334155" font-size="10">find_remediation</text>
+    <text x="232" y="352" fill="#475569">Query existing remediations</text>
+  </g>
+
+  <rect x="56" y="370" width="388" height="36" rx="8" fill="#F0FDFA" stroke="#0D9488" stroke-width="1"/>
+  <text x="250" y="388" text-anchor="middle" font-size="11" font-weight="600" fill="#0F766E">Best for: user-driven flows where your</text>
+  <text x="250" y="402" text-anchor="middle" font-size="11" font-weight="600" fill="#0F766E">agent steers the process step by step</text>
+
+  <rect x="56" y="418" width="388" height="24" rx="6" fill="#0D9488" opacity="0.08"/>
+  <text x="250" y="434" text-anchor="middle" font-size="11" fill="#0F766E">"Let's investigate this together"</text>
+
+  <!-- A2A Section -->
+  <g filter="url(#shadow)">
+    <rect x="500" y="84" width="420" height="370" rx="16" fill="white"/>
+  </g>
+  <rect x="500" y="84" width="420" height="50" rx="16" fill="url(#blueGrad)"/>
+  <rect x="500" y="118" width="420" height="16" fill="url(#blueGrad)"/>
+  <text x="710" y="114" text-anchor="middle" font-size="16" font-weight="700" fill="white">A2A -- Autonomous Delegation</text>
+
+  <text x="524" y="156" font-size="12" fill="#475569">Your orchestrator delegates full remediation tasks:</text>
+
+  <g font-size="12">
+    <rect x="524" y="172" width="372" height="38" rx="8" fill="#EFF6FF"/>
+    <circle cx="544" cy="191" r="12" fill="#2563EB" opacity="0.15"/>
+    <text x="544" y="195" text-anchor="middle" font-size="11" font-weight="700" fill="#2563EB">1</text>
+    <text x="566" y="187" font-weight="600" fill="#1E293B" font-size="11">Discover Kubernaut's Agent Card</text>
+    <text x="566" y="202" fill="#64748B" font-size="10">Capabilities, endpoint, authentication</text>
+
+    <rect x="524" y="218" width="372" height="38" rx="8" fill="#EFF6FF"/>
+    <circle cx="544" cy="237" r="12" fill="#2563EB" opacity="0.15"/>
+    <text x="544" y="241" text-anchor="middle" font-size="11" font-weight="700" fill="#2563EB">2</text>
+    <text x="566" y="233" font-weight="600" fill="#1E293B" font-size="11">Send tasks/send with signal</text>
+    <text x="566" y="248" fill="#64748B" font-size="10">Structured alert or natural language</text>
+
+    <rect x="524" y="264" width="372" height="38" rx="8" fill="#EFF6FF"/>
+    <circle cx="544" cy="283" r="12" fill="#2563EB" opacity="0.15"/>
+    <text x="544" y="287" text-anchor="middle" font-size="11" font-weight="700" fill="#2563EB">3</text>
+    <text x="566" y="279" font-weight="600" fill="#1E293B" font-size="11">Receive streaming status updates</text>
+    <text x="566" y="294" fill="#64748B" font-size="10">At each pipeline phase transition</text>
+
+    <rect x="524" y="310" width="372" height="38" rx="8" fill="#EFF6FF"/>
+    <circle cx="544" cy="329" r="12" fill="#2563EB" opacity="0.15"/>
+    <text x="544" y="333" text-anchor="middle" font-size="11" font-weight="700" fill="#2563EB">4</text>
+    <text x="566" y="325" font-weight="600" fill="#1E293B" font-size="11">Get verified result or escalation</text>
+    <text x="566" y="340" fill="#64748B" font-size="10">Full RCA context included in response</text>
+  </g>
+
+  <rect x="516" y="370" width="388" height="36" rx="8" fill="#EFF6FF" stroke="#2563EB" stroke-width="1"/>
+  <text x="710" y="388" text-anchor="middle" font-size="11" font-weight="600" fill="#1D4ED8">Best for: autonomous flows where your agent</text>
+  <text x="710" y="402" text-anchor="middle" font-size="11" font-weight="600" fill="#1D4ED8">detects an issue and hands off entirely</text>
+
+  <rect x="516" y="418" width="388" height="24" rx="6" fill="#2563EB" opacity="0.08"/>
+  <text x="710" y="434" text-anchor="middle" font-size="11" fill="#1D4ED8">"Fix this and let me know when it's done"</text>
+
+  <!-- Decision table -->
+  <g filter="url(#shadow)">
+    <rect x="120" y="466" width="720" height="60" rx="12" fill="white"/>
+  </g>
+  <g font-size="11">
+    <rect x="120" y="466" width="720" height="20" rx="12" fill="#F8FAFC"/>
+    <rect x="120" y="478" width="720" height="8" fill="#F8FAFC"/>
+    <text x="300" y="480" text-anchor="middle" font-weight="700" fill="#475569">Scenario</text>
+    <text x="600" y="480" text-anchor="middle" font-weight="700" fill="#475569">Protocol</text>
+    <line x1="120" y1="488" x2="840" y2="488" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="300" y="504" text-anchor="middle" fill="#334155">User asks "fix payments" in your chat</text>
+    <text x="600" y="504" text-anchor="middle" font-weight="600" fill="#0F766E">MCP (interactive)</text>
+    <text x="300" y="520" text-anchor="middle" fill="#334155">Monitoring agent detects anomaly at 3am</text>
+    <text x="600" y="520" text-anchor="middle" font-weight="600" fill="#1D4ED8">A2A (autonomous)</text>
+  </g>
+</svg>

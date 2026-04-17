@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" font-family="Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="960" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#EFF6FF"/>
+    </linearGradient>
+    <linearGradient id="icebergTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E0F2FE"/>
+      <stop offset="100%" stop-color="#BAE6FD"/>
+    </linearGradient>
+    <linearGradient id="icebergBottom" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1D4ED8"/>
+      <stop offset="100%" stop-color="#1E3A5F"/>
+    </linearGradient>
+    <filter id="shadow" x="-2%" y="-4%" width="104%" height="112%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#1E293B" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="540" fill="url(#bgGrad)"/>
+
+  <text x="480" y="36" text-anchor="middle" font-size="22" font-weight="700" fill="#1E293B">What Kubernaut brings to the table</text>
+  <text x="480" y="58" text-anchor="middle" font-size="13" fill="#64748B">Kubernetes remediation has a lot of surface area under the hood</text>
+
+  <!-- Water line -->
+  <rect x="40" y="178" width="370" height="2" fill="#60A5FA" opacity="0.4"/>
+  <text x="44" y="174" font-size="9" fill="#60A5FA" font-weight="600" letter-spacing="0.5">VISIBLE</text>
+  <text x="44" y="196" font-size="9" fill="#1D4ED8" font-weight="600" letter-spacing="0.5">UNDER THE SURFACE</text>
+
+  <!-- Tip of iceberg -->
+  <path d="M 160,176 L 220,88 L 280,176 Z" fill="url(#icebergTop)" stroke="#93C5FD" stroke-width="1"/>
+  <text x="220" y="145" text-anchor="middle" font-size="11" font-weight="600" fill="#1E40AF">"Run a</text>
+  <text x="220" y="160" text-anchor="middle" font-size="11" font-weight="600" fill="#1E40AF">kubectl fix"</text>
+
+  <!-- Below water -->
+  <path d="M 60,182 L 160,176 L 280,176 L 380,182 L 360,510 L 80,510 Z" fill="url(#icebergBottom)" opacity="0.85"/>
+
+  <g font-size="10" fill="white" font-weight="500">
+    <text x="220" y="216" text-anchor="middle">Signal deduplication</text>
+    <text x="220" y="240" text-anchor="middle">Fingerprint-based RR creation</text>
+    <text x="220" y="264" text-anchor="middle">LLM root cause analysis</text>
+    <text x="220" y="288" text-anchor="middle">Native client-go inspection</text>
+    <text x="220" y="312" text-anchor="middle">Prometheus metric correlation</text>
+    <text x="220" y="336" text-anchor="middle">Workflow catalog + matching</text>
+    <text x="220" y="360" text-anchor="middle">OPA policy safety gates</text>
+    <text x="220" y="384" text-anchor="middle">Human approval workflows</text>
+    <text x="220" y="408" text-anchor="middle">Multi-executor support</text>
+    <text x="220" y="432" text-anchor="middle">Effectiveness verification</text>
+    <text x="220" y="456" text-anchor="middle">9 CRDs + controller lifecycle</text>
+    <text x="220" y="480" text-anchor="middle">Full audit trail</text>
+    <text x="220" y="504" text-anchor="middle">RBAC + inter-pod TLS</text>
+  </g>
+
+  <!-- Right side: Four domain pillars -->
+  <g filter="url(#shadow)">
+    <rect x="440" y="78" width="480" height="96" rx="12" fill="white"/>
+  </g>
+  <rect x="440" y="78" width="8" height="96" rx="4" fill="#DC2626"/>
+  <text x="464" y="100" font-size="14" font-weight="700" fill="#1E293B">Signal Intake</text>
+  <g font-size="11" fill="#475569">
+    <text x="464" y="118">Prometheus AlertManager + Kubernetes Events + natural language</text>
+    <text x="464" y="136">Fingerprint dedup (50 identical alerts -&gt; 1 remediation)</text>
+    <text x="464" y="154">Resource scope validation against live cluster state</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="440" y="186" width="480" height="96" rx="12" fill="white"/>
+  </g>
+  <rect x="440" y="186" width="8" height="96" rx="4" fill="#2563EB"/>
+  <text x="464" y="208" font-size="14" font-weight="700" fill="#1E293B">Investigation</text>
+  <g font-size="11" fill="#475569">
+    <text x="464" y="226">LLM-powered RCA -- actual diagnosis, not pattern matching</text>
+    <text x="464" y="244">Native Go client-go: pods, logs, events, resource state</text>
+    <text x="464" y="262">Prometheus queries, remediation history context</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="440" y="294" width="480" height="96" rx="12" fill="white"/>
+  </g>
+  <rect x="440" y="294" width="8" height="96" rx="4" fill="#D97706"/>
+  <text x="464" y="316" font-size="14" font-weight="700" fill="#1E293B">Remediation Execution</text>
+  <g font-size="11" fill="#475569">
+    <text x="464" y="334">Tekton Pipelines | Kubernetes Jobs | Ansible (AWX/AAP)</text>
+    <text x="464" y="352">Per-workflow ServiceAccount with least-privilege RBAC</text>
+    <text x="464" y="370">OPA/Rego policy gates + optional human approval</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="440" y="402" width="480" height="96" rx="12" fill="white"/>
+  </g>
+  <rect x="440" y="402" width="8" height="96" rx="4" fill="#16A34A"/>
+  <text x="464" y="424" font-size="14" font-weight="700" fill="#1E293B">Closing the Loop</text>
+  <g font-size="11" fill="#475569">
+    <text x="464" y="442">Health checks, alert resolution, spec-hash drift detection</text>
+    <text x="464" y="460">Effectiveness scoring fed back into future investigations</text>
+    <text x="464" y="478">Full audit trail: every LLM call, tool invocation, decision</text>
+  </g>
+
+  <text x="680" y="520" text-anchor="middle" font-size="11" font-weight="600" fill="#7C3AED">3 major releases | 9 CRDs | production-hardened</text>
+</svg>

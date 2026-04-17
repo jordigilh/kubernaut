@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" font-family="Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="960" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#EFF6FF"/>
+    </linearGradient>
+    <linearGradient id="arrowGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0D9488"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    <filter id="shadow" x="-2%" y="-4%" width="104%" height="112%">
+      <feDropShadow dx="0" dy="2" stdDeviation="5" flood-color="#1E293B" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="540" fill="url(#bgGrad)"/>
+
+  <text x="480" y="40" text-anchor="middle" font-size="22" font-weight="700" fill="#1E293B">Natural Language -- No Schema Required</text>
+  <text x="480" y="64" text-anchor="middle" font-size="14" fill="#64748B">Your agent speaks your users' language. Kubernaut translates to Kubernetes.</text>
+
+  <!-- Input bubble -->
+  <g filter="url(#shadow)">
+    <rect x="80" y="100" width="360" height="120" rx="16" fill="white" stroke="#0D9488" stroke-width="1.5"/>
+  </g>
+  <rect x="80" y="100" width="360" height="36" rx="16" fill="#0D9488" opacity="0.06"/>
+  <rect x="80" y="128" width="360" height="8" fill="#0D9488" opacity="0.06"/>
+  <text x="100" y="124" font-size="11" font-weight="700" fill="#0F766E" letter-spacing="0.5">FROM YOUR USER</text>
+  <text x="100" y="162" font-size="16" fill="#1E293B" font-style="italic">"pods in namespace payments are</text>
+  <text x="100" y="184" font-size="16" fill="#1E293B" font-style="italic">crash-looping after the last deploy"</text>
+  <text x="100" y="208" font-size="11" fill="#94A3B8">Plain text -- no formatting, no schema, no alert structure</text>
+
+  <!-- Arrow -->
+  <rect x="264" y="238" width="432" height="4" rx="2" fill="url(#arrowGrad)"/>
+  <polygon points="696,240 684,230 684,250" fill="#2563EB"/>
+  <text x="480" y="232" text-anchor="middle" font-size="10" font-weight="600" fill="#7C3AED">Kubernaut LLM extracts structured signal</text>
+
+  <!-- Output (structured) -->
+  <g filter="url(#shadow)">
+    <rect x="480" y="268" width="420" height="180" rx="16" fill="white" stroke="#2563EB" stroke-width="1.5"/>
+  </g>
+  <rect x="480" y="268" width="420" height="36" rx="16" fill="#2563EB" opacity="0.06"/>
+  <rect x="480" y="296" width="420" height="8" fill="#2563EB" opacity="0.06"/>
+  <text x="500" y="292" font-size="11" font-weight="700" fill="#1D4ED8" letter-spacing="0.5">STRUCTURED SIGNAL</text>
+
+  <g font-size="13" font-family="Menlo, Monaco, Courier New, monospace">
+    <text x="504" y="330" fill="#64748B">{</text>
+    <text x="520" y="350" fill="#7C3AED">"alert_type"</text><text x="620" y="350" fill="#64748B">:</text>
+    <text x="636" y="350" fill="#16A34A">"CrashLoopBackOff"</text><text x="790" y="350" fill="#64748B">,</text>
+    <text x="520" y="372" fill="#7C3AED">"namespace"</text><text x="616" y="372" fill="#64748B">:</text>
+    <text x="636" y="372" fill="#16A34A">"payments"</text><text x="726" y="372" fill="#64748B">,</text>
+    <text x="520" y="394" fill="#7C3AED">"resource"</text><text x="610" y="394" fill="#64748B">:</text>
+    <text x="636" y="394" fill="#16A34A">"deploy/payments-api"</text><text x="836" y="394" fill="#64748B">,</text>
+    <text x="520" y="416" fill="#7C3AED">"context"</text><text x="602" y="416" fill="#64748B">:</text>
+    <text x="636" y="416" fill="#16A34A">"post-deploy regression"</text>
+    <text x="504" y="438" fill="#64748B">}</text>
+  </g>
+
+  <!-- What happens next -->
+  <line x1="690" y1="450" x2="690" y2="478" stroke="#2563EB" stroke-width="1.5"/>
+  <polygon points="690,478 684,468 696,468" fill="#2563EB"/>
+
+  <g filter="url(#shadow)">
+    <rect x="480" y="480" width="420" height="40" rx="10" fill="white"/>
+  </g>
+  <text x="502" y="505" font-size="11" fill="#475569">Feeds into normal pipeline: </text>
+  <text x="630" y="505" font-size="11" font-weight="600" fill="#1D4ED8">dedup</text>
+  <text x="662" y="505" font-size="11" fill="#64748B"> &gt; </text>
+  <text x="676" y="505" font-size="11" font-weight="600" fill="#1D4ED8">investigate</text>
+  <text x="738" y="505" font-size="11" fill="#64748B"> &gt; </text>
+  <text x="752" y="505" font-size="11" font-weight="600" fill="#1D4ED8">remediate</text>
+  <text x="810" y="505" font-size="11" fill="#64748B"> &gt; </text>
+  <text x="824" y="505" font-size="11" font-weight="600" fill="#16A34A">verified fix</text>
+
+  <!-- Bottom left -->
+  <g filter="url(#shadow)">
+    <rect x="80" y="268" width="360" height="100" rx="12" fill="white"/>
+  </g>
+  <text x="100" y="296" font-size="14" font-weight="700" fill="#1E293B">What this means for you</text>
+  <g font-size="12" fill="#475569">
+    <circle cx="104" cy="318" r="3" fill="#0D9488"/>
+    <text x="116" y="322">No adapter code to write</text>
+    <circle cx="104" cy="340" r="3" fill="#0D9488"/>
+    <text x="116" y="344">No alert schema to learn</text>
+    <circle cx="104" cy="362" r="3" fill="#0D9488"/>
+    <text x="116" y="366">Users describe problems in their own words</text>
+  </g>
+
+  <rect x="80" y="388" width="360" height="36" rx="10" fill="#7C3AED" opacity="0.08"/>
+  <text x="260" y="411" text-anchor="middle" font-size="12" font-weight="600" fill="#7C3AED">Integration barrier: minimal</text>
+</svg>
