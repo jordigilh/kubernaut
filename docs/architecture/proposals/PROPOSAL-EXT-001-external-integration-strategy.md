@@ -4,7 +4,7 @@
 **Date**: April 15, 2026
 **Author**: Kubernaut Architecture Team
 **Confidence**: 95% (post design gate mitigation)
-**Related**: [#703](https://github.com/jordigilh/kubernaut/issues/703) (MCP Interactive Mode), [#705](https://github.com/jordigilh/kubernaut/issues/705) (A2A Protocol), [#592](https://github.com/jordigilh/kubernaut/issues/592) (Conversational Mode), [DD-INTERACTIVE-001](../decisions/DD-INTERACTIVE-001-interactive-mode-crd-placement-and-timeouts.md)
+**Related**: [#703](https://github.com/jordigilh/kubernaut/issues/703) (MCP Interactive Mode), [#705](https://github.com/jordigilh/kubernaut/issues/705) (A2A Protocol), [#708](https://github.com/jordigilh/kubernaut/issues/708) (API Frontend Service), [#592](https://github.com/jordigilh/kubernaut/issues/592) (Conversational Mode), [DD-INTERACTIVE-001](../decisions/DD-INTERACTIVE-001-interactive-mode-crd-placement-and-timeouts.md)
 
 ---
 
@@ -229,15 +229,15 @@ The API Frontend serves an Agent Card at `/.well-known/agent.json` for A2A disco
 
 ## 4. CRD and Controller Changes
 
-### 4.1 Design Decision: DD-INTERACTIVE-001 (Implemented)
+### 4.1 Design Decision: DD-INTERACTIVE-001 (Approved)
 
-Two design gates were resolved and the scaffolding implementation landed in the codebase:
+Two design gates were resolved. Implementation is planned for v1.4:
 
 **G1: CRD Placement (Option C -- Hybrid)**
 
 - `AIAnalysisSpec.InteractiveMode bool` -- immutable intent, set by RO at creation time based on `kubernaut.ai/interactive-mode` annotation on the parent RR. Follows existing `self == oldSelf` CEL rule.
 - `AIAnalysisStatus.InteractiveSession *InteractiveSessionInfo` -- mutable runtime state (session ID, user, start time, expiry). Only populated when `spec.interactiveMode` is true.
-- `kubernaut.ai/interactive-mode` annotation on RR -- set by API Frontend when MCP session starts. Constant and helper defined in `pkg/shared/annotations/annotations.go`.
+- `kubernaut.ai/interactive-mode` annotation on RR -- set by API Frontend when MCP session starts. Shared constant and helper to be defined in `pkg/shared/annotations/annotations.go`.
 
 **G2: Timeout Policy (Option A -- Elevated Timeouts)**
 
@@ -249,18 +249,18 @@ Two design gates were resolved and the scaffolding implementation landed in the 
 
 ### 4.2 Implementation Status
 
+All items below are **planned for v1.4**. None have been implemented yet.
+
 | Change | File | Status |
 |--------|------|--------|
-| `InteractiveMode` spec field | `api/aianalysis/v1alpha1/aianalysis_types.go` | Landed |
-| `InteractiveSessionInfo` type + status field | Same | Landed |
-| Annotation constant + `IsInteractiveMode` helper | `pkg/shared/annotations/annotations.go` | Landed |
-| RO propagation: annotation -> spec + elevated timeouts | `pkg/remediationorchestrator/creator/aianalysis.go` | Landed |
-| RR-level Analyzing timeout override | `internal/controller/remediationorchestrator/reconciler.go` | Landed |
-| AA controller early branch | `pkg/aianalysis/handlers/investigating.go` | Landed |
-| Helm values | `charts/kubernaut/values.yaml` (`kubernautAgent.interactive`) | Landed |
-| Deepcopy + CRD manifests regenerated | `make generate && make manifests` | Landed |
-
-**Not yet wired**: `InteractiveConfig` and `SetInteractiveAnalyzingTimeout` in `cmd/remediationorchestrator/main.go` -- requires reading Helm-sourced config at startup; part of full #703 implementation.
+| `InteractiveMode` spec field | `api/aianalysis/v1alpha1/aianalysis_types.go` | Planned |
+| `InteractiveSessionInfo` type + status field | Same | Planned |
+| Annotation constant + `IsInteractiveMode` helper | `pkg/shared/annotations/annotations.go` | Planned |
+| RO propagation: annotation -> spec + elevated timeouts | `pkg/remediationorchestrator/creator/aianalysis.go` | Planned |
+| RR-level Analyzing timeout override | `internal/controller/remediationorchestrator/reconciler.go` | Planned |
+| AA controller early branch | `pkg/aianalysis/handlers/investigating.go` | Planned |
+| Helm values | `charts/kubernaut/values.yaml` (`kubernautAgent.interactive`) | Planned |
+| Deepcopy + CRD manifests regenerated | `make generate && make manifests` | Planned |
 
 ---
 
@@ -271,8 +271,8 @@ Three enhancements form a layered stack. Understanding the boundaries prevents s
 | Enhancement | Scope | Entry Points | Target Version |
 |-------------|-------|-------------|----------------|
 | **#592** Conversational Mode | **RAR-scoped** -- ask about a pending approval | Slack bot thread replies, `kubectl kubernaut chat` | v1.4 |
-| **#703** MCP Interactive Mode | **RR-scoped** -- drive the full investigation lifecycle | Any MCP-compatible client (IDE copilots, Slack bots, consoles) | v1.5 |
-| **#705** A2A Protocol | **Signal-scoped** -- delegate remediation, track task lifecycle | External A2A agents | v1.5/v1.6 |
+| **#703** MCP Interactive Mode | **RR-scoped** -- drive the full investigation lifecycle | Any MCP-compatible client (IDE copilots, Slack bots, consoles) | v1.4 |
+| **#705** A2A Protocol | **Signal-scoped** -- delegate remediation, track task lifecycle | External A2A agents | v1.4 |
 
 ### What #703 inherits from #592
 
@@ -419,8 +419,8 @@ If an integrating team needs something sooner:
 
 | Gate | Question | Status |
 |------|----------|--------|
-| **G1: CRD immutability** | Where does `InteractiveMode` live? | **Resolved** -- Option C (hybrid: spec + status). DD-INTERACTIVE-001. Implementation landed. |
-| **G2: RO timeout policy** | How long can interactive sessions run? | **Resolved** -- Option A (elevated timeouts: 30m/45m). Implementation landed. |
+| **G1: CRD immutability** | Where does `InteractiveMode` live? | **Resolved** -- Option C (hybrid: spec + status). DD-INTERACTIVE-001. |
+| **G2: RO timeout policy** | How long can interactive sessions run? | **Resolved** -- Option A (elevated timeouts: 30m/45m). DD-INTERACTIVE-001. |
 | **G3: A2A spec stability** | Which A2A spec revision do we target? | **Mitigated** -- pin to a specific spec revision; treat drift as future iteration. |
 
 ### 7.6 Risks
@@ -437,12 +437,11 @@ If an integrating team needs something sooner:
 
 | Version | Capability | Enhancement |
 |---------|-----------|-------------|
-| **v1.4** | Conversational mode (RAR-scoped) -- Slack bot + kubectl plugin | #592 |
-| **v1.5** | MCP interactive mode + API Frontend -- full investigation lifecycle | #703 |
-| **v1.6** | A2A inbound on API Frontend -- agent delegation | #705 Phase 1 |
-| **v1.7+** | A2A outbound on NT -- ITSM/approval/comms agent delegation | #705 Phase 2 |
-| **v1.7+** | Post-WFE retry lifecycle -- re-select workflow on failure | Cross-cutting (#703 + #705) |
-| **v1.7+** | Multi-cluster A2A federation -- per-cluster Gateway agents | #54 |
+| **v1.4** | MCP interactive mode + A2A inbound + API Frontend | #703, #705, #708 |
+| **v1.5** | Multi-agent consensus RCA | #648 |
+| **v1.6** | A2A-based multi-cluster federation -- per-cluster Gateway agents | #54 |
+| **v1.6+** | A2A outbound on NT -- ITSM/approval/comms agent delegation | #705 Phase 2 |
+| **v1.6+** | Post-WFE retry lifecycle -- re-select workflow on failure | Cross-cutting (#703 + #705) |
 
 Within each version, the internal evolution follows this progression:
 

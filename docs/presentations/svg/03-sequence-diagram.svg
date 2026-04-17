@@ -52,7 +52,7 @@
 
   <!-- Step 1: User asks -->
   <g>
-    <line x1="140" y1="116" x2="430" y2="116" stroke="#334155" stroke-width="1.5" marker-end="url(#arrowDark)"/>
+    <line x1="140" y1="116" x2="430" y2="116" stroke="#334155" stroke-width="1.5"/>
     <polygon points="430,116 422,111 422,121" fill="#334155"/>
     <rect x="192" y="102" width="176" height="20" rx="4" fill="#E0F2FE"/>
     <text x="280" y="116" text-anchor="middle" font-size="10" fill="#0C4A6E">"What's going on with payments?"</text>
@@ -143,7 +143,7 @@
     <line x1="440" y1="448" x2="750" y2="448" stroke="#0D9488" stroke-width="1.5"/>
     <polygon points="750,448 742,443 742,453" fill="#0D9488"/>
     <rect x="504" y="434" width="176" height="20" rx="4" fill="#F0FDFA"/>
-    <text x="592" y="448" text-anchor="middle" font-size="10" font-weight="600" fill="#0F766E">kubernaut_select_wf (execute)</text>
+    <text x="592" y="448" text-anchor="middle" font-size="10" font-weight="600" fill="#0F766E">kubernaut_select_workflow (execute)</text>
   </g>
 
   <!-- Step 12: Watch stream -->

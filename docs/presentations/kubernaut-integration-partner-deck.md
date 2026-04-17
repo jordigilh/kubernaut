@@ -106,14 +106,14 @@ Kubernaut does the heavy lifting and streams results back.
 ┌──────────────────────────────────────────────────────────┐
 │  Your Platform                                            │
 │                                                           │
-│  🔴 Alert: pods crash-looping in namespace payments       │
+│  [!] Alert: pods crash-looping in namespace payments      │
 │                                                           │
 │  User: "What's going on with payments?"                   │
 │                                                           │
 │  Agent: "Investigating the payments namespace..."         │
-│  ▸ Checked pod status: payments-api-7d4f — 12 restarts   │
-│  ▸ Pulled logs: OOMKilled at 512Mi limit                  │
-│  ▸ Queried metrics: memory trending up since 14:32 deploy │
+│  > Checked pod status: payments-api-7d4f -- 12 restarts   │
+│  > Pulled logs: OOMKilled at 512Mi limit                  │
+│  > Queried metrics: memory trending up since 14:32 deploy │
 │                                                           │
 │  Agent: "Root cause: memory leak in payments-api caused   │
 │  by unbounded cache growth after the 14:32 deploy."      │
@@ -122,7 +122,7 @@ Kubernaut does the heavy lifting and streams results back.
 │                                                           │
 │  Agent: "I found 2 remediation options:"                  │
 │  ┌──────────────────┐  ┌───────────────────────────┐     │
-│  │ 🔄 Rollback      │  │ 📈 Increase memory limit  │     │
+│  │ [R] Rollback      │  │ [M] Increase memory limit │     │
 │  │ Deploy to v2.3.1 │  │ 512Mi → 1Gi               │     │
 │  │ [Recommended]     │  │                           │     │
 │  └──────────────────┘  └───────────────────────────┘     │
@@ -130,9 +130,9 @@ Kubernaut does the heavy lifting and streams results back.
 │  User: clicks [Rollback]                                  │
 │                                                           │
 │  Agent: "Executing rollback..."                           │
-│  ▸ Pipeline started ─────────────────── ✅                │
-│  ▸ Health check: pods healthy, 0 restarts                 │
-│  ▸ Alert resolved                                         │
+│  > Pipeline started ------------------- OK                │
+│  > Health check: pods healthy, 0 restarts                 │
+│  > Alert resolved                                         │
 │                                                           │
 │  Agent: "Done. Payments is healthy."                      │
 └──────────────────────────────────────────────────────────┘
@@ -162,7 +162,7 @@ Your UI                Your Agent              Kubernaut
   │ "Can you fix it?"       │                        │
   │────────────────────────▶│  kubernaut_enrich      │
   │                         │───────────────────────▶│── gather context
-  │                         │  kubernaut_select_wf   │
+  │                         │  kubernaut_select_workflow   │
   │                         │───────────────────────▶│── query catalog
   │                         │    workflow options     │
   │                         │◀───────────────────────│
@@ -170,7 +170,7 @@ Your UI                Your Agent              Kubernaut
   │◀────────────────────────│                        │
   │                         │                        │
   │  [clicks Rollback]      │                        │
-  │────────────────────────▶│  kubernaut_select_wf   │
+  │────────────────────────▶│  kubernaut_select_workflow   │
   │                         │  (execute=true)        │
   │                         │───────────────────────▶│── run pipeline
   │                         │  kubernaut_watch (SSE)  │── verify fix
@@ -238,7 +238,12 @@ Your agent calls Kubernaut's MCP tools directly:
 | `kubernaut_enrich` | Gather live cluster context for a root cause |
 | `kubernaut_select_workflow` | Browse catalog, select, and execute a remediation |
 | `kubernaut_watch` | Attach to an ongoing remediation for live status |
-| `submit_signal` | Submit a new alert, event, or natural language signal |
+
+Supporting internal tools (used by the API Frontend, not exposed to external clients):
+
+| Tool | Purpose |
+|---|---|
+| `submit_signal` | Submit a structured signal to the Gateway for dedup and RR creation |
 | `find_remediation` | Query existing remediations by namespace, resource, status |
 
 Best for: **interactive, user-driven flows** where your agent steers the process.

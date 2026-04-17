@@ -53,13 +53,17 @@
     <text x="72" y="296" font-weight="600" fill="#334155" font-size="10">kubernaut_watch</text>
     <text x="232" y="296" fill="#475569">Live status via SSE stream</text>
 
-    <line x1="56" y1="306" x2="444" y2="306" stroke="#F1F5F9" stroke-width="1"/>
-    <text x="72" y="324" font-weight="600" fill="#334155" font-size="10">submit_signal</text>
-    <text x="232" y="324" fill="#475569">Submit alert or natural language</text>
+    <line x1="56" y1="306" x2="444" y2="306" stroke="#E2E8F0" stroke-width="1"/>
+    <rect x="56" y="312" width="388" height="16" rx="4" fill="#F8FAFC"/>
+    <text x="250" y="324" text-anchor="middle" font-size="8" font-weight="600" fill="#94A3B8">INTERNAL (not exposed to external clients)</text>
 
-    <line x1="56" y1="334" x2="444" y2="334" stroke="#F1F5F9" stroke-width="1"/>
-    <text x="72" y="352" font-weight="600" fill="#334155" font-size="10">find_remediation</text>
-    <text x="232" y="352" fill="#475569">Query existing remediations</text>
+    <line x1="56" y1="330" x2="444" y2="330" stroke="#F1F5F9" stroke-width="1"/>
+    <text x="72" y="346" font-weight="600" fill="#94A3B8" font-size="10">submit_signal</text>
+    <text x="232" y="346" fill="#94A3B8">Submit alert or natural language</text>
+
+    <line x1="56" y1="354" x2="444" y2="354" stroke="#F1F5F9" stroke-width="1"/>
+    <text x="72" y="368" font-weight="600" fill="#94A3B8" font-size="10">find_remediation</text>
+    <text x="232" y="368" fill="#94A3B8">Query existing remediations</text>
   </g>
 
   <rect x="56" y="370" width="388" height="36" rx="8" fill="#F0FDFA" stroke="#0D9488" stroke-width="1"/>

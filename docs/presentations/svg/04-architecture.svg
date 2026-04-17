@@ -146,5 +146,5 @@
 
   <!-- CRDs label -->
   <rect x="72" y="492" width="820" height="22" rx="6" fill="#2563EB" opacity="0.06"/>
-  <text x="480" y="508" text-anchor="middle" font-size="10" fill="#64748B">9 CRDs: RemediationRequest | SignalProcessing | AIAnalysis | ApprovalRequest | Workflow | EffectivenessAssessment | ...</text>
+  <text x="480" y="508" text-anchor="middle" font-size="10" fill="#64748B">CRDs: RemediationRequest | SignalProcessing | AIAnalysis | RemediationApprovalRequest | WorkflowExecution | EffectivenessAssessment | ...</text>
 </svg>
