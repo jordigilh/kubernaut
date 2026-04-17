@@ -115,7 +115,41 @@ var _ = Describe("Conversation Context Extraction", func() {
 			Expect(res.SignalName).To(Equal("BackOff"))
 		})
 
-		It("should prefer Resource line over individual Pod/Namespace fields", func() {
+		It("should prefer Owner Chain root owner over Resource line", func() {
+			content := "- Signal Name: BackOff\n- Resource: fp-e2e-496-123/Pod/memory-eater-5b9d684998-kg7xw\n**Owner Chain**: ReplicaSet/memory-eater-5b9d684998(fp-e2e-496-123) → Deployment/memory-eater(fp-e2e-496-123)"
+			ctx := conversation.NewContext([]openai.Message{
+				{Role: "user", Content: stringPtr(content)},
+			})
+			res := ctx.ExtractResource()
+			Expect(res.Kind).To(Equal("Deployment"))
+			Expect(res.Name).To(Equal("memory-eater"))
+			Expect(res.Namespace).To(Equal("fp-e2e-496-123"))
+			Expect(res.SignalName).To(Equal("BackOff"))
+		})
+
+		It("should extract root owner from single-entry owner chain", func() {
+			content := "- Resource: default/Pod/nginx-abc123\n**Owner Chain**: ReplicaSet/nginx-abc(default)"
+			ctx := conversation.NewContext([]openai.Message{
+				{Role: "user", Content: stringPtr(content)},
+			})
+			res := ctx.ExtractResource()
+			Expect(res.Kind).To(Equal("ReplicaSet"))
+			Expect(res.Name).To(Equal("nginx-abc"))
+			Expect(res.Namespace).To(Equal("default"))
+		})
+
+		It("should extract root owner without namespace annotation", func() {
+			content := "- Resource: default/Pod/my-pod\n**Owner Chain**: ReplicaSet/my-pod-abc → Deployment/my-pod"
+			ctx := conversation.NewContext([]openai.Message{
+				{Role: "user", Content: stringPtr(content)},
+			})
+			res := ctx.ExtractResource()
+			Expect(res.Kind).To(Equal("Deployment"))
+			Expect(res.Name).To(Equal("my-pod"))
+			Expect(res.Namespace).To(Equal("default"))
+		})
+
+		It("should fall back to Resource line when no owner chain present", func() {
 			content := "- Signal Name: OOMKilled\n- Resource: staging/StatefulSet/my-db\n- Pod: some-pod\n- Namespace: other-ns"
 			ctx := conversation.NewContext([]openai.Message{
 				{Role: "user", Content: stringPtr(content)},
