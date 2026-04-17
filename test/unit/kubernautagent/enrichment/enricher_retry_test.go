@@ -29,6 +29,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -205,6 +206,77 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 				"UT-704-E-004: OwnerChainError must be set for observability")
 			Expect(result.HardFail).To(BeFalse(),
 				"UT-704-E-004: HardFail must be false in best-effort mode (retries=0)")
+		})
+	})
+
+	Describe("UT-704-E-006: GVR-not-found (unknown Kind) should NOT trigger HardFail", func() {
+		It("should NOT set HardFail when the Kind is unknown to the API server", func() {
+			// Simulates cert-manager Certificate when CRD is not installed.
+			// The RESTMapper returns NoResourceMatchError for unknown resource types.
+			noMatchErr := fmt.Errorf("k8s adapter: resolve GVR for Certificate: %w",
+				&meta.NoResourceMatchError{PartialResource: schema.GroupVersionResource{Resource: "certificates"}})
+			k8s := &countingK8sClient{
+				errSeq: []error{noMatchErr, noMatchErr, noMatchErr, noMatchErr},
+			}
+			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
+				WithRetryConfig(enrichment.RetryConfig{
+					MaxRetries:  3,
+					BaseBackoff: 1 * time.Millisecond,
+				})
+
+			result, err := e.Enrich(ctx, "Certificate", "demo-app-cert", "default", "", "inc-006")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			Expect(result.OwnerChainError).NotTo(BeNil(),
+				"UT-704-E-006: OwnerChainError should be set for observability")
+			Expect(result.HardFail).To(BeFalse(),
+				"UT-704-E-006: HardFail must be false — unknown Kind is a schema limitation, not an RCA failure")
+		})
+
+		It("should still HardFail when a known Kind's instance is not found", func() {
+			notFoundErr := apierrors.NewNotFound(
+				schema.GroupResource{Resource: "pods"}, "unreachable-pod")
+			k8s := &countingK8sClient{
+				errSeq: []error{notFoundErr, notFoundErr, notFoundErr, notFoundErr},
+			}
+			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
+				WithRetryConfig(enrichment.RetryConfig{
+					MaxRetries:  3,
+					BaseBackoff: 1 * time.Millisecond,
+				})
+
+			result, err := e.Enrich(ctx, "Pod", "unreachable-pod", "default", "", "inc-006b")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			Expect(result.HardFail).To(BeTrue(),
+				"UT-704-E-006: HardFail must be true for known Kinds — the resource is unreachable, RCA is incomplete")
+		})
+	})
+
+	Describe("UT-704-E-007: IsNoMatchError classification", func() {
+		It("should return true for NoResourceMatchError", func() {
+			err := fmt.Errorf("wrapped: %w",
+				&meta.NoResourceMatchError{PartialResource: schema.GroupVersionResource{Resource: "certificates"}})
+			Expect(enrichment.IsNoMatchError(err)).To(BeTrue())
+		})
+
+		It("should return true for NoKindMatchError", func() {
+			err := fmt.Errorf("wrapped: %w",
+				&meta.NoKindMatchError{GroupKind: schema.GroupKind{Kind: "Certificate"}})
+			Expect(enrichment.IsNoMatchError(err)).To(BeTrue())
+		})
+
+		It("should return false for NotFound API error", func() {
+			err := apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, "test")
+			Expect(enrichment.IsNoMatchError(err)).To(BeFalse())
+		})
+
+		It("should return false for Forbidden API error", func() {
+			err := apierrors.NewForbidden(
+				schema.GroupResource{Resource: "pods"}, "test", fmt.Errorf("denied"))
+			Expect(enrichment.IsNoMatchError(err)).To(BeFalse())
 		})
 	})
 })

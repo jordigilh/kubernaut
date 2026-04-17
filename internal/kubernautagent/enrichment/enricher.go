@@ -18,6 +18,7 @@ package enrichment
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 )
 
 // OwnerChainEntry represents a single entry in a Kubernetes owner chain.
@@ -61,12 +63,12 @@ type DataStorageClient interface {
 
 // RemediationHistoryResult holds the full DS response mapped to domain types.
 type RemediationHistoryResult struct {
-	TargetResource     string          `json:"target_resource"`
-	RegressionDetected bool            `json:"regression_detected"`
-	Tier1              []Tier1Entry    `json:"tier1"`
-	Tier1Window        string          `json:"tier1_window"`
-	Tier2              []Tier2Summary  `json:"tier2"`
-	Tier2Window        string          `json:"tier2_window"`
+	TargetResource     string         `json:"target_resource"`
+	RegressionDetected bool           `json:"regression_detected"`
+	Tier1              []Tier1Entry   `json:"tier1"`
+	Tier1Window        string         `json:"tier1_window"`
+	Tier2              []Tier2Summary `json:"tier2"`
+	Tier2Window        string         `json:"tier2_window"`
 }
 
 // Tier1Entry is a detailed remediation history record (recent window).
@@ -88,14 +90,14 @@ type Tier1Entry struct {
 
 // Tier2Summary is a compact historical remediation record (wider window).
 type Tier2Summary struct {
-	RemediationUID     string   `json:"remediation_uid"`
-	SignalType         string   `json:"signal_type,omitempty"`
-	ActionType         string   `json:"action_type,omitempty"`
-	Outcome            string   `json:"outcome,omitempty"`
-	EffectivenessScore *float64 `json:"effectiveness_score,omitempty"`
-	SignalResolved     *bool    `json:"signal_resolved,omitempty"`
-	HashMatch          string   `json:"hash_match,omitempty"`
-	AssessmentReason   string   `json:"assessment_reason,omitempty"`
+	RemediationUID     string    `json:"remediation_uid"`
+	SignalType         string    `json:"signal_type,omitempty"`
+	ActionType         string    `json:"action_type,omitempty"`
+	Outcome            string    `json:"outcome,omitempty"`
+	EffectivenessScore *float64  `json:"effectiveness_score,omitempty"`
+	SignalResolved     *bool     `json:"signal_resolved,omitempty"`
+	HashMatch          string    `json:"hash_match,omitempty"`
+	AssessmentReason   string    `json:"assessment_reason,omitempty"`
 	CompletedAt        time.Time `json:"completed_at"`
 }
 
@@ -111,14 +113,14 @@ type HealthChecks struct {
 
 // MetricDeltas holds before/after metric measurements.
 type MetricDeltas struct {
-	CpuBefore         *float64 `json:"cpu_before,omitempty"`
-	CpuAfter          *float64 `json:"cpu_after,omitempty"`
-	MemoryBefore      *float64 `json:"memory_before,omitempty"`
-	MemoryAfter       *float64 `json:"memory_after,omitempty"`
+	CpuBefore          *float64 `json:"cpu_before,omitempty"`
+	CpuAfter           *float64 `json:"cpu_after,omitempty"`
+	MemoryBefore       *float64 `json:"memory_before,omitempty"`
+	MemoryAfter        *float64 `json:"memory_after,omitempty"`
 	LatencyP95BeforeMs *float64 `json:"latency_p95_before_ms,omitempty"`
 	LatencyP95AfterMs  *float64 `json:"latency_p95_after_ms,omitempty"`
-	ErrorRateBefore   *float64 `json:"error_rate_before,omitempty"`
-	ErrorRateAfter    *float64 `json:"error_rate_after,omitempty"`
+	ErrorRateBefore    *float64 `json:"error_rate_before,omitempty"`
+	ErrorRateAfter     *float64 `json:"error_rate_after,omitempty"`
 }
 
 // RetryConfig controls retry behavior for infrastructure calls in Enrich().
@@ -133,20 +135,20 @@ type RetryConfig struct {
 
 // EnrichmentResult is the combined enrichment data.
 type EnrichmentResult struct {
-	ResourceKind      string                   `json:"resource_kind,omitempty"`
-	ResourceName      string                   `json:"resource_name,omitempty"`
-	ResourceNamespace string                   `json:"resource_namespace,omitempty"`
-	OwnerChain        []OwnerChainEntry        `json:"owner_chain"`
+	ResourceKind      string            `json:"resource_kind,omitempty"`
+	ResourceName      string            `json:"resource_name,omitempty"`
+	ResourceNamespace string            `json:"resource_namespace,omitempty"`
+	OwnerChain        []OwnerChainEntry `json:"owner_chain"`
 	// OwnerChainError is non-nil when GetOwnerChain fails (resource not found, API error).
 	// Set for observability regardless of retry mode.
-	OwnerChainError   error                    `json:"-"`
+	OwnerChainError error `json:"-"`
 	// HardFail is true when owner chain resolution fails after retry
 	// exhaustion (all errors retried, matching HAPI v1.2.1). The
 	// investigator uses this to trigger rca_incomplete (BR-HAPI-261
 	// AC#7, #704). Only set when RetryConfig has MaxRetries > 0.
-	HardFail          bool                     `json:"-"`
-	DetectedLabels    *DetectedLabels          `json:"detected_labels,omitempty"`
-	QuotaDetails      map[string]string        `json:"quota_details,omitempty"`
+	HardFail           bool                      `json:"-"`
+	DetectedLabels     *DetectedLabels           `json:"detected_labels,omitempty"`
+	QuotaDetails       map[string]string         `json:"quota_details,omitempty"`
 	RemediationHistory *RemediationHistoryResult `json:"remediation_history,omitempty"`
 }
 
@@ -226,6 +228,15 @@ func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, n
 }
 
 // isTransientK8sError classifies K8s API errors for observability purposes.
+// IsNoMatchError returns true if the error indicates an unknown Kind/resource
+// type (CRD not registered with the API server). This distinguishes schema
+// limitations (e.g. cert-manager not installed) from actual resource failures.
+func IsNoMatchError(err error) bool {
+	var noResource *meta.NoResourceMatchError
+	var noKind *meta.NoKindMatchError
+	return errors.As(err, &noResource) || errors.As(err, &noKind)
+}
+
 // Not used in the retry path (HAPI retries all errors), but kept for logging
 // and future use in metrics/audit classification.
 func isTransientK8sError(err error) bool {
@@ -263,7 +274,7 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 	chain, ownerErr := e.resolveOwnerChainWithRetry(ctx, kind, name, namespace)
 	if ownerErr != nil {
 		result.OwnerChainError = ownerErr
-		if e.retryConfig.MaxRetries > 0 {
+		if e.retryConfig.MaxRetries > 0 && !IsNoMatchError(ownerErr) {
 			result.HardFail = true
 		}
 		e.logger.Warn("enrichment: owner chain resolution failed",
