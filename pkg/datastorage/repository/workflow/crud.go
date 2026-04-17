@@ -173,6 +173,133 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 	return nil
 }
 
+// SupersedeAndCreate atomically marks the old workflow as Superseded and inserts
+// the new one in a single transaction. This eliminates the visibility gap (#707)
+// where the old workflow is already Superseded but the new one doesn't exist yet,
+// causing ListWorkflowsByActionType to return zero results.
+func (r *Repository) SupersedeAndCreate(ctx context.Context, oldID, oldVersion, reason string, newWorkflow *models.RemediationWorkflow) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	supersedeQuery := `
+		UPDATE remediation_workflow_catalog
+		SET status = $1, status_reason = $2, updated_at = NOW()
+		WHERE workflow_id = $3 AND version = $4
+	`
+	result, err := tx.ExecContext(ctx, supersedeQuery, "Superseded", reason, oldID, oldVersion)
+	if err != nil {
+		return fmt.Errorf("failed to supersede workflow %s: %w", oldID, err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		r.logger.Info("WARNING: supersede target not found",
+			"workflow_id", oldID, "version", oldVersion)
+	}
+
+	if newWorkflow.IsLatestVersion {
+		latestQuery := `
+			UPDATE remediation_workflow_catalog
+			SET is_latest_version = false, updated_at = NOW()
+			WHERE workflow_name = $1 AND is_latest_version = true
+		`
+		if _, err = tx.ExecContext(ctx, latestQuery, newWorkflow.WorkflowName); err != nil {
+			return fmt.Errorf("failed to update previous versions: %w", err)
+		}
+	}
+
+	var insertQuery string
+	var args []interface{}
+
+	if newWorkflow.WorkflowID != "" {
+		insertQuery = `
+			INSERT INTO remediation_workflow_catalog (
+				workflow_id,
+				workflow_name, version, schema_version, name, description, owner, maintainer,
+				content, content_hash, parameters, execution_engine, schema_image, schema_digest,
+				execution_bundle, execution_bundle_digest, engine_config,
+				labels, custom_labels, detected_labels, status,
+				is_latest_version, previous_version, version_notes, change_summary,
+				approved_by, approved_at, expected_success_rate, expected_duration_seconds,
+				created_by, action_type, service_account_name
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7, $8,
+				$9, $10, $11, $12, $13, $14,
+				$15, $16, $17,
+				$18, $19, $20, $21,
+				$22, $23, $24, $25,
+				$26, $27, $28, $29,
+				$30, $31, $32
+			)
+			RETURNING workflow_id
+		`
+		args = []interface{}{
+			newWorkflow.WorkflowID,
+			newWorkflow.WorkflowName, newWorkflow.Version, newWorkflow.SchemaVersion, newWorkflow.Name, newWorkflow.Description, newWorkflow.Owner, newWorkflow.Maintainer,
+			newWorkflow.Content, newWorkflow.ContentHash, newWorkflow.Parameters, newWorkflow.ExecutionEngine, newWorkflow.SchemaImage, newWorkflow.SchemaDigest,
+			newWorkflow.ExecutionBundle, newWorkflow.ExecutionBundleDigest, newWorkflow.EngineConfig,
+			newWorkflow.Labels, newWorkflow.CustomLabels, newWorkflow.DetectedLabels, newWorkflow.Status,
+			newWorkflow.IsLatestVersion, newWorkflow.PreviousVersion, newWorkflow.VersionNotes, newWorkflow.ChangeSummary,
+			newWorkflow.ApprovedBy, newWorkflow.ApprovedAt, newWorkflow.ExpectedSuccessRate, newWorkflow.ExpectedDurationSeconds,
+			newWorkflow.CreatedBy, newWorkflow.ActionType, newWorkflow.ServiceAccountName,
+		}
+	} else {
+		insertQuery = `
+			INSERT INTO remediation_workflow_catalog (
+				workflow_name, version, schema_version, name, description, owner, maintainer,
+				content, content_hash, parameters, execution_engine, schema_image, schema_digest,
+				execution_bundle, execution_bundle_digest, engine_config,
+				labels, custom_labels, detected_labels, status,
+				is_latest_version, previous_version, version_notes, change_summary,
+				approved_by, approved_at, expected_success_rate, expected_duration_seconds,
+				created_by, action_type, service_account_name
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7,
+				$8, $9, $10, $11, $12, $13,
+				$14, $15, $16,
+				$17, $18, $19, $20,
+				$21, $22, $23, $24,
+				$25, $26, $27, $28,
+				$29, $30, $31
+			)
+			RETURNING workflow_id
+		`
+		args = []interface{}{
+			newWorkflow.WorkflowName, newWorkflow.Version, newWorkflow.SchemaVersion, newWorkflow.Name, newWorkflow.Description, newWorkflow.Owner, newWorkflow.Maintainer,
+			newWorkflow.Content, newWorkflow.ContentHash, newWorkflow.Parameters, newWorkflow.ExecutionEngine, newWorkflow.SchemaImage, newWorkflow.SchemaDigest,
+			newWorkflow.ExecutionBundle, newWorkflow.ExecutionBundleDigest, newWorkflow.EngineConfig,
+			newWorkflow.Labels, newWorkflow.CustomLabels, newWorkflow.DetectedLabels, newWorkflow.Status,
+			newWorkflow.IsLatestVersion, newWorkflow.PreviousVersion, newWorkflow.VersionNotes, newWorkflow.ChangeSummary,
+			newWorkflow.ApprovedBy, newWorkflow.ApprovedAt, newWorkflow.ExpectedSuccessRate, newWorkflow.ExpectedDurationSeconds,
+			newWorkflow.CreatedBy, newWorkflow.ActionType, newWorkflow.ServiceAccountName,
+		}
+	}
+
+	var confirmedID string
+	if err = tx.QueryRowContext(ctx, insertQuery, args...).Scan(&confirmedID); err != nil {
+		return fmt.Errorf("failed to create workflow: %w", err)
+	}
+	newWorkflow.WorkflowID = confirmedID
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	r.logger.Info("workflow superseded and new version created",
+		"old_workflow_id", oldID,
+		"new_workflow_id", newWorkflow.WorkflowID,
+		"workflow_name", newWorkflow.WorkflowName,
+		"version", newWorkflow.Version)
+
+	return nil
+}
+
 // ========================================
 // READ OPERATIONS
 // ========================================
