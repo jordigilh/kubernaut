@@ -4,7 +4,7 @@
 **Date**: April 15, 2026
 **Author**: Kubernaut Architecture Team
 **Confidence**: 95% (post design gate mitigation)
-**Related**: [#703](https://github.com/jordigilh/kubernaut/issues/703) (MCP Interactive Mode), [#705](https://github.com/jordigilh/kubernaut/issues/705) (A2A Protocol), [#708](https://github.com/jordigilh/kubernaut/issues/708) (API Frontend Service), [#592](https://github.com/jordigilh/kubernaut/issues/592) (Conversational Mode), [DD-INTERACTIVE-001](../decisions/DD-INTERACTIVE-001-interactive-mode-crd-placement-and-timeouts.md)
+**Related**: [#703](https://github.com/jordigilh/kubernaut/issues/703) (MCP Interactive Mode), [#705](https://github.com/jordigilh/kubernaut/issues/705) (A2A Protocol), [#708](https://github.com/jordigilh/kubernaut/issues/708) (API Frontend Service), [#711](https://github.com/jordigilh/kubernaut/issues/711) (Investigation Prompt Bundles), [#713](https://github.com/jordigilh/kubernaut/issues/713) (Kubernaut Console), [#714](https://github.com/jordigilh/kubernaut/issues/714) (NL Signal Intake), [#592](https://github.com/jordigilh/kubernaut/issues/592) (Conversational Mode), [DD-INTERACTIVE-001](../decisions/DD-INTERACTIVE-001-interactive-mode-crd-placement-and-timeouts.md)
 
 ---
 
@@ -439,7 +439,7 @@ If an integrating team needs something sooner:
 
 | Version | Capability | Enhancement |
 |---------|-----------|-------------|
-| **v1.4** | MCP interactive mode + A2A inbound + API Frontend | #703, #705, #708 |
+| **v1.4** | MCP interactive mode + A2A inbound + API Frontend + Kubernaut Console + NL signal intake + Prompt Bundles | #703, #705, #708, #711, #713, #714 |
 | **v1.5** | Multi-agent consensus RCA | #648 |
 | **v1.6** | A2A-based multi-cluster federation -- per-cluster Gateway agents | #54 |
 | **v1.6+** | A2A outbound on NT -- ITSM/approval/comms agent delegation | #705 Phase 2 |
