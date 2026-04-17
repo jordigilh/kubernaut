@@ -977,6 +977,7 @@ spec:
         app: memory-eater
         kubernaut.ai/managed: "true"
     spec:
+      automountServiceAccountToken: false
       containers:
       - name: memory-eater
         image: us-central1-docker.pkg.dev/genuine-flight-317411/devel/memory-eater:1.0
@@ -1029,6 +1030,7 @@ spec:
         app: memory-eater
         kubernaut.ai/managed: "true"
     spec:
+      automountServiceAccountToken: false
       containers:
       - name: memory-eater
         image: us-central1-docker.pkg.dev/genuine-flight-317411/devel/memory-eater:1.0
