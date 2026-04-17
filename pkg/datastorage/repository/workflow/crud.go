@@ -60,7 +60,8 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 			SET is_latest_version = false, updated_at = NOW()
 			WHERE workflow_name = $1 AND is_latest_version = true
 		`
-		result, err := tx.ExecContext(ctx, updateQuery, workflow.WorkflowName)
+		var result sql.Result
+		result, err = tx.ExecContext(ctx, updateQuery, workflow.WorkflowName)
 		if err != nil {
 			r.logger.Error(err, "failed to update previous versions",
 				"workflow_name", workflow.WorkflowName,
