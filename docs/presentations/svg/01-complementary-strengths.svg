@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" font-family="Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="960" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#EFF6FF"/>
+    </linearGradient>
+    <linearGradient id="tealGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0D9488"/>
+      <stop offset="100%" stop-color="#0F766E"/>
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </linearGradient>
+    <linearGradient id="purpleGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#6D28D9"/>
+    </linearGradient>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="112%">
+      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#1E293B" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="540" fill="url(#bgGrad)"/>
+
+  <text x="480" y="52" text-anchor="middle" font-size="24" font-weight="700" fill="#1E293B">Two projects, complementary strengths</text>
+
+  <!-- Left column -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="80" width="410" height="380" rx="16" fill="white"/>
+    <rect x="40" y="80" width="410" height="56" rx="16" fill="url(#tealGrad)"/>
+    <rect x="40" y="120" width="410" height="16" fill="url(#tealGrad)"/>
+  </g>
+  <text x="245" y="115" text-anchor="middle" font-size="18" font-weight="700" fill="white">Your Project</text>
+
+  <g font-size="13" fill="#334155">
+    <rect x="64" y="156" width="362" height="44" rx="8" fill="#F0FDFA"/>
+    <rect x="72" y="168" width="20" height="20" rx="4" fill="#0D9488" opacity="0.15"/>
+    <text x="82" y="182" text-anchor="middle" font-size="10" font-weight="700" fill="#0D9488">S</text>
+    <text x="100" y="173" font-weight="600" fill="#0F766E" font-size="12">STRENGTH</text>
+    <text x="100" y="190" fill="#334155">Agent orchestration, UI, natural language interaction</text>
+
+    <rect x="64" y="210" width="362" height="44" rx="8" fill="#F0FDFA"/>
+    <rect x="72" y="222" width="20" height="20" rx="4" fill="#0D9488" opacity="0.15"/>
+    <text x="82" y="236" text-anchor="middle" font-size="10" font-weight="700" fill="#0D9488">V</text>
+    <text x="100" y="227" font-weight="600" fill="#0F766E" font-size="12">FOCUS</text>
+    <text x="100" y="244" fill="#334155">Chat UI, dashboards, user experience</text>
+
+    <rect x="64" y="264" width="362" height="44" rx="8" fill="#F0FDFA"/>
+    <rect x="72" y="276" width="20" height="20" rx="4" fill="#0D9488" opacity="0.15"/>
+    <text x="82" y="290" text-anchor="middle" font-size="10" font-weight="700" fill="#0D9488">B</text>
+    <text x="100" y="281" font-weight="600" fill="#0F766E" font-size="12">DELIVERS</text>
+    <text x="100" y="298" fill="#334155">The experience layer</text>
+
+    <rect x="64" y="318" width="362" height="44" rx="8" fill="#F0FDFA"/>
+    <rect x="72" y="330" width="20" height="20" rx="4" fill="#0D9488" opacity="0.15"/>
+    <text x="82" y="344" text-anchor="middle" font-size="10" font-weight="700" fill="#0D9488">O</text>
+    <text x="100" y="335" font-weight="600" fill="#0F766E" font-size="12">SCOPE</text>
+    <text x="100" y="352" fill="#334155">User intent, presentation, agent orchestration</text>
+  </g>
+
+  <!-- Right column -->
+  <g filter="url(#shadow)">
+    <rect x="510" y="80" width="410" height="380" rx="16" fill="white"/>
+    <rect x="510" y="80" width="410" height="56" rx="16" fill="url(#blueGrad)"/>
+    <rect x="510" y="120" width="410" height="16" fill="url(#blueGrad)"/>
+  </g>
+  <text x="715" y="115" text-anchor="middle" font-size="18" font-weight="700" fill="white">Kubernaut</text>
+
+  <g font-size="13" fill="#334155">
+    <rect x="534" y="156" width="362" height="44" rx="8" fill="#EFF6FF"/>
+    <rect x="542" y="168" width="20" height="20" rx="4" fill="#2563EB" opacity="0.15"/>
+    <text x="552" y="182" text-anchor="middle" font-size="10" font-weight="700" fill="#2563EB">S</text>
+    <text x="570" y="173" font-weight="600" fill="#1D4ED8" font-size="12">STRENGTH</text>
+    <text x="570" y="190" fill="#334155">Kubernetes remediation domain expertise</text>
+
+    <rect x="534" y="210" width="362" height="44" rx="8" fill="#EFF6FF"/>
+    <rect x="542" y="222" width="20" height="20" rx="4" fill="#2563EB" opacity="0.15"/>
+    <text x="552" y="236" text-anchor="middle" font-size="10" font-weight="700" fill="#2563EB">V</text>
+    <text x="570" y="227" font-weight="600" fill="#1D4ED8" font-size="12">FOCUS</text>
+    <text x="570" y="244" fill="#334155">LLM investigation, workflow execution, verification</text>
+
+    <rect x="534" y="264" width="362" height="44" rx="8" fill="#EFF6FF"/>
+    <rect x="542" y="276" width="20" height="20" rx="4" fill="#2563EB" opacity="0.15"/>
+    <text x="552" y="290" text-anchor="middle" font-size="10" font-weight="700" fill="#2563EB">B</text>
+    <text x="570" y="281" font-weight="600" fill="#1D4ED8" font-size="12">DELIVERS</text>
+    <text x="570" y="298" fill="#334155">The remediation engine</text>
+
+    <rect x="534" y="318" width="362" height="44" rx="8" fill="#EFF6FF"/>
+    <rect x="542" y="330" width="20" height="20" rx="4" fill="#2563EB" opacity="0.15"/>
+    <text x="552" y="344" text-anchor="middle" font-size="10" font-weight="700" fill="#2563EB">O</text>
+    <text x="570" y="335" font-weight="600" fill="#1D4ED8" font-size="12">SCOPE</text>
+    <text x="570" y="352" fill="#334155">Investigation, execution, safety, verification</text>
+  </g>
+
+  <!-- Center connector -->
+  <circle cx="480" cy="400" r="32" fill="url(#purpleGrad)"/>
+  <text x="480" y="396" text-anchor="middle" font-size="22" fill="white">+</text>
+  <text x="480" y="412" text-anchor="middle" font-size="9" font-weight="600" fill="white" letter-spacing="0.5">COMBINED</text>
+
+  <text x="480" y="492" text-anchor="middle" font-size="15" font-weight="600" fill="#475569">Zero overlap. Clear boundaries.</text>
+  <text x="480" y="514" text-anchor="middle" font-size="15" font-weight="600" fill="#7C3AED">Combined, our users get end-to-end Kubernetes incident response.</text>
+</svg>

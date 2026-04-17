@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" font-family="Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="960" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#EFF6FF"/>
+    </linearGradient>
+    <linearGradient id="tealGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0D9488"/>
+      <stop offset="100%" stop-color="#0F766E"/>
+    </linearGradient>
+    <filter id="shadow" x="-2%" y="-4%" width="104%" height="112%">
+      <feDropShadow dx="0" dy="2" stdDeviation="5" flood-color="#1E293B" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="540" fill="url(#bgGrad)"/>
+
+  <text x="480" y="40" text-anchor="middle" font-size="22" font-weight="700" fill="#1E293B">New Integration Personas (v1.4+)</text>
+  <text x="480" y="62" text-anchor="middle" font-size="13" fill="#64748B">External actors connecting via MCP and A2A protocols</text>
+
+  <!-- Card 1: Human Operator via MCP -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="82" width="880" height="120" rx="16" fill="white"/>
+  </g>
+  <rect x="40" y="82" width="880" height="40" rx="16" fill="url(#tealGrad)"/>
+  <rect x="40" y="106" width="880" height="16" fill="url(#tealGrad)"/>
+  <text x="60" y="108" font-size="15" font-weight="700" fill="white">Human Operator via MCP</text>
+  <rect x="820" y="90" width="86" height="24" rx="6" fill="white" opacity="0.2"/>
+  <text x="863" y="107" text-anchor="middle" font-size="11" font-weight="700" fill="white">INTERACTIVE</text>
+
+  <rect x="60" y="132" width="56" height="22" rx="4" fill="#0D9488" opacity="0.12"/>
+  <text x="88" y="148" text-anchor="middle" font-size="10" font-weight="700" fill="#0D9488">MCP</text>
+  <text x="126" y="148" font-size="12" font-weight="600" fill="#0F766E">Protocol: MCP Streamable HTTP</text>
+  <rect x="360" y="132" width="72" height="22" rx="4" fill="#0D9488" opacity="0.12"/>
+  <text x="396" y="148" text-anchor="middle" font-size="10" font-weight="700" fill="#0D9488">ENTRY</text>
+  <text x="442" y="148" font-size="12" font-weight="600" fill="#0F766E">API Frontend -&gt; KA</text>
+
+  <text x="60" y="176" font-size="11" fill="#475569">Steer investigations, review findings interactively, choose workflows explicitly, watch live remediation status</text>
+  <text x="60" y="192" font-size="10" fill="#94A3B8">IDE copilots, Slack bots, operational consoles, custom UIs -- any MCP-compatible client</text>
+
+  <!-- Card 2: External AI Agent (inbound) -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="216" width="880" height="120" rx="16" fill="white"/>
+  </g>
+  <rect x="40" y="216" width="880" height="40" rx="16" fill="url(#tealGrad)"/>
+  <rect x="40" y="240" width="880" height="16" fill="url(#tealGrad)"/>
+  <text x="60" y="242" font-size="15" font-weight="700" fill="white">External AI Agent (inbound)</text>
+  <rect x="828" y="224" width="78" height="24" rx="6" fill="white" opacity="0.2"/>
+  <text x="867" y="241" text-anchor="middle" font-size="11" font-weight="700" fill="white">INBOUND</text>
+
+  <rect x="60" y="266" width="56" height="22" rx="4" fill="#0D9488" opacity="0.12"/>
+  <text x="88" y="282" text-anchor="middle" font-size="10" font-weight="700" fill="#0D9488">A2A</text>
+  <text x="126" y="282" font-size="12" font-weight="600" fill="#0F766E">Protocol: Agent-to-Agent</text>
+  <rect x="360" y="266" width="72" height="22" rx="4" fill="#0D9488" opacity="0.12"/>
+  <text x="396" y="282" text-anchor="middle" font-size="10" font-weight="700" fill="#0D9488">ENTRY</text>
+  <text x="442" y="282" font-size="12" font-weight="600" fill="#0F766E">API Frontend -&gt; Gateway</text>
+
+  <text x="60" y="310" font-size="11" fill="#475569">Submit alerts/signals, track remediation lifecycle, respond to approval requests, receive structured RCA artifacts</text>
+  <text x="60" y="326" font-size="10" fill="#94A3B8">Autonomous orchestrators, monitoring agents, incident management platforms</text>
+
+  <!-- Card 3: ITSM/Comms Agent (outbound) -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="350" width="880" height="120" rx="16" fill="white"/>
+  </g>
+  <rect x="40" y="350" width="880" height="40" rx="16" fill="url(#tealGrad)"/>
+  <rect x="40" y="374" width="880" height="16" fill="url(#tealGrad)"/>
+  <text x="60" y="376" font-size="15" font-weight="700" fill="white">ITSM / Approval / Comms Agent (outbound)</text>
+  <rect x="820" y="358" width="86" height="24" rx="6" fill="white" opacity="0.2"/>
+  <text x="863" y="375" text-anchor="middle" font-size="11" font-weight="700" fill="white">OUTBOUND</text>
+
+  <rect x="60" y="400" width="56" height="22" rx="4" fill="#0D9488" opacity="0.12"/>
+  <text x="88" y="416" text-anchor="middle" font-size="10" font-weight="700" fill="#0D9488">A2A</text>
+  <text x="126" y="416" font-size="12" font-weight="600" fill="#0F766E">Protocol: Agent-to-Agent</text>
+  <rect x="360" y="400" width="72" height="22" rx="4" fill="#0D9488" opacity="0.12"/>
+  <text x="396" y="416" text-anchor="middle" font-size="10" font-weight="700" fill="#0D9488">SOURCE</text>
+  <text x="442" y="416" font-size="12" font-weight="600" fill="#0F766E">Notification Service -&gt; external</text>
+
+  <text x="60" y="444" font-size="11" fill="#475569">Receive incident creation/update notifications, accept approval delegation requests, post team communications</text>
+  <text x="60" y="460" font-size="10" fill="#94A3B8">ServiceNow, PagerDuty, Jira Service Management, custom ITSM agents</text>
+
+  <!-- Footer: Autonomous pipeline note -->
+  <rect x="200" y="488" width="560" height="36" rx="10" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1"/>
+  <text x="480" y="511" text-anchor="middle" font-size="12" fill="#64748B">Autonomous pipeline (AlertManager, K8s Events) enters via Gateway webhooks -- unchanged</text>
+</svg>

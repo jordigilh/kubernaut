@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" font-family="Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="960" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#EFF6FF"/>
+    </linearGradient>
+    <filter id="shadow" x="-2%" y="-4%" width="104%" height="112%">
+      <feDropShadow dx="0" dy="2" stdDeviation="5" flood-color="#1E293B" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="540" fill="url(#bgGrad)"/>
+
+  <text x="480" y="40" text-anchor="middle" font-size="22" font-weight="700" fill="#1E293B">Clear boundaries, no duplication</text>
+
+  <!-- Left: Your Project -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="64" width="420" height="440" rx="16" fill="white"/>
+  </g>
+  <rect x="40" y="64" width="420" height="48" rx="16" fill="#0D9488"/>
+  <rect x="40" y="96" width="420" height="16" fill="#0D9488"/>
+  <text x="250" y="95" text-anchor="middle" font-size="17" font-weight="700" fill="white">Your Project Covers</text>
+
+  <g font-size="13">
+    <rect x="64" y="128" width="372" height="48" rx="8" fill="#F0FDFA"/>
+    <rect x="72" y="140" width="24" height="24" rx="6" fill="#0D9488" opacity="0.12"/>
+    <text x="84" y="157" text-anchor="middle" font-size="11" font-weight="700" fill="#0D9488">UX</text>
+    <text x="106" y="146" font-weight="600" fill="#0F766E">UX and branding</text>
+    <text x="106" y="164" fill="#475569" font-size="11">Users interact with your interface, your design language</text>
+
+    <rect x="64" y="186" width="372" height="48" rx="8" fill="#F0FDFA"/>
+    <rect x="72" y="198" width="24" height="24" rx="6" fill="#0D9488" opacity="0.12"/>
+    <text x="84" y="215" text-anchor="middle" font-size="11" font-weight="700" fill="#0D9488">NL</text>
+    <text x="106" y="204" font-weight="600" fill="#0F766E">User intent parsing</text>
+    <text x="106" y="222" fill="#475569" font-size="11">Understanding "what's going on" means "investigate"</text>
+
+    <rect x="64" y="244" width="372" height="48" rx="8" fill="#F0FDFA"/>
+    <rect x="72" y="256" width="24" height="24" rx="6" fill="#0D9488" opacity="0.12"/>
+    <text x="84" y="273" text-anchor="middle" font-size="11" font-weight="700" fill="#0D9488">FMT</text>
+    <text x="106" y="262" font-weight="600" fill="#0F766E">Result formatting</text>
+    <text x="106" y="280" fill="#475569" font-size="11">Render findings, options, and progress in your style</text>
+
+    <rect x="64" y="302" width="372" height="48" rx="8" fill="#F0FDFA"/>
+    <rect x="72" y="314" width="24" height="24" rx="6" fill="#0D9488" opacity="0.12"/>
+    <text x="84" y="331" text-anchor="middle" font-size="10" font-weight="700" fill="#0D9488">AUTH</text>
+    <text x="106" y="320" font-weight="600" fill="#0F766E">Authentication</text>
+    <text x="106" y="338" fill="#475569" font-size="11">Who can access what, multi-tenant routing</text>
+
+    <rect x="64" y="360" width="372" height="48" rx="8" fill="#F0FDFA"/>
+    <rect x="72" y="372" width="24" height="24" rx="6" fill="#0D9488" opacity="0.12"/>
+    <text x="84" y="389" text-anchor="middle" font-size="10" font-weight="700" fill="#0D9488">AGT</text>
+    <text x="106" y="378" font-weight="600" fill="#0F766E">Agent orchestration</text>
+    <text x="106" y="396" fill="#475569" font-size="11">Multi-agent coordination, task routing, fallbacks</text>
+
+    <rect x="64" y="418" width="372" height="48" rx="8" fill="#F0FDFA"/>
+    <rect x="72" y="430" width="24" height="24" rx="6" fill="#0D9488" opacity="0.12"/>
+    <text x="84" y="447" text-anchor="middle" font-size="10" font-weight="700" fill="#0D9488">POL</text>
+    <text x="106" y="436" font-weight="600" fill="#0F766E">Policy overlay</text>
+    <text x="106" y="454" fill="#475569" font-size="11">Additional approval rules, organizational policies</text>
+  </g>
+
+  <!-- Right: Kubernaut -->
+  <g filter="url(#shadow)">
+    <rect x="500" y="64" width="420" height="440" rx="16" fill="white"/>
+  </g>
+  <rect x="500" y="64" width="420" height="48" rx="16" fill="#2563EB"/>
+  <rect x="500" y="96" width="420" height="16" fill="#2563EB"/>
+  <text x="710" y="95" text-anchor="middle" font-size="17" font-weight="700" fill="white">Kubernaut Covers</text>
+
+  <g font-size="13">
+    <rect x="524" y="128" width="372" height="48" rx="8" fill="#EFF6FF"/>
+    <rect x="532" y="140" width="24" height="24" rx="6" fill="#2563EB" opacity="0.12"/>
+    <text x="544" y="157" text-anchor="middle" font-size="10" font-weight="700" fill="#2563EB">K8s</text>
+    <text x="566" y="146" font-weight="600" fill="#1D4ED8">Kubernetes inspection</text>
+    <text x="566" y="164" fill="#475569" font-size="11">Native client-go -- pods, logs, events, resource state</text>
+
+    <rect x="524" y="186" width="372" height="48" rx="8" fill="#EFF6FF"/>
+    <rect x="532" y="198" width="24" height="24" rx="6" fill="#2563EB" opacity="0.12"/>
+    <text x="544" y="215" text-anchor="middle" font-size="10" font-weight="700" fill="#2563EB">LLM</text>
+    <text x="566" y="204" font-weight="600" fill="#1D4ED8">LLM-powered RCA</text>
+    <text x="566" y="222" fill="#475569" font-size="11">Actual diagnosis, not pattern matching or rules</text>
+
+    <rect x="524" y="244" width="372" height="48" rx="8" fill="#EFF6FF"/>
+    <rect x="532" y="256" width="24" height="24" rx="6" fill="#2563EB" opacity="0.12"/>
+    <text x="544" y="273" text-anchor="middle" font-size="10" font-weight="700" fill="#2563EB">DDP</text>
+    <text x="566" y="262" font-weight="600" fill="#1D4ED8">Signal deduplication</text>
+    <text x="566" y="280" fill="#475569" font-size="11">50 identical alerts -&gt; 1 remediation request</text>
+
+    <rect x="524" y="302" width="372" height="48" rx="8" fill="#EFF6FF"/>
+    <rect x="532" y="314" width="24" height="24" rx="6" fill="#2563EB" opacity="0.12"/>
+    <text x="544" y="331" text-anchor="middle" font-size="10" font-weight="700" fill="#2563EB">WF</text>
+    <text x="566" y="320" font-weight="600" fill="#1D4ED8">Workflow execution</text>
+    <text x="566" y="338" fill="#475569" font-size="11">Tekton Pipelines, K8s Jobs, Ansible (AWX/AAP)</text>
+
+    <rect x="524" y="360" width="372" height="48" rx="8" fill="#EFF6FF"/>
+    <rect x="532" y="372" width="24" height="24" rx="6" fill="#2563EB" opacity="0.12"/>
+    <text x="544" y="389" text-anchor="middle" font-size="10" font-weight="700" fill="#2563EB">OPA</text>
+    <text x="566" y="378" font-weight="600" fill="#1D4ED8">Safety controls</text>
+    <text x="566" y="396" fill="#475569" font-size="11">OPA policies, RBAC, human approval gates</text>
+
+    <rect x="524" y="418" width="372" height="48" rx="8" fill="#EFF6FF"/>
+    <rect x="532" y="430" width="24" height="24" rx="6" fill="#2563EB" opacity="0.12"/>
+    <text x="544" y="447" text-anchor="middle" font-size="10" font-weight="700" fill="#2563EB">EA</text>
+    <text x="566" y="436" font-weight="600" fill="#1D4ED8">Effectiveness verification</text>
+    <text x="566" y="454" fill="#475569" font-size="11">Health checks, alert resolution, scoring feedback</text>
+  </g>
+
+  <text x="480" y="528" text-anchor="middle" font-size="13" font-weight="600" fill="#64748B">Both projects evolve on their own roadmaps -- integration stays stable via MCP / A2A</text>
+</svg>
