@@ -101,15 +101,17 @@ func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult,
 			recurringWarnings = append(recurringWarnings, fmt.Sprintf(
 				"**MANDATORY: You MUST NOT re-select '%s' for signal "+
 					"'%s'.** This workflow has been applied %d times with "+
-					"zero effectiveness -- the signal continues to recur. Escalate to "+
-					"`needs_human_review` or select a fundamentally different remediation approach.",
+					"zero effectiveness -- the signal continues to recur. Set "+
+					"`investigation_outcome` to `inconclusive` and omit `selected_workflow`, "+
+					"or select a fundamentally different remediation approach.",
 				r.ActionType, r.SignalType, r.Count,
 			))
 		} else {
 			recurringWarnings = append(recurringWarnings, fmt.Sprintf(
 				"**WARNING: REPEATED INEFFECTIVE REMEDIATION for '%s'** -- "+
 					"Completed %d times for signal '%s' but the issue continues "+
-					"to recur. Escalate to `needs_human_review` or an alternative approach.",
+					"to recur. Set `investigation_outcome` to `inconclusive` and omit "+
+					"`selected_workflow`, or select an alternative approach.",
 				r.ActionType, r.Count, r.SignalType,
 			))
 		}

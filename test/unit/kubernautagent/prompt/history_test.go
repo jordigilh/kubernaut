@@ -288,6 +288,46 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 		})
 	})
 
+	Describe("UT-KA-725-001: All-zero effectiveness warning references investigation_outcome", func() {
+		It("should contain 'investigation_outcome' to 'inconclusive' and not 'needs_human_review'", func() {
+			result := &enrichment.RemediationHistoryResult{
+				TargetResource: "default/Pod/web",
+				Tier1: []enrichment.Tier1Entry{
+					{RemediationUID: "wf-a", ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success", EffectivenessScore: floatPtr(0.0), CompletedAt: time.Now()},
+					{RemediationUID: "wf-b", ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success", EffectivenessScore: floatPtr(0.0), CompletedAt: time.Now()},
+				},
+				Tier1Window: "24h",
+			}
+			output := prompt.BuildRemediationHistorySection(result, 2)
+			Expect(output).To(ContainSubstring("MANDATORY: You MUST NOT re-select"),
+				"all-zero escalation warning must still be present")
+			Expect(output).To(ContainSubstring("`investigation_outcome` to `inconclusive`"),
+				"all-zero warning must reference investigation_outcome to inconclusive")
+			Expect(output).NotTo(ContainSubstring("`needs_human_review`"),
+				"all-zero warning must NOT reference non-existent needs_human_review schema field")
+		})
+	})
+
+	Describe("UT-KA-725-002: Repeated ineffective warning references investigation_outcome", func() {
+		It("should contain 'investigation_outcome' to 'inconclusive' and not 'needs_human_review'", func() {
+			result := &enrichment.RemediationHistoryResult{
+				TargetResource: "default/Pod/web",
+				Tier1: []enrichment.Tier1Entry{
+					{RemediationUID: "wf-a", ActionType: "scale_up", SignalType: "HighLatency", Outcome: "Success", EffectivenessScore: floatPtr(0.3), CompletedAt: time.Now()},
+					{RemediationUID: "wf-b", ActionType: "scale_up", SignalType: "HighLatency", Outcome: "Success", EffectivenessScore: floatPtr(0.2), CompletedAt: time.Now()},
+				},
+				Tier1Window: "24h",
+			}
+			output := prompt.BuildRemediationHistorySection(result, 2)
+			Expect(output).To(ContainSubstring("WARNING: REPEATED INEFFECTIVE REMEDIATION"),
+				"repeated ineffective warning must be present")
+			Expect(output).To(ContainSubstring("`investigation_outcome` to `inconclusive`"),
+				"repeated ineffective warning must reference investigation_outcome to inconclusive")
+			Expect(output).NotTo(ContainSubstring("`needs_human_review`"),
+				"repeated ineffective warning must NOT reference non-existent needs_human_review schema field")
+		})
+	})
+
 	Describe("UT-KA-433-HP-011: BuildRemediationHistorySection full integration", func() {
 		It("should return empty string for nil result", func() {
 			Expect(prompt.BuildRemediationHistorySection(nil, 2)).To(BeEmpty())

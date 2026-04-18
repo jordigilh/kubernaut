@@ -307,6 +307,109 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 		})
 	})
 
+	Describe("Prompt Engineering Fixes — #725", func() {
+
+		Describe("UT-KA-725-003: Phase 3 template contains inconclusive example JSON", func() {
+			It("should include an inconclusive example with investigation_outcome in the template", func() {
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+
+				rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+					Signal: prompt.SignalData{
+						Name: "test-signal", Namespace: "default", Severity: "warning",
+						Message: "Test",
+					},
+					RCASummary: "RCA summary",
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(rendered).To(ContainSubstring(`"investigation_outcome": "inconclusive"`),
+					"Phase 3 template must include a concrete inconclusive example JSON")
+				Expect(rendered).To(ContainSubstring(`"selected_workflow": null`),
+					"Inconclusive example must show selected_workflow as null")
+			})
+		})
+	})
+
+	Describe("Investigation Analysis Field — #724", func() {
+
+		Describe("UT-KA-724-002: Phase 3 prompt includes investigation analysis section", func() {
+			It("should render Phase 1 Investigation Analysis section when field is populated", func() {
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+
+				phase1 := &prompt.Phase1Data{
+					Severity:               "high",
+					InvestigationOutcome:    "actionable",
+					Confidence:              0.88,
+					InvestigationAnalysis:   "Memory usage in the api-server container grew steadily from 180Mi to 256Mi over 6 hours. The leak correlates with unclosed gRPC streaming connections.",
+					ContributingFactors:     []string{"memory leak", "gRPC connection leak"},
+					RemediationTarget: prompt.Phase1RemediationTarget{
+						Kind: "Deployment", Name: "api-server", Namespace: "production",
+					},
+				}
+
+				rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+					Signal: prompt.SignalData{
+						Name: "api-server-oom", Namespace: "production", Severity: "critical",
+						Message: "OOMKilled",
+					},
+					RCASummary: "OOMKilled due to memory leak",
+					Phase1:     phase1,
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(rendered).To(ContainSubstring("Phase 1 Investigation Analysis"),
+					"Phase 3 prompt must include 'Phase 1 Investigation Analysis' section header")
+				Expect(rendered).To(ContainSubstring("unclosed gRPC streaming connections"),
+					"Phase 3 prompt must include the investigation analysis content")
+			})
+		})
+
+		Describe("UT-KA-724-003: Empty investigation_analysis preserves backward compatibility", func() {
+			It("should NOT render investigation analysis section when field is empty", func() {
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+
+				phase1 := &prompt.Phase1Data{
+					Severity:            "high",
+					InvestigationOutcome: "actionable",
+					Confidence:           0.88,
+					ContributingFactors:  []string{"memory leak"},
+					RemediationTarget: prompt.Phase1RemediationTarget{
+						Kind: "Deployment", Name: "api-server", Namespace: "production",
+					},
+				}
+
+				rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+					Signal: prompt.SignalData{
+						Name: "api-server-oom", Namespace: "production", Severity: "critical",
+						Message: "OOMKilled",
+					},
+					RCASummary: "OOMKilled due to memory leak",
+					Phase1:     phase1,
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(rendered).NotTo(ContainSubstring("Phase 1 Investigation Analysis"),
+					"Phase 3 prompt must NOT include investigation analysis section when field is empty")
+			})
+
+			It("should NOT render investigation analysis section when Phase1 is nil", func() {
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+
+				rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+					Signal: prompt.SignalData{
+						Name: "api-server-oom", Namespace: "production", Severity: "critical",
+						Message: "OOMKilled",
+					},
+					RCASummary: "OOMKilled due to memory leak",
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(rendered).NotTo(ContainSubstring("Phase 1 Investigation Analysis"),
+					"Phase 3 prompt must NOT include investigation analysis section when Phase1 is nil")
+			})
+		})
+	})
+
 	Describe("UT-KA-SO-PROMPT-001: Prompt uses unified submit_result tool instruction", func() {
 		It("should include submit_result instruction regardless of structured output setting", func() {
 			builder, err := prompt.NewBuilder(prompt.WithStructuredOutput(true))
