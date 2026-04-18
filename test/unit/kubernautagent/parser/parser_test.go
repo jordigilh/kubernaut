@@ -677,4 +677,65 @@ false
 				"problem_resolved outcome must suppress the generic not-actionable warning")
 		})
 	})
+
+	Describe("Investigation Analysis Field — #724", func() {
+
+		Describe("UT-KA-724-001: Parser extracts investigation_analysis from nested LLM response", func() {
+			It("should populate InvestigationAnalysis from root_cause_analysis.investigation_analysis", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"root_cause_analysis": {
+						"summary": "OOMKilled due to memory leak in api-server",
+						"severity": "high",
+						"investigation_analysis": "The investigation revealed a steady memory growth pattern in the api-server container over the past 6 hours. Memory usage increased from 180Mi to 256Mi, hitting the container limit. The leak appears to correlate with increased gRPC streaming connections that are not being properly closed."
+					},
+					"confidence": 0.88,
+					"investigation_outcome": "actionable"
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.InvestigationAnalysis).To(Equal(
+					"The investigation revealed a steady memory growth pattern in the api-server container over the past 6 hours. Memory usage increased from 180Mi to 256Mi, hitting the container limit. The leak appears to correlate with increased gRPC streaming connections that are not being properly closed."),
+					"Parser must extract investigation_analysis from nested RCA into InvestigationResult.InvestigationAnalysis")
+			})
+
+			It("should leave InvestigationAnalysis empty when not present in LLM response", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"root_cause_analysis": {
+						"summary": "OOMKilled due to memory limit exceeded"
+					},
+					"confidence": 0.9,
+					"investigation_outcome": "actionable"
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.InvestigationAnalysis).To(BeEmpty(),
+					"InvestigationAnalysis must be empty when not provided by LLM (backward compat)")
+			})
+
+			It("should extract investigation_analysis from hybrid JSON (flat rca_summary + nested RCA)", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"rca_summary": "OOMKilled due to memory leak",
+					"workflow_id": "oom-increase-memory",
+					"confidence": 0.92,
+					"root_cause_analysis": {
+						"summary": "OOMKilled due to memory leak in api-server",
+						"investigation_analysis": "Memory grew from 180Mi to 256Mi over 6h due to unclosed gRPC streams."
+					}
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(Equal("OOMKilled due to memory leak"),
+					"flat rca_summary must take precedence")
+				Expect(result.InvestigationAnalysis).To(Equal(
+					"Memory grew from 180Mi to 256Mi over 6h due to unclosed gRPC streams."),
+					"investigation_analysis must be merged from nested RCA in hybrid JSON (F2)")
+			})
+		})
+	})
 })

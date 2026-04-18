@@ -63,6 +63,9 @@ type InvestigationResult struct {
 	// as fallbacks when Phase 3 does not produce one (HAPI parity: #715).
 	InvestigationOutcome string `json:"investigation_outcome,omitempty"`
 
+	// Investigation analysis narrative from Phase 1 for Phase 3 context (#724).
+	InvestigationAnalysis string `json:"investigation_analysis,omitempty"`
+
 	// RCA detail
 	SignalName          string   `json:"signal_name,omitempty"`
 	ContributingFactors []string `json:"contributing_factors,omitempty"`

@@ -54,13 +54,14 @@ const rcaResultSchemaJSON = `{
             "name": { "type": "string" },
             "namespace": { "type": "string" }
           }
-        }
+        },
+        "investigation_analysis": { "type": "string", "description": "Concise narrative summary of the investigation findings and reasoning (< 500 words). This field is consumed by the Phase 3 workflow selection LLM to provide investigation context." }
       },
       "required": ["summary"]
     },
     "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "unknown"] },
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
-    "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data"] },
+    "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data", "inconclusive"] },
     "actionable": { "type": "boolean" },
     "detected_labels": { "type": "object" }
   },
@@ -114,7 +115,7 @@ const investigationResultSchemaJSON = `{
     },
     "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "unknown"] },
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
-    "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data"] },
+    "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data", "inconclusive"] },
     "actionable": { "type": "boolean" },
     "detected_labels": { "type": "object" }
   },

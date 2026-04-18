@@ -55,6 +55,7 @@ func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, erro
 			_ = json.Unmarshal([]byte(jsonStr), &flat)
 			applyFlatFields(&result, flat)
 			mergeNestedRemediationTarget(&result, jsonStr)
+			mergeNestedInvestigationAnalysis(&result, jsonStr)
 			applyOutcomeRouting(&result)
 			return &result, nil
 		}
@@ -190,12 +191,13 @@ type llmAlternative struct {
 }
 
 type llmRCA struct {
-	Summary              string        `json:"summary"`
-	Severity             string        `json:"severity,omitempty"`
-	SignalName           string        `json:"signal_name,omitempty"`
-	ContributingFactors  []string      `json:"contributing_factors,omitempty"`
-	RemediationTarget    *llmRemTarget `json:"remediation_target,omitempty"`
-	RemediationTargetAlt *llmRemTarget `json:"remediationTarget,omitempty"`
+	Summary               string        `json:"summary"`
+	Severity              string        `json:"severity,omitempty"`
+	SignalName            string        `json:"signal_name,omitempty"`
+	ContributingFactors   []string      `json:"contributing_factors,omitempty"`
+	RemediationTarget     *llmRemTarget `json:"remediation_target,omitempty"`
+	RemediationTargetAlt  *llmRemTarget `json:"remediationTarget,omitempty"`
+	InvestigationAnalysis string        `json:"investigation_analysis,omitempty"`
 }
 
 func (r *llmRCA) resolvedTarget() *llmRemTarget {
@@ -242,6 +244,7 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 		result.Severity = resp.RCA.Severity
 		result.SignalName = resp.RCA.SignalName
 		result.ContributingFactors = resp.RCA.ContributingFactors
+		result.InvestigationAnalysis = resp.RCA.InvestigationAnalysis
 		if t := resp.RCA.resolvedTarget(); t != nil {
 			result.RemediationTarget = katypes.RemediationTarget{
 				Kind:      t.Kind,
@@ -431,6 +434,21 @@ func mergeNestedRemediationTarget(result *katypes.InvestigationResult, jsonStr s
 			Namespace: t.Namespace,
 		}
 	}
+}
+
+// mergeNestedInvestigationAnalysis extracts investigation_analysis from a nested
+// root_cause_analysis object when the flat parse path succeeded but the field
+// is empty. Handles hybrid JSON where the LLM returns flat rca_summary alongside
+// a nested RCA containing investigation_analysis (#724 F2).
+func mergeNestedInvestigationAnalysis(result *katypes.InvestigationResult, jsonStr string) {
+	if result.InvestigationAnalysis != "" {
+		return
+	}
+	var resp llmResponse
+	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil || resp.RCA == nil {
+		return
+	}
+	result.InvestigationAnalysis = resp.RCA.InvestigationAnalysis
 }
 
 // applyFlatFields applies LLM-provided flat fields to the result:

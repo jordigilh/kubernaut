@@ -75,6 +75,61 @@ var _ = Describe("Phase Separation: Schema Contracts — #700", func() {
 		})
 	})
 
+	Describe("UT-KA-724-004: RCAResultSchema contains investigation_analysis property", func() {
+		It("should include investigation_analysis under root_cause_analysis.properties", func() {
+			schema := parser.RCAResultSchema()
+			Expect(schema).NotTo(BeEmpty())
+
+			var parsed map[string]interface{}
+			err := json.Unmarshal(schema, &parsed)
+			Expect(err).NotTo(HaveOccurred())
+
+			props := parsed["properties"].(map[string]interface{})
+			rca := props["root_cause_analysis"].(map[string]interface{})
+			rcaProps := rca["properties"].(map[string]interface{})
+			Expect(rcaProps).To(HaveKey("investigation_analysis"),
+				"RCA schema must include investigation_analysis property for Phase 1 narrative field")
+		})
+	})
+
+	Describe("UT-KA-724-F3: Schema investigation_outcome enum includes inconclusive", func() {
+		It("should include 'inconclusive' in the RCA schema investigation_outcome enum", func() {
+			schema := parser.RCAResultSchema()
+			var parsed map[string]interface{}
+			err := json.Unmarshal(schema, &parsed)
+			Expect(err).NotTo(HaveOccurred())
+
+			props := parsed["properties"].(map[string]interface{})
+			outcomeField := props["investigation_outcome"].(map[string]interface{})
+			enumValues := outcomeField["enum"].([]interface{})
+
+			enumStrings := make([]string, len(enumValues))
+			for i, v := range enumValues {
+				enumStrings[i] = v.(string)
+			}
+			Expect(enumStrings).To(ContainElement("inconclusive"),
+				"investigation_outcome enum must include 'inconclusive' to match parser and Phase 3 template example")
+		})
+
+		It("should include 'inconclusive' in the full investigation schema investigation_outcome enum", func() {
+			schema := parser.InvestigationResultSchema()
+			var parsed map[string]interface{}
+			err := json.Unmarshal(schema, &parsed)
+			Expect(err).NotTo(HaveOccurred())
+
+			props := parsed["properties"].(map[string]interface{})
+			outcomeField := props["investigation_outcome"].(map[string]interface{})
+			enumValues := outcomeField["enum"].([]interface{})
+
+			enumStrings := make([]string, len(enumValues))
+			for i, v := range enumValues {
+				enumStrings[i] = v.(string)
+			}
+			Expect(enumStrings).To(ContainElement("inconclusive"),
+				"investigation_outcome enum must include 'inconclusive' to match parser and Phase 3 template example")
+		})
+	})
+
 	Describe("UT-KA-700-002: InvestigationResultSchema must NOT expose HR fields to LLM (BR-HAPI-200)", func() {
 		It("should contain workflow fields but NOT needs_human_review / human_review_reason", func() {
 			schema := parser.InvestigationResultSchema()
