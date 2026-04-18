@@ -599,6 +599,51 @@ var _ = Describe("#719: Gateway suppresses new RR creation when ManualReviewRequ
 			Expect(existingRR).NotTo(BeNil())
 		})
 	})
+
+	Context("UT-GW-719-004: Mixed RRs — ManualReviewRequired wins over normal terminal", func() {
+		It("should suppress when ManualReviewRequired coexists with a normal terminal RR", func() {
+			// RR-A: Normal successful completion (Remediated) — would allow new RR on its own
+			rrA := &remediationv1alpha1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-normal-completed",
+					Namespace: namespace,
+				},
+				Spec: remediationv1alpha1.RemediationRequestSpec{
+					SignalFingerprint: fingerprint,
+				},
+				Status: remediationv1alpha1.RemediationRequestStatus{
+					OverallPhase: remediationv1alpha1.PhaseCompleted,
+					Outcome:      "Remediated",
+				},
+			}
+			Expect(k8sClient.Create(ctx, rrA)).To(Succeed())
+
+			// RR-B: Subsequent failure requiring human review
+			rrB := &remediationv1alpha1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-manual-review-failed",
+					Namespace: namespace,
+				},
+				Spec: remediationv1alpha1.RemediationRequestSpec{
+					SignalFingerprint: fingerprint,
+				},
+				Status: remediationv1alpha1.RemediationRequestStatus{
+					OverallPhase: remediationv1alpha1.PhaseFailed,
+					Outcome:      "ManualReviewRequired",
+				},
+			}
+			Expect(k8sClient.Create(ctx, rrB)).To(Succeed())
+
+			shouldDedup, existingRR, err := checker.ShouldDeduplicate(ctx, namespace, fingerprint)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(shouldDedup).To(BeTrue(),
+				"#719: ManualReviewRequired on any RR for the fingerprint must suppress new RR creation")
+			Expect(existingRR).NotTo(BeNil())
+			Expect(existingRR.Status.Outcome).To(Equal("ManualReviewRequired"),
+				"#719: The returned RR should be the ManualReviewRequired one for occurrence tracking")
+		})
+	})
 })
 
 // ============================================================================
