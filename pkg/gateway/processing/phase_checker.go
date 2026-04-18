@@ -79,6 +79,7 @@ func NewPhaseBasedDeduplicationChecker(k8sClient client.Reader, cooldownPeriod t
 // - Gateway does NOT count consecutive failures
 // - Gateway does NOT create Blocked RRs
 // - Gateway simply checks: "Is there an active RR?" → update dedup, else create new
+// - #719: ManualReviewRequired outcome on terminal RRs acts as suppression state
 //
 // BR-GATEWAY-185 v1.1: Use spec.signalFingerprint field selector instead of labels
 // - Labels are mutable and truncated to 63 chars (data loss risk)
@@ -132,12 +133,21 @@ func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, 
 	// Check each RR: non-terminal phases (including Verifying) always deduplicate.
 	// #280: Post-completion cooldown removed — Verifying phase covers the dedup gap.
 	// Failed/TimedOut RRs with active exponential backoff also deduplicate (#242, DD-WE-004).
+	// #719: Terminal RRs with Outcome=ManualReviewRequired suppress new RR creation
+	// because human intervention is required — automatic retry adds noise.
 	var mostRecentBackoffRR *remediationv1alpha1.RemediationRequest
 
 	for i := range rrList.Items {
 		rr := &rrList.Items[i]
 
 		if !IsTerminalPhase(rr.Status.OverallPhase) {
+			return true, rr, nil
+		}
+
+		// #719: ManualReviewRequired is a terminal suppression state. A human must
+		// act before the system retries — creating new RRs would only produce
+		// immediately-Blocked noise. Suppresses until the RR is acknowledged.
+		if rr.Status.Outcome == "ManualReviewRequired" {
 			return true, rr, nil
 		}
 

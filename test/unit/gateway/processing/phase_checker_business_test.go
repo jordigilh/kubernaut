@@ -478,6 +478,130 @@ var _ = Describe("Issue #242: Gateway must enforce exponential backoff cooldown 
 })
 
 // ============================================================================
+// BUSINESS OUTCOME TESTS: ManualReviewRequired Terminal Suppression (#719)
+// ============================================================================
+//
+// #719: When an RR reaches Failed with Outcome=ManualReviewRequired, the Gateway
+// should suppress new RR creation for the same fingerprint. Human intervention
+// is required — automatic retry adds noise without value.
+//
+// BUSINESS VALUE:
+// - Prevents spurious Blocked RRs that pile up every alert cycle
+// - Single clear "human review required" signal instead of growing RR list
+// - Avoids wasted enrichment/audit resources on RRs that will be immediately blocked
+// ============================================================================
+
+var _ = Describe("#719: Gateway suppresses new RR creation when ManualReviewRequired is terminal", func() {
+	var (
+		ctx       context.Context
+		k8sClient client.Client
+		scheme    *runtime.Scheme
+		checker   *processing.PhaseBasedDeduplicationChecker
+	)
+
+	const (
+		namespace   = "kubernaut-system"
+		fingerprint = "e5f6a7b8c9d0123456789012345678901234567890abcdef1234567890abcdef"
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = runtime.NewScheme()
+		Expect(remediationv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		k8sClient = fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithStatusSubresource(&remediationv1alpha1.RemediationRequest{}).
+			WithIndex(&remediationv1alpha1.RemediationRequest{}, "spec.signalFingerprint", func(o client.Object) []string {
+				rr := o.(*remediationv1alpha1.RemediationRequest)
+				return []string{rr.Spec.SignalFingerprint}
+			}).
+			Build()
+
+		checker = processing.NewPhaseBasedDeduplicationChecker(k8sClient, 0)
+	})
+
+	Context("UT-GW-719-001: Failed RR with Outcome=ManualReviewRequired", func() {
+		It("should suppress new RR creation — human intervention required", func() {
+			rr := &remediationv1alpha1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-manual-review-terminal",
+					Namespace: namespace,
+				},
+				Spec: remediationv1alpha1.RemediationRequestSpec{
+					SignalFingerprint: fingerprint,
+				},
+				Status: remediationv1alpha1.RemediationRequestStatus{
+					OverallPhase: remediationv1alpha1.PhaseFailed,
+					Outcome:      "ManualReviewRequired",
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			shouldDedup, existingRR, err := checker.ShouldDeduplicate(ctx, namespace, fingerprint)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(shouldDedup).To(BeTrue(),
+				"#719: Failed RR with ManualReviewRequired must suppress new RR creation")
+			Expect(existingRR).NotTo(BeNil())
+			Expect(existingRR.Name).To(Equal("rr-manual-review-terminal"))
+		})
+	})
+
+	Context("UT-GW-719-002: Failed RR without ManualReviewRequired still allows new RR", func() {
+		It("should allow new RR creation for regular Failed RRs (no regression)", func() {
+			rr := &remediationv1alpha1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-failed-normal",
+					Namespace: namespace,
+				},
+				Spec: remediationv1alpha1.RemediationRequestSpec{
+					SignalFingerprint: fingerprint,
+				},
+				Status: remediationv1alpha1.RemediationRequestStatus{
+					OverallPhase: remediationv1alpha1.PhaseFailed,
+					Outcome:      "",
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			shouldDedup, existingRR, err := checker.ShouldDeduplicate(ctx, namespace, fingerprint)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(shouldDedup).To(BeFalse(),
+				"#719: Regular Failed RR without ManualReviewRequired must still allow new RR")
+			Expect(existingRR).To(BeNil())
+		})
+	})
+
+	Context("UT-GW-719-003: Completed RR with Outcome=ManualReviewRequired", func() {
+		It("should suppress new RR creation for any terminal phase with ManualReviewRequired", func() {
+			rr := &remediationv1alpha1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-completed-manual-review",
+					Namespace: namespace,
+				},
+				Spec: remediationv1alpha1.RemediationRequestSpec{
+					SignalFingerprint: fingerprint,
+				},
+				Status: remediationv1alpha1.RemediationRequestStatus{
+					OverallPhase: remediationv1alpha1.PhaseCompleted,
+					Outcome:      "ManualReviewRequired",
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			shouldDedup, existingRR, err := checker.ShouldDeduplicate(ctx, namespace, fingerprint)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(shouldDedup).To(BeTrue(),
+				"#719: Completed RR with ManualReviewRequired must also suppress")
+			Expect(existingRR).NotTo(BeNil())
+		})
+	})
+})
+
+// ============================================================================
 // BUSINESS OUTCOME TESTS: Verifying Phase Deduplication (#280)
 // ============================================================================
 //
