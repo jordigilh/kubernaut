@@ -96,20 +96,21 @@ type investigationTemplateData struct {
 
 // workflowTemplateData maps to fields expected by phase3_workflow_selection.tmpl.
 type workflowTemplateData struct {
-	Severity            string
-	SignalName          string
-	Namespace           string
-	ResourceKind        string
-	ResourceName        string
-	ClusterName         string
-	SignalMode          string
-	PriorityDescription string
-	Environment         string
-	RiskDescription     string
-	RCASummary          string
-	EnrichmentContext   string
-	StructuredOutput    bool
-	Phase1Assessment    string
+	Severity              string
+	SignalName            string
+	Namespace             string
+	ResourceKind          string
+	ResourceName          string
+	ClusterName           string
+	SignalMode            string
+	PriorityDescription   string
+	Environment           string
+	RiskDescription       string
+	RCASummary            string
+	EnrichmentContext     string
+	StructuredOutput      bool
+	Phase1Assessment      string
+	InvestigationAnalysis string
 }
 
 // Phase1RemediationTarget identifies the remediation target from Phase 1 RCA.
@@ -123,11 +124,12 @@ type Phase1RemediationTarget struct {
 // prompt. Populated from the parsed InvestigationResult of runRCA.
 // Only structured fields are propagated — NOT the raw LLM conversation (#715).
 type Phase1Data struct {
-	Severity             string
-	ContributingFactors  []string
-	RemediationTarget    Phase1RemediationTarget
-	InvestigationOutcome string
-	Confidence           float64
+	Severity              string
+	ContributingFactors   []string
+	RemediationTarget     Phase1RemediationTarget
+	InvestigationOutcome  string
+	Confidence            float64
+	InvestigationAnalysis string
 }
 
 // BuilderOption configures prompt builder behaviour.
@@ -236,9 +238,10 @@ func (b *Builder) RenderWorkflowSelection(in WorkflowSelectionInput) (string, er
 		PriorityDescription: withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
 		Environment:         withDefault(sanitized.Environment, "default"),
 		RiskDescription:     withDefault(sanitized.RiskTolerance, inferRisk(sanitized.Severity)),
-		RCASummary:          sanitizeField(in.RCASummary),
-		StructuredOutput:    b.structuredOutput,
-		Phase1Assessment:    formatPhase1Assessment(in.Phase1),
+		RCASummary:            sanitizeField(in.RCASummary),
+		StructuredOutput:      b.structuredOutput,
+		Phase1Assessment:      formatPhase1Assessment(in.Phase1),
+		InvestigationAnalysis: formatInvestigationAnalysis(in.Phase1),
 	}
 
 	if in.EnrichData != nil {
@@ -297,6 +300,13 @@ func formatPhase1Assessment(p1 *Phase1Data) string {
 		return ""
 	}
 	return strings.Join(parts, "\n")
+}
+
+func formatInvestigationAnalysis(p1 *Phase1Data) string {
+	if p1 == nil || p1.InvestigationAnalysis == "" {
+		return ""
+	}
+	return sanitizeField(p1.InvestigationAnalysis)
 }
 
 func sortedLabelString(m map[string]string) string {

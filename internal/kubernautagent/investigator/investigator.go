@@ -731,8 +731,9 @@ func buildPhase1Context(rcaResult *katypes.InvestigationResult) *prompt.Phase1Da
 			Name:      rcaResult.RemediationTarget.Name,
 			Namespace: rcaResult.RemediationTarget.Namespace,
 		},
-		InvestigationOutcome: rcaResult.InvestigationOutcome,
-		Confidence:           rcaResult.Confidence,
+		InvestigationOutcome:  rcaResult.InvestigationOutcome,
+		Confidence:            rcaResult.Confidence,
+		InvestigationAnalysis: rcaResult.InvestigationAnalysis,
 	}
 }
 

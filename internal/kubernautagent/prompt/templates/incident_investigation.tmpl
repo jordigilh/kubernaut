@@ -159,7 +159,8 @@ Choose the tool based on whether the resource is **namespaced** or **cluster-sco
       "kind": "Deployment",
       "name": "resource-name",
       "namespace": "namespace"
-    }
+    },
+    "investigation_analysis": "Concise narrative of investigation findings and reasoning"
   },
   "severity": "high",
   "confidence": 0.95,
@@ -174,3 +175,4 @@ Choose the tool based on whether the resource is **namespaced** or **cluster-sco
 - Top-level severity must match root_cause_analysis.severity
 - confidence indicates your certainty in the root cause analysis (0.0–1.0)
 - For non-actionable outcomes, set actionable to false
+- investigation_analysis: Provide a concise narrative (< 500 words) summarizing what you investigated, what evidence you found, and how you reached your conclusion. This is used by the workflow selection phase to understand the investigation context.
