@@ -94,7 +94,11 @@ var _ = Describe("TP-433-ADV P5: Prompt Parity — GAP-010/012/019", func() {
 				},
 			}
 
-			rendered, err := builder.RenderWorkflowSelection(signal, "Memory limit exceeded", enrichData)
+			rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+				Signal:     signal,
+				RCASummary: "Memory limit exceeded",
+				EnrichData: enrichData,
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).To(ContainSubstring("IncreaseMemory"),
 				"Phase 3 should include action types from history, not just counts")
@@ -115,7 +119,11 @@ var _ = Describe("TP-433-ADV P5: Prompt Parity — GAP-010/012/019", func() {
 				},
 			}
 
-			rendered, err := builder.RenderWorkflowSelection(signal, "Memory limit exceeded", enrichData)
+			rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+				Signal:     signal,
+				RCASummary: "Memory limit exceeded",
+				EnrichData: enrichData,
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).To(ContainSubstring("regression"),
 				"Phase 3 should propagate regression warning")
@@ -127,7 +135,10 @@ var _ = Describe("TP-433-ADV P5: Prompt Parity — GAP-010/012/019", func() {
 			signal := prompt.SignalData{
 				Name: "Alert", Namespace: "default", Severity: "warning", Message: "test",
 			}
-			rendered, err := builder.RenderWorkflowSelection(signal, "RCA summary", nil)
+			rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+				Signal:     signal,
+				RCASummary: "RCA summary",
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).To(ContainSubstring("investigation_outcome"))
 		})

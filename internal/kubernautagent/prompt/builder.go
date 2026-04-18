@@ -109,6 +109,25 @@ type workflowTemplateData struct {
 	RCASummary          string
 	EnrichmentContext   string
 	StructuredOutput    bool
+	Phase1Assessment    string
+}
+
+// Phase1RemediationTarget identifies the remediation target from Phase 1 RCA.
+type Phase1RemediationTarget struct {
+	Kind      string
+	Name      string
+	Namespace string
+}
+
+// Phase1Data carries structured Phase 1 assessment fields into the Phase 3
+// prompt. Populated from the parsed InvestigationResult of runRCA.
+// Only structured fields are propagated — NOT the raw LLM conversation (#715).
+type Phase1Data struct {
+	Severity             string
+	ContributingFactors  []string
+	RemediationTarget    Phase1RemediationTarget
+	InvestigationOutcome string
+	Confidence           float64
 }
 
 // BuilderOption configures prompt builder behaviour.
@@ -193,9 +212,19 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentD
 	return buf.String(), nil
 }
 
+// WorkflowSelectionInput groups the parameters for RenderWorkflowSelection.
+// Optional fields (EnrichData, Phase1) are zero-valued when not available;
+// callers populate only what they have.
+type WorkflowSelectionInput struct {
+	Signal     SignalData
+	RCASummary string
+	EnrichData *EnrichmentData
+	Phase1     *Phase1Data
+}
+
 // RenderWorkflowSelection renders the Phase 3 workflow selection prompt.
-func (b *Builder) RenderWorkflowSelection(signal SignalData, rcaSummary string, enrichData *EnrichmentData) (string, error) {
-	sanitized := sanitizeSignal(signal)
+func (b *Builder) RenderWorkflowSelection(in WorkflowSelectionInput) (string, error) {
+	sanitized := sanitizeSignal(in.Signal)
 	data := workflowTemplateData{
 		Severity:            withDefault(sanitized.Severity, "critical"),
 		SignalName:          withDefault(sanitized.Name, "investigation"),
@@ -207,23 +236,24 @@ func (b *Builder) RenderWorkflowSelection(signal SignalData, rcaSummary string, 
 		PriorityDescription: withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
 		Environment:         withDefault(sanitized.Environment, "default"),
 		RiskDescription:     withDefault(sanitized.RiskTolerance, inferRisk(sanitized.Severity)),
-		RCASummary:          rcaSummary,
+		RCASummary:          in.RCASummary,
 		StructuredOutput:    b.structuredOutput,
+		Phase1Assessment:    formatPhase1Assessment(in.Phase1),
 	}
 
-	if enrichData != nil {
+	if in.EnrichData != nil {
 		var parts []string
-		if len(enrichData.OwnerChain) > 0 {
-			parts = append(parts, "Owner chain: "+strings.Join(enrichData.OwnerChain, " → "))
+		if len(in.EnrichData.OwnerChain) > 0 {
+			parts = append(parts, "Owner chain: "+strings.Join(in.EnrichData.OwnerChain, " → "))
 		}
-		if len(enrichData.DetectedLabels) > 0 {
-			parts = append(parts, "Detected labels: "+sortedLabelString(enrichData.DetectedLabels))
+		if len(in.EnrichData.DetectedLabels) > 0 {
+			parts = append(parts, "Detected labels: "+sortedLabelString(in.EnrichData.DetectedLabels))
 		}
 		// GAP-012: Phase 3 gets full remediation history (not abbreviated counts)
 		// so LLM can make informed workflow selection based on past outcomes.
-		if enrichData.HistoryResult != nil && (len(enrichData.HistoryResult.Tier1) > 0 || len(enrichData.HistoryResult.Tier2) > 0) {
+		if in.EnrichData.HistoryResult != nil && (len(in.EnrichData.HistoryResult.Tier1) > 0 || len(in.EnrichData.HistoryResult.Tier2) > 0) {
 			parts = append(parts, BuildRemediationHistorySection(
-				enrichData.HistoryResult, RepeatedRemediationEscalationThreshold))
+				in.EnrichData.HistoryResult, RepeatedRemediationEscalationThreshold))
 		}
 		data.EnrichmentContext = strings.Join(parts, "\n\n")
 	}
@@ -233,6 +263,36 @@ func (b *Builder) RenderWorkflowSelection(signal SignalData, rcaSummary string, 
 		return "", fmt.Errorf("rendering workflow selection template: %w", err)
 	}
 	return buf.String(), nil
+}
+
+func formatPhase1Assessment(p1 *Phase1Data) string {
+	if p1 == nil {
+		return ""
+	}
+	var parts []string
+	if p1.Severity != "" {
+		parts = append(parts, "- **Severity**: "+p1.Severity)
+	}
+	if len(p1.ContributingFactors) > 0 {
+		parts = append(parts, "- **Contributing Factors**: "+strings.Join(p1.ContributingFactors, "; "))
+	}
+	if p1.RemediationTarget.Kind != "" {
+		target := p1.RemediationTarget.Kind + "/" + p1.RemediationTarget.Name
+		if p1.RemediationTarget.Namespace != "" {
+			target += " (ns: " + p1.RemediationTarget.Namespace + ")"
+		}
+		parts = append(parts, "- **Remediation Target**: "+target)
+	}
+	if p1.InvestigationOutcome != "" {
+		parts = append(parts, "- **Investigation Outcome**: "+p1.InvestigationOutcome)
+	}
+	if p1.Confidence > 0 {
+		parts = append(parts, fmt.Sprintf("- **Confidence**: %.2f", p1.Confidence))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "\n")
 }
 
 func sortedLabelString(m map[string]string) string {

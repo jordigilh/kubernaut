@@ -97,13 +97,16 @@ var _ = Describe("Prompt Content Parity — TP-433-PARITY (#433)", func() {
 			builder, err := prompt.NewBuilder()
 			Expect(err).NotTo(HaveOccurred())
 
-			rendered, err := builder.RenderWorkflowSelection(prompt.SignalData{
-				Name:       "mem-exhaustion-predicted",
-				Namespace:  "production",
-				Severity:   "warning",
-				Message:    "Memory exhaustion predicted in 2h",
-				SignalMode: "proactive",
-			}, "Memory trending toward limit", nil)
+			rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+				Signal: prompt.SignalData{
+					Name:       "mem-exhaustion-predicted",
+					Namespace:  "production",
+					Severity:   "warning",
+					Message:    "Memory exhaustion predicted in 2h",
+					SignalMode: "proactive",
+				},
+				RCASummary: "Memory trending toward limit",
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(strings.ToLower(rendered)).To(ContainSubstring("proactive"))
 			Expect(rendered).To(ContainSubstring("is predicted"))
