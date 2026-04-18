@@ -119,10 +119,13 @@ var _ = Describe("Phase Separation: Prompt Contracts — #700", func() {
 
 	Describe("UT-KA-700-006: Workflow selection prompt retains full content", func() {
 		It("should contain all workflow discovery tools and submit_result with full schema", func() {
-			rendered, err := builder.RenderWorkflowSelection(prompt.SignalData{
-				Name: "api-server-abc", Namespace: "production", Severity: "critical",
-				Message: "OOMKilled",
-			}, "OOMKilled due to memory limit exceeded on api-server", nil)
+			rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+				Signal: prompt.SignalData{
+					Name: "api-server-abc", Namespace: "production", Severity: "critical",
+					Message: "OOMKilled",
+				},
+				RCASummary: "OOMKilled due to memory limit exceeded on api-server",
+			})
 			Expect(err).NotTo(HaveOccurred())
 
 			By("including workflow discovery references")

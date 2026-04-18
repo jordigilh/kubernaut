@@ -678,32 +678,40 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 
 			// Query for events in the last hour (simulates auditor querying historical data)
 			// DataStorage API uses "since" (relative time like "1h") and "until" (absolute RFC3339)
-			respByTime, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
-				CorrelationID: dsgen.NewOptString(correlationID),
-				Since:         dsgen.NewOptString("1h"), // Last 1 hour
-				Limit:         dsgen.NewOptInt(100),
-			})
-			Expect(err).ToNot(HaveOccurred(), "Timestamp range query must succeed")
+			//
 			// Spec-mandated audit events for this scenario (6 total):
 			//   3 lifecycle: started, transitioned, created  (DD-AUDIT-003)
 			//   1 webhook:   remediationapprovalrequest.decided (ADR-034 v1.7 two-event pattern: WHO)
 			//   1 approval:  orchestrator.approval.approved     (ADR-034 v1.7 two-event pattern: WHAT/WHY)
 			//   1 webhook:   remediationrequest.timeout_modified (BR-AUDIT-005 Gap #8)
-			Expect(respByTime.Data).To(HaveLen(6),
-				"COMPLIANCE: Audit events must be queryable by timestamp (SOC 2 CC7.2)")
-
-			eventTypes := make([]string, len(respByTime.Data))
-			for i, evt := range respByTime.Data {
-				eventTypes[i] = evt.EventType
-			}
-			Expect(eventTypes).To(ConsistOf(
+			//
+			// The timeout_modified event may still be in-flight from the AuthWebhook
+			// audit buffer when earlier assertions pass, so poll until all 6 arrive.
+			expectedTypes := []string{
 				roaudit.EventTypeLifecycleStarted,
 				roaudit.EventTypeLifecycleTransitioned,
 				roaudit.EventTypeLifecycleCreated,
 				authwebhook.EventTypeRARDecided,
 				roaudit.EventTypeApprovalApproved,
 				authwebhook.EventTypeTimeoutModified,
-			), "COMPLIANCE: Each spec-mandated audit event must appear exactly once (no duplicates, no missing)")
+			}
+			Eventually(func(g Gomega) {
+				resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+					CorrelationID: dsgen.NewOptString(correlationID),
+					Since:         dsgen.NewOptString("1h"),
+					Limit:         dsgen.NewOptInt(100),
+				})
+				g.Expect(err).ToNot(HaveOccurred(), "Timestamp range query must succeed")
+				g.Expect(resp.Data).To(HaveLen(6),
+					"COMPLIANCE: Audit events must be queryable by timestamp (SOC 2 CC7.2)")
+
+				eventTypes := make([]string, len(resp.Data))
+				for i, evt := range resp.Data {
+					eventTypes[i] = evt.EventType
+				}
+				g.Expect(eventTypes).To(ConsistOf(expectedTypes),
+					"COMPLIANCE: Each spec-mandated audit event must appear exactly once (no duplicates, no missing)")
+			}, 15*time.Second, 1*time.Second).Should(Succeed())
 
 			// BUSINESS OUTCOME 4: Verify actor is present in audit data (forensic investigation)
 			By("Verifying actor identity is retrievable (forensic investigation scenario)")

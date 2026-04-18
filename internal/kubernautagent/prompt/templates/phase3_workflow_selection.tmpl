@@ -37,6 +37,11 @@ enrichment context provided.
 
 {{ .RCASummary }}
 {{ end }}
+{{ if .Phase1Assessment }}
+## Phase 1 Assessment
+
+{{ .Phase1Assessment }}
+{{ end }}
 {{ if .EnrichmentContext }}
 ## Enrichment Context
 

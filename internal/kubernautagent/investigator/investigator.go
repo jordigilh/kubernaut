@@ -186,7 +186,9 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		inv.pipeline.AnomalyDetector.Reset()
 	}
 
-	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, tokens, correlationID)
+	p1Ctx := buildPhase1Context(rcaResult)
+
+	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, tokens, correlationID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
 	}
@@ -194,6 +196,8 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	if workflowResult.RCASummary == "" {
 		workflowResult.RCASummary = rcaResult.RCASummary
 	}
+
+	mergePhase1Fallbacks(workflowResult, p1Ctx)
 
 	backfillSeverity(workflowResult, signal)
 	attachDetectedLabels(workflowResult, enrichData)
@@ -295,8 +299,13 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	return result, nil
 }
 
-func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string) (*katypes.InvestigationResult, error) {
-	systemPrompt, err := inv.builder.RenderWorkflowSelection(signalToPrompt(signal), rcaSummary, enrichData)
+func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string) (*katypes.InvestigationResult, error) {
+	systemPrompt, err := inv.builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+		Signal:     signalToPrompt(signal),
+		RCASummary: rcaSummary,
+		EnrichData: enrichData,
+		Phase1:     p1Ctx,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("rendering workflow selection prompt: %w", err)
 	}
@@ -706,6 +715,47 @@ func toolErrorJSON(msg string) string {
 	}{Status: "error", Error: msg}
 	b, _ := json.Marshal(payload)
 	return string(b)
+}
+
+// buildPhase1Context extracts structured assessment fields from the Phase 1
+// InvestigationResult for propagation into Phase 3 (HAPI parity: #715).
+func buildPhase1Context(rcaResult *katypes.InvestigationResult) *prompt.Phase1Data {
+	if rcaResult == nil {
+		return nil
+	}
+	return &prompt.Phase1Data{
+		Severity:            rcaResult.Severity,
+		ContributingFactors: rcaResult.ContributingFactors,
+		RemediationTarget: prompt.Phase1RemediationTarget{
+			Kind:      rcaResult.RemediationTarget.Kind,
+			Name:      rcaResult.RemediationTarget.Name,
+			Namespace: rcaResult.RemediationTarget.Namespace,
+		},
+		InvestigationOutcome: rcaResult.InvestigationOutcome,
+		Confidence:           rcaResult.Confidence,
+	}
+}
+
+// mergePhase1Fallbacks applies Phase 1 assessment fields to the Phase 3 result
+// when Phase 3 did not produce them. Matches HAPI's result.setdefault() pattern:
+// Phase 3 values always take precedence; Phase 1 fills in gaps only.
+func mergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1Data) {
+	if result == nil || p1 == nil {
+		return
+	}
+	if result.Severity == "" && p1.Severity != "" {
+		result.Severity = p1.Severity
+	}
+	if len(result.ContributingFactors) == 0 && len(p1.ContributingFactors) > 0 {
+		result.ContributingFactors = p1.ContributingFactors
+	}
+	if result.Confidence == 0 && p1.Confidence > 0 {
+		result.Confidence = p1.Confidence
+	}
+	if result.InvestigationOutcome == "" && p1.InvestigationOutcome != "" {
+		result.InvestigationOutcome = p1.InvestigationOutcome
+		parser.ApplyInvestigationOutcome(result, p1.InvestigationOutcome)
+	}
 }
 
 func signalToPrompt(s katypes.SignalContext) prompt.SignalData {
