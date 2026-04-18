@@ -64,7 +64,7 @@ Track progress on the [v1.3 milestone](https://github.com/jordigilh/kubernaut/mi
 - **MCP interactive mode** — Human operators can investigate, enrich, and select remediation workflows through any MCP-compatible chat interface — IDE copilots, Slack bots, operational consoles, or custom UIs ([#703](https://github.com/jordigilh/kubernaut/issues/703))
 - **A2A protocol support** — External AI agents can delegate remediation to Kubernaut and track task lifecycle via the [Agent-to-Agent](https://a2aproject.github.io/A2A/latest/specification/) standard ([#705](https://github.com/jordigilh/kubernaut/issues/705))
 - **API Frontend service** — Unified external protocol layer hosting MCP and inbound A2A endpoints, with shared CRD watching for live remediation status streaming ([#708](https://github.com/jordigilh/kubernaut/issues/708))
-- **Investigation Prompt Bundles** — Customers inject their SOPs into the investigation pipeline via OCI-packaged prompts and skills, enabling pre/post-investigation hooks and customizable RCA flows ([#711](https://github.com/jordigilh/kubernaut/issues/711))
+- **Investigation Prompt Bundles** — Customers inject their SOPs into the investigation pipeline via OCI-packaged prompts and skills, laying the groundwork for hook phases and customizable RCA flows while the current prompt-builder-driven path is validated ([#711](https://github.com/jordigilh/kubernaut/issues/711))
 - **Prompt injection guardrails** — Shadow agent with a dedicated scanning model to protect the agentic pipeline against prompt injection attacks ([#601](https://github.com/jordigilh/kubernaut/issues/601))
 - **Operator workflow/parameter override** — Allow operators to override workflow selection and parameters during RAR approval
 
@@ -83,6 +83,8 @@ Track progress on the [v1.5 milestone](https://github.com/jordigilh/kubernaut/mi
 ### v1.6 — Multi-Cluster Federation (planned)
 
 - **Fleet-wide remediation** — A2A-based multi-cluster architecture enabling centralized signal ingestion, cross-cluster RCA investigation, and federated workflow execution across Kubernetes fleets
+
+Goose/ACP remains under architectural evaluation as a future runtime option and is not a near-term dependency for the v1.4-v1.6 roadmap.
 
 ### v1.2 — Operational Resilience and Security Hardening ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.2.0))
 
