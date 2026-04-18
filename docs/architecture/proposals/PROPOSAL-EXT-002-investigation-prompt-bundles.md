@@ -85,7 +85,7 @@ spec:
 | `metadata.name` | Yes | Unique identifier for the bundle |
 | `metadata.labels` | No | Standard labels for filtering and ordering. `kubernaut.ai/phase` must match `spec.phase` |
 | `spec.phase` | Yes | The hook point where this bundle executes |
-| `spec.prompt` | Yes | Go template string. Has access to the template data contract fields for the bundle's phase |
+| `spec.prompt` | Yes | Go template string rendered with `missingkey=error`. Has access to the template data contract fields for the bundle's phase. Undefined field references produce hard errors, not silent empty strings |
 | `spec.skills` | No | List of skill references. OCI digests (`@sha256:`) for external skills, `builtin://` for KA's internal tools |
 | `spec.outputSchema` | Conditional | Required for `rca-resolution` and `workflow-selection` phases. JSON Schema enforced via `submit_result` tool. Omitted for `pre-investigation`, `investigation`, and `post-investigation` (natural language output) |
 
@@ -394,7 +394,7 @@ For each phase, KA:
 3. For each bundle:
    a. Pulls and caches any referenced skill artifacts from the skills marketplace
    b. Registers the skill tools in the LLM tool set for that invocation
-   c. Renders the Go template with the current template data context
+   c. Renders the Go template with `Option("missingkey=error")` and the current template data context
    d. Executes the LLM loop (system prompt + tool calls)
    e. Captures the output (natural language or structured JSON)
    f. Appends the output to `PriorPhaseOutputs` for subsequent phases
@@ -602,12 +602,15 @@ KA resolves prompt bundles from two sources, in priority order:
 # kubernaut-agent config
 promptBundles:
   registryURL: "registry.example.com/kubernaut-bundles"
+  failurePolicy: failClosed   # global default: abort pipeline on bundle failure
   pullSecrets:
     - name: "registry-credentials"
   bundles:
     - ref: "registry.example.com/bundles/acme-cmdb-precheck@sha256:abc123..."
     - ref: "registry.example.com/bundles/acme-post-rca-enrichment@sha256:def456..."
     - ref: "registry.example.com/bundles/acme-custom-investigation@sha256:789abc..."
+    - ref: "registry.example.com/bundles/optional-metrics-enrichment@sha256:fed987..."
+      failurePolicy: failOpen  # per-bundle override: this enrichment is nice-to-have
 
 skillsMarketplace:
   registryURL: "marketplace.kubernaut.ai/skills"
@@ -646,11 +649,11 @@ When a bundle is pulled, KA validates:
 
 | Check | Failure Action |
 |-------|---------------|
-| YAML parse | Reject bundle, log error, fall back to default |
+| YAML parse | Reject bundle, log error, apply failure policy (see 8.3) |
 | `apiVersion` supported | Reject if KA doesn't support the requested contract version |
 | `kind` == `PromptBundle` | Reject |
 | `spec.phase` is a known hook point | Reject |
-| `spec.prompt` is a valid Go template | Reject (template parse error) |
+| `spec.prompt` is a valid Go template | Reject (template parse error). Templates are parsed with `Option("missingkey=error")` -- any reference to an undefined field is a hard error, not a silent empty string |
 | `spec.skills` references resolvable | Reject if any OCI digest fails to pull or any `builtin://` tool is unknown |
 | `spec.outputSchema` present for structured phases | Reject if missing for `rca-resolution`, `workflow-selection` |
 | `spec.outputSchema` compatible with required schema | Reject if required fields are missing from the customer's schema |
@@ -661,12 +664,39 @@ After the LLM produces output via `submit_result`:
 
 1. Validate the JSON against the bundle's `outputSchema`
 2. If validation fails, log the error and attempt self-correction (existing `SelfCorrect` pattern from `investigator.go`)
-3. If self-correction exhausts retries, fall back to the default built-in bundle for that phase
-4. Record the fallback event in the audit trail
+3. If self-correction exhausts retries, apply the configured failure policy (see 8.3)
+4. Record the failure event in the audit trail
 
-### 8.3 Fallback Guarantee
+### 8.3 Failure Policy
 
-For the three required phases (`investigation`, `rca-resolution`, `workflow-selection`), KA always has a fallback: the built-in default bundle. A customer bundle failure never breaks the pipeline -- it degrades to default behavior with full audit trail visibility.
+Bundle execution failures are governed by a configurable **failure policy**. The policy determines whether the investigation pipeline continues with defaults or aborts when a customer bundle fails.
+
+| Policy | Behavior | Default |
+|--------|----------|---------|
+| `failClosed` | **Abort the investigation**. The `RemediationRequest` transitions to a terminal error state with a clear diagnostic message identifying the failed bundle and phase. Requires human review. | **Yes (default)** |
+| `failOpen` | Fall back to the built-in default bundle for that phase. The investigation continues but the customer's SOP was not applied. A warning is recorded in the audit trail. | No |
+
+**Why `failClosed` is the default**: Silently falling back to defaults produces an investigation that *looks* correct but skips the customer's SOPs. If a customer configured a CMDB pre-check to prevent remediation of decommissioned resources, falling back means that check never ran -- yet the pipeline proceeds as if everything is fine. This is worse than failing loudly, because the operator sees "investigation complete, workflow selected" without realizing their safety gate was skipped.
+
+`failOpen` is available for non-critical hook points (e.g., a `pre-investigation` enrichment bundle where the investigation is still valid without it), but the customer must explicitly opt in.
+
+The failure policy is configured per-bundle and globally:
+
+```yaml
+# Global default (applies to all bundles unless overridden)
+promptBundles:
+  failurePolicy: failClosed   # default
+
+  bundles:
+    # Per-bundle override
+    - ref: "registry.example.com/bundles/acme-cmdb-precheck@sha256:abc123..."
+      failurePolicy: failClosed   # explicit: abort if CMDB check fails
+
+    - ref: "registry.example.com/bundles/optional-enrichment@sha256:def456..."
+      failurePolicy: failOpen     # opt-in: this enrichment is nice-to-have
+```
+
+For the three required phases (`investigation`, `rca-resolution`, `workflow-selection`), KA always has a built-in default bundle available. When `failOpen` is configured and a customer bundle fails, KA falls back to the default with full audit trail visibility. When `failClosed` is configured, the built-in bundle is not used as a fallback -- the pipeline aborts.
 
 ---
 
@@ -700,8 +730,9 @@ Every prompt bundle execution is recorded in the audit trail:
 - Skill artifacts resolved and their digests
 - LLM prompt (rendered template)
 - LLM response (natural language or structured JSON)
-- Validation result (pass/fail/fallback)
-- Fallback events (if customer bundle failed and default was used)
+- Validation result (pass/fail)
+- Failure policy applied (`failClosed` -> pipeline aborted, `failOpen` -> fell back to default)
+- Fallback events with reason (if `failOpen` was configured and default was used)
 
 ---
 
@@ -717,19 +748,20 @@ Every prompt bundle execution is recorded in the audit trail:
 | Template data contract types | 0.5w | `PhaseOutput`, extended template data struct |
 | Phase execution orchestrator | 2w | Replace hardcoded `runRCA`/`runWorkflowSelection` with phase-driven loop |
 | Output propagation (natural language + structured) | 1w | `PriorPhaseOutputs` accumulation, `.Investigation` population |
-| Pull-time + runtime validation | 1w | Schema compatibility check, fallback logic |
+| Pull-time + runtime validation | 1w | Schema compatibility check, failure policy (failClosed/failOpen), per-bundle override |
 | Configuration (Helm, config YAML) | 0.5w | `promptBundles` and `skillsMarketplace` config sections |
 | Built-in bundle extraction | 1w | Extract current `.tmpl` files into embedded YAML bundles |
 | Audit trail integration | 0.5w | New audit event types for bundle execution |
-| Unit tests (Ginkgo/Gomega) | 2w | Bundle parsing, template rendering, phase orchestration, validation, fallback |
+| Unit tests (Ginkgo/Gomega) | 2w | Bundle parsing, template rendering, phase orchestration, validation, failure policy (failClosed/failOpen) |
 | Integration tests | 1.5w | End-to-end bundle resolution, skill discovery, phase execution with mock LLM |
 
 ### 10.2 Totals
 
 | Scope | 1 Developer | 2 Developers (parallel) |
 |-------|-------------|------------------------|
-| Full implementation | 13.5 weeks | 8 weeks |
-| MVP (investigation + workflow-selection bundles only, no pre/post hooks) | 8 weeks | 5 weeks |
+| Full implementation (all 5 hook points) | 13.5 weeks | 8 weeks |
+
+**Note**: There is no separate MVP scope because the phase executor is a single reusable component. Once `executeBundlePhase(phase, bundles, context)` works for one hook point, wiring it to the remaining four is configuration, not new code. The effort is in the executor, not the hook points.
 
 ### 10.3 Dependencies
 
@@ -739,8 +771,8 @@ Every prompt bundle execution is recorded in the audit trail:
 ### 10.4 Risks
 
 1. **Skills marketplace format instability** -- The marketplace project is actively defining its artifact format. KA's `SkillResolver` must be designed as an interface that can adapt to format changes without requiring prompt bundle manifest changes.
-2. **Template complexity** -- Customer-authored Go templates may produce unexpected output. Pull-time template parsing catches syntax errors, but semantic correctness (e.g., referencing `.Investigation.RCASummary` in a `pre-investigation` bundle where it's not yet available) requires documentation and possibly runtime warnings.
-3. **LLM compliance with custom schemas** -- Custom `outputSchema` values may be harder for the LLM to follow than Kubernaut's well-tested defaults. The self-correction + fallback mechanism mitigates this, but customers may see higher fallback rates with complex schemas.
+2. **Template complexity** -- Customer-authored Go templates may produce unexpected output. Mitigated by `missingkey=error` (typos and undefined fields produce hard errors, not silent empty strings) and pull-time template parsing (catches syntax errors). Semantic issues (e.g., referencing `.Investigation.RCASummary` in `pre-investigation` where it's not yet populated) are caught at render time since the field is nil. Full semantic validation deferred to `kubernaut bundle test` (DG-5).
+3. **LLM compliance with custom schemas** -- Custom `outputSchema` values may be harder for the LLM to follow than Kubernaut's well-tested defaults. The self-correction mechanism mitigates this. Under `failClosed` (default), schema non-compliance after retries aborts the pipeline -- customers must validate their schemas thoroughly. Under `failOpen`, the built-in bundle takes over, but the customer's intent is lost.
 
 ---
 
@@ -748,13 +780,12 @@ Every prompt bundle execution is recorded in the audit trail:
 
 | Version | Capability | Notes |
 |---------|-----------|-------|
-| **v1.5** | MVP: investigation + workflow-selection bundles from OCI, builtin skill refs only | No external skills, no pre/post hooks. Validates the bundle format and phase orchestration. |
+| **v1.5** | All five hook points with builtin skill refs and failure policy | The phase executor is a single reusable component; wiring it to five hook points is configuration, not new code. Builtin skills only. `failClosed` default. |
 | **v1.5** | Skills marketplace integration | External skill resolution via OCI pull. Requires marketplace format to be stable. |
-| **v1.6** | Pre/post-investigation hooks | Customer SOP injection with natural language propagation. |
-| **v1.6** | `rca-resolution` phase | Conflict resolution for multi-source RCA findings. |
-| **v1.7+** | Agent marketplace integration | A2A agent artifacts as skill-like dependencies. Extends the skill resolver to handle agent delegation. |
-| **v1.7+** | OCI signature verification (sigstore) | Blocked on sigstore adoption for workflow bundles. Same infrastructure reused. |
-| **v1.7+** | Prompt Bundle marketplace | Customers publish and share prompt bundles via a dedicated marketplace. |
+| **v1.6** | Agent marketplace integration | A2A agent artifacts as skill-like dependencies. Extends the skill resolver to handle agent delegation. |
+| **v1.6** | `kubernaut bundle test` CLI | Validates a bundle against synthetic signal data with a mock or real LLM. Verifies: template renders, declared skills are called, output meets expectations. Analogous to `helm template` + `conftest` for prompts. |
+| **v1.6+** | OCI signature verification (sigstore) | Blocked on sigstore adoption for workflow bundles. Same infrastructure reused. |
+| **v1.6+** | Prompt Bundle marketplace | Customers publish and share prompt bundles via a dedicated marketplace. |
 
 ### Design Gates
 
@@ -763,7 +794,8 @@ Every prompt bundle execution is recorded in the audit trail:
 | **DG-1: OCI signature verification** | How do we verify prompt bundle and skill artifact signatures? | **Deferred** -- blocked on sigstore adoption for workflow bundles. Digests provide integrity; signatures add authenticity. |
 | **DG-2: Template data contract versioning** | How do we evolve the template data contract without breaking existing bundles? | **Resolved** -- `apiVersion` field in manifest. Additive changes in `v1alpha1`, breaking changes require version bump. Multiple versions supported concurrently. |
 | **DG-3: OCI media type for prompt bundles** | What media type identifies prompt bundle artifacts in OCI registries? | **Resolved** -- `application/vnd.kubernaut.promptbundle.v1+yaml`. |
-| **DG-4: Core phase override safety** | How do we prevent customer bundles from breaking required phases? | **Resolved** -- Pull-time schema compatibility check + runtime validation with self-correction + fallback to default built-in bundle. |
+| **DG-4: Core phase override safety** | How do we prevent customer bundles from breaking required phases? | **Resolved** -- Pull-time schema compatibility check + runtime validation with self-correction + configurable failure policy (`failClosed` default aborts pipeline; `failOpen` falls back to built-in bundle). |
+| **DG-5: Bundle testing** | How do customers validate bundles before deployment? | **Deferred** to v1.6 -- `kubernaut bundle test` CLI that runs a bundle against synthetic signal data, verifies template rendering, skill invocation, and output shape. Without this, semantic validation (prompt produces correct behavior) only happens at runtime. |
 
 ---
 
@@ -781,7 +813,73 @@ The following existing code locations are the primary integration points for pro
 | MCP server config | `pkg/kubernautagent/tools/mcp/config.go` | `ServerConfig` reused for skill endpoint configuration |
 | LLM loop | `internal/kubernautagent/investigator/investigator.go` | `runLLMLoop()` unchanged -- receives merged tool definitions from the phase orchestrator |
 
-## Appendix B: Glossary
+## Appendix B: Design Rationale -- The WAR File Analogy
+
+The PromptBundle is a novel artifact in the LLM agent ecosystem. While components exist -- OCI for distribution, tool definitions (e.g., in Agent Skills OCI), prompt content itself -- no existing standard combines a prompt, its required tool/skill dependencies, the expected output contract, and pipeline metadata into a single, deployable, OCI-packaged unit for agentic execution.
+
+To understand the PromptBundle's role, consider the analogy of a Java Web Archive (WAR) file in an application server (e.g., Tomcat, JBoss):
+
+| Concept | Java WAR File Analogy | PromptBundle Analogy |
+|---|---|---|
+| **Deployable Unit** | WAR file (`.war`) | PromptBundle OCI artifact |
+| **Contains** | Web application code (`.java`, `.jsp`, `.js`), libraries (`.jar`), configuration (`web.xml`) | Prompt template, skill references, output schema, pipeline hooks |
+| **Runtime** | Java Virtual Machine (JVM) | Large Language Model (LLM) |
+| **Application Server**| Tomcat, JBoss (provides environment, manages lifecycle) | Kubernaut Agent (KA) (provides execution environment, manages prompt/skill lifecycle) |
+| **Dependencies** | Shared JARs in app server's lib | Built-in tools, OCI-packaged skills (from marketplace) |
+| **Execution Flow** | Servlet invocation, JSP rendering | Prompt injection, tool execution, output parsing |
+| **Goal** | Standardized, portable web app deployment | Standardized, portable agentic behavior definition |
+
+**Why not existing formats?**
+
+*   **Agent Skills OCI (e.g., from A2A Project)**: Defines tools/skills (schemas, descriptions, endpoints) and their distribution as OCI artifacts. This is analogous to a `.jar` library. A PromptBundle *consumes* these skills, but doesn't define the prompt content or output contract.
+*   **A2A Agent Card**: Describes an agent's capabilities and services it exposes, similar to a `service.yaml` in Kubernetes or a WSDL. It doesn't contain the specific prompts for *how* the agent should operate internally, nor its skill dependencies.
+*   **MCP Prompts (e.g., raw prompt text)**: This is just the "code" or "script" (`.java` or `.jsp` equivalent). It lacks packaging, metadata, dependencies, and output contracts required for robust, shareable, and verifiable agentic behavior.
+
+The PromptBundle bridges this gap by combining these elements into a single, deployable artifact that defines a specific LLM interaction pattern within the Kubernaut Agent's pipeline.
+
+## Appendix C: Adversarial Review and Design Decisions
+
+This design was subjected to adversarial review to identify weaknesses. The following critiques were raised and resolved:
+
+### Critique 1: Silent Fallback Masks SOP Bypass (Severity: High)
+
+**Concern**: The original design defaulted to `failOpen`, silently falling back to built-in bundles when customer bundles failed. This means a CMDB pre-check could fail silently, and the pipeline would proceed as if the check never existed -- producing an investigation that *looks* correct but skipped the customer's safety gate.
+
+**Resolution**: Default failure policy changed to `failClosed`. The pipeline aborts on bundle failure, producing a clear error in the `RemediationRequest` status. `failOpen` is available as an explicit opt-in for non-critical enrichment bundles. See Section 8.3.
+
+### Critique 2: LLM Cost Multiplier
+
+**Concern**: Five sequential LLM invocations (one per phase) multiplies cost and latency vs. the current single-shot approach.
+
+**Assessment**: Dismissed as a design concern. The phase model is correct -- cost is a deployment consideration. Customers who don't configure pre/post hooks execute the same number of LLM calls as today (investigation + rca-resolution + workflow-selection vs. current RCA + workflow-selection, plus one new rca-resolution call that is a low-cost structuring pass with no tool calls). Pre/post hooks are opt-in and customers accept the cost trade-off for SOP compliance.
+
+### Critique 3: Reusable Phase Executor
+
+**Concern**: Five hook points suggested overengineering; an MVP should start with one or two phases.
+
+**Assessment**: Dismissed. The implementation is a single reusable `executeBundlePhase(phase, bundles, context)` function: download bundle, unpack, resolve skills, render template, run LLM with skills, capture output, append to context. Wiring this function to five hook points is configuration, not new code. The effort is in the executor, not the number of phases. See Section 10.2.
+
+### Critique 4: Go Template Power Gives Customers Enough Rope
+
+**Concern**: Go templates are Turing-complete (`{{if}}`, `{{range}}`, function maps). A customer could write a template that panics KA or produces unexpected behavior.
+
+**Status**: Mitigated. Templates are rendered with `Option("missingkey=error")`, which turns undefined field references (typos like `{{ .Signal.Namspace }}`) into hard errors instead of silent empty strings. Combined with pull-time template parsing (syntax errors) and a restricted function map (no arbitrary function calls), the attack surface is limited to valid template operations over the declared data contract. Full semantic validation deferred to `kubernaut bundle test` CLI (see DG-5).
+
+### Critique 5: Non-Deterministic Output from Prompt Bundles
+
+**Concern**: Prompts are probabilistic. The same bundle, same data, same LLM can produce different natural language outputs. OCI digests guarantee the prompt didn't change, but guarantee nothing about what it will produce. The deterministic infrastructure (OCI, schemas, digests) creates a false sense of safety over a non-deterministic artifact.
+
+**Assessment**: This critique applies a wrong mental model to the NL phases (`pre-investigation`, `investigation`, `post-investigation`). These phases produce **context for another LLM**, not output for a parser or a human decision gate. "Resource is registered in CMDB and available" vs. "CMDB confirms foo-pod is active" are semantically equivalent to the consuming LLM. The design is **mandatory context injection**: instead of hoping the investigation LLM will discover and call the CMDB tool (it might skip it), the pre-investigation phase forces the call, captures the result, and delivers it as given context (RAG). The investigation LLM sees it as fact, not as an optional tool. Non-determinism of phrasing is irrelevant when the consumer understands natural language.
+
+Initially this critique was thought to hold for `rca-resolution`, where natural language is structured into JSON. However, the structuring mechanism is `submit_result` -- a **tool call**, not raw JSON output. Tool calling is a first-class LLM capability with typed parameter schemas, supported by virtually all models (unlike native structured/JSON output, which is model-dependent). The rca-resolution LLM reads the investigation narrative and calls `submit_result` with the `InvestigationResult` schema -- the same tool-calling pattern the investigation phase uses for `get_pod_logs` or `query_prometheus`. This is not NL-to-JSON-via-parsing; it is NL-to-tool-call, which is a well-proven pattern already working in the current KA codebase. Additional safety: `outputSchema` validation + self-correction retries + `failClosed` if structuring fails.
+
+### Critique 6: No Customer Testing Story
+
+**Concern**: Customers have no way to validate a prompt bundle before deployment. Pull-time validation catches syntax but not semantics. The first semantic failure happens at runtime.
+
+**Status**: Accepted. `kubernaut bundle test` CLI is planned for v1.6 (see DG-5, Evolution Path). The expected contract: a bundle test validates that the template renders, the declared skills are called, and the output meets expected shape/patterns. Until then, customers validate in staging environments.
+
+## Appendix D: Glossary
 
 | Term | Definition |
 |------|------------|
