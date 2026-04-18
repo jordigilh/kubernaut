@@ -781,7 +781,47 @@ The following existing code locations are the primary integration points for pro
 | MCP server config | `pkg/kubernautagent/tools/mcp/config.go` | `ServerConfig` reused for skill endpoint configuration |
 | LLM loop | `internal/kubernautagent/investigator/investigator.go` | `runLLMLoop()` unchanged -- receives merged tool definitions from the phase orchestrator |
 
-## Appendix B: Glossary
+## Appendix B: Design Rationale -- The WAR File Analogy
+
+### Why a new format?
+
+The Prompt Bundle is a novel artifact type. No existing standard packages a prompt + skill dependencies + output contract + pipeline metadata into a single distributable unit. The landscape has adjacent specs that each cover part of the problem:
+
+| Existing Standard | What It Covers | What It Doesn't Cover |
+|-------------------|---------------|----------------------|
+| [Agent Skills OCI Artifacts Spec](https://github.com/ThomasVitale/agents-skills-oci-artifacts-spec) (v0.1.0, 2026) | Packaging and distributing skills (tool definitions, scripts) as OCI artifacts with digest-based immutability and Sigstore signing | The prompt that uses those skills, output contracts, pipeline phase ordering |
+| [A2A Agent Card](https://a2aproject.github.io/A2A/latest/specification/) | Capability advertisement and discovery (`skills[]`, endpoint, auth) | Distributable artifacts, prompt content, execution semantics |
+| [MCP Prompts](https://modelcontextprotocol.io) | Runtime-served parameterized prompt templates | OCI packaging, skill dependencies, output schema, pipeline awareness |
+
+The Prompt Bundle is the union: a deployable artifact that tells an agent "run this prompt, with these tools, expecting this output, at this pipeline phase."
+
+### The Java WAR file analogy
+
+The relationship between a Prompt Bundle, an agent, and an LLM mirrors the relationship between a WAR file, an application server, and the JVM:
+
+| Java EE | Prompt Bundle |
+|---------|---------------|
+| `.war` file (deployable artifact) | OCI artifact (`application/vnd.kubernaut.promptbundle.v1+yaml`) |
+| Servlet code (business logic) | `spec.prompt` (Go template -- the actual LLM instructions) |
+| `WEB-INF/lib/*.jar` (dependencies) | `spec.skills[]` (OCI digest references to skill artifacts) |
+| `web.xml` (deployment descriptor) | `metadata.labels` (phase, priority) + `spec.phase` (where in the pipeline this runs) |
+| Return type / response contract | `spec.outputSchema` (JSON Schema for structured output) |
+| Servlet API (`HttpServletRequest`, `HttpServletResponse`) | Template data contract (`.Signal`, `.Enrichment`, `.PriorPhaseOutputs`, `.Investigation`) |
+| Application server (Tomcat, WildFly) | Agent (Kubernaut Agent -- loads, validates, and executes bundles) |
+| JVM (Java Virtual Machine) | LLM (the runtime that executes the prompt) |
+
+Key parallels:
+
+- **The WAR doesn't care which app server runs it**, as long as the server implements the Servlet spec. A Prompt Bundle doesn't care which agent runs it, as long as the agent implements the template data contract (`v1alpha1`).
+- **The WAR declares its dependencies** (JARs in `WEB-INF/lib`), and the app server classloads them. A Prompt Bundle declares its skill dependencies (OCI digests), and the agent resolves and registers them as tools.
+- **The app server manages the lifecycle** (deploy, undeploy, health checks). The agent manages the bundle lifecycle (pull, validate, execute, fallback).
+- **Multiple WARs can run on the same server** with different URL contexts. Multiple bundles run in the same pipeline at different phases.
+
+### Relationship to the Agent Skills OCI spec
+
+The Agent Skills OCI spec (v0.1.0) defines how to package and distribute the *tools* -- the JARs in the analogy. Our Prompt Bundle references those artifacts via `spec.skills[].ref` using OCI digests. If the skills marketplace adopts the Agent Skills OCI artifact type (`application/vnd.agent-skills.skill.v1`), KA's skill resolver will consume them natively. The two specs are complementary, not competing: one packages the tools, the other packages the code that uses them.
+
+## Appendix C: Glossary
 
 | Term | Definition |
 |------|------------|
