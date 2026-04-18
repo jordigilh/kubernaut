@@ -4,7 +4,7 @@
 **Date**: April 15, 2026
 **Author**: Kubernaut Architecture Team
 **Confidence**: 95% (two rounds of adversarial audit; near-term scope narrowed to A2A plus current prompt builder, with Goose ACP explicitly gated by spike findings)
-**Related**: [#711](https://github.com/jordigilh/kubernaut/issues/711) (Investigation Prompt Bundles), [#601](https://github.com/jordigilh/kubernaut/issues/601) (Shadow Agent), [#648](https://github.com/jordigilh/kubernaut/issues/648) (Multi-Agent Consensus / Dual Investigation), [PROPOSAL-EXT-001](PROPOSAL-EXT-001-external-integration-strategy.md) (External Integration Strategy), [PROPOSAL-EXT-002](PROPOSAL-EXT-002-investigation-prompt-bundles.md) (Investigation Prompt Bundles)
+**Related**: [#711](https://github.com/jordigilh/kubernaut/issues/711) (Investigation Prompt Bundles), [#601](https://github.com/jordigilh/kubernaut/issues/601) (Shadow Agent), [#648](https://github.com/jordigilh/kubernaut/issues/648) (Multi-Agent Consensus / Dual Investigation), [#708](https://github.com/jordigilh/kubernaut/issues/708) (API Frontend Service), [PROPOSAL-EXT-001](PROPOSAL-EXT-001-external-integration-strategy.md) (External Integration Strategy), [PROPOSAL-EXT-002](PROPOSAL-EXT-002-investigation-prompt-bundles.md) (Investigation Prompt Bundles)
 
 ---
 
@@ -33,6 +33,10 @@ This evaluation was refined through two rounds of adversarial audit (14 findings
 13. [Risk Register](#13-risk-register)
 14. [Design Gates](#14-design-gates)
 15. [Impact on PROPOSAL-EXT-002](#15-impact-on-proposal-ext-002)
+
+**Appendices**
+
+- [Appendix A: API Frontend Runtime Evaluation (Google ADK-Go vs Goose)](#appendix-a-api-frontend-runtime-evaluation-google-adk-go-vs-goose)
 
 ---
 
@@ -540,6 +544,7 @@ Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medi
 | **DG-7: Runtime selection** | How does KA select which runtime executes a given phase? | **Resolved for near-term scope** -- Hook phases use A2A endpoints only. Core phases stay inline. If ACP is introduced later, add an explicit protocol/type discriminator to the hook spec. |
 | **DG-8: ACP stability gate** | When is ACP stable enough for production use? | **Deferred** -- Goose ACP must support the required session configuration semantics (or a supported extension method), not just basic session creation and prompt turns. |
 | **DG-9: Credential management** | How do LLM credentials reach Goose pods? | **Deferred** -- K8s Secrets injection. Must validate Goose supports KA's full provider matrix (Vertex AI SA, Azure MI, Bedrock IAM). |
+| **DG-10: API Frontend runtime selection** | Which framework powers the API Frontend service (A2A + MCP endpoints)? | **Open** -- Google ADK-Go is the leading candidate. Hands-on spike required before v1.4 implementation. See [Appendix A](#appendix-a-api-frontend-runtime-evaluation-google-adk-go-vs-goose). |
 
 ---
 
@@ -558,3 +563,101 @@ The following updates to PROPOSAL-EXT-002 are proposed but **deferred to a follo
 | Section 11 | Add Goose alignment milestones (v1.5 validation, v1.6 A2A hooks, future Goose re-evaluation) |
 | Appendix B | Update WAR analogy -- KA as compiler, Goose as application server |
 | Appendix D | Add glossary terms: Goose, ACP, ACP Go SDK, Recipe, InvestigationHook, pre-workflow-selection, settings |
+
+---
+
+## Appendix A: API Frontend Runtime Evaluation (Google ADK-Go vs Goose)
+
+### A.1 Scope
+
+This appendix covers a **separate evaluation track** from the main body of this proposal. The main body evaluates Goose as a future runtime for **KA's investigation engine** (replacing `runLLMLoop`). This appendix evaluates which framework should power the **API Frontend service** ([#708](https://github.com/jordigilh/kubernaut/issues/708)) -- the new microservice that exposes Kubernaut's MCP and A2A endpoints to external operators and agents.
+
+These are independent architectural decisions:
+
+```
+Kubernaut Architecture
+├── KA (Investigation Engine)
+│   ├── LLM adapter: LangChainGo (current, stays)
+│   └── Future candidate: Goose via ACP (gated, see main body)
+│
+└── API Frontend (Protocol Layer) [#708]
+    ├── A2A server: expose Kubernaut as an A2A agent
+    ├── MCP server: expose investigation tools to MCP clients
+    └── Candidates: Google ADK-Go (first choice) vs Goose
+```
+
+LangChainGo remains KA's LLM adapter for the investigation loop regardless of which framework powers the API Frontend.
+
+### A.2 What the API Frontend Needs
+
+PROPOSAL-EXT-001 defines the API Frontend as a hybrid service hosting both MCP and A2A endpoints, with CRD-based live status streaming. The runtime framework must support:
+
+| Requirement | Description | Priority |
+|---|---|---|
+| **Native Go** | Kubernaut is a Go-only codebase. The framework must be idiomatic Go, not a sidecar or FFI bridge. | Must-have |
+| **A2A server** | Host an A2A endpoint with Agent Card, `tasks/send`, task lifecycle, and streaming task status updates. | Must-have |
+| **MCP server** | Expose Kubernaut's investigation tools (`kubernaut_investigate`, `kubernaut_enrich`, `kubernaut_select_workflow`, `kubernaut_watch`) as MCP tools to external clients. | Must-have |
+| **LLM provider flexibility** | Support multiple LLM providers (Vertex AI, Azure OpenAI, Bedrock, Anthropic) for NL signal extraction and future conversational flows. | Must-have |
+| **Multi-agent orchestration** | Support sub-agent delegation patterns for future multi-agent consensus and cross-cluster federation. | Should-have |
+| **Streaming (SSE)** | Stream real-time CRD phase transitions to connected MCP/A2A clients. | Must-have |
+| **Maturity and community** | Active development, responsive maintainers, production adoption signals. | Should-have |
+| **License** | Permissive open-source license compatible with Apache 2.0. | Must-have |
+
+### A.3 Preliminary Comparison
+
+| Characteristic | Google ADK-Go (`google/adk-go`) | Goose (AAIF, `aaif-goose/goose`) |
+|---|---|---|
+| **Language** | Native Go (idiomatic, code-first) | Rust core; Go integration via `coder/acp-go-sdk` (typed client, not native runtime) |
+| **A2A server** | First-class. Quickstart guides for both exposing and consuming A2A agents. Active migration to `a2a-go/v2` (A2A protocol v1). Server components in `remoteagent` and `server` packages. | Via MCP extension bridge. Goose acts as an A2A client through an MCP server that bridges A2A, not as a native A2A server endpoint. |
+| **MCP server** | Supported. `mcptoolset` package wraps ADK tools as MCP tools, exposable via in-memory, stdio, or Streamable HTTP transports. | Native and first-class. Goose's core architecture is MCP-centric. |
+| **MCP client** | Supported. `mcptoolset.New()` connects to external MCP servers with auto-reconnection. | Native. Goose consumes MCP servers for extensions. |
+| **LLM providers** | Gemini-first, but supports other providers via LiteLLM or custom model adapters. | 15+ providers natively (OpenAI, Anthropic, Vertex AI, Azure, Bedrock, Ollama, etc.) |
+| **Multi-agent** | Built-in sub-agent orchestration. Agents compose hierarchically. | Sub-agents via recipes. Multi-agent patterns supported but less structured. |
+| **Streaming** | SSE via Streamable HTTP transport for MCP; A2A streaming via protocol-native mechanisms. | ACP `SessionUpdate` provides real-time streaming of agent events. |
+| **Deployment model** | Go binary -- compiles into the API Frontend service directly. | Separate Rust binary (sidecar or standalone pod). Go code communicates over ACP/HTTP. |
+| **Governance** | Google (open-source, Apache 2.0). Part of Google's agent ecosystem alongside A2A and Vertex AI. | AAIF / Linux Foundation (Apache 2.0). Alongside MCP and AGENTS.md under AAIF umbrella. |
+| **GitHub activity** | `google/adk-go`: ~7.6k stars, active development, Go module published at `google.golang.org/adk`. | `aaif-goose/goose`: large community, frequent releases (v1.30.0 as of April 2026). |
+| **K8s fit** | Compiles into a single Go binary -- same deployment pattern as all other Kubernaut services. | Requires separate container (Rust binary). Adds operational complexity (sidecar or dedicated pod). |
+
+### A.4 Current Assessment
+
+**Google ADK-Go is the leading candidate** for the API Frontend runtime based on:
+
+1. **Native Go alignment**: ADK-Go compiles into the API Frontend binary directly, matching Kubernaut's single-binary-per-service deployment model. No sidecar, no IPC overhead.
+2. **First-class A2A server**: ADK-Go provides both exposing (serving as an A2A agent) and consuming (delegating to remote A2A agents) quickstarts. The `a2a-go/v2` migration (PR [google/adk-go#701](https://github.com/google/adk-go/pull/701)) tracks A2A protocol v1 support.
+3. **MCP server support**: `mcptoolset` allows wrapping Kubernaut's investigation tools as MCP tools, exposed via Streamable HTTP -- exactly what PROPOSAL-EXT-001 requires.
+4. **Deployment simplicity**: Single Go binary, same Helm chart pattern, same CI pipeline. Goose would require a separate Rust container and an ACP communication layer.
+
+**Goose remains valuable** in a different role:
+
+- As a **future KA investigation runtime** (the main body of this proposal), once ACP matures.
+- Its **MCP-native architecture** and **recipe ecosystem** are strengths for complex multi-tool investigation phases, not for protocol-level server hosting.
+- The evaluation is not dismissive -- Goose and ADK solve different problems in Kubernaut's architecture.
+
+### A.5 Relationship to LangChainGo
+
+The three technologies serve distinct layers:
+
+| Layer | Technology | Role | Changes? |
+|---|---|---|---|
+| KA investigation engine | LangChainGo | LLM adapter for `runLLMLoop`, tool calling, multi-turn reasoning | No -- stays as-is |
+| API Frontend protocol layer | Google ADK-Go (candidate) | A2A server, MCP server, NL signal extraction | New in v1.4 |
+| KA investigation engine (future) | Goose via ACP (candidate) | Potential replacement for `runLLMLoop` | Gated by ACP stability |
+
+### A.6 Open Questions
+
+| Question | Notes |
+|---|---|
+| **ADK-Go LLM provider breadth** | ADK-Go is Gemini-first. Kubernaut needs Vertex AI (Anthropic), Azure OpenAI, and Bedrock. Evaluate whether ADK-Go's model adapter layer or LiteLLM integration covers the required providers without friction. |
+| **ADK-Go production readiness** | `google/adk-go` is at v0.1.0 (module path `google.golang.org/adk`). Assess API stability expectations and breaking change policy before committing. |
+| **Streaming architecture** | PROPOSAL-EXT-001 requires SSE streaming of CRD phase transitions. Confirm that ADK-Go's Streamable HTTP transport can be extended for CRD-sourced events, not just agent-generated events. |
+| **Agent Card hosting** | Verify that ADK-Go's A2A server implementation supports custom Agent Card fields (capabilities, skills, authentication) as defined in EXT-001 Section 3.4. |
+
+### A.7 Next Steps
+
+| Step | Timing | Description |
+|---|---|---|
+| **Hands-on spike: ADK-Go** | v1.4 pre-work | Build a minimal A2A server + MCP server using ADK-Go. Expose one Kubernaut tool (`kubernaut_investigate`) as both an A2A task and an MCP tool. Validate Agent Card serving, SSE streaming, and provider flexibility. |
+| **Hands-on spike: Goose as API Frontend** | v1.4 pre-work (parallel) | Build the same minimal server using Goose (Rust binary + ACP Go client). Compare deployment complexity, latency, and operational overhead. |
+| **Comparison report** | End of spike | Document findings, update this appendix with empirical results, and resolve DG-10. |
+| **DG-10 resolution** | Before v1.4 implementation | Select the API Frontend runtime based on spike results. Gate: the chosen framework must satisfy all must-have requirements in Section A.2. |
