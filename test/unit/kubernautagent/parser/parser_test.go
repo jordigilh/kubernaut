@@ -590,6 +590,77 @@ false
 		})
 	})
 
+	Describe("Phase 1-to-Phase 3 Propagation — #715", func() {
+
+		Describe("UT-KA-715-004: Parser preserves raw investigation_outcome on result", func() {
+			It("should store the raw investigation_outcome string on InvestigationResult", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "Inconclusive investigation — multiple potential causes",
+					"investigation_outcome": "inconclusive",
+					"confidence": 0.4
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.InvestigationOutcome).To(Equal("inconclusive"),
+					"UT-KA-715-004: parser must preserve raw investigation_outcome string on result")
+			})
+
+			It("should store problem_resolved investigation_outcome", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "Problem self-resolved after pod restart",
+					"investigation_outcome": "problem_resolved",
+					"confidence": 0.85
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.InvestigationOutcome).To(Equal("problem_resolved"),
+					"UT-KA-715-004: parser must preserve problem_resolved outcome")
+			})
+
+			It("should store actionable investigation_outcome", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "OOMKilled due to memory limit",
+					"investigation_outcome": "actionable",
+					"confidence": 0.9
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.InvestigationOutcome).To(Equal("actionable"),
+					"UT-KA-715-004: parser must preserve actionable outcome")
+			})
+
+			It("should leave InvestigationOutcome empty when not provided by LLM", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "OOMKilled due to memory limit",
+					"confidence": 0.9
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.InvestigationOutcome).To(BeEmpty(),
+					"UT-KA-715-004: InvestigationOutcome must be empty when LLM doesn't provide it")
+			})
+
+			It("should preserve investigation_outcome from nested LLM format", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"root_cause_analysis": {
+						"summary": "Memory pressure on api-server"
+					},
+					"investigation_outcome": "inconclusive",
+					"confidence": 0.35
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.InvestigationOutcome).To(Equal("inconclusive"),
+					"UT-KA-715-004: parser must preserve investigation_outcome from nested format")
+			})
+		})
+	})
+
 	Describe("UT-KA-433-AP-021: problem_resolved suppresses not-actionable warning", func() {
 		It("should emit Problem self-resolved but NOT Alert not actionable", func() {
 			p := parser.NewResultParser()

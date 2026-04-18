@@ -458,7 +458,8 @@ func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 	}
 
 	if flat.InvestigationOutcome != "" {
-		applyInvestigationOutcome(result, flat.InvestigationOutcome)
+		result.InvestigationOutcome = flat.InvestigationOutcome
+		ApplyInvestigationOutcome(result, flat.InvestigationOutcome)
 	}
 
 	// #301: Contradiction override — when the outcome is problem_resolved but
@@ -470,11 +471,12 @@ func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 	}
 }
 
-// applyInvestigationOutcome maps KA-style investigation_outcome values
+// ApplyInvestigationOutcome maps KA-style investigation_outcome values
 // to is_actionable/needs_human_review/human_review_reason fields.
+// Exported for use by the investigator when merging Phase 1 fallbacks (#715).
 // H5-fix: explicit `actionable` field takes precedence — only set IsActionable
 // from outcome when the `actionable` field was absent.
-func applyInvestigationOutcome(result *katypes.InvestigationResult, outcome string) {
+func ApplyInvestigationOutcome(result *katypes.InvestigationResult, outcome string) {
 	switch outcome {
 	case "problem_resolved":
 		if result.IsActionable == nil {

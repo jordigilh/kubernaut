@@ -57,6 +57,12 @@ type InvestigationResult struct {
 	// Outcome routing (is_actionable already existed, GAP-002 population in P3)
 	IsActionable *bool `json:"is_actionable,omitempty"`
 
+	// InvestigationOutcome preserves the raw investigation_outcome string from
+	// the LLM (e.g., "actionable", "inconclusive", "problem_resolved"). Used
+	// for Phase 1→3 propagation so the investigator can merge Phase 1 outcomes
+	// as fallbacks when Phase 3 does not produce one (HAPI parity: #715).
+	InvestigationOutcome string `json:"investigation_outcome,omitempty"`
+
 	// RCA detail
 	SignalName          string   `json:"signal_name,omitempty"`
 	ContributingFactors []string `json:"contributing_factors,omitempty"`
