@@ -3,14 +3,14 @@
 **Status**: PROPOSAL (under review)
 **Date**: April 15, 2026
 **Author**: Kubernaut Architecture Team
-**Confidence**: 95% (two rounds of adversarial audit, ACP Go SDK validated as integration mechanism)
+**Confidence**: 95% (two rounds of adversarial audit; near-term scope narrowed to A2A plus current prompt builder, with Goose ACP explicitly gated by spike findings)
 **Related**: [#711](https://github.com/jordigilh/kubernaut/issues/711) (Investigation Prompt Bundles), [#601](https://github.com/jordigilh/kubernaut/issues/601) (Shadow Agent), [#648](https://github.com/jordigilh/kubernaut/issues/648) (Multi-Agent Consensus / Dual Investigation), [PROPOSAL-EXT-001](PROPOSAL-EXT-001-external-integration-strategy.md) (External Integration Strategy), [PROPOSAL-EXT-002](PROPOSAL-EXT-002-investigation-prompt-bundles.md) (Investigation Prompt Bundles)
 
 ---
 
 ## Purpose
 
-This proposal evaluates [Goose](https://github.com/block/goose) (AAIF -- an extensible, open-source AI agent framework) as a long-term runtime for executing Kubernaut Agent's investigation phases. It defines how KA's Prompt Bundle format relates to Goose Recipes, identifies the `coder/acp-go-sdk` as the primary integration mechanism, proposes a 6-phase pipeline model with `InvestigationHook` CRDs, and establishes a phased adoption roadmap that introduces zero Goose dependency in v1.5-v1.6 while positioning v1.7+ for full delegation.
+This proposal evaluates [Goose](https://github.com/block/goose) (AAIF -- an extensible, open-source AI agent framework) as a future candidate runtime for executing Kubernaut Agent's investigation phases. It defines how KA's Prompt Bundle format relates to Goose Recipes, records an ACP SDK spike using `coder/acp-go-sdk`, proposes a 6-phase pipeline model with `InvestigationHook` CRDs, and establishes a phased roadmap that keeps v1.5 focused on validating the current `prompt.Builder`-driven approach, narrows v1.6 remote delegation to A2A only, and defers any Goose adoption until the Goose ACP/API surface is stable enough to support it.
 
 This evaluation was refined through two rounds of adversarial audit (14 findings resolved), covering self-correction loop compatibility, template rendering ownership, protocol consistency, audit granularity, and operational risks.
 
@@ -23,8 +23,8 @@ This evaluation was refined through two rounds of adversarial audit (14 findings
 3. [Six-Phase Pipeline Model](#3-six-phase-pipeline-model)
 4. [InvestigationHook CRD](#4-investigationhook-crd)
 5. [What KA Keeps (Domain-Specific Orchestration)](#5-what-ka-keeps-domain-specific-orchestration)
-6. [What KA Drops (Long-Term, v1.7+)](#6-what-ka-drops-long-term-v17)
-7. [ACP Go SDK Integration](#7-acp-go-sdk-integration)
+6. [What KA Could Drop on a Future Goose Path](#6-what-ka-could-drop-on-a-future-goose-path)
+7. [ACP Go SDK Spike Findings](#7-acp-go-sdk-spike-findings)
 8. [Shadow Agent and Dual Investigation Fit](#8-shadow-agent-and-dual-investigation-fit)
 9. [Runtime Comparison](#9-runtime-comparison)
 10. [Option A vs Option B: Enhance KA vs Adopt Goose](#10-option-a-vs-option-b-enhance-ka-vs-adopt-goose)
@@ -38,26 +38,27 @@ This evaluation was refined through two rounds of adversarial audit (14 findings
 
 ## 1. Executive Summary
 
-PROPOSAL-EXT-002 defines PromptBundles as a Kubernaut-specific YAML format for packaging prompts, skill references, and output schemas as OCI artifacts. This evaluation finds that **Goose Recipes share the same structural concepts** (instructions + tools + output schema) and proposes Goose as a long-term runtime (v1.7+) for executing investigation phases.
+PROPOSAL-EXT-002 defines PromptBundles as a Kubernaut-specific YAML format for packaging prompts, skill references, and output schemas as OCI artifacts. This evaluation finds that **Goose Recipes share the same structural concepts** (instructions + tools + output schema), but the near-term roadmap does not depend on Goose.
 
-The key enabler is the **`coder/acp-go-sdk`** -- a typed Go client for the Agent Client Protocol (ACP) -- which lets KA communicate with Goose programmatically without producing intermediate Recipe YAML files. KA populates Go structs in memory and dispatches them via the SDK.
+The key future enabler is the **`coder/acp-go-sdk`** -- a typed Go client for the Agent Client Protocol (ACP). A spike confirms that it supports session creation, prompt turns, and streamed updates, but it does **not** by itself close the current Goose ACP gap around recipe/session configuration.
 
 **Key architectural decisions from two rounds of adversarial review:**
 
-- **PromptBundle is a Kubernaut-native format** that KA compiles into ACP session configs (not Goose Recipe YAML). Conceptual alignment with Goose Recipes exists at the naming/structure level, not file-format level.
-- **ACP Go SDK (`coder/acp-go-sdk`)** is the integration mechanism -- typed Go structs for session management, prompt dispatch, and streaming. No YAML translation layer needed.
+- **PromptBundle is a Kubernaut-native format**. Conceptual alignment with Goose Recipes exists at the naming/structure level, not file-format level.
+- **ACP Go SDK (`coder/acp-go-sdk`)** is a promising future integration mechanism, but only after Goose ACP can support Kubernaut's required session semantics for instructions, extensions, schema, and settings.
 - **6-phase pipeline** with `pre-workflow-selection` as a new optional hook phase (extends the 5-phase model in EXT-002).
 - **InvestigationHook CRD** for optional phases (parallel execution within a phase). Mandatory phases remain in KA's YAML config.
-- **KA as "compiler"**: renders Go templates and resolves OCI skill refs into ACP session configs.
-- **EXT-002 updates deferred** to a follow-up PR after the `remote-execution-review` branch merges (avoids branch divergence risk).
+- **KA as "compiler"**: in a future Goose path, KA would render Go templates and resolve OCI skill refs before invoking the runtime.
+- **Near-term remote protocol scope is A2A only**. ACP remains a future candidate once Goose API/SDK support is mature enough.
+- **EXT-002 updates deferred** to a follow-up PR so this proposal can stay focused on the narrowed near-term scope: current prompt builder validation first, A2A-only remote hooks second, Goose later.
 
-**Phased adoption (zero Goose dependency until v1.7+):**
+**Phased adoption (no mandatory Goose dependency in the near term):**
 
 | Version | Goose Dependency | KA Role | Runtime |
 |---------|-----------------|---------|---------|
-| v1.5 | None | Inline executor + orchestrator | KA executes all phases inline |
-| v1.6 | Optional (hooks only) | Orchestrator + inline for core | Hook phases can delegate to Goose/DocsClaw via CRD |
-| v1.7+ | Full (contingent on ACP stability) | Pure orchestrator/compiler | All phases delegate to Goose |
+| v1.5 | None | Current inline executor + orchestrator | Validate the existing typed `prompt.Builder` flow; no manifest-driven loading yet |
+| v1.6 | None for core; optional remote A2A hooks only | Orchestrator + inline for core | Hook phases can delegate to A2A agents (for example, DocsClaw or customer-managed agents) |
+| Future (post-v1.5 re-evaluation) | Candidate only, contingent on ACP/API stability | Potential pure orchestrator/compiler | Revisit Goose once ACP can support the required session configuration model |
 
 ---
 
@@ -95,17 +96,28 @@ response:
 | `extensions[].ref` | OCI digest refs (`@sha256:`) and `builtin://` scheme. KA resolves these to live MCP endpoint URLs. | `extensions[]` with `type: sse`, `url: "..."` format |
 | `response.json_schema` | JSON Schema for structured output phases. | `response.json_schema` (directly compatible) |
 
-### 2.3 KA Compilation (In-Memory)
+### 2.3 Near-Term Implementation Scope (v1.5-v1.6)
 
-KA pre-processes the bundle into a runtime-ready configuration at invocation time. No YAML output is produced.
+The near-term implementation does **not** replace the current typed prompt-building path. KA's existing `prompt.Builder` remains the source of truth for prompt rendering in v1.5:
+
+1. **Render** embedded Go templates using typed Go structs (`SignalData`, `EnrichmentData`, `Phase1Data`)
+2. **Execute** investigation, RCA resolution, and workflow selection inline inside KA
+3. **Validate** the current prompt structure and output contracts before introducing manifest-driven loading
+
+This preserves the current implementation in `internal/kubernautagent/prompt/builder.go` and keeps the manifest-driven model as a later step rather than a v1.5 commitment.
+
+### 2.4 Future Compilation Path (Goose/ACP, Gated)
+
+If Goose adoption is revisited later, KA would still perform the Kubernaut-specific compilation steps before invoking Goose:
 
 1. **Render** Go templates against the phase-specific data contract -> rendered instructions string
-2. **Resolve** OCI skill refs to MCP endpoint URLs via skill resolver -> list of SSE endpoint configs
-3. **Resolve** `builtin://` refs to KA's own MCP server endpoints (target architecture)
-4. **Construct** ACP session config from rendered data (via `coder/acp-go-sdk` Go structs)
-5. **Dispatch** to runtime: inline executor (v1.5-v1.6) or Goose via ACP (v1.7+)
+2. **Resolve** OCI skill refs to concrete remote tool endpoints
+3. **Resolve** `builtin://` refs to KA-hosted or extracted MCP endpoints
+4. **Create** a session and send prompt turns over ACP
 
-### 2.4 Why Not Use Goose Recipes Directly?
+However, the current Goose ACP surface does not yet provide recipe/session parity for instructions, extensions, schema, and settings during session creation. See Section 7 for the spike results and current gap.
+
+### 2.5 Why Not Use Goose Recipes Directly?
 
 Goose Recipes support `{{key}}` flat parameter substitution in `instructions`. This is insufficient for Kubernaut's nested data contract:
 
@@ -173,7 +185,7 @@ spec:
   priority: 100
   failurePolicy: failClosed
   runtime:
-    endpoint: "http://goose-hooks.svc:3000"
+    endpoint: "http://docsclaw-hooks.svc:8080/a2a"
     timeout: 30s
 ```
 
@@ -185,15 +197,17 @@ spec:
 | `bundleRef` | OCI digest reference to the bundle artifact |
 | `priority` | Execution order hint. All hooks in a phase run in parallel, but priority determines output ordering in `PriorPhaseOutputs` |
 | `failurePolicy` | `failClosed` (abort pipeline, default) or `failOpen` (skip this hook, log warning) |
-| `runtime.endpoint` | Where to execute: Goose, DocsClaw, or any A2A-compatible agent |
+| `runtime.endpoint` | A2A endpoint URL for the remote hook agent |
 | `runtime.timeout` | Per-hook timeout. Aggregate phase timeout in KA config caps total phase duration |
 
 ### 4.3 Benefits
 
 - **Dynamic**: Add/remove hooks without KA restart (GitOps friendly)
 - **Individual RBAC**: Each hook can have its own RBAC policy
-- **K8s-native**: Status tracking, events, and conditions follow Kubernetes conventions
+- **K8s-native config surface**: Hook definitions are managed as Kubernetes resources with standard discovery and RBAC
 - **Parallel execution**: Independent hooks execute concurrently for lower latency
+
+**Near-term protocol scope**: v1.6 supports **A2A only** for remote hook execution. We intentionally do not add a `protocol` or `type` field yet because only one remote protocol is supported in the near term. If ACP/Goose is adopted later, the CRD should gain an explicit discriminator rather than overloading `runtime.endpoint`.
 
 ### 4.4 CRD Discovery
 
@@ -217,19 +231,19 @@ Even with Goose as the LLM engine, KA retains:
 | Responsibility | Description |
 |---------------|-------------|
 | **Pipeline orchestration** | 6-phase sequencing, hook CRD discovery, parallel hook dispatch, context propagation (`PriorPhaseOutputs`) |
-| **Bundle compilation** | Go template rendering, OCI skill resolution, `builtin://` resolution -- producing ACP session configs (not Recipe YAML files) |
+| **Bundle compilation** | Go template rendering and existing typed prompt builder flow in the near term; future Goose compilation remains gated |
 | **API contract** | `SignalContext` in, `InvestigationResult` out -- unchanged regardless of runtime |
 | **Signal enrichment** | K8s owner chain resolution, label merging, re-enrichment when RCA identifies a different target |
 | **Result assembly** | Merging phase outputs into `InvestigationResult` (severity backfill, remediation target injection, detected labels, catalog enrichment) |
-| **Audit assembly** | Real-time via ACP `SessionUpdate` callback (v1.7+), or post-hoc trace collection (v1.6 hooks). Stored via DataStorage audit pipeline |
+| **Audit assembly** | A2A execution-trace collection for v1.6 hooks; future Goose/ACP streaming remains a gated candidate. Stored via DataStorage audit pipeline |
 | **Failure policy enforcement** | `failClosed`/`failOpen` per hook, aggregate phase timeout, context cancellation for parallel hooks |
-| **Catalog validation** | Workflow self-correction loop with retries. In v1.7+, KA uses ACP `Prompt()` on the existing session to send correction messages (see Section 12 -- CRITICAL-1) |
+| **Catalog validation** | Workflow self-correction loop with retries in the current inline model. A future Goose implementation could map this to ACP prompt turns, but that path is still gated by Section 7 findings |
 
 ---
 
-## 6. What KA Drops (Long-Term, v1.7+)
+## 6. What KA Could Drop on a Future Goose Path
 
-When Goose becomes the runtime for all phases, KA drops:
+If Goose later becomes the runtime for all phases, KA could drop:
 
 | Component | Current Role | Replacement |
 |-----------|-------------|-------------|
@@ -241,28 +255,61 @@ When Goose becomes the runtime for all phases, KA drops:
 
 ---
 
-## 7. ACP Go SDK Integration
+## 7. ACP Go SDK Spike Findings
 
-The [`coder/acp-go-sdk`](https://github.com/coder/acp-go-sdk) is a Go client library that provides typed bindings for the Agent Client Protocol. This is the primary integration mechanism for KA-to-Goose communication in v1.7+.
+The [`coder/acp-go-sdk`](https://github.com/coder/acp-go-sdk) is a Go client library that provides typed bindings for the Agent Client Protocol. This section records a focused spike on what the SDK and current Goose ACP implementation prove today, and what remains missing before Kubernaut could rely on it.
 
 ### 7.1 Key Capabilities
 
-| SDK Method | KA Usage |
-|-----------|----------|
-| `NewSession(config)` | Create a Goose session with instructions, extensions, output schema, and LLM settings. KA populates these from the compiled PromptBundle data. |
-| `Prompt(sessionID, message)` | Send a message to an existing session. Enables the self-correction loop (CRITICAL-1) and multi-turn conversations. |
-| `SessionUpdate` callback | Real-time streaming of agent events (tool calls, messages, thought chunks). KA registers a handler to emit audit events. |
-| Session config via Go structs | Instructions, extensions, output schema, and settings are fields on typed Go structs. No YAML serialization needed. |
+| SDK Method | What the spike validates |
+|-----------|-------------------------|
+| `Initialize(...)` | ACP capability negotiation before opening a session |
+| `NewSession(request)` | Session creation with `cwd` and `mcpServers` |
+| `Prompt(request)` | Sending a prompt to an existing session |
+| `SessionUpdate` callback | Streaming agent message chunks, thought chunks, tool calls, tool call updates, and plans |
 
 ### 7.2 What the SDK Eliminates
 
-- **No custom ACP HTTP client**: SDK handles JSON-RPC 2.0 over HTTP/SSE.
-- **No Goose Recipe YAML translator**: Bundle compilation produces Go structs, not files.
-- **No SSE stream parser**: SDK provides callback-based event streaming.
+- **No custom ACP client plumbing**: SDK handles ACP request/response types and streamed updates.
+- **No custom SSE event parser**: streamed updates are surfaced via typed callbacks.
 
-### 7.3 Impact on Work Estimates
+### 7.3 Spike Appendix: Exact Request/Response Flow
 
-Reduces v1.7 Goose integration by approximately 2 weeks (from 9-11w to 7-9w). The SDK makes the "Goose as runtime" path closer to "swap out the LLM client implementation" than "build a remote agent orchestration layer."
+The SDK README and example client demonstrate the concrete flow below:
+
+```go
+initResp, err := conn.Initialize(ctx, acp.InitializeRequest{...})
+sessResp, err := conn.NewSession(ctx, acp.NewSessionRequest{
+	Cwd:        mustCwd(),
+	McpServers: []acp.McpServer{},
+})
+_, err = conn.Prompt(ctx, acp.PromptRequest{
+	SessionId: sessResp.SessionId,
+	Prompt:    []acp.ContentBlock{acp.TextBlock("Hello, agent!")},
+})
+```
+
+The example client also demonstrates `SessionUpdate(...)` handling for:
+
+- `AgentMessageChunk`
+- `AgentThoughtChunk`
+- `ToolCall`
+- `ToolCallUpdate`
+- `Plan`
+
+This is enough to validate the **transport and interaction model**: session creation, prompt turns, and streaming updates are all available in the SDK today. Source references: the ACP Go SDK [README](https://raw.githubusercontent.com/coder/acp-go-sdk/main/README.md) and example client [`example/client/main.go`](https://raw.githubusercontent.com/coder/acp-go-sdk/main/example/client/main.go).
+
+### 7.4 Current Gap: Goose ACP Lacks Recipe/Session Parity
+
+The spike also found a material upstream limitation:
+
+- `acp-go-sdk`'s `NewSessionRequest` currently exposes `cwd` and `mcpServers`, not a rich session payload for instructions, response schema, settings, or recipe application.
+- Upstream Goose has an open issue stating that `goose-acp` does **not** yet support creating a new session from a recipe the way `goose-server` does: [aaif-goose/goose#7596](https://github.com/block/goose/issues/7596).
+- As a result, the current ACP path does **not** yet prove that KA can compile a PromptBundle directly into a Goose ACP session with full parity for instructions, extensions, schema, and settings.
+
+### 7.5 Impact on Work Estimates
+
+The spike reduces uncertainty around the ACP interaction model, but it does **not** eliminate the need for additional upstream Goose ACP support or a custom extension method. The SDK therefore strengthens Goose as a future candidate, but it does not justify treating Goose integration as a committed near-term implementation path.
 
 ---
 
@@ -270,7 +317,7 @@ Reduces v1.7 Goose integration by approximately 2 weeks (from 9-11w to 7-9w). Th
 
 ### 8.1 Shadow Agent (#601)
 
-In the current inline architecture, a shadow agent runs in parallel with the primary investigation, monitoring for prompt injection. With Goose as the runtime:
+In the current inline architecture, a shadow agent runs in parallel with the primary investigation, monitoring for prompt injection. If Goose becomes viable later:
 
 - The ACP Go SDK's `SessionUpdate` callback provides the same real-time event stream the shadow agent needs.
 - KA spawns the shadow agent goroutine which receives events from the primary Goose session's callback and runs prompt injection detection.
@@ -279,7 +326,7 @@ In the current inline architecture, a shadow agent runs in parallel with the pri
 
 ### 8.2 Dual Investigation / Multi-Agent Consensus (#648)
 
-KA's strategy config (`single`, `consensus`, `consensus-fast`) already defines whether to run one or two parallel investigations. With Goose:
+KA's strategy config (`single`, `consensus`, `consensus-fast`) already defines whether to run one or two parallel investigations. If Goose becomes viable later:
 
 - KA creates two ACP sessions using the **same compiled bundle** but different `settings` blocks (different provider/model, e.g., Claude vs GPT-4o).
 - Both sessions execute in parallel. KA collects both `InvestigationResult` structured outputs.
@@ -303,7 +350,7 @@ KA's strategy config (`single`, `consensus`, `consensus-fast`) already defines w
 | Deployment | K8s-native, ConfigMap | Container, env var config |
 | License | TBD (Red Hat OCTO) | Apache 2.0 |
 
-**Recommendation**: DocsClaw for lightweight hook phases. Goose for complex phases requiring multi-turn conversations, structured output, and self-correction (investigation, rca-resolution, workflow-selection).
+**Recommendation**: DocsClaw or customer-managed A2A agents for lightweight hook phases in the near term. Goose remains a future option for more complex phases, contingent on ACP/API maturity.
 
 ---
 
@@ -323,13 +370,13 @@ Add MCP support to `runLLMLoop`. KA stays self-contained.
 | **Recipe ecosystem** | Not available |
 | **Long-term maintenance** | KA team owns full LLM stack |
 
-### 10.2 Option B: Adopt Goose (v1.7+)
+### 10.2 Option B: Adopt Goose (Future Candidate)
 
-Delegate LLM execution to Goose via ACP Go SDK. KA becomes pure orchestrator/compiler.
+Delegate LLM execution to Goose via ACP Go SDK once the Goose ACP/API surface is mature enough. KA would become pure orchestrator/compiler at that point.
 
 | Attribute | Assessment |
 |-----------|-----------|
-| **Effort** | ~7-9 weeks (v1.7 integration, on top of v1.5/v1.6 work) |
+| **Effort** | Tentative; re-estimate after Goose ACP session-configuration gap closes |
 | **New dependency** | Goose runtime + `coder/acp-go-sdk` |
 | **Testing** | More complex (multi-process, requires Goose in CI) |
 | **Provider support** | Goose manages; must validate full matrix |
@@ -339,31 +386,31 @@ Delegate LLM execution to Goose via ACP Go SDK. KA becomes pure orchestrator/com
 
 ### 10.3 Recommendation
 
-**Option A for v1.5-v1.6**. Option B for v1.7+ when ACP stabilizes. Format alignment with Goose Recipe field naming happens in v1.5 regardless (zero cost -- it is field naming in the manifest).
+**Option A for v1.5** and for the likely v1.6 baseline. Option B remains a future candidate only after Goose ACP can support the required session semantics. Near-term work should validate the current prompt-builder-driven approach before any manifest-driven or Goose-backed execution shift.
 
 ---
 
 ## 11. Phased Adoption Roadmap
 
-### 11.1 v1.5: Inline Execution, Recipe-Aligned Format
+### 11.1 v1.5: Validate Current Inline Execution Path
 
-- Ship PromptBundles with Goose Recipe-aligned field names (`instructions`, `extensions`, `response`).
+- Validate the current typed `prompt.Builder` path and prompt contracts before changing the execution model.
 - KA executes all phases inline (current architecture + MCP support).
 - `InvestigationHook` CRD for optional hook phases (parallel execution).
 - **No Goose runtime dependency.**
 
-### 11.2 v1.6: Optional External Delegation for Hooks
+### 11.2 v1.6: Optional External Delegation for Hooks (A2A Only)
 
-- Optional hook phases (`pre-investigation`, `post-investigation`, `pre-workflow-selection`) can delegate to external runtimes (DocsClaw, Goose, any A2A agent) via `runtime.endpoint` in `InvestigationHook` CRD.
+- Optional hook phases (`pre-investigation`, `post-investigation`, `pre-workflow-selection`) can delegate to external **A2A** runtimes (DocsClaw or customer-managed A2A agents) via `runtime.endpoint` in `InvestigationHook` CRD.
 - Core phases (`investigation`, `rca-resolution`, `workflow-selection`) remain inline.
-- Real-time audit for delegated hooks via ACP `SessionUpdate` callback (Goose) or execution trace (A2A agents).
+- Audit for delegated hooks uses the A2A execution trace contract already defined in PROPOSAL-EXT-002.
 
-### 11.3 v1.7+: Full Goose Delegation (Contingent on ACP Stability)
+### 11.3 Future: Revisit Goose Delegation (Contingent on ACP/API Stability)
 
-- All phases delegate to Goose. KA drops `runLLMLoop`, `llm.Client`, tool registry.
-- KA becomes pure orchestrator/compiler.
+- Re-evaluate Goose only after the v1.5 validation milestone and only if Goose ACP can support the required session configuration semantics.
+- If viable, KA could later drop `runLLMLoop`, `llm.Client`, and tool registry responsibilities.
 - Prerequisites:
-  - ACP Phase 4 stable (Goose deprecates goosed REST API in favor of ACP-only)
+  - Goose ACP supports recipe/session parity or a supported extension method with equivalent semantics
   - KA builtins extracted to standalone MCP servers
   - Credential management via K8s Secrets validated against full provider matrix
   - Anomaly detection implemented as a Goose extension (custom MCP server)
@@ -373,7 +420,7 @@ Delegate LLM execution to Goose via ACP Go SDK. KA becomes pure orchestrator/com
 
 ## 12. Adversarial Audit Findings and Resolutions
 
-Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medium, 3 low). All have been resolved.
+Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medium, 3 low). The findings below are incorporated into the revised scope and assumptions in this document.
 
 ### Round 1
 
@@ -393,31 +440,31 @@ Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medi
 
 **Problem**: The plan lacked a comparison with enhancing the existing KA architecture.
 
-**Resolution**: Section 10 presents Option A (Enhance existing KA, ~2-3w) vs Option B (Goose adoption, 7-9w for v1.7+), with a clear recommendation for Option A in v1.5-v1.6 and Option B for v1.7+ when ACP stabilizes.
+**Resolution**: Section 10 presents Option A (Enhance existing KA, ~2-3w) vs Option B (Goose adoption as a future candidate), with a clear recommendation for Option A in the near term and Option B only after the Goose ACP gap is closed.
 
-#### HIGH-1: Protocol -- ACP Go SDK Eliminates the Dual Protocol Problem
+#### HIGH-1: Protocol Scope Must Be Explicit
 
 **Problem**: Initial recommendation of KA speaking ACP directly conflicted with A2A as the sole delegation protocol defined in PROPOSAL-EXT-002.
 
-**Resolution**: The `coder/acp-go-sdk` provides typed Go bindings. KA speaks ACP natively to Goose via Go structs -- no REST/HTTP layer, no protocol translation. For non-Goose runtimes (DocsClaw, customer A2A agents), KA speaks A2A. This is two protocols, but they serve different purposes: ACP for Goose (KA's own runtime), A2A for external agents (customer-managed). The ACP SDK makes the Goose path a library call, not a network protocol concern. In the future, if Goose adopts native A2A, KA can standardize on A2A for everything.
+**Resolution**: Narrow the near-term scope to **A2A only** for remote execution. v1.6 hook delegation assumes a single remote protocol and therefore does not need a `protocol` discriminator in the CRD yet. ACP remains a future evaluation track for Goose once the Goose ACP surface can support Kubernaut's required session configuration.
 
 #### HIGH-2: Anomaly Detection in Remote Execution
 
 **Problem**: KA's anomaly detection occurs mid-`runLLMLoop` (per-turn checks). Moving LLM execution to Goose loses this mid-loop inspection.
 
-**Resolution**: For v1.7+ (Goose runtime), anomaly detection becomes a **Goose extension** -- a custom MCP server that wraps tool calls with KA's anomaly checking logic. Alternatively, KA's aggregate phase timeout + `failClosed` provides a coarser safety net. Detailed design deferred to v1.7 implementation.
+**Resolution**: On a future Goose path, anomaly detection would likely become a **Goose extension** -- a custom MCP server that wraps tool calls with KA's anomaly checking logic. Alternatively, KA's aggregate phase timeout + `failClosed` provides a coarser safety net. Detailed design is deferred until Goose is back in active scope.
 
 #### HIGH-3: Audit Granularity in Remote Execution
 
 **Problem**: Moving LLM execution to Goose could degrade real-time, per-turn audit events to post-hoc trace extraction.
 
-**Resolution**: The `SessionUpdate` callback in the ACP Go SDK delivers events in real-time as the Goose session executes -- tool calls, agent messages, thought chunks. KA registers a `SessionUpdate` handler that emits KA audit events (`EventTypeLLMRequest`, `EventTypeLLMResponse`, `EventTypeLLMToolCall`) as they stream in, preserving the same per-turn granularity as the current inline `runLLMLoop`. No post-hoc trace extraction needed. This applies to both v1.6 hooks and v1.7+ core phases.
+**Resolution**: For the near term, v1.6 remote hooks rely on the A2A execution-trace artifact already defined in PROPOSAL-EXT-002. The ACP spike indicates that `SessionUpdate` is a promising future fit for Goose-side streaming, but that remains contingent on Goose ACP supporting the required session configuration model.
 
 #### HIGH-4: ACP Instability
 
 **Problem**: ACP is mid-migration (Phase 3), not yet stable. Building against an unstable protocol is risky.
 
-**Resolution**: Goose adoption is v1.7+ (long-term). ACP Phase 4 (stable, single interface) is expected before then. v1.5-v1.6 have zero ACP dependency. Risk is mitigated by timeline alignment.
+**Resolution**: Goose adoption remains a future candidate only. v1.5 validates the current inline approach, and v1.6 remote hooks use A2A only. ACP stays off the critical path until Goose ACP can configure sessions with the semantics Kubernaut needs.
 
 ### Round 2
 
@@ -425,25 +472,25 @@ Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medi
 
 **Problem**: OCI digest references in `extensions[].ref` are not native Goose format.
 
-**Resolution**: KA's skill resolver handles OCI-to-endpoint translation. For Goose, KA constructs ACP extension configs (`type: sse`, `url`, `headers`) from resolved endpoint URLs. This is Go struct population, not YAML generation. Estimate: included in existing skill resolver work (PROPOSAL-EXT-002 scope).
+**Resolution**: KA's skill resolver still handles OCI-to-endpoint translation, but the Goose-specific mapping is future work. Near-term remote execution remains A2A-only, so ACP extension construction is no longer assumed to be part of v1.6 scope.
 
 #### MEDIUM-2: `submit_result` vs Goose `final_tool` Semantic Gap
 
 **Problem**: Behavioral difference between KA's `submit_result` sentinel tool and Goose's `final_tool` concept.
 
-**Resolution**: Functionally equivalent for the happy path. Goose's `response.json_schema` maps to KA's `outputSchema` + `submit_result`. For self-correction, KA uses ACP `Prompt()` to continue the session (see CRITICAL-1).
+**Resolution**: This remains a future Goose design concern, not a near-term delivery item. The current inline flow continues to use `submit_result`, and any Goose mapping must be revisited only after the ACP session-configuration gap is closed.
 
 #### MEDIUM-3: Work Estimate Revised
 
 **Problem**: Initial estimate of 5.5 weeks was optimistic.
 
-**Resolution**: v1.7+ Goose integration estimated at **7-9 weeks** (reduced from 9-11w due to ACP Go SDK eliminating the need for a custom ACP client or Recipe translator). This is on top of v1.5/v1.6 work.
+**Resolution**: Any Goose estimate remains tentative until the ACP session-configuration gap is closed upstream. The more important near-term decision is sequencing: validate the current prompt builder first, then narrow any remote execution work to A2A.
 
 #### MEDIUM-4: LLM Credential Migration Unaddressed
 
 **Problem**: How Goose accesses LLM credentials (API keys, service accounts) was not specified.
 
-**Resolution**: LLM credentials move to Goose pod via K8s Secrets. Provider compatibility matrix (Vertex AI with service accounts, Azure with managed identity, Bedrock with IAM roles) must be validated against Goose's provider support. Documented as a v1.7 prerequisite (Design Gate DG-9).
+**Resolution**: LLM credentials move to Goose pod via K8s Secrets. Provider compatibility matrix (Vertex AI with service accounts, Azure with managed identity, Bedrock with IAM roles) must be validated against Goose's provider support. Documented as a future prerequisite (Design Gate DG-9).
 
 #### LOW-1: DocsClaw Structured Output Description
 
@@ -475,12 +522,13 @@ Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medi
 
 | Risk | Severity | Mitigation | Phase |
 |------|----------|-----------|-------|
-| **ACP protocol instability** | High | v1.7+ adoption contingent on ACP Phase 4 stability. v1.5-v1.6 have zero ACP dependency. | v1.7+ |
-| **`coder/acp-go-sdk` maturity** | Medium | Third-party SDK (Coder). API stability and maintenance commitment not guaranteed. Validate against live Goose instance before v1.7 commitment. | v1.7+ |
-| **Goose provider matrix gaps** | Medium | Must validate Goose supports Vertex AI (service accounts), Azure (managed identity), Bedrock (IAM roles). Documented as DG-9 gate. | v1.7+ |
-| **Latency increase** | Medium | Goose adds IPC overhead (~50-100ms per invocation). Acceptable for investigation phases (multi-second LLM calls). Monitor aggregate pipeline latency. | v1.7+ |
+| **ACP protocol instability** | High | Goose adoption is off the near-term critical path. Revisit only after current v1.5 validation and once ACP is stable enough for required session semantics. | Future |
+| **Goose ACP session configuration gap** | High | Current Goose ACP lacks recipe/session parity for instructions, extensions, schema, and settings during session creation. Track upstream gap and do not commit Goose delivery dates until resolved. | Future |
+| **`coder/acp-go-sdk` maturity** | Medium | Third-party SDK (Coder). API stability and maintenance commitment not guaranteed. Validate against live Goose instance before any Goose commitment. | Future |
+| **Goose provider matrix gaps** | Medium | Must validate Goose supports Vertex AI (service accounts), Azure (managed identity), Bedrock (IAM roles). Documented as DG-9 gate. | Future |
+| **Latency increase** | Medium | Goose adds IPC overhead (~50-100ms per invocation). Acceptable for investigation phases (multi-second LLM calls). Monitor aggregate pipeline latency. | Future |
 | **Governance / licensing** | Low | Apache 2.0 confirmed. AUP dispute resolved. Monitor for future governance changes in Block/Goose project. | Ongoing |
-| **Testing complexity** | Medium | Goose in CI requires containerized Goose instance. Mock ACP server for unit tests; real Goose for integration tests. | v1.7+ |
+| **Testing complexity** | Medium | Goose in CI requires containerized Goose instance. Mock ACP server for unit tests; real Goose for integration tests. | Future |
 | **InvestigationHook CRD adoption** | Low | CRD requires code generation and documentation. KA uses informer cache (no reconciler). Established pattern in the codebase. | v1.5 |
 
 ---
@@ -489,15 +537,15 @@ Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medi
 
 | Gate | Question | Status |
 |------|----------|--------|
-| **DG-7: Runtime selection** | How does KA select which runtime executes a given phase? | **Resolved** -- Hook phases: operator configures via InvestigationHook CRD `runtime.endpoint`. Core phases: inline (v1.5-v1.6), Goose (v1.7+). |
-| **DG-8: ACP stability gate** | When is ACP stable enough for production use? | **Deferred** -- Monitor ACP Phase 4 rollout. Gate criterion: Goose deprecates goosed REST API in favor of ACP-only interface. |
+| **DG-7: Runtime selection** | How does KA select which runtime executes a given phase? | **Resolved for near-term scope** -- Hook phases use A2A endpoints only. Core phases stay inline. If ACP is introduced later, add an explicit protocol/type discriminator to the hook spec. |
+| **DG-8: ACP stability gate** | When is ACP stable enough for production use? | **Deferred** -- Goose ACP must support the required session configuration semantics (or a supported extension method), not just basic session creation and prompt turns. |
 | **DG-9: Credential management** | How do LLM credentials reach Goose pods? | **Deferred** -- K8s Secrets injection. Must validate Goose supports KA's full provider matrix (Vertex AI SA, Azure MI, Bedrock IAM). |
 
 ---
 
 ## 15. Impact on PROPOSAL-EXT-002
 
-The following updates to PROPOSAL-EXT-002 are proposed but **deferred to a follow-up PR** after the `remote-execution-review` branch merges to main (avoids branch divergence risk):
+The following updates to PROPOSAL-EXT-002 are proposed but **deferred to a follow-up PR** so this document can stay focused on the narrowed near-term scope:
 
 | EXT-002 Section | Proposed Change |
 |----------------|----------------|
@@ -507,6 +555,6 @@ The following updates to PROPOSAL-EXT-002 are proposed but **deferred to a follo
 | Section 3.4 | Reference InvestigationHook CRD for hook phases, KA config for core phases |
 | Section 5.2 | Add `pre-workflow-selection` template data contract |
 | Section 7 | Add InvestigationHook CRD-based bundle resolution for optional phases |
-| Section 11 | Add Goose alignment milestones (v1.5 format, v1.6 optional runtime, v1.7+ full delegation) |
+| Section 11 | Add Goose alignment milestones (v1.5 validation, v1.6 A2A hooks, future Goose re-evaluation) |
 | Appendix B | Update WAR analogy -- KA as compiler, Goose as application server |
 | Appendix D | Add glossary terms: Goose, ACP, ACP Go SDK, Recipe, InvestigationHook, pre-workflow-selection, settings |
