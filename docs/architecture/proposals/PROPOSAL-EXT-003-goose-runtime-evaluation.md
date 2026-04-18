@@ -56,7 +56,7 @@ The key future enabler is the **`coder/acp-go-sdk`** -- a typed Go client for th
 
 | Version | Goose Dependency | KA Role | Runtime |
 |---------|-----------------|---------|---------|
-| v1.5 | None | Current inline executor + orchestrator | Validate the existing typed `prompt.Builder` flow; no manifest-driven loading yet |
+| v1.5 | None | Current inline executor + orchestrator | Validate the existing typed `prompt.Builder` flow; define hook/CRD shape only, with no remote-runtime adoption yet |
 | v1.6 | None for core; optional remote A2A hooks only | Orchestrator + inline for core | Hook phases can delegate to A2A agents (for example, DocsClaw or customer-managed agents) |
 | Future (post-v1.5 re-evaluation) | Candidate only, contingent on ACP/API stability | Potential pure orchestrator/compiler | Revisit Goose once ACP can support the required session configuration model |
 
@@ -92,7 +92,7 @@ response:
 | `apiVersion` | Kubernaut template data contract version (which `.Signal`, `.Enrichment`, `.Investigation` fields are available). Distinct from `version`. | No equivalent (Kubernaut extension) |
 | `version` | Bundle format version. | `version` (identical) |
 | `title` / `description` | Human-readable metadata. | `title` / `description` (identical) |
-| `instructions` | Go template rendered by KA with `missingkey=error`. Supports conditionals (`{{if}}`), iteration (`{{range}}`), and nested object access (`{{ .Signal.Namespace }}`). | `instructions` (Goose uses flat `{{key}}` parameter substitution only) |
+| `instructions` | Go template rendered by KA using the current `prompt.Builder` behavior. Supports conditionals (`{{if}}`), iteration (`{{range}}`), and nested object access (`{{ .Signal.Namespace }}`). A future manifest-driven implementation may tighten this further (for example, with stricter missing-key handling). | `instructions` (Goose uses flat `{{key}}` parameter substitution only) |
 | `extensions[].ref` | OCI digest refs (`@sha256:`) and `builtin://` scheme. KA resolves these to live MCP endpoint URLs. | `extensions[]` with `type: sse`, `url: "..."` format |
 | `response.json_schema` | JSON Schema for structured output phases. | `response.json_schema` (directly compatible) |
 
@@ -328,10 +328,10 @@ In the current inline architecture, a shadow agent runs in parallel with the pri
 
 KA's strategy config (`single`, `consensus`, `consensus-fast`) already defines whether to run one or two parallel investigations. If Goose becomes viable later:
 
-- KA creates two ACP sessions using the **same compiled bundle** but different `settings` blocks (different provider/model, e.g., Claude vs GPT-4o).
-- Both sessions execute in parallel. KA collects both `InvestigationResult` structured outputs.
+- Candidate future design: KA could create two ACP sessions using the **same compiled bundle** but different provider/model settings (for example, Claude vs GPT-4o), assuming Goose ACP gains the required session-configuration support.
+- Both sessions would execute in parallel, and KA would collect both `InvestigationResult` structured outputs.
 - The consensus algorithm (voting, merge, or comparison) runs in KA -- it is domain logic, not LLM execution.
-- Goose's `settings.provider` and `settings.model` fields make this natural: same recipe, different settings = dual investigation. No recipe duplication needed.
+- Goose's `settings.provider` and `settings.model` fields make this a plausible future fit: same logical recipe/bundle, different settings, no recipe duplication needed.
 
 ---
 
@@ -396,7 +396,7 @@ Delegate LLM execution to Goose via ACP Go SDK once the Goose ACP/API surface is
 
 - Validate the current typed `prompt.Builder` path and prompt contracts before changing the execution model.
 - KA executes all phases inline (current architecture + MCP support).
-- `InvestigationHook` CRD for optional hook phases (parallel execution).
+- `InvestigationHook` CRD design and schema definition for optional hook phases; runtime adoption is deferred.
 - **No Goose runtime dependency.**
 
 ### 11.2 v1.6: Optional External Delegation for Hooks (A2A Only)
@@ -428,7 +428,7 @@ Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medi
 
 **Problem**: Catalog validation (workflow-selection phase) retries within the same LLM session -- appending correction messages and calling `runLLMLoop` again. If the loop moves to Goose, KA loses stateful mid-session retries.
 
-**Resolution**: Use ACP Go SDK's `Prompt()` method on the existing session to continue with correction context. KA: (1) creates a Goose session via `NewSession`, (2) sends the workflow prompt via `Prompt()`, (3) receives structured output via `SessionUpdate` callback, (4) validates against the catalog, (5) if invalid, calls `Prompt()` again on the same session with the correction message. The Goose session maintains full conversation state across retries. This maps directly to KA's current pattern where `correctionFn` appends to `messages` and re-calls `runLLMLoop`. Verified: ACP `session/prompt` sends a user message to an existing session and streams the response.
+**Resolution**: Candidate future design only: if Goose becomes viable and the ACP session-configuration gap is closed, KA could use ACP Go SDK `Prompt()` calls on an existing session to continue with correction context. In that model, KA would create a Goose session, send the workflow prompt, validate the structured output, and, if invalid, send a correction message via another `Prompt()` call on the same session. That would map well to KA's current pattern where `correctionFn` appends to `messages` and re-calls `runLLMLoop`, but it should not be treated as committed until upstream ACP support is sufficient.
 
 #### CRITICAL-2: Template Rendering Ownership
 
@@ -514,7 +514,7 @@ Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medi
 
 **Problem**: The `settings` block in Goose Recipes (provider, model, temperature) was not discussed.
 
-**Resolution**: `settings` is a pass-through field from KA config to the compiled ACP session config. It is strategically important for dual investigation (#648): same recipe, different `settings` (different provider/model) = two parallel investigations. KA's strategy config (`single`/`consensus`/`consensus-fast`) determines which `settings` get injected into each ACP session invocation.
+**Resolution**: Candidate future design only: if Goose ACP gains the needed session-configuration support, `settings` would likely become a pass-through field from KA strategy/config into Goose session setup. That would make dual investigation (#648) natural: same logical recipe/bundle, different provider/model settings per session. Until the upstream ACP gap is closed, this remains an intended future mapping rather than a resolved implementation detail.
 
 ---
 
