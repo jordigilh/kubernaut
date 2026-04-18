@@ -236,7 +236,7 @@ func (b *Builder) RenderWorkflowSelection(in WorkflowSelectionInput) (string, er
 		PriorityDescription: withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
 		Environment:         withDefault(sanitized.Environment, "default"),
 		RiskDescription:     withDefault(sanitized.RiskTolerance, inferRisk(sanitized.Severity)),
-		RCASummary:          in.RCASummary,
+		RCASummary:          sanitizeField(in.RCASummary),
 		StructuredOutput:    b.structuredOutput,
 		Phase1Assessment:    formatPhase1Assessment(in.Phase1),
 	}
@@ -271,20 +271,24 @@ func formatPhase1Assessment(p1 *Phase1Data) string {
 	}
 	var parts []string
 	if p1.Severity != "" {
-		parts = append(parts, "- **Severity**: "+p1.Severity)
+		parts = append(parts, "- **Severity**: "+sanitizeField(p1.Severity))
 	}
 	if len(p1.ContributingFactors) > 0 {
-		parts = append(parts, "- **Contributing Factors**: "+strings.Join(p1.ContributingFactors, "; "))
+		sanitized := make([]string, len(p1.ContributingFactors))
+		for i, f := range p1.ContributingFactors {
+			sanitized[i] = sanitizeField(f)
+		}
+		parts = append(parts, "- **Contributing Factors**: "+strings.Join(sanitized, "; "))
 	}
 	if p1.RemediationTarget.Kind != "" {
-		target := p1.RemediationTarget.Kind + "/" + p1.RemediationTarget.Name
+		target := sanitizeField(p1.RemediationTarget.Kind) + "/" + sanitizeField(p1.RemediationTarget.Name)
 		if p1.RemediationTarget.Namespace != "" {
-			target += " (ns: " + p1.RemediationTarget.Namespace + ")"
+			target += " (ns: " + sanitizeField(p1.RemediationTarget.Namespace) + ")"
 		}
 		parts = append(parts, "- **Remediation Target**: "+target)
 	}
 	if p1.InvestigationOutcome != "" {
-		parts = append(parts, "- **Investigation Outcome**: "+p1.InvestigationOutcome)
+		parts = append(parts, "- **Investigation Outcome**: "+sanitizeField(p1.InvestigationOutcome))
 	}
 	if p1.Confidence > 0 {
 		parts = append(parts, fmt.Sprintf("- **Confidence**: %.2f", p1.Confidence))
