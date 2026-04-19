@@ -37,6 +37,7 @@ This evaluation was refined through two rounds of adversarial audit (14 findings
 **Appendices**
 
 - [Appendix A: API Frontend Runtime Evaluation (Google ADK-Go vs Goose)](#appendix-a-api-frontend-runtime-evaluation-google-adk-go-vs-goose)
+- [Appendix B: Delegated Authorization Model for Agent MCP Access](#appendix-b-delegated-authorization-model-for-agent-mcp-access)
 
 ---
 
@@ -534,6 +535,8 @@ Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medi
 | **Governance / licensing** | Low | Apache 2.0 confirmed. AUP dispute resolved. Monitor for future governance changes in Block/Goose project. | Ongoing |
 | **Testing complexity** | Medium | Goose in CI requires containerized Goose instance. Mock ACP server for unit tests; real Goose for integration tests. | Future |
 | **InvestigationHook CRD adoption** | Low | CRD requires code generation and documentation. KA uses informer cache (no reconciler). Established pattern in the codebase. | v1.5 |
+| **SPIRE dynamic registration throughput** | Medium | KA creates SPIRE registration entries per agent session. Must validate the SPIRE Registration API supports the required throughput and TTL semantics under concurrent load. Flagged in DG-11 / Appendix B open questions. | Future |
+| **MCP Gateway RFC 9396 support** | Medium | No off-the-shelf MCP gateway reads `authorization_details` (RFC 9396) today. May require a custom Go gateway component or Envoy with ext_authz. Adds build/maintenance cost. Evaluate during DG-11 detailed design. | Future |
 
 ---
 
@@ -545,6 +548,7 @@ Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medi
 | **DG-8: ACP stability gate** | When is ACP stable enough for production use? | **Deferred** -- Goose ACP must support the required session configuration semantics (or a supported extension method), not just basic session creation and prompt turns. |
 | **DG-9: Credential management** | How do LLM credentials reach Goose pods? | **Deferred** -- K8s Secrets injection. Must validate Goose supports KA's full provider matrix (Vertex AI SA, Azure MI, Bedrock IAM). |
 | **DG-10: API Frontend runtime selection** | Which framework powers the API Frontend service (A2A + MCP endpoints)? | **Open** -- Google ADK-Go is the leading candidate. Hands-on spike required before v1.4 implementation. See [Appendix A](#appendix-a-api-frontend-runtime-evaluation-google-adk-go-vs-goose). |
+| **DG-11: Agent MCP credential model** | How do delegated agents (Goose or otherwise) authenticate to MCP services declared in their recipes without holding credentials? | **Open** -- Delegated authorization model using SPIRE SVIDs with RFC 8693 token exchange and RFC 9396 rich authorization requests. KA as permission ceiling. See [Appendix B](#appendix-b-delegated-authorization-model-for-agent-mcp-access). |
 
 ---
 
@@ -661,3 +665,282 @@ The three technologies serve distinct layers:
 | **Hands-on spike: Goose as API Frontend** | v1.4 pre-work (parallel) | Build the same minimal server using Goose (Rust binary + ACP Go client). Compare deployment complexity, latency, and operational overhead. |
 | **Comparison report** | End of spike | Document findings, update this appendix with empirical results, and resolve DG-10. |
 | **DG-10 resolution** | Before v1.4 implementation | Select the API Frontend runtime based on spike results. Gate: the chosen framework must satisfy all must-have requirements in Section A.2. |
+
+---
+
+## Appendix B: Delegated Authorization Model for Agent MCP Access
+
+### B.1 Scope
+
+This appendix addresses a critical security question for Kubernaut's agentic architecture: **how does an agent executing a recipe with MCP-backed skills authenticate to those MCP services without holding credentials?**
+
+The [Agent Sandboxing Strategy](https://github.com/kagenti/kagenti/blob/feat/sandbox-k9-docs/docs/agentic-runtime/zero-secret-agents.md) establishes a zero-secret architecture where agents never possess credentials usable outside their own session. However, it does not define the **skill-to-credential mapping** -- the mechanism that routes the correct credential to the correct MCP service when an agent invokes a tool. This appendix fills that gap, grounded in industry standards from [CoSAI WS4](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems) and IETF RFCs.
+
+This model applies to any agent runtime Kubernaut might adopt (Goose, DocsClaw, customer-managed A2A agents) -- it is framework-agnostic.
+
+### B.2 The Problem: Skill-to-Credential Mapping
+
+A Goose recipe (or Kubernaut PromptBundle) declares multiple MCP-backed skills. Each skill may require a **different credential** with **different scopes** to access its backend service:
+
+```yaml
+extensions:
+  - type: mcp
+    name: github-mcp        # needs GitHub OAuth (repo:read scope)
+  - type: mcp
+    name: k8s-mcp           # needs K8s service account token
+  - type: mcp
+    name: jira-mcp          # needs Jira API token (issue:write scope)
+```
+
+The zero-secret architecture dictates that the agent never holds any of these credentials. But the infrastructure must know:
+
+1. **Which** outbound call maps to which skill
+2. **Which** credential set (provider, scope, audience) each destination requires
+3. **How** to bind the recipe's skill declarations to infrastructure-level auth configuration
+
+Without this binding, the AuthBridge sidecar cannot differentiate between an outbound call to GitHub (needing a GitHub-scoped token) and a call to Jira (needing a Jira-scoped token).
+
+### B.3 Delegated Authorization Model
+
+The solution is a **delegated authorization model** where KA acts as the permission ceiling and SPIRE provides short-lived, scoped identities for each agent session.
+
+#### B.3.1 The Permission Chain
+
+```mermaid
+graph TD
+    PA["Platform Admin"] -->|grants broad MCP access| KA["Kubernaut Agent - KA<br/>SPIFFE ID: spiffe://kubernaut.io/ka"]
+    KA -->|reads recipe, creates scoped token<br/>RFC 8693 Token Exchange| AS["Agent Session<br/>SPIFFE ID: spiffe://kubernaut.io/agent-session/id"]
+    AS -->|per-tool token at gateway<br/>RFC 9396 authorization_details| GW["MCP Gateway<br/>validates + forwards"]
+    GW -->|scoped OBO token| MCP1["github-mcp"]
+    GW -->|scoped OBO token| MCP2["k8s-mcp"]
+    GW -->|scoped OBO token| MCP3["jira-mcp"]
+
+    style KA fill:#e1f5fe
+    style AS fill:#fff3e0
+    style GW fill:#f3e5f5
+```
+
+**Key constraint**: The agent's permissions are always a **strict subset** of KA's permissions. A recipe cannot declare access to an MCP service that KA itself is not authorized to reach. This prevents rogue recipes from escalating privilege.
+
+#### B.3.2 KA as Permission Ceiling
+
+KA enforces a ceiling check before deploying any agent:
+
+1. KA parses the recipe and enumerates declared MCP skills
+2. KA validates every skill maps to an MCP service within KA's own authorization boundary
+3. If any skill references a service KA cannot access, the recipe is **rejected before the agent is created**
+4. If all skills are within scope, KA creates a scoped auth context for the session
+
+This is the same delegation pattern used by AWS IAM `sts:AssumeRole` with scope-down policies and Kubernetes RBAC impersonation -- the delegating principal must hold the superset.
+
+### B.4 SPIRE-Based Identity Issuance
+
+[SPIRE](https://spiffe.io/) (the SPIFFE Runtime Environment) is an approved technology in the Agent Sandboxing Strategy and is explicitly recommended by CoSAI WS4 for agentic identity.
+
+From the [CoSAI MCP Security paper](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems/blob/main/model-context-protocol-security.md) (Section 3.2.1):
+
+> "Standards are emerging to define the identity of agents and servers. One of these is **SPIFFE / SPIRE**, which provides cryptographic workload identities that can be granted authorization to resources."
+
+From the [CoSAI Agentic IAM paper](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems/blob/main/agentic-identity-and-access-control.md) (Section 3.3):
+
+> "**Dynamic, ephemeral IDs**: SPIFFE SVIDs, short-lived OAuth tokens, DIDs -- for dynamic or higher-risk agents (**preferred default**)"
+
+#### B.4.1 Identity Lifecycle
+
+SPIRE provides the **workload identity** (SVID); the authorization server (Keycloak) issues the **OAuth token with `authorization_details`**. These are distinct systems -- the SVID answers "who is this workload?", while the OAuth token answers "what is this workload allowed to do?"
+
+```mermaid
+sequenceDiagram
+    participant KA as Kubernaut Agent
+    participant SPIRE as SPIRE Server
+    participant KC as Keycloak (AuthZ Server)
+    participant AB as AuthBridge Sidecar
+    participant Agent as Goose Agent
+    participant GW as MCP Gateway
+    participant MCP as MCP Service
+
+    Note over KA: Recipe declares github-mcp, k8s-mcp
+    KA->>KA: Validate skills within KA permissions
+    KA->>SPIRE: Register agent session entry
+    Note right of SPIRE: SPIFFE ID: spiffe://kubernaut.io/agent-session/abc123
+    Note right of SPIRE: TTL: 30 min | Selectors: pod NS, SA, labels
+    KA->>KC: Register scoped authorization_details for session
+    Note right of KC: github-mcp: list_prs, get_pr
+    Note right of KC: k8s-mcp: get_pods, get_logs
+
+    KA->>KA: Deploy agent pod with AuthBridge sidecar
+
+    Note over AB: Pod starts, AuthBridge obtains SVID
+    AB->>SPIRE: Request SVID via workload attestation
+    SPIRE-->>AB: X.509 SVID (workload identity)
+
+    Note over Agent: Agent invokes github-mcp skill
+    Agent->>AB: MCP tool call list_prs - no credentials
+    AB->>KC: RFC 8693 token exchange (present SVID, request authorization_details)
+    KC-->>AB: OAuth token with scoped authorization_details
+    AB->>GW: Forward request with OAuth token
+    GW->>GW: Validate token and check authorization_details permits github-mcp list_prs
+    GW->>GW: RFC 8693 token exchange to GitHub OAuth repo:read
+    GW->>MCP: Proxied request with scoped OAuth token
+    MCP-->>GW: Response
+    GW-->>AB: Response
+    AB-->>Agent: Tool result
+
+    Note over Agent: Session ends
+    Note over SPIRE: SVID TTL expires - no cleanup needed
+```
+
+#### B.4.2 Why SPIRE Fits
+
+| Property | How SPIRE Delivers It |
+|:--|:--|
+| **Short-lived by design** | SVID TTLs are configurable (minutes to hours). When the agent session ends, the identity expires naturally. No revocation, no cleanup. |
+| **Workload-attested** | SPIRE attests the workload based on pod properties (namespace, service account, labels). The agent cannot forge or escalate its identity. |
+| **Zero-secret aligned** | A SPIFFE SVID is a cryptographic identity, not a stored secret. Issued on-demand, used for token exchange, expires. The agent never holds a reusable credential. |
+| **Scope-encodable** | JWT SVIDs carry custom claims. KA encodes allowed MCP services and actions as `authorization_details` per [RFC 9396](https://datatracker.ietf.org/doc/html/rfc9396). |
+| **Already approved** | Listed as an approved technology in the Agent Sandboxing Strategy. |
+
+### B.5 Standards Alignment
+
+The delegated authorization model is grounded in three IETF RFCs and two CoSAI WS4 publications.
+
+#### B.5.1 RFC 8693 -- OAuth 2.0 Token Exchange
+
+[RFC 8693](https://datatracker.ietf.org/doc/html/rfc8693) defines the mechanism for exchanging one security token for another with narrower scope. In Kubernaut's model:
+
+- KA exchanges its own broad SPIFFE SVID for a **scoped agent session token** via SPIRE/Keycloak
+- The MCP Gateway performs a second exchange: agent session token -> **per-MCP-service OAuth token** (narrowest scope)
+
+Each hop narrows the scope. The agent can never exceed KA's authorization boundary.
+
+From the [CoSAI MCP Security paper](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems/blob/main/model-context-protocol-security.md) (Section 3.2.2):
+
+> "Perform token exchange with the authorization server to provide full accountability (RFC 8693)"
+
+#### B.5.2 RFC 9396 -- Rich Authorization Requests
+
+[RFC 9396](https://datatracker.ietf.org/doc/html/rfc9396) defines `authorization_details` -- a structured, per-tool authorization descriptor carried in tokens. This solves the skill-to-credential mapping problem:
+
+```json
+{
+  "type": "mcp_tool",
+  "tool": "github-mcp",
+  "actions": ["list_prs", "get_pr"],
+  "locations": ["https://mcp-gateway:8080/github"]
+}
+```
+
+Each MCP tool the agent is authorized to invoke is explicitly declared in the token. The MCP Gateway reads `authorization_details` and enforces per-tool access -- no custom claim invention needed.
+
+From the [CoSAI MCP Security paper](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems/blob/main/model-context-protocol-security.md) (Section 3.2.2):
+
+> "Fine grained authorizations, through Rich Authorization Requests (RFC 9396), limit requests to specific resources or tool parameters"
+
+#### B.5.3 RFC 9449 -- DPoP (Proof of Possession)
+
+[RFC 9449](https://datatracker.ietf.org/doc/html/rfc9449) adds proof-of-possession semantics to prevent token replay. If an agent's SVID is intercepted, DPoP ensures the token cannot be used from a different workload.
+
+From the [CoSAI MCP Security paper](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems/blob/main/model-context-protocol-security.md) (Section 3.2.2):
+
+> "Use short-lived tokens and support proof-of-possession (DPoP) to prevent replay attacks (RFC 9449)"
+
+#### B.5.4 CoSAI WS4 -- Multi-Hop Delegation Rule
+
+The [Agentic IAM paper](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems/blob/main/agentic-identity-and-access-control.md) (Section 3.4) codifies the delegation constraint:
+
+> "**Scope SHOULD narrow at each hop** and MUST NOT expand beyond the delegating principal's effective permissions."
+
+This directly validates KA's role as the permission ceiling. The delegation chain narrows at every hop by construction:
+
+```
+Platform Admin -> KA (superset) -> Agent Session (scoped subset) -> Per-MCP-service (narrowest)
+```
+
+#### B.5.5 CoSAI WS4 -- Gateways as Enforcement Boundaries
+
+The [Agentic IAM paper](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems/blob/main/agentic-identity-and-access-control.md) (Section 5.1) explicitly recommends MCP servers and gateways as enforcement points:
+
+> "MCP servers, API gateways, and service meshes SHOULD terminate and validate agent tokens (including attestation where applicable), evaluate policies per request combining agent, subject, resource, and context attributes, and forward only scoped OBO credentials downstream -- never raw upstream tokens."
+
+### B.6 Recipe-to-Infrastructure Translation
+
+The recipe is the source of intent; KA is the compiler that translates it into infrastructure configuration.
+
+```mermaid
+graph LR
+    subgraph Recipe["Recipe - declarative intent"]
+        R["extensions:<br/>- github-mcp<br/>- k8s-mcp"]
+    end
+    subgraph Compiler["KA Compiler - deploy time"]
+        V["Ceiling check:<br/>skills within KA perms"]
+        S["SPIRE registration:<br/>scoped SVID + auth_details"]
+        D["Pod deployment:<br/>AuthBridge config"]
+    end
+    subgraph Runtime["Runtime - per request"]
+        AB2["AuthBridge presents SVID"]
+        GW2["Gateway validates<br/>authorization_details"]
+        TE["Token exchange per service"]
+    end
+
+    R --> V --> S --> D --> AB2 --> GW2 --> TE
+```
+
+| Concern | Owner |
+|:--|:--|
+| What tools does the agent need? | **Recipe** (declares skills) |
+| Is the agent allowed to use those tools? | **KA** (validates recipe against its own permissions) |
+| What credentials does each tool need? | **AuthBridge + MCP Gateway** (configured by KA with scoped exchange rules) |
+| Is this specific call authorized? | **MCP Gateway** (validates `authorization_details` per request) |
+
+The recipe stays clean -- no credentials, no auth metadata. KA is the only component that bridges intent (recipe) to infrastructure (SPIRE registration + MCP Gateway policy). The agent is fully sandboxed with minimum privilege for its task.
+
+### B.7 Implications for Kubernaut
+
+1. **Recipes stay portable**: No credentials, no auth hints, no infrastructure coupling. Safe to store as OCI artifacts, share across environments, and version in Git.
+
+2. **KA owns the security context**: When KA deploys an agent, it ensures the pod has the correct AuthBridge config, SPIRE registration, and network policies. Security posture is an infrastructure concern, not an agent concern.
+
+3. **Tool authorization is decoupled from the recipe**: The MCP Gateway decides which tools an agent can use based on the scoped SVID, not based on what the recipe declares. A recipe can *request* a tool, but the gateway can deny it.
+
+4. **No credential rotation burden on the agent**: OAuth token expiry, API key changes, and DB password rotation are handled entirely by the proxy/gateway layer. The agent is unaffected.
+
+5. **Auditable at every layer**: SPIRE logs identity issuance, AuthBridge logs token exchanges, MCP Gateway logs tool invocations with agent and subject identifiers. This satisfies CoSAI's "prove control on demand" requirement.
+
+### B.8 Relationship to MCP Handshake RFC
+
+The [Zero-Trust MCP Handshake RFC](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems/blob/main/rfc-mcp_handshake.md) proposes an additional layer for high-sensitivity operations: ephemeral, transaction-bound tokens with parameter binding (SHA-256 hash of tool parameters bound to the token). This adds replay protection beyond what DPoP provides.
+
+For Kubernaut's production-sensitive workflows (e.g., remediation execution, infrastructure changes), the handshake pattern could be layered on top of the delegated authorization model:
+
+| Data Classification | Authorization Model |
+|:--|:--|
+| Internal/Public (Class 4-5) | Standard delegated auth (SVID + `authorization_details`) |
+| Confidential (Class 3) | Delegated auth + transaction-bound ephemeral tokens |
+| PII/Sensitive (Class 1-2) | Delegated auth + ephemeral tokens + dual-agent validation |
+
+This tiered approach aligns with the MCP Handshake RFC's phased implementation path and can be adopted incrementally as Kubernaut's agent capabilities expand.
+
+### B.9 Open Questions
+
+| Question | Notes |
+|:--|:--|
+| **SPIRE registration API for dynamic agents** | KA needs to create and delete SPIRE registration entries dynamically per agent session. Validate the SPIRE Registration API supports the required throughput and TTL semantics. |
+| **MCP Gateway implementation** | Select or build the MCP Gateway that can read `authorization_details` (RFC 9396) and perform per-service token exchange. Evaluate existing options (Envoy with ext_authz, custom Go gateway, or third-party). |
+| **ABAC/PBAC policy engine** | CoSAI recommends OPA/Rego, Cedar, or OpenFGA for policy evaluation. Select the engine that integrates best with Kubernaut's existing Kubernetes RBAC model. |
+| **JWT SVID vs X.509 SVID** | JWT SVIDs are better for carrying `authorization_details` claims. X.509 SVIDs are better for mTLS. Determine whether AuthBridge needs both or can standardize on JWT. |
+| **Integration with existing K8s RBAC** | Define how the SPIRE-based model coexists with Kubernaut's existing namespace-scoped RBAC for `InvestigationHook` CRDs and operator permissions. |
+
+### B.10 References
+
+| Reference | Description |
+|:--|:--|
+| [CoSAI WS4 -- Secure Design for Agentic Systems](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems) | Repository for all CoSAI Workstream 4 publications |
+| [MCP Security (CoSAI)](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems/blob/main/model-context-protocol-security.md) | MCP threat model, controls, and mitigations including SPIFFE/SPIRE recommendation |
+| [Agentic Identity and Access Management (CoSAI)](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems/blob/main/agentic-identity-and-access-control.md) | Agent-as-first-class-identity, multi-hop delegation, ZSP, gateway enforcement |
+| [Zero-Trust MCP Handshake RFC (CoSAI)](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems/blob/main/rfc-mcp_handshake.md) | Transaction-bound ephemeral tokens, tiered data classification |
+| [RFC 8693 -- OAuth 2.0 Token Exchange](https://datatracker.ietf.org/doc/html/rfc8693) | Standard for scope-narrowing token exchange at each delegation hop |
+| [RFC 9396 -- Rich Authorization Requests](https://datatracker.ietf.org/doc/html/rfc9396) | Structured `authorization_details` for per-tool, per-action authorization |
+| [RFC 9449 -- DPoP](https://datatracker.ietf.org/doc/html/rfc9449) | Proof-of-possession to prevent token replay |
+| [SPIFFE / SPIRE](https://spiffe.io/) | CNCF graduated project for workload identity |
+| [Agent Sandboxing Strategy](https://github.com/kagenti/kagenti/blob/feat/sandbox-k9-docs/docs/agentic-runtime/zero-secret-agents.md) | Zero-secret architecture, three security pillars, isolation profiles |
+
