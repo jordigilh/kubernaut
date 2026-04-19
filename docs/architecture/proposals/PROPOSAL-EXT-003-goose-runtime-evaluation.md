@@ -38,6 +38,7 @@ This evaluation was refined through two rounds of adversarial audit (14 findings
 
 - [Appendix A: API Frontend Runtime Evaluation (Google ADK-Go vs Goose)](#appendix-a-api-frontend-runtime-evaluation-google-adk-go-vs-goose)
 - [Appendix B: Delegated Authorization Model for Agent MCP Access](#appendix-b-delegated-authorization-model-for-agent-mcp-access)
+- [Appendix C: Agent Execution Architecture](#appendix-c-agent-execution-architecture)
 
 ---
 
@@ -537,6 +538,7 @@ Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medi
 | **InvestigationHook CRD adoption** | Low | CRD requires code generation and documentation. KA uses informer cache (no reconciler). Established pattern in the codebase. | v1.5 |
 | **SPIRE dynamic registration throughput** | Medium | KA creates SPIRE registration entries per agent session. Must validate the SPIRE Registration API supports the required throughput and TTL semantics under concurrent load. Flagged in DG-11 / Appendix B open questions. | Future |
 | **MCP Gateway RFC 9396 support** | Medium | No off-the-shelf MCP gateway reads `authorization_details` (RFC 9396) today. May require a custom Go gateway component or Envoy with ext_authz. Adds build/maintenance cost. Evaluate during DG-11 detailed design. | Future |
+| **Goose headless execution reliability** | Medium | Goose must support reliable headless mode with structured output on exit for KA to collect results from ephemeral pods. If headless mode is unreliable or requires interactive prompts, the ephemeral pod model breaks. Validate during ACP stability spike (DG-8). Flagged in DG-12 / Appendix C open questions. | Future |
 
 ---
 
@@ -549,6 +551,7 @@ Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medi
 | **DG-9: Credential management** | How do LLM credentials reach Goose pods? | **Deferred** -- K8s Secrets injection. Must validate Goose supports KA's full provider matrix (Vertex AI SA, Azure MI, Bedrock IAM). |
 | **DG-10: API Frontend runtime selection** | Which framework powers the API Frontend service (A2A + MCP endpoints)? | **Open** -- Google ADK-Go is the leading candidate. Hands-on spike required before v1.4 implementation. See [Appendix A](#appendix-a-api-frontend-runtime-evaluation-google-adk-go-vs-goose). |
 | **DG-11: Agent MCP credential model** | How do delegated agents (Goose or otherwise) authenticate to MCP services declared in their recipes without holding credentials? | **Open** -- Delegated authorization model using SPIRE SVIDs with RFC 8693 token exchange and RFC 9396 rich authorization requests. KA as permission ceiling. See [Appendix B](#appendix-b-delegated-authorization-model-for-agent-mcp-access). |
+| **DG-12: Agent execution architecture** | How do KA, Goose, and the API Frontend divide responsibilities for investigation execution? Which phases use LLM reasoning (Goose) vs programmatic execution (KA in-process)? | **Open** -- Three-layer architecture: ADK-Go (protocol gateway), KA (investigation operator), Goose (worker runtime). Enrichment stays programmatic in KA; investigation, RCA, and workflow selection delegate to ephemeral Goose pods. See [Appendix C](#appendix-c-agent-execution-architecture). |
 
 ---
 
@@ -944,3 +947,265 @@ This tiered approach aligns with the MCP Handshake RFC's phased implementation p
 | [SPIFFE / SPIRE](https://spiffe.io/) | CNCF graduated project for workload identity |
 | [Agent Sandboxing Strategy](https://github.com/kagenti/kagenti/blob/feat/sandbox-k9-docs/docs/agentic-runtime/zero-secret-agents.md) | Zero-secret architecture, three security pillars, isolation profiles |
 
+
+---
+
+## Appendix C: Agent Execution Architecture
+
+### C.1 Scope
+
+This appendix defines the **three-layer execution architecture** for Kubernaut's agentic capabilities: how external protocol handling, investigation orchestration, and LLM-driven execution are separated across distinct components. It establishes **KA as the investigation operator** -- the canonical term for KA's role in managing the full investigation lifecycle through the operator pattern.
+
+This appendix builds on:
+- **Appendix A** (API Frontend runtime evaluation -- the protocol layer)
+- **Appendix B** (delegated authorization -- how agents authenticate to MCP services)
+- **Main body, Section 5** (what KA keeps as domain-specific orchestration)
+
+### C.2 The Three Layers
+
+Kubernaut's agentic architecture separates concerns into three layers, each with a single responsibility:
+
+```mermaid
+graph TD
+    subgraph protocol ["Protocol Layer: API Frontend (ADK-Go)"]
+        A2A["A2A Server<br/>Agent Card, task lifecycle, SSE"]
+        MCP["MCP Server<br/>investigate, enrich, select_workflow tools"]
+    end
+
+    subgraph operator ["Operator Layer: Kubernaut Agent"]
+        KAOp["Investigation Operator<br/>CRD lifecycle, recipe compilation,<br/>permission ceiling, enrichment"]
+    end
+
+    subgraph worker ["Worker Layer: Ephemeral Goose Pods"]
+        GP1["Investigation Recipe"]
+        GP2["RCA Recipe"]
+        GP3["Workflow Selection Recipe"]
+    end
+
+    A2A --> KAOp
+    MCP --> KAOp
+    KAOp --> GP1
+    KAOp --> GP2
+    KAOp --> GP3
+```
+
+| Layer | Component | Pattern | Responsibility |
+|---|---|---|---|
+| **Protocol** | API Frontend (ADK-Go) | Gateway | Translates between external protocols (A2A tasks, MCP tool calls) and internal Kubernaut CRDs/APIs. No domain knowledge, no state ownership. |
+| **Operator** | Kubernaut Agent | Operator ([operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)) | Owns the investigation CRD lifecycle, encodes domain knowledge, compiles recipes, enforces permission ceiling, aggregates enrichment data. Long-running, reactive controller. |
+| **Worker** | Goose Pods | Ephemeral worker | Receives a fully-compiled recipe, executes LLM reasoning with tool calls, returns structured output, exits. Stateless, no domain knowledge. |
+
+### C.3 KA as Investigation Operator
+
+KA follows the **operator pattern** from Kubernetes and agentic workflow design. The operator pattern is characterized by:
+
+- **Deep domain-specific operational knowledge** encoded in a long-running controller
+- **CRD-based state management** -- the operator owns and drives custom resources toward desired state
+- **Reactive, event-driven lifecycle** -- the operator watches for events and reconciles
+
+The **investigation operator** encompasses the KA subsystem as a whole: the `kubernautagent` service (investigation logic, enrichment, recipe compilation) together with the `AIAnalysis` controller (CRD reconciliation, phase transitions). In v1.3, these are separate components -- the AIAnalysis controller reconciles `AIAnalysis` CRDs and invokes KA via HTTP, while KA itself is a stateless HTTP service. The operator pattern describes the **combined behavior** of these components, and future versions may unify them further.
+
+KA satisfies all three operator characteristics:
+
+| Operator Characteristic | How KA Implements It |
+|---|---|
+| Deep domain knowledge | KA knows which investigation phases to run, what enrichment data to inject, how to validate recipe permissions, how to interpret structured RCA output, and how to map findings to workflow selection. |
+| CRD state management | The AIAnalysis controller reconciles `AIAnalysis` CRDs, managing phase transitions from `Pending` through `Investigating`, `Analyzing`, and `Completed`/`Failed`. KA's investigation logic drives these transitions. |
+| Reactive lifecycle | The AIAnalysis controller is a long-running controller-runtime reconciler that watches `AIAnalysis` CRDs and reacts to phase changes. KA encodes the domain logic that determines the next state. |
+
+The term **"investigation operator"** is the canonical way to reference KA's role in Kubernaut documentation going forward. It refers to the KA subsystem's combined behavior, not a single binary.
+
+#### C.3.1 Operator Responsibilities
+
+KA's responsibilities in the agentic architecture extend [Section 5's current responsibility table](#5-what-ka-keeps-domain-specific-orchestration) with the new concerns introduced by the Goose worker model (pod creation, permission ceiling enforcement, multi-agent coordination). The Section 5 responsibilities (pipeline orchestration, bundle compilation, API contract, signal enrichment, result assembly, audit assembly, failure policy enforcement, catalog validation) remain valid; the list below adds the execution-layer responsibilities:
+
+1. **Recipe selection**: Based on the investigation phase and pipeline configuration, KA determines which Goose recipe to run. Core phases (investigation, RCA, workflow selection) use recipes from KA's configuration; optional phases use `InvestigationHook` CRDs.
+
+2. **Recipe compilation**: KA renders the recipe template by injecting alert context, enrichment data, prior findings, and prompt parameters. This is the "compiler" role -- KA produces a fully-resolved Goose recipe YAML from a template plus runtime context.
+
+3. **Permission ceiling enforcement**: Before creating an agent pod, KA validates that every MCP extension declared in the recipe is within KA's own granted permissions. Recipes requesting skills outside KA's ceiling are rejected. See [Appendix B](#appendix-b-delegated-authorization-model-for-agent-mcp-access) for the delegated authorization model.
+
+4. **Pod creation with security**: KA creates ephemeral Goose pods with:
+   - Pod Security Standards (`restricted` profile)
+   - Read-only root filesystem, non-root execution, no privilege escalation
+   - AuthBridge sidecar configured with scoped SPIRE entry
+   - Namespace-scoped network policies limiting egress to approved MCP endpoints
+   - Resource limits and TTL
+
+5. **Result collection and validation**: KA watches for pod completion, extracts structured output (investigation findings, RCA, workflow recommendation), validates it against the expected output schema, and writes it to the `AIAnalysis` CRD status.
+
+6. **Multi-agent coordination**: For Shadow Agent ([#601](https://github.com/jordigilh/kubernaut/issues/601)) and Dual Investigation ([#648](https://github.com/jordigilh/kubernaut/issues/648)), KA creates multiple Goose pods in parallel with different recipes or LLMs and reconciles their outputs.
+
+7. **Enrichment aggregation**: In v1.3, enrichment runs in-process within KA (K8s-native data gathering). The architectural direction is toward A2A/MCP-based enrichment providers, with KA as the aggregator that calls providers, validates structured output, and merges results. See [Section C.4.1](#c41-enrichment-evolution).
+
+### C.4 Phase-to-Runtime Mapping
+
+Not all investigation phases require LLM reasoning. The architecture distinguishes between **programmatic** phases (deterministic data gathering, no LLM) and **LLM-driven** phases (reasoning, tool calling, multi-turn conversation).
+
+| Phase | Default Runtime | Can Be Delegated? | Rationale |
+|---|---|---|---|
+| **Enrichment** | KA in-process (programmatic) | Yes -- future: A2A/MCP-based providers | Currently handles K8s-native enrichment (owner chain, labels, history, Prometheus). Future enrichment should be protocol-based (A2A or MCP) to support non-K8s targets (cloud infrastructure, CMDB, network topology). KA aggregates structured results from multiple providers. See [C.4.1](#c41-enrichment-evolution). |
+| **Investigation** | Goose pod (recipe) | N/A (always delegated) | LLM-driven: multi-turn reasoning with tool calls (K8s inspect, logs, metrics) to build investigation findings. |
+| **RCA / Resolution** | Goose pod (recipe) | N/A (always delegated) | LLM-driven: root cause analysis from investigation findings, reasoning about causality and contributing factors. |
+| **Workflow Selection** | Goose pod (recipe) | N/A (always delegated) | LLM-driven: match RCA findings against workflow catalog, reason about the best remediation strategy. |
+| **Pre/Post Investigation hooks** | Remote agent (A2A endpoint) | N/A (always delegated) | Delegated: executed by a remote agent at the A2A endpoint defined in the `InvestigationHook` CRD. May or may not involve LLM reasoning depending on the hook implementation. Customer-deployed, independently managed. |
+| **Pre-Workflow-Selection hook** | Remote agent (A2A endpoint) | N/A (always delegated) | Delegated: same as other hooks. Common use case: policy checks, change freeze validation, ITSM integration. |
+
+Note on security boundaries: For **Goose pods** (core LLM phases), KA creates the pod and controls the full security context (SPIRE, AuthBridge, Pod Security Standards restricted). For **remote agents** (hook phases), the remote service manages its own security -- KA only controls the A2A contract and the `failClosed`/`failOpen` policy.
+
+#### C.4.1 Enrichment Evolution
+
+Enrichment is programmatic and in-process in v1.3, but the architectural direction is toward **A2A/MCP-based enrichment providers**:
+
+| Version | Enrichment Model | Scope |
+|---|---|---|
+| **v1.3 (current)** | KA in-process | K8s-native: owner chain, labels, remediation history, Prometheus metrics |
+| **Future** | A2A/MCP-based providers, KA as aggregator | Multi-source: K8s, CMDB, cloud provider APIs, network topology, SaaS services. KA calls enrichment providers over A2A/MCP, validates structured output against the enrichment schema, and merges results. |
+
+Enrichment must produce **structured, deterministic data** regardless of source because it directly impacts workflow selection. Making enrichment protocol-based (A2A/MCP) ensures the structured data contract is enforced at the protocol level, enabling different enrichment providers to be composed without changing KA's core logic.
+
+In the near term, KA's built-in enrichment runs first and injects results into the Goose recipe context:
+
+1. **Enrichment data becomes recipe context**: KA runs enrichment first, then injects the results into the Goose recipe. The investigation recipe starts with richer context, improving LLM reasoning quality and reducing unnecessary tool calls.
+
+2. **Reduced blast radius**: Goose pods do not need access to DataStorage, the K8s owner chain, or the enrichment pipeline. They receive pre-packaged context, which means fewer MCP extensions, fewer permissions, and a tighter security boundary.
+
+### C.5 Execution Flow
+
+The following sequence diagram shows the complete execution flow for a single `AIAnalysis`, from enrichment through workflow selection.
+
+```mermaid
+sequenceDiagram
+    participant RO as Remediation Orchestrator
+    participant KA as Investigation Operator (KA)
+    participant K8s as K8s API / Prometheus / DS
+    participant SPIRE as SPIRE Server
+    participant GP as Goose Pod + AuthBridge
+    participant MCP as MCP Services
+
+    RO->>KA: AIAnalysis CRD created (phase: Pending)
+
+    Note over KA: Enrichment (programmatic, in-process)
+    KA->>K8s: Owner chain, labels, history, metrics
+    K8s-->>KA: Structured enrichment data
+    KA->>KA: Write enrichment to AIAnalysis status
+
+    Note over KA: Investigation (Goose)
+    KA->>KA: Compile investigation recipe<br/>Inject enrichment context
+    KA->>KA: Validate recipe skills within permission ceiling
+    KA->>SPIRE: Register scoped agent session entry
+    KA->>GP: Create ephemeral pod with recipe + AuthBridge sidecar
+    GP->>MCP: LLM tool calls via AuthBridge (no credentials held)
+    MCP-->>GP: Tool results
+    GP-->>KA: Structured investigation findings
+    KA->>KA: Validate output schema, write findings to AIAnalysis
+
+    Note over KA: RCA Resolution (Goose)
+    KA->>KA: Compile RCA recipe<br/>Inject findings + enrichment
+    KA->>SPIRE: Register scoped agent session entry
+    KA->>GP: Create ephemeral pod with recipe + AuthBridge sidecar
+    GP->>MCP: LLM tool calls via AuthBridge
+    MCP-->>GP: Tool results
+    GP-->>KA: Structured RCA output
+    KA->>KA: Validate output, write RCA to AIAnalysis
+
+    Note over KA: Workflow Selection (Goose)
+    KA->>KA: Compile selection recipe<br/>Inject RCA + workflow catalog
+    KA->>SPIRE: Register scoped agent session entry
+    KA->>GP: Create ephemeral pod with recipe + AuthBridge sidecar
+    GP->>GP: LLM matches RCA to workflows
+    GP-->>KA: Selected workflow + rationale
+    KA->>KA: Validate output, write selection to AIAnalysis
+
+    KA-->>RO: AIAnalysis completed (phase: Completed)
+```
+
+### C.6 Interaction with the API Frontend
+
+The API Frontend (protocol layer) interacts with KA but does not participate in recipe compilation or Goose pod management.
+
+```mermaid
+graph LR
+    subgraph external ["External"]
+        Human["Human Operator<br/>(MCP client)"]
+        Agent["External AI Agent<br/>(A2A client)"]
+    end
+
+    subgraph frontend ["API Frontend (ADK-Go)"]
+        A2ASrv["A2A Server"]
+        MCPSrv["MCP Server"]
+    end
+
+    subgraph core ["Kubernaut Core"]
+        GW["Gateway"]
+        RO["Remediation Orchestrator"]
+        KAOp["Investigation Operator (KA)"]
+    end
+
+    subgraph goose ["Ephemeral Agents"]
+        Pods["Goose Pods<br/>(investigation, RCA, workflow selection)"]
+    end
+
+    Human -->|MCP tool calls| MCPSrv
+    Agent -->|"A2A SendMessage"| A2ASrv
+    A2ASrv -->|create RR| GW
+    MCPSrv -->|investigation requests| KAOp
+    GW --> RO
+    RO -->|AIAnalysis CRD| KAOp
+    KAOp -->|compiled recipes| Pods
+    Pods -->|structured results| KAOp
+```
+
+Two entry paths exist, but both converge at the CRD level to preserve the audit trail and lifecycle consistency:
+
+- **A2A path**: External agent sends `SendMessage` to API Frontend, which creates a `RemediationRequest` via Gateway. The normal CRD pipeline triggers RO, which creates an `AIAnalysis`. The investigation operator reconciles it and manages the full investigation lifecycle including Goose pod creation.
+
+- **MCP path**: Human operator invokes MCP tools (`kubernaut_investigate`, `kubernaut_enrich`, `kubernaut_select_workflow`) via the API Frontend. Per [#703](https://github.com/jordigilh/kubernaut/issues/703), MCP interactive mode requires a pre-existing `AIAnalysis` CRD -- the operator attaches to it rather than bypassing the CRD pipeline. The API Frontend interacts with KA for investigation operations, but the CRD lifecycle (RR, AIAnalysis) is preserved for audit, governance, and state tracking.
+
+In both paths, the API Frontend has no visibility into Goose pods, recipe compilation, or SPIRE registration. It only sees the CRD-level status updates and KA's API responses.
+
+### C.7 What Changes vs Current KA
+
+| Aspect | Current KA (v1.3) | Future KA (with Goose) |
+|---|---|---|
+| LLM execution | In-process via `runLLMLoop` + LangChainGo | Delegates to ephemeral Goose pods per phase |
+| Credentials | KA holds LLM credentials directly | Zero-secret: delegates via SPIRE/AuthBridge (Appendix B) |
+| Parallelism | Single LLM call per phase | Can run parallel recipes (Shadow Agent, Dual Investigation) |
+| Prompt construction | Go `prompt.Builder` builds prompt in-process | Recipe compiled from template + context, sent to Goose |
+| Tool execution | Tools executed in-process (K8s client, Prometheus) | Tools accessed by Goose via MCP extensions through gateway |
+| Enrichment | In-process (programmatic) | **Near-term unchanged** -- stays in-process, programmatic. Future: A2A/MCP-based enrichment providers with KA as aggregator (see C.4.1). |
+| CRD lifecycle management | Reconciles AIAnalysis, manages phases | **Unchanged** -- same reconciler, same phase model |
+| Domain knowledge | Encoded in KA's investigation logic | **Unchanged** -- KA retains all domain knowledge |
+
+### C.8 Terminology
+
+| Term | Definition |
+|---|---|
+| **Investigation operator** | The canonical term for KA's role. KA is a Kubernetes operator that owns the investigation CRD lifecycle, encodes domain-specific operational knowledge, and manages the full remediation investigation pipeline. |
+| **Protocol gateway** | The API Frontend service. Translates external protocols (A2A, MCP) into internal Kubernaut operations. No domain knowledge. |
+| **Worker** | An ephemeral Goose pod that executes a single compiled recipe and returns structured output. Stateless, no domain knowledge, no lifecycle awareness. |
+| **Recipe compilation** | The process by which KA transforms a recipe template into a fully-resolved recipe YAML by injecting runtime context (enrichment data, alert details, prior findings). |
+| **Permission ceiling** | KA's own set of granted MCP permissions. Delegated agents can only access MCP services that are a subset of KA's permissions. See Appendix B. |
+
+### C.9 Open Questions
+
+| Question | Notes |
+|---|---|
+| **Goose headless mode maturity** | Goose must support reliable headless execution (no interactive prompts, structured output on exit). Validate during the ACP stability spike (DG-8). |
+| **Pod lifecycle for long investigations** | Some investigations may run for several minutes. Determine appropriate TTL, liveness probes, and timeout handling for Goose pods. |
+| **Recipe output schema enforcement** | How does KA enforce that a Goose pod returns output conforming to the expected schema? Goose recipes support `output_schema`, but validation of actual output needs testing. |
+| **Intermediate results streaming** | Can Goose stream intermediate findings back to KA during execution (e.g., for real-time status updates to MCP clients), or is output only available on pod completion? |
+| **LangChainGo deprecation timeline** | Once Goose is validated as the execution runtime, define the migration path and timeline for removing `runLLMLoop` and LangChainGo from KA. |
+| **Enrichment provider protocol** | Define the A2A/MCP contract for enrichment providers: structured input (signal context, target resource), structured output (enrichment schema), and how KA aggregates results from multiple providers. Must ensure deterministic, schema-validated output since enrichment directly impacts workflow selection. |
+
+### C.10 References
+
+| Reference | Description |
+|:--|:--|
+| [Operator Pattern (Kubernetes)](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) | Kubernetes documentation on the operator pattern |
+| [Operator Pattern in Agentic Flows](https://www.mindstudio.ai/blog/claude-code-agentic-workflow-patterns/) | Operator as planner/coordinator with workers as executors |
+| [Goose Recipes](https://block.github.io/goose/docs/tutorials/recipes-tutorial/) | Goose recipe format: instructions, extensions, parameters, output schema |
+| [Goose Parallel Subrecipes](https://block.github.io/goose/docs/tutorials/subrecipes-in-parallel/) | Running multiple recipe instances concurrently |
+| [Google ADK-Go](https://google.golang.org/adk) | Agent Development Kit for Go -- A2A and MCP server framework |
+| [PROPOSAL-EXT-003 Appendix A](#appendix-a-api-frontend-runtime-evaluation-google-adk-go-vs-goose) | API Frontend runtime evaluation |
+| [PROPOSAL-EXT-003 Appendix B](#appendix-b-delegated-authorization-model-for-agent-mcp-access) | Delegated authorization model for agent MCP access |
