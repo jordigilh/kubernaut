@@ -298,12 +298,12 @@ kubectl create configmap mock-mcp-server-code \
 kubectl apply -f deploy/mock-mcp-server/
 
 # 2. Update HolmesGPT API config to use mock MCP
-kubectl patch configmap holmesgpt-api-config \
+kubectl patch configmap kubernaut-agent-config \
   -n kubernaut-system \
   --patch '{"data":{"mcp_url":"http://mock-mcp-server.kubernaut-system.svc.cluster.local:8080"}}'
 
 # 3. Restart HolmesGPT API
-kubectl rollout restart deployment holmesgpt-api -n kubernaut-system
+kubectl rollout restart deployment kubernaut-agent -n kubernaut-system
 
 # 4. Deploy test scenario
 kubectl apply -f test/scenarios/oomkill-cost-management.yaml
@@ -311,7 +311,7 @@ kubectl apply -f test/scenarios/oomkill-cost-management.yaml
 # 5. Verify everything is running
 kubectl get pods -n kubernaut-system
 kubectl logs -n kubernaut-system mock-mcp-server-xxx -f &
-kubectl logs -n kubernaut-system holmesgpt-api-xxx -f &
+kubectl logs -n kubernaut-system kubernaut-agent-xxx -f &
 ```
 
 **Deliverable**: Test infrastructure deployed and instrumented
@@ -323,7 +323,7 @@ kubectl logs -n kubernaut-system holmesgpt-api-xxx -f &
 **Test Process**:
 ```bash
 # 1. Trigger investigation
-curl -X POST http://holmesgpt-api.kubernaut-system.svc.cluster.local:8080/api/v1/investigations \
+curl -X POST http://kubernaut-agent.kubernaut-system.svc.cluster.local:8080/api/v1/investigations \
   -H "Content-Type: application/json" \
   -d '{
     "alert": {
@@ -340,7 +340,7 @@ curl -X POST http://holmesgpt-api.kubernaut-system.svc.cluster.local:8080/api/v1
 kubectl logs -n kubernaut-system mock-mcp-server-xxx -f
 
 # Terminal 2: HolmesGPT API logs (EVENT 2)
-kubectl logs -n kubernaut-system holmesgpt-api-xxx -f
+kubectl logs -n kubernaut-system kubernaut-agent-xxx -f
 
 # 3. Analyze results
 # - Did LLM call search_playbook_catalog? ✅/❌

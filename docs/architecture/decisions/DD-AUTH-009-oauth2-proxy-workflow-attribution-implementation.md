@@ -304,7 +304,7 @@ kubectl logs -n kubernaut-system deployment/data-storage-service -c oauth-proxy
 
 #### **Task 3.1: Update Deployment Manifest**
 
-**File**: `deploy/holmesgpt-api/06-deployment.yaml`
+**File**: `deploy/kubernaut-agent/06-deployment.yaml`
 
 **Changes**: Same as DataStorage (adjusted for HAPI-specific configuration)
 
@@ -326,14 +326,14 @@ kubectl logs -n kubernaut-system deployment/data-storage-service -c oauth-proxy
     - --set-authorization-header=true
     - --pass-user-headers=true
     # SAR for HAPI: LLM cost attribution
-    - --openshift-sar={"namespace":"kubernaut-system","resource":"services","resourceName":"holmesgpt-api","verb":"get"}
+    - --openshift-sar={"namespace":"kubernaut-system","resource":"services","resourceName":"kubernaut-agent","verb":"get"}
 ```
 
 #### **Task 3.2: Test HolmesGPT API**
 
 ```bash
-kubectl apply -f deploy/holmesgpt-api/06-deployment.yaml
-kubectl get pods -n kubernaut-system -l app.kubernetes.io/name=holmesgpt-api -w
+kubectl apply -f deploy/kubernaut-agent/06-deployment.yaml
+kubectl get pods -n kubernaut-system -l app.kubernetes.io/name=kubernaut-agent -w
 ```
 
 ---
@@ -854,11 +854,11 @@ If issues arise during deployment:
 kubectl rollout undo deployment/data-storage-service -n kubernaut-system
 
 # Rollback HolmesGPT API
-kubectl rollout undo deployment/holmesgpt-api -n kubernaut-system
+kubectl rollout undo deployment/kubernaut-agent -n kubernaut-system
 
 # Revert to old secrets
 kubectl apply -f deploy/data-storage/oauth-proxy-secret.yaml
-kubectl apply -f deploy/holmesgpt-api/13-oauth-proxy-secret.yaml
+kubectl apply -f deploy/kubernaut-agent/13-oauth-proxy-secret.yaml
 ```
 
 ---

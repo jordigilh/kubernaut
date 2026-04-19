@@ -135,7 +135,7 @@ spec:
   - to:
     - podSelector:
         matchLabels:
-          app: holmesgpt-api
+          app: kubernaut-agent
     ports:
     - protocol: TCP
       port: 8080
@@ -354,7 +354,7 @@ spec:
         - name: HOLMESGPT_API_KEY_PATH
           value: "/var/run/secrets/holmesgpt/api-key"
         - name: HOLMESGPT_ENDPOINT
-          value: "http:// holmesgpt-api.kubernaut-system.svc:8080"
+          value: "http:// kubernaut-agent.kubernaut-system.svc:8080"
         volumeMounts:
         - name: tmp
           mountPath: /tmp
@@ -372,7 +372,7 @@ spec:
         projected:
           sources:
           - secret:
-              name: holmesgpt-api-credentials
+              name: kubernaut-agent-credentials
               items:
               - key: api-key
                 path: api-key

@@ -73,8 +73,8 @@ Each test validates: "Does the operator see accurate toolset information in the 
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `holmesgpt-api/src/config/hot_reload.py` | `ConfigManager.__init__`, `_on_config_change` | ~15 (new/modified) |
-| `holmesgpt-api/src/main.py` | `init_config_manager` | ~3 (modified) |
+| `kubernaut-agent/src/config/hot_reload.py` | `ConfigManager.__init__`, `_on_config_change` | ~15 (new/modified) |
+| `kubernaut-agent/src/main.py` | `init_config_manager` | ~3 (modified) |
 
 ---
 
@@ -124,7 +124,7 @@ Format: `UT-HAPI-470-{SEQUENCE}`
 
 **BR**: BR-HAPI-199
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_config_manager.py`
+**File**: `kubernaut-agent/tests/unit/test_config_manager.py`
 
 **Given**: A main config file with `llm.model: gpt-4` and no toolsets, and an SDK config file with `toolsets: {prometheus/metrics: {enabled: true}}`
 **When**: ConfigManager is created with both paths and started
@@ -138,7 +138,7 @@ Format: `UT-HAPI-470-{SEQUENCE}`
 
 **BR**: BR-HAPI-199
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_config_manager.py`
+**File**: `kubernaut-agent/tests/unit/test_config_manager.py`
 
 **Given**: Main config has `toolsets: {kubernetes/core: {}}`, SDK config has `toolsets: {prometheus/metrics: {enabled: true}}`
 **When**: ConfigManager starts with both paths
@@ -152,7 +152,7 @@ Format: `UT-HAPI-470-{SEQUENCE}`
 
 **BR**: BR-HAPI-199
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_config_manager.py`
+**File**: `kubernaut-agent/tests/unit/test_config_manager.py`
 
 **Given**: ConfigManager running with SDK toolsets merged
 **When**: Main config file is updated (e.g., `llm.model` changes)
@@ -167,7 +167,7 @@ Format: `UT-HAPI-470-{SEQUENCE}`
 
 **BR**: BR-HAPI-199
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_config_manager.py`
+**File**: `kubernaut-agent/tests/unit/test_config_manager.py`
 
 **Given**: Main config file exists, SDK config path is empty string or points to non-existent file
 **When**: ConfigManager starts
@@ -182,7 +182,7 @@ Format: `UT-HAPI-470-{SEQUENCE}`
 
 **BR**: BR-HAPI-199
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_config_manager.py`
+**File**: `kubernaut-agent/tests/unit/test_config_manager.py`
 
 **Given**: Main config file exists, SDK config file contains invalid YAML or is empty
 **When**: ConfigManager starts
@@ -202,7 +202,7 @@ Format: `UT-HAPI-470-{SEQUENCE}`
 - **Framework**: pytest (HAPI Python convention, consistent with existing `test_config_manager.py`)
 - **Mocks**: None — uses real filesystem via `tempfile.NamedTemporaryFile`
 - **Log capture**: pytest `caplog` fixture for asserting log messages
-- **Location**: `holmesgpt-api/tests/unit/test_config_manager.py` (append to existing file)
+- **Location**: `kubernaut-agent/tests/unit/test_config_manager.py` (append to existing file)
 
 ### Anti-Pattern Compliance
 
@@ -217,10 +217,10 @@ Format: `UT-HAPI-470-{SEQUENCE}`
 
 ```bash
 # All HAPI unit tests
-cd holmesgpt-api && python3 -m pytest tests/unit/test_config_manager.py -v
+cd kubernaut-agent && python3 -m pytest tests/unit/test_config_manager.py -v
 
 # Specific test by pattern
-cd holmesgpt-api && python3 -m pytest tests/unit/test_config_manager.py -v -k "470"
+cd kubernaut-agent && python3 -m pytest tests/unit/test_config_manager.py -v -k "470"
 ```
 
 ---

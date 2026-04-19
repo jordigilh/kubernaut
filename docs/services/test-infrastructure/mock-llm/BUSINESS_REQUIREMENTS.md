@@ -1243,7 +1243,7 @@ Cross-reference audit of: Python Mock LLM source (`server.py`, `__main__.py`, `D
 
 - **Parent Issue**: [#531](https://github.com/jordigilh/kubernaut/issues/531) — Rewrite Mock LLM service in Go
 - **Parent Service**: [#433](https://github.com/jordigilh/kubernaut/issues/433) — Kubernaut Agent Go rewrite
-- **Kubernaut Agent Business Requirements**: [BUSINESS_REQUIREMENTS.md](../../stateless/holmesgpt-api/BUSINESS_REQUIREMENTS.md)
+- **Kubernaut Agent Business Requirements**: [BUSINESS_REQUIREMENTS.md](../../stateless/kubernaut-agent/BUSINESS_REQUIREMENTS.md)
 - **DD-TEST-011**: [Mock LLM Configuration Pattern](../../../architecture/decisions/DD-TEST-011-mock-llm-self-discovery-pattern.md)
 - **TD-HAPI-001**: [Extract Mock LLM to External Service](../../../development/technical-debt/TD-HAPI-001-extract-mock-llm-to-external-service.md) (COMPLETE)
 - **#548**: Deterministic UUIDs in DataStorage

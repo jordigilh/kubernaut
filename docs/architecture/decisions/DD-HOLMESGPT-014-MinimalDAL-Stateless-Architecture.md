@@ -9,21 +9,21 @@
 
 ## Context & Problem
 
-The `holmesgpt-api` service depends on the **HolmesGPT Python SDK** for AI-powered investigation. The SDK includes a `SupabaseDal` class for **Robusta Platform** integration, which provides:
+The `kubernaut-agent` service depends on the **HolmesGPT Python SDK** for AI-powered investigation. The SDK includes a `SupabaseDal` class for **Robusta Platform** integration, which provides:
 
 1. **Custom Investigation Instructions**: Per-account runbooks stored in Supabase
 2. **Historical Issue Data**: Past investigation results for pattern learning
 3. **Configuration Recommendations**: Persistent remediation recommendations
 4. **Multi-tenant AI Credentials**: Customer-specific LLM API key management
 
-**Key Question**: Should `holmesgpt-api` use the SDK's `SupabaseDal` or create a custom minimal implementation?
+**Key Question**: Should `kubernaut-agent` use the SDK's `SupabaseDal` or create a custom minimal implementation?
 
 ---
 
 ## Requirements Analysis
 
 ### **Kubernaut Architecture**
-- ✅ **Stateless service**: No persistent state in holmesgpt-api
+- ✅ **Stateless service**: No persistent state in kubernaut-agent
 - ✅ **Context API integration**: Historical data comes from Context API (not Supabase)
 - ✅ **Rego policies**: Custom investigation logic in WorkflowExecution Controller
 - ✅ **Kubernetes Secrets**: LLM credentials managed via K8s (not database)
@@ -171,7 +171,7 @@ pip install holmesgpt[core]  # No Supabase
 
 ### **1. MinimalDAL Class**
 
-Location: `holmesgpt-api/src/extensions/recovery.py`
+Location: `kubernaut-agent/src/extensions/recovery.py`
 
 ```python
 class MinimalDAL:
@@ -309,7 +309,7 @@ postgrest==0.16.8   # Installed but unused
 3. Contribute upstream to Robusta project
 4. Potential savings: ~50MB
 
-**Threshold**: If holmesgpt-api image exceeds 500MB
+**Threshold**: If kubernaut-agent image exceeds 500MB
 
 ---
 
@@ -325,6 +325,6 @@ postgrest==0.16.8   # Installed but unused
 
 - HolmesGPT SDK: `dependencies/holmesgpt/`
 - SupabaseDal: `dependencies/holmesgpt/holmes/core/supabase_dal.py`
-- MinimalDAL: `holmesgpt-api/src/extensions/recovery.py`
+- MinimalDAL: `kubernaut-agent/src/extensions/recovery.py`
 - Context API: `docs/services/stateless/context-api/`
 

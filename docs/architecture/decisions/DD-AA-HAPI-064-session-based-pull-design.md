@@ -75,7 +75,7 @@ Error responses:
 
 ### HAPI Session Manager
 
-New component: `holmesgpt-api/src/session/manager.py`
+New component: `kubernaut-agent/src/session/manager.py`
 
 ```python
 class SessionManager:

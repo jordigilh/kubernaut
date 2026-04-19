@@ -811,8 +811,8 @@ groups:
 ## 📚 **References**
 
 ### Internal Documentation
-- `/holmesgpt-api/docs/EFFECTIVENESS_MONITOR_RESTART_RECOVERY.md` - Complete technical details
-- `/holmesgpt-api/docs/EFFECTIVENESS_MONITOR_CRD_DESIGN_ASSESSMENT.md` - CRD vs Database comparison
+- `/kubernaut-agent/docs/EFFECTIVENESS_MONITOR_RESTART_RECOVERY.md` - Complete technical details
+- `/kubernaut-agent/docs/EFFECTIVENESS_MONITOR_CRD_DESIGN_ASSESSMENT.md` - CRD vs Database comparison
 - `/docs/architecture/EFFECTIVENESS_MONITOR_RESTART_RECOVERY_FLOWS.md` - Use case flows
 - `DD-EFFECTIVENESS-001` - Hybrid approach (automated + selective AI)
 

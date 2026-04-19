@@ -153,13 +153,13 @@ spec:
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `http://holmesgpt-api:8080/api/v1/incident/analyze` | POST | Initial incident investigation |
-| ~~`http://holmesgpt-api:8080/api/v1/recovery/analyze`~~ | ~~POST~~ | ~~Recovery attempt analysis~~ **DEPRECATED v1.0**: Alert re-fires through Gateway with prior EA context replace dedicated recovery. See BR-AA-HAPI-064.9. |
-| `http://holmesgpt-api:8080/health` | GET | Health check for circuit breaker |
+| `http://kubernaut-agent:8080/api/v1/incident/analyze` | POST | Initial incident investigation |
+| ~~`http://kubernaut-agent:8080/api/v1/recovery/analyze`~~ | ~~POST~~ | ~~Recovery attempt analysis~~ **DEPRECATED v1.0**: Alert re-fires through Gateway with prior EA context replace dedicated recovery. See BR-AA-HAPI-064.9. |
+| `http://kubernaut-agent:8080/health` | GET | Health check for circuit breaker |
 
 ### Investigation Request (V1.0)
 
-**Endpoint**: `POST http://holmesgpt-api:8080/api/v1/incident/analyze`
+**Endpoint**: `POST http://kubernaut-agent:8080/api/v1/incident/analyze`
 
 > **IMPORTANT**: HolmesGPT-API uses a **flat structure** - NOT nested `signalContext`.
 >
@@ -608,7 +608,7 @@ import "github.com/jordigilh/kubernaut/pkg/clients/holmesgpt"
 ```
 
 **Client Location**: `pkg/clients/holmesgpt/` (18 files, ~12,600 lines)
-**Generation**: `ogen -package holmesgpt -target pkg/clients/holmesgpt holmesgpt-api/api/openapi.json`
+**Generation**: `ogen -package holmesgpt -target pkg/clients/holmesgpt kubernaut-agent/api/openapi.json`
 
 ---
 
@@ -660,7 +660,7 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app: holmesgpt-api
+              app: kubernaut-agent
       ports:
         - port: 8090
     # Kubernetes API

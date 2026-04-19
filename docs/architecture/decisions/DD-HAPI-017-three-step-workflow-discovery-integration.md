@@ -25,12 +25,12 @@
 
 ### Current State
 
-HAPI exposes a single LLM tool, `search_workflow_catalog`, implemented in `holmesgpt-api/src/toolsets/workflow_catalog.py` (class `SearchWorkflowCatalogTool`). This tool:
+HAPI exposes a single LLM tool, `search_workflow_catalog`, implemented in `kubernaut-agent/src/toolsets/workflow_catalog.py` (class `SearchWorkflowCatalogTool`). This tool:
 
 1. Accepts a structured query (`<signal_type> <severity> [keywords]`) and optional filters
 2. Calls DS via `POST /api/v1/workflows/search` with label-based + semantic search
 3. Returns a ranked list of workflows with confidence scores
-4. Is registered in both the incident flow (`holmesgpt-api/src/extensions/incident/llm_integration.py`) and the recovery flow (`holmesgpt-api/src/extensions/recovery/llm_integration.py`)
+4. Is registered in both the incident flow (`kubernaut-agent/src/extensions/incident/llm_integration.py`) and the recovery flow (`kubernaut-agent/src/extensions/recovery/llm_integration.py`)
 
 ### Problems
 
@@ -150,8 +150,8 @@ The tool specifications (parameters, descriptions, DS endpoint contracts, pagina
 Both prompt builders are updated to reference the three-step protocol:
 
 **Affected files**:
-- `holmesgpt-api/src/extensions/incident/prompt_builder.py`
-- `holmesgpt-api/src/extensions/recovery/prompt_builder.py`
+- `kubernaut-agent/src/extensions/incident/prompt_builder.py`
+- `kubernaut-agent/src/extensions/recovery/prompt_builder.py`
 
 **Changes**:
 - All references to `search_workflow_catalog` are removed
@@ -168,7 +168,7 @@ Both prompt builders are updated to reference the three-step protocol:
 
 ### 3. DS Client Regeneration
 
-HAPI's Python DS client (`holmesgpt-api/src/clients/datastorage/`) is generated from `api/openapi/data-storage-v1.yaml`. After the DS OpenAPI spec is updated to include the three new endpoints (per DD-WORKFLOW-016), the Python client is regenerated.
+HAPI's Python DS client (`kubernaut-agent/src/clients/datastorage/`) is generated from `api/openapi/data-storage-v1.yaml`. After the DS OpenAPI spec is updated to include the three new endpoints (per DD-WORKFLOW-016), the Python client is regenerated.
 
 New client methods (generated):
 - `list_available_actions(severity, component, environment, priority, custom_labels, detected_labels, remediation_id, page, cursor)` (v1.4: page/cursor replace offset/limit for LLM)
@@ -181,7 +181,7 @@ The Go ogen client (`pkg/datastorage/ogen-client/`) is also regenerated from the
 
 ### 4. Post-Selection Validation
 
-**Current state**: `WorkflowResponseValidator` (`holmesgpt-api/src/validation/workflow_response_validator.py`) calls `get_workflow_by_id(workflow_id)` without signal context filters. The incident flow has a self-correction loop (`MAX_VALIDATION_ATTEMPTS = 3`) that retries on validation failure with feedback. The recovery flow has no validation.
+**Current state**: `WorkflowResponseValidator` (`kubernaut-agent/src/validation/workflow_response_validator.py`) calls `get_workflow_by_id(workflow_id)` without signal context filters. The incident flow has a self-correction loop (`MAX_VALIDATION_ATTEMPTS = 3`) that retries on validation failure with feedback. The recovery flow has no validation.
 
 **New design**:
 
@@ -251,7 +251,7 @@ The DS endpoint changes required by this design are documented here for blast ra
 
 - **Tier 2 (wider history)**: Summary entries for the same `preRemediationSpecHash` across a broader time window, catching cases where the same configuration state has been seen before on different resource instances.
 
-- **Causal chain detection** (`_detect_spec_drift_causal_chains` in `holmesgpt-api/src/extensions/remediation_history_prompt.py`): Detects when a `spec_drift` entry's `postRemediationSpecHash` matches a subsequent entry's `preRemediationSpecHash`, proving the drift led to a follow-up remediation.
+- **Causal chain detection** (`_detect_spec_drift_causal_chains` in `kubernaut-agent/src/extensions/remediation_history_prompt.py`): Detects when a `spec_drift` entry's `postRemediationSpecHash` matches a subsequent entry's `preRemediationSpecHash`, proving the drift led to a follow-up remediation.
 
 - **Declining effectiveness trend detection**: Identifies patterns where successive remediations on the same target show decreasing effectiveness scores.
 
@@ -370,11 +370,11 @@ When `detected_labels` are available in session state, the response includes:
 
 | Component | File | Change | Owner |
 |-----------|------|--------|-------|
-| HAPI workflow tools | `holmesgpt-api/src/toolsets/workflow_catalog.py` | Replace `SearchWorkflowCatalogTool` with three tools | This DD |
-| HAPI incident prompts | `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Rewrite workflow instructions | This DD |
-| HAPI recovery prompts | `holmesgpt-api/src/extensions/recovery/prompt_builder.py` | Rewrite workflow instructions | This DD |
-| HAPI validator | `holmesgpt-api/src/validation/workflow_response_validator.py` | Add context filters | This DD |
-| HAPI recovery flow | `holmesgpt-api/src/extensions/recovery/llm_integration.py` | Add validation loop | This DD |
+| HAPI workflow tools | `kubernaut-agent/src/toolsets/workflow_catalog.py` | Replace `SearchWorkflowCatalogTool` with three tools | This DD |
+| HAPI incident prompts | `kubernaut-agent/src/extensions/incident/prompt_builder.py` | Rewrite workflow instructions | This DD |
+| HAPI recovery prompts | `kubernaut-agent/src/extensions/recovery/prompt_builder.py` | Rewrite workflow instructions | This DD |
+| HAPI validator | `kubernaut-agent/src/validation/workflow_response_validator.py` | Add context filters | This DD |
+| HAPI recovery flow | `kubernaut-agent/src/extensions/recovery/llm_integration.py` | Add validation loop | This DD |
 | DS workflow handlers | `pkg/datastorage/server/workflow_handlers.go` | Endpoint replacement | DD-WORKFLOW-016/017 |
 | DS workflow repository | `pkg/datastorage/repository/workflow/` | Query refactoring | DD-WORKFLOW-016/017 |
 
@@ -382,7 +382,7 @@ When `detected_labels` are available in session state, the response includes:
 
 | Client | Location | Source |
 |--------|----------|--------|
-| Python OpenAPI client | `holmesgpt-api/src/clients/datastorage/` | `api/openapi/data-storage-v1.yaml` |
+| Python OpenAPI client | `kubernaut-agent/src/clients/datastorage/` | `api/openapi/data-storage-v1.yaml` |
 | Go ogen client | `pkg/datastorage/ogen-client/` | `api/openapi/data-storage-v1.yaml` |
 
 ### Test Infrastructure (Discovery Endpoint Changes -- This DD)
@@ -391,9 +391,9 @@ When `detected_labels` are available in session state, the response includes:
 |------|----------|--------|
 | DS E2E search tests | `test/e2e/datastorage/04_*`, `06_*`, `08_*` | Rewrite for three-step endpoints |
 | DS E2E version tests | `test/e2e/datastorage/07_*` | Update search and list calls |
-| Python integration tests | `holmesgpt-api/tests/integration/test_workflow_catalog_*.py` | Rewrite for new client methods |
-| Python E2E tests | `holmesgpt-api/tests/e2e/test_workflow_catalog_*.py` | Rewrite for new client methods |
-| Python test fixtures | `holmesgpt-api/tests/fixtures/workflow_fixtures.py` | Update create/search helpers |
+| Python integration tests | `kubernaut-agent/tests/integration/test_workflow_catalog_*.py` | Rewrite for new client methods |
+| Python E2E tests | `kubernaut-agent/tests/e2e/test_workflow_catalog_*.py` | Rewrite for new client methods |
+| Python test fixtures | `kubernaut-agent/tests/fixtures/workflow_fixtures.py` | Update create/search helpers |
 
 ### Test Infrastructure (Registration Payload Changes -- DD-WORKFLOW-017 Scope)
 

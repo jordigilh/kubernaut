@@ -139,7 +139,7 @@
 
 **2. Toolset Integration Strategy Evaluation** 🔍 **REQUIRES DETAILED ANALYSIS**
 - **Problem**: Two approaches for exposing tools to LLM
-  - **Option A**: Embed tools directly in container (e.g., kubectl in holmesgpt-api image)
+  - **Option A**: Embed tools directly in container (e.g., kubectl in kubernaut-agent image)
   - **Option B**: Expose tools via MCP (current MVP approach)
 - **Timeline**: Evaluate for v2.0 (not needed for v1.x)
 - **Decision Needed**: Direct embedding vs. MCP-based toolsets

@@ -232,7 +232,7 @@ spec:
 gateway-service.kubernaut-system.svc.cluster.local:8080
 context-api.kubernaut-system.svc.cluster.local:8082
 data-storage.kubernaut-system.svc.cluster.local:8080
-holmesgpt-api.kubernaut-system.svc.cluster.local:8080
+kubernaut-agent.kubernaut-system.svc.cluster.local:8080
 dynamic-toolset.kubernaut-system.svc.cluster.local:8083
 effectiveness-monitor.kubernaut-system.svc.cluster.local:8080
 notification-service.kubernaut-system.svc.cluster.local:8088

@@ -259,16 +259,16 @@ Investigation rate limit exceeded (5/min)
 **Resolution**:
 ```bash
 # Check current rate
-curl http://holmesgpt-api:9090/metrics | grep holmesgpt_rate_limit_exceeded_total
+curl http://kubernaut-agent:9090/metrics | grep holmesgpt_rate_limit_exceeded_total
 
 # Option 1: Increase rate limit (config)
 # Edit ConfigMap to increase from 5/min to 10/min
 
 # Option 2: Scale replicas (increases global capacity)
-kubectl scale deployment/holmesgpt-api --replicas=4 -n kubernaut-system
+kubectl scale deployment/kubernaut-agent --replicas=4 -n kubernaut-system
 
 # Option 3: Identify top consumers
-kubectl logs -n kubernaut-system holmesgpt-api-{pod} | grep "Rate limit exceeded" | jq -r '.client' | sort | uniq -c | sort -rn
+kubectl logs -n kubernaut-system kubernaut-agent-{pod} | grep "Rate limit exceeded" | jq -r '.client' | sort | uniq -c | sort -rn
 ```
 
 ---
@@ -484,7 +484,7 @@ sleep 30
 kubectl rollout restart deployment/dynamic-toolset -n kubernaut-system
 kubectl rollout restart deployment/data-storage -n kubernaut-system
 kubectl rollout restart deployment/context-api -n kubernaut-system
-kubectl rollout restart deployment/holmesgpt-api -n kubernaut-system
+kubectl rollout restart deployment/kubernaut-agent -n kubernaut-system
 kubectl rollout restart deployment/gateway -n kubernaut-system
 kubectl rollout restart deployment/notification -n kubernaut-system
 

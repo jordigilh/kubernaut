@@ -422,7 +422,7 @@ build-image:
 
 **Stateless Services**:
 6. gateway-service - Status TBD
-7. **holmesgpt-api-service** - ✅ **Already UBI10 Compliant** (Python UBI10)
+7. **kubernaut-agent-service** - ✅ **Already UBI10 Compliant** (Python UBI10)
 8. **context-api-service** - ⚠️ **Requires UBI10 Implementation** (new service)
 9. data-storage-service - Status TBD
 10. effectiveness-monitor-service - Status TBD
@@ -529,7 +529,7 @@ build-image:
 
 2. **Create UBI10 Dockerfile** (`docker/context-api.Dockerfile`):
    - Use UBI10 Go toolset pattern from ADR-027
-   - Follow established patterns from workflow-service and holmesgpt-api
+   - Follow established patterns from workflow-service and kubernaut-agent
    - Include multi-arch support from day 1
 
 3. **Validation**:
@@ -564,7 +564,7 @@ build-image:
 |---|---|---|---|---|---|
 | **notification** | alpine/distroless | UBI10 Go + minimal | **P1 - HIGH** | 2-3 hours | Week 2 |
 | **context-api** | N/A (new) | UBI10 Go + minimal | **P1 - HIGH** | 1 hour (doc only) | Day 9 |
-| **holmesgpt-api** | UBI10 Python ✅ | N/A (compliant) | N/A | 0 hours | ✅ Complete |
+| **kubernaut-agent** | UBI10 Python ✅ | N/A (compliant) | N/A | 0 hours | ✅ Complete |
 | **workflow-service** | UBI10 Go ✅ | N/A (compliant) | N/A | 0 hours | ✅ Complete |
 | Other services | TBD | UBI10 (appropriate) | P2-P3 | TBD | Weeks 3-4 |
 

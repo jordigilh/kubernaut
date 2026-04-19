@@ -166,7 +166,7 @@ LLM uses: "OOMKilled" for workflow search
 
 ### Option 3: Backend Validation (Alternative)
 
-**Approach**: Validate and normalize signal_type in `holmesgpt-api` before MCP search
+**Approach**: Validate and normalize signal_type in `kubernaut-agent` before MCP search
 
 **Implementation**:
 ```python
@@ -205,7 +205,7 @@ def validate_and_normalize_signal_type(llm_signal_type: str) -> tuple[str, float
 - ✅ No MCP changes needed
 
 **Cons**:
-- ⚠️ Adds complexity to holmesgpt-api
+- ⚠️ Adds complexity to kubernaut-agent
 - ⚠️ Requires embedding/similarity library
 - ⚠️ Might "fix" LLM errors incorrectly
 
@@ -223,7 +223,7 @@ def validate_and_normalize_signal_type(llm_signal_type: str) -> tuple[str, float
 - Include mapping examples
 
 ### Phase 2: Add Backend Validation (Optional Safety Net)
-- Validate signal_type in `holmesgpt-api`
+- Validate signal_type in `kubernaut-agent`
 - Log warnings for non-canonical types
 - Normalize minor variations (case, typos)
 

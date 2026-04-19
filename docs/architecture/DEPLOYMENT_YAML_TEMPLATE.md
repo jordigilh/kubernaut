@@ -385,20 +385,20 @@ spec:
 ### **4. HolmesGPT API Service**
 
 ```yaml
-# deploy/holmesgpt-api-deployment.yaml
+# deploy/kubernaut-agent-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: holmesgpt-api
+  name: kubernaut-agent
   namespace: kubernaut-system
 spec:
   replicas: 2
   template:
     spec:
-      serviceAccountName: holmesgpt-api
+      serviceAccountName: kubernaut-agent
       containers:
-      - name: holmesgpt-api
-        image: kubernaut/holmesgpt-api:v1.0.0
+      - name: kubernaut-agent
+        image: kubernaut/kubernaut-agent:v1.0.0
         ports:
         - containerPort: 8080
         - containerPort: 9090

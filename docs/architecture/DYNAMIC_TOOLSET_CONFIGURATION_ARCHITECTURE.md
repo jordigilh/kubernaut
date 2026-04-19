@@ -1003,7 +1003,7 @@ func (m *DynamicToolsetManager) toolsetsMatch(current, desired []ToolsetConfig) 
 }
 ```
 
-### 6.3 HolmesGPT-API File-Based ConfigMap Polling (`docker/holmesgpt-api/src/services/toolset_config_service.py`)
+### 6.3 HolmesGPT-API File-Based ConfigMap Polling (`docker/kubernaut-agent/src/services/toolset_config_service.py`)
 
 ```python
 import os
@@ -1211,21 +1211,21 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: holmesgpt-api
+  name: kubernaut-agent
   namespace: kubernaut-system
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: holmesgpt-api
+      app: kubernaut-agent
   template:
     metadata:
       labels:
-        app: holmesgpt-api
+        app: kubernaut-agent
     spec:
       containers:
-      - name: holmesgpt-api
-        image: holmesgpt-api:v1.0.0
+      - name: kubernaut-agent
+        image: kubernaut-agent:v1.0.0
         env:
         # File-based polling configuration
         - name: TOOLSET_POLL_INTERVAL
@@ -1410,7 +1410,7 @@ rules:
 # apiVersion: rbac.authorization.k8s.io/v1
 # kind: Role
 # metadata:
-#   name: holmesgpt-api-configmap-reader
+#   name: kubernaut-agent-configmap-reader
 #   namespace: kubernaut-system
 # rules:
 # - apiGroups: [""]

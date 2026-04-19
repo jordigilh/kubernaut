@@ -299,7 +299,7 @@ If ANY validation fails → return errors to LLM → LLM self-corrects → retry
 Validation is **NOT** a separate tool. It happens automatically when HAPI parses the LLM's JSON response.
 
 ```python
-# holmesgpt-api/src/extensions/incident.py
+# kubernaut-agent/src/extensions/incident.py
 
 class WorkflowResponseValidator:
     """

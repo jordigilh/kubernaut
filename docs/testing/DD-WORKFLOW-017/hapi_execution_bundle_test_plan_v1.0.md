@@ -25,24 +25,24 @@ Issue #89 Phase 1 (DataStorage). The DataStorage API now returns `execution_bund
 
 ### Services Under Test
 
-1. **WorkflowResponseValidator** (`holmesgpt-api/src/validation/workflow_response_validator.py`):
+1. **WorkflowResponseValidator** (`kubernaut-agent/src/validation/workflow_response_validator.py`):
    Reads `workflow.execution_bundle` from DS catalog, validates against LLM value, sets
    `validated_execution_bundle` on `ValidationResult`.
 
-2. **Incident Result Parser** (`holmesgpt-api/src/extensions/incident/result_parser.py`):
+2. **Incident Result Parser** (`kubernaut-agent/src/extensions/incident/result_parser.py`):
    Writes `selected_workflow["execution_bundle"]` from `ValidationResult.validated_execution_bundle`.
 
-3. **Discovery Tools** (`holmesgpt-api/src/toolsets/workflow_discovery.py`):
+3. **Discovery Tools** (`kubernaut-agent/src/toolsets/workflow_discovery.py`):
    Step 2 (ListWorkflows) and Step 3 (GetWorkflow) expose `execution_bundle` in LLM-facing responses.
 
-4. **DS Client Model** (`holmesgpt-api/src/clients/datastorage/`):
+4. **DS Client Model** (`kubernaut-agent/src/clients/datastorage/`):
    `RemediationWorkflow` and `WorkflowDiscoveryEntry` models must expose `execution_bundle`.
 
 ### Out of Scope
 
 - DataStorage validation of `execution.bundle` (covered by Phase 1 test plan)
 - Downstream CRD field renames in AA/WFE (covered by Phase 3)
-- Recovery result parser (`holmesgpt-api/src/extensions/recovery/result_parser.py`) -- deferred
+- Recovery result parser (`kubernaut-agent/src/extensions/recovery/result_parser.py`) -- deferred
 - OCI 1.1 subject/referrers integration (Issue #105)
 - Python integration tests against a running DataStorage (deferred to integration tier)
 
@@ -104,7 +104,7 @@ This test plan extends with execution_bundle-specific scenarios.
 
 ## 1. Unit Tests -- Validator (Python)
 
-**Location**: `holmesgpt-api/tests/unit/test_workflow_response_validation.py` (extend existing)
+**Location**: `kubernaut-agent/tests/unit/test_workflow_response_validation.py` (extend existing)
 **Framework**: pytest
 **SUT**: `WorkflowResponseValidator.validate()` and `ValidationResult`
 **Mock**: DS client (`get_workflow_by_id` returns a workflow with `execution_bundle` set)
@@ -292,7 +292,7 @@ This test plan extends with execution_bundle-specific scenarios.
 
 ## 2. Unit Tests -- Incident Result Parser (Python)
 
-**Location**: `holmesgpt-api/tests/unit/test_llm_self_correction.py` (extend existing)
+**Location**: `kubernaut-agent/tests/unit/test_llm_self_correction.py` (extend existing)
 **Framework**: pytest
 **SUT**: `parse_and_validate_investigation_result()`
 **Mock**: DS client, LLM investigation response JSON
@@ -392,7 +392,7 @@ This test plan extends with execution_bundle-specific scenarios.
 
 ## 3. Unit Tests -- Discovery Tools (Python)
 
-**Location**: `holmesgpt-api/tests/unit/test_workflow_discovery_tools.py` (extend existing)
+**Location**: `kubernaut-agent/tests/unit/test_workflow_discovery_tools.py` (extend existing)
 **Framework**: pytest
 **SUT**: `ListWorkflowsTool`, `GetWorkflowTool`
 **Mock**: HTTP responses from DataStorage API
@@ -540,7 +540,7 @@ This test plan extends with execution_bundle-specific scenarios.
 ### REFACTOR Phase
 1. Remove any remaining `container_image` references in HAPI codebase
 2. Update existing test fixtures that reference old field names
-3. Verify `grep -r "container_image" holmesgpt-api/` returns zero hits (excluding vendor/generated)
+3. Verify `grep -r "container_image" kubernaut-agent/` returns zero hits (excluding vendor/generated)
 
 ---
 

@@ -9,7 +9,7 @@
 
 ## Proposal
 
-**Integrate MCP workflow catalog search logic directly inside holmesgpt-api instead of developing a separate MCP service wrapper.**
+**Integrate MCP workflow catalog search logic directly inside kubernaut-agent instead of developing a separate MCP service wrapper.**
 
 **Rationale**: Avoid building an unnecessary service layer on top of existing Data Storage Service REST API.
 
@@ -103,9 +103,9 @@
 
 **Proposed State**:
 - **Remove** Mock MCP Server as separate service
-- **Add** `playbook_mcp.py` module inside holmesgpt-api
+- **Add** `playbook_mcp.py` module inside kubernaut-agent
 - **Call** Data Storage Service REST API (no direct database access)
-- **Leverage** existing embedding service (no embedding generation in holmesgpt-api)
+- **Leverage** existing embedding service (no embedding generation in kubernaut-agent)
 - **Eliminate** unnecessary service wrapper
 
 ---
@@ -132,8 +132,8 @@
 
 #### 3. **Simplified Deployment** (98% confidence)
 - **Benefit**: One less service to deploy, monitor, and maintain
-- **Current**: 3 services (holmesgpt-api + mock-mcp-server + data-storage + embedding-service)
-- **Proposed**: 3 services (holmesgpt-api + data-storage + embedding-service)
+- **Current**: 3 services (kubernaut-agent + mock-mcp-server + data-storage + embedding-service)
+- **Proposed**: 3 services (kubernaut-agent + data-storage + embedding-service)
 - **Operational Savings**: 
   - Fewer pods to manage
   - Simpler service mesh configuration
@@ -157,7 +157,7 @@
 - **Benefit**: HolmesGPT API calls REST API, not PostgreSQL directly
 - **Architecture**: Clean separation via Data Storage Service
 - **Evidence**: Per DD-STORAGE-008, all database access is via REST API
-- **Migration-Proof**: v1.1 changes to Data Storage don't affect holmesgpt-api
+- **Migration-Proof**: v1.1 changes to Data Storage don't affect kubernaut-agent
 
 #### 7. **No Embedding Logic Duplication** (98% confidence)
 - **Benefit**: Embedding Service handles all embedding generation
@@ -254,7 +254,7 @@
 **Confidence: 92%**
 
 **Implementation**:
-1. Add `playbook_mcp.py` module to holmesgpt-api
+1. Add `playbook_mcp.py` module to kubernaut-agent
 2. Implement MCP tool: `search_workflow_catalog`
 3. Call Data Storage Service REST API (`GET /api/v1/playbooks/search`)
 4. No database access, no embedding generation
@@ -265,11 +265,11 @@
 - **Low Risk**: Just an HTTP client wrapper (~100 lines)
 - **Clean Architecture**: Uses existing Data Storage REST API
 - **Consistent Pattern**: Matches existing toolset integration (Kubernetes, Prometheus)
-- **No Coupling**: No database or embedding logic in holmesgpt-api
+- **No Coupling**: No database or embedding logic in kubernaut-agent
 
 **Code Structure**:
 ```python
-# holmesgpt-api/src/toolsets/playbook_mcp.py
+# kubernaut-agent/src/toolsets/playbook_mcp.py
 
 import httpx
 from typing import List, Dict, Any
@@ -355,7 +355,7 @@ class PlaybookMCPTool:
 
 **Integration in recovery.py**:
 ```python
-# holmesgpt-api/src/extensions/recovery.py
+# kubernaut-agent/src/extensions/recovery.py
 
 from toolsets.playbook_mcp import PlaybookMCPTool
 
@@ -461,7 +461,7 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Dict[str, A
 ## Implementation Plan (v1.0 MVP)
 
 ### Phase 1: Integration (1 day)
-- [ ] Create `holmesgpt-api/src/toolsets/playbook_mcp.py`
+- [ ] Create `kubernaut-agent/src/toolsets/playbook_mcp.py`
 - [ ] Implement `PlaybookMCPTool` class with `search_workflow_catalog` method
 - [ ] Call Data Storage REST API (`GET /api/v1/playbooks/search`)
 - [ ] Update `recovery.py` to use `PlaybookMCPTool`
@@ -489,7 +489,7 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Dict[str, A
 
 ## Summary
 
-**Recommendation**: Integrate MCP workflow tool in holmesgpt-api for v1.0 MVP  
+**Recommendation**: Integrate MCP workflow tool in kubernaut-agent for v1.0 MVP  
 **Confidence**: 92%  
 **Development Time**: 1.5 days (vs. 3-4 days for separate service)  
 **Architecture**: Clean (REST API only, no database/embedding coupling)  

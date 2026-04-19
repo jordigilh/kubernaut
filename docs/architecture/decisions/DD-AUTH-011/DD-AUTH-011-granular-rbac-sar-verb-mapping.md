@@ -254,7 +254,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: holmesgpt-api-data-storage-combined
+  name: kubernaut-agent-data-storage-combined
   namespace: kubernaut-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -262,7 +262,7 @@ roleRef:
   name: data-storage-read-only  # Primary role
 subjects:
   - kind: ServiceAccount
-    name: holmesgpt-api-sa
+    name: kubernaut-agent-sa
     namespace: kubernaut-system
 
 ---
@@ -270,7 +270,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: holmesgpt-api-data-storage-audit-writer
+  name: kubernaut-agent-data-storage-audit-writer
   namespace: kubernaut-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -278,7 +278,7 @@ roleRef:
   name: data-storage-audit-writer
 subjects:
   - kind: ServiceAccount
-    name: holmesgpt-api-sa
+    name: kubernaut-agent-sa
     namespace: kubernaut-system
 
 ---

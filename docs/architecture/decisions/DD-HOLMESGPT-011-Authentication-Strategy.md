@@ -135,7 +135,7 @@ From `00-core-development-methodology.mdc`:
 
 ### **Phase 1: Middleware Update** (GREEN Phase)
 ```python
-# holmesgpt-api/src/middleware/auth.py
+# kubernaut-agent/src/middleware/auth.py
 
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader, HTTPBearer

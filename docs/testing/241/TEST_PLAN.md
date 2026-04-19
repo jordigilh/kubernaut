@@ -15,7 +15,7 @@
 
 **Cross-References**:
 - [Testing Strategy](../../../.cursor/rules/03-testing-strategy.mdc)
-- [Existing validator tests](../../../holmesgpt-api/tests/unit/test_workflow_response_validation.py)
+- [Existing validator tests](../../../kubernaut-agent/tests/unit/test_workflow_response_validation.py)
 
 ---
 
@@ -69,7 +69,7 @@ Tests validate that **undeclared parameters are removed before reaching executio
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `holmesgpt-api/src/validation/workflow_response_validator.py` | `_validate_parameters` (stripping addition at end of method) | ~10 |
+| `kubernaut-agent/src/validation/workflow_response_validator.py` | `_validate_parameters` (stripping addition at end of method) | ~10 |
 
 ### Integration-Testable Code (I/O, wiring, cross-component)
 
@@ -134,7 +134,7 @@ Format: `{TIER}-HAPI-241-{SEQUENCE}`
 
 **BR**: BR-WORKFLOW-004, DD-WE-006
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_workflow_response_validation.py`
+**File**: `kubernaut-agent/tests/unit/test_workflow_response_validation.py`
 
 **Given**: A workflow with schema declaring `["TARGET_NAMESPACE", "TARGET_RESOURCE_NAME"]`
 **When**: Validator runs with params `{"TARGET_NAMESPACE": "prod", "TARGET_RESOURCE_NAME": "cert", "GIT_PASSWORD": "secret123", "GIT_USERNAME": "admin"}`
@@ -149,7 +149,7 @@ Format: `{TIER}-HAPI-241-{SEQUENCE}`
 
 **BR**: BR-WORKFLOW-004
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_workflow_response_validation.py`
+**File**: `kubernaut-agent/tests/unit/test_workflow_response_validation.py`
 
 **Given**: A workflow with schema declaring `["namespace", "replicas"]`
 **When**: Validator runs with params `{"namespace": "default", "replicas": 3}` (no extras)
@@ -163,7 +163,7 @@ Format: `{TIER}-HAPI-241-{SEQUENCE}`
 
 **BR**: BR-WORKFLOW-004
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_workflow_response_validation.py`
+**File**: `kubernaut-agent/tests/unit/test_workflow_response_validation.py`
 
 **Given**: A workflow with schema declaring `["namespace"]` (required, string)
 **When**: Validator runs with params `{"namespace": "default", "extra_param": "val1", "another_extra": 42}`
@@ -178,7 +178,7 @@ Format: `{TIER}-HAPI-241-{SEQUENCE}`
 
 **BR**: BR-WORKFLOW-004
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_workflow_response_validation.py`
+**File**: `kubernaut-agent/tests/unit/test_workflow_response_validation.py`
 
 **Given**: A workflow with `parameters = None` (no schema)
 **When**: Validator runs with params `{"any_param": "value", "another": "thing"}`
@@ -192,7 +192,7 @@ Format: `{TIER}-HAPI-241-{SEQUENCE}`
 
 **BR**: BR-WORKFLOW-004
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_workflow_response_validation.py`
+**File**: `kubernaut-agent/tests/unit/test_workflow_response_validation.py`
 
 **Given**: A workflow with schema declaring `["namespace"]` (optional)
 **When**: Validator runs with params `{}`
@@ -207,7 +207,7 @@ Format: `{TIER}-HAPI-241-{SEQUENCE}`
 
 **BR**: DD-WE-006
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_workflow_response_validation.py`
+**File**: `kubernaut-agent/tests/unit/test_workflow_response_validation.py`
 
 **Given**: A workflow with schema declaring `["TARGET_NAMESPACE"]` only
 **When**: Validator runs with params `{"TARGET_NAMESPACE": "demo", "GIT_PASSWORD": "kubernaut-token", "GIT_USERNAME": "kubernaut", "ADMIN_TOKEN": "abc"}`
@@ -226,7 +226,7 @@ Format: `{TIER}-HAPI-241-{SEQUENCE}`
 - **Framework**: pytest
 - **Mocks**: `unittest.mock.Mock` for DS client and workflow objects
 - **Helper**: `create_workflow_with_params(param_defs)` (existing in `TestParameterSchemaValidation`)
-- **Location**: `holmesgpt-api/tests/unit/test_workflow_response_validation.py` (extend `TestParameterSchemaValidation` class)
+- **Location**: `kubernaut-agent/tests/unit/test_workflow_response_validation.py` (extend `TestParameterSchemaValidation` class)
 - **Key pattern**: Tests pass a `params` dict to `validator.validate()`, then assert on the same `params` dict object after the call returns (verifying in-place mutation)
 
 ---
@@ -235,13 +235,13 @@ Format: `{TIER}-HAPI-241-{SEQUENCE}`
 
 ```bash
 # All HAPI unit tests
-make test-unit-holmesgpt-api
+make test-unit-kubernaut-agent
 
 # Just the parameter validation tests
-cd holmesgpt-api && python -m pytest tests/unit/test_workflow_response_validation.py::TestParameterSchemaValidation -v
+cd kubernaut-agent && python -m pytest tests/unit/test_workflow_response_validation.py::TestParameterSchemaValidation -v
 
 # Specific test by name
-cd holmesgpt-api && python -m pytest tests/unit/test_workflow_response_validation.py -k "undeclared" -v
+cd kubernaut-agent && python -m pytest tests/unit/test_workflow_response_validation.py -k "undeclared" -v
 ```
 
 ---

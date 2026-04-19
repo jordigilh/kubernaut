@@ -1086,7 +1086,7 @@ resources:
 
 ### Architecture References
 - [Dynamic Toolset Configuration Architecture](../../../../architecture/DYNAMIC_TOOLSET_CONFIGURATION_ARCHITECTURE.md) - Complete architecture
-- [HolmesGPT API Overview](../holmesgpt-api/overview.md) - Consumer of toolsets
+- [HolmesGPT API Overview](../kubernaut-agent/overview.md) - Consumer of toolsets
 - [Service Dependency Map](../../../../architecture/SERVICE_DEPENDENCY_MAP.md)
 
 ---

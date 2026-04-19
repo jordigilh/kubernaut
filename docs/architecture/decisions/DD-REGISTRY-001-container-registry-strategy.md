@@ -72,7 +72,7 @@
 ```
 quay.io/jordigilh/gateway:dev
 quay.io/jordigilh/datastorage:feature-audit-v2
-quay.io/jordigilh/holmesgpt-api:test-20251217
+quay.io/jordigilh/kubernaut-agent:test-20251217
 quay.io/jordigilh/must-gather:latest
 ```
 
@@ -101,7 +101,7 @@ quay.io/jordigilh/must-gather:latest
 ```
 quay.io/kubernaut/gateway:v1.0.0
 quay.io/kubernaut/datastorage:v1.0.0
-quay.io/kubernaut/holmesgpt-api:v1.0.0
+quay.io/kubernaut/kubernaut-agent:v1.0.0
 quay.io/kubernaut/must-gather:v1.0.0
 ```
 

@@ -41,7 +41,7 @@ oapi-codegen -package client -generate types,client \
 podman run --rm -v ${PWD}:/local:z openapitools/openapi-generator-cli generate \
   -i /local/api/openapi/data-storage-v1.yaml \
   -g python \
-  -o /local/holmesgpt-api/src/clients/datastorage \
+  -o /local/kubernaut-agent/src/clients/datastorage \
   --package-name datastorage_client
 ```
 

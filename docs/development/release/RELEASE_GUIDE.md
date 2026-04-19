@@ -406,7 +406,7 @@ Each job:
 Build strategy:
 - **Go services (10)**: `CGO_ENABLED=0` cross-compilation via `GOARCH` (native speed).
   Builder: `ubi10/go-toolset`, runtime: `ubi10/ubi-minimal`.
-- **Python (1)**: holmesgpt-api uses `ubi10/python-312`. Full QEMU for arm64.
+- **Python (1)**: kubernaut-agent uses `ubi10/python-312`. Full QEMU for arm64.
 - **Bash (1)**: must-gather uses `ubi10/ubi` with kubectl and jq. Full QEMU for arm64.
 
 ### Stage 2: Multi-Arch Manifests
@@ -441,7 +441,7 @@ Confirm all 12 images exist with the correct multi-arch manifest:
 VERSION="1.1.0"  # adjust to your release
 for svc in gateway signalprocessing aianalysis authwebhook \
            remediationorchestrator workflowexecution notification \
-           datastorage effectivenessmonitor holmesgpt-api must-gather db-migrate; do
+           datastorage effectivenessmonitor kubernaut-agent must-gather db-migrate; do
   echo -n "$svc: "
   skopeo inspect --raw docker://quay.io/kubernaut-ai/$svc:$VERSION \
     | python3 -c "import sys,json; m=json.load(sys.stdin); print(f'{len(m.get(\"manifests\",[]))} arch(es)')" \
@@ -472,7 +472,7 @@ Verify the release exists and the pre-release flag matches expectations.
 ```bash
 for svc in gateway signalprocessing aianalysis authwebhook \
            remediationorchestrator workflowexecution notification \
-           datastorage effectivenessmonitor holmesgpt-api must-gather db-migrate; do
+           datastorage effectivenessmonitor kubernaut-agent must-gather db-migrate; do
   echo -n "$svc:latest -> "
   skopeo inspect docker://quay.io/kubernaut-ai/$svc:latest \
     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('Labels',{}).get('org.opencontainers.image.version','unknown'))" \
@@ -601,7 +601,7 @@ multi-arch manifests (amd64 + arm64).
 | 7 | notification | Go | `docker/notification-controller.Dockerfile` |
 | 8 | datastorage | Go | `docker/data-storage.Dockerfile` |
 | 9 | effectivenessmonitor | Go | `docker/effectivenessmonitor-controller.Dockerfile` |
-| 10 | holmesgpt-api | Python | `holmesgpt-api/Dockerfile` |
+| 10 | kubernaut-agent | Python | `kubernaut-agent/Dockerfile` |
 | 11 | must-gather | Bash | `cmd/must-gather/Dockerfile` |
 | 12 | db-migrate | Shell (goose CLI) | `docker/db-migrate.Dockerfile` |
 
@@ -637,7 +637,7 @@ Every released image carries build-time version metadata:
 
 - **Go services**: `CGO_ENABLED=0` cross-compilation via `GOARCH`. Builder stage
   uses `ubi10/go-toolset`, runtime uses `ubi10/ubi-minimal`.
-- **Python** (holmesgpt-api): `ubi10/python-312` for both builder and runtime.
+- **Python** (kubernaut-agent): `ubi10/python-312` for both builder and runtime.
 - **must-gather**: `ubi10/ubi` base with kubectl and jq.
 - **arm64 on amd64 runner**: QEMU user-space emulation. Go cross-compiles natively;
   QEMU handles the container base layer and non-Go build steps.

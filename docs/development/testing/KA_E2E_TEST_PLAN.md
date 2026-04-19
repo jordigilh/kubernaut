@@ -75,7 +75,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_mock_llm_edge_cases_e2e.py::TestIncidentEdgeCases::test_no_workflow_found_returns_needs_human_review`
 
-**Go Target**: `test/e2e/holmesgpt-api/incident_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/incident_analysis_test.go`
 
 ---
 
@@ -106,7 +106,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_mock_llm_edge_cases_e2e.py::TestIncidentEdgeCases::test_low_confidence_returns_needs_human_review`
 
-**Go Target**: `test/e2e/holmesgpt-api/incident_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/incident_analysis_test.go`
 
 ---
 
@@ -136,7 +136,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_mock_llm_edge_cases_e2e.py::TestIncidentEdgeCases::test_max_retries_exhausted_returns_validation_history`
 
-**Go Target**: `test/e2e/holmesgpt-api/incident_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/incident_analysis_test.go`
 
 ---
 
@@ -166,7 +166,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_mock_llm_edge_cases_e2e.py::TestHappyPathComparison::test_normal_incident_analysis_succeeds`
 
-**Go Target**: `test/e2e/holmesgpt-api/incident_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/incident_analysis_test.go`
 
 ---
 
@@ -197,7 +197,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_workflow_selection_e2e.py::TestIncidentAnalysisE2E::test_incident_analysis_returns_valid_response_structure`
 
-**Go Target**: `test/e2e/holmesgpt-api/incident_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/incident_analysis_test.go`
 
 ---
 
@@ -224,7 +224,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_workflow_selection_e2e.py::TestIncidentAnalysisE2E::test_incident_with_enrichment_results`
 
-**Go Target**: `test/e2e/holmesgpt-api/incident_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/incident_analysis_test.go`
 
 ---
 
@@ -250,7 +250,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_workflow_selection_e2e.py::TestErrorHandlingE2E::test_invalid_request_returns_error`
 
-**Go Target**: `test/e2e/holmesgpt-api/incident_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/incident_analysis_test.go`
 
 ---
 
@@ -276,7 +276,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_workflow_selection_e2e.py::TestErrorHandlingE2E::test_missing_remediation_id_returns_error`
 
-**Go Target**: `test/e2e/holmesgpt-api/incident_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/incident_analysis_test.go`
 
 ---
 
@@ -312,7 +312,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_recovery_endpoint_e2e.py::TestRecoveryEndpointE2EHappyPath::test_recovery_endpoint_returns_complete_response_e2e`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -343,7 +343,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_recovery_endpoint_e2e.py::TestRecoveryEndpointE2EFieldValidation::test_recovery_response_has_correct_field_types_e2e`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -374,7 +374,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_recovery_endpoint_e2e.py::TestRecoveryEndpointE2EPreviousExecution::test_recovery_processes_previous_execution_context_e2e`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -404,7 +404,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_recovery_endpoint_e2e.py::TestRecoveryEndpointE2EDetectedLabels::test_recovery_uses_detected_labels_for_workflow_selection_e2e`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -434,7 +434,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_recovery_endpoint_e2e.py::TestRecoveryEndpointE2EMockMode::test_recovery_mock_mode_produces_valid_responses_e2e`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -460,7 +460,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_recovery_endpoint_e2e.py::TestRecoveryEndpointE2EErrorScenarios::test_recovery_rejects_invalid_recovery_attempt_number_e2e`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -487,7 +487,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_recovery_endpoint_e2e.py::TestRecoveryEndpointE2EErrorScenarios::test_recovery_requires_previous_execution_for_recovery_attempts_e2e`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -516,7 +516,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_recovery_endpoint_e2e.py::TestRecoveryEndpointE2EDataStorageIntegration::test_recovery_searches_data_storage_for_workflows_e2e`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -545,7 +545,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_recovery_endpoint_e2e.py::TestRecoveryEndpointE2EWorkflowValidation::test_recovery_returns_executable_workflow_specification_e2e`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -576,7 +576,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_recovery_endpoint_e2e.py::TestRecoveryEndpointE2EEndToEndFlow::test_complete_incident_to_recovery_flow_e2e`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -606,7 +606,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_mock_llm_edge_cases_e2e.py::TestRecoveryEdgeCases::test_signal_not_reproducible_returns_no_recovery`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -635,7 +635,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_mock_llm_edge_cases_e2e.py::TestRecoveryEdgeCases::test_no_recovery_workflow_returns_human_review`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -666,7 +666,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_mock_llm_edge_cases_e2e.py::TestRecoveryEdgeCases::test_low_confidence_recovery_returns_human_review`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -696,7 +696,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_mock_llm_edge_cases_e2e.py::TestHappyPathComparison::test_normal_recovery_analysis_succeeds`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -725,7 +725,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_workflow_selection_e2e.py::TestRecoveryAnalysisE2E::test_recovery_analysis_returns_valid_response`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -751,7 +751,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_workflow_selection_e2e.py::TestRecoveryAnalysisE2E::test_recovery_with_previous_execution_context`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -778,7 +778,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_real_llm_integration.py::TestRealRecoveryAnalysis::test_recovery_analysis_with_real_llm`
 
-**Go Target**: `test/e2e/holmesgpt-api/real_llm_integration_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/real_llm_integration_test.go`
 
 **Note**: Skip by default unless `RUN_REAL_LLM=true`
 
@@ -815,7 +815,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Python Source**: `test_audit_pipeline_e2e.py::TestAuditPipelineE2E::test_llm_request_event_persisted`
 
-**Go Target**: `test/e2e/holmesgpt-api/audit_pipeline_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/audit_pipeline_test.go`
 
 **Implementation Notes**:
 ```go
@@ -869,7 +869,7 @@ events := resp.Data
 
 **Python Source**: `test_audit_pipeline_e2e.py::TestAuditPipelineE2E::test_llm_response_event_persisted`
 
-**Go Target**: `test/e2e/holmesgpt-api/audit_pipeline_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/audit_pipeline_test.go`
 
 **Implementation Notes**:
 ```go
@@ -917,7 +917,7 @@ for _, event := range events {
 
 **Python Source**: `test_audit_pipeline_e2e.py::TestAuditPipelineE2E::test_validation_attempt_event_persisted`
 
-**Go Target**: `test/e2e/holmesgpt-api/audit_pipeline_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/audit_pipeline_test.go`
 
 ---
 
@@ -950,7 +950,7 @@ for _, event := range events {
 
 **Python Source**: `test_audit_pipeline_e2e.py::TestAuditPipelineE2E::test_complete_audit_trail_persisted`
 
-**Go Target**: `test/e2e/holmesgpt-api/audit_pipeline_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/audit_pipeline_test.go`
 
 **Implementation Notes**:
 ```go
@@ -1028,7 +1028,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_data_storage_integration.py::TestWorkflowCatalogEndToEnd::test_semantic_search_with_exact_match_br_storage_013`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1055,7 +1055,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_data_storage_integration.py::TestWorkflowCatalogEndToEnd::test_confidence_scoring_dd_workflow_004_v1`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1081,7 +1081,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_data_storage_integration.py::TestWorkflowCatalogEndToEnd::test_empty_results_handling_br_hapi_250`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1107,7 +1107,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_data_storage_integration.py::TestWorkflowCatalogEndToEnd::test_filter_validation_dd_llm_001`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1133,7 +1133,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_data_storage_integration.py::TestWorkflowCatalogEndToEnd::test_top_k_limiting_br_hapi_250`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1161,7 +1161,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_data_storage_integration.py::TestWorkflowCatalogEndToEnd::test_error_handling_service_unavailable_br_storage_013`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1190,7 +1190,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_e2e.py::TestCriticalUserJourneys::test_oomkilled_incident_finds_memory_workflow_e1_1`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1217,7 +1217,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_e2e.py::TestCriticalUserJourneys::test_crashloop_incident_finds_restart_workflow_e1_2`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1243,7 +1243,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_e2e.py::TestEdgeCaseUserJourneys::test_ai_handles_no_matching_workflows`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1270,7 +1270,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_e2e.py::TestEdgeCaseUserJourneys::test_ai_can_refine_search`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1298,7 +1298,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_container_image_integration.py::TestWorkflowCatalogContainerImageIntegration::test_data_storage_returns_container_image_in_search`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1325,7 +1325,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_container_image_integration.py::TestWorkflowCatalogContainerImageIntegration::test_data_storage_returns_container_digest_in_search`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1354,7 +1354,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_container_image_integration.py::TestWorkflowCatalogContainerImageIntegration::test_end_to_end_container_image_flow`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1381,7 +1381,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_container_image_integration.py::TestWorkflowCatalogContainerImageIntegration::test_container_image_matches_catalog_entry`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1410,7 +1410,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 **Python Source**: `test_workflow_catalog_container_image_integration.py::TestWorkflowCatalogContainerImageDirectAPI::test_direct_api_search_returns_container_image`
 
-**Go Target**: `test/e2e/holmesgpt-api/workflow_catalog_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/workflow_catalog_test.go`
 
 ---
 
@@ -1477,7 +1477,7 @@ Expect(hasLLMResponse).To(BeTrue())
 - ServiceAccount authentication configured
 - Test workflows seeded (10 workflows covering staging + production environments)
 
-**Setup Command**: `make test-e2e-holmesgpt-api`
+**Setup Command**: `make test-e2e-kubernaut-agent`
 
 **Infrastructure Pattern**: AA E2E (Phase 4a-4e):
 1. Deploy DataStorage infrastructure
@@ -1872,7 +1872,7 @@ Migration complete when:
 
 **Python Source**: `test_real_llm_integration.py::TestRealRecoveryAnalysis::test_multi_step_recovery_analysis`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -1935,7 +1935,7 @@ Migration complete when:
 
 **Python Source**: `test_real_llm_integration.py::TestRealRecoveryAnalysis::test_cascading_failure_recovery_analysis`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -1990,7 +1990,7 @@ Migration complete when:
 
 **Python Source**: `test_real_llm_integration.py::TestRealRecoveryAnalysis::test_recovery_near_attempt_limit`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -2049,7 +2049,7 @@ Migration complete when:
 
 **Python Source**: `test_real_llm_integration.py::TestRealRecoveryAnalysis::test_multitenant_resource_contention_recovery`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -2108,7 +2108,7 @@ Migration complete when:
 
 **Python Source**: `test_real_llm_integration.py::TestRealRecoveryAnalysis::test_network_partition_recovery`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -2158,7 +2158,7 @@ Migration complete when:
 
 **Python Source**: `test_real_llm_integration.py::TestRealRecoveryAnalysis::test_recovery_analysis_with_real_llm`
 
-**Go Target**: `test/e2e/holmesgpt-api/recovery_analysis_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/recovery_analysis_test.go`
 
 ---
 
@@ -2166,7 +2166,7 @@ Migration complete when:
 
 **Business Requirements**: BR-AI-084 (Proactive Signal Mode Prompt Strategy)
 **Architecture**: ADR-054 (Proactive Signal Mode Classification)
-**Go Target**: `test/e2e/holmesgpt-api/proactive_signal_mode_test.go`
+**Go Target**: `test/e2e/kubernaut-agent/proactive_signal_mode_test.go`
 
 #### E2E-HAPI-055: Proactive OOMKill Returns Proactive-Aware Analysis
 
@@ -2292,8 +2292,8 @@ Migration complete when:
 
 ## References
 
-- **Python Test Suite**: `holmesgpt-api/tests/e2e/`
-- **Go Test Suite Target**: `test/e2e/holmesgpt-api/`
+- **Python Test Suite**: `kubernaut-agent/tests/e2e/`
+- **Go Test Suite Target**: `test/e2e/kubernaut-agent/`
 - **Infrastructure**: `test/infrastructure/holmesgpt_api.go`
 - **Migration Plan**: `.cursor/plans/hapi_e2e_go_migration_*.plan.md`
 - **Template**: `V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md`

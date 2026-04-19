@@ -250,7 +250,7 @@ func AuthorizationMiddleware(logger *zap.Logger) func(http.Handler) http.Handler
 func isAuthorized(userInfo *authv1.UserInfo, method, path string) bool {
     // Dynamic Toolset Service: Only allow discovery requests from admin or HolmesGPT API
     authorizedServiceAccounts := []string{
-        "system:serviceaccount:kubernaut-system:holmesgpt-api-sa",
+        "system:serviceaccount:kubernaut-system:kubernaut-agent-sa",
         "system:serviceaccount:kubernaut-system:admin-sa",
     }
 
@@ -330,7 +330,7 @@ spec:
   - from:
     - podSelector:
         matchLabels:
-          app: holmesgpt-api
+          app: kubernaut-agent
     - podSelector:
         matchLabels:
           app: admin-console

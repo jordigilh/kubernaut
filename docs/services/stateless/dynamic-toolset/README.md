@@ -1246,7 +1246,7 @@ kubectl logs -f -n kubernaut-system -l app=dynamic-toolset | grep "method="
 ## 📞 Quick Links
 
 - **Parent**: [../README.md](../README.md) - All stateless services
-- **Consumer**: [../holmesgpt-api/](../holmesgpt-api/) - Uses generated toolsets
+- **Consumer**: [../kubernaut-agent/](../kubernaut-agent/) - Uses generated toolsets
 - **Architecture**: [../../architecture/](../../architecture/)
 
 ---

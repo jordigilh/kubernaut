@@ -21,7 +21,7 @@
 | Script | Status | Multi-Arch Support | Notes |
 |--------|--------|--------------------|-------|
 | `build-notification-controller.sh` | ✅ Complete | Default ON | MULTI_ARCH=true, auto single-arch for KIND |
-| `build-holmesgpt-api.sh` | ✅ Complete | Default ON | Already implemented (PLATFORMS=linux/amd64,linux/arm64) |
+| `build-kubernaut-agent.sh` | ✅ Complete | Default ON | Already implemented (PLATFORMS=linux/amd64,linux/arm64) |
 | `build-and-deploy.sh` | ⚠️ Needs Review | N/A | Orchestration script, delegates to other scripts |
 
 ### 📋 Services with Dockerfiles
@@ -71,7 +71,7 @@
 **Multi-Arch**: ✅ Enabled by default via Makefile `docker-build` target
 
 1. **gateway-service** - 🔄 Uses Makefile (multi-arch by default)
-2. **holmesgpt-api** - ✅ Dedicated script with multi-arch support
+2. **kubernaut-agent** - ✅ Dedicated script with multi-arch support
 3. **context-api** - 🔄 Uses Makefile (multi-arch by default)
 4. **data-storage** - 🔄 Uses Makefile (multi-arch by default)
 5. **effectiveness-monitor** - 🔄 Uses Makefile (multi-arch by default)
@@ -119,7 +119,7 @@ PLATFORMS=linux/amd64,linux/arm64,linux/arm/v7 make docker-build
 | Service | Build Test | Push Test | Deploy Test | Date |
 |---------|-----------|-----------|-------------|------|
 | **notification-controller** | ✅ | ✅ | ✅ | 2025-10-20 |
-| **holmesgpt-api** | ✅ | ❌ | ❌ | Pre-existing |
+| **kubernaut-agent** | ✅ | ❌ | ❌ | Pre-existing |
 
 ### 🔄 Pending Verification
 
@@ -291,7 +291,7 @@ Based on notification-controller v1.0.1 build:
 
 1. ✅ **Complete** - Makefile multi-arch targets
 2. ✅ **Complete** - Update `build-notification-controller.sh`
-3. ✅ **Complete** - Verify `build-holmesgpt-api.sh` compatibility
+3. ✅ **Complete** - Verify `build-kubernaut-agent.sh` compatibility
 4. ✅ **Complete** - Create comprehensive documentation
 5. 🔄 **In Progress** - Test remaining services with Makefile builds
 

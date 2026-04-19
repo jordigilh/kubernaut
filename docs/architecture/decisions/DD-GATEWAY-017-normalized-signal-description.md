@@ -202,8 +202,8 @@ flowchart LR
 - [DD-GATEWAY-002](DD-GATEWAY-002-opentelemetry-adapter.md): OpenTelemetry adapter (PLANNING)
 - [DD-GATEWAY-NON-K8S-SIGNALS](DD-GATEWAY-NON-K8S-SIGNALS.md): Non-Kubernetes signal support (PROPOSED)
 - [BR-GATEWAY-185](../../services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md): Normalized Signal Description Capture
-- [BR-HAPI-213](../../services/stateless/holmesgpt-api/BUSINESS_REQUIREMENTS.md): Signal Description in Investigation Prompt
-- [BR-HAPI-211](../../services/stateless/holmesgpt-api/BUSINESS_REQUIREMENTS.md): LLM Input Sanitization
+- [BR-HAPI-213](../../services/stateless/kubernaut-agent/BUSINESS_REQUIREMENTS.md): Signal Description in Investigation Prompt
+- [BR-HAPI-211](../../services/stateless/kubernaut-agent/BUSINESS_REQUIREMENTS.md): LLM Input Sanitization
 
 ---
 

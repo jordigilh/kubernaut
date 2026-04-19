@@ -144,7 +144,7 @@ sequenceDiagram
 
             HGP->>HGP: 🧠 Generate intelligent recovery strategy
             Note over HGP: 🔍 INVESTIGATION ONLY:<br/>• Root cause analysis<br/>• Pattern recognition<br/>• Recommendation generation<br/>• NO INFRASTRUCTURE EXECUTION
-            HGP-->>-PFH: ✅ InvestigationResult{<br/>  Method: "holmesgpt-api",<br/>  Analysis: "Resource contention causing termination delay",<br/>  Root_Cause: "Memory pressure + finalizer conflict",<br/>  Recommendations: [<br/>    "force_delete_with_grace_period_0",<br/>    "scale_down_resource_intensive_pods",<br/>    "clear_stuck_finalizers"<br/>  ],<br/>  Confidence: 0.87,<br/>  Processing_Time: "3.2s"<br/>}
+            HGP-->>-PFH: ✅ InvestigationResult{<br/>  Method: "kubernaut-agent",<br/>  Analysis: "Resource contention causing termination delay",<br/>  Root_Cause: "Memory pressure + finalizer conflict",<br/>  Recommendations: [<br/>    "force_delete_with_grace_period_0",<br/>    "scale_down_resource_intensive_pods",<br/>    "clear_stuck_finalizers"<br/>  ],<br/>  Confidence: 0.87,<br/>  Processing_Time: "3.2s"<br/>}
 
         else HolmesGPT-API Failed or Unavailable
             HGP-->>-PFH: ❌ HolmesGPT Investigation Failed
@@ -317,7 +317,7 @@ graph TD
 ### **1. HolmesGPT-API Investigation (V1: Primary & Only Strategy)** 🔍
 ```
 HolmesGPT-API.InvestigateSignal(ctx, signal) → {
-    Method: "holmesgpt-api",
+    Method: "kubernaut-agent",
     Analysis: "Detailed failure analysis with Kubernetes context enrichment",
     Recommendations: [
         {

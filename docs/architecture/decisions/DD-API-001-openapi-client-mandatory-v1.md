@@ -369,7 +369,7 @@ events := resp.JSON200.Data
 ## References
 
 - [ADR-031: OpenAPI Specification Standard](./ADR-031-openapi-specification-standard.md)
-- [ADR-045: AIAnalysis ↔ HolmesGPT-API Service Contract](./ADR-045-aianalysis-holmesgpt-api-contract.md)
+- [ADR-045: AIAnalysis ↔ HolmesGPT-API Service Contract](./ADR-045-aianalysis-kubernaut-agent-contract.md)
 - [NT_DS_API_QUERY_ISSUE_DEC_18_2025.md](../../handoff/NT_DS_API_QUERY_ISSUE_DEC_18_2025.md) - Bug report
 - [oapi-codegen Documentation](https://github.com/deepmap/oapi-codegen)
 - [OpenAPI Specification 3.0.3](https://spec.openapis.org/oas/v3.0.3)

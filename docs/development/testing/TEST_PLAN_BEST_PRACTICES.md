@@ -5,7 +5,7 @@
 **Status**: AUTHORITATIVE
 
 **Cross-References**:
-- [Test Plan Template](../../../holmesgpt-api/tests/e2e/TEST_PLAN_WORKFLOW_CATALOG_EDGE_CASES.md) - Complete template with all sections
+- [Test Plan Template](../../../kubernaut-agent/tests/e2e/TEST_PLAN_WORKFLOW_CATALOG_EDGE_CASES.md) - Complete template with all sections
 - [NT Test Plan](../../services/crd-controllers/06-notification/TEST_PLAN_NT_V1_0_MVP.md) - Real-world implementation example
 - [Testing Strategy](./../../../.cursor/rules/03-testing-strategy.mdc) - Defense-in-depth approach
 - [Testing Guidelines](../business-requirements/TESTING_GUIDELINES.md) - BR coverage vs code coverage
@@ -203,7 +203,7 @@ This document explains **when** and **why** to use each section of the Test Plan
 
 **Why**: Provides complete test specification for implementation
 
-**Reference**: [Template Tier Sections](../../../holmesgpt-api/tests/e2e/TEST_PLAN_WORKFLOW_CATALOG_EDGE_CASES.md#-tier-1-unit-tests-70-br-coverage--70-code-coverage)
+**Reference**: [Template Tier Sections](../../../kubernaut-agent/tests/e2e/TEST_PLAN_WORKFLOW_CATALOG_EDGE_CASES.md#-tier-1-unit-tests-70-br-coverage--70-code-coverage)
 
 ---
 
@@ -566,7 +566,7 @@ Before finalizing your test plan, verify:
 
 ## 🔗 **Cross-References**
 
-- **[Test Plan Template](../../../holmesgpt-api/tests/e2e/TEST_PLAN_WORKFLOW_CATALOG_EDGE_CASES.md)** - Complete template with all sections and placeholders
+- **[Test Plan Template](../../../kubernaut-agent/tests/e2e/TEST_PLAN_WORKFLOW_CATALOG_EDGE_CASES.md)** - Complete template with all sections and placeholders
 - **[NT Test Plan](../../services/crd-controllers/06-notification/TEST_PLAN_NT_V1_0_MVP.md)** - Real-world example showing all sections in use
 - **[Testing Strategy](../../../.cursor/rules/03-testing-strategy.mdc)** - Defense-in-depth approach (authoritative)
 - **[Testing Guidelines](../business-requirements/TESTING_GUIDELINES.md)** - BR coverage vs code coverage distinction

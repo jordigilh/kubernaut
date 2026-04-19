@@ -84,12 +84,12 @@ Every BR covered by at least Unit + Integration tests.
 
 | File | Component | Estimated Lines |
 |------|-----------|-----------------|
-| `holmesgpt-api/src/extensions/incident/enrichment_service.py` (NEW) | EnrichmentService: owner resolution dispatch, label detection, history fetch, retry logic, EnrichmentResult construction | ~180 |
-| `holmesgpt-api/src/extensions/incident/llm_integration.py` | Three-phase orchestration, conversation continuity threading, updated `_inject_target_resource`, shared retry budget | ~120 |
-| `holmesgpt-api/src/extensions/incident/result_parser.py` | `_parse_affected_resource` for two structure types | ~30 |
-| `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Phase 1 prompt (affectedResource instructions), Phase 3 prompt (enrichment context + workflow selection) | ~40 |
-| `holmesgpt-api/src/toolsets/resource_context.py` | Strip session_state writes, keep label detection return | ~30 |
-| `holmesgpt-api/src/toolsets/workflow_discovery.py` | Labels in `list_available_actions` response format | ~20 |
+| `kubernaut-agent/src/extensions/incident/enrichment_service.py` (NEW) | EnrichmentService: owner resolution dispatch, label detection, history fetch, retry logic, EnrichmentResult construction | ~180 |
+| `kubernaut-agent/src/extensions/incident/llm_integration.py` | Three-phase orchestration, conversation continuity threading, updated `_inject_target_resource`, shared retry budget | ~120 |
+| `kubernaut-agent/src/extensions/incident/result_parser.py` | `_parse_affected_resource` for two structure types | ~30 |
+| `kubernaut-agent/src/extensions/incident/prompt_builder.py` | Phase 1 prompt (affectedResource instructions), Phase 3 prompt (enrichment context + workflow selection) | ~40 |
+| `kubernaut-agent/src/toolsets/resource_context.py` | Strip session_state writes, keep label detection return | ~30 |
+| `kubernaut-agent/src/toolsets/workflow_discovery.py` | Labels in `list_available_actions` response format | ~20 |
 | ~~`dependencies/holmesgpt/holmes/core/investigation.py`~~ | ~~SDK changes reverted — prompt-based continuity instead~~ | 0 |
 | ~~`dependencies/holmesgpt/holmes/core/models.py`~~ | ~~SDK changes reverted — no `messages` field needed~~ | 0 |
 
@@ -99,8 +99,8 @@ Every BR covered by at least Unit + Integration tests.
 
 | File | Component |
 |------|-----------|
-| `holmesgpt-api/src/extensions/incident/llm_integration.py` | Full three-phase loop with conversation continuity, EnrichmentService calls (~200 lines of loop logic) |
-| `holmesgpt-api/src/extensions/incident/enrichment_service.py` | K8s client owner resolution, DS client history fetch, retry behavior |
+| `kubernaut-agent/src/extensions/incident/llm_integration.py` | Full three-phase loop with conversation continuity, EnrichmentService calls (~200 lines of loop logic) |
+| `kubernaut-agent/src/extensions/incident/enrichment_service.py` | K8s client owner resolution, DS client history fetch, retry behavior |
 
 ---
 
@@ -220,7 +220,7 @@ Tests are organized into 8 dependency-ordered TDD groups. Each group follows RED
 
 - **Unit Tests**: pytest, mocked DS client / K8s client / Holmes SDK
 - **Integration Tests**: pytest, real DataStorage (programmatic container), mocked LLM
-- **Location**: `holmesgpt-api/tests/unit/` and `holmesgpt-api/tests/integration/`
+- **Location**: `kubernaut-agent/tests/unit/` and `kubernaut-agent/tests/integration/`
 
 ---
 

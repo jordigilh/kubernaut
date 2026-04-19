@@ -137,7 +137,7 @@ Each stateless service has 8 standardized documents:
 
 #### **Services**:
 1. **gateway-service/** - Multi-signal ingestion, deduplication, CRD creation
-2. **holmesgpt-api/** - HolmesGPT REST API wrapper
+2. **kubernaut-agent/** - HolmesGPT REST API wrapper
 3. **notification-service/** - Multi-channel notifications (Slack, PagerDuty, email)
 4. **context-api/** - Historical context serving
 5. **data-storage/** - Unified storage interface

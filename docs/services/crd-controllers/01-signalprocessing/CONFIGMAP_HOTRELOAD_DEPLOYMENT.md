@@ -352,7 +352,7 @@ kubectl rollout undo configmap/kubernaut-rego-policies -n kubernaut-system
 - **BR-SP-072**: [Rego Hot-Reload](BUSINESS_REQUIREMENTS.md#br-sp-072-rego-hot-reload)
 - **DD-INFRA-001**: [ConfigMap Hot-Reload Pattern](../../../architecture/decisions/DD-INFRA-001-configmap-hotreload-pattern.md)
 - **Shared Package**: `pkg/shared/hotreload/FileWatcher`
-- **HolmesGPT API Example**: `docs/services/stateless/holmesgpt-api/implementation/IMPLEMENTATION_PLAN_HOTRELOAD.md`
+- **HolmesGPT API Example**: `docs/services/stateless/kubernaut-agent/implementation/IMPLEMENTATION_PLAN_HOTRELOAD.md`
 
 ---
 

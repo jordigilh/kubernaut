@@ -37,7 +37,7 @@ Without a single authoritative definition of the prompt/response contract:
 This ADR serves as the contract between:
 - HolmesGPT API (prompt generator)
 - LLM Provider (Claude 4.5 Haiku - current testing model, subject to change)
-- Response Parser (holmesgpt-api)
+- Response Parser (kubernaut-agent)
 - Downstream services (RemediationExecution)
 
 ---
@@ -213,7 +213,7 @@ Perform independent Root Cause Analysis (RCA) using available tools based on the
 **Purpose**: Guides LLM to perform independent investigation appropriate to the signal type
 
 **Backing**:
-- **BR-HAPI-001**: AI-Powered Investigation Endpoint (holmesgpt-api/BUSINESS_REQUIREMENTS.md)
+- **BR-HAPI-001**: AI-Powered Investigation Endpoint (kubernaut-agent/BUSINESS_REQUIREMENTS.md)
 - **HolmesGPT SDK**: Investigation workflow (holmes.core.investigation.investigate_issues)
 
 **Note**: Investigation steps are NOT prescriptive - LLM determines appropriate investigation based on signal source and incident type.
@@ -484,7 +484,7 @@ The following fields are **NOT** included in the LLM response because they are a
 
 ### Parser Requirements
 
-The response parser (`holmesgpt-api/src/extensions/recovery.py`) MUST validate:
+The response parser (`kubernaut-agent/src/extensions/recovery.py`) MUST validate:
 
 1. **JSON Structure**: Response is valid JSON matching schema
 2. **Required Fields**: All required fields are present
@@ -642,7 +642,7 @@ If validation fails, the parser MUST:
 
 ### Prompt Generation
 
-**File**: `holmesgpt-api/src/extensions/recovery.py`
+**File**: `kubernaut-agent/src/extensions/recovery.py`
 **Function**: `_create_investigation_prompt(request_data: Dict[str, Any]) -> str`
 
 **Requirements**:
@@ -653,7 +653,7 @@ If validation fails, the parser MUST:
 
 ### Response Parsing
 
-**File**: `holmesgpt-api/src/extensions/recovery.py`
+**File**: `kubernaut-agent/src/extensions/recovery.py`
 **Function**: `_parse_recovery_response(response: str) -> Dict[str, Any]`
 
 **Requirements**:

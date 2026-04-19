@@ -161,7 +161,7 @@ graph TB
 ### 3.1 Project Structure
 
 ```
-holmesgpt-api-server/
+kubernaut-agent-server/
 ├── src/
 │   ├── main.py                     # Application entry point
 │   ├── config/
@@ -833,7 +833,7 @@ async def chat_websocket(
 FROM registry.access.redhat.com/ubi10/python-312-minimal:latest AS builder
 
 # Metadata
-LABEL name="holmesgpt-api-server-builder" \
+LABEL name="kubernaut-agent-server-builder" \
       vendor="Kubernaut Project" \
       version="1.0.0" \
       summary="HolmesGPT REST API Server Builder" \
@@ -864,7 +864,7 @@ RUN pip install --no-cache-dir --user --upgrade pip setuptools wheel && \
 FROM registry.access.redhat.com/ubi10-micro:latest
 
 # Metadata for upstream community Container Certification
-LABEL name="holmesgpt-api-server" \
+LABEL name="kubernaut-agent-server" \
       vendor="Kubernaut Project" \
       version="1.0.0" \
       release="1" \
@@ -873,7 +873,7 @@ LABEL name="holmesgpt-api-server" \
       io.k8s.description="HolmesGPT REST API Server for Kubernetes troubleshooting" \
       io.k8s.display-name="HolmesGPT API Server" \
       io.openshift.tags="ai,troubleshooting,kubernetes,investigation,holmesgpt" \
-      com.redhat.component="holmesgpt-api-server" \
+      com.redhat.component="kubernaut-agent-server" \
       com.redhat.license_terms="https://www.redhat.com/en/about/red-hat-end-user-license-agreements#UBI"
 
 # Copy Python runtime from builder
@@ -1215,14 +1215,14 @@ class RateLimitMiddleware:
 ### 8.1 Kubernetes Deployment Manifest
 
 ```yaml
-# deployment/kubernetes/holmesgpt-api-deployment.yaml
+# deployment/kubernetes/kubernaut-agent-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: holmesgpt-api-server
+  name: kubernaut-agent-server
   namespace: kubernaut-system
   labels:
-    app: holmesgpt-api-server
+    app: kubernaut-agent-server
     component: ai-investigation
     version: v1.0.0
 spec:
@@ -1234,11 +1234,11 @@ spec:
       maxSurge: 1
   selector:
     matchLabels:
-      app: holmesgpt-api-server
+      app: kubernaut-agent-server
   template:
     metadata:
       labels:
-        app: holmesgpt-api-server
+        app: kubernaut-agent-server
         component: ai-investigation
       annotations:
         prometheus.io/scrape: "true"
@@ -1252,10 +1252,10 @@ spec:
         fsGroup: 0
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: holmesgpt-api-server
+      serviceAccountName: kubernaut-agent-server
       containers:
-      - name: holmesgpt-api
-        image: registry.kubernaut.io/holmesgpt-api-server:1.0.0
+      - name: kubernaut-agent
+        image: registry.kubernaut.io/kubernaut-agent-server:1.0.0
         imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false
@@ -1350,21 +1350,21 @@ spec:
                 - key: app
                   operator: In
                   values:
-                  - holmesgpt-api-server
+                  - kubernaut-agent-server
               topologyKey: kubernetes.io/hostname
 ```
 
 ### 8.2 Service and Ingress
 
 ```yaml
-# deployment/kubernetes/holmesgpt-api-service.yaml
+# deployment/kubernetes/kubernaut-agent-service.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: holmesgpt-api-service
+  name: kubernaut-agent-service
   namespace: kubernaut-system
   labels:
-    app: holmesgpt-api-server
+    app: kubernaut-agent-server
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "9091"
@@ -1381,13 +1381,13 @@ spec:
     targetPort: metrics
     protocol: TCP
   selector:
-    app: holmesgpt-api-server
+    app: kubernaut-agent-server
 
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: holmesgpt-api-ingress
+  name: kubernaut-agent-ingress
   namespace: kubernaut-system
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
@@ -1398,17 +1398,17 @@ metadata:
 spec:
   tls:
   - hosts:
-    - holmesgpt-api.kubernaut.io
-    secretName: holmesgpt-api-tls
+    - kubernaut-agent.kubernaut.io
+    secretName: kubernaut-agent-tls
   rules:
-  - host: holmesgpt-api.kubernaut.io
+  - host: kubernaut-agent.kubernaut.io
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
           service:
-            name: holmesgpt-api-service
+            name: kubernaut-agent-service
             port:
               number: 8090
 ```
@@ -1553,7 +1553,7 @@ security:
     - "https://kubernaut.kubernaut.io"
     - "https://admin.kubernaut.io"
   allowed_hosts:
-    - "holmesgpt-api.kubernaut.io"
+    - "kubernaut-agent.kubernaut.io"
   jwt_expire_minutes: 60
 
 llm:
@@ -1605,7 +1605,7 @@ logging:
   format: "json"
   structured: true
   fields:
-    service: "holmesgpt-api"
+    service: "kubernaut-agent"
     component: "investigation"
 
 performance:

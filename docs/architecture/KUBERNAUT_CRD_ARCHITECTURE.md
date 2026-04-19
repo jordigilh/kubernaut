@@ -289,7 +289,7 @@ Kubernaut's V1.0 architecture consists of:
 
 **Business Requirements**: BR-HAPI-001 to BR-HAPI-185
 
-**Source**: [docs/services/stateless/holmesgpt-api/overview.md](../services/stateless/holmesgpt-api/overview.md)
+**Source**: [docs/services/stateless/kubernaut-agent/overview.md](../services/stateless/kubernaut-agent/overview.md)
 
 ---
 
@@ -1092,7 +1092,7 @@ This section provides detailed feature descriptions for all 11 Kubernaut service
 
 **Port**: 8080 (API/health), 9090 (metrics)
 
-**Source**: [docs/services/stateless/holmesgpt-api/overview.md](../services/stateless/holmesgpt-api/overview.md)
+**Source**: [docs/services/stateless/kubernaut-agent/overview.md](../services/stateless/kubernaut-agent/overview.md)
 
 ---
 
@@ -1332,7 +1332,7 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
 
 **Latency**: 5-30s (LLM-dependent)
 
-**Source**: [02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md), [stateless/holmesgpt-api/overview.md](../services/stateless/holmesgpt-api/overview.md)
+**Source**: [02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md), [stateless/kubernaut-agent/overview.md](../services/stateless/kubernaut-agent/overview.md)
 
 ---
 
@@ -1882,7 +1882,7 @@ kubernaut_workflow_success_rate{workflow_type="multi-step-remediation"}
 - [Stateless Services](../services/stateless/)
   - [gateway-service/overview.md](../services/stateless/gateway-service/overview.md)
   - [context-api/overview.md](../services/stateless/context-api/overview.md)
-  - [holmesgpt-api/overview.md](../services/stateless/holmesgpt-api/overview.md)
+  - [kubernaut-agent/overview.md](../services/stateless/kubernaut-agent/overview.md)
 
 ---
 

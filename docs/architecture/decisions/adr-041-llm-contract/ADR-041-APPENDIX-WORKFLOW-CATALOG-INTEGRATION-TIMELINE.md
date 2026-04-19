@@ -211,7 +211,7 @@ Claude used HolmesGPT SDK's Kubernetes toolsets to gather comprehensive context:
 
 #### Tool Invocation Details
 
-**holmesgpt-api Logs**:
+**kubernaut-agent Logs**:
 ```
 2025-11-17 19:26:31 INFO: Running tool #19 [bold]search_workflow_catalog[/bold]:
   Search workflow catalog: 'OOMKilled high memory limit exceeded container'
@@ -363,7 +363,7 @@ the memory limit to accommodate the workload."
 
 ### ✅ Tool Invocation Success
 
-**Evidence**: holmesgpt-api logs show:
+**Evidence**: kubernaut-agent logs show:
 ```
 19:26:31 INFO: Running tool #19 [bold]search_workflow_catalog[/bold]
 19:26:31 INFO: BR-HAPI-250: Workflow catalog search completed - 2 workflows found
@@ -800,6 +800,6 @@ curl -X POST http://localhost:8080/api/v1/incident/analyze -d @scenario.json
 ---
 
 **Reference Files**:
-- Ollama setup: `holmesgpt-api/start-local-ollama.sh`
-- Claude setup: `holmesgpt-api/start-local-claude.sh`
-- Configuration: `holmesgpt-api/config-local-ollama.yaml`, `holmesgpt-api/config-local-claude.yaml`
+- Ollama setup: `kubernaut-agent/start-local-ollama.sh`
+- Claude setup: `kubernaut-agent/start-local-claude.sh`
+- Configuration: `kubernaut-agent/config-local-ollama.yaml`, `kubernaut-agent/config-local-claude.yaml`

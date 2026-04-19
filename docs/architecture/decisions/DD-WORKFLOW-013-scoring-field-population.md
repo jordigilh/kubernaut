@@ -36,7 +36,7 @@ Document how scoring fields (`base_similarity`, `label_boost`, `label_penalty`, 
 ### **Step 2: HolmesGPT API → Data Storage Service**
 
 ```python
-# holmesgpt-api/src/toolsets/workflow_catalog.py
+# kubernaut-agent/src/toolsets/workflow_catalog.py
 # Line 338: POST request to Data Storage Service
 
 POST http://data-storage:8080/api/v1/workflows/search
@@ -173,7 +173,7 @@ type workflowWithScore struct {
 ### **Step 6: JSON Response → Python Transformation**
 
 ```python
-# holmesgpt-api/src/toolsets/workflow_catalog.py
+# kubernaut-agent/src/toolsets/workflow_catalog.py
 # _transform_api_response() method
 
 # CURRENT (with breakdown):

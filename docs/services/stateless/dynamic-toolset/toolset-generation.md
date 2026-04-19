@@ -456,7 +456,7 @@ grafana-toolset.yaml: |
 apiVersion: v1
 kind: Secret
 metadata:
-  name: holmesgpt-api-secrets
+  name: kubernaut-agent-secrets
   namespace: kubernaut-system
 type: Opaque
 stringData:
@@ -468,7 +468,7 @@ stringData:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: holmesgpt-api
+  name: kubernaut-agent
 spec:
   template:
     spec:
@@ -478,7 +478,7 @@ spec:
         - name: GRAFANA_API_KEY
           valueFrom:
             secretKeyRef:
-              name: holmesgpt-api-secrets
+              name: kubernaut-agent-secrets
               key: GRAFANA_API_KEY
 ```
 

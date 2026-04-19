@@ -11,21 +11,21 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: holmesgpt-api
+  name: kubernaut-agent
   namespace: kubernaut-system
   labels:
-    app: holmesgpt-api
+    app: kubernaut-agent
     component: ai-investigation
     version: v1.0.0
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: holmesgpt-api
+      app: kubernaut-agent
   template:
     metadata:
       labels:
-        app: holmesgpt-api
+        app: kubernaut-agent
         component: ai-investigation
         version: v1.0.0
     spec:
@@ -37,8 +37,8 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-      - name: holmesgpt-api
-        image: kubernaut/holmesgpt-api:latest
+      - name: kubernaut-agent
+        image: kubernaut/kubernaut-agent:latest
         imagePullPolicy: Always
         ports:
         - name: http
@@ -104,14 +104,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: holmesgpt-api
+  name: kubernaut-agent
   namespace: kubernaut-system
   labels:
-    app: holmesgpt-api
+    app: kubernaut-agent
     component: ai-investigation
 spec:
   selector:
-    app: holmesgpt-api
+    app: kubernaut-agent
   ports:
   - name: http
     port: 8090
@@ -129,7 +129,7 @@ metadata:
   name: holmesgpt-config
   namespace: kubernaut-system
   labels:
-    app: holmesgpt-api
+    app: kubernaut-agent
     component: ai-investigation
 data:
   config.yaml: |
@@ -165,15 +165,15 @@ data:
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: holmesgpt-api
+  name: kubernaut-agent
   namespace: kubernaut-system
   labels:
-    app: holmesgpt-api
+    app: kubernaut-agent
     component: ai-investigation
 spec:
   to:
     kind: Service
-    name: holmesgpt-api
+    name: kubernaut-agent
   port:
     targetPort: http
   tls:
