@@ -95,7 +95,22 @@ var _ = SynchronizedBeforeSuite(
 				WorkflowID:  "oom-recovery-v1",
 				Name:        "oom-recovery",
 				Description: "OOM recovery workflow",
-				ActionType:  "IncreaseMemory",
+				ActionType:  "IncreaseMemoryLimits",
+				Environment: "production",
+			},
+			{
+				WorkflowID:  "oomkill-increase-memory-v1",
+				Name:        "oomkill-increase-memory",
+				Description: "OOMKill memory increase workflow",
+				ActionType:  "IncreaseMemoryLimits",
+				Environment: "production",
+			},
+			{
+				WorkflowID:  "oom-recovery-aggressive-v1",
+				Name:        "oom-recovery-aggressive",
+				Description: "Aggressive OOM recovery with wildcard labels",
+				ActionType:  "IncreaseMemoryLimits",
+				Environment: "production",
 			},
 		}
 		wfUUIDs, err := infrastructure.SeedWorkflowsInDataStorage(

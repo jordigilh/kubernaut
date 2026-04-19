@@ -288,6 +288,46 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 		})
 	})
 
+	Describe("UT-KA-725-001: All-zero effectiveness warning references investigation_outcome", func() {
+		It("should contain 'investigation_outcome' to 'inconclusive' and not 'needs_human_review'", func() {
+			result := &enrichment.RemediationHistoryResult{
+				TargetResource: "default/Pod/web",
+				Tier1: []enrichment.Tier1Entry{
+					{RemediationUID: "wf-a", ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success", EffectivenessScore: floatPtr(0.0), CompletedAt: time.Now()},
+					{RemediationUID: "wf-b", ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success", EffectivenessScore: floatPtr(0.0), CompletedAt: time.Now()},
+				},
+				Tier1Window: "24h",
+			}
+			output := prompt.BuildRemediationHistorySection(result, 2)
+			Expect(output).To(ContainSubstring("MANDATORY: You MUST NOT re-select"),
+				"all-zero escalation warning must still be present")
+			Expect(output).To(ContainSubstring("`investigation_outcome` to `inconclusive`"),
+				"all-zero warning must reference investigation_outcome to inconclusive")
+			Expect(output).NotTo(ContainSubstring("`needs_human_review`"),
+				"all-zero warning must NOT reference non-existent needs_human_review schema field")
+		})
+	})
+
+	Describe("UT-KA-725-002: Repeated ineffective warning references investigation_outcome", func() {
+		It("should contain 'investigation_outcome' to 'inconclusive' and not 'needs_human_review'", func() {
+			result := &enrichment.RemediationHistoryResult{
+				TargetResource: "default/Pod/web",
+				Tier1: []enrichment.Tier1Entry{
+					{RemediationUID: "wf-a", ActionType: "scale_up", SignalType: "HighLatency", Outcome: "Success", EffectivenessScore: floatPtr(0.3), CompletedAt: time.Now()},
+					{RemediationUID: "wf-b", ActionType: "scale_up", SignalType: "HighLatency", Outcome: "Success", EffectivenessScore: floatPtr(0.2), CompletedAt: time.Now()},
+				},
+				Tier1Window: "24h",
+			}
+			output := prompt.BuildRemediationHistorySection(result, 2)
+			Expect(output).To(ContainSubstring("WARNING: REPEATED INEFFECTIVE REMEDIATION"),
+				"repeated ineffective warning must be present")
+			Expect(output).To(ContainSubstring("`investigation_outcome` to `inconclusive`"),
+				"repeated ineffective warning must reference investigation_outcome to inconclusive")
+			Expect(output).NotTo(ContainSubstring("`needs_human_review`"),
+				"repeated ineffective warning must NOT reference non-existent needs_human_review schema field")
+		})
+	})
+
 	Describe("UT-KA-433-HP-011: BuildRemediationHistorySection full integration", func() {
 		It("should return empty string for nil result", func() {
 			Expect(prompt.BuildRemediationHistorySection(nil, 2)).To(BeEmpty())
@@ -361,6 +401,59 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 			output := prompt.BuildRemediationHistorySection(result, 2)
 			Expect(output).To(ContainSubstring("MANDATORY: You MUST NOT re-select"))
 			Expect(output).To(ContainSubstring("restart_pod"))
+		})
+	})
+
+	// ========================================
+	// Issue #722: Remediated and Inconclusive outcome detection
+	// BR-AI-056: KA must detect recurring patterns with new outcome values
+	// ========================================
+	Describe("UT-KA-722-001: DetectCompletedButRecurring with Remediated outcome", func() {
+		It("should detect entries with outcome=Remediated as completed", func() {
+			entries := []prompt.HistoryEntry{
+				{ActionType: "increase_memory", SignalType: "OOMKilled", Outcome: "Remediated"},
+				{ActionType: "increase_memory", SignalType: "OOMKilled", Outcome: "Remediated"},
+				{ActionType: "increase_memory", SignalType: "OOMKilled", Outcome: "Remediated"},
+			}
+			recurring := prompt.DetectCompletedButRecurring(entries, 2)
+			Expect(recurring).To(HaveLen(1))
+			Expect(recurring[0].ActionType).To(Equal("increase_memory"))
+			Expect(recurring[0].Count).To(Equal(3))
+			Expect(recurring[0].SignalType).To(Equal("OOMKilled"))
+		})
+	})
+
+	Describe("UT-KA-722-002: DetectCompletedButRecurring with Inconclusive outcome", func() {
+		It("should detect entries with outcome=Inconclusive as completed", func() {
+			entries := []prompt.HistoryEntry{
+				{ActionType: "restart_pod", SignalType: "HighCPU", Outcome: "Inconclusive"},
+				{ActionType: "restart_pod", SignalType: "HighCPU", Outcome: "Inconclusive"},
+			}
+			recurring := prompt.DetectCompletedButRecurring(entries, 2)
+			Expect(recurring).To(HaveLen(1))
+			Expect(recurring[0].ActionType).To(Equal("restart_pod"))
+			Expect(recurring[0].Count).To(Equal(2))
+			Expect(recurring[0].SignalType).To(Equal("HighCPU"))
+		})
+	})
+
+	Describe("UT-KA-722-003: AllZeroEffectiveness with Remediated outcome", func() {
+		It("should include Remediated entries in zero-effectiveness check", func() {
+			entries := []prompt.HistoryEntry{
+				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Remediated", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false)},
+				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Remediated", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false)},
+			}
+			Expect(prompt.AllZeroEffectiveness(entries, "restart_pod", "OOMKilled")).To(BeTrue())
+		})
+	})
+
+	Describe("UT-KA-722-004: AllZeroEffectiveness with Inconclusive outcome", func() {
+		It("should include Inconclusive entries in zero-effectiveness check", func() {
+			entries := []prompt.HistoryEntry{
+				{ActionType: "scale_up", SignalType: "HighLatency", Outcome: "Inconclusive", EffectivenessScore: nil, SignalResolved: boolPtr(false)},
+				{ActionType: "scale_up", SignalType: "HighLatency", Outcome: "Inconclusive", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false)},
+			}
+			Expect(prompt.AllZeroEffectiveness(entries, "scale_up", "HighLatency")).To(BeTrue())
 		})
 	})
 })

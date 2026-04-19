@@ -21,7 +21,7 @@
 ### In Scope
 
 **HAPI-side (Python/pytest)**:
-- **Three new tool classes** replacing `SearchWorkflowCatalogTool` in `holmesgpt-api/src/toolsets/workflow_catalog.py`
+- **Three new tool classes** replacing `SearchWorkflowCatalogTool` in `kubernaut-agent/src/toolsets/workflow_catalog.py`
   - `ListAvailableActionsTool` -- action type discovery from taxonomy
   - `ListWorkflowsTool` -- workflow selection within action type
   - `GetWorkflowTool` -- single workflow parameter schema lookup with security gate
@@ -148,13 +148,13 @@
 
 ## 3. Test Cases
 
-### Phase 1: HAPI Tool Classes (`holmesgpt-api/src/toolsets/workflow_catalog.py`)
+### Phase 1: HAPI Tool Classes (`kubernaut-agent/src/toolsets/workflow_catalog.py`)
 
 #### UT-HAPI-017-001-001: ListAvailableActionsTool happy path
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: ListAvailableActionsTool calls DS `GET /api/v1/workflows/actions` and returns parsed action types
 **Preconditions**: Mock DS client returning 200 with action type list
 **Steps**:
@@ -168,7 +168,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Error Handling
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Tool returns validation error when no context filters provided
 **Preconditions**: No mock DS call (validation fails before invocation)
 **Steps**:
@@ -179,7 +179,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Tool forwards pagination metadata (hasMore, offset, total) to LLM
 **Preconditions**: Mock DS client returning `{"actionTypes": [...], "hasMore": true, "offset": 0, "limit": 20, "total": 45}`
 **Steps**:
@@ -192,7 +192,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Error Handling
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Tool handles 400, 500, 502 errors from DS with appropriate messages
 **Preconditions**: Mock DS client raising `ApiException` with various status codes
 **Steps**:
@@ -206,7 +206,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: All signal context filters (severity, component, environment, priority, custom_labels, detected_labels) are passed to the DS client call
 **Preconditions**: Mock DS client capturing call arguments
 **Steps**:
@@ -218,7 +218,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Tool returns a well-formed StructuredToolResult with status and rendered content
 **Preconditions**: Mock DS client returning valid response
 **Steps**:
@@ -232,7 +232,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: ListWorkflowsTool calls DS `GET /api/v1/workflows/actions/{action_type}` and returns workflows for the specified action type
 **Preconditions**: Mock DS client returning 200 with workflow list
 **Steps**:
@@ -246,7 +246,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Error Handling
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Tool returns validation error when action_type is not provided
 **Preconditions**: No mock DS call
 **Steps**:
@@ -257,7 +257,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Tool forwards pagination metadata for LLM to request all pages
 **Preconditions**: Mock DS client returning paginated response with `hasMore=true`
 **Steps**:
@@ -270,7 +270,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Error Handling
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Tool handles 400 and 500 errors from DS
 **Preconditions**: Mock DS client raising `ApiException`
 **Steps**:
@@ -284,7 +284,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: All signal context filters forwarded alongside action_type
 **Preconditions**: Mock DS client capturing call arguments
 **Steps**:
@@ -296,7 +296,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Tool returns well-formed StructuredToolResult with workflow details
 **Preconditions**: Mock DS client returning valid response
 **Steps**:
@@ -308,7 +308,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: GetWorkflowTool calls DS `GET /api/v1/workflows/{workflow_id}` and returns parameter schema
 **Preconditions**: Mock DS client returning 200 with full workflow detail including parameter schema
 **Steps**:
@@ -322,7 +322,7 @@
 **BR**: BR-HAPI-017-001, BR-HAPI-017-003
 **Type**: Unit
 **Category**: Security
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: GetWorkflowTool returns error when DS returns 404 (workflow exists but context filters exclude it)
 **Preconditions**: Mock DS client raising `ApiException(status=404)` (security gate rejection)
 **Steps**:
@@ -335,7 +335,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Error Handling
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Tool handles 400, 500, 502 from DS
 **Preconditions**: Mock DS client raising `ApiException` with various status codes
 **Steps**:
@@ -347,7 +347,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Security
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: All signal context filters forwarded for defense-in-depth security gate
 **Preconditions**: Mock DS client capturing call arguments
 **Steps**:
@@ -359,7 +359,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Tool's rendered output includes the workflow parameter schema for LLM to populate
 **Preconditions**: Mock DS returning workflow with parameters
 **Steps**:
@@ -371,7 +371,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Internal scoring fields (finalScore) are not included in LLM-facing output
 **Preconditions**: Mock DS response containing `finalScore` field
 **Steps**:
@@ -383,7 +383,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: New toolset class registers ListAvailableActionsTool, ListWorkflowsTool, and GetWorkflowTool
 **Preconditions**: Instantiate new toolset class
 **Steps**:
@@ -400,7 +400,7 @@
 **BR**: BR-HAPI-017-002
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_prompt_builder_three_step.py`
+**File**: `kubernaut-agent/tests/unit/test_prompt_builder_three_step.py`
 **Description**: Incident prompt builder generates instructions referencing all three discovery tools
 **Preconditions**: Instantiate incident prompt builder with test data
 **Steps**:
@@ -414,7 +414,7 @@
 **BR**: BR-HAPI-017-002
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_prompt_builder_three_step.py`
+**File**: `kubernaut-agent/tests/unit/test_prompt_builder_three_step.py`
 **Description**: Recovery prompt builder generates instructions referencing all three discovery tools
 **Preconditions**: Instantiate recovery prompt builder with test data
 **Steps**:
@@ -426,7 +426,7 @@
 **BR**: BR-HAPI-017-002, BR-HAPI-017-006
 **Type**: Unit
 **Category**: Security
-**File**: `holmesgpt-api/tests/unit/test_prompt_builder_three_step.py`
+**File**: `kubernaut-agent/tests/unit/test_prompt_builder_three_step.py`
 **Description**: No references to the old tool name remain in incident prompt
 **Preconditions**: Instantiate incident prompt builder
 **Steps**:
@@ -438,7 +438,7 @@
 **BR**: BR-HAPI-017-002, BR-HAPI-017-006
 **Type**: Unit
 **Category**: Security
-**File**: `holmesgpt-api/tests/unit/test_prompt_builder_three_step.py`
+**File**: `kubernaut-agent/tests/unit/test_prompt_builder_three_step.py`
 **Description**: No references to the old tool name remain in recovery prompt
 **Preconditions**: Instantiate recovery prompt builder
 **Steps**:
@@ -450,7 +450,7 @@
 **BR**: BR-HAPI-017-002
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_prompt_builder_three_step.py`
+**File**: `kubernaut-agent/tests/unit/test_prompt_builder_three_step.py`
 **Description**: Step 2 instructions explicitly require LLM to review all workflows before selecting
 **Preconditions**: Instantiate prompt builder (both incident and recovery)
 **Steps**:
@@ -467,7 +467,7 @@
 **BR**: BR-HAPI-017-003
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_workflow_validation_context_filters.py`
+**File**: `kubernaut-agent/tests/unit/test_workflow_validation_context_filters.py`
 **Description**: WorkflowResponseValidator calls DS `get_workflow` with all signal context filters
 **Preconditions**: Mock DS client capturing call arguments
 **Steps**:
@@ -480,7 +480,7 @@
 **BR**: BR-HAPI-017-003
 **Type**: Unit
 **Category**: Security
-**File**: `holmesgpt-api/tests/unit/test_workflow_validation_context_filters.py`
+**File**: `kubernaut-agent/tests/unit/test_workflow_validation_context_filters.py`
 **Description**: When DS returns 404 (security gate rejection), validator marks validation as failed
 **Preconditions**: Mock DS client raising `ApiException(status=404)`
 **Steps**:
@@ -494,7 +494,7 @@
 **BR**: BR-HAPI-017-003
 **Type**: Unit
 **Category**: Observability
-**File**: `holmesgpt-api/tests/unit/test_workflow_validation_context_filters.py`
+**File**: `kubernaut-agent/tests/unit/test_workflow_validation_context_filters.py`
 **Description**: Validation failure error message is actionable for the LLM self-correction loop
 **Preconditions**: Mock DS client returning 404
 **Steps**:
@@ -507,7 +507,7 @@
 **BR**: BR-HAPI-017-003
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_workflow_validation_context_filters.py`
+**File**: `kubernaut-agent/tests/unit/test_workflow_validation_context_filters.py`
 **Description**: When DS returns 200, validation proceeds with parameter schema checks
 **Preconditions**: Mock DS client returning 200 with workflow including parameter schema
 **Steps**:
@@ -524,7 +524,7 @@
 **BR**: BR-HAPI-017-004
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_recovery_validation_loop.py`
+**File**: `kubernaut-agent/tests/unit/test_recovery_validation_loop.py`
 **Description**: Recovery flow retries LLM investigation up to 3 times on validation failure
 **Preconditions**: Mock LLM returning invalid workflow selection on all attempts; mock validator always failing
 **Steps**:
@@ -538,7 +538,7 @@
 **BR**: BR-HAPI-017-004
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_recovery_validation_loop.py`
+**File**: `kubernaut-agent/tests/unit/test_recovery_validation_loop.py`
 **Description**: On retry, validation errors from previous attempt are injected into the prompt
 **Preconditions**: Mock validator returning errors on first attempt, success on second
 **Steps**:
@@ -551,7 +551,7 @@
 **BR**: BR-HAPI-017-004
 **Type**: Unit
 **Category**: Error Handling
-**File**: `holmesgpt-api/tests/unit/test_recovery_validation_loop.py`
+**File**: `kubernaut-agent/tests/unit/test_recovery_validation_loop.py`
 **Description**: After 3 failed validation attempts, recovery marks result as needs_human_review
 **Preconditions**: All 3 validation attempts fail
 **Steps**:
@@ -565,7 +565,7 @@
 **BR**: BR-HAPI-017-004
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_recovery_validation_loop.py`
+**File**: `kubernaut-agent/tests/unit/test_recovery_validation_loop.py`
 **Description**: Recovery flow succeeds when LLM self-corrects on second attempt
 **Preconditions**: First attempt fails validation, second succeeds
 **Steps**:
@@ -583,7 +583,7 @@
 **BR**: BR-HAPI-017-005
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Tool includes remediationId as query parameter in DS call
 **Preconditions**: Tool constructed with `remediation_id="rem-uuid-123"`; mock DS client capturing args
 **Steps**:
@@ -596,7 +596,7 @@
 **BR**: BR-HAPI-017-005
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Tool includes remediationId as query parameter in DS call
 **Preconditions**: Tool constructed with `remediation_id="rem-uuid-123"`; mock DS client
 **Steps**:
@@ -609,7 +609,7 @@
 **BR**: BR-HAPI-017-005
 **Type**: Unit
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Tool includes remediationId as query parameter in DS call
 **Preconditions**: Tool constructed with `remediation_id="rem-uuid-123"`; mock DS client
 **Steps**:
@@ -622,7 +622,7 @@
 **BR**: BR-HAPI-017-005
 **Type**: Unit
 **Category**: Error Handling
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Tool proceeds normally when remediationId is None or empty
 **Preconditions**: Tool constructed with `remediation_id=None`
 **Steps**:
@@ -640,7 +640,7 @@
 **BR**: BR-HAPI-017-006
 **Type**: Unit
 **Category**: Security
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
 **Description**: Importing `SearchWorkflowCatalogTool` raises ImportError
 **Preconditions**: Old class has been removed
 **Steps**:
@@ -652,11 +652,11 @@
 **BR**: BR-HAPI-017-006
 **Type**: Unit
 **Category**: Security
-**File**: `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py`
-**Description**: No Python source file in holmesgpt-api/src/ references the old tool name
+**File**: `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py`
+**Description**: No Python source file in kubernaut-agent/src/ references the old tool name
 **Preconditions**: Codebase search
 **Steps**:
-1. Walk all `.py` files in `holmesgpt-api/src/`
+1. Walk all `.py` files in `kubernaut-agent/src/`
 2. Search for string `search_workflow_catalog` (case-insensitive)
 3. Assert 0 matches
 **Expected Result**: Old tool completely removed from codebase
@@ -669,7 +669,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Integration
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/integration/test_three_step_discovery_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_three_step_discovery_integration.py`
 **Description**: ListAvailableActionsTool returns action types from real DS with bootstrapped taxonomy
 **Preconditions**: Real DS with PostgreSQL; action_type_taxonomy table seeded via fixtures
 **Steps**:
@@ -684,7 +684,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Integration
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/integration/test_three_step_discovery_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_three_step_discovery_integration.py`
 **Description**: ListWorkflowsTool returns workflows from real DS for a given action type
 **Preconditions**: Real DS with bootstrapped workflows of type `scale_up`
 **Steps**:
@@ -698,7 +698,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Integration
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/integration/test_three_step_discovery_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_three_step_discovery_integration.py`
 **Description**: GetWorkflowTool returns full workflow detail from real DS
 **Preconditions**: Real DS with bootstrapped workflow; known workflow_id
 **Steps**:
@@ -711,7 +711,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: Integration
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/integration/test_three_step_discovery_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_three_step_discovery_integration.py`
 **Description**: Pagination works with enough workflows to span multiple pages
 **Preconditions**: Real DS with 25+ workflows (page size 20)
 **Steps**:
@@ -726,7 +726,7 @@
 **BR**: BR-HAPI-017-003
 **Type**: Integration
 **Category**: Security
-**File**: `holmesgpt-api/tests/integration/test_workflow_validation_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_workflow_validation_integration.py`
 **Description**: GetWorkflow with context filters that don't match the workflow returns 404
 **Preconditions**: Real DS with workflow targeting `environment="production"`, `severity="critical"`
 **Steps**:
@@ -739,7 +739,7 @@
 **BR**: BR-HAPI-017-003
 **Type**: Integration
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/integration/test_workflow_validation_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_workflow_validation_integration.py`
 **Description**: GetWorkflow with matching context returns full workflow detail
 **Preconditions**: Real DS with workflow targeting `environment="production"`, `severity="critical"`
 **Steps**:
@@ -752,7 +752,7 @@
 **BR**: BR-HAPI-017-004
 **Type**: Integration
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/integration/test_recovery_validation_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_recovery_validation_integration.py`
 **Description**: Recovery validation loop retries when DS returns validation error
 **Preconditions**: Real DS; mock LLM returning invalid then valid workflow
 **Steps**:
@@ -767,7 +767,7 @@
 **BR**: BR-HAPI-017-004
 **Type**: Integration
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/integration/test_recovery_validation_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_recovery_validation_integration.py`
 **Description**: Recovery flow produces valid result after LLM self-corrects parameters
 **Preconditions**: Real DS; mock LLM returning wrong params then correct params
 **Steps**:
@@ -1130,7 +1130,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: E2E
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/e2e/test_three_step_discovery_e2e.py`
+**File**: `kubernaut-agent/tests/e2e/test_three_step_discovery_e2e.py`
 **Description**: Full incident analysis uses three-step discovery with Mock LLM
 **Preconditions**: Kind cluster with HAPI, DS, Mock LLM; seeded workflows with action_type taxonomy
 **Steps**:
@@ -1144,7 +1144,7 @@
 **BR**: BR-HAPI-017-001
 **Type**: E2E
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/e2e/test_recovery_three_step_e2e.py`
+**File**: `kubernaut-agent/tests/e2e/test_recovery_three_step_e2e.py`
 **Description**: Full recovery analysis uses three-step discovery with Mock LLM
 **Preconditions**: Kind cluster with HAPI, DS, Mock LLM; seeded workflows
 **Steps**:
@@ -1157,7 +1157,7 @@
 **BR**: BR-HAPI-017-004
 **Type**: E2E
 **Category**: Happy Path
-**File**: `holmesgpt-api/tests/e2e/test_recovery_three_step_e2e.py`
+**File**: `kubernaut-agent/tests/e2e/test_recovery_three_step_e2e.py`
 **Description**: Recovery validation loop retries and self-corrects with Mock LLM
 **Preconditions**: Kind cluster; Mock LLM programmed to return invalid workflow on first attempt, valid on second
 **Steps**:
@@ -1172,7 +1172,7 @@
 
 ## 4. Fixture Updates Required
 
-### HAPI Fixtures (`holmesgpt-api/tests/fixtures/workflow_fixtures.py`)
+### HAPI Fixtures (`kubernaut-agent/tests/fixtures/workflow_fixtures.py`)
 
 The existing `WorkflowFixture` and `bootstrap_workflows()` must be updated for the three-step protocol:
 
@@ -1216,10 +1216,10 @@ Per TESTING_GUIDELINES v2.7.0 (>=80% per tier, measured against tier-specific te
 
 | Component | Unit | Integration | E2E |
 |-----------|------|-------------|-----|
-| HAPI tools | `holmesgpt-api/tests/unit/test_three_step_discovery_tools.py` | `holmesgpt-api/tests/integration/test_three_step_discovery_integration.py` | `holmesgpt-api/tests/e2e/test_three_step_discovery_e2e.py` |
-| HAPI prompts | `holmesgpt-api/tests/unit/test_prompt_builder_three_step.py` | -- | -- |
-| HAPI validator | `holmesgpt-api/tests/unit/test_workflow_validation_context_filters.py` | `holmesgpt-api/tests/integration/test_workflow_validation_integration.py` | -- |
-| HAPI recovery loop | `holmesgpt-api/tests/unit/test_recovery_validation_loop.py` | `holmesgpt-api/tests/integration/test_recovery_validation_integration.py` | `holmesgpt-api/tests/e2e/test_recovery_three_step_e2e.py` |
+| HAPI tools | `kubernaut-agent/tests/unit/test_three_step_discovery_tools.py` | `kubernaut-agent/tests/integration/test_three_step_discovery_integration.py` | `kubernaut-agent/tests/e2e/test_three_step_discovery_e2e.py` |
+| HAPI prompts | `kubernaut-agent/tests/unit/test_prompt_builder_three_step.py` | -- | -- |
+| HAPI validator | `kubernaut-agent/tests/unit/test_workflow_validation_context_filters.py` | `kubernaut-agent/tests/integration/test_workflow_validation_integration.py` | -- |
+| HAPI recovery loop | `kubernaut-agent/tests/unit/test_recovery_validation_loop.py` | `kubernaut-agent/tests/integration/test_recovery_validation_integration.py` | `kubernaut-agent/tests/e2e/test_recovery_three_step_e2e.py` |
 | DS handlers | `test/unit/datastorage/workflow_discovery_handler_test.go` | -- | -- |
 | DS repository | -- | `test/integration/datastorage/workflow_discovery_repository_test.go` | -- |
 | DS audit | -- | `test/integration/datastorage/workflow_discovery_audit_test.go` | `test/e2e/datastorage/06_workflow_discovery_audit_test.go` |

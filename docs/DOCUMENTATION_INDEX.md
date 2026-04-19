@@ -104,7 +104,7 @@ This index provides comprehensive navigation across all Kubernaut documentation 
 ### HolmesGPT Integration
 | Document | Purpose | Architecture Link |
 |----------|---------|------------------|
-| **[services/stateless/holmesgpt-api/toolset/DYNAMIC_TOOLSET_CONFIGURATION.md](services/stateless/holmesgpt-api/toolset/DYNAMIC_TOOLSET_CONFIGURATION.md)** | Toolset Management | [AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md) |
+| **[services/stateless/kubernaut-agent/toolset/DYNAMIC_TOOLSET_CONFIGURATION.md](services/stateless/kubernaut-agent/toolset/DYNAMIC_TOOLSET_CONFIGURATION.md)** | Toolset Management | [AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md) |
 
 ### Vector Database
 | Document | Purpose | Architecture Link |

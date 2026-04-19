@@ -129,8 +129,8 @@ func (r *Reconciler) trackEffectivenessStatus(ctx context.Context, rr *remediati
 				Message:            fmt.Sprintf("Effectiveness assessment completed (reason: %s)", ea.Status.AssessmentReason),
 				LastTransitionTime: metav1.Now(),
 			})
-			// #280: If RR is in Verifying, complete it now that EA finished
-			r.completeVerificationIfNeeded(rr, logger)
+			// #280/#722: If RR is in Verifying, complete with score-aware outcome
+			r.completeVerificationIfNeeded(rr, ea, logger)
 			return nil
 		})
 
@@ -148,8 +148,8 @@ func (r *Reconciler) trackEffectivenessStatus(ctx context.Context, rr *remediati
 				Message:            fmt.Sprintf("Effectiveness assessment failed (reason: %s)", ea.Status.AssessmentReason),
 				LastTransitionTime: metav1.Now(),
 			})
-			// #280: If RR is in Verifying, complete it now that EA finished (even on failure)
-			r.completeVerificationIfNeeded(rr, logger)
+			// #280/#722: If RR is in Verifying, complete with score-aware outcome
+			r.completeVerificationIfNeeded(rr, ea, logger)
 			return nil
 		})
 
@@ -164,18 +164,45 @@ func (r *Reconciler) trackEffectivenessStatus(ctx context.Context, rr *remediati
 	return nil
 }
 
-// completeVerificationIfNeeded transitions the RR from Verifying to Completed (#280).
+// DeriveOutcomeFromEA computes the RR outcome from EA component scores (Issue #722).
+//
+// Decision logic:
+//   - alertAssessed && alertScore == 0 → "Inconclusive" (alert still firing)
+//   - alertAssessed && alertScore > 0  → "Remediated" (alert resolved)
+//   - !alertAssessed                   → "Remediated" (fail-open: AM unavailable)
+//
+// The !alertAssessed fail-open preserves current behavior for environments without
+// AlertManager. EM alert/alert.go sets Assessed=false when AM is unreachable or disabled.
+func DeriveOutcomeFromEA(ea *eav1.EffectivenessAssessment) string {
+	if ea == nil {
+		return "Remediated"
+	}
+
+	components := ea.Status.Components
+	if !components.AlertAssessed {
+		return "Remediated"
+	}
+
+	if components.AlertScore != nil && *components.AlertScore == 0 {
+		return "Inconclusive"
+	}
+
+	return "Remediated"
+}
+
+// completeVerificationIfNeeded transitions the RR from Verifying to Completed (#280, #722).
 // Called inside a status update closure when EA reaches a terminal phase.
-// The remediation itself succeeded (RR was in Executing, WFE completed), so Outcome is "Remediated"
-// regardless of whether the EA assessment passed or failed.
-func (r *Reconciler) completeVerificationIfNeeded(rr *remediationv1.RemediationRequest, logger interface{ Info(string, ...interface{}) }) {
+// Issue #722: Uses DeriveOutcomeFromEA for score-aware outcome instead of hardcoding "Remediated".
+func (r *Reconciler) completeVerificationIfNeeded(rr *remediationv1.RemediationRequest, ea *eav1.EffectivenessAssessment, logger interface{ Info(string, ...interface{}) }) {
 	if rr.Status.OverallPhase != phase.Verifying {
 		return
 	}
 
+	outcome := DeriveOutcomeFromEA(ea)
+
 	now := metav1.Now()
 	rr.Status.OverallPhase = phase.Completed
-	rr.Status.Outcome = "Remediated"
+	rr.Status.Outcome = outcome
 	rr.Status.CompletedAt = &now
 	rr.Status.ObservedGeneration = rr.Generation
 
@@ -188,6 +215,6 @@ func (r *Reconciler) completeVerificationIfNeeded(rr *remediationv1.RemediationR
 	}
 
 	logger.Info("Verification complete, RR transitioned to Completed",
-		"outcome", "Remediated",
+		"outcome", outcome,
 		"remediationRequest", rr.Name)
 }

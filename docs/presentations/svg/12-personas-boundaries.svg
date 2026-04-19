@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" font-family="Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="960" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#EFF6FF"/>
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </linearGradient>
+    <filter id="shadow" x="-2%" y="-4%" width="104%" height="112%">
+      <feDropShadow dx="0" dy="2" stdDeviation="5" flood-color="#1E293B" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="540" fill="url(#bgGrad)"/>
+
+  <text x="480" y="40" text-anchor="middle" font-size="22" font-weight="700" fill="#1E293B">Interaction Boundaries</text>
+  <text x="480" y="62" text-anchor="middle" font-size="13" fill="#64748B">Clear scope prevents overlap with integrating platforms</text>
+
+  <!-- Left: Kubernaut IS -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="82" width="420" height="320" rx="16" fill="white"/>
+  </g>
+  <rect x="40" y="82" width="420" height="44" rx="16" fill="url(#blueGrad)"/>
+  <rect x="40" y="110" width="420" height="16" fill="url(#blueGrad)"/>
+  <text x="250" y="111" text-anchor="middle" font-size="16" font-weight="700" fill="white">Kubernaut IS</text>
+
+  <rect x="60" y="140" width="380" height="72" rx="10" fill="#EFF6FF"/>
+  <rect x="72" y="154" width="32" height="32" rx="8" fill="#2563EB" opacity="0.15"/>
+  <text x="88" y="175" text-anchor="middle" font-size="10" font-weight="700" fill="#2563EB">RCA</text>
+  <text x="116" y="162" font-size="13" font-weight="700" fill="#1D4ED8">Remediation specialist</text>
+  <text x="116" y="180" font-size="11" fill="#475569">Investigate alerts, perform root cause analysis,</text>
+  <text x="116" y="194" font-size="11" fill="#475569">select and execute workflows, verify effectiveness</text>
+
+  <rect x="60" y="222" width="380" height="72" rx="10" fill="#EFF6FF"/>
+  <rect x="72" y="236" width="32" height="32" rx="8" fill="#2563EB" opacity="0.15"/>
+  <text x="88" y="257" text-anchor="middle" font-size="10" font-weight="700" fill="#2563EB">OPA</text>
+  <text x="116" y="244" font-size="13" font-weight="700" fill="#1D4ED8">Policy enforcement engine</text>
+  <text x="116" y="262" font-size="11" fill="#475569">Rego-based approval gating, confidence thresholds,</text>
+  <text x="116" y="276" font-size="11" fill="#475569">scope management, safety controls</text>
+
+  <rect x="60" y="304" width="380" height="72" rx="10" fill="#EFF6FF"/>
+  <rect x="72" y="318" width="32" height="32" rx="8" fill="#2563EB" opacity="0.15"/>
+  <text x="88" y="339" text-anchor="middle" font-size="10" font-weight="700" fill="#2563EB">LOG</text>
+  <text x="116" y="326" font-size="13" font-weight="700" fill="#1D4ED8">Audit authority</text>
+  <text x="116" y="344" font-size="11" fill="#475569">Every decision, tool call, and state transition</text>
+  <text x="116" y="358" font-size="11" fill="#475569">recorded with attribution -- SOC2-ready design</text>
+
+  <!-- Right: Kubernaut is NOT -->
+  <g filter="url(#shadow)">
+    <rect x="500" y="82" width="420" height="320" rx="16" fill="white"/>
+  </g>
+  <rect x="500" y="82" width="420" height="44" rx="16" fill="#DC2626"/>
+  <rect x="500" y="110" width="420" height="16" fill="#DC2626"/>
+  <text x="710" y="111" text-anchor="middle" font-size="16" font-weight="700" fill="white">Kubernaut is NOT</text>
+
+  <rect x="520" y="140" width="380" height="72" rx="10" fill="#FEF2F2"/>
+  <rect x="532" y="154" width="32" height="32" rx="8" fill="#DC2626" opacity="0.12"/>
+  <text x="548" y="173" text-anchor="middle" font-size="14" font-weight="700" fill="#DC2626">X</text>
+  <text x="576" y="162" font-size="13" font-weight="700" fill="#991B1B">Not an orchestration platform</text>
+  <text x="576" y="180" font-size="11" fill="#475569">No multi-agent routing, no UI rendering,</text>
+  <text x="576" y="194" font-size="11" fill="#475569">no conversation UX management</text>
+
+  <rect x="520" y="222" width="380" height="72" rx="10" fill="#FEF2F2"/>
+  <rect x="532" y="236" width="32" height="32" rx="8" fill="#DC2626" opacity="0.12"/>
+  <text x="548" y="255" text-anchor="middle" font-size="14" font-weight="700" fill="#DC2626">X</text>
+  <text x="576" y="244" font-size="13" font-weight="700" fill="#991B1B">Not a monitoring platform</text>
+  <text x="576" y="262" font-size="11" fill="#475569">Receives signals from external sources,</text>
+  <text x="576" y="276" font-size="11" fill="#475569">does not generate them</text>
+
+  <rect x="520" y="304" width="380" height="72" rx="10" fill="#FEF2F2"/>
+  <rect x="532" y="318" width="32" height="32" rx="8" fill="#DC2626" opacity="0.12"/>
+  <text x="548" y="337" text-anchor="middle" font-size="14" font-weight="700" fill="#DC2626">X</text>
+  <text x="576" y="326" font-size="13" font-weight="700" fill="#991B1B">Not an identity provider</text>
+  <text x="576" y="344" font-size="11" fill="#475569">Authenticates via the cluster's native mechanisms</text>
+  <text x="576" y="358" font-size="11" fill="#475569">(TokenReview, SubjectAccessReview)</text>
+
+  <!-- Bottom banner: Graduation path -->
+  <rect x="80" y="420" width="800" height="60" rx="12" fill="#7C3AED" opacity="0.08"/>
+  <rect x="80" y="420" width="800" height="60" rx="12" fill="none" stroke="#7C3AED" stroke-width="1.5" opacity="0.3"/>
+  <text x="480" y="446" text-anchor="middle" font-size="13" font-weight="700" fill="#7C3AED">Graduation Path</text>
+  <text x="480" y="466" text-anchor="middle" font-size="11" fill="#6D28D9">Personas graduate into ADR-060 -- BRs extracted per-persona per-capability (e.g., BR-MCP-001)</text>
+
+  <!-- Bottom note -->
+  <text x="480" y="516" text-anchor="middle" font-size="11" fill="#94A3B8">See PROPOSAL-EXT-001 Section 1.3 for the full ownership-split matrix</text>
+</svg>

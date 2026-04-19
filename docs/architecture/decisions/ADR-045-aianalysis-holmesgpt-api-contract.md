@@ -36,12 +36,12 @@ We will establish a formal API contract between AIAnalysis and HolmesGPT-API wit
 - `/docs` - Swagger UI
 - `/redoc` - ReDoc UI
 
-**Export Location**: `holmesgpt-api/api/openapi.json`
+**Export Location**: `kubernaut-agent/api/openapi.json`
 
 **Export Command**:
 ```bash
 # Start the server and export the spec
-cd holmesgpt-api
+cd kubernaut-agent
 python3 -c "
 from src.main import create_app
 app = create_app()
@@ -56,7 +56,7 @@ print('OpenAPI spec exported to api/openapi.json')
 ```bash
 # Generate Go client from OpenAPI spec using oapi-codegen
 oapi-codegen -package holmesgpt -generate types,client \
-    holmesgpt-api/api/openapi.json > pkg/clients/holmesgpt/client.go
+    kubernaut-agent/api/openapi.json > pkg/clients/holmesgpt/client.go
 ```
 
 **Source Models** (Pydantic):
@@ -74,7 +74,7 @@ oapi-codegen -package holmesgpt -generate types,client \
 
 **URL**: `POST /api/v1/investigate`
 
-**Base URL**: `http://holmesgpt-api:8080` (in-cluster)
+**Base URL**: `http://kubernaut-agent:8080` (in-cluster)
 
 **Content-Type**: `application/json`
 
@@ -488,15 +488,15 @@ ProblemDetails:
 
 | Item | Owner | Status |
 |------|-------|--------|
-| Create `holmesgpt-api/api/` directory | HAPI Team | ✅ Done |
+| Create `kubernaut-agent/api/` directory | HAPI Team | ✅ Done |
 | Export OpenAPI spec to `api/openapi.json` | HAPI Team | ✅ Done (19 schemas) |
 | Add `targetInOwnerChain` field to response | HAPI Team | ✅ Done (v1.1) |
 | Add `warnings[]` field to response | HAPI Team | ✅ Done (v1.1) |
 | Implement OwnerChain validation logic | HAPI Team | ✅ Done (11 tests) |
 | Add `alternativeWorkflows[]` for audit/context | HAPI Team | ✅ Done (v1.2) |
-| Add export script to Makefile | HAPI Team | ✅ Done (`make export-openapi-holmesgpt-api`) |
+| Add export script to Makefile | HAPI Team | ✅ Done (`make export-openapi-kubernaut-agent`) |
 | Generate Go client for AIAnalysis | AIAnalysis Team | ⏳ Ready (OpenAPI available, 19 schemas) |
-| Add OpenAPI spec to CI validation | HAPI Team | ✅ Done (`.github/workflows/holmesgpt-api-ci.yml`) |
+| Add OpenAPI spec to CI validation | HAPI Team | ✅ Done (`.github/workflows/kubernaut-agent-ci.yml`) |
 
 ---
 
@@ -510,7 +510,7 @@ ProblemDetails:
 - **BR-HAPI-192**: Recovery Context Consumption
 - **BR-HAPI-193**: Execution Outcome Reporting
 - `pkg/shared/types/enrichment.go` - AUTHORITATIVE DetectedLabels schema (Go)
-- `holmesgpt-api/src/models/incident_models.py` - DetectedLabels schema (Python/Pydantic)
+- `kubernaut-agent/src/models/incident_models.py` - DetectedLabels schema (Python/Pydantic)
 
 ---
 

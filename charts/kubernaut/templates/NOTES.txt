@@ -25,36 +25,30 @@ Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Na
    kubectl port-forward -n {{ .Release.Namespace }} svc/data-storage-service 8080:8080
    curl -s http://localhost:8080/api/v1/workflows | jq '.'
 
-{{- if .Values.demoContent.enabled }}
-=== Demo Content ===
+=== Rego Policies ===
 
-A post-install hook seeds bundled ActionTypes and RemediationWorkflows.
-Workflows with unmet Secret dependencies are automatically skipped.
+Rego policies are required and must be provided at install time:
 
-ActionTypes ({{ len (.Files.Glob "files/demo-content/action-types/*.yaml") }}):
-{{- range $path, $_ := .Files.Glob "files/demo-content/action-types/*.yaml" }}
-  - {{ trimSuffix ".yaml" ($path | base) }}
-{{- end }}
+  --set-file signalprocessing.policies.content=path/to/policy.rego
+  --set-file aianalysis.policies.content=path/to/approval.rego
 
-RemediationWorkflows ({{ len (.Files.Glob "files/demo-content/workflows/*.yaml") }}):
-{{- range $path, $_ := .Files.Glob "files/demo-content/workflows/*.yaml" }}
-{{- $content := $.Files.Get $path }}
-{{- if contains "dependencies:" $content }}
-  - {{ trimSuffix ".yaml" ($path | base) }}  [requires Secrets in {{ $.Values.workflowexecution.workflowNamespace }}]
-{{- else }}
-  - {{ trimSuffix ".yaml" ($path | base) }}
-{{- end }}
-{{- end }}
+Alternatively, create ConfigMaps manually and reference them:
 
-To install skipped workflows later, create the required Secrets in the
-{{ .Values.workflowexecution.workflowNamespace }} namespace and run:
+  --set signalprocessing.policies.existingConfigMap=my-sp-policy
+  --set aianalysis.policies.existingConfigMap=my-aa-policy
 
-  helm upgrade {{ .Release.Name }} <chart> -n {{ .Release.Namespace }}
+For reference policies, see: https://github.com/jordigilh/kubernaut-demo-scenarios
 
-Check seed job results:
+=== ActionTypes & RemediationWorkflows ===
 
-  kubectl logs -l app=demo-content-seed -n {{ .Release.Namespace }}
-{{- end }}
+The chart does not bundle ActionTypes or RemediationWorkflows.
+Deploy your own after install:
+
+  kubectl rollout status deploy/authwebhook -n {{ .Release.Namespace }} --timeout=120s
+  kubectl apply -f <your-action-types/> -n {{ .Release.Namespace }}
+  kubectl apply -f <your-workflows/> -n {{ .Release.Namespace }}
+
+For demo scenarios, see: https://github.com/jordigilh/kubernaut-demo-scenarios
 
 {{- if and (include "kubernaut.monitoring.prometheus.enabled" .) (or .Values.kubernautAgent.existingSdkConfigMap .Values.kubernautAgent.sdkConfigContent) }}
 === IMPORTANT: Prometheus Configuration ===

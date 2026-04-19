@@ -25,8 +25,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -46,6 +44,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
@@ -54,6 +53,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/conversation"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
@@ -111,7 +111,16 @@ func main() {
 	}
 
 	if cfg.LLM.APIKey == "" {
-		cfg.LLM.APIKey = resolveCredentialsFile(cfg.LLM.Provider, slogger)
+		const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
+		cfg.LLM.APIKey = credentials.ResolveCredentialsFile(cfg.LLM.Provider, credDir, slogger)
+	}
+
+	switch cfg.LLM.Provider {
+	case "vertex", "vertex_ai":
+		if cfg.LLM.APIKey == "" {
+			slogger.Warn("GCP provider configured without credentials — requests will use ambient ADC if available",
+				"provider", cfg.LLM.Provider)
+		}
 	}
 
 	if cfg.LLM.OAuth2.Enabled {
@@ -134,8 +143,16 @@ func main() {
 
 	slogger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
 
-	llmClient, err := langchaingo.New(cfg.LLM.Provider, cfg.LLM.Endpoint, cfg.LLM.Model, cfg.LLM.APIKey,
-		buildLLMProviderOptions(cfg)...)
+	var llmClient llm.Client
+	switch cfg.LLM.Provider {
+	case "vertex_ai":
+		llmClient, err = vertexanthropic.New(context.Background(),
+			cfg.LLM.Model, []byte(cfg.LLM.APIKey),
+			cfg.LLM.VertexProject, cfg.LLM.VertexLocation)
+	default:
+		llmClient, err = langchaingo.New(cfg.LLM.Provider, cfg.LLM.Endpoint, cfg.LLM.Model, cfg.LLM.APIKey,
+			buildLLMProviderOptions(cfg)...)
+	}
 	if err != nil {
 		slogger.Error("failed to create LLM client", "provider", cfg.LLM.Provider, "error", err)
 		os.Exit(1)
@@ -158,7 +175,7 @@ func main() {
 	ds := initDSClients(cfg, k8sInfra, slogger)
 	auditStore, auditCleanup := buildAuditStore(cfg, slogger, logrLogger)
 	reg := buildToolRegistry(cfg, slogger, k8sInfra, ds)
-	enricher := buildEnricher(ds, k8sInfra, auditStore, slogger)
+	enricher := buildEnricher(cfg, ds, k8sInfra, auditStore, slogger)
 	sanitizer := buildSanitizationPipeline(cfg, slogger)
 	anomalyDetector := buildAnomalyDetector(cfg, slogger)
 	sum := buildSummarizer(llmClient, cfg, slogger)
@@ -501,15 +518,24 @@ func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // buildEnricher creates the enrichment.Enricher when DS clients are available.
 // ADR-056: attaches LabelDetector so detected_labels are populated during enrichment.
-func buildEnricher(ds *dsClients, infra *k8sInfra, auditStore audit.AuditStore, logger *slog.Logger) *enrichment.Enricher {
+// #704: wires RetryConfig from config for HAPI-aligned owner chain retry+fail-hard.
+func buildEnricher(cfg *kaconfig.Config, ds *dsClients, infra *k8sInfra, auditStore audit.AuditStore, logger *slog.Logger) *enrichment.Enricher {
 	if ds == nil {
 		return nil
 	}
 	e := enrichment.NewEnricher(ds.k8sAdapter, ds.dsAdapter, auditStore, logger)
 	if infra != nil && infra.dynClient != nil {
-		e.WithLabelDetector(enrichment.NewLabelDetector(infra.dynClient))
+		e.WithLabelDetector(enrichment.NewLabelDetector(infra.dynClient, infra.mapper))
 		logger.Info("label detector enabled (ADR-056)")
 	}
+	e.WithRetryConfig(enrichment.RetryConfig{
+		MaxRetries:  cfg.Enrichment.MaxRetries,
+		BaseBackoff: cfg.Enrichment.BaseBackoff,
+	})
+	logger.Info("enrichment retry config wired (#704)",
+		slog.Int("max_retries", cfg.Enrichment.MaxRetries),
+		slog.Duration("base_backoff", cfg.Enrichment.BaseBackoff),
+	)
 	return e
 }
 
@@ -563,6 +589,10 @@ func buildLLMProviderOptions(cfg *kaconfig.Config) []langchaingo.Option {
 // Layers are applied inside-out: the innermost transport (DefaultTransport)
 // handles the actual HTTP call, and outer layers intercept/decorate.
 //
+// GCP providers (vertex, vertex_ai) handle their own auth internally —
+// credentials are passed via the adapter constructor, not through the shared
+// transport chain. This avoids coupling GCP auth with generic transport layers.
+//
 // Chain: StructuredOutputTransport? → AuthHeadersTransport? → OAuth2Transport? → http.DefaultTransport
 //
 // Returns nil when no custom transports are needed (caller uses provider defaults).
@@ -581,10 +611,7 @@ func buildTransportChain(cfg *kaconfig.Config) http.RoundTripper {
 	}
 
 	if cfg.LLM.StructuredOutput {
-		base = llmtransport.NewStructuredOutputTransport(
-			parser.InvestigationResultSchema(),
-			base,
-		)
+		base = llmtransport.NewStructuredOutputTransport(nil, base)
 		needsCustom = true
 	}
 
@@ -594,51 +621,6 @@ func buildTransportChain(cfg *kaconfig.Config) http.RoundTripper {
 	return base
 }
 
-// resolveCredentialsFile reads the LLM API key from the Helm-mounted credentials
-// directory (/etc/kubernaut-agent/credentials/). The Helm chart mounts the
-// credentialsSecretName as a volume; each secret key becomes a file.
-// Providers use different env-var names (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.),
-// so we try the provider-specific key first, then fall back to any single file.
-func resolveCredentialsFile(provider string, logger *slog.Logger) string {
-	const credDir = "/etc/kubernaut-agent/credentials"
-
-	providerKeyFiles := map[string]string{
-		"openai":     "OPENAI_API_KEY",
-		"anthropic":  "ANTHROPIC_API_KEY",
-		"mistral":    "MISTRAL_API_KEY",
-		"huggingface": "HUGGINGFACEHUB_API_TOKEN",
-	}
-
-	if keyFile, ok := providerKeyFiles[provider]; ok {
-		path := filepath.Join(credDir, keyFile)
-		if data, err := os.ReadFile(path); err == nil {
-			key := strings.TrimSpace(string(data))
-			if key != "" {
-				logger.Info("resolved LLM API key from credentials file", "path", path)
-				return key
-			}
-		}
-	}
-
-	entries, err := os.ReadDir(credDir)
-	if err != nil {
-		return ""
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		path := filepath.Join(credDir, e.Name())
-		if data, readErr := os.ReadFile(path); readErr == nil {
-			key := strings.TrimSpace(string(data))
-			if key != "" {
-				logger.Info("resolved LLM API key from credentials file (fallback)", "path", path)
-				return key
-			}
-		}
-	}
-	return ""
-}
 
 // buildAuditStore creates a BufferedDSAuditStore (DD-AUDIT-002 aligned) when audit
 // is enabled and DS is available, falling back to NopAuditStore otherwise.

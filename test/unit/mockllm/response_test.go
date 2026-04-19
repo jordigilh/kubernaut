@@ -133,7 +133,7 @@ var _ = Describe("Response Builders", func() {
 			Expect(text).To(ContainSubstring(`"actionable": false`))
 		})
 
-		It("UT-MOCK-030-003: human_review scenario includes needs_human_review and reason", func() {
+		It("UT-MOCK-030-003: response builder must NOT emit needs_human_review even when config has it (BR-HAPI-200)", func() {
 			reviewCfg := scenarios.MockScenarioConfig{
 				ScenarioName:         "no_workflow_found",
 				Severity:             "critical",
@@ -146,9 +146,12 @@ var _ = Describe("Response Builders", func() {
 
 			resp := response.BuildTextResponse("mock-model", reviewCfg)
 			text := *resp.Choices[0].Message.Content
-			Expect(text).To(ContainSubstring(`"needs_human_review": true`))
-			Expect(text).To(ContainSubstring(`"human_review_reason": "no_matching_workflows"`))
-			Expect(text).To(ContainSubstring(`"investigation_outcome": "inconclusive"`))
+			Expect(text).NotTo(ContainSubstring(`"needs_human_review"`),
+				"response builder must NOT emit needs_human_review — HR is parser-derived, not LLM-driven")
+			Expect(text).NotTo(ContainSubstring(`"human_review_reason"`),
+				"response builder must NOT emit human_review_reason — HR reason is parser-derived, not LLM-driven")
+			Expect(text).To(ContainSubstring(`"investigation_outcome": "inconclusive"`),
+				"investigation_outcome must still be emitted for parser derivation")
 		})
 
 		It("UT-MOCK-030-004: text response JSON is parseable", func() {

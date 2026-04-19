@@ -266,7 +266,7 @@ func AggressivePodmanCleanup(writer io.Writer) error {
 //
 //	tarFiles, err := ExportImagesAndPrune(map[string]string{
 //	    "datastorage":  "localhost/kubernaut-datastorage:latest",
-//	    "holmesgpt-api": "localhost/kubernaut-holmesgpt-api:latest",
+//	    "kubernaut-agent": "localhost/kubernaut-kubernaut-agent:latest",
 //	}, "/tmp", writer)
 //	if err != nil {
 //	    return err

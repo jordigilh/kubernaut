@@ -1,5 +1,7 @@
-{{- if not .Values.signalprocessing.existingPolicyConfigMap }}
-{{- $policyContent := .Values.signalprocessing.policy | default (.Files.Get "files/defaults/signalprocessing-policy.rego") }}
+{{- if not .Values.signalprocessing.policies.existingConfigMap }}
+{{- if not .Values.signalprocessing.policies.content }}
+{{- fail "signalprocessing.policies.content is required (via --set-file signalprocessing.policies.content=policy.rego) or provide signalprocessing.policies.existingConfigMap" }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -11,7 +13,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   policy.rego: |
-{{ $policyContent | indent 4 }}
+{{ .Values.signalprocessing.policies.content | indent 4 }}
 {{- end }}
 {{- if not .Values.signalprocessing.proactiveSignalMappings.existingConfigMap }}
 {{- $mappingsContent := .Values.signalprocessing.proactiveSignalMappings.content | default (.Files.Get "files/defaults/proactive-signal-mappings.yaml") }}
@@ -209,7 +211,7 @@ spec:
             name: signalprocessing-config
         - name: policy
           configMap:
-            name: {{ .Values.signalprocessing.existingPolicyConfigMap | default "signalprocessing-policy" }}
+            name: {{ .Values.signalprocessing.policies.existingConfigMap | default "signalprocessing-policy" }}
         - name: proactive-signal-mappings
           configMap:
             name: {{ .Values.signalprocessing.proactiveSignalMappings.existingConfigMap | default "signalprocessing-proactive-signal-mappings" }}

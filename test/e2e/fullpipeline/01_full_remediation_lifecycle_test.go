@@ -390,10 +390,10 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"aianalysis.rego.evaluation",    // pkg/aianalysis/audit: RecordRegoEvaluation
 			"aianalysis.analysis.completed", // pkg/aianalysis/audit: RecordAnalysisComplete
 			// HolmesGPT API (event_category: "aiagent" per ADR-034 v1.2)
-			string(ogenclient.LLMRequestPayloadAuditEventEventData),         // holmesgpt-api/src/audit/events.py: create_llm_request_event
-			string(ogenclient.LLMResponsePayloadAuditEventEventData),        // holmesgpt-api/src/audit/events.py: create_llm_response_event
-			string(ogenclient.WorkflowValidationPayloadAuditEventEventData), // holmesgpt-api/src/audit/events.py: create_validation_attempt_event
-			string(ogenclient.AIAgentResponsePayloadAuditEventEventData),    // holmesgpt-api/src/audit/events.py: create_aiagent_response_complete_event
+			string(ogenclient.LLMRequestPayloadAuditEventEventData),         // kubernaut-agent/src/audit/events.py: create_llm_request_event
+			string(ogenclient.LLMResponsePayloadAuditEventEventData),        // kubernaut-agent/src/audit/events.py: create_llm_response_event
+			string(ogenclient.WorkflowValidationPayloadAuditEventEventData), // kubernaut-agent/src/audit/events.py: create_validation_attempt_event
+			string(ogenclient.AIAgentResponsePayloadAuditEventEventData),    // kubernaut-agent/src/audit/events.py: create_aiagent_response_complete_event
 			// Workflow Execution
 			"workflowexecution.selection.completed", // pkg/workflowexecution/audit: RecordWorkflowSelectionCompleted
 			"workflowexecution.execution.started",   // pkg/workflowexecution/audit: RecordExecutionWorkflowStarted

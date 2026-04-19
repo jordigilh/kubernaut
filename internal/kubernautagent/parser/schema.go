@@ -29,6 +29,45 @@ func InvestigationResultSchema() json.RawMessage {
 	return json.RawMessage(investigationResultSchemaJSON)
 }
 
+// RCAResultSchema returns the JSON Schema for the RCA-only phase (Phase 1).
+// It excludes workflow selection and escalation fields that belong in Phase 3.
+// Aligned with HAPI v1.2.1 PHASE1_SECTIONS: root_cause_analysis, confidence,
+// investigation_outcome, actionable, severity, detected_labels.
+func RCAResultSchema() json.RawMessage {
+	return json.RawMessage(rcaResultSchemaJSON)
+}
+
+const rcaResultSchemaJSON = `{
+  "type": "object",
+  "properties": {
+    "root_cause_analysis": {
+      "type": "object",
+      "properties": {
+        "summary": { "type": "string" },
+        "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "unknown"] },
+        "signal_name": { "type": "string" },
+        "contributing_factors": { "type": "array", "items": { "type": "string" } },
+        "remediation_target": {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string" },
+            "name": { "type": "string" },
+            "namespace": { "type": "string" }
+          }
+        },
+        "investigation_analysis": { "type": "string", "description": "Concise narrative summary of the investigation findings and reasoning (< 500 words). This field is consumed by the Phase 3 workflow selection LLM to provide investigation context." }
+      },
+      "required": ["summary"]
+    },
+    "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "unknown"] },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data", "inconclusive"] },
+    "actionable": { "type": "boolean" },
+    "detected_labels": { "type": "object" }
+  },
+  "required": ["root_cause_analysis", "confidence"]
+}`
+
 const investigationResultSchemaJSON = `{
   "type": "object",
   "properties": {
@@ -76,10 +115,8 @@ const investigationResultSchemaJSON = `{
     },
     "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "unknown"] },
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
-    "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data"] },
+    "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data", "inconclusive"] },
     "actionable": { "type": "boolean" },
-    "needs_human_review": { "type": "boolean" },
-    "human_review_reason": { "type": "string" },
     "detected_labels": { "type": "object" }
   },
   "required": ["root_cause_analysis", "confidence"]

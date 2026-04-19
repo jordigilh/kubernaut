@@ -9,7 +9,7 @@
 
 ## Decision
 
-**APPROVED**: Integrate MCP workflow catalog search as a toolset within holmesgpt-api instead of maintaining a separate MCP service.
+**APPROVED**: Integrate MCP workflow catalog search as a toolset within kubernaut-agent instead of maintaining a separate MCP service.
 
 ---
 
@@ -24,7 +24,7 @@ The Mock MCP Server successfully validated the MVP:
 ### Production Architecture (v1.0)
 For production, we will:
 - **Remove** Mock MCP Server (served its validation purpose)
-- **Integrate** MCP workflow toolset directly in holmesgpt-api
+- **Integrate** MCP workflow toolset directly in kubernaut-agent
 - **Leverage** existing Data Storage Service REST API
 - **Use** existing Embedding Service for semantic search
 
@@ -77,7 +77,7 @@ Embedding Service + PostgreSQL/pgvector
 
 ### Code Structure
 ```python
-# holmesgpt-api/src/toolsets/playbook_mcp.py
+# kubernaut-agent/src/toolsets/playbook_mcp.py
 class PlaybookMCPTool:
     def __init__(self, data_storage_url: str):
         self.data_storage_url = data_storage_url

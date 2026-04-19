@@ -165,14 +165,6 @@
       "default": "",
       "description": "Override the full resource names"
     },
-    "demoContent": {
-      "type": "object",
-      "description": "Demo content: bundled ActionTypes and RemediationWorkflows for quickstart evaluation.",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": { "type": "boolean", "default": true, "description": "Deploy bundled demo ActionTypes and RemediationWorkflows." }
-      }
-    },
     "tls": {
       "type": "object",
       "description": "TLS certificate management for AuthWebhook and inter-service communication.",
@@ -398,15 +390,14 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
-        "policy": {
-          "type": "string",
-          "default": "",
-          "description": "Raw Rego policy content (ADR-060). Inject via --set-file signalprocessing.policy=policy.rego"
-        },
-        "existingPolicyConfigMap": {
-          "type": "string",
-          "default": "",
-          "description": "Pre-existing ConfigMap with key 'policy.rego'. Mutually exclusive with 'policy'."
+        "policies": {
+          "type": "object",
+          "description": "Classification policy externalization (ADR-060). Provide content via --set-file or reference an existing ConfigMap.",
+          "additionalProperties": false,
+          "properties": {
+            "content": { "type": "string", "default": "", "description": "Raw Rego policy content. Inject via --set-file signalprocessing.policies.content=policy.rego" },
+            "existingConfigMap": { "type": "string", "default": "", "description": "Pre-existing ConfigMap with key 'policy.rego'. Mutually exclusive with 'content'." }
+          }
         },
         "proactiveSignalMappings": {
           "type": "object",

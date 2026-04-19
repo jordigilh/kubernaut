@@ -118,7 +118,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - working-directory: holmesgpt-api
+      - working-directory: kubernaut-agent
         run: make test-unit
 ```
 
@@ -380,7 +380,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - working-directory: holmesgpt-api
+      - working-directory: kubernaut-agent
         run: |
           pip install -r requirements.txt -r requirements-test.txt
           make test-unit

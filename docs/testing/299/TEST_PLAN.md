@@ -207,7 +207,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 | `test/infrastructure/workflow_bundles.go` | Modified | Inline registration; extracted shared `callCreateWorkflowInline` |
 | `test/infrastructure/workflow_seeding.go` | Modified | Uses shared `callCreateWorkflowInline`; stale OCI comments updated |
 | `test/e2e/datastorage/*.go` | Modified | Updated to `CreateWorkflowInlineRequest` and new response types |
-| `holmesgpt-api/tests/fixtures/workflow_fixtures.py` | Modified | `bootstrap_workflows` uses `to_inline_request()` |
+| `kubernaut-agent/tests/fixtures/workflow_fixtures.py` | Modified | `bootstrap_workflows` uses `to_inline_request()` |
 
 ---
 

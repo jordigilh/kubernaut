@@ -138,9 +138,9 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 }
 
 // analysisJSON builds a structured response that KA's parser can fully extract.
-// Top-level fields (investigation_outcome, actionable, severity, confidence,
-// needs_human_review, human_review_reason) are required by KA's outcome routing;
-// the nested root_cause_analysis and selected_workflow are consumed by parseLLMFormat.
+// Top-level fields (investigation_outcome, actionable, severity, confidence) are
+// required by KA's outcome routing; needs_human_review / human_review_reason are
+// parser-derived (BR-HAPI-200) and must NOT appear in LLM responses.
 //
 // Golden transcript ref: kubernaut-demo-scenarios#296 — response structure mirrors
 // real Claude Sonnet 4 output to ensure KA parser fidelity.
@@ -196,13 +196,6 @@ func analysisJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 	if cfg.IsActionable != nil {
 		obj["actionable"] = *cfg.IsActionable
 	}
-	if cfg.NeedsHumanReview != nil {
-		obj["needs_human_review"] = *cfg.NeedsHumanReview
-	}
-	if cfg.HumanReviewReason != "" {
-		obj["human_review_reason"] = cfg.HumanReviewReason
-	}
-
 	return obj
 }
 

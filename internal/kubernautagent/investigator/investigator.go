@@ -36,6 +36,11 @@ import (
 
 const maxSelfCorrectionAttempts = 3
 
+// SubmitResultToolName is the sentinel tool name that the LLM calls to deliver
+// its structured investigation result. When detected in runLLMLoop, the tool
+// call arguments are returned as content without executing any real tool.
+const SubmitResultToolName = "submit_result"
+
 // CatalogFetcher retrieves a fresh workflow validator from the catalog.
 // Implementations query DataStorage at request time so KA always sees the
 // current catalog without boot-time prefetch or caching (see #665).
@@ -125,7 +130,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	if rcaResult.HumanReviewNeeded {
 		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, enrichData)
-		injectRemediationTarget(rcaResult, signal, enrichData)
+		InjectRemediationTarget(rcaResult, signal, enrichData)
 		injectTargetResourceParameters(rcaResult)
 		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
 		return rcaResult, nil
@@ -133,6 +138,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	// GAP-001 / ADR-056: Re-enrich using RCA-identified remediation target if different.
 	// H3-fix: retain pre-RCA enrichment if re-enrichment fails.
+	workflowSignal := signal
 	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
 	if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
 		inv.logger.Info("re-enriching with RCA remediation target",
@@ -140,6 +146,27 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			"rca_target", postRCAKind+"/"+postRCAName,
 		)
 		reEnriched := inv.resolveEnrichment(ctx, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
+
+		// BR-HAPI-261 AC#7 / #704: check HardFail BEFORE label merge
+		// to prevent the merge from silently dropping the failure signal.
+		// Use enrichData (initial enrichment) for labels because the failed
+		// re-enrichment has empty/all-failed detections — preserving signal-level
+		// labels (e.g. pdbProtected) matches pre-#704 behaviour where
+		// allLabelDetectionsFailed() fell through to keep initial labels.
+		if reEnriched != nil && reEnriched.HardFail {
+			inv.logger.Warn("enrichment owner chain hard-failed, triggering rca_incomplete",
+				slog.String("error", reEnriched.OwnerChainError.Error()),
+			)
+			rcaResult.HumanReviewNeeded = true
+			rcaResult.HumanReviewReason = "rca_incomplete"
+			backfillSeverity(rcaResult, signal)
+			attachDetectedLabels(rcaResult, enrichData)
+			InjectRemediationTarget(rcaResult, workflowSignal, enrichData)
+			injectTargetResourceParameters(rcaResult)
+			inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
+			return rcaResult, nil
+		}
+
 		if reEnriched != nil && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
 			enrichData = reEnriched
 		} else if reEnriched != nil {
@@ -149,9 +176,19 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			inv.logger.Warn("re-enrichment returned nil, retaining pre-RCA enrichment data")
 		}
 		promptEnrichment = toPromptEnrichment(enrichData)
+
+		workflowSignal.ResourceKind = postRCAKind
+		workflowSignal.ResourceName = postRCAName
+		workflowSignal.Namespace = postRCANS
 	}
 
-	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, promptEnrichment, tokens, correlationID)
+	if inv.pipeline.AnomalyDetector != nil {
+		inv.pipeline.AnomalyDetector.Reset()
+	}
+
+	p1Ctx := buildPhase1Context(rcaResult)
+
+	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, tokens, correlationID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
 	}
@@ -163,9 +200,11 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		workflowResult.SignalName = rcaResult.SignalName
 	}
 
+	mergePhase1Fallbacks(workflowResult, p1Ctx)
+
 	backfillSeverity(workflowResult, signal)
 	attachDetectedLabels(workflowResult, enrichData)
-	injectRemediationTarget(workflowResult, signal, enrichData)
+	InjectRemediationTarget(workflowResult, workflowSignal, enrichData)
 	injectTargetResourceParameters(workflowResult)
 	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID)
 	return workflowResult, nil
@@ -249,11 +288,27 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 			RCASummary: content,
 		}, nil
 	}
+
+	// Defense-in-depth: RCA phase must never abort the pipeline via
+	// needs_human_review. Only max-turns exhaustion (above) is a valid RCA abort.
+	// Aligned with HAPI v1.2.1 where needs_human_review is parser-driven in Phase 3.
+	if result.HumanReviewNeeded {
+		inv.logger.Info("clearing HumanReviewNeeded set during RCA (parser-driven in Phase 3 only)",
+			slog.String("reason", result.HumanReviewReason))
+		result.HumanReviewNeeded = false
+		result.HumanReviewReason = ""
+	}
+
 	return result, nil
 }
 
-func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string) (*katypes.InvestigationResult, error) {
-	systemPrompt, err := inv.builder.RenderWorkflowSelection(signalToPrompt(signal), rcaSummary, enrichData)
+func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string) (*katypes.InvestigationResult, error) {
+	systemPrompt, err := inv.builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+		Signal:     signalToPrompt(signal),
+		RCASummary: rcaSummary,
+		EnrichData: enrichData,
+		Phase1:     p1Ctx,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("rendering workflow selection prompt: %w", err)
 	}
@@ -388,7 +443,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		resp, err := inv.client.Chat(ctx, llm.ChatRequest{
 			Messages: messages,
 			Tools:    toolDefs,
-			Options:  llm.ChatOptions{JSONMode: true},
+			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase)},
 		})
 		if err != nil {
 			failEvent := audit.NewEvent(audit.EventTypeResponseFailed, correlationID)
@@ -420,6 +475,13 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.logger)
 
 		if len(resp.ToolCalls) > 0 {
+			for _, tc := range resp.ToolCalls {
+				if tc.Name == SubmitResultToolName {
+					inv.logger.Info("submit_result sentinel detected", slog.String("phase", string(phase)))
+					return tc.Arguments, false, nil
+				}
+			}
+
 			messages = append(messages, resp.Message)
 			for i, tc := range resp.ToolCalls {
 				toolResult := inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments))
@@ -504,19 +566,35 @@ func toolNames(defs []llm.ToolDefinition) []string {
 }
 
 func (inv *Investigator) toolDefinitionsForPhase(phase katypes.Phase) []llm.ToolDefinition {
-	if inv.registry == nil {
-		return nil
+	var defs []llm.ToolDefinition
+	if inv.registry != nil {
+		phaseTools := inv.registry.ToolsForPhase(phase, inv.phaseTools)
+		defs = make([]llm.ToolDefinition, 0, len(phaseTools)+1)
+		for _, t := range phaseTools {
+			defs = append(defs, llm.ToolDefinition{
+				Name:        t.Name(),
+				Description: t.Description(),
+				Parameters:  t.Parameters(),
+			})
+		}
 	}
-	phaseTools := inv.registry.ToolsForPhase(phase, inv.phaseTools)
-	defs := make([]llm.ToolDefinition, 0, len(phaseTools))
-	for _, t := range phaseTools {
-		defs = append(defs, llm.ToolDefinition{
-			Name:        t.Name(),
-			Description: t.Description(),
-			Parameters:  t.Parameters(),
-		})
-	}
+
+	defs = append(defs, llm.ToolDefinition{
+		Name:        SubmitResultToolName,
+		Description: "Submit the final investigation result as structured JSON. Call this tool when your analysis is complete.",
+		Parameters:  submitResultSchemaForPhase(phase),
+	})
 	return defs
+}
+
+// submitResultSchemaForPhase returns the phase-appropriate JSON Schema for
+// the submit_result tool. RCA uses a restricted schema without workflow/escalation
+// fields; workflow discovery uses the full InvestigationResultSchema.
+func submitResultSchemaForPhase(phase katypes.Phase) json.RawMessage {
+	if phase == katypes.PhaseRCA {
+		return parser.RCAResultSchema()
+	}
+	return parser.InvestigationResultSchema()
 }
 
 func (inv *Investigator) executeTool(ctx context.Context, name string, args json.RawMessage) string {
@@ -689,6 +767,48 @@ func toolErrorJSON(msg string) string {
 	return string(b)
 }
 
+// buildPhase1Context extracts structured assessment fields from the Phase 1
+// InvestigationResult for propagation into Phase 3 (HAPI parity: #715).
+func buildPhase1Context(rcaResult *katypes.InvestigationResult) *prompt.Phase1Data {
+	if rcaResult == nil {
+		return nil
+	}
+	return &prompt.Phase1Data{
+		Severity:            rcaResult.Severity,
+		ContributingFactors: rcaResult.ContributingFactors,
+		RemediationTarget: prompt.Phase1RemediationTarget{
+			Kind:      rcaResult.RemediationTarget.Kind,
+			Name:      rcaResult.RemediationTarget.Name,
+			Namespace: rcaResult.RemediationTarget.Namespace,
+		},
+		InvestigationOutcome:  rcaResult.InvestigationOutcome,
+		Confidence:            rcaResult.Confidence,
+		InvestigationAnalysis: rcaResult.InvestigationAnalysis,
+	}
+}
+
+// mergePhase1Fallbacks applies Phase 1 assessment fields to the Phase 3 result
+// when Phase 3 did not produce them. Matches HAPI's result.setdefault() pattern:
+// Phase 3 values always take precedence; Phase 1 fills in gaps only.
+func mergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1Data) {
+	if result == nil || p1 == nil {
+		return
+	}
+	if result.Severity == "" && p1.Severity != "" {
+		result.Severity = p1.Severity
+	}
+	if len(result.ContributingFactors) == 0 && len(p1.ContributingFactors) > 0 {
+		result.ContributingFactors = p1.ContributingFactors
+	}
+	if result.Confidence == 0 && p1.Confidence > 0 {
+		result.Confidence = p1.Confidence
+	}
+	if result.InvestigationOutcome == "" && p1.InvestigationOutcome != "" {
+		result.InvestigationOutcome = p1.InvestigationOutcome
+		parser.ApplyInvestigationOutcome(result, p1.InvestigationOutcome)
+	}
+}
+
 func signalToPrompt(s katypes.SignalContext) prompt.SignalData {
 	return prompt.SignalData{
 		Name:              s.Name,
@@ -795,19 +915,18 @@ func attachDetectedLabels(result *katypes.InvestigationResult, enrichData *enric
 	result.DetectedLabels = detectedLabelsToResult(enrichData.DetectedLabels)
 }
 
-// injectRemediationTarget replicates KA's _inject_target_resource behavior.
+// InjectRemediationTarget resolves the authoritative remediation target.
 //
-// Logic:
-//   - If the LLM did not provide a remediation_target (Kind==""), inject the
-//     K8s root owner from the owner chain.
-//   - If the LLM provided a target with the SAME Kind as the root owner
-//     (e.g., both Deployment), override with the root owner. K8s identity is
-//     authoritative for same-kind resources — the LLM may return a name that
-//     doesn't exist in the cluster.
-//   - If the LLM provided a target with a DIFFERENT Kind (e.g., Certificate
-//     when the root owner is Deployment), preserve the LLM's target. The LLM
-//     identified a cross-type resource that owner-chain resolution can't reach.
-func injectRemediationTarget(result *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult) {
+// Root owner resolution priority:
+//  1. Owner chain last entry (most common: Pod → RS → Deployment)
+//  2. Enrichment source identity (after re-enrichment, the chain is empty
+//     because the enriched resource IS the root — see #694)
+//  3. Signal identity (fallback when enrichData is nil)
+//
+// LLM target handling:
+//   - Kind == "" or same as root: override with K8s-verified root identity
+//   - Different Kind (cross-type): preserve the LLM's target
+func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult) {
 	if result == nil {
 		return
 	}
@@ -820,6 +939,12 @@ func injectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 		rootName = root.Name
 		if root.Namespace != "" {
 			rootNS = root.Namespace
+		}
+	} else if enrichData != nil && enrichData.ResourceKind != "" {
+		rootKind = enrichData.ResourceKind
+		rootName = enrichData.ResourceName
+		if enrichData.ResourceNamespace != "" {
+			rootNS = enrichData.ResourceNamespace
 		}
 	}
 

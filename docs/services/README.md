@@ -173,7 +173,7 @@ docs/services/
 │   │   └── implementation/
 │   │       └── IMPLEMENTATION_PLAN_V*.md
 │   ├── data-storage/
-│   ├── holmesgpt-api/
+│   ├── kubernaut-agent/
 │   └── notification/
 │
 └── crd-controllers/                             (Kubernetes controllers)

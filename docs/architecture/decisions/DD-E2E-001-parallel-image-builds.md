@@ -155,9 +155,9 @@ go func() {
 
 // Build HolmesGPT-API image (parallel)
 go func() {
-    err := buildImageOnly("HolmesGPT-API", "localhost/kubernaut-holmesgpt-api:latest",
-        "holmesgpt-api/Dockerfile", projectRoot, writer)
-    buildResults <- imageBuildResult{"holmesgpt-api", "kubernaut-holmesgpt-api:latest", err}
+    err := buildImageOnly("HolmesGPT-API", "localhost/kubernaut-kubernaut-agent:latest",
+        "kubernaut-agent/Dockerfile", projectRoot, writer)
+    buildResults <- imageBuildResult{"kubernaut-agent", "kubernaut-kubernaut-agent:latest", err}
 }()
 
 // Build AIAnalysis controller image (parallel)
@@ -193,7 +193,7 @@ if err := deployDataStorageOnly(clusterName, kubeconfigPath, builtImages["datast
 }
 
 fmt.Fprintln(writer, "🤖 Deploying HolmesGPT-API...")
-if err := deployHolmesGPTAPIOnly(clusterName, kubeconfigPath, builtImages["holmesgpt-api"], writer); err != nil {
+if err := deployHolmesGPTAPIOnly(clusterName, kubeconfigPath, builtImages["kubernaut-agent"], writer); err != nil {
     return fmt.Errorf("failed to deploy HolmesGPT-API: %w", err)
 }
 

@@ -155,7 +155,7 @@ Format: `{TIER}-HAPI-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-301
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_litellm_metrics_callback.py`
+**File**: `kubernaut-agent/tests/unit/test_litellm_metrics_callback.py`
 
 **Given**: A `KubernautLiteLLMCallback` instance with a fresh `HAMetrics` (custom test registry)
 **When**: `log_success_event` is called with a LiteLLM response containing `model="vertex_ai/claude-sonnet-4-20250514"`
@@ -173,7 +173,7 @@ Format: `{TIER}-HAPI-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-301
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_litellm_metrics_callback.py`
+**File**: `kubernaut-agent/tests/unit/test_litellm_metrics_callback.py`
 
 **Given**: A `KubernautLiteLLMCallback` instance with a fresh `HAMetrics` (custom test registry)
 **When**: `log_success_event` is called with `start_time` = T and `end_time` = T + 3.5s
@@ -190,7 +190,7 @@ Format: `{TIER}-HAPI-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-301
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_litellm_metrics_callback.py`
+**File**: `kubernaut-agent/tests/unit/test_litellm_metrics_callback.py`
 
 **Given**: A `KubernautLiteLLMCallback` instance with a fresh `HAMetrics` (custom test registry)
 **When**: `log_success_event` is called with a response containing `usage={"prompt_tokens": 1500, "completion_tokens": 350}`
@@ -207,7 +207,7 @@ Format: `{TIER}-HAPI-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-301
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_litellm_metrics_callback.py`
+**File**: `kubernaut-agent/tests/unit/test_litellm_metrics_callback.py`
 
 **Given**: A `KubernautLiteLLMCallback` instance
 **When**: Callback receives models in different LiteLLM formats
@@ -228,7 +228,7 @@ Format: `{TIER}-HAPI-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-301
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_litellm_metrics_callback.py`
+**File**: `kubernaut-agent/tests/unit/test_litellm_metrics_callback.py`
 
 **Given**: A `KubernautLiteLLMCallback` instance with a fresh `HAMetrics` (custom test registry)
 **When**: `log_success_event` is called with a response where `usage` is `None` or missing
@@ -246,7 +246,7 @@ Format: `{TIER}-HAPI-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-301
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_litellm_metrics_callback.py`
+**File**: `kubernaut-agent/tests/unit/test_litellm_metrics_callback.py`
 
 **Given**: A `KubernautLiteLLMCallback` instance where the `HAMetrics` instance raises an exception on `.record_llm_call()`
 **When**: `log_success_event` is called
@@ -263,7 +263,7 @@ Format: `{TIER}-HAPI-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-301
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_litellm_metrics_callback.py`
+**File**: `kubernaut-agent/tests/unit/test_litellm_metrics_callback.py`
 
 **Given**: A `KubernautLiteLLMCallback` instance with a fresh `HAMetrics` (custom test registry)
 **When**: `log_failure_event` is called with an `AuthenticationError` exception
@@ -280,7 +280,7 @@ Format: `{TIER}-HAPI-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-301
 **Type**: Integration
-**File**: `holmesgpt-api/tests/integration/test_llm_metrics_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_llm_metrics_integration.py`
 
 **Given**: HAPI running with Mock LLM provider, LiteLLM callback registered, and a custom Prometheus registry
 **When**: A complete incident investigation is triggered via `analyze_incident()` and completes successfully
@@ -297,7 +297,7 @@ Format: `{TIER}-HAPI-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-301
 **Type**: Integration
-**File**: `holmesgpt-api/tests/integration/test_llm_metrics_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_llm_metrics_integration.py`
 
 **Given**: HAPI running with Mock LLM provider that returns token usage in responses
 **When**: A complete incident investigation completes successfully
@@ -314,7 +314,7 @@ Format: `{TIER}-HAPI-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-301
 **Type**: Integration
-**File**: `holmesgpt-api/tests/integration/test_llm_metrics_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_llm_metrics_integration.py`
 
 **Given**: HAPI running with Mock LLM provider
 **When**: A complete incident investigation completes successfully
@@ -334,7 +334,7 @@ Format: `{TIER}-HAPI-{BR_NUMBER}-{SEQUENCE}`
 - **Framework**: pytest (HAPI is a Python service)
 - **Mocks**: `HAMetrics` with custom `CollectorRegistry` for test isolation (already supported by constructor)
 - **Assertions**: Direct registry gathering via `prometheus_client` to read counter/histogram values
-- **Location**: `holmesgpt-api/tests/unit/test_litellm_metrics_callback.py`
+- **Location**: `kubernaut-agent/tests/unit/test_litellm_metrics_callback.py`
 
 ### Integration Tests
 
@@ -342,7 +342,7 @@ Format: `{TIER}-HAPI-{BR_NUMBER}-{SEQUENCE}`
 - **Mocks**: Mock LLM provider (HAPI's existing Mock LLM infrastructure)
 - **Infrastructure**: HAPI app instance with Mock LLM, custom Prometheus registry
 - **No direct `record_llm_call()` calls** — tests trigger `analyze_incident()` and verify metrics as a side effect (per [Metrics Anti-Pattern guidelines](../development/business-requirements/TESTING_GUIDELINES.md#anti-pattern-direct-metrics-method-calls-in-integration-tests))
-- **Location**: `holmesgpt-api/tests/integration/test_llm_metrics_integration.py`
+- **Location**: `kubernaut-agent/tests/integration/test_llm_metrics_integration.py`
 
 ---
 
@@ -350,13 +350,13 @@ Format: `{TIER}-HAPI-{BR_NUMBER}-{SEQUENCE}`
 
 ```bash
 # Unit tests
-cd holmesgpt-api && python -m pytest tests/unit/test_litellm_metrics_callback.py -v
+cd kubernaut-agent && python -m pytest tests/unit/test_litellm_metrics_callback.py -v
 
 # Integration tests
-cd holmesgpt-api && python -m pytest tests/integration/test_llm_metrics_integration.py -v
+cd kubernaut-agent && python -m pytest tests/integration/test_llm_metrics_integration.py -v
 
 # All HAPI tests
-make test-unit-holmesgpt-api
+make test-unit-kubernaut-agent
 ```
 
 ---

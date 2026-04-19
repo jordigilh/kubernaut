@@ -121,7 +121,7 @@ The fingerprint formula `SHA256(namespace:kind:name)` will produce different has
 
 ### HAPI Prompt (No Changes Required)
 
-The HAPI prompt builder (`holmesgpt-api/src/extensions/incident/prompt_builder.py`) receives `resource_kind` and `resource_name` from the AA spec and passes them directly to the LLM. The LLM investigates whatever resource it is told about using `kubectl` tools. The prompt output schema already instructs the LLM to trace up OwnerReferences for the `affectedResource` field. No prompt changes are needed -- the fix is fully contained in the Gateway.
+The HAPI prompt builder (`kubernaut-agent/src/extensions/incident/prompt_builder.py`) receives `resource_kind` and `resource_name` from the AA spec and passes them directly to the LLM. The LLM investigates whatever resource it is told about using `kubectl` tools. The prompt output schema already instructs the LLM to trace up OwnerReferences for the `affectedResource` field. No prompt changes are needed -- the fix is fully contained in the Gateway.
 
 ### Signal Processing, AI Analysis, Workflow Execution
 

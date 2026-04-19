@@ -103,11 +103,11 @@ Tests validate **business outcomes**:
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `holmesgpt-api/src/toolsets/resource_context.py` | New `GetClusterResourceContextTool.__init__`, `_invoke`, `_invoke_async`; rename `GetResourceContextTool` → `GetNamespacedResourceContextTool`, update tool name string | ~80 new, ~10 modified |
-| `holmesgpt-api/src/extensions/incident/llm_integration.py` | `_inject_target_resource` — conditional injection based on `resource_scope` + workflow schema declaration; new `_build_validation_guard_nudge` | ~30 modified, ~15 new |
-| `holmesgpt-api/src/validation/workflow_response_validator.py` | Remove `_validate_canonical_params` (Step 0); modify `HAPI_MANAGED_PARAMS` usage | ~30 removed/modified |
-| `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Phase 3b — both tools with when-to-use guidance | ~15 modified |
-| `holmesgpt-api/src/extensions/llm_config.py` | `register_resource_context_toolset` — register both tools in toolset | ~10 modified |
+| `kubernaut-agent/src/toolsets/resource_context.py` | New `GetClusterResourceContextTool.__init__`, `_invoke`, `_invoke_async`; rename `GetResourceContextTool` → `GetNamespacedResourceContextTool`, update tool name string | ~80 new, ~10 modified |
+| `kubernaut-agent/src/extensions/incident/llm_integration.py` | `_inject_target_resource` — conditional injection based on `resource_scope` + workflow schema declaration; new `_build_validation_guard_nudge` | ~30 modified, ~15 new |
+| `kubernaut-agent/src/validation/workflow_response_validator.py` | Remove `_validate_canonical_params` (Step 0); modify `HAPI_MANAGED_PARAMS` usage | ~30 removed/modified |
+| `kubernaut-agent/src/extensions/incident/prompt_builder.py` | Phase 3b — both tools with when-to-use guidance | ~15 modified |
+| `kubernaut-agent/src/extensions/llm_config.py` | `register_resource_context_toolset` — register both tools in toolset | ~10 modified |
 
 ### E2E-Testable Code (full pipeline, regression)
 
@@ -183,8 +183,8 @@ Format: `{TIER}-{SERVICE}-{ISSUE}-{SEQUENCE}`
 
 #### TDD Group 1: Cluster-Scoped Resource Context Tool
 
-**File under test**: `holmesgpt-api/src/toolsets/resource_context.py`
-**Test file**: `holmesgpt-api/tests/unit/test_resource_context_tool.py`
+**File under test**: `kubernaut-agent/src/toolsets/resource_context.py`
+**Test file**: `kubernaut-agent/tests/unit/test_resource_context_tool.py`
 
 ##### RED Phase — Write failing tests
 
@@ -222,8 +222,8 @@ All 7 tests pass.
 
 #### TDD Group 2: Tool Rename (`get_resource_context` → `get_namespaced_resource_context`)
 
-**File under test**: `holmesgpt-api/src/toolsets/resource_context.py`
-**Test file**: `holmesgpt-api/tests/unit/test_resource_context_tool.py`
+**File under test**: `kubernaut-agent/src/toolsets/resource_context.py`
+**Test file**: `kubernaut-agent/tests/unit/test_resource_context_tool.py`
 
 ##### RED Phase — Write failing tests
 
@@ -254,8 +254,8 @@ All 4 tests pass.
 
 #### TDD Group 3: Relaxed Canonical Param Validation
 
-**File under test**: `holmesgpt-api/src/validation/workflow_response_validator.py`
-**Test file**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File under test**: `kubernaut-agent/src/validation/workflow_response_validator.py`
+**Test file**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 ##### RED Phase — Write failing tests
 
@@ -285,8 +285,8 @@ All 4 tests pass. Existing tests UT-HAPI-496-007 through 009 (mandatory rejectio
 
 #### TDD Group 4: Conditional Injection Logic
 
-**File under test**: `holmesgpt-api/src/extensions/incident/llm_integration.py`
-**Test file**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File under test**: `kubernaut-agent/src/extensions/incident/llm_integration.py`
+**Test file**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 ##### RED Phase — Write failing tests
 
@@ -321,8 +321,8 @@ All 6 tests pass.
 
 #### TDD Group 5: Prompt Update
 
-**File under test**: `holmesgpt-api/src/extensions/incident/prompt_builder.py`
-**Test file**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File under test**: `kubernaut-agent/src/extensions/incident/prompt_builder.py`
+**Test file**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 ##### RED Phase — Write failing tests
 
@@ -353,8 +353,8 @@ All 4 tests pass. Existing test UT-HAPI-496-016 (asserts `get_resource_context` 
 
 #### TDD Group 6: Post-Selection Validation Guard
 
-**File under test**: `holmesgpt-api/src/extensions/incident/llm_integration.py`
-**Test file**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File under test**: `kubernaut-agent/src/extensions/incident/llm_integration.py`
+**Test file**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 ##### RED Phase — Write failing tests
 
@@ -389,8 +389,8 @@ All 4 tests pass.
 
 #### TDD Group 7: Schema Propagation via ValidationResult
 
-**File under test**: `holmesgpt-api/src/validation/workflow_response_validator.py`, `holmesgpt-api/src/extensions/incident/result_parser.py`
-**Test file**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File under test**: `kubernaut-agent/src/validation/workflow_response_validator.py`, `kubernaut-agent/src/extensions/incident/result_parser.py`
+**Test file**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 ##### RED Phase — Write failing tests
 
@@ -437,7 +437,7 @@ These tests are not deleted — their assertions are updated to reflect the new 
 
 **BR**: #524-A
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_resource_context_tool.py`
+**File**: `kubernaut-agent/tests/unit/test_resource_context_tool.py`
 
 **Given**: A mock K8s client where `_get_resource_metadata("Node", "worker-3", "")` returns a Node object with no ownerReferences
 **When**: `GetClusterResourceContextTool._invoke_async(kind="Node", name="worker-3")` is called
@@ -453,7 +453,7 @@ These tests are not deleted — their assertions are updated to reflect the new 
 
 **BR**: #524-A
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_resource_context_tool.py`
+**File**: `kubernaut-agent/tests/unit/test_resource_context_tool.py`
 
 **Given**: A session_state dict and a mock K8s client returning a Node
 **When**: `GetClusterResourceContextTool._invoke_async(kind="Node", name="worker-3")` is called
@@ -467,7 +467,7 @@ These tests are not deleted — their assertions are updated to reflect the new 
 
 **BR**: #524-B
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: `session_state` with `resource_scope: "cluster"` and `root_owner: {kind: "Node", name: "worker-3"}`. Result with `selected_workflow` whose schema declares TARGET_RESOURCE_NAME, TARGET_RESOURCE_KIND, and TARGET_RESOURCE_NAMESPACE.
 **When**: `_inject_target_resource(result, session_state, remediation_id)` is called
@@ -482,7 +482,7 @@ These tests are not deleted — their assertions are updated to reflect the new 
 
 **BR**: #524-B
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: `session_state` with `resource_scope: "namespaced"` and `root_owner: {kind: "Deployment", name: "api", namespace: "prod"}`. Result with `selected_workflow` whose schema declares only TARGET_RESOURCE_NAME and TARGET_RESOURCE_KIND (no NAMESPACE).
 **When**: `_inject_target_resource(result, session_state, remediation_id)` is called
@@ -496,7 +496,7 @@ These tests are not deleted — their assertions are updated to reflect the new 
 
 **BR**: #524-5
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: `session_state` with `resource_scope: "namespaced"`. Result with `selected_workflow: {action_type: "RemoveTaint"}`.
 **When**: `_check_scope_mismatch(result, session_state)` is called
@@ -515,7 +515,7 @@ These tests are not deleted — their assertions are updated to reflect the new 
 
 - **Framework**: Python pytest + pytest-asyncio (HAPI convention)
 - **Mocks**: `unittest.mock.AsyncMock` for K8s client, `MagicMock` for history_fetcher
-- **Location**: `holmesgpt-api/tests/unit/`
+- **Location**: `kubernaut-agent/tests/unit/`
 - **Anti-patterns avoided**:
   - No `time.sleep()` — all assertions are synchronous or use `await`
   - No `Skip()` / `pytest.skip()` — all tests are implemented
@@ -528,7 +528,7 @@ These tests are not deleted — their assertions are updated to reflect the new 
 
 ```bash
 # All HAPI unit tests
-cd holmesgpt-api && python -m pytest tests/unit/ -v
+cd kubernaut-agent && python -m pytest tests/unit/ -v
 
 # Specific test by ID pattern
 python -m pytest tests/unit/test_resource_context_tool.py -v -k "524"

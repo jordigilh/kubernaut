@@ -93,16 +93,16 @@ Tests validate **business outcomes**:
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `holmesgpt-api/src/extensions/incident/llm_integration.py` | `_inject_target_resource` (new), removal of `_check_affected_resource_mismatch`, `_affected_resource_matches` | ~70 new, ~70 removed |
-| `holmesgpt-api/src/validation/workflow_response_validator.py` | `_validate_parameters` (HAPI_MANAGED_PARAMS skip); **Issue #524**: `_validate_canonical_params` (Step 0) removed | ~30 new, ~5 modified (historical); post-#524 no Step 0 |
-| `holmesgpt-api/src/extensions/incident/prompt_builder.py` | `create_incident_investigation_prompt` (Phase 3b simplification, JSON examples) | ~40 modified |
-| `holmesgpt-api/src/extensions/incident/result_parser.py` | `parse_and_validate_investigation_result` (remove rca_target extraction, remove BR-HAPI-212 check) | ~15 removed |
+| `kubernaut-agent/src/extensions/incident/llm_integration.py` | `_inject_target_resource` (new), removal of `_check_affected_resource_mismatch`, `_affected_resource_matches` | ~70 new, ~70 removed |
+| `kubernaut-agent/src/validation/workflow_response_validator.py` | `_validate_parameters` (HAPI_MANAGED_PARAMS skip); **Issue #524**: `_validate_canonical_params` (Step 0) removed | ~30 new, ~5 modified (historical); post-#524 no Step 0 |
+| `kubernaut-agent/src/extensions/incident/prompt_builder.py` | `create_incident_investigation_prompt` (Phase 3b simplification, JSON examples) | ~40 modified |
+| `kubernaut-agent/src/extensions/incident/result_parser.py` | `parse_and_validate_investigation_result` (remove rca_target extraction, remove BR-HAPI-212 check) | ~15 removed |
 
 ### Integration-Testable Code (I/O, cross-component)
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `holmesgpt-api/src/toolsets/workflow_discovery.py` | `GetWorkflowTool._invoke` (schema stripping before `json.dumps`) | ~15 new |
+| `kubernaut-agent/src/toolsets/workflow_discovery.py` | `GetWorkflowTool._invoke` (schema stripping before `json.dumps`) | ~15 new |
 
 ### E2E-Testable Code (full pipeline)
 
@@ -170,8 +170,8 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 #### TDD Group 1: Injection Logic (`_inject_target_resource`)
 
-**File under test**: `holmesgpt-api/src/extensions/incident/llm_integration.py`
-**Test file**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File under test**: `kubernaut-agent/src/extensions/incident/llm_integration.py`
+**Test file**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 ##### RED Phase — Write failing tests
 
@@ -210,8 +210,8 @@ All 8 tests pass.
 
 #### TDD Group 2: Schema Validation (`WorkflowResponseValidator`)
 
-**File under test**: `holmesgpt-api/src/validation/workflow_response_validator.py`
-**Test file**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File under test**: `kubernaut-agent/src/validation/workflow_response_validator.py`
+**Test file**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Issue #524 note**: Mandatory **Step 0** (`_validate_canonical_params`) was **removed**. `UT-HAPI-496-007` / `008` / `009` now assert the validator **accepts** workflows whose schemas omit individual canonical parameters; `UT-HAPI-496-010` / `011` remain the positive-path and HAPI-managed skip coverage.
 
@@ -239,8 +239,8 @@ All 8 tests pass.
 
 #### TDD Group 3: Schema Stripping (`GetWorkflowTool`)
 
-**File under test**: `holmesgpt-api/src/toolsets/workflow_discovery.py`
-**Test file**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File under test**: `kubernaut-agent/src/toolsets/workflow_discovery.py`
+**Test file**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 ##### RED Phase — Write failing tests
 
@@ -268,8 +268,8 @@ All 4 tests pass.
 
 #### TDD Group 4: Prompt and Parser Cleanup
 
-**Files under test**: `holmesgpt-api/src/extensions/incident/prompt_builder.py`, `result_parser.py`
-**Test file**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**Files under test**: `kubernaut-agent/src/extensions/incident/prompt_builder.py`, `result_parser.py`
+**Test file**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 ##### RED Phase — Write failing tests
 
@@ -297,8 +297,8 @@ All 3 tests pass.
 
 #### TDD Group 5: Enum Cleanup
 
-**Files under test**: `holmesgpt-api/src/models/incident_models.py`, `incident_response_data.py`, `openapi.json`, `aianalysis_types.go`
-**Test file**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**Files under test**: `kubernaut-agent/src/models/incident_models.py`, `incident_response_data.py`, `openapi.json`, `aianalysis_types.go`
+**Test file**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 ##### RED Phase — Write failing test
 
@@ -373,7 +373,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A result dict with `selected_workflow` containing `parameters: {"MEMORY_LIMIT_NEW": "512Mi"}`, and `session_state` containing `root_owner: {kind: "Deployment", name: "postgres-emptydir", namespace: "demo"}`
 **When**: `_inject_target_resource(result, session_state, remediation_id)` is called
@@ -388,7 +388,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A result dict with `root_cause_analysis: {}` and `session_state` containing `root_owner: {kind: "Deployment", name: "api-server", namespace: "production"}`
 **When**: `_inject_target_resource(result, session_state, remediation_id)` is called
@@ -403,7 +403,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A result dict with `selected_workflow` present and `session_state` with no `root_owner` key
 **When**: `_inject_target_resource(result, session_state, remediation_id)` is called
@@ -419,7 +419,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A result dict with `selected_workflow: None` and `session_state` containing `root_owner`
 **When**: `_inject_target_resource(result, session_state, remediation_id)` is called
@@ -433,7 +433,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A result dict with `selected_workflow: None`, `root_cause_analysis: {summary: "resolved"}`, and `session_state` containing `root_owner`
 **When**: `_inject_target_resource(result, session_state, remediation_id)` is called
@@ -447,7 +447,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A result dict with `selected_workflow.parameters: {"MEMORY_LIMIT_NEW": "512Mi", "REPLICA_COUNT": "3"}` and `session_state` with root_owner
 **When**: `_inject_target_resource(result, session_state, remediation_id)` is called
@@ -462,7 +462,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A workflow schema declaring TARGET_RESOURCE_KIND and TARGET_RESOURCE_NAMESPACE but NOT TARGET_RESOURCE_NAME
 **When**: `WorkflowResponseValidator.validate(workflow_id, bundle, params)` is called
@@ -476,7 +476,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A workflow schema declaring TARGET_RESOURCE_NAME and TARGET_RESOURCE_NAMESPACE but NOT TARGET_RESOURCE_KIND
 **When**: `WorkflowResponseValidator.validate(workflow_id, bundle, params)` is called
@@ -489,7 +489,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A workflow schema declaring TARGET_RESOURCE_NAME and TARGET_RESOURCE_KIND but NOT TARGET_RESOURCE_NAMESPACE
 **When**: `WorkflowResponseValidator.validate(workflow_id, bundle, params)` is called
@@ -502,7 +502,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A workflow schema declaring all 3 canonical params plus MEMORY_LIMIT_NEW
 **When**: `WorkflowResponseValidator.validate(workflow_id, bundle, params)` is called with LLM params `{"MEMORY_LIMIT_NEW": "512Mi"}` (no canonical params from LLM)
@@ -516,7 +516,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A workflow schema with TARGET_RESOURCE_NAME (required: true), TARGET_RESOURCE_KIND (required: true), TARGET_RESOURCE_NAMESPACE (required: true), MEMORY_LIMIT_NEW (required: true)
 **When**: `WorkflowResponseValidator.validate()` is called with LLM params `{"MEMORY_LIMIT_NEW": "512Mi"}` — canonical params intentionally absent
@@ -530,7 +530,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A DataStorage workflow response containing parameters.schema.parameters with 5 entries: TARGET_RESOURCE_NAME, TARGET_RESOURCE_KIND, TARGET_RESOURCE_NAMESPACE, MEMORY_LIMIT_NEW, REPLICA_COUNT
 **When**: get_workflow tool processes the response before returning to LLM
@@ -545,7 +545,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A DataStorage workflow response with only operational params (no canonical params — edge case for legacy workflows)
 **When**: get_workflow tool processes the response
@@ -559,7 +559,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A DataStorage workflow response with no `parameters` key or empty parameters
 **When**: get_workflow tool processes the response
@@ -573,7 +573,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: Standard request_data for an incident investigation
 **When**: `create_incident_investigation_prompt(request_data)` is called
@@ -588,7 +588,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: Standard request_data for an incident investigation
 **When**: `create_incident_investigation_prompt(request_data)` is called
@@ -604,7 +604,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: An investigation result containing `selected_workflow` but NO `affectedResource` in root_cause_analysis
 **When**: `parse_and_validate_investigation_result()` is called
@@ -618,7 +618,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A result dict with `selected_workflow` present and `session_state` containing `root_owner: {kind: "Node", name: "worker-1"}` (no namespace key)
 **When**: `_inject_target_resource(result, session_state, remediation_id)` is called
@@ -634,7 +634,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A result dict where LLM set `root_cause_analysis.affectedResource: {kind: "Pod", name: "api-xyz-123", namespace: "prod"}` and `session_state` with `root_owner: {kind: "Deployment", name: "api", namespace: "prod"}`
 **When**: `_inject_target_resource(result, session_state, remediation_id)` is called
@@ -649,7 +649,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: A DataStorage workflow response where `parameters` is a string (malformed) instead of a dict/list
 **When**: get_workflow tool processes the response before returning to LLM
@@ -664,7 +664,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 **BR**: BR-496
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+**File**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 
 **Given**: The `HumanReviewReason` enum in `incident_models.py`
 **When**: Enum members are inspected
@@ -729,7 +729,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 - **Framework**: Python pytest (HAPI Python codebase)
 - **Mocks**: DataStorage client (mock), session_state (dict fixture), investigation_result (fixture)
-- **Location**: `holmesgpt-api/tests/unit/test_target_resource_injection.py`
+- **Location**: `kubernaut-agent/tests/unit/test_target_resource_injection.py`
 - **Anti-patterns avoided**:
   - No `time.Sleep()` — Python tests are synchronous
   - No `Skip()` — all tests implemented or not written
@@ -750,7 +750,7 @@ All 3 E2E tests pass (along with existing E2E tests, which now implicitly valida
 
 ```bash
 # Unit tests (Python)
-cd holmesgpt-api && python -m pytest tests/unit/test_target_resource_injection.py -v
+cd kubernaut-agent && python -m pytest tests/unit/test_target_resource_injection.py -v
 
 # E2E tests (Go — requires Kind cluster)
 make test-e2e-fullpipeline

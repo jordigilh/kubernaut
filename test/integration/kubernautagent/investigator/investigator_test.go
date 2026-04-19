@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -34,6 +35,8 @@ import (
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // staticCatalogFetcher returns a pre-built validator for tests that need
@@ -71,7 +74,7 @@ func (m *mockLLMClient) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatRe
 	return llm.ChatResponse{
 		Message: llm.Message{
 			Role:    "assistant",
-			Content: `{"rca_summary":"no more responses","human_review_needed":true}`,
+			Content: `{"rca_summary":"no more responses","confidence":0.1}`,
 		},
 	}, nil
 }
@@ -229,9 +232,10 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 	Describe("IT-KA-433-008: Investigation stops at max turns and returns human-review", func() {
 		It("should return HumanReviewNeeded when max turns exhausted", func() {
 			mockClient.responses = []llm.ChatResponse{
-				{Message: llm.Message{Role: "assistant", Content: "I need more information", ToolCalls: []llm.ToolCall{
-					{ID: "tc_1", Name: "kubectl_describe", Arguments: `{"kind":"Pod","name":"api","namespace":"default"}`},
-				}}},
+				{
+					Message:   llm.Message{Role: "assistant", Content: "I need more information"},
+					ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "kubectl_describe", Arguments: `{"kind":"Pod","name":"api","namespace":"default"}`}},
+				},
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 1, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -361,7 +365,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 	})
 
 	Describe("IT-KA-433W-005: Investigator with enricher includes owner chain in RCA system prompt", func() {
-		It("should include owner chain and remediation history strings in the RCA system prompt", func() {
+		It("should include owner chain in RCA prompt but NOT remediation history (Phase 3 only per #700)", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Memory pressure detected"}`}},
 				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9}`}},
@@ -380,8 +384,14 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			systemPrompt := rcaCall.Messages[0].Content
 			Expect(systemPrompt).To(ContainSubstring("Deployment/api-server"),
 				"RCA system prompt should contain owner chain entries")
-			Expect(systemPrompt).To(ContainSubstring("oom-increase-memory"),
-				"RCA system prompt should contain remediation history workflow ID")
+			Expect(systemPrompt).NotTo(ContainSubstring("oom-increase-memory"),
+				"RCA system prompt must NOT contain remediation history (Phase 3 only per #700)")
+
+			By("remediation history should appear in workflow selection prompt instead")
+			wdCall := mockClient.calls[1]
+			wdSystemPrompt := wdCall.Messages[0].Content
+			Expect(wdSystemPrompt).To(ContainSubstring("oom-increase-memory"),
+				"workflow selection prompt should contain remediation history workflow ID")
 		})
 	})
 
@@ -406,6 +416,95 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		})
 	})
 
+	Describe("IT-KA-686-001: submit_result tool call returns structured investigation result", func() {
+		It("should capture submit_result arguments as investigation result instead of executing a tool", func() {
+			submitArgs := `{"root_cause_analysis":{"summary":"OOMKilled due to memory limit exceeded","severity":"critical","remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}},"selected_workflow":{"workflow_id":"oom-increase-memory","confidence":0.95,"rationale":"increase memory limit","parameters":{"MEMORY_LIMIT":"512Mi"}},"confidence":0.95,"severity":"critical"}`
+
+			reg := registry.New()
+			reg.Register(&fakeTool{name: "kubectl_describe", result: `{"kind":"Pod","metadata":{"name":"api-server"},"status":{"phase":"Running"}}`})
+
+			mockClient.responses = []llm.ChatResponse{
+				{
+					Message: llm.Message{Role: "assistant", Content: "Let me investigate"},
+					ToolCalls: []llm.ToolCall{
+						{ID: "tc_1", Name: "kubectl_describe", Arguments: `{"kind":"Pod","name":"api-server","namespace":"production"}`},
+					},
+				},
+				{
+					Message: llm.Message{Role: "assistant", Content: "Found the issue"},
+					ToolCalls: []llm.ToolCall{
+						{ID: "tc_submit", Name: "submit_result", Arguments: submitArgs},
+					},
+				},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.95}`}},
+			}
+
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api-server", Namespace: "production", Severity: "critical", Message: "OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RCASummary).To(ContainSubstring("OOMKilled"))
+			Expect(result.WorkflowID).To(Equal("oom-increase-memory"))
+			Expect(result.Confidence).To(BeNumerically("~", 0.95, 0.01))
+		})
+	})
+
+	Describe("IT-KA-686-002: submit_result in both RCA and workflow discovery phases", func() {
+		It("should include submit_result in tool definitions sent to LLM for both phases", func() {
+			reg := registry.New()
+			reg.Register(&fakeTool{name: "kubectl_describe", result: `{}`})
+			reg.Register(&fakeTool{name: "list_available_actions", result: `[]`})
+
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"found issue"}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+			}
+
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
+			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(mockClient.calls).To(HaveLen(2))
+
+			By("RCA phase includes submit_result")
+			rcaToolNames := toolNamesFromCall(mockClient.calls[0])
+			Expect(rcaToolNames).To(ContainElement("submit_result"),
+				"RCA phase should include submit_result tool definition")
+
+			By("Workflow discovery phase includes submit_result")
+			wdToolNames := toolNamesFromCall(mockClient.calls[1])
+			Expect(wdToolNames).To(ContainElement("submit_result"),
+				"Workflow discovery phase should include submit_result tool definition")
+		})
+	})
+
+	Describe("IT-KA-686-003: submit_result bypasses anomaly detector", func() {
+		It("should not invoke anomaly detector CheckToolCall for submit_result", func() {
+			submitArgs := `{"root_cause_analysis":{"summary":"issue found"},"confidence":0.9}`
+
+			mockClient.responses = []llm.ChatResponse{
+				{
+					Message: llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{
+						{ID: "tc_submit", Name: "submit_result", Arguments: submitArgs},
+					},
+				},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+			}
+
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RCASummary).To(ContainSubstring("issue found"))
+		})
+	})
+
 	Describe("IT-KA-433-009: Investigation emits audit events", func() {
 		It("should emit audit events at correct investigation points", func() {
 			mockClient.responses = []llm.ChatResponse{
@@ -426,6 +525,209 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		})
 	})
 })
+
+var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() {
+
+	var (
+		logger     *slog.Logger
+		auditStore *recordingAuditStore
+		mockClient *mockLLMClient
+		builder    *prompt.Builder
+		rp         *parser.ResultParser
+		phaseTools katypes.PhaseToolMap
+	)
+
+	BeforeEach(func() {
+		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		auditStore = &recordingAuditStore{}
+		mockClient = &mockLLMClient{}
+		builder, _ = prompt.NewBuilder()
+		rp = parser.NewResultParser()
+		phaseTools = investigator.DefaultPhaseToolMap()
+	})
+
+	Describe("UT-KA-693-005: Workflow selection prompt shows re-enriched target", func() {
+		It("should include the RCA-identified Deployment name in workflow selection prompt", func() {
+			k8s := &resourceAwareK8sClient{
+				chains: map[string][]enrichment.OwnerChainEntry{
+					"worker-77784c6cf7-l27g4": {
+						{Kind: "ReplicaSet", Name: "worker-77784c6cf7", Namespace: "demo-crashloop"},
+						{Kind: "Deployment", Name: "worker", Namespace: "demo-crashloop"},
+					},
+					"worker": {}, // Deployment is root, empty chain
+				},
+			}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled in worker deployment","remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools,
+			})
+
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				ResourceKind: "Pod",
+				ResourceName: "worker-77784c6cf7-l27g4",
+				Name:         "worker-77784c6cf7-l27g4",
+				Namespace:    "demo-crashloop",
+				Severity:     "critical",
+				Message:      "OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			Expect(mockClient.calls).To(HaveLen(2))
+			workflowCallContent := allMessageContent(mockClient.calls[1].Messages)
+			Expect(workflowCallContent).To(ContainSubstring("demo-crashloop/Deployment/worker"),
+				"UT-KA-693-005: workflow selection prompt Resource field must show re-enriched target")
+			Expect(workflowCallContent).NotTo(ContainSubstring("demo-crashloop/Pod/worker-77784c6cf7-l27g4"),
+				"UT-KA-693-005: workflow selection prompt Resource field must NOT show original Pod identity")
+		})
+	})
+
+	Describe("UT-KA-693-006: No re-enrichment leaves signal unchanged", func() {
+		It("should preserve original signal when RCA returns same target", func() {
+			k8s := &fakeK8sClient{
+				ownerChain: []enrichment.OwnerChainEntry{
+					{Kind: "ReplicaSet", Name: "worker-77784c6cf7", Namespace: "demo-crashloop"},
+					{Kind: "Deployment", Name: "worker", Namespace: "demo-crashloop"},
+				},
+			}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"CrashLoop in worker pod"}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart-pod","confidence":0.8}`}},
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools,
+			})
+
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				ResourceKind: "Pod",
+				ResourceName: "worker-77784c6cf7-l27g4",
+				Name:         "worker-77784c6cf7-l27g4",
+				Namespace:    "demo-crashloop",
+				Severity:     "warning",
+				Message:      "CrashLoopBackOff",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"),
+				"UT-KA-693-006: target kind should come from owner chain")
+			Expect(result.RemediationTarget.Name).To(Equal("worker"),
+				"UT-KA-693-006: target name should come from owner chain root")
+		})
+	})
+
+	Describe("UT-KA-693-007: Injection receives same signal identity as prompt", func() {
+		It("should produce remediation target consistent with prompt identity after re-enrichment", func() {
+			k8s := &resourceAwareK8sClient{
+				chains: map[string][]enrichment.OwnerChainEntry{
+					"worker-77784c6cf7-l27g4": {
+						{Kind: "ReplicaSet", Name: "worker-77784c6cf7", Namespace: "demo-crashloop"},
+						{Kind: "Deployment", Name: "worker", Namespace: "demo-crashloop"},
+					},
+					"worker": {}, // Deployment is root, empty chain
+				},
+			}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled targeting Deployment worker","remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.95,"remediation_target":{"kind":"Deployment","name":"worker-77784c6cf7","namespace":"demo-crashloop"}}`}},
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools,
+			})
+
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				ResourceKind: "Pod",
+				ResourceName: "worker-77784c6cf7-l27g4",
+				Name:         "worker-77784c6cf7-l27g4",
+				Namespace:    "demo-crashloop",
+				Severity:     "critical",
+				Message:      "OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"),
+				"UT-KA-693-007: injection must use re-enrichment source kind")
+			Expect(result.RemediationTarget.Name).To(Equal("worker"),
+				"UT-KA-693-007: injection must use re-enrichment source name, not LLM hallucination")
+		})
+	})
+
+	Describe("IT-KA-704-001: Owner chain failure triggers rca_incomplete", func() {
+		It("should set needs_human_review=true with rca_incomplete when GetOwnerChain fails", func() {
+			notFoundErr := apierrors.NewNotFound(
+				schema.GroupResource{Resource: "pods"}, "target-pod")
+			k8s := &fakeK8sClient{
+				ownerChain: nil,
+				err:        notFoundErr,
+			}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, logger).
+				WithRetryConfig(enrichment.RetryConfig{
+					MaxRetries:  3,
+					BaseBackoff: 1 * time.Millisecond,
+				})
+
+			// RCA names a DIFFERENT target than the signal to trigger re-enrichment.
+			// Only one response needed: flow returns at rca_incomplete before workflow selection.
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit exceeded","remediation_target":{"kind":"Pod","name":"target-pod","namespace":"production"}}`}},
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools,
+			})
+
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				ResourceKind: "Pod",
+				ResourceName: "signal-pod",
+				Name:         "signal-pod",
+				Namespace:    "production",
+				Severity:     "critical",
+				Message:      "OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.HumanReviewNeeded).To(BeTrue(),
+				"IT-KA-704-001: owner chain failure must trigger human review")
+			Expect(result.HumanReviewReason).To(Equal("rca_incomplete"),
+				"IT-KA-704-001: reason must be rca_incomplete per BR-HAPI-261 AC#7")
+			Expect(result.RCASummary).NotTo(BeEmpty(),
+				"IT-KA-704-001: RCA phase should complete before enrichment check")
+			Expect(result.WorkflowID).To(BeEmpty(),
+				"IT-KA-704-001: workflow selection should be skipped when rca_incomplete")
+		})
+	})
+})
+
+func toolNamesFromCall(call llm.ChatRequest) []string {
+	names := make([]string, len(call.Tools))
+	for i, td := range call.Tools {
+		names[i] = td.Name
+	}
+	return names
+}
 
 func allMessageContent(msgs []llm.Message) string {
 	var sb string

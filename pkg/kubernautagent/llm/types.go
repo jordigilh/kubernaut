@@ -74,7 +74,8 @@ type TokenUsage struct {
 
 // ChatOptions holds optional parameters for the LLM call.
 type ChatOptions struct {
-	Temperature float64 `json:"temperature,omitempty"`
-	MaxTokens   int     `json:"max_tokens,omitempty"`
-	JSONMode    bool    `json:"json_mode,omitempty"`
+	Temperature  float64         `json:"temperature,omitempty"`
+	MaxTokens    int             `json:"max_tokens,omitempty"`
+	JSONMode     bool            `json:"json_mode,omitempty"`
+	OutputSchema json.RawMessage `json:"output_schema,omitempty"`
 }

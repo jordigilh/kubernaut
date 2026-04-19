@@ -56,20 +56,25 @@ kubectl create secret generic llm-credentials \
   --from-literal=OPENAI_API_KEY=sk-... \
   -n kubernaut-system
 
-# 5. Install
+# 5. Install (--set-file for Rego policies is mandatory)
 helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o
+  --set kubernautAgent.llm.model=gpt-4o \
+  --set-file signalprocessing.policies.content=path/to/policy.rego \
+  --set-file aianalysis.policies.content=path/to/approval.rego
 ```
 
 This deploys the full platform with:
 
-- Default SignalProcessing Rego policy (environment, severity, priority, custom labels)
-- Default AIAnalysis approval policy (production requires approval, non-production auto-approves)
-- 25 ActionTypes and 20 RemediationWorkflows for common scenarios
+- User-provided SignalProcessing Rego policy (via `--set-file signalprocessing.policies.content=`)
+- User-provided AIAnalysis approval policy (via `--set-file aianalysis.policies.content=`)
 - Console-only notifications (no external integrations required)
 - Monitoring integrations disabled (enable when kube-prometheus-stack is installed)
+
+> **Note**: The chart does not bundle default Rego policies. You must provide your own
+> via `--set-file` or by specifying an `existingConfigMap`. For reference policies, see
+> the [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) repository.
 
 Verify:
 
@@ -90,6 +95,8 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --set kubernautAgent.llm.provider=openai \
   --set kubernautAgent.llm.model=gpt-4o \
+  --set-file signalprocessing.policies.content=path/to/policy.rego \
+  --set-file aianalysis.policies.content=path/to/approval.rego \
   --set notification.slack.secretName=slack-webhook \
   --set notification.slack.channel="#ops-alerts"
 ```
@@ -103,6 +110,8 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --set kubernautAgent.llm.provider=openai \
   --set kubernautAgent.llm.model=gpt-4o \
+  --set-file signalprocessing.policies.content=path/to/policy.rego \
+  --set-file aianalysis.policies.content=path/to/approval.rego \
   --set effectivenessmonitor.external.prometheusEnabled=true \
   --set effectivenessmonitor.external.alertManagerEnabled=true \
   --set gateway.auth.signalSources[0].name=alertmanager \
@@ -156,9 +165,8 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --set postgresql.auth.existingSecret=pg-credentials \
   --set valkey.existingSecret=vk-credentials \
-  --set demoContent.enabled=false \
   --set-file kubernautAgent.sdkConfigContent=my-sdk-config.yaml \
-  --set-file signalprocessing.policy=my-policy.rego \
+  --set-file signalprocessing.policies.content=my-policy.rego \
   --set-file aianalysis.policies.content=my-approval.rego
 ```
 
@@ -204,7 +212,9 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   -n kubernaut-system \
   -f charts/kubernaut/values-ocp.yaml \
   --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o
+  --set kubernautAgent.llm.model=gpt-4o \
+  --set-file signalprocessing.policies.content=path/to/policy.rego \
+  --set-file aianalysis.policies.content=path/to/approval.rego
 ```
 
 The OCP overlay switches PostgreSQL and Valkey to Red Hat RHEL10 catalog images and replaces `bitnami/kubectl` with `ose-cli` for hook jobs. No ImageStream prerequisites -- pods pull directly from `registry.redhat.io` using the cluster's global pull secret.
@@ -255,16 +265,16 @@ For Vertex AI, Azure, or advanced setups (toolsets, MCP servers), use `sdkConfig
 
 | Parameter | Description | Default |
 |---|---|---|
-| `signalprocessing.policy` | Rego policy content (via `--set-file`) | Embedded default |
-| `signalprocessing.existingPolicyConfigMap` | Pre-existing ConfigMap with `policy.rego` key | `""` |
-| `signalprocessing.proactiveSignalMappings.content` | Proactive signal mappings YAML | Embedded default |
+| `signalprocessing.policies.content` | Rego policy content (via `--set-file`) — **required** | `""` |
+| `signalprocessing.policies.existingConfigMap` | Pre-existing ConfigMap with `policy.rego` key | `""` |
+| `signalprocessing.proactiveSignalMappings.content` | Proactive signal mappings YAML (via `--set-file`) | `""` |
 | `signalprocessing.proactiveSignalMappings.existingConfigMap` | Pre-existing ConfigMap | `""` |
 
 ### AIAnalysis
 
 | Parameter | Description | Default |
 |---|---|---|
-| `aianalysis.policies.content` | Approval policy Rego (via `--set-file`) | Embedded default |
+| `aianalysis.policies.content` | Approval policy Rego (via `--set-file`) — **required** | `""` |
 | `aianalysis.policies.existingConfigMap` | Pre-existing ConfigMap with `approval.rego` key | `""` |
 | `aianalysis.rego.confidenceThreshold` | Confidence threshold for auto-approval (nil = Rego default 0.8) | `null` |
 
@@ -363,7 +373,7 @@ All controllers accept: `replicas`, `resources`, `pdb.{enabled,minAvailable,maxU
 
 ## Disconnected / Air-Gapped Install
 
-The chart OCI artifact is fully self-contained (policies, demo content, credential auto-generation). For airgapped environments, mirror container images and override the registry:
+For airgapped environments, mirror container images and override the registry. Rego policies must still be provided via `--set-file`:
 
 ```bash
 # Nested registry (Harbor, Artifactory)
@@ -371,7 +381,9 @@ helm install kubernaut oci://harbor.corp/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --set global.image.registry=harbor.corp \
   --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o
+  --set kubernautAgent.llm.model=gpt-4o \
+  --set-file signalprocessing.policies.content=path/to/policy.rego \
+  --set-file aianalysis.policies.content=path/to/approval.rego
 
 # Flat registry (quay.io, Docker Hub, OCP internal)
 helm install kubernaut oci://quay.io/myorg/charts/kubernaut \
@@ -379,7 +391,9 @@ helm install kubernaut oci://quay.io/myorg/charts/kubernaut \
   --set global.image.registry=quay.io/myorg \
   --set global.image.separator=- \
   --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o
+  --set kubernautAgent.llm.model=gpt-4o \
+  --set-file signalprocessing.policies.content=path/to/policy.rego \
+  --set-file aianalysis.policies.content=path/to/approval.rego
 ```
 
 See the [Disconnected Install Guide](https://jordigilh.github.io/kubernaut-docs/operations/disconnected-install/) for image mirroring and OCP IDMS instructions.

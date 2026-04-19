@@ -543,7 +543,7 @@ CMD ["python3.12", "main.py"]
 
 ```dockerfile
 # Add upstream community Container Certification labels
-LABEL name="holmesgpt-api-server" \
+LABEL name="kubernaut-agent-server" \
       vendor="Kubernaut Project" \
       version="1.0.0" \
       release="1" \
@@ -552,7 +552,7 @@ LABEL name="holmesgpt-api-server" \
       io.k8s.description="HolmesGPT REST API Server for Kubernetes troubleshooting" \
       io.k8s.display-name="HolmesGPT API Server" \
       io.openshift.tags="ai,troubleshooting,kubernetes,investigation" \
-      com.redhat.component="holmesgpt-api-server" \
+      com.redhat.component="kubernaut-agent-server" \
       com.redhat.license_terms="https://www.redhat.com/en/about/red-hat-end-user-license-agreements#UBI"
 ```
 
@@ -563,7 +563,7 @@ LABEL name="holmesgpt-api-server" \
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: holmesgpt-api-server
+  name: kubernaut-agent-server
 spec:
   template:
     spec:
@@ -575,8 +575,8 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-      - name: holmesgpt-api
-        image: registry.kubernaut.ai/holmesgpt-api:1.0.0
+      - name: kubernaut-agent
+        image: registry.kubernaut.ai/kubernaut-agent:1.0.0
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true

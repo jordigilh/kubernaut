@@ -910,7 +910,7 @@ It("should handle malformed retry count annotation (treats as 0)", func() {
 
 ### HAPI Unit Tests (Python)
 
-**Test File**: `holmesgpt-api/tests/test_prompt_builder.py` (new or extend)
+**Test File**: `kubernaut-agent/tests/test_prompt_builder.py` (new or extend)
 
 | Test ID | Scenario | Status |
 |---------|----------|--------|
@@ -934,8 +934,8 @@ It("should handle malformed retry count annotation (treats as 0)", func() {
 | E2E-RO-106-001 | RO propagates signalMode=proactive from SP status to AA spec | `test/e2e/remediationorchestrator/proactive_signal_mode_e2e_test.go` | ✅ Passed |
 | E2E-AA-084-001 | AA processes proactive signal mode through to Mock LLM | `test/e2e/aianalysis/07_proactive_signal_mode_test.go` | ✅ Passed |
 | E2E-AA-084-002 | AA processes reactive signal mode (standard flow) | `test/e2e/aianalysis/07_proactive_signal_mode_test.go` | ✅ Passed |
-| E2E-HAPI-055 | HAPI returns proactive-aware analysis for signal_mode=proactive | `test/e2e/holmesgpt-api/proactive_signal_mode_test.go` | ✅ Passed |
-| E2E-HAPI-056 | HAPI returns standard RCA for signal_mode=reactive | `test/e2e/holmesgpt-api/proactive_signal_mode_test.go` | ✅ Passed |
-| E2E-HAPI-057 | HAPI defaults to reactive when signal_mode is absent | `test/e2e/holmesgpt-api/proactive_signal_mode_test.go` | ✅ Passed |
+| E2E-HAPI-055 | HAPI returns proactive-aware analysis for signal_mode=proactive | `test/e2e/kubernaut-agent/proactive_signal_mode_test.go` | ✅ Passed |
+| E2E-HAPI-056 | HAPI returns standard RCA for signal_mode=reactive | `test/e2e/kubernaut-agent/proactive_signal_mode_test.go` | ✅ Passed |
+| E2E-HAPI-057 | HAPI defaults to reactive when signal_mode is absent | `test/e2e/kubernaut-agent/proactive_signal_mode_test.go` | ✅ Passed |
 
 ---

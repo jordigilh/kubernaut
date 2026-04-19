@@ -915,12 +915,12 @@ func (cb *CircuitBreaker) recordSuccess() {
   - 6 recovery scenarios documented
   - Monitoring metrics and alert rules
 
-- **CRD Design Assessment**: `/holmesgpt-api/docs/EFFECTIVENESS_MONITOR_CRD_DESIGN_ASSESSMENT.md`
+- **CRD Design Assessment**: `/kubernaut-agent/docs/EFFECTIVENESS_MONITOR_CRD_DESIGN_ASSESSMENT.md`
   - Why NO custom CRD required
   - Watch-and-database pattern rationale
   - CRD vs Database comparison
 
-- **Technical Details**: `/holmesgpt-api/docs/EFFECTIVENESS_MONITOR_RESTART_RECOVERY.md`
+- **Technical Details**: `/kubernaut-agent/docs/EFFECTIVENESS_MONITOR_RESTART_RECOVERY.md`
   - 5 restart scenarios with complete flows
   - Edge case handling
   - Implementation requirements

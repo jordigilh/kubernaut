@@ -440,7 +440,7 @@ spec:
 
     # High latency
     - alert: HTTPServiceHighLatency
-      expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=~"gateway-service|notification-service|holmesgpt-api|context-api|data-storage"}[5m])) > 5
+      expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=~"gateway-service|notification-service|kubernaut-agent|context-api|data-storage"}[5m])) > 5
       for: 5m
       labels:
         severity: warning
@@ -452,7 +452,7 @@ spec:
 
     # High error rate
     - alert: HTTPServiceHighErrorRate
-      expr: rate(http_requests_total{job=~"gateway-service|notification-service|holmesgpt-api|context-api|data-storage",status=~"5.."}[5m]) / rate(http_requests_total{job=~"gateway-service|notification-service|holmesgpt-api|context-api|data-storage"}[5m]) > 0.05
+      expr: rate(http_requests_total{job=~"gateway-service|notification-service|kubernaut-agent|context-api|data-storage",status=~"5.."}[5m]) / rate(http_requests_total{job=~"gateway-service|notification-service|kubernaut-agent|context-api|data-storage"}[5m]) > 0.05
       for: 5m
       labels:
         severity: warning
@@ -846,28 +846,28 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: holmesgpt-api-alerts
+  name: kubernaut-agent-alerts
   namespace: kubernaut-system
   labels:
-    app: holmesgpt-api
+    app: kubernaut-agent
     prometheus: kubernaut
 spec:
   groups:
-  - name: holmesgpt-api
+  - name: kubernaut-agent
     interval: 30s
     rules:
 
     # Service down
     - alert: HolmesGPTAPIDown
-      expr: up{job="holmesgpt-api"} == 0
+      expr: up{job="kubernaut-agent"} == 0
       for: 2m
       labels:
         severity: warning
-        service: holmesgpt-api
+        service: kubernaut-agent
       annotations:
         summary: "HolmesGPT API is down"
         description: "HolmesGPT API has been down for more than 2 minutes. AI investigations will fail."
-        runbook_url: https://docs.kubernaut.io/runbooks/holmesgpt-api/service-down
+        runbook_url: https://docs.kubernaut.io/runbooks/kubernaut-agent/service-down
 
     # High LLM latency
     - alert: HolmesGPTAPIHighLLMLatency
@@ -875,11 +875,11 @@ spec:
       for: 10m
       labels:
         severity: warning
-        service: holmesgpt-api
+        service: kubernaut-agent
       annotations:
         summary: "HolmesGPT LLM requests are slow"
         description: "95th percentile LLM request time is {{ $value }}s for provider {{ $labels.provider }}."
-        runbook_url: https://docs.kubernaut.io/runbooks/holmesgpt-api/high-llm-latency
+        runbook_url: https://docs.kubernaut.io/runbooks/kubernaut-agent/high-llm-latency
 
     # LLM provider errors
     - alert: HolmesGPTAPILLMProviderErrors
@@ -887,11 +887,11 @@ spec:
       for: 5m
       labels:
         severity: warning
-        service: holmesgpt-api
+        service: kubernaut-agent
       annotations:
         summary: "LLM provider {{ $labels.provider }} has high error rate"
         description: "{{ $value | humanizePercentage }} of requests to {{ $labels.provider }} are failing."
-        runbook_url: https://docs.kubernaut.io/runbooks/holmesgpt-api/llm-provider-errors
+        runbook_url: https://docs.kubernaut.io/runbooks/kubernaut-agent/llm-provider-errors
 
     # High token usage
     - alert: HolmesGPTAPIHighTokenUsage
@@ -899,11 +899,11 @@ spec:
       for: 1h
       labels:
         severity: info
-        service: holmesgpt-api
+        service: kubernaut-agent
       annotations:
         summary: "High LLM token usage"
         description: "Using {{ $value }} tokens per hour for provider {{ $labels.provider }}. Review usage and costs."
-        runbook_url: https://docs.kubernaut.io/runbooks/holmesgpt-api/high-token-usage
+        runbook_url: https://docs.kubernaut.io/runbooks/kubernaut-agent/high-token-usage
 ```
 
 ---
@@ -989,7 +989,7 @@ kubectl apply -f deploy/prometheus-rules/ai-analysis-alerts.yaml
 kubectl apply -f deploy/prometheus-rules/workflow-execution-alerts.yaml
 kubectl apply -f deploy/prometheus-rules/kubernetes-executor-alerts.yaml  # DEPRECATED - ADR-025
 kubectl apply -f deploy/prometheus-rules/notification-service-alerts.yaml
-kubectl apply -f deploy/prometheus-rules/holmesgpt-api-alerts.yaml
+kubectl apply -f deploy/prometheus-rules/kubernaut-agent-alerts.yaml
 kubectl apply -f deploy/prometheus-rules/business-logic-alerts.yaml
 ```
 

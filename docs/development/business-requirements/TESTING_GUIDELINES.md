@@ -1386,7 +1386,7 @@ Integration tests require real service dependencies (HolmesGPT-API, Data Storage
 | **PostgreSQL** | `quay.io/jordigilh/pgvector:pg16` | 5432 | Audit trail storage (pgvector) |
 | **Redis** | `quay.io/jordigilh/redis:7-alpine` | 6379 | Caching layer |
 | **Data Storage** | Built from `docker/data-storage.Dockerfile` | 8080 | Audit persistence API |
-| **HolmesGPT-API** | Built from `holmesgpt-api/Dockerfile` | 8081 | AI analysis service |
+| **HolmesGPT-API** | Built from `kubernaut-agent/Dockerfile` | 8081 | AI analysis service |
 
 #### Running Integration Tests
 
@@ -1617,7 +1617,7 @@ export REDIS_PORT=6379
 **LLM is mocked across ALL test tiers** due to cost constraints. HolmesGPT-API is LLM-agnostic; point `LLM_ENDPOINT` at a standalone Mock LLM service for deterministic responses.
 
 ```yaml
-# podman-compose.test.yml - holmesgpt-api service
+# podman-compose.test.yml - kubernaut-agent service
 environment:
   - LLM_ENDPOINT=http://mock-llm:8080   # Standalone Mock LLM service
   - LLM_MODEL=mock-model

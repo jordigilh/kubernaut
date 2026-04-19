@@ -902,7 +902,7 @@ if aiAnalysis.status.phase == "Approving" && !remediation.status.approvalNotific
 ---
 
 ### **🔍 HolmesGPT API Service**
-**Image**: `quay.io/jordigilh/holmesgpt-api-server`
+**Image**: `quay.io/jordigilh/kubernaut-agent-server`
 **Port**: 8080 (HTTP API/health), 9090 (metrics)
 **Single Responsibility**: AI Investigation Wrapper Only
 

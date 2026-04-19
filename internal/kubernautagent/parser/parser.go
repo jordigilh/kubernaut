@@ -33,33 +33,48 @@ func NewResultParser() *ResultParser {
 }
 
 // Parse extracts InvestigationResult from raw LLM content.
-// Handles both raw JSON and JSON embedded in markdown code blocks.
+// Handles three formats in priority order:
+//  1. Single JSON object (flat or nested) — structured output or well-behaved LLM
+//  2. Section-header format ("# root_cause_analysis\n{...}\n# confidence\n0.95\n...")
+//     produced when structured output is unavailable (e.g. Vertex AI)
+//  3. JSON embedded in markdown code blocks or prose
 func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, error) {
 	if content == "" {
 		return nil, fmt.Errorf("empty JSON content")
 	}
 
 	jsonStr := extractJSON(content)
+	if jsonStr != "" {
+		var result katypes.InvestigationResult
+		if err := json.Unmarshal([]byte(jsonStr), &result); err == nil && (result.RCASummary != "" || result.WorkflowID != "") {
+			// BR-HAPI-200: Clear any HR fields populated by json.Unmarshal via
+			// the "human_review_reason" tag match. HR is parser-derived only.
+			result.HumanReviewNeeded = false
+			result.HumanReviewReason = ""
+			var flat flatLLMFields
+			_ = json.Unmarshal([]byte(jsonStr), &flat)
+			applyFlatFields(&result, flat)
+			mergeNestedRemediationTarget(&result, jsonStr)
+			mergeNestedInvestigationAnalysis(&result, jsonStr)
+			applyOutcomeRouting(&result)
+			return &result, nil
+		}
+
+		if parsed, err := parseLLMFormat(jsonStr); err == nil {
+			applyOutcomeRouting(parsed)
+			return parsed, nil
+		}
+	}
+
+	if parsed, err := parseSectionHeaders(content); err == nil {
+		applyOutcomeRouting(parsed)
+		return parsed, nil
+	}
+
 	if jsonStr == "" {
 		return nil, fmt.Errorf("no JSON found in response")
 	}
-
-	var result katypes.InvestigationResult
-	if err := json.Unmarshal([]byte(jsonStr), &result); err == nil && (result.RCASummary != "" || result.WorkflowID != "") {
-		var flat flatLLMFields
-		_ = json.Unmarshal([]byte(jsonStr), &flat)
-		applyFlatFields(&result, flat)
-		mergeNestedRemediationTarget(&result, jsonStr)
-		applyOutcomeRouting(&result)
-		return &result, nil
-	}
-
-	parsed, err := parseLLMFormat(jsonStr)
-	if err != nil {
-		return nil, err
-	}
-	applyOutcomeRouting(parsed)
-	return parsed, nil
+	return nil, fmt.Errorf("no recognized fields in LLM JSON response")
 }
 
 // extractJSON finds JSON content using a priority chain:
@@ -166,8 +181,6 @@ type llmResponse struct {
 	Confidence           float64           `json:"confidence,omitempty"`
 	Actionable           *bool             `json:"actionable,omitempty"`
 	InvestigationOutcome string            `json:"investigation_outcome,omitempty"`
-	NeedsHumanReview     *bool             `json:"needs_human_review,omitempty"`
-	HumanReviewReason    string            `json:"human_review_reason,omitempty"`
 	DetectedLabels       map[string]interface{} `json:"detected_labels,omitempty"`
 }
 
@@ -178,12 +191,13 @@ type llmAlternative struct {
 }
 
 type llmRCA struct {
-	Summary              string        `json:"summary"`
-	Severity             string        `json:"severity,omitempty"`
-	SignalName           string        `json:"signal_name,omitempty"`
-	ContributingFactors  []string      `json:"contributing_factors,omitempty"`
-	RemediationTarget    *llmRemTarget `json:"remediation_target,omitempty"`
-	RemediationTargetAlt *llmRemTarget `json:"remediationTarget,omitempty"`
+	Summary               string        `json:"summary"`
+	Severity              string        `json:"severity,omitempty"`
+	SignalName            string        `json:"signal_name,omitempty"`
+	ContributingFactors   []string      `json:"contributing_factors,omitempty"`
+	RemediationTarget     *llmRemTarget `json:"remediation_target,omitempty"`
+	RemediationTargetAlt  *llmRemTarget `json:"remediationTarget,omitempty"`
+	InvestigationAnalysis string        `json:"investigation_analysis,omitempty"`
 }
 
 func (r *llmRCA) resolvedTarget() *llmRemTarget {
@@ -214,8 +228,6 @@ type flatLLMFields struct {
 	Severity             string `json:"severity,omitempty"`
 	Actionable           *bool  `json:"actionable,omitempty"`
 	InvestigationOutcome string `json:"investigation_outcome,omitempty"`
-	NeedsHumanReview     *bool  `json:"needs_human_review,omitempty"`
-	HumanReviewReason    string `json:"human_review_reason,omitempty"`
 }
 
 // parseLLMFormat parses the nested LLM response format and converts
@@ -232,6 +244,7 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 		result.Severity = resp.RCA.Severity
 		result.SignalName = resp.RCA.SignalName
 		result.ContributingFactors = resp.RCA.ContributingFactors
+		result.InvestigationAnalysis = resp.RCA.InvestigationAnalysis
 		if t := resp.RCA.resolvedTarget(); t != nil {
 			result.RemediationTarget = katypes.RemediationTarget{
 				Kind:      t.Kind,
@@ -278,8 +291,6 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 		Severity:             resp.Severity,
 		Actionable:           resp.Actionable,
 		InvestigationOutcome: resp.InvestigationOutcome,
-		NeedsHumanReview:     resp.NeedsHumanReview,
-		HumanReviewReason:    resp.HumanReviewReason,
 	})
 
 	if len(resp.DetectedLabels) > 0 {
@@ -291,6 +302,117 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 	}
 
 	return result, nil
+}
+
+// parseSectionHeaders handles the "# header\nvalue" format produced by LLMs when
+// structured output (output_config) is unavailable (e.g. Vertex AI).
+// The prompt instructs:
+//
+//	# root_cause_analysis
+//	{"summary": "...", ...}
+//	# confidence
+//	0.95
+//	# selected_workflow
+//	{"workflow_id": "...", ...}
+//	# alternative_workflows
+//	[{"workflow_id": "...", ...}]
+//
+// This function extracts each section's content, assembles an llmResponse,
+// and maps it to InvestigationResult via parseLLMFormat.
+func parseSectionHeaders(content string) (*katypes.InvestigationResult, error) {
+	sections := extractSections(content)
+	if len(sections) == 0 {
+		return nil, fmt.Errorf("no section headers found")
+	}
+
+	assembled := make(map[string]json.RawMessage)
+
+	for header, body := range sections {
+		body = strings.TrimSpace(body)
+		if body == "" {
+			continue
+		}
+
+		// Arrays (e.g. alternative_workflows) must be preserved as-is.
+		// extractJSON only finds objects, so it would strip the enclosing [].
+		if body[0] == '[' {
+			assembled[header] = json.RawMessage(body)
+			continue
+		}
+
+		jsonBody := extractJSON(body)
+		if jsonBody != "" {
+			assembled[header] = json.RawMessage(jsonBody)
+			continue
+		}
+		// Scalar values: numbers ("0.95"), booleans ("true"/"false"), or strings ("critical")
+		quotedOrRaw := body
+		if quotedOrRaw != "true" && quotedOrRaw != "false" && quotedOrRaw != "null" {
+			if len(quotedOrRaw) > 0 && quotedOrRaw[0] != '"' {
+				if _, err := json.Number(quotedOrRaw).Float64(); err != nil {
+					quotedOrRaw = `"` + strings.ReplaceAll(quotedOrRaw, `"`, `\"`) + `"`
+				}
+			}
+		}
+		assembled[header] = json.RawMessage(quotedOrRaw)
+	}
+
+	if len(assembled) == 0 {
+		return nil, fmt.Errorf("no parseable section content found")
+	}
+
+	compositeJSON, err := json.Marshal(assembled)
+	if err != nil {
+		return nil, fmt.Errorf("assembling section headers: %w", err)
+	}
+
+	return parseLLMFormat(string(compositeJSON))
+}
+
+// extractSections splits content on lines matching "# <header_name>" and returns
+// a map of header → body text. Recognizes headers with and without markdown fencing.
+func extractSections(content string) map[string]string {
+	knownHeaders := map[string]bool{
+		"root_cause_analysis":   true,
+		"selected_workflow":     true,
+		"alternative_workflows": true,
+		"confidence":            true,
+		"severity":              true,
+		"actionable":            true,
+		"investigation_outcome": true,
+		"detected_labels":       true,
+	}
+
+	sections := make(map[string]string)
+	lines := strings.Split(content, "\n")
+	var currentHeader string
+	var currentBody strings.Builder
+
+	flush := func() {
+		if currentHeader != "" {
+			sections[currentHeader] = currentBody.String()
+		}
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "# ") {
+			candidate := strings.TrimSpace(trimmed[2:])
+			if knownHeaders[candidate] {
+				flush()
+				currentHeader = candidate
+				currentBody.Reset()
+				continue
+			}
+		}
+		if currentHeader != "" {
+			currentBody.WriteString(line)
+			currentBody.WriteString("\n")
+		}
+	}
+	flush()
+
+	return sections
 }
 
 // mergeNestedRemediationTarget checks for a nested root_cause_analysis.remediation_target
@@ -314,10 +436,24 @@ func mergeNestedRemediationTarget(result *katypes.InvestigationResult, jsonStr s
 	}
 }
 
+// mergeNestedInvestigationAnalysis extracts investigation_analysis from a nested
+// root_cause_analysis object when the flat parse path succeeded but the field
+// is empty. Handles hybrid JSON where the LLM returns flat rca_summary alongside
+// a nested RCA containing investigation_analysis (#724 F2).
+func mergeNestedInvestigationAnalysis(result *katypes.InvestigationResult, jsonStr string) {
+	if result.InvestigationAnalysis != "" {
+		return
+	}
+	var resp llmResponse
+	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil || resp.RCA == nil {
+		return
+	}
+	result.InvestigationAnalysis = resp.RCA.InvestigationAnalysis
+}
+
 // applyFlatFields applies LLM-provided flat fields to the result:
 // - actionable: sets IsActionable, synthesizes warning, applies confidence floor
-// - investigation_outcome: maps to outcome routing fields
-// - needs_human_review / human_review_reason: propagates directly
+// - investigation_outcome: maps to outcome routing fields (HR is derived, not propagated)
 func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 	if flat.Severity != "" && result.Severity == "" {
 		result.Severity = flat.Severity
@@ -340,30 +476,25 @@ func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 	}
 
 	if flat.InvestigationOutcome != "" {
-		applyInvestigationOutcome(result, flat.InvestigationOutcome)
+		result.InvestigationOutcome = flat.InvestigationOutcome
+		ApplyInvestigationOutcome(result, flat.InvestigationOutcome)
 	}
 
-	if flat.NeedsHumanReview != nil && *flat.NeedsHumanReview {
-		result.HumanReviewNeeded = true
-		if flat.HumanReviewReason != "" {
-			result.HumanReviewReason = flat.HumanReviewReason
-		}
-	}
-
-	// #301: Contradiction override — when the LLM says the problem is resolved
-	// but also sets needs_human_review=true, the resolution takes precedence.
-	// Python KA enforced this; KA must match for AA parity.
+	// #301: Contradiction override — when the outcome is problem_resolved but
+	// the parser-derived HR was set (e.g., via inconclusive outcome fallback),
+	// the resolution takes precedence. Defense-in-depth per HAPI parity.
 	if flat.InvestigationOutcome == "problem_resolved" && result.HumanReviewNeeded {
 		result.HumanReviewNeeded = false
 		result.HumanReviewReason = ""
 	}
 }
 
-// applyInvestigationOutcome maps KA-style investigation_outcome values
+// ApplyInvestigationOutcome maps KA-style investigation_outcome values
 // to is_actionable/needs_human_review/human_review_reason fields.
+// Exported for use by the investigator when merging Phase 1 fallbacks (#715).
 // H5-fix: explicit `actionable` field takes precedence — only set IsActionable
 // from outcome when the `actionable` field was absent.
-func applyInvestigationOutcome(result *katypes.InvestigationResult, outcome string) {
+func ApplyInvestigationOutcome(result *katypes.InvestigationResult, outcome string) {
 	switch outcome {
 	case "problem_resolved":
 		if result.IsActionable == nil {
@@ -383,7 +514,11 @@ func applyInvestigationOutcome(result *katypes.InvestigationResult, outcome stri
 	case "inconclusive":
 		result.HumanReviewNeeded = true
 		if result.HumanReviewReason == "" {
-			result.HumanReviewReason = "investigation_inconclusive"
+			if result.RCASummary != "" && result.WorkflowID == "" {
+				result.HumanReviewReason = "no_matching_workflows"
+			} else {
+				result.HumanReviewReason = "investigation_inconclusive"
+			}
 		}
 	case "actionable":
 		if result.IsActionable == nil {

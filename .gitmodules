@@ -1,3 +1,0 @@
-[submodule "dependencies/holmesgpt"]
-	path = dependencies/holmesgpt
-	url = https://github.com/robusta-dev/holmesgpt.git

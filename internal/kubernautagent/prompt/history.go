@@ -29,6 +29,15 @@ import (
 // remediations before the LLM is warned to escalate (KA constants.py:92).
 const RepeatedRemediationEscalationThreshold = 2
 
+// completedOutcomes defines which RR outcome values indicate a remediation that
+// "completed" from the orchestrator's perspective. Used by recurring detection and
+// all-zero-effectiveness logic to identify remediations that ran to completion.
+// Issue #722: Added "Remediated" and "Inconclusive" (CRD-level outcomes).
+var completedOutcomes = map[string]bool{
+	"completed": true, "success": true, "Completed": true, "Success": true,
+	"Remediated": true, "Inconclusive": true,
+}
+
 // HistoryEntry is a unified interface for detection algorithms that operate on
 // both Tier1 and Tier2 entries (recurring detection, all-zero-effectiveness).
 type HistoryEntry struct {
@@ -101,15 +110,17 @@ func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult,
 			recurringWarnings = append(recurringWarnings, fmt.Sprintf(
 				"**MANDATORY: You MUST NOT re-select '%s' for signal "+
 					"'%s'.** This workflow has been applied %d times with "+
-					"zero effectiveness -- the signal continues to recur. Escalate to "+
-					"`needs_human_review` or select a fundamentally different remediation approach.",
+					"zero effectiveness -- the signal continues to recur. Set "+
+					"`investigation_outcome` to `inconclusive` and omit `selected_workflow`, "+
+					"or select a fundamentally different remediation approach.",
 				r.ActionType, r.SignalType, r.Count,
 			))
 		} else {
 			recurringWarnings = append(recurringWarnings, fmt.Sprintf(
 				"**WARNING: REPEATED INEFFECTIVE REMEDIATION for '%s'** -- "+
 					"Completed %d times for signal '%s' but the issue continues "+
-					"to recur. Escalate to `needs_human_review` or an alternative approach.",
+					"to recur. Set `investigation_outcome` to `inconclusive` and omit "+
+					"`selected_workflow`, or select an alternative approach.",
 				r.ActionType, r.Count, r.SignalType,
 			))
 		}
@@ -332,9 +343,6 @@ func DetectDecliningEffectiveness(chain []enrichment.Tier1Entry) []string {
 // multiple times for the same signal type across all tiers.
 // 1:1 port of KA _detect_completed_but_recurring().
 func DetectCompletedButRecurring(entries []HistoryEntry, threshold int) []RecurringPattern {
-	completedOutcomes := map[string]bool{
-		"completed": true, "success": true, "Completed": true, "Success": true,
-	}
 
 	type key struct{ actionType, signalType string }
 	counts := make(map[key]int)
@@ -368,9 +376,6 @@ func DetectCompletedButRecurring(entries []HistoryEntry, threshold int) []Recurr
 // action+signal combination have zero (or nil) effectiveness and unresolved signal.
 // 1:1 port of KA _all_zero_effectiveness().
 func AllZeroEffectiveness(entries []HistoryEntry, actionType, signalType string) bool {
-	completedOutcomes := map[string]bool{
-		"completed": true, "success": true, "Completed": true, "Success": true,
-	}
 
 	matched := false
 	for _, e := range entries {

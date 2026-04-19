@@ -695,7 +695,7 @@ spec:
       includeHistoricalPatterns: true
 
   holmesGPTConfig:
-    endpoint: "http://holmesgpt-api:8090"
+    endpoint: "http://kubernaut-agent:8090"
     toolsets:
     - "kubernetes"
     - "prometheus"

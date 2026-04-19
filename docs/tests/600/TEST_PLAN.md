@@ -223,7 +223,7 @@ Format: `UT-HAPI-600-{SEQUENCE}` (all unit tier, HAPI service)
 **BR**: BR-AUDIT-005
 **Priority**: P0
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_tool_call_audit_serialization.py`
+**File**: `kubernaut-agent/tests/unit/test_tool_call_audit_serialization.py`
 
 **Preconditions**:
 - `ToolCallResult` constructed with `tool_name="kubectl_describe"`
@@ -247,7 +247,7 @@ Format: `UT-HAPI-600-{SEQUENCE}` (all unit tier, HAPI service)
 **BR**: BR-AUDIT-005
 **Priority**: P0
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_tool_call_audit_serialization.py`
+**File**: `kubernaut-agent/tests/unit/test_tool_call_audit_serialization.py`
 
 **Preconditions**:
 - `ToolCallResult` with `result.params={"namespace": "default", "name": "api-gateway"}`
@@ -363,7 +363,7 @@ Format: `UT-HAPI-600-{SEQUENCE}` (all unit tier, HAPI service)
 - **Framework**: pytest (HAPI Python service convention)
 - **Mocks**: `MagicMock` for audit_store only (external I/O)
 - **Real objects**: `ToolCallResult`, `StructuredToolResult`, `InvestigationResult` from `holmes.core.models`
-- **Location**: `holmesgpt-api/tests/unit/test_tool_call_audit_serialization.py`
+- **Location**: `kubernaut-agent/tests/unit/test_tool_call_audit_serialization.py`
 
 ### 10.2 Tools & Versions
 
@@ -398,7 +398,7 @@ Format: `UT-HAPI-600-{SEQUENCE}` (all unit tier, HAPI service)
 | Deliverable | Location | Description |
 |-------------|----------|-------------|
 | This test plan | `docs/tests/600/TEST_PLAN.md` | Strategy, blast radius analysis, and test design |
-| Unit test suite | `holmesgpt-api/tests/unit/test_tool_call_audit_serialization.py` | 11 pytest tests (4 P0 + 7 P1) |
+| Unit test suite | `kubernaut-agent/tests/unit/test_tool_call_audit_serialization.py` | 11 pytest tests (4 P0 + 7 P1) |
 
 ---
 
@@ -406,7 +406,7 @@ Format: `UT-HAPI-600-{SEQUENCE}` (all unit tier, HAPI service)
 
 ```bash
 # All #600 tests
-cd holmesgpt-api
+cd kubernaut-agent
 source venv/bin/activate
 PYTHONPATH="$PWD/src:$PWD/src/clients:$PWD/../dependencies/holmesgpt" \
   python -m pytest tests/unit/test_tool_call_audit_serialization.py -v --no-cov

@@ -77,7 +77,7 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 		return prodcontroller.WFECreationCallbacks{
 			EmitWorkflowCreatedAudit: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {},
 			CreateWFE:                func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) { return "wfe-test", nil },
-			ResolveWorkflowName:      func(_ context.Context, workflowID string) string { return workflowID },
+			ResolveWorkflowDisplay:   func(_ context.Context, workflowID string) (string, string) { return "", workflowID },
 		}
 	}
 
@@ -154,8 +154,8 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 		cbs.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
 			return "wfe-created", nil
 		}
-		cbs.ResolveWorkflowName = func(_ context.Context, workflowID string) string {
-			return "Human-Friendly-" + workflowID
+		cbs.ResolveWorkflowDisplay = func(_ context.Context, workflowID string) (string, string) {
+			return "TestAction", "Human-Friendly-" + workflowID
 		}
 
 		_, err := prodcontroller.CreateWFEAndTransition(ctx, c, m, rr, ai, "hash456", cbs)

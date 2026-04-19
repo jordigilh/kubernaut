@@ -380,14 +380,16 @@ func (m *Manager) BuildCompletionEvent(
 	audit.SetDuration(event, int(durationMs))
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
-	// Note: `outcome` parameter is CRD-level (Remediated/NoActionRequired/ManualReviewRequired)
-	// but OpenAPI enum expects ["Success", "Failed", "Pending"] - always use "Success" for completion events
+	// Note: `outcome` parameter is CRD-level (Remediated/NoActionRequired/ManualReviewRequired/Inconclusive)
+	// but OpenAPI enum expects ["Success", "Failed", "Pending"] - always use "Success" for completion events.
+	// Issue #722: crd_outcome carries the actual CRD-level outcome for KA correlation.
 	payload := api.RemediationOrchestratorAuditPayload{
 		EventType:  api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted,
 		Outcome:    api.OptRemediationOrchestratorAuditPayloadOutcome{Value: api.RemediationOrchestratorAuditPayloadOutcomeSuccess, Set: true},
 		DurationMs: api.OptInt64{Value: durationMs, Set: true},
 		Namespace:  namespace,
 		RrName:     rrName,
+		CrdOutcome: api.OptString{Value: outcome, Set: outcome != ""},
 	}
 	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData(payload)
 
@@ -679,24 +681,23 @@ const ActionWorkflowCreated = "workflow_created"
 
 // RemediationWorkflowCreatedData holds the pre-remediation context for audit.
 type RemediationWorkflowCreatedData struct {
-	PreRemediationSpecHash string `json:"pre_remediation_spec_hash"`
-	TargetResource         string `json:"target_resource"`
-	WorkflowID             string `json:"workflow_id"`
-	WorkflowVersion        string `json:"workflow_version,omitempty"`
+	PreRemediationSpecHash string
+	TargetResource         string
+	WorkflowID             string
+	WorkflowVersion        string
+	ActionType             string
+	SignalType             string
+	SignalFingerprint      string
 }
 
 // BuildRemediationWorkflowCreatedEvent builds an audit event capturing the
 // pre-remediation spec hash before workflow execution begins (DD-EM-002).
-// actionType is the DD-WORKFLOW-016 action_type (e.g., "ScaleReplicas", "RestartPod").
+// Issue #722: Accepts RemediationWorkflowCreatedData struct for clean parameterization.
 func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
-	preRemediationSpecHash string,
-	targetResource string,
-	workflowID string,
-	workflowVersion string,
-	actionType string,
+	data RemediationWorkflowCreatedData,
 ) (*api.AuditEventRequest, error) {
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -713,16 +714,22 @@ func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 		EventType:              api.RemediationOrchestratorAuditPayloadEventTypeRemediationWorkflowCreated,
 		RrName:                 rrName,
 		Namespace:              namespace,
-		PreRemediationSpecHash: api.OptString{Value: preRemediationSpecHash, Set: true},
-		TargetResource:         api.OptString{Value: targetResource, Set: true},
-		WorkflowID:             api.OptString{Value: workflowID, Set: true},
+		PreRemediationSpecHash: api.OptString{Value: data.PreRemediationSpecHash, Set: true},
+		TargetResource:         api.OptString{Value: data.TargetResource, Set: true},
+		WorkflowID:             api.OptString{Value: data.WorkflowID, Set: true},
 	}
 
-	if workflowVersion != "" {
-		payload.WorkflowVersion = api.OptString{Value: workflowVersion, Set: true}
+	if data.WorkflowVersion != "" {
+		payload.WorkflowVersion = api.OptString{Value: data.WorkflowVersion, Set: true}
 	}
-	if actionType != "" {
-		payload.ActionType = api.OptString{Value: actionType, Set: true}
+	if data.ActionType != "" {
+		payload.ActionType = api.OptString{Value: data.ActionType, Set: true}
+	}
+	if data.SignalType != "" {
+		payload.SignalType = api.OptString{Value: data.SignalType, Set: true}
+	}
+	if data.SignalFingerprint != "" {
+		payload.SignalFingerprint = api.OptString{Value: data.SignalFingerprint, Set: true}
 	}
 
 	event.EventData = api.NewAuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData(payload)

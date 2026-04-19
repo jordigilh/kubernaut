@@ -33,9 +33,9 @@ Each CRD controller runs as a separate microservice with its own binary:
 
 | Directory | Service | Description |
 |-----------|---------|-------------|
-| `holmesgpt-api/` (repo root) | Kubernaut Agent (KA) | LLM-powered root cause analysis |
+| `kubernaut-agent/` (repo root) | Kubernaut Agent (KA) | LLM-powered root cause analysis |
 
-> **Note**: `holmesgpt-api/` lives at the repository root, not under `cmd/`.
+> **Note**: `kubernaut-agent/` lives at the repository root, not under `cmd/`.
 
 ### **Container Images / Tools**
 
@@ -116,13 +116,13 @@ make build-all
 
 ```bash
 # Local development
-make build-holmesgpt-api
+make build-kubernaut-agent
 
 # Docker image (production)
-make build-holmesgpt-api-image
+make build-kubernaut-agent-image
 
 # Docker image (E2E, minimal deps)
-make build-holmesgpt-api-image-e2e
+make build-kubernaut-agent-image-e2e
 ```
 
 ---
@@ -147,7 +147,7 @@ make image-build-datastorage
 make image-build-authwebhook
 
 # HolmesGPT-API (separate target)
-make image-build-holmesgpt-api
+make image-build-kubernaut-agent
 ```
 
 Dockerfile mappings (from `docker/`):
@@ -163,7 +163,7 @@ Dockerfile mappings (from `docker/`):
 | effectivenessmonitor | `docker/effectivenessmonitor-controller.Dockerfile` |
 | notification | `docker/notification-controller.Dockerfile` |
 | authwebhook | `docker/authwebhook.Dockerfile` |
-| holmesgpt-api | `holmesgpt-api/Dockerfile` |
+| kubernaut-agent | `kubernaut-agent/Dockerfile` |
 
 ---
 
@@ -187,7 +187,7 @@ Chart templates (in `charts/kubernaut/templates/`):
 - `workflowexecution/workflowexecution.yaml`
 - `effectivenessmonitor/effectivenessmonitor.yaml`
 - `notification/notification.yaml`
-- `holmesgpt-api/holmesgpt-api.yaml`
+- `kubernaut-agent/kubernaut-agent.yaml`
 
 ---
 

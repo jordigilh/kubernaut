@@ -22,7 +22,7 @@ Secrets/configmaps access is namespace-scoped via Roles, not cluster-wide via Cl
 | **Notification** | `kubernaut-system` | `notification-controller` | RBAC-isolated via namespace-scoped Role (#229) |
 | **AuthWebhook** | `kubernaut-system` | `authwebhook-sa` | Auth webhook handler |
 | **SignalProcessing** | `kubernaut-system` | `signalprocessing-controller` | Signal processing |
-| **HolmesGPT API** | `kubernaut-system` | `holmesgpt-api-sa` | HolmesGPT API service |
+| **HolmesGPT API** | `kubernaut-system` | `kubernaut-agent-sa` | HolmesGPT API service |
 | **DataStorage** | `kubernaut-system` | `data-storage-sa` | DataStorage service (self-audit) |
 
 ---

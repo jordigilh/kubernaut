@@ -547,9 +547,9 @@ var _ = Describe("Self-Documenting JSON Format", func() {
 - `docs/architecture/SAFETY_AWARE_INVESTIGATION_PATTERN.md`
 - `docs/services/crd-controllers/02-aianalysis/prompt-engineering-dependencies.md`
 - `docs/services/crd-controllers/02-aianalysis/controller-implementation.md`
-- `docs/services/stateless/holmesgpt-api/api-specification.md`
+- `docs/services/stateless/kubernaut-agent/api-specification.md`
 - `docs/services/crd-controllers/02-aianalysis/integration-points.md`
-- `holmesgpt-api/SPECIFICATION.md`
+- `kubernaut-agent/SPECIFICATION.md`
 
 ---
 

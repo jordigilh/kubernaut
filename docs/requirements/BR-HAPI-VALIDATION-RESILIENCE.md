@@ -138,7 +138,7 @@ Set HOLMESGPT_DEV_MODE=true to skip validation (development only)
 
 | Toolset | Error Type | Troubleshooting Guidance |
 |---------|-----------|-------------------------|
-| **kubernetes** | RBAC denied | "Ensure ServiceAccount has ClusterRole 'holmesgpt-api-kubernetes-toolset'. See RBAC section in 08-holmesgpt-api.md" |
+| **kubernetes** | RBAC denied | "Ensure ServiceAccount has ClusterRole 'kubernaut-agent-kubernetes-toolset'. See RBAC section in 08-kubernaut-agent.md" |
 | **kubernetes** | API unreachable | "Check KUBERNETES_IN_CLUSTER setting and API server connectivity" |
 | **prometheus** | Connection failed | "Check Prometheus service is running and PROMETHEUS_URL is correct: {url}" |
 | **prometheus** | HTTP 404 | "Prometheus endpoint not found. Verify PROMETHEUS_URL: {url}" |
@@ -156,8 +156,8 @@ Set HOLMESGPT_DEV_MODE=true to skip validation (development only)
 - Timeout errors: Include timeout duration
 
 **AC3**: kubernetes toolset errors include ServiceAccount and ClusterRole names
-- ServiceAccount: `holmesgpt-api`
-- ClusterRole: `holmesgpt-api-kubernetes-toolset`
+- ServiceAccount: `kubernaut-agent`
+- ClusterRole: `kubernaut-agent-kubernetes-toolset`
 - Namespace: `kubernaut-system`
 
 **AC4**: prometheus/grafana errors include endpoint URL
@@ -166,7 +166,7 @@ Set HOLMESGPT_DEV_MODE=true to skip validation (development only)
 
 **AC5**: Error message includes documentation reference
 - Format: `"See {section} in {file}"`
-- Example: `"See RBAC section in 08-holmesgpt-api.md"`
+- Example: `"See RBAC section in 08-kubernaut-agent.md"`
 
 **AC6**: Error message suggests dev mode override
 - Footer: `"Set HOLMESGPT_DEV_MODE=true to skip validation (development only)"`
@@ -183,15 +183,15 @@ Set HOLMESGPT_DEV_MODE=true to skip validation (development only)
     {
       "toolset": "kubernetes",
       "failure_reason": "RBAC permission denied for 'list pods'",
-      "troubleshooting": "Ensure ServiceAccount has ClusterRole 'holmesgpt-api-kubernetes-toolset'",
-      "documentation": "See RBAC section in 08-holmesgpt-api.md",
+      "troubleshooting": "Ensure ServiceAccount has ClusterRole 'kubernaut-agent-kubernetes-toolset'",
+      "documentation": "See RBAC section in 08-kubernaut-agent.md",
       "timestamp": "2025-01-15T10:30:00Z"
     },
     {
       "toolset": "prometheus",
       "failure_reason": "Connection failed to http://prometheus:9090",
       "troubleshooting": "Check Prometheus service is running and network connectivity",
-      "documentation": "See Configuration section in 08-holmesgpt-api.md",
+      "documentation": "See Configuration section in 08-kubernaut-agent.md",
       "timestamp": "2025-01-15T10:30:01Z"
     }
   ],
@@ -756,9 +756,9 @@ holmesgpt_dev_mode_enabled = Gauge(
 ### Documentation Updates
 
 **Files to Update**:
-1. `docs/services/stateless/08-holmesgpt-api.md` - Add BR references in relevant sections
+1. `docs/services/stateless/08-kubernaut-agent.md` - Add BR references in relevant sections
 2. `docs/requirements/README.md` - Add BR-HAPI-186 to BR-HAPI-191 to BR index
-3. `docker/holmesgpt-api/README.md` - Document HOLMESGPT_DEV_MODE and TOOLSET_MAX_FAILURES_BEFORE_RELOAD
+3. `docker/kubernaut-agent/README.md` - Document HOLMESGPT_DEV_MODE and TOOLSET_MAX_FAILURES_BEFORE_RELOAD
 
 ---
 
@@ -771,7 +771,7 @@ holmesgpt_dev_mode_enabled = Gauge(
 
 **Next Steps**:
 1. ✅ Create implementation tasks in project tracker
-2. ✅ Update `08-holmesgpt-api.md` with BR references
+2. ✅ Update `08-kubernaut-agent.md` with BR references
 3. ✅ Create testing strategy document
 4. ✅ Begin Phase 1 implementation (BR-HAPI-186)
 

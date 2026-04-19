@@ -127,7 +127,7 @@ integration and E2E tiers to reach >=80% per-tier coverage.
 
 ## 3. HAPI Integration Tests
 
-**File**: `holmesgpt-api/tests/integration/test_remediation_history_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_remediation_history_integration.py`
 **Infrastructure**: Direct function calls, env patching, mock pool manager
 **Pattern**: Same as `test_llm_prompt_business_logic.py`
 

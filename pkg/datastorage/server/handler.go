@@ -91,6 +91,7 @@ type WorkflowContentIntegrityRepository interface {
 	GetActiveByWorkflowName(ctx context.Context, workflowName string) (*models.RemediationWorkflow, error)
 	GetLatestDisabledByNameAndVersion(ctx context.Context, workflowName, version string) (*models.RemediationWorkflow, error)
 	UpdateStatus(ctx context.Context, workflowID, version, status, reason, updatedBy string) error
+	SupersedeAndCreate(ctx context.Context, oldID, oldVersion, reason string, newWorkflow *models.RemediationWorkflow) error
 }
 
 // ActionTypeValidator validates action types against the taxonomy before DB insertion.

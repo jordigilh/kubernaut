@@ -1,6 +1,6 @@
 # Kubernaut Agent Service - Multi-Architecture Dockerfile (ADR-027)
 #
-# Replaces holmesgpt-api (Python) with native Go implementation (#433).
+# Replaces kubernaut-agent (Python) with native Go implementation (#433).
 #
 # Build targets (Issue #80):
 #   production:  scratch runtime -- zero CVE surface, no shell (release.yml)
@@ -72,7 +72,7 @@ LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
 	org.opencontainers.image.title="kubernaut-agent" \
-	org.opencontainers.image.description="AI-powered incident investigation agent replacing holmesgpt-api with native Go, LangChainGo, and client-go toolset." \
+	org.opencontainers.image.description="AI-powered incident investigation agent replacing kubernaut-agent with native Go, LangChainGo, and client-go toolset." \
 	org.opencontainers.image.vendor="Kubernaut"
 LABEL name="kubernaut-agent" \
 	vendor="Kubernaut" \
@@ -108,5 +108,5 @@ LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
 	org.opencontainers.image.revision="${GIT_COMMIT}" \
 	org.opencontainers.image.created="${BUILD_DATE}" \
 	org.opencontainers.image.title="kubernaut-agent" \
-	org.opencontainers.image.description="AI-powered incident investigation agent replacing holmesgpt-api with native Go, LangChainGo, and client-go toolset." \
+	org.opencontainers.image.description="AI-powered incident investigation agent replacing kubernaut-agent with native Go, LangChainGo, and client-go toolset." \
 	org.opencontainers.image.vendor="Kubernaut"

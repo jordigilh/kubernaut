@@ -26,7 +26,7 @@ spec:
       serviceAccountName: kubernaut-holmesgpt
       containers:
       - name: holmesgpt
-        image: kubernaut/holmesgpt-api:latest
+        image: kubernaut/kubernaut-agent:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8090

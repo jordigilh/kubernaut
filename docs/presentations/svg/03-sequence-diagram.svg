@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" font-family="Inter, Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="960" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#EFF6FF"/>
+    </linearGradient>
+    <linearGradient id="tealGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0D9488"/>
+      <stop offset="100%" stop-color="#0F766E"/>
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </linearGradient>
+    <linearGradient id="slateGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#475569"/>
+      <stop offset="100%" stop-color="#334155"/>
+    </linearGradient>
+    <filter id="shadow" x="-4%" y="-8%" width="108%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#1E293B" flood-opacity="0.1"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="540" fill="url(#bgGrad)"/>
+
+  <!-- Title -->
+  <text x="480" y="36" text-anchor="middle" font-size="22" font-weight="700" fill="#1E293B">What happens behind the scenes</text>
+
+  <!-- Column headers -->
+  <!-- Your UI -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="56" width="140" height="36" rx="8" fill="url(#slateGrad)"/>
+  </g>
+  <text x="140" y="80" text-anchor="middle" font-size="12" font-weight="600" fill="white">Your UI</text>
+
+  <!-- Your Agent -->
+  <g filter="url(#shadow)">
+    <rect x="370" y="56" width="140" height="36" rx="8" fill="url(#tealGrad)"/>
+  </g>
+  <text x="440" y="80" text-anchor="middle" font-size="12" font-weight="600" fill="white">Your Agent</text>
+
+  <!-- Kubernaut -->
+  <g filter="url(#shadow)">
+    <rect x="670" y="56" width="180" height="36" rx="8" fill="url(#blueGrad)"/>
+  </g>
+  <text x="760" y="80" text-anchor="middle" font-size="12" font-weight="600" fill="white">Kubernaut (MCP)</text>
+
+  <!-- Lifelines -->
+  <line x1="140" y1="92" x2="140" y2="510" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <line x1="440" y1="92" x2="440" y2="510" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <line x1="760" y1="92" x2="760" y2="510" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="6,4"/>
+
+  <!-- Step 1: User asks -->
+  <g>
+    <line x1="140" y1="116" x2="430" y2="116" stroke="#334155" stroke-width="1.5"/>
+    <polygon points="430,116 422,111 422,121" fill="#334155"/>
+    <rect x="192" y="102" width="176" height="20" rx="4" fill="#E0F2FE"/>
+    <text x="280" y="116" text-anchor="middle" font-size="10" fill="#0C4A6E">"What's going on with payments?"</text>
+  </g>
+
+  <!-- Step 2: Agent calls investigate -->
+  <g>
+    <line x1="440" y1="148" x2="750" y2="148" stroke="#0D9488" stroke-width="1.5"/>
+    <polygon points="750,148 742,143 742,153" fill="#0D9488"/>
+    <rect x="510" y="134" width="164" height="20" rx="4" fill="#F0FDFA"/>
+    <text x="592" y="148" text-anchor="middle" font-size="10" font-weight="600" fill="#0F766E">kubernaut_investigate</text>
+  </g>
+
+  <!-- Step 3: Kubernaut works -->
+  <rect x="720" y="166" width="80" height="68" rx="6" fill="#EFF6FF" stroke="#2563EB" stroke-width="1" opacity="0.7"/>
+  <g font-size="9" fill="#1D4ED8">
+    <text x="734" y="182">inspect pods</text>
+    <text x="734" y="196">pull logs</text>
+    <text x="734" y="210">query metrics</text>
+    <text x="734" y="224">LLM analysis</text>
+  </g>
+
+  <!-- Step 4: SSE stream back -->
+  <g>
+    <line x1="750" y1="248" x2="450" y2="248" stroke="#2563EB" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <polygon points="450,248 458,243 458,253" fill="#2563EB"/>
+    <rect x="530" y="234" width="140" height="20" rx="4" fill="#EFF6FF"/>
+    <text x="600" y="248" text-anchor="middle" font-size="10" font-weight="600" fill="#1D4ED8">SSE: findings stream</text>
+  </g>
+
+  <!-- Step 5: Agent renders to UI -->
+  <g>
+    <line x1="430" y1="268" x2="150" y2="268" stroke="#334155" stroke-width="1.5"/>
+    <polygon points="150,268 158,263 158,273" fill="#334155"/>
+    <rect x="214" y="254" width="144" height="20" rx="4" fill="#F1F5F9"/>
+    <text x="286" y="268" text-anchor="middle" font-size="10" fill="#475569">streamed to user</text>
+  </g>
+
+  <!-- Step 6: User asks to fix -->
+  <g>
+    <line x1="140" y1="300" x2="430" y2="300" stroke="#334155" stroke-width="1.5"/>
+    <polygon points="430,300 422,295 422,305" fill="#334155"/>
+    <rect x="226" y="286" width="112" height="20" rx="4" fill="#E0F2FE"/>
+    <text x="282" y="300" text-anchor="middle" font-size="10" fill="#0C4A6E">"Can you fix it?"</text>
+  </g>
+
+  <!-- Step 7: Enrich + select workflow -->
+  <g>
+    <line x1="440" y1="328" x2="750" y2="328" stroke="#0D9488" stroke-width="1.5"/>
+    <polygon points="750,328 742,323 742,333" fill="#0D9488"/>
+    <rect x="524" y="314" width="140" height="20" rx="4" fill="#F0FDFA"/>
+    <text x="594" y="328" text-anchor="middle" font-size="10" font-weight="600" fill="#0F766E">kubernaut_enrich</text>
+  </g>
+
+  <g>
+    <line x1="440" y1="352" x2="750" y2="352" stroke="#0D9488" stroke-width="1.5"/>
+    <polygon points="750,352 742,347 742,357" fill="#0D9488"/>
+    <rect x="510" y="338" width="164" height="20" rx="4" fill="#F0FDFA"/>
+    <text x="592" y="352" text-anchor="middle" font-size="10" font-weight="600" fill="#0F766E">kubernaut_select_workflow</text>
+  </g>
+
+  <!-- Step 8: Options return -->
+  <g>
+    <line x1="750" y1="376" x2="450" y2="376" stroke="#2563EB" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <polygon points="450,376 458,371 458,381" fill="#2563EB"/>
+    <rect x="536" y="362" width="128" height="20" rx="4" fill="#EFF6FF"/>
+    <text x="600" y="376" text-anchor="middle" font-size="10" font-weight="600" fill="#1D4ED8">workflow options</text>
+  </g>
+
+  <!-- Step 9: Rendered as cards -->
+  <g>
+    <line x1="430" y1="396" x2="150" y2="396" stroke="#334155" stroke-width="1.5"/>
+    <polygon points="150,396 158,391 158,401" fill="#334155"/>
+    <rect x="218" y="382" width="136" height="20" rx="4" fill="#F1F5F9"/>
+    <text x="286" y="396" text-anchor="middle" font-size="10" fill="#475569">rendered as UI cards</text>
+  </g>
+
+  <!-- Step 10: User picks workflow -->
+  <g>
+    <line x1="140" y1="424" x2="430" y2="424" stroke="#334155" stroke-width="1.5"/>
+    <polygon points="430,424 422,419 422,429" fill="#334155"/>
+    <rect x="218" y="410" width="136" height="20" rx="4" fill="#E0F2FE"/>
+    <text x="286" y="424" text-anchor="middle" font-size="10" fill="#0C4A6E">clicks [Rollback]</text>
+  </g>
+
+  <!-- Step 11: Execute -->
+  <g>
+    <line x1="440" y1="448" x2="750" y2="448" stroke="#0D9488" stroke-width="1.5"/>
+    <polygon points="750,448 742,443 742,453" fill="#0D9488"/>
+    <rect x="504" y="434" width="176" height="20" rx="4" fill="#F0FDFA"/>
+    <text x="592" y="448" text-anchor="middle" font-size="10" font-weight="600" fill="#0F766E">kubernaut_select_workflow (execute)</text>
+  </g>
+
+  <!-- Step 12: Watch stream -->
+  <g>
+    <line x1="750" y1="472" x2="450" y2="472" stroke="#16A34A" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <polygon points="450,472 458,467 458,477" fill="#16A34A"/>
+    <rect x="524" y="458" width="148" height="20" rx="4" fill="#F0FDF4"/>
+    <text x="598" y="472" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">kubernaut_watch (SSE)</text>
+  </g>
+
+  <!-- Step 13: Done -->
+  <g>
+    <line x1="430" y1="496" x2="150" y2="496" stroke="#16A34A" stroke-width="1.5"/>
+    <polygon points="150,496 158,491 158,501" fill="#16A34A"/>
+    <rect x="214" y="482" width="148" height="20" rx="4" fill="#F0FDF4"/>
+    <text x="288" y="496" text-anchor="middle" font-size="10" font-weight="700" fill="#166534">OK "Done. Healthy."</text>
+  </g>
+</svg>

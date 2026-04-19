@@ -714,8 +714,8 @@ Total: ~7s (check) + 0.5s (create) + 5min (stabilization) + 8.3min (assessment)
 ## 🔗 **REFERENCES**
 
 - **Design Decision**: `/docs/architecture/decisions/DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md`
-- **Technical Details**: `/holmesgpt-api/docs/EFFECTIVENESS_MONITOR_RESTART_RECOVERY.md`
-- **CRD Assessment**: `/holmesgpt-api/docs/EFFECTIVENESS_MONITOR_CRD_DESIGN_ASSESSMENT.md`
+- **Technical Details**: `/kubernaut-agent/docs/EFFECTIVENESS_MONITOR_RESTART_RECOVERY.md`
+- **CRD Assessment**: `/kubernaut-agent/docs/EFFECTIVENESS_MONITOR_CRD_DESIGN_ASSESSMENT.md`
 - **Database Schema**: `/migrations/001_v1_schema.sql` (effectiveness assessment tables)
 
 ---

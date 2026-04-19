@@ -297,9 +297,6 @@ jobs:
             podman save "${IMAGE}" | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
           done
 
-      - name: Sync demo content from kubernaut-demo-scenarios
-        run: make sync-demo-content
-
       - name: Run smoke tests
         run: |
           scripts/helm-smoke-test.sh \
@@ -416,9 +413,6 @@ jobs:
 
           echo "Updated Chart.yaml:"
           head -6 charts/kubernaut/Chart.yaml
-
-      - name: Sync demo content from kubernaut-demo-scenarios
-        run: make sync-demo-content
 
       - name: Login to Quay.io OCI registry
         run: |

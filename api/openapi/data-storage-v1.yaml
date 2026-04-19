@@ -3707,6 +3707,28 @@ components:
             Used by DS remediation history to populate actionType on entries and summaries.
           example: "ScaleReplicas"
 
+        # Signal context fields (remediation.workflow_created, Issue #722)
+        signal_type:
+          type: string
+          description: |
+            Signal type that triggered the remediation (e.g., "alert", "event").
+            Propagated from the originating signal via Gateway/RR.
+            Used by DS remediation history for correlation and KA recurring detection.
+          example: "alert"
+        signal_fingerprint:
+          type: string
+          description: |
+            Unique fingerprint of the originating signal (hash of signal identity).
+            Used by DS remediation history to correlate entries across cycles.
+          example: "sha256:a1b2c3d4..."
+        crd_outcome:
+          type: string
+          description: |
+            The actual CRD-level outcome of the RemediationRequest (e.g., Remediated,
+            Inconclusive, VerificationTimedOut, ManualReviewRequired).
+            Present on completion and verification_completed events.
+          example: "Inconclusive"
+
         # EA creation fields (orchestrator.ea.created, Issue #277)
         ea_name:
           type: string
@@ -5076,7 +5098,7 @@ components:
 
     # ========================================
     # HolmesGPT API Event Payloads
-    # From: holmesgpt-api/src/models/audit_models.py
+    # From: kubernaut-agent/src/models/audit_models.py
     # ========================================
 
     AIAgentResponsePayload:

@@ -114,6 +114,16 @@
 
 ---
 
+## 📄 Active Proposals
+
+| ID | Proposal | Status | Date | File |
+|---|---|---|---|---|
+| PROPOSAL-EXT-001 | External Integration Strategy (MCP, A2A, API Frontend) | 📋 Under Review | 2026-04-15 | [PROPOSAL-EXT-001-external-integration-strategy.md](proposals/PROPOSAL-EXT-001-external-integration-strategy.md) |
+| PROPOSAL-EXT-002 | Investigation Prompt Bundles (OCI-packaged prompts and skills) | 📋 Under Review | 2026-04-15 | [PROPOSAL-EXT-002-investigation-prompt-bundles.md](proposals/PROPOSAL-EXT-002-investigation-prompt-bundles.md) |
+| PROPOSAL-EXT-003 | Goose Runtime Evaluation and Phased Adoption (ACP Go SDK, 6-phase pipeline, KA-as-compiler) | 📋 Under Review | 2026-04-15 | [PROPOSAL-EXT-003-goose-runtime-evaluation.md](proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) |
+
+---
+
 ## 📝 When to Create a New DD
 
 Create a new DD document for decisions that:
@@ -135,5 +145,5 @@ Create a new DD document for decisions that:
 
 ---
 
-**Last Updated**: March 19, 2026
+**Last Updated**: April 15, 2026
 **Maintained By**: Kubernaut Architecture Team

@@ -10,7 +10,7 @@
 
 **Cross-References**:
 - [Test Plan Best Practices](../../../docs/development/testing/TEST_PLAN_BEST_PRACTICES.md) - When/why to use each section
-- [Test Plan Template](../../../holmesgpt-api/tests/e2e/TEST_PLAN_WORKFLOW_CATALOG_EDGE_CASES.md) - Reusable template for other teams
+- [Test Plan Template](../../../kubernaut-agent/tests/e2e/TEST_PLAN_WORKFLOW_CATALOG_EDGE_CASES.md) - Reusable template for other teams
 
 ---
 

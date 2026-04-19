@@ -89,9 +89,9 @@ Our Advantage:      16% MORE EFFICIENT than SDK ✅
 **Result**: Zero overlap in all categories
 
 **Documentation**:
-1. Full Analysis: `holmesgpt-api/docs/SDK_TEST_OVERLAP_ANALYSIS.md` (25 sections)
-2. Executive Summary: `holmesgpt-api/docs/SDK_OVERLAP_SUMMARY.md`
-3. Design Decision: `holmesgpt-api/docs/DD-005-Test-Strategy-Validation.md`
+1. Full Analysis: `kubernaut-agent/docs/SDK_TEST_OVERLAP_ANALYSIS.md` (25 sections)
+2. Executive Summary: `kubernaut-agent/docs/SDK_OVERLAP_SUMMARY.md`
+3. Design Decision: `kubernaut-agent/docs/DD-005-Test-Strategy-Validation.md`
 4. Project Reference: This document
 
 ---
@@ -232,10 +232,10 @@ Our Advantage:      16% MORE EFFICIENT than SDK ✅
 
 ### Related Documents
 
-- **Service Implementation Plan**: `holmesgpt-api/docs/services/stateless/holmesgpt-api/IMPLEMENTATION_PLAN_V1.0.md`
+- **Service Implementation Plan**: `kubernaut-agent/docs/services/stateless/kubernaut-agent/IMPLEMENTATION_PLAN_V1.0.md`
 - **Business Requirements**: `docs/requirements/13_HOLMESGPT_REST_API_WRAPPER.md`
-- **Full Test Analysis**: `holmesgpt-api/docs/SDK_TEST_OVERLAP_ANALYSIS.md`
-- **Executive Summary**: `holmesgpt-api/docs/SDK_OVERLAP_SUMMARY.md`
+- **Full Test Analysis**: `kubernaut-agent/docs/SDK_TEST_OVERLAP_ANALYSIS.md`
+- **Executive Summary**: `kubernaut-agent/docs/SDK_OVERLAP_SUMMARY.md`
 
 ### Related Decisions
 

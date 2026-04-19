@@ -57,7 +57,7 @@ The HAPI OpenAPI spec MUST include `signal_mode` as a field in the `IncidentRequ
 
 ### R4: HAPI Prompt Strategy
 
-HAPI MUST switch its investigation prompt based on the `signal_mode` value. The current prompt (`holmesgpt-api/src/extensions/incident/prompt_builder.py`) uses a 5-phase investigation workflow. The proactive variant must adapt the relevant phases:
+HAPI MUST switch its investigation prompt based on the `signal_mode` value. The current prompt (`kubernaut-agent/src/extensions/incident/prompt_builder.py`) uses a 5-phase investigation workflow. The proactive variant must adapt the relevant phases:
 
 | Phase | Reactive (current) | Proactive (new) |
 |---|---|---|
@@ -125,10 +125,10 @@ RO copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
 | AA CRD spec | `api/aianalysis/v1alpha1/aianalysis_types.go` | Add `SignalMode` to `SignalContextInput` |
 | RO creator | `pkg/remediationorchestrator/creator/aianalysis.go` | Change `SignalName` source from `rr.Spec` → `sp.Status` + copy `SignalMode` in `buildSignalContext()` |
 | AA request builder | `pkg/aianalysis/handlers/request_builder.go` | Pass `SignalMode` in `BuildIncidentRequest()` |
-| HAPI OpenAPI | `holmesgpt-api/api/openapi.json` | Add `signal_mode` to `IncidentRequest` schema |
-| HAPI Python model | `holmesgpt-api/src/models/incident_models.py` | Add `signal_mode: Optional[str]` to `IncidentRequest` class |
-| HAPI prompt builder | `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Conditional prompt strategy in `create_incident_investigation_prompt()` (Phases 1-2, 5) |
-| HAPI LLM integration | `holmesgpt-api/src/extensions/incident/llm_integration.py` | Pass `signal_mode` to prompt builder in `analyze_incident()` |
+| HAPI OpenAPI | `kubernaut-agent/api/openapi.json` | Add `signal_mode` to `IncidentRequest` schema |
+| HAPI Python model | `kubernaut-agent/src/models/incident_models.py` | Add `signal_mode: Optional[str]` to `IncidentRequest` class |
+| HAPI prompt builder | `kubernaut-agent/src/extensions/incident/prompt_builder.py` | Conditional prompt strategy in `create_incident_investigation_prompt()` (Phases 1-2, 5) |
+| HAPI LLM integration | `kubernaut-agent/src/extensions/incident/llm_integration.py` | Pass `signal_mode` to prompt builder in `analyze_incident()` |
 | Go client regen | `pkg/holmesgpt/client/oas_schemas_gen.go` | `make generate-holmesgpt-client` |
 | Mock LLM | `test/services/mock-llm/src/server.py` | Add proactive scenario variants + detection logic (see Test Plan) |
 | Deepcopy | `api/aianalysis/v1alpha1/zz_generated.deepcopy.go` | `make generate` |
@@ -180,5 +180,5 @@ This is a **future enhancement** — v1.0 uses the same approval thresholds rega
 
 - [BR-SP-106: Proactive Signal Mode Classification](BR-SP-106-proactive-signal-mode-classification.md)
 - [Issue #55: Proactive remediation pipeline](https://github.com/jordigilh/kubernaut/issues/55)
-- [ADR-045: AIAnalysis ↔ HolmesGPT API Contract](../architecture/decisions/ADR-045-aianalysis-holmesgpt-api-contract.md)
+- [ADR-045: AIAnalysis ↔ HolmesGPT API Contract](../architecture/decisions/ADR-045-aianalysis-kubernaut-agent-contract.md)
 - [AA Business Requirements](../services/crd-controllers/02-aianalysis/BUSINESS_REQUIREMENTS.md)

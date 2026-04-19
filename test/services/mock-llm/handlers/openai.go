@@ -91,6 +91,15 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := scenarioWithCfg.Config()
+
+	if !cfg.OverrideResource {
+		if res := ctx.ExtractResource(); res.Kind != "" && res.Name != "" {
+			cfg.ResourceKind = res.Kind
+			cfg.ResourceName = res.Name
+			cfg.ResourceNS = res.Namespace
+		}
+	}
+
 	scenarioName := cfg.ScenarioName
 	h.recordScenarioMetric(scenarioName, result.Method)
 

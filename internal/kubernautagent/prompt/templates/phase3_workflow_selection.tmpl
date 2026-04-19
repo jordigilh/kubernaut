@@ -1,5 +1,5 @@
 {{- /* Phase 3: Workflow Selection Prompt (Issue #537 / BR-HAPI-263)
-     Source: holmesgpt-api/src/extensions/incident/prompt_builder.py create_phase3_workflow_prompt
+     Source: kubernaut-agent/src/extensions/incident/prompt_builder.py create_phase3_workflow_prompt
      Two-invocation architecture: Phase 3 creates a new LLM session with NO memory of Phase 1.
      RCA and enrichment context are injected separately by the caller.
 */ -}}
@@ -37,6 +37,16 @@ enrichment context provided.
 
 {{ .RCASummary }}
 {{ end }}
+{{ if .Phase1Assessment }}
+## Phase 1 Assessment
+
+{{ .Phase1Assessment }}
+{{ end }}
+{{ if .InvestigationAnalysis }}
+## Phase 1 Investigation Analysis
+
+{{ .InvestigationAnalysis }}
+{{ end }}
 {{ if .EnrichmentContext }}
 ## Enrichment Context
 
@@ -54,7 +64,7 @@ best matches the RCA findings.
 - Cross-reference each action type's `when_to_use` and `when_not_to_use` guidance against the RCA findings.
 
 **Step 2**: Call `list_workflows` with `action_type` set to your chosen action type.
-**CRITICAL**: If `pagination.hasMore` is true, call again with increased `offset` to review ALL workflows.
+**CRITICAL**: If the response includes `pagination.hasNext`, call the tool again with `page: "next"` and `cursor` set to the `nextCursor` value to review ALL workflows.
 
 **Step 3**: Call `get_workflow` with the `workflow_id` of your selected workflow to retrieve its full parameter schema.
 
@@ -66,6 +76,28 @@ Set `selected_workflow` to None, `investigation_outcome` to "resolved" (confiden
 ### Outcome B: Investigation Inconclusive
 Set `selected_workflow` to None, `investigation_outcome` to "inconclusive" (confidence < 0.5).
 
+**Example inconclusive submit_result**:
+```json
+{
+  "root_cause_analysis": {
+    "summary": "Unable to determine root cause with sufficient confidence",
+    "severity": "unknown",
+    "signal_name": "SignalName",
+    "contributing_factors": ["factor1"],
+    "remediation_target": {
+      "kind": "Deployment",
+      "name": "resource-name",
+      "namespace": "namespace"
+    }
+  },
+  "selected_workflow": null,
+  "severity": "unknown",
+  "confidence": 0.3,
+  "investigation_outcome": "inconclusive",
+  "actionable": false
+}
+```
+
 ### Outcome C: No Automated Remediation Available
 Set `selected_workflow` to None. Do NOT include `investigation_outcome`.
 
@@ -73,9 +105,10 @@ Set `selected_workflow` to None. Do NOT include `investigation_outcome`.
 Set `selected_workflow` to None, include `actionable: false`.
 
 ## Expected Response Format
-{{ if .StructuredOutput }}
-**CRITICAL**: Respond with a SINGLE JSON object (no markdown, no section headers, no prose):
 
+**CRITICAL**: When your workflow selection is complete, call the `submit_result` tool with a JSON object containing your findings. Do NOT write the JSON as text — use the `submit_result` tool call.
+
+**submit_result argument schema**:
 ```json
 {
   "root_cause_analysis": {
@@ -107,31 +140,11 @@ Set `selected_workflow` to None, include `actionable: false`.
 ```
 
 **Rules**:
-- Output ONLY the JSON object, no surrounding text
+- Call `submit_result` with the JSON object as the tool argument
+- Select ONE workflow per incident as `selected_workflow`
+- Include up to 2-3 `alternative_workflows` (for audit/context only)
 - All fields in root_cause_analysis.summary and selected_workflow are required when actionable
 - Top-level severity must match root_cause_analysis.severity
 - Top-level confidence must match selected_workflow.confidence
 - parameters should only contain workflow-specific values (kind/name/namespace are injected by the system)
 - For non-actionable outcomes, omit selected_workflow and set actionable to false
-- If human review is needed, include "needs_human_review": true and "human_review_reason"
-{{ else }}
-**CRITICAL**: Use section header format. Each field on its own line with a `#` header:
-
-# root_cause_analysis
-{"summary": "Brief summary from Phase 1 RCA", "severity": "critical|high|medium|low|unknown", "contributing_factors": [...], "remediationTarget": {"kind": "...", "name": "...", "namespace": "..."}}
-
-# confidence
-0.95
-
-# selected_workflow
-{"workflow_id": "...", "confidence": 0.95, "rationale": "...", "parameters": {"PARAM_NAME": "value"}}
-
-# alternative_workflows
-[{"workflow_id": "...", "confidence": 0.75, "rationale": "..."}]
-
-**IMPORTANT**:
-- Select ONE workflow per incident as `selected_workflow`
-- Include up to 2-3 `alternative_workflows` (for audit/context only)
-- Each field must have its own `# field_name` header
-- Populate ALL required parameters from the workflow schema
-{{ end }}

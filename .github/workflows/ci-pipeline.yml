@@ -36,10 +36,10 @@ name: CI Pipeline
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [ main, 'release/**' ]
     types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [ main ]
+    branches: [ main, 'release/**' ]
   workflow_dispatch:
 
 env:
@@ -792,9 +792,6 @@ jobs:
           kind create cluster --name "$KIND_CLUSTER_NAME" --wait 120s
           kubectl cluster-info
           kubectl get nodes -o wide
-
-      - name: Sync demo content from kubernaut-demo-scenarios
-        run: make sync-demo-content
 
       - name: Run smoke tests
         env:

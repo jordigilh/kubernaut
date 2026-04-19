@@ -741,7 +741,7 @@ var _ = Describe("BR-SP-100: Owner Chain Enables Root Cause Analysis", func() {
 })
 
 // BR-SP-101: DetectedLabels tests removed - ADR-056: DetectedLabels relocated to KA
-// See: holmesgpt-api/tests/unit/test_label_detector.py
+// See: kubernaut-agent/tests/unit/test_label_detector.py
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // BR-SP-102: CustomLabels from Rego

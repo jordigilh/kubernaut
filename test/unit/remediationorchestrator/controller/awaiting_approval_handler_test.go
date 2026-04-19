@@ -70,7 +70,7 @@ func noopAwaitingCallbacks() prodcontroller.AwaitingApprovalCallbacks {
 		WFECallbacks: prodcontroller.WFECreationCallbacks{
 			EmitWorkflowCreatedAudit: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {},
 			CreateWFE:                func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) { return "wfe-test", nil },
-			ResolveWorkflowName:      func(_ context.Context, _ string) string { return "test-wf" },
+			ResolveWorkflowDisplay:   func(_ context.Context, _ string) (string, string) { return "TestAction", "test-wf" },
 		},
 	}
 }

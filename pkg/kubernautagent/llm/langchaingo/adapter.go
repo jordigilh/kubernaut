@@ -35,6 +35,7 @@ import (
 	"github.com/tmc/langchaingo/llms/openai"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 )
 
 // Option configures provider-specific settings for the LangChainGo adapter.
@@ -68,8 +69,9 @@ func WithBedrockRegion(r string) Option {
 }
 
 // WithHTTPClient sets a custom HTTP client for providers that support it
-// (currently Anthropic). Used to chain transports for structured output
-// injection and auth header passthrough.
+// (Anthropic and vertex_ai). Used to chain transports for structured output
+// injection and auth header passthrough. For vertex_ai, GCP OAuth2 auth is
+// layered on top of the provided transport internally by the shim.
 func WithHTTPClient(c *http.Client) Option {
 	return func(o *options) { o.httpClient = c }
 }
@@ -81,7 +83,7 @@ type Adapter struct {
 }
 
 // New creates a new LangChainGo adapter for the given provider.
-// Supported providers: "openai", "ollama", "azure", "vertex", "anthropic", "bedrock", "huggingface", "mistral".
+// Supported providers: "openai", "ollama", "azure", "vertex", "vertex_ai", "anthropic", "bedrock", "huggingface", "mistral".
 func New(provider, endpoint, model, apiKey string, opts ...Option) (*Adapter, error) {
 	o := &options{vertexLocation: "us-central1"}
 	for _, fn := range opts {
@@ -122,11 +124,15 @@ func newModel(provider, endpoint, model, apiKey string, o *options) (llms.Model,
 		if o.vertexProject == "" {
 			return nil, fmt.Errorf("vertex provider requires project (use WithVertexProject)")
 		}
-		return vertex.New(context.Background(),
+		vopts := []googleai.Option{
 			googleai.WithCloudProject(o.vertexProject),
 			googleai.WithCloudLocation(o.vertexLocation),
 			googleai.WithDefaultModel(model),
-		)
+		}
+		if apiKey != "" {
+			vopts = append(vopts, googleai.WithCredentialsJSON([]byte(apiKey)))
+		}
+		return vertex.New(context.Background(), vopts...)
 	case "anthropic":
 		aopts := []anthropic.Option{anthropic.WithModel(model), anthropic.WithToken(apiKey)}
 		if endpoint != "" {
@@ -163,7 +169,13 @@ func newModel(provider, endpoint, model, apiKey string, o *options) (llms.Model,
 
 // Chat translates a Kubernaut ChatRequest into LangChainGo's MessageContent
 // format, calls GenerateContent, and maps the response back.
+// Per-session OutputSchema is propagated to the HTTP transport via context,
+// enabling phase-specific structured output for Anthropic (see #700).
 func (a *Adapter) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
+	if len(req.Options.OutputSchema) > 0 {
+		ctx = transport.WithOutputSchema(ctx, req.Options.OutputSchema)
+	}
+
 	msgs := toMessages(req.Messages)
 	opts := buildCallOptions(req)
 

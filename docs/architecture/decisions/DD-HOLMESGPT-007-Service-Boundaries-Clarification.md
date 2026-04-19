@@ -503,12 +503,12 @@ async def analyze_recovery(request: RecoveryRequest, user=Depends(require_auth))
 
 ### HolmesGPT API Documentation (Created)
 
-1. **`holmesgpt-api/docs/ARCHITECTURE_CLARIFICATION.md`** (NEW)
-2. **`holmesgpt-api/docs/E2E_TEST_ARCHITECTURE_CORRECTION.md`** (NEW)
-3. **`holmesgpt-api/docs/ARCHITECTURE_ALIGNMENT_TRIAGE_V2.md`** (NEW)
-4. **`holmesgpt-api/docs/ARCHITECTURE_CONSISTENCY_ASSESSMENT.md`** (NEW)
-5. **`holmesgpt-api/SPECIFICATION.md`** (UPDATED)
-6. **`holmesgpt-api/README.md`** (UPDATED)
+1. **`kubernaut-agent/docs/ARCHITECTURE_CLARIFICATION.md`** (NEW)
+2. **`kubernaut-agent/docs/E2E_TEST_ARCHITECTURE_CORRECTION.md`** (NEW)
+3. **`kubernaut-agent/docs/ARCHITECTURE_ALIGNMENT_TRIAGE_V2.md`** (NEW)
+4. **`kubernaut-agent/docs/ARCHITECTURE_CONSISTENCY_ASSESSMENT.md`** (NEW)
+5. **`kubernaut-agent/SPECIFICATION.md`** (UPDATED)
+6. **`kubernaut-agent/README.md`** (UPDATED)
 
 ---
 

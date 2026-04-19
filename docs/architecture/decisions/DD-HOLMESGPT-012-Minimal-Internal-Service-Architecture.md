@@ -154,7 +154,7 @@ Over-engineering:       58.4% of implementation effort
 
 **Implementation Files**:
 ```
-holmesgpt-api/
+kubernaut-agent/
 ├── src/
 │   ├── main.py                    # FastAPI app
 │   ├── extensions/
@@ -178,7 +178,7 @@ holmesgpt-api/
 
 **Removed Code**:
 ```
-holmesgpt-api/
+kubernaut-agent/
 ├── src/middleware/
 │   ├── ratelimit.py              # ❌ REMOVED - Network policies handle this
 │   └── validation.py             # ❌ REMOVED - Pydantic sufficient
@@ -317,12 +317,12 @@ v2.0: Add rate limiting + advanced security (if external exposure)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: holmesgpt-api-ingress
+  name: kubernaut-agent-ingress
   namespace: kubernaut-system
 spec:
   podSelector:
     matchLabels:
-      app: holmesgpt-api
+      app: kubernaut-agent
   policyTypes:
   - Ingress
   ingress:

@@ -198,7 +198,7 @@ spec:
           name: kubernaut-system
       podSelector:
         matchLabels:
-          app: holmesgpt-api
+          app: kubernaut-agent
     ports:
     - protocol: TCP
       port: 8080

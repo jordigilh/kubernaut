@@ -111,6 +111,16 @@ func (d *AnomalyDetector) TotalExceeded() bool {
 	return d.totalCallCount > d.config.MaxTotalToolCalls
 }
 
+// Reset clears all accumulated counters (total calls, per-tool calls, failure
+// tracker) while preserving config thresholds and suspicious patterns. This
+// gives each investigation phase (RCA, workflow selection) its own independent
+// tool budget per DD-HAPI-019-003.
+func (d *AnomalyDetector) Reset() {
+	d.totalCallCount = 0
+	d.toolCallCounts = make(map[string]int)
+	d.failureTracker = make(map[string]int)
+}
+
 func (d *AnomalyDetector) checkSuspiciousArgs(name string, args json.RawMessage) AnomalyResult {
 	if len(d.suspiciousPatterns) == 0 || len(args) == 0 {
 		return AnomalyResult{Allowed: true}

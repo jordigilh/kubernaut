@@ -652,9 +652,10 @@ type RemediationRequestStatus struct {
 	// - "NoActionRequired": AIAnalysis determined no action needed (problem self-resolved)
 	// - "ManualReviewRequired": Requires operator intervention
 	// - "VerificationTimedOut": EA assessment did not complete within deadline (#280)
-	// Reference: BR-ORCH-037, BR-HAPI-200
+	// - "Inconclusive": EA completed but alert still firing (alertScore=0) (#722)
+	// Reference: BR-ORCH-037, BR-HAPI-200, BR-EM-012
 	// +optional
-	// +kubebuilder:validation:Enum=Remediated;NoActionRequired;ManualReviewRequired;VerificationTimedOut
+	// +kubebuilder:validation:Enum=Remediated;NoActionRequired;ManualReviewRequired;VerificationTimedOut;Inconclusive
 	Outcome string `json:"outcome,omitempty"`
 
 	// TimeoutPhase indicates which orchestration phase timed out.

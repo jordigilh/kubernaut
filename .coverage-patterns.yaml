@@ -52,23 +52,3 @@ go_services:
     pkg_pattern: "/pkg/workflowexecution/"
     unit_exclude: "/(audit|status)/"
     integration_include: "/(audit|status)/"
-
-python_services:
-  holmesgpt-api:
-    unit_testable:
-      - "models/"
-      - "validation/"
-      - "sanitization/"
-      - "toolsets/"
-      - "config/"
-      - "audit/buffered_store.py"
-      - "errors.py"
-    integration_testable:
-      - "extensions/"
-      - "middleware/"
-      - "auth/"
-      - "clients/"
-      - "main.py"
-      - "audit/events.py"
-      - "audit/factory.py"
-      - "metrics/instrumentation.py"

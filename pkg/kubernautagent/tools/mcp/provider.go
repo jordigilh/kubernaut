@@ -33,7 +33,7 @@ func (t Tool) Description() string          { return t.ToolDescription }
 func (t Tool) Parameters() json.RawMessage  { return t.ToolParameters }
 
 // MCPToolProvider discovers tools from an MCP server.
-// v1.3: StubProvider returns empty; v1.4: real SSE transport.
+// v1.3: StubProvider returns empty; v1.5: real SSE transport.
 type MCPToolProvider interface {
 	DiscoverTools(ctx context.Context) ([]Tool, error)
 	Close() error

@@ -96,30 +96,35 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			logger.Info("✅ Step 1: Action types listed", "count", len(actionTypes.ActionTypes))
 
 			// STEP 2: List workflows for ScaleReplicas
-			step2Resp, err := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
-				ActionType:  "ScaleReplicas",
-				Severity:    dsgen.ListWorkflowsByActionTypeSeverityCritical,
-				Component:   "pod",
-				Environment: "production",
-				Priority:    dsgen.ListWorkflowsByActionTypePriorityP0,
-				Limit:       dsgen.NewOptInt(100),
-			})
-			Expect(err).ToNot(HaveOccurred())
-
-			workflows, ok := step2Resp.(*dsgen.WorkflowDiscoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected *WorkflowDiscoveryResponse")
-			Expect(workflows.Workflows).ToNot(BeEmpty(), "Should return at least 1 workflow")
-
-			// Find our workflow in the results
+			// Use Eventually to tolerate transient visibility windows during parallel
+			// workflow registration (#707: non-atomic supersede can create brief gaps).
 			var foundWorkflowID string
-			for _, wf := range workflows.Workflows {
-				if wf.WorkflowId.String() == discoveryWorkflowID {
-					foundWorkflowID = wf.WorkflowId.String()
-					break
+			Eventually(func() string {
+				step2Resp, listErr := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
+					ActionType:  "ScaleReplicas",
+					Severity:    dsgen.ListWorkflowsByActionTypeSeverityCritical,
+					Component:   "pod",
+					Environment: "production",
+					Priority:    dsgen.ListWorkflowsByActionTypePriorityP0,
+					Limit:       dsgen.NewOptInt(100),
+				})
+				if listErr != nil {
+					return ""
 				}
-			}
-			Expect(foundWorkflowID).To(Equal(discoveryWorkflowID), "Discovery test workflow should be listed")
-			logger.Info("✅ Step 2: Workflows listed", "count", len(workflows.Workflows))
+				workflows, ok := step2Resp.(*dsgen.WorkflowDiscoveryResponse)
+				if !ok || len(workflows.Workflows) == 0 {
+					return ""
+				}
+				for _, wf := range workflows.Workflows {
+					if wf.WorkflowId.String() == discoveryWorkflowID {
+						return wf.WorkflowId.String()
+					}
+				}
+				return ""
+			}, 30*time.Second, 2*time.Second).Should(Equal(discoveryWorkflowID),
+				"Discovery test workflow should be listed")
+			foundWorkflowID = discoveryWorkflowID
+			logger.Info("✅ Step 2: Workflows listed", "foundID", foundWorkflowID)
 
 			// STEP 3: Get full workflow detail with context filters (security gate)
 			workflowUUID, err := uuid.Parse(discoveryWorkflowID)

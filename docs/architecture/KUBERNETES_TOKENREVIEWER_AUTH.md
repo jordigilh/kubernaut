@@ -452,7 +452,7 @@ metadata:
 **Examples**:
 - `gateway` (Gateway Service)
 - `notification-service` (Notification Service)
-- `holmesgpt-api` (HolmesGPT API)
+- `kubernaut-agent` (HolmesGPT API)
 - `remediation-orchestrator-sa` (Remediation Orchestrator)
 - `ai-analysis-sa` (AI Analysis)
 
@@ -512,7 +512,7 @@ subjects:
 #### Stateless HTTP Services (REST APIs - Port 8080, Metrics - Port 9090)
 6. ✅ Gateway Service (`gateway`)
 7. ✅ Notification Service (`notification-service`)
-8. ✅ HolmesGPT API (`holmesgpt-api`)
+8. ✅ HolmesGPT API (`kubernaut-agent`)
 
 #### Future Services (Pending Specification)
 9. ⏸️ Context API

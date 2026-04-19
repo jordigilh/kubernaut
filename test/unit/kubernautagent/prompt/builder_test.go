@@ -51,7 +51,7 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 	})
 
 	Describe("UT-KA-433-018: Prompt template includes enrichment data", func() {
-		It("should include owner chain and remediation history when present", func() {
+		It("should include owner chain and labels in RCA prompt (remediation history is Phase 3 only per #700)", func() {
 			builder, err := prompt.NewBuilder()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(builder).NotTo(BeNil())
@@ -74,9 +74,39 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 				Message:   "High memory usage detected",
 			}, enrichData)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rendered).To(ContainSubstring("Deployment/api-server"))
-			Expect(rendered).To(ContainSubstring("oom-increase-memory"))
-			Expect(rendered).To(ContainSubstring("REMEDIATION HISTORY"))
+			Expect(rendered).To(ContainSubstring("Deployment/api-server"),
+				"RCA prompt should include owner chain")
+			Expect(rendered).NotTo(ContainSubstring("oom-increase-memory"),
+				"RCA prompt must NOT include remediation history (Phase 3 only per #700)")
+			Expect(rendered).NotTo(ContainSubstring("REMEDIATION HISTORY"),
+				"RCA prompt must NOT include remediation history section header")
+		})
+
+		It("should include remediation history in workflow selection prompt", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			enrichData := &prompt.EnrichmentData{
+				OwnerChain: []string{"Deployment/api-server"},
+				HistoryResult: &enrichment.RemediationHistoryResult{
+					TargetResource: "production/Pod/api-server-abc",
+					Tier1: []enrichment.Tier1Entry{
+						{RemediationUID: "oom-increase-memory", ActionType: "increase_memory", Outcome: "success", CompletedAt: time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)},
+					},
+					Tier1Window: "24h",
+				},
+			}
+			rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+				Signal: prompt.SignalData{
+					Name: "api-server-abc", Namespace: "production", Severity: "warning",
+					Message: "High memory usage detected",
+				},
+				RCASummary: "OOMKilled root cause",
+				EnrichData: enrichData,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("oom-increase-memory"),
+				"workflow selection prompt should include remediation history")
 		})
 	})
 
@@ -132,8 +162,256 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 		})
 	})
 
-	Describe("UT-KA-SO-PROMPT-001: WithStructuredOutput renders pure JSON format section", func() {
-		It("should include SINGLE JSON object instruction when structured output enabled", func() {
+	Describe("UT-KA-686-008: Prompt renders submit_result tool instruction", func() {
+		It("should include submit_result instruction in investigation prompt regardless of StructuredOutput", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name: "test-signal", Namespace: "default", Severity: "high", Message: "Test",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("submit_result"),
+				"investigation prompt must instruct LLM to call submit_result tool")
+		})
+
+		It("should include submit_result instruction in workflow selection prompt", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+				Signal: prompt.SignalData{
+					Name: "test-signal", Namespace: "default", Severity: "high", Message: "Test",
+				},
+				RCASummary: "OOMKilled root cause",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("submit_result"),
+				"workflow selection prompt must instruct LLM to call submit_result tool")
+		})
+	})
+
+	Describe("UT-KA-686-009: Prompt no longer includes section-header format instructions", func() {
+		It("should not contain section header format instructions in investigation prompt", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name: "test-signal", Namespace: "default", Severity: "high", Message: "Test",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).NotTo(ContainSubstring("Use section header format"),
+				"prompt must no longer instruct section header format")
+		})
+
+		It("should not contain section header format instructions in workflow prompt", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+				Signal: prompt.SignalData{
+					Name: "test-signal", Namespace: "default", Severity: "high", Message: "Test",
+				},
+				RCASummary: "OOMKilled root cause",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).NotTo(ContainSubstring("Use section header format"),
+				"workflow prompt must no longer instruct section header format")
+		})
+	})
+
+	Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
+
+		Describe("UT-KA-715-001: Phase 3 prompt includes structured Phase 1 assessment", func() {
+			It("should contain Phase 1 Assessment section with severity, contributing factors, and remediation target", func() {
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+
+				phase1 := &prompt.Phase1Data{
+					Severity:            "high",
+					ContributingFactors: []string{"memory leak in api-server container", "no HPA configured"},
+					RemediationTarget: prompt.Phase1RemediationTarget{
+						Kind: "Deployment", Name: "api-server", Namespace: "production",
+					},
+				}
+
+				rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+					Signal: prompt.SignalData{
+						Name: "api-server-abc", Namespace: "production", Severity: "critical",
+						Message: "OOMKilled",
+					},
+					RCASummary: "OOMKilled due to memory limit exceeded",
+					Phase1:     phase1,
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(rendered).To(ContainSubstring("Phase 1 Assessment"),
+					"Phase 3 prompt must include Phase 1 Assessment section header")
+				Expect(rendered).To(ContainSubstring("high"),
+					"Phase 3 prompt must include Phase 1 severity")
+				Expect(rendered).To(ContainSubstring("memory leak in api-server container"),
+					"Phase 3 prompt must include Phase 1 contributing factors")
+				Expect(rendered).To(ContainSubstring("Deployment/api-server"),
+					"Phase 3 prompt must include Phase 1 remediation target")
+			})
+		})
+
+		Describe("UT-KA-715-002: Nil Phase 1 context backward compatibility", func() {
+			It("should render without Phase 1 Assessment section when Phase 1 context is nil", func() {
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+
+				rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+					Signal: prompt.SignalData{
+						Name: "api-server-abc", Namespace: "production", Severity: "critical",
+						Message: "OOMKilled",
+					},
+					RCASummary: "OOMKilled due to memory limit exceeded",
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(rendered).NotTo(ContainSubstring("Phase 1 Assessment"),
+					"Phase 3 prompt must NOT include Phase 1 Assessment when context is nil")
+				Expect(rendered).To(ContainSubstring("OOMKilled due to memory limit exceeded"),
+					"Phase 3 prompt should still include RCA summary")
+			})
+		})
+
+		Describe("UT-KA-715-003: Phase 1 investigation_outcome and confidence in prompt", func() {
+			It("should include investigation_outcome and confidence values from Phase 1", func() {
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+
+				phase1 := &prompt.Phase1Data{
+					Severity:             "medium",
+					InvestigationOutcome: "inconclusive",
+					Confidence:           0.45,
+					ContributingFactors:  []string{"intermittent network timeouts"},
+				}
+
+				rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+					Signal: prompt.SignalData{
+						Name: "worker-pod", Namespace: "staging", Severity: "warning",
+						Message: "CrashLoopBackOff",
+					},
+					RCASummary: "Intermittent crashes due to network issues",
+					Phase1:     phase1,
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(rendered).To(ContainSubstring("inconclusive"),
+					"Phase 3 prompt must include Phase 1 investigation_outcome")
+				Expect(rendered).To(ContainSubstring("0.45"),
+					"Phase 3 prompt must include Phase 1 confidence value")
+			})
+		})
+	})
+
+	Describe("Prompt Engineering Fixes — #725", func() {
+
+		Describe("UT-KA-725-003: Phase 3 template contains inconclusive example JSON", func() {
+			It("should include an inconclusive example with investigation_outcome in the template", func() {
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+
+				rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+					Signal: prompt.SignalData{
+						Name: "test-signal", Namespace: "default", Severity: "warning",
+						Message: "Test",
+					},
+					RCASummary: "RCA summary",
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(rendered).To(ContainSubstring(`"investigation_outcome": "inconclusive"`),
+					"Phase 3 template must include a concrete inconclusive example JSON")
+				Expect(rendered).To(ContainSubstring(`"selected_workflow": null`),
+					"Inconclusive example must show selected_workflow as null")
+			})
+		})
+	})
+
+	Describe("Investigation Analysis Field — #724", func() {
+
+		Describe("UT-KA-724-002: Phase 3 prompt includes investigation analysis section", func() {
+			It("should render Phase 1 Investigation Analysis section when field is populated", func() {
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+
+				phase1 := &prompt.Phase1Data{
+					Severity:               "high",
+					InvestigationOutcome:    "actionable",
+					Confidence:              0.88,
+					InvestigationAnalysis:   "Memory usage in the api-server container grew steadily from 180Mi to 256Mi over 6 hours. The leak correlates with unclosed gRPC streaming connections.",
+					ContributingFactors:     []string{"memory leak", "gRPC connection leak"},
+					RemediationTarget: prompt.Phase1RemediationTarget{
+						Kind: "Deployment", Name: "api-server", Namespace: "production",
+					},
+				}
+
+				rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+					Signal: prompt.SignalData{
+						Name: "api-server-oom", Namespace: "production", Severity: "critical",
+						Message: "OOMKilled",
+					},
+					RCASummary: "OOMKilled due to memory leak",
+					Phase1:     phase1,
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(rendered).To(ContainSubstring("Phase 1 Investigation Analysis"),
+					"Phase 3 prompt must include 'Phase 1 Investigation Analysis' section header")
+				Expect(rendered).To(ContainSubstring("unclosed gRPC streaming connections"),
+					"Phase 3 prompt must include the investigation analysis content")
+			})
+		})
+
+		Describe("UT-KA-724-003: Empty investigation_analysis preserves backward compatibility", func() {
+			It("should NOT render investigation analysis section when field is empty", func() {
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+
+				phase1 := &prompt.Phase1Data{
+					Severity:            "high",
+					InvestigationOutcome: "actionable",
+					Confidence:           0.88,
+					ContributingFactors:  []string{"memory leak"},
+					RemediationTarget: prompt.Phase1RemediationTarget{
+						Kind: "Deployment", Name: "api-server", Namespace: "production",
+					},
+				}
+
+				rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+					Signal: prompt.SignalData{
+						Name: "api-server-oom", Namespace: "production", Severity: "critical",
+						Message: "OOMKilled",
+					},
+					RCASummary: "OOMKilled due to memory leak",
+					Phase1:     phase1,
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(rendered).NotTo(ContainSubstring("Phase 1 Investigation Analysis"),
+					"Phase 3 prompt must NOT include investigation analysis section when field is empty")
+			})
+
+			It("should NOT render investigation analysis section when Phase1 is nil", func() {
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+
+				rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+					Signal: prompt.SignalData{
+						Name: "api-server-oom", Namespace: "production", Severity: "critical",
+						Message: "OOMKilled",
+					},
+					RCASummary: "OOMKilled due to memory leak",
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(rendered).NotTo(ContainSubstring("Phase 1 Investigation Analysis"),
+					"Phase 3 prompt must NOT include investigation analysis section when Phase1 is nil")
+			})
+		})
+	})
+
+	Describe("UT-KA-SO-PROMPT-001: Prompt uses unified submit_result tool instruction", func() {
+		It("should include submit_result instruction regardless of structured output setting", func() {
 			builder, err := prompt.NewBuilder(prompt.WithStructuredOutput(true))
 			Expect(err).NotTo(HaveOccurred())
 
@@ -144,13 +422,13 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 				Message:   "Test message",
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rendered).To(ContainSubstring("SINGLE JSON object"),
-				"structured output mode must instruct LLM to return pure JSON")
+			Expect(rendered).To(ContainSubstring("submit_result"),
+				"prompt must instruct LLM to call submit_result tool")
 			Expect(rendered).NotTo(ContainSubstring("Use section header format"),
-				"structured output mode must NOT include legacy section header instructions")
+				"prompt must NOT include legacy section header instructions")
 		})
 
-		It("should include legacy section header format when structured output disabled", func() {
+		It("should include submit_result instruction when structured output is disabled", func() {
 			builder, err := prompt.NewBuilder()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -161,10 +439,10 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 				Message:   "Test message",
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rendered).To(ContainSubstring("Use section header format"),
-				"default mode must use legacy section header instructions")
-			Expect(rendered).NotTo(ContainSubstring("SINGLE JSON object"),
-				"default mode must NOT include structured output instructions")
+			Expect(rendered).To(ContainSubstring("submit_result"),
+				"prompt must instruct LLM to call submit_result tool even without structured output")
+			Expect(rendered).NotTo(ContainSubstring("Use section header format"),
+				"prompt must NOT include legacy section header instructions")
 		})
 	})
 

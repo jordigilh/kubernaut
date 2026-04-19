@@ -22,21 +22,12 @@ import (
 	"log/slog"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 )
-
-var knownWorkloadGVRs = map[string]schema.GroupVersionResource{
-	"Deployment":  {Group: "apps", Version: "v1", Resource: "deployments"},
-	"StatefulSet": {Group: "apps", Version: "v1", Resource: "statefulsets"},
-	"DaemonSet":   {Group: "apps", Version: "v1", Resource: "daemonsets"},
-	"ReplicaSet":  {Group: "apps", Version: "v1", Resource: "replicasets"},
-	"Job":         {Group: "batch", Version: "v1", Resource: "jobs"},
-	"CronJob":     {Group: "batch", Version: "v1", Resource: "cronjobs"},
-	"Pod":         {Group: "", Version: "v1", Resource: "pods"},
-}
 
 var (
 	hpaGVR           = schema.GroupVersionResource{Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"}
@@ -48,13 +39,18 @@ var (
 // LabelDetector detects cluster infrastructure characteristics for a resource.
 // Per ADR-056 v1.7, label detection runs in EnrichmentService Phase 2 of the
 // three-phase RCA, after owner chain resolution provides the root owner.
+//
+// GVR resolution uses the REST mapper to support any standard Kubernetes kind,
+// including non-workload root owners like ConfigMap, Secret, and Service (#679).
 type LabelDetector struct {
 	dynClient dynamic.Interface
+	mapper    meta.RESTMapper
 }
 
-// NewLabelDetector creates a LabelDetector backed by the given dynamic K8s client.
-func NewLabelDetector(dynClient dynamic.Interface) *LabelDetector {
-	return &LabelDetector{dynClient: dynClient}
+// NewLabelDetector creates a LabelDetector backed by the given dynamic K8s client
+// and REST mapper. The mapper resolves any Kubernetes kind to its GVR (#679).
+func NewLabelDetector(dynClient dynamic.Interface, mapper meta.RESTMapper) *LabelDetector {
+	return &LabelDetector{dynClient: dynClient, mapper: mapper}
 }
 
 // DetectLabels detects infrastructure characteristics for the given resource,
@@ -96,9 +92,9 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, kind, name, namespace 
 }
 
 func (d *LabelDetector) fetchResource(ctx context.Context, kind, name, namespace string) (*unstructured.Unstructured, error) {
-	gvr, ok := knownWorkloadGVRs[kind]
-	if !ok {
-		return nil, fmt.Errorf("unknown kind %q for label detection", kind)
+	gvr, err := d.resolveGVR(kind)
+	if err != nil {
+		return nil, fmt.Errorf("cannot resolve GVR for kind %q: %w", kind, err)
 	}
 	var client dynamic.ResourceInterface
 	if namespace != "" {
@@ -109,22 +105,48 @@ func (d *LabelDetector) fetchResource(ctx context.Context, kind, name, namespace
 	return client.Get(ctx, name, metav1.GetOptions{})
 }
 
+func (d *LabelDetector) resolveGVR(kind string) (schema.GroupVersionResource, error) {
+	if d.mapper == nil {
+		return schema.GroupVersionResource{}, fmt.Errorf("REST mapper is required for GVR resolution of kind %q", kind)
+	}
+	plural := strings.ToLower(kind) + "s"
+	gvr, err := d.mapper.ResourceFor(schema.GroupVersionResource{Resource: plural})
+	if err != nil {
+		return schema.GroupVersionResource{}, err
+	}
+	return gvr, nil
+}
+
 func detectGitOps(obj *unstructured.Unstructured, result *DetectedLabels) {
 	annotations := obj.GetAnnotations()
-	if annotations == nil {
+	if annotations != nil {
+		if v, ok := annotations["argocd.argoproj.io/managed-by"]; ok && v != "" {
+			result.GitOpsManaged = true
+			result.GitOpsTool = "argocd"
+			return
+		}
+		if _, ok := annotations["fluxcd.io/sync-checksum"]; ok {
+			result.GitOpsManaged = true
+			result.GitOpsTool = "flux"
+			return
+		}
+		if _, ok := annotations["kustomize.toolkit.fluxcd.io/name"]; ok {
+			result.GitOpsManaged = true
+			result.GitOpsTool = "flux"
+			return
+		}
+	}
+
+	labels := obj.GetLabels()
+	if labels == nil {
 		return
 	}
-	if v, ok := annotations["argocd.argoproj.io/managed-by"]; ok && v != "" {
+	if _, ok := labels["argocd.argoproj.io/instance"]; ok {
 		result.GitOpsManaged = true
 		result.GitOpsTool = "argocd"
 		return
 	}
-	if _, ok := annotations["fluxcd.io/sync-checksum"]; ok {
-		result.GitOpsManaged = true
-		result.GitOpsTool = "flux"
-		return
-	}
-	if _, ok := annotations["kustomize.toolkit.fluxcd.io/name"]; ok {
+	if _, ok := labels["fluxcd.io/sync-gc-mark"]; ok {
 		result.GitOpsManaged = true
 		result.GitOpsTool = "flux"
 	}
@@ -136,6 +158,10 @@ func detectHelm(obj *unstructured.Unstructured, result *DetectedLabels) {
 		return
 	}
 	if v, ok := labels["app.kubernetes.io/managed-by"]; ok && strings.EqualFold(v, "Helm") {
+		result.HelmManaged = true
+		return
+	}
+	if _, ok := labels["helm.sh/chart"]; ok {
 		result.HelmManaged = true
 	}
 }

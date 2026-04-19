@@ -23,7 +23,7 @@ import (
 
 // StubProvider is the v1.3 MCP tool provider that logs a warning and
 // returns an empty tool list. Config parsing and registry wiring are
-// tested; real SSE/stdio transport deferred to v1.4.
+// tested; real SSE/stdio transport deferred to v1.5.
 type StubProvider struct {
 	logger *slog.Logger
 }

@@ -116,8 +116,8 @@ Session summaries from January 26, 2026.
 ### HolmesGPT API ✅ COMPLETE
 | Component | Status | Document |
 |---|---|---|
-| **OAuth-Proxy Config** | ✅ Complete | `deploy/holmesgpt-api/06-deployment.yaml` (verb:"get") |
-| **ClusterRole** | ✅ Complete | `deploy/holmesgpt-api/03-rbac.yaml` |
+| **OAuth-Proxy Config** | ✅ Complete | `deploy/kubernaut-agent/06-deployment.yaml` (verb:"get") |
+| **ClusterRole** | ✅ Complete | `deploy/kubernaut-agent/03-rbac.yaml` |
 | **E2E Tests** | 🚧 Pending | To be created |
 
 ### Notification Service ✅ COMPLETE (PoC)
@@ -149,7 +149,7 @@ Session summaries from January 26, 2026.
 
 ### Related DDs
 - **[DD-AUTH-009: OAuth2-Proxy Workflow Attribution](../DD-AUTH-009-oauth2-proxy-workflow-attribution-implementation.md)** - Workflow audit tracking with X-Auth-Request-User header
-- **[DD-AUTH-006: HAPI OAuth-Proxy Configuration](../DD-AUTH-006-holmesgpt-api-oauth-proxy-config.md)** - HolmesGPT API sidecar config
+- **[DD-AUTH-006: HAPI OAuth-Proxy Configuration](../DD-AUTH-006-kubernaut-agent-oauth-proxy-config.md)** - HolmesGPT API sidecar config
 - **[DD-AUTH-004: DataStorage Client Authentication](../DD-AUTH-004-datastorage-client-authentication-pattern.md)** - ServiceAccount authentication pattern
 - **[DD-AUDIT-004: RR Reconstruction Field Mapping](../DD-AUDIT-004-RR-RECONSTRUCTION-FIELD-MAPPING.md)** - Audit trail for RemediationRequest reconstruction
 
@@ -206,7 +206,7 @@ Session summaries from January 26, 2026.
 - ✅ **Notification**: `test/e2e/notification/` (cross-namespace RBAC)
 
 ### Pending Tests
-- 🚧 **HolmesGPT API E2E tests** (`test/e2e/holmesgpt-api/auth_validation_test.go`)
+- 🚧 **HolmesGPT API E2E tests** (`test/e2e/kubernaut-agent/auth_validation_test.go`)
 - 🚧 **401 Unauthorized scenarios** (invalid/expired tokens)
 
 ---
@@ -246,7 +246,7 @@ This design decision is the **canonical reference** for Kubernetes RBAC verb map
 **Referenced By**:
 - DataStorage deployment (`deploy/data-storage/deployment.yaml`)
 - DataStorage ClusterRole (`deploy/data-storage/client-rbac-v2.yaml`)
-- HolmesGPT API deployment (`deploy/holmesgpt-api/06-deployment.yaml`)
+- HolmesGPT API deployment (`deploy/kubernaut-agent/06-deployment.yaml`)
 - E2E test guides (`DD-AUTH-011-E2E-TESTING-GUIDE.md`)
 
 ---

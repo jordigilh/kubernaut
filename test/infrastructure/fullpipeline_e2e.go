@@ -546,6 +546,14 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 9: Create enrichment fixture resources (#704)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 9: Creating enrichment fixture resources (#704)...")
+	if err := createEnrichmentFixtures(ctx, kubeconfigPath, writer); err != nil {
+		return builtImages, seededUUIDs, fmt.Errorf("PHASE 9 failed: enrichment fixtures: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// DONE
 	// ═══════════════════════════════════════════════════════════════════════
 	totalDuration := time.Since(startTime).Round(time.Second)
@@ -975,6 +983,7 @@ spec:
         app: memory-eater
         kubernaut.ai/managed: "true"
     spec:
+      automountServiceAccountToken: false
       containers:
       - name: memory-eater
         image: us-central1-docker.pkg.dev/genuine-flight-317411/devel/memory-eater:1.0
@@ -1027,6 +1036,7 @@ spec:
         app: memory-eater
         kubernaut.ai/managed: "true"
     spec:
+      automountServiceAccountToken: false
       containers:
       - name: memory-eater
         image: us-central1-docker.pkg.dev/genuine-flight-317411/devel/memory-eater:1.0

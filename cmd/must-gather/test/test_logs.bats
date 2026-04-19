@@ -155,7 +155,7 @@ EOF
     mock_kubectl "${TEST_TEMP_DIR}/pod-list.yaml"
 
     # Create mock logs for all 8 V1.0 services
-    declare -a services=("gateway" "datastorage" "holmesgpt-api"
+    declare -a services=("gateway" "datastorage" "kubernaut-agent"
                         "notification-controller" "signalprocessing-controller"
                         "aianalysis-controller" "workflowexecution-controller"
                         "remediationorchestrator-controller")

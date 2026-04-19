@@ -134,7 +134,7 @@ WHERE event_type = 'aianalysis.analysis.completed'
 
 ### HolmesAPI Changes
 
-**File**: `holmesgpt-api/src/audit/events.py`
+**File**: `kubernaut-agent/src/audit/events.py`
 
 ```python
 def create_hapi_response_complete_event(
@@ -163,7 +163,7 @@ def create_hapi_response_complete_event(
     )
 ```
 
-**File**: `holmesgpt-api/src/audit/events.py` (failure path, added in #442)
+**File**: `kubernaut-agent/src/audit/events.py` (failure path, added in #442)
 
 ```python
 def create_aiagent_response_failed_event(
@@ -196,7 +196,7 @@ def create_aiagent_response_failed_event(
     )
 ```
 
-**File**: `holmesgpt-api/src/extensions/incident/endpoint.py`
+**File**: `kubernaut-agent/src/extensions/incident/endpoint.py`
 
 ```python
 @router.post("/incident/analyze")

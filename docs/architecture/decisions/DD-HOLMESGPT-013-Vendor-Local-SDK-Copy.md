@@ -9,7 +9,7 @@
 
 ## 📋 **Context**
 
-The `holmesgpt-api` service depends on the **HolmesGPT Python SDK** for AI-powered investigation capabilities. During SDK integration, we discovered critical dependency management challenges that threatened production stability:
+The `kubernaut-agent` service depends on the **HolmesGPT Python SDK** for AI-powered investigation capabilities. During SDK integration, we discovered critical dependency management challenges that threatened production stability:
 
 ### **Triggering Issue: Dependency Specification Bugs**
 
@@ -310,7 +310,7 @@ real    0m 08s
 ## 📚 **References**
 
 - **HolmesGPT SDK**: https://github.com/robusta-dev/holmesgpt
-- **Implementation**: `holmesgpt-api/requirements.txt`, `dependencies/holmesgpt/`
+- **Implementation**: `kubernaut-agent/requirements.txt`, `dependencies/holmesgpt/`
 - **Dependency Fix**: `docs/architecture/HOLMESGPT_DEPENDENCY_CONFLICT.md` (if needed)
 - **DD-014 Standard**: [14-design-decisions-documentation.mdc](.cursor/rules/14-design-decisions-documentation.mdc)
 

@@ -83,8 +83,8 @@ def test_ut_hapi_056_001_argocd_pod_annotation(self):
 
 ## Cycle 1.1: LabelDetector (21 tests)
 
-**File**: `holmesgpt-api/tests/unit/test_label_detector.py`
-**Production code**: `holmesgpt-api/src/detection/labels.py`
+**File**: `kubernaut-agent/tests/unit/test_label_detector.py`
+**Production code**: `kubernaut-agent/src/detection/labels.py`
 
 ### Summary
 
@@ -437,8 +437,8 @@ def test_ut_hapi_056_001_argocd_pod_annotation(self):
 
 ## Cycle 1.2: K8s Client Label Queries (12 tests)
 
-**File**: `holmesgpt-api/tests/unit/test_k8s_client_label_queries.py`
-**Production code**: `holmesgpt-api/src/clients/k8s_client.py`
+**File**: `kubernaut-agent/tests/unit/test_k8s_client_label_queries.py`
+**Production code**: `kubernaut-agent/src/clients/k8s_client.py`
 
 ### Summary
 
@@ -553,8 +553,8 @@ Same as UT-HAPI-056-032 but for unexpected `Exception`. Returns `None`.
 
 ## Cycle 1.3: Resource Context + Session State + Reassessment (12 tests)
 
-**File**: `holmesgpt-api/tests/unit/test_resource_context_session_state.py`
-**Production code**: `holmesgpt-api/src/toolsets/resource_context.py`
+**File**: `kubernaut-agent/tests/unit/test_resource_context_session_state.py`
+**Production code**: `kubernaut-agent/src/toolsets/resource_context.py`
 
 ### Summary
 
@@ -759,8 +759,8 @@ Same as UT-HAPI-056-032 but for unexpected `Exception`. Returns `None`.
 
 ## Cycle 2.1: Flow Enforcement (8 tests)
 
-**File**: `holmesgpt-api/tests/unit/test_workflow_discovery_flow_enforcement.py`
-**Production code**: `holmesgpt-api/src/toolsets/workflow_discovery.py`
+**File**: `kubernaut-agent/tests/unit/test_workflow_discovery_flow_enforcement.py`
+**Production code**: `kubernaut-agent/src/toolsets/workflow_discovery.py`
 
 ### Summary
 
@@ -849,8 +849,8 @@ Same as UT-HAPI-056-044 but for `list_workflows` and `get_workflow`.
 
 ## Cycle 2.2: Context Params from session_state (5 tests)
 
-**File**: `holmesgpt-api/tests/unit/test_workflow_discovery_context_params.py`
-**Production code**: `holmesgpt-api/src/toolsets/workflow_discovery.py` (`_build_context_params`)
+**File**: `kubernaut-agent/tests/unit/test_workflow_discovery_context_params.py`
+**Production code**: `kubernaut-agent/src/toolsets/workflow_discovery.py` (`_build_context_params`)
 
 ### Summary
 
@@ -936,8 +936,8 @@ Same as UT-HAPI-056-044 but for `list_workflows` and `get_workflow`.
 
 ## Cycle 2.3: Prompt Removal (3 tests)
 
-**File**: `holmesgpt-api/tests/unit/test_prompt_no_detected_labels.py`
-**Production code**: `holmesgpt-api/src/extensions/incident/prompt_builder.py`, `holmesgpt-api/src/extensions/recovery/prompt_builder.py`
+**File**: `kubernaut-agent/tests/unit/test_prompt_no_detected_labels.py`
+**Production code**: `kubernaut-agent/src/extensions/incident/prompt_builder.py`, `kubernaut-agent/src/extensions/recovery/prompt_builder.py`
 
 ### Summary
 
@@ -986,8 +986,8 @@ Same as UT-HAPI-056-056 but for recovery prompt builder.
 
 ## Cycle 2.4: Session State Wiring (4 tests)
 
-**File**: `holmesgpt-api/tests/unit/test_session_state_wiring.py`
-**Production code**: `holmesgpt-api/src/extensions/llm_config.py`
+**File**: `kubernaut-agent/tests/unit/test_session_state_wiring.py`
+**Production code**: `kubernaut-agent/src/extensions/llm_config.py`
 
 ### Summary
 
@@ -1022,8 +1022,8 @@ Same pattern: verify session_state reaches the toolset (059, 060) and flows to i
 
 ## Cycle 2.5: Response Model (5 tests)
 
-**File**: `holmesgpt-api/tests/unit/test_response_detected_labels.py`
-**Production code**: `holmesgpt-api/src/models/incident_models.py`, `holmesgpt-api/src/models/recovery_models.py`, `holmesgpt-api/src/extensions/llm_config.py`
+**File**: `kubernaut-agent/tests/unit/test_response_detected_labels.py`
+**Production code**: `kubernaut-agent/src/models/incident_models.py`, `kubernaut-agent/src/models/recovery_models.py`, `kubernaut-agent/src/extensions/llm_config.py`
 
 ### Summary
 
@@ -1068,8 +1068,8 @@ Same pattern: verify session_state reaches the toolset (059, 060) and flows to i
 
 ## Cycle 3.1: should_include_detected_labels Safety Gate (9 tests)
 
-**File**: `holmesgpt-api/tests/unit/test_should_include_detected_labels.py`
-**Production code**: `holmesgpt-api/src/toolsets/workflow_discovery.py` (`should_include_detected_labels`)
+**File**: `kubernaut-agent/tests/unit/test_should_include_detected_labels.py`
+**Production code**: `kubernaut-agent/src/toolsets/workflow_discovery.py` (`should_include_detected_labels`)
 
 ### Summary
 
@@ -1218,8 +1218,8 @@ Same pattern: verify session_state reaches the toolset (059, 060) and flows to i
 
 ## Cycle 3.2: LabelDetector Branch Gaps (4 tests)
 
-**File**: `holmesgpt-api/tests/unit/test_label_detector.py` (extend existing)
-**Production code**: `holmesgpt-api/src/detection/labels.py`
+**File**: `kubernaut-agent/tests/unit/test_label_detector.py` (extend existing)
+**Production code**: `kubernaut-agent/src/detection/labels.py`
 
 ### Summary
 
@@ -1296,9 +1296,9 @@ Same pattern: verify session_state reaches the toolset (059, 060) and flows to i
 
 ## Cycle 2.6: cluster_context in list_available_actions (7 unit + 1 integration test)
 
-**File (unit)**: `holmesgpt-api/tests/unit/test_workflow_discovery_cluster_context.py`
-**File (integration)**: `holmesgpt-api/tests/integration/test_detected_labels_integration.py` (extend)
-**Production code**: `holmesgpt-api/src/toolsets/workflow_discovery.py` (`ListAvailableActionsTool._invoke`)
+**File (unit)**: `kubernaut-agent/tests/unit/test_workflow_discovery_cluster_context.py`
+**File (integration)**: `kubernaut-agent/tests/integration/test_detected_labels_integration.py` (extend)
+**Production code**: `kubernaut-agent/src/toolsets/workflow_discovery.py` (`ListAvailableActionsTool._invoke`)
 **Authority**: ADR-056 v1.3, DD-HAPI-017 v1.3, DD-HAPI-018 v1.1
 **BR**: BR-HAPI-017-007
 
@@ -1555,8 +1555,8 @@ ADR-056 v1.2 established that detected labels are HAPI-internal and not returned
 
 ## Integration Tests: DetectedLabels End-to-End Flow (8 tests)
 
-**File**: `holmesgpt-api/tests/integration/test_detected_labels_integration.py`
-**Fixtures**: `holmesgpt-api/tests/integration/fixtures/k8s_mock_fixtures.py`
+**File**: `kubernaut-agent/tests/integration/test_detected_labels_integration.py`
+**Fixtures**: `kubernaut-agent/tests/integration/fixtures/k8s_mock_fixtures.py`
 **Production code**: `src/extensions/incident/llm_integration.py`, `src/extensions/recovery/llm_integration.py`, `src/toolsets/workflow_discovery.py`, `src/detection/labels.py`
 
 ### Infrastructure
@@ -1582,7 +1582,7 @@ ADR-056 v1.2 established that detected labels are HAPI-internal and not returned
 
 ## E2E Tests: DetectedLabels in Kind Cluster (3 tests)
 
-**File**: `test/e2e/holmesgpt-api/detected_labels_e2e_test.go`
+**File**: `test/e2e/kubernaut-agent/detected_labels_e2e_test.go`
 **Infrastructure**: Kind cluster with HAPI, Mock LLM (3-step), DataStorage, real K8s resources
 
 ### Summary

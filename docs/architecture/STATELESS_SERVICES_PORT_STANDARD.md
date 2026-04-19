@@ -175,13 +175,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: holmesgpt-api
+  name: kubernaut-agent
   namespace: kubernaut-system
   labels:
-    app.kubernetes.io/name: holmesgpt-api
+    app.kubernetes.io/name: kubernaut-agent
 spec:
   selector:
-    app: holmesgpt-api
+    app: kubernaut-agent
   ports:
   - port: 8080
     targetPort: 8080

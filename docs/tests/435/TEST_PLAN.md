@@ -167,7 +167,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: DD-AUDIT-003
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_token_usage_audit.py`
+**File**: `kubernaut-agent/tests/unit/test_token_usage_audit.py`
 
 **Given**: A freshly created TokenAccumulator with no `add()` calls
 **When**: `prompt_tokens`, `completion_tokens`, and `total()` are read
@@ -182,7 +182,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: DD-AUDIT-003
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_token_usage_audit.py`
+**File**: `kubernaut-agent/tests/unit/test_token_usage_audit.py`
 
 **Given**: A TokenAccumulator
 **When**: `add(150, 80)` then `add(200, 120)` are called
@@ -197,7 +197,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: DD-AUDIT-003
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_token_usage_audit.py`
+**File**: `kubernaut-agent/tests/unit/test_token_usage_audit.py`
 
 **Given**: A TokenAccumulator with existing totals from `add(100, 50)`
 **When**: `add(0, 0)` is called
@@ -212,7 +212,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: DD-AUDIT-003
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_token_usage_audit.py`
+**File**: `kubernaut-agent/tests/unit/test_token_usage_audit.py`
 
 **Given**: A TokenAccumulator after `add(500, 200)`
 **When**: `total()` is called
@@ -226,7 +226,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: DD-AUDIT-003
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_token_usage_audit.py`
+**File**: `kubernaut-agent/tests/unit/test_token_usage_audit.py`
 
 **Given**: Valid incident_id, remediation_id, response_data, and token counts
 **When**: `create_aiagent_response_complete_event(..., total_prompt_tokens=350, total_completion_tokens=200)` is called
@@ -241,7 +241,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: ADR-034
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_token_usage_audit.py`
+**File**: `kubernaut-agent/tests/unit/test_token_usage_audit.py`
 
 **Given**: Valid incident_id, remediation_id, response_data, NO token counts
 **When**: `create_aiagent_response_complete_event(...)` is called without token params
@@ -256,7 +256,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: DD-AUDIT-003
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_token_usage_audit.py`
+**File**: `kubernaut-agent/tests/unit/test_token_usage_audit.py`
 
 **Given**: Valid LLM response data and token count
 **When**: `create_llm_response_event(..., tokens_used=550)` is called (note: tokens_used is an existing unused param)
@@ -269,7 +269,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: ADR-034
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_token_usage_audit.py`
+**File**: `kubernaut-agent/tests/unit/test_token_usage_audit.py`
 
 **Given**: Valid LLM response data, no token count
 **When**: `create_llm_response_event(...)` is called without tokens_used (default None)
@@ -282,7 +282,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: BR-HAPI-301
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_token_usage_audit.py`
+**File**: `kubernaut-agent/tests/unit/test_token_usage_audit.py`
 
 **Given**: A TokenAccumulator set in the ContextVar, and a KubernautLiteLLMCallback
 **When**: `log_success_event` is called with usage(prompt=150, completion=80)
@@ -297,7 +297,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: BR-HAPI-301
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_token_usage_audit.py`
+**File**: `kubernaut-agent/tests/unit/test_token_usage_audit.py`
 
 **Given**: No TokenAccumulator in ContextVar (ContextVar is empty/None)
 **When**: `log_success_event` is called with usage(prompt=100, completion=50)
@@ -312,7 +312,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: BR-HAPI-301
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_token_usage_audit.py`
+**File**: `kubernaut-agent/tests/unit/test_token_usage_audit.py`
 
 **Given**: A broken accumulator (add() raises RuntimeError) set in ContextVar
 **When**: `log_success_event` is called
@@ -326,7 +326,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: DD-AUDIT-003
 **Type**: Integration
-**File**: `holmesgpt-api/tests/integration/test_token_usage_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_token_usage_integration.py`
 
 **Given**: Mock LLM returning canned response with usage(prompt=500, completion=200), mock audit store capturing events
 **When**: `_run_incident_investigation` completes a full investigation
@@ -341,7 +341,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: DD-AUDIT-003
 **Type**: Integration
-**File**: `holmesgpt-api/tests/integration/test_token_usage_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_token_usage_integration.py`
 
 **Given**: Mock LLM returning canned response with usage(prompt=500, completion=200), mock audit store capturing events
 **When**: `audit_llm_response_and_tools` is called with accumulated token total
@@ -355,7 +355,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: DD-AUDIT-003
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_token_usage_audit.py`
+**File**: `kubernaut-agent/tests/unit/test_token_usage_audit.py`
 
 **Given**: A TokenAccumulator, a KubernautLiteLLMCallback, and 3 LLM calls with usage (300,150), (200,80), (100,70)
 **When**: For each call, snapshot `acc.total()` before, fire callback, compute `acc.total() - snapshot`
@@ -371,7 +371,7 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 **BR**: DD-AUDIT-003
 **Type**: Integration
-**File**: `holmesgpt-api/tests/integration/test_token_usage_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_token_usage_integration.py`
 
 **Given**: 2-attempt investigation with usage (300,150) and (200,100)
 **When**: Each attempt emits `aiagent.llm.response` with per-call delta, then `aiagent.response.complete` with session totals
@@ -391,14 +391,14 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 - **Framework**: pytest (HAPI Python convention)
 - **Mocks**: `unittest.mock.MagicMock` for LiteLLM response objects, `CollectorRegistry` for isolated Prometheus metrics
-- **Location**: `holmesgpt-api/tests/unit/test_token_usage_audit.py`
+- **Location**: `kubernaut-agent/tests/unit/test_token_usage_audit.py`
 
 ### Integration Tests
 
 - **Framework**: pytest
 - **Mocks**: Mock LLM (always mocked per testing guidelines), mock audit store (capture emitted events)
 - **Infrastructure**: No external services required
-- **Location**: `holmesgpt-api/tests/integration/test_token_usage_integration.py`
+- **Location**: `kubernaut-agent/tests/integration/test_token_usage_integration.py`
 
 ---
 
@@ -406,16 +406,16 @@ Format: `{TIER}-HAPI-435-{SEQUENCE}`
 
 ```bash
 # Unit tests
-cd holmesgpt-api && python -m pytest tests/unit/test_token_usage_audit.py -v
+cd kubernaut-agent && python -m pytest tests/unit/test_token_usage_audit.py -v
 
 # Integration tests
-cd holmesgpt-api && python -m pytest tests/integration/test_token_usage_integration.py -v
+cd kubernaut-agent && python -m pytest tests/integration/test_token_usage_integration.py -v
 
 # All HAPI tests
-cd holmesgpt-api && python -m pytest tests/unit/ tests/integration/ -v
+cd kubernaut-agent && python -m pytest tests/unit/ tests/integration/ -v
 
 # Specific test by ID
-cd holmesgpt-api && python -m pytest tests/unit/test_token_usage_audit.py -v -k "UT_HAPI_435_001"
+cd kubernaut-agent && python -m pytest tests/unit/test_token_usage_audit.py -v -k "UT_HAPI_435_001"
 ```
 
 ---

@@ -928,7 +928,7 @@ In v1.3 (issue [#433](https://github.com/jordigilh/kubernaut/issues/433), Kubern
 | `ActorType` | `Service` |
 | `ActorID` | `kubernaut-agent` |
 
-(Previously documented as `holmesgpt-api` for HAPI-emitted events.)
+(Previously documented as `kubernaut-agent` for HAPI-emitted events.)
 
 **`EventAction` / `EventOutcome` by event type** (KA sets both on every event; `event_id` is a **UUID** generated per event):
 

@@ -40,8 +40,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
@@ -104,9 +106,10 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 	}
 
 	Describe("IT-KA-433-AP-001: Investigation emits llm.request with model and prompt_preview", func() {
-		It("should include model name and prompt_preview in llm.request event", func() {
+		It("should include model name and prompt_preview in llm.request events for both phases", func() {
 			mockClient.responses = []llm.ChatResponse{
-				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","human_review_needed":true}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9}`}},
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
@@ -118,7 +121,8 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			reqEvents := eventsOfType(audit.EventTypeLLMRequest)
-			Expect(reqEvents).To(HaveLen(1))
+			Expect(reqEvents).To(HaveLen(2),
+				"two-phase investigation (RCA + workflow selection) should emit 2 llm.request events")
 			first := reqEvents[0]
 			Expect(first.Data["model"]).To(Equal("claude-sonnet-4-20250514"))
 			preview, ok := first.Data["prompt_preview"].(string)
@@ -346,7 +350,19 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, apiServerDeploy)
-			ld := enrichment.NewLabelDetector(dynClient)
+			testMapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+				{Group: "", Version: "v1"},
+				{Group: "apps", Version: "v1"},
+				{Group: "autoscaling", Version: "v2"},
+				{Group: "policy", Version: "v1"},
+				{Group: "networking.k8s.io", Version: "v1"},
+			})
+			testMapper.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, meta.RESTScopeNamespace)
+			testMapper.Add(schema.GroupVersionKind{Group: "autoscaling", Version: "v2", Kind: "HorizontalPodAutoscaler"}, meta.RESTScopeNamespace)
+			testMapper.Add(schema.GroupVersionKind{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}, meta.RESTScopeNamespace)
+			testMapper.Add(schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"}, meta.RESTScopeNamespace)
+			testMapper.Add(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ResourceQuota"}, meta.RESTScopeNamespace)
+			ld := enrichment.NewLabelDetector(dynClient, testMapper)
 
 			k8sClientForLabels := &resourceAwareK8sClient{
 				chains: map[string][]enrichment.OwnerChainEntry{

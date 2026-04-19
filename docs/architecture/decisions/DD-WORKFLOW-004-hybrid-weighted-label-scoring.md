@@ -693,7 +693,7 @@ custom_labels["team"] = [input.namespace.labels["team"]] {
 3. AIAnalysis combines LLM-determined labels + detected labels
 4. Calls Data Storage workflow search with ALL labels (custom_labels auto-appended per DD-HAPI-001)
 
-**Implementation**: `holmesgpt-api/src/extensions/recovery.py`
+**Implementation**: `kubernaut-agent/src/extensions/recovery.py`
 
 ```python
 def search_workflows(context, rca_findings):

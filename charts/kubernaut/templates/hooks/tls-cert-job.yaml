@@ -277,9 +277,6 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["get", "list"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["actiontypes", "remediationworkflows"]
-    verbs: ["get", "create", "update", "patch"]
   # #521: CRD upgrade hook needs SSA permissions on CRDs.
   # Consolidated into the shared hook ClusterRole to avoid proliferating
   # ClusterRoles/Bindings — all hooks share one SA and are short-lived.
@@ -308,9 +305,9 @@ subjects:
 ---
 # Job 3: Remove admission webhooks before uninstall (pre-delete).
 # During helm uninstall, Helm may terminate the authwebhook pod before
-# deleting chart-managed CRs (ActionTypes, RemediationWorkflows from
-# demoContent). The validating webhooks use failurePolicy=Fail, so
-# DELETE requests are rejected once the webhook endpoint is gone.
+# deleting CRs that pass through admission webhooks. The validating
+# webhooks use failurePolicy=Fail, so DELETE requests are rejected
+# once the webhook endpoint is gone.
 # Removing the webhook configs first ensures clean teardown.
 # NOTE: Unconditional — webhooks exist regardless of tls.mode.
 apiVersion: batch/v1

@@ -23,9 +23,9 @@
 
 ### In Scope
 
-- `holmesgpt-api/src/main.py`: Two-file config loading from well-known SDK path
-- `holmesgpt-api/src/models/config_models.py`: `AppConfig` TypedDict update
-- `charts/kubernaut/templates/holmesgpt-api/holmesgpt-api.yaml`: ConfigMap split, volume mounts, conditional SDK template
+- `kubernaut-agent/src/main.py`: Two-file config loading from well-known SDK path
+- `kubernaut-agent/src/models/config_models.py`: `AppConfig` TypedDict update
+- `charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml`: ConfigMap split, volume mounts, conditional SDK template
 - `charts/kubernaut/values.yaml` / `values.schema.json`: New fields validation
 
 ### Out of Scope
@@ -71,14 +71,14 @@ Tests validate **business outcomes**: "Does the operator get Prometheus tools av
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `holmesgpt-api/src/main.py` | `load_config()` SDK merge logic | ~30 new lines |
-| `holmesgpt-api/src/models/config_models.py` | `AppConfig` TypedDict | ~5 new lines |
+| `kubernaut-agent/src/main.py` | `load_config()` SDK merge logic | ~30 new lines |
+| `kubernaut-agent/src/models/config_models.py` | `AppConfig` TypedDict | ~5 new lines |
 
 ### Integration-Testable Code (I/O, rendering, cross-component)
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `charts/kubernaut/templates/holmesgpt-api/holmesgpt-api.yaml` | ConfigMap + Deployment templates | ~50 changed lines |
+| `charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml` | ConfigMap + Deployment templates | ~50 changed lines |
 | `charts/kubernaut/values.yaml` | New fields | ~15 new lines |
 | `charts/kubernaut/values.schema.json` | Schema validation | ~20 new lines |
 
@@ -125,7 +125,7 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 
 ### Tier 1: Unit Tests (Python pytest)
 
-**Testable code scope**: `holmesgpt-api/src/main.py` `load_config()` — targeting >=80% of new SDK merge logic
+**Testable code scope**: `kubernaut-agent/src/main.py` `load_config()` — targeting >=80% of new SDK merge logic
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
@@ -140,11 +140,11 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 
 ### Tier 2: Integration Tests (Helm template/lint, shell)
 
-**Testable code scope**: `charts/kubernaut/templates/holmesgpt-api/` — targeting >=80% of template logic paths
+**Testable code scope**: `charts/kubernaut/templates/kubernaut-agent/` — targeting >=80% of template logic paths
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `IT-HAPI-390-001` | Helm renders both holmesgpt-api-config and holmesgpt-sdk-config as separate ConfigMaps | Pending |
+| `IT-HAPI-390-001` | Helm renders both kubernaut-agent-config and holmesgpt-sdk-config as separate ConfigMaps | Pending |
 | `IT-HAPI-390-002` | Setting existingSdkConfigMap causes chart to skip generating holmesgpt-sdk-config | Pending |
 | `IT-HAPI-390-003` | Deployment spec includes sdk-config volume and /etc/holmesgpt/sdk mount | Pending |
 | `IT-HAPI-390-004` | helm lint passes for default values, with toolsets, and with existingSdkConfigMap | Pending |
@@ -166,7 +166,7 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 
 **BR**: #390-LOAD
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_sdk_config_loading.py`
+**File**: `kubernaut-agent/tests/unit/test_sdk_config_loading.py`
 
 **Given**: Main config at `CONFIG_FILE` with `logging`, `data_storage`, `audit`. SDK config at `SDK_CONFIG_FILE` with `llm`, `toolsets`.
 **When**: `load_config()` is called.
@@ -184,7 +184,7 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 
 **BR**: #390-MERGE
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_sdk_config_loading.py`
+**File**: `kubernaut-agent/tests/unit/test_sdk_config_loading.py`
 
 **Given**: Main config has default `llm.max_retries: 3`. SDK config has `llm.provider: "vertex_ai"`, `llm.model: "claude-sonnet-4"`.
 **When**: `load_config()` is called.
@@ -201,7 +201,7 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 
 **BR**: #390-TOOLSETS
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_sdk_config_loading.py`
+**File**: `kubernaut-agent/tests/unit/test_sdk_config_loading.py`
 
 **Given**: SDK config contains `toolsets: {"prometheus/metrics": {"enabled": true, "config": {"prometheus_url": "http://prom:9090"}}}`.
 **When**: `load_config()` is called and result passed to `prepare_toolsets_config_for_sdk()`.
@@ -218,7 +218,7 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 
 **BR**: #390-MCP
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_sdk_config_loading.py`
+**File**: `kubernaut-agent/tests/unit/test_sdk_config_loading.py`
 
 **Given**: SDK config contains `mcp_servers: {"custom": {"url": "http://mcp:8080"}}`.
 **When**: `load_config()` is called.
@@ -233,7 +233,7 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 
 **BR**: #390-MISSING
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_sdk_config_loading.py`
+**File**: `kubernaut-agent/tests/unit/test_sdk_config_loading.py`
 
 **Given**: Main config exists. `SDK_CONFIG_FILE` points to a non-existent path.
 **When**: `load_config()` is called.
@@ -250,7 +250,7 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 
 **BR**: #390-EMPTY
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_sdk_config_loading.py`
+**File**: `kubernaut-agent/tests/unit/test_sdk_config_loading.py`
 
 **Given**: Main config exists. SDK config file exists but is empty.
 **When**: `load_config()` is called.
@@ -267,7 +267,7 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 
 **BR**: #390-NO-LLM
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_sdk_config_loading.py`
+**File**: `kubernaut-agent/tests/unit/test_sdk_config_loading.py`
 
 **Given**: SDK config file exists with `toolsets` but no `llm` section.
 **When**: `merge_sdk_config()` is called.
@@ -284,7 +284,7 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 
 **BR**: #390-LLM-ONLY
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_sdk_config_loading.py`
+**File**: `kubernaut-agent/tests/unit/test_sdk_config_loading.py`
 
 **Given**: SDK config file has only `llm` section (no `toolsets` or `mcp_servers`).
 **When**: `merge_sdk_config()` is called.
@@ -303,7 +303,7 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 **Type**: E2E (Kind cluster)
 **File**: `test/infrastructure/holmesgpt_api.go`
 
-**Given**: `deployHAPIOnly()` creates both `holmesgpt-api-config` and `holmesgpt-sdk-config` ConfigMaps.
+**Given**: `deployHAPIOnly()` creates both `kubernaut-agent-config` and `holmesgpt-sdk-config` ConfigMaps.
 **When**: HAPI pod starts in the Kind cluster.
 **Then**: HAPI boots successfully, loads both configs, and passes readiness probe.
 
@@ -339,11 +339,11 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 
 **Given**: Default `values.yaml` with `holmesgptApi.llm.provider: "openai"`.
 **When**: `helm template` is run.
-**Then**: Output contains both `holmesgpt-api-config` and `holmesgpt-sdk-config` ConfigMaps. HAPI ConfigMap has `logging`, `data_storage`, `audit` but NOT `llm`. SDK ConfigMap has `llm` section.
+**Then**: Output contains both `kubernaut-agent-config` and `holmesgpt-sdk-config` ConfigMaps. HAPI ConfigMap has `logging`, `data_storage`, `audit` but NOT `llm`. SDK ConfigMap has `llm` section.
 
 **Acceptance Criteria**:
 - Two ConfigMaps with distinct names in rendered output
-- `holmesgpt-api-config` does not contain `llm:` key
+- `kubernaut-agent-config` does not contain `llm:` key
 - `holmesgpt-sdk-config` contains `llm:` with rendered values
 
 ---
@@ -393,7 +393,7 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 
 **Acceptance Criteria**:
 - Exit code 0 for all three lint runs
-- No WARNING or ERROR messages related to holmesgpt-api
+- No WARNING or ERROR messages related to kubernaut-agent
 
 ---
 
@@ -403,7 +403,7 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 
 - **Framework**: Python pytest (HAPI is a Python service)
 - **Mocks**: Filesystem only (temp config files via `tempfile`)
-- **Location**: `holmesgpt-api/tests/unit/test_sdk_config_loading.py`
+- **Location**: `kubernaut-agent/tests/unit/test_sdk_config_loading.py`
 - **Env Vars**: `CONFIG_FILE` and `SDK_CONFIG_FILE` pointed to temp files
 
 ### Integration Tests
@@ -418,7 +418,7 @@ Format: `{TIER}-HAPI-390-{SEQUENCE}`
 
 ```bash
 # Unit tests (Python)
-cd holmesgpt-api && python -m pytest tests/unit/test_sdk_config_loading.py -v
+cd kubernaut-agent && python -m pytest tests/unit/test_sdk_config_loading.py -v
 
 # Helm lint (all modes)
 helm lint charts/kubernaut/

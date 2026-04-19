@@ -1,5 +1,7 @@
 {{- if not .Values.aianalysis.policies.existingConfigMap }}
-{{- $approvalContent := .Values.aianalysis.policies.content | default (.Files.Get "files/defaults/approval.rego") }}
+{{- if not .Values.aianalysis.policies.content }}
+{{- fail "aianalysis.policies.content is required (via --set-file aianalysis.policies.content=approval.rego) or provide aianalysis.policies.existingConfigMap" }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -11,7 +13,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   approval.rego: |
-{{ $approvalContent | indent 4 }}
+{{ .Values.aianalysis.policies.content | indent 4 }}
 {{- end }}
 ---
 apiVersion: v1
@@ -73,6 +75,10 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
+  # controller-runtime leader election requires lease RBAC (#687)
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

@@ -11,7 +11,7 @@
             "tool_calls": [
               {
                 "function": {
-                  "arguments": "{\"query\": \"MOCK_RCA_INCOMPLETE critical\", \"rca_resource\": {\"signal_name\": \"MOCK_RCA_INCOMPLETE\", \"kind\": \"Pod\", \"namespace\": \"production\", \"name\": \"ambiguous-pod\"}}",
+                  "arguments": "{\"query\": \"MOCK_RCA_INCOMPLETE critical\", \"rca_resource\": {\"signal_name\": \"MOCK_RCA_INCOMPLETE\", \"kind\": \"Pod\", \"namespace\": \"production\", \"name\": \"unreachable-pod\"}}",
                   "name": "search_workflow_catalog"
                 },
                 "id": "call_f301000e40b5",

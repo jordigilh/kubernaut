@@ -42,6 +42,7 @@ type Config struct {
 	Summarizer     SummarizerConfig     `yaml:"summarizer"`
 	Conversation   ConversationConfig   `yaml:"conversation"`
 	AlignmentCheck AlignmentCheckConfig `yaml:"alignmentCheck"`
+	Enrichment     EnrichmentConfig     `yaml:"enrichment"`
 }
 
 type LLMConfig struct {
@@ -53,6 +54,9 @@ type LLMConfig struct {
 	VertexProject    string                       `yaml:"vertex_project"`
 	VertexLocation   string                       `yaml:"vertex_location"`
 	BedrockRegion    string                       `yaml:"bedrock_region"`
+	Temperature      float64                      `yaml:"temperature"`
+	MaxRetries       int                          `yaml:"max_retries"`
+	TimeoutSeconds   int                          `yaml:"timeout_seconds"`
 	StructuredOutput bool                         `yaml:"-"`
 	CustomHeaders    []pkgconfig.HeaderDefinition `yaml:"-"`
 	OAuth2           OAuth2Config                 `yaml:"-"`
@@ -124,6 +128,14 @@ type SanitizationConfig struct {
 
 type SummarizerConfig struct {
 	Threshold int `yaml:"threshold"`
+}
+
+// EnrichmentConfig controls retry behavior for K8s owner chain resolution
+// during enrichment. HAPI-aligned defaults (MaxRetries=3, BaseBackoff=1s)
+// ensure rca_incomplete is triggered on definitive enrichment failure.
+type EnrichmentConfig struct {
+	MaxRetries  int           `yaml:"max_retries"`
+	BaseBackoff time.Duration `yaml:"base_backoff"`
 }
 
 type AnomalyConfig struct {
@@ -215,13 +227,20 @@ func Load(data []byte) (*Config, error) {
 
 // SDKConfig represents the SDK configuration file structure.
 // This maps to the kubernaut-agent-sdk-config ConfigMap rendered by
-// the Helm chart when llm.provider/model are set. Transport fields
-// (structured_output, custom_headers, oauth2) are sourced exclusively
-// from this config; they are ignored in the main config.yaml.
+// the Helm chart when llm.provider/model are set. All LLM fields
+// use gap-fill semantics (main config wins when non-zero) except
+// transport fields (structured_output, custom_headers, oauth2) which
+// are sourced exclusively from this config.
 type SDKConfig struct {
 	LLM struct {
 		Provider         string                       `yaml:"provider"`
 		Model            string                       `yaml:"model"`
+		Endpoint         string                       `yaml:"endpoint"`
+		APIKey           string                       `yaml:"api_key"`
+		AzureAPIVersion  string                       `yaml:"azure_api_version"`
+		VertexProject    string                       `yaml:"vertex_project"`
+		VertexLocation   string                       `yaml:"vertex_location"`
+		BedrockRegion    string                       `yaml:"bedrock_region"`
 		MaxRetries       int                          `yaml:"max_retries"`
 		TimeoutSeconds   int                          `yaml:"timeout_seconds"`
 		Temperature      float64                      `yaml:"temperature"`
@@ -232,9 +251,13 @@ type SDKConfig struct {
 }
 
 // MergeSDKConfig loads an SDK config file and merges LLM fields into
-// the main config. Provider and model use gap-fill semantics (main
-// config takes precedence). Transport fields (structured_output,
-// custom_headers, oauth2) are sourced exclusively from the SDK config.
+// the main config. Gap-fill semantics: the main config value is kept
+// when non-zero; the SDK value fills the gap only when the main value
+// is the zero value. Gap-fill fields: provider (special: also replaces
+// the default "openai"), model, endpoint, api_key, vertex_project,
+// vertex_location, bedrock_region, azure_api_version, temperature,
+// max_retries, timeout_seconds. Override fields (SDK always wins):
+// structured_output, custom_headers, oauth2.
 func (c *Config) MergeSDKConfig(data []byte) error {
 	var sdk SDKConfig
 	if err := yaml.Unmarshal(data, &sdk); err != nil {
@@ -248,6 +271,33 @@ func (c *Config) MergeSDKConfig(data []byte) error {
 	if c.LLM.Model == "" && sdk.LLM.Model != "" {
 		c.LLM.Model = sdk.LLM.Model
 	}
+	if c.LLM.Endpoint == "" && sdk.LLM.Endpoint != "" {
+		c.LLM.Endpoint = sdk.LLM.Endpoint
+	}
+	if c.LLM.APIKey == "" && sdk.LLM.APIKey != "" {
+		c.LLM.APIKey = sdk.LLM.APIKey
+	}
+	if c.LLM.VertexProject == "" && sdk.LLM.VertexProject != "" {
+		c.LLM.VertexProject = sdk.LLM.VertexProject
+	}
+	if c.LLM.VertexLocation == "" && sdk.LLM.VertexLocation != "" {
+		c.LLM.VertexLocation = sdk.LLM.VertexLocation
+	}
+	if c.LLM.BedrockRegion == "" && sdk.LLM.BedrockRegion != "" {
+		c.LLM.BedrockRegion = sdk.LLM.BedrockRegion
+	}
+	if c.LLM.AzureAPIVersion == "" && sdk.LLM.AzureAPIVersion != "" {
+		c.LLM.AzureAPIVersion = sdk.LLM.AzureAPIVersion
+	}
+	if c.LLM.Temperature == 0 && sdk.LLM.Temperature != 0 {
+		c.LLM.Temperature = sdk.LLM.Temperature
+	}
+	if c.LLM.MaxRetries == 0 && sdk.LLM.MaxRetries != 0 {
+		c.LLM.MaxRetries = sdk.LLM.MaxRetries
+	}
+	if c.LLM.TimeoutSeconds == 0 && sdk.LLM.TimeoutSeconds != 0 {
+		c.LLM.TimeoutSeconds = sdk.LLM.TimeoutSeconds
+	}
 	c.LLM.StructuredOutput = sdk.LLM.StructuredOutput
 	c.LLM.CustomHeaders = sdk.LLM.CustomHeaders
 	c.LLM.OAuth2 = sdk.LLM.OAuth2
@@ -257,8 +307,8 @@ func (c *Config) MergeSDKConfig(data []byte) error {
 // Validate checks required fields and value constraints.
 func (c *Config) Validate() error {
 	switch c.LLM.Provider {
-	case "bedrock", "huggingface", "anthropic", "openai":
-		// endpoint is optional: LangChainGo uses default endpoints for these providers
+	case "bedrock", "huggingface", "anthropic", "openai", "vertex", "vertex_ai":
+		// endpoint is optional: LangChainGo uses default endpoints or project/location for these providers
 	default:
 		if c.LLM.Endpoint == "" {
 			return fmt.Errorf("llm.endpoint is required for provider %q", c.LLM.Provider)
@@ -335,6 +385,10 @@ func DefaultConfig() *Config {
 			Enabled:       false,
 			Timeout:       10 * time.Second,
 			MaxStepTokens: 500,
+		},
+		Enrichment: EnrichmentConfig{
+			MaxRetries:  3,
+			BaseBackoff: 1 * time.Second,
 		},
 	}
 }

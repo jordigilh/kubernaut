@@ -308,7 +308,7 @@ kubectl get pods -n kubernaut-system
 
 **Acceptance Criteria**:
 - 13 pods in `Running` state with `1/1` ready
-- Pod names include: `gateway`, `datastorage`, `aianalysis-controller`, `authwebhook`, `notification-controller`, `remediationorchestrator-controller`, `signalprocessing-controller`, `workflowexecution-controller`, `effectivenessmonitor-controller`, `holmesgpt-api`, `event-exporter`, `postgresql`, `redis`
+- Pod names include: `gateway`, `datastorage`, `aianalysis-controller`, `authwebhook`, `notification-controller`, `remediationorchestrator-controller`, `signalprocessing-controller`, `workflowexecution-controller`, `effectivenessmonitor-controller`, `kubernaut-agent`, `event-exporter`, `postgresql`, `redis`
 - No pods in `CrashLoopBackOff`, `Error`, `CreateContainerConfigError`, or `Pending`
 - Timeout: 5 minutes from install completion
 
@@ -322,7 +322,7 @@ kubectl get pods -n kubernaut-system
 **Given**: All pods running (VERIFY-001)
 **When**: User runs:
 ```bash
-kubectl port-forward -n kubernaut-system svc/holmesgpt-api 8080:8080
+kubectl port-forward -n kubernaut-system svc/kubernaut-agent 8080:8080
 curl -s http://localhost:8080/health | jq '.'
 ```
 **Then**: Health endpoint responds with valid JSON

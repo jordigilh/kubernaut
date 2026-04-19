@@ -16,7 +16,7 @@
 #
 # Services (8 total):
 # - Gateway, AIAnalysis, WorkflowExecution, RemediationOrchestrator
-# - Notification, AuthWebhook, SignalProcessing, holmesgpt-api
+# - Notification, AuthWebhook, SignalProcessing, kubernaut-agent
 # ========================================
 
 ---
@@ -175,10 +175,10 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: holmesgpt-api-data-storage-client
+  name: kubernaut-agent-data-storage-client
   namespace: kubernaut-system
   labels:
-    app: holmesgpt-api
+    app: kubernaut-agent
     component: rbac
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -186,7 +186,7 @@ roleRef:
   name: data-storage-client
 subjects:
   - kind: ServiceAccount
-    name: holmesgpt-api-sa
+    name: kubernaut-agent-sa
     namespace: kubernaut-system
 
 ---

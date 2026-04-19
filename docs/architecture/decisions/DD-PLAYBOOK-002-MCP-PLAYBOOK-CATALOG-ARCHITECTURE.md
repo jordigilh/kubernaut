@@ -220,7 +220,7 @@ The Kubernaut architecture requires a way for the LLM (via HolmesGPT API) to sea
 - Claude 3.5 Sonnet via Anthropic SDK
 - MCP tool calling via Anthropic's tool use API
 
-**Note**: HolmesGPT API implementation details (prompts, Claude integration) are documented in `docs/services/stateless/holmesgpt-api/` and will be reviewed with AIAnalysis service implementation.
+**Note**: HolmesGPT API implementation details (prompts, Claude integration) are documented in `docs/services/stateless/kubernaut-agent/` and will be reviewed with AIAnalysis service implementation.
 
 ---
 

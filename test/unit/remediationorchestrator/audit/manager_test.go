@@ -839,11 +839,13 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-hash-001",
 				"default",
 				"rr-hash-001",
-				"sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-				"default/Deployment/nginx",
-				"wf-scale-001",
-				"1.0.0",
-				"ScaleReplicas",
+				prodaudit.RemediationWorkflowCreatedData{
+					PreRemediationSpecHash: "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+					TargetResource:         "default/Deployment/nginx",
+					WorkflowID:             "wf-scale-001",
+					WorkflowVersion:        "1.0.0",
+					ActionType:             "ScaleReplicas",
+				},
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(event.EventType).To(Equal("remediation.workflow_created"))
@@ -854,11 +856,13 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-hash-002",
 				"production",
 				"rr-hash-002",
-				"sha256:1111111111111111111111111111111111111111111111111111111111111111",
-				"production/Deployment/api-server",
-				"wf-restart-pods",
-				"2.1.0",
-				"RestartPod",
+				prodaudit.RemediationWorkflowCreatedData{
+					PreRemediationSpecHash: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+					TargetResource:         "production/Deployment/api-server",
+					WorkflowID:             "wf-restart-pods",
+					WorkflowVersion:        "2.1.0",
+					ActionType:             "RestartPod",
+				},
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -878,11 +882,13 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-hash-003",
 				"default",
 				"rr-hash-003",
-				"sha256:abcdef",
-				"default/Pod/test",
-				"wf-test",
-				"1.0.0",
-				"ScaleReplicas",
+				prodaudit.RemediationWorkflowCreatedData{
+					PreRemediationSpecHash: "sha256:abcdef",
+					TargetResource:         "default/Pod/test",
+					WorkflowID:             "wf-test",
+					WorkflowVersion:        "1.0.0",
+					ActionType:             "ScaleReplicas",
+				},
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -896,11 +902,12 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-hash-004",
 				"default",
 				"rr-hash-004",
-				"sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-				"default/Deployment/nginx",
-				"wf-scale-001",
-				"", // empty version
-				"ScaleReplicas",
+				prodaudit.RemediationWorkflowCreatedData{
+					PreRemediationSpecHash: "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+					TargetResource:         "default/Deployment/nginx",
+					WorkflowID:             "wf-scale-001",
+					ActionType:             "ScaleReplicas",
+				},
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(event.Version).To(Equal("1.0"), "Event must have valid version even with empty workflow version")
@@ -1030,7 +1037,13 @@ var _ = Describe("Audit Manager", func() {
 				{
 					name: "RemediationWorkflowCreated",
 					build: func() error {
-						_, err := manager.BuildRemediationWorkflowCreatedEvent("corr", "ns", "rr", "sha256:abc", "ns/Deploy/x", "wf", "1.0", "ScaleReplicas")
+						_, err := manager.BuildRemediationWorkflowCreatedEvent("corr", "ns", "rr", prodaudit.RemediationWorkflowCreatedData{
+							PreRemediationSpecHash: "sha256:abc",
+							TargetResource:         "ns/Deploy/x",
+							WorkflowID:             "wf",
+							WorkflowVersion:        "1.0",
+							ActionType:             "ScaleReplicas",
+						})
 						if err != nil {
 							return err
 						}
@@ -1043,6 +1056,55 @@ var _ = Describe("Audit Manager", func() {
 				err := e.build()
 				Expect(err).ToNot(HaveOccurred(), "Event %s should pass validation", e.name)
 			}
+		})
+	})
+
+	// ========================================
+	// Issue #722: Signal context and CRD outcome in audit events
+	// BR-ORCH-042: RO audit data completeness for KA correlation
+	// ========================================
+	Describe("BuildRemediationWorkflowCreatedEvent signal context (Issue #722)", func() {
+		It("UT-RO-722-004: should include signal_type and signal_fingerprint in payload", func() {
+			event, err := manager.BuildRemediationWorkflowCreatedEvent(
+				"corr-722-004",
+				"default",
+				"rr-722-004",
+				prodaudit.RemediationWorkflowCreatedData{
+					PreRemediationSpecHash: "sha256:prehash",
+					TargetResource:         "default/Deployment/api-server",
+					WorkflowID:             "wf-scale-replicas",
+					WorkflowVersion:        "v2.1",
+					ActionType:             "ScaleReplicas",
+					SignalType:             "alert",
+					SignalFingerprint:      "sha256:a1b2c3d4",
+				},
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			payload, ok := event.EventData.GetRemediationOrchestratorAuditPayload()
+			Expect(ok).To(BeTrue(), "EventData must contain RO payload")
+			Expect(payload.SignalType.Value).To(Equal("alert"),
+				"signal_type must be populated from RR signal context")
+			Expect(payload.SignalFingerprint.Value).To(Equal("sha256:a1b2c3d4"),
+				"signal_fingerprint must be populated from RR signal context")
+		})
+	})
+
+	Describe("BuildCompletionEvent CRD outcome (Issue #722)", func() {
+		It("UT-RO-722-005: should include crd_outcome reflecting actual RR outcome", func() {
+			event, err := manager.BuildCompletionEvent(
+				"corr-722-005",
+				"default",
+				"rr-722-005",
+				"Inconclusive",
+				12000,
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			payload, ok := event.EventData.GetRemediationOrchestratorAuditPayload()
+			Expect(ok).To(BeTrue(), "EventData must contain RO payload")
+			Expect(payload.CrdOutcome.Value).To(Equal("Inconclusive"),
+				"crd_outcome must reflect actual CRD-level outcome, not hardcoded Success")
 		})
 	})
 })

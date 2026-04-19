@@ -108,7 +108,7 @@ Triggers:
 ### **HolmesGPT API**
 ```yaml
 Triggers:
-  - holmesgpt-api/**
+  - kubernaut-agent/**
   - test/integration/holmesgpt/**
 ```
 

@@ -41,7 +41,7 @@ import (
 type WFECreationCallbacks struct {
 	EmitWorkflowCreatedAudit func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, preHash string)
 	CreateWFE                func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error)
-	ResolveWorkflowName      func(ctx context.Context, workflowID string) string
+	ResolveWorkflowDisplay   func(ctx context.Context, workflowID string) (string, string)
 }
 
 // CreateWFEAndTransition is the shared flow for creating a WorkflowExecution CRD,
@@ -76,9 +76,8 @@ func CreateWFEAndTransition(
 
 	var workflowDisplayName, confidence string
 	if ai.Status.SelectedWorkflow != nil {
-		workflowName := cbs.ResolveWorkflowName(ctx, ai.Status.SelectedWorkflow.WorkflowID)
-		workflowDisplayName = remediationrequest.FormatWorkflowDisplay(
-			ai.Status.SelectedWorkflow.ActionType, workflowName)
+		actionType, workflowName := cbs.ResolveWorkflowDisplay(ctx, ai.Status.SelectedWorkflow.WorkflowID)
+		workflowDisplayName = remediationrequest.FormatWorkflowDisplay(actionType, workflowName)
 		confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
 	}
 

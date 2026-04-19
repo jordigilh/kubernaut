@@ -124,8 +124,8 @@ context-api-66c5995db9-ktr5r            1/1     Running   0          24m
 data-storage-service-56dc97568b-4jv9l   1/1     Running   0          2m51s
 data-storage-service-56dc97568b-9pxqn   1/1     Running   0          2m55s
 data-storage-service-56dc97568b-qlnmx   1/1     Running   0          2m49s
-holmesgpt-api-6fb454486d-kgh74          1/1     Running   0          15h
-holmesgpt-api-6fb454486d-w7f78          1/1     Running   0          15h
+kubernaut-agent-6fb454486d-kgh74          1/1     Running   0          15h
+kubernaut-agent-6fb454486d-w7f78          1/1     Running   0          15h
 postgres-56db7cdd9f-zkg2d               1/1     Running   0          12h
 redis-75cfb58d99-s8vwp                  1/1     Running   0          88m
 ```
@@ -202,7 +202,7 @@ PONG
 ```json
 {
   "status":"healthy",
-  "service":"holmesgpt-api",
+  "service":"kubernaut-agent",
   "endpoints":[
     "/api/v1/recovery/analyze",
     "/api/v1/postexec/analyze",

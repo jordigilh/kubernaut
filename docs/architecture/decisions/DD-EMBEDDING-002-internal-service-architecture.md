@@ -4,7 +4,7 @@
 **Status**: ✅ **APPROVED**
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: DD-EMBEDDING-001 (Embedding Service Implementation), BR-STORAGE-013 (Workflow Semantic Search)
-**Affects**: Data Storage Service, Embedding Service, holmesgpt-api, Workflow Catalog
+**Affects**: Data Storage Service, Embedding Service, kubernaut-agent, Workflow Catalog
 **Version**: 1.0
 
 ---
@@ -38,7 +38,7 @@ This decision impacts:
 
 - ✅ **Embedding Service exists**: Python microservice with sentence-transformers
 - ✅ **Data Storage uses embeddings**: Workflow catalog with pgvector semantic search
-- ✅ **holmesgpt-api needs search**: LLM searches workflows via MCP tools
+- ✅ **kubernaut-agent needs search**: LLM searches workflows via MCP tools
 - ❌ **Architecture undefined**: Embedding Service exposure not decided
 
 ### **Decision Scope**
@@ -59,11 +59,11 @@ Choose the architectural pattern for Embedding Service integration:
 
 **Architecture**:
 ```
-holmesgpt-api
+kubernaut-agent
   ↓ HTTP POST /api/v1/embed
 Embedding Service (Public)
   ↓ (embedding returned)
-holmesgpt-api
+kubernaut-agent
   ↓ HTTP POST /api/v1/workflows/search (with embedding)
 Data Storage Service
   ↓ PostgreSQL query (with embedding)
@@ -72,14 +72,14 @@ PostgreSQL/pgvector
 
 **API Design**:
 ```json
-// Step 1: holmesgpt-api calls Embedding Service
+// Step 1: kubernaut-agent calls Embedding Service
 POST http://embedding-service:8086/api/v1/embed
 {
   "text": "OOMKilled pod in production"
 }
 Response: {"embedding": [0.1, 0.2, ..., 0.9]}
 
-// Step 2: holmesgpt-api calls Data Storage
+// Step 2: kubernaut-agent calls Data Storage
 POST http://datastorage:8080/api/v1/workflows/search
 {
   "embedding": [0.1, 0.2, ..., 0.9],  // Caller provides embedding
@@ -112,7 +112,7 @@ POST http://datastorage:8080/api/v1/workflows/search
 
 **Architecture**:
 ```
-holmesgpt-api
+kubernaut-agent
   ↓ HTTP POST /api/v1/workflows/search (text query)
 Data Storage Service
   ↓ HTTP POST /api/v1/embed (INTERNAL)
@@ -125,7 +125,7 @@ PostgreSQL/pgvector
 
 **API Design**:
 ```json
-// Single call: holmesgpt-api → Data Storage (text-based)
+// Single call: kubernaut-agent → Data Storage (text-based)
 POST http://datastorage:8080/api/v1/workflows/search
 {
   "query": "OOMKilled pod in production",  // TEXT (not embedding)
@@ -373,7 +373,7 @@ POST /api/v1/workflows
 | **Signal Processing** | Alert enrichment | ❌ No | Uses action history (structured queries), not semantic search |
 | **Toolset** | K8s operations | ❌ No | Executes kubectl commands, no natural language |
 | **Data Storage** | Persistence | ✅ **Yes** | Workflow catalog semantic search |
-| **holmesgpt-api** | LLM integration | ✅ **Yes** (via Data Storage) | Workflow search via MCP tools |
+| **kubernaut-agent** | LLM integration | ✅ **Yes** (via Data Storage) | Workflow search via MCP tools |
 | **Notification** | Alert delivery | ❌ No | Sends notifications, no semantic search |
 | **Context API** | ~~Context retrieval~~ | ❌ **DEPRECATED** | Not in use |
 
@@ -385,7 +385,7 @@ POST /api/v1/workflows
 - Other services: ❌ No planned use cases
 
 **Conclusion**:
-- ✅ **V1.0**: Only Data Storage + holmesgpt-api need embeddings
+- ✅ **V1.0**: Only Data Storage + kubernaut-agent need embeddings
 - ❌ **V1.1+**: NO other services need embeddings (100% confidence)
 - ❌ **V2.0+**: NO planned use cases
 
@@ -541,9 +541,9 @@ workflow["embedding"] = embedding
 - `pkg/datastorage/server/workflow_handlers.go` - Enhanced with embedding generation
 - `pkg/datastorage/models/workflow.go` - Workflow models (NO embedding field in API)
 
-**holmesgpt-api Integration (Python)**:
-- `holmesgpt-api/src/clients/datastorage_client.py` - Text-based search API
-- `holmesgpt-api/src/toolsets/workflow_catalog.py` - MCP tools (text queries)
+**kubernaut-agent Integration (Python)**:
+- `kubernaut-agent/src/clients/datastorage_client.py` - Text-based search API
+- `kubernaut-agent/src/toolsets/workflow_catalog.py` - MCP tools (text queries)
 
 ---
 
@@ -639,7 +639,7 @@ spec:
 
 # ✅ Security enforcement:
 # - ONLY Data Storage can access Embedding Service
-# - holmesgpt-api CANNOT access Embedding Service
+# - kubernaut-agent CANNOT access Embedding Service
 # - External callers CANNOT access Embedding Service
 ```
 
@@ -669,7 +669,7 @@ Admin/CLI
 #### **Flow 2: Search Workflow**
 
 ```
-holmesgpt-api (Python)
+kubernaut-agent (Python)
   ↓ POST /api/v1/workflows/search (text query)
 Data Storage Service (Go)
   ↓ Check embedding cache
@@ -684,7 +684,7 @@ PostgreSQL/pgvector
   ↓ Return ranked workflows
 Data Storage Service (Go)
   ↓ Return workflows (NO embeddings in response)
-holmesgpt-api (Python)
+kubernaut-agent (Python)
   ✅ Workflows returned
 ```
 
@@ -715,7 +715,7 @@ holmesgpt-api (Python)
 ### **Neutral**
 
 - 🔄 **Service count**: 11 services (unchanged)
-- 🔄 **Latency**: 1 HTTP hop (holmesgpt-api → Data Storage)
+- 🔄 **Latency**: 1 HTTP hop (kubernaut-agent → Data Storage)
 - 🔄 **Operational**: Standard Kubernetes deployment patterns
 
 ---
@@ -753,7 +753,7 @@ holmesgpt-api (Python)
 | Service | Needs Embeddings (V1.0) | Needs Embeddings (V1.1+) | Result |
 |---------|-------------------------|--------------------------|--------|
 | **Data Storage** | ✅ Yes | ✅ Yes | Needs access |
-| **holmesgpt-api** | ✅ Yes (via Data Storage) | ✅ Yes | No direct access needed |
+| **kubernaut-agent** | ✅ Yes (via Data Storage) | ✅ Yes | No direct access needed |
 | **Signal Processing** | ❌ No (uses action history) | ❌ No | No access needed |
 | **All Others** | ❌ No | ❌ No | No access needed |
 
@@ -839,7 +839,7 @@ holmesgpt-api (Python)
 3. 🚧 **Create Implementation Plan** (EMBEDDING_SERVICE_IMPLEMENTATION_PLAN_V1.0.md)
 4. 🚧 **Implement Embedding Service** (Python microservice with NetworkPolicy)
 5. 🚧 **Integrate with Data Storage** (Go client, embedding cache, text-based API)
-6. 🚧 **Update holmesgpt-api** (text-based search API)
+6. 🚧 **Update kubernaut-agent** (text-based search API)
 7. 🚧 **Testing** (unit, integration, E2E with text-based API)
 8. 🚧 **Deploy to Development Environment** (validate NetworkPolicy enforcement)
 

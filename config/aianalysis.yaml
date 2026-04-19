@@ -15,7 +15,7 @@ controller:
 # HOLMESGPT-API CONNECTIVITY (BR-AI-007, BR-AA-HAPI-064)
 # ========================================
 holmesgpt:
-  url: http://holmesgpt-api:8080
+  url: http://kubernaut-agent:8080
   # LLM RCA + 3-step workflow discovery can take 2-3 min with real Vertex AI
   timeout: 180s
   # BR-AA-HAPI-064.8: Constant interval between session status polls.

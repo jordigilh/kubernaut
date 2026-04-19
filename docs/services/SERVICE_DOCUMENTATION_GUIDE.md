@@ -1345,7 +1345,7 @@ Documentation is complete when:
 **Stateless Services** (MEDIUM priority):
 6. [context-api/testing-strategy.md](mdc:docs/services/stateless/context-api/testing-strategy.md) - Query and caching testing
 7. [data-storage/testing-strategy.md](mdc:docs/services/stateless/data-storage/testing-strategy.md) - Vector DB and persistence testing
-8. [holmesgpt-api/testing-strategy.md](mdc:docs/services/stateless/holmesgpt-api/testing-strategy.md) - LLM and prompt testing (Python)
+8. [kubernaut-agent/testing-strategy.md](mdc:docs/services/stateless/kubernaut-agent/testing-strategy.md) - LLM and prompt testing
 9. [notification-service/testing-strategy.md](mdc:docs/services/stateless/notification-service/testing-strategy.md) - Multi-channel notification testing
 10. [dynamic-toolset/testing-strategy.md](mdc:docs/services/stateless/dynamic-toolset/testing-strategy.md) - Service discovery testing
 

@@ -25,7 +25,7 @@
 
 ### Current State
 
-DetectedLabels auto-detection is implemented in HolmesGPT API (HAPI) in Python (`holmesgpt-api/src/detection/labels.py`). Per ADR-056, this computation runs post-RCA against the actual remediation target resource (identified by the LLM) rather than the signal source, because the signal and the root cause may be different resources with different GitOps/infrastructure characteristics. The original SP Go reference implementation (`pkg/signalprocessing/detection/labels.go`) has been removed.
+DetectedLabels auto-detection is implemented in HolmesGPT API (HAPI) in Python (`kubernaut-agent/src/detection/labels.py`). Per ADR-056, this computation runs post-RCA against the actual remediation target resource (identified by the LLM) rather than the signal source, because the signal and the root cause may be different resources with different GitOps/infrastructure characteristics. The original SP Go reference implementation (`pkg/signalprocessing/detection/labels.go`) has been removed.
 
 ### Problem
 
@@ -306,7 +306,7 @@ Detected labels have two consumer paths (ADR-056 v1.3, DD-HAPI-017 v1.3):
 - The `failedDetections` array itself MUST NOT appear in the LLM-facing `cluster_context`
 - Use `strip_failed_detections()` (in `workflow_discovery.py`) to apply this exclusion consistently
 
-**Reference implementation**: `holmesgpt-api/src/toolsets/workflow_discovery.py` (`_build_context_params` for DS filters, `ListAvailableActionsTool._invoke` for `cluster_context` injection)
+**Reference implementation**: `kubernaut-agent/src/toolsets/workflow_discovery.py` (`_build_context_params` for DS filters, `ListAvailableActionsTool._invoke` for `cluster_context` injection)
 
 ---
 
@@ -368,7 +368,7 @@ The original specification assumes workload resources (Pod, Deployment, Stateful
 
 ## Conformance Test Vectors
 
-HAPI's test suite MUST pass the following test vectors. Test IDs are from the authoritative HAPI test suite (`holmesgpt-api/tests/unit/test_label_detector.py`).
+HAPI's test suite MUST pass the following test vectors. Test IDs are from the authoritative HAPI test suite (`kubernaut-agent/tests/unit/test_label_detector.py`).
 
 ### Happy Path Vectors
 
@@ -445,9 +445,9 @@ Per ADR-056, DetectedLabels computation was relocated from SP to HAPI. SP's orig
 
 | File | Change | Version |
 |------|--------|---------|
-| `holmesgpt-api/src/detection/labels.py` | Label detector: ArgoCD v3 `tracking-id` detection added (priorities 1, 5, 8) | v1.3 |
-| `holmesgpt-api/src/toolsets/resource_context.py` | Context builder: `deployment_details.annotations` now populated for ArgoCD v3 | v1.3 |
-| `holmesgpt-api/tests/unit/test_label_detector.py` | Conformance tests: DL-HP-11 through DL-HP-14 added | v1.3 |
+| `kubernaut-agent/src/detection/labels.py` | Label detector: ArgoCD v3 `tracking-id` detection added (priorities 1, 5, 8) | v1.3 |
+| `kubernaut-agent/src/toolsets/resource_context.py` | Context builder: `deployment_details.annotations` now populated for ArgoCD v3 | v1.3 |
+| `kubernaut-agent/tests/unit/test_label_detector.py` | Conformance tests: DL-HP-11 through DL-HP-14 added | v1.3 |
 
 ---
 

@@ -33,7 +33,7 @@ var _ = Describe("Kubernaut Agent G4 Credential Scrubbing — #433", func() {
 		})
 
 		It("should scrub mysql:// URLs", func() {
-			input := `mysql://root:hunter2@mysql-host:3306/app`
+			input := `mysql://root:hunter2@mysql-host:3306/app` // notsecret
 			result, err := stage.Sanitize(ctx, input)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(ContainSubstring("hunter2"))
@@ -67,7 +67,7 @@ var _ = Describe("Kubernaut Agent G4 Credential Scrubbing — #433", func() {
 
 	Describe("UT-KA-433-050: Scrubs bearer token patterns", func() {
 		It("should scrub Bearer tokens", func() {
-			input := `Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrdWJlcm5ldGVzLyJ9.signature`
+			input := `Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrdWJlcm5ldGVzLyJ9.signature` // notsecret
 			result, err := stage.Sanitize(ctx, input)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(ContainSubstring("eyJhbGciOiJSUzI1NiI"))
@@ -86,12 +86,12 @@ var _ = Describe("Kubernaut Agent G4 Credential Scrubbing — #433", func() {
 			},
 			Entry("password-json", `{"password":"supersecret123"}`, "supersecret123"),
 			Entry("password-plain", `password=mysecretpwd`, "mysecretpwd"),
-			Entry("password-url", `postgres://user:urlpass@host`, "urlpass"),
+			Entry("password-url", `postgres://user:urlpass@host`, "urlpass"), // notsecret
 			Entry("api-key-json", `{"api_key":"key-abc-123-xyz"}`, "key-abc-123-xyz"),
 			Entry("api-key-plain", `apikey=sk-live-test123`, "sk-live-test123"),
 			Entry("openai-key", `key is sk-proj-Abc123Def456Ghi`, "sk-proj-Abc123Def456Ghi"), // pre-commit:allow-sensitive
 			Entry("bearer-token", `Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig`, "eyJhbGciOiJIUzI1NiJ9"),
-			Entry("github-token", `token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij`, "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ"), // pre-commit:allow-sensitive
+			Entry("github-token", `token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij`, "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ"), // notsecret pre-commit:allow-sensitive
 			Entry("token-json", `{"token":"tok_abc123xyz"}`, "tok_abc123xyz"),
 			Entry("secret-json", `{"client_secret":"cs_live_abc"}`, "cs_live_abc"),
 			Entry("secret-plain", `client_secret=mysecretvalue`, "mysecretvalue"),
@@ -128,7 +128,7 @@ Events: Normal Scheduled, Normal Pulled, Normal Created, Normal Started.`
 				`{"password":"abc","api_key":"sk-proj-xyz","token":"eyJ..."}` + "\n" +
 				"Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig\n" +
 				"AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n" +   // pre-commit:allow-sensitive
-				"ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij" // pre-commit:allow-sensitive
+				"ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij" // notsecret pre-commit:allow-sensitive
 
 			start := time.Now()
 			iterations := 100

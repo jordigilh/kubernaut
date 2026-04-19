@@ -595,11 +595,11 @@ volumeMounts:
 > but this is used only for business classification and custom labels — not for DetectedLabels.
 >
 > **Authoritative specification**: DD-HAPI-018 v1.3
-> **Authoritative implementation**: `holmesgpt-api/src/detection/labels.py`
+> **Authoritative implementation**: `kubernaut-agent/src/detection/labels.py`
 
 **Original Description** *(retained for traceability)*: The SignalProcessing controller MUST auto-detect 8 cluster characteristics from K8s resources.
 
-**Test Coverage**: Relocated to `holmesgpt-api/tests/unit/test_label_detector.py`
+**Test Coverage**: Relocated to `kubernaut-agent/tests/unit/test_label_detector.py`
 
 ---
 

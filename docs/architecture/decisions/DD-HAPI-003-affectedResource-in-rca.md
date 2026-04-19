@@ -26,7 +26,7 @@ HolmesGPT-API returns `root_cause_analysis` in its `/incident/analyze` response.
 
 ### Current State
 
-**HAPI Code** (`holmesgpt-api/src/extensions/incident/result_parser.py` line 218):
+**HAPI Code** (`kubernaut-agent/src/extensions/incident/result_parser.py` line 218):
 ```python
 # Check if RCA-identified target is in OwnerChain
 rca_target = rca.get("affectedResource") or rca.get("affected_resource")
@@ -196,9 +196,9 @@ func (r *Reconciler) CheckManagedResource(ctx context.Context, rr *remediationv1
 - [ ] Update ADR-053 (resource scope management)
 
 ### Phase 2: HAPI Updates
-- [ ] Update HAPI OpenAPI spec (`holmesgpt-api/api/openapi.json`)
-- [ ] Update HAPI models docstring (`holmesgpt-api/src/models/incident_models.py`)
-- [ ] Create LLM response format guide (`holmesgpt-api/docs/LLM_RESPONSE_FORMAT.md`)
+- [ ] Update HAPI OpenAPI spec (`kubernaut-agent/api/openapi.json`)
+- [ ] Update HAPI models docstring (`kubernaut-agent/src/models/incident_models.py`)
+- [ ] Create LLM response format guide (`kubernaut-agent/docs/LLM_RESPONSE_FORMAT.md`)
 - [ ] Regenerate HAPI Python client
 
 ### Phase 3: AIAnalysis CRD Updates
@@ -242,18 +242,18 @@ func (r *Reconciler) CheckManagedResource(ctx context.Context, rr *remediationv1
 2. **ADR-001** (REFERENCE): CRD Spec Immutability (no changes - RCA target is in Status)
 
 ### API Specifications (Updated)
-1. **HAPI OpenAPI Spec** (`holmesgpt-api/api/openapi.json`): Add `affectedResource` schema to `root_cause_analysis`
-2. **HAPI Python Models** (`holmesgpt-api/src/models/incident_models.py`): Update docstring for `IncidentResponse.root_cause_analysis`
+1. **HAPI OpenAPI Spec** (`kubernaut-agent/api/openapi.json`): Add `affectedResource` schema to `root_cause_analysis`
+2. **HAPI Python Models** (`kubernaut-agent/src/models/incident_models.py`): Update docstring for `IncidentResponse.root_cause_analysis`
 3. **AIAnalysis CRD** (`api/aianalysis/v1alpha1/aianalysis_types.go`): Add `TargetResource` field to `RootCauseAnalysis`
 
 ### Implementation Files (Updated)
-1. **HAPI Result Parser** (`holmesgpt-api/src/extensions/incident/result_parser.py`): Already extracts `affectedResource` (line 218) - no changes needed
+1. **HAPI Result Parser** (`kubernaut-agent/src/extensions/incident/result_parser.py`): Already extracts `affectedResource` (line 218) - no changes needed
 2. **AIAnalysis Response Processor** (`pkg/aianalysis/handlers/response_processor.go`): Add extraction logic for `affectedResource`
 3. **RemediationOrchestrator Scope Validator** (`pkg/remediationorchestrator/routing/scope_validator.go`): NEW FILE - implement `CheckManagedResource()`
 4. **RemediationOrchestrator Routing** (`pkg/remediationorchestrator/routing/blocking.go`): Integrate scope validator as Check #6
 
 ### Documentation (Created/Updated)
-1. **LLM Response Format Guide** (`holmesgpt-api/docs/LLM_RESPONSE_FORMAT.md`): NEW FILE - document `affectedResource` structure and examples
+1. **LLM Response Format Guide** (`kubernaut-agent/docs/LLM_RESPONSE_FORMAT.md`): NEW FILE - document `affectedResource` structure and examples
 2. **Scope Management Handoff**: UPDATE - reference RCA target in RO validation (internal development reference, removed in v1.0)
 
 ### Test Files (Created)

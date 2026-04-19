@@ -138,6 +138,101 @@ var _ = Describe("Kubernaut Agent I7 Anomaly Detection — #433", func() {
 		})
 	})
 
+	Describe("UT-KA-686-010: Reset() restores a fresh budget for a new phase", func() {
+		It("should allow full budget after Reset()", func() {
+			cfg := investigator.AnomalyConfig{
+				MaxToolCallsPerTool: 100,
+				MaxTotalToolCalls:   5,
+				MaxRepeatedFailures: 100,
+			}
+			detector := investigator.NewAnomalyDetector(cfg, nil)
+
+			// Exhaust the total budget
+			tools := []string{"kubectl_describe", "kubectl_logs", "kubectl_events", "kubectl_get_by_name", "prometheus_query"}
+			for i, tool := range tools {
+				r := detector.CheckToolCall(tool, json.RawMessage(`{}`))
+				Expect(r.Allowed).To(BeTrue(), "call %d should be allowed", i+1)
+			}
+			r := detector.CheckToolCall("kubectl_logs_grep", json.RawMessage(`{}`))
+			Expect(r.Allowed).To(BeFalse(), "should be rejected after budget exhausted")
+			Expect(detector.TotalExceeded()).To(BeTrue())
+
+			// Reset and verify full budget is available again
+			detector.Reset()
+			Expect(detector.TotalExceeded()).To(BeFalse(), "TotalExceeded should be false after Reset")
+
+			for i, tool := range tools {
+				r := detector.CheckToolCall(tool, json.RawMessage(`{}`))
+				Expect(r.Allowed).To(BeTrue(), "post-reset call %d should be allowed", i+1)
+			}
+		})
+
+		It("should reset per-tool counters", func() {
+			cfg := investigator.AnomalyConfig{
+				MaxToolCallsPerTool: 2,
+				MaxTotalToolCalls:   100,
+				MaxRepeatedFailures: 100,
+			}
+			detector := investigator.NewAnomalyDetector(cfg, nil)
+
+			detector.CheckToolCall("kubectl_describe", json.RawMessage(`{}`))
+			detector.CheckToolCall("kubectl_describe", json.RawMessage(`{}`))
+			r := detector.CheckToolCall("kubectl_describe", json.RawMessage(`{}`))
+			Expect(r.Allowed).To(BeFalse(), "should be rejected at per-tool limit")
+
+			detector.Reset()
+
+			r = detector.CheckToolCall("kubectl_describe", json.RawMessage(`{}`))
+			Expect(r.Allowed).To(BeTrue(), "post-reset per-tool counter should be fresh")
+		})
+
+		It("should reset failure tracker", func() {
+			cfg := investigator.AnomalyConfig{
+				MaxToolCallsPerTool: 100,
+				MaxTotalToolCalls:   100,
+				MaxRepeatedFailures: 2,
+			}
+			detector := investigator.NewAnomalyDetector(cfg, nil)
+			args := json.RawMessage(`{"name":"pod-a"}`)
+
+			detector.RecordFailure("kubectl_describe", args)
+			r := detector.RecordFailure("kubectl_describe", args)
+			Expect(r.Allowed).To(BeFalse(), "should abort after repeated failures")
+
+			detector.Reset()
+
+			r = detector.RecordFailure("kubectl_describe", args)
+			Expect(r.Allowed).To(BeTrue(), "post-reset failure tracker should be fresh")
+		})
+
+		It("should preserve config and suspicious patterns after Reset()", func() {
+			patterns := []*regexp.Regexp{regexp.MustCompile(`(?i)/etc/shadow`)}
+			cfg := investigator.AnomalyConfig{
+				MaxToolCallsPerTool: 2,
+				MaxTotalToolCalls:   5,
+				MaxRepeatedFailures: 2,
+			}
+			detector := investigator.NewAnomalyDetector(cfg, patterns)
+
+			// Exhaust budget, then reset
+			for i := 0; i < 5; i++ {
+				detector.CheckToolCall("kubectl_logs", json.RawMessage(`{}`))
+			}
+			detector.Reset()
+
+			// Config thresholds still enforced
+			detector.CheckToolCall("kubectl_describe", json.RawMessage(`{}`))
+			detector.CheckToolCall("kubectl_describe", json.RawMessage(`{}`))
+			r := detector.CheckToolCall("kubectl_describe", json.RawMessage(`{}`))
+			Expect(r.Allowed).To(BeFalse(), "per-tool limit from config should still apply")
+
+			// Suspicious patterns still enforced
+			r = detector.CheckToolCall("kubectl_logs", json.RawMessage(`{"path":"/etc/shadow"}`))
+			Expect(r.Allowed).To(BeFalse(), "suspicious patterns should still be active")
+			Expect(r.Reason).To(ContainSubstring("suspicious"))
+		})
+	})
+
 	Describe("UT-KA-433-059: Configurable thresholds from config", func() {
 		It("should respect custom threshold values", func() {
 			cfg := investigator.AnomalyConfig{

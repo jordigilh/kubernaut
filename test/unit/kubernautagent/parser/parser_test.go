@@ -403,7 +403,10 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 			Expect(props).To(HaveKey("confidence"))
 			Expect(props).To(HaveKey("severity"))
 			Expect(props).To(HaveKey("actionable"))
-			Expect(props).To(HaveKey("needs_human_review"))
+			Expect(props).NotTo(HaveKey("needs_human_review"),
+				"needs_human_review is parser-derived, not exposed to LLM (BR-HAPI-200)")
+			Expect(props).NotTo(HaveKey("human_review_reason"),
+				"human_review_reason is parser-derived, not exposed to LLM (BR-HAPI-200)")
 			Expect(props).To(HaveKey("detected_labels"))
 		})
 	})
@@ -503,6 +506,161 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 		})
 	})
 
+	Describe("UT-KA-686-001: section-header format from Vertex AI (no structured output)", func() {
+		It("should parse # header format with workflow selection", func() {
+			sectionContent := `I've completed the investigation. Here are my findings:
+
+# root_cause_analysis
+{"summary": "Bad Deployment rollout patched ConfigMap ref from worker-config to worker-config-bad", "severity": "critical", "contributing_factors": ["bad patch", "invalid directive", "no admission webhook"], "remediation_target": {"kind": "Deployment", "name": "worker", "namespace": "demo-crashloop"}}
+
+# confidence
+0.98
+
+# selected_workflow
+{"workflow_id": "f871d3c0-4c88-55aa-a412-7defebe000a3", "confidence": 0.98, "rationale": "crashloop-rollback-v1 is an exact match", "parameters": {"TARGET_RESOURCE_NAMESPACE": "demo-crashloop", "TARGET_RESOURCE_NAME": "worker", "TARGET_RESOURCE_KIND": "Deployment"}}
+
+# alternative_workflows
+[{"workflow_id": "crashloop-rollback-risk-v1", "confidence": 0.90, "rationale": "valid but over-engineered"}]
+`
+			p := parser.NewResultParser()
+			result, err := p.Parse(sectionContent)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			By("RCA fields extracted")
+			Expect(result.RCASummary).To(ContainSubstring("Bad Deployment rollout"))
+			Expect(result.Severity).To(Equal("critical"))
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"))
+			Expect(result.RemediationTarget.Name).To(Equal("worker"))
+			Expect(result.RemediationTarget.Namespace).To(Equal("demo-crashloop"))
+
+			By("Workflow selection extracted")
+			Expect(result.WorkflowID).To(Equal("f871d3c0-4c88-55aa-a412-7defebe000a3"))
+			Expect(result.Confidence).To(BeNumerically("~", 0.98, 0.01))
+			Expect(result.Reason).To(ContainSubstring("exact match"))
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "demo-crashloop"))
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "worker"))
+
+			By("Alternatives extracted")
+			Expect(result.AlternativeWorkflows).To(HaveLen(1))
+			Expect(result.AlternativeWorkflows[0].WorkflowID).To(Equal("crashloop-rollback-risk-v1"))
+		})
+
+		It("should parse section headers with JSON in markdown code blocks", func() {
+			fencedContent := `Here are my findings:
+
+# root_cause_analysis
+` + "```json" + `
+{"summary": "OOMKilled pod", "severity": "high", "remediation_target": {"kind": "Deployment", "name": "api", "namespace": "prod"}}
+` + "```" + `
+
+# confidence
+0.92
+
+# selected_workflow
+` + "```json" + `
+{"workflow_id": "oom-fix-v1", "confidence": 0.92, "rationale": "increase memory", "parameters": {"MEMORY": "512Mi"}}
+` + "```" + `
+`
+			p := parser.NewResultParser()
+			result, err := p.Parse(fencedContent)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RCASummary).To(Equal("OOMKilled pod"))
+			Expect(result.WorkflowID).To(Equal("oom-fix-v1"))
+			Expect(result.Confidence).To(BeNumerically("~", 0.92, 0.01))
+		})
+
+		It("should parse section headers with RCA only (no workflow)", func() {
+			rcaOnly := `# root_cause_analysis
+{"summary": "Transient network issue", "severity": "low"}
+
+# confidence
+0.80
+
+# actionable
+false
+`
+			p := parser.NewResultParser()
+			result, err := p.Parse(rcaOnly)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RCASummary).To(Equal("Transient network issue"))
+			Expect(result.WorkflowID).To(BeEmpty())
+		})
+	})
+
+	Describe("Phase 1-to-Phase 3 Propagation — #715", func() {
+
+		Describe("UT-KA-715-004: Parser preserves raw investigation_outcome on result", func() {
+			It("should store the raw investigation_outcome string on InvestigationResult", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "Inconclusive investigation — multiple potential causes",
+					"investigation_outcome": "inconclusive",
+					"confidence": 0.4
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.InvestigationOutcome).To(Equal("inconclusive"),
+					"UT-KA-715-004: parser must preserve raw investigation_outcome string on result")
+			})
+
+			It("should store problem_resolved investigation_outcome", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "Problem self-resolved after pod restart",
+					"investigation_outcome": "problem_resolved",
+					"confidence": 0.85
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.InvestigationOutcome).To(Equal("problem_resolved"),
+					"UT-KA-715-004: parser must preserve problem_resolved outcome")
+			})
+
+			It("should store actionable investigation_outcome", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "OOMKilled due to memory limit",
+					"investigation_outcome": "actionable",
+					"confidence": 0.9
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.InvestigationOutcome).To(Equal("actionable"),
+					"UT-KA-715-004: parser must preserve actionable outcome")
+			})
+
+			It("should leave InvestigationOutcome empty when not provided by LLM", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"rca_summary": "OOMKilled due to memory limit",
+					"confidence": 0.9
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.InvestigationOutcome).To(BeEmpty(),
+					"UT-KA-715-004: InvestigationOutcome must be empty when LLM doesn't provide it")
+			})
+
+			It("should preserve investigation_outcome from nested LLM format", func() {
+				p := parser.NewResultParser()
+				result, err := p.Parse(`{
+					"root_cause_analysis": {
+						"summary": "Memory pressure on api-server"
+					},
+					"investigation_outcome": "inconclusive",
+					"confidence": 0.35
+				}`)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.InvestigationOutcome).To(Equal("inconclusive"),
+					"UT-KA-715-004: parser must preserve investigation_outcome from nested format")
+			})
+		})
+	})
+
 	Describe("UT-KA-433-AP-021: problem_resolved suppresses not-actionable warning", func() {
 		It("should emit Problem self-resolved but NOT Alert not actionable", func() {
 			p := parser.NewResultParser()
@@ -517,6 +675,67 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 			Expect(result.Warnings).To(ContainElement(ContainSubstring("Problem self-resolved")))
 			Expect(result.Warnings).NotTo(ContainElement(ContainSubstring("Alert not actionable")),
 				"problem_resolved outcome must suppress the generic not-actionable warning")
+		})
+	})
+
+	Describe("Investigation Analysis Field — #724", func() {
+
+		Describe("UT-KA-724-001: Parser extracts investigation_analysis from nested LLM response", func() {
+			It("should populate InvestigationAnalysis from root_cause_analysis.investigation_analysis", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"root_cause_analysis": {
+						"summary": "OOMKilled due to memory leak in api-server",
+						"severity": "high",
+						"investigation_analysis": "The investigation revealed a steady memory growth pattern in the api-server container over the past 6 hours. Memory usage increased from 180Mi to 256Mi, hitting the container limit. The leak appears to correlate with increased gRPC streaming connections that are not being properly closed."
+					},
+					"confidence": 0.88,
+					"investigation_outcome": "actionable"
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.InvestigationAnalysis).To(Equal(
+					"The investigation revealed a steady memory growth pattern in the api-server container over the past 6 hours. Memory usage increased from 180Mi to 256Mi, hitting the container limit. The leak appears to correlate with increased gRPC streaming connections that are not being properly closed."),
+					"Parser must extract investigation_analysis from nested RCA into InvestigationResult.InvestigationAnalysis")
+			})
+
+			It("should leave InvestigationAnalysis empty when not present in LLM response", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"root_cause_analysis": {
+						"summary": "OOMKilled due to memory limit exceeded"
+					},
+					"confidence": 0.9,
+					"investigation_outcome": "actionable"
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.InvestigationAnalysis).To(BeEmpty(),
+					"InvestigationAnalysis must be empty when not provided by LLM (backward compat)")
+			})
+
+			It("should extract investigation_analysis from hybrid JSON (flat rca_summary + nested RCA)", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"rca_summary": "OOMKilled due to memory leak",
+					"workflow_id": "oom-increase-memory",
+					"confidence": 0.92,
+					"root_cause_analysis": {
+						"summary": "OOMKilled due to memory leak in api-server",
+						"investigation_analysis": "Memory grew from 180Mi to 256Mi over 6h due to unclosed gRPC streams."
+					}
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(Equal("OOMKilled due to memory leak"),
+					"flat rca_summary must take precedence")
+				Expect(result.InvestigationAnalysis).To(Equal(
+					"Memory grew from 180Mi to 256Mi over 6h due to unclosed gRPC streams."),
+					"investigation_analysis must be merged from nested RCA in hybrid JSON (F2)")
+			})
 		})
 	})
 })

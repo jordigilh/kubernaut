@@ -140,7 +140,7 @@ Implement a sanitization layer that intercepts ALL data flowing to the LLM:
 
 #### Component 1: LLM Sanitizer Module
 
-**Location**: `holmesgpt-api/src/sanitization/llm_sanitizer.py`
+**Location**: `kubernaut-agent/src/sanitization/llm_sanitizer.py`
 
 **Responsibility**: Regex-based credential detection and redaction
 
@@ -174,7 +174,7 @@ Implement a sanitization layer that intercepts ALL data flowing to the LLM:
 
 #### Component 2: Tool Invoke Wrapper
 
-**Location**: `holmesgpt-api/src/extensions/llm_config.py`
+**Location**: `kubernaut-agent/src/extensions/llm_config.py`
 
 **Responsibility**: Intercept `Tool.invoke()` to sanitize `StructuredToolResult.data`
 
@@ -236,7 +236,7 @@ def wrap_tool_results_with_sanitization(tool_executor):
 
 #### Component 3: Prompt Sanitization
 
-**Location**: `holmesgpt-api/src/extensions/incident.py`, `recovery.py`
+**Location**: `kubernaut-agent/src/extensions/incident.py`, `recovery.py`
 
 **Responsibility**: Sanitize constructed prompts before LLM submission
 
@@ -397,7 +397,7 @@ grep -r "password\|secret\|token\|api_key" audit_events.json
 | [DD-005-OBSERVABILITY-STANDARDS.md](./DD-005-OBSERVABILITY-STANDARDS.md) | DD-005 patterns source |
 | [BR-HAPI-211](../../requirements/BR-HAPI-211-llm-input-sanitization.md) | Business requirement |
 | [pkg/shared/sanitization/](../../../pkg/shared/sanitization/) | Go reference implementation |
-| [security-configuration.md](../../services/stateless/holmesgpt-api/security-configuration.md) | HAPI security overview |
+| [security-configuration.md](../../services/stateless/kubernaut-agent/security-configuration.md) | HAPI security overview |
 
 ---
 

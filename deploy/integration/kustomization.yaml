@@ -61,7 +61,7 @@ images:
     newTag: latest
   - name: quay.io/jordigilh/kubernaut-ai-service
     newTag: latest
-  - name: quay.io/jordigilh/kubernaut-holmesgpt-api
+  - name: quay.io/jordigilh/kubernaut-kubernaut-agent
     newTag: latest
 
 # Patches for development environment

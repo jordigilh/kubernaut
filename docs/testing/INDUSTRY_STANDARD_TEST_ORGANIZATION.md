@@ -179,7 +179,7 @@ jobs:
   integration-fast:
     strategy:
       matrix:
-        service: [holmesgpt-api]
+        service: [kubernaut-agent]
     timeout-minutes: 5
 ```
 
@@ -330,7 +330,7 @@ jobs:
   integration-fast:
     strategy:
       matrix:
-        service: [holmesgpt-api]
+        service: [kubernaut-agent]
     timeout-minutes: 5
 
   integration-medium:
