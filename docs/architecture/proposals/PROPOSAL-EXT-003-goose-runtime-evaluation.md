@@ -535,6 +535,8 @@ Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medi
 | **Governance / licensing** | Low | Apache 2.0 confirmed. AUP dispute resolved. Monitor for future governance changes in Block/Goose project. | Ongoing |
 | **Testing complexity** | Medium | Goose in CI requires containerized Goose instance. Mock ACP server for unit tests; real Goose for integration tests. | Future |
 | **InvestigationHook CRD adoption** | Low | CRD requires code generation and documentation. KA uses informer cache (no reconciler). Established pattern in the codebase. | v1.5 |
+| **SPIRE dynamic registration throughput** | Medium | KA creates SPIRE registration entries per agent session. Must validate the SPIRE Registration API supports the required throughput and TTL semantics under concurrent load. Flagged in DG-11 / Appendix B open questions. | Future |
+| **MCP Gateway RFC 9396 support** | Medium | No off-the-shelf MCP gateway reads `authorization_details` (RFC 9396) today. May require a custom Go gateway component or Envoy with ext_authz. Adds build/maintenance cost. Evaluate during DG-11 detailed design. | Future |
 
 ---
 
@@ -664,7 +666,6 @@ The three technologies serve distinct layers:
 | **Comparison report** | End of spike | Document findings, update this appendix with empirical results, and resolve DG-10. |
 | **DG-10 resolution** | Before v1.4 implementation | Select the API Frontend runtime based on spike results. Gate: the chosen framework must satisfy all must-have requirements in Section A.2. |
 
-
 ---
 
 ## Appendix B: Delegated Authorization Model for Agent MCP Access
@@ -746,10 +747,13 @@ From the [CoSAI Agentic IAM paper](https://github.com/cosai-oasis/ws4-secure-des
 
 #### B.4.1 Identity Lifecycle
 
+SPIRE provides the **workload identity** (SVID); the authorization server (Keycloak) issues the **OAuth token with `authorization_details`**. These are distinct systems -- the SVID answers "who is this workload?", while the OAuth token answers "what is this workload allowed to do?"
+
 ```mermaid
 sequenceDiagram
     participant KA as Kubernaut Agent
     participant SPIRE as SPIRE Server
+    participant KC as Keycloak (AuthZ Server)
     participant AB as AuthBridge Sidecar
     participant Agent as Goose Agent
     participant GW as MCP Gateway
@@ -760,20 +764,22 @@ sequenceDiagram
     KA->>SPIRE: Register agent session entry
     Note right of SPIRE: SPIFFE ID: spiffe://kubernaut.io/agent-session/abc123
     Note right of SPIRE: TTL: 30 min | Selectors: pod NS, SA, labels
+    KA->>KC: Register scoped authorization_details for session
+    Note right of KC: github-mcp: list_prs, get_pr
+    Note right of KC: k8s-mcp: get_pods, get_logs
 
     KA->>KA: Deploy agent pod with AuthBridge sidecar
 
     Note over AB: Pod starts, AuthBridge obtains SVID
     AB->>SPIRE: Request SVID via workload attestation
-    SPIRE-->>AB: JWT SVID with authorization_details
-    Note right of AB: github-mcp: list_prs, get_pr
-    Note right of AB: k8s-mcp: get_pods, get_logs
+    SPIRE-->>AB: X.509 SVID (workload identity)
 
     Note over Agent: Agent invokes github-mcp skill
     Agent->>AB: MCP tool call list_prs - no credentials
-    AB->>GW: Forward request with JWT SVID
-    GW->>GW: Validate SVID against trust bundle
-    GW->>GW: Check authorization_details permits github-mcp list_prs
+    AB->>KC: RFC 8693 token exchange (present SVID, request authorization_details)
+    KC-->>AB: OAuth token with scoped authorization_details
+    AB->>GW: Forward request with OAuth token
+    GW->>GW: Validate token and check authorization_details permits github-mcp list_prs
     GW->>GW: RFC 8693 token exchange to GitHub OAuth repo:read
     GW->>MCP: Proxied request with scoped OAuth token
     MCP-->>GW: Response
