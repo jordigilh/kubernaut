@@ -796,7 +796,30 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Expect(apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, weObj)).To(Succeed())
 		allFailures = append(allFailures, crdvalidators.ValidateWEStatus(weObj)...)
 
-		// NT: re-fetch completion notification
+		// NT: wait for completion notification to reach terminal phase before validation.
+		Eventually(func() bool {
+			nrList := &notificationv1.NotificationRequestList{}
+			if err := apiReader.List(ctx, nrList, client.InNamespace(namespace)); err != nil {
+				return false
+			}
+			for i := range nrList.Items {
+				nr := &nrList.Items[i]
+				if nr.Spec.RemediationRequestRef != nil &&
+					nr.Spec.RemediationRequestRef.Name == remediationRequest.Name &&
+					nr.Spec.Type == notificationv1.NotificationTypeCompletion {
+					switch nr.Status.Phase {
+					case notificationv1.NotificationPhaseSent,
+						notificationv1.NotificationPhasePartiallySent,
+						notificationv1.NotificationPhaseFailed:
+						return true
+					}
+					return false
+				}
+			}
+			return false
+		}, 2*time.Minute, interval).Should(BeTrue(),
+			"Completion NotificationRequest should reach terminal phase (Sent, PartiallySent, or Failed)")
+
 		nrList := &notificationv1.NotificationRequestList{}
 		Expect(apiReader.List(ctx, nrList, client.InNamespace(namespace))).To(Succeed())
 		for i := range nrList.Items {
@@ -1336,7 +1359,30 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Expect(apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, amWE)).To(Succeed())
 		allFailures = append(allFailures, crdvalidators.ValidateWEStatus(amWE)...)
 
-		// NT: fetch completion notification
+		// NT: wait for completion notification to reach terminal phase before validation.
+		Eventually(func() bool {
+			amNRList := &notificationv1.NotificationRequestList{}
+			if err := apiReader.List(ctx, amNRList, client.InNamespace(namespace)); err != nil {
+				return false
+			}
+			for i := range amNRList.Items {
+				nr := &amNRList.Items[i]
+				if nr.Spec.RemediationRequestRef != nil &&
+					nr.Spec.RemediationRequestRef.Name == remediationRequest.Name &&
+					nr.Spec.Type == notificationv1.NotificationTypeCompletion {
+					switch nr.Status.Phase {
+					case notificationv1.NotificationPhaseSent,
+						notificationv1.NotificationPhasePartiallySent,
+						notificationv1.NotificationPhaseFailed:
+						return true
+					}
+					return false
+				}
+			}
+			return false
+		}, 2*time.Minute, interval).Should(BeTrue(),
+			"Completion NotificationRequest should reach terminal phase (Sent, PartiallySent, or Failed)")
+
 		amNRList := &notificationv1.NotificationRequestList{}
 		Expect(apiReader.List(ctx, amNRList, client.InNamespace(namespace))).To(Succeed())
 		for i := range amNRList.Items {
