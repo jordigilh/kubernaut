@@ -1220,7 +1220,7 @@ SDKEOF
   # ST-NP-001: Default renders 12 NetworkPolicies (enabled by default)
   # Count: 12 after removing orphaned holmesgpt-api NP in v1.4.
   output=$(helm template test "$CHART_PATH" \
-    $(template_common_args) $(template_llm_args) \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 2>&1)
   local np_count
   np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
@@ -1233,7 +1233,7 @@ SDKEOF
 
   # ST-NP-002: Disabling renders zero policies
   output=$(helm template test "$CHART_PATH" \
-    $(template_common_args) $(template_llm_args) \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.enabled=false 2>&1)
   np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
   if [[ "$np_count" -eq 0 ]]; then
@@ -1274,7 +1274,7 @@ for d in docs:
 
   # ST-NP-004: Per-service disable skips that policy
   output=$(helm template test "$CHART_PATH" \
-    $(template_common_args) $(template_llm_args) \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.enabled=true \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
     --set networkPolicies.notification.enabled=false 2>&1)
@@ -1289,7 +1289,7 @@ for d in docs:
   # postgresql.host is required when postgresql.enabled=false (migration-job validation).
   # Count: 10 = 12 total - PG - VK after removing holmesgpt-api NP.
   output=$(helm template test "$CHART_PATH" \
-    $(template_common_args) $(template_llm_args) \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.enabled=true \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
     --set postgresql.enabled=false \
@@ -1305,7 +1305,7 @@ for d in docs:
   fi
 
   # ST-NP-006: helm lint passes with NetworkPolicies enabled
-  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) \
+  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.enabled=true \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 >/dev/null 2>&1; then
     tap_ok "ST-NP-006: helm lint passes with networkPolicies.enabled=true"
@@ -1333,7 +1333,7 @@ for d in docs:
   # UT-MON-463-001: monitoring.prometheus.enabled+url configures both EM and KA
   local mon_output
   mon_output=$(helm template test "$CHART_PATH" \
-    $(template_common_args) $(template_llm_args) \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set monitoring.prometheus.enabled=true \
     --set monitoring.prometheus.url=http://prom:9090 2>&1)
   if grep -q 'prometheusUrl: "http://prom:9090"' <<< "$mon_output" && \
@@ -1364,7 +1364,7 @@ for d in docs:
   # UT-MON-463-004: monitoring.prometheus.enabled=false disables in both
   local mon_off
   mon_off=$(helm template test "$CHART_PATH" \
-    $(template_common_args) $(template_llm_args) \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set monitoring.prometheus.enabled=false 2>&1)
   if grep -q 'prometheusEnabled: false' <<< "$mon_off" && \
      ! grep -A3 "tools:" <<< "$mon_off" | grep -q 'url:'; then
@@ -1377,7 +1377,7 @@ for d in docs:
   # UT-MON-463-005: both Prometheus and AlertManager enabled
   local mon_both
   mon_both=$(helm template test "$CHART_PATH" \
-    $(template_common_args) $(template_llm_args) \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set monitoring.prometheus.enabled=true \
     --set monitoring.prometheus.url=http://prom:9090 \
     --set monitoring.alertManager.enabled=true \
@@ -1394,7 +1394,7 @@ for d in docs:
   # UT-MON-463-008: OCP auto-detection applies defaults
   local mon_ocp
   mon_ocp=$(helm template test "$CHART_PATH" \
-    $(template_common_args) $(template_llm_args) \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
     --api-versions route.openshift.io/v1 \
     --set monitoring.prometheus.enabled=true \
     --set monitoring.alertManager.enabled=true 2>&1)
@@ -1409,7 +1409,7 @@ for d in docs:
   # UT-MON-463-009: TLS CA volume mounted on both EM and KA when tlsCaFile set
   local mon_tls
   mon_tls=$(helm template test "$CHART_PATH" \
-    $(template_common_args) $(template_llm_args) \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set monitoring.prometheus.enabled=true \
     --set monitoring.prometheus.url=https://prom:9091 \
     --set monitoring.prometheus.tlsCaFile=/etc/ssl/certs/service-ca.crt 2>&1)
@@ -1424,7 +1424,7 @@ for d in docs:
   # UT-MON-463-010: OCP RBAC created when monitoring enabled on OCP
   local mon_rbac
   mon_rbac=$(helm template test "$CHART_PATH" \
-    $(template_common_args) $(template_llm_args) \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
     --api-versions route.openshift.io/v1 \
     --set monitoring.prometheus.enabled=true 2>&1)
   if grep -q "cluster-monitoring-view" <<< "$mon_rbac"; then
@@ -1435,7 +1435,7 @@ for d in docs:
   fi
 
   # UT-MON-463-013: helm lint passes with monitoring block
-  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) \
+  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set monitoring.prometheus.enabled=true \
     --set monitoring.prometheus.url=http://prom:9090 >/dev/null 2>&1; then
     tap_ok "UT-MON-463-013: helm lint passes with monitoring block"
