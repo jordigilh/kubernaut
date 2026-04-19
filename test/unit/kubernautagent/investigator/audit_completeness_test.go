@@ -284,18 +284,27 @@ var _ = Describe("Phase 0: Audit Completeness — #592", func() {
 
 	Describe("UT-CS-592-029: response.complete serializes both HumanReviewReason and Reason", func() {
 		It("should store human_review_reason enum value AND reason string separately", func() {
-			responseJSON := `{
+			rcaJSON := `{
+				"rca_summary": "Investigation inconclusive due to insufficient data",
+				"severity": "critical"
+			}`
+			p3JSON := `{
 				"rca_summary": "Investigation inconclusive due to insufficient data",
 				"severity": "critical",
-				"needs_human_review": true,
-				"human_review_reason": "investigation_inconclusive",
+				"investigation_outcome": "inconclusive",
 				"reason": "Unable to determine root cause with available observability data"
 			}`
 
-			mockLLM := newScriptedLLM(llm.ChatResponse{
-				Message: llm.Message{Role: "assistant", Content: responseJSON},
-				Usage:   llm.TokenUsage{TotalTokens: 120},
-			})
+			mockLLM := newScriptedLLM(
+				llm.ChatResponse{
+					Message: llm.Message{Role: "assistant", Content: rcaJSON},
+					Usage:   llm.TokenUsage{TotalTokens: 80},
+				},
+				llm.ChatResponse{
+					Message: llm.Message{Role: "assistant", Content: p3JSON},
+					Usage:   llm.TokenUsage{TotalTokens: 120},
+				},
+			)
 
 			inv := investigator.New(investigator.Config{
 				Client:       mockLLM,
@@ -323,9 +332,9 @@ var _ = Describe("Phase 0: Audit Completeness — #592", func() {
 
 			Expect(responseData).To(HaveKey("human_review_reason"),
 				"response_data must serialize HumanReviewReason (the enum value)")
-			Expect(responseData["human_review_reason"]).To(Equal("investigation_inconclusive"),
-				"human_review_reason must be the enum value from InvestigationResult.HumanReviewReason, "+
-					"not the free-text Reason field (bug: current code maps r.Reason to this key)")
+			Expect(responseData["human_review_reason"]).To(Equal("no_matching_workflows"),
+				"human_review_reason must be parser-derived from investigation_outcome per #700: "+
+					"inconclusive + RCA present + no workflow = no_matching_workflows")
 
 			Expect(responseData).To(HaveKey("reason"),
 				"response_data must separately serialize Reason (the free-text explanation)")
