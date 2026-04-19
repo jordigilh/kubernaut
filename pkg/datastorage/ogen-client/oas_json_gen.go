@@ -6040,6 +6040,24 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.SignalType.Set {
+					e.FieldStart("signal_type")
+					s.SignalType.Encode(e)
+				}
+			}
+			{
+				if s.SignalFingerprint.Set {
+					e.FieldStart("signal_fingerprint")
+					s.SignalFingerprint.Encode(e)
+				}
+			}
+			{
+				if s.CrdOutcome.Set {
+					e.FieldStart("crd_outcome")
+					s.CrdOutcome.Encode(e)
+				}
+			}
+			{
 				if s.EaName.Set {
 					e.FieldStart("ea_name")
 					s.EaName.Encode(e)
@@ -9052,6 +9070,24 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.ActionType.Set {
 					e.FieldStart("action_type")
 					s.ActionType.Encode(e)
+				}
+			}
+			{
+				if s.SignalType.Set {
+					e.FieldStart("signal_type")
+					s.SignalType.Encode(e)
+				}
+			}
+			{
+				if s.SignalFingerprint.Set {
+					e.FieldStart("signal_fingerprint")
+					s.SignalFingerprint.Encode(e)
+				}
+			}
+			{
+				if s.CrdOutcome.Set {
+					e.FieldStart("crd_outcome")
+					s.CrdOutcome.Encode(e)
 				}
 			}
 			{
@@ -29217,6 +29253,24 @@ func (s *RemediationOrchestratorAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SignalType.Set {
+			e.FieldStart("signal_type")
+			s.SignalType.Encode(e)
+		}
+	}
+	{
+		if s.SignalFingerprint.Set {
+			e.FieldStart("signal_fingerprint")
+			s.SignalFingerprint.Encode(e)
+		}
+	}
+	{
+		if s.CrdOutcome.Set {
+			e.FieldStart("crd_outcome")
+			s.CrdOutcome.Encode(e)
+		}
+	}
+	{
 		if s.EaName.Set {
 			e.FieldStart("ea_name")
 			s.EaName.Encode(e)
@@ -29260,7 +29314,7 @@ func (s *RemediationOrchestratorAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [35]string{
+var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [38]string{
 	0:  "event_type",
 	1:  "rr_name",
 	2:  "namespace",
@@ -29289,13 +29343,16 @@ var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [35]string{
 	25: "target_resource",
 	26: "workflow_version",
 	27: "action_type",
-	28: "ea_name",
-	29: "hash_compute_delay",
-	30: "alert_check_delay",
-	31: "gitops_sync_delay",
-	32: "operator_reconcile_delay",
-	33: "is_gitops_managed",
-	34: "is_crd",
+	28: "signal_type",
+	29: "signal_fingerprint",
+	30: "crd_outcome",
+	31: "ea_name",
+	32: "hash_compute_delay",
+	33: "alert_check_delay",
+	34: "gitops_sync_delay",
+	35: "operator_reconcile_delay",
+	36: "is_gitops_managed",
+	37: "is_crd",
 }
 
 // Decode decodes RemediationOrchestratorAuditPayload from json.
@@ -29590,6 +29647,36 @@ func (s *RemediationOrchestratorAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"action_type\"")
+			}
+		case "signal_type":
+			if err := func() error {
+				s.SignalType.Reset()
+				if err := s.SignalType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"signal_type\"")
+			}
+		case "signal_fingerprint":
+			if err := func() error {
+				s.SignalFingerprint.Reset()
+				if err := s.SignalFingerprint.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"signal_fingerprint\"")
+			}
+		case "crd_outcome":
+			if err := func() error {
+				s.CrdOutcome.Reset()
+				if err := s.CrdOutcome.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"crd_outcome\"")
 			}
 		case "ea_name":
 			if err := func() error {

@@ -745,12 +745,14 @@ spec:
                   - "NoActionRequired": AIAnalysis determined no action needed (problem self-resolved)
                   - "ManualReviewRequired": Requires operator intervention
                   - "VerificationTimedOut": EA assessment did not complete within deadline (#280)
-                  Reference: BR-ORCH-037, BR-HAPI-200
+                  - "Inconclusive": EA completed but alert still firing (alertScore=0) (#722)
+                  Reference: BR-ORCH-037, BR-HAPI-200, BR-EM-012
                 enum:
                 - Remediated
                 - NoActionRequired
                 - ManualReviewRequired
                 - VerificationTimedOut
+                - Inconclusive
                 type: string
               overallPhase:
                 description: "Phase tracking for orchestration.\nUses typed RemediationPhase

@@ -2494,8 +2494,15 @@ func (r *Reconciler) emitWorkflowCreatedAudit(ctx context.Context, rr *remediati
 
 	event, err := r.auditManager.BuildRemediationWorkflowCreatedEvent(
 		correlationID, rr.Namespace, rr.Name,
-		preHash, targetResource,
-		workflowID, workflowVersion, actionType,
+		roaudit.RemediationWorkflowCreatedData{
+			PreRemediationSpecHash: preHash,
+			TargetResource:         targetResource,
+			WorkflowID:             workflowID,
+			WorkflowVersion:        workflowVersion,
+			ActionType:             actionType,
+			SignalType:             rr.Spec.SignalType,
+			SignalFingerprint:      rr.Spec.SignalFingerprint,
+		},
 	)
 	if err != nil {
 		logger.Error(err, "Failed to build workflow_created audit event")
