@@ -538,6 +538,7 @@ Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medi
 | **InvestigationHook CRD adoption** | Low | CRD requires code generation and documentation. KA uses informer cache (no reconciler). Established pattern in the codebase. | v1.5 |
 | **SPIRE dynamic registration throughput** | Medium | KA creates SPIRE registration entries per agent session. Must validate the SPIRE Registration API supports the required throughput and TTL semantics under concurrent load. Flagged in DG-11 / Appendix B open questions. | Future |
 | **MCP Gateway RFC 9396 support** | Medium | No off-the-shelf MCP gateway reads `authorization_details` (RFC 9396) today. May require a custom Go gateway component or Envoy with ext_authz. Adds build/maintenance cost. Evaluate during DG-11 detailed design. | Future |
+| **Goose headless execution reliability** | Medium | Goose must support reliable headless mode with structured output on exit for KA to collect results from ephemeral pods. If headless mode is unreliable or requires interactive prompts, the ephemeral pod model breaks. Validate during ACP stability spike (DG-8). Flagged in DG-12 / Appendix C open questions. | Future |
 
 ---
 
@@ -991,7 +992,7 @@ graph TD
 | Layer | Component | Pattern | Responsibility |
 |---|---|---|---|
 | **Protocol** | API Frontend (ADK-Go) | Gateway | Translates between external protocols (A2A tasks, MCP tool calls) and internal Kubernaut CRDs/APIs. No domain knowledge, no state ownership. |
-| **Operator** | Kubernaut Agent | Operator ([operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)) | Owns the investigation CRD lifecycle, encodes domain knowledge, compiles recipes, enforces permission ceiling, runs programmatic enrichment. Long-running, reactive controller. |
+| **Operator** | Kubernaut Agent | Operator ([operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)) | Owns the investigation CRD lifecycle, encodes domain knowledge, compiles recipes, enforces permission ceiling, aggregates enrichment data. Long-running, reactive controller. |
 | **Worker** | Goose Pods | Ephemeral worker | Receives a fully-compiled recipe, executes LLM reasoning with tool calls, returns structured output, exits. Stateless, no domain knowledge. |
 
 ### C.3 KA as Investigation Operator
@@ -1002,19 +1003,21 @@ KA follows the **operator pattern** from Kubernetes and agentic workflow design.
 - **CRD-based state management** -- the operator owns and drives custom resources toward desired state
 - **Reactive, event-driven lifecycle** -- the operator watches for events and reconciles
 
-KA satisfies all three:
+The **investigation operator** encompasses the KA subsystem as a whole: the `kubernautagent` service (investigation logic, enrichment, recipe compilation) together with the `AIAnalysis` controller (CRD reconciliation, phase transitions). In v1.3, these are separate components -- the AIAnalysis controller reconciles `AIAnalysis` CRDs and invokes KA via HTTP, while KA itself is a stateless HTTP service. The operator pattern describes the **combined behavior** of these components, and future versions may unify them further.
+
+KA satisfies all three operator characteristics:
 
 | Operator Characteristic | How KA Implements It |
 |---|---|
 | Deep domain knowledge | KA knows which investigation phases to run, what enrichment data to inject, how to validate recipe permissions, how to interpret structured RCA output, and how to map findings to workflow selection. |
-| CRD state management | KA reconciles `AIAnalysis` CRDs, managing phase transitions from `Pending` through `Investigating`, `Analyzing`, and `Completed`/`Failed`. |
-| Reactive lifecycle | KA is a long-running controller-runtime reconciler that watches `AIAnalysis` CRDs and reacts to phase changes and external events. |
+| CRD state management | The AIAnalysis controller reconciles `AIAnalysis` CRDs, managing phase transitions from `Pending` through `Investigating`, `Analyzing`, and `Completed`/`Failed`. KA's investigation logic drives these transitions. |
+| Reactive lifecycle | The AIAnalysis controller is a long-running controller-runtime reconciler that watches `AIAnalysis` CRDs and reacts to phase changes. KA encodes the domain logic that determines the next state. |
 
-The term **"investigation operator"** is the canonical way to reference KA's role in Kubernaut documentation going forward.
+The term **"investigation operator"** is the canonical way to reference KA's role in Kubernaut documentation going forward. It refers to the KA subsystem's combined behavior, not a single binary.
 
 #### C.3.1 Operator Responsibilities
 
-KA's responsibilities in the agentic architecture are:
+KA's responsibilities in the agentic architecture extend [Section 5's current responsibility table](#5-what-ka-keeps-domain-specific-orchestration) with the new concerns introduced by the Goose worker model (pod creation, permission ceiling enforcement, multi-agent coordination). The Section 5 responsibilities (pipeline orchestration, bundle compilation, API contract, signal enrichment, result assembly, audit assembly, failure policy enforcement, catalog validation) remain valid; the list below adds the execution-layer responsibilities:
 
 1. **Recipe selection**: Based on the investigation phase and pipeline configuration, KA determines which Goose recipe to run. Core phases (investigation, RCA, workflow selection) use recipes from KA's configuration; optional phases use `InvestigationHook` CRDs.
 
@@ -1033,22 +1036,35 @@ KA's responsibilities in the agentic architecture are:
 
 6. **Multi-agent coordination**: For Shadow Agent ([#601](https://github.com/jordigilh/kubernaut/issues/601)) and Dual Investigation ([#648](https://github.com/jordigilh/kubernaut/issues/648)), KA creates multiple Goose pods in parallel with different recipes or LLMs and reconciles their outputs.
 
-7. **Programmatic enrichment**: Enrichment runs in-process within KA (see [Section C.4](#c4-phase-to-runtime-mapping)).
+7. **Enrichment aggregation**: In v1.3, enrichment runs in-process within KA (K8s-native data gathering). The architectural direction is toward A2A/MCP-based enrichment providers, with KA as the aggregator that calls providers, validates structured output, and merges results. See [Section C.4.1](#c41-enrichment-evolution).
 
 ### C.4 Phase-to-Runtime Mapping
 
 Not all investigation phases require LLM reasoning. The architecture distinguishes between **programmatic** phases (deterministic data gathering, no LLM) and **LLM-driven** phases (reasoning, tool calling, multi-turn conversation).
 
-| Phase | Runtime | Rationale |
-|---|---|---|
-| **Enrichment** | KA in-process (programmatic) | Deterministic data gathering: K8s owner chain resolution, label extraction, remediation history lookup, Prometheus metrics. No LLM reasoning involved. |
-| **Investigation** | Goose pod (recipe) | LLM-driven: multi-turn reasoning with tool calls (K8s inspect, logs, metrics) to build investigation findings. |
-| **RCA / Resolution** | Goose pod (recipe) | LLM-driven: root cause analysis from investigation findings, reasoning about causality and contributing factors. |
-| **Workflow Selection** | Goose pod (recipe) | LLM-driven: match RCA findings against workflow catalog, reason about the best remediation strategy. |
-| **Pre/Post Investigation hooks** | Goose pod (recipe) | LLM-driven: optional `InvestigationHook` phases, if configured via CRDs. |
-| **Pre-Workflow-Selection hook** | Goose pod (recipe) | LLM-driven: optional hook phase before workflow selection, if configured. |
+| Phase | Default Runtime | Can Be Delegated? | Rationale |
+|---|---|---|---|
+| **Enrichment** | KA in-process (programmatic) | Yes -- future: A2A/MCP-based providers | Currently handles K8s-native enrichment (owner chain, labels, history, Prometheus). Future enrichment should be protocol-based (A2A or MCP) to support non-K8s targets (cloud infrastructure, CMDB, network topology). KA aggregates structured results from multiple providers. See [C.4.1](#c41-enrichment-evolution). |
+| **Investigation** | Goose pod (recipe) | N/A (always delegated) | LLM-driven: multi-turn reasoning with tool calls (K8s inspect, logs, metrics) to build investigation findings. |
+| **RCA / Resolution** | Goose pod (recipe) | N/A (always delegated) | LLM-driven: root cause analysis from investigation findings, reasoning about causality and contributing factors. |
+| **Workflow Selection** | Goose pod (recipe) | N/A (always delegated) | LLM-driven: match RCA findings against workflow catalog, reason about the best remediation strategy. |
+| **Pre/Post Investigation hooks** | Remote agent (A2A endpoint) | N/A (always delegated) | Delegated: executed by a remote agent at the A2A endpoint defined in the `InvestigationHook` CRD. May or may not involve LLM reasoning depending on the hook implementation. Customer-deployed, independently managed. |
+| **Pre-Workflow-Selection hook** | Remote agent (A2A endpoint) | N/A (always delegated) | Delegated: same as other hooks. Common use case: policy checks, change freeze validation, ITSM integration. |
 
-Enrichment staying programmatic has two benefits:
+Note on security boundaries: For **Goose pods** (core LLM phases), KA creates the pod and controls the full security context (SPIRE, AuthBridge, Pod Security Standards restricted). For **remote agents** (hook phases), the remote service manages its own security -- KA only controls the A2A contract and the `failClosed`/`failOpen` policy.
+
+#### C.4.1 Enrichment Evolution
+
+Enrichment is programmatic and in-process in v1.3, but the architectural direction is toward **A2A/MCP-based enrichment providers**:
+
+| Version | Enrichment Model | Scope |
+|---|---|---|
+| **v1.3 (current)** | KA in-process | K8s-native: owner chain, labels, remediation history, Prometheus metrics |
+| **Future** | A2A/MCP-based providers, KA as aggregator | Multi-source: K8s, CMDB, cloud provider APIs, network topology, SaaS services. KA calls enrichment providers over A2A/MCP, validates structured output against the enrichment schema, and merges results. |
+
+Enrichment must produce **structured, deterministic data** regardless of source because it directly impacts workflow selection. Making enrichment protocol-based (A2A/MCP) ensures the structured data contract is enforced at the protocol level, enabling different enrichment providers to be composed without changing KA's core logic.
+
+In the near term, KA's built-in enrichment runs first and injects results into the Goose recipe context:
 
 1. **Enrichment data becomes recipe context**: KA runs enrichment first, then injects the results into the Goose recipe. The investigation recipe starts with richer context, improving LLM reasoning quality and reducing unnecessary tool calls.
 
@@ -1140,11 +1156,11 @@ graph LR
     Pods -->|structured results| KAOp
 ```
 
-Two entry paths exist:
+Two entry paths exist, but both converge at the CRD level to preserve the audit trail and lifecycle consistency:
 
-- **A2A path**: External agent sends `SendMessage` to API Frontend, which creates a `RemediationRequest` via Gateway. The normal CRD pipeline triggers RO, which creates an `AIAnalysis`. KA reconciles it and manages the full investigation lifecycle including Goose pod creation.
+- **A2A path**: External agent sends `SendMessage` to API Frontend, which creates a `RemediationRequest` via Gateway. The normal CRD pipeline triggers RO, which creates an `AIAnalysis`. The investigation operator reconciles it and manages the full investigation lifecycle including Goose pod creation.
 
-- **MCP path**: Human operator invokes MCP tools (`kubernaut_investigate`, `kubernaut_enrich`, `kubernaut_select_workflow`) via the API Frontend. The API Frontend calls KA directly for investigation operations. KA may create Goose pods for the LLM-driven phases while handling enrichment in-process.
+- **MCP path**: Human operator invokes MCP tools (`kubernaut_investigate`, `kubernaut_enrich`, `kubernaut_select_workflow`) via the API Frontend. Per [#703](https://github.com/jordigilh/kubernaut/issues/703), MCP interactive mode requires a pre-existing `AIAnalysis` CRD -- the operator attaches to it rather than bypassing the CRD pipeline. The API Frontend interacts with KA for investigation operations, but the CRD lifecycle (RR, AIAnalysis) is preserved for audit, governance, and state tracking.
 
 In both paths, the API Frontend has no visibility into Goose pods, recipe compilation, or SPIRE registration. It only sees the CRD-level status updates and KA's API responses.
 
@@ -1157,7 +1173,7 @@ In both paths, the API Frontend has no visibility into Goose pods, recipe compil
 | Parallelism | Single LLM call per phase | Can run parallel recipes (Shadow Agent, Dual Investigation) |
 | Prompt construction | Go `prompt.Builder` builds prompt in-process | Recipe compiled from template + context, sent to Goose |
 | Tool execution | Tools executed in-process (K8s client, Prometheus) | Tools accessed by Goose via MCP extensions through gateway |
-| Enrichment | In-process (programmatic) | **Unchanged** -- stays in-process, programmatic |
+| Enrichment | In-process (programmatic) | **Near-term unchanged** -- stays in-process, programmatic. Future: A2A/MCP-based enrichment providers with KA as aggregator (see C.4.1). |
 | CRD lifecycle management | Reconciles AIAnalysis, manages phases | **Unchanged** -- same reconciler, same phase model |
 | Domain knowledge | Encoded in KA's investigation logic | **Unchanged** -- KA retains all domain knowledge |
 
@@ -1180,6 +1196,7 @@ In both paths, the API Frontend has no visibility into Goose pods, recipe compil
 | **Recipe output schema enforcement** | How does KA enforce that a Goose pod returns output conforming to the expected schema? Goose recipes support `output_schema`, but validation of actual output needs testing. |
 | **Intermediate results streaming** | Can Goose stream intermediate findings back to KA during execution (e.g., for real-time status updates to MCP clients), or is output only available on pod completion? |
 | **LangChainGo deprecation timeline** | Once Goose is validated as the execution runtime, define the migration path and timeline for removing `runLLMLoop` and LangChainGo from KA. |
+| **Enrichment provider protocol** | Define the A2A/MCP contract for enrichment providers: structured input (signal context, target resource), structured output (enrichment schema), and how KA aggregates results from multiple providers. Must ensure deterministic, schema-validated output since enrichment directly impacts workflow selection. |
 
 ### C.10 References
 
