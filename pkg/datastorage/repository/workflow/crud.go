@@ -283,12 +283,24 @@ func (r *Repository) SupersedeAndCreate(ctx context.Context, oldID, oldVersion, 
 		}
 	}
 
+	// SAVEPOINT allows recovery from PK collision without aborting the whole
+	// transaction. PostgreSQL marks a tx as aborted after any statement error;
+	// ROLLBACK TO SAVEPOINT clears that state so subsequent statements can run.
+	if _, err = tx.ExecContext(ctx, "SAVEPOINT before_insert"); err != nil {
+		return fmt.Errorf("failed to set savepoint: %w", err)
+	}
+
 	var confirmedID string
 	reactivated := false
 	if err = tx.QueryRowContext(ctx, insertQuery, args...).Scan(&confirmedID); err != nil {
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) || pgErr.Code != "23505" || pgErr.ConstraintName != "remediation_workflow_catalog_pkey" {
 			return fmt.Errorf("failed to create workflow: %w", err)
+		}
+
+		// Roll back to the savepoint to clear the aborted transaction state.
+		if _, err = tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT before_insert"); err != nil {
+			return fmt.Errorf("failed to rollback to savepoint: %w", err)
 		}
 
 		// PK collision on deterministic UUID: the same content was previously registered
