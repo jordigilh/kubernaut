@@ -777,8 +777,11 @@ func signalToPrompt(s katypes.SignalContext) prompt.SignalData {
 		SignalMode:       s.SignalMode,
 		FiringTime:       s.FiringTime,
 		ReceivedTime:     s.ReceivedTime,
-		IsDuplicate:      s.IsDuplicate,
-		OccurrenceCount:  s.OccurrenceCount,
+		IsDuplicate:                s.IsDuplicate,
+		OccurrenceCount:            s.OccurrenceCount,
+		DeduplicationWindowMinutes: s.DeduplicationWindowMinutes,
+		FirstSeen:                  s.FirstSeen,
+		LastSeen:                   s.LastSeen,
 	}
 }
 

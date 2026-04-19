@@ -139,6 +139,9 @@ type SignalContext struct {
 	// Timestamps and dedup (GAP-014: from IncidentRequest OpenAPI schema)
 	FiringTime      string `json:"firing_time,omitempty"`
 	ReceivedTime    string `json:"received_time,omitempty"`
-	IsDuplicate     *bool  `json:"is_duplicate,omitempty"`
-	OccurrenceCount *int   `json:"occurrence_count,omitempty"`
+	IsDuplicate                *bool  `json:"is_duplicate,omitempty"`
+	OccurrenceCount            *int   `json:"occurrence_count,omitempty"`
+	DeduplicationWindowMinutes *int   `json:"deduplication_window_minutes,omitempty"`
+	FirstSeen                  string `json:"first_seen,omitempty"`
+	LastSeen                   string `json:"last_seen,omitempty"`
 }

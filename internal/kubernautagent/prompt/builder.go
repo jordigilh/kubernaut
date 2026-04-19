@@ -49,8 +49,11 @@ type SignalData struct {
 	SignalMode       string
 	FiringTime       string
 	ReceivedTime     string
-	IsDuplicate      *bool
-	OccurrenceCount  *int
+	IsDuplicate                *bool
+	OccurrenceCount            *int
+	DeduplicationWindowMinutes *int
+	FirstSeen                  string
+	LastSeen                   string
 }
 
 // EnrichmentData contains enrichment context injected into the prompt.
@@ -194,8 +197,15 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentD
 		Priority:            sanitized.Priority,
 		BusinessCategory:    sanitized.BusinessCategory,
 		RiskTolerance:       sanitized.RiskTolerance,
-		IsDuplicate:         sanitized.IsDuplicate != nil && *sanitized.IsDuplicate,
-		OccurrenceCount:     derefIntOr(sanitized.OccurrenceCount, 0),
+		IsDuplicate:                sanitized.IsDuplicate != nil && *sanitized.IsDuplicate,
+		OccurrenceCount:            derefIntOr(sanitized.OccurrenceCount, 0),
+		DeduplicationWindowMinutes: derefIntOr(sanitized.DeduplicationWindowMinutes, 0),
+		FirstSeen:                  sanitized.FirstSeen,
+		LastSeen:                   sanitized.LastSeen,
+	}
+
+	if isPDBSignal(sanitized.ResourceKind) {
+		data.PDBSignalGuidance = "active"
 	}
 
 	if enrichData != nil {
@@ -340,6 +350,10 @@ func derefIntOr(p *int, fallback int) int {
 	return fallback
 }
 
+func isPDBSignal(resourceKind string) bool {
+	return resourceKind == "PodDisruptionBudget"
+}
+
 func sanitizeSignal(signal SignalData) SignalData {
 	return SignalData{
 		Name:             sanitizeField(signal.Name),
@@ -358,8 +372,11 @@ func sanitizeSignal(signal SignalData) SignalData {
 		SignalMode:       sanitizeField(signal.SignalMode),
 		FiringTime:       sanitizeField(signal.FiringTime),
 		ReceivedTime:     sanitizeField(signal.ReceivedTime),
-		IsDuplicate:      signal.IsDuplicate,
-		OccurrenceCount:  signal.OccurrenceCount,
+		IsDuplicate:                signal.IsDuplicate,
+		OccurrenceCount:            signal.OccurrenceCount,
+		DeduplicationWindowMinutes: signal.DeduplicationWindowMinutes,
+		FirstSeen:                  sanitizeField(signal.FirstSeen),
+		LastSeen:                   sanitizeField(signal.LastSeen),
 	}
 }
 

@@ -410,6 +410,221 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 		})
 	})
 
+	Describe("UT-KA-742: PDB signal guidance activation (#742)", func() {
+		It("UT-KA-742-001: isPDBSignal returns true for ResourceKind=PodDisruptionBudget", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name:         "KubePodDisruptionBudgetAtLimit",
+				Namespace:    "demo-pdb",
+				Severity:     "medium",
+				Message:      "PDB at limit",
+				ResourceKind: "PodDisruptionBudget",
+				ResourceName: "payment-service-pdb",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("PDB-Specific Investigation Guidance"),
+				"PDB guidance must render when ResourceKind is PodDisruptionBudget")
+		})
+
+		It("UT-KA-742-002: isPDBSignal returns true for PodDisruptionBudget (case preserved through sanitize)", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name:         "some-pdb-alert",
+				Namespace:    "production",
+				Severity:     "warning",
+				Message:      "PDB constraint active",
+				ResourceKind: "PodDisruptionBudget",
+				ResourceName: "api-pdb",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("PDB-Specific Investigation Guidance"),
+				"PDB guidance must render for any signal with ResourceKind=PodDisruptionBudget")
+		})
+
+		It("UT-KA-742-003: isPDBSignal returns false for non-PDB signals", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name:         "OOMKilled",
+				Namespace:    "production",
+				Severity:     "critical",
+				Message:      "Container exceeded memory limit",
+				ResourceKind: "Deployment",
+				ResourceName: "payment-service",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).NotTo(ContainSubstring("PDB-Specific Investigation Guidance"),
+				"PDB guidance must NOT render for Deployment signals")
+		})
+
+		It("UT-KA-742-004: RenderInvestigation includes PDB guidance when ResourceKind=PodDisruptionBudget", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name:         "KubePodDisruptionBudgetAtLimit",
+				Namespace:    "demo-pdb",
+				Severity:     "medium",
+				Message:      "PDB payment-service-pdb at disruption limit",
+				ResourceKind: "PodDisruptionBudget",
+				ResourceName: "payment-service-pdb",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("Inspect the PDB spec"),
+				"PDB guidance must include investigation instruction")
+			Expect(rendered).To(ContainSubstring("kind=PodDisruptionBudget"),
+				"PDB guidance must instruct LLM to use PDB kind")
+		})
+
+		It("UT-KA-742-005: RenderInvestigation does NOT include PDB guidance when ResourceKind is empty", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name:      "KubePodDisruptionBudgetAtLimit",
+				Namespace: "demo-pdb",
+				Severity:  "medium",
+				Message:   "PDB at limit",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).NotTo(ContainSubstring("PDB-Specific Investigation Guidance"),
+				"PDB guidance must NOT render when ResourceKind is empty (defaults to Pod)")
+		})
+
+		It("UT-KA-742-006: RenderInvestigation does NOT include PDB guidance for Pod signals", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name:         "CrashLoopBackOff",
+				Namespace:    "production",
+				Severity:     "critical",
+				Message:      "Pod crash looping",
+				ResourceKind: "Pod",
+				ResourceName: "api-server-abc123",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).NotTo(ContainSubstring("PDB-Specific Investigation Guidance"),
+				"PDB guidance must NOT render for Pod signals")
+		})
+
+		It("UT-KA-742-007: PDB guidance section contains remediation_target instruction", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name:         "KubePodDisruptionBudgetAtLimit",
+				Namespace:    "demo-pdb",
+				Severity:     "medium",
+				Message:      "PDB at limit",
+				ResourceKind: "PodDisruptionBudget",
+				ResourceName: "payment-service-pdb",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("PDB"),
+				"PDB guidance must reference PDB")
+			Expect(rendered).To(ContainSubstring("not the root cause"),
+				"PDB guidance must warn against treating node drain as root cause")
+		})
+	})
+
+	Describe("UT-KA-743: Dedup timing fields wiring (#743)", func() {
+		It("UT-KA-743-001: RenderInvestigation renders dedup section with correct timing fields", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			isDup := true
+			count := 3
+			window := 30
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name:                      "HighMemoryUsage",
+				Namespace:                 "production",
+				Severity:                  "warning",
+				Message:                   "Memory above 90%",
+				IsDuplicate:               &isDup,
+				OccurrenceCount:           &count,
+				DeduplicationWindowMinutes: &window,
+				FirstSeen:                 "2026-04-01T10:00:00Z",
+				LastSeen:                  "2026-04-01T10:30:00Z",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("2026-04-01T10:00:00Z"),
+				"First Seen timestamp must appear in dedup section")
+			Expect(rendered).To(ContainSubstring("2026-04-01T10:30:00Z"),
+				"Last Seen timestamp must appear in dedup section")
+			Expect(rendered).To(ContainSubstring("30 minutes"),
+				"Deduplication window must render as '30 minutes'")
+			Expect(rendered).To(ContainSubstring("Occurrence Count: 3"),
+				"Occurrence count must render correctly")
+		})
+
+		It("UT-KA-743-002: RenderInvestigation does NOT render dedup section when IsDuplicate=false", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			isDup := false
+			count := 0
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name:            "HighMemoryUsage",
+				Namespace:       "production",
+				Severity:        "warning",
+				Message:         "Memory above 90%",
+				IsDuplicate:     &isDup,
+				OccurrenceCount: &count,
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).NotTo(ContainSubstring("Signal Recurrence Context"),
+				"Dedup section must NOT render when IsDuplicate is false")
+		})
+
+		It("UT-KA-743-003: RenderInvestigation does NOT render dedup section when OccurrenceCount=0", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			isDup := true
+			count := 0
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name:            "HighMemoryUsage",
+				Namespace:       "production",
+				Severity:        "warning",
+				Message:         "Memory above 90%",
+				IsDuplicate:     &isDup,
+				OccurrenceCount: &count,
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).NotTo(ContainSubstring("Signal Recurrence Context"),
+				"Dedup section must NOT render when OccurrenceCount is 0")
+		})
+
+		It("UT-KA-743-004: Dedup fields render correctly with zero-value DeduplicationWindowMinutes", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			isDup := true
+			count := 2
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name:            "HighMemoryUsage",
+				Namespace:       "production",
+				Severity:        "warning",
+				Message:         "Memory above 90%",
+				IsDuplicate:     &isDup,
+				OccurrenceCount: &count,
+				FirstSeen:       "2026-04-01T10:00:00Z",
+				LastSeen:        "2026-04-01T10:15:00Z",
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("0 minutes"),
+				"DeduplicationWindowMinutes defaults to 0 when not provided")
+			Expect(rendered).To(ContainSubstring("2026-04-01T10:00:00Z"),
+				"FirstSeen must render even without DeduplicationWindowMinutes")
+		})
+	})
+
 	Describe("UT-KA-SO-PROMPT-001: Prompt uses unified submit_result tool instruction", func() {
 		It("should include submit_result instruction regardless of structured output setting", func() {
 			builder, err := prompt.NewBuilder(prompt.WithStructuredOutput(true))

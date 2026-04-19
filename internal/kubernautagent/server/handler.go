@@ -238,6 +238,15 @@ func MapIncidentRequestToSignal(req *agentclient.IncidentRequest) katypes.Signal
 	if v, ok := req.OccurrenceCount.Get(); ok {
 		sc.OccurrenceCount = &v
 	}
+	if v, ok := req.DeduplicationWindowMinutes.Get(); ok {
+		sc.DeduplicationWindowMinutes = &v
+	}
+	if v, ok := req.FirstSeen.Get(); ok {
+		sc.FirstSeen = v
+	}
+	if v, ok := req.LastSeen.Get(); ok {
+		sc.LastSeen = v
+	}
 	return sc
 }
 
