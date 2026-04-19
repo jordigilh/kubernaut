@@ -431,15 +431,15 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: holmesgpt-api-metrics
+  name: kubernaut-agent-metrics
   namespace: kubernaut-system
   labels:
-    app: holmesgpt-api
+    app: kubernaut-agent
     component: http-service
 spec:
   selector:
     matchLabels:
-      app: holmesgpt-api
+      app: kubernaut-agent
   endpoints:
   - port: metrics
     path: /metrics
@@ -737,7 +737,7 @@ kubectl apply -f deploy/workflow-execution-deployment.yaml
 kubectl apply -f deploy/kubernetes-executor-deployment.yaml  # DEPRECATED - ADR-025
 kubectl apply -f deploy/gateway-service-deployment.yaml
 kubectl apply -f deploy/notification-service-deployment.yaml
-kubectl apply -f deploy/holmesgpt-api-deployment.yaml
+kubectl apply -f deploy/kubernaut-agent-deployment.yaml
 ```
 
 ---
@@ -764,7 +764,7 @@ kubectl apply -f deploy/servicemonitors/workflow-execution-servicemonitor.yaml
 kubectl apply -f deploy/servicemonitors/kubernetes-executor-servicemonitor.yaml  # DEPRECATED - ADR-025
 kubectl apply -f deploy/servicemonitors/gateway-service-servicemonitor.yaml
 kubectl apply -f deploy/servicemonitors/notification-service-servicemonitor.yaml
-kubectl apply -f deploy/servicemonitors/holmesgpt-api-servicemonitor.yaml
+kubectl apply -f deploy/servicemonitors/kubernaut-agent-servicemonitor.yaml
 ```
 
 ---
@@ -946,7 +946,7 @@ echo "Checking ServiceMonitors..."
 # Note: kubernetes-executor DEPRECATED - ADR-025
 for service in remediation-orchestrator remediation-processor ai-analysis \
                 workflow-execution kubernetes-executor gateway-service \
-                notification-service holmesgpt-api; do
+                notification-service kubernaut-agent; do
   kubectl get servicemonitor -n $NAMESPACE ${service}-metrics &>/dev/null
   if [ $? -eq 0 ]; then
     echo "✅ ServiceMonitor: ${service}-metrics"
@@ -961,7 +961,7 @@ echo "Checking Services..."
 # Note: kubernetes-executor DEPRECATED - ADR-025
 for service in remediation-orchestrator remediation-processor ai-analysis \
                 workflow-execution kubernetes-executor gateway-service \
-                notification-service holmesgpt-api; do
+                notification-service kubernaut-agent; do
   kubectl get svc -n $NAMESPACE $service &>/dev/null
   if [ $? -eq 0 ]; then
     echo "✅ Service: $service"

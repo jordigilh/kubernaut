@@ -29,8 +29,8 @@ This test plan validates the fixes for two bugs that together break the remediat
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| Unit test pass rate | 100% | `go test ./test/unit/datastorage/...` + `pytest holmesgpt-api/tests/unit/` |
-| Integration test pass rate | 100% | `go test ./test/integration/datastorage/...` + `pytest holmesgpt-api/tests/integration/` |
+| Unit test pass rate | 100% | `go test ./test/unit/datastorage/...` + `pytest kubernaut-agent/tests/unit/` |
+| Integration test pass rate | 100% | `go test ./test/integration/datastorage/...` + `pytest kubernaut-agent/tests/integration/` |
 | Unit-testable code coverage (DS logic) | >=80% | Coverage on `remediation_history_logic.go`, `remediation_history_repository.go` |
 | Unit-testable code coverage (HAPI) | >=80% | Coverage on `remediation_history_client.py`, enrichment wiring |
 | Backward compatibility | 0 regressions | All existing remediation history tests pass unmodified |
@@ -73,7 +73,7 @@ This test plan validates the fixes for two bugs that together break the remediat
 - **DS Query** (`pkg/datastorage/repository/remediation_history_repository.go`): `QueryROEventsBySpecHash` expanded to match post-hash via EM correlation
 - **DS Logic** (`pkg/datastorage/server/remediation_history_logic.go`): `CorrelateTier1Chain` produces correct `hashMatch` for post-hash-matched entries
 - **DS Handler** (`pkg/datastorage/server/remediation_history_handler.go`): Full flow returns entries for both pre and post hash matches
-- **HAPI Enrichment** (`holmesgpt-api/src/extensions/incident/llm_integration.py`): `history_fetcher` init with TypedDict config
+- **HAPI Enrichment** (`kubernaut-agent/src/extensions/incident/llm_integration.py`): `history_fetcher` init with TypedDict config
 - **RO Routing Observability** (`pkg/remediationorchestrator/routing/blocking.go`): Logging on `dsClient==nil` and DS query results
 - **Audit Tick Verbosity** (`pkg/audit/store.go`): Timer tick reduced from INFO to V(1)
 
@@ -127,7 +127,7 @@ This test plan validates the fixes for two bugs that together break the remediat
 | `pkg/datastorage/server/remediation_history_logic.go` | `CorrelateTier1Chain`, `ComputeHashMatch` | ~96 |
 | `pkg/audit/store.go` | `backgroundWriter` (tick log line) | ~10 |
 | `pkg/remediationorchestrator/routing/blocking.go` | `CheckIneffectiveRemediationChain` (nil/log paths) | ~30 |
-| `holmesgpt-api/src/extensions/incident/llm_integration.py` | `history_fetcher` init block (lines 811-850) | ~40 |
+| `kubernaut-agent/src/extensions/incident/llm_integration.py` | `history_fetcher` init block (lines 811-850) | ~40 |
 
 ### 6.2 Integration-Testable Code (I/O, DB, cross-component)
 
@@ -185,7 +185,7 @@ Format: `{TIER}-{SERVICE}-616-{SEQUENCE}`
 
 #### HAPI Unit Tests
 
-**File**: `holmesgpt-api/tests/unit/test_history_fetcher_init.py`
+**File**: `kubernaut-agent/tests/unit/test_history_fetcher_init.py`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
@@ -257,7 +257,7 @@ Format: `{TIER}-{SERVICE}-616-{SEQUENCE}`
 **BR**: BR-HAPI-016
 **Priority**: P0
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_history_fetcher_init.py`
+**File**: `kubernaut-agent/tests/unit/test_history_fetcher_init.py`
 
 **Preconditions**:
 - `app_config` is a plain dict (TypedDict at runtime): `{"data_storage_url": "http://ds:8080", "service_name": "test"}`
@@ -304,7 +304,7 @@ Format: `{TIER}-{SERVICE}-616-{SEQUENCE}`
 
 - **Framework**: Ginkgo/Gomega BDD (Go), pytest (Python)
 - **Mocks**: Mock repository for handler tests; mock `create_remediation_history_api` for HAPI tests
-- **Location**: `test/unit/datastorage/`, `test/unit/remediationorchestrator/routing/`, `test/unit/audit/`, `holmesgpt-api/tests/unit/`
+- **Location**: `test/unit/datastorage/`, `test/unit/remediationorchestrator/routing/`, `test/unit/audit/`, `kubernaut-agent/tests/unit/`
 
 ### 10.2 Integration Tests
 
@@ -341,7 +341,7 @@ Format: `{TIER}-{SERVICE}-616-{SEQUENCE}`
 |-------------|----------|-------------|
 | This test plan | `docs/tests/616/TEST_PLAN.md` | Strategy and test design |
 | DS unit tests | `test/unit/datastorage/remediation_history_query_fix_test.go` | 4 Ginkgo tests |
-| HAPI unit tests | `holmesgpt-api/tests/unit/test_history_fetcher_init.py` | 3 pytest tests |
+| HAPI unit tests | `kubernaut-agent/tests/unit/test_history_fetcher_init.py` | 3 pytest tests |
 | RO observability tests | `test/unit/remediationorchestrator/routing/observability_test.go` | 2 Ginkgo tests |
 | Audit verbosity test | `test/unit/audit/timer_tick_verbosity_test.go` | 1 Ginkgo test |
 | DS integration tests | `test/integration/datastorage/remediation_history_query_fix_integration_test.go` | 4 Ginkgo tests |
@@ -365,12 +365,12 @@ go test ./test/unit/remediationorchestrator/routing/... -ginkgo.v -ginkgo.focus=
 go test ./test/unit/audit/... -ginkgo.v -ginkgo.focus="616"
 
 # HAPI unit tests
-cd holmesgpt-api && python -m pytest tests/unit/test_history_fetcher_init.py -v
+cd kubernaut-agent && python -m pytest tests/unit/test_history_fetcher_init.py -v
 
 # Full regression
 go test ./test/unit/datastorage/... -ginkgo.v
 go test ./test/integration/datastorage/... -ginkgo.v
-cd holmesgpt-api && python -m pytest tests/ -v
+cd kubernaut-agent && python -m pytest tests/ -v
 ```
 
 ---

@@ -294,8 +294,8 @@ rate(holmesgpt_investigations_total{status=~"2.."}[5m])
 
 ## 📚 **References**
 
-- [metrics-slos.md](../services/stateless/holmesgpt-api/metrics-slos.md) - Metrics specification
-- [src/middleware/metrics.py](../../holmesgpt-api/src/middleware/metrics.py) - Current implementation
+- [metrics-slos.md](../services/stateless/kubernaut-agent/metrics-slos.md) - Metrics specification
+- [src/middleware/metrics.py](../../kubernaut-agent/src/middleware/metrics.py) - Current implementation
 - [DD-HOLMESGPT-013](../architecture/decisions/DD-HOLMESGPT-013-Observability-Strategy.md) - Observability strategy
 
 ---

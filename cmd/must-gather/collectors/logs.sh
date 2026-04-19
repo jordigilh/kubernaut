@@ -24,7 +24,7 @@ LOGS_DIR="${COLLECTION_DIR}/logs"
 echo "Collecting service logs..."
 
 # V1.0 Services (8 total)
-# Stateless HTTP Services (3): gateway, datastorage, holmesgpt-api
+# Stateless HTTP Services (3): gateway, datastorage, kubernaut-agent
 # CRD Controllers (5): notification-controller, signalprocessing-controller,
 #                      aianalysis-controller, workflowexecution-controller,
 #                      remediationorchestrator-controller
@@ -32,7 +32,7 @@ echo "Collecting service logs..."
 SERVICE_PATTERNS=(
     "gateway-"
     "datastorage-"
-    "holmesgpt-api-"
+    "kubernaut-agent-"
     "notification-controller-"
     "signalprocessing-controller-"
     "aianalysis-controller-"

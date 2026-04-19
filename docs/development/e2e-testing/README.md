@@ -133,7 +133,7 @@ make setup-local-hybrid
 
 # 3. Deploy HolmesGPT container
 # Option A: Local deployment
-docker run -d -p 8090:8090 kubernaut/holmesgpt-api:latest
+docker run -d -p 8090:8090 kubernaut/kubernaut-agent:latest
 
 # Option B: In-cluster deployment
 oc apply -f deploy/holmesgpt-deployment.yaml

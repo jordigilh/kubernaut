@@ -76,7 +76,7 @@ RecoveryStatus *RecoveryStatus `json:"recoveryStatus,omitempty"`
 
 **Endpoint**: `POST /api/v1/recovery/analyze`
 
-**Response** (from holmesgpt-api/src/extensions/recovery.py:603-609):
+**Response** (from kubernaut-agent/src/extensions/recovery.py:603-609):
 ```json
 {
   "recovery_analysis": {
@@ -285,7 +285,7 @@ if analysis.Spec.IsRecoveryAttempt {
 | `docs/services/crd-controllers/02-aianalysis/crd-schema.md:427` | Status fields | **Optional** (`omitempty`) |
 | `docs/architecture/decisions/DD-RECOVERY-002` | Recovery flow | **Approved** (Nov 29, 2025) |
 | `docs/services/crd-controllers/02-aianalysis/BR_MAPPING.md` | Recovery BRs | **4/4 BRs complete** |
-| `holmesgpt-api/src/extensions/recovery.py:603-609` | HAPI response | **Data available** |
+| `kubernaut-agent/src/extensions/recovery.py:603-609` | HAPI response | **Data available** |
 | `pkg/aianalysis/handlers/investigating.go` | Population logic | **NOT implemented** |
 | AIANALYSIS_TRIAGE (audits dir removed) | Status | **Deferred** |
 

@@ -63,7 +63,7 @@ type IncidentResponse struct {
 // Enum type
 type HumanReviewReason string
 
-// Constants (from holmesgpt-api/src/models/incident_models.py)
+// Constants (from kubernaut-agent/src/models/incident_models.py)
 const (
     HumanReviewReasonWorkflowNotFound          HumanReviewReason = "workflow_not_found"
     HumanReviewReasonImageMismatch             HumanReviewReason = "image_mismatch"

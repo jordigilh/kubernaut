@@ -150,7 +150,7 @@ def pytest_sessionfinish(session, exitstatus):
     subprocess.run(["podman", "image", "prune", "-f"], check=False, capture_output=True)
 ```
 
-**Reference**: HolmesGPT-API `holmesgpt-api/tests/integration/conftest.py` (complete implementation)
+**Reference**: HolmesGPT-API `kubernaut-agent/tests/integration/conftest.py` (complete implementation)
 
 #### **2. Composite Image Tags** (REQUIRED)
 
@@ -396,7 +396,7 @@ Python services (like HolmesGPT-API) use pytest fixtures instead of programmatic
 **Pattern**: Framework manages infrastructure (no shell scripts)
 
 ```python
-# holmesgpt-api/tests/integration/conftest.py
+# kubernaut-agent/tests/integration/conftest.py
 
 import pytest
 import subprocess
@@ -485,7 +485,7 @@ def data_storage_url(integration_infrastructure):
 | **Failure Handling** | `Fail()` | `pytest.fail()` |
 | **Health Checks** | `Eventually()` | `wait_for_infrastructure()` |
 
-**Reference Implementation**: `holmesgpt-api/tests/integration/conftest.py`
+**Reference Implementation**: `kubernaut-agent/tests/integration/conftest.py`
 
 ---
 
@@ -526,7 +526,7 @@ When integration tests require **multiple custom images**, apply the same parall
 
 ```yaml
 # ❌ WRONG: Serial builds via podman-compose
-# This blocks: datastorage builds → holmesgpt-api builds → controller builds
+# This blocks: datastorage builds → kubernaut-agent builds → controller builds
 podman-compose up -d --build  # Each image builds sequentially
 
 # ✅ CORRECT: Parallel builds before compose up

@@ -133,7 +133,7 @@ data:
 
     holmesgpt:
       enabled: true
-      endpoint: "http://holmesgpt-api:8080"
+      endpoint: "http://kubernaut-agent:8080"
       timeout: "60s"
       dynamic_toolsets:
         enabled: true

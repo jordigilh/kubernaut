@@ -130,15 +130,15 @@ Use mock LLM responses during development, validate with real LLM only for final
 ### Development Testing
 ```bash
 # Fast tests with mocks
-pytest holmesgpt-api/tests/unit/ -v
-pytest holmesgpt-api/tests/integration/ -v
+pytest kubernaut-agent/tests/unit/ -v
+pytest kubernaut-agent/tests/integration/ -v
 ```
 
 ### Final Validation (Week 4)
 ```bash
 # Real LLM test (2.5 hours Ollama / 30s Claude)
 export ANTHROPIC_API_KEY="sk-..."
-pytest holmesgpt-api/tests/validation/test_real_llm_integration.py -v
+pytest kubernaut-agent/tests/validation/test_real_llm_integration.py -v
 ```
 
 ---

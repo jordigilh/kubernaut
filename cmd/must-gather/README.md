@@ -131,7 +131,7 @@ kubernaut-must-gather-20260104-123456/
 │   │   │   ├── previous.log (if exists)
 │   │   │   └── describe.txt
 │   │   ├── datastorage-*/
-│   │   ├── holmesgpt-api-*/
+│   │   ├── kubernaut-agent-*/
 │   │   ├── signalprocessing-controller-*/
 │   │   ├── aianalysis-controller-*/
 │   │   ├── workflowexecution-controller-*/

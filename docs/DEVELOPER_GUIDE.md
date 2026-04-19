@@ -66,7 +66,7 @@ kubernaut/
 │   └── ...                     #   Infrastructure, load, chaos, etc.
 ├── charts/kubernaut/           # Helm chart (production deployment)
 ├── deploy/                     # Kustomize overlays (individual service development)
-├── holmesgpt-api/              # Python service (HolmesGPT API)
+├── kubernaut-agent/              # Python service (HolmesGPT API)
 │   ├── src/
 │   └── tests/
 ├── docs/                       # Project documentation
@@ -237,7 +237,7 @@ git submodule update --init --recursive
 For the Python service (HolmesGPT API):
 
 ```bash
-cd holmesgpt-api
+cd kubernaut-agent
 pip install -r requirements.txt
 pytest tests/unit/ -v
 ```
@@ -260,7 +260,7 @@ Kubernaut is composed of 10 Go services (under `cmd/`) and 1 Python service. All
 | **notification** | CRD Controller | `cmd/notification` | Delivers Slack and console notifications with remediation context |
 | **authwebhook** | Webhook Server | `cmd/authwebhook` | Admission webhooks for CRD validation, registers workflows with DataStorage |
 | **must-gather** | CLI Tool | `cmd/must-gather` | Diagnostics collection script (not included in `SERVICES` build var) |
-| **holmesgpt-api** | Python | `holmesgpt-api/` | REST wrapper around the HolmesGPT SDK for LLM investigations |
+| **kubernaut-agent** | Python | `kubernaut-agent/` | REST wrapper around the HolmesGPT SDK for LLM investigations |
 
 ---
 
@@ -292,8 +292,8 @@ The `CONTAINER_TOOL` variable auto-detects Podman or Docker.
 ### HolmesGPT API (Python)
 
 ```bash
-cd holmesgpt-api
-podman build -t quay.io/kubernaut-ai/holmesgpt-api:dev .
+cd kubernaut-agent
+podman build -t quay.io/kubernaut-ai/kubernaut-agent:dev .
 ```
 
 ---
@@ -340,9 +340,9 @@ make test-e2e-gateway
 **HolmesGPT API (Python)**:
 
 ```bash
-make test-unit-holmesgpt-api
-make test-integration-holmesgpt-api
-make test-e2e-holmesgpt-api
+make test-unit-kubernaut-agent
+make test-integration-kubernaut-agent
+make test-e2e-kubernaut-agent
 ```
 
 ### Linting

@@ -17,6 +17,6 @@ images:
 - name: quay.io/jordigilh/kubernaut-webhook-service
   newName: kubernaut/gateway-service
   newTag: latest
-- name: kubernaut/holmesgpt-api
-  newName: kubernaut/holmesgpt-api
+- name: kubernaut/kubernaut-agent
+  newName: kubernaut/kubernaut-agent
   newTag: latest

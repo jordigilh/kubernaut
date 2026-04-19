@@ -28,7 +28,7 @@
 ### In Scope
 
 - **RO routing engine** (`pkg/remediationorchestrator/routing/blocking.go`): Updated `countForwardChain` function with five-condition detection: same action type (ActionType), failed EA (SignalResolved==false), 1h time window, hash link continuity, threshold=2
-- **HAPI prompt builder** (`holmesgpt-api/src/extensions/remediation_history_prompt.py`): Strengthen the existing `_detect_completed_but_recurring` warning from advisory ("Recommend selecting") to mandatory ("You MUST NOT re-select") when effectivenessScore is zero
+- **HAPI prompt builder** (`kubernaut-agent/src/extensions/remediation_history_prompt.py`): Strengthen the existing `_detect_completed_but_recurring` warning from advisory ("Recommend selecting") to mandatory ("You MUST NOT re-select") when effectivenessScore is zero
 
 ### Out of Scope
 
@@ -90,7 +90,7 @@ Tests validate that the **operator** sees remediation blocked with a clear escal
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
 | `pkg/remediationorchestrator/routing/blocking.go` | `countForwardChain` (updated with 5-condition filter), integration point in `CheckIneffectiveRemediationChain`, `ForwardChainThreshold`/`ForwardChainWindow` config | ~50 |
-| `holmesgpt-api/src/extensions/remediation_history_prompt.py` | Warning variant selection in `build_remediation_history_section`, `_all_zero_effectiveness` helper | ~25 |
+| `kubernaut-agent/src/extensions/remediation_history_prompt.py` | Warning variant selection in `build_remediation_history_section`, `_all_zero_effectiveness` helper | ~25 |
 
 ### Integration-Testable Code (I/O, wiring, cross-component)
 
@@ -159,7 +159,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 ### Tier 1: Unit Tests (Python -- HAPI Prompt)
 
-**Testable code scope**: `build_remediation_history_section` in `holmesgpt-api/src/extensions/remediation_history_prompt.py` -- target >=80% of modified lines
+**Testable code scope**: `build_remediation_history_section` in `kubernaut-agent/src/extensions/remediation_history_prompt.py` -- target >=80% of modified lines
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
@@ -326,7 +326,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: Issue #224, Issue #525
 **Type**: Unit (Python)
-**File**: `holmesgpt-api/tests/unit/test_remediation_history_prompt.py`
+**File**: `kubernaut-agent/tests/unit/test_remediation_history_prompt.py`
 
 **Given**: Remediation history context with tier1 chain containing 2 entries:
   - Entry 1: `actionType=IncreaseMemoryLimits`, `outcome=completed`, `effectivenessScore=0.0`, `signalResolved=false`, `signalType=OOMKilled`
@@ -347,7 +347,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: Issue #224
 **Type**: Unit (Python)
-**File**: `holmesgpt-api/tests/unit/test_remediation_history_prompt.py`
+**File**: `kubernaut-agent/tests/unit/test_remediation_history_prompt.py`
 
 **Given**: Remediation history context with tier1 chain containing 2 entries:
   - Entry 1: `actionType=IncreaseMemoryLimits`, `outcome=completed`, `effectivenessScore=0.8`, `signalType=OOMKilled`
@@ -377,7 +377,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 - **Framework**: pytest (existing HAPI test framework)
 - **Mocks**: None (pure function testing)
-- **Location**: `holmesgpt-api/tests/unit/test_remediation_history_prompt.py`
+- **Location**: `kubernaut-agent/tests/unit/test_remediation_history_prompt.py`
 
 ---
 
@@ -391,10 +391,10 @@ go test ./test/unit/remediationorchestrator/routing/... -v
 go test ./test/unit/remediationorchestrator/routing/... -ginkgo.focus="Issue #525"
 
 # Python unit tests -- all prompt tests
-cd holmesgpt-api && python3 -m pytest tests/unit/test_remediation_history_prompt.py -v
+cd kubernaut-agent && python3 -m pytest tests/unit/test_remediation_history_prompt.py -v
 
 # Python unit tests -- focus on Issue #525
-cd holmesgpt-api && python3 -m pytest tests/unit/test_remediation_history_prompt.py -k "525" -v
+cd kubernaut-agent && python3 -m pytest tests/unit/test_remediation_history_prompt.py -k "525" -v
 
 # Build validation
 go build ./...

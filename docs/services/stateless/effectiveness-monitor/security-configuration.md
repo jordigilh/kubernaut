@@ -177,7 +177,7 @@ spec:
       - name: effectiveness-monitor
         env:
         - name: HOLMESGPT_API_URL
-          value: "http://holmesgpt-api.kubernaut-system.svc.cluster.local:8080"
+          value: "http://kubernaut-agent.kubernaut-system.svc.cluster.local:8080"
 ```
 
 ### **HolmesGPT API Authorization**
@@ -195,7 +195,7 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: holmesgpt-api-postexec-analyzer
+  name: kubernaut-agent-postexec-analyzer
 rules:
 - apiGroups: ["holmesgpt.kubernaut.io"]
   resources: ["postexecanalyses"]
@@ -209,7 +209,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: holmesgpt-api-postexec-analyzer
+  name: kubernaut-agent-postexec-analyzer
 subjects:
 - kind: ServiceAccount
   name: effectiveness-monitor
@@ -366,7 +366,7 @@ spec:
           name: kubernaut-system
       podSelector:
         matchLabels:
-          app: holmesgpt-api-service
+          app: kubernaut-agent-service
     ports:
     - protocol: TCP
       port: 8080

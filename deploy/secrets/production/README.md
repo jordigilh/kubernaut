@@ -72,7 +72,7 @@ kubectl get secrets -n kubernaut-system | grep oauth-proxy
 
 ```
 data-storage-oauth-proxy-secret       Opaque   1      10s
-holmesgpt-api-oauth-proxy-secret      Opaque   1      10s
+kubernaut-agent-oauth-proxy-secret      Opaque   1      10s
 ```
 
 ---
@@ -107,14 +107,14 @@ openssl rand -base64 32 | sudo tee /vault/secrets/hapi-cookie-secret.txt
 
 # 2. Delete existing secrets from Kubernetes
 kubectl delete secret data-storage-oauth-proxy-secret -n kubernaut-system
-kubectl delete secret holmesgpt-api-oauth-proxy-secret -n kubernaut-system
+kubectl delete secret kubernaut-agent-oauth-proxy-secret -n kubernaut-system
 
 # 3. Redeploy secrets
 kubectl apply -k deploy/secrets/production/
 
 # 4. Restart deployments to pick up new secrets
 kubectl rollout restart deployment/data-storage-service -n kubernaut-system
-kubectl rollout restart deployment/holmesgpt-api -n kubernaut-system
+kubectl rollout restart deployment/kubernaut-agent -n kubernaut-system
 ```
 
 ---

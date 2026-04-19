@@ -494,8 +494,8 @@ logger.Info("Effectiveness assessment completed",
   - `/docs/architecture/EFFECTIVENESS_MONITOR_RESTART_RECOVERY_FLOWS.md`
 
 - **Technical Details**:
-  - `/holmesgpt-api/docs/EFFECTIVENESS_MONITOR_CRD_DESIGN_ASSESSMENT.md`
-  - `/holmesgpt-api/docs/EFFECTIVENESS_MONITOR_RESTART_RECOVERY.md`
+  - `/kubernaut-agent/docs/EFFECTIVENESS_MONITOR_CRD_DESIGN_ASSESSMENT.md`
+  - `/kubernaut-agent/docs/EFFECTIVENESS_MONITOR_RESTART_RECOVERY.md`
 
 ---
 

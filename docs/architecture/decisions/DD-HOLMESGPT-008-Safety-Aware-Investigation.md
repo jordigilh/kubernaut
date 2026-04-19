@@ -233,7 +233,7 @@ The HolmesGPT API service initially included a separate `/api/v1/safety/analyze`
 - **RemediationProcessor**: `docs/services/stateless/remediation-processor/README.md`
 - **WorkflowExecution**: `docs/services/stateless/workflow-execution/README.md`
 - **Rego Policies**: `config/rego/safety_policies.rego`
-- **HolmesGPT API**: `holmesgpt-api/SPECIFICATION.md`
+- **HolmesGPT API**: `kubernaut-agent/SPECIFICATION.md`
 
 ---
 
@@ -321,7 +321,7 @@ The adoption of self-documenting JSON format (DD-HOLMESGPT-009) further improved
 ✅ **Zero maintenance overhead** (no legend synchronization)
 ✅ **+64.6% throughput** (token-limited scenarios)
 
-**See**: `holmesgpt-api/docs/DD-HOLMESGPT-009-TOKEN-OPTIMIZATION-IMPACT.md` for complete analysis.
+**See**: `kubernaut-agent/docs/DD-HOLMESGPT-009-TOKEN-OPTIMIZATION-IMPACT.md` for complete analysis.
 
 ---
 

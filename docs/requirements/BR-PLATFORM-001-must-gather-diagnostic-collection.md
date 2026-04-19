@@ -84,7 +84,7 @@ This capability follows established Kubernetes ecosystem best practices:
 - SignalProcessing (`signalprocessing-*` pods)
 - Notification Service (`notification-*` pods)
 - DataStorage Service (`datastorage-*` pods)
-- HolmesGPT API (`holmesgpt-api-*` pods)
+- HolmesGPT API (`kubernaut-agent-*` pods)
 - Any operator/controller pods
 
 **Log Collection Requirements**:

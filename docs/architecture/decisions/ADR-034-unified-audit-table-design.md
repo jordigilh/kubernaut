@@ -587,7 +587,7 @@ ORDER BY event_count DESC;
    - **Test Coverage**: 17 tests (8 unit, 6 integration, 3 E2E)
 
 4. **Workflow Catalog Service** (4 hours) - **NEW**
-   - `workflow.catalog.search_completed` (actor: holmesgpt-api)
+   - `workflow.catalog.search_completed` (actor: kubernaut-agent)
    - **Event Data**: Includes scoring breakdown (base_similarity, label_boost, label_penalty, confidence)
    - **Event Category**: `workflow` (new category for workflow-related operations)
    - **Use Cases**: Debugging workflow selection, tuning workflow definitions, compliance tracking

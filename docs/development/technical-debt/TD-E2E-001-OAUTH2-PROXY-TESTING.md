@@ -1,11 +1,11 @@
 ⚠️ **OBSOLETE** - February 6, 2026
 
-**Reason**: Kubernaut adopted middleware-based authentication approach (DD-AUTH-014) using Kubernetes TokenReview and SubjectAccessReview APIs instead of `oauth2-proxy`. See `holmesgpt-api/src/middleware/auth.py` for implementation.
+**Reason**: Kubernaut adopted middleware-based authentication approach (DD-AUTH-014) using Kubernetes TokenReview and SubjectAccessReview APIs instead of `oauth2-proxy`. See `kubernaut-agent/src/middleware/auth.py` for implementation.
 
 **Architectural Decision**: DD-AUTH-014 provides application-level authentication/authorization control without the need for sidecar proxies, simplifying deployment and improving performance.
 
 **Current Authentication Stack**:
-- **HAPI**: `holmesgpt-api/src/middleware/auth.py` (DD-AUTH-014)
+- **HAPI**: `kubernaut-agent/src/middleware/auth.py` (DD-AUTH-014)
 - **Gateway**: Kubernetes-native TokenReview + SAR
 - **DataStorage**: Direct service-to-service with ServiceAccount tokens
 

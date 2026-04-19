@@ -14,7 +14,7 @@
 1. **[Gateway Service](./gateway-service/)** - Signal ingestion and triage (Design B: adapter endpoints)
 2. **[Context API](./context-api/)** - Historical intelligence and pattern matching (read-only)
 3. **[Data Storage](./data-storage/)** - Audit trail persistence and embeddings (write-only)
-4. **[HolmesGPT API](./holmesgpt-api/)** - AI investigation engine (Python SDK wrapper)
+4. **[HolmesGPT API](./kubernaut-agent/)** - AI investigation engine (Python SDK wrapper)
 5. **~~[Notification Service](./notification-service/)~~** - ⚠️ DEPRECATED (migrated to CRD Controller, see [06-notification](../crd-controllers/06-notification/))
 6. **[Dynamic Toolset](./dynamic-toolset/)** - HolmesGPT toolset configuration management
 
@@ -125,7 +125,7 @@ stateless/
 │   ├── README.md                      ✅ NEW
 │   ├── overview.md
 │   └── api-specification.md
-├── holmesgpt-api/                     ✅ 3 documents
+├── kubernaut-agent/                     ✅ 3 documents
 │   ├── README.md                      ✅ NEW
 │   ├── overview.md
 │   ├── api-specification.md

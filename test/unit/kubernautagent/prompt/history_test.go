@@ -403,6 +403,59 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 			Expect(output).To(ContainSubstring("restart_pod"))
 		})
 	})
+
+	// ========================================
+	// Issue #722: Remediated and Inconclusive outcome detection
+	// BR-AI-056: KA must detect recurring patterns with new outcome values
+	// ========================================
+	Describe("UT-KA-722-001: DetectCompletedButRecurring with Remediated outcome", func() {
+		It("should detect entries with outcome=Remediated as completed", func() {
+			entries := []prompt.HistoryEntry{
+				{ActionType: "increase_memory", SignalType: "OOMKilled", Outcome: "Remediated"},
+				{ActionType: "increase_memory", SignalType: "OOMKilled", Outcome: "Remediated"},
+				{ActionType: "increase_memory", SignalType: "OOMKilled", Outcome: "Remediated"},
+			}
+			recurring := prompt.DetectCompletedButRecurring(entries, 2)
+			Expect(recurring).To(HaveLen(1))
+			Expect(recurring[0].ActionType).To(Equal("increase_memory"))
+			Expect(recurring[0].Count).To(Equal(3))
+			Expect(recurring[0].SignalType).To(Equal("OOMKilled"))
+		})
+	})
+
+	Describe("UT-KA-722-002: DetectCompletedButRecurring with Inconclusive outcome", func() {
+		It("should detect entries with outcome=Inconclusive as completed", func() {
+			entries := []prompt.HistoryEntry{
+				{ActionType: "restart_pod", SignalType: "HighCPU", Outcome: "Inconclusive"},
+				{ActionType: "restart_pod", SignalType: "HighCPU", Outcome: "Inconclusive"},
+			}
+			recurring := prompt.DetectCompletedButRecurring(entries, 2)
+			Expect(recurring).To(HaveLen(1))
+			Expect(recurring[0].ActionType).To(Equal("restart_pod"))
+			Expect(recurring[0].Count).To(Equal(2))
+			Expect(recurring[0].SignalType).To(Equal("HighCPU"))
+		})
+	})
+
+	Describe("UT-KA-722-003: AllZeroEffectiveness with Remediated outcome", func() {
+		It("should include Remediated entries in zero-effectiveness check", func() {
+			entries := []prompt.HistoryEntry{
+				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Remediated", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false)},
+				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Remediated", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false)},
+			}
+			Expect(prompt.AllZeroEffectiveness(entries, "restart_pod", "OOMKilled")).To(BeTrue())
+		})
+	})
+
+	Describe("UT-KA-722-004: AllZeroEffectiveness with Inconclusive outcome", func() {
+		It("should include Inconclusive entries in zero-effectiveness check", func() {
+			entries := []prompt.HistoryEntry{
+				{ActionType: "scale_up", SignalType: "HighLatency", Outcome: "Inconclusive", EffectivenessScore: nil, SignalResolved: boolPtr(false)},
+				{ActionType: "scale_up", SignalType: "HighLatency", Outcome: "Inconclusive", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false)},
+			}
+			Expect(prompt.AllZeroEffectiveness(entries, "scale_up", "HighLatency")).To(BeTrue())
+		})
+	})
 })
 
 func intPtr(v int) *int { return &v }

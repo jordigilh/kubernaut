@@ -143,7 +143,7 @@ And the metric holmesgpt_config_reload_total SHALL increment by 1
 | Artifact | Location |
 |----------|----------|
 | Design Decision | `docs/architecture/decisions/DD-HAPI-004-configmap-hotreload.md` |
-| PoC Code | `holmesgpt-api/poc/hot_reload_poc.py` |
+| PoC Code | `kubernaut-agent/poc/hot_reload_poc.py` |
 | Implementation Plan | TBD (pending approval) |
 
 ---

@@ -529,7 +529,7 @@ go test ./pkg/service -bench BenchmarkEvaluate
 - **Main Entry**: `cmd/signalprocessing/main.go:240-252`
 
 ### Python Service (YAML Config)
-- **Reference**: `holmesgpt-api/src/config/hot_reload.py`
+- **Reference**: `kubernaut-agent/src/config/hot_reload.py`
 - **Library**: `watchdog` (Python equivalent of fsnotify)
 - **Design**: DD-HAPI-004
 

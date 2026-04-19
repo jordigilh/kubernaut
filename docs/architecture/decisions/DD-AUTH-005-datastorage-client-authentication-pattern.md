@@ -16,7 +16,7 @@
 
 **Scope**:
 - **7 Go Services**: Gateway, AIAnalysis, WorkflowExecution, RemediationOrchestrator, Notification, AuthWebhook, SignalProcessing
-- **1 Python Service**: holmesgpt-api
+- **1 Python Service**: kubernaut-agent
 - **All DataStorage API Endpoints**: `/api/v1/audit/*`, `/api/v1/storage/*`
 - **All Environments**: Integration tests, E2E tests, Production
 
@@ -459,7 +459,7 @@ func NewOpenAPIClientAdapter(baseURL string, timeout time.Duration) (*OpenAPICli
 
 ### **Component 3: Python Auth Session**
 
-**File**: `holmesgpt-api/src/clients/datastorage_auth_session.py`
+**File**: `kubernaut-agent/src/clients/datastorage_auth_session.py`
 
 ```python
 import os
@@ -480,7 +480,7 @@ class ServiceAccountAuthSession(Session):
     modifying the OpenAPI-generated client code.
 
     Authentication Flow:
-    1. holmesgpt-api creates DataStorage client with this session
+    1. kubernaut-agent creates DataStorage client with this session
     2. Session reads /var/run/secrets/kubernetes.io/serviceaccount/token
     3. Session injects "Authorization: Bearer <token>" header
     4. oauth-proxy sidecar validates token and injects X-Auth-Request-User
@@ -540,10 +540,10 @@ class ServiceAccountAuthSession(Session):
         return super().request(method, url, **kwargs)
 ```
 
-**Usage in holmesgpt-api**:
+**Usage in kubernaut-agent**:
 
 ```python
-# holmesgpt-api/src/services/audit_service.py
+# kubernaut-agent/src/services/audit_service.py
 
 from src.clients.datastorage_auth_session import ServiceAccountAuthSession
 from src.clients.datastorage import DataStorageClient
@@ -617,7 +617,7 @@ var _ = Describe("DataStorage Integration Tests", func() {
 
 **Python Integration Tests**:
 ```python
-# holmesgpt-api/tests/integration/test_datastorage.py
+# kubernaut-agent/tests/integration/test_datastorage.py
 
 def test_place_legal_hold():
     """Integration test with mocked user header."""
@@ -682,7 +682,7 @@ var _ = Describe("DataStorage E2E Tests", func() {
 
 **Python E2E Tests** (if applicable):
 ```python
-# holmesgpt-api/tests/e2e/test_datastorage.py
+# kubernaut-agent/tests/e2e/test_datastorage.py
 
 def test_place_legal_hold_e2e():
     """E2E test with real oauth-proxy sidecar."""
@@ -714,9 +714,9 @@ dsClient, err := audit.NewOpenAPIClientAdapter(dataStorageURL, 30*time.Second)
 // Transport automatically reads token from /var/run/secrets/kubernetes.io/serviceaccount/token
 ```
 
-**Python Service** (holmesgpt-api):
+**Python Service** (kubernaut-agent):
 ```python
-# holmesgpt-api/src/main.py
+# kubernaut-agent/src/main.py
 
 ds_client = create_datastorage_client("http://datastorage:8080")
 # Session automatically reads token from /var/run/secrets/kubernetes.io/serviceaccount/token
@@ -795,12 +795,12 @@ ds_client = create_datastorage_client("http://datastorage:8080")
   - [ ] **Result**: ALL 7 Go services get authentication automatically
 
 ### **Phase 2: Python Foundation** (1.5 hours)
-- [ ] **Task 2.1**: Create `holmesgpt-api/src/clients/datastorage_auth_session.py`
+- [ ] **Task 2.1**: Create `kubernaut-agent/src/clients/datastorage_auth_session.py`
   - [ ] Implement `ServiceAccountAuthSession` class
   - [ ] Implement token injection from filesystem
   - [ ] Implement mock user header for integration tests
 
-- [ ] **Task 2.2**: Update holmesgpt-api DataStorage client instantiation
+- [ ] **Task 2.2**: Update kubernaut-agent DataStorage client instantiation
   - [ ] Find where DataStorage client is created
   - [ ] Use `ServiceAccountAuthSession`
 
@@ -865,9 +865,9 @@ ds_client = create_datastorage_client("http://datastorage:8080")
 | **Notification** | Go | audit.NewOpenAPIClientAdapter() | ✅ Yes | ✅ Zero (uses adapter) |
 | **AuthWebhook** | Go | audit.NewOpenAPIClientAdapter() | ✅ Yes | ✅ Zero (uses adapter) |
 | **SignalProcessing** | Go | audit.NewOpenAPIClientAdapter() | ✅ Yes | ✅ Zero (uses adapter) |
-| **holmesgpt-api** | Python | Direct OpenAPI client | ✅ Yes | ⚠️ One function (client instantiation) |
+| **kubernaut-agent** | Python | Direct OpenAPI client | ✅ Yes | ⚠️ One function (client instantiation) |
 
-**Total Service Code Changes**: **1 function** (holmesgpt-api client instantiation)
+**Total Service Code Changes**: **1 function** (kubernaut-agent client instantiation)
 
 ---
 

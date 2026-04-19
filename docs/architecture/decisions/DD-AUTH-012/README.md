@@ -113,10 +113,10 @@ args:
 ### HolmesGPT API ✅ COMPLETE
 | Component | Status | Configuration |
 |---|---|---|
-| **OAuth-Proxy Sidecar** | ✅ Deployed | `deploy/holmesgpt-api/06-deployment.yaml` |
-| **SAR Configuration** | ✅ Configured | `verb:"get"` on `holmesgpt-api` resource |
+| **OAuth-Proxy Sidecar** | ✅ Deployed | `deploy/kubernaut-agent/06-deployment.yaml` |
+| **SAR Configuration** | ✅ Configured | `verb:"get"` on `kubernaut-agent` resource |
 | **X-Auth-Request-User** | ✅ Enabled | `--set-xauthrequest=true` |
-| **ClusterRole** | ✅ Deployed | `deploy/holmesgpt-api/03-rbac.yaml` |
+| **ClusterRole** | ✅ Deployed | `deploy/kubernaut-agent/03-rbac.yaml` |
 | **E2E Tests** | 🚧 Pending | To be created |
 
 ---
@@ -131,7 +131,7 @@ args:
 
 ### Related DDs
 - **[DD-AUTH-009: OAuth2-Proxy Workflow Attribution](../DD-AUTH-009-oauth2-proxy-workflow-attribution-implementation.md)** - X-Auth-Request-User header injection for audit tracking
-- **[DD-AUTH-006: HAPI OAuth-Proxy Configuration](../DD-AUTH-006-holmesgpt-api-oauth-proxy-config.md)** - HolmesGPT API sidecar config
+- **[DD-AUTH-006: HAPI OAuth-Proxy Configuration](../DD-AUTH-006-kubernaut-agent-oauth-proxy-config.md)** - HolmesGPT API sidecar config
 - **[DD-AUTH-004: DataStorage Client Authentication](../DD-AUTH-004-datastorage-client-authentication-pattern.md)** - ServiceAccount authentication pattern
 
 ### Related ADRs
@@ -267,7 +267,7 @@ roleRef:
 - 🚧 Test 5: Invalid token → 401 Unauthorized (pending)
 
 **HolmesGPT API**:
-- 🚧 Test 1: ServiceAccount with `holmesgpt-api-client` role → 200 OK
+- 🚧 Test 1: ServiceAccount with `kubernaut-agent-client` role → 200 OK
 - 🚧 Test 2: ServiceAccount without role → 403 Forbidden
 - 🚧 Test 3: Invalid token → 401 Unauthorized
 
@@ -303,7 +303,7 @@ This design decision is the **canonical reference** for the technical choice to 
 
 **Referenced By**:
 - DataStorage deployment (`deploy/data-storage/deployment.yaml`)
-- HolmesGPT API deployment (`deploy/holmesgpt-api/06-deployment.yaml`)
+- HolmesGPT API deployment (`deploy/kubernaut-agent/06-deployment.yaml`)
 - DD-AUTH-011 (Granular RBAC strategy)
 - DD-AUTH-013 (HTTP Status Codes)
 

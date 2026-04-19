@@ -110,9 +110,9 @@ func createAuthenticatedDataStorageClient(dataStorageURL, saToken string) (*ogen
 }
 
 // GetKAE2ETestWorkflows returns workflows for KA E2E tests
-// Pattern: Inlined workflow definitions (CANNOT use test/e2e/holmesgpt-api - import cycle)
+// Pattern: Inlined workflow definitions (CANNOT use test/e2e/kubernaut-agent - import cycle)
 // Similar to AA E2E approach (aianalysis_e2e.go:287-296)
-// Source of truth: test/e2e/holmesgpt-api/test_workflows.go:GetKAE2ETestWorkflows()
+// Source of truth: test/e2e/kubernaut-agent/test_workflows.go:GetKAE2ETestWorkflows()
 // Acceptable trade-off: Small duplication avoids architectural issues
 func GetKAE2ETestWorkflows() []TestWorkflow {
 	// BR-HAPI-191: SchemaParameters MUST match Mock LLM scenario parameters

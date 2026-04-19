@@ -72,7 +72,7 @@ When formulating recovery strategies, consider the following organizational poli
 
 ### Implementation Location
 
-File: `holmesgpt-api/src/extensions/recovery.py`
+File: `kubernaut-agent/src/extensions/recovery.py`
 Function: `_create_investigation_prompt()`
 
 ---

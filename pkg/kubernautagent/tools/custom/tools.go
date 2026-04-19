@@ -101,7 +101,7 @@ func RegisterAll(reg *registry.Registry, dsOgenClient WorkflowDiscoveryClient, d
 		reg.Register(t)
 	}
 	reg.Register(NewNamespacedResourceContextTool(dsClient, k8sClient))
-	reg.Register(NewClusterResourceContextTool(dsClient))
+	reg.Register(NewClusterResourceContextTool(dsClient, k8sClient))
 }
 
 // --- list_available_actions ---

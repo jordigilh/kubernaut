@@ -121,7 +121,7 @@ containers:
 
 ### **HolmesGPT API** (Production)
 
-**Production**: `deploy/holmesgpt-api/06-deployment.yaml`
+**Production**: `deploy/kubernaut-agent/06-deployment.yaml`
 
 ```yaml
 containers:
@@ -129,9 +129,9 @@ containers:
     image: quay.io/openshift/oauth-proxy:latest
     args:
       - --provider=openshift
-      - --openshift-service-account=holmesgpt-api
+      - --openshift-service-account=kubernaut-agent
       # DD-AUTH-006: SAR with verb:"get" (HAPI protects its own endpoints)
-      - --openshift-sar={"namespace":"kubernaut-system","resource":"services","resourceName":"holmesgpt-api","verb":"get"}
+      - --openshift-sar={"namespace":"kubernaut-system","resource":"services","resourceName":"kubernaut-agent","verb":"get"}
       - --set-xauthrequest=true  # For LLM cost tracking
 ```
 
@@ -290,7 +290,7 @@ func (h *WorkflowHandler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Re
 
 **Updated**: Production deployments to use `ose-oauth-proxy`
 - DataStorage: `deploy/data-storage/deployment.yaml` (updated today)
-- HolmesGPT API: `deploy/holmesgpt-api/06-deployment.yaml` (already using ose-oauth-proxy)
+- HolmesGPT API: `deploy/kubernaut-agent/06-deployment.yaml` (already using ose-oauth-proxy)
 
 **Authority**: DD-AUTH-004 (DataStorage), DD-AUTH-006 (HAPI), DD-AUTH-012 (this document)
 

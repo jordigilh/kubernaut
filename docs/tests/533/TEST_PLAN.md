@@ -25,7 +25,7 @@
 ### In Scope
 
 - **OpenAPI payload schemas** (`api/openapi/data-storage-v1.yaml`): New `AIAgentEnrichmentCompletedPayload` and `AIAgentEnrichmentFailedPayload` types added to the discriminated union (`oneOf` + `discriminator.mapping`)
-- **Python client regeneration** (`holmesgpt-api/src/clients/datastorage/`): Regenerate the OpenAPI Python client so Pydantic models for the new payload types exist
+- **Python client regeneration** (`kubernaut-agent/src/clients/datastorage/`): Regenerate the OpenAPI Python client so Pydantic models for the new payload types exist
 - **Pydantic re-exports** (`src/models/audit_models.py`): Re-export the new generated payload types as `EnrichmentCompletedEventData` and `EnrichmentFailedEventData`
 - **Audit event factory functions** (`src/audit/events.py`): Two new factory functions: `create_enrichment_completed_event` and `create_enrichment_failed_event`
 - **Module exports** (`src/audit/__init__.py`): Export new factory functions for consumption by business code
@@ -82,13 +82,13 @@ Tests validate:
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `holmesgpt-api/src/audit/events.py` | `create_enrichment_completed_event`, `create_enrichment_failed_event` | ~60 |
+| `kubernaut-agent/src/audit/events.py` | `create_enrichment_completed_event`, `create_enrichment_failed_event` | ~60 |
 
 ### Integration-Testable Code (I/O, wiring, cross-component)
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `holmesgpt-api/src/extensions/incident/llm_integration.py` | 2 `audit_store.store_audit()` call sites in Phase 2 | ~6 |
+| `kubernaut-agent/src/extensions/incident/llm_integration.py` | 2 `audit_store.store_audit()` call sites in Phase 2 | ~6 |
 
 **Note**: The emission call sites in `llm_integration.py` are I/O (they call `audit_store.store_audit()`), but testing them would require mocking the audit store — which falls into the [Audit Anti-Pattern](../development/business-requirements/TESTING_GUIDELINES.md#anti-pattern-direct-audit-infrastructure-testing). Emission wiring is verified via code review and E2E coverage.
 
@@ -97,9 +97,9 @@ Tests validate:
 | File | Reason |
 |------|--------|
 | `api/openapi/data-storage-v1.yaml` | Schema definition — validated by OpenAPI tooling |
-| `holmesgpt-api/src/clients/datastorage/` | Generated client — validated by generator |
-| `holmesgpt-api/src/models/audit_models.py` | Re-exports only (2 lines per type) — no logic to test |
-| `holmesgpt-api/src/audit/__init__.py` | Module exports — compilation validates correctness |
+| `kubernaut-agent/src/clients/datastorage/` | Generated client — validated by generator |
+| `kubernaut-agent/src/models/audit_models.py` | Re-exports only (2 lines per type) — no logic to test |
+| `kubernaut-agent/src/audit/__init__.py` | Module exports — compilation validates correctness |
 
 ---
 
@@ -144,7 +144,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 ### Tier 1: Unit Tests
 
-**Testable code scope**: `holmesgpt-api/src/audit/events.py` — 2 new factory functions, targeting >=80% coverage of new code
+**Testable code scope**: `kubernaut-agent/src/audit/events.py` — 2 new factory functions, targeting >=80% coverage of new code
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
@@ -175,7 +175,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-AUDIT-005
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_audit_enrichment_events.py`
+**File**: `kubernaut-agent/tests/unit/test_audit_enrichment_events.py`
 
 **Given**: A successful Phase 2 enrichment with root_owner={kind: "Deployment", name: "api-server", namespace: "production"}, 3 detected labels, remediation history fetched, owner chain of length 3
 **When**: `create_enrichment_completed_event()` is called with incident_id="inc-123", remediation_id="rem-456", and the enrichment result data
@@ -192,7 +192,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 **Acceptance Criteria**:
 - All 8 ADR-034 envelope fields are present and non-None
 - `event_category` matches the HAPI service constant ("aiagent")
-- `actor_type` == "Service" and `actor_id` == "holmesgpt-api"
+- `actor_type` == "Service" and `actor_id` == "kubernaut-agent"
 
 ---
 
@@ -200,7 +200,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-AUDIT-005
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_audit_enrichment_events.py`
+**File**: `kubernaut-agent/tests/unit/test_audit_enrichment_events.py`
 
 **Given**: Phase 2 resolved root_owner={kind: "Deployment", name: "api-server", namespace: "production"}
 **When**: `create_enrichment_completed_event()` is called
@@ -219,7 +219,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-AUDIT-005
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_audit_enrichment_events.py`
+**File**: `kubernaut-agent/tests/unit/test_audit_enrichment_events.py`
 
 **Given**: Phase 2 detected labels {"gitOpsManaged": True, "pdbProtected": False, "hpaEnabled": True}
 **When**: `create_enrichment_completed_event()` is called with detected_labels={"gitOpsManaged": True, "pdbProtected": False, "hpaEnabled": True}
@@ -235,7 +235,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-AUDIT-005
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_audit_enrichment_events.py`
+**File**: `kubernaut-agent/tests/unit/test_audit_enrichment_events.py`
 
 **Given**: Phase 2 had failed detections ["networkIsolated", "serviceMesh"]
 **When**: `create_enrichment_completed_event()` is called with failed_detections=["networkIsolated", "serviceMesh"]
@@ -251,7 +251,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-AUDIT-005
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_audit_enrichment_events.py`
+**File**: `kubernaut-agent/tests/unit/test_audit_enrichment_events.py`
 
 **Given**: Phase 2 successfully fetched remediation history from DataStorage
 **When**: `create_enrichment_completed_event()` is called with remediation_history_fetched=True
@@ -267,7 +267,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-AUDIT-005
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_audit_enrichment_events.py`
+**File**: `kubernaut-agent/tests/unit/test_audit_enrichment_events.py`
 
 **Given**: Phase 2 resolved owner chain of length 3 (Pod → ReplicaSet → Deployment)
 **When**: `create_enrichment_completed_event()` is called with owner_chain_length=3
@@ -283,7 +283,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-AUDIT-005
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_audit_enrichment_events.py`
+**File**: `kubernaut-agent/tests/unit/test_audit_enrichment_events.py`
 
 **Given**: Phase 2 enrichment failed with reason="rca_incomplete", detail="resolve_owner_chain failed after 3 retries"
 **When**: `create_enrichment_failed_event()` is called with incident_id="inc-123", remediation_id="rem-456", the failure data, and affected_resource
@@ -294,7 +294,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 - `event_action` == "enrichment_failed"
 - `event_outcome` == "failure"
 - `actor_type` == "Service"
-- `actor_id` == "holmesgpt-api"
+- `actor_id` == "kubernaut-agent"
 
 **Acceptance Criteria**:
 - Envelope structure matches the completed event except for outcome and action
@@ -305,7 +305,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-AUDIT-005
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_audit_enrichment_events.py`
+**File**: `kubernaut-agent/tests/unit/test_audit_enrichment_events.py`
 
 **Given**: EnrichmentFailure with reason="rca_incomplete" and detail="resolve_owner_chain failed after 3 retries: ConnectionError"
 **When**: `create_enrichment_failed_event()` is called
@@ -323,7 +323,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-AUDIT-005
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_audit_enrichment_events.py`
+**File**: `kubernaut-agent/tests/unit/test_audit_enrichment_events.py`
 
 **Given**: Enrichment was attempted for affected_resource={"kind": "Pod", "name": "api-xyz", "namespace": "prod"}
 **When**: `create_enrichment_failed_event()` is called with the affected_resource dict
@@ -339,7 +339,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-AUDIT-005
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_audit_enrichment_events.py`
+**File**: `kubernaut-agent/tests/unit/test_audit_enrichment_events.py`
 
 **Given**: remediation_id="rem-abc-123"
 **When**: `create_enrichment_failed_event()` is called
@@ -354,7 +354,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-AUDIT-005
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_audit_enrichment_events.py`
+**File**: `kubernaut-agent/tests/unit/test_audit_enrichment_events.py`
 
 **Given**: Phase 2 succeeded but label detector was unavailable (detected_labels=None) and DS was unreachable (remediation_history_fetched=False), with root_owner={kind: "Deployment", name: "api", namespace: "default"} and owner_chain_length=2
 **When**: `create_enrichment_completed_event()` is called with detected_labels=None, failed_detections=None, remediation_history_fetched=False
@@ -375,7 +375,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-AUDIT-005
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_audit_enrichment_events.py`
+**File**: `kubernaut-agent/tests/unit/test_audit_enrichment_events.py`
 
 **Given**: Phase 2 resolved root_owner={kind: "Node", name: "worker-1"} (no namespace — cluster-scoped resource)
 **When**: `create_enrichment_completed_event()` is called with root_owner_namespace=""
@@ -391,7 +391,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-AUDIT-005
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_audit_enrichment_events.py`
+**File**: `kubernaut-agent/tests/unit/test_audit_enrichment_events.py`
 
 **Given**: Enrichment failed but remediation_id is None (early failure before RR is created)
 **When**: `create_enrichment_failed_event()` is called with remediation_id=None
@@ -409,9 +409,9 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 - **Framework**: pytest (HAPI Python convention; class-based `TestXxx` with `test_` methods)
 - **Mocks**: None required — factory functions are pure logic operating on Pydantic models
-- **Location**: `holmesgpt-api/tests/unit/test_audit_enrichment_events.py`
+- **Location**: `kubernaut-agent/tests/unit/test_audit_enrichment_events.py`
 - **Dependencies**: OpenAPI-generated Pydantic models must exist before tests can import them
-- **conftest**: Uses existing `holmesgpt-api/tests/unit/conftest.py` (provides prometrix mock, config files, session reset)
+- **conftest**: Uses existing `kubernaut-agent/tests/unit/conftest.py` (provides prometrix mock, config files, session reset)
 
 ### Integration Tests
 
@@ -461,7 +461,7 @@ Step 8: TDD REFACTOR — Clean up, verify consistency
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
 | OpenAPI schema change breaks Go ogen build | Medium | High | Only add schemas + mappings; don't modify existing schemas. Run `go build ./...` after regeneration to confirm. |
-| Python client regeneration introduces regressions | Low | High | Run full `make test-unit-holmesgpt-api` after regeneration to verify existing tests still pass. |
+| Python client regeneration introduces regressions | Low | High | Run full `make test-unit-kubernaut-agent` after regeneration to verify existing tests still pass. |
 | New payload field names conflict with existing OpenAPI types | Low | Medium | Prefix with `AIAgentEnrichment*` to stay in the `aiagent.*` namespace. Check for name collisions before adding. |
 | Partial enrichment data causes None-field serialization issues | Medium | Medium | UT-HAPI-533-011 explicitly tests this boundary. Factory function uses `Optional` for nullable fields. |
 | `signalprocessing.enrichment.completed` discriminator value already exists | High | High | The existing discriminator has `'signalprocessing.enrichment.completed'` mapped to `SignalProcessingAuditPayload`. Our new events use `'aiagent.enrichment.completed'` and `'aiagent.enrichment.failed'` — different prefix, no collision. Verified in OpenAPI spec. |
@@ -472,13 +472,13 @@ Step 8: TDD REFACTOR — Clean up, verify consistency
 
 ```bash
 # Unit tests (all HAPI)
-make test-unit-holmesgpt-api
+make test-unit-kubernaut-agent
 
 # Specific test file
-cd holmesgpt-api && source venv/bin/activate && python -m pytest tests/unit/test_audit_enrichment_events.py -v
+cd kubernaut-agent && source venv/bin/activate && python -m pytest tests/unit/test_audit_enrichment_events.py -v
 
 # Specific test by ID
-cd holmesgpt-api && source venv/bin/activate && python -m pytest tests/unit/test_audit_enrichment_events.py -k "ut_hapi_533_001" -v
+cd kubernaut-agent && source venv/bin/activate && python -m pytest tests/unit/test_audit_enrichment_events.py -k "ut_hapi_533_001" -v
 
 # Regenerate Python DS client
 make generate-datastorage-client-python

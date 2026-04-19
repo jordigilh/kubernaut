@@ -131,7 +131,7 @@ This document summarizes the implementation plans for RFC 7807 error responses a
 
 ### HolmesGPT API Service (Python/FastAPI)
 
-**Plan**: `docs/services/stateless/holmesgpt-api/IMPLEMENTATION_PLAN_V3.1_RFC7807_GRACEFUL_SHUTDOWN.md`
+**Plan**: `docs/services/stateless/kubernaut-agent/IMPLEMENTATION_PLAN_V3.1_RFC7807_GRACEFUL_SHUTDOWN.md`
 
 **Version**: v3.1 (extends v3.0 production-ready base)
 
@@ -169,11 +169,11 @@ This document summarizes the implementation plans for RFC 7807 error responses a
   2. SIGINT graceful shutdown
 
 **Implementation Files**:
-- `holmesgpt-api/src/errors.py` (enhance existing)
-- `holmesgpt-api/src/main.py` (add exception handlers + signal handlers)
-- `holmesgpt-api/src/extensions/health.py` (update for shutdown)
-- `holmesgpt-api/tests/unit/test_rfc7807_errors.py` (new)
-- `holmesgpt-api/tests/integration/test_graceful_shutdown.py` (new)
+- `kubernaut-agent/src/errors.py` (enhance existing)
+- `kubernaut-agent/src/main.py` (add exception handlers + signal handlers)
+- `kubernaut-agent/src/extensions/health.py` (update for shutdown)
+- `kubernaut-agent/tests/unit/test_rfc7807_errors.py` (new)
+- `kubernaut-agent/tests/integration/test_graceful_shutdown.py` (new)
 
 **Confidence**: 95%
 

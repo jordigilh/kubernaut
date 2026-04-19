@@ -28,7 +28,7 @@
 1. ✅ `gateway-service` - HTTP Gateway & Security
 2. ✅ `context-api` - Historical Intelligence Provider
 3. ✅ `data-storage` - Data Persistence & Vector DB
-4. ✅ `holmesgpt-api` - AI Investigation Wrapper
+4. ✅ `kubernaut-agent` - AI Investigation Wrapper
 5. ✅ `dynamic-toolset` - Dynamic Toolset Discovery
 6. ✅ `notification-service` - Multi-Channel Notifications
 

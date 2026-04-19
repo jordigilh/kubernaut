@@ -428,7 +428,7 @@ func (r *AIAnalysisReconciler) Reconcile(
     httpReq, _ := http.NewRequestWithContext(
         ctx,
         "POST",
-        "http://holmesgpt-api:8080/api/v1/investigate",
+        "http://kubernaut-agent:8080/api/v1/investigate",
         bytes.NewBuffer(body),
     )
     httpReq.Header.Set("Content-Type", "application/json")

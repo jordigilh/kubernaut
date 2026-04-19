@@ -681,7 +681,7 @@ This separation enables efficient dual-source intelligence gathering: HolmesGPT 
 
 **Updated Documents**:
 - ✅ `10_AI_CONTEXT_ORCHESTRATION.md` (this document) - BR-CONTEXT-006, BR-CONTEXT-008, BR-API-006, BR-API-007 clarified
-- ✅ `08-holmesgpt-api.md` (stateless service spec) - Already reflects correct architecture
+- ✅ `08-kubernaut-agent.md` (stateless service spec) - Already reflects correct architecture
 - ✅ `REMAINING_SERVICES_PLAN.md` (service planning) - Context API description updated
 
 ---

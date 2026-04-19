@@ -232,11 +232,11 @@ kubectl get configmap -n kubernaut | grep holmesgpt
 
 ```bash
 # Update HolmesGPT API configuration to use Mock MCP server
-kubectl patch configmap holmesgpt-api-config -n kubernaut \
+kubectl patch configmap kubernaut-agent-config -n kubernaut \
   --patch '{"data":{"mcp_url":"http://mock-mcp-server.llm-validation.svc.cluster.local:8080"}}'
 
 # Restart HolmesGPT API to pick up new config
-kubectl rollout restart deployment holmesgpt-api -n kubernaut
+kubectl rollout restart deployment kubernaut-agent -n kubernaut
 ```
 
 **Success Criteria**:
@@ -256,7 +256,7 @@ kubectl rollout restart deployment holmesgpt-api -n kubernaut
 # Trigger investigation for Scenario 1
 POD_NAME=$(kubectl get pod -n test-scenario-01 -l app=memory-hungry-app -o jsonpath='{.items[0].metadata.name}')
 
-curl -X POST http://holmesgpt-api.kubernaut.svc.cluster.local:8080/api/v1/investigations \
+curl -X POST http://kubernaut-agent.kubernaut.svc.cluster.local:8080/api/v1/investigations \
   -H "Content-Type: application/json" \
   -d '{
     "alert": {
@@ -270,7 +270,7 @@ curl -X POST http://holmesgpt-api.kubernaut.svc.cluster.local:8080/api/v1/invest
 
 # Monitor logs
 kubectl logs -n llm-validation -l app=mock-mcp-server -f  # EVENT 1
-kubectl logs -n kubernaut -l app=holmesgpt-api -f          # EVENT 2
+kubectl logs -n kubernaut -l app=kubernaut-agent -f          # EVENT 2
 ```
 
 **Success Criteria**:
@@ -441,7 +441,7 @@ kubectl get secrets -n kubernaut | grep vertex
 
 **Validation**:
 ```bash
-kubectl get configmap holmesgpt-api-config -n kubernaut -o yaml
+kubectl get configmap kubernaut-agent-config -n kubernaut -o yaml
 ```
 
 ---

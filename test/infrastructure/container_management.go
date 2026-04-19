@@ -38,14 +38,14 @@ import (
 // Image Naming (DD-TEST-001 v1.3):
 //
 //	Use GenerateInfraImageName() helper for consistent tag generation:
-//	Image: infrastructure.GenerateInfraImageName("holmesgpt-api", "aianalysis")
-//	→ "holmesgpt-api:holmesgpt-api-aianalysis-1734278400-a1b2c3d4"
+//	Image: infrastructure.GenerateInfraImageName("kubernaut-agent", "aianalysis")
+//	→ "kubernaut-agent:kubernaut-agent-aianalysis-1734278400-a1b2c3d4"
 //
 // Example Usage (AIAnalysis starting KA):
 //
 //	kaConfig := infrastructure.GenericContainerConfig{
 //	    Name:    "aianalysis_ka_test",
-//	    Image:   infrastructure.GenerateInfraImageName("holmesgpt-api", "aianalysis"), // DD-TEST-001 v1.3
+//	    Image:   infrastructure.GenerateInfraImageName("kubernaut-agent", "aianalysis"), // DD-TEST-001 v1.3
 //	    Network: "aianalysis_test_network",
 //	    Ports:   map[int]int{8080: 18120}, // container:host
 //	    Env: map[string]string{
@@ -53,7 +53,7 @@ import (
 //	        "MOCK_LLM":     "true",
 //	    },
 //	    BuildContext:    ".",                     // Optional: build if needed
-//	    BuildDockerfile: "holmesgpt-api/Dockerfile.e2e", // Use E2E Dockerfile (minimal deps, faster builds)
+//	    BuildDockerfile: "kubernaut-agent/Dockerfile.e2e", // Use E2E Dockerfile (minimal deps, faster builds)
 //	    HealthCheck: &HealthCheckConfig{
 //	        URL:     "http://127.0.0.1:18120/health",
 //	        Timeout: 30 * time.Second,
@@ -125,7 +125,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 		// Extract service name from image name
 		// Examples:
 		//   "localhost/datastorage:aianalysis-a3b5c7d9" → "datastorage"
-		//   "kubernaut/holmesgpt-api" → "holmesgpt-api"
+		//   "kubernaut/kubernaut-agent" → "kubernaut-agent"
 		serviceName := extractServiceNameFromImage(cfg.Image)
 
 		if serviceName != "" {
@@ -287,7 +287,7 @@ func StopGenericContainer(instance *ContainerInstance, writer io.Writer) error {
 //
 // Handles:
 //   - "localhost/datastorage:aianalysis-a3b5c7d9" → "datastorage"
-//   - "kubernaut/holmesgpt-api" → "holmesgpt-api"
+//   - "kubernaut/kubernaut-agent" → "kubernaut-agent"
 //   - "datastorage:test-tag" → "datastorage"
 //   - "ghcr.io/owner/kubernaut/datastorage:pr-123" → "datastorage"
 //

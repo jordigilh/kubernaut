@@ -80,11 +80,11 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: holmesgpt-api-config
+  name: kubernaut-agent-config
   namespace: kubernaut
 data:
   config.yaml: |
-    service_name: holmesgpt-api
+    service_name: kubernaut-agent
     version: "1.0.0"
     log_level: INFO
 
@@ -327,7 +327,7 @@ watchdog>=3.0.0,<4.0.0  # File system events (fsnotify equivalent)
 ```yaml
 spec:
   containers:
-  - name: holmesgpt-api
+  - name: kubernaut-agent
     volumeMounts:
     - name: config
       mountPath: /etc/holmesgpt
@@ -335,7 +335,7 @@ spec:
   volumes:
   - name: config
     configMap:
-      name: holmesgpt-api-config
+      name: kubernaut-agent-config
 ```
 
 **Note**: No RBAC changes required - volume mounts use kubelet, not pod's service account.

@@ -1205,7 +1205,7 @@ ERROR auto_reload_validation_failed_keeping_failure_counter
 - **BR Specification**: `docs/requirements/BR-HAPI-VALIDATION-RESILIENCE.md`
 - **Phase 1**: `BR-HAPI-189-PHASE1-SDK-INVESTIGATION.md`
 - **Phase 2**: `BR-HAPI-189-PHASE2-IMPLEMENTATION-TEMPLATES.md`
-- **Service Spec**: `docs/services/stateless/08-holmesgpt-api.md`
+- **Service Spec**: `docs/services/stateless/08-kubernaut-agent.md`
 - **Architecture**: `docs/architecture/DYNAMIC_TOOLSET_CONFIGURATION_ARCHITECTURE.md`
 
 ---

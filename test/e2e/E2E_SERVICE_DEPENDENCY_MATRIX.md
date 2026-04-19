@@ -24,13 +24,13 @@ This matrix documents the **actual dependencies** deployed by each E2E test suit
 |---------|---------------|-----------------|----------------------|---------------------|-------|
 | **datastorage** | `datastorage` | None (standalone) | PostgreSQL 16, Redis | `kind-datastorage-config.yaml` | Core dependency for all other services |
 | **gateway** | `gateway`, `datastorage` | None | PostgreSQL 16, Redis | `kind-gateway-config.yaml` | Ingestion service with DS for audit |
-| **aianalysis** | `aianalysis`, `datastorage`, `holmesgpt-api`, `mock-llm` | None | PostgreSQL 16, Redis | `kind-aianalysis-config.yaml` | AI analysis with KA + Mock LLM |
+| **aianalysis** | `aianalysis`, `datastorage`, `kubernaut-agent`, `mock-llm` | None | PostgreSQL 16, Redis | `kind-aianalysis-config.yaml` | AI analysis with KA + Mock LLM |
 | **authwebhook** | `authwebhook`, `datastorage` | None | PostgreSQL 16, Redis | `kind-authwebhook-config.yaml` | User attribution for SOC2 CC8.1 |
 | **notification** | `notification`, `authwebhook` | DS (shared deployment) | None | `kind-notification-config.yaml` | Uses shared DS, requires AW |
 | **remediationorchestrator** | `remediationorchestrator`, `datastorage`, `authwebhook` | None | PostgreSQL 16, Redis | `kind-remediationorchestrator-config.yaml` | Requires DS + AW (SOC2) |
 | **signalprocessing** | `signalprocessing`, `datastorage` | None | PostgreSQL 16, Redis | `kind-signalprocessing-config.yaml` | Signal enrichment with DS audit |
 | **workflowexecution** | `workflowexecution`, `datastorage`, `authwebhook` | None | PostgreSQL 16, Redis, Tekton v1.7.0 | `kind-workflowexecution-config.yaml` | Requires DS + AW + Tekton |
-| **holmesgpt-api** | `holmesgpt-api`, `datastorage`, `mock-llm` | None | PostgreSQL 16, Redis | (uses workflowexecution config) | KA with Mock LLM + DS audit |
+| **kubernaut-agent** | `kubernaut-agent`, `datastorage`, `mock-llm` | None | PostgreSQL 16, Redis | (uses workflowexecution config) | KA with Mock LLM + DS audit |
 
 ---
 
@@ -46,7 +46,7 @@ gateway
 
 aianalysis
     ├─ datastorage (audit trails)
-    ├─ holmesgpt-api (AI analysis)
+    ├─ kubernaut-agent (AI analysis)
     └─ mock-llm (cost-free LLM simulation)
 
 authwebhook
@@ -68,7 +68,7 @@ workflowexecution
     ├─ authwebhook (user attribution, SOC2 CC8.1)
     └─ Tekton v1.7.0 (workflow engine)
 
-holmesgpt-api
+kubernaut-agent
     ├─ datastorage (audit trails)
     └─ mock-llm (cost-free LLM simulation)
 ```
@@ -89,7 +89,7 @@ holmesgpt-api
 | remediationorchestrator | `docker/remediationorchestrator-controller.Dockerfile` | `kubernaut/remediationorchestrator-controller` | ✅ Yes (E2E_COVERAGE) |
 | signalprocessing | `docker/signalprocessing-controller.Dockerfile` | `kubernaut/signalprocessing-controller` | ✅ Yes |
 | workflowexecution | `docker/workflowexecution-controller.Dockerfile` | `kubernaut/workflowexecution-controller` | ✅ Yes (disabled on ARM64) |
-| holmesgpt-api | `holmesgpt-api/Dockerfile` | `kubernaut/holmesgpt-api` | ❌ No (Python service) |
+| kubernaut-agent | `kubernaut-agent/Dockerfile` | `kubernaut/kubernaut-agent` | ❌ No (Python service) |
 | mock-llm | `test/services/mock-llm/Dockerfile` | `kubernaut/mock-llm` | ❌ No (test fixture) |
 
 ---
@@ -131,7 +131,7 @@ mock-llm
 gateway (depends on datastorage)
 authwebhook (depends on datastorage)
 signalprocessing (depends on datastorage)
-holmesgpt-api (depends on datastorage + mock-llm)
+kubernaut-agent (depends on datastorage + mock-llm)
 ```
 
 ### Tier 3: Depends on Tier 2
@@ -139,7 +139,7 @@ holmesgpt-api (depends on datastorage + mock-llm)
 notification (depends on datastorage + authwebhook)
 remediationorchestrator (depends on datastorage + authwebhook)
 workflowexecution (depends on datastorage + authwebhook)
-aianalysis (depends on datastorage + holmesgpt-api + mock-llm)
+aianalysis (depends on datastorage + kubernaut-agent + mock-llm)
 ```
 
 **CI/CD Strategy**: Build Tier 1 first, then Tier 2 & 3 in parallel (no cross-tier dependencies in 2 & 3).
@@ -239,7 +239,7 @@ Each service uses a unique port range to avoid conflicts in parallel E2E executi
 | remediationorchestrator | 30083 → (varies) | 30183 | 30081 |
 | signalprocessing | 30082 → (varies) | 30182 | 30081 |
 | workflowexecution | (varies) | 30185 → 9185 | 30081 |
-| holmesgpt-api | 30088 → 8088 | (varies) | 30081 |
+| kubernaut-agent | 30088 → 8088 | (varies) | 30081 |
 
 **Authority**: DD-TEST-001 (Port Allocation Standard)
 

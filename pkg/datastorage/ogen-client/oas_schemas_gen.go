@@ -18390,6 +18390,17 @@ type RemediationOrchestratorAuditPayload struct {
 	// Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery.
 	// Used by DS remediation history to populate actionType on entries and summaries.
 	ActionType OptString `json:"action_type"`
+	// Signal type that triggered the remediation (e.g., "alert", "event").
+	// Propagated from the originating signal via Gateway/RR.
+	// Used by DS remediation history for correlation and KA recurring detection.
+	SignalType OptString `json:"signal_type"`
+	// Unique fingerprint of the originating signal (hash of signal identity).
+	// Used by DS remediation history to correlate entries across cycles.
+	SignalFingerprint OptString `json:"signal_fingerprint"`
+	// The actual CRD-level outcome of the RemediationRequest (e.g., Remediated,
+	// Inconclusive, VerificationTimedOut, ManualReviewRequired).
+	// Present on completion and verification_completed events.
+	CrdOutcome OptString `json:"crd_outcome"`
 	// Name of the EffectivenessAssessment CRD created by the RO.
 	// Only present for orchestrator.ea.created events.
 	EaName OptString `json:"ea_name"`
@@ -18557,6 +18568,21 @@ func (s *RemediationOrchestratorAuditPayload) GetWorkflowVersion() OptString {
 // GetActionType returns the value of ActionType.
 func (s *RemediationOrchestratorAuditPayload) GetActionType() OptString {
 	return s.ActionType
+}
+
+// GetSignalType returns the value of SignalType.
+func (s *RemediationOrchestratorAuditPayload) GetSignalType() OptString {
+	return s.SignalType
+}
+
+// GetSignalFingerprint returns the value of SignalFingerprint.
+func (s *RemediationOrchestratorAuditPayload) GetSignalFingerprint() OptString {
+	return s.SignalFingerprint
+}
+
+// GetCrdOutcome returns the value of CrdOutcome.
+func (s *RemediationOrchestratorAuditPayload) GetCrdOutcome() OptString {
+	return s.CrdOutcome
 }
 
 // GetEaName returns the value of EaName.
@@ -18732,6 +18758,21 @@ func (s *RemediationOrchestratorAuditPayload) SetWorkflowVersion(val OptString) 
 // SetActionType sets the value of ActionType.
 func (s *RemediationOrchestratorAuditPayload) SetActionType(val OptString) {
 	s.ActionType = val
+}
+
+// SetSignalType sets the value of SignalType.
+func (s *RemediationOrchestratorAuditPayload) SetSignalType(val OptString) {
+	s.SignalType = val
+}
+
+// SetSignalFingerprint sets the value of SignalFingerprint.
+func (s *RemediationOrchestratorAuditPayload) SetSignalFingerprint(val OptString) {
+	s.SignalFingerprint = val
+}
+
+// SetCrdOutcome sets the value of CrdOutcome.
+func (s *RemediationOrchestratorAuditPayload) SetCrdOutcome(val OptString) {
+	s.CrdOutcome = val
 }
 
 // SetEaName sets the value of EaName.

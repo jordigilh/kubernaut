@@ -118,12 +118,12 @@ The LLM searches for workflows using:
 ## 🧪 Testing
 
 ### Unit Tests
-Location: `holmesgpt-api/tests/unit/`
+Location: `kubernaut-agent/tests/unit/`
 - `test_prompt_generation_adr041.py`: Validates prompt structure against ADR-041
 - `test_recovery_analysis.py`: Tests recovery analysis endpoint
 
 ### Integration Tests
-Location: `holmesgpt-api/tests/integration/` (future)
+Location: `kubernaut-agent/tests/integration/` (future)
 - LLM query construction validation
 - MCP search parameter validation
 - Workflow parameter population validation

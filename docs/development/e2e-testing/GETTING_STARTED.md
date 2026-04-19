@@ -40,7 +40,7 @@ This provides **enterprise-grade security isolation** while maintaining **develo
 Ensure HolmesGPT custom container is deployed and accessible:
 ```bash
 # Option 1: Local container deployment
-docker run -d -p 8090:8090 kubernaut/holmesgpt-api:latest
+docker run -d -p 8090:8090 kubernaut/kubernaut-agent:latest
 
 # Option 2: Kubernetes deployment (in remote cluster)
 oc apply -f deploy/holmesgpt-deployment.yaml

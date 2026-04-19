@@ -348,7 +348,7 @@ args:
 
 **Tasks**:
 1. Update `deploy/data-storage/deployment.yaml` (oauth2-proxy v7.5.1 + SAR)
-2. Update `deploy/holmesgpt-api/06-deployment.yaml` (oauth2-proxy v7.5.1)
+2. Update `deploy/kubernaut-agent/06-deployment.yaml` (oauth2-proxy v7.5.1)
 3. Create secrets with Kustomize
 4. Test deployments
 

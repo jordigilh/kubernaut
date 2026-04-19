@@ -1011,8 +1011,8 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 	})
 
 	// Detection Methods (BR-SP-101) removed - ADR-056: DetectedLabels relocated to KA
-	// See: holmesgpt-api/src/detection/labels.py for post-RCA label detection
-	// BR-SP-101 tests relocated to: holmesgpt-api/tests/unit/test_label_detector.py
+	// See: kubernaut-agent/src/detection/labels.py for post-RCA label detection
+	// BR-SP-101 tests relocated to: kubernaut-agent/tests/unit/test_label_detector.py
 	//
 	// The following detection tests were removed as part of ADR-056 cleanup:
 	// - CTRL-DETECT-01 through CTRL-DETECT-09 (hasPDB, hasHPA, NetworkPolicy, IsProduction, GitOps)

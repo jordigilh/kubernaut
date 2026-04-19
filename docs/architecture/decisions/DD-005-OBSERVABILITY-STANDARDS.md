@@ -343,7 +343,7 @@ go test -c ./test/e2e/{service}/... -o /dev/null
 
 **Mandatory Labels** (all metrics):
 - **environment**: `prod`, `staging`, `dev`
-- **service**: `gateway`, `context-api`, `holmesgpt-api`, etc.
+- **service**: `gateway`, `context-api`, `kubernaut-agent`, etc.
 
 **Common Labels** (use consistently):
 - **endpoint**: HTTP endpoint path (e.g., `/api/v1/signals/prometheus`)

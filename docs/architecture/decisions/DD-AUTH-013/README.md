@@ -85,7 +85,7 @@ Session summaries and implementation status from January 26, 2026.
 ### HolmesGPT API ✅ COMPLETE
 | Component | Status | Document |
 |---|---|---|
-| **OpenAPI Spec** | ✅ Complete | `holmesgpt-api/api/openapi.json` |
+| **OpenAPI Spec** | ✅ Complete | `kubernaut-agent/api/openapi.json` |
 | **Generated Client** | ✅ Complete | `pkg/holmesgpt/client/` |
 | **Custom Client** | ✅ Complete | `pkg/holmesgpt/client/holmesgpt.go` (switch statements) |
 | **401 Responses** | ✅ Documented | POST /api/v1/incident/analyze, POST /api/v1/recovery/analyze |
@@ -116,7 +116,7 @@ Session summaries and implementation status from January 26, 2026.
 ### Related DDs
 - **[DD-AUTH-011: Granular RBAC & SAR Verb Mapping](../DD-AUTH-011/DD-AUTH-011-granular-rbac-sar-verb-mapping.md)** - RBAC strategy
 - **[DD-AUTH-009: OAuth2-Proxy Workflow Attribution](../DD-AUTH-009-oauth2-proxy-workflow-attribution-implementation.md)** - Workflow audit tracking
-- **[DD-AUTH-006: HAPI OAuth-Proxy Configuration](../DD-AUTH-006-holmesgpt-api-oauth-proxy-config.md)** - HAPI sidecar config
+- **[DD-AUTH-006: HAPI OAuth-Proxy Configuration](../DD-AUTH-006-kubernaut-agent-oauth-proxy-config.md)** - HAPI sidecar config
 
 ### Related ADRs
 - **ADR-036**: Externalized Auth/Authz Sidecar Strategy
@@ -128,7 +128,7 @@ Session summaries and implementation status from January 26, 2026.
 ### OpenAPI Specifications
 ```
 api/openapi/data-storage-v1.yaml            (401/403 responses added)
-holmesgpt-api/api/openapi.json             (401/403/500 responses added)
+kubernaut-agent/api/openapi.json             (401/403/500 responses added)
 ```
 
 ### Generated Clients
@@ -174,7 +174,7 @@ test/e2e/datastorage/23_sar_access_control_test.go  (SAR validation with 403 han
 
 ### Pending Tests
 - 🚧 **401 Unauthorized scenarios** (invalid/expired tokens)
-- 🚧 **HolmesGPT API E2E tests** (`test/e2e/holmesgpt-api/auth_validation_test.go`)
+- 🚧 **HolmesGPT API E2E tests** (`test/e2e/kubernaut-agent/auth_validation_test.go`)
 
 ---
 
@@ -188,7 +188,7 @@ This design decision is the **canonical reference** for all HTTP status codes re
 
 **Referenced By**:
 - DataStorage OpenAPI spec (`api/openapi/data-storage-v1.yaml`)
-- HolmesGPT API OpenAPI spec (`holmesgpt-api/api/openapi.json`)
+- HolmesGPT API OpenAPI spec (`kubernaut-agent/api/openapi.json`)
 - E2E test documentation (`docs/architecture/decisions/DD-AUTH-011/DD-AUTH-011-E2E-TESTING-GUIDE.md`)
 
 ---

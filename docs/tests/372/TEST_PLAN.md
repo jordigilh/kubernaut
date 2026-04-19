@@ -68,8 +68,8 @@ Tests validate business outcomes: "Does the system retry when the LLM fails to f
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `holmesgpt-api/src/extensions/incident/result_parser.py` | `parse_and_validate_investigation_result` | ~380 |
-| `holmesgpt-api/src/extensions/incident/prompt_builder.py` | `build_validation_error_feedback` | ~50 |
+| `kubernaut-agent/src/extensions/incident/result_parser.py` | `parse_and_validate_investigation_result` | ~380 |
+| `kubernaut-agent/src/extensions/incident/prompt_builder.py` | `build_validation_error_feedback` | ~50 |
 
 ---
 
@@ -130,7 +130,7 @@ Format: `UT-HAPI-372-{SEQUENCE}`
 
 **BR**: BR-HAPI-002
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_structured_output_retry.py`
+**File**: `kubernaut-agent/tests/unit/test_structured_output_retry.py`
 
 **Given**: LLM returns a plain-text narrative with no JSON markers (no ` ```json``` ` block, no `# section_header` format)
 **When**: `parse_and_validate_investigation_result()` is called
@@ -147,7 +147,7 @@ Format: `UT-HAPI-372-{SEQUENCE}`
 
 **BR**: BR-HAPI-002
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_structured_output_retry.py`
+**File**: `kubernaut-agent/tests/unit/test_structured_output_retry.py`
 
 **Given**: LLM returns rich markdown with headers, bullet points, and analysis but no structured JSON
 **When**: `parse_and_validate_investigation_result()` is called
@@ -160,7 +160,7 @@ Format: `UT-HAPI-372-{SEQUENCE}`
 
 **BR**: BR-HAPI-002
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_structured_output_retry.py`
+**File**: `kubernaut-agent/tests/unit/test_structured_output_retry.py`
 
 **Given**: LLM returns structured output with `investigation_outcome: resolved` and `selected_workflow: null`
 **When**: `parse_and_validate_investigation_result()` is called
@@ -175,7 +175,7 @@ Format: `UT-HAPI-372-{SEQUENCE}`
 
 **BR**: BR-HAPI-002
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_structured_output_retry.py`
+**File**: `kubernaut-agent/tests/unit/test_structured_output_retry.py`
 
 **Given**: LLM returns structured output with `investigation_outcome: inconclusive` and `selected_workflow: null`
 **When**: `parse_and_validate_investigation_result()` is called
@@ -191,7 +191,7 @@ Format: `UT-HAPI-372-{SEQUENCE}`
 
 **BR**: BR-HAPI-002
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_structured_output_retry.py`
+**File**: `kubernaut-agent/tests/unit/test_structured_output_retry.py`
 
 **Given**: LLM returns structured JSON with `selected_workflow: null` and no `investigation_outcome`
 **When**: `parse_and_validate_investigation_result()` is called
@@ -207,7 +207,7 @@ Format: `UT-HAPI-372-{SEQUENCE}`
 
 **BR**: BR-HAPI-197
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_structured_output_retry.py`
+**File**: `kubernaut-agent/tests/unit/test_structured_output_retry.py`
 
 **Given**: LLM returns structured JSON with a valid `selected_workflow` that passes catalog validation
 **When**: `parse_and_validate_investigation_result()` is called with a mock `data_storage_client`
@@ -222,7 +222,7 @@ Format: `UT-HAPI-372-{SEQUENCE}`
 
 **BR**: DD-HAPI-002
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_structured_output_retry.py`
+**File**: `kubernaut-agent/tests/unit/test_structured_output_retry.py`
 
 **Given**: Format failure `ValidationResult` from UT-HAPI-372-001
 **When**: Error message is examined
@@ -237,7 +237,7 @@ Format: `UT-HAPI-372-{SEQUENCE}`
 
 **BR**: DD-HAPI-002
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_structured_output_retry.py`
+**File**: `kubernaut-agent/tests/unit/test_structured_output_retry.py`
 
 **Given**: Validation error list containing the structured output format error
 **When**: `build_validation_error_feedback()` is called with this error
@@ -256,7 +256,7 @@ Format: `UT-HAPI-372-{SEQUENCE}`
 
 - **Framework**: pytest (HAPI standard)
 - **Mocks**: `unittest.mock.Mock` for `InvestigationResult` (`.analysis` attribute), mock `data_storage_client` for UT-HAPI-372-006
-- **Location**: `holmesgpt-api/tests/unit/test_structured_output_retry.py`
+- **Location**: `kubernaut-agent/tests/unit/test_structured_output_retry.py`
 
 ---
 
@@ -264,13 +264,13 @@ Format: `UT-HAPI-372-{SEQUENCE}`
 
 ```bash
 # All #372 tests
-cd holmesgpt-api && python -m pytest tests/unit/test_structured_output_retry.py -v
+cd kubernaut-agent && python -m pytest tests/unit/test_structured_output_retry.py -v
 
 # Specific test by ID
-cd holmesgpt-api && python -m pytest tests/unit/test_structured_output_retry.py -v -k "372_001"
+cd kubernaut-agent && python -m pytest tests/unit/test_structured_output_retry.py -v -k "372_001"
 
 # Full HAPI unit suite (regression check)
-cd holmesgpt-api && python -m pytest tests/unit/ -v
+cd kubernaut-agent && python -m pytest tests/unit/ -v
 ```
 
 ---

@@ -288,7 +288,7 @@ def _safe_fallback(content: str) -> str:
 | [DD-HAPI-005](../../architecture/decisions/DD-HAPI-005-llm-input-sanitization.md) | Design Decision |
 | [DD-005](../../architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md) | Pattern Source |
 | [pkg/shared/sanitization/](../../../pkg/shared/sanitization/) | Go Reference Implementation |
-| [security-configuration.md](../../services/stateless/holmesgpt-api/security-configuration.md) | HAPI Security Overview |
+| [security-configuration.md](../../services/stateless/kubernaut-agent/security-configuration.md) | HAPI Security Overview |
 
 ---
 

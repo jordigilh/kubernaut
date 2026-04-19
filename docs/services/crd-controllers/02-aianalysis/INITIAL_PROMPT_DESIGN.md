@@ -310,7 +310,7 @@ business_category_hints = {
 - [DD-WORKFLOW-001](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) - Mandatory label schema (DetectedLabels)
 - [DD-WORKFLOW-002](../../../architecture/decisions/DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md) - Workflow Catalog Architecture
 - [BR_MAPPING.md](./BR_MAPPING.md) - 31 V1.0 Business Requirements (BR-AI-001 to BR-AI-033, BR-AI-075-076, BR-AI-080-083)
-- [HolmesGPT API BRs](../stateless/holmesgpt-api/BUSINESS_REQUIREMENTS.md) - HolmesGPT API BRs
+- [HolmesGPT API BRs](../stateless/kubernaut-agent/BUSINESS_REQUIREMENTS.md) - HolmesGPT API BRs
 
 ---
 

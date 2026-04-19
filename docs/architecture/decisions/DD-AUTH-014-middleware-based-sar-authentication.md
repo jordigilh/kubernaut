@@ -17,13 +17,13 @@
 
 ### Version 3.0 (January 31, 2026)
 - **CRITICAL FIX**: Corrected RBAC for HolmesGPT API access
-  - **FOUND**: Gateway was granted `holmesgpt-api-client` RBAC but has ZERO HAPI code references
-  - **FIXED**: AIAnalysis controller granted `holmesgpt-api-client` RBAC (actual HAPI caller)
+  - **FOUND**: Gateway was granted `kubernaut-agent-client` RBAC but has ZERO HAPI code references
+  - **FIXED**: AIAnalysis controller granted `kubernaut-agent-client` RBAC (actual HAPI caller)
   - **EVIDENCE**: `cmd/aianalysis/main.go` has 9 HAPI references, `cmd/gateway/main.go` has 0
   - **ARCHITECTURE**: Gateway creates AIAnalysis CRDs → Controller calls HAPI (correct flow)
 - **ADDED**: AIAnalysis controller ServiceAccount token mount (`automountServiceAccountToken: true`)
 - **IMPACT**: Fixes all 21 AIAnalysis E2E test failures (HTTP 401 auth errors eliminated)
-- **PRODUCTION**: `deploy/holmesgpt-api/14-client-rbac.yaml` corrected (gateway-sa → aianalysis-controller)
+- **PRODUCTION**: `deploy/kubernaut-agent/14-client-rbac.yaml` corrected (gateway-sa → aianalysis-controller)
 - **E2E**: `test/infrastructure/aianalysis_e2e.go` updated with proper RBAC
 - **RELATED**: Commits `ccbc818f3`, `a786c11a5` (AIAnalysis auth fix)
 
@@ -694,11 +694,11 @@ ctx := context.WithValue(r.Context(), "user", user)
 
 **Status**: ✅ Implementation complete (January 2026)
 
-1. ✅ Created `pkg/holmesgpt-api/middleware/auth.go`
+1. ✅ Created `pkg/kubernaut-agent/middleware/auth.go`
    - Reused `pkg/shared/auth` interfaces
    - Service-specific SAR configuration
 
-2. ✅ Updated `holmesgpt-api/main.py`
+2. ✅ Updated `kubernaut-agent/main.py`
    - Added auth middleware to FastAPI app
    - Configured SAR parameters
    - **Removed oauth-proxy from Python app**

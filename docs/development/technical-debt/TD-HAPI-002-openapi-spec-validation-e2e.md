@@ -58,7 +58,7 @@ logger.info(f"needs_human_review={result.needs_human_review}")  # AttributeError
 ### OpenAPI-Validated E2E Tests
 
 ```python
-# File: holmesgpt-api/tests/e2e/test_openapi_compliance.py
+# File: kubernaut-agent/tests/e2e/test_openapi_compliance.py
 
 import pytest
 from openapi_core import Spec
@@ -188,7 +188,7 @@ class TestOpenAPICompliance:
 
 **Dependencies**:
 ```python
-# holmesgpt-api/requirements.txt
+# kubernaut-agent/requirements.txt
 openapi-core>=0.18.0        # OpenAPI 3.x validation
 openapi-spec-validator>=0.7.0  # Schema validation
 jsonschema>=4.20.0          # JSON schema validation
@@ -202,7 +202,7 @@ jsonschema>=4.20.0          # JSON schema validation
 
 ### Phase 2: Create OpenAPI Compliance Test Suite
 
-**Location**: `holmesgpt-api/tests/e2e/test_openapi_compliance.py`
+**Location**: `kubernaut-agent/tests/e2e/test_openapi_compliance.py`
 
 **Test Structure**:
 ```python
@@ -218,7 +218,7 @@ class TestOpenAPICompliance:
 
 ### Phase 3: Add Schema Validation Helpers
 
-**Location**: `holmesgpt-api/tests/utils/openapi_validator.py`
+**Location**: `kubernaut-agent/tests/utils/openapi_validator.py`
 
 ```python
 # File: tests/utils/openapi_validator.py
@@ -304,7 +304,7 @@ class HAPIOpenAPIValidator:
 
 **Update existing tests**:
 ```python
-# File: holmesgpt-api/tests/e2e/test_mock_llm_edge_cases_e2e.py
+# File: kubernaut-agent/tests/e2e/test_mock_llm_edge_cases_e2e.py
 
 from tests.utils.openapi_validator import HAPIOpenAPIValidator
 
@@ -347,7 +347,7 @@ class TestRecoveryEdgeCases:
 # .git/hooks/pre-commit
 
 # Regenerate OpenAPI spec and check for changes
-cd holmesgpt-api
+cd kubernaut-agent
 python3 -c "
 from src.main import create_app
 app = create_app()

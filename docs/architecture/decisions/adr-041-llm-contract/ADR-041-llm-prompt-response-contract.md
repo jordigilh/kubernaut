@@ -76,7 +76,7 @@ Without a single authoritative definition of the prompt/response contract:
 This ADR serves as the contract between:
 - HolmesGPT API (prompt generator)
 - LLM Provider (Claude 4.5 Haiku - current testing model, subject to change)
-- Response Parser (holmesgpt-api)
+- Response Parser (kubernaut-agent)
 - Downstream services (RemediationExecution)
 
 ---

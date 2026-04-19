@@ -845,7 +845,18 @@ endef
 ##@ Cursor Rule Compliance
 
 .PHONY: lint-rules
-lint-rules: lint-test-patterns lint-business-integration lint-tdd-compliance ## Run all cursor rule compliance checks
+lint-rules: lint-test-patterns lint-business-integration lint-tdd-compliance lint-naming-convention ## Run all cursor rule compliance checks
+
+.PHONY: lint-naming-convention
+lint-naming-convention: ## Check for legacy holmesgpt-api references (#691)
+	@echo "🔍 Checking for legacy holmesgpt-api naming..."
+	@HITS=$$(grep -rl "holmesgpt-api" config/ deploy/ internal/ pkg/ cmd/ charts/ 2>/dev/null || true); \
+	if [ -n "$$HITS" ]; then \
+		echo "❌ Legacy 'holmesgpt-api' references found:"; \
+		echo "$$HITS"; \
+		exit 1; \
+	fi
+	@echo "✅ No legacy holmesgpt-api references in source code"
 
 .PHONY: lint-test-patterns
 lint-test-patterns: ## Check for test anti-patterns

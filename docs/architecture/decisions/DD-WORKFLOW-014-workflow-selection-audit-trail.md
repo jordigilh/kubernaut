@@ -299,7 +299,7 @@ PostgreSQL (audit_events table)
 ### **Step 1: HolmesGPT API - Pass remediation_id in JSON Body**
 
 ```python
-# holmesgpt-api/src/toolsets/workflow_catalog.py
+# kubernaut-agent/src/toolsets/workflow_catalog.py
 # Pass remediation_id in JSON request body (NOT HTTP header)
 
 def _search_workflows(self, query: str, filters: Dict, top_k: int):

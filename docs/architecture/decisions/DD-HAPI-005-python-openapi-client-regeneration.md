@@ -95,7 +95,7 @@ HAPI integration tests were experiencing recurring failures due to `urllib3` ver
 ### Rationale
 
 1. **Consistency with Go Services**:
-   - Go: `//go:generate ogen --target . --package client --clean ../../../holmesgpt-api/api/openapi.json`
+   - Go: `//go:generate ogen --target . --package client --clean ../../../kubernaut-agent/api/openapi.json`
    - Python: `@pytest.fixture ensure_openapi_client()` → regenerate from `api/openapi.json`
    - **Pattern**: Generate on-demand, never commit
 
@@ -126,14 +126,14 @@ HAPI integration tests were experiencing recurring failures due to `urllib3` ver
 
 #### 1. `.gitignore` Entry
 ```bash
-# holmesgpt-api/.gitignore
+# kubernaut-agent/.gitignore
 # Generated OpenAPI clients (regenerated on demand, like Go's `go generate`)
 # DD-HAPI-005: Auto-regenerate Python OpenAPI client to prevent version drift
 tests/clients/holmesgpt_api_client/
 ```
 
 #### 2. Generation Script
-**File**: `holmesgpt-api/tests/integration/generate-client.sh`
+**File**: `kubernaut-agent/tests/integration/generate-client.sh`
 
 ```bash
 #!/bin/bash
@@ -152,7 +152,7 @@ docker run --rm \
 ```
 
 #### 3. Auto-Regeneration Fixture
-**File**: `holmesgpt-api/tests/integration/conftest.py`
+**File**: `kubernaut-agent/tests/integration/conftest.py`
 
 ```python
 @pytest.fixture(scope="session", autouse=True)
@@ -262,7 +262,7 @@ def ensure_openapi_client():
 ### Go Services (Current)
 ```go
 // pkg/holmesgpt/client/generate.go
-//go:generate ogen --target . --package client --clean ../../../holmesgpt-api/api/openapi.json
+//go:generate ogen --target . --package client --clean ../../../kubernaut-agent/api/openapi.json
 ```
 
 ```bash
@@ -272,7 +272,7 @@ $ go generate ./pkg/holmesgpt/client/
 
 ### Python Services (DD-HAPI-005)
 ```python
-# holmesgpt-api/tests/integration/conftest.py
+# kubernaut-agent/tests/integration/conftest.py
 @pytest.fixture(scope="session", autouse=True)
 def ensure_openapi_client():
     subprocess.run(["./generate-client.sh"], check=True)
@@ -280,7 +280,7 @@ def ensure_openapi_client():
 
 ```bash
 # Regenerate Python client (automatic during pytest)
-$ cd holmesgpt-api
+$ cd kubernaut-agent
 $ python -m pytest tests/integration/
 # Client regenerated automatically before tests run
 ```

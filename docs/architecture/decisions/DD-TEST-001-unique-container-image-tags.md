@@ -44,7 +44,7 @@
 - **Section 1.5**: Infrastructure Image Tag Format for shared services (datastorage, postgresql, redis)
 - Configurable NodePort support for service-specific Data Storage deployments
 - `GenerateInfraImageName()` and `deployDataStorageServiceInNamespaceWithNodePort()` functions
-- Format: `localhost/{infrastructure}:{consumer}-{uuid}` (e.g., `localhost/datastorage:holmesgpt-api-1884d074`)
+- Format: `localhost/{infrastructure}:{consumer}-{uuid}` (e.g., `localhost/datastorage:kubernaut-agent-1884d074`)
 
 **Impact**: Infrastructure images (datastorage, postgresql, redis) used by E2E tests now have service-specific unique tags to prevent collisions in parallel E2E execution
 
@@ -159,12 +159,12 @@ localhost/{infrastructure}:{consumer}-{uuid}
 **Components**:
 - `localhost/`: Registry prefix (required for Kind local images with ImagePullPolicy: Never)
 - `{infrastructure}`: Infrastructure service name (datastorage, postgresql, redis)
-- `{consumer}`: Service being tested (holmesgpt-api, gateway, signalprocessing, etc.)
+- `{consumer}`: Service being tested (kubernaut-agent, gateway, signalprocessing, etc.)
 - `{uuid}`: 8-character hex UUID from `time.Now().UnixNano()`
 
 **Example Tags**:
 ```
-localhost/datastorage:holmesgpt-api-1884d074
+localhost/datastorage:kubernaut-agent-1884d074
 localhost/datastorage:gateway-a5f3c2e9
 localhost/datastorage:signalprocessing-7b8d9f12
 localhost/datastorage:workflowexecution-3c4e5a67
@@ -182,7 +182,7 @@ localhost/datastorage:workflowexecution-3c4e5a67
 
 // GenerateInfraImageName generates DD-TEST-001 v1.3 compliant image name
 // Returns: "localhost/{infrastructure}:{consumer}-{uuid}"
-// Example: "localhost/datastorage:holmesgpt-api-1884d074"
+// Example: "localhost/datastorage:kubernaut-agent-1884d074"
 func GenerateInfraImageName(infrastructure, consumer string) string {
     uuid := fmt.Sprintf("%x", time.Now().UnixNano())[:8]
     tag := fmt.Sprintf("%s-%s", consumer, uuid)
@@ -190,8 +190,8 @@ func GenerateInfraImageName(infrastructure, consumer string) string {
 }
 
 // Usage in HAPI E2E setup:
-dataStorageImage := GenerateInfraImageName("datastorage", "holmesgpt-api")
-// Result: "localhost/datastorage:holmesgpt-api-1884d074"
+dataStorageImage := GenerateInfraImageName("datastorage", "kubernaut-agent")
+// Result: "localhost/datastorage:kubernaut-agent-1884d074"
 
 // Deploy with service-specific NodePort
 err := deployDataStorageServiceInNamespaceWithNodePort(
@@ -203,7 +203,7 @@ err := deployDataStorageServiceInNamespaceWithNodePort(
 spec:
   containers:
   - name: datastorage
-    image: localhost/datastorage:holmesgpt-api-1884d074  # Full image name with localhost/
+    image: localhost/datastorage:kubernaut-agent-1884d074  # Full image name with localhost/
     imagePullPolicy: Never  # CRITICAL: Use local image, no registry pull
 ```
 

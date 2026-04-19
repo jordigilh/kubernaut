@@ -26,9 +26,9 @@
 
 ### In Scope
 
-- **K8s client** (`holmesgpt-api/src/clients/k8s_client.py`): New `_list_resource_quotas_sync` and `list_resource_quotas` methods following the established `_list_pdbs_sync`/`list_pdbs` pattern
-- **LabelDetector** (`holmesgpt-api/src/detection/labels.py`): New `_detect_resource_quota` and `_summarize_quotas` methods, signature change to return `Tuple[Optional[Dict], Optional[Dict]]`
-- **Resource Context** (`holmesgpt-api/src/toolsets/resource_context.py`): Tuple destructuring in `_detect_labels_if_needed`, new `quota_details` top-level field in `result_data`
+- **K8s client** (`kubernaut-agent/src/clients/k8s_client.py`): New `_list_resource_quotas_sync` and `list_resource_quotas` methods following the established `_list_pdbs_sync`/`list_pdbs` pattern
+- **LabelDetector** (`kubernaut-agent/src/detection/labels.py`): New `_detect_resource_quota` and `_summarize_quotas` methods, signature change to return `Tuple[Optional[Dict], Optional[Dict]]`
+- **Resource Context** (`kubernaut-agent/src/toolsets/resource_context.py`): Tuple destructuring in `_detect_labels_if_needed`, new `quota_details` top-level field in `result_data`
 - **DetectedLabels Go struct** (`pkg/shared/types/enrichment.go`): New `ResourceQuotaConstrained bool` field
 - **FailedDetections enum sync** (4 locations): Add `resourceQuotaConstrained` to kubebuilder annotation, generated CRD, DS OpenAPI spec, and Go validation tag
 - **DD-HAPI-018 v1.4**: Specification for Detection 8 (ResourceQuota Constrained)
@@ -80,9 +80,9 @@ Tests validate business outcomes -- "LLM receives accurate quota context for rem
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `holmesgpt-api/src/clients/k8s_client.py` | `_list_resource_quotas_sync`, `list_resource_quotas` | ~25 |
-| `holmesgpt-api/src/detection/labels.py` | `_detect_resource_quota`, `_summarize_quotas`, tuple return from `detect_labels` | ~40 |
-| `holmesgpt-api/src/toolsets/resource_context.py` | Tuple destructuring in `_detect_labels_if_needed`, `quota_details` in `result_data` | ~15 |
+| `kubernaut-agent/src/clients/k8s_client.py` | `_list_resource_quotas_sync`, `list_resource_quotas` | ~25 |
+| `kubernaut-agent/src/detection/labels.py` | `_detect_resource_quota`, `_summarize_quotas`, tuple return from `detect_labels` | ~40 |
+| `kubernaut-agent/src/toolsets/resource_context.py` | Tuple destructuring in `_detect_labels_if_needed`, `quota_details` in `result_data` | ~15 |
 
 ### Go Unit-Testable Code
 
@@ -94,7 +94,7 @@ Tests validate business outcomes -- "LLM receives accurate quota context for rem
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `holmesgpt-api/src/toolsets/resource_context.py` | `_detect_labels_if_needed` full pipeline with real `LabelDetector` | ~15 |
+| `kubernaut-agent/src/toolsets/resource_context.py` | `_detect_labels_if_needed` full pipeline with real `LabelDetector` | ~15 |
 
 ---
 
@@ -142,7 +142,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 ### Tier 1: Python Unit Tests -- K8s Client (3 tests)
 
-**Testable code scope**: `holmesgpt-api/src/clients/k8s_client.py` -- `_list_resource_quotas_sync`, `list_resource_quotas` (~25 lines, target >=80%)
+**Testable code scope**: `kubernaut-agent/src/clients/k8s_client.py` -- `_list_resource_quotas_sync`, `list_resource_quotas` (~25 lines, target >=80%)
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
@@ -150,12 +150,12 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 | `UT-HAPI-366-002` | `list_resource_quotas` returns empty list when no quotas exist | Pending |
 | `UT-HAPI-366-003` | `list_resource_quotas` returns error string on K8s API failure | Pending |
 
-**File**: `holmesgpt-api/tests/unit/test_k8s_client_label_queries.py` (extend existing)
+**File**: `kubernaut-agent/tests/unit/test_k8s_client_label_queries.py` (extend existing)
 **Pattern**: `_make_client()` with mocked `_core_v1.list_namespaced_resource_quota`, assert `(items, error)` tuple. Same as existing `UT-HAPI-056-022` through `033`.
 
 ### Tier 1: Python Unit Tests -- LabelDetector (7 tests)
 
-**Testable code scope**: `holmesgpt-api/src/detection/labels.py` -- `_detect_resource_quota`, `_summarize_quotas`, tuple return (~40 lines, target >=80%)
+**Testable code scope**: `kubernaut-agent/src/detection/labels.py` -- `_detect_resource_quota`, `_summarize_quotas`, tuple return (~40 lines, target >=80%)
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
@@ -167,7 +167,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 | `UT-HAPI-366-009` | Quota summary is None when no quotas exist | Pending |
 | `UT-HAPI-366-010` | Quota summary is None on detection error (graceful degradation) | Pending |
 
-**File**: `holmesgpt-api/tests/unit/test_label_detector.py` (extend existing)
+**File**: `kubernaut-agent/tests/unit/test_label_detector.py` (extend existing)
 **Pattern**: Tests call `detect_labels()`, destructure `(labels, quota_summary)`, and assert both elements.
 
 Mock fixture for UT-HAPI-366-007:
@@ -180,7 +180,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 ### Tier 1: Python Unit Tests -- Resource Context (3 tests)
 
-**Testable code scope**: `holmesgpt-api/src/toolsets/resource_context.py` -- `_detect_labels_if_needed` tuple destructuring, `quota_details` in `result_data` (~15 lines, target >=80%)
+**Testable code scope**: `kubernaut-agent/src/toolsets/resource_context.py` -- `_detect_labels_if_needed` tuple destructuring, `quota_details` in `result_data` (~15 lines, target >=80%)
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
@@ -188,7 +188,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 | `UT-HAPI-366-012` | `quota_details` absent from tool `result_data` when no quotas | Pending |
 | `UT-HAPI-366-013` | `detected_infrastructure.labels` contains only flat bool/string values (no nested dict) | Pending |
 
-**File**: `holmesgpt-api/tests/unit/test_resource_context_session_state.py` (extend existing)
+**File**: `kubernaut-agent/tests/unit/test_resource_context_session_state.py` (extend existing)
 **Pattern**: Mock `LabelDetector.detect_labels` to return `(labels_dict, quota_summary)` tuple. Assert `result_data["quota_details"]` and `result_data["detected_infrastructure"]["labels"]` structure.
 
 ### Tier 1: Go Unit Tests -- DetectedLabels (2 tests)
@@ -211,7 +211,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 | `IT-HAPI-366-001` | Full pipeline: K8s has quotas -> `resourceQuotaConstrained=true` in session state AND `quota_details` in tool result | Pending |
 | `IT-HAPI-366-002` | Full pipeline: K8s has no quotas -> `resourceQuotaConstrained=false` in session state AND no `quota_details` in tool result | Pending |
 
-**File**: `holmesgpt-api/tests/unit/test_resource_context_session_state.py` (extend existing)
+**File**: `kubernaut-agent/tests/unit/test_resource_context_session_state.py` (extend existing)
 **Rationale**: Uses mocked K8s client already available in this file. Avoids dependency on Go-bootstrapped infrastructure in `tests/integration/conftest.py` (Risk 5 mitigation).
 **Pattern**: Uses real `LabelDetector` (not patched) with mocked K8s client extended with `list_resource_quotas` mock. Asserts both session_state and tool result.
 
@@ -227,7 +227,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-SP-101
 **Type**: Unit (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_k8s_client_label_queries.py`
+**File**: `kubernaut-agent/tests/unit/test_k8s_client_label_queries.py`
 
 **Given**: K8s API has 1 ResourceQuota in namespace "default" with cpu hard=4, memory hard=8Gi
 **When**: `list_resource_quotas("default")` is called
@@ -244,7 +244,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-SP-101
 **Type**: Unit (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_k8s_client_label_queries.py`
+**File**: `kubernaut-agent/tests/unit/test_k8s_client_label_queries.py`
 
 **Given**: K8s API has no ResourceQuotas in namespace "default"
 **When**: `list_resource_quotas("default")` is called
@@ -260,7 +260,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-SP-103
 **Type**: Unit (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_k8s_client_label_queries.py`
+**File**: `kubernaut-agent/tests/unit/test_k8s_client_label_queries.py`
 
 **Given**: K8s API raises `ApiException(status=403, reason="Forbidden")` on list
 **When**: `list_resource_quotas("default")` is called
@@ -277,7 +277,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-SP-101
 **Type**: Unit (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_label_detector.py`
+**File**: `kubernaut-agent/tests/unit/test_label_detector.py`
 
 **Given**: `list_resource_quotas` returns 1 quota with cpu hard=4
 **When**: `detect_labels(k8s_context, owner_chain)` is called
@@ -294,7 +294,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-SP-101
 **Type**: Unit (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_label_detector.py`
+**File**: `kubernaut-agent/tests/unit/test_label_detector.py`
 
 **Given**: `list_resource_quotas` returns empty list `([], None)`
 **When**: `detect_labels(k8s_context, owner_chain)` is called
@@ -310,7 +310,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-SP-103
 **Type**: Unit (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_label_detector.py`
+**File**: `kubernaut-agent/tests/unit/test_label_detector.py`
 
 **Given**: `list_resource_quotas` returns `([], "Forbidden")`
 **When**: `detect_labels(k8s_context, owner_chain)` is called
@@ -327,7 +327,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-HAPI-250
 **Type**: Unit (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_label_detector.py`
+**File**: `kubernaut-agent/tests/unit/test_label_detector.py`
 
 **Given**: `list_resource_quotas` returns 1 quota: hard={cpu: "4", memory: "8Gi", pods: "20"}, used={cpu: "2500m", memory: "6Gi", pods: "15"}
 **When**: `detect_labels(k8s_context, owner_chain)` is called
@@ -349,7 +349,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-HAPI-250
 **Type**: Unit (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_label_detector.py`
+**File**: `kubernaut-agent/tests/unit/test_label_detector.py`
 
 **Given**: `list_resource_quotas` returns 2 quotas: Quota A (cpu hard=4, cpu used=2), Quota B (memory hard=8Gi, memory used=6Gi)
 **When**: `detect_labels(k8s_context, owner_chain)` is called
@@ -367,7 +367,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-HAPI-250
 **Type**: Unit (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_label_detector.py`
+**File**: `kubernaut-agent/tests/unit/test_label_detector.py`
 
 **Given**: `list_resource_quotas` returns `([], None)`
 **When**: `detect_labels(k8s_context, owner_chain)` is called
@@ -383,7 +383,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-SP-103
 **Type**: Unit (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_label_detector.py`
+**File**: `kubernaut-agent/tests/unit/test_label_detector.py`
 
 **Given**: `list_resource_quotas` raises `Exception("connection refused")`
 **When**: `detect_labels(k8s_context, owner_chain)` is called
@@ -401,7 +401,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-HAPI-250
 **Type**: Unit (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_resource_context_session_state.py`
+**File**: `kubernaut-agent/tests/unit/test_resource_context_session_state.py`
 
 **Given**: `LabelDetector.detect_labels` returns `(labels_with_quota_true, quota_summary_dict)`
 **When**: `_detect_labels_if_needed` is called via the tool
@@ -418,7 +418,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-HAPI-250
 **Type**: Unit (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_resource_context_session_state.py`
+**File**: `kubernaut-agent/tests/unit/test_resource_context_session_state.py`
 
 **Given**: `LabelDetector.detect_labels` returns `(labels_with_quota_false, None)`
 **When**: `_detect_labels_if_needed` is called via the tool
@@ -434,7 +434,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-HAPI-250
 **Type**: Unit (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_resource_context_session_state.py`
+**File**: `kubernaut-agent/tests/unit/test_resource_context_session_state.py`
 
 **Given**: `LabelDetector.detect_labels` returns `(labels_dict, quota_summary_dict)` where labels has all detection fields
 **When**: `_detect_labels_if_needed` places labels into `detected_infrastructure`
@@ -468,7 +468,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-HAPI-250
 **Type**: Integration (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_resource_context_session_state.py`
+**File**: `kubernaut-agent/tests/unit/test_resource_context_session_state.py`
 
 **Given**: Mocked K8s client with `list_resource_quotas` returning 1 quota (cpu hard=4 used=2500m, memory hard=8Gi used=6Gi, pods hard=20 used=15)
 **When**: `GetResourceContextTool` executes full pipeline (real `LabelDetector`, mocked K8s)
@@ -486,7 +486,7 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 **BR**: BR-HAPI-250
 **Type**: Integration (Python, pytest)
-**File**: `holmesgpt-api/tests/unit/test_resource_context_session_state.py`
+**File**: `kubernaut-agent/tests/unit/test_resource_context_session_state.py`
 
 **Given**: Mocked K8s client with `list_resource_quotas` returning `([], None)`
 **When**: `GetResourceContextTool` executes full pipeline (real `LabelDetector`, mocked K8s)
@@ -506,14 +506,14 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 - **Framework**: pytest (HolmesGPT API standard)
 - **Mocks**: K8s API only (`_core_v1.list_namespaced_resource_quota` via `MagicMock`)
-- **Location**: `holmesgpt-api/tests/unit/`
+- **Location**: `kubernaut-agent/tests/unit/`
 - **Existing patterns**: Follow `_make_client()` and `_make_k8s_queries()` helpers in existing test files
 
 ### Python Integration Tests
 
 - **Framework**: pytest
 - **Mocks**: K8s API only (mocked client), real `LabelDetector` business logic
-- **Location**: `holmesgpt-api/tests/unit/test_resource_context_session_state.py` (co-located per Risk 5 mitigation)
+- **Location**: `kubernaut-agent/tests/unit/test_resource_context_session_state.py` (co-located per Risk 5 mitigation)
 - **Infrastructure**: No external services needed; mocked K8s client provides all data
 
 ### Go Unit Tests
@@ -528,18 +528,18 @@ Mock fixture for UT-HAPI-366-008 (multi-quota aggregation):
 
 ```bash
 # Python unit tests (K8s client + LabelDetector + Resource Context)
-cd holmesgpt-api && python -m pytest tests/unit/test_k8s_client_label_queries.py -v -k "366"
-cd holmesgpt-api && python -m pytest tests/unit/test_label_detector.py -v -k "366"
-cd holmesgpt-api && python -m pytest tests/unit/test_resource_context_session_state.py -v -k "366"
+cd kubernaut-agent && python -m pytest tests/unit/test_k8s_client_label_queries.py -v -k "366"
+cd kubernaut-agent && python -m pytest tests/unit/test_label_detector.py -v -k "366"
+cd kubernaut-agent && python -m pytest tests/unit/test_resource_context_session_state.py -v -k "366"
 
 # Python integration tests
-cd holmesgpt-api && python -m pytest tests/unit/test_resource_context_session_state.py -v -k "IT_HAPI_366"
+cd kubernaut-agent && python -m pytest tests/unit/test_resource_context_session_state.py -v -k "IT_HAPI_366"
 
 # Go unit tests
 go test ./test/unit/aianalysis/... --ginkgo.focus="366"
 
 # All #366 tests
-cd holmesgpt-api && python -m pytest tests/unit/ -v -k "366"
+cd kubernaut-agent && python -m pytest tests/unit/ -v -k "366"
 go test ./test/unit/aianalysis/... --ginkgo.focus="366"
 ```
 
@@ -551,7 +551,7 @@ go test ./test/unit/aianalysis/... --ginkgo.focus="366"
 |------|-----------|--------------|
 | R1: Multiple ResourceQuotas in same namespace | Aggregation logic in `_summarize_quotas`: tightest hard limit per resource, sum used | UT-HAPI-366-008 |
 | R2: quota_summary leaking into labels dict | Option C: `detect_labels` returns `Tuple[Optional[Dict], Optional[Dict]]`; labels remain flat | UT-HAPI-366-013 |
-| R3: RBAC for `resourcequotas` | RBAC already granted in `holmesgpt-api.yaml`; graceful degradation on 403 | UT-HAPI-366-003, UT-HAPI-366-006, UT-HAPI-366-010 |
+| R3: RBAC for `resourcequotas` | RBAC already granted in `kubernaut-agent.yaml`; graceful degradation on 403 | UT-HAPI-366-003, UT-HAPI-366-006, UT-HAPI-366-010 |
 | R4: FailedDetections enum divergence | Add `gitOpsTool` + `resourceQuotaConstrained` to all 4 authoritative sources + run `make manifests && make generate && make generate-datastorage-client`; `gitOpsTool` fix in separate commit | UT-AA-366-001 |
 | R5: Integration test infra dependency | IT tests placed in `test_resource_context_session_state.py` using mocked K8s, not in `tests/integration/` | IT-HAPI-366-001, IT-HAPI-366-002 |
 | R6: Quantity parsing complexity | Pass raw quantity strings to LLM; no `_remaining` keys; no parsing needed | UT-HAPI-366-007 (asserts raw strings) |
@@ -569,13 +569,13 @@ go test ./test/unit/aianalysis/... --ginkgo.focus="366"
 - [ ] `pkg/shared/types/enrichment.go` line 140: Add `gitOpsTool,resourceQuotaConstrained` to `+kubebuilder:validation:items:Enum`; add `ResourceQuotaConstrained bool` field to struct
 - [ ] `api/openapi/data-storage-v1.yaml` line 2920: Add `resourceQuotaConstrained` to `failedDetections.items.enum`; add `resourceQuotaConstrained` boolean property
 - [ ] `pkg/datastorage/models/workflow_labels.go` line 121: Add `resourceQuotaConstrained` to `oneof` validation tag; add to `ValidDetectedLabelFields` slice; add `ResourceQuotaConstrained bool` field
-- [ ] `holmesgpt-api/src/models/incident_models.py` line 121: Add `"resourceQuotaConstrained"` to `DETECTED_LABELS_FIELD_NAMES` set; add `resourceQuotaConstrained: bool = Field(default=False, ...)` to Pydantic model; update `failedDetections` Field description
+- [ ] `kubernaut-agent/src/models/incident_models.py` line 121: Add `"resourceQuotaConstrained"` to `DETECTED_LABELS_FIELD_NAMES` set; add `resourceQuotaConstrained: bool = Field(default=False, ...)` to Pydantic model; update `failedDetections` Field description
 
 ### Derived (regenerated -- run after manual edits)
 
 - [ ] `make manifests` -> regenerates `config/crd/bases/kubernaut.ai_aianalyses.yaml` + `charts/kubernaut/crds/kubernaut.ai_aianalyses.yaml`
 - [ ] `make generate` -> copies OpenAPI spec to `pkg/datastorage/server/middleware/openapi_spec_data.yaml` + `pkg/audit/openapi_spec_data.yaml`
-- [ ] `make generate-datastorage-client` -> regenerates `pkg/datastorage/ogen-client/oas_*_gen.go` + `holmesgpt-api/src/clients/datastorage/.../detected_labels.py`
+- [ ] `make generate-datastorage-client` -> regenerates `pkg/datastorage/ogen-client/oas_*_gen.go` + `kubernaut-agent/src/clients/datastorage/.../detected_labels.py`
 
 ### Tests to update
 
@@ -591,11 +591,11 @@ go test ./test/unit/aianalysis/... --ginkgo.focus="366"
 
 Existing tests that call `detect_labels()` must be updated to destructure the new tuple return:
 
-- `holmesgpt-api/tests/unit/test_label_detector.py` (~35 call sites):
+- `kubernaut-agent/tests/unit/test_label_detector.py` (~35 call sites):
   - All test classes (`TestLabelDetectorHappyPath`, `TestLabelDetectorEdgeCases`, `TestLabelDetectorErrorHandling`, `TestLabelDetectorBranchGaps`)
   - Each `result = await detector.detect_labels(...)` becomes `result, _ = await detector.detect_labels(...)`
   - `_make_k8s_queries()` helper extended with `list_resource_quotas` mock (defaults to `([], None)` to preserve existing test behavior)
-- `holmesgpt-api/tests/unit/test_resource_context_session_state.py` (~12 mock sites):
+- `kubernaut-agent/tests/unit/test_resource_context_session_state.py` (~12 mock sites):
   - Each `mock_detector.detect_labels.return_value = LABELS_...` becomes `mock_detector.detect_labels.return_value = (LABELS_..., None)`
   - `mock_detector.detect_labels.return_value = None` becomes `mock_detector.detect_labels.return_value = (None, None)`
 

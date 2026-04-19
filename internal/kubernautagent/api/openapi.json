@@ -99,7 +99,7 @@
             }
           },
           "403": {
-            "description": "Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.\n\n**Source**: HAPI middleware (DD-AUTH-014)\n\n**Cause**: ServiceAccount lacks required SAR permissions.\n\n**Resolution**: Grant ServiceAccount the holmesgpt-api-client ClusterRole.\n\n**Authority**: DD-AUTH-014 (Middleware-Based SAR Authentication)",
+            "description": "Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.\n\n**Source**: HAPI middleware (DD-AUTH-014)\n\n**Cause**: ServiceAccount lacks required SAR permissions.\n\n**Resolution**: Grant ServiceAccount the kubernaut-agent-client ClusterRole.\n\n**Authority**: DD-AUTH-014 (Middleware-Based SAR Authentication)",
             "content": {
               "application/problem+json": {
                 "schema": {

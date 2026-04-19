@@ -28,7 +28,7 @@ HolmesGPT-API returns `root_cause_analysis` in its `/incident/analyze` response.
 
 ### Current State (v1.6 — Issue #529: Three-Phase RCA)
 
-**HAPI Code** (`holmesgpt-api/src/extensions/incident/llm_integration.py`):
+**HAPI Code** (`kubernaut-agent/src/extensions/incident/llm_integration.py`):
 ```python
 # Issue #529: Three-phase RCA flow.
 # Phase 1: LLM provides affectedResource in RCA output.
@@ -378,25 +378,25 @@ metadata:
 2. **ADR-001** (REFERENCE): CRD Spec Immutability (no changes - RCA target is in Status)
 
 ### API Specifications (Updated)
-1. **HAPI OpenAPI Spec** (`holmesgpt-api/api/openapi.json`): Add `affectedResource` schema with `apiVersion` to `root_cause_analysis`
-2. **HAPI Python Models** (`holmesgpt-api/src/models/incident_models.py`): Update docstring for `IncidentResponse.root_cause_analysis`
+1. **HAPI OpenAPI Spec** (`kubernaut-agent/api/openapi.json`): Add `affectedResource` schema with `apiVersion` to `root_cause_analysis`
+2. **HAPI Python Models** (`kubernaut-agent/src/models/incident_models.py`): Update docstring for `IncidentResponse.root_cause_analysis`
 3. **AIAnalysis CRD** (`api/aianalysis/v1alpha1/aianalysis_types.go`): Add `TargetResource` field with `APIVersion` to `RootCauseAnalysis`
 4. **RemediationRequest CRD** (`api/remediationrequest/v1alpha1/types.go`): Add `APIVersion` to `TargetResource`
 5. **SignalProcessing CRD** (`api/signalprocessing/v1alpha1/types.go`): Add `APIVersion` to `TargetResource`
 
 ### Implementation Files (Updated)
-1. **HAPI LLM Integration** (`holmesgpt-api/src/extensions/incident/llm_integration.py`): v1.4 — `_inject_target_resource()` replaces `_check_affected_resource_mismatch()`. Derives `affectedResource` and conditional `TARGET_RESOURCE_*` from `session_state["root_owner"]` per Issue #524.
-2. **HAPI Resource Context Toolset** (`holmesgpt-api/src/toolsets/resource_context.py`): Issue #524 — `get_namespaced_resource_context`, `get_cluster_resource_context`; store K8s-verified `root_owner` and `resource_scope` in `session_state`
-3. **HAPI Prompt Builder** (`holmesgpt-api/src/extensions/incident/prompt_builder.py`): v1.4 — Removed all `affectedResource` instructions. LLM focuses on `get_namespaced_resource_context` / `get_cluster_resource_context` (Issue #524).
-4. **HAPI Result Parser** (`holmesgpt-api/src/extensions/incident/result_parser.py`): v1.4 — Removed BR-HAPI-212 `rca_incomplete` check for missing `affectedResource` (superseded by `_inject_target_resource`).
-5. **HAPI Validation** (`holmesgpt-api/src/validation/workflow_response_validator.py`): v1.4 — `HAPI_MANAGED_PARAMS` and skip required-check for HAPI-managed params. **Issue #524**: Removed `_validate_canonical_params` (former Step 0); injection is conditional on schema declarations.
-6. **HAPI Workflow Discovery** (`holmesgpt-api/src/toolsets/workflow_discovery.py`): v1.4 — `strip_hapi_managed_params()` removes `TARGET_RESOURCE_*` from schema before returning to LLM.
+1. **HAPI LLM Integration** (`kubernaut-agent/src/extensions/incident/llm_integration.py`): v1.4 — `_inject_target_resource()` replaces `_check_affected_resource_mismatch()`. Derives `affectedResource` and conditional `TARGET_RESOURCE_*` from `session_state["root_owner"]` per Issue #524.
+2. **HAPI Resource Context Toolset** (`kubernaut-agent/src/toolsets/resource_context.py`): Issue #524 — `get_namespaced_resource_context`, `get_cluster_resource_context`; store K8s-verified `root_owner` and `resource_scope` in `session_state`
+3. **HAPI Prompt Builder** (`kubernaut-agent/src/extensions/incident/prompt_builder.py`): v1.4 — Removed all `affectedResource` instructions. LLM focuses on `get_namespaced_resource_context` / `get_cluster_resource_context` (Issue #524).
+4. **HAPI Result Parser** (`kubernaut-agent/src/extensions/incident/result_parser.py`): v1.4 — Removed BR-HAPI-212 `rca_incomplete` check for missing `affectedResource` (superseded by `_inject_target_resource`).
+5. **HAPI Validation** (`kubernaut-agent/src/validation/workflow_response_validator.py`): v1.4 — `HAPI_MANAGED_PARAMS` and skip required-check for HAPI-managed params. **Issue #524**: Removed `_validate_canonical_params` (former Step 0); injection is conditional on schema declarations.
+6. **HAPI Workflow Discovery** (`kubernaut-agent/src/toolsets/workflow_discovery.py`): v1.4 — `strip_hapi_managed_params()` removes `TARGET_RESOURCE_*` from schema before returning to LLM.
 7. **AIAnalysis Response Processor** (`pkg/aianalysis/handlers/response_processor.go`): `ExtractRootCauseAnalysis` maps `affectedResource` from HAPI response into CRD.
 8. **AIAnalysis Rego Evaluator** (`pkg/aianalysis/rego/evaluator.go`): `affected_resource` in `PolicyInput`.
 9. **RemediationOrchestrator Scope Validator** (`pkg/remediationorchestrator/routing/scope_validator.go`): Uses `AffectedResource` for scope validation.
 
 ### Documentation (Created/Updated)
-1. **LLM Response Format Guide** (`holmesgpt-api/docs/LLM_RESPONSE_FORMAT.md`): Document `affectedResource` structure with `apiVersion` examples
+1. **LLM Response Format Guide** (`kubernaut-agent/docs/LLM_RESPONSE_FORMAT.md`): Document `affectedResource` structure with `apiVersion` examples
 2. **Scope Management Handoff**: Reference RCA target with `apiVersion` in RO validation (internal development reference, removed in v1.0)
 
 ---
@@ -429,7 +429,7 @@ metadata:
 Three independent layers ensure `affectedResource` is always populated correctly, producing a consistent operator experience regardless of which layer catches an issue:
 
 ### Layer 1: HAPI Injection (Authoritative Source — BR-496 v2)
-- **File**: `holmesgpt-api/src/extensions/incident/llm_integration.py` (`_inject_target_resource`)
+- **File**: `kubernaut-agent/src/extensions/incident/llm_integration.py` (`_inject_target_resource`)
 - **Mechanism**: `get_namespaced_resource_context` or `get_cluster_resource_context` (from the `resource_context` toolset) resolves context for the RCA target and stores `root_owner` and `resource_scope` in `session_state`. After the self-correction loop, `_inject_target_resource` sets `affectedResource` from `root_owner` and injects only declared `TARGET_RESOURCE_*` workflow parameters.
 - **Missing root_owner**: If `root_owner` is absent from `session_state` (tool never called or failed) → `needs_human_review=true`, `human_review_reason=rca_incomplete`.
 - **LLM overwrite**: Any `affectedResource` the LLM might include is unconditionally overwritten by the K8s-verified `root_owner`.

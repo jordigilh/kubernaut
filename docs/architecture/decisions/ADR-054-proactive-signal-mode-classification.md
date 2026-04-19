@@ -247,8 +247,8 @@ Expose a new `/api/v1/proactive-investigation` endpoint alongside the existing i
 | AA CRD | `api/aianalysis/v1alpha1/aianalysis_types.go` | Add `SignalMode` to `SignalContextInput` |
 | RO creator | `pkg/remediationorchestrator/creator/aianalysis.go` | Change `SignalName` source to `sp.Status` + copy `SignalMode` in `buildSignalContext()` |
 | AA builder | `pkg/aianalysis/handlers/request_builder.go` | Pass `SignalMode` in `BuildIncidentRequest()` |
-| HAPI OpenAPI | `holmesgpt-api/api/openapi.json` | Add `signal_mode` to `IncidentRequest` |
-| HAPI prompt | `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Conditional prompt strategy (Phases 1-2, 5) |
+| HAPI OpenAPI | `kubernaut-agent/api/openapi.json` | Add `signal_mode` to `IncidentRequest` |
+| HAPI prompt | `kubernaut-agent/src/extensions/incident/prompt_builder.py` | Conditional prompt strategy (Phases 1-2, 5) |
 | Mock LLM | `test/services/mock-llm/src/server.py` | Proactive scenario variants + detection logic |
 | Deepcopy | `zz_generated.deepcopy.go` | `make generate` |
 
@@ -268,7 +268,7 @@ Expose a new `/api/v1/proactive-investigation` endpoint alongside the existing i
 - [BR-AI-084: Proactive Signal Mode Prompt Strategy](../../requirements/BR-AI-084-proactive-signal-mode-prompt-strategy.md)
 - [Issue #55: Proactive remediation pipeline](https://github.com/jordigilh/kubernaut/issues/55)
 - [DD-WORKFLOW-001: Mandatory Label Schema](DD-WORKFLOW-001-mandatory-label-schema.md)
-- [ADR-045: AIAnalysis ↔ HolmesGPT API Contract](ADR-045-aianalysis-holmesgpt-api-contract.md)
+- [ADR-045: AIAnalysis ↔ HolmesGPT API Contract](ADR-045-aianalysis-kubernaut-agent-contract.md)
 
 ---
 

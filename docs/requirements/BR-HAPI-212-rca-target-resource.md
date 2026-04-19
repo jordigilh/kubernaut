@@ -206,7 +206,7 @@ root_cause_analysis:
 ```
 
 **Acceptance Criteria**:
-1. ✅ OpenAPI spec (`holmesgpt-api/api/openapi.json`) includes `affectedResource` schema
+1. ✅ OpenAPI spec (`kubernaut-agent/api/openapi.json`) includes `affectedResource` schema
 2. ✅ OpenAPI spec marks `affectedResource` as optional
 3. ✅ OpenAPI spec includes descriptions for all fields
 4. ✅ Python client generation reflects updated schema
@@ -376,8 +376,8 @@ HAPI no longer relies on the LLM to provide `affectedResource`. Instead, `_injec
 ## 🚀 **Implementation Plan**
 
 ### **Phase 1: HAPI OpenAPI Spec Update**
-1. Update `holmesgpt-api/api/openapi.json` to add `affectedResource` schema
-2. Update `holmesgpt-api/src/models/incident_models.py` docstring
+1. Update `kubernaut-agent/api/openapi.json` to add `affectedResource` schema
+2. Update `kubernaut-agent/src/models/incident_models.py` docstring
 3. Regenerate Python client
 4. Update LLM prompt templates to include `affectedResource` guidance
 
@@ -405,7 +405,7 @@ HAPI no longer relies on the LLM to provide `affectedResource`. Instead, `_injec
 ---
 
 ### **Phase 3: Documentation**
-1. Create LLM response format guide (`holmesgpt-api/docs/LLM_RESPONSE_FORMAT.md`)
+1. Create LLM response format guide (`kubernaut-agent/docs/LLM_RESPONSE_FORMAT.md`)
 2. Update HAPI API documentation
 3. Update integration contract documentation (DD-CONTRACT-002)
 

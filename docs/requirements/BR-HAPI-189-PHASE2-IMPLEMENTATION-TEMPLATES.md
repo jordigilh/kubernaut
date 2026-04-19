@@ -1253,5 +1253,5 @@ def test_factory_function_creates_wrapper():
 
 - Phase 1 Findings: `BR-HAPI-189-PHASE1-SDK-INVESTIGATION.md`
 - BR Specification: `BR-HAPI-VALIDATION-RESILIENCE.md`
-- Service Spec: `docs/services/stateless/08-holmesgpt-api.md`
+- Service Spec: `docs/services/stateless/08-kubernaut-agent.md`
 

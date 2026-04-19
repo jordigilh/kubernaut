@@ -803,7 +803,7 @@ It("should complete E2E flow with no_workflows_matched and create notification",
 - ✅ Defense-in-depth strategy followed (70/50/10 BR coverage)
 - ✅ Anti-patterns explicitly warned against
 - ✅ Implementation hints provided for guidance
-- ⚠️ 5% risk: Mock LLM configuration for E2E may need adjustment based on actual holmesgpt-api mock implementation
+- ⚠️ 5% risk: Mock LLM configuration for E2E may need adjustment based on actual kubernaut-agent mock implementation
 
 ---
 

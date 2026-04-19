@@ -298,7 +298,7 @@ func generateHTMLReport(coverDir, profileFile string, writer io.Writer) {
 
 // E2EPythonCoverageOptions configures Python coverage collection for a service.
 type E2EPythonCoverageOptions struct {
-	// ServiceName is the short service name used in file naming (e.g., "holmesgpt-api").
+	// ServiceName is the short service name used in file naming (e.g., "kubernaut-agent").
 	ServiceName string
 	// ClusterName is the Kind cluster name.
 	ClusterName string
@@ -309,7 +309,7 @@ type E2EPythonCoverageOptions struct {
 	// KubeconfigPath is the path to the kubeconfig for the Kind cluster.
 	KubeconfigPath string
 	// SourceDir is the path to Python source (relative to project root) for path remapping.
-	// e.g., "holmesgpt-api/src"
+	// e.g., "kubernaut-agent/src"
 	SourceDir string
 	// ContainerSourceDir is the source path inside the container.
 	// e.g., "/opt/app-root/src/src"

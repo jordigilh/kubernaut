@@ -309,12 +309,12 @@ func setupAIAnalysisTestInfrastructure(ctx context.Context) (*AIAnalysisTestInfr
 
 **Files to Modify**:
 
-1. **DELETED**: `holmesgpt-api/src/mock_responses.py`
+1. **DELETED**: `kubernaut-agent/src/mock_responses.py`
    - Mock response generation logic was removed
    - Edge case signal type handling was removed
    - MOCK_* constants were removed
 
-2. **MODIFY**: `holmesgpt-api/src/extensions/incident/endpoint.py`
+2. **MODIFY**: `kubernaut-agent/src/extensions/incident/endpoint.py`
    ```python
    # BEFORE (mock-aware):
    if os.getenv("MOCK_LLM_MODE") == "true":
@@ -326,13 +326,13 @@ func setupAIAnalysisTestInfrastructure(ctx context.Context) (*AIAnalysisTestInfr
    response = self.llm_client.analyze(prompt)  # Always use SDK
    ```
 
-3. **MODIFY**: `holmesgpt-api/src/extensions/recovery/endpoint.py`
+3. **MODIFY**: `kubernaut-agent/src/extensions/recovery/endpoint.py`
    ```python
    # Same pattern - remove all MOCK_LLM_MODE checks
    response = self.llm_client.analyze(prompt)
    ```
 
-4. **MODIFY**: `holmesgpt-api/tests/conftest.py`
+4. **MODIFY**: `kubernaut-agent/tests/conftest.py`
    ```python
    # BEFORE: Python-based mock server
    @pytest.fixture(scope="session")
@@ -358,7 +358,7 @@ func setupAIAnalysisTestInfrastructure(ctx context.Context) (*AIAnalysisTestInfr
 **E2E Test Suite Setup**:
 
 ```go
-// test/e2e/holmesgpt-api/aiagent_api_e2e_suite_test.go
+// test/e2e/kubernaut-agent/aiagent_api_e2e_suite_test.go
 
 var _ = BeforeSuite(func() {
     ctx := context.Background()
@@ -465,7 +465,7 @@ func (s *NoWorkflowScenario) GenerateResponse(messages []Message) (*ChatCompleti
 
 | Service | Port | Usage | Test Suite |
 |---------|------|-------|------------|
-| **HAPI** | 18760 | Mock LLM for HAPI E2E tests | `test/e2e/holmesgpt-api/` |
+| **HAPI** | 18760 | Mock LLM for HAPI E2E tests | `test/e2e/kubernaut-agent/` |
 | **AIAnalysis** | 18761 | Mock LLM for AA integration tests | `test/integration/aianalysis/` |
 | **RemediationOrchestrator** | 18762 | Mock LLM for RO integration tests | `test/integration/remediation/` |
 

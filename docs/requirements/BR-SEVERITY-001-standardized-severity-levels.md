@@ -175,8 +175,8 @@ This table documents where each component enforces or references the canonical s
 | Component | Mechanism | Levels Supported | Source File |
 |-----------|-----------|-----------------|-------------|
 | **AIAnalysis CRD** | `kubebuilder:validation:Enum` | `critical`, `high`, `medium`, `low`, `unknown` | `api/aianalysis/v1alpha1/aianalysis_types.go` |
-| **HAPI Incident Prompt** | LLM instruction text | `critical`, `high`, `medium`, `low`, `unknown` | `holmesgpt-api/src/extensions/incident/prompt_builder.py` |
-| **HAPI Recovery Prompt** | LLM instruction text | `critical`, `high`, `medium`, `low`, `unknown` | `holmesgpt-api/src/extensions/recovery/prompt_builder.py` |
+| **HAPI Incident Prompt** | LLM instruction text | `critical`, `high`, `medium`, `low`, `unknown` | `kubernaut-agent/src/extensions/incident/prompt_builder.py` |
+| **HAPI Recovery Prompt** | LLM instruction text | `critical`, `high`, `medium`, `low`, `unknown` | `kubernaut-agent/src/extensions/recovery/prompt_builder.py` |
 | **SignalProcessing Rego** | Rego policy output | `critical`, `high`, `medium`, `low`, `unknown` | `config/rego/severity.rego` |
 | **Workflow Catalog** | DataStorage label filter (JSONB array, ? operator) | `[critical, high, medium, low]` | `api/openapi/data-storage-v1.yaml` |
 | **Prometheus Metrics** | Label cardinality | `critical`, `high`, `medium`, `low`, `unknown` | Various `metrics.go` files |

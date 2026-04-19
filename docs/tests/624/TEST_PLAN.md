@@ -113,7 +113,7 @@ Validates three fixes: (A) Pattern 2B regex in `result_parser.py` correctly extr
 
 ### Tier 1: Unit Tests
 
-**File**: `holmesgpt-api/tests/unit/test_pattern_2b_nested_json.py`
+**File**: `kubernaut-agent/tests/unit/test_pattern_2b_nested_json.py`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
@@ -121,7 +121,7 @@ Validates three fixes: (A) Pattern 2B regex in `result_parser.py` correctly extr
 | `UT-HAPI-624-002` | Pattern 2B extracts nested workflow JSON correctly | Pending |
 | `UT-HAPI-624-003` | Unbalanced braces return empty dict gracefully | Pending |
 
-**File**: `holmesgpt-api/tests/unit/test_ensure_response_shape.py`
+**File**: `kubernaut-agent/tests/unit/test_ensure_response_shape.py`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
@@ -130,7 +130,7 @@ Validates three fixes: (A) Pattern 2B regex in `result_parser.py` correctly extr
 | `UT-HAPI-624-006` | Enrichment failure dict passes IncidentResponseData validation | Pending |
 | `UT-HAPI-624-007` | Phase-1 exhaustion dict passes IncidentResponseData validation | Pending |
 
-**File**: `holmesgpt-api/tests/unit/test_phase1_structured_output.py`
+**File**: `kubernaut-agent/tests/unit/test_phase1_structured_output.py`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
@@ -140,7 +140,7 @@ Validates three fixes: (A) Pattern 2B regex in `result_parser.py` correctly extr
 
 ### Tier 2: Integration Tests
 
-**File**: `holmesgpt-api/tests/integration/test_audit_normalization_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_audit_normalization_integration.py`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
@@ -152,15 +152,15 @@ Validates three fixes: (A) Pattern 2B regex in `result_parser.py` correctly extr
 ## 10. Environmental Needs
 
 - **Framework**: pytest
-- **Location**: `holmesgpt-api/tests/unit/`, `holmesgpt-api/tests/integration/`
-- **Configuration**: `holmesgpt-api/pytest.ini`
+- **Location**: `kubernaut-agent/tests/unit/`, `kubernaut-agent/tests/integration/`
+- **Configuration**: `kubernaut-agent/pytest.ini`
 
 ---
 
 ## 11. Execution
 
 ```bash
-cd holmesgpt-api
+cd kubernaut-agent
 pytest tests/unit/test_pattern_2b_nested_json.py tests/unit/test_ensure_response_shape.py -v
 pytest tests/integration/test_audit_normalization_integration.py -v
 ```

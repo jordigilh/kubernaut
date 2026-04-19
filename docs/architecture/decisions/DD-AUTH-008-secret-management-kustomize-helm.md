@@ -225,7 +225,7 @@ kubernaut/
 │       ├── values.yaml                  # Secret names (references)
 │       └── templates/
 │           ├── data-storage-deployment.yaml
-│           └── holmesgpt-api-deployment.yaml
+│           └── kubernaut-agent-deployment.yaml
 └── docs/
     └── architecture/decisions/
         └── DD-AUTH-008-secret-management-kustomize-helm.md  # This doc
@@ -252,7 +252,7 @@ secretGenerator:
       disableNameSuffixHash: true  # Stable name for Helm reference
 
   # HolmesGPT API OAuth2-Proxy Cookie Secret
-  - name: holmesgpt-api-oauth-proxy-secret
+  - name: kubernaut-agent-oauth-proxy-secret
     literals:
       - cookie-secret=$(openssl rand -base64 32)
     options:
@@ -280,7 +280,7 @@ dataStorage:
 
 holmesgptApi:
   oauth:
-    secretName: holmesgpt-api-oauth-proxy-secret
+    secretName: kubernaut-agent-oauth-proxy-secret
     secretKey: cookie-secret
   
   image:
@@ -384,7 +384,7 @@ secretGenerator:
     options:
       disableNameSuffixHash: true
 
-  - name: holmesgpt-api-oauth-proxy-secret
+  - name: kubernaut-agent-oauth-proxy-secret
     files:
       - cookie-secret=/vault/secrets/hapi-cookie-secret.txt
     options:

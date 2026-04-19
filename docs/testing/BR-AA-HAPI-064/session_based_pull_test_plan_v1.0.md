@@ -88,8 +88,8 @@ with synchronous response body validation. They must be refactored to the async-
 
 | File | Tests affected | Refactoring pattern |
 | ---- | -------------- | ------------------- |
-| `holmesgpt-api/tests/unit/test_recovery.py` | 11 endpoint calls | Submit (202) → GET result (200) → assert body |
-| `holmesgpt-api/tests/unit/test_sdk_availability.py` | 1 endpoint call | Submit (202) → GET result (200) → assert body |
+| `kubernaut-agent/tests/unit/test_recovery.py` | 11 endpoint calls | Submit (202) → GET result (200) → assert body |
+| `kubernaut-agent/tests/unit/test_sdk_availability.py` | 1 endpoint call | Submit (202) → GET result (200) → assert body |
 
 Files with string references to endpoint paths but no HTTP calls (`test_health.py`, `test_rfc7807_errors.py`)
 are **not affected** and require no changes.
@@ -281,9 +281,9 @@ request lifecycle, so the submit → get-result pattern works without polling or
 
 ## 2. Unit Tests -- HAPI (Python)
 
-**Location**: `holmesgpt-api/tests/unit/test_session_manager.py`, `holmesgpt-api/tests/unit/test_session_endpoints.py`
+**Location**: `kubernaut-agent/tests/unit/test_session_manager.py`, `kubernaut-agent/tests/unit/test_session_endpoints.py`
 **Framework**: pytest
-**Existing pattern reference**: `holmesgpt-api/tests/unit/test_health.py`
+**Existing pattern reference**: `kubernaut-agent/tests/unit/test_health.py`
 
 ### 2.1 SessionManager Core
 
@@ -496,10 +496,10 @@ CRD Events team completed issues #71-#73. These integration tests validate sessi
 
 ## 4. Integration Tests -- HAPI (Python)
 
-**Location**: `holmesgpt-api/tests/integration/test_session_manager_integration.py`
+**Location**: `kubernaut-agent/tests/integration/test_session_manager_integration.py`
 **Framework**: pytest
 **Infrastructure**: Mock LLM + DataStorage (per existing HAPI integration pattern)
-**Existing pattern reference**: `holmesgpt-api/tests/integration/test_hapi_audit_flow_integration.py`
+**Existing pattern reference**: `kubernaut-agent/tests/integration/test_hapi_audit_flow_integration.py`
 
 **Critical**: Audit flow follows existing pattern: call business logic directly -> `audit_store.flush()` -> query via `query_audit_events_with_retry()` -> assert **exact** counts.
 
@@ -578,9 +578,9 @@ CRD Events team completed issues #71-#73. These integration tests validate sessi
 
 ### 5.2 HAPI E2E
 
-**Location**: `test/e2e/holmesgpt-api/session_endpoints_test.go`
+**Location**: `test/e2e/kubernaut-agent/session_endpoints_test.go`
 **Infrastructure**: Kind cluster with HAPI + DS (PostgreSQL, Redis) + Mock LLM. NO CRD controllers.
-**Existing pattern reference**: `test/e2e/holmesgpt-api/incident_analysis_test.go`, `test/e2e/holmesgpt-api/audit_pipeline_test.go`
+**Existing pattern reference**: `test/e2e/kubernaut-agent/incident_analysis_test.go`, `test/e2e/kubernaut-agent/audit_pipeline_test.go`
 
 #### Incident Session Endpoints (6 scenarios)
 
@@ -678,12 +678,12 @@ Mock LLM itself does not need session endpoints (HAPI manages sessions internall
 | Tier        | Service | File Path                                                             |
 | ----------- | ------- | --------------------------------------------------------------------- |
 | Unit        | AA      | `test/unit/aianalysis/investigating_handler_session_test.go`          |
-| Unit        | HAPI    | `holmesgpt-api/tests/unit/test_session_manager.py`                    |
-| Unit        | HAPI    | `holmesgpt-api/tests/unit/test_session_endpoints.py`                  |
+| Unit        | HAPI    | `kubernaut-agent/tests/unit/test_session_manager.py`                    |
+| Unit        | HAPI    | `kubernaut-agent/tests/unit/test_session_endpoints.py`                  |
 | Integration | AA      | `test/integration/aianalysis/session_flow_integration_test.go`        |
-| Integration | HAPI    | `holmesgpt-api/tests/integration/test_session_manager_integration.py` |
+| Integration | HAPI    | `kubernaut-agent/tests/integration/test_session_manager_integration.py` |
 | E2E         | AA      | `test/e2e/aianalysis/08_session_async_flow_test.go`                   |
-| E2E         | HAPI    | `test/e2e/holmesgpt-api/session_endpoints_test.go`                    |
+| E2E         | HAPI    | `test/e2e/kubernaut-agent/session_endpoints_test.go`                    |
 
 ---
 
@@ -695,7 +695,7 @@ Mock LLM itself does not need session endpoints (HAPI manages sessions internall
 - All 6 HAPI integration tests passing with **exact** audit count validation (IT-HAPI-064-001 through 006)
 - All 13 E2E tests passing (E2E-AA-064-001, E2E-HAPI-064-001 through 012)
 - **Existing HAPI unit tests refactored** to async-aware pattern per "Async-First Endpoints" decision (12 tests in 2 files)
-- **Full existing HAPI unit test suite passes** after async migration (`make test-unit-holmesgpt-api`)
+- **Full existing HAPI unit test suite passes** after async migration (`make test-unit-kubernaut-agent`)
 - No new lint errors introduced
 - No `time.Sleep()` in any test (use `Eventually()`)
 - No `Skip()` or `XIt()` in any test

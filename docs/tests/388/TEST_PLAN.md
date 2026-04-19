@@ -72,15 +72,15 @@ Tests validate: "When the LLM determines an alert is benign, the system correctl
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `holmesgpt-api/src/extensions/incident/result_parser.py` | `parse_incident_response` (new `actionable` field extraction + routing) | ~20 |
-| `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Prompt template (Outcome D section + `# actionable` field definition) | ~25 |
+| `kubernaut-agent/src/extensions/incident/result_parser.py` | `parse_incident_response` (new `actionable` field extraction + routing) | ~20 |
+| `kubernaut-agent/src/extensions/incident/prompt_builder.py` | Prompt template (Outcome D section + `# actionable` field definition) | ~25 |
 | `pkg/aianalysis/handlers/response_processor.go` | `ProcessIncidentResponse` (new `Actionability == NotActionable` routing), `hasNotActionableSignal` | ~15 |
 
 ### Integration-Testable Code (I/O, wiring, cross-component)
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `holmesgpt-api/src/extensions/incident/llm_integration.py` | `analyze_incident` → full flow with mock LLM returning `actionable: false` | ~30 |
+| `kubernaut-agent/src/extensions/incident/llm_integration.py` | `analyze_incident` → full flow with mock LLM returning `actionable: false` | ~30 |
 | `pkg/aianalysis/handlers/response_processor.go` | Full `ProcessIncidentResponse` with real HAPI client | ~50 |
 
 ---
@@ -157,7 +157,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-200 (extension)
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_resolved_signals_br_hapi_200.py`
+**File**: `kubernaut-agent/tests/unit/test_resolved_signals_br_hapi_200.py`
 
 **Given**: The HAPI prompt builder generates the incident analysis prompt
 **When**: The prompt is built for any incident
@@ -178,7 +178,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-200 (extension)
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_resolved_signals_br_hapi_200.py`
+**File**: `kubernaut-agent/tests/unit/test_resolved_signals_br_hapi_200.py`
 
 **Given**: LLM analysis text containing `# actionable\nfalse`, `# selected_workflow\nNone`, `# confidence\n0.85`
 **When**: `parse_incident_response` processes the analysis
@@ -197,7 +197,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-200 (extension)
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_resolved_signals_br_hapi_200.py`
+**File**: `kubernaut-agent/tests/unit/test_resolved_signals_br_hapi_200.py`
 
 **Given**: LLM analysis containing `actionable: false` AND `needs_human_review: true` (contradiction)
 **When**: `parse_incident_response` processes the analysis
@@ -215,7 +215,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-200 (extension)
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_resolved_signals_br_hapi_200.py`
+**File**: `kubernaut-agent/tests/unit/test_resolved_signals_br_hapi_200.py`
 
 **Given**: LLM analysis with `actionable: false` and `selected_workflow: None`
 **When**: `parse_incident_response` processes the analysis
@@ -231,7 +231,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-200 (extension)
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_resolved_signals_br_hapi_200.py`
+**File**: `kubernaut-agent/tests/unit/test_resolved_signals_br_hapi_200.py`
 
 **Given**: LLM analysis with `actionable: false`
 **When**: `parse_incident_response` processes the analysis
@@ -282,7 +282,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-200 (extension)
 **Type**: Integration
-**File**: `holmesgpt-api/tests/integration/test_not_actionable_integration.py`
+**File**: `kubernaut-agent/tests/integration/test_not_actionable_integration.py`
 
 **Given**: HAPI endpoint configured with a mock LLM that returns an analysis containing `actionable: false` for a `KubePersistentVolumeClaimOrphaned` signal
 **When**: An incident analysis request is sent to `POST /api/v1/incident/analyze`
@@ -323,7 +323,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 - **Framework**: pytest (existing HAPI convention)
 - **Mocks**: Mock LLM responses (pre-built analysis text)
-- **Location**: `holmesgpt-api/tests/unit/`
+- **Location**: `kubernaut-agent/tests/unit/`
 
 ### Unit Tests (Go — AIAnalysis)
 
@@ -335,7 +335,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 - **Framework**: pytest with httpx/TestClient
 - **Mocks**: Mock LLM only (mock SDK agent response)
-- **Location**: `holmesgpt-api/tests/integration/`
+- **Location**: `kubernaut-agent/tests/integration/`
 
 ### Integration Tests (Go — RO)
 
@@ -349,10 +349,10 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 
 ```bash
 # HAPI unit tests
-cd holmesgpt-api && python -m pytest tests/unit/test_resolved_signals_br_hapi_200.py -v
+cd kubernaut-agent && python -m pytest tests/unit/test_resolved_signals_br_hapi_200.py -v
 
 # HAPI integration tests
-cd holmesgpt-api && python -m pytest tests/integration/test_not_actionable_integration.py -v
+cd kubernaut-agent && python -m pytest tests/integration/test_not_actionable_integration.py -v
 
 # AIAnalysis unit tests
 go test ./test/unit/aianalysis/... -ginkgo.focus="UT-AA-388"

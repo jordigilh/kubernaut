@@ -444,7 +444,7 @@ spec:
     - MaxRetriesExceeded: Check HAPI pod health, LLM backend availability, network connectivity
     - TransientError: Verify LLM provider (Vertex AI / Anthropic) is operational
     - PermanentError: Check HAPI configuration, authentication credentials, API keys
-    - Review HAPI logs: kubectl logs -n kubernaut-system -l app=holmesgpt-api --tail=100
+    - Review HAPI logs: kubectl logs -n kubernaut-system -l app=kubernaut-agent --tail=100
 ```
 
 ---

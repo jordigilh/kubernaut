@@ -492,7 +492,7 @@ labels = {
 3. AIAnalysis combines LLM-determined labels + detected labels
 4. Calls Data Storage workflow search with ALL labels
 
-**Implementation**: `holmesgpt-api/src/extensions/recovery.py`
+**Implementation**: `kubernaut-agent/src/extensions/recovery.py`
 
 ```python
 def search_workflows(context, rca_findings):
@@ -670,13 +670,13 @@ func (r *WorkflowRepository) SearchWorkflows(ctx context.Context, filters *Workf
 ### Phase 3: Update AIAnalysis Integration (1-2 hours)
 
 **Tasks**:
-1. Update `holmesgpt-api/src/extensions/recovery.py` to pass detected labels
-2. Update `holmesgpt-api/src/toolsets/workflow_catalog.py` to document optional labels
+1. Update `kubernaut-agent/src/extensions/recovery.py` to pass detected labels
+2. Update `kubernaut-agent/src/toolsets/workflow_catalog.py` to document optional labels
 3. Add integration tests for label pass-through
 
 **Files**:
-- `holmesgpt-api/src/extensions/recovery.py`
-- `holmesgpt-api/src/toolsets/workflow_catalog.py`
+- `kubernaut-agent/src/extensions/recovery.py`
+- `kubernaut-agent/src/toolsets/workflow_catalog.py`
 - `test/integration/datastorage/workflow_catalog_test.go`
 
 ---

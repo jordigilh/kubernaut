@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
@@ -60,6 +61,30 @@ type clusterResponse struct {
 	RemediationHistory *enrichment.RemediationHistoryResult `json:"remediation_history"`
 }
 
+func computeSpecHash(ctx context.Context, k8s enrichment.K8sClient, kind, name, namespace, toolName string) string {
+	computed, err := k8s.GetSpecHash(ctx, kind, name, namespace)
+	if err != nil {
+		slog.Warn(toolName+": specHash computation failed, proceeding with empty",
+			slog.String("kind", kind), slog.String("name", name),
+			slog.String("namespace", namespace), slog.String("error", err.Error()))
+		return ""
+	}
+	return computed
+}
+
+func fetchRemediationHistory(ctx context.Context, ds enrichment.DataStorageClient, kind, name, namespace, specHash, toolName string) *enrichment.RemediationHistoryResult {
+	result, err := ds.GetRemediationHistory(ctx, kind, name, namespace, specHash)
+	if err != nil {
+		slog.Warn(toolName+": remediation history fetch failed",
+			slog.String("kind", kind), slog.String("name", name),
+			slog.String("namespace", namespace), slog.String("error", err.Error()))
+	}
+	if result == nil {
+		result = &enrichment.RemediationHistoryResult{}
+	}
+	return result
+}
+
 // --- get_namespaced_resource_context ---
 
 type namespacedResourceContextTool struct {
@@ -86,7 +111,12 @@ func (t *namespacedResourceContextTool) Execute(ctx context.Context, args json.R
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	chain, _ := t.k8s.GetOwnerChain(ctx, params.Kind, params.Name, params.Namespace)
+	chain, chainErr := t.k8s.GetOwnerChain(ctx, params.Kind, params.Name, params.Namespace)
+	if chainErr != nil {
+		slog.Warn("get_namespaced_resource_context: owner chain resolution failed",
+			slog.String("kind", params.Kind), slog.String("name", params.Name),
+			slog.String("namespace", params.Namespace), slog.String("error", chainErr.Error()))
+	}
 
 	rootOwner := rootOwnerResponse{
 		Kind:      params.Kind,
@@ -102,10 +132,8 @@ func (t *namespacedResourceContextTool) Execute(ctx context.Context, args json.R
 		}
 	}
 
-	histResult, _ := t.ds.GetRemediationHistory(ctx, rootOwner.Kind, rootOwner.Name, rootOwner.Namespace, "")
-	if histResult == nil {
-		histResult = &enrichment.RemediationHistoryResult{}
-	}
+	specHash := computeSpecHash(ctx, t.k8s, rootOwner.Kind, rootOwner.Name, rootOwner.Namespace, "get_namespaced_resource_context")
+	histResult := fetchRemediationHistory(ctx, t.ds, rootOwner.Kind, rootOwner.Name, rootOwner.Namespace, specHash, "get_namespaced_resource_context")
 
 	resp := namespacedResponse{
 		RootOwner:          rootOwner,
@@ -121,12 +149,13 @@ func (t *namespacedResourceContextTool) Execute(ctx context.Context, args json.R
 // --- get_cluster_resource_context ---
 
 type clusterResourceContextTool struct {
-	ds enrichment.DataStorageClient
+	ds  enrichment.DataStorageClient
+	k8s enrichment.K8sClient
 }
 
 // NewClusterResourceContextTool creates a get_cluster_resource_context tool.
-func NewClusterResourceContextTool(ds enrichment.DataStorageClient) tools.Tool {
-	return &clusterResourceContextTool{ds: ds}
+func NewClusterResourceContextTool(ds enrichment.DataStorageClient, k8s enrichment.K8sClient) tools.Tool {
+	return &clusterResourceContextTool{ds: ds, k8s: k8s}
 }
 
 func (t *clusterResourceContextTool) Name() string               { return "get_cluster_resource_context" }
@@ -142,10 +171,8 @@ func (t *clusterResourceContextTool) Execute(ctx context.Context, args json.RawM
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	histResult, _ := t.ds.GetRemediationHistory(ctx, params.Kind, params.Name, "", "")
-	if histResult == nil {
-		histResult = &enrichment.RemediationHistoryResult{}
-	}
+	specHash := computeSpecHash(ctx, t.k8s, params.Kind, params.Name, "", "get_cluster_resource_context")
+	histResult := fetchRemediationHistory(ctx, t.ds, params.Kind, params.Name, "", specHash, "get_cluster_resource_context")
 
 	resp := clusterResponse{
 		RootOwner: rootOwnerResponse{

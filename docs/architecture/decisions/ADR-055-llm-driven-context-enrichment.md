@@ -111,10 +111,10 @@ This flow applies to the incident path.
 
 | File | Change | Rationale |
 |------|--------|-----------|
-| `holmesgpt-api/src/extensions/incident/llm_integration.py` | Remove pre-LLM root owner resolution, spec hash computation, remediation history fetch via root owner, and Phase C `affectedResource` population (~lines 227-278, 593-608) | Pre-computation targets wrong resource |
-| `holmesgpt-api/src/extensions/incident/result_parser.py` | Remove `target_in_owner_chain` from `parse_and_validate_investigation_result`. Remove `is_target_in_owner_chain()` function. | Replaced by `affected_resource` Rego input |
-| `holmesgpt-api/src/clients/k8s_client.py` | Remove `resolve_root_owner()` function. Keep `compute_spec_hash()` (reused by new tool). | `resolve_root_owner` was a trivial list[-1]; new tool traverses K8s API instead |
-| `holmesgpt-api/tests/unit/test_k8s_client_owner_resolution.py` | Remove tests for `resolve_root_owner()` | Function removed |
+| `kubernaut-agent/src/extensions/incident/llm_integration.py` | Remove pre-LLM root owner resolution, spec hash computation, remediation history fetch via root owner, and Phase C `affectedResource` population (~lines 227-278, 593-608) | Pre-computation targets wrong resource |
+| `kubernaut-agent/src/extensions/incident/result_parser.py` | Remove `target_in_owner_chain` from `parse_and_validate_investigation_result`. Remove `is_target_in_owner_chain()` function. | Replaced by `affected_resource` Rego input |
+| `kubernaut-agent/src/clients/k8s_client.py` | Remove `resolve_root_owner()` function. Keep `compute_spec_hash()` (reused by new tool). | `resolve_root_owner` was a trivial list[-1]; new tool traverses K8s API instead |
+| `kubernaut-agent/tests/unit/test_k8s_client_owner_resolution.py` | Remove tests for `resolve_root_owner()` | Function removed |
 
 #### AIAnalysis Controller (Go)
 
@@ -269,7 +269,7 @@ async def resolve_owner_chain(
 The resource context tools need to read `ownerReferences` on resources during chain traversal AND read `.spec` for hash computation (plus cluster-scoped `get` where applicable for `get_cluster_resource_context`). The RBAC manifest must be expanded:
 
 ```yaml
-# deploy/holmesgpt-api/03-rbac.yaml
+# deploy/kubernaut-agent/03-rbac.yaml
 rules:
   # Existing: read events
   - apiGroups: [""]
@@ -289,7 +289,7 @@ Note: `replicasets` added (needed for Pod -> ReplicaSet traversal). `pods` added
 
 #### Tool Registration
 
-Both tools are registered on the **`resource_context` toolset** (`ResourceContextToolset` in `holmesgpt-api/src/toolsets/resource_context.py`), which is attached in the incident flow alongside the existing DD-HAPI-017 workflow discovery tools. The LLM sees `get_namespaced_resource_context` and `get_cluster_resource_context` as distinct tool names and must choose the one that matches the RCA target’s scope (Issue #524).
+Both tools are registered on the **`resource_context` toolset** (`ResourceContextToolset` in `kubernaut-agent/src/toolsets/resource_context.py`), which is attached in the incident flow alongside the existing DD-HAPI-017 workflow discovery tools. The LLM sees `get_namespaced_resource_context` and `get_cluster_resource_context` as distinct tool names and must choose the one that matches the RCA target’s scope (Issue #524).
 
 #### Updated Prompt Flow
 

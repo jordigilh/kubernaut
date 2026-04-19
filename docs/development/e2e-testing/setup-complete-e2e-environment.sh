@@ -506,7 +506,7 @@ data:
       enabled: true
       mode: "container"
       endpoint: "http://localhost:8090"
-      container_image: "kubernaut/holmesgpt-api:latest"
+      container_image: "kubernaut/kubernaut-agent:latest"
       deployment_target: "local"  # Options: local, cluster
       timeout: 60s
       retry_count: 3

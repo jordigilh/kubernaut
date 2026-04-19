@@ -73,7 +73,7 @@ Enhanced GitHub CI workflows to automatically:
 - notification
 - gateway
 - datastorage
-- holmesgpt-api
+- kubernaut-agent
 
 **Artifact Pattern**: `must-gather-logs-{service}-{run_id}`
 
@@ -90,7 +90,7 @@ Enhanced GitHub CI workflows to automatically:
     path: |
       /tmp/kind-logs-*
       /tmp/${{ inputs.service }}-e2e-logs-*
-      /tmp/holmesgpt-api-e2e-logs-*
+      /tmp/kubernaut-agent-e2e-logs-*
     retention-days: 14
     if-no-files-found: warn
 ```

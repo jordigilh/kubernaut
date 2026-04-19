@@ -59,7 +59,7 @@ Uvicorn is an ASGI server that:
 ```yaml
 # Kubernetes deployment
 containers:
-- name: holmesgpt-api
+- name: kubernaut-agent
   args:
   - "-config"
   - "/etc/holmesgpt/config.yaml"
@@ -153,7 +153,7 @@ containers:
 **Python Service** (HAPI):
 ```yaml
 containers:
-- name: holmesgpt-api
+- name: kubernaut-agent
   args:
   - "-config"
   - "/etc/holmesgpt/config.yaml"  # ← Identical interface
@@ -251,7 +251,7 @@ containers:
 
 - **ADR-030**: Configuration Management Standard
 - **HAPI ADR-030 Implementation**: (internal development reference, removed in v1.0)
-- **Entrypoint Script**: `holmesgpt-api/entrypoint.sh`
+- **Entrypoint Script**: `kubernaut-agent/entrypoint.sh`
 
 ### Verification Test
 

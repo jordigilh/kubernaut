@@ -507,7 +507,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: holmesgpt-api-config
+  name: kubernaut-agent-config
   namespace: kubernaut-system
 data:
   config.yaml: |
@@ -533,7 +533,7 @@ kind create cluster --name kubernaut-llm-test
 kubectl apply -f config/crd/
 
 # Install HolmesGPT API
-kubectl apply -f deploy/holmesgpt-api/
+kubectl apply -f deploy/kubernaut-agent/
 
 # Install mock MCP server
 kubectl apply -f deploy/mock-mcp-server/
@@ -661,7 +661,7 @@ kubectl apply -f test/scenarios/oomkill-cost-management.yaml
 kubectl wait --for=condition=OOMKill pod/memory-hungry-app -n cost-management --timeout=5m
 
 # 3. Create investigation request (manual or via HolmesGPT API)
-curl -X POST http://holmesgpt-api.kubernaut-system.svc.cluster.local:8080/api/v1/investigations \
+curl -X POST http://kubernaut-agent.kubernaut-system.svc.cluster.local:8080/api/v1/investigations \
   -H "Content-Type: application/json" \
   -d '{
     "alert": {
@@ -674,7 +674,7 @@ curl -X POST http://holmesgpt-api.kubernaut-system.svc.cluster.local:8080/api/v1
   }'
 
 # 4. Review LLM response
-kubectl logs -n kubernaut-system holmesgpt-api-xxx -f
+kubectl logs -n kubernaut-system kubernaut-agent-xxx -f
 
 # 5. Validate outcome
 # - Did LLM identify correct root cause?
@@ -683,10 +683,10 @@ kubectl logs -n kubernaut-system holmesgpt-api-xxx -f
 
 # 6. Refine prompt if needed
 # Edit prompt template in HolmesGPT API ConfigMap
-kubectl edit configmap holmesgpt-api-prompt -n kubernaut-system
+kubectl edit configmap kubernaut-agent-prompt -n kubernaut-system
 
 # 7. Restart HolmesGPT API
-kubectl rollout restart deployment holmesgpt-api -n kubernaut-system
+kubectl rollout restart deployment kubernaut-agent -n kubernaut-system
 
 # 8. Repeat test
 ```

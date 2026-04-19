@@ -8,7 +8,7 @@
 **Branch**: cherry-pick to `main` via `release/v1.1.0-rc2`
 
 **Authority**:
-- [BR-HAPI-214](../../services/stateless/holmesgpt-api/BUSINESS_REQUIREMENTS.md): Anti-Confirmation-Bias Investigation Guardrails
+- [BR-HAPI-214](../../services/stateless/kubernaut-agent/BUSINESS_REQUIREMENTS.md): Anti-Confirmation-Bias Investigation Guardrails
 - [Issue #462](https://github.com/jordigilh/kubernaut/issues/462): Forward RR.spec.signalAnnotations to HAPI + anti-confirmation-bias guardrail
 
 **Cross-References**:
@@ -21,7 +21,7 @@
 
 ### In Scope
 
-- `holmesgpt-api/src/extensions/incident/prompt_builder.py`: `create_incident_investigation_prompt()` -- add `## Investigation Guardrails` section and pre-conclusion gates in Outcome A and Outcome D
+- `kubernaut-agent/src/extensions/incident/prompt_builder.py`: `create_incident_investigation_prompt()` -- add `## Investigation Guardrails` section and pre-conclusion gates in Outcome A and Outcome D
 
 ### Out of Scope
 
@@ -64,7 +64,7 @@ Tests validate **business outcomes**: "when an investigation prompt is generated
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `holmesgpt-api/src/extensions/incident/prompt_builder.py` | `create_incident_investigation_prompt()` (guardrail section ~10 lines, pre-conclusion gates ~4 lines) | ~14 |
+| `kubernaut-agent/src/extensions/incident/prompt_builder.py` | `create_incident_investigation_prompt()` (guardrail section ~10 lines, pre-conclusion gates ~4 lines) | ~14 |
 
 ### Integration-Testable Code (I/O, wiring, cross-component)
 
@@ -132,7 +132,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-214
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_investigation_guardrails.py`
+**File**: `kubernaut-agent/tests/unit/test_investigation_guardrails.py`
 
 **Given**: A standard reactive incident request (`signal_mode` absent or `"reactive"`)
 **When**: `create_incident_investigation_prompt()` is called
@@ -148,7 +148,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-214
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_investigation_guardrails.py`
+**File**: `kubernaut-agent/tests/unit/test_investigation_guardrails.py`
 
 **Given**: A proactive incident request (`signal_mode = "proactive"`)
 **When**: `create_incident_investigation_prompt()` is called
@@ -164,7 +164,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-214
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_investigation_guardrails.py`
+**File**: `kubernaut-agent/tests/unit/test_investigation_guardrails.py`
 
 **Given**: A standard incident request
 **When**: `create_incident_investigation_prompt()` is called
@@ -180,7 +180,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-214
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_investigation_guardrails.py`
+**File**: `kubernaut-agent/tests/unit/test_investigation_guardrails.py`
 
 **Given**: A standard incident request
 **When**: `create_incident_investigation_prompt()` is called
@@ -196,7 +196,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-214
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_investigation_guardrails.py`
+**File**: `kubernaut-agent/tests/unit/test_investigation_guardrails.py`
 
 **Given**: A standard incident request
 **When**: `create_incident_investigation_prompt()` is called
@@ -212,7 +212,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 **BR**: BR-HAPI-214
 **Type**: Unit
-**File**: `holmesgpt-api/tests/unit/test_investigation_guardrails.py`
+**File**: `kubernaut-agent/tests/unit/test_investigation_guardrails.py`
 
 **Given**: A standard incident request
 **When**: `create_incident_investigation_prompt()` is called
@@ -228,10 +228,10 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 ### Unit Tests
 
-- **Framework**: pytest (Python, mandatory for holmesgpt-api)
+- **Framework**: pytest (Python, mandatory for kubernaut-agent)
 - **Mocks**: None needed -- `create_incident_investigation_prompt()` is a pure function
 - **Test Helpers**: Minimal `dict` payloads shaped like `IncidentRequest` (same pattern as `test_prompt_generation_adr041.py`)
-- **Location**: `holmesgpt-api/tests/unit/test_investigation_guardrails.py`
+- **Location**: `kubernaut-agent/tests/unit/test_investigation_guardrails.py`
 
 ---
 
@@ -239,13 +239,13 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 ```bash
 # All HAPI unit tests
-cd holmesgpt-api && python -m pytest tests/unit/ -v
+cd kubernaut-agent && python -m pytest tests/unit/ -v
 
 # Specific guardrail tests
-cd holmesgpt-api && python -m pytest tests/unit/test_investigation_guardrails.py -v
+cd kubernaut-agent && python -m pytest tests/unit/test_investigation_guardrails.py -v
 
 # By test ID pattern
-cd holmesgpt-api && python -m pytest tests/unit/test_investigation_guardrails.py -k "HAPI_214" -v
+cd kubernaut-agent && python -m pytest tests/unit/test_investigation_guardrails.py -k "HAPI_214" -v
 ```
 
 ---
