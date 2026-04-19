@@ -183,7 +183,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 				GinkgoWriter.Printf("  ✅ Found %d aiagent.response.complete event(s)\n", len(resp.Data))
 
 				// Verify event outcome (should be success - HTTP 200 from KA perspective)
-				// Per holmesgpt-api/src/audit/events.py:413 - KA always returns outcome="success"
+				// Per kubernaut-agent/src/audit/events.py:413 - KA always returns outcome="success"
 				// because the API request succeeded (HTTP 200), even when needs_human_review=true.
 				// The "failure" is captured in the AIAnalysis audit event (analysis.failed), not the KA event.
 				for _, event := range resp.Data {

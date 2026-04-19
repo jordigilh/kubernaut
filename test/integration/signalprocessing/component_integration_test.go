@@ -677,7 +677,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 
 
 	// Detection LabelDetector and Priority 3 tests removed - ADR-056: DetectedLabels relocated to KA
-	// See: holmesgpt-api/tests/unit/test_label_detector.py for post-RCA detection tests
+	// See: kubernaut-agent/tests/unit/test_label_detector.py for post-RCA detection tests
 
 })
 

@@ -146,7 +146,7 @@ url = config['data_storage']['url']
 
 **ONLY Exception**: `CONFIG_FILE` env var to specify YAML file location
 
-**Detection**: `grep -r "os.getenv" holmesgpt-api/ --include="*.py" | grep -v "CONFIG_FILE"`
+**Detection**: `grep -r "os.getenv" kubernaut-agent/ --include="*.py" | grep -v "CONFIG_FILE"`
 
 ---
 

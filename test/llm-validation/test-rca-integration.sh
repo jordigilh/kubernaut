@@ -10,16 +10,16 @@ echo "========================================="
 echo ""
 
 # Check if running in cluster or need port-forward
-if kubectl get svc holmesgpt-api -n kubernaut-system &>/dev/null; then
-    echo "✅ Found holmesgpt-api service in cluster"
+if kubectl get svc kubernaut-agent -n kubernaut-system &>/dev/null; then
+    echo "✅ Found kubernaut-agent service in cluster"
 else
-    echo "❌ holmesgpt-api service not found"
+    echo "❌ kubernaut-agent service not found"
     exit 1
 fi
 
 # Port-forward to service
 echo "Setting up port-forward..."
-kubectl port-forward -n kubernaut-system svc/holmesgpt-api 8080:8080 > /dev/null 2>&1 &
+kubectl port-forward -n kubernaut-system svc/kubernaut-agent 8080:8080 > /dev/null 2>&1 &
 PF_PID=$!
 sleep 3
 
@@ -41,7 +41,7 @@ echo "Response saved to /tmp/rca-response.json"
 echo ""
 
 echo "=== TEST 2: Check Toolsets Configuration ===" 
-kubectl logs -n kubernaut-system -l app=holmesgpt-api --tail=100 | grep "toolsets" | tail -1
+kubectl logs -n kubernaut-system -l app=kubernaut-agent --tail=100 | grep "toolsets" | tail -1
 echo ""
 
 echo "=== TEST 3: Check Playbook Count ===" 
@@ -55,7 +55,7 @@ echo "Tool calls made by LLM: $TOOL_CALLS"
 echo ""
 
 echo "=== TEST 5: Check LLM Response ===" 
-kubectl logs -n kubernaut-system -l app=holmesgpt-api --tail=300 | grep -A30 "RAW LLM RESPONSE" | head -35
+kubectl logs -n kubernaut-system -l app=kubernaut-agent --tail=300 | grep -A30 "RAW LLM RESPONSE" | head -35
 echo ""
 
 echo "========================================="

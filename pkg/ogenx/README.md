@@ -324,7 +324,7 @@ func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest)
 ### Example 3: E2E Tests
 
 ```go
-// test/e2e/holmesgpt-api/incident_analysis_test.go
+// test/e2e/kubernaut-agent/incident_analysis_test.go
 It("E2E-HAPI-007: Invalid request returns error", func() {
     req := &hapiclient.IncidentRequest{
         IncidentID: "test-invalid-007",

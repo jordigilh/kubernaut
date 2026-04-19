@@ -31,7 +31,7 @@ mkdir -p "${METRICS_DIR}"
 SERVICE_ENDPOINTS=(
     "http://gateway.kubernaut-system:8080/metrics"
     "http://data-storage.kubernaut-system:8080/metrics"
-    "http://holmesgpt-api.kubernaut-system:8080/metrics"
+    "http://kubernaut-agent.kubernaut-system:8080/metrics"
     "http://notification-controller-metrics.kubernaut-notifications:8080/metrics"
 )
 

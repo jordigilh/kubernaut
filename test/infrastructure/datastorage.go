@@ -393,7 +393,7 @@ func extractKubernautServiceLogs(logsDir, serviceName string, writer io.Writer) 
 		{serviceName, fmt.Sprintf("*%s*/*.log", serviceName)},
 		{"datastorage", "*datastorage*/*.log"},
 		{"gateway", "*gateway*/*.log"},
-		{"holmesgpt-api", "*holmesgpt*/*.log"},
+		{"kubernaut-agent", "*holmesgpt*/*.log"},
 		{"aianalysis", "*aianalysis*/*.log"},
 		{"notification", "*notification*/*.log"},
 		{"signalprocessing", "*signalprocessing*/*.log"},
@@ -640,7 +640,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 
 // DeployDataStorageTestServices deploys PostgreSQL, Redis, and Data Storage Service to a namespace
 // This is used by E2E tests to create isolated test environments
-// dataStorageImage: DD-TEST-001 compliant image tag (e.g., "datastorage:holmesgpt-api-a1b2c3d4")
+// dataStorageImage: DD-TEST-001 compliant image tag (e.g., "datastorage:kubernaut-agent-a1b2c3d4")
 //
 // PostgreSQL-only architecture (SOC2 audit storage)
 // DeployDataStorageTestServices deploys DataStorage with OAuth2-Proxy for testing.

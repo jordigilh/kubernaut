@@ -42,7 +42,7 @@ import (
 // implements the same OpenAPI Handler interface.
 //
 // Infrastructure: Kind cluster + DataStorage + Mock LLM + Kubernaut Agent (Go)
-// Replaces: test/e2e/holmesgpt-api/ (Python KA E2E tests)
+// Replaces: test/e2e/kubernaut-agent/ (Python KA E2E tests)
 
 func TestKubernautAgentE2E(t *testing.T) {
 	RegisterFailHandler(Fail)

@@ -28,7 +28,7 @@ kubectl get secrets -n kubernaut-system | grep oauth-proxy
 
 ```
 data-storage-oauth-proxy-secret       Opaque   1      10s
-holmesgpt-api-oauth-proxy-secret      Opaque   1      10s
+kubernaut-agent-oauth-proxy-secret      Opaque   1      10s
 ```
 
 ---
@@ -38,7 +38,7 @@ holmesgpt-api-oauth-proxy-secret      Opaque   1      10s
 | Secret Name | Namespace | Key | Value | Usage |
 |-------------|-----------|-----|-------|-------|
 | `data-storage-oauth-proxy-secret` | `kubernaut-system` | `cookie-secret` | Random 32-byte string | DataStorage oauth2-proxy sidecar |
-| `holmesgpt-api-oauth-proxy-secret` | `kubernaut-system` | `cookie-secret` | Random 32-byte string | HolmesGPT API oauth2-proxy sidecar |
+| `kubernaut-agent-oauth-proxy-secret` | `kubernaut-system` | `cookie-secret` | Random 32-byte string | HolmesGPT API oauth2-proxy sidecar |
 
 ---
 
@@ -227,7 +227,7 @@ volumeMounts:
 ## 🔗 **Related**
 
 - **Helm Charts**: `helm/kubernaut/` - Application deployment (references secrets)
-- **Deployments**: `deploy/data-storage/`, `deploy/holmesgpt-api/` - Service manifests
+- **Deployments**: `deploy/data-storage/`, `deploy/kubernaut-agent/` - Service manifests
 - **OAuth2-Proxy Docs**: https://oauth2-proxy.github.io/oauth2-proxy/docs/
 
 ---

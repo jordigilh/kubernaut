@@ -1,5 +1,5 @@
 {{- /* Self-Correction Feedback: Resource Context Mismatch (Issue #516)
-     Source: holmesgpt-api/src/extensions/incident/prompt_builder.py build_resource_context_mismatch_feedback
+     Source: kubernaut-agent/src/extensions/incident/prompt_builder.py build_resource_context_mismatch_feedback
      Appended when LLM's remediationTarget doesn't match the last get_resource_context call.
 */ -}}
 {{ if .IsMissing }}
