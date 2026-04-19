@@ -19,8 +19,10 @@ package workflow
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	sqlbuilder "github.com/jordigilh/kubernaut/pkg/datastorage/repository/sql"
 )
@@ -282,8 +284,35 @@ func (r *Repository) SupersedeAndCreate(ctx context.Context, oldID, oldVersion, 
 	}
 
 	var confirmedID string
+	reactivated := false
 	if err = tx.QueryRowContext(ctx, insertQuery, args...).Scan(&confirmedID); err != nil {
-		return fmt.Errorf("failed to create workflow: %w", err)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23505" || pgErr.ConstraintName != "remediation_workflow_catalog_pkey" {
+			return fmt.Errorf("failed to create workflow: %w", err)
+		}
+
+		// PK collision on deterministic UUID: the same content was previously registered
+		// and its row still exists (Superseded). Re-activate it within this transaction.
+		reactivateQuery := `
+			UPDATE remediation_workflow_catalog
+			SET status = 'Active', is_latest_version = $1, updated_at = NOW(),
+			    status_reason = 'reactivated: re-registered via CRD'
+			WHERE workflow_id = $2 AND status = 'Superseded'
+		`
+		var result sql.Result
+		result, err = tx.ExecContext(ctx, reactivateQuery, newWorkflow.IsLatestVersion, newWorkflow.WorkflowID)
+		if err != nil {
+			return fmt.Errorf("failed to re-activate workflow %s: %w", newWorkflow.WorkflowID, err)
+		}
+		rowsReactivated, _ := result.RowsAffected()
+		if rowsReactivated == 0 {
+			err = fmt.Errorf("PK collision on workflow_id=%s but row is not Superseded — cannot re-activate", newWorkflow.WorkflowID)
+			return err
+		}
+
+		confirmedID = newWorkflow.WorkflowID
+		reactivated = true
+		err = nil
 	}
 	newWorkflow.WorkflowID = confirmedID
 
@@ -291,11 +320,18 @@ func (r *Repository) SupersedeAndCreate(ctx context.Context, oldID, oldVersion, 
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	r.logger.Info("workflow superseded and new version created",
-		"old_workflow_id", oldID,
-		"new_workflow_id", newWorkflow.WorkflowID,
-		"workflow_name", newWorkflow.WorkflowName,
-		"version", newWorkflow.Version)
+	if reactivated {
+		r.logger.Info("workflow re-activated from Superseded state (PK collision recovery)",
+			"workflow_id", newWorkflow.WorkflowID,
+			"workflow_name", newWorkflow.WorkflowName,
+			"version", newWorkflow.Version)
+	} else {
+		r.logger.Info("workflow superseded and new version created",
+			"old_workflow_id", oldID,
+			"new_workflow_id", newWorkflow.WorkflowID,
+			"workflow_name", newWorkflow.WorkflowName,
+			"version", newWorkflow.Version)
+	}
 
 	return nil
 }

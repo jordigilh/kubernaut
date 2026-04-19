@@ -133,6 +133,109 @@ var _ = Describe("Workflow Cross-Version Supersession (Issue #371, BR-WORKFLOW-0
 	})
 
 	// ========================================
+	// IT-DS-730-001: PK collision recovery — re-register v1.0.0 after v1.0.1 superseded it
+	// Issue #730, BR-WORKFLOW-006: Re-registering an older version whose content (and
+	// thus deterministic UUID) already exists as a Superseded row should succeed by
+	// re-activating the existing row, not returning 500.
+	// ========================================
+	Describe("IT-DS-730-001: PK collision recovery on re-registration of superseded version", func() {
+		It("should re-activate the Superseded row and return success", func() {
+			testID := fmt.Sprintf("pk-reactivate-%s", uuid.New().String()[:8])
+
+			yamlV1 := supersessionTestYAML(testID, "1.0.0", "Original v1.0.0 for PK collision test")
+			yamlV2 := supersessionTestYAML(testID, "1.0.1", "Upgraded v1.0.1 for PK collision test")
+
+			httpServer, srv := createIntegrityTestServer(yamlV1)
+			defer httpServer.Close()
+			defer func() { _ = srv.Shutdown(ctx) }()
+
+			// Step 1: Register v1.0.0 → Active
+			wr1 := registerIntegrityWorkflow(httpServer.URL, yamlV1)
+			Expect(wr1.StatusCode).To(Equal(http.StatusCreated),
+				"v1.0.0 should be created (201)")
+
+			// Step 2: Register v1.0.1 → v1.0.0 becomes Superseded, v1.0.1 Active
+			wr2 := registerIntegrityWorkflow(httpServer.URL, yamlV2)
+			Expect(wr2.StatusCode).To(Equal(http.StatusCreated),
+				"v1.0.1 should be created (201)")
+
+			Eventually(func() string {
+				return queryWorkflowStatus(wr1.WorkflowID)
+			}, 5*time.Second, 500*time.Millisecond).Should(Equal("Superseded"),
+				"v1.0.0 should be Superseded after v1.0.1 registration")
+
+			// Step 3: Re-register v1.0.0 (same YAML → same content hash → same UUID → PK collision)
+			wr3 := registerIntegrityWorkflow(httpServer.URL, yamlV1)
+			Expect(wr3.StatusCode).To(SatisfyAny(Equal(http.StatusOK), Equal(http.StatusCreated)),
+				"Re-registering v1.0.0 should succeed (200 or 201), got %d — PK collision should be handled gracefully", wr3.StatusCode)
+
+			// Step 4: v1.0.0 should now be Active again
+			Eventually(func() string {
+				return queryWorkflowStatus(wr1.WorkflowID)
+			}, 5*time.Second, 500*time.Millisecond).Should(Equal("Active"),
+				"v1.0.0 should be re-activated after re-registration")
+
+			// Step 5: v1.0.1 should be Superseded
+			Expect(queryWorkflowStatus(wr2.WorkflowID)).To(Equal("Superseded"),
+				"v1.0.1 should be Superseded after v1.0.0 re-registration")
+
+			// Step 6: Exactly one active entry
+			var activeCount int
+			err := db.QueryRow(
+				"SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_name = $1 AND status = 'Active'", testID,
+			).Scan(&activeCount)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(activeCount).To(Equal(1),
+				"Exactly one active entry should exist after PK collision recovery")
+
+			// Step 7: Exactly one is_latest_version=true
+			var latestCount int
+			err = db.QueryRow(
+				"SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_name = $1 AND is_latest_version = true", testID,
+			).Scan(&latestCount)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(latestCount).To(Equal(1),
+				"Exactly one is_latest_version=true should exist after PK collision recovery")
+		})
+	})
+
+	// ========================================
+	// IT-DS-730-002: PK collision with Disabled row should NOT re-activate (security)
+	// Issue #730: If an older version was intentionally Disabled, re-registering
+	// the same content should create a new entry, not re-activate the Disabled row.
+	// ========================================
+	Describe("IT-DS-730-002: PK collision with Disabled row does not re-activate", func() {
+		It("should not re-activate a Disabled row on PK collision", func() {
+			testID := fmt.Sprintf("pk-disabled-%s", uuid.New().String()[:8])
+
+			yamlV1 := supersessionTestYAML(testID, "1.0.0", "Original v1.0.0 for disabled PK test")
+
+			httpServer, srv := createIntegrityTestServer(yamlV1)
+			defer httpServer.Close()
+			defer func() { _ = srv.Shutdown(ctx) }()
+
+			// Step 1: Register v1.0.0 → Active
+			wr1 := registerIntegrityWorkflow(httpServer.URL, yamlV1)
+			Expect(wr1.StatusCode).To(Equal(http.StatusCreated))
+
+			// Step 2: Disable v1.0.0 (simulating CRD DELETE)
+			err := workflowRepo.UpdateStatus(ctx, wr1.WorkflowID, "1.0.0", "Disabled", "CRD deleted", "test-user")
+			Expect(err).ToNot(HaveOccurred())
+
+			// Step 3: Re-register v1.0.0 (same YAML → same UUID)
+			// The handler should detect the Disabled row and re-enable via the existing Disabled path,
+			// returning 200 (same content hash → re-enable).
+			wr2 := registerIntegrityWorkflow(httpServer.URL, yamlV1)
+			Expect(wr2.StatusCode).To(Equal(http.StatusOK),
+				"Re-registering disabled workflow with same hash should re-enable (200), got %d", wr2.StatusCode)
+
+			// Step 4: The entry should be Active now (re-enabled via Disabled path, not PK collision path)
+			Expect(queryWorkflowStatus(wr1.WorkflowID)).To(Equal("Active"),
+				"Disabled workflow should be re-enabled via the existing Disabled handler")
+		})
+	})
+
+	// ========================================
 	// IT-DS-371-002: Delete+recreate pattern — old disabled, new active
 	// Issue #371, BR-WORKFLOW-006: When a workflow is disabled (simulating CRD DELETE)
 	// and a new version is registered, the disabled entry stays disabled and the
