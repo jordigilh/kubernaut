@@ -16,6 +16,8 @@ WARP.md
 
 # Build artifacts
 bin/
+!bin/*-arm64
+!bin/*-amd64
 *.exe
 *.test
 *.prof

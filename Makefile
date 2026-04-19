@@ -979,6 +979,72 @@ image-manifest: ## Create and push multi-arch manifests (run after both arches a
 	@echo ""
 	@echo "✅ All manifests pushed as $(IMAGE_REGISTRY):$(IMAGE_TAG)."
 
+# ========================================
+# Cross-compilation targets (no QEMU, no container)
+# Used by release.yml arm64 jobs for native cross-compile.
+# Produces bin/<binary>-<arch> (e.g., bin/data-storage-arm64)
+# ========================================
+
+# Service-to-binary-name mapping (matches Dockerfile -o flags)
+BINARY_NAME_datastorage := data-storage
+BINARY_NAME_gateway := gateway
+BINARY_NAME_aianalysis := aianalysis-controller
+BINARY_NAME_authwebhook := authwebhook
+BINARY_NAME_notification := manager
+BINARY_NAME_remediationorchestrator := remediationorchestrator-controller
+BINARY_NAME_signalprocessing := signalprocessing-controller
+BINARY_NAME_workflowexecution := workflowexecution
+BINARY_NAME_effectivenessmonitor := effectivenessmonitor-controller
+BINARY_NAME_kubernautagent := kubernautagent
+
+# Go services that support host-native cross-compilation (excludes db-migrate, must-gather)
+CROSS_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor kubernautagent
+
+# Runtime Dockerfile mapping (production scratch images for pre-built binaries)
+RUNTIME_DOCKERFILES_datastorage := docker/data-storage.runtime.Dockerfile
+RUNTIME_DOCKERFILES_gateway := docker/gateway.runtime.Dockerfile
+RUNTIME_DOCKERFILES_aianalysis := docker/aianalysis.runtime.Dockerfile
+RUNTIME_DOCKERFILES_authwebhook := docker/authwebhook.runtime.Dockerfile
+RUNTIME_DOCKERFILES_notification := docker/notification-controller.runtime.Dockerfile
+RUNTIME_DOCKERFILES_remediationorchestrator := docker/remediationorchestrator-controller.runtime.Dockerfile
+RUNTIME_DOCKERFILES_signalprocessing := docker/signalprocessing-controller.runtime.Dockerfile
+RUNTIME_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.runtime.Dockerfile
+RUNTIME_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.runtime.Dockerfile
+RUNTIME_DOCKERFILES_kubernautagent := docker/kubernautagent.runtime.Dockerfile
+
+.PHONY: cross-build-%
+cross-build-%: ## Cross-compile a Go service binary for target arch (no container, no QEMU)
+	@if [ -z "$(BINARY_NAME_$*)" ]; then \
+	    echo "ERROR: Unknown cross-compile service '$*'. Available: $(CROSS_SERVICES)"; exit 1; \
+	fi
+	@echo "  Cross-compiling $* -> bin/$(BINARY_NAME_$*)-$(IMAGE_ARCH)..."
+	@mkdir -p bin
+	@CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -mod=mod \
+	    -ldflags "-s -w -X github.com/jordigilh/kubernaut/internal/version.Version=$(APP_VERSION) -X github.com/jordigilh/kubernaut/internal/version.GitCommit=$(GIT_COMMIT) -X github.com/jordigilh/kubernaut/internal/version.BuildDate=$(BUILD_DATE)" \
+	    -o bin/$(BINARY_NAME_$*)-$(IMAGE_ARCH) ./cmd/$*/main.go
+
+.PHONY: cross-build-all
+cross-build-all: ## Cross-compile all Go services for target arch
+	@echo "🔨 Cross-compiling all Go services for $(IMAGE_ARCH)..."
+	@$(foreach svc,$(CROSS_SERVICES),$(MAKE) cross-build-$(svc);)
+	@echo "✅ All binaries built in bin/*-$(IMAGE_ARCH)"
+
+.PHONY: image-runtime-%
+image-runtime-%: ## Build runtime-only image from pre-built binary (no QEMU needed)
+	@if [ -z "$(RUNTIME_DOCKERFILES_$*)" ]; then \
+	    echo "ERROR: Unknown runtime service '$*'. Available: $(CROSS_SERVICES)"; exit 1; \
+	fi
+	@if [ ! -f "bin/$(BINARY_NAME_$*)-$(IMAGE_ARCH)" ]; then \
+	    echo "ERROR: Binary bin/$(BINARY_NAME_$*)-$(IMAGE_ARCH) not found. Run: make cross-build-$* IMAGE_ARCH=$(IMAGE_ARCH)"; exit 1; \
+	fi
+	@echo "  Building runtime image $* [$(IMAGE_ARCH)] (no QEMU)..."
+	@$(CONTAINER_TOOL) build --no-cache \
+	    --build-arg BINARY=bin/$(BINARY_NAME_$*)-$(IMAGE_ARCH) \
+	    --build-arg APP_VERSION=$(APP_VERSION) \
+	    --build-arg GIT_COMMIT=$(GIT_COMMIT) \
+	    --build-arg BUILD_DATE=$(BUILD_DATE) \
+	    -t $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-$(IMAGE_ARCH) -f $(RUNTIME_DOCKERFILES_$*) .
+
 # Per-service image targets (e.g., make image-build-aianalysis IMAGE_TAG=demo-v1.0)
 .PHONY: image-build-%
 image-build-%: ## Build a single service image (specified arch via IMAGE_ARCH)
