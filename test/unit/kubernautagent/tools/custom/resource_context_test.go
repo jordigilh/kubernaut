@@ -19,6 +19,7 @@ package custom_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -27,27 +28,39 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/custom"
 )
 
-// fakeK8s returns a configurable owner chain.
+// fakeK8s returns a configurable owner chain and spec hash.
 type fakeK8s struct {
-	chain []enrichment.OwnerChainEntry
-	err   error
+	chain       []enrichment.OwnerChainEntry
+	err         error
+	specHash    string
+	specHashErr error
+
+	capturedSpecHashKind      string
+	capturedSpecHashName      string
+	capturedSpecHashNamespace string
 }
 
 func (f *fakeK8s) GetOwnerChain(_ context.Context, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
 	return f.chain, f.err
 }
 
-func (f *fakeK8s) GetSpecHash(_ context.Context, _, _, _ string) (string, error) {
-	return "", nil
+func (f *fakeK8s) GetSpecHash(_ context.Context, kind, name, namespace string) (string, error) {
+	f.capturedSpecHashKind = kind
+	f.capturedSpecHashName = name
+	f.capturedSpecHashNamespace = namespace
+	return f.specHash, f.specHashErr
 }
 
-// fakeDS returns configurable remediation history.
+// fakeDS returns configurable remediation history and captures the specHash argument.
 type fakeDS struct {
 	history *enrichment.RemediationHistoryResult
 	err     error
+
+	capturedSpecHash string
 }
 
-func (f *fakeDS) GetRemediationHistory(_ context.Context, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
+func (f *fakeDS) GetRemediationHistory(_ context.Context, _, _, _, specHash string) (*enrichment.RemediationHistoryResult, error) {
+	f.capturedSpecHash = specHash
 	return f.history, f.err
 }
 
@@ -163,9 +176,10 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 
 	Describe("UT-KA-433-115: get_cluster_resource_context returns root_owner without namespace", func() {
 		It("should return root_owner with only kind and name", func() {
+			k8s := &fakeK8s{}
 			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
 
-			tool := custom.NewClusterResourceContextTool(ds)
+			tool := custom.NewClusterResourceContextTool(ds, k8s)
 			result, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"Node","name":"worker-1"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -183,13 +197,14 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 
 	Describe("UT-KA-433-116: get_cluster_resource_context includes remediation_history", func() {
 		It("should return remediation history from DataStorage", func() {
+			k8s := &fakeK8s{}
 			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{
 				Tier1: []enrichment.Tier1Entry{
 					{RemediationUID: "node-drain", Outcome: "success"},
 				},
 			}}
 
-			tool := custom.NewClusterResourceContextTool(ds)
+			tool := custom.NewClusterResourceContextTool(ds, k8s)
 			result, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"Node","name":"worker-1"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -207,8 +222,9 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 
 	Describe("UT-KA-433-117: get_cluster_resource_context has valid JSON schema", func() {
 		It("should return a non-nil parameter schema with required kind/name", func() {
+			k8s := &fakeK8s{}
 			ds := &fakeDS{}
-			tool := custom.NewClusterResourceContextTool(ds)
+			tool := custom.NewClusterResourceContextTool(ds, k8s)
 
 			Expect(tool.Name()).To(Equal("get_cluster_resource_context"))
 			Expect(tool.Description()).NotTo(BeEmpty())
@@ -230,9 +246,10 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 
 	Describe("UT-KA-433-118: get_cluster_resource_context omits detected_infrastructure", func() {
 		It("should not include detected_infrastructure or quota_details in response", func() {
+			k8s := &fakeK8s{}
 			ds := &fakeDS{history: nil}
 
-			tool := custom.NewClusterResourceContextTool(ds)
+			tool := custom.NewClusterResourceContextTool(ds, k8s)
 			result, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"Namespace","name":"kube-system"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -247,6 +264,99 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			Expect(custom.AllToolNames).To(HaveLen(5))
 			Expect(custom.AllToolNames).To(ContainElement("get_namespaced_resource_context"))
 			Expect(custom.AllToolNames).To(ContainElement("get_cluster_resource_context"))
+		})
+	})
+
+	// --- Issue #729: specHash computation ---
+
+	Describe("UT-KA-729-001: get_namespaced_resource_context computes specHash on rootOwner — BR-AI-056", func() {
+		It("should call GetSpecHash with rootOwner coordinates and forward hash to DS", func() {
+			k8s := &fakeK8s{
+				chain: []enrichment.OwnerChainEntry{
+					{Kind: "ReplicaSet", Name: "api-server-abc", Namespace: "production"},
+					{Kind: "Deployment", Name: "api-server", Namespace: "production"},
+				},
+				specHash: "abc123def456",
+			}
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
+
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s)
+			_, err := tool.Execute(context.Background(),
+				json.RawMessage(`{"kind":"Pod","name":"api-server-abc-xyz","namespace":"production"}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(k8s.capturedSpecHashKind).To(Equal("Deployment"))
+			Expect(k8s.capturedSpecHashName).To(Equal("api-server"))
+			Expect(k8s.capturedSpecHashNamespace).To(Equal("production"))
+			Expect(ds.capturedSpecHash).To(Equal("abc123def456"))
+		})
+	})
+
+	Describe("UT-KA-729-002: get_namespaced_resource_context uses input resource when no owner chain — BR-AI-056", func() {
+		It("should compute specHash on input resource when chain is empty", func() {
+			k8s := &fakeK8s{
+				chain:    nil,
+				specHash: "orphan-hash-789",
+			}
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
+
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s)
+			_, err := tool.Execute(context.Background(),
+				json.RawMessage(`{"kind":"Pod","name":"orphan-pod","namespace":"default"}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(k8s.capturedSpecHashKind).To(Equal("Pod"))
+			Expect(k8s.capturedSpecHashName).To(Equal("orphan-pod"))
+			Expect(k8s.capturedSpecHashNamespace).To(Equal("default"))
+			Expect(ds.capturedSpecHash).To(Equal("orphan-hash-789"))
+		})
+	})
+
+	Describe("UT-KA-729-003: get_namespaced_resource_context degrades gracefully on specHash failure — BR-AI-056", func() {
+		It("should pass empty specHash to DS when GetSpecHash fails", func() {
+			k8s := &fakeK8s{
+				chain:       nil,
+				specHashErr: errors.New("GVR resolution failed"),
+			}
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
+
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s)
+			result, err := tool.Execute(context.Background(),
+				json.RawMessage(`{"kind":"CustomResource","name":"my-cr","namespace":"test"}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeEmpty())
+			Expect(ds.capturedSpecHash).To(Equal(""))
+		})
+	})
+
+	Describe("UT-KA-729-004: get_cluster_resource_context computes specHash — BR-AI-056", func() {
+		It("should call GetSpecHash with cluster-scoped coordinates and forward hash to DS", func() {
+			k8s := &fakeK8s{specHash: "node-hash-abc"}
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
+
+			tool := custom.NewClusterResourceContextTool(ds, k8s)
+			_, err := tool.Execute(context.Background(),
+				json.RawMessage(`{"kind":"Node","name":"worker-1"}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(k8s.capturedSpecHashKind).To(Equal("Node"))
+			Expect(k8s.capturedSpecHashName).To(Equal("worker-1"))
+			Expect(k8s.capturedSpecHashNamespace).To(Equal(""))
+			Expect(ds.capturedSpecHash).To(Equal("node-hash-abc"))
+		})
+	})
+
+	Describe("UT-KA-729-005: get_cluster_resource_context degrades gracefully on specHash failure — BR-AI-056", func() {
+		It("should pass empty specHash when GetSpecHash fails for cluster resource", func() {
+			k8s := &fakeK8s{specHashErr: errors.New("node not found")}
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
+
+			tool := custom.NewClusterResourceContextTool(ds, k8s)
+			result, err := tool.Execute(context.Background(),
+				json.RawMessage(`{"kind":"Node","name":"missing-node"}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeEmpty())
+			Expect(ds.capturedSpecHash).To(Equal(""))
 		})
 	})
 })

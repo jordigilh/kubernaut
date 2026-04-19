@@ -101,6 +101,7 @@ var _ = Describe("Kubernaut Agent Resource Context — #433 (reclassified from I
 		})
 
 		It("should return remediation history for cluster-scoped resources", func() {
+			k8s := &fakeK8sClient{}
 			ds := &fakeDataStorageClient{
 				history: &enrichment.RemediationHistoryResult{
 					Tier1: []enrichment.Tier1Entry{
@@ -110,7 +111,7 @@ var _ = Describe("Kubernaut Agent Resource Context — #433 (reclassified from I
 			}
 
 			reg := registry.New()
-			reg.Register(custom.NewClusterResourceContextTool(ds))
+			reg.Register(custom.NewClusterResourceContextTool(ds, k8s))
 
 			result, err := reg.Execute(context.Background(), "get_cluster_resource_context",
 				json.RawMessage(`{"kind":"Node","name":"worker-1"}`))
