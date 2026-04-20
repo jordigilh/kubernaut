@@ -148,7 +148,7 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 		Expect(ea.Status.ValidityDeadline).NotTo(BeNil())
 		Expect(ea.Status.PrometheusCheckAfter).NotTo(BeNil())
 		Expect(ea.Status.AlertManagerCheckAfter).NotTo(BeNil())
-		Expect(ea.Status.Message).To(Equal("Assessment completed: full"))
+		Expect(ea.Status.Message).To(Equal("Assessment completed: Full"))
 
 		// E2E-EA-163-002: Conditions validation (Ready, AssessmentComplete, SpecIntegrity)
 		Expect(ea.Status.Conditions).To(ContainElements(

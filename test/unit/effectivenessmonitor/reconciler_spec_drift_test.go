@@ -143,7 +143,7 @@ var _ = Describe("Spec Drift Early Exit (UT-EM-254-005, #254)", func() {
 		Expect(fetched.Status.Phase).To(Equal(eav1.PhaseCompleted),
 			"Phase must be Completed after spec drift")
 		Expect(fetched.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonSpecDrift),
-			"AssessmentReason must be spec_drift")
+			"AssessmentReason must be SpecDrift")
 		Expect(fetched.Status.CompletedAt).NotTo(BeNil(),
 			"CompletedAt must be set")
 

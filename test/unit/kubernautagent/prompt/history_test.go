@@ -129,7 +129,7 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 				RemediationUID:   "wf-drift-001",
 				ActionType:       "restart_pod",
 				Outcome:          "Success",
-				AssessmentReason: "spec_drift",
+				AssessmentReason: "SpecDrift",
 				CompletedAt:      time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
 			}
 			result := prompt.FormatTier1Entry(entry, nil)
@@ -143,7 +143,7 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 				RemediationUID:          "wf-drift-001",
 				ActionType:              "restart_pod",
 				Outcome:                 "Success",
-				AssessmentReason:        "spec_drift",
+				AssessmentReason:        "SpecDrift",
 				PostRemediationSpecHash: "sha256:aaa",
 				CompletedAt:             time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
 			}
@@ -176,7 +176,7 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 				RemediationUID:   "wf-drift-old",
 				ActionType:       "scale_up",
 				Outcome:          "Success",
-				AssessmentReason: "spec_drift",
+				AssessmentReason: "SpecDrift",
 				CompletedAt:      time.Date(2026, 1, 10, 8, 0, 0, 0, time.UTC),
 			}
 			result := prompt.FormatTier2Summary(s)
@@ -206,7 +206,7 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 		It("should exclude spec_drift entries from declining detection", func() {
 			chain := []enrichment.Tier1Entry{
 				{ActionType: "restart_pod", EffectivenessScore: floatPtr(0.8)},
-				{ActionType: "restart_pod", EffectivenessScore: floatPtr(0.0), AssessmentReason: "spec_drift"},
+				{ActionType: "restart_pod", EffectivenessScore: floatPtr(0.0), AssessmentReason: "SpecDrift"},
 				{ActionType: "restart_pod", EffectivenessScore: floatPtr(0.9)},
 			}
 			Expect(prompt.DetectDecliningEffectiveness(chain)).To(BeEmpty())
@@ -229,7 +229,7 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 		It("should not count spec_drift entries", func() {
 			entries := []prompt.HistoryEntry{
 				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success"},
-				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success", AssessmentReason: "spec_drift"},
+				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success", AssessmentReason: "SpecDrift"},
 			}
 			recurring := prompt.DetectCompletedButRecurring(entries, 2)
 			Expect(recurring).To(BeEmpty())
@@ -266,7 +266,7 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 			chain := []enrichment.Tier1Entry{
 				{
 					RemediationUID:          "wf-drift-001",
-					AssessmentReason:        "spec_drift",
+					AssessmentReason:        "SpecDrift",
 					PostRemediationSpecHash: "sha256:aaa",
 				},
 				{
@@ -381,7 +381,7 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 			result := &enrichment.RemediationHistoryResult{
 				TargetResource: "default/Pod/web",
 				Tier1: []enrichment.Tier1Entry{
-					{RemediationUID: "wf-drift", AssessmentReason: "spec_drift", ActionType: "restart", Outcome: "Success", CompletedAt: time.Now()},
+					{RemediationUID: "wf-drift", AssessmentReason: "SpecDrift", ActionType: "restart", Outcome: "Success", CompletedAt: time.Now()},
 				},
 				Tier1Window: "24h",
 			}
@@ -454,6 +454,93 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 				{ActionType: "scale_up", SignalType: "HighLatency", Outcome: "Inconclusive", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false)},
 			}
 			Expect(prompt.AllZeroEffectiveness(entries, "scale_up", "HighLatency")).To(BeTrue())
+		})
+	})
+
+	// ========================================
+	// Issue #749: PascalCase AssessmentReason (BR-EM-749)
+	// ========================================
+
+	Describe("UT-KA-749-001: FormatTier1Entry recognizes PascalCase SpecDrift", func() {
+		It("should render INCONCLUSIVE (spec drift) for SpecDrift reason", func() {
+			entry := enrichment.Tier1Entry{
+				RemediationUID:   "wf-drift-001",
+				AssessmentReason: "SpecDrift",
+				ActionType:       "restart_pod",
+				Outcome:          "Success",
+				CompletedAt:      time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
+			}
+			output := prompt.FormatTier1Entry(entry, nil)
+			Expect(output).To(ContainSubstring("INCONCLUSIVE (spec drift)"))
+		})
+	})
+
+	Describe("UT-KA-749-002: DetectDecliningEffectiveness skips SpecDrift", func() {
+		It("should not count SpecDrift entries in declining effectiveness detection", func() {
+			chain := []enrichment.Tier1Entry{
+				{ActionType: "restart_pod", EffectivenessScore: floatPtr(0.8)},
+				{ActionType: "restart_pod", EffectivenessScore: floatPtr(0.0), AssessmentReason: "SpecDrift"},
+				{ActionType: "restart_pod", EffectivenessScore: floatPtr(0.9)},
+			}
+			declining := prompt.DetectDecliningEffectiveness(chain)
+			Expect(declining).To(BeEmpty(), "SpecDrift entries must be excluded from declining detection")
+		})
+	})
+
+	Describe("UT-KA-749-003: DetectCompletedButRecurring skips SpecDrift", func() {
+		It("should not count SpecDrift entries as recurring", func() {
+			entries := []prompt.HistoryEntry{
+				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success"},
+				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success", AssessmentReason: "SpecDrift"},
+			}
+			recurring := prompt.DetectCompletedButRecurring(entries, 2)
+			Expect(recurring).To(BeEmpty(), "SpecDrift entries must be excluded from recurring detection")
+		})
+	})
+
+	Describe("UT-KA-749-004: AllZeroEffectiveness skips SpecDrift", func() {
+		It("should not count SpecDrift entries in zero-effectiveness check", func() {
+			entries := []prompt.HistoryEntry{
+				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false)},
+				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success", EffectivenessScore: floatPtr(0.0), AssessmentReason: "SpecDrift"},
+			}
+			result := prompt.AllZeroEffectiveness(entries, "restart_pod", "OOMKilled")
+			Expect(result).To(BeTrue(), "SpecDrift entries must be excluded; remaining entry has zero effectiveness")
+		})
+	})
+
+	Describe("UT-KA-749-005: DetectSpecDriftCausalChains matches SpecDrift", func() {
+		It("should detect causal chain with PascalCase SpecDrift", func() {
+			chain := []enrichment.Tier1Entry{
+				{
+					RemediationUID:          "wf-drift-001",
+					AssessmentReason:        "SpecDrift",
+					PostRemediationSpecHash: "sha256:aaa",
+				},
+				{
+					RemediationUID:          "wf-followup-001",
+					PreRemediationSpecHash:  "sha256:aaa",
+					PostRemediationSpecHash: "sha256:bbb",
+				},
+			}
+			causalChains := prompt.DetectSpecDriftCausalChains(chain)
+			Expect(causalChains).To(HaveKey("wf-drift-001"))
+			Expect(causalChains["wf-drift-001"]).To(Equal("wf-followup-001"))
+		})
+	})
+
+	Describe("UT-KA-749-006: BuildRemediationHistorySection HasSpecDrift for PascalCase", func() {
+		It("should set HasSpecDrift=true for PascalCase SpecDrift entries", func() {
+			result := &enrichment.RemediationHistoryResult{
+				TargetResource: "default/Pod/web",
+				Tier1: []enrichment.Tier1Entry{
+					{RemediationUID: "wf-drift", AssessmentReason: "SpecDrift", ActionType: "restart", Outcome: "Success", CompletedAt: time.Now()},
+				},
+				Tier1Window: "24h",
+			}
+			output := prompt.BuildRemediationHistorySection(result, 2)
+			Expect(output).To(ContainSubstring("Note on spec drift entries"),
+				"PascalCase SpecDrift must trigger the spec drift note in the rendered section")
 		})
 	})
 })

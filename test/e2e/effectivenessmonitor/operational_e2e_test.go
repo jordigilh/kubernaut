@@ -69,11 +69,11 @@ var _ = Describe("EffectivenessMonitor Operational E2E Tests", Label("e2e"), fun
 			ea := waitForEAPhase(name, eav1.PhaseCompleted)
 
 			Expect(ea.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonExpired),
-				"EA should have assessment reason 'expired'")
+				"EA should have assessment reason 'Expired'")
 
 			// E2E-EA-163-003: Controller NEVER sets PhaseFailed for expired - stays Completed
 			Expect(ea.Status.Phase).To(Equal("Completed"))
-			Expect(ea.Status.Message).To(Equal("Assessment completed: expired"))
+			Expect(ea.Status.Message).To(Equal("Assessment completed: Expired"))
 
 			By("Verifying no component assessments were performed")
 			Expect(ea.Status.Components.HealthAssessed).To(BeFalse(),

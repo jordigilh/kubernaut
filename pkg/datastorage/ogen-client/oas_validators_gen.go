@@ -2390,17 +2390,17 @@ func (s EffectivenessScoreResponseAssessmentStatus) Validate() error {
 		return nil
 	case "in_progress":
 		return nil
-	case "full":
+	case "Full":
 		return nil
-	case "partial":
+	case "Partial":
 		return nil
-	case "spec_drift":
+	case "SpecDrift":
 		return nil
-	case "expired":
+	case "Expired":
 		return nil
-	case "no_execution":
+	case "NoExecution":
 		return nil
-	case "metrics_timed_out":
+	case "MetricsTimedOut":
 		return nil
 	case "EffectivenessAssessed":
 		return nil
@@ -4499,17 +4499,17 @@ func (s *RemediationHistoryEntry) Validate() error {
 
 func (s RemediationHistoryEntryAssessmentReason) Validate() error {
 	switch s {
-	case "full":
+	case "Full":
 		return nil
-	case "partial":
+	case "Partial":
 		return nil
-	case "spec_drift":
+	case "SpecDrift":
 		return nil
-	case "expired":
+	case "Expired":
 		return nil
-	case "no_execution":
+	case "NoExecution":
 		return nil
-	case "metrics_timed_out":
+	case "MetricsTimedOut":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -4607,17 +4607,17 @@ func (s *RemediationHistorySummary) Validate() error {
 
 func (s RemediationHistorySummaryAssessmentReason) Validate() error {
 	switch s {
-	case "full":
+	case "Full":
 		return nil
-	case "partial":
+	case "Partial":
 		return nil
-	case "spec_drift":
+	case "SpecDrift":
 		return nil
-	case "expired":
+	case "Expired":
 		return nil
-	case "no_execution":
+	case "NoExecution":
 		return nil
-	case "metrics_timed_out":
+	case "MetricsTimedOut":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

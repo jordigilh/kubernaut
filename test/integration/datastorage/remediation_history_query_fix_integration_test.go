@@ -126,7 +126,7 @@ var _ = Describe("Issue #616: QueryROEventsBySpecHash Post-Hash Matching", Label
 		)
 		insertEMHashEvent(correlationID, preHash, postHash, ts.Add(4*time.Minute))
 		insertAuditEvent("effectiveness.assessment.completed", "effectiveness", correlationID,
-			map[string]interface{}{"reason": "full", "score": 0.85},
+			map[string]interface{}{"reason": "Full", "score": 0.85},
 			ts.Add(5*time.Minute),
 		)
 	}

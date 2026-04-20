@@ -145,6 +145,92 @@ func (m *MockDataStorageClient) Reset() {
 	m.failUntilCall = 0
 }
 
+// errorCaptureSink captures Error-level log messages for test assertions.
+type errorCaptureSink struct {
+	mu     sync.Mutex
+	errors []string
+}
+
+func (s *errorCaptureSink) Init(logr.RuntimeInfo)                    {}
+func (s *errorCaptureSink) Enabled(int) bool                         { return true }
+func (s *errorCaptureSink) Info(level int, msg string, _ ...interface{}) {}
+func (s *errorCaptureSink) Error(_ error, msg string, _ ...interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.errors = append(s.errors, msg)
+}
+func (s *errorCaptureSink) WithValues(...interface{}) logr.LogSink { return s }
+func (s *errorCaptureSink) WithName(string) logr.LogSink          { return s }
+
+func (s *errorCaptureSink) hasErrorContaining(substr string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, msg := range s.errors {
+		if containsSubstring(msg, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *errorCaptureSink) errorCountContaining(substr string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	count := 0
+	for _, msg := range s.errors {
+		if containsSubstring(msg, substr) {
+			count++
+		}
+	}
+	return count
+}
+
+// infoCaptureSink captures Info-level log messages with their verbosity level.
+type infoCaptureSink struct {
+	mu      sync.Mutex
+	entries []infoEntry
+}
+
+type infoEntry struct {
+	level int
+	msg   string
+}
+
+func (s *infoCaptureSink) Init(logr.RuntimeInfo)                          {}
+func (s *infoCaptureSink) Enabled(int) bool                               { return true }
+func (s *infoCaptureSink) Error(_ error, _ string, _ ...interface{})      {}
+func (s *infoCaptureSink) WithValues(...interface{}) logr.LogSink         { return s }
+func (s *infoCaptureSink) WithName(string) logr.LogSink                  { return s }
+func (s *infoCaptureSink) Info(level int, msg string, _ ...interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.entries = append(s.entries, infoEntry{level: level, msg: msg})
+}
+
+func (s *infoCaptureSink) hasInfoAtLevel(level int, substr string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range s.entries {
+		if e.level == level && containsSubstring(e.msg, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsSubstring(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || findSubstring(s, substr))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
 // Helper function to create a test event
 // DD-AUDIT-002 V2.0: Uses OpenAPI types and helper functions
 func createTestEvent() *ogenclient.AuditEventRequest {
@@ -537,6 +623,120 @@ var _ = Describe("BufferedAuditStore", func() {
 				ContainSubstring("dropped"),
 				ContainSubstring("timeout"), // Close() may timeout if retries are still in-flight
 			))
+		})
+	})
+
+	// ========================================
+	// Issue #749: Timer drift threshold and log verbosity (BR-AUDIT-749)
+	// ========================================
+	Describe("Timer Drift Threshold (Issue #749)", func() {
+
+		// UT-AUDIT-749-001: 3x drift should NOT trigger Error log (threshold is 5x)
+		It("UT-AUDIT-749-001: timer drift at 3x does NOT emit Error log", func() {
+			config := audit.Config{
+				BufferSize:    100,
+				BatchSize:     10,
+				FlushInterval: 100 * time.Millisecond,
+				MaxRetries:    3,
+			}
+
+			logSink := &errorCaptureSink{}
+			testLogger := logr.New(logSink)
+
+			var err error
+			store, err = audit.NewBufferedStore(mockClient, config, "test-service", testLogger)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Store one event so the timer-based flush has something to process
+			event := createTestEvent()
+			Expect(store.StoreAudit(ctx, event)).To(Succeed())
+
+			// Wait for several flush intervals to allow timer ticks to accumulate
+			// At 100ms interval, 3x drift means ~300ms between ticks (normal jitter)
+			time.Sleep(500 * time.Millisecond)
+
+			// Close cleanly to drain
+			Expect(store.Close()).To(Succeed())
+			store = nil
+
+			// No Error-level log about "TIMER BUG" should appear for normal jitter
+			Expect(logSink.hasErrorContaining("TIMER BUG")).To(BeFalse(),
+				"3x drift (normal jitter) must NOT trigger TIMER BUG Error — threshold should be 5x")
+		})
+
+		// UT-AUDIT-749-002: 6x drift SHOULD trigger Error log
+		// This is harder to test deterministically since we can't control Go scheduler.
+		// We validate the threshold constant indirectly: the threshold value in the code
+		// must be >2x (old value) and <=5x (new value). Since we can't inject fake time
+		// into backgroundWriter, we test the behavioral contract: a store with a very short
+		// FlushInterval on a loaded system won't fire the Error for normal jitter.
+		// The actual 6x test requires inspecting the threshold constant.
+		It("UT-AUDIT-749-002: timer drift threshold is 5x (not 2x)", func() {
+			// This test validates the code review finding: the threshold should be 5x.
+			// We can't deterministically trigger 6x drift in a unit test, but we can
+			// verify that with a 10ms FlushInterval (where 2x=20ms is easily exceeded
+			// by Go scheduler), the old 2x threshold would fire constantly but
+			// the new 5x threshold (50ms) should rarely fire.
+			config := audit.Config{
+				BufferSize:    100,
+				BatchSize:     10,
+				FlushInterval: 10 * time.Millisecond,
+				MaxRetries:    3,
+			}
+
+			logSink := &errorCaptureSink{}
+			testLogger := logr.New(logSink)
+
+			var err error
+			store, err = audit.NewBufferedStore(mockClient, config, "test-service", testLogger)
+			Expect(err).ToNot(HaveOccurred())
+
+			event := createTestEvent()
+			Expect(store.StoreAudit(ctx, event)).To(Succeed())
+
+			// With 10ms interval and 2x threshold (20ms), Error would fire on almost every tick.
+			// With 5x threshold (50ms), it should fire much less frequently.
+			time.Sleep(200 * time.Millisecond)
+
+			Expect(store.Close()).To(Succeed())
+			store = nil
+
+			errorCount := logSink.errorCountContaining("TIMER BUG")
+			// With 5x threshold at 10ms interval, we expect far fewer errors than tick count (~20 ticks)
+			// Old 2x threshold would fire on nearly every tick
+			Expect(errorCount).To(BeNumerically("<", 10),
+				"5x threshold should fire much less than the ~20 ticks that occurred")
+		})
+	})
+
+	Describe("StoreAudit Log Verbosity (Issue #749)", func() {
+
+		// UT-AUDIT-749-003: StoreAudit should NOT emit Info logs at V(0)
+		It("UT-AUDIT-749-003: StoreAudit does not emit Info-level logs at default verbosity", func() {
+			config := audit.Config{
+				BufferSize:    100,
+				BatchSize:     10,
+				FlushInterval: 10 * time.Second,
+				MaxRetries:    3,
+			}
+
+			logSink := &infoCaptureSink{}
+			testLogger := logr.New(logSink)
+
+			var err error
+			store, err = audit.NewBufferedStore(mockClient, config, "test-service", testLogger)
+			Expect(err).ToNot(HaveOccurred())
+
+			event := createTestEvent()
+			Expect(store.StoreAudit(ctx, event)).To(Succeed())
+
+			// At V(0) (production default), no Info logs from StoreAudit should appear
+			Expect(logSink.hasInfoAtLevel(0, "StoreAudit called")).To(BeFalse(),
+				"StoreAudit called log must be V(1), not Info")
+			Expect(logSink.hasInfoAtLevel(0, "Validation passed")).To(BeFalse(),
+				"Validation passed log must be V(1), not Info")
+			Expect(logSink.hasInfoAtLevel(0, "Event buffered successfully")).To(BeFalse(),
+				"Event buffered successfully log must be V(1), not Info")
 		})
 	})
 

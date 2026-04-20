@@ -28,6 +28,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
@@ -58,10 +59,11 @@ func NewDSClientAdapter(baseURL string, timeout time.Duration, logger logr.Logge
 		timeout = 5 * time.Second
 	}
 
-	baseTransport := &http.Transport{
-		MaxIdleConns:        10,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     30 * time.Second,
+	// Issue #750: Use DefaultBaseTransport so TLS_CA_FILE is honoured for
+	// inter-service HTTPS when tls.interService.enabled=true.
+	baseTransport, err := sharedtls.DefaultBaseTransport()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create TLS-aware base transport: %w", err)
 	}
 	transport := auth.NewServiceAccountTransportWithBase(baseTransport)
 

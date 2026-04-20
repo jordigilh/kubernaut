@@ -152,7 +152,7 @@ var _ = Describe("Alert Decay Detection Integration (Issue #369, BR-EM-012)", fu
 		Expect(fetchedEA.Status.Components.AlertScore).To(HaveValue(Equal(1.0)),
 			"AlertScore should be 1.0 (confirmed resolved)")
 		Expect(fetchedEA.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonFull),
-			"Reason should be 'full' (all components assessed)")
+			"Reason should be 'Full' (all components assessed)")
 		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(BeNumerically(">", 0),
 			"AlertDecayRetries should be preserved for operator observability")
 
@@ -287,7 +287,7 @@ var _ = Describe("Alert Decay Detection Integration (Issue #369, BR-EM-012)", fu
 		Expect(fetchedEA.Status.Components.AlertScore).To(HaveValue(Equal(0.0)),
 			"AlertScore should be 0.0 (alert firing, remediation failed)")
 		Expect(fetchedEA.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonFull),
-			"AssessmentReason should be 'full' (all components assessed, not alert_decay_timeout)")
+			"AssessmentReason should be 'Full' (all components assessed, not alert_decay_timeout)")
 		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(1)),
 			"AlertDecayRetries should be 1 (one decay pass before metrics gate killed hypothesis)")
 

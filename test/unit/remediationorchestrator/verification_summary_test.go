@@ -55,7 +55,7 @@ var _ = Describe("Verification Summary Builder (#318)", func() {
 			Expect(summary).To(ContainSubstring("Verification passed"))
 			Expect(vCtx.Assessed).To(BeTrue())
 			Expect(vCtx.Outcome).To(Equal("passed"))
-			Expect(vCtx.Reason).To(Equal("full"))
+			Expect(vCtx.Reason).To(Equal("Full"))
 		})
 	})
 
@@ -76,7 +76,7 @@ var _ = Describe("Verification Summary Builder (#318)", func() {
 			Expect(summary).To(ContainSubstring("modified by an external entity"))
 			Expect(vCtx.Assessed).To(BeTrue())
 			Expect(vCtx.Outcome).To(Equal("inconclusive"))
-			Expect(vCtx.Reason).To(Equal("spec_drift"))
+			Expect(vCtx.Reason).To(Equal("SpecDrift"))
 
 			bullets := creator.BuildComponentBullets(ea)
 			Expect(bullets).To(ContainSubstring("Resource integrity: spec modified externally after remediation"))
@@ -120,7 +120,7 @@ var _ = Describe("Verification Summary Builder (#318)", func() {
 			summary, vCtx := creator.BuildVerificationSummary(ea, nil)
 			Expect(summary).To(ContainSubstring("related alerts persisted beyond the assessment window"))
 			Expect(vCtx.Outcome).To(Equal("inconclusive"))
-			Expect(vCtx.Reason).To(Equal("alert_decay_timeout"))
+			Expect(vCtx.Reason).To(Equal("AlertDecayTimeout"))
 		})
 	})
 
@@ -135,7 +135,7 @@ var _ = Describe("Verification Summary Builder (#318)", func() {
 			summary, vCtx := creator.BuildVerificationSummary(ea, nil)
 			Expect(summary).To(ContainSubstring("metrics were not available"))
 			Expect(vCtx.Outcome).To(Equal("partial"))
-			Expect(vCtx.Reason).To(Equal("metrics_timed_out"))
+			Expect(vCtx.Reason).To(Equal("MetricsTimedOut"))
 		})
 	})
 
@@ -150,7 +150,7 @@ var _ = Describe("Verification Summary Builder (#318)", func() {
 			summary, vCtx := creator.BuildVerificationSummary(ea, nil)
 			Expect(summary).To(ContainSubstring("assessment window expired"))
 			Expect(vCtx.Outcome).To(Equal("unavailable"))
-			Expect(vCtx.Reason).To(Equal("expired"))
+			Expect(vCtx.Reason).To(Equal("Expired"))
 		})
 	})
 
@@ -165,7 +165,7 @@ var _ = Describe("Verification Summary Builder (#318)", func() {
 			summary, vCtx := creator.BuildVerificationSummary(ea, nil)
 			Expect(summary).To(ContainSubstring("no workflow execution was found"))
 			Expect(vCtx.Outcome).To(Equal("unavailable"))
-			Expect(vCtx.Reason).To(Equal("no_execution"))
+			Expect(vCtx.Reason).To(Equal("NoExecution"))
 		})
 	})
 
@@ -487,7 +487,7 @@ var _ = Describe("Verification Summary Builder (#318)", func() {
 			Expect(summary).To(ContainSubstring("Related alerts: still firing"))
 			Expect(summary).To(ContainSubstring("Metrics: partial improvement (score: 0.50)"))
 			Expect(vCtx.Outcome).To(Equal("completed"))
-			Expect(vCtx.Reason).To(Equal("full"))
+			Expect(vCtx.Reason).To(Equal("Full"))
 			Expect(vCtx.Summary).To(ContainSubstring("all checks were performed"))
 			Expect(vCtx.Summary).NotTo(ContainSubstring("Verification passed"))
 		})
@@ -546,7 +546,7 @@ var _ = Describe("Verification Summary Builder (#318)", func() {
 			Expect(summary).To(ContainSubstring("Metrics: no improvement detected"))
 			Expect(summary).NotTo(ContainSubstring("Pod health"))
 			Expect(vCtx.Outcome).To(Equal("completed"))
-			Expect(vCtx.Reason).To(Equal("full"))
+			Expect(vCtx.Reason).To(Equal("Full"))
 		})
 	})
 

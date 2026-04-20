@@ -1663,7 +1663,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				Expect(nr.Spec.Context.Verification.Assessed).To(BeTrue())
 				Expect(nr.Spec.Context.Verification.Outcome).To(Equal("inconclusive"))
-				Expect(nr.Spec.Context.Verification.Reason).To(Equal("spec_drift"))
+				Expect(nr.Spec.Context.Verification.Reason).To(Equal("SpecDrift"))
 				Expect(nr.Spec.Context.Verification.Summary).To(ContainSubstring("modified by an external entity"))
 			})
 		})

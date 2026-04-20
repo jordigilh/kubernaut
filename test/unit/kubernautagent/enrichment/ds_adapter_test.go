@@ -106,7 +106,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			Expect(t1.HashMatch).To(Equal("preRemediation"))
 			Expect(t1.PreRemediationSpecHash).To(Equal("sha256:aaa"))
 			Expect(t1.PostRemediationSpecHash).To(Equal("sha256:bbb"))
-			Expect(t1.AssessmentReason).To(Equal("full"))
+			Expect(t1.AssessmentReason).To(Equal("Full"))
 			Expect(t1.HealthChecks).NotTo(BeNil())
 			Expect(*t1.HealthChecks.PodRunning).To(BeTrue())
 			Expect(*t1.HealthChecks.ReadinessPass).To(BeTrue())

@@ -113,19 +113,6 @@ func DefaultBaseTransport() (*http.Transport, error) {
 	return NewTLSTransport(caFile)
 }
 
-// NewInterServiceClient creates an http.Client with optional CA trust for
-// inter-service HTTPS calls. When caFile is empty, returns a plain client.
-func NewInterServiceClient(caFile string, timeout time.Duration) (*http.Client, error) {
-	if caFile == "" {
-		return &http.Client{Timeout: timeout}, nil
-	}
-	transport, err := NewTLSTransport(caFile)
-	if err != nil {
-		return nil, err
-	}
-	return &http.Client{Transport: transport, Timeout: timeout}, nil
-}
-
 // NewTLSTransport creates an http.Transport configured with a custom CA pool
 // for verifying server certificates on outbound HTTPS calls.
 func NewTLSTransport(caFile string) (*http.Transport, error) {

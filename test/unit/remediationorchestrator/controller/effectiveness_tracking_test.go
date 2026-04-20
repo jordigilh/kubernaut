@@ -119,7 +119,7 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 		Expect(cond).ToNot(BeNil(), "EffectivenessAssessed condition should be set")
 		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		Expect(cond.Reason).To(Equal("AssessmentCompleted"))
-		Expect(cond.Message).To(ContainSubstring("full"))
+		Expect(cond.Message).To(ContainSubstring("Full"))
 	})
 
 	// ========================================
@@ -285,7 +285,7 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)).To(Succeed())
 
 		cond := meta.FindStatusCondition(fetchedRR.Status.Conditions, "EffectivenessAssessed")
-		Expect(cond).ToNot(BeNil())
+		Expect(cond).NotTo(BeNil(), "EffectivenessAssessed condition must exist to verify idempotency")
 		Expect(cond.Message).To(Equal("Already set"), "Condition should not be overwritten")
 	})
 
@@ -337,6 +337,6 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 			"Expired is still a completed assessment (Status=True)")
 		Expect(cond.Reason).To(Equal("AssessmentExpired"),
 			"ADR-EM-001: expired EAs must use Reason=AssessmentExpired, not AssessmentCompleted")
-		Expect(cond.Message).To(ContainSubstring("expired"))
+		Expect(cond.Message).To(ContainSubstring("Expired"))
 	})
 })

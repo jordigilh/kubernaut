@@ -8411,13 +8411,13 @@ type EffectivenessScoreResponse struct {
 	// Current assessment status:
 	// - no_data: No component events found
 	// - in_progress: Some component events present but assessment not completed
-	// - full: All components assessed successfully
-	// - partial: Some components assessed, others unavailable
-	// - spec_drift: Target resource spec changed during assessment (score unreliable, forced to 0.0)
-	// - expired: Assessment timed out before completing
-	// - no_execution: No workflow execution found for this correlation ID
-	// - metrics_timed_out: Prometheus metrics collection timed out
-	// - EffectivenessAssessed: Legacy value (equivalent to "full").
+	// - Full: All components assessed successfully
+	// - Partial: Some components assessed, others unavailable
+	// - SpecDrift: Target resource spec changed during assessment (score unreliable, forced to 0.0)
+	// - Expired: Assessment timed out before completing
+	// - NoExecution: No workflow execution found for this correlation ID
+	// - MetricsTimedOut: Prometheus metrics collection timed out
+	// - EffectivenessAssessed: Legacy value (equivalent to "Full").
 	AssessmentStatus EffectivenessScoreResponseAssessmentStatus `json:"assessment_status"`
 	// Timestamp when this score was computed.
 	ComputedAt time.Time `json:"computed_at"`
@@ -8488,24 +8488,24 @@ func (*EffectivenessScoreResponse) getEffectivenessScoreRes() {}
 // Current assessment status:
 // - no_data: No component events found
 // - in_progress: Some component events present but assessment not completed
-// - full: All components assessed successfully
-// - partial: Some components assessed, others unavailable
-// - spec_drift: Target resource spec changed during assessment (score unreliable, forced to 0.0)
-// - expired: Assessment timed out before completing
-// - no_execution: No workflow execution found for this correlation ID
-// - metrics_timed_out: Prometheus metrics collection timed out
-// - EffectivenessAssessed: Legacy value (equivalent to "full").
+// - Full: All components assessed successfully
+// - Partial: Some components assessed, others unavailable
+// - SpecDrift: Target resource spec changed during assessment (score unreliable, forced to 0.0)
+// - Expired: Assessment timed out before completing
+// - NoExecution: No workflow execution found for this correlation ID
+// - MetricsTimedOut: Prometheus metrics collection timed out
+// - EffectivenessAssessed: Legacy value (equivalent to "Full").
 type EffectivenessScoreResponseAssessmentStatus string
 
 const (
 	EffectivenessScoreResponseAssessmentStatusNoData                EffectivenessScoreResponseAssessmentStatus = "no_data"
 	EffectivenessScoreResponseAssessmentStatusInProgress            EffectivenessScoreResponseAssessmentStatus = "in_progress"
-	EffectivenessScoreResponseAssessmentStatusFull                  EffectivenessScoreResponseAssessmentStatus = "full"
-	EffectivenessScoreResponseAssessmentStatusPartial               EffectivenessScoreResponseAssessmentStatus = "partial"
-	EffectivenessScoreResponseAssessmentStatusSpecDrift             EffectivenessScoreResponseAssessmentStatus = "spec_drift"
-	EffectivenessScoreResponseAssessmentStatusExpired               EffectivenessScoreResponseAssessmentStatus = "expired"
-	EffectivenessScoreResponseAssessmentStatusNoExecution           EffectivenessScoreResponseAssessmentStatus = "no_execution"
-	EffectivenessScoreResponseAssessmentStatusMetricsTimedOut       EffectivenessScoreResponseAssessmentStatus = "metrics_timed_out"
+	EffectivenessScoreResponseAssessmentStatusFull                  EffectivenessScoreResponseAssessmentStatus = "Full"
+	EffectivenessScoreResponseAssessmentStatusPartial               EffectivenessScoreResponseAssessmentStatus = "Partial"
+	EffectivenessScoreResponseAssessmentStatusSpecDrift             EffectivenessScoreResponseAssessmentStatus = "SpecDrift"
+	EffectivenessScoreResponseAssessmentStatusExpired               EffectivenessScoreResponseAssessmentStatus = "Expired"
+	EffectivenessScoreResponseAssessmentStatusNoExecution           EffectivenessScoreResponseAssessmentStatus = "NoExecution"
+	EffectivenessScoreResponseAssessmentStatusMetricsTimedOut       EffectivenessScoreResponseAssessmentStatus = "MetricsTimedOut"
 	EffectivenessScoreResponseAssessmentStatusEffectivenessAssessed EffectivenessScoreResponseAssessmentStatus = "EffectivenessAssessed"
 )
 
@@ -17633,7 +17633,7 @@ type RemediationHistoryEntry struct {
 	// When the remediation was completed.
 	CompletedAt time.Time `json:"completedAt"`
 	// Reason/status of the effectiveness assessment. Null if assessment
-	// not yet completed. When "spec_drift", the effectiveness score is
+	// not yet completed. When "SpecDrift", the effectiveness score is
 	// unreliable (hard-overridden to 0.0) because the target resource
 	// spec was modified during the assessment window (DD-EM-002 v1.1).
 	AssessmentReason OptNilRemediationHistoryEntryAssessmentReason `json:"assessmentReason"`
@@ -17802,18 +17802,18 @@ func (s *RemediationHistoryEntry) SetAssessedAt(val OptDateTime) {
 }
 
 // Reason/status of the effectiveness assessment. Null if assessment
-// not yet completed. When "spec_drift", the effectiveness score is
+// not yet completed. When "SpecDrift", the effectiveness score is
 // unreliable (hard-overridden to 0.0) because the target resource
 // spec was modified during the assessment window (DD-EM-002 v1.1).
 type RemediationHistoryEntryAssessmentReason string
 
 const (
-	RemediationHistoryEntryAssessmentReasonFull            RemediationHistoryEntryAssessmentReason = "full"
-	RemediationHistoryEntryAssessmentReasonPartial         RemediationHistoryEntryAssessmentReason = "partial"
-	RemediationHistoryEntryAssessmentReasonSpecDrift       RemediationHistoryEntryAssessmentReason = "spec_drift"
-	RemediationHistoryEntryAssessmentReasonExpired         RemediationHistoryEntryAssessmentReason = "expired"
-	RemediationHistoryEntryAssessmentReasonNoExecution     RemediationHistoryEntryAssessmentReason = "no_execution"
-	RemediationHistoryEntryAssessmentReasonMetricsTimedOut RemediationHistoryEntryAssessmentReason = "metrics_timed_out"
+	RemediationHistoryEntryAssessmentReasonFull            RemediationHistoryEntryAssessmentReason = "Full"
+	RemediationHistoryEntryAssessmentReasonPartial         RemediationHistoryEntryAssessmentReason = "Partial"
+	RemediationHistoryEntryAssessmentReasonSpecDrift       RemediationHistoryEntryAssessmentReason = "SpecDrift"
+	RemediationHistoryEntryAssessmentReasonExpired         RemediationHistoryEntryAssessmentReason = "Expired"
+	RemediationHistoryEntryAssessmentReasonNoExecution     RemediationHistoryEntryAssessmentReason = "NoExecution"
+	RemediationHistoryEntryAssessmentReasonMetricsTimedOut RemediationHistoryEntryAssessmentReason = "MetricsTimedOut"
 )
 
 // AllValues returns all RemediationHistoryEntryAssessmentReason values.
@@ -17945,7 +17945,7 @@ type RemediationHistorySummary struct {
 	// Result of three-way hash comparison against currentSpecHash.
 	HashMatch OptRemediationHistorySummaryHashMatch `json:"hashMatch"`
 	// Reason/status of the effectiveness assessment (same enum as
-	// RemediationHistoryEntry). When "spec_drift", effectiveness score
+	// RemediationHistoryEntry). When "SpecDrift", effectiveness score
 	// is unreliable (DD-EM-002 v1.1).
 	AssessmentReason OptNilRemediationHistorySummaryAssessmentReason `json:"assessmentReason"`
 	// When the remediation was completed.
@@ -18043,17 +18043,17 @@ func (s *RemediationHistorySummary) SetCompletedAt(val time.Time) {
 }
 
 // Reason/status of the effectiveness assessment (same enum as
-// RemediationHistoryEntry). When "spec_drift", effectiveness score
+// RemediationHistoryEntry). When "SpecDrift", effectiveness score
 // is unreliable (DD-EM-002 v1.1).
 type RemediationHistorySummaryAssessmentReason string
 
 const (
-	RemediationHistorySummaryAssessmentReasonFull            RemediationHistorySummaryAssessmentReason = "full"
-	RemediationHistorySummaryAssessmentReasonPartial         RemediationHistorySummaryAssessmentReason = "partial"
-	RemediationHistorySummaryAssessmentReasonSpecDrift       RemediationHistorySummaryAssessmentReason = "spec_drift"
-	RemediationHistorySummaryAssessmentReasonExpired         RemediationHistorySummaryAssessmentReason = "expired"
-	RemediationHistorySummaryAssessmentReasonNoExecution     RemediationHistorySummaryAssessmentReason = "no_execution"
-	RemediationHistorySummaryAssessmentReasonMetricsTimedOut RemediationHistorySummaryAssessmentReason = "metrics_timed_out"
+	RemediationHistorySummaryAssessmentReasonFull            RemediationHistorySummaryAssessmentReason = "Full"
+	RemediationHistorySummaryAssessmentReasonPartial         RemediationHistorySummaryAssessmentReason = "Partial"
+	RemediationHistorySummaryAssessmentReasonSpecDrift       RemediationHistorySummaryAssessmentReason = "SpecDrift"
+	RemediationHistorySummaryAssessmentReasonExpired         RemediationHistorySummaryAssessmentReason = "Expired"
+	RemediationHistorySummaryAssessmentReasonNoExecution     RemediationHistorySummaryAssessmentReason = "NoExecution"
+	RemediationHistorySummaryAssessmentReasonMetricsTimedOut RemediationHistorySummaryAssessmentReason = "MetricsTimedOut"
 )
 
 // AllValues returns all RemediationHistorySummaryAssessmentReason values.

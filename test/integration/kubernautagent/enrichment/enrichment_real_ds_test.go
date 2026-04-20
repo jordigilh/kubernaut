@@ -140,9 +140,9 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 
 			By("Seeding 2 RO events + EM events in PostgreSQL")
 			insertROEvent(corrID1, target, "sha256:pre1", "IncreaseMemory", now)
-			insertEMEvents(corrID1, "full", 0.85, "sha256:pre1", "sha256:post1", now)
+			insertEMEvents(corrID1, "Full", 0.85, "sha256:pre1", "sha256:post1", now)
 			insertROEvent(corrID2, target, "sha256:pre1", "RestartPod", now.Add(30*time.Minute))
-			insertEMEvents(corrID2, "full", 0.90, "sha256:pre1", "sha256:post2", now.Add(30*time.Minute))
+			insertEMEvents(corrID2, "Full", 0.90, "sha256:pre1", "sha256:post2", now.Add(30*time.Minute))
 
 			By("Calling enricher with real infrastructure")
 			result, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "sha256:pre1", "incident-enr001-"+testID)
@@ -170,7 +170,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			Expect(recent.Outcome).To(Equal("success"))
 			Expect(recent.HashMatch).To(Equal("preRemediation"))
 			Expect(recent.PreRemediationSpecHash).To(Equal("sha256:pre1"))
-			Expect(recent.AssessmentReason).To(Equal("full"))
+			Expect(recent.AssessmentReason).To(Equal("Full"))
 
 			older := result.RemediationHistory.Tier1[1]
 			Expect(older.RemediationUID).To(Equal(corrID1))
@@ -236,7 +236,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 
 			By("Seeding remediation history")
 			insertROEvent(corrID, target, "sha256:pre3", "IncreaseMemory", now)
-			insertEMEvents(corrID, "full", 0.88, "sha256:pre3", "sha256:post3", now)
+			insertEMEvents(corrID, "Full", 0.88, "sha256:pre3", "sha256:post3", now)
 
 			By("Calling enricher (triggers audit event)")
 			_, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "sha256:pre3", incidentID)
@@ -318,7 +318,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 
 			By("Seeding remediation history for StatefulSet")
 			insertROEvent(corrID, target, "sha256:pre5", "RestartPod", now)
-			insertEMEvents(corrID, "full", 0.92, "sha256:pre5", "sha256:post5", now)
+			insertEMEvents(corrID, "Full", 0.92, "sha256:pre5", "sha256:post5", now)
 
 			By("Building enricher with broken K8s + real DS + real audit store")
 			brokenK8s := &errorK8sClient{err: errors.New("K8s API unavailable")}
@@ -484,7 +484,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 				}, now.Add(4*time.Minute))
 
 			insertAuditEvent("effectiveness.assessment.completed", "effectiveness", corrID,
-				map[string]interface{}{"reason": "full", "score": 0.855},
+				map[string]interface{}{"reason": "Full", "score": 0.855},
 				now.Add(5*time.Minute))
 
 			By("Calling enricher")
@@ -528,7 +528,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 
 			By("Seeding RO event with preHash=sha256:old9")
 			insertROEvent(corrID, target, "sha256:old9", "RestartPod", now)
-			insertEMEvents(corrID, "full", 0.90, "sha256:old9", "sha256:current9", now)
+			insertEMEvents(corrID, "Full", 0.90, "sha256:old9", "sha256:current9", now)
 
 			By("Calling enricher with currentSpecHash=sha256:old9 (matches preHash → regression)")
 			result1, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "sha256:old9", "incident-enr009a-"+testID)

@@ -646,7 +646,7 @@ var _ = Describe("Completion Notification Verification Context (#318)", func() {
 
 		Expect(nr.Spec.Context.Verification.Assessed).To(BeTrue())
 		Expect(nr.Spec.Context.Verification.Outcome).To(Equal("passed"))
-		Expect(nr.Spec.Context.Verification.Reason).To(Equal("full"))
+		Expect(nr.Spec.Context.Verification.Reason).To(Equal("Full"))
 	})
 
 	// ========================================
