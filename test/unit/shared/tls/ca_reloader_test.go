@@ -70,6 +70,25 @@ var _ = Describe("CAReloader (#756)", func() {
 		return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
 	}
 
+	// subjectFromPEM extracts the raw subject bytes from a PEM-encoded cert
+	// so we can assert our specific CA is present in the pool.
+	subjectFromPEM := func(pemData []byte) []byte {
+		block, _ := pem.Decode(pemData)
+		Expect(block.Type).To(Equal("CERTIFICATE"), "PEM block must be a CERTIFICATE")
+		cert, err := x509.ParseCertificate(block.Bytes)
+		Expect(err).ToNot(HaveOccurred())
+		return cert.RawSubject
+	}
+
+	poolContainsSubject := func(pool *x509.CertPool, subject []byte) bool {
+		for _, s := range pool.Subjects() { //nolint:staticcheck
+			if string(s) == string(subject) {
+				return true
+			}
+		}
+		return false
+	}
+
 	writeCAFile := func(cn string) string {
 		caPath := filepath.Join(certDir, "ca.crt")
 		pemBytes := generateCAPEM(cn)
@@ -84,7 +103,7 @@ var _ = Describe("CAReloader (#756)", func() {
 
 		reloader, err := sharedtls.NewCAReloader(pemBytes)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(reloader.GetCertPool().Subjects()).To(HaveLen(1),
+		Expect(poolContainsSubject(reloader.GetCertPool(), subjectFromPEM(pemBytes))).To(BeTrue(),
 			"reloader must contain the loaded CA certificate")
 	})
 
@@ -109,14 +128,16 @@ var _ = Describe("CAReloader (#756)", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		poolBefore := reloader.GetCertPool()
-		Expect(poolBefore.Subjects()).To(HaveLen(1), "initial pool must have one CA")
+		Expect(poolContainsSubject(poolBefore, subjectFromPEM(pemBytes))).To(BeTrue(),
+			"initial pool must contain the initial CA")
 
 		newPEM := generateCAPEM("rotated-ca")
 		err = reloader.ReloadCallback(string(newPEM))
 		Expect(err).ToNot(HaveOccurred())
 
 		poolAfter := reloader.GetCertPool()
-		Expect(poolAfter.Subjects()).To(HaveLen(1), "reloaded pool must have one CA")
+		Expect(poolContainsSubject(poolAfter, subjectFromPEM(newPEM))).To(BeTrue(),
+			"reloaded pool must contain the rotated CA")
 		Expect(poolAfter).ToNot(BeIdenticalTo(poolBefore),
 			"cert pool must be replaced after reload")
 	})
@@ -188,10 +209,12 @@ var _ = Describe("CAReloader (#756)", func() {
 	// BR-SECURITY-756: Convenience constructor for file-based CA initialization
 	It("UT-TLS-756-017: should load CA from file path", func() {
 		caPath := writeCAFile("file-ca")
-
-		reloader, err := sharedtls.NewCAReloaderFromFile(caPath)
+		pemData, err := os.ReadFile(caPath)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(reloader.GetCertPool().Subjects()).To(HaveLen(1),
+
+		reloader, fileErr := sharedtls.NewCAReloaderFromFile(caPath)
+		Expect(fileErr).ToNot(HaveOccurred())
+		Expect(poolContainsSubject(reloader.GetCertPool(), subjectFromPEM(pemData))).To(BeTrue(),
 			"file-loaded reloader must contain the CA certificate")
 	})
 
@@ -214,7 +237,7 @@ var _ = Describe("CAReloader (#756)", func() {
 		Expect(transport.TLSClientConfig.MinVersion).To(
 			BeNumerically(">=", uint16(0x0303)),
 			"minimum TLS version must be at least TLS 1.2 (0x0303)")
-		Expect(transport.TLSClientConfig.RootCAs.Subjects()).To(HaveLen(1),
+		Expect(poolContainsSubject(transport.TLSClientConfig.RootCAs, subjectFromPEM(pemBytes))).To(BeTrue(),
 			"transport must have the CA in its root CA pool")
 	})
 })
