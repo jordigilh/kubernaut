@@ -497,6 +497,16 @@ func main() {
 		}()
 	}
 
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
+	if caWatchErr != nil {
+		logger.Error(caWatchErr, "Failed to start CA file watcher")
+		os.Exit(1)
+	}
+	if caWatcher != nil {
+		defer caWatcher.Stop()
+	}
+
 	if err := mgr.Start(ctx); err != nil {
 		logger.Error(err, "Problem running manager")
 		os.Exit(1)

@@ -49,6 +49,7 @@ import (
 	emmetrics "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/metrics"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/startup"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -246,13 +247,14 @@ func main() {
 			time.Sleep(caRetryInterval)
 		}
 
-		caReloader, err := emclient.NewCAReloader(caPEM)
+		// Issue #756: Migrate to shared CAReloader for consistency
+		caReloader, err := sharedtls.NewCAReloader(caPEM)
 		if err != nil {
 			setupLog.Error(err, "Failed to initialize CA reloader", "caFile", cfg.External.TLSCaFile)
 			os.Exit(1)
 		}
 
-		caWatcher, err := hotreload.NewFileWatcher(
+		emCAWatcher, err := hotreload.NewFileWatcher(
 			cfg.External.TLSCaFile,
 			caReloader.ReloadCallback,
 			ctrl.Log.WithName("ca-reloader"),
@@ -261,10 +263,11 @@ func main() {
 			setupLog.Error(err, "Failed to create CA file watcher", "caFile", cfg.External.TLSCaFile)
 			os.Exit(1)
 		}
-		if err := caWatcher.Start(ctx); err != nil {
+		if err := emCAWatcher.Start(ctx); err != nil {
 			setupLog.Error(err, "Failed to start CA file watcher", "caFile", cfg.External.TLSCaFile)
 			os.Exit(1)
 		}
+		defer emCAWatcher.Stop()
 
 		// Wrap CAReloader (RoundTripper) with SA bearer token for OCP monitoring endpoints.
 		saTransport := auth.NewServiceAccountTransportWithBase(caReloader)
@@ -379,6 +382,16 @@ func main() {
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
+	}
+
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
+	if caWatchErr != nil {
+		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
+		os.Exit(1)
+	}
+	if caWatcher != nil {
+		defer caWatcher.Stop()
 	}
 
 	setupLog.Info("starting manager")

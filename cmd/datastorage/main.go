@@ -42,6 +42,7 @@ import (
 	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // ========================================
@@ -342,6 +343,16 @@ func main() {
 			metricsErrors <- err
 		}
 	}()
+
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
+	if caWatchErr != nil {
+		logger.Error(caWatchErr, "Failed to start CA file watcher")
+		os.Exit(1)
+	}
+	if caWatcher != nil {
+		defer caWatcher.Stop()
+	}
 
 	// Start API server in goroutine
 	serverErrors := make(chan error, 1)

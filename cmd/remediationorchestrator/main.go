@@ -44,6 +44,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/version"
 	clusterid "github.com/jordigilh/kubernaut/pkg/shared/cluster"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	config "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -380,6 +381,16 @@ func main() {
 
 	// Setup signal handler for graceful shutdown
 	ctx := ctrl.SetupSignalHandler()
+
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
+	if caWatchErr != nil {
+		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
+		os.Exit(1)
+	}
+	if caWatcher != nil {
+		defer caWatcher.Stop()
+	}
 
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
