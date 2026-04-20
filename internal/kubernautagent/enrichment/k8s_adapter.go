@@ -47,18 +47,16 @@ func NewK8sAdapter(dynClient dynamic.Interface, mapper meta.RESTMapper) *K8sAdap
 // At each level, only the controller ownerReference (Controller: true) is followed,
 // aligning with Gateway and SignalProcessing behavior (see #696).
 // Returns the chain from the immediate owner to the root owner, excluding the starting resource.
+//
+// Scope-aware (#762): uses RESTMapping.Scope to determine cluster vs namespaced
+// API calls, rather than relying on the namespace parameter being empty.
 func (a *K8sAdapter) GetOwnerChain(ctx context.Context, kind, name, namespace string) ([]OwnerChainEntry, error) {
-	gvr, err := a.resolveGVR(kind)
+	mapping, err := a.resolveMapping(kind)
 	if err != nil {
 		return nil, fmt.Errorf("k8s adapter: resolve GVR for %s: %w", kind, err)
 	}
 
-	var resourceClient dynamic.ResourceInterface
-	if namespace != "" {
-		resourceClient = a.dynClient.Resource(gvr).Namespace(namespace)
-	} else {
-		resourceClient = a.dynClient.Resource(gvr)
-	}
+	resourceClient := a.scopedClient(mapping, namespace)
 
 	obj, err := resourceClient.Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
@@ -85,24 +83,24 @@ func (a *K8sAdapter) GetOwnerChain(ctx context.Context, kind, name, namespace st
 			break
 		}
 		ownerRef := *controllerRef
-		chain = append(chain, OwnerChainEntry{
-			Kind:      ownerRef.Kind,
-			Name:      ownerRef.Name,
-			Namespace: namespace,
-		})
 
-		ownerGVR, err := a.resolveOwnerGVR(ownerRef)
+		ownerMapping, err := a.resolveOwnerMapping(ownerRef)
 		if err != nil {
 			break
 		}
 
-		var ownerClient dynamic.ResourceInterface
-		if namespace != "" {
-			ownerClient = a.dynClient.Resource(ownerGVR).Namespace(namespace)
-		} else {
-			ownerClient = a.dynClient.Resource(ownerGVR)
+		ownerNS := namespace
+		if ownerMapping.Scope.Name() != meta.RESTScopeNameNamespace {
+			ownerNS = ""
 		}
 
+		chain = append(chain, OwnerChainEntry{
+			Kind:      ownerRef.Kind,
+			Name:      ownerRef.Name,
+			Namespace: ownerNS,
+		})
+
+		ownerClient := a.scopedClient(ownerMapping, namespace)
 		ownerObj, err := ownerClient.Get(ctx, ownerRef.Name, metav1.GetOptions{})
 		if err != nil {
 			break
@@ -113,39 +111,27 @@ func (a *K8sAdapter) GetOwnerChain(ctx context.Context, kind, name, namespace st
 	return chain, nil
 }
 
-// GetSpecHash fetches the resource and computes a canonical SHA-256 hash of its .spec field.
-// Returns an empty string (not an error) when the resource has no .spec (e.g. ConfigMaps, Nodes).
+// GetSpecHash fetches the resource and computes a canonical resource fingerprint.
+// Uses CanonicalResourceFingerprint (#765) which hashes all functional state,
+// not just .spec. The method name is retained for interface compatibility.
+//
+// Scope-aware (#762): uses RESTMapping.Scope for cluster vs namespaced dispatch.
 func (a *K8sAdapter) GetSpecHash(ctx context.Context, kind, name, namespace string) (string, error) {
-	gvr, err := a.resolveGVR(kind)
+	mapping, err := a.resolveMapping(kind)
 	if err != nil {
 		return "", fmt.Errorf("k8s adapter: resolve GVR for spec hash of %s: %w", kind, err)
 	}
 
-	var resourceClient dynamic.ResourceInterface
-	if namespace != "" {
-		resourceClient = a.dynClient.Resource(gvr).Namespace(namespace)
-	} else {
-		resourceClient = a.dynClient.Resource(gvr)
-	}
+	resourceClient := a.scopedClient(mapping, namespace)
 
 	obj, err := resourceClient.Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return "", fmt.Errorf("k8s adapter: get %s/%s in %s for spec hash: %w", kind, name, namespace, err)
 	}
 
-	spec, ok := obj.Object["spec"]
-	if !ok {
-		return "", nil
-	}
-
-	specMap, ok := spec.(map[string]interface{})
-	if !ok {
-		return "", nil
-	}
-
-	h, err := hash.CanonicalSpecHash(specMap)
+	h, err := hash.CanonicalResourceFingerprint(obj.Object)
 	if err != nil {
-		return "", fmt.Errorf("k8s adapter: compute spec hash for %s/%s in %s: %w", kind, name, namespace, err)
+		return "", fmt.Errorf("k8s adapter: compute resource fingerprint for %s/%s in %s: %w", kind, name, namespace, err)
 	}
 	return h, nil
 }
@@ -157,30 +143,41 @@ type resettableMapper interface {
 	Reset()
 }
 
-func (a *K8sAdapter) resolveGVR(kind string) (schema.GroupVersionResource, error) {
+// resolveMapping returns the full RESTMapping for a Kind, including GVR and Scope.
+// Includes resettableMapper retry for CRDs installed after startup.
+func (a *K8sAdapter) resolveMapping(kind string) (*meta.RESTMapping, error) {
 	plural := strings.ToLower(kind) + "s"
 	gvr, err := a.mapper.ResourceFor(schema.GroupVersionResource{Resource: plural})
-	if err == nil {
-		return gvr, nil
-	}
-	if rm, ok := a.mapper.(resettableMapper); ok {
-		rm.Reset()
-		gvr, retryErr := a.mapper.ResourceFor(schema.GroupVersionResource{Resource: plural})
-		if retryErr == nil {
-			return gvr, nil
+	if err != nil {
+		if rm, ok := a.mapper.(resettableMapper); ok {
+			rm.Reset()
+			gvr, err = a.mapper.ResourceFor(schema.GroupVersionResource{Resource: plural})
+		}
+		if err != nil {
+			return nil, err
 		}
 	}
-	return schema.GroupVersionResource{}, err
+	gvk, err := a.mapper.KindFor(gvr)
+	if err != nil {
+		return nil, fmt.Errorf("resolve kind for %s: %w", gvr, err)
+	}
+	return a.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 }
 
-func (a *K8sAdapter) resolveOwnerGVR(ref metav1.OwnerReference) (schema.GroupVersionResource, error) {
+// resolveOwnerMapping resolves a full RESTMapping from an ownerReference.
+func (a *K8sAdapter) resolveOwnerMapping(ref metav1.OwnerReference) (*meta.RESTMapping, error) {
 	gv, err := schema.ParseGroupVersion(ref.APIVersion)
 	if err != nil {
-		return schema.GroupVersionResource{}, fmt.Errorf("parse API version %q: %w", ref.APIVersion, err)
+		return nil, fmt.Errorf("parse API version %q: %w", ref.APIVersion, err)
 	}
-	mapping, err := a.mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: ref.Kind}, gv.Version)
-	if err != nil {
-		return schema.GroupVersionResource{}, err
+	return a.mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: ref.Kind}, gv.Version)
+}
+
+// scopedClient returns a namespaced or cluster-scoped dynamic client based on
+// the RESTMapping's Scope, matching the pattern in resolver.go (#762).
+func (a *K8sAdapter) scopedClient(mapping *meta.RESTMapping, namespace string) dynamic.ResourceInterface {
+	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		return a.dynClient.Resource(mapping.Resource).Namespace(namespace)
 	}
-	return mapping.Resource, nil
+	return a.dynClient.Resource(mapping.Resource)
 }

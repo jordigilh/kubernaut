@@ -143,7 +143,7 @@ var _ = Describe("LabelDetector Non-Workload Root Owners — Issue #679", func()
 	})
 
 	Describe("UT-KA-679-004: Node root owner (cluster-scoped)", func() {
-		It("should detect serviceMesh annotation with zero failedDetections", func() {
+		It("should detect serviceMesh annotation; namespace-scoped detections fail for cluster root (#762)", func() {
 			scheme := newFullScheme()
 
 			node := &corev1.Node{
@@ -162,7 +162,8 @@ var _ = Describe("LabelDetector Non-Workload Root Owners — Issue #679", func()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(labels).NotTo(BeNil())
 			Expect(labels.ServiceMesh).To(Equal("istio"), "Node with Istio inject annotation should be detected")
-			Expect(labels.FailedDetections).To(BeEmpty(), "no detections should fail for Node")
+			Expect(labels.FailedDetections).To(ContainElements("hpaEnabled", "pdbProtected", "networkIsolated", "resourceQuotaConstrained"),
+				"#762: namespace-scoped detections must be marked failed for cluster-scoped root with empty namespace")
 		})
 	})
 

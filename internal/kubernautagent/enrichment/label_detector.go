@@ -91,30 +91,36 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, kind, name, namespace 
 	return result, nil
 }
 
+// fetchResource retrieves a resource using scope-aware client dispatch (#762).
 func (d *LabelDetector) fetchResource(ctx context.Context, kind, name, namespace string) (*unstructured.Unstructured, error) {
-	gvr, err := d.resolveGVR(kind)
+	mapping, err := d.resolveMapping(kind)
 	if err != nil {
 		return nil, fmt.Errorf("cannot resolve GVR for kind %q: %w", kind, err)
 	}
 	var client dynamic.ResourceInterface
-	if namespace != "" {
-		client = d.dynClient.Resource(gvr).Namespace(namespace)
+	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		client = d.dynClient.Resource(mapping.Resource).Namespace(namespace)
 	} else {
-		client = d.dynClient.Resource(gvr)
+		client = d.dynClient.Resource(mapping.Resource)
 	}
 	return client.Get(ctx, name, metav1.GetOptions{})
 }
 
-func (d *LabelDetector) resolveGVR(kind string) (schema.GroupVersionResource, error) {
+// resolveMapping returns the full RESTMapping for a Kind, including Scope.
+func (d *LabelDetector) resolveMapping(kind string) (*meta.RESTMapping, error) {
 	if d.mapper == nil {
-		return schema.GroupVersionResource{}, fmt.Errorf("REST mapper is required for GVR resolution of kind %q", kind)
+		return nil, fmt.Errorf("REST mapper is required for GVR resolution of kind %q", kind)
 	}
 	plural := strings.ToLower(kind) + "s"
 	gvr, err := d.mapper.ResourceFor(schema.GroupVersionResource{Resource: plural})
 	if err != nil {
-		return schema.GroupVersionResource{}, err
+		return nil, err
 	}
-	return gvr, nil
+	gvk, err := d.mapper.KindFor(gvr)
+	if err != nil {
+		return nil, fmt.Errorf("resolve kind for %s: %w", gvr, err)
+	}
+	return d.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 }
 
 func detectGitOps(obj *unstructured.Unstructured, result *DetectedLabels) {
@@ -185,6 +191,10 @@ func detectServiceMesh(obj *unstructured.Unstructured, result *DetectedLabels) {
 }
 
 func (d *LabelDetector) detectHPA(ctx context.Context, rootKind, rootName, rootNS string, result *DetectedLabels, failed *[]string) {
+	if rootNS == "" {
+		*failed = append(*failed, "hpaEnabled")
+		return
+	}
 	list, err := d.dynClient.Resource(hpaGVR).Namespace(rootNS).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		slog.Warn("label detection: HPA list failed", "namespace", rootNS, "error", err)
@@ -215,9 +225,10 @@ func extractScaleTargetRef(hpa *unstructured.Unstructured) (string, string) {
 }
 
 func (d *LabelDetector) detectPDB(ctx context.Context, rootObj *unstructured.Unstructured, rootNS string, result *DetectedLabels, failed *[]string) {
-	// PDB selectors match pod labels, not the controller's own metadata.labels.
-	// For Deployments/StatefulSets/DaemonSets/ReplicaSets, extract the pod
-	// template labels from spec.template.metadata.labels.
+	if rootNS == "" {
+		*failed = append(*failed, "pdbProtected")
+		return
+	}
 	podLabels := extractPodTemplateLabels(rootObj)
 	rootLabels := rootObj.GetLabels()
 
@@ -301,6 +312,10 @@ func labelsSubset(subset, superset map[string]string) bool {
 }
 
 func (d *LabelDetector) detectNetworkPolicy(ctx context.Context, namespace string, result *DetectedLabels, failed *[]string) {
+	if namespace == "" {
+		*failed = append(*failed, "networkIsolated")
+		return
+	}
 	list, err := d.dynClient.Resource(networkPolicyGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		slog.Warn("label detection: NetworkPolicy list failed", "namespace", namespace, "error", err)
@@ -311,6 +326,10 @@ func (d *LabelDetector) detectNetworkPolicy(ctx context.Context, namespace strin
 }
 
 func (d *LabelDetector) detectResourceQuota(ctx context.Context, namespace string, result *DetectedLabels, failed *[]string) {
+	if namespace == "" {
+		*failed = append(*failed, "resourceQuotaConstrained")
+		return
+	}
 	list, err := d.dynClient.Resource(resourceQuotaGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		slog.Warn("label detection: ResourceQuota list failed", "namespace", namespace, "error", err)
