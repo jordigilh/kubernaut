@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // ========================================
@@ -80,9 +81,13 @@ func defaultTimeout(cfg Config) time.Duration {
 //
 // For integration tests with custom authentication, use NewHolmesGPTClientWithTransport.
 func NewKubernautAgentClient(cfg Config) (*KubernautAgentClient, error) {
-	// DD-AUTH-006: Use ServiceAccount authentication for production/E2E
-	// OAuth-proxy validates this token and injects X-Auth-Request-User header
-	transport := auth.NewServiceAccountTransportWithBase(http.DefaultTransport)
+	// Issue #750: Use DefaultBaseTransport so TLS_CA_FILE is honoured for
+	// inter-service HTTPS when tls.interService.enabled=true.
+	baseTransport, err := sharedtls.DefaultBaseTransport()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create TLS-aware base transport: %w", err)
+	}
+	transport := auth.NewServiceAccountTransportWithBase(baseTransport)
 
 	return newClientWithHTTP(cfg, &http.Client{
 		Timeout:   defaultTimeout(cfg),
