@@ -19,6 +19,7 @@ package investigator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -330,12 +331,25 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
+		var noJSON *parser.ErrNoJSON
+		if errors.As(parseErr, &noJSON) {
+			// #760 / HAPI state machine: free text during workflow selection after
+			// successful RCA = deliberate decline. Classify as no_matching_workflows.
+			inv.logger.Warn("workflow selection: LLM returned free text (no JSON), classifying as no_matching_workflows",
+				slog.String("error", parseErr.Error()))
+			return &katypes.InvestigationResult{
+				RCASummary:        rcaSummary,
+				HumanReviewNeeded: true,
+				HumanReviewReason: "no_matching_workflows",
+				Reason:            fmt.Sprintf("workflow selection: LLM did not produce parseable result: %s", parseErr),
+			}, nil
+		}
 		inv.logger.Warn("workflow selection parse failed",
 			slog.String("error", parseErr.Error()))
 		return &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
-			Reason:            "failed to parse workflow selection response",
+			Reason:            fmt.Sprintf("failed to parse workflow selection response: %s", parseErr),
 		}, nil
 	}
 

@@ -40,7 +40,7 @@ func NewResultParser() *ResultParser {
 //  3. JSON embedded in markdown code blocks or prose
 func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, error) {
 	if content == "" {
-		return nil, fmt.Errorf("empty JSON content")
+		return nil, &ErrEmptyContent{}
 	}
 
 	jsonStr := extractJSON(content)
@@ -72,9 +72,9 @@ func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, erro
 	}
 
 	if jsonStr == "" {
-		return nil, fmt.Errorf("no JSON found in response")
+		return nil, &ErrNoJSON{Content: content}
 	}
-	return nil, fmt.Errorf("no recognized fields in LLM JSON response")
+	return nil, &ErrNoRecognizedFields{Raw: jsonStr}
 }
 
 // extractJSON finds JSON content using a priority chain:
@@ -314,7 +314,7 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 	// as a minimum to reject truly garbage JSON (e.g., {"foo": "bar"}).
 	hasContent := result.RCASummary != "" || result.WorkflowID != "" || resp.Confidence > 0
 	if !hasContent {
-		return nil, fmt.Errorf("no recognized fields in LLM JSON response")
+		return nil, &ErrNoRecognizedFields{}
 	}
 
 	return result, nil
