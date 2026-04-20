@@ -1038,7 +1038,7 @@ image-runtime-%: ## Build runtime-only image from pre-built binary (no QEMU need
 	    echo "ERROR: Binary bin/$(BINARY_NAME_$*)-$(IMAGE_ARCH) not found. Run: make cross-build-$* IMAGE_ARCH=$(IMAGE_ARCH)"; exit 1; \
 	fi
 	@echo "  Building runtime image $* [$(IMAGE_ARCH)] (no QEMU)..."
-	@$(CONTAINER_TOOL) build --no-cache \
+	@$(CONTAINER_TOOL) build --no-cache --platform linux/$(IMAGE_ARCH) \
 	    --build-arg BINARY=bin/$(BINARY_NAME_$*)-$(IMAGE_ARCH) \
 	    --build-arg APP_VERSION=$(APP_VERSION) \
 	    --build-arg GIT_COMMIT=$(GIT_COMMIT) \
