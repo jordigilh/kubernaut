@@ -20,6 +20,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -91,16 +92,19 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 			generateSelfSignedCert(certPath, keyPath)
 
 			server := &http.Server{Addr: ":0"}
-			isTLS, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+			isTLS, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(isTLS).To(BeTrue(), "should detect TLS certs and configure TLS")
-			Expect(server.TLSConfig.Certificates).To(HaveLen(1), "TLS config should contain exactly one certificate")
+
+			cert, certErr := server.TLSConfig.GetCertificate(&tls.ClientHelloInfo{})
+			Expect(certErr).ToNot(HaveOccurred())
+			Expect(cert.Certificate).To(HaveLen(1), "TLS cert chain should contain exactly one certificate")
 		})
 
 		// UT-TLS-493-002: ConditionalTLS starts HTTP when cert files don't exist
 		It("UT-TLS-493-002: should start HTTP when cert files don't exist", func() {
 			server := &http.Server{Addr: ":0"}
-			isTLS, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+			isTLS, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(isTLS).To(BeFalse(), "no certs, should remain plain HTTP")
 			Expect(server.TLSConfig).To(BeNil(), "TLSConfig must remain nil when no certs exist")
@@ -112,7 +116,7 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 			Expect(os.WriteFile(keyPath, []byte("not-a-key"), 0600)).To(Succeed())
 
 			server := &http.Server{Addr: ":0"}
-			_, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+			_, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
 			Expect(err).To(HaveOccurred())
 		})
 	})

@@ -1,5 +1,5 @@
 /*
-Copyright 2025 Jordi Gil.
+Copyright 2026 Jordi Gil.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,13 +19,19 @@ limitations under the License.
 package tls
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
+
+	"github.com/go-logr/logr"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 )
 
 // TLSConfig holds TLS configuration shared across services.
@@ -55,30 +61,34 @@ func (c TLSConfig) KeyPath() string {
 }
 
 // ConfigureConditionalTLS configures the server for TLS if cert files exist in certDir.
-// Returns (true, nil) if TLS was configured, (false, nil) if no certs found (plain HTTP),
-// or (false, error) if certs exist but are invalid.
-func ConfigureConditionalTLS(server *http.Server, certDir string) (bool, error) {
+// Returns (true, reloader, nil) if TLS was configured with hot-reload support,
+// (false, nil, nil) if no certs found (plain HTTP),
+// or (false, nil, error) if certs exist but are invalid.
+//
+// Issue #756: Returns a CertReloader that can be wired to a FileWatcher for
+// zero-downtime certificate rotation.
+func ConfigureConditionalTLS(server *http.Server, certDir string) (bool, *CertReloader, error) {
 	certFile := filepath.Join(certDir, "tls.crt")
 	keyFile := filepath.Join(certDir, "tls.key")
 
 	if _, err := os.Stat(certFile); os.IsNotExist(err) {
-		return false, nil
+		return false, nil, nil
 	}
 	if _, err := os.Stat(keyFile); os.IsNotExist(err) {
-		return false, nil
+		return false, nil, nil
 	}
 
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	reloader, err := NewCertReloader(certFile, keyFile)
 	if err != nil {
-		return false, fmt.Errorf("failed to load TLS certificate from %s: %w", certDir, err)
+		return false, nil, fmt.Errorf("failed to load TLS certificate from %s: %w", certDir, err)
 	}
 
 	server.TLSConfig = &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   tls.VersionTLS12,
+		GetCertificate: reloader.GetCertificate,
+		MinVersion:     tls.VersionTLS12,
 	}
 
-	return true, nil
+	return true, reloader, nil
 }
 
 // LoadCACert loads a PEM-encoded CA certificate from the given file path
@@ -97,11 +107,27 @@ func LoadCACert(caFile string) (*x509.CertPool, error) {
 	return pool, nil
 }
 
-// DefaultBaseTransport returns an http.Transport pre-configured with the CA
-// certificate at $TLS_CA_FILE (if set). Services inject this into their
-// auth-wrapping transports so inter-service HTTPS calls trust the cluster CA.
-// When TLS_CA_FILE is unset or empty, returns a plain Transport.
-func DefaultBaseTransport() (*http.Transport, error) {
+// Singleton CAReloader for process-wide client TLS.
+// Initialized lazily by DefaultBaseTransport via sync.Once.
+var (
+	caReloaderOnce     sync.Once
+	caReloaderInstance *CAReloader
+	caReloaderErr      error
+
+	// mu protects singleton reset (testing only)
+	singletonMu sync.Mutex
+)
+
+// DefaultBaseTransport returns an http.RoundTripper pre-configured with the CA
+// certificate at $TLS_CA_FILE (if set). When TLS_CA_FILE points to a valid CA
+// file, a process-level CAReloader is initialized (once) and returned as the
+// RoundTripper — this enables hot-reload when the CA file is rotated.
+//
+// When TLS_CA_FILE is unset or empty, returns a plain http.Transport.
+//
+// Issue #756: Changed return type from *http.Transport to http.RoundTripper to
+// accommodate CAReloader which implements RoundTripper with hot-reload.
+func DefaultBaseTransport() (http.RoundTripper, error) {
 	caFile := os.Getenv("TLS_CA_FILE")
 	if caFile == "" {
 		return &http.Transport{
@@ -110,7 +136,60 @@ func DefaultBaseTransport() (*http.Transport, error) {
 			IdleConnTimeout:     90 * time.Second,
 		}, nil
 	}
-	return NewTLSTransport(caFile)
+
+	singletonMu.Lock()
+	defer singletonMu.Unlock()
+
+	caReloaderOnce.Do(func() {
+		caReloaderInstance, caReloaderErr = NewCAReloaderFromFile(caFile)
+	})
+	if caReloaderErr != nil {
+		return nil, caReloaderErr
+	}
+	return caReloaderInstance, nil
+}
+
+// ResetDefaultTransportForTesting resets the singleton CAReloader so that
+// tests run with a clean slate. Must only be called from test code.
+func ResetDefaultTransportForTesting() {
+	singletonMu.Lock()
+	defer singletonMu.Unlock()
+	caReloaderOnce = sync.Once{}
+	caReloaderInstance = nil
+	caReloaderErr = nil
+}
+
+// StartCAFileWatcher initializes the CA reloader singleton and starts a
+// FileWatcher on $TLS_CA_FILE. Returns nil watcher if TLS_CA_FILE is unset.
+// The returned watcher must be stopped by the caller (defer watcher.Stop()).
+func StartCAFileWatcher(ctx context.Context, logger logr.Logger) (*hotreload.FileWatcher, error) {
+	caFile := os.Getenv("TLS_CA_FILE")
+	if caFile == "" {
+		return nil, nil
+	}
+
+	rt, err := DefaultBaseTransport()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize CA reloader: %w", err)
+	}
+
+	reloader, ok := rt.(*CAReloader)
+	if !ok {
+		return nil, nil
+	}
+
+	watcher, err := hotreload.NewFileWatcher(
+		caFile,
+		reloader.ReloadCallback,
+		logger.WithName("ca-reloader"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create CA file watcher: %w", err)
+	}
+	if err := watcher.Start(ctx); err != nil {
+		return nil, fmt.Errorf("failed to start CA file watcher: %w", err)
+	}
+	return watcher, nil
 }
 
 // NewTLSTransport creates an http.Transport configured with a custom CA pool
