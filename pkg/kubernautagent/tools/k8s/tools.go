@@ -34,6 +34,7 @@ import (
 var AllToolNames = []string{
 	"kubectl_describe",
 	"kubectl_get_by_name",
+	"kubectl_get_by_name_in_cluster",
 	"kubectl_get_by_kind_in_namespace",
 	"kubectl_get_by_kind_in_cluster",
 	"kubectl_find_resource",
@@ -60,6 +61,7 @@ func NewAllTools(client kubernetes.Interface, resolver ResourceResolver) []tools
 	result := []tools.Tool{
 		newDescribe(resolver),
 		newGetByName(resolver),
+		newGetByNameInCluster(resolver),
 		newGetByKindInNamespace(resolver),
 		newGetByKindInCluster(resolver),
 		newFindResource(resolver),
@@ -96,13 +98,14 @@ type logArgs struct {
 }
 
 var (
-	objParams         = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"name":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","name","namespace"]}`)
-	listParams        = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","namespace"]}`)
-	clusterListParams = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"}},"required":["kind"]}`)
-	findParams        = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"keyword":{"type":"string","description":"Substring to match in resource name, namespace, or labels"}},"required":["kind","keyword"]}`)
-	nsOnlyParams      = json.RawMessage(`{"type":"object","properties":{"namespace":{"type":"string"}},"required":["namespace"]}`)
-	noParams          = json.RawMessage(`{"type":"object","properties":{}}`)
-	logParams         = json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"namespace":{"type":"string"},"container":{"type":"string"},"tailLines":{"type":"integer"},"limitBytes":{"type":"integer"},"pattern":{"type":"string"}},"required":["name","namespace"]}`)
+	objParams             = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"name":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","name","namespace"]}`)
+	clusterObjParams      = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind"},"name":{"type":"string","description":"Exact resource name to find across all namespaces"}},"required":["kind","name"]}`)
+	listParams            = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","namespace"]}`)
+	clusterListParams     = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"}},"required":["kind"]}`)
+	findParams            = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"keyword":{"type":"string","description":"Substring to match in resource name, namespace, or labels"}},"required":["kind","keyword"]}`)
+	nsOnlyParams          = json.RawMessage(`{"type":"object","properties":{"namespace":{"type":"string"}},"required":["namespace"]}`)
+	noParams              = json.RawMessage(`{"type":"object","properties":{}}`)
+	logParams             = json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"namespace":{"type":"string"},"container":{"type":"string"},"tailLines":{"type":"integer"},"limitBytes":{"type":"integer"},"pattern":{"type":"string"}},"required":["name","namespace"]}`)
 )
 
 // resourceTool is a shared base for tools that fetch K8s resources.
@@ -170,6 +173,62 @@ func newGetByKindInCluster(resolver ResourceResolver) *resourceTool {
 			return resolver.List(ctx, a.Kind, "")
 		},
 	}
+}
+
+// --- get by name in cluster tool (#752) ---
+
+type getByNameInClusterTool struct {
+	resolver ResourceResolver
+}
+
+func newGetByNameInCluster(resolver ResourceResolver) *getByNameInClusterTool {
+	return &getByNameInClusterTool{resolver: resolver}
+}
+
+func (t *getByNameInClusterTool) Name() string               { return "kubectl_get_by_name_in_cluster" }
+func (t *getByNameInClusterTool) Description() string {
+	return "Get a single Kubernetes resource by exact name across all namespaces (avoids listing all resources of a kind)"
+}
+func (t *getByNameInClusterTool) Parameters() json.RawMessage { return clusterObjParams }
+
+func (t *getByNameInClusterTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
+	var a struct {
+		Kind string `json:"kind"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", fmt.Errorf("parsing args: %w", err)
+	}
+
+	resources, err := t.resolver.List(ctx, a.Kind, "")
+	if err != nil {
+		return "", err
+	}
+
+	data, _ := json.Marshal(resources)
+
+	var listObj struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(data, &listObj); err != nil || listObj.Items == nil {
+		return "", fmt.Errorf("resource %q named %q not found in cluster", a.Kind, a.Name)
+	}
+
+	for _, item := range listObj.Items {
+		var meta struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+		}
+		if err := json.Unmarshal(item, &meta); err != nil {
+			continue
+		}
+		if meta.Metadata.Name == a.Name {
+			return string(item), nil
+		}
+	}
+
+	return "", fmt.Errorf("resource %q named %q not found in cluster", a.Kind, a.Name)
 }
 
 // --- find resource tool ---
