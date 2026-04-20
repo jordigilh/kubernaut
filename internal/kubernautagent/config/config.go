@@ -124,8 +124,13 @@ type SanitizationConfig struct {
 	CredentialScrubEnabled    bool `yaml:"credential_scrub_enabled"`
 }
 
+// DefaultMaxToolOutputSize is the default hard character limit for tool output
+// before it enters the LLM context window. ~25K tokens for most models.
+const DefaultMaxToolOutputSize = 100000
+
 type SummarizerConfig struct {
-	Threshold int `yaml:"threshold"`
+	Threshold         int `yaml:"threshold"`
+	MaxToolOutputSize int `yaml:"max_tool_output_size"`
 }
 
 // EnrichmentConfig controls retry behavior for K8s owner chain resolution
@@ -279,7 +284,8 @@ func DefaultConfig() *Config {
 			CredentialScrubEnabled:   true,
 		},
 		Summarizer: SummarizerConfig{
-			Threshold: 8000,
+			Threshold:         8000,
+			MaxToolOutputSize: DefaultMaxToolOutputSize,
 		},
 		Enrichment: EnrichmentConfig{
 			MaxRetries:  3,

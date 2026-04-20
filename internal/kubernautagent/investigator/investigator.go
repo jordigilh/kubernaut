@@ -52,10 +52,11 @@ type CatalogFetcher interface {
 // Investigator applies inside executeTool and runWorkflowSelection.
 // All fields may be nil; nil fields are skipped.
 type Pipeline struct {
-	Sanitizer       *sanitization.Pipeline
-	AnomalyDetector *AnomalyDetector
-	CatalogFetcher  CatalogFetcher
-	Summarizer      *summarizer.Summarizer
+	Sanitizer         *sanitization.Pipeline
+	AnomalyDetector   *AnomalyDetector
+	CatalogFetcher    CatalogFetcher
+	Summarizer        *summarizer.Summarizer
+	MaxToolOutputSize int
 }
 
 // Config holds all dependencies for constructing an Investigator.
@@ -625,6 +626,10 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 		} else {
 			result = summarized
 		}
+	}
+
+	if inv.pipeline.MaxToolOutputSize > 0 {
+		result = summarizer.TruncateToolOutput(result, name, inv.pipeline.MaxToolOutputSize)
 	}
 
 	return result
