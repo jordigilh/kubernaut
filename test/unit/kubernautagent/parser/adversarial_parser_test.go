@@ -183,7 +183,7 @@ End of analysis.`
 	})
 
 	Describe("UT-KA-433-PRS-009: Parser ignores LLM needs_human_review (BR-HAPI-200)", func() {
-		It("should NOT propagate LLM-set needs_human_review; HR derived from investigation_outcome only", func() {
+		It("should clear LLM-set HR fields and re-derive from outcome routing", func() {
 			input := `{
 				"rca_summary": "Unclear root cause — multiple potential issues",
 				"needs_human_review": true,
@@ -193,10 +193,15 @@ End of analysis.`
 
 			result, err := p.Parse(input)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.HumanReviewNeeded).To(BeFalse(),
-				"LLM-set needs_human_review must be ignored — HR is parser-derived only")
-			Expect(result.HumanReviewReason).To(BeEmpty(),
-				"LLM-set human_review_reason must be ignored — HR reason is parser-derived only")
+			// #746: LLM's needs_human_review=true and human_review_reason="investigation_inconclusive"
+			// are cleared by the parser (line 52-53). Then applyOutcomeRouting re-derives HR:
+			// no workflow selected → no_matching_workflows (BR-HAPI-197.2, HAPI v1.2.1 parity).
+			// The key assertion: the LLM's "investigation_inconclusive" reason is NOT preserved —
+			// the parser derives "no_matching_workflows" from the absence of a workflow.
+			Expect(result.HumanReviewNeeded).To(BeTrue(),
+				"No workflow selected → parser-derived HumanReviewNeeded (BR-HAPI-197.2)")
+			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
+				"Parser must derive no_matching_workflows, not preserve LLM's investigation_inconclusive")
 		})
 	})
 

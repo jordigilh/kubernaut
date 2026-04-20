@@ -174,14 +174,24 @@ const confidenceFloor = 0.8
 // Fields here must stay in sync with the JSON schema in schema.go and the
 // structured output prompt template in incident_investigation.tmpl.
 type llmResponse struct {
-	RCA                  *llmRCA           `json:"root_cause_analysis"`
-	Workflow             *llmWorkflow      `json:"selected_workflow"`
-	AlternativeWorkflows []llmAlternative  `json:"alternative_workflows,omitempty"`
-	Severity             string            `json:"severity,omitempty"`
-	Confidence           float64           `json:"confidence,omitempty"`
-	Actionable           *bool             `json:"actionable,omitempty"`
-	InvestigationOutcome string            `json:"investigation_outcome,omitempty"`
-	DetectedLabels       map[string]interface{} `json:"detected_labels,omitempty"`
+	RCA                  *llmRCA                `json:"root_cause_analysis"`
+	RCAAlt               *llmRCA                `json:"rootCauseAnalysis,omitempty"`
+	Workflow             *llmWorkflow            `json:"selected_workflow"`
+	AlternativeWorkflows []llmAlternative        `json:"alternative_workflows,omitempty"`
+	Severity             string                  `json:"severity,omitempty"`
+	Confidence           float64                 `json:"confidence,omitempty"`
+	Actionable           *bool                   `json:"actionable,omitempty"`
+	InvestigationOutcome string                  `json:"investigation_outcome,omitempty"`
+	DetectedLabels       map[string]interface{}  `json:"detected_labels,omitempty"`
+}
+
+// resolvedRCA returns the RCA from either snake_case or camelCase key.
+// #746: LLMs sometimes use camelCase rootCauseAnalysis instead of snake_case.
+func (r *llmResponse) resolvedRCA() *llmRCA {
+	if r.RCA != nil {
+		return r.RCA
+	}
+	return r.RCAAlt
 }
 
 type llmAlternative struct {
@@ -239,13 +249,14 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 	}
 
 	result := &katypes.InvestigationResult{}
-	if resp.RCA != nil {
-		result.RCASummary = resp.RCA.Summary
-		result.Severity = resp.RCA.Severity
-		result.SignalName = resp.RCA.SignalName
-		result.ContributingFactors = resp.RCA.ContributingFactors
-		result.InvestigationAnalysis = resp.RCA.InvestigationAnalysis
-		if t := resp.RCA.resolvedTarget(); t != nil {
+	rca := resp.resolvedRCA()
+	if rca != nil {
+		result.RCASummary = rca.Summary
+		result.Severity = rca.Severity
+		result.SignalName = rca.SignalName
+		result.ContributingFactors = rca.ContributingFactors
+		result.InvestigationAnalysis = rca.InvestigationAnalysis
+		if t := rca.resolvedTarget(); t != nil {
 			result.RemediationTarget = katypes.RemediationTarget{
 				Kind:      t.Kind,
 				Name:      t.Name,
@@ -297,7 +308,12 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 		result.DetectedLabels = resp.DetectedLabels
 	}
 
-	if result.RCASummary == "" && result.WorkflowID == "" {
+	// #746: Relax guard to accept responses where the LLM provided at least one
+	// recognizable signal (confidence, RCA, or workflow). HAPI v1.2.1 has no such
+	// guard — all parsed JSON flows through outcome routing. We require confidence > 0
+	// as a minimum to reject truly garbage JSON (e.g., {"foo": "bar"}).
+	hasContent := result.RCASummary != "" || result.WorkflowID != "" || resp.Confidence > 0
+	if !hasContent {
 		return nil, fmt.Errorf("no recognized fields in LLM JSON response")
 	}
 
@@ -424,10 +440,14 @@ func mergeNestedRemediationTarget(result *katypes.InvestigationResult, jsonStr s
 		return
 	}
 	var resp llmResponse
-	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil || resp.RCA == nil {
+	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil {
 		return
 	}
-	if t := resp.RCA.resolvedTarget(); t != nil {
+	rca := resp.resolvedRCA()
+	if rca == nil {
+		return
+	}
+	if t := rca.resolvedTarget(); t != nil {
 		result.RemediationTarget = katypes.RemediationTarget{
 			Kind:      t.Kind,
 			Name:      t.Name,
@@ -445,10 +465,14 @@ func mergeNestedInvestigationAnalysis(result *katypes.InvestigationResult, jsonS
 		return
 	}
 	var resp llmResponse
-	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil || resp.RCA == nil {
+	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil {
 		return
 	}
-	result.InvestigationAnalysis = resp.RCA.InvestigationAnalysis
+	rca := resp.resolvedRCA()
+	if rca == nil {
+		return
+	}
+	result.InvestigationAnalysis = rca.InvestigationAnalysis
 }
 
 // applyFlatFields applies LLM-provided flat fields to the result:
@@ -528,8 +552,9 @@ func ApplyInvestigationOutcome(result *katypes.InvestigationResult, outcome stri
 	}
 }
 
-// applyOutcomeRouting derives is_actionable from other fields when the LLM
-// did not provide it explicitly. This mirrors KA's determine_investigation_outcome().
+// applyOutcomeRouting derives is_actionable and human review fields from other
+// fields when the LLM did not provide them explicitly. This mirrors HAPI
+// v1.2.1's fallback chain (result_parser.py lines 483-510).
 func applyOutcomeRouting(result *katypes.InvestigationResult) {
 	if result.IsActionable != nil {
 		return
@@ -537,5 +562,14 @@ func applyOutcomeRouting(result *katypes.InvestigationResult) {
 	if result.WorkflowID != "" {
 		trueVal := true
 		result.IsActionable = &trueVal
+		return
+	}
+	// #746 / BR-HAPI-197.2: When no workflow is selected and no specific outcome
+	// (inconclusive, problem_resolved, etc.) has already set HumanReviewNeeded,
+	// derive no_matching_workflows. Matches HAPI v1.2.1:
+	//   elif selected_workflow is None: needs_human_review = True; reason = "no_matching_workflows"
+	if !result.HumanReviewNeeded {
+		result.HumanReviewNeeded = true
+		result.HumanReviewReason = "no_matching_workflows"
 	}
 }

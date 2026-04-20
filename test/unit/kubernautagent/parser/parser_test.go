@@ -738,4 +738,201 @@ false
 			})
 		})
 	})
+
+	// ========================================
+	// ISSUE #746: NO-MATCHING-WORKFLOW MISCLASSIFICATION FIX
+	// Parser must correctly classify LLM responses where no workflow matches
+	// as no_matching_workflows instead of llm_parsing_error. Achieves behavioral
+	// parity with HAPI v1.2.1 fallback chain (BR-HAPI-197.2).
+	// ========================================
+	Describe("KA Parser — No-Matching-Workflow Misclassification (#746)", func() {
+
+		Describe("UT-KA-746-001: camelCase rootCauseAnalysis extracted by parseLLMFormat", func() {
+			It("should extract RCA fields from camelCase rootCauseAnalysis", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"rootCauseAnalysis": {
+						"summary": "ResourceQuota memory limit exceeded",
+						"severity": "medium",
+						"contributing_factors": ["quota ceiling", "pod request size"]
+					},
+					"selected_workflow": {
+						"workflow_id": "patch-quota",
+						"confidence": 0.85
+					},
+					"confidence": 0.85
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(Equal("ResourceQuota memory limit exceeded"),
+					"#746: camelCase rootCauseAnalysis.summary must be extracted")
+				Expect(result.Severity).To(Equal("medium"),
+					"#746: camelCase rootCauseAnalysis.severity must be extracted")
+				Expect(result.ContributingFactors).To(ConsistOf("quota ceiling", "pod request size"),
+					"#746: camelCase rootCauseAnalysis.contributing_factors must be extracted")
+			})
+		})
+
+		Describe("UT-KA-746-002: camelCase RCA + snake_case workflow both extracted", func() {
+			It("should extract both camelCase RCA and snake_case workflow", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"rootCauseAnalysis": {
+						"summary": "CrashLoopBackOff due to missing ConfigMap",
+						"severity": "high",
+						"remediationTarget": {
+							"kind": "Deployment",
+							"name": "web-app",
+							"namespace": "production"
+						}
+					},
+					"selected_workflow": {
+						"workflow_id": "rollback-deployment",
+						"confidence": 0.90,
+						"rationale": "Previous revision was stable"
+					},
+					"confidence": 0.90
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(Equal("CrashLoopBackOff due to missing ConfigMap"),
+					"#746: camelCase RCA summary extracted")
+				Expect(result.WorkflowID).To(Equal("rollback-deployment"),
+					"#746: snake_case selected_workflow.workflow_id extracted alongside camelCase RCA")
+				Expect(result.RemediationTarget.Kind).To(Equal("Deployment"),
+					"#746: camelCase remediationTarget extracted from camelCase RCA")
+			})
+		})
+
+		Describe("UT-KA-746-003: No workflow + confidence > 0 derives no_matching_workflows", func() {
+			It("should set HumanReviewNeeded and no_matching_workflows when no workflow selected", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"root_cause_analysis": {
+						"summary": "ResourceQuota memory limit fully consumed"
+					},
+					"confidence": 0.95
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.HumanReviewNeeded).To(BeTrue(),
+					"#746: No workflow selected must trigger HumanReviewNeeded (BR-HAPI-197.2)")
+				Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
+					"#746: Parser must derive no_matching_workflows when no workflow selected (HAPI parity)")
+			})
+		})
+
+		Describe("UT-KA-746-004: Truly unrecognizable JSON still rejected", func() {
+			It("should return error for JSON with no recognized fields", func() {
+				p := parser.NewResultParser()
+				content := `{"foo": "bar", "baz": 42}`
+				result, err := p.Parse(content)
+				Expect(err).To(HaveOccurred(),
+					"#746: Unrecognizable JSON must still be rejected (defense-in-depth)")
+				Expect(result).To(BeNil())
+				Expect(err.Error()).To(ContainSubstring("no recognized fields"))
+			})
+		})
+
+		Describe("UT-KA-746-005: investigation_outcome=inconclusive + RCA + no workflow -> no_matching_workflows", func() {
+			It("should derive no_matching_workflows from inconclusive outcome with RCA and no workflow", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"root_cause_analysis": {
+						"summary": "Disk pressure detected but no automated remediation available"
+					},
+					"confidence": 0.88,
+					"investigation_outcome": "inconclusive"
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.HumanReviewNeeded).To(BeTrue(),
+					"#746: inconclusive + no workflow must trigger HumanReviewNeeded")
+				Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
+					"#746: inconclusive + RCA summary + no workflow must derive no_matching_workflows")
+			})
+		})
+
+		Describe("UT-KA-746-006: Workflow selected -> no false HR escalation", func() {
+			It("should not set HumanReviewNeeded when a workflow is selected", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"root_cause_analysis": {
+						"summary": "OOMKilled due to memory pressure"
+					},
+					"selected_workflow": {
+						"workflow_id": "oom-increase-memory",
+						"confidence": 0.92
+					},
+					"confidence": 0.92
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.HumanReviewNeeded).To(BeFalse(),
+					"#746: Workflow selected must NOT trigger HumanReviewNeeded (no regression)")
+				Expect(result.WorkflowID).To(Equal("oom-increase-memory"))
+			})
+		})
+
+		Describe("UT-KA-746-007: problem_resolved outcome -> no HR escalation", func() {
+			It("should not set HumanReviewNeeded for problem_resolved outcome", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"root_cause_analysis": {
+						"summary": "Network partition self-healed"
+					},
+					"confidence": 0.90,
+					"investigation_outcome": "problem_resolved",
+					"actionable": false
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.HumanReviewNeeded).To(BeFalse(),
+					"#746: problem_resolved must NOT trigger HumanReviewNeeded (no regression)")
+				Expect(result.Warnings).To(ContainElement(ContainSubstring("Problem self-resolved")))
+			})
+		})
+
+		Describe("UT-KA-746-008: Golden transcript — exact #746 audit JSON", func() {
+			It("should classify exact #746 audit response as no_matching_workflows", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"needsHumanReview": true,
+					"confidence": 0.98,
+					"analysis": "The namespace-quota ResourceQuota memory limit (512Mi) is fully consumed by 2 running api-server pods (2x256Mi). The deployment requests 3 replicas but only 2 fit within the quota ceiling.",
+					"rootCauseAnalysis": {
+						"severity": "medium",
+						"remediationTarget": {
+							"kind": "Deployment",
+							"name": "api-server",
+							"namespace": "demo-quota"
+						},
+						"contributingFactors": [
+							"ResourceQuota sets a hard limit of 512Mi",
+							"Each pod requests/limits 256Mi — only 2 fit",
+							"3x256Mi=768Mi exceeds 512Mi ceiling",
+							"No remediation history — first-time mismatch",
+							"Failure is purely quota enforcement"
+						]
+					}
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"#746: Golden transcript must parse successfully, not return llm_parsing_error")
+				Expect(result).NotTo(BeNil())
+				Expect(result.Confidence).To(BeNumerically("~", 0.98, 0.01),
+					"#746: confidence must be preserved from LLM response")
+				Expect(result.HumanReviewNeeded).To(BeTrue(),
+					"#746: No workflow selected must trigger HumanReviewNeeded")
+				Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
+					"#746: Must be classified as no_matching_workflows, not llm_parsing_error")
+			})
+		})
+	})
 })
