@@ -190,16 +190,17 @@ func main() {
 	}
 
 	inv := investigator.New(investigator.Config{
-		Client:       instrumentedLLM,
-		Builder:      promptBuilder,
-		ResultParser: resultParser,
-		Enricher:     enricher,
-		AuditStore:   auditStore,
-		Logger:       slogger,
-		MaxTurns:     cfg.Investigator.MaxTurns,
-		PhaseTools:   phaseTools,
-		Registry:     reg,
-		ModelName:    cfg.LLM.Model,
+		Client:        instrumentedLLM,
+		Builder:       promptBuilder,
+		ResultParser:  resultParser,
+		Enricher:      enricher,
+		AuditStore:    auditStore,
+		Logger:        slogger,
+		MaxTurns:      cfg.Investigator.MaxTurns,
+		PhaseTools:    phaseTools,
+		Registry:      reg,
+		ModelName:     cfg.LLM.Model,
+		ScopeResolver: investigator.NewMapperScopeResolver(k8sInfra.mapper),
 		Pipeline: investigator.Pipeline{
 			Sanitizer:         sanitizer,
 			AnomalyDetector:   anomalyDetector,
