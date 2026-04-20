@@ -670,4 +670,56 @@ var _ = Describe("Kubernaut Agent K8s Kind Resolution — #433 Phase 2", func() 
 			Expect(result).To(Equal("[]"))
 		})
 	})
+
+	// --- #752: kubectl_get_by_name_in_cluster tool ---
+
+	Describe("UT-KA-752-007: kubectl_get_by_name_in_cluster returns single matching resource", func() {
+		It("should return a single Pod by name across all namespaces", func() {
+			tool := findToolByName(reg, "kubectl_get_by_name_in_cluster")
+			Expect(tool).NotTo(BeNil(), "kubectl_get_by_name_in_cluster must be registered")
+
+			result, err := tool.Execute(context.Background(),
+				json.RawMessage(`{"kind":"Pod","name":"api-pod"}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("api-pod"),
+				"should return the matching Pod")
+		})
+	})
+
+	Describe("UT-KA-752-008: kubectl_get_by_name_in_cluster returns not-found for nonexistent resource", func() {
+		It("should return an error or empty result when resource does not exist", func() {
+			tool := findToolByName(reg, "kubectl_get_by_name_in_cluster")
+			Expect(tool).NotTo(BeNil(), "kubectl_get_by_name_in_cluster must be registered")
+
+			result, err := tool.Execute(context.Background(),
+				json.RawMessage(`{"kind":"Pod","name":"nonexistent-pod-xyz"}`))
+			if err != nil {
+				Expect(err.Error()).To(ContainSubstring("not found"),
+					"error should indicate resource not found")
+			} else {
+				Expect(result).To(ContainSubstring("not found"),
+					"result should indicate resource not found")
+			}
+		})
+	})
+
+	Describe("UT-KA-752-009: kubectl_get_by_name_in_cluster registered in AllToolNames", func() {
+		It("should be included in AllToolNames", func() {
+			found := false
+			for _, name := range k8s.AllToolNames {
+				if name == "kubectl_get_by_name_in_cluster" {
+					found = true
+					break
+				}
+			}
+			Expect(found).To(BeTrue(),
+				"kubectl_get_by_name_in_cluster must be in AllToolNames")
+		})
+
+		It("should be discoverable via the registry", func() {
+			tool := findToolByName(reg, "kubectl_get_by_name_in_cluster")
+			Expect(tool).NotTo(BeNil(),
+				"tool must be registered in the registry")
+		})
+	})
 })

@@ -124,4 +124,55 @@ var _ = Describe("Kubernaut Agent Summarizer Unit — #433", func() {
 			Expect(wrapped.Parameters()).To(Equal(inner.Parameters()))
 		})
 	})
+
+	Describe("UT-KA-752-003: Summarizer pre-truncates before LLM call", func() {
+		It("should pre-truncate input exceeding maxInputSize before sending to LLM", func() {
+			fake := &fakeLLM{response: "summarized"}
+			maxInput := 500
+			s := summarizer.NewWithMaxInput(fake, 100, maxInput)
+
+			longOutput := strings.Repeat("d", 1000)
+			result, err := s.MaybeSummarize(context.Background(), "kubectl_get_by_kind_in_cluster", longOutput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal("summarized"))
+
+			Expect(fake.calls).To(HaveLen(1))
+			prompt := fake.calls[0].Messages[0].Content
+			Expect(len(prompt)).To(BeNumerically("<=", maxInput+200),
+				"LLM prompt should not exceed maxInputSize plus format overhead")
+		})
+	})
+
+	Describe("UT-KA-752-004: Summarizer works for moderate inputs", func() {
+		It("should send full output when between threshold and maxInputSize", func() {
+			fake := &fakeLLM{response: "moderate summary"}
+			s := summarizer.NewWithMaxInput(fake, 100, 5000)
+
+			moderateOutput := strings.Repeat("m", 300)
+			result, err := s.MaybeSummarize(context.Background(), "kubectl_logs", moderateOutput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal("moderate summary"))
+
+			Expect(fake.calls).To(HaveLen(1))
+			prompt := fake.calls[0].Messages[0].Content
+			Expect(prompt).To(ContainSubstring(moderateOutput),
+				"full output should be in prompt when below maxInputSize")
+		})
+	})
+
+	Describe("UT-KA-752-006: Pre-truncation note in prompt", func() {
+		It("should include truncation note in LLM prompt when input was pre-truncated", func() {
+			fake := &fakeLLM{response: "summary with note"}
+			s := summarizer.NewWithMaxInput(fake, 100, 400)
+
+			longOutput := strings.Repeat("n", 800)
+			_, err := s.MaybeSummarize(context.Background(), "kubectl_get_by_kind_in_cluster", longOutput)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(fake.calls).To(HaveLen(1))
+			prompt := fake.calls[0].Messages[0].Content
+			Expect(prompt).To(ContainSubstring("PRE-TRUNCATED"),
+				"prompt should indicate pre-truncation occurred")
+		})
+	})
 })

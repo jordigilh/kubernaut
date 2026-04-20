@@ -31,7 +31,7 @@ var _ = Describe("Kubernaut Agent Investigator — #433", func() {
 			ptm := investigator.DefaultPhaseToolMap()
 			Expect(ptm).NotTo(BeNil(), "DefaultPhaseToolMap should not return nil")
 			rcaTools := ptm[katypes.PhaseRCA]
-			Expect(rcaTools).To(HaveLen(33), "RCA phase should have 19 K8s + 2 metrics + 1 fetch_pod_logs + 8 Prometheus + 2 resource context + 1 todo_write")
+			Expect(rcaTools).To(HaveLen(34), "RCA phase should have 20 K8s + 2 metrics + 1 fetch_pod_logs + 8 Prometheus + 2 resource context + 1 todo_write")
 			Expect(rcaTools).To(ContainElement("kubectl_describe"))
 			Expect(rcaTools).To(ContainElement("kubectl_logs"))
 			Expect(rcaTools).To(ContainElement("execute_prometheus_instant_query"))
@@ -39,6 +39,7 @@ var _ = Describe("Kubernaut Agent Investigator — #433", func() {
 			Expect(rcaTools).To(ContainElement("get_namespaced_resource_context"))
 			Expect(rcaTools).To(ContainElement("get_cluster_resource_context"))
 			Expect(rcaTools).To(ContainElement("todo_write"))
+			Expect(rcaTools).To(ContainElement("kubectl_get_by_name_in_cluster"))
 			Expect(rcaTools).To(ContainElement("kubectl_get_by_kind_in_cluster"))
 			Expect(rcaTools).To(ContainElement("kubectl_find_resource"))
 			Expect(rcaTools).To(ContainElement("kubectl_get_yaml"))
