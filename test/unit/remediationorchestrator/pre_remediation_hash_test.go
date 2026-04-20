@@ -145,7 +145,8 @@ var _ = Describe("CapturePreRemediationHash (DD-EM-002)", func() {
 		)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(degradedReason).To(BeEmpty(), "No .spec is legitimate, not degraded")
-		Expect(hash).To(BeEmpty(), "Resource without .spec should return empty hash")
+		Expect(hash).NotTo(BeEmpty(), "#765: ConfigMap functional state (.data) produces valid fingerprint")
+		Expect(hash).To(HavePrefix("sha256:"))
 	})
 
 	// UT-RO-545-001: Forbidden error yields empty hash (degraded soft-fail)
@@ -215,7 +216,7 @@ var _ = Describe("CapturePreRemediationHash (DD-EM-002)", func() {
 // CapturePreRemediationHash with ConfigMaps (#396, BR-EM-004)
 //
 // Tests that CapturePreRemediationHash includes ConfigMap content in the
-// composite hash via resolveConfigMapHashes + CompositeSpecHash.
+// composite hash via resolveConfigMapHashes + CompositeResourceFingerprint.
 // ========================================
 var _ = Describe("CapturePreRemediationHash with ConfigMaps (#396)", func() {
 

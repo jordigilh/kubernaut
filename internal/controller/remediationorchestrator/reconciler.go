@@ -1038,7 +1038,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			remTarget.Kind, remTarget.Name, remTarget.Namespace,
 		)
 		if hashErr != nil {
-			// Hard errors (NestedMap/CanonicalSpecHash) are terminal
+			// Hard errors (CanonicalResourceFingerprint) are terminal
 			logger.Error(hashErr, "Failed to capture pre-remediation hash (terminal)")
 			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.OverallPhase = remediationv1.PhaseFailed
@@ -3616,14 +3616,14 @@ func formatRemediationTargetString(ai *aianalysisv1.AIAnalysis) string {
 	return ar.Kind + "/" + ar.Name
 }
 
-// CapturePreRemediationHash fetches the target resource via an uncached reader,
-// extracts its .spec, and computes the canonical SHA-256 hash (DD-EM-002).
+// CapturePreRemediationHash fetches the target resource via an uncached reader
+// and computes the canonical resource fingerprint (DD-EM-002 v2.0, #765).
 //
 // Returns (hash, degradedReason, err) where:
 //   - ("sha256:...", "", nil) on success
-//   - ("", "", nil) when legitimately no hash: NotFound, no .spec, unknown GVK
+//   - ("", "", nil) when legitimately no hash: NotFound, unknown GVK
 //   - ("", "reason", nil) when degraded: Forbidden, transient API errors (Issue #545 defense-in-depth)
-//   - ("", "", err) on hard errors: NestedMap or CanonicalSpecHash failures
+//   - ("", "", err) on hard errors: fingerprint computation failures
 //
 // This is exported for testability from the test package.
 func CapturePreRemediationHash(
@@ -3636,7 +3636,6 @@ func CapturePreRemediationHash(
 ) (string, string, error) {
 	logger := log.FromContext(ctx)
 
-	// Resolve Kind to GVK via REST mapper
 	gvk, err := k8sutil.ResolveGVKForKind(restMapper, targetKind)
 	if err != nil {
 		logger.V(1).Info("Cannot resolve GVK for kind, skipping pre-remediation hash",
@@ -3644,7 +3643,6 @@ func CapturePreRemediationHash(
 		return "", "", nil
 	}
 
-	// Fetch the resource using unstructured client
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(gvk)
 	key := client.ObjectKey{Name: targetName, Namespace: targetNamespace}
@@ -3654,43 +3652,29 @@ func CapturePreRemediationHash(
 				"kind", targetKind, "name", targetName, "namespace", targetNamespace)
 			return "", "", nil
 		}
-		// Issue #545: Soft-fail on access errors (Forbidden, transient API errors).
-		// The EA will be degraded but the remediation pipeline continues.
 		reason := fmt.Sprintf("failed to fetch target resource %s/%s: %v", targetKind, targetName, err)
 		logger.Info("Pre-remediation hash capture degraded (soft-fail)",
 			"kind", targetKind, "name", targetName, "namespace", targetNamespace, "reason", reason)
 		return "", reason, nil
 	}
 
-	// Extract .spec from unstructured
-	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
+	fingerprint, err := canonicalhash.CanonicalResourceFingerprint(obj.Object)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to extract .spec from %s/%s: %w", targetKind, targetName, err)
-	}
-	if !found || spec == nil {
-		logger.V(1).Info("Target resource has no .spec, skipping pre-remediation hash",
-			"kind", targetKind, "name", targetName)
-		return "", "", nil
+		return "", "", fmt.Errorf("failed to compute resource fingerprint for %s/%s: %w", targetKind, targetName, err)
 	}
 
-	// Compute canonical spec hash
-	specHash, err := canonicalhash.CanonicalSpecHash(spec)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to compute canonical hash for %s/%s: %w", targetKind, targetName, err)
-	}
-
-	// Resolve ConfigMap references and compute composite hash (#396, BR-EM-004)
+	spec, _, _ := unstructured.NestedMap(obj.Object, "spec")
 	configMapHashes := resolveConfigMapHashes(ctx, reader, spec, targetKind, targetNamespace)
 
-	compositeHash, err := canonicalhash.CompositeSpecHash(specHash, configMapHashes)
+	compositeHash, err := canonicalhash.CompositeResourceFingerprint(fingerprint, configMapHashes)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to compute composite hash for %s/%s: %w", targetKind, targetName, err)
+		return "", "", fmt.Errorf("failed to compute composite fingerprint for %s/%s: %w", targetKind, targetName, err)
 	}
 
 	if len(configMapHashes) > 0 {
-		logger.V(1).Info("Pre-remediation composite hash computed",
+		logger.V(1).Info("Pre-remediation composite fingerprint computed",
 			"kind", targetKind, "name", targetName,
-			"specHash", specHash, "configMapCount", len(configMapHashes),
+			"fingerprint", fingerprint, "configMapCount", len(configMapHashes),
 			"compositeHash", compositeHash)
 	}
 

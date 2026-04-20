@@ -199,9 +199,23 @@ func ConfigMapDataHash(data map[string]string, binaryData map[string][]byte) (st
 //
 // Identity: if configMapHashes is nil or empty, returns specHash unchanged.
 // This preserves backward compatibility for resources with no ConfigMap refs.
+//
+// Deprecated: Use CompositeResourceFingerprint for new code (#765).
 func CompositeSpecHash(specHash string, configMapHashes map[string]string) (string, error) {
+	return CompositeResourceFingerprint(specHash, configMapHashes)
+}
+
+// CompositeResourceFingerprint combines a resource fingerprint with per-ConfigMap
+// content hashes into a single composite digest (#765, DD-EM-002 v2.0).
+//
+// ConfigMap names are sorted before concatenation to ensure order independence.
+// Identity: if configMapHashes is nil or empty, returns fingerprint unchanged.
+//
+// Note: Secrets are excluded from cascading per project policy (Vault-managed,
+// rotational, not functional configuration state).
+func CompositeResourceFingerprint(fingerprint string, configMapHashes map[string]string) (string, error) {
 	if len(configMapHashes) == 0 {
-		return specHash, nil
+		return fingerprint, nil
 	}
 
 	names := make([]string, 0, len(configMapHashes))
@@ -211,7 +225,7 @@ func CompositeSpecHash(specHash string, configMapHashes map[string]string) (stri
 	sort.Strings(names)
 
 	var b strings.Builder
-	b.WriteString(specHash)
+	b.WriteString(fingerprint)
 	for _, name := range names {
 		b.WriteString("\n")
 		b.WriteString(name)

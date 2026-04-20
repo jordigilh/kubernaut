@@ -10,6 +10,7 @@
 | 1.1 | 2026-02-14 | Architecture Team | Added Spec Drift Guard: re-hash on each reconcile, spec_drift reason, DS score=0.0 short-circuit |
 | 1.2 | 2026-02-24 | Architecture Team | **Issue #188 (DD-EM-003)**: Updated RO consumer description to reference `resolveDualTargets` (renamed from `resolveEffectivenessTarget`). Hash is now explicitly computed from the `RemediationTarget` (the AI-resolved resource), not the single `TargetResource`. |
 | 1.3 | 2026-03-04 | Architecture Team | **Issue #396**: ConfigMap-aware composite hashing. Spec hash now incorporates referenced ConfigMap `.data` and `.binaryData` content. Added `ExtractConfigMapRefs`, `ConfigMapDataHash`, `CompositeSpecHash` utilities. Sentinel value for absent/forbidden ConfigMaps. RBAC update for configmaps. |
+| 2.0 | 2026-04-06 | Architecture Team | **Issue #765**: Resource Fingerprint Generalization. Algorithm now hashes all functional state (not just `.spec`), enabling fingerprinting for ConfigMaps, ClusterRoles, Nodes, etc. `CanonicalResourceFingerprint` replaces `CanonicalSpecHash`. `CompositeResourceFingerprint` replaces `CompositeSpecHash`. No backwards compatibility (clean cut). Secrets excluded from cascading (Vault-managed, rotational). |
 
 ---
 

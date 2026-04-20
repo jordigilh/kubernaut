@@ -286,7 +286,7 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 		ns := createTestNamespace("em-183-001")
 		defer deleteTestNamespace(ns)
 
-		emptyMapHash, err := canonicalhash.CanonicalSpecHash(map[string]interface{}{})
+		emptyMapHash, err := canonicalhash.CanonicalResourceFingerprint(map[string]interface{}{})
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Creating a Deployment as the HPA scale target")

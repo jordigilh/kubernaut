@@ -59,15 +59,13 @@ func (r *Reconciler) assessHealth(ctx context.Context, ea *eav1.EffectivenessAss
 	return healthAssessResult{Component: result, Status: status}
 }
 
-// assessHash computes the spec hash of the target resource and compares
-// with the pre-remediation hash (BR-EM-004, DD-EM-002).
+// assessHash computes the resource fingerprint and compares
+// with the pre-remediation hash (BR-EM-004, DD-EM-002 v2.0, #765).
 func (r *Reconciler) assessHash(ctx context.Context, ea *eav1.EffectivenessAssessment) hash.ComputeResult {
 	logger := log.FromContext(ctx)
 
-	// Step 1: Fetch target spec from K8s API (DD-EM-003: hash uses RemediationTarget)
-	spec, postHashDegradedReason := r.getTargetSpec(ctx, ea.Spec.RemediationTarget)
+	functionalState, spec, postHashDegradedReason := r.getTargetFunctionalState(ctx, ea.Spec.RemediationTarget)
 
-	// Issue #546: Set EA condition based on spec fetch result
 	if postHashDegradedReason != "" {
 		conditions.SetCondition(ea, conditions.ConditionPostHashCaptured,
 			metav1.ConditionFalse, conditions.ReasonPostHashCaptureFailed, postHashDegradedReason)
@@ -78,21 +76,16 @@ func (r *Reconciler) assessHash(ctx context.Context, ea *eav1.EffectivenessAsses
 			metav1.ConditionTrue, conditions.ReasonPostHashCaptured, "Post-remediation spec hash captured")
 	}
 
-	// Step 2: Read pre-remediation hash from EA spec (set by RO via RR status).
-	// Falls back to DataStorage query for backward compatibility with EAs created
-	// before the RO started populating PreRemediationSpecHash.
 	preHash := ea.Spec.PreRemediationSpecHash
 	if preHash == "" {
 		logger.V(1).Info("PreRemediationSpecHash not in EA spec, falling back to DataStorage query")
 		preHash = r.queryPreRemediationHash(ctx, ea.Spec.CorrelationID)
 	}
 
-	// Step 3: Resolve ConfigMap content hashes (#396, BR-EM-004)
 	configMapHashes := r.resolveConfigMapHashes(ctx, spec, ea.Spec.RemediationTarget)
 
-	// Step 4: Compute post-hash (composite when ConfigMaps present) and compare with pre-hash
 	result := r.hashComputer.Compute(hash.SpecHashInput{
-		Spec:            spec,
+		FunctionalState: functionalState,
 		PreHash:         preHash,
 		ConfigMapHashes: configMapHashes,
 	})

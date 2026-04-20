@@ -119,32 +119,34 @@ func (r *Reconciler) listActivePodNames(ctx context.Context, target eav1.TargetR
 	return names
 }
 
-// getTargetSpec retrieves a target resource's .spec as an unstructured map from the K8s API.
-// Uses the REST mapper to resolve the Kind to a GVR, then fetches via unstructured client.
+// getTargetFunctionalState fetches the target resource and returns both:
+//   - functionalState: full obj.Object (for CanonicalResourceFingerprint)
+//   - spec: obj.Object["spec"] (for ExtractConfigMapRefs which needs pod template structure)
 //
-// Returns (spec, degradedReason) where:
-//   - (specMap, "") on success
-//   - (emptyMap, "") when not applicable: NotFound, no .spec, unknown GVK, nil RESTMapper
-//   - (emptyMap, "reason") when degraded: Forbidden, transient API errors (Issue #546)
+// Returns (functionalState, spec, degradedReason) where:
+//   - (obj, specMap, "") on success
+//   - (emptyMap, emptyMap, "") when not applicable: NotFound, unknown GVK, nil RESTMapper
+//   - (emptyMap, emptyMap, "reason") when degraded: Forbidden, transient API errors (Issue #546)
 //
-// DD-EM-003: Caller decides which target to pass (RemediationTarget for hash, etc.).
-func (r *Reconciler) getTargetSpec(ctx context.Context, target eav1.TargetResource) (map[string]interface{}, string) {
+// DD-EM-002 v2.0 (#765): Returns full object for resource fingerprint.
+func (r *Reconciler) getTargetFunctionalState(ctx context.Context, target eav1.TargetResource) (map[string]interface{}, map[string]interface{}, string) {
 	logger := log.FromContext(ctx)
 
 	if r.restMapper == nil {
 		logger.V(1).Info("RESTMapper not configured, falling back to metadata spec")
-		return map[string]interface{}{
+		fallback := map[string]interface{}{
 			"kind":      target.Kind,
 			"name":      target.Name,
 			"namespace": target.Namespace,
-		}, ""
+		}
+		return fallback, fallback, ""
 	}
 
 	gvk, err := k8sutil.ResolveGVKForKind(r.restMapper, target.Kind)
 	if err != nil {
 		logger.Error(err, "Failed to resolve GVK for target resource kind",
 			"kind", target.Kind)
-		return map[string]interface{}{}, ""
+		return map[string]interface{}{}, map[string]interface{}{}, ""
 	}
 
 	obj := &unstructured.Unstructured{}
@@ -158,24 +160,28 @@ func (r *Reconciler) getTargetSpec(ctx context.Context, target eav1.TargetResour
 			logger.Info("Target resource not found, computing hash from empty spec",
 				"kind", target.Kind,
 				"name", target.Name)
-			return map[string]interface{}{}, ""
+			return map[string]interface{}{}, map[string]interface{}{}, ""
 		}
 		logger.Error(err, "Failed to fetch target resource")
-		return map[string]interface{}{}, fmt.Sprintf("failed to fetch target resource %s/%s: %v", target.Kind, target.Name, err)
+		return map[string]interface{}{}, map[string]interface{}{}, fmt.Sprintf("failed to fetch target resource %s/%s: %v", target.Kind, target.Name, err)
 	}
 
-	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
-	if err != nil || !found {
-		logger.V(1).Info("Target resource has no .spec field",
-			"kind", target.Kind,
-			"name", target.Name)
-		return map[string]interface{}{}, ""
+	spec, _, _ := unstructured.NestedMap(obj.Object, "spec")
+	if spec == nil {
+		spec = map[string]interface{}{}
 	}
 
-	logger.V(2).Info("Target spec retrieved",
+	logger.V(2).Info("Target functional state retrieved",
 		"kind", target.Kind,
 		"name", target.Name)
-	return spec, ""
+	return obj.Object, spec, ""
+}
+
+// getTargetSpec is a backward-compatible wrapper that returns only the spec map.
+// Used by callers that don't need the full functional state.
+func (r *Reconciler) getTargetSpec(ctx context.Context, target eav1.TargetResource) (map[string]interface{}, string) {
+	_, spec, degradedReason := r.getTargetFunctionalState(ctx, target)
+	return spec, degradedReason
 }
 
 // queryPreRemediationHash queries DataStorage for the pre-remediation spec hash
