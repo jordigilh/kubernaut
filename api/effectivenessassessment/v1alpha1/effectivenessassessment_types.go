@@ -60,26 +60,30 @@ const (
 )
 
 // AssessmentReason constants describe why an assessment completed with a particular outcome.
+// Issue #749: All values use PascalCase per Kubernetes API conventions.
 const (
 	// AssessmentReasonFull indicates all enabled components were assessed successfully.
-	AssessmentReasonFull = "full"
+	AssessmentReasonFull = "Full"
 	// AssessmentReasonPartial indicates some components were assessed but not all.
-	AssessmentReasonPartial = "partial"
+	AssessmentReasonPartial = "Partial"
 	// AssessmentReasonNoExecution indicates no workflow execution was found for this RR.
-	AssessmentReasonNoExecution = "no_execution"
+	AssessmentReasonNoExecution = "NoExecution"
 	// AssessmentReasonMetricsTimedOut indicates metrics were not available before validity expired.
-	AssessmentReasonMetricsTimedOut = "metrics_timed_out"
+	AssessmentReasonMetricsTimedOut = "MetricsTimedOut"
 	// AssessmentReasonExpired indicates the validity window expired with no data collected.
-	AssessmentReasonExpired = "expired"
+	AssessmentReasonExpired = "Expired"
 	// AssessmentReasonSpecDrift indicates the target resource spec was modified during assessment.
 	// The remediation is considered unsuccessful — DS score = 0.0 (DD-EM-002 v1.1).
-	AssessmentReasonSpecDrift = "spec_drift"
+	AssessmentReasonSpecDrift = "SpecDrift"
 	// AssessmentReasonAlertDecayTimeout indicates the validity window expired while the EM
-	// was actively monitoring alert decay. Unlike "partial" (alert never checked) or
-	// "expired" (no data), this means the EM confirmed the resource was healthy but the
+	// was actively monitoring alert decay. Unlike "Partial" (alert never checked) or
+	// "Expired" (no data), this means the EM confirmed the resource was healthy but the
 	// Prometheus alert persisted beyond validity — likely a genuine re-occurrence.
 	// Reference: Issue #369, BR-EM-012
-	AssessmentReasonAlertDecayTimeout = "alert_decay_timeout"
+	AssessmentReasonAlertDecayTimeout = "AlertDecayTimeout"
+	// AssessmentReasonUnrecoverable indicates the assessment could not be performed
+	// due to an unrecoverable condition (e.g., target not found). Issue #749.
+	AssessmentReasonUnrecoverable = "Unrecoverable"
 )
 
 // EffectivenessAssessmentSpec defines the desired state of an EffectivenessAssessment.
@@ -232,7 +236,7 @@ type EffectivenessAssessmentStatus struct {
 	Components EAComponents `json:"components,omitempty"`
 
 	// AssessmentReason describes why the assessment completed with this outcome.
-	// +kubebuilder:validation:Enum=full;partial;no_execution;metrics_timed_out;expired;spec_drift;alert_decay_timeout
+	// +kubebuilder:validation:Enum=Full;Partial;NoExecution;MetricsTimedOut;Expired;SpecDrift;AlertDecayTimeout;Unrecoverable
 	AssessmentReason string `json:"assessmentReason,omitempty"`
 
 	// CompletedAt is the timestamp when the assessment finished.
