@@ -81,6 +81,16 @@ func (t *jqCountTool) Execute(ctx context.Context, args json.RawMessage) (string
 }
 
 const maxJQResults = 10000
+const maxJQOutputChars = 100000
+
+// TruncateJQOutput truncates JQ output exceeding the given character limit,
+// appending a hint to guide the LLM toward more specific queries.
+func TruncateJQOutput(output string, limit int) string {
+	if len(output) <= limit {
+		return output
+	}
+	return output[:limit] + fmt.Sprintf("\n... [TRUNCATED] JQ output exceeded %d character limit (%d total). Use a more specific jq expression or filter with select().", limit, len(output))
+}
 
 func runJQ(ctx context.Context, resolver ResourceResolver, kind, expr string, countMode bool) (string, error) {
 	resources, err := resolver.List(ctx, kind, "")
@@ -136,5 +146,6 @@ func runJQ(ctx context.Context, resolver ResourceResolver, kind, expr string, co
 		return fmt.Sprintf("Count: %d%s\n%s", count, suffix, strings.Join(preview, "\n")), nil
 	}
 
-	return strings.Join(results, "\n"), nil
+	joined := strings.Join(results, "\n")
+	return TruncateJQOutput(joined, maxJQOutputChars), nil
 }
