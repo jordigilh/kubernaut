@@ -33,6 +33,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 var _ = Describe("BR-INTEGRATION-750: authwebhook DSClientAdapter inter-service TLS trust (#750)", func() {
@@ -43,6 +44,7 @@ var _ = Describe("BR-INTEGRATION-750: authwebhook DSClientAdapter inter-service 
 	)
 
 	BeforeEach(func() {
+		sharedtls.ResetDefaultTransportForTesting()
 		origTLSCAFile, hadTLSCAFile = os.LookupEnv("TLS_CA_FILE")
 	})
 
@@ -52,6 +54,7 @@ var _ = Describe("BR-INTEGRATION-750: authwebhook DSClientAdapter inter-service 
 		} else {
 			os.Unsetenv("TLS_CA_FILE")
 		}
+		sharedtls.ResetDefaultTransportForTesting()
 	})
 
 	generateSelfSignedCA := func(certFile string) {

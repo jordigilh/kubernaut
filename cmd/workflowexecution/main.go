@@ -40,6 +40,7 @@ import (
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/version"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
@@ -318,8 +319,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Issue #756: Extract signal context for CA file watcher lifecycle
+	ctx := ctrl.SetupSignalHandler()
+
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
+	if caWatchErr != nil {
+		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
+		os.Exit(1)
+	}
+	if caWatcher != nil {
+		defer caWatcher.Stop()
+	}
+
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}

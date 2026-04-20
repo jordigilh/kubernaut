@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"time"
 
@@ -40,6 +41,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"                 // BR-GATEWAY-036/037: Shared auth middleware
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"    // BR-AUDIT-005 Gap #7: Standardized error details
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"              // ADR-052 Addendum 001: Exponential backoff with jitter
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"             // Issue #756: FileWatcher for cert rotation
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"        // Issue #493/#678: Conditional TLS
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -122,8 +124,11 @@ const (
 // - Distributed tracing: OpenTelemetry integration (future)
 type Server struct {
 	// HTTP server
-	httpServer *http.Server
-	router     chi.Router // Chi router for adapter registration and route grouping
+	httpServer   *http.Server
+	router       chi.Router // Chi router for adapter registration and route grouping
+	certReloader *sharedtls.CertReloader      // Issue #756: nil when TLS disabled
+	certWatcher  *hotreload.FileWatcher        // Issue #756: nil when TLS disabled
+	tlsCertDir   string                        // Issue #756: cert dir for FileWatcher path
 
 	// Configuration
 	config *config.ServerConfig // ADR-030: Service configuration (needed for middleware setup)
@@ -326,11 +331,13 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 	}
 
 	if cfg.Server.TLS.Enabled() {
-		isTLS, tlsErr := sharedtls.ConfigureConditionalTLS(server.httpServer, cfg.Server.TLS.CertDir)
+		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(server.httpServer, cfg.Server.TLS.CertDir)
 		if tlsErr != nil {
 			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr)
 		}
 		if isTLS {
+			server.certReloader = reloader
+			server.tlsCertDir = cfg.Server.TLS.CertDir
 			server.logger.Info("TLS configured for Gateway server", "certDir", cfg.Server.TLS.CertDir)
 		}
 	}
@@ -638,11 +645,13 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	}
 
 	if cfg.Server.TLS.Enabled() {
-		isTLS, tlsErr := sharedtls.ConfigureConditionalTLS(server.httpServer, cfg.Server.TLS.CertDir)
+		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(server.httpServer, cfg.Server.TLS.CertDir)
 		if tlsErr != nil {
 			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr)
 		}
 		if isTLS {
+			server.certReloader = reloader
+			server.tlsCertDir = cfg.Server.TLS.CertDir
 			server.logger.Info("TLS configured for Gateway server", "certDir", cfg.Server.TLS.CertDir)
 		}
 	}
@@ -1065,6 +1074,23 @@ func (s *Server) sendSuccessResponse(
 //	}()
 func (s *Server) Start(ctx context.Context) error {
 	s.logger.Info("Starting Gateway server", "addr", s.httpServer.Addr)
+
+	// Issue #756: Start cert file watcher for hot-reload before accepting connections
+	if s.certReloader != nil {
+		watcher, err := hotreload.NewFileWatcher(
+			filepath.Join(s.tlsCertDir, "tls.crt"),
+			s.certReloader.ReloadCallback,
+			s.logger.WithName("cert-reloader"),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create cert file watcher: %w", err)
+		}
+		if err := watcher.Start(ctx); err != nil {
+			return fmt.Errorf("failed to start cert file watcher: %w", err)
+		}
+		s.certWatcher = watcher
+	}
+
 	// Issue #493: Conditional TLS — serve HTTPS when TLSConfig is set
 	if s.httpServer.TLSConfig != nil {
 		s.logger.Info("TLS enabled, starting HTTPS server")
@@ -1128,6 +1154,11 @@ func (s *Server) Stop(ctx context.Context) error {
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		s.logger.Error(err, "Failed to gracefully shutdown HTTP server")
 		return err
+	}
+
+	// Issue #756: Stop cert file watcher after HTTP server is down
+	if s.certWatcher != nil {
+		s.certWatcher.Stop()
 	}
 
 	// DD-GATEWAY-012: Redis close REMOVED - Gateway is now Redis-free

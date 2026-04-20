@@ -131,7 +131,7 @@ var _ = Describe("TLS Integration Tests (#493)", func() {
 		})
 
 		server := &http.Server{Handler: mux}
-		isTLS, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+		isTLS, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(isTLS).To(BeTrue())
 

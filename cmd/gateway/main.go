@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -126,6 +127,16 @@ func main() {
 	errChan := make(chan error, 1)
 	serverCtx, serverCancel := context.WithCancel(context.Background())
 	defer serverCancel()
+
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(serverCtx, logger)
+	if caWatchErr != nil {
+		logger.Error(caWatchErr, "Failed to start CA file watcher")
+		os.Exit(1)
+	}
+	if caWatcher != nil {
+		defer caWatcher.Stop()
+	}
 
 	go func() {
 		logger.Info("Gateway server starting", "address", serverCfg.Server.ListenAddr)

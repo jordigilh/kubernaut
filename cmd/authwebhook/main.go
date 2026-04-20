@@ -15,6 +15,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	awconfig "github.com/jordigilh/kubernaut/pkg/authwebhook/config"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -267,6 +268,16 @@ func main() {
 		os.Exit(1)
 	}
 	setupLog.Info("Registered health check endpoints", "liveness", "/healthz", "readiness", "/readyz")
+
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
+	if caWatchErr != nil {
+		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
+		os.Exit(1)
+	}
+	if caWatcher != nil {
+		defer caWatcher.Stop()
+	}
 
 	setupLog.Info("Starting webhook server", "port", cfg.Webhook.Port)
 	if err := mgr.Start(ctx); err != nil {
