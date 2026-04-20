@@ -173,7 +173,7 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 
 		// Business outcome 5: Assessment completed with a definitive reason.
 		Expect(fetchedEA.Status.AssessmentReason).To(
-			BeElementOf("full", "partial", "metrics_timed_out"),
+			BeElementOf("Full", "Partial", "MetricsTimedOut"),
 			"Assessment must complete with a definitive reason, not hang or fail")
 	})
 
@@ -226,7 +226,7 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 
 		// Business outcome 4: Assessment completes with a definitive reason.
 		Expect(fetchedEA.Status.AssessmentReason).To(
-			BeElementOf("full", "partial", "metrics_timed_out"),
+			BeElementOf("Full", "Partial", "MetricsTimedOut"),
 			"Assessment must complete definitively, not fail due to missing pre-hash")
 
 		// Confirm the EA spec didn't fabricate a pre-hash

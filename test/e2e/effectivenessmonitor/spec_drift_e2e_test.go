@@ -182,7 +182,7 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 					continue
 				}
 				payload, ok := evt.EventData.GetEffectivenessAssessmentAuditPayload()
-				if ok && payload.Reason.IsSet() && payload.Reason.Value == "spec_drift" {
+				if ok && payload.Reason.IsSet() && payload.Reason.Value == "SpecDrift" {
 					hasSpecDriftEvent = true
 					break
 				}

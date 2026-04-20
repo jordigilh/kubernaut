@@ -209,7 +209,7 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.4)", func() {
 						{
 							EventData: map[string]interface{}{
 								"event_type": "effectiveness.assessment.completed",
-								"reason":     "full",
+								"reason":     "Full",
 							},
 						},
 					},

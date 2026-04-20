@@ -178,7 +178,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 			Status: eav1.EffectivenessAssessmentStatus{
 				Phase:            eav1.PhaseCompleted,
 				AssessmentReason: eav1.AssessmentReasonFull,
-				Message:          "Assessment completed: full",
+				Message:          "Assessment completed: Full",
 			},
 		}
 

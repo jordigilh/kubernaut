@@ -99,8 +99,8 @@ var _ = Describe("EM Failed Phase (#573, ADR-EM-001 section 11)", func() {
 
 			Expect(updatedEA.Status.Phase).To(Equal(eav1.PhaseFailed),
 				"UT-EM-573-001: EA with empty correlationID should transition to Failed")
-			Expect(updatedEA.Status.AssessmentReason).To(Equal("unrecoverable"),
-				"UT-EM-573-001: reason should be 'unrecoverable'")
+			Expect(updatedEA.Status.AssessmentReason).To(Equal("Unrecoverable"),
+				"UT-EM-573-001: reason should be 'Unrecoverable'")
 			Expect(updatedEA.Status.Message).To(ContainSubstring("correlationID"),
 				"UT-EM-573-001: message should mention correlationID")
 		})
@@ -140,8 +140,8 @@ var _ = Describe("EM Failed Phase (#573, ADR-EM-001 section 11)", func() {
 				"UT-EM-573-002: completedAt should be set")
 			Expect(updatedEA.Status.CompletedAt.Time).To(BeTemporally(">=", beforeReconcile),
 				"UT-EM-573-002: completedAt should be after reconcile started")
-			Expect(updatedEA.Status.AssessmentReason).To(Equal("unrecoverable"),
-				"UT-EM-573-002: assessmentReason should be 'unrecoverable'")
+			Expect(updatedEA.Status.AssessmentReason).To(Equal("Unrecoverable"),
+				"UT-EM-573-002: assessmentReason should be 'Unrecoverable'")
 			Expect(updatedEA.Status.Message).To(ContainSubstring("correlationID is required"),
 				"UT-EM-573-002: message should describe the validation failure")
 		})

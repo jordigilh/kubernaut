@@ -198,7 +198,7 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 				{
 					EventData: map[string]interface{}{
 						"event_type": "effectiveness.assessment.completed",
-						"reason":     "full",
+						"reason":     "Full",
 					},
 				},
 			}
@@ -207,7 +207,7 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 
 			Expect(resp.CorrelationID).To(Equal("rr-test-001"))
 			Expect(resp.Score).To(HaveValue(BeNumerically("~", 0.95, 0.001)))
-			Expect(resp.AssessmentStatus).To(Equal("full"))
+			Expect(resp.AssessmentStatus).To(Equal("Full"))
 			Expect(resp.Components.HealthAssessed).To(BeTrue())
 			Expect(resp.Components.AlertAssessed).To(BeTrue())
 			Expect(resp.Components.MetricsAssessed).To(BeTrue())
@@ -299,14 +299,14 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 				{
 					EventData: map[string]interface{}{
 						"event_type": "effectiveness.assessment.completed",
-						"reason":     "spec_drift",
+						"reason":     "SpecDrift",
 					},
 				},
 			}
 
 			resp := server.BuildEffectivenessResponse("rr-drift-001", events)
 
-			Expect(resp.AssessmentStatus).To(Equal("spec_drift"))
+			Expect(resp.AssessmentStatus).To(Equal("SpecDrift"))
 			Expect(resp.Score).To(HaveValue(Equal(0.0)),
 				"spec_drift should short-circuit to score 0.0 regardless of component scores")
 		})
@@ -338,14 +338,14 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 				{
 					EventData: map[string]interface{}{
 						"event_type": "effectiveness.assessment.completed",
-						"reason":     "spec_drift",
+						"reason":     "SpecDrift",
 					},
 				},
 			}
 
 			resp := server.BuildEffectivenessResponse("rr-drift-002", events)
 
-			Expect(resp.AssessmentStatus).To(Equal("spec_drift"))
+			Expect(resp.AssessmentStatus).To(Equal("SpecDrift"))
 			Expect(resp.Score).To(HaveValue(Equal(0.0)),
 				"spec_drift overrides all component scores to 0.0")
 		})
@@ -365,20 +365,20 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 				{
 					EventData: map[string]interface{}{
 						"event_type": "effectiveness.assessment.completed",
-						"reason":     "full",
+						"reason":     "Full",
 					},
 				},
 				{
 					EventData: map[string]interface{}{
 						"event_type": "effectiveness.assessment.completed",
-						"reason":     "spec_drift",
+						"reason":     "SpecDrift",
 					},
 				},
 			}
 
 			resp := server.BuildEffectivenessResponse("rr-order-001", events)
 
-			Expect(resp.AssessmentStatus).To(Equal("spec_drift"),
+			Expect(resp.AssessmentStatus).To(Equal("SpecDrift"),
 				"DD-EM-002 v1.1: spec_drift must take priority over full")
 			Expect(resp.Score).To(HaveValue(Equal(0.0)),
 				"spec_drift short-circuits to score 0.0")
@@ -392,23 +392,49 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 				{
 					EventData: map[string]interface{}{
 						"event_type": "effectiveness.assessment.completed",
-						"reason":     "spec_drift",
+						"reason":     "SpecDrift",
 					},
 				},
 				{
 					EventData: map[string]interface{}{
 						"event_type": "effectiveness.assessment.completed",
-						"reason":     "full",
+						"reason":     "Full",
 					},
 				},
 			}
 
 			resp := server.BuildEffectivenessResponse("rr-order-002", events)
 
-			Expect(resp.AssessmentStatus).To(Equal("spec_drift"),
+			Expect(resp.AssessmentStatus).To(Equal("SpecDrift"),
 				"DD-EM-002 v1.1: spec_drift must not be overwritten by later full event")
 			Expect(resp.Score).To(HaveValue(Equal(0.0)),
 				"spec_drift short-circuits to score 0.0")
+		})
+
+		// UT-DS-749-001: PascalCase SpecDrift short-circuits to 0.0 (BR-EM-749)
+		It("UT-DS-749-001: BuildEffectivenessResponse short-circuits PascalCase SpecDrift to 0.0", func() {
+			events := []*server.EffectivenessEvent{
+				{
+					EventData: map[string]interface{}{
+						"event_type": "effectiveness.health.assessed",
+						"assessed":   true,
+						"score":      1.0,
+					},
+				},
+				{
+					EventData: map[string]interface{}{
+						"event_type": "effectiveness.assessment.completed",
+						"reason":     "SpecDrift",
+					},
+				},
+			}
+
+			resp := server.BuildEffectivenessResponse("rr-pascal-drift-001", events)
+
+			Expect(resp.AssessmentStatus).To(Equal("SpecDrift"),
+				"BR-EM-749: PascalCase SpecDrift must be recognized")
+			Expect(resp.Score).To(HaveValue(Equal(0.0)),
+				"BR-EM-749: PascalCase SpecDrift must short-circuit to 0.0")
 		})
 
 		// UT-DS-EFF-015: Non-drift assessment still computes normally
@@ -424,14 +450,14 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 				{
 					EventData: map[string]interface{}{
 						"event_type": "effectiveness.assessment.completed",
-						"reason":     "full",
+						"reason":     "Full",
 					},
 				},
 			}
 
 			resp := server.BuildEffectivenessResponse("rr-normal-001", events)
 
-			Expect(resp.AssessmentStatus).To(Equal("full"))
+			Expect(resp.AssessmentStatus).To(Equal("Full"))
 			Expect(resp.Score).To(HaveValue(BeNumerically(">", 0.0)),
 				"non-drift assessment should compute a positive score from components")
 		})

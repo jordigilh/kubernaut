@@ -51,11 +51,34 @@ var _ = Describe("EffectivenessAssessment CRD Types (ADR-EM-001)", func() {
 	Describe("AssessmentReason Constants", func() {
 
 		It("should define all five assessment reasons", func() {
-			Expect(eav1.AssessmentReasonFull).To(Equal("full"))
-			Expect(eav1.AssessmentReasonPartial).To(Equal("partial"))
-			Expect(eav1.AssessmentReasonNoExecution).To(Equal("no_execution"))
-			Expect(eav1.AssessmentReasonMetricsTimedOut).To(Equal("metrics_timed_out"))
-			Expect(eav1.AssessmentReasonExpired).To(Equal("expired"))
+			Expect(eav1.AssessmentReasonFull).To(Equal("Full"))
+			Expect(eav1.AssessmentReasonPartial).To(Equal("Partial"))
+			Expect(eav1.AssessmentReasonNoExecution).To(Equal("NoExecution"))
+			Expect(eav1.AssessmentReasonMetricsTimedOut).To(Equal("MetricsTimedOut"))
+			Expect(eav1.AssessmentReasonExpired).To(Equal("Expired"))
+		})
+
+		// UT-EM-749-001: All AssessmentReason constants are PascalCase (BR-EM-749)
+		It("UT-EM-749-001: all AssessmentReason constants must be PascalCase", func() {
+			reasons := []string{
+				eav1.AssessmentReasonFull,
+				eav1.AssessmentReasonPartial,
+				eav1.AssessmentReasonNoExecution,
+				eav1.AssessmentReasonMetricsTimedOut,
+				eav1.AssessmentReasonExpired,
+				eav1.AssessmentReasonSpecDrift,
+				eav1.AssessmentReasonAlertDecayTimeout,
+			}
+
+			for _, reason := range reasons {
+				Expect(reason).To(MatchRegexp(`^[A-Z][a-zA-Z]+$`),
+					"AssessmentReason %q must be PascalCase (no underscores, starts with uppercase)", reason)
+			}
+		})
+
+		// UT-EM-749-002: Unrecoverable reason must be a PascalCase constant (BR-EM-749)
+		It("UT-EM-749-002: unrecoverable reason must become PascalCase Unrecoverable", func() {
+			Expect(eav1.AssessmentReasonUnrecoverable).To(Equal("Unrecoverable"))
 		})
 	})
 

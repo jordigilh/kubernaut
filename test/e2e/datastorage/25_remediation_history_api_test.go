@@ -192,7 +192,7 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 		now := time.Now().UTC()
 		cid := fmt.Sprintf("corr-e2e-full-%s", testID)
 		insertROEvent(cid, targetResource, currentSpecHash, "ScaleUp", now.Add(-2*time.Hour))
-		insertEMEvents(cid, "full", 0.85, currentSpecHash, "sha256:e2e_post_"+testID, now.Add(-2*time.Hour))
+		insertEMEvents(cid, "Full", 0.85, currentSpecHash, "sha256:e2e_post_"+testID, now.Add(-2*time.Hour))
 
 		// Act: query via HTTP API
 		status, body := queryRemediationHistory(map[string]string{
@@ -213,7 +213,7 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 
 		entry := chain[0].(map[string]interface{})
 		Expect(entry).To(HaveKey("assessmentReason"))
-		Expect(entry["assessmentReason"]).To(Equal("full"))
+		Expect(entry["assessmentReason"]).To(Equal("Full"))
 		Expect(entry).To(HaveKey("effectivenessScore"))
 		score := entry["effectivenessScore"].(float64)
 		Expect(score).To(BeNumerically(">", 0.0))
@@ -226,7 +226,7 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 		now := time.Now().UTC()
 		cid := fmt.Sprintf("corr-e2e-drift-%s", testID)
 		insertROEvent(cid, targetResource, currentSpecHash, "ScaleUp", now.Add(-2*time.Hour))
-		insertEMEvents(cid, "spec_drift", 0.0, currentSpecHash, "sha256:e2e_drift_"+testID, now.Add(-2*time.Hour))
+		insertEMEvents(cid, "SpecDrift", 0.0, currentSpecHash, "sha256:e2e_drift_"+testID, now.Add(-2*time.Hour))
 
 		// Act
 		status, body := queryRemediationHistory(map[string]string{
@@ -244,7 +244,7 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 		Expect(chain).To(HaveLen(1))
 
 		entry := chain[0].(map[string]interface{})
-		Expect(entry["assessmentReason"]).To(Equal("spec_drift"),
+		Expect(entry["assessmentReason"]).To(Equal("SpecDrift"),
 			"spec_drift reason must survive the full service pipeline")
 		Expect(entry["effectivenessScore"]).To(BeNumerically("==", 0.0),
 			"spec_drift score must be 0.0 (unreliable)")
@@ -281,13 +281,13 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 		cid3 := fmt.Sprintf("corr-e2e-mixed3-%s", testID)
 
 		insertROEvent(cid1, targetResource, currentSpecHash, "ScaleUp", now.Add(-3*time.Hour))
-		insertEMEvents(cid1, "full", 0.85, currentSpecHash, "sha256:p1_"+testID, now.Add(-3*time.Hour))
+		insertEMEvents(cid1, "Full", 0.85, currentSpecHash, "sha256:p1_"+testID, now.Add(-3*time.Hour))
 
 		insertROEvent(cid2, targetResource, currentSpecHash, "RestartPod", now.Add(-2*time.Hour))
-		insertEMEvents(cid2, "spec_drift", 0.0, currentSpecHash, "sha256:p2_"+testID, now.Add(-2*time.Hour))
+		insertEMEvents(cid2, "SpecDrift", 0.0, currentSpecHash, "sha256:p2_"+testID, now.Add(-2*time.Hour))
 
 		insertROEvent(cid3, targetResource, currentSpecHash, "ScaleDown", now.Add(-1*time.Hour))
-		insertEMEvents(cid3, "partial", 0.65, currentSpecHash, "sha256:p3_"+testID, now.Add(-1*time.Hour))
+		insertEMEvents(cid3, "Partial", 0.65, currentSpecHash, "sha256:p3_"+testID, now.Add(-1*time.Hour))
 
 		// Act
 		status, body := queryRemediationHistory(map[string]string{
@@ -312,7 +312,7 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 				reasons[i] = r.(string)
 			}
 		}
-		Expect(reasons).To(Equal([]string{"full", "spec_drift", "partial"}),
+		Expect(reasons).To(Equal([]string{"Full", "SpecDrift", "Partial"}),
 			"Assessment reasons should be in ascending timestamp order (oldest first, per OpenAPI spec)")
 	})
 

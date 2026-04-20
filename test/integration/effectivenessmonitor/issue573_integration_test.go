@@ -305,7 +305,7 @@ var _ = Describe("Issue #573: ADR-EM-001 Implementation Gaps", func() {
 
 			Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted),
 				"IT-EM-573-013: phase should be Completed")
-			Expect(fetchedEA.Status.AssessmentReason).To(Equal("partial"),
+			Expect(fetchedEA.Status.AssessmentReason).To(Equal("Partial"),
 				"IT-EM-573-013: reason should be partial")
 			Expect(fetchedEA.Status.Components.HealthAssessed).To(BeTrue(),
 				"IT-EM-573-013: health should be assessed")
@@ -363,7 +363,7 @@ var _ = Describe("Issue #573: ADR-EM-001 Implementation Gaps", func() {
 			// full path reaches allComponentsDone at Step 8.
 			Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted),
 				"IT-EM-573-014: phase should be Completed")
-			Expect(fetchedEA.Status.AssessmentReason).NotTo(Equal("partial"),
+			Expect(fetchedEA.Status.AssessmentReason).NotTo(Equal("Partial"),
 				"IT-EM-573-014: reason should NOT be partial (full assessment path)")
 			Expect(fetchedEA.Status.Components.HealthAssessed).To(BeTrue(),
 				"IT-EM-573-014: health should be assessed")
