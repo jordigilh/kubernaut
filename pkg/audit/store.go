@@ -183,8 +183,7 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 // - The event fails validation (missing required fields)
 // - The buffer is full (event is dropped, but service continues)
 func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error {
-	// DEBUG: Log entry to StoreAudit (E2E debugging - Dec 28, 2025)
-	s.logger.Info("🔍 StoreAudit called",
+	s.logger.V(1).Info("StoreAudit called",
 		"event_type", event.EventType,
 		"event_action", event.EventAction,
 		"correlation_id", event.CorrelationID,
@@ -214,8 +213,7 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.A
 		return nil // Silently drop event during graceful shutdown
 	}
 
-	// DEBUG: Validation passed
-	s.logger.Info("✅ Validation passed, attempting to buffer event",
+	s.logger.V(1).Info("Validation passed, attempting to buffer event",
 		"event_type", event.EventType,
 		"buffer_size_before", len(s.buffer))
 
@@ -224,8 +222,7 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.A
 		// ✅ Event buffered successfully
 		newCount := atomic.AddInt64(&s.bufferedCount, 1)
 
-		// DEBUG: Event successfully added to buffer
-		s.logger.Info("✅ Event buffered successfully",
+		s.logger.V(1).Info("Event buffered successfully",
 			"event_type", event.EventType,
 			"correlation_id", event.CorrelationID,
 			"buffer_size_after", len(s.buffer),
@@ -446,8 +443,8 @@ func (s *BufferedAuditStore) backgroundWriter() {
 				"drift", drift,
 				"tick_time", tickTime.Format(time.RFC3339Nano))
 
-			// Warn if tick drift exceeds 2x expected interval (potential bug)
-			if timeSinceLastFlush > expectedInterval*2 {
+			// Warn if tick drift exceeds 5x expected interval (genuine scheduling issue)
+			if timeSinceLastFlush > expectedInterval*5 {
 				s.logger.Error(nil, "🚨 TIMER BUG DETECTED: Tick interval significantly exceeded expected",
 					"expected_interval", expectedInterval,
 					"actual_interval", timeSinceLastFlush,

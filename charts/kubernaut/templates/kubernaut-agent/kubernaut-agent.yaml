@@ -124,7 +124,7 @@ data:
       ca_file: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
 {{- end }}
     audit:
-      flush_interval_seconds: 0.1
+      flush_interval_seconds: 1.0
       buffer_size: 10000
       batch_size: 50
 {{- if and .Values.kubernautAgent.prometheus.ocpMonitoringRbac (not (and .Values.kubernautAgent.prometheus.tls .Values.kubernautAgent.prometheus.tls.caConfigMapName)) }}
