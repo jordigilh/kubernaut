@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -46,6 +47,7 @@ import (
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
@@ -248,19 +250,50 @@ func main() {
 	}
 
 	// Issue #493: Conditional TLS for the HTTP server
+	// Issue #756: CertReloader enables hot-reload of server certificates
+	var certReloader *sharedtls.CertReloader
 	if cfg.Server.TLS.Enabled() {
-		isTLS, tlsErr := sharedtls.ConfigureConditionalTLS(httpServer, cfg.Server.TLS.CertDir)
+		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(httpServer, cfg.Server.TLS.CertDir)
 		if tlsErr != nil {
 			slogger.Error("Failed to configure TLS", "error", tlsErr)
 			os.Exit(1)
 		}
 		if isTLS {
+			certReloader = reloader
 			slogger.Info("TLS configured for HTTP server", "certDir", cfg.Server.TLS.CertDir)
 		}
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Issue #756: Wire FileWatcher for server cert hot-reload
+	if certReloader != nil {
+		certWatcher, watchErr := hotreload.NewFileWatcher(
+			filepath.Join(cfg.Server.TLS.CertDir, "tls.crt"),
+			certReloader.ReloadCallback,
+			logr.FromSlogHandler(slogger.Handler()).WithName("cert-reloader"),
+		)
+		if watchErr != nil {
+			slogger.Error("Failed to create cert file watcher", "error", watchErr)
+			os.Exit(1)
+		}
+		if err := certWatcher.Start(ctx); err != nil {
+			slogger.Error("Failed to start cert file watcher", "error", err)
+			os.Exit(1)
+		}
+		defer certWatcher.Stop()
+	}
+
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logr.FromSlogHandler(slogger.Handler()))
+	if caWatchErr != nil {
+		slogger.Error("Failed to start CA file watcher", "error", caWatchErr)
+		os.Exit(1)
+	}
+	if caWatcher != nil {
+		defer caWatcher.Stop()
+	}
 
 	store.StartCleanupLoop(ctx, cfg.Session.TTL/2)
 
