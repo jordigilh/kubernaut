@@ -199,10 +199,11 @@ func main() {
 		Registry:     reg,
 		ModelName:    cfg.LLM.Model,
 		Pipeline: investigator.Pipeline{
-			Sanitizer:       sanitizer,
-			AnomalyDetector: anomalyDetector,
-			CatalogFetcher:  catalogFetcher,
-			Summarizer:      sum,
+			Sanitizer:         sanitizer,
+			AnomalyDetector:   anomalyDetector,
+			CatalogFetcher:    catalogFetcher,
+			Summarizer:        sum,
+			MaxToolOutputSize: cfg.Summarizer.MaxToolOutputSize,
 		},
 	})
 
@@ -588,10 +589,18 @@ func buildAuditStore(cfg *kaconfig.Config, slogger *slog.Logger, logrLog logr.Lo
 }
 
 // buildSummarizer creates a tool output summarizer when the threshold is positive.
+// When MaxToolOutputSize is configured, it enables pre-truncation to prevent
+// the summarizer's own LLM call from exceeding context window limits (#752).
 func buildSummarizer(llmClient llm.Client, cfg *kaconfig.Config, logger *slog.Logger) *summarizer.Summarizer {
 	if cfg.Summarizer.Threshold <= 0 {
 		logger.Info("summarizer disabled (threshold <= 0)")
 		return nil
+	}
+	if cfg.Summarizer.MaxToolOutputSize > 0 {
+		logger.Info("summarizer enabled with pre-truncation",
+			"threshold", cfg.Summarizer.Threshold,
+			"max_tool_output_size", cfg.Summarizer.MaxToolOutputSize)
+		return summarizer.NewWithMaxInput(llmClient, cfg.Summarizer.Threshold, cfg.Summarizer.MaxToolOutputSize)
 	}
 	logger.Info("summarizer enabled", "threshold", cfg.Summarizer.Threshold)
 	return summarizer.New(llmClient, cfg.Summarizer.Threshold)

@@ -128,9 +128,9 @@ var _ = Describe("Kubernaut Agent I4 Phase Scoping Integration — #433", func()
 			}
 		})
 
-		It("should enforce that RCA has 33 tools, WorkflowDiscovery has 4, Validation has 1", func() {
+		It("should enforce that RCA has 34 tools, WorkflowDiscovery has 4, Validation has 1", func() {
 			rcaTools := reg.ToolsForPhase(katypes.PhaseRCA, ptm)
-			Expect(rcaTools).To(HaveLen(33), "RCA should have 19 K8s + 2 metrics + 1 fetch_pod_logs + 8 Prometheus + 2 resource context + 1 TodoWrite = 33 tools")
+			Expect(rcaTools).To(HaveLen(34), "RCA should have 20 K8s + 2 metrics + 1 fetch_pod_logs + 8 Prometheus + 2 resource context + 1 TodoWrite = 34 tools")
 
 			wdTools := reg.ToolsForPhase(katypes.PhaseWorkflowDiscovery, ptm)
 			Expect(wdTools).To(HaveLen(4), "WorkflowDiscovery should have 3 workflow + 1 TodoWrite = 4 tools")

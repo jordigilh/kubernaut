@@ -28,11 +28,13 @@ import (
 // Summarizer uses a secondary LLM call to shorten tool output that exceeds
 // a configurable threshold. Per DD-HAPI-019-002: llm_summarize transformer.
 type Summarizer struct {
-	llmClient llm.Client
-	threshold int
+	llmClient    llm.Client
+	threshold    int
+	maxInputSize int
 }
 
 // New creates a summarizer with the given LLM client and threshold.
+// maxInputSize defaults to 0 (no pre-truncation).
 func New(client llm.Client, threshold int) *Summarizer {
 	return &Summarizer{
 		llmClient: client,
@@ -40,18 +42,46 @@ func New(client llm.Client, threshold int) *Summarizer {
 	}
 }
 
+// NewWithMaxInput creates a summarizer that pre-truncates inputs exceeding
+// maxInputSize before sending them to the secondary LLM call. This prevents
+// the summarizer's own LLM from hitting context window limits (#752).
+func NewWithMaxInput(client llm.Client, threshold, maxInputSize int) *Summarizer {
+	return &Summarizer{
+		llmClient:    client,
+		threshold:    threshold,
+		maxInputSize: maxInputSize,
+	}
+}
+
 // MaybeSummarize returns the input unchanged if it is at or below the threshold.
 // If the input exceeds the threshold, it makes a secondary LLM call to produce
 // a shorter summary preserving key details for incident investigation.
+// When maxInputSize > 0 and the result exceeds it, the input is pre-truncated
+// before being sent to the LLM to prevent the summarizer itself from overflowing.
 func (s *Summarizer) MaybeSummarize(ctx context.Context, toolName string, result string) (string, error) {
 	if len(result) <= s.threshold {
 		return result, nil
 	}
 
-	prompt := fmt.Sprintf(
-		"Summarize the following %s output, preserving key details for incident investigation:\n\n%s",
-		toolName, result,
-	)
+	input := result
+	preTruncated := false
+	if s.maxInputSize > 0 && len(input) > s.maxInputSize {
+		input = input[:s.maxInputSize]
+		preTruncated = true
+	}
+
+	var prompt string
+	if preTruncated {
+		prompt = fmt.Sprintf(
+			"Summarize the following %s output [PRE-TRUNCATED from %d to %d chars], preserving key details for incident investigation:\n\n%s",
+			toolName, len(result), s.maxInputSize, input,
+		)
+	} else {
+		prompt = fmt.Sprintf(
+			"Summarize the following %s output, preserving key details for incident investigation:\n\n%s",
+			toolName, input,
+		)
+	}
 
 	resp, err := s.llmClient.Chat(ctx, llm.ChatRequest{
 		Messages: []llm.Message{
@@ -66,6 +96,20 @@ func (s *Summarizer) MaybeSummarize(ctx context.Context, toolName string, result
 	}
 
 	return resp.Message.Content, nil
+}
+
+// TruncateToolOutput applies a hard character limit to tool output, appending
+// a guidance hint when truncation occurs. This is the final safety net
+// preventing oversized output from entering the LLM context window (#752).
+func TruncateToolOutput(output, toolName string, limit int) string {
+	if len(output) <= limit {
+		return output
+	}
+	hint := fmt.Sprintf(
+		"\n... [TRUNCATED] %s output was %d chars (limit: %d). Use kubectl_get_by_name or kubectl_get_by_name_in_cluster to fetch specific resources instead of listing all.",
+		toolName, len(output), limit,
+	)
+	return output[:limit] + hint
 }
 
 // Wrap returns a tool that delegates to inner but applies MaybeSummarize
