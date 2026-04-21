@@ -46,17 +46,14 @@ import (
 // content rejection, and idempotent re-apply.
 
 var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, Label("e2e", "workflow-update"), func() {
-	var (
-		testCtx    = ctx
-		crdCleanup []string
-	)
+	var crdCleanup []string
 
 	AfterEach(func() {
 		for _, name := range crdCleanup {
 			rw := &rwv1alpha1.RemediationWorkflow{}
 			key := types.NamespacedName{Name: name, Namespace: sharedNamespace}
-			if err := k8sClient.Get(testCtx, key, rw); err == nil {
-				_ = k8sClient.Delete(testCtx, rw)
+			if err := k8sClient.Get(ctx, key, rw); err == nil {
+				_ = k8sClient.Delete(ctx, rw)
 			}
 		}
 		crdCleanup = nil
@@ -71,7 +68,7 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 
 		By("Creating initial RW CRD v1.0.0")
 		rw := buildRemediationWorkflowCRD(crdName, "1.0.0", "Initial description for version bump test")
-		Expect(k8sClient.Create(testCtx, rw)).To(Succeed())
+		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
 
 		By("Waiting for initial workflowId in status")
 		initial := waitForCRDStatus(crdName, 30*time.Second)
@@ -80,17 +77,17 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 
 		By("Updating CRD: bump version to 1.1.0 and change description")
 		current := &rwv1alpha1.RemediationWorkflow{}
-		Expect(k8sClient.Get(testCtx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, current)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, current)).To(Succeed())
 		current.Spec.Version = "1.1.0"
 		current.Spec.Description.WhenNotToUse = "Updated for version bump test"
-		Expect(k8sClient.Update(testCtx, current)).To(Succeed(),
+		Expect(k8sClient.Update(ctx, current)).To(Succeed(),
 			"Version bump UPDATE should be Allowed by webhook")
 
 		By("Waiting for new workflowId (content hash changes -> new deterministic UUID)")
 		var newWorkflowID string
 		Eventually(func() string {
 			rw := &rwv1alpha1.RemediationWorkflow{}
-			if err := k8sClient.Get(testCtx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, rw); err != nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, rw); err != nil {
 				return ""
 			}
 			if rw.Status.WorkflowID != "" && rw.Status.WorkflowID != initialWorkflowID {
@@ -120,7 +117,7 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 		authAuditClient := createAuthenticatedAuditClient()
 		if authAuditClient != nil {
 			Eventually(func() bool {
-				events, err := authAuditClient.QueryAuditEvents(testCtx, auditclient.QueryAuditEventsParams{
+				events, err := authAuditClient.QueryAuditEvents(ctx, auditclient.QueryAuditEventsParams{
 					EventType: auditclient.NewOptString("remediationworkflow.admitted.update"),
 				})
 				if err != nil {
@@ -143,7 +140,7 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 
 		By("Creating initial RW CRD v1.0.0")
 		rw := buildRemediationWorkflowCRD(crdName, "1.0.0", "Original description")
-		Expect(k8sClient.Create(testCtx, rw)).To(Succeed())
+		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
 
 		By("Waiting for initial workflowId in status")
 		initial := waitForCRDStatus(crdName, 30*time.Second)
@@ -152,10 +149,10 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 
 		By("Updating CRD: change description WITHOUT bumping version")
 		current := &rwv1alpha1.RemediationWorkflow{}
-		Expect(k8sClient.Get(testCtx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, current)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, current)).To(Succeed())
 		current.Spec.Description.WhenNotToUse = "Changed content without version bump"
 
-		err := k8sClient.Update(testCtx, current)
+		err := k8sClient.Update(ctx, current)
 		Expect(err).To(HaveOccurred(),
 			"Same-version content change should be DENIED by webhook")
 		Expect(err.Error()).To(ContainSubstring("denied"),
@@ -163,7 +160,7 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 
 		By("Verifying CRD in cluster still has original description")
 		unchanged := &rwv1alpha1.RemediationWorkflow{}
-		Expect(k8sClient.Get(testCtx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, unchanged)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, unchanged)).To(Succeed())
 		Expect(unchanged.Spec.Description.WhenNotToUse).To(BeEmpty(),
 			"CRD should retain original spec (no WhenNotToUse field)")
 
@@ -179,7 +176,7 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 
 		By("Creating initial RW CRD v1.0.0")
 		rw := buildRemediationWorkflowCRD(crdName, "1.0.0", "Idempotent test description")
-		Expect(k8sClient.Create(testCtx, rw)).To(Succeed())
+		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
 
 		By("Waiting for initial workflowId in status")
 		initial := waitForCRDStatus(crdName, 30*time.Second)
@@ -189,14 +186,14 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 
 		By("Re-applying the CRD with identical spec (no changes)")
 		current := &rwv1alpha1.RemediationWorkflow{}
-		Expect(k8sClient.Get(testCtx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, current)).To(Succeed())
-		Expect(k8sClient.Update(testCtx, current)).To(Succeed(),
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, current)).To(Succeed())
+		Expect(k8sClient.Update(ctx, current)).To(Succeed(),
 			"Idempotent re-apply should be Allowed")
 
 		By("Verifying workflowId is unchanged (no supersession)")
 		Consistently(func() string {
 			rw := &rwv1alpha1.RemediationWorkflow{}
-			if err := k8sClient.Get(testCtx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, rw); err != nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, rw); err != nil {
 				return ""
 			}
 			return rw.Status.WorkflowID
