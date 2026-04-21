@@ -133,9 +133,9 @@ func (d *AnomalyDetector) TotalExceeded() bool {
 }
 
 // Reset clears all accumulated counters (total calls, per-tool calls, failure
-// tracker) while preserving config thresholds and suspicious patterns. This
-// gives each investigation phase (RCA, workflow selection) its own independent
-// tool budget per DD-HAPI-019-003.
+// tracker) while preserving config thresholds and suspicious patterns. Called
+// at the start of each Investigate() session (#770) and between phases (RCA →
+// workflow selection) per DD-HAPI-019-003.
 func (d *AnomalyDetector) Reset() {
 	d.totalCallCount = 0
 	d.toolCallCounts = make(map[string]int)

@@ -183,6 +183,10 @@ func New(cfg Config) *Investigator {
 // Per BR-AUDIT-005, all audit events use signal.RemediationID as correlation ID
 // so that DataStorage queries by remediation_id return the full investigation trail.
 func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	if inv.pipeline.AnomalyDetector != nil {
+		inv.pipeline.AnomalyDetector.Reset()
+	}
+
 	correlationID := signal.RemediationID
 	enrichmentCache := make(map[string]*enrichment.EnrichmentResult)
 

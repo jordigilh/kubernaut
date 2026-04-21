@@ -1,10 +1,10 @@
-# Test Plan: KA Tool Call Budget Exempt Prefixes and Metrics RBAC
+# Test Plan: KA Tool Call Budget — Exempt Prefixes, Session Reset, and Metrics RBAC
 
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 
-**Test Plan Identifier**: TP-770-v1
-**Feature**: Exempt internal planning tools from investigation budget; add metrics.k8s.io RBAC
-**Version**: 1.0
+**Test Plan Identifier**: TP-770-v2
+**Feature**: Exempt internal planning tools from investigation budget; reset budget per session; add metrics.k8s.io RBAC
+**Version**: 2.0
 **Created**: 2026-04-21
 **Author**: AI Assistant
 **Status**: Draft
@@ -18,18 +18,23 @@
 
 When investigating KubeNodeNotReady alerts, the KA exhausts its 30-tool-call budget before
 completing RCA because internal planning tool calls (`todo_write`) consume investigation budget.
+Additionally, the AnomalyDetector's counters persist across Investigate() sessions (different
+Remediation Requests), causing KA to become non-functional after 1-2 incidents.
+
 This test plan covers:
 1. Exempting `todo_*` prefixed tools from the anomaly detector's total and per-tool budgets
-2. Adding `metrics.k8s.io` RBAC permissions to prevent wasted tool calls on forbidden API calls
-3. Distinguishing budget exhaustion from turn exhaustion in ExhaustedResult messages
+2. Resetting the AnomalyDetector at the start of each Investigate() call (#770 critical fix)
+3. Adding `metrics.k8s.io` RBAC permissions to prevent wasted tool calls on forbidden API calls
+4. Distinguishing budget exhaustion from turn exhaustion in ExhaustedResult messages
 
 ### 1.2 Objectives
 
 1. `todo_write` calls do NOT increment totalCallCount or toolCallCounts
 2. `todo_write` calls are still checked for suspicious arguments
 3. Investigation tools (kubectl_*, prometheus_*) still count against budgets
-4. ExhaustedResult from anomaly detector is labeled "tool budget exhausted" (not "max turns")
-5. `metrics.k8s.io` RBAC rule added to Helm chart and E2E manifest
+4. AnomalyDetector.Reset() is called at the start of Investigate() — each session gets a fresh budget
+5. ExhaustedResult from anomaly detector is labeled "tool budget exhausted" (not "max turns")
+6. `metrics.k8s.io` RBAC rule added to Helm chart and E2E manifest
 
 ---
 
@@ -54,6 +59,8 @@ This test plan covers:
 | UT-KA-770-005 | Custom exempt prefixes from config are respected |
 | UT-KA-770-006 | DefaultAnomalyConfig includes `todo_` in ExemptPrefixes |
 | UT-KA-770-007 | TotalExceeded returns false even after many exempt tool calls |
+| UT-KA-770-010a | Reset at session boundary gives second investigation a full budget |
+| UT-KA-770-010b | Without session-boundary reset, counter leaks across investigations (bug doc) |
 
 ---
 
@@ -68,4 +75,5 @@ All existing assertions remain valid.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.0 | 2026-04-21 | Add session-boundary Reset() fix and tests (UT-KA-770-010a/b) |
 | 1.0 | 2026-04-21 | Initial test plan |

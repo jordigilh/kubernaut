@@ -233,6 +233,76 @@ var _ = Describe("Kubernaut Agent I7 Anomaly Detection — #433", func() {
 		})
 	})
 
+	Describe("UT-KA-770-010: Reset at session start scopes budget to investigation", func() {
+		// This test reproduces the critical bug from #770: the AnomalyDetector
+		// counter persists across Investigate() calls because Reset() is only
+		// called between phases (RCA→WF), not at the start of each session.
+		// After 1-2 investigations the KA becomes non-functional.
+		It("should allow full budget in a second session after Reset at session boundary", func() {
+			cfg := investigator.AnomalyConfig{
+				MaxToolCallsPerTool: 100,
+				MaxTotalToolCalls:   5,
+				MaxRepeatedFailures: 100,
+				ExemptPrefixes:      []string{"todo_"},
+			}
+			detector := investigator.NewAnomalyDetector(cfg, nil)
+
+			// --- Session 1: exhaust most of the budget (like a real investigation) ---
+			session1Tools := []string{"kubectl_describe", "kubectl_events", "kubectl_logs", "kubectl_get_by_name"}
+			for _, t := range session1Tools {
+				r := detector.CheckToolCall(t, json.RawMessage(`{}`))
+				Expect(r.Allowed).To(BeTrue(), "session 1: %s should be allowed", t)
+			}
+			// Inter-phase reset (RCA → workflow selection) — this exists today
+			detector.Reset()
+			for _, t := range session1Tools {
+				r := detector.CheckToolCall(t, json.RawMessage(`{}`))
+				Expect(r.Allowed).To(BeTrue(), "session 1 phase 2: %s should be allowed", t)
+			}
+
+			// --- Session boundary: simulate start of a new Investigate() call ---
+			// BUG: without this Reset(), session 2 inherits session 1's counters
+			detector.Reset()
+
+			// --- Session 2: must have full budget ---
+			for i, t := range session1Tools {
+				r := detector.CheckToolCall(t, json.RawMessage(`{}`))
+				Expect(r.Allowed).To(BeTrue(), "session 2 call %d (%s) should be allowed with fresh budget", i+1, t)
+			}
+			r := detector.CheckToolCall("list_available_actions", json.RawMessage(`{}`))
+			Expect(r.Allowed).To(BeTrue(), "session 2: 5th call should still be within budget of 5")
+		})
+
+		It("should fail session 2 WITHOUT reset at session boundary (documents the bug)", func() {
+			cfg := investigator.AnomalyConfig{
+				MaxToolCallsPerTool: 100,
+				MaxTotalToolCalls:   5,
+				MaxRepeatedFailures: 100,
+				ExemptPrefixes:      []string{"todo_"},
+			}
+			detector := investigator.NewAnomalyDetector(cfg, nil)
+
+			// --- Session 1: use 4 tool calls ---
+			for _, t := range []string{"kubectl_describe", "kubectl_events", "kubectl_logs", "kubectl_get_by_name"} {
+				detector.CheckToolCall(t, json.RawMessage(`{}`))
+			}
+			// Inter-phase reset (exists today)
+			detector.Reset()
+			// Session 1 phase 2: use 4 more
+			for _, t := range []string{"list_available_actions", "list_workflows", "get_workflow", "kubectl_describe"} {
+				detector.CheckToolCall(t, json.RawMessage(`{}`))
+			}
+
+			// NO session-boundary reset — simulating the bug
+
+			// Session 2: counter carries over from session 1 phase 2 (at 4)
+			r := detector.CheckToolCall("kubectl_describe", json.RawMessage(`{}`))
+			Expect(r.Allowed).To(BeTrue(), "5th call should still be allowed")
+			r = detector.CheckToolCall("kubectl_events", json.RawMessage(`{}`))
+			Expect(r.Allowed).To(BeFalse(), "6th call should be rejected — counter leaked from session 1")
+		})
+	})
+
 	Describe("UT-KA-433-059: Configurable thresholds from config", func() {
 		It("should respect custom threshold values", func() {
 			cfg := investigator.AnomalyConfig{
