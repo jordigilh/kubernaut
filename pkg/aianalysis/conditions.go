@@ -85,6 +85,9 @@ const (
 	// ReasonWorkflowResolutionFailed - workflow selection failed
 	ReasonWorkflowResolutionFailed = "WorkflowResolutionFailed"
 
+	// ReasonNoMatchingWorkflows - investigation succeeded but no workflow matched (#768)
+	ReasonNoMatchingWorkflows = "NoMatchingWorkflows"
+
 	// ReasonLowConfidence - confidence below threshold
 	ReasonLowConfidence = "LowConfidence"
 
