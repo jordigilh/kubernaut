@@ -359,7 +359,8 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
 		inv.logger.Warn("RCA parse failed, treating as summary",
-			slog.String("error", parseErr.Error()))
+			slog.String("error", parseErr.Error()),
+			slog.String("correlation_id", correlationID))
 		return &katypes.InvestigationResult{
 			RCASummary: content,
 		}, nil
@@ -370,7 +371,8 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	// Aligned with HAPI v1.2.1 where needs_human_review is parser-driven in Phase 3.
 	if result.HumanReviewNeeded {
 		inv.logger.Info("clearing HumanReviewNeeded set during RCA (parser-driven in Phase 3 only)",
-			slog.String("reason", result.HumanReviewReason))
+			slog.String("reason", result.HumanReviewReason),
+			slog.String("correlation_id", correlationID))
 		result.HumanReviewNeeded = false
 		result.HumanReviewReason = ""
 	}
@@ -408,7 +410,8 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			Reason:            fmt.Sprintf("max turns (%d) exhausted during workflow selection", inv.maxTurns),
 		}, nil
 	case *SubmitNoWorkflowResult:
-		inv.logger.Info("submit_result_no_workflow sentinel: classifying as no_matching_workflows")
+		inv.logger.Info("submit_result_no_workflow sentinel: classifying as no_matching_workflows",
+			slog.String("correlation_id", correlationID))
 		return &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
@@ -426,7 +429,8 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			return retryResult, nil
 		}
 		// Retries exhausted → no_matching_workflows
-		inv.logger.Warn("workflow selection: all retries exhausted, classifying as no_matching_workflows")
+		inv.logger.Warn("workflow selection: all retries exhausted, classifying as no_matching_workflows",
+			slog.String("correlation_id", correlationID))
 		return &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
@@ -443,7 +447,8 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			return retryResult, nil
 		}
 		inv.logger.Warn("workflow selection parse failed after retries, classifying as no_matching_workflows",
-			slog.String("error", parseErr.Error()))
+			slog.String("error", parseErr.Error()),
+			slog.String("correlation_id", correlationID))
 		return &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
@@ -559,7 +564,8 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 	for attempt := 0; attempt < maxParseRetries; attempt++ {
 		inv.logger.Info("parse-level retry for workflow submit",
 			slog.Int("attempt", attempt+1),
-			slog.Int("max", maxParseRetries))
+			slog.Int("max", maxParseRetries),
+			slog.String("correlation_id", correlationID))
 
 		retryMessages = append(retryMessages,
 			llm.Message{Role: "user", Content: correctionTemplate},
@@ -580,7 +586,9 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.InvestigationResultSchema()},
 		})
 		if err != nil {
-			inv.logger.Warn("retry LLM call failed", slog.String("error", err.Error()))
+			inv.logger.Warn("retry LLM call failed",
+				slog.String("error", err.Error()),
+				slog.String("correlation_id", correlationID))
 			continue
 		}
 		if tokens != nil {
@@ -591,7 +599,8 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 			for _, tc := range resp.ToolCalls {
 				switch tc.Name {
 				case SubmitResultNoWorkflowToolName:
-					inv.logger.Info("retry succeeded: submit_result_no_workflow")
+					inv.logger.Info("retry succeeded: submit_result_no_workflow",
+					slog.String("correlation_id", correlationID))
 					return &katypes.InvestigationResult{
 						RCASummary:        rcaSummary,
 						HumanReviewNeeded: true,
@@ -599,11 +608,13 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 						Reason:            "LLM used submit_result_no_workflow after retry",
 					}
 				case SubmitResultWithWorkflowToolName:
-					inv.logger.Info("retry succeeded: submit_result_with_workflow")
+					inv.logger.Info("retry succeeded: submit_result_with_workflow",
+					slog.String("correlation_id", correlationID))
 					result, parseErr := inv.resultParser.Parse(tc.Arguments)
 					if parseErr != nil {
 						inv.logger.Warn("retry submit_result_with_workflow parse failed",
-							slog.String("error", parseErr.Error()))
+							slog.String("error", parseErr.Error()),
+							slog.String("correlation_id", correlationID))
 						retryMessages = append(retryMessages, resp.Message)
 						continue
 					}
@@ -700,7 +711,8 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 				if sr := sentinelResult(tc); sr != nil {
 					inv.logger.Info("sentinel detected",
 						slog.String("tool", tc.Name),
-						slog.String("phase", string(phase)))
+						slog.String("phase", string(phase)),
+						slog.String("correlation_id", correlationID))
 					return sr, nil
 				}
 			}
