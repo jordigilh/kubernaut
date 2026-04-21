@@ -423,20 +423,29 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	case *SubmitResult:
 		content = r.Content
 	case *TextResult:
-		// #760 v2: parse-level retry — LLM returned text instead of a tool call.
-		retryResult := inv.retryWorkflowSubmit(ctx, r.Content, messages, rcaSummary, tokens, correlationID)
-		if retryResult != nil {
-			return retryResult, nil
+		// #760 v2: LLM returned text instead of a tool call. Try parsing
+		// first — the text may contain a valid investigation result (e.g.
+		// problem_resolved or predictive_no_action where no workflow is
+		// expected). Only fall through to parse-level retry when the
+		// content cannot be parsed at all.
+		if _, textErr := inv.resultParser.Parse(r.Content); textErr == nil {
+			inv.logger.Info("workflow selection: parsed text response directly (no tool call)",
+				slog.String("correlation_id", correlationID))
+			content = r.Content
+		} else {
+			retryResult := inv.retryWorkflowSubmit(ctx, r.Content, messages, rcaSummary, tokens, correlationID)
+			if retryResult != nil {
+				return retryResult, nil
+			}
+			inv.logger.Warn("workflow selection: all retries exhausted, classifying as no_matching_workflows",
+				slog.String("correlation_id", correlationID))
+			return &katypes.InvestigationResult{
+				RCASummary:        rcaSummary,
+				HumanReviewNeeded: true,
+				HumanReviewReason: "no_matching_workflows",
+				Reason:            "workflow selection: LLM did not use submit tool after retries",
+			}, nil
 		}
-		// Retries exhausted → no_matching_workflows
-		inv.logger.Warn("workflow selection: all retries exhausted, classifying as no_matching_workflows",
-			slog.String("correlation_id", correlationID))
-		return &katypes.InvestigationResult{
-			RCASummary:        rcaSummary,
-			HumanReviewNeeded: true,
-			HumanReviewReason: "no_matching_workflows",
-			Reason:            "workflow selection: LLM did not use submit tool after retries",
-		}, nil
 	}
 
 	result, parseErr := inv.resultParser.Parse(content)
