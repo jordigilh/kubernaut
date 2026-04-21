@@ -70,6 +70,10 @@ rules:
   - apiGroups: ["networking.istio.io"]
     resources: ["virtualservices", "destinationrules", "gateways", "serviceentries"]
     verbs: ["get", "list", "watch"]
+  # ── Metrics API (#770) ────────────────────────────────────────────────────
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
   # ── Prometheus Operator ──────────────────────────────────────────────────
   - apiGroups: ["monitoring.coreos.com"]
     resources: ["prometheusrules", "servicemonitors", "podmonitors", "probes"]
