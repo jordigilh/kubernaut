@@ -87,7 +87,10 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 				Client: investigationLLM, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
-				Pipeline: investigator.Pipeline{MaxToolOutputSize: maxOutput},
+				Pipeline: investigator.Pipeline{
+					MaxToolOutputSize: maxOutput,
+					AnomalyDetector:  investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil),
+				},
 			})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
@@ -126,7 +129,10 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 				Client: investigationLLM, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
-				Pipeline: investigator.Pipeline{MaxToolOutputSize: 100000},
+				Pipeline: investigator.Pipeline{
+					MaxToolOutputSize: 100000,
+					AnomalyDetector:  investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil),
+				},
 			})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
@@ -168,6 +174,7 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 				Pipeline: investigator.Pipeline{
 					Summarizer:        sum,
 					MaxToolOutputSize: maxOutput,
+					AnomalyDetector:   investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil),
 				},
 			})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{

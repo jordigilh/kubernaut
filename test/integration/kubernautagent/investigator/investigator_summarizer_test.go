@@ -81,7 +81,7 @@ var _ = Describe("Kubernaut Agent Summarizer Wiring — TP-433-WIR Phase 6", fun
 				},
 			}
 
-			inv := investigator.New(investigator.Config{Client: investigationLLM, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg, Pipeline: investigator.Pipeline{Summarizer: sum}})
+			inv := investigator.New(investigator.Config{Client: investigationLLM, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg, Pipeline: investigator.Pipeline{Summarizer: sum, AnomalyDetector: investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil)}})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
 			})

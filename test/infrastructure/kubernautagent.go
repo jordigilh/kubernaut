@@ -622,6 +622,9 @@ rules:
   - apiGroups: ["cert-manager.io"]
     resources: ["certificates", "clusterissuers", "certificaterequests"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
