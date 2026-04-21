@@ -7,6 +7,7 @@
 **Scope**: All Kubernetes CRDs in Kubernaut requiring user authentication
 
 **Version History**:
+- **v1.4** (April 21, 2026): Issue #773 — RemediationWorkflow operations updated from CREATE/DELETE to CREATE/UPDATE/DELETE. UPDATE now triggers DS re-registration with content integrity enforcement (409 on same version + different content). Distinct `remediationworkflow.admitted.update` audit event type added (SOC2 CC8.1).
 - **v1.3** (March 4, 2026): Added RemediationWorkflow (CREATE/DELETE) as 4th webhook handler. Workflow registration now uses CRD + ValidatingWebhook (ADR-058), replacing REST-only approach. Corrects v1.1 note about workflow CRUD using HTTP middleware.
 - **v1.2** (January 6, 2026): **ARCHITECTURE UPDATE**: Single consolidated webhook deployment (`kubernaut-auth-webhook`) with multiple handlers. Updated implementation approach and timelines. Added references to comprehensive implementation and test plans.
 - **v1.1** (January 6, 2026): Added NotificationRequest (DELETE attribution). ~~Note: Workflow CRUD uses HTTP middleware, not CRD webhook~~ (Corrected in v1.3: RemediationWorkflow now uses CRD webhook)
@@ -188,7 +189,7 @@ env:
 | **WorkflowExecution** | Block Clearance | `status.blockClearanceRequest` | CC8.1 (Attribution) | WE Team | P0 | v1.0 |
 | **RemediationApprovalRequest** | Approval Decisions | `status.approvalRequest` | CC8.1 (Attribution) | RO Team | P0 | v1.0 |
 | **NotificationRequest** | Cancellation Attribution | `metadata.deletionTimestamp` (DELETE) | CC8.1 (Attribution) | Notification Team | P0 | v1.1 |
-| **RemediationWorkflow** | CRD-Based Registration/Disable | `status.workflowId`, `status.catalogStatus` (CREATE/DELETE) | CC8.1 (Attribution) | Webhook Team | P0 | v1.0 |
+| **RemediationWorkflow** | CRD-Based Registration/Disable/Re-Registration | `status.workflowId`, `status.catalogStatus` (CREATE/UPDATE/DELETE) | CC8.1 (Attribution) | Webhook Team | P0 | v1.0 |
 
 **Note**: RemediationWorkflow registration uses a ValidatingWebhookConfiguration that bridges CRD lifecycle to the DS workflow catalog (ADR-058, BR-WORKFLOW-006). The DS REST API for workflow registration is internal-only.
 

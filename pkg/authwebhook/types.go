@@ -15,6 +15,7 @@ const (
 
 	// ADR-058: RemediationWorkflow CRD admission event types
 	EventTypeRWAdmittedCreate = "remediationworkflow.admitted.create"
+	EventTypeRWAdmittedUpdate = "remediationworkflow.admitted.update"
 	EventTypeRWAdmittedDelete = "remediationworkflow.admitted.delete"
 	EventTypeRWAdmittedDenied = "remediationworkflow.admitted.denied"
 

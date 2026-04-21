@@ -199,10 +199,12 @@ var _ = Describe("Deterministic UUID Handler Integration (#548)", func() {
 	})
 
 	// ========================================
-	// UT-DS-548-008: Supersede produces new deterministic UUID from new content
+	// UT-DS-548-008: Same version + different content returns 409 (Issue #773)
+	// Previously: Supersede produced new deterministic UUID from new content
+	// Now: Version-locked content immutability rejects the request
 	// ========================================
-	Describe("UT-DS-548-008: Supersede produces new deterministic UUID from new content", func() {
-		It("should create a new workflow with DeterministicUUID(newHash) and supersede the old", func() {
+	Describe("UT-DS-548-008: Same version different content returns 409 (Issue #773)", func() {
+		It("should return 409 Conflict for same version with different content", func() {
 			oldHash := computeTestHash(deterministicBaseYAML)
 			oldUUID := deterministicuuid.DeterministicUUID(oldHash)
 
@@ -223,22 +225,13 @@ var _ = Describe("Deterministic UUID Handler Integration (#548)", func() {
 
 			handler.HandleCreateWorkflow(rr, req)
 
-			Expect(rr.Code).To(Equal(http.StatusCreated),
-				"Supersede should return 201, got %d: %s", rr.Code, rr.Body.String())
+			Expect(rr.Code).To(Equal(http.StatusConflict),
+				"Same version + different content should return 409, got %d: %s", rr.Code, rr.Body.String())
 
-			// Old workflow should have been superseded
-			Expect(mockRepo.updateStatusCalls).To(HaveLen(1))
-			Expect(mockRepo.updateStatusCalls[0].WorkflowID).To(Equal(oldUUID))
-			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("Superseded"))
-
-			// New workflow should have deterministic UUID from new content hash
-			Expect(mockRepo.createdWorkflows).To(HaveLen(1))
-			created := mockRepo.createdWorkflows[0]
-			newExpectedUUID := deterministicuuid.DeterministicUUID(created.ContentHash)
-			Expect(created.WorkflowID).To(Equal(newExpectedUUID),
-				"New workflow should have DeterministicUUID(newContentHash)")
-			Expect(created.WorkflowID).NotTo(Equal(oldUUID),
-				"New UUID should differ from old UUID since content changed")
+			Expect(mockRepo.updateStatusCalls).To(BeEmpty(),
+				"No status update should occur — request is rejected")
+			Expect(mockRepo.createdWorkflows).To(BeEmpty(),
+				"No new workflow should be created — request is rejected")
 		})
 	})
 })

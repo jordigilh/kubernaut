@@ -1125,7 +1125,7 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData:
+	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData:
 		if err := s.RemediationWorkflowWebhookAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -1474,7 +1474,7 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData:
+	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData:
 		if err := s.RemediationWorkflowWebhookAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -5703,6 +5703,8 @@ func (s RemediationWorkflowWebhookAuditPayloadAction) Validate() error {
 	switch s {
 	case "create":
 		return nil
+	case "update":
+		return nil
 	case "delete":
 		return nil
 	case "denied":
@@ -5715,6 +5717,8 @@ func (s RemediationWorkflowWebhookAuditPayloadAction) Validate() error {
 func (s RemediationWorkflowWebhookAuditPayloadEventType) Validate() error {
 	switch s {
 	case "remediationworkflow.admitted.create":
+		return nil
+	case "remediationworkflow.admitted.update":
 		return nil
 	case "remediationworkflow.admitted.delete":
 		return nil

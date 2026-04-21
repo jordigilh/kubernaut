@@ -2858,6 +2858,7 @@ const (
 	AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.create"
 	AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.delete"
 	AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.denied"
+	AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.update"
 	AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData                 AuditEventEventDataType = "effectiveness.alert.assessed"
 	AuditEventEventDataEffectivenessAlertDecayDetectedAuditEventEventData            AuditEventEventDataType = "effectiveness.alert_decay.detected"
 	AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData           AuditEventEventDataType = "effectiveness.assessment.completed"
@@ -3071,7 +3072,7 @@ func (s AuditEventEventData) IsRemediationRequestWebhookAuditPayload() bool {
 // IsRemediationWorkflowWebhookAuditPayload reports whether AuditEventEventData is RemediationWorkflowWebhookAuditPayload.
 func (s AuditEventEventData) IsRemediationWorkflowWebhookAuditPayload() bool {
 	switch s.Type {
-	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData:
+	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData:
 		return true
 	default:
 		return false
@@ -4062,6 +4063,13 @@ func NewAuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData(
 	return s
 }
 
+// NewAuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData returns new AuditEventEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData, v)
+	return s
+}
+
 // SetEffectivenessAssessmentAuditPayload sets AuditEventEventData to EffectivenessAssessmentAuditPayload.
 // panics if `t` is not associated with EffectivenessAssessmentAuditPayload
 func (s *AuditEventEventData) SetEffectivenessAssessmentAuditPayload(t AuditEventEventDataType, v EffectivenessAssessmentAuditPayload) {
@@ -4797,6 +4805,7 @@ const (
 	AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.create"
 	AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.delete"
 	AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.denied"
+	AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.update"
 	AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData                 AuditEventRequestEventDataType = "effectiveness.alert.assessed"
 	AuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData            AuditEventRequestEventDataType = "effectiveness.alert_decay.detected"
 	AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData           AuditEventRequestEventDataType = "effectiveness.assessment.completed"
@@ -5010,7 +5019,7 @@ func (s AuditEventRequestEventData) IsRemediationRequestWebhookAuditPayload() bo
 // IsRemediationWorkflowWebhookAuditPayload reports whether AuditEventRequestEventData is RemediationWorkflowWebhookAuditPayload.
 func (s AuditEventRequestEventData) IsRemediationWorkflowWebhookAuditPayload() bool {
 	switch s.Type {
-	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData:
+	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData:
 		return true
 	default:
 		return false
@@ -5998,6 +6007,13 @@ func NewAuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventReq
 func NewAuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData, v)
 	return s
 }
 
@@ -19856,7 +19872,7 @@ func (s *RemediationWorkflowStatus) UnmarshalText(data []byte) error {
 }
 
 // Audit payload for RemediationWorkflow CRD admission events (ADR-058).
-// Emitted by the authwebhook when a RemediationWorkflow CRD is created, deleted, or denied.
+// Emitted by the authwebhook when a RemediationWorkflow CRD is created, updated, deleted, or denied.
 // Ref: #/components/schemas/RemediationWorkflowWebhookAuditPayload
 type RemediationWorkflowWebhookAuditPayload struct {
 	// Event type for discriminator (matches parent event_type).
@@ -19938,6 +19954,7 @@ type RemediationWorkflowWebhookAuditPayloadAction string
 
 const (
 	RemediationWorkflowWebhookAuditPayloadActionCreate RemediationWorkflowWebhookAuditPayloadAction = "create"
+	RemediationWorkflowWebhookAuditPayloadActionUpdate RemediationWorkflowWebhookAuditPayloadAction = "update"
 	RemediationWorkflowWebhookAuditPayloadActionDelete RemediationWorkflowWebhookAuditPayloadAction = "delete"
 	RemediationWorkflowWebhookAuditPayloadActionDenied RemediationWorkflowWebhookAuditPayloadAction = "denied"
 )
@@ -19946,6 +19963,7 @@ const (
 func (RemediationWorkflowWebhookAuditPayloadAction) AllValues() []RemediationWorkflowWebhookAuditPayloadAction {
 	return []RemediationWorkflowWebhookAuditPayloadAction{
 		RemediationWorkflowWebhookAuditPayloadActionCreate,
+		RemediationWorkflowWebhookAuditPayloadActionUpdate,
 		RemediationWorkflowWebhookAuditPayloadActionDelete,
 		RemediationWorkflowWebhookAuditPayloadActionDenied,
 	}
@@ -19955,6 +19973,8 @@ func (RemediationWorkflowWebhookAuditPayloadAction) AllValues() []RemediationWor
 func (s RemediationWorkflowWebhookAuditPayloadAction) MarshalText() ([]byte, error) {
 	switch s {
 	case RemediationWorkflowWebhookAuditPayloadActionCreate:
+		return []byte(s), nil
+	case RemediationWorkflowWebhookAuditPayloadActionUpdate:
 		return []byte(s), nil
 	case RemediationWorkflowWebhookAuditPayloadActionDelete:
 		return []byte(s), nil
@@ -19970,6 +19990,9 @@ func (s *RemediationWorkflowWebhookAuditPayloadAction) UnmarshalText(data []byte
 	switch RemediationWorkflowWebhookAuditPayloadAction(data) {
 	case RemediationWorkflowWebhookAuditPayloadActionCreate:
 		*s = RemediationWorkflowWebhookAuditPayloadActionCreate
+		return nil
+	case RemediationWorkflowWebhookAuditPayloadActionUpdate:
+		*s = RemediationWorkflowWebhookAuditPayloadActionUpdate
 		return nil
 	case RemediationWorkflowWebhookAuditPayloadActionDelete:
 		*s = RemediationWorkflowWebhookAuditPayloadActionDelete
@@ -19987,6 +20010,7 @@ type RemediationWorkflowWebhookAuditPayloadEventType string
 
 const (
 	RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate RemediationWorkflowWebhookAuditPayloadEventType = "remediationworkflow.admitted.create"
+	RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedUpdate RemediationWorkflowWebhookAuditPayloadEventType = "remediationworkflow.admitted.update"
 	RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete RemediationWorkflowWebhookAuditPayloadEventType = "remediationworkflow.admitted.delete"
 	RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied RemediationWorkflowWebhookAuditPayloadEventType = "remediationworkflow.admitted.denied"
 )
@@ -19995,6 +20019,7 @@ const (
 func (RemediationWorkflowWebhookAuditPayloadEventType) AllValues() []RemediationWorkflowWebhookAuditPayloadEventType {
 	return []RemediationWorkflowWebhookAuditPayloadEventType{
 		RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate,
+		RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedUpdate,
 		RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete,
 		RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied,
 	}
@@ -20004,6 +20029,8 @@ func (RemediationWorkflowWebhookAuditPayloadEventType) AllValues() []Remediation
 func (s RemediationWorkflowWebhookAuditPayloadEventType) MarshalText() ([]byte, error) {
 	switch s {
 	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate:
+		return []byte(s), nil
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedUpdate:
 		return []byte(s), nil
 	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete:
 		return []byte(s), nil
@@ -20019,6 +20046,9 @@ func (s *RemediationWorkflowWebhookAuditPayloadEventType) UnmarshalText(data []b
 	switch RemediationWorkflowWebhookAuditPayloadEventType(data) {
 	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate:
 		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate
+		return nil
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedUpdate:
+		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedUpdate
 		return nil
 	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete:
 		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete

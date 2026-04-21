@@ -574,7 +574,7 @@ webhooks:
   rules:
   - apiGroups: ["kubernaut.ai"]
     apiVersions: ["v1alpha1"]
-    operations: ["CREATE", "DELETE"]
+    operations: ["CREATE", "UPDATE", "DELETE"]
     resources: ["remediationworkflows"]
     scope: "Namespaced"
   sideEffects: NoneOnDryRun

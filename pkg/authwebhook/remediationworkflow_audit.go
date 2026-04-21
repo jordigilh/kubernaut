@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// emitAdmitAudit emits a success audit event for a CREATE or DELETE operation.
+// emitAdmitAudit emits a success audit event for a CREATE, UPDATE, or DELETE operation.
 func (h *RemediationWorkflowHandler) emitAdmitAudit(ctx context.Context, req admission.Request, eventType, workflowID, resourceName string) {
 	if h.auditStore == nil {
 		return
@@ -46,7 +46,12 @@ func (h *RemediationWorkflowHandler) emitAdmitAudit(ctx context.Context, req adm
 	action := api.RemediationWorkflowWebhookAuditPayloadActionCreate
 	ogenEventType := api.RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate
 	wrapFn := api.NewAuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData
-	if eventType == EventTypeRWAdmittedDelete {
+	switch eventType {
+	case EventTypeRWAdmittedUpdate:
+		action = api.RemediationWorkflowWebhookAuditPayloadActionUpdate
+		ogenEventType = api.RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedUpdate
+		wrapFn = api.NewAuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData
+	case EventTypeRWAdmittedDelete:
 		action = api.RemediationWorkflowWebhookAuditPayloadActionDelete
 		ogenEventType = api.RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete
 		wrapFn = api.NewAuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData
@@ -65,7 +70,7 @@ func (h *RemediationWorkflowHandler) emitAdmitAudit(ctx context.Context, req adm
 	storeAuditBestEffort(ctx, h.auditStore, event, "rw-webhook", eventType)
 }
 
-// emitDeniedAudit emits a denied audit event when CREATE is rejected.
+// emitDeniedAudit emits a denied audit event when CREATE or UPDATE is rejected.
 func (h *RemediationWorkflowHandler) emitDeniedAudit(ctx context.Context, req admission.Request, reason string) {
 	if h.auditStore == nil {
 		return

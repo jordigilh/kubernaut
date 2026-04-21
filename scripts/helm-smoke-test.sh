@@ -1090,6 +1090,18 @@ SDKEOF
       "Found runAsUser/runAsGroup: 65534 in rendered templates"
   fi
 
+  # ST-WEBHOOK-OPS-001: RemediationWorkflow webhook includes CREATE, UPDATE, DELETE (#773)
+  local webhooks_tpl
+  webhooks_tpl=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    -s templates/authwebhook/webhooks.yaml 2>&1)
+  if echo "$webhooks_tpl" | grep -B5 "remediationworkflows" | grep -q "UPDATE"; then
+    tap_ok "ST-WEBHOOK-OPS-001: RemediationWorkflow webhook includes UPDATE operation (#773)"
+  else
+    tap_not_ok "ST-WEBHOOK-OPS-001: RemediationWorkflow webhook includes UPDATE operation" \
+      "UPDATE operation missing from remediationworkflows webhook operations"
+  fi
+
   echo "# --- Template Tests: Rego Policy Mandatory Validation ---"
 
   local aia_tpl sp_tpl

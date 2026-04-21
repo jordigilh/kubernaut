@@ -2,7 +2,7 @@
 
 **Date**: 2025-11-27
 **Status**: ✅ **APPROVED**
-**Version**: 2.1
+**Version**: 2.2
 **Authority**: ⭐ **AUTHORITATIVE** - Single source of truth for workflow immutability
 **Related**: DD-WORKFLOW-006, DD-WORKFLOW-009, DD-WORKFLOW-002, DD-NAMING-001, ADR-058 (Webhook-Driven Registration), BR-WORKFLOW-006 (RemediationWorkflow CRD)
 
@@ -10,10 +10,17 @@
 
 ## Changelog
 
+### Version 2.2 (2026-04-21) — Issue #773
+- UPDATE operations on RemediationWorkflow CRDs are now intercepted by the AuthWebhook and re-registered with DS (no longer passthrough)
+- Content is version-locked: same (name, version) + different content hash returns 409 Conflict (`content-integrity-violation`)
+- Version bump is the proper mechanism to change workflow content (cross-version supersession)
+- Idempotent re-apply (same content hash) returns 200 OK with no DB writes
+- Added `remediationworkflow.admitted.update` audit event type (SOC2 CC8.1)
+
 ### Version 2.1 (2026-03-04)
 - Clarified that immutability applies to CRD-registered workflows (BR-WORKFLOW-006)
 - The RemediationWorkflow CRD `.spec` is the source of truth for workflow schema content
-- UPDATE operations on RemediationWorkflow CRDs pass through the AuthWebhook without DS interaction (spec is immutable; only K8s metadata like labels/annotations may change)
+- ~~UPDATE operations on RemediationWorkflow CRDs pass through the AuthWebhook without DS interaction~~ (superseded by v2.2)
 - To modify a workflow's schema, operators must create a new CRD with a new version
 - Added cross-references to ADR-058 and BR-WORKFLOW-006
 
