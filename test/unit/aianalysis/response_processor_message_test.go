@@ -106,8 +106,9 @@ var _ = Describe("Issue #588: Status.Message and Status.Warnings Independence", 
 	})
 
 	// UT-AA-588-002: Status.Warnings is populated independently from Status.Message.
-	// When there are no validation attempts but warnings exist, Message should be empty
-	// and Warnings should still be populated.
+	// When there are no validation attempts but warnings exist, Warnings should be populated.
+	// Note: no_matching_workflows routes to handleNoMatchingWorkflowsCompleted per #768,
+	// which sets an informational Message. Use a different humanReviewReason for this test.
 	It("UT-AA-588-002: Status.Warnings is populated independently when no validation attempts exist", func() {
 		analysis = createAnalysis()
 
@@ -116,13 +117,13 @@ var _ = Describe("Issue #588: Status.Message and Status.Warnings Independence", 
 			Analysis:         "Analysis text",
 			NeedsHumanReview: client.NewOptBool(true),
 			HumanReviewReason: client.OptNilHumanReviewReason{
-				Value: client.HumanReviewReasonNoMatchingWorkflows,
+				Value: client.HumanReviewReasonWorkflowNotFound,
 				Set:   true,
 			},
 			Confidence:                0.2,
 			Timestamp:                 "2026-03-04T12:00:00Z",
 			ValidationAttemptsHistory: nil,
-			Warnings:                  []string{"No matching workflows found", "Search scope was empty"},
+			Warnings:                  []string{"Workflow not found in catalog", "Search scope was empty"},
 		}
 
 		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
@@ -133,7 +134,7 @@ var _ = Describe("Issue #588: Status.Message and Status.Warnings Independence", 
 			"Status.Message must be empty when there are no validation attempts")
 
 		// Warnings must still be populated
-		Expect(analysis.Status.Warnings).To(ConsistOf("No matching workflows found", "Search scope was empty"))
+		Expect(analysis.Status.Warnings).To(ConsistOf("Workflow not found in catalog", "Search scope was empty"))
 	})
 
 	// UT-AA-588-003: Both fields empty when no validation attempts and no warnings.

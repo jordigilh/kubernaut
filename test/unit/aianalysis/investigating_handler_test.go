@@ -406,7 +406,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Entry("workflow_not_found → WorkflowNotFound", "workflow_not_found", "WorkflowNotFound"),
 				Entry("image_mismatch → ImageMismatch", "image_mismatch", "ImageMismatch"),
 				Entry("parameter_validation_failed → ParameterValidationFailed", "parameter_validation_failed", "ParameterValidationFailed"),
-				Entry("no_matching_workflows → NoMatchingWorkflows", "no_matching_workflows", "NoMatchingWorkflows"),
+				// no_matching_workflows removed — now routes to Phase=Completed per #768 (see UT-AA-768-001)
 				Entry("low_confidence → LowConfidence", "low_confidence", "LowConfidence"),
 				Entry("llm_parsing_error → LLMParsingError", "llm_parsing_error", "LLMParsingError"),
 				// BR-HAPI-200: New investigation outcome
