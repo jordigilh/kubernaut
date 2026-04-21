@@ -1080,6 +1080,10 @@ func toPromptEnrichment(data *enrichment.EnrichmentResult) *prompt.EnrichmentDat
 		pe.DetectedLabels = detectedLabelsToPromptMap(data.DetectedLabels)
 	}
 
+	if len(data.QuotaDetails) > 0 {
+		pe.QuotaDetails = data.QuotaDetails
+	}
+
 	pe.HistoryResult = data.RemediationHistory
 	return pe
 }

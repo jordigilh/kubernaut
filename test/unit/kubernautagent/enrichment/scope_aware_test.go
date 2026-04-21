@@ -164,7 +164,7 @@ var _ = Describe("TP-762: Scope-Aware LabelDetector (#762)", func() {
 			addLabelDetectorKinds(mapper)
 
 			ld := enrichment.NewLabelDetector(dynClient, mapper)
-			labels, err := ld.DetectLabels(context.Background(), "Node", "worker-1", "kube-system", nil)
+			labels, _, err := ld.DetectLabels(context.Background(), "Node", "worker-1", "kube-system", nil)
 			Expect(err).NotTo(HaveOccurred(),
 				"UT-KA-762-005: LabelDetector must fetch Node using cluster-scoped client")
 			Expect(labels).NotTo(BeNil())
@@ -184,7 +184,7 @@ var _ = Describe("TP-762: Scope-Aware LabelDetector (#762)", func() {
 			addLabelDetectorKinds(mapper)
 
 			ld := enrichment.NewLabelDetector(dynClient, mapper)
-			labels, err := ld.DetectLabels(context.Background(), "Node", "worker-1", "", nil)
+			labels, _, err := ld.DetectLabels(context.Background(), "Node", "worker-1", "", nil)
 			Expect(err).NotTo(HaveOccurred(),
 				"UT-KA-762-006: should not error when namespace is empty")
 			Expect(labels).NotTo(BeNil())
