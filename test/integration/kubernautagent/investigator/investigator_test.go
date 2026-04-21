@@ -735,16 +735,6 @@ func wfToolResp(jsonContent string) llm.ChatResponse {
 	}
 }
 
-// noWfToolResp creates a mock ChatResponse where the LLM calls submit_result_no_workflow.
-func noWfToolResp(jsonContent string) llm.ChatResponse {
-	return llm.ChatResponse{
-		Message: llm.Message{Role: "assistant", Content: ""},
-		ToolCalls: []llm.ToolCall{
-			{ID: "tc_nowf", Name: "submit_result_no_workflow", Arguments: jsonContent},
-		},
-	}
-}
-
 func toolNamesFromCall(call llm.ChatRequest) []string {
 	names := make([]string, len(call.Tools))
 	for i, td := range call.Tools {

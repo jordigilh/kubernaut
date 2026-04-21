@@ -121,6 +121,18 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 		return map[string]interface{}{
 			"kind": cfg.ResourceKind, "namespace": cfg.ResourceNS, "name": cfg.ResourceName,
 		}
+	case openai.ToolSubmitResultWithWorkflow:
+		return analysisJSON(cfg)
+	case openai.ToolSubmitResultNoWorkflow:
+		rca := map[string]interface{}{
+			"summary":     cfg.RootCause,
+			"severity":    cfg.Severity,
+			"signal_name": cfg.SignalName,
+		}
+		return map[string]interface{}{
+			"root_cause_analysis": rca,
+			"reasoning":           "No matching workflow found for this scenario",
+		}
 	default:
 		return map[string]interface{}{}
 	}

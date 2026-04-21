@@ -104,7 +104,16 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	h.recordScenarioMetric(scenarioName, result.Method)
 
 	if h.forceText || len(req.Tools) == 0 {
-		writeJSON(w, http.StatusOK, response.BuildForceTextResponse(model, cfg, req.Tools))
+		if conversation.HasSubmitWithWorkflowTool(req.Tools) {
+			toolName := openai.ToolSubmitResultWithWorkflow
+			if cfg.WorkflowID == "" {
+				toolName = openai.ToolSubmitResultNoWorkflow
+			}
+			h.trackToolCall(toolName)
+			writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, toolName, cfg))
+		} else {
+			writeJSON(w, http.StatusOK, response.BuildForceTextResponse(model, cfg, req.Tools))
+		}
 		h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
 		return
 	}
@@ -128,7 +137,16 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		h.trackToolCall(hr.ToolName)
 		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, hr.ToolName, cfg))
 	default:
-		writeJSON(w, http.StatusOK, response.BuildTextResponse(model, cfg))
+		if conversation.HasSubmitWithWorkflowTool(req.Tools) {
+			toolName := openai.ToolSubmitResultWithWorkflow
+			if cfg.WorkflowID == "" {
+				toolName = openai.ToolSubmitResultNoWorkflow
+			}
+			h.trackToolCall(toolName)
+			writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, toolName, cfg))
+		} else {
+			writeJSON(w, http.StatusOK, response.BuildTextResponse(model, cfg))
+		}
 	}
 	h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
 }
