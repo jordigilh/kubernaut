@@ -646,11 +646,13 @@ func buildAnomalyDetector(cfg *kaconfig.Config, logger *slog.Logger) *investigat
 		MaxToolCallsPerTool: cfg.Anomaly.MaxToolCallsPerTool,
 		MaxTotalToolCalls:   cfg.Anomaly.MaxTotalToolCalls,
 		MaxRepeatedFailures: cfg.Anomaly.MaxRepeatedFailures,
+		ExemptPrefixes:      cfg.Anomaly.ExemptPrefixes,
 	}
 	logger.Info("anomaly detector enabled",
 		"maxToolCallsPerTool", ac.MaxToolCallsPerTool,
 		"maxTotalToolCalls", ac.MaxTotalToolCalls,
 		"maxRepeatedFailures", ac.MaxRepeatedFailures,
+		"exemptPrefixes", ac.ExemptPrefixes,
 	)
 	return investigator.NewAnomalyDetector(ac, nil)
 }

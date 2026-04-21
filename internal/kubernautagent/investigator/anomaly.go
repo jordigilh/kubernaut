@@ -21,21 +21,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // AnomalyConfig holds configurable thresholds for the anomaly detector (I7).
 type AnomalyConfig struct {
-	MaxToolCallsPerTool int `yaml:"maxToolCallsPerTool"`
-	MaxTotalToolCalls   int `yaml:"maxTotalToolCalls"`
-	MaxRepeatedFailures int `yaml:"maxRepeatedFailures"`
+	MaxToolCallsPerTool int      `yaml:"maxToolCallsPerTool"`
+	MaxTotalToolCalls   int      `yaml:"maxTotalToolCalls"`
+	MaxRepeatedFailures int      `yaml:"maxRepeatedFailures"`
+	ExemptPrefixes      []string `yaml:"exemptPrefixes"`
 }
 
 // DefaultAnomalyConfig returns production defaults per DD-HAPI-019-003.
+// ExemptPrefixes includes "todo_" per #770: internal planning tools should
+// not consume the investigation tool budget.
 func DefaultAnomalyConfig() AnomalyConfig {
 	return AnomalyConfig{
 		MaxToolCallsPerTool: 5,
 		MaxTotalToolCalls:   30,
 		MaxRepeatedFailures: 3,
+		ExemptPrefixes:      []string{"todo_"},
 	}
 }
 
@@ -67,9 +72,15 @@ func NewAnomalyDetector(config AnomalyConfig, suspiciousPatterns []*regexp.Regex
 
 // CheckToolCall validates a tool call against anomaly thresholds.
 // Returns Allowed=false if the call should be rejected.
+// Tools matching ExemptPrefixes are checked for suspicious arguments but
+// do not count against total or per-tool budgets (#770).
 func (d *AnomalyDetector) CheckToolCall(name string, args json.RawMessage) AnomalyResult {
 	if r := d.checkSuspiciousArgs(name, args); !r.Allowed {
 		return r
+	}
+
+	if d.isExempt(name) {
+		return AnomalyResult{Allowed: true}
 	}
 
 	d.totalCallCount++
@@ -89,6 +100,16 @@ func (d *AnomalyDetector) CheckToolCall(name string, args json.RawMessage) Anoma
 	}
 
 	return AnomalyResult{Allowed: true}
+}
+
+// isExempt returns true if the tool name matches any configured exempt prefix.
+func (d *AnomalyDetector) isExempt(name string) bool {
+	for _, prefix := range d.config.ExemptPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // RecordFailure records a tool execution failure for repeated-failure detection.

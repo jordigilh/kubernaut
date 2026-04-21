@@ -142,9 +142,10 @@ type EnrichmentConfig struct {
 }
 
 type AnomalyConfig struct {
-	MaxToolCallsPerTool int `yaml:"max_tool_calls_per_tool"`
-	MaxTotalToolCalls   int `yaml:"max_total_tool_calls"`
-	MaxRepeatedFailures int `yaml:"max_repeated_failures"`
+	MaxToolCallsPerTool int      `yaml:"max_tool_calls_per_tool"`
+	MaxTotalToolCalls   int      `yaml:"max_total_tool_calls"`
+	MaxRepeatedFailures int      `yaml:"max_repeated_failures"`
+	ExemptPrefixes      []string `yaml:"exempt_prefixes"`
 }
 
 // Load parses configuration from YAML bytes and applies defaults.
@@ -278,6 +279,7 @@ func DefaultConfig() *Config {
 			MaxToolCallsPerTool: 5,
 			MaxTotalToolCalls:   30,
 			MaxRepeatedFailures: 3,
+			ExemptPrefixes:      []string{"todo_"},
 		},
 		Sanitization: SanitizationConfig{
 			InjectionPatternsEnabled: true,

@@ -79,8 +79,9 @@ type TextResult struct{ Content string }
 
 func (*TextResult) loopResult() {}
 
-// ExhaustedResult is returned when the loop exhausts maxTurns.
-type ExhaustedResult struct{}
+// ExhaustedResult is returned when the loop exhausts maxTurns or tool budget.
+// Reason distinguishes the two cases for observability (#770).
+type ExhaustedResult struct{ Reason string }
 
 func (*ExhaustedResult) loopResult() {}
 
@@ -346,7 +347,7 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	case *ExhaustedResult:
 		return &katypes.InvestigationResult{
 			HumanReviewNeeded: true,
-			Reason:            fmt.Sprintf("max turns (%d) exhausted during RCA", inv.maxTurns),
+			Reason:            fmt.Sprintf("%s during RCA (maxTurns=%d)", r.Reason, inv.maxTurns),
 		}, nil
 	case *SubmitResult:
 		content = r.Content
@@ -407,7 +408,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		return &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
-			Reason:            fmt.Sprintf("max turns (%d) exhausted during workflow selection", inv.maxTurns),
+			Reason:            fmt.Sprintf("%s during workflow selection (maxTurns=%d)", r.Reason, inv.maxTurns),
 		}, nil
 	case *SubmitNoWorkflowResult:
 		inv.logger.Info("submit_result_no_workflow sentinel: classifying as no_matching_workflows",
@@ -497,7 +498,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			switch cr := corrLoopRes.(type) {
 			case *ExhaustedResult:
 				r.HumanReviewNeeded = true
-				r.Reason = "self-correction exhausted LLM turns"
+				r.Reason = fmt.Sprintf("self-correction: %s", cr.Reason)
 				return r, nil
 			case *SubmitNoWorkflowResult:
 				return &katypes.InvestigationResult{
@@ -748,7 +749,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 				})
 			}
 			if inv.pipeline.AnomalyDetector != nil && inv.pipeline.AnomalyDetector.TotalExceeded() {
-				return &ExhaustedResult{}, nil
+				return &ExhaustedResult{Reason: "tool budget exhausted"}, nil
 			}
 			continue
 		}
@@ -756,7 +757,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		return &TextResult{Content: resp.Message.Content}, nil
 	}
 
-	return &ExhaustedResult{}, nil
+	return &ExhaustedResult{Reason: "max turns exhausted"}, nil
 }
 
 func totalPromptLength(messages []llm.Message) int {
