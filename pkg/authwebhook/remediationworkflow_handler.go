@@ -30,6 +30,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -263,6 +264,12 @@ func (h *RemediationWorkflowHandler) handleDelete(ctx context.Context, req admis
 // updateCRDStatus writes the DS registration result into the CRD's .status subresource.
 // Runs asynchronously after admission completes so it doesn't block the API server response.
 // Uses a fresh context with a timeout since the admission context is cancelled after response.
+//
+// Uses RetryOnConflict to handle the race between this goroutine and the API server
+// committing the spec change. On the UPDATE path, a plain GET succeeds immediately
+// (CRD already exists) but returns a stale resourceVersion; the subsequent Status().Update
+// gets a 409 Conflict once the API server commits the new resourceVersion. The retry
+// loop re-GETs the CRD (fresh resourceVersion) and retries the status write.
 func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registeredBy string, result *WorkflowRegistrationResult) {
 	logger := ctrl.Log.WithName("rw-webhook").WithValues("operation", "status-update", "name", name, "namespace", namespace)
 
@@ -274,21 +281,25 @@ func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registered
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	rw := &rwv1alpha1.RemediationWorkflow{}
-	if err := RetryGetCRD(ctx, h.k8sClient, types.NamespacedName{Namespace: namespace, Name: name}, rw, 5); err != nil {
-		logger.Error(err, "Failed to fetch CRD for status update after retries")
-		return
-	}
+	key := types.NamespacedName{Namespace: namespace, Name: name}
 
-	now := metav1.Now()
-	rw.Status.WorkflowID = result.WorkflowID
-	rw.Status.CatalogStatus = sharedtypes.CatalogStatus(result.Status)
-	rw.Status.RegisteredBy = registeredBy
-	rw.Status.RegisteredAt = &now
-	rw.Status.PreviouslyExisted = result.PreviouslyExisted
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		rw := &rwv1alpha1.RemediationWorkflow{}
+		if err := h.k8sClient.Get(ctx, key, rw); err != nil {
+			return err
+		}
 
-	if err := h.k8sClient.Status().Update(ctx, rw); err != nil {
-		logger.Error(err, "Failed to update CRD status",
+		now := metav1.Now()
+		rw.Status.WorkflowID = result.WorkflowID
+		rw.Status.CatalogStatus = sharedtypes.CatalogStatus(result.Status)
+		rw.Status.RegisteredBy = registeredBy
+		rw.Status.RegisteredAt = &now
+		rw.Status.PreviouslyExisted = result.PreviouslyExisted
+
+		return h.k8sClient.Status().Update(ctx, rw)
+	})
+	if err != nil {
+		logger.Error(err, "Failed to update CRD status after retries",
 			"workflow_id", result.WorkflowID,
 		)
 		return
