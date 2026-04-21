@@ -2513,6 +2513,7 @@ components:
               'webhook.remediationapprovalrequest.decided': '#/components/schemas/RemediationApprovalAuditPayload'
               'webhook.remediationrequest.timeout_modified': '#/components/schemas/RemediationRequestWebhookAuditPayload'
               'remediationworkflow.admitted.create': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
+              'remediationworkflow.admitted.update': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
               'remediationworkflow.admitted.delete': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
               'remediationworkflow.admitted.denied': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
               'workflow.catalog.actions_listed': '#/components/schemas/WorkflowDiscoveryAuditPayload'
@@ -4278,12 +4279,13 @@ components:
       required: [event_type, workflow_name, action]
       description: |
         Audit payload for RemediationWorkflow CRD admission events (ADR-058).
-        Emitted by the authwebhook when a RemediationWorkflow CRD is created, deleted, or denied.
+        Emitted by the authwebhook when a RemediationWorkflow CRD is created, updated, deleted, or denied.
       properties:
         event_type:
           type: string
           enum:
             - 'remediationworkflow.admitted.create'
+            - 'remediationworkflow.admitted.update'
             - 'remediationworkflow.admitted.delete'
             - 'remediationworkflow.admitted.denied'
           description: Event type for discriminator (matches parent event_type)
@@ -4293,7 +4295,7 @@ components:
           example: "crashloop-rollback-v1"
         action:
           type: string
-          enum: [create, delete, denied]
+          enum: [create, update, delete, denied]
           description: Admission action performed
           example: "create"
         workflow_id:
