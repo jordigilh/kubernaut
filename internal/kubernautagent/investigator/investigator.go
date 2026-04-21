@@ -163,6 +163,10 @@ type Investigator struct {
 // Config.Registry may be nil (tool execution will be skipped).
 // Config.Pipeline fields default to nil (their features are skipped).
 func New(cfg Config) *Investigator {
+	pipeline := cfg.Pipeline
+	if pipeline.AnomalyDetector == nil {
+		pipeline.AnomalyDetector = NewAnomalyDetector(DefaultAnomalyConfig(), nil)
+	}
 	return &Investigator{
 		client:        cfg.Client,
 		builder:       cfg.Builder,
@@ -173,7 +177,7 @@ func New(cfg Config) *Investigator {
 		maxTurns:      cfg.MaxTurns,
 		phaseTools:    cfg.PhaseTools,
 		registry:      cfg.Registry,
-		pipeline:      cfg.Pipeline,
+		pipeline:      pipeline,
 		modelName:     cfg.ModelName,
 		scopeResolver: cfg.ScopeResolver,
 	}
@@ -183,9 +187,7 @@ func New(cfg Config) *Investigator {
 // Per BR-AUDIT-005, all audit events use signal.RemediationID as correlation ID
 // so that DataStorage queries by remediation_id return the full investigation trail.
 func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
-	if inv.pipeline.AnomalyDetector != nil {
-		inv.pipeline.AnomalyDetector.Reset()
-	}
+	inv.pipeline.AnomalyDetector.Reset()
 
 	correlationID := signal.RemediationID
 	enrichmentCache := make(map[string]*enrichment.EnrichmentResult)
@@ -257,9 +259,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		workflowSignal.Namespace = postRCANS
 	}
 
-	if inv.pipeline.AnomalyDetector != nil {
-		inv.pipeline.AnomalyDetector.Reset()
-	}
+	inv.pipeline.AnomalyDetector.Reset()
 
 	p1Ctx := buildPhase1Context(rcaResult)
 
@@ -752,9 +752,9 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 					ToolName:   tc.Name,
 				})
 			}
-			if inv.pipeline.AnomalyDetector != nil && inv.pipeline.AnomalyDetector.TotalExceeded() {
-				return &ExhaustedResult{Reason: "tool budget exhausted"}, nil
-			}
+		if inv.pipeline.AnomalyDetector.TotalExceeded() {
+			return &ExhaustedResult{Reason: "tool budget exhausted"}, nil
+		}
 			continue
 		}
 
@@ -848,14 +848,12 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 		return toolErrorJSON("no registry configured for tool " + name)
 	}
 
-	if inv.pipeline.AnomalyDetector != nil {
-		if ar := inv.pipeline.AnomalyDetector.CheckToolCall(name, args); !ar.Allowed {
-			inv.logger.Warn("anomaly detector rejected tool call",
-				slog.String("tool", name),
-				slog.String("reason", ar.Reason),
-			)
-			return toolErrorJSON(ar.Reason)
-		}
+	if ar := inv.pipeline.AnomalyDetector.CheckToolCall(name, args); !ar.Allowed {
+		inv.logger.Warn("anomaly detector rejected tool call",
+			slog.String("tool", name),
+			slog.String("reason", ar.Reason),
+		)
+		return toolErrorJSON(ar.Reason)
 	}
 
 	result, err := inv.registry.Execute(ctx, name, args)
@@ -864,10 +862,8 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 			slog.String("tool", name),
 			slog.String("error", err.Error()),
 		)
-		if inv.pipeline.AnomalyDetector != nil {
-			if ar := inv.pipeline.AnomalyDetector.RecordFailure(name, args); !ar.Allowed {
-				return toolErrorJSON(ar.Reason)
-			}
+		if ar := inv.pipeline.AnomalyDetector.RecordFailure(name, args); !ar.Allowed {
+			return toolErrorJSON(ar.Reason)
 		}
 		return toolErrorJSON(err.Error())
 	}
