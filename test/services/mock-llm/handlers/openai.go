@@ -104,7 +104,7 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	h.recordScenarioMetric(scenarioName, result.Method)
 
 	if h.forceText || len(req.Tools) == 0 {
-		if conversation.HasSubmitWithWorkflowTool(req.Tools) {
+		if conversation.HasSubmitWithWorkflowTool(req.Tools) && !isResolvedOutcome(cfg) {
 			toolName := openai.ToolSubmitResultWithWorkflow
 			if cfg.WorkflowID == "" {
 				toolName = openai.ToolSubmitResultNoWorkflow
@@ -137,7 +137,7 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		h.trackToolCall(hr.ToolName)
 		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, hr.ToolName, cfg))
 	default:
-		if conversation.HasSubmitWithWorkflowTool(req.Tools) {
+		if conversation.HasSubmitWithWorkflowTool(req.Tools) && !isResolvedOutcome(cfg) {
 			toolName := openai.ToolSubmitResultWithWorkflow
 			if cfg.WorkflowID == "" {
 				toolName = openai.ToolSubmitResultNoWorkflow
@@ -176,6 +176,18 @@ func buildDetectionContext(ctx *conversation.Context) *scenarios.DetectionContex
 		Content:     content,
 		AllText:     allText,
 		IsProactive: isProactive,
+	}
+}
+
+// isResolvedOutcome returns true when the scenario represents a resolved or
+// non-actionable investigation that should bypass the split submit tools and
+// use a text response so the KA parser handles investigation_outcome routing.
+func isResolvedOutcome(cfg scenarios.MockScenarioConfig) bool {
+	switch cfg.InvestigationOutcome {
+	case "problem_resolved", "predictive_no_action":
+		return true
+	default:
+		return cfg.IsActionable != nil && !*cfg.IsActionable && cfg.WorkflowID == ""
 	}
 }
 
