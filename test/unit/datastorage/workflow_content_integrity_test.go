@@ -182,11 +182,11 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 	})
 
 	// ========================================
-	// UT-DS-INTEGRITY-002: Active + different hash -> 201, new UUID, old superseded
-	// BR-WORKFLOW-006: Spec change for same name+version supersedes old record
+	// UT-DS-INTEGRITY-002: Active + same version + different hash -> 409 Conflict
+	// Issue #773: Version-locked content immutability — content MUST NOT change without version bump
 	// ========================================
-	Describe("UT-DS-INTEGRITY-002: Active workflow with different content hash", func() {
-		It("should supersede the old workflow and return 201 with a new UUID", func() {
+	Describe("UT-DS-INTEGRITY-002: Active workflow with same version and different content hash", func() {
+		It("should return 409 Conflict with content-integrity-violation RFC7807 error", func() {
 			oldUUID := "old-uuid-002"
 			mockRepo := &mockWorkflowIntegrityRepo{
 				activeWorkflow: &models.RemediationWorkflow{
@@ -205,22 +205,20 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 
 			handler.HandleCreateWorkflow(rr, req)
 
-			Expect(rr.Code).To(Equal(http.StatusCreated),
-				"Different content hash should return 201 (new workflow created), got %d: %s", rr.Code, rr.Body.String())
+			Expect(rr.Code).To(Equal(http.StatusConflict),
+				"Active + same version + different hash should return 409 Conflict, got %d: %s", rr.Code, rr.Body.String())
 
 			var resp map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &resp)).To(Succeed())
-			Expect(resp["workflowId"]).ToNot(Equal(oldUUID),
-				"Should return a NEW UUID, not the old one")
+			Expect(resp["type"]).To(ContainSubstring("content-integrity-violation"),
+				"RFC7807 'type' should contain 'content-integrity-violation'")
+			Expect(resp["title"]).To(ContainSubstring("Version Bump"),
+				"RFC7807 'title' should reference version bump requirement")
 
-			Expect(mockRepo.updateStatusCalls).To(HaveLen(1),
-				"Old workflow should have its status updated")
-			Expect(mockRepo.updateStatusCalls[0].WorkflowID).To(Equal(oldUUID))
-			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("Superseded"),
-				"Old workflow should be marked as superseded")
-
-			Expect(mockRepo.createdWorkflows).To(HaveLen(1),
-				"A new workflow record should be created")
+			Expect(mockRepo.updateStatusCalls).To(BeEmpty(),
+				"No status update should occur — request is rejected")
+			Expect(mockRepo.createdWorkflows).To(BeEmpty(),
+				"No new workflow should be created — request is rejected")
 		})
 	})
 
@@ -304,11 +302,11 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 	})
 
 	// ========================================
-	// UT-DS-INTEGRITY-005: Historical UUID retrievable after supersede
-	// BR-WORKFLOW-006: Audit trail preservation — old UUID stays in catalog
+	// UT-DS-INTEGRITY-005: Same-version content change is rejected (no supersession)
+	// Issue #773: Version-locked content immutability — old record stays intact
 	// ========================================
-	Describe("UT-DS-INTEGRITY-005: Superseded workflow UUID preserved for audit", func() {
-		It("should not delete the old workflow record when superseding", func() {
+	Describe("UT-DS-INTEGRITY-005: Same-version content change rejected preserves old record", func() {
+		It("should reject with 409 and leave old workflow record unchanged", func() {
 			oldUUID := "old-uuid-005"
 			mockRepo := &mockWorkflowIntegrityRepo{
 				activeWorkflow: &models.RemediationWorkflow{
@@ -327,23 +325,22 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 
 			handler.HandleCreateWorkflow(rr, req)
 
-			Expect(rr.Code).To(Equal(http.StatusCreated))
+			Expect(rr.Code).To(Equal(http.StatusConflict),
+				"Same-version content change should be rejected with 409")
 
-			Expect(mockRepo.updateStatusCalls).To(HaveLen(1),
-				"Old workflow should be status-updated, not deleted")
-			Expect(mockRepo.updateStatusCalls[0].Status).To(Equal("Superseded"),
-				"Old record must be marked 'Superseded' — never deleted")
-			Expect(mockRepo.updateStatusCalls[0].Reason).To(ContainSubstring("content hash"),
-				"Reason should reference content hash mismatch for auditability")
+			Expect(mockRepo.updateStatusCalls).To(BeEmpty(),
+				"Old workflow should NOT be superseded — request is rejected")
+			Expect(mockRepo.createdWorkflows).To(BeEmpty(),
+				"No new workflow should be created — request is rejected")
 		})
 	})
 
 	// ========================================
-	// UT-DS-INTEGRITY-006: Discovery excludes superseded workflows
-	// BR-WORKFLOW-006: Superseded records are invisible to catalog discovery
+	// UT-DS-INTEGRITY-006: Same-version content change returns RFC7807
+	// Issue #773: 409 response body must contain structured error for debugging
 	// ========================================
-	Describe("UT-DS-INTEGRITY-006: Superseded workflows excluded from catalog response", func() {
-		It("should not return superseded workflows in creation response", func() {
+	Describe("UT-DS-INTEGRITY-006: Same-version content change returns RFC7807 response", func() {
+		It("should return RFC7807 response with content-integrity-violation type", func() {
 			mockRepo := &mockWorkflowIntegrityRepo{
 				activeWorkflow: &models.RemediationWorkflow{
 					WorkflowID:   "old-uuid-006",
@@ -361,12 +358,12 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 
 			handler.HandleCreateWorkflow(rr, req)
 
-			Expect(rr.Code).To(Equal(http.StatusCreated))
+			Expect(rr.Code).To(Equal(http.StatusConflict))
 
 			var resp map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &resp)).To(Succeed())
-			Expect(resp["status"]).To(Equal("Active"),
-				"Response should contain the new ACTIVE workflow, not the superseded one")
+			Expect(resp["type"]).To(ContainSubstring("content-integrity-violation"),
+				"RFC7807 type must identify the violation kind")
 		})
 	})
 
