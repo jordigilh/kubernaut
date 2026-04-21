@@ -46,23 +46,23 @@ func (r *Reconciler) handleSpecDrift(ctx context.Context, rctx *reconcileContext
 
 	logger := log.FromContext(ctx)
 
-	currentSpec, _ := r.getTargetSpec(ctx, ea.Spec.RemediationTarget)
-	specHash, specHashErr := canonicalhash.CanonicalSpecHash(currentSpec)
-	if specHashErr != nil {
-		logger.Error(specHashErr, "Failed to compute current spec hash for drift check")
+	functionalState, spec, _ := r.getTargetFunctionalState(ctx, ea.Spec.RemediationTarget)
+	fingerprint, fpErr := canonicalhash.CanonicalResourceFingerprint(functionalState)
+	if fpErr != nil {
+		logger.Error(fpErr, "Failed to compute current resource fingerprint for drift check")
 		return ctrl.Result{}, false, nil
 	}
 
-	driftConfigMapHashes := r.resolveConfigMapHashes(ctx, currentSpec, ea.Spec.RemediationTarget)
+	driftConfigMapHashes := r.resolveConfigMapHashes(ctx, spec, ea.Spec.RemediationTarget)
 	if len(driftConfigMapHashes) > 0 {
 		logger.V(2).Info("Drift guard resolved ConfigMap hashes",
 			"configMapCount", len(driftConfigMapHashes),
 			"correlationID", ea.Spec.CorrelationID)
 	}
 
-	currentHash, compositeErr := canonicalhash.CompositeSpecHash(specHash, driftConfigMapHashes)
+	currentHash, compositeErr := canonicalhash.CompositeResourceFingerprint(fingerprint, driftConfigMapHashes)
 	if compositeErr != nil {
-		logger.Error(compositeErr, "Failed to compute composite hash for drift check")
+		logger.Error(compositeErr, "Failed to compute composite fingerprint for drift check")
 		return ctrl.Result{}, false, nil
 	}
 

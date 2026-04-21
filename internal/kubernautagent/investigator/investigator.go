@@ -22,7 +22,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
@@ -64,35 +68,42 @@ type Pipeline struct {
 // Using a struct instead of positional parameters makes the constructor
 // stable and self-documenting. Optional fields (Registry, Pipeline)
 // default to their zero values when omitted.
+// ScopeResolver determines whether a Kubernetes kind is cluster-scoped (#763).
+type ScopeResolver interface {
+	IsClusterScoped(kind string) (bool, error)
+}
+
 type Config struct {
-	Client       llm.Client
-	Builder      *prompt.Builder
-	ResultParser *parser.ResultParser
-	Enricher     *enrichment.Enricher
-	AuditStore   audit.AuditStore
-	Logger       *slog.Logger
-	MaxTurns     int
-	PhaseTools   katypes.PhaseToolMap
-	Registry     *registry.Registry
-	Pipeline     Pipeline
-	ModelName    string
+	Client        llm.Client
+	Builder       *prompt.Builder
+	ResultParser  *parser.ResultParser
+	Enricher      *enrichment.Enricher
+	AuditStore    audit.AuditStore
+	Logger        *slog.Logger
+	MaxTurns      int
+	PhaseTools    katypes.PhaseToolMap
+	Registry      *registry.Registry
+	Pipeline      Pipeline
+	ModelName     string
+	ScopeResolver ScopeResolver
 }
 
 // Investigator orchestrates the two-invocation architecture:
 // Invocation 1 (RCA): system prompt + tool calls -> RCA summary
 // Invocation 2 (Workflow Selection): new session with RCA context -> workflow choice
 type Investigator struct {
-	client       llm.Client
-	builder      *prompt.Builder
-	resultParser *parser.ResultParser
-	enricher     *enrichment.Enricher
-	auditStore   audit.AuditStore
-	logger       *slog.Logger
-	maxTurns     int
-	phaseTools   katypes.PhaseToolMap
-	registry     *registry.Registry
-	pipeline     Pipeline
-	modelName    string
+	client        llm.Client
+	builder       *prompt.Builder
+	resultParser  *parser.ResultParser
+	enricher      *enrichment.Enricher
+	auditStore    audit.AuditStore
+	logger        *slog.Logger
+	maxTurns      int
+	phaseTools    katypes.PhaseToolMap
+	registry      *registry.Registry
+	pipeline      Pipeline
+	modelName     string
+	scopeResolver ScopeResolver
 }
 
 // New creates an Investigator from the given configuration.
@@ -100,17 +111,18 @@ type Investigator struct {
 // Config.Pipeline fields default to nil (their features are skipped).
 func New(cfg Config) *Investigator {
 	return &Investigator{
-		client:       cfg.Client,
-		builder:      cfg.Builder,
-		resultParser: cfg.ResultParser,
-		enricher:     cfg.Enricher,
-		auditStore:   cfg.AuditStore,
-		logger:       cfg.Logger,
-		maxTurns:     cfg.MaxTurns,
-		phaseTools:   cfg.PhaseTools,
-		registry:     cfg.Registry,
-		pipeline:     cfg.Pipeline,
-		modelName:    cfg.ModelName,
+		client:        cfg.Client,
+		builder:       cfg.Builder,
+		resultParser:  cfg.ResultParser,
+		enricher:      cfg.Enricher,
+		auditStore:    cfg.AuditStore,
+		logger:        cfg.Logger,
+		maxTurns:      cfg.MaxTurns,
+		phaseTools:    cfg.PhaseTools,
+		registry:      cfg.Registry,
+		pipeline:      cfg.Pipeline,
+		modelName:     cfg.ModelName,
+		scopeResolver: cfg.ScopeResolver,
 	}
 }
 
@@ -119,8 +131,11 @@ func New(cfg Config) *Investigator {
 // so that DataStorage queries by remediation_id return the full investigation trail.
 func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
 	correlationID := signal.RemediationID
+	enrichmentCache := make(map[string]*enrichment.EnrichmentResult)
+
 	signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
-	enrichData := inv.resolveEnrichment(ctx, signalKind, signalName, signalNS, signal.IncidentID)
+	signalNS = inv.normalizeNamespace(signalKind, signalNS)
+	enrichData := inv.resolveEnrichmentCached(ctx, enrichmentCache, signalKind, signalName, signalNS, signal.IncidentID)
 	promptEnrichment := toPromptEnrichment(enrichData)
 	tokens := &TokenAccumulator{}
 
@@ -142,12 +157,13 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	// H3-fix: retain pre-RCA enrichment if re-enrichment fails.
 	workflowSignal := signal
 	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
+	postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
 	if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
 		inv.logger.Info("re-enriching with RCA remediation target",
 			"signal", signalKind+"/"+signalName,
 			"rca_target", postRCAKind+"/"+postRCAName,
 		)
-		reEnriched := inv.resolveEnrichment(ctx, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
+		reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
 
 		// BR-HAPI-261 AC#7 / #704: check HardFail BEFORE label merge
 		// to prevent the merge from silently dropping the failure signal.
@@ -908,15 +924,11 @@ func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 		root := enrichData.OwnerChain[len(enrichData.OwnerChain)-1]
 		rootKind = root.Kind
 		rootName = root.Name
-		if root.Namespace != "" {
-			rootNS = root.Namespace
-		}
+		rootNS = root.Namespace
 	} else if enrichData != nil && enrichData.ResourceKind != "" {
 		rootKind = enrichData.ResourceKind
 		rootName = enrichData.ResourceName
-		if enrichData.ResourceNamespace != "" {
-			rootNS = enrichData.ResourceNamespace
-		}
+		rootNS = enrichData.ResourceNamespace
 	}
 
 	llmKind := result.RemediationTarget.Kind
@@ -955,4 +967,69 @@ func allLabelDetectionsFailed(labels *enrichment.DetectedLabels) bool {
 		return false
 	}
 	return len(labels.FailedDetections) >= len(enrichment.AllDetectionCategories)
+}
+
+// EnrichmentCacheKey returns the dedup cache key for a (kind, name, namespace) tuple (#764).
+func EnrichmentCacheKey(kind, name, namespace string) string {
+	return kind + "/" + name + "/" + namespace
+}
+
+// resolveEnrichmentCached wraps resolveEnrichment with a per-call cache (#764).
+// If the same (kind, name, namespace) was already enriched in this investigation,
+// returns the cached result without making another API call.
+func (inv *Investigator) resolveEnrichmentCached(ctx context.Context, cache map[string]*enrichment.EnrichmentResult, kind, name, namespace, incidentID string) *enrichment.EnrichmentResult {
+	key := EnrichmentCacheKey(kind, name, namespace)
+	if cached, ok := cache[key]; ok {
+		inv.logger.Info("enrichment cache hit, reusing cached result",
+			"kind", kind, "name", name, "namespace", namespace)
+		return cached
+	}
+	result := inv.resolveEnrichment(ctx, kind, name, namespace, incidentID)
+	cache[key] = result
+	return result
+}
+
+// normalizeNamespace forces namespace="" for cluster-scoped resources (#763).
+// If no ScopeResolver is configured, returns the namespace unchanged.
+func (inv *Investigator) normalizeNamespace(kind, namespace string) string {
+	if inv.scopeResolver == nil {
+		return namespace
+	}
+	isCluster, err := inv.scopeResolver.IsClusterScoped(kind)
+	if err != nil {
+		inv.logger.Warn("ScopeResolver error, preserving namespace",
+			"kind", kind, "error", err)
+		return namespace
+	}
+	if isCluster {
+		return ""
+	}
+	return namespace
+}
+
+// mapperScopeResolver implements ScopeResolver using a RESTMapper.
+type mapperScopeResolver struct {
+	mapper meta.RESTMapper
+}
+
+// NewMapperScopeResolver creates a ScopeResolver backed by a RESTMapper.
+func NewMapperScopeResolver(mapper meta.RESTMapper) ScopeResolver {
+	return &mapperScopeResolver{mapper: mapper}
+}
+
+func (r *mapperScopeResolver) IsClusterScoped(kind string) (bool, error) {
+	plural := strings.ToLower(kind) + "s"
+	gvr, err := r.mapper.ResourceFor(schema.GroupVersionResource{Resource: plural})
+	if err != nil {
+		return false, err
+	}
+	gvk, err := r.mapper.KindFor(gvr)
+	if err != nil {
+		return false, err
+	}
+	mapping, err := r.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return false, err
+	}
+	return mapping.Scope.Name() != meta.RESTScopeNameNamespace, nil
 }

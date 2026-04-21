@@ -25,9 +25,9 @@ import (
 )
 
 // ========================================
-// Canonical Spec Hash Tests (DD-EM-002)
+// Canonical Resource Fingerprint Tests (DD-EM-002 v2.0, #765)
 //
-// Contract: CanonicalSpecHash(spec map[string]interface{}) -> (string, error)
+// Contract: CanonicalResourceFingerprint(obj map[string]interface{}) -> (string, error)
 //
 // Guarantees from DD-EM-002:
 //   - Idempotent: same content always produces same hash
@@ -36,10 +36,11 @@ import (
 //   - SHA-256 strength
 //   - Human-readable hex format: "sha256:<64-char-hex>" (71 chars total)
 //   - Cross-process portable
+//   - Strips apiVersion, kind, metadata, status from input before hashing
 //
 // Test IDs from DD-EM-002 Testing Requirements table.
 // ========================================
-var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
+var _ = Describe("CanonicalResourceFingerprint (DD-EM-002 v2.0)", func() {
 
 	// UT-HASH-001: Map key order independence
 	It("UT-HASH-001: should produce identical hash regardless of map key iteration order", func() {
@@ -77,8 +78,8 @@ var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
 			"replicas": float64(3),
 		}
 
-		hashA, errA := hash.CanonicalSpecHash(specA)
-		hashB, errB := hash.CanonicalSpecHash(specB)
+		hashA, errA := hash.CanonicalResourceFingerprint(specA)
+		hashB, errB := hash.CanonicalResourceFingerprint(specB)
 
 		Expect(errA).ToNot(HaveOccurred())
 		Expect(errB).ToNot(HaveOccurred())
@@ -94,8 +95,8 @@ var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
 			"items": []interface{}{"charlie", "alpha", "bravo"},
 		}
 
-		hashA, errA := hash.CanonicalSpecHash(specA)
-		hashB, errB := hash.CanonicalSpecHash(specB)
+		hashA, errA := hash.CanonicalResourceFingerprint(specA)
+		hashB, errB := hash.CanonicalResourceFingerprint(specB)
 
 		Expect(errA).ToNot(HaveOccurred())
 		Expect(errB).ToNot(HaveOccurred())
@@ -125,8 +126,8 @@ var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
 			},
 		}
 
-		hashA, errA := hash.CanonicalSpecHash(specA)
-		hashB, errB := hash.CanonicalSpecHash(specB)
+		hashA, errA := hash.CanonicalResourceFingerprint(specA)
+		hashB, errB := hash.CanonicalResourceFingerprint(specB)
 
 		Expect(errA).ToNot(HaveOccurred())
 		Expect(errB).ToNot(HaveOccurred())
@@ -168,7 +169,7 @@ var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
 			},
 		}
 
-		h, err := hash.CanonicalSpecHash(spec)
+		h, err := hash.CanonicalResourceFingerprint(spec)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(h).To(HavePrefix("sha256:"), "Hash must have sha256: prefix")
 		Expect(h).To(HaveLen(71), "sha256: (7) + 64 hex chars = 71")
@@ -189,8 +190,8 @@ var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
 			},
 		}
 
-		hashA, errA := hash.CanonicalSpecHash(specA)
-		hashB, errB := hash.CanonicalSpecHash(specB)
+		hashA, errA := hash.CanonicalResourceFingerprint(specA)
+		hashB, errB := hash.CanonicalResourceFingerprint(specB)
 
 		Expect(errA).ToNot(HaveOccurred())
 		Expect(errB).ToNot(HaveOccurred())
@@ -200,12 +201,12 @@ var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
 	// UT-HASH-006: Empty spec, nil spec, empty map
 	It("UT-HASH-006: should handle edge cases gracefully", func() {
 		// Empty map
-		h1, err1 := hash.CanonicalSpecHash(map[string]interface{}{})
+		h1, err1 := hash.CanonicalResourceFingerprint(map[string]interface{}{})
 		Expect(err1).ToNot(HaveOccurred())
 		Expect(h1).To(HavePrefix("sha256:"))
 
 		// Nil map
-		h2, err2 := hash.CanonicalSpecHash(nil)
+		h2, err2 := hash.CanonicalResourceFingerprint(nil)
 		Expect(err2).ToNot(HaveOccurred())
 		Expect(h2).To(HavePrefix("sha256:"))
 
@@ -222,8 +223,8 @@ var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
 			"ratio":    float64(0.75),
 		}
 
-		h1, err1 := hash.CanonicalSpecHash(spec)
-		h2, err2 := hash.CanonicalSpecHash(spec)
+		h1, err1 := hash.CanonicalResourceFingerprint(spec)
+		h2, err2 := hash.CanonicalResourceFingerprint(spec)
 
 		Expect(err1).ToNot(HaveOccurred())
 		Expect(err2).ToNot(HaveOccurred())
@@ -238,7 +239,7 @@ var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
 			"emoji":       "🚀",
 		}
 
-		h, err := hash.CanonicalSpecHash(spec)
+		h, err := hash.CanonicalResourceFingerprint(spec)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(h).To(HavePrefix("sha256:"))
 		Expect(h).To(HaveLen(71))
@@ -263,7 +264,7 @@ var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
 			"containers": containers,
 		}
 
-		h, err := hash.CanonicalSpecHash(spec)
+		h, err := hash.CanonicalResourceFingerprint(spec)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(h).To(HavePrefix("sha256:"))
 		Expect(h).To(HaveLen(71))
@@ -278,11 +279,11 @@ var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
 			},
 		}
 
-		first, err := hash.CanonicalSpecHash(spec)
+		first, err := hash.CanonicalResourceFingerprint(spec)
 		Expect(err).ToNot(HaveOccurred())
 
 		for i := 0; i < 999; i++ {
-			h, err := hash.CanonicalSpecHash(spec)
+			h, err := hash.CanonicalResourceFingerprint(spec)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(h).To(Equal(first), "Iteration %d produced different hash", i+1)
 		}
@@ -313,8 +314,8 @@ var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
 			},
 		}
 
-		hashA, errA := hash.CanonicalSpecHash(specA)
-		hashB, errB := hash.CanonicalSpecHash(specB)
+		hashA, errA := hash.CanonicalResourceFingerprint(specA)
+		hashB, errB := hash.CanonicalResourceFingerprint(specB)
 
 		Expect(errA).ToNot(HaveOccurred())
 		Expect(errB).ToNot(HaveOccurred())
@@ -342,8 +343,8 @@ var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
 			},
 		}
 
-		hashA, errA := hash.CanonicalSpecHash(specA)
-		hashB, errB := hash.CanonicalSpecHash(specB)
+		hashA, errA := hash.CanonicalResourceFingerprint(specA)
+		hashB, errB := hash.CanonicalResourceFingerprint(specB)
 
 		Expect(errA).ToNot(HaveOccurred())
 		Expect(errB).ToNot(HaveOccurred())
@@ -355,8 +356,8 @@ var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
 		specA := map[string]interface{}{"replicas": float64(1)}
 		specB := map[string]interface{}{"replicas": float64(2)}
 
-		hashA, errA := hash.CanonicalSpecHash(specA)
-		hashB, errB := hash.CanonicalSpecHash(specB)
+		hashA, errA := hash.CanonicalResourceFingerprint(specA)
+		hashB, errB := hash.CanonicalResourceFingerprint(specB)
 
 		Expect(errA).ToNot(HaveOccurred())
 		Expect(errB).ToNot(HaveOccurred())
@@ -367,7 +368,7 @@ var _ = Describe("CanonicalSpecHash (DD-EM-002)", func() {
 	It("should return hash in sha256:<64-hex> format (71 chars total)", func() {
 		spec := map[string]interface{}{"key": "value"}
 
-		h, err := hash.CanonicalSpecHash(spec)
+		h, err := hash.CanonicalResourceFingerprint(spec)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(h).To(HavePrefix("sha256:"))
 		Expect(h).To(HaveLen(71))

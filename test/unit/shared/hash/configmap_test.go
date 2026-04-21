@@ -471,13 +471,13 @@ var _ = Describe("CompositeSpecHash (#396)", func() {
 
 	BeforeEach(func() {
 		var err error
-		specHash, err = hash.CanonicalSpecHash(map[string]interface{}{
+		specHash, err = hash.CanonicalResourceFingerprint(map[string]interface{}{
 			"replicas": float64(3),
 		})
 		Expect(err).ToNot(HaveOccurred())
 	})
 
-	It("UT-SH-396-017: should equal CanonicalSpecHash when no ConfigMaps (backward compat)", func() {
+	It("UT-SH-396-017: should equal CanonicalResourceFingerprint when no ConfigMaps (identity)", func() {
 		composite, err := hash.CompositeSpecHash(specHash, nil)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(composite).To(Equal(specHash),

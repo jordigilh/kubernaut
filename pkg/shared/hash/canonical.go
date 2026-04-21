@@ -1,8 +1,8 @@
 // Package hash provides a canonical hashing utility for Kubernetes resource specs.
 //
 // DD-EM-002: Both the Remediation Orchestrator and Effectiveness Monitor use
-// CanonicalSpecHash to compute deterministic, order-independent SHA-256 hashes
-// of resource .spec fields. This enables cross-process pre/post remediation
+// CanonicalResourceFingerprint to compute deterministic, order-independent SHA-256 hashes
+// of resource functional state. This enables cross-process pre/post remediation
 // comparison without being affected by Go's non-deterministic map iteration
 // or Kubernetes API server slice reordering.
 //
@@ -21,25 +21,47 @@ import (
 	"sort"
 )
 
-// CanonicalSpecHash computes a deterministic SHA-256 hash of a Kubernetes
-// resource spec (DD-EM-002). The algorithm recursively normalizes the input:
+// strippedKeys are the top-level keys excluded from the resource fingerprint.
+// These are non-functional metadata managed by Kubernetes, not the resource's
+// intended state.
+var strippedKeys = map[string]bool{
+	"apiVersion": true,
+	"kind":       true,
+	"metadata":   true,
+	"status":     true,
+}
+
+// CanonicalResourceFingerprint computes a deterministic SHA-256 hash of a
+// Kubernetes resource's functional state (DD-EM-002 v2.0, #765).
 //
-//   - Maps: keys sorted alphabetically, values normalized recursively
-//   - Slices: elements sorted by their canonical JSON representation
-//   - Scalars: passed through unchanged
+// It strips non-functional top-level keys (apiVersion, kind, metadata, status)
+// and hashes the remaining map. For a Deployment this is {spec: {...}}, for a
+// ConfigMap it's {data: {...}, binaryData: {...}}, for a ClusterRole it's
+// {rules: [...], aggregationRule: {...}}.
 //
-// A nil spec is treated as an empty map. The returned string is in the format
-// "sha256:<64-lowercase-hex>" (71 characters total).
-func CanonicalSpecHash(spec map[string]interface{}) (string, error) {
-	if spec == nil {
-		spec = map[string]interface{}{}
+// Normalization guarantees:
+//   - Map-order independent
+//   - Slice-order independent
+//   - Idempotent
+//   - Format: "sha256:<64-lowercase-hex>" (71 characters)
+func CanonicalResourceFingerprint(obj map[string]interface{}) (string, error) {
+	if obj == nil {
+		obj = map[string]interface{}{}
 	}
 
-	normalized := normalizeValue(spec)
+	functional := make(map[string]interface{}, len(obj))
+	for k, v := range obj {
+		if strippedKeys[k] {
+			continue
+		}
+		functional[k] = v
+	}
+
+	normalized := normalizeValue(functional)
 
 	data, err := json.Marshal(normalized)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal normalized spec: %w", err)
+		return "", fmt.Errorf("failed to marshal normalized resource fingerprint: %w", err)
 	}
 
 	h := sha256.Sum256(data)

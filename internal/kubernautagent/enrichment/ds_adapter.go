@@ -61,7 +61,7 @@ func (a *DSAdapter) GetRemediationHistory(ctx context.Context, kind, name, names
 	}
 
 	if _, isBadRequest := res.(*ogenclient.GetRemediationHistoryContextBadRequest); isBadRequest {
-		return &RemediationHistoryResult{}, nil
+		return nil, fmt.Errorf("ds adapter: bad request for %s/%s/%s (spec_hash=%s)", namespace, kind, name, specHash)
 	}
 
 	historyCtx, ok := res.(*ogenclient.RemediationHistoryContext)
