@@ -60,6 +60,7 @@ type SignalData struct {
 type EnrichmentData struct {
 	OwnerChain      []string
 	DetectedLabels  map[string]string
+	QuotaDetails    map[string]enrichment.QuotaResourceUsage
 	HistoryResult   *enrichment.RemediationHistoryResult
 	HistoryRendered string
 }
@@ -85,6 +86,7 @@ type investigationTemplateData struct {
 	SignalMode                  string
 	OwnerChain                  string
 	DetectedLabels              string
+	QuotaDetails                map[string]enrichment.QuotaResourceUsage
 	IsDuplicate                 bool
 	OccurrenceCount             int
 	DeduplicationWindowMinutes  int
@@ -214,6 +216,9 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentD
 		}
 		if len(enrichData.DetectedLabels) > 0 {
 			data.DetectedLabels = sortedLabelString(enrichData.DetectedLabels)
+		}
+		if len(enrichData.QuotaDetails) > 0 {
+			data.QuotaDetails = enrichData.QuotaDetails
 		}
 	}
 

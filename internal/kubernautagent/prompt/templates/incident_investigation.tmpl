@@ -71,13 +71,19 @@ disruptions (drain/eviction). Before concluding this is a taint or scheduling is
    SYMPTOM of the PDB blocking eviction, not the root cause.
 4. **RCA target**: The affected resource should be the PDB, not the Node.
 {{ end -}}
-{{ if or .OwnerChain .DetectedLabels }}
+{{ if or .OwnerChain .DetectedLabels .QuotaDetails }}
 ## Enrichment Context (AUTO-DETECTED)
 {{ if .OwnerChain }}
 **Owner Chain**: {{ .OwnerChain }}
 {{ end -}}
 {{ if .DetectedLabels }}
 **Detected Labels**: {{ .DetectedLabels }}
+{{ end -}}
+{{ if .QuotaDetails }}
+**Resource Quotas** (enforced in this namespace):
+{{- range $resource, $usage := .QuotaDetails }}
+- {{ $resource }}: {{ $usage.Used }} used of {{ $usage.Hard }} limit
+{{- end }}
 {{ end -}}
 {{ end -}}
 ## Your Investigation Workflow
