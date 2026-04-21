@@ -109,7 +109,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 		It("should include model name and prompt_preview in llm.request events for both phases", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9}`}},
+				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
@@ -142,7 +142,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 					Message: llm.Message{Role: "assistant", Content: expectedContent},
 					Usage:   llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
 				},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-recovery","confidence":0.9}`}},
+				wfToolResp(`{"workflow_id":"oom-recovery","confidence":0.9}`),
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
@@ -177,7 +177,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 					},
 				},
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-recovery","confidence":0.9}`}},
+				wfToolResp(`{"workflow_id":"oom-recovery","confidence":0.9}`),
 			}
 
 			inv := investigator.New(investigator.Config{
@@ -207,10 +207,11 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 					Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled"}`},
 					Usage:   llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
 				},
-				{
-					Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-recovery","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}}`},
-					Usage:   llm.TokenUsage{PromptTokens: 200, CompletionTokens: 100, TotalTokens: 300},
-				},
+				func() llm.ChatResponse {
+					r := wfToolResp(`{"workflow_id":"oom-recovery","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}}`)
+					r.Usage = llm.TokenUsage{PromptTokens: 200, CompletionTokens: 100, TotalTokens: 300}
+					return r
+				}(),
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
@@ -290,7 +291,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 		It("should set EventAction and EventOutcome on llm.request and llm.response events", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"test"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.8}`}},
+				wfToolResp(`{"workflow_id":"restart","confidence":0.8}`),
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
@@ -383,10 +384,10 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 					"rca_summary": "OOM due to worker memory leak",
 					"remediation_target": {"kind": "Deployment", "name": "worker", "namespace": "production"}
 				}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{
+				wfToolResp(`{
 					"workflow_id": "oom-recovery",
 					"confidence": 0.9
-				}`}},
+				}`),
 			}
 
 			labelSignal := katypes.SignalContext{
@@ -453,8 +454,8 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"pod crashed"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"unknown-workflow","confidence":0.8}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+					wfToolResp(`{"workflow_id":"unknown-workflow","confidence":0.8}`),
+					wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 				},
 			}
 
@@ -503,9 +504,9 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"pod crashed"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"bad-1","confidence":0.8}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"bad-2","confidence":0.7}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"bad-3","confidence":0.6}`}},
+					wfToolResp(`{"workflow_id":"bad-1","confidence":0.8}`),
+					wfToolResp(`{"workflow_id":"bad-2","confidence":0.7}`),
+					wfToolResp(`{"workflow_id":"bad-3","confidence":0.6}`),
 				},
 			}
 

@@ -63,10 +63,11 @@ var _ = Describe("KA-KA Integration Parity — Token Usage (TP-433-PARITY)", fun
 						Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled"}`},
 						Usage:   llm.TokenUsage{PromptTokens: 500, CompletionTokens: 200, TotalTokens: 700},
 					},
-					{
-						Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.9}`},
-						Usage:   llm.TokenUsage{PromptTokens: 600, CompletionTokens: 150, TotalTokens: 750},
-					},
+					func() llm.ChatResponse {
+						r := wfToolResp(`{"workflow_id":"restart","confidence":0.9}`)
+						r.Usage = llm.TokenUsage{PromptTokens: 600, CompletionTokens: 150, TotalTokens: 750}
+						return r
+					}(),
 				},
 			}
 
@@ -131,10 +132,11 @@ var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", fun
 						Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"pod crashed"}`},
 						Usage:   llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
 					},
-					{
-						Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.9}`},
-						Usage:   llm.TokenUsage{PromptTokens: 120, CompletionTokens: 60, TotalTokens: 180},
-					},
+					func() llm.ChatResponse {
+						r := wfToolResp(`{"workflow_id":"restart","confidence":0.9}`)
+						r.Usage = llm.TokenUsage{PromptTokens: 120, CompletionTokens: 60, TotalTokens: 180}
+						return r
+					}(),
 				},
 			}
 			instrumented := llm.NewInstrumentedClient(baseMock)
@@ -163,10 +165,11 @@ var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", fun
 						Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"timeout"}`},
 						Usage:   llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
 					},
-					{
-						Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.85}`},
-						Usage:   llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
-					},
+					func() llm.ChatResponse {
+						r := wfToolResp(`{"workflow_id":"restart","confidence":0.85}`)
+						r.Usage = llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150}
+						return r
+					}(),
 				},
 			}
 			instrumented := llm.NewInstrumentedClient(baseMock)
@@ -222,11 +225,11 @@ var _ = Describe("KA-KA Integration Parity — RCA (TP-433-PARITY)", func() {
 						"rca_summary": "OOMKilled due to memory limit exceeded on container web",
 						"remediation_target": {"kind": "Deployment", "name": "api-server", "namespace": "production"}
 					}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{
+					wfToolResp(`{
 						"workflow_id": "oom-increase-memory",
 						"confidence": 0.92,
 						"execution_bundle": "oom-recovery-v2"
-					}`}},
+					}`),
 				},
 			}
 
@@ -256,7 +259,7 @@ var _ = Describe("KA-KA Integration Parity — RCA (TP-433-PARITY)", func() {
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Memory exhaustion from unbound cache growth"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.8}`}},
+					wfToolResp(`{"workflow_id":"restart","confidence":0.8}`),
 				},
 			}
 
