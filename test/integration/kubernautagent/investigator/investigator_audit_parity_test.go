@@ -463,7 +463,10 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools,
-				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: validator}},
+				Pipeline: investigator.Pipeline{
+					CatalogFetcher:  &staticCatalogFetcher{validator: validator},
+					AnomalyDetector: investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil),
+				},
 			})
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -514,7 +517,10 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools,
-				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: validator}},
+				Pipeline: investigator.Pipeline{
+					CatalogFetcher:  &staticCatalogFetcher{validator: validator},
+					AnomalyDetector: investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil),
+				},
 			})
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{

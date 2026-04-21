@@ -78,7 +78,7 @@ var _ = Describe("Kubernaut Agent Sanitization Wiring — TP-433-WIR Phase 3", f
 				wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 			}
 
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg, Pipeline: investigator.Pipeline{Sanitizer: pipeline}})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg, Pipeline: investigator.Pipeline{Sanitizer: pipeline, AnomalyDetector: investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil)}})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
 			})
@@ -112,7 +112,7 @@ var _ = Describe("Kubernaut Agent Sanitization Wiring — TP-433-WIR Phase 3", f
 				wfToolResp(`{"workflow_id":"noop","confidence":0.6}`),
 			}
 
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg, Pipeline: investigator.Pipeline{Sanitizer: pipeline}})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg, Pipeline: investigator.Pipeline{Sanitizer: pipeline, AnomalyDetector: investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil)}})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
 			})
