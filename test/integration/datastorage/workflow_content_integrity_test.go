@@ -171,7 +171,12 @@ func countWorkflowsByName(workflowName string) int {
 }
 
 func integrityTestYAML(testID, description string) string {
+	return integrityTestYAMLWithVersion(testID, description, "1.0.0")
+}
+
+func integrityTestYAMLWithVersion(testID, description, version string) string {
 	crd := testutil.NewTestWorkflowCRD(testID, "IncreaseMemoryLimits", "job")
+	crd.Spec.Version = version
 	crd.Spec.Description = sharedtypes.StructuredDescription{
 		What:      description,
 		WhenToUse: "Integration test",
@@ -243,13 +248,15 @@ var _ = Describe("Workflow Content Integrity Integration Tests (BR-WORKFLOW-006)
 	})
 
 	// ========================================
-	// IT-DS-INTEGRITY-003: Content change creates new UUID, supersedes old
+	// IT-DS-INTEGRITY-003: Same (name, version) + different content → 409 Conflict
+	// Issue #773: Version-locked content immutability. Must bump version to register
+	// new content for an active workflow.
 	// ========================================
-	Describe("IT-DS-INTEGRITY-003: Content change supersedes old workflow", func() {
-		It("should create new UUID and mark old as superseded", func() {
-			testID := fmt.Sprintf("integrity-supersede-%s", uuid.New().String()[:8])
+	Describe("IT-DS-INTEGRITY-003: Same-version content change rejected with 409", func() {
+		It("should return 409 Conflict with content-integrity-violation", func() {
+			testID := fmt.Sprintf("integrity-reject-%s", uuid.New().String()[:8])
 			yamlOriginal := integrityTestYAML(testID, "Original content before change")
-			yamlModified := integrityTestYAML(testID, "Modified content triggers supersede")
+			yamlModified := integrityTestYAML(testID, "Modified content triggers rejection")
 
 			httpServer, srv := createIntegrityTestServer(yamlOriginal)
 			defer httpServer.Close()
@@ -259,15 +266,10 @@ var _ = Describe("Workflow Content Integrity Integration Tests (BR-WORKFLOW-006)
 			Expect(wr1.StatusCode).To(Equal(http.StatusCreated))
 
 			wr2 := registerIntegrityWorkflow(httpServer.URL, yamlModified)
-			Expect(wr2.StatusCode).To(Equal(http.StatusCreated),
-				"Modified content should return 201")
-			Expect(wr2.WorkflowID).ToNot(Equal(wr1.WorkflowID),
-				"New workflow should have a different UUID")
-
-			Eventually(func() string {
-				return queryWorkflowStatus(wr1.WorkflowID)
-			}, 5*time.Second, 500*time.Millisecond).Should(Equal("Superseded"),
-				"Old workflow should be marked as superseded")
+			Expect(wr2.StatusCode).To(Equal(http.StatusConflict),
+				"Same version + different content should return 409 Conflict")
+			Expect(wr2.Raw["type"]).To(ContainSubstring("content-integrity-violation"),
+				"RFC7807 problem type should be content-integrity-violation")
 		})
 	})
 
@@ -329,48 +331,53 @@ var _ = Describe("Workflow Content Integrity Integration Tests (BR-WORKFLOW-006)
 	})
 
 	// ========================================
-	// IT-DS-INTEGRITY-006: Superseded record preserved in DB (audit trail)
+	// IT-DS-INTEGRITY-006: Cross-version superseded record preserved in DB (audit trail)
+	// Issue #773: Same-version supersede is no longer possible (409 Conflict).
+	// Cross-version supersede (v1.0.0 → v2.0.0) preserves the old record.
 	// ========================================
-	Describe("IT-DS-INTEGRITY-006: Superseded record preserved for audit", func() {
-		It("should keep the old record with status=superseded", func() {
+	Describe("IT-DS-INTEGRITY-006: Cross-version superseded record preserved for audit", func() {
+		It("should keep the old record with status=superseded after version bump", func() {
 			testID := fmt.Sprintf("integrity-audit-%s", uuid.New().String()[:8])
-			yamlOriginal := integrityTestYAML(testID, "Audit trail original")
-			yamlModified := integrityTestYAML(testID, "Audit trail modified")
+			yamlV1 := integrityTestYAMLWithVersion(testID, "Audit trail v1", "1.0.0")
+			yamlV2 := integrityTestYAMLWithVersion(testID, "Audit trail v2", "2.0.0")
 
-			httpServer, srv := createIntegrityTestServer(yamlOriginal)
+			httpServer, srv := createIntegrityTestServer(yamlV1)
 			defer httpServer.Close()
 			defer func() { _ = srv.Shutdown(ctx) }()
 
-			wr1 := registerIntegrityWorkflow(httpServer.URL, yamlOriginal)
+			wr1 := registerIntegrityWorkflow(httpServer.URL, yamlV1)
 			Expect(wr1.StatusCode).To(Equal(http.StatusCreated))
 
-			wr2 := registerIntegrityWorkflow(httpServer.URL, yamlModified)
-			Expect(wr2.StatusCode).To(Equal(http.StatusCreated))
+			wr2 := registerIntegrityWorkflow(httpServer.URL, yamlV2)
+			Expect(wr2.StatusCode).To(Equal(http.StatusCreated),
+				"Cross-version supersede should return 201")
 
 			Eventually(func() int {
 				return countWorkflowsByName(testID)
 			}, 5*time.Second, 500*time.Millisecond).Should(Equal(2),
-				"Both original and new records should exist in DB")
+				"Both v1 and v2 records should exist in DB")
 
 			var oldContent string
 			err := db.QueryRow(
 				"SELECT content FROM remediation_workflow_catalog WHERE workflow_id = $1", wr1.WorkflowID,
 			).Scan(&oldContent)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(oldContent).To(ContainSubstring("Audit trail original"),
+			Expect(oldContent).To(ContainSubstring("Audit trail v1"),
 				"Old record should retain its original content for audit")
 		})
 	})
 
 	// ========================================
-	// IT-DS-INTEGRITY-007: Multiple supersedes preserve full chain
+	// IT-DS-INTEGRITY-007: Multiple cross-version supersedes preserve full chain
+	// Issue #773: Same-version supersede is no longer possible (409 Conflict).
+	// Cross-version chain (v1 → v2 → v3) preserves all historical records.
 	// ========================================
-	Describe("IT-DS-INTEGRITY-007: Multiple supersedes preserve full history", func() {
-		It("should keep all historical records", func() {
+	Describe("IT-DS-INTEGRITY-007: Multiple cross-version supersedes preserve full history", func() {
+		It("should keep all historical records across version bumps", func() {
 			testID := fmt.Sprintf("integrity-chain-%s", uuid.New().String()[:8])
-			yaml1 := integrityTestYAML(testID, "Version A of workflow")
-			yaml2 := integrityTestYAML(testID, "Version B of workflow")
-			yaml3 := integrityTestYAML(testID, "Version C of workflow")
+			yaml1 := integrityTestYAMLWithVersion(testID, "Version A of workflow", "1.0.0")
+			yaml2 := integrityTestYAMLWithVersion(testID, "Version B of workflow", "2.0.0")
+			yaml3 := integrityTestYAMLWithVersion(testID, "Version C of workflow", "3.0.0")
 
 			httpServer, srv := createIntegrityTestServer(yaml1)
 			defer httpServer.Close()
@@ -380,15 +387,15 @@ var _ = Describe("Workflow Content Integrity Integration Tests (BR-WORKFLOW-006)
 			Expect(wrA.StatusCode).To(Equal(http.StatusCreated))
 
 			wrB := registerIntegrityWorkflow(httpServer.URL, yaml2)
-			Expect(wrB.StatusCode).To(Equal(http.StatusCreated), "B supersedes A")
+			Expect(wrB.StatusCode).To(Equal(http.StatusCreated), "v2 supersedes v1")
 
 			wrC := registerIntegrityWorkflow(httpServer.URL, yaml3)
-			Expect(wrC.StatusCode).To(Equal(http.StatusCreated), "C supersedes B")
+			Expect(wrC.StatusCode).To(Equal(http.StatusCreated), "v3 supersedes v2")
 
 			Eventually(func() int {
 				return countWorkflowsByName(testID)
 			}, 5*time.Second, 500*time.Millisecond).Should(Equal(3),
-				"Should have 3 records: A(superseded) + B(superseded) + C(active)")
+				"Should have 3 records: v1(superseded) + v2(superseded) + v3(active)")
 
 			var activeCount int
 			err := db.QueryRow(

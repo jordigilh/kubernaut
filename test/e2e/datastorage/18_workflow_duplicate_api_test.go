@@ -39,9 +39,10 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 		// DS-BUG-001 Fix Verification: The original bug was that duplicate workflow creation
 		// returned 500 Internal Server Error. The fix uses BR-WORKFLOW-006 ContentHash-based
 		// duplicate detection:
-		//   active + same hash    → 200 OK (idempotent, no DB writes)
-		//   active + diff hash    → supersede old → create new → 201 Created
-		// Both are meaningful responses, not 500.
+		//   active + same hash       → 200 OK (idempotent, no DB writes)
+		//   active + diff hash       → 409 Conflict (must bump version — Issue #773)
+		//   cross-version (any hash) → supersede old → create new → 201 Created
+		// All are meaningful responses, not 500.
 
 		It("should return 200 OK for idempotent re-apply of same content (DS-BUG-001 fix)", func() {
 			ctx := context.Background()
@@ -104,14 +105,61 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			GinkgoWriter.Printf("   - No 500 Internal Server Error\n")
 		})
 
-		It("should supersede active workflow when content hash changes (BR-WORKFLOW-006)", func() {
+		// Issue #773: Same (name, version) + different content → 409 Conflict.
+		// Version-locked content immutability: must bump the version to register new content.
+		It("should reject same-version content change with 409 Conflict (Issue #773)", func() {
+			ctx := context.Background()
+
+			testID := fmt.Sprintf("rej-%d", time.Now().UnixNano())
+			uniqueName := fmt.Sprintf("e2e-rej-%s", testID)
+			content1 := generateWorkflowContent(uniqueName, "1.0.0")
+
+			workflow := &ogenclient.CreateWorkflowInlineRequest{Content: content1}
+			workflow.Source.SetTo("e2e-test")
+			resp1, err := DSClient.CreateWorkflow(ctx, workflow)
+			Expect(err).ToNot(HaveOccurred())
+
+			switch resp1.(type) {
+			case *ogenclient.CreateWorkflowCreated, *ogenclient.CreateWorkflowOK:
+			default:
+				Fail(fmt.Sprintf("Expected CreateWorkflowCreated or CreateWorkflowOK, got: %T", resp1))
+			}
+
+			supersedeCRD := testutil.NewTestWorkflowCRD(uniqueName, "ScaleReplicas", "tekton")
+			supersedeCRD.Spec.Description.What = "Different content, same version — should be rejected"
+			supersedeCRD.Spec.Description.WhenToUse = "Issue #773: content-integrity-violation E2E test"
+			supersedeCRD.Spec.Labels.Priority = "P0"
+			supersedeCRD.Spec.Execution.Bundle = e2eBundleRef
+			supersedeCRD.Spec.Parameters = []models.WorkflowParameter{
+				{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target resource for remediation"},
+			}
+			content2 := testutil.MarshalWorkflowCRD(supersedeCRD)
+
+			GinkgoWriter.Printf("\n Creating workflow with different content, same version (expecting 409 Conflict)...\n")
+			reject := &ogenclient.CreateWorkflowInlineRequest{Content: content2}
+			reject.Source.SetTo("e2e-test")
+			resp2, err := DSClient.CreateWorkflow(ctx, reject)
+			err = ogenx.ToError(resp2, err)
+			Expect(err).To(HaveOccurred(), "Same version + different content should return error")
+
+			httpErr := ogenx.GetHTTPError(err)
+			Expect(httpErr).ToNot(BeNil(), "Error should be HTTPError")
+			Expect(httpErr.StatusCode).To(Equal(409),
+				"Same version + different content should return 409 Conflict")
+
+			GinkgoWriter.Printf("Issue #773 Content Integrity Verified:\n")
+			GinkgoWriter.Printf("   - Same version + different content → 409 Conflict\n")
+		})
+
+		// Issue #371: Cross-version supersede still works — version bump creates new workflow
+		// and marks old as superseded.
+		It("should supersede active workflow on cross-version update (BR-WORKFLOW-006)", func() {
 			ctx := context.Background()
 
 			testID := fmt.Sprintf("sup-%d", time.Now().UnixNano())
 			uniqueName := fmt.Sprintf("e2e-sup-%s", testID)
 			content1 := generateWorkflowContent(uniqueName, "1.0.0")
 
-			// Step 1: Create initial workflow
 			workflow := &ogenclient.CreateWorkflowInlineRequest{Content: content1}
 			workflow.Source.SetTo("e2e-test")
 			resp1, err := DSClient.CreateWorkflow(ctx, workflow)
@@ -128,27 +176,13 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			}
 			firstWorkflowID := firstWorkflow.WorkflowId.Value.String()
 
-			// Step 2: Create with same name+version but different content (triggers supersede)
-			supersedeCRD := testutil.NewTestWorkflowCRD(uniqueName, "ScaleReplicas", "tekton")
-			supersedeCRD.Spec.Description.What = "Updated content to trigger supersede (BR-WORKFLOW-006)"
-			supersedeCRD.Spec.Description.WhenToUse = "DS-BUG-001 supersede path E2E test"
-			supersedeCRD.Spec.Labels.Priority = "P0"
-			supersedeCRD.Spec.Execution.Bundle = e2eBundleRef
-			supersedeCRD.Spec.Parameters = []models.WorkflowParameter{
-				{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target resource for remediation"},
-			}
-			supersedeCRD.Spec.DetectedLabels = &models.DetectedLabelsSchema{
-				HPAEnabled:      "true",
-				GitOpsTool:      "argocd",
-				PopulatedFields: []string{"hpaEnabled", "gitOpsTool"},
-			}
-			content2 := testutil.MarshalWorkflowCRD(supersedeCRD)
+			content2 := generateWorkflowContent(uniqueName, "2.0.0")
 
-			GinkgoWriter.Printf("\n Creating workflow with different content (expecting 201 Created - supersede)...\n")
+			GinkgoWriter.Printf("\n Creating workflow with version bump (expecting 201 Created - supersede)...\n")
 			supersede := &ogenclient.CreateWorkflowInlineRequest{Content: content2}
 			supersede.Source.SetTo("e2e-test")
 			resp2, err := DSClient.CreateWorkflow(ctx, supersede)
-			Expect(err).ToNot(HaveOccurred(), "Supersede should not return error")
+			Expect(err).ToNot(HaveOccurred(), "Cross-version supersede should not return error")
 
 			var supersededWorkflow *ogenclient.RemediationWorkflow
 			switch v := resp2.(type) {
@@ -161,11 +195,11 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			}
 
 			Expect(supersededWorkflow.WorkflowId.Value.String()).ToNot(Equal(firstWorkflowID),
-				"Supersede should create a new workflow with a different ID")
+				"Cross-version supersede should create a new workflow with a different ID")
 
-			GinkgoWriter.Printf("BR-WORKFLOW-006 Supersede Verified:\n")
-			GinkgoWriter.Printf("   - First creation: %s\n", firstWorkflowID)
-			GinkgoWriter.Printf("   - Supersede: %s (new ID)\n", supersededWorkflow.WorkflowId.Value.String())
+			GinkgoWriter.Printf("BR-WORKFLOW-006 Cross-Version Supersede Verified:\n")
+			GinkgoWriter.Printf("   - v1.0.0: %s\n", firstWorkflowID)
+			GinkgoWriter.Printf("   - v2.0.0: %s (new ID)\n", supersededWorkflow.WorkflowId.Value.String())
 		})
 
 		It("should return error for invalid OCI image reference", func() {

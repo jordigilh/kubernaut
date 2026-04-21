@@ -654,6 +654,36 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	})
 
 	// ========================================
+	// UT-AW-773-006: UPDATE during deletion skips registration (deletionTimestamp set)
+	// Issue #773: When K8s sends UPDATE during CRD deletion (e.g., finalizer removal),
+	// handleUpdate must NOT re-register with DS, which would undo the DisableWorkflow
+	// performed by handleDelete (DS sees "disabled + same hash → re-enable").
+	// ========================================
+	Describe("UT-AW-773-006: UPDATE during deletion skips DS registration", func() {
+		It("should allow the update without calling DS when deletionTimestamp is set", func() {
+			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			now := metav1.Now()
+			rw.DeletionTimestamp = &now
+
+			dsCalled := false
+			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
+				dsCalled = true
+				return nil, fmt.Errorf("should not be called")
+			}
+
+			admReq := buildUpdateAdmissionRequest(rw)
+			resp := handler.Handle(ctx, admReq)
+
+			Expect(resp.Allowed).To(BeTrue(),
+				"UPDATE during deletion should be Allowed (skip registration)")
+			Expect(dsCalled).To(BeFalse(),
+				"DS CreateWorkflowInline should NOT be called during deletion")
+			Expect(mockAudit.StoredEvents).To(BeEmpty(),
+				"No audit event should be emitted for skipped deletion updates")
+		})
+	})
+
+	// ========================================
 	// UT-AW-299-010: DELETE always allowed even if DS disable fails
 	// ========================================
 	Describe("UT-AW-299-010: DELETE always allowed even if DS disable fails", func() {
