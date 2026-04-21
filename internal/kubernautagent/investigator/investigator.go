@@ -1024,6 +1024,14 @@ func mergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 	if result.InvestigationOutcome == "" && p1.InvestigationOutcome != "" {
 		result.InvestigationOutcome = p1.InvestigationOutcome
 		parser.ApplyInvestigationOutcome(result, p1.InvestigationOutcome)
+		// #301 defense-in-depth: Phase 1 problem_resolved overrides
+		// contradictory HumanReviewNeeded set by Phase 3 (e.g. the
+		// SubmitNoWorkflowResult branch hardcodes HumanReviewNeeded=true,
+		// but that should not apply when the investigation is resolved).
+		if p1.InvestigationOutcome == "problem_resolved" && result.HumanReviewNeeded {
+			result.HumanReviewNeeded = false
+			result.HumanReviewReason = ""
+		}
 	}
 }
 
