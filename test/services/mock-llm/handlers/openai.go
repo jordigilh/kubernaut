@@ -17,6 +17,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -103,8 +104,22 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	scenarioName := cfg.ScenarioName
 	h.recordScenarioMetric(scenarioName, result.Method)
 
+	hasSplit := conversation.HasSubmitWithWorkflowTool(req.Tools)
+	resolved := isResolvedOutcome(cfg)
+	log.Printf("[mock-llm] scenario=%s outcome=%s workflowID=%q forceText=%v tools=%d hasSplitTool=%v isResolved=%v",
+		scenarioName, cfg.InvestigationOutcome, cfg.WorkflowID, h.forceText, len(req.Tools), hasSplit, resolved)
+
 	if h.forceText || len(req.Tools) == 0 {
-		writeJSON(w, http.StatusOK, response.BuildForceTextResponse(model, cfg, req.Tools))
+		if hasSplit && !resolved {
+			toolName := openai.ToolSubmitResultWithWorkflow
+			if cfg.WorkflowID == "" {
+				toolName = openai.ToolSubmitResultNoWorkflow
+			}
+			h.trackToolCall(toolName)
+			writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, toolName, cfg))
+		} else {
+			writeJSON(w, http.StatusOK, response.BuildForceTextResponse(model, cfg, req.Tools))
+		}
 		h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
 		return
 	}
@@ -128,7 +143,16 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		h.trackToolCall(hr.ToolName)
 		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, hr.ToolName, cfg))
 	default:
-		writeJSON(w, http.StatusOK, response.BuildTextResponse(model, cfg))
+		if hasSplit && !resolved {
+			toolName := openai.ToolSubmitResultWithWorkflow
+			if cfg.WorkflowID == "" {
+				toolName = openai.ToolSubmitResultNoWorkflow
+			}
+			h.trackToolCall(toolName)
+			writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, toolName, cfg))
+		} else {
+			writeJSON(w, http.StatusOK, response.BuildTextResponse(model, cfg))
+		}
 	}
 	h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
 }
@@ -158,6 +182,18 @@ func buildDetectionContext(ctx *conversation.Context) *scenarios.DetectionContex
 		Content:     content,
 		AllText:     allText,
 		IsProactive: isProactive,
+	}
+}
+
+// isResolvedOutcome returns true when the scenario represents a resolved or
+// non-actionable investigation that should bypass the split submit tools and
+// use a text response so the KA parser handles investigation_outcome routing.
+func isResolvedOutcome(cfg scenarios.MockScenarioConfig) bool {
+	switch cfg.InvestigationOutcome {
+	case "problem_resolved", "predictive_no_action":
+		return true
+	default:
+		return cfg.IsActionable != nil && !*cfg.IsActionable && cfg.WorkflowID == ""
 	}
 }
 

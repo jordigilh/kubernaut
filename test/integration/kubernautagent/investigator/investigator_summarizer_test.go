@@ -77,7 +77,7 @@ var _ = Describe("Kubernaut Agent Summarizer Wiring — TP-433-WIR Phase 6", fun
 						ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "kubectl_describe", Arguments: `{}`}},
 					},
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"done"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+					wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 				},
 			}
 
@@ -111,7 +111,7 @@ var _ = Describe("Kubernaut Agent Summarizer Wiring — TP-433-WIR Phase 6", fun
 						ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "kubectl_describe", Arguments: `{}`}},
 					},
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"done"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+					wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 				},
 			}
 

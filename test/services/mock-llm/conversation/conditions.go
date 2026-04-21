@@ -57,6 +57,17 @@ func (c *ToolResultCountGE) Evaluate(ctx *Context) bool {
 	return ctx.CountToolResults() >= c.N
 }
 
+// HasSubmitWithWorkflowTool checks whether the tools list includes
+// submit_result_with_workflow, indicating the split-submit protocol (#760).
+func HasSubmitWithWorkflowTool(tools []openai.Tool) bool {
+	for _, t := range tools {
+		if t.Function.Name == openai.ToolSubmitResultWithWorkflow {
+			return true
+		}
+	}
+	return false
+}
+
 // AlwaysTrue is a fallback condition that always evaluates to true.
 type AlwaysTrue struct{}
 

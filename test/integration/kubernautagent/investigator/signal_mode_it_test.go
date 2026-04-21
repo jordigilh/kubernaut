@@ -59,7 +59,7 @@ var _ = Describe("KA-KA Integration Parity — Signal Mode (TP-433-PARITY)", fun
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"anticipated failure"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"scale-up","confidence":0.8}`}},
+					wfToolResp(`{"workflow_id":"scale-up","confidence":0.8}`),
 				},
 			}
 
@@ -91,7 +91,7 @@ var _ = Describe("KA-KA Integration Parity — Signal Mode (TP-433-PARITY)", fun
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"pod crashed"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.9}`}},
+					wfToolResp(`{"workflow_id":"restart","confidence":0.9}`),
 				},
 			}
 

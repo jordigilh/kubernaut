@@ -78,7 +78,7 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 						ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "kubectl_get_by_kind_in_cluster", Arguments: `{"kind":"Secret"}`}},
 					},
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"done"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+					wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 				},
 			}
 
@@ -118,7 +118,7 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 						ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "kubectl_describe", Arguments: `{}`}},
 					},
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"done"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+					wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 				},
 			}
 
@@ -156,7 +156,7 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 						ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "kubectl_get_by_kind_in_cluster", Arguments: `{"kind":"Pod"}`}},
 					},
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"done"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+					wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 				},
 			}
 

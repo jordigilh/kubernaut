@@ -178,7 +178,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		It("should return an InvestigationResult with both RCA summary and workflow_id", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit exceeded"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}}`}},
+				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}}`),
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -198,7 +198,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		It("should make 2 LLM calls (RCA + workflow)", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"issue found"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart-pod","confidence":0.8}`}},
+				wfToolResp(`{"workflow_id":"restart-pod","confidence":0.8}`),
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -213,7 +213,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		It("should pass RCA context into the workflow selection invocation", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"memory leak in api-server container"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.88}`}},
+				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.88}`),
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -259,7 +259,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 					ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "kubectl_describe", Arguments: `{"kind":"Pod","name":"api","namespace":"default"}`}},
 				},
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Pod api is healthy"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"generic-restart","confidence":0.7}`}},
+				wfToolResp(`{"workflow_id":"generic-restart","confidence":0.7}`),
 			}
 
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
@@ -289,7 +289,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 					ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "kubectl_describe", Arguments: `{}`}},
 				},
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"could not investigate"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.5}`}},
+				wfToolResp(`{"workflow_id":"restart","confidence":0.5}`),
 			}
 
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
@@ -314,7 +314,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"found issue"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+				wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 			}
 
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
@@ -342,7 +342,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"found issue"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+				wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 			}
 
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
@@ -368,7 +368,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		It("should include owner chain in RCA prompt but NOT remediation history (Phase 3 only per #700)", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Memory pressure detected"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9}`}},
+				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -399,7 +399,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		It("should produce investigation result without enrichment data and without panic", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Issue found"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+				wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: nil, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -436,7 +436,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 						{ID: "tc_submit", Name: "submit_result", Arguments: submitArgs},
 					},
 				},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.95}`}},
+				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.95}`),
 			}
 
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
@@ -452,14 +452,14 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 	})
 
 	Describe("IT-KA-686-002: submit_result in both RCA and workflow discovery phases", func() {
-		It("should include submit_result in tool definitions sent to LLM for both phases", func() {
+		It("should include submit_result in RCA and submit_result_with_workflow / submit_result_no_workflow in workflow discovery", func() {
 			reg := registry.New()
 			reg.Register(&fakeTool{name: "kubectl_describe", result: `{}`})
 			reg.Register(&fakeTool{name: "list_available_actions", result: `[]`})
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"found issue"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+				wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 			}
 
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
@@ -474,10 +474,12 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			Expect(rcaToolNames).To(ContainElement("submit_result"),
 				"RCA phase should include submit_result tool definition")
 
-			By("Workflow discovery phase includes submit_result")
+			By("Workflow discovery phase includes submit_result_with_workflow and submit_result_no_workflow")
 			wdToolNames := toolNamesFromCall(mockClient.calls[1])
-			Expect(wdToolNames).To(ContainElement("submit_result"),
-				"Workflow discovery phase should include submit_result tool definition")
+			Expect(wdToolNames).To(ContainElement("submit_result_with_workflow"),
+				"Workflow discovery phase should include submit_result_with_workflow tool definition")
+			Expect(wdToolNames).To(ContainElement("submit_result_no_workflow"),
+				"Workflow discovery phase should include submit_result_no_workflow tool definition")
 		})
 	})
 
@@ -492,7 +494,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 						{ID: "tc_submit", Name: "submit_result", Arguments: submitArgs},
 					},
 				},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+				wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 			}
 
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
@@ -509,7 +511,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		It("should emit audit events at correct investigation points", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"found issue"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.85}`}},
+				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.85}`),
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -562,7 +564,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled in worker deployment","remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
+				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`),
 			}
 
 			inv := investigator.New(investigator.Config{
@@ -604,7 +606,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"CrashLoop in worker pod"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart-pod","confidence":0.8}`}},
+				wfToolResp(`{"workflow_id":"restart-pod","confidence":0.8}`),
 			}
 
 			inv := investigator.New(investigator.Config{
@@ -646,7 +648,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled targeting Deployment worker","remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.95,"remediation_target":{"kind":"Deployment","name":"worker-77784c6cf7","namespace":"demo-crashloop"}}`}},
+				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.95,"remediation_target":{"kind":"Deployment","name":"worker-77784c6cf7","namespace":"demo-crashloop"}}`),
 			}
 
 			inv := investigator.New(investigator.Config{
@@ -720,6 +722,18 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 		})
 	})
 })
+
+// wfToolResp creates a mock ChatResponse where the LLM calls submit_result_with_workflow
+// with the given JSON content. Used to adapt pre-#760v2 tests that previously returned
+// workflow selection as plain text.
+func wfToolResp(jsonContent string) llm.ChatResponse {
+	return llm.ChatResponse{
+		Message: llm.Message{Role: "assistant", Content: ""},
+		ToolCalls: []llm.ToolCall{
+			{ID: "tc_wf", Name: "submit_result_with_workflow", Arguments: jsonContent},
+		},
+	}
+}
 
 func toolNamesFromCall(call llm.ChatRequest) []string {
 	names := make([]string, len(call.Tools))

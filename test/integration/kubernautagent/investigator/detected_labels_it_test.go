@@ -116,7 +116,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.9}`}},
+					wfToolResp(`{"workflow_id":"restart","confidence":0.9}`),
 				},
 			}
 
@@ -174,7 +174,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"memory leak"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.8}`}},
+					wfToolResp(`{"workflow_id":"restart","confidence":0.8}`),
 				},
 			}
 
@@ -235,7 +235,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"pod crashed"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.9}`}},
+					wfToolResp(`{"workflow_id":"restart","confidence":0.9}`),
 				},
 			}
 

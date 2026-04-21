@@ -61,8 +61,8 @@ var _ = Describe("Kubernaut Agent Validator Wiring — TP-433-WIR Phase 5", func
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"pod crashed"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"unknown-workflow","confidence":0.8}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+					wfToolResp(`{"workflow_id":"unknown-workflow","confidence":0.8}`),
+					wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 				},
 			}
 
@@ -83,7 +83,7 @@ var _ = Describe("Kubernaut Agent Validator Wiring — TP-433-WIR Phase 5", func
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"pod crashed"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"totally-unknown","confidence":0.9}`}},
+					wfToolResp(`{"workflow_id":"totally-unknown","confidence":0.9}`),
 				},
 			}
 
