@@ -137,6 +137,14 @@ func (h *RemediationWorkflowHandler) handleCreate(ctx context.Context, req admis
 // Issue #773: Hardened to CREATE-level strictness — all error paths return Denied
 // with denied audit event (SOC2 CC8.1 compliance).
 func (h *RemediationWorkflowHandler) handleUpdate(ctx context.Context, req admission.Request) admission.Response {
+	// During CRD deletion, K8s sends UPDATE admission requests for metadata
+	// changes (e.g., finalizer removal by the catalog-cleanup controller).
+	// Registering here would undo the DisableWorkflow performed by handleDelete
+	// (DS sees "disabled + same hash → re-enable"). Skip to preserve the disable.
+	rw := &rwv1alpha1.RemediationWorkflow{}
+	if err := json.Unmarshal(req.Object.Raw, rw); err == nil && rw.DeletionTimestamp != nil {
+		return admission.Allowed("update during deletion — skipped (DELETE handles DS lifecycle)")
+	}
 	return h.registerWorkflow(ctx, req, "UPDATE", EventTypeRWAdmittedUpdate)
 }
 

@@ -46,11 +46,12 @@ func (h *RemediationWorkflowHandler) emitAdmitAudit(ctx context.Context, req adm
 	action := api.RemediationWorkflowWebhookAuditPayloadActionCreate
 	ogenEventType := api.RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate
 	wrapFn := api.NewAuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData
-	if eventType == EventTypeRWAdmittedUpdate {
+	switch eventType {
+	case EventTypeRWAdmittedUpdate:
 		action = api.RemediationWorkflowWebhookAuditPayloadActionUpdate
 		ogenEventType = api.RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedUpdate
 		wrapFn = api.NewAuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData
-	} else if eventType == EventTypeRWAdmittedDelete {
+	case EventTypeRWAdmittedDelete:
 		action = api.RemediationWorkflowWebhookAuditPayloadActionDelete
 		ogenEventType = api.RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete
 		wrapFn = api.NewAuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData
