@@ -19,7 +19,6 @@ package investigator
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -45,6 +44,59 @@ const maxSelfCorrectionAttempts = 3
 // its structured investigation result. When detected in runLLMLoop, the tool
 // call arguments are returned as content without executing any real tool.
 const SubmitResultToolName = "submit_result"
+
+// SubmitResultWithWorkflowToolName is the sentinel for the workflow-selected
+// path during PhaseWorkflowDiscovery (#760 v2).
+const SubmitResultWithWorkflowToolName = "submit_result_with_workflow"
+
+// SubmitResultNoWorkflowToolName is the sentinel for the no-workflow path
+// during PhaseWorkflowDiscovery (#760 v2).
+const SubmitResultNoWorkflowToolName = "submit_result_no_workflow"
+
+// LoopResult is a sealed interface representing the outcome of runLLMLoop.
+// Callers dispatch on the concrete type via a type switch.
+type LoopResult interface {
+	loopResult()
+}
+
+// SubmitResult is returned when the LLM calls the generic submit_result tool (RCA phase).
+type SubmitResult struct{ Content string }
+
+func (*SubmitResult) loopResult() {}
+
+// SubmitWithWorkflowResult is returned when the LLM calls submit_result_with_workflow.
+type SubmitWithWorkflowResult struct{ Content string }
+
+func (*SubmitWithWorkflowResult) loopResult() {}
+
+// SubmitNoWorkflowResult is returned when the LLM calls submit_result_no_workflow.
+type SubmitNoWorkflowResult struct{ Content string }
+
+func (*SubmitNoWorkflowResult) loopResult() {}
+
+// TextResult is returned when the LLM responds with plain text (no tool call).
+type TextResult struct{ Content string }
+
+func (*TextResult) loopResult() {}
+
+// ExhaustedResult is returned when the loop exhausts maxTurns.
+type ExhaustedResult struct{}
+
+func (*ExhaustedResult) loopResult() {}
+
+// sentinelResult maps a sentinel tool call to its LoopResult type.
+func sentinelResult(tc llm.ToolCall) LoopResult {
+	switch tc.Name {
+	case SubmitResultToolName:
+		return &SubmitResult{Content: tc.Arguments}
+	case SubmitResultWithWorkflowToolName:
+		return &SubmitWithWorkflowResult{Content: tc.Arguments}
+	case SubmitResultNoWorkflowToolName:
+		return &SubmitNoWorkflowResult{Content: tc.Arguments}
+	default:
+		return nil
+	}
+}
 
 // CatalogFetcher retrieves a fresh workflow validator from the catalog.
 // Implementations query DataStorage at request time so KA always sees the
@@ -284,15 +336,24 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 		{Role: "user", Content: fmt.Sprintf("Investigate: %s %s in %s — %s", signal.Severity, signal.Name, signal.Namespace, signal.Message)},
 	}
 
-	content, exhausted, err := inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, tokens, correlationID)
+	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, tokens, correlationID)
 	if err != nil {
 		return nil, err
 	}
-	if exhausted {
+
+	var content string
+	switch r := loopRes.(type) {
+	case *ExhaustedResult:
 		return &katypes.InvestigationResult{
 			HumanReviewNeeded: true,
 			Reason:            fmt.Sprintf("max turns (%d) exhausted during RCA", inv.maxTurns),
 		}, nil
+	case *SubmitResult:
+		content = r.Content
+	case *TextResult:
+		content = r.Content
+	default:
+		content = ""
 	}
 
 	result, parseErr := inv.resultParser.Parse(content)
@@ -333,39 +394,61 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		{Role: "user", Content: fmt.Sprintf("RCA findings: %s\n\nSelect the appropriate remediation workflow.", rcaSummary)},
 	}
 
-	content, exhausted, err := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID)
+	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID)
 	if err != nil {
 		return nil, err
 	}
-	if exhausted {
+
+	var content string
+	switch r := loopRes.(type) {
+	case *ExhaustedResult:
 		return &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
 			Reason:            fmt.Sprintf("max turns (%d) exhausted during workflow selection", inv.maxTurns),
 		}, nil
+	case *SubmitNoWorkflowResult:
+		inv.logger.Info("submit_result_no_workflow sentinel: classifying as no_matching_workflows")
+		return &katypes.InvestigationResult{
+			RCASummary:        rcaSummary,
+			HumanReviewNeeded: true,
+			HumanReviewReason: "no_matching_workflows",
+			Reason:            "LLM explicitly declined workflow selection via submit_result_no_workflow",
+		}, nil
+	case *SubmitWithWorkflowResult:
+		content = r.Content
+	case *SubmitResult:
+		content = r.Content
+	case *TextResult:
+		// #760 v2: parse-level retry — LLM returned text instead of a tool call.
+		retryResult := inv.retryWorkflowSubmit(ctx, r.Content, messages, rcaSummary, tokens, correlationID)
+		if retryResult != nil {
+			return retryResult, nil
+		}
+		// Retries exhausted → no_matching_workflows
+		inv.logger.Warn("workflow selection: all retries exhausted, classifying as no_matching_workflows")
+		return &katypes.InvestigationResult{
+			RCASummary:        rcaSummary,
+			HumanReviewNeeded: true,
+			HumanReviewReason: "no_matching_workflows",
+			Reason:            "workflow selection: LLM did not use submit tool after retries",
+		}, nil
 	}
 
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
-		var noJSON *parser.ErrNoJSON
-		if errors.As(parseErr, &noJSON) {
-			// #760 / HAPI state machine: free text during workflow selection after
-			// successful RCA = deliberate decline. Classify as no_matching_workflows.
-			inv.logger.Warn("workflow selection: LLM returned free text (no JSON), classifying as no_matching_workflows",
-				slog.String("error", parseErr.Error()))
-			return &katypes.InvestigationResult{
-				RCASummary:        rcaSummary,
-				HumanReviewNeeded: true,
-				HumanReviewReason: "no_matching_workflows",
-				Reason:            fmt.Sprintf("workflow selection: LLM did not produce parseable result: %s", parseErr),
-			}, nil
+		// Try parse-level retry for malformed JSON too
+		retryResult := inv.retryWorkflowSubmit(ctx, content, messages, rcaSummary, tokens, correlationID)
+		if retryResult != nil {
+			return retryResult, nil
 		}
-		inv.logger.Warn("workflow selection parse failed",
+		inv.logger.Warn("workflow selection parse failed after retries, classifying as no_matching_workflows",
 			slog.String("error", parseErr.Error()))
 		return &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
-			Reason:            fmt.Sprintf("failed to parse workflow selection response: %s", parseErr),
+			HumanReviewReason: "no_matching_workflows",
+			Reason:            fmt.Sprintf("workflow selection: LLM did not produce parseable result: %s", parseErr),
 		}, nil
 	}
 
@@ -393,17 +476,30 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			messages = append(messages, llm.Message{Role: "assistant", Content: content})
 			messages = append(messages, llm.Message{Role: "user", Content: correctionMsg})
 
-			correctedContent, corrExhausted, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID)
+			corrLoopRes, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID)
 			if corrErr != nil {
 				return nil, corrErr
 			}
-			if corrExhausted {
+			switch cr := corrLoopRes.(type) {
+			case *ExhaustedResult:
 				r.HumanReviewNeeded = true
 				r.Reason = "self-correction exhausted LLM turns"
 				return r, nil
+			case *SubmitNoWorkflowResult:
+				return &katypes.InvestigationResult{
+					RCASummary:        rcaSummary,
+					HumanReviewNeeded: true,
+					HumanReviewReason: "no_matching_workflows",
+					Reason:            "LLM declined workflow during self-correction via submit_result_no_workflow",
+				}, nil
+			case *SubmitWithWorkflowResult:
+				content = cr.Content
+			case *SubmitResult:
+				content = cr.Content
+			case *TextResult:
+				content = cr.Content
 			}
-			content = correctedContent
-			return inv.resultParser.Parse(correctedContent)
+			return inv.resultParser.Parse(content)
 		}
 
 		corrected, corrErr := validator.SelfCorrect(result, maxSelfCorrectionAttempts, correctionFn)
@@ -421,6 +517,104 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	}
 
 	return result, nil
+}
+
+const maxParseRetries = 2
+
+// retryWorkflowSubmit performs up to maxParseRetries correction attempts when
+// the LLM returns text or unparseable JSON instead of calling a submit tool.
+// Each retry sends a correction message with examples of both submit tools,
+// with only the two submit tools available (prevents re-investigation).
+// Returns non-nil *InvestigationResult on success or nil when retries exhaust.
+func (inv *Investigator) retryWorkflowSubmit(ctx context.Context, lastContent string, history []llm.Message, rcaSummary string, tokens *TokenAccumulator, correlationID string) *katypes.InvestigationResult {
+	submitOnlyTools := []llm.ToolDefinition{
+		{
+			Name:        SubmitResultWithWorkflowToolName,
+			Description: "Submit investigation result WITH a selected workflow.",
+			Parameters:  parser.WithWorkflowResultSchema(),
+		},
+		{
+			Name:        SubmitResultNoWorkflowToolName,
+			Description: "Submit investigation result when NO matching workflow exists.",
+			Parameters:  parser.NoWorkflowResultSchema(),
+		},
+	}
+
+	correctionTemplate := `Your response could not be parsed. You MUST call one of these tools:
+
+1. If a workflow matches: call submit_result_with_workflow with JSON like:
+   {"root_cause_analysis":{"summary":"..."},"selected_workflow":{"workflow_id":"...","confidence":0.9},"confidence":0.9}
+
+2. If NO workflow matches: call submit_result_no_workflow with JSON like:
+   {"root_cause_analysis":{"summary":"..."},"reasoning":"explanation why no workflow applies"}
+
+Do NOT respond with plain text. You MUST call one of the above tools.`
+
+	retryMessages := make([]llm.Message, len(history))
+	copy(retryMessages, history)
+	retryMessages = append(retryMessages,
+		llm.Message{Role: "assistant", Content: lastContent},
+	)
+
+	for attempt := 0; attempt < maxParseRetries; attempt++ {
+		inv.logger.Info("parse-level retry for workflow submit",
+			slog.Int("attempt", attempt+1),
+			slog.Int("max", maxParseRetries))
+
+		retryMessages = append(retryMessages,
+			llm.Message{Role: "user", Content: correctionTemplate},
+		)
+
+		retryEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+		retryEvent.EventAction = audit.ActionLLMRequest
+		retryEvent.EventOutcome = audit.OutcomeSuccess
+		retryEvent.Data["retry_attempt"] = attempt + 1
+		retryEvent.Data["retry_max"] = maxParseRetries
+		retryEvent.Data["phase"] = string(katypes.PhaseWorkflowDiscovery)
+		retryEvent.Data["retry_reason"] = "parse_level_correction"
+		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.logger)
+
+		resp, err := inv.client.Chat(ctx, llm.ChatRequest{
+			Messages: retryMessages,
+			Tools:    submitOnlyTools,
+			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.InvestigationResultSchema()},
+		})
+		if err != nil {
+			inv.logger.Warn("retry LLM call failed", slog.String("error", err.Error()))
+			continue
+		}
+		if tokens != nil {
+			tokens.Add(resp.Usage)
+		}
+
+		if len(resp.ToolCalls) > 0 {
+			for _, tc := range resp.ToolCalls {
+				switch tc.Name {
+				case SubmitResultNoWorkflowToolName:
+					inv.logger.Info("retry succeeded: submit_result_no_workflow")
+					return &katypes.InvestigationResult{
+						RCASummary:        rcaSummary,
+						HumanReviewNeeded: true,
+						HumanReviewReason: "no_matching_workflows",
+						Reason:            "LLM used submit_result_no_workflow after retry",
+					}
+				case SubmitResultWithWorkflowToolName:
+					inv.logger.Info("retry succeeded: submit_result_with_workflow")
+					result, parseErr := inv.resultParser.Parse(tc.Arguments)
+					if parseErr != nil {
+						inv.logger.Warn("retry submit_result_with_workflow parse failed",
+							slog.String("error", parseErr.Error()))
+						retryMessages = append(retryMessages, resp.Message)
+						continue
+					}
+					return result
+				}
+			}
+		}
+
+		retryMessages = append(retryMessages, resp.Message)
+	}
+	return nil
 }
 
 // enrichFromCatalog backfills execution metadata from the workflow catalog
@@ -453,7 +647,8 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 // runLLMLoop executes the multi-turn LLM conversation loop with tool
 // execution routed through the registry. correlationID is propagated to
 // all audit events per BR-AUDIT-005 (remediation_id as query key).
-func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, tokens *TokenAccumulator, correlationID string) (string, bool, error) {
+// Returns a sealed LoopResult; callers dispatch via type switch (#760 v2).
+func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, tokens *TokenAccumulator, correlationID string) (LoopResult, error) {
 	toolDefs := inv.toolDefinitionsForPhase(phase)
 	loopStart := time.Now()
 
@@ -480,7 +675,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			failEvent.Data["phase"] = string(phase)
 			failEvent.Data["duration_seconds"] = time.Since(loopStart).Seconds()
 			audit.StoreBestEffort(ctx, inv.auditStore, failEvent, inv.logger)
-			return "", false, fmt.Errorf("%s LLM call turn %d: %w", phase, turn, err)
+			return nil, fmt.Errorf("%s LLM call turn %d: %w", phase, turn, err)
 		}
 
 		if tokens != nil {
@@ -502,9 +697,11 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 
 		if len(resp.ToolCalls) > 0 {
 			for _, tc := range resp.ToolCalls {
-				if tc.Name == SubmitResultToolName {
-					inv.logger.Info("submit_result sentinel detected", slog.String("phase", string(phase)))
-					return tc.Arguments, false, nil
+				if sr := sentinelResult(tc); sr != nil {
+					inv.logger.Info("sentinel detected",
+						slog.String("tool", tc.Name),
+						slog.String("phase", string(phase)))
+					return sr, nil
 				}
 			}
 
@@ -530,15 +727,15 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 				})
 			}
 			if inv.pipeline.AnomalyDetector != nil && inv.pipeline.AnomalyDetector.TotalExceeded() {
-				return "", true, nil
+				return &ExhaustedResult{}, nil
 			}
 			continue
 		}
 
-		return resp.Message.Content, false, nil
+		return &TextResult{Content: resp.Message.Content}, nil
 	}
 
-	return "", true, nil
+	return &ExhaustedResult{}, nil
 }
 
 func totalPromptLength(messages []llm.Message) int {
@@ -577,7 +774,7 @@ func (inv *Investigator) toolDefinitionsForPhase(phase katypes.Phase) []llm.Tool
 	var defs []llm.ToolDefinition
 	if inv.registry != nil {
 		phaseTools := inv.registry.ToolsForPhase(phase, inv.phaseTools)
-		defs = make([]llm.ToolDefinition, 0, len(phaseTools)+1)
+		defs = make([]llm.ToolDefinition, 0, len(phaseTools)+2)
 		for _, t := range phaseTools {
 			defs = append(defs, llm.ToolDefinition{
 				Name:        t.Name(),
@@ -587,11 +784,26 @@ func (inv *Investigator) toolDefinitionsForPhase(phase katypes.Phase) []llm.Tool
 		}
 	}
 
-	defs = append(defs, llm.ToolDefinition{
-		Name:        SubmitResultToolName,
-		Description: "Submit the final investigation result as structured JSON. Call this tool when your analysis is complete.",
-		Parameters:  submitResultSchemaForPhase(phase),
-	})
+	if phase == katypes.PhaseWorkflowDiscovery {
+		defs = append(defs,
+			llm.ToolDefinition{
+				Name:        SubmitResultWithWorkflowToolName,
+				Description: "Submit investigation result WITH a selected workflow. Call this when you have identified a matching workflow.",
+				Parameters:  parser.WithWorkflowResultSchema(),
+			},
+			llm.ToolDefinition{
+				Name:        SubmitResultNoWorkflowToolName,
+				Description: "Submit investigation result when NO matching workflow exists. Call this when none of the available workflows can remediate the incident.",
+				Parameters:  parser.NoWorkflowResultSchema(),
+			},
+		)
+	} else {
+		defs = append(defs, llm.ToolDefinition{
+			Name:        SubmitResultToolName,
+			Description: "Submit the final investigation result as structured JSON. Call this tool when your analysis is complete.",
+			Parameters:  submitResultSchemaForPhase(phase),
+		})
+	}
 	return defs
 }
 
