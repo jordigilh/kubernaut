@@ -269,12 +269,19 @@ func extractDetectedLabels(m map[string]interface{}) *sharedtypes.DetectedLabels
 
 // handleWorkflowResolutionFailureFromIncident handles workflow resolution failure from IncidentResponse
 // BR-HAPI-197: Workflow resolution failed, human must intervene
+// #768: Delegates to handleNoMatchingWorkflowsCompleted when humanReviewReason=no_matching_workflows
 func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
-	hasSelectedWorkflow := resp.SelectedWorkflow.Set && !resp.SelectedWorkflow.Null
 	humanReviewReason := ""
 	if resp.HumanReviewReason.Set && !resp.HumanReviewReason.Null {
 		humanReviewReason = string(resp.HumanReviewReason.Value)
 	}
+
+	// #768: no_matching_workflows is a successful investigation — route to Completed handler
+	if humanReviewReason == "no_matching_workflows" {
+		return p.handleNoMatchingWorkflowsCompleted(ctx, analysis, resp)
+	}
+
+	hasSelectedWorkflow := resp.SelectedWorkflow.Set && !resp.SelectedWorkflow.Null
 
 	p.log.Info("Workflow resolution failed, requires human review",
 		"warnings", resp.Warnings,
@@ -476,6 +483,66 @@ func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context,
 	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonNoWorkflowNeeded, "Alert not actionable, no workflow needed")
 	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No workflow selected, approval not applicable")
 
+	p.auditClient.RecordAnalysisComplete(ctx, analysis)
+
+	return ctrl.Result{}, nil
+}
+
+// handleNoMatchingWorkflowsCompleted handles the case where the investigation succeeded
+// but no workflow matched the incident. This is Phase=Completed (not Failed) because the
+// analysis was successful — it correctly concluded that no automated remediation is available.
+//
+// Issue #768: Phase should be Completed when humanReviewReason=no_matching_workflows
+// Issue #769: rootCauseAnalysis must be preserved (rootCause must be populated)
+func (p *ResponseProcessor) handleNoMatchingWorkflowsCompleted(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
+	humanReviewReason := ""
+	if resp.HumanReviewReason.Set && !resp.HumanReviewReason.Null {
+		humanReviewReason = string(resp.HumanReviewReason.Value)
+	}
+
+	p.log.Info("Investigation succeeded, no matching workflows — completing with human review",
+		"confidence", resp.Confidence,
+		"humanReviewReason", humanReviewReason,
+		"warnings", resp.Warnings,
+	)
+
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseCompleted
+	analysis.Status.ObservedGeneration = analysis.Generation
+	analysis.Status.CompletedAt = &now
+	setTotalAnalysisTime(analysis, now)
+	analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
+	analysis.Status.SubReason = "NoMatchingWorkflows"
+	analysis.Status.InvestigationID = resp.IncidentID
+
+	// #768: NeedsHumanReview remains true — still requires human intervention
+	analysis.Status.NeedsHumanReview = true
+	if humanReviewReason != "" {
+		analysis.Status.HumanReviewReason = humanReviewReason
+	}
+
+	// Build operator-friendly message
+	analysis.Status.Message = "Investigation completed: no matching workflows found"
+	if len(resp.Warnings) > 0 {
+		analysis.Status.Message += "; " + strings.Join(resp.Warnings, "; ")
+	}
+	analysis.Status.Warnings = resp.Warnings
+
+	// #769: Preserve RCA — both rootCause (summary) and rootCauseAnalysis (full struct)
+	if len(resp.RootCauseAnalysis) > 0 {
+		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
+			analysis.Status.RootCause = rca.Summary
+			analysis.Status.RootCauseAnalysis = rca
+		}
+	}
+
+	// #768: Conditions reflect successful investigation, no workflow match
+	aianalysis.SetInvestigationComplete(analysis, true, "Investigation completed successfully")
+	aianalysis.SetAnalysisComplete(analysis, true, "Analysis completed: no matching workflows found")
+	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonNoMatchingWorkflows, "No matching workflows found, human review required")
+	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No workflow selected, approval not applicable")
+
+	// #768: Audit as completion (not failure) — this also feeds RR reconstruction
 	p.auditClient.RecordAnalysisComplete(ctx, analysis)
 
 	return ctrl.Result{}, nil

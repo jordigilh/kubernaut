@@ -138,6 +138,12 @@ func (h *AIAnalysisHandler) handleCompleted(
 		return h.handleWorkflowNotNeeded(ctx, rr, ai)
 	}
 
+	// #768: Investigation succeeded but no workflow matched — route to manual review
+	if ai.Status.NeedsHumanReview && ai.Status.SelectedWorkflow == nil {
+		logger.Info("AIAnalysis completed with NeedsHumanReview (no workflow) - routing to ManualReviewCompleted")
+		return h.handleManualReviewCompleted(ctx, rr, ai)
+	}
+
 	// Check if approval is required (BR-ORCH-001)
 	if ai.Status.ApprovalRequired {
 		logger.Info("AIAnalysis requires approval, creating approval notification")
