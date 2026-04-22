@@ -145,6 +145,7 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 		wfUUID, regErr := registerTestBundleWorkflow(
 			dataStorageURL,
 			saToken,
+			kubeconfigPath,
 			bw.name,
 			bw.version,
 			content,
@@ -185,11 +186,15 @@ func readWorkflowFixtureContent(fixtureName string) (string, error) {
 // ADR-058: Sends CRD YAML content directly (inline) instead of OCI pullspec.
 // Returns the DS-assigned UUID for use in WorkflowExecution specs (DD-WE-006).
 // Includes DD-AUTH-014 ServiceAccount authentication.
-func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, schemaContent, description string, output io.Writer) (string, error) {
+func registerTestBundleWorkflow(dataStorageURL, saToken, kubeconfigPath, workflowName, version, schemaContent, description string, output io.Writer) (string, error) {
 	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s) inline\n", workflowName, version)
 
+	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create TLS-aware transport: %w", err)
+	}
 	httpClient := &http.Client{
-		Transport: testauth.NewServiceAccountTransport(saToken),
+		Transport: testauth.NewServiceAccountTransportWithBase(saToken, tlsTransport),
 	}
 
 	client, err := dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))

@@ -226,7 +226,7 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 	}
 
 	// Issue #785: inter-service CA must exist before controller mounts tls-ca.
-	if _, err := GenerateInterServiceTLS(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
 	}
 
