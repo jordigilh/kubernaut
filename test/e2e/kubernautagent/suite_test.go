@@ -59,7 +59,9 @@ var (
 	kubeconfigPath string
 
 	// Same port mapping as KA (DD-TEST-001 v2.9)
-	kaURL          string // http://localhost:8088
+	kaURL          string // http://localhost:8088  (API port)
+	kaHealthURL    string // http://localhost:28088 (Issue #753: dedicated health port)
+	kaMetricsURL   string // http://localhost:9088  (Issue #753: dedicated metrics port)
 	dataStorageURL string // http://localhost:8089
 
 	sharedNamespace string = "kubernaut-agent-e2e"
@@ -102,6 +104,8 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 
 		kaURL = "http://localhost:8088"
+		kaHealthURL = "http://localhost:28088"
+		kaMetricsURL = "http://localhost:9088"
 		dataStorageURL = "http://localhost:8089"
 
 		logger.Info("⏳ Waiting for Kind NodePort mapping to stabilize...")
@@ -122,9 +126,10 @@ var _ = SynchronizedBeforeSuite(
 			return nil
 		}, 90*time.Second, 2*time.Second).Should(Succeed(), "Data Storage health check should succeed")
 
+		// Issue #753: KA health probes on dedicated port 8081 (NodePort 30188 → host 28088)
 		logger.Info("⏳ Waiting for Kubernaut Agent service to be ready...")
 		Eventually(func() error {
-			resp, err := http.Get(kaURL + "/health")
+			resp, err := http.Get(kaHealthURL + "/readyz")
 			if err != nil {
 				return err
 			}
@@ -172,6 +177,8 @@ var _ = SynchronizedBeforeSuite(
 		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 
 		kaURL = "http://localhost:8088"
+		kaHealthURL = "http://localhost:28088"
+		kaMetricsURL = "http://localhost:9088"
 		dataStorageURL = "http://localhost:8089"
 
 		cwd, err := os.Getwd()

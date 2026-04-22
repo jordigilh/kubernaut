@@ -239,22 +239,22 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 
 	Context("BR-HAPI-433 (NFR): Non-functional requirements", func() {
 
-		It("E2E-KA-433-006: GET /health returns 200 within 5s of container start", func() {
+		It("E2E-KA-433-006: GET /healthz returns 200 (Issue #753: dedicated health port)", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
 			// Scenario ID: E2E-KA-433-006
-			// Business Outcome: GET /health returns 200 within 5s of container start
+			// Business Outcome: GET /healthz returns 200 within 5s of container start
 			// BR: BR-HAPI-433 (NFR)
 
-			resp, err := http.Get(kaURL + "/health")
+			resp, err := http.Get(kaHealthURL + "/healthz")
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 			Expect(resp.StatusCode).To(Equal(http.StatusOK),
 				"health endpoint should return 200")
 		})
 
-		It("E2E-KA-433-007: GET /metrics exposes Prometheus metrics", func() {
+		It("E2E-KA-433-007: GET /metrics exposes Prometheus metrics (Issue #753: dedicated metrics port)", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
@@ -262,7 +262,7 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 			// Business Outcome: GET /metrics exposes Prometheus metrics (go runtime + request counters)
 			// BR: BR-HAPI-433 (NFR)
 
-			resp, err := http.Get(kaURL + "/metrics")
+			resp, err := http.Get(kaMetricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 			Expect(resp.StatusCode).To(Equal(http.StatusOK),

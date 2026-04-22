@@ -12,6 +12,14 @@ nodes:
   - containerPort: 30088
     hostPort: 8088
     protocol: TCP
+  # Kubernaut Agent health - Issue #753
+  - containerPort: 30188
+    hostPort: 28088
+    protocol: TCP
+  # Kubernaut Agent metrics - Issue #753
+  - containerPort: 30988
+    hostPort: 9088
+    protocol: TCP
   # Data Storage - Per DD-TEST-001 v2.5
   - containerPort: 30089
     hostPort: 8089

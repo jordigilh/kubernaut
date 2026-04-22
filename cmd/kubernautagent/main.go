@@ -43,6 +43,7 @@ import (
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
@@ -223,10 +224,8 @@ func main() {
 
 	r := chi.NewRouter()
 
-	r.Get("/health", healthHandler)
-	r.Get("/ready", readyHandler)
+	// Issue #753: /config remains on API port; health, readiness and metrics move to dedicated ports
 	r.Get("/config", configHandler(cfg))
-	r.Handle("/metrics", promhttp.Handler())
 
 	r.Route("/api/v1", func(r chi.Router) {
 		authMw := newAuthMiddleware(cfg, logrLogger)
@@ -265,6 +264,16 @@ func main() {
 		}
 	}
 
+	// Issue #753: Dedicated health and metrics servers (plain HTTP, never TLS)
+	healthServer := sharedhealth.NewHealthServer(cfg.Server.HealthAddr, healthHandler, readyHandler)
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", promhttp.Handler())
+	metricsServer := &http.Server{
+		Addr:              cfg.Server.MetricsAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -298,6 +307,20 @@ func main() {
 
 	store.StartCleanupLoop(ctx, cfg.Session.TTL/2)
 
+	// Issue #753: Start dedicated health and metrics servers
+	go func() {
+		slogger.Info("health server listening", "addr", cfg.Server.HealthAddr)
+		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slogger.Error("health server error", "error", err)
+		}
+	}()
+	go func() {
+		slogger.Info("metrics server listening", "addr", cfg.Server.MetricsAddr)
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slogger.Error("metrics server error", "error", err)
+		}
+	}()
+
 	go func() {
 		slogger.Info("HTTP server listening", "addr", addr)
 		var listenErr error
@@ -318,7 +341,13 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if shutdownErr := httpServer.Shutdown(shutdownCtx); shutdownErr != nil {
-		fmt.Fprintf(os.Stderr, "shutdown error: %v\n", shutdownErr)
+		fmt.Fprintf(os.Stderr, "API server shutdown error: %v\n", shutdownErr)
+	}
+	if shutdownErr := healthServer.Shutdown(shutdownCtx); shutdownErr != nil {
+		fmt.Fprintf(os.Stderr, "health server shutdown error: %v\n", shutdownErr)
+	}
+	if shutdownErr := metricsServer.Shutdown(shutdownCtx); shutdownErr != nil {
+		fmt.Fprintf(os.Stderr, "metrics server shutdown error: %v\n", shutdownErr)
 	}
 
 	slogger.Info("flushing audit store...")
@@ -327,12 +356,15 @@ func main() {
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status":    "healthy",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 func readyHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
 func configHandler(cfg *kaconfig.Config) http.HandlerFunc {

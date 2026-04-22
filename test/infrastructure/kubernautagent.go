@@ -709,7 +709,12 @@ spec:
         image: %s
         imagePullPolicy: %s
         ports:
-        - containerPort: 8080
+        - name: http
+          containerPort: 8080
+        - name: health
+          containerPort: 8081
+        - name: metrics
+          containerPort: 9090
         args:
         - "-config"
         - "/etc/kubernautagent/config.yaml"
@@ -730,14 +735,14 @@ spec:
         %s
         readinessProbe:
           httpGet:
-            path: /ready
-            port: 8080
+            path: /readyz
+            port: 8081
           initialDelaySeconds: 3
           periodSeconds: 5
         livenessProbe:
           httpGet:
-            path: /health
-            port: 8080
+            path: /healthz
+            port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
       volumes:
@@ -754,9 +759,18 @@ metadata:
 spec:
   type: NodePort
   ports:
-  - port: 8080
+  - name: http
+    port: 8080
     targetPort: 8080
     nodePort: 30088
+  - name: health
+    port: 8081
+    targetPort: 8081
+    nodePort: 30188
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    nodePort: 30988
   selector:
     app: kubernaut-agent
 `, namespace, namespace, imageTag, imagePullPolicy, covEnv, covMount, covVol, namespace)
