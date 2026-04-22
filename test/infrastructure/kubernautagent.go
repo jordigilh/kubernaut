@@ -133,6 +133,12 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
+	// Issue #785: Generate inter-service TLS before deploying services
+	_, _ = fmt.Fprintln(writer, "  🔐 Generating inter-service TLS certificates (Issue #785)...")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	type deployResult struct {
 		name string
 		err  error
@@ -197,8 +203,8 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to get SA token: %w", err)
 	}
 
-	dsURL := "http://localhost:8089"
-	seedClient, err := createAuthenticatedDataStorageClient(dsURL, saToken)
+	dsURL := "https://localhost:8089"
+	seedClient, err := createTLSAuthenticatedDataStorageClient(dsURL, saToken, kubeconfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to create DS client: %w", err)
 	}
@@ -677,8 +683,11 @@ data:
       model: "mock-model"
       endpoint: "http://mock-llm:8080"
       api_key: "mock-api-key-for-e2e"
+    server:
+      tls:
+        certDir: /etc/tls
     data_storage:
-      url: "http://data-storage-service:8080"
+      url: "https://data-storage-service:8080"
     logging:
       level: "debug"
     audit:
@@ -719,6 +728,8 @@ spec:
         - "-config"
         - "/etc/kubernautagent/config.yaml"
         env:
+        - name: TLS_CA_FILE
+          value: /etc/tls-ca/ca.crt
         - name: LLM_ENDPOINT
           value: "http://mock-llm:8080"
         - name: LLM_MODEL
@@ -726,11 +737,17 @@ spec:
         - name: LLM_PROVIDER
           value: "openai"
         - name: DATA_STORAGE_URL
-          value: "http://data-storage-service:8080"
+          value: "https://data-storage-service:8080"
         %s
         volumeMounts:
         - name: config
           mountPath: /etc/kubernautagent
+          readOnly: true
+        - name: tls-certs
+          mountPath: /etc/tls
+          readOnly: true
+        - name: tls-ca
+          mountPath: /etc/tls-ca
           readOnly: true
         %s
         readinessProbe:
@@ -749,6 +766,13 @@ spec:
       - name: config
         configMap:
           name: kubernaut-agent-config
+      - name: tls-certs
+        secret:
+          secretName: kubernautagent-tls
+          optional: true
+      - name: tls-ca
+        configMap:
+          name: inter-service-ca
       %s
 ---
 apiVersion: v1

@@ -38,6 +38,7 @@ import (
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	rarconditions "github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
@@ -61,7 +62,7 @@ import (
 
 var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "approval"), func() {
 	const (
-		dataStorageURL = "http://localhost:8090" // DD-TEST-001: RO → DataStorage dependency port
+		dataStorageURL = "https://localhost:8090" // Issue #785: DataStorage API (HTTPS)
 		e2eTimeout     = 120 * time.Second
 		e2eInterval    = 2 * time.Second
 	)
@@ -81,13 +82,14 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					"kubernaut.ai/audit-enabled": "true", // Required for AuthWebhook to intercept status updates
 				}))
 
-			// Create authenticated DataStorage client (DD-AUTH-014)
-			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+			// Create authenticated DataStorage client (DD-AUTH-014, Issue #785: TLS)
+			tlsBase, err := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+			Expect(err).ToNot(HaveOccurred(), "TLS transport for DataStorage")
+			saTransport := testauth.NewServiceAccountTransportWithBase(e2eAuthToken, tlsBase)
 			httpClient := &http.Client{
 				Timeout:   20 * time.Second,
 				Transport: saTransport,
 			}
-			var err error
 			dsClient, err = dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
 			Expect(err).ToNot(HaveOccurred())
 
@@ -449,13 +451,14 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					"kubernaut.ai/audit-enabled": "true", // Required for AuthWebhook to intercept status updates
 				}))
 
-			// Create authenticated DataStorage client
-			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+			// Create authenticated DataStorage client (Issue #785: TLS)
+			tlsBase, err := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+			Expect(err).ToNot(HaveOccurred(), "TLS transport for DataStorage")
+			saTransport := testauth.NewServiceAccountTransportWithBase(e2eAuthToken, tlsBase)
 			httpClient := &http.Client{
 				Timeout:   20 * time.Second,
 				Transport: saTransport,
 			}
-			var err error
 			dsClient, err = dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
 			Expect(err).ToNot(HaveOccurred())
 

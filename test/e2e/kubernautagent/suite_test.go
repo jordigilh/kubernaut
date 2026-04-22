@@ -103,10 +103,15 @@ var _ = SynchronizedBeforeSuite(
 		err = infrastructure.SetupKubernautAgentInfrastructure(ctx, clusterName, kubeconfigPath, sharedNamespace, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
 
-		kaURL = "http://localhost:8088"
+		kaURL = "https://localhost:8088"
 		kaHealthURL = "http://localhost:28088"
 		kaMetricsURL = "http://localhost:9088"
-		dataStorageURL = "http://localhost:8089"
+		dataStorageURL = "https://localhost:8089"
+
+		// Issue #785: Configure http.DefaultTransport to trust the inter-service CA.
+		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsErr).ToNot(HaveOccurred(), "Failed to create TLS-aware transport (Issue #785)")
+		http.DefaultTransport = tlsTransport
 
 		logger.Info("⏳ Waiting for Kind NodePort mapping to stabilize...")
 		time.Sleep(5 * time.Second)
@@ -176,10 +181,15 @@ var _ = SynchronizedBeforeSuite(
 		ctx, cancel = context.WithCancel(context.Background())
 		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 
-		kaURL = "http://localhost:8088"
+		kaURL = "https://localhost:8088"
 		kaHealthURL = "http://localhost:28088"
 		kaMetricsURL = "http://localhost:9088"
-		dataStorageURL = "http://localhost:8089"
+		dataStorageURL = "https://localhost:8089"
+
+		// Issue #785: Configure http.DefaultTransport to trust the inter-service CA.
+		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsErr).ToNot(HaveOccurred(), "Failed to create TLS-aware transport (Issue #785)")
+		http.DefaultTransport = tlsTransport
 
 		cwd, err := os.Getwd()
 		Expect(err).ToNot(HaveOccurred())

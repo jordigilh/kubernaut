@@ -283,6 +283,12 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		return fmt.Errorf("failed to create AuthWebhook RoleBinding: %w", err)
 	}
 
+	// Issue #785: Inter-service TLS before DataStorage/RemedationOrchestrator deploy.
+	_, _ = fmt.Fprintf(writer, "\n🔐 Issue #785: Generating inter-service TLS certificates...\n")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
@@ -372,7 +378,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	if err != nil {
 		return fmt.Errorf("failed to get seed SA token: %w", err)
 	}
-	if err := SeedActionTypesViaAPIWithURL("http://localhost:8090", seedToken, 30*time.Second, writer); err != nil {
+	if err := SeedActionTypesViaAPIWithTLS("https://localhost:8090", seedToken, kubeconfigPath, 30*time.Second, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 
@@ -603,7 +609,7 @@ data:
       executing: "30m"
       awaitingApproval: "3s"%s
     datastorage:
-      url: "http://data-storage-service:8080"
+      url: "https://data-storage-service:8080"
       timeout: "10s"
       buffer:
         bufferSize: 10000
@@ -645,11 +651,16 @@ spec:
         env:
         - name: GOCOVERDIR
           value: /coverdata
+        - name: TLS_CA_FILE
+          value: /etc/tls-ca/ca.crt
         volumeMounts:
         - name: coverdata
           mountPath: /coverdata
         - name: config
           mountPath: /etc/config
+          readOnly: true
+        - name: tls-ca
+          mountPath: /etc/tls-ca
           readOnly: true
         startupProbe:
           httpGet:
@@ -678,6 +689,9 @@ spec:
       - name: config
         configMap:
           name: remediationorchestrator-config
+      - name: tls-ca
+        configMap:
+          name: inter-service-ca
 ---
 apiVersion: v1
 kind: Service

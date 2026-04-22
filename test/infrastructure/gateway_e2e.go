@@ -315,6 +315,13 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		return fmt.Errorf("failed to create Gateway DataStorage access RoleBinding: %w", err)
 	}
 
+	// 4c3. Issue #785: Generate inter-service TLS certificates (ECDSA P-256)
+	// Must be BEFORE service deployments so Secrets/ConfigMap exist when pods start.
+	_, _ = fmt.Fprintf(writer, "🔐 Generating inter-service TLS certificates (Issue #785)...\n")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	// 4d. Deploy DataStorage with middleware-based auth (DD-AUTH-014)
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with middleware-based auth...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImageName, writer); err != nil {
@@ -344,8 +351,8 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	if err != nil {
 		return fmt.Errorf("failed to get seed SA token for action type seeding: %w", err)
 	}
-	if err := SeedActionTypesViaAPIWithURL(
-		fmt.Sprintf("http://localhost:%d", DataStorageE2EHostPort), seedToken, 30*time.Second, writer,
+	if err := SeedActionTypesViaAPIWithTLS(
+		fmt.Sprintf("https://localhost:%d", DataStorageE2EHostPort), seedToken, kubeconfigPath, 30*time.Second, writer,
 	); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
@@ -374,8 +381,9 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Gateway E2E infrastructure ready (HYBRID PARALLEL MODE)!")
 	_, _ = fmt.Fprintf(writer, "  • Gateway: http://localhost:%d\n", GatewayE2EHostPort)
-	_, _ = fmt.Fprintf(writer, "  • Gateway Metrics: http://localhost:%d/metrics\n", GatewayE2EMetricsPort)
-	_, _ = fmt.Fprintf(writer, "  • DataStorage: http://localhost:%d (NodePort %d)\n", DataStorageE2EHostPort, GatewayDataStoragePort)
+	_, _ = fmt.Fprintf(writer, "  • Gateway Health: http://localhost:%d (plain HTTP)\n", GatewayE2EHealthPort)
+	_, _ = fmt.Fprintf(writer, "  • Gateway Metrics: http://localhost:%d/metrics (plain HTTP)\n", GatewayE2EMetricsPort)
+	_, _ = fmt.Fprintf(writer, "  • DataStorage: https://localhost:%d (TLS, NodePort %d)\n", DataStorageE2EHostPort, GatewayDataStoragePort)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return nil
@@ -647,7 +655,7 @@ data:
       writeTimeout: 30s
       idleTimeout: 120s
     datastorage:
-      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      url: "https://data-storage-service.kubernaut-system.svc.cluster.local:8080"
       timeout: 10s
       buffer:
         bufferSize: 10000
@@ -694,6 +702,8 @@ spec:
           args:
             - "--config=/etc/gateway/config.yaml"
           env:%s
+            - name: TLS_CA_FILE
+              value: /etc/tls-ca/ca.crt
             - name: KUBERNAUT_CONTROLLER_NAMESPACE
               value: kubernaut-system
             - name: POD_NAME
@@ -717,6 +727,9 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/gateway
+              readOnly: true
+            - name: tls-ca
+              mountPath: /etc/tls-ca
               readOnly: true%s
           startupProbe:
             httpGet:
@@ -751,7 +764,10 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: gateway-config%s
+            name: gateway-config
+        - name: tls-ca
+          configMap:
+            name: inter-service-ca%s
 ---
 apiVersion: v1
 kind: Service

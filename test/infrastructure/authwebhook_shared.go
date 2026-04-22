@@ -135,7 +135,7 @@ func deployAuthWebhookManifestsInternal(ctx context.Context, namespace, kubeconf
 
 	// STEP 3: Deploy AuthWebhook using inline YAML template
 	_, _ = fmt.Fprintln(writer, "\n🚀 STEP 3: Deploying AuthWebhook service...")
-	dsURL := fmt.Sprintf("http://data-storage-service.%s.svc.cluster.local:8080", namespace)
+	dsURL := fmt.Sprintf("https://data-storage-service.%s.svc.cluster.local:8080", namespace)
 	manifest := authWebhookManifest(namespace, awImageName, dsURL)
 	cmd = exec.Command("kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,

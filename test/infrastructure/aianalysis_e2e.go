@@ -222,6 +222,12 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ DataStorage RBAC deployed\n")
 
+	// Issue #785: Inter-service TLS (Secrets + ConfigMap) must exist before DataStorage starts HTTPS.
+	_, _ = fmt.Fprintln(writer, "🔐 Issue #785: Generating inter-service TLS certificates...")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 7a: Deploy DataStorage infrastructure FIRST (required for workflow seeding)
 	// ═══════════════════════════════════════════════════════════════════════
@@ -251,7 +257,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	// Wait for DataStorage to be ready (use port-forward)
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DataStorage to be ready...")
-	dataStorageURL := fmt.Sprintf("http://localhost:%d", 38080)
+	dataStorageURL := fmt.Sprintf("https://localhost:%d", 38080)
 	dataStorageHealthURL := fmt.Sprintf("http://localhost:%d", 38081)
 
 	// Start port-forward to DataStorage API and health ports
@@ -298,11 +304,15 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		return fmt.Errorf("failed to get ServiceAccount token: %w", err)
 	}
 
-	// Create authenticated OpenAPI client for DataStorage
+	// Create authenticated OpenAPI client for DataStorage (Issue #785: TLS to DS API on port-forward)
+	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to create TLS-aware transport for workflow seeding: %w", err)
+	}
 	seedClient, err := ogenclient.NewClient(
 		dataStorageURL,
 		ogenclient.WithClient(&http.Client{
-			Transport: testauth.NewServiceAccountTransport(saToken),
+			Transport: testauth.NewServiceAccountTransportWithBase(saToken, tlsTransport),
 			Timeout:   30 * time.Second,
 		}),
 	)
@@ -547,11 +557,11 @@ data:
       leaderElection: false
       leaderElectionId: "aianalysis.kubernaut.ai"
     agent:
-      url: "http://kubernaut-agent:8080"
+      url: "https://kubernaut-agent:8080"
       timeout: "60s"
       sessionPollInterval: "2s"
     datastorage:
-      url: "http://data-storage-service:8080"
+      url: "https://data-storage-service:8080"
       timeout: "10s"
       buffer:
         bufferSize: 20000
@@ -676,6 +686,8 @@ spec:
         env:
         - name: CONFIG_PATH
           value: /etc/aianalysis/config.yaml
+        - name: TLS_CA_FILE
+          value: /etc/tls-ca/ca.crt
         # DD-TEST-007: GOCOVERDIR for E2E binary coverage (added dynamically below)
         %s
         args:
@@ -688,6 +700,9 @@ spec:
         - name: rego-policies
           mountPath: /etc/aianalysis/policies
           readOnly: true
+        - name: tls-ca
+          mountPath: /etc/tls-ca
+          readOnly: true
         # DD-TEST-007: Coverage data mount (added dynamically below)
         %s
       volumes:
@@ -697,6 +712,9 @@ spec:
       - name: rego-policies
         configMap:
           name: aianalysis-policies
+      - name: tls-ca
+        configMap:
+          name: inter-service-ca
       # DD-TEST-007: Coverage data volume (added dynamically below)
       %s
 ---

@@ -109,6 +109,27 @@ func createAuthenticatedDataStorageClient(dataStorageURL, saToken string) (*ogen
 	return client, nil
 }
 
+// createTLSAuthenticatedDataStorageClient creates an ogen client that trusts the
+// inter-service CA and injects a ServiceAccount Bearer token.
+// Issue #785: Required for E2E suites where DataStorage serves HTTPS.
+func createTLSAuthenticatedDataStorageClient(dataStorageURL, saToken, kubeconfigPath string) (*ogenclient.Client, error) {
+	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create TLS-aware transport: %w", err)
+	}
+	client, err := ogenclient.NewClient(
+		dataStorageURL,
+		ogenclient.WithClient(&http.Client{
+			Transport: testauth.NewServiceAccountTransportWithBase(saToken, tlsTransport),
+			Timeout:   30 * time.Second,
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create TLS DataStorage client: %w", err)
+	}
+	return client, nil
+}
+
 // GetKAE2ETestWorkflows returns workflows for KA E2E tests
 // Pattern: Inlined workflow definitions (CANNOT use test/e2e/kubernaut-agent - import cycle)
 // Similar to AA E2E approach (aianalysis_e2e.go:287-296)

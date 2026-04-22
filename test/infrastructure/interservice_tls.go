@@ -57,6 +57,21 @@ func InterServiceCAPath(kubeconfigPath string) string {
 func GenerateInterServiceTLS(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) (string, error) {
 	_, _ = fmt.Fprintln(writer, "🔐 Issue #753: Generating inter-service TLS certificates (ECDSA P-256)...")
 
+	// Idempotency guard: if the CA ConfigMap already exists in this namespace and the
+	// host-side CA PEM file is present, skip regeneration. This prevents a race condition
+	// in fullpipeline E2E where multiple component deployers call this function in parallel
+	// goroutines, each generating a different CA and overwriting the Secrets/ConfigMap.
+	caPEMPath := InterServiceCAPath(kubeconfigPath)
+	checkCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "configmap", "inter-service-ca", "-n", namespace, "--ignore-not-found", "-o", "name")
+	checkOut, checkErr := checkCmd.Output()
+	if checkErr == nil && strings.TrimSpace(string(checkOut)) != "" {
+		if _, statErr := os.Stat(caPEMPath); statErr == nil {
+			_, _ = fmt.Fprintf(writer, "  ✅ inter-service TLS already exists (ConfigMap + %s) — skipping\n", caPEMPath)
+			return caPEMPath, nil
+		}
+	}
+
 	// Generate CA key pair
 	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -84,8 +99,7 @@ func GenerateInterServiceTLS(ctx context.Context, kubeconfigPath, namespace stri
 		return "", fmt.Errorf("failed to parse CA certificate: %w", err)
 	}
 
-	// Write CA PEM to deterministic path
-	caPEMPath := InterServiceCAPath(kubeconfigPath)
+	// Write CA PEM to deterministic path (caPEMPath declared in idempotency guard above)
 	if err := os.WriteFile(caPEMPath, caCertPEM, 0600); err != nil {
 		return "", fmt.Errorf("failed to write CA PEM to %s: %w", caPEMPath, err)
 	}

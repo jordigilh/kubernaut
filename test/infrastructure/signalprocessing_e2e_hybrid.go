@@ -245,6 +245,12 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 		return fmt.Errorf("failed to create DataStorage client RoleBinding: %w", err)
 	}
 
+	// Issue #785: Inter-service TLS (Secrets + CA ConfigMap must exist before DataStorage pod starts)
+	_, _ = fmt.Fprintf(writer, "🔐 Generating inter-service TLS certificates (Issue #785)...\n")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
@@ -326,7 +332,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	if err != nil {
 		return fmt.Errorf("failed to get seed SA token: %w", err)
 	}
-	if err := SeedActionTypesViaAPIWithURL("http://localhost:30081", seedToken, 30*time.Second, writer); err != nil {
+	if err := SeedActionTypesViaAPIWithTLS("https://localhost:30081", seedToken, kubeconfigPath, 30*time.Second, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 
@@ -335,6 +341,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "  🚀 Strategy: Hybrid parallel (build parallel → cluster → load)")
 	_, _ = fmt.Fprintln(writer, "  📊 Coverage: Enabled (GOCOVERDIR=/coverdata)")
+	_, _ = fmt.Fprintln(writer, "  🎯 DataStorage API: https://localhost:30081")
 	_, _ = fmt.Fprintln(writer, "  🎯 SP API: http://localhost:30082")
 	_, _ = fmt.Fprintln(writer, "  📊 SP Metrics: http://localhost:30182")
 	_, _ = fmt.Fprintln(writer, "  📦 Namespace: kubernaut-system")
@@ -823,7 +830,7 @@ data:
       regoConfigMapKey: "policy.rego"
       hotReloadInterval: "30s"
     datastorage:
-      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      url: "https://data-storage-service.kubernaut-system.svc.cluster.local:8080"
       timeout: "10s"
       buffer:
         bufferSize: 10000
@@ -916,6 +923,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: TLS_CA_FILE
+          value: /etc/tls-ca/ca.crt
         - name: GOCOVERDIR
           value: /coverdata
         ports:
@@ -960,6 +969,9 @@ spec:
         # E2E Coverage: Mount coverage directory
         - name: coverdata
           mountPath: /coverdata
+        - name: tls-ca
+          mountPath: /etc/tls-ca
+          readOnly: true
       volumes:
       # ADR-030: Service configuration ConfigMap
       - name: config
@@ -978,6 +990,9 @@ spec:
         hostPath:
           path: /coverdata
           type: DirectoryOrCreate
+      - name: tls-ca
+        configMap:
+          name: inter-service-ca
 ---
 apiVersion: v1
 kind: Service

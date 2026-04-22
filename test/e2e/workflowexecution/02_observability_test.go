@@ -448,7 +448,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 	// 3. Controller configured with --datastorage-url
 	Context("BR-WE-005: Audit Persistence in PostgreSQL (E2E)", Label("datastorage", "audit"), func() {
 		// NodePort access per DD-TEST-001: localhost:8092 → NodePort 30081 → DS pod:8080
-		const dataStorageServiceURL = "http://localhost:8092"
+		const dataStorageServiceURL = "https://localhost:8092"
 
 		It("should persist audit events to Data Storage for completed workflow", func() {
 			// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN - NO EXCEPTIONS
@@ -552,7 +552,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// This validation moved from integration tests (EnvTest limitation) to E2E
 			// Per DD-AUDIT-004: Type-safe audit payloads with complete failure context
 
-			const dataStorageServiceURL = "http://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
+			const dataStorageServiceURL = "https://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
 
 			Expect(isDataStorageDeployed()).To(BeTrue(),
 				"Data Storage REQUIRED but not deployed in cluster")
