@@ -19872,7 +19872,11 @@ func (s *MandatoryLabels) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("component")
-		e.Str(s.Component)
+		e.ArrStart()
+		for _, elem := range s.Component {
+			e.Str(elem)
+		}
+		e.ArrEnd()
 	}
 	{
 		e.FieldStart("environment")
@@ -19925,9 +19929,17 @@ func (s *MandatoryLabels) Decode(d *jx.Decoder) error {
 		case "component":
 			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				v, err := d.Str()
-				s.Component = string(v)
-				if err != nil {
+				s.Component = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Component = append(s.Component, elem)
+					return nil
+				}); err != nil {
 					return err
 				}
 				return nil

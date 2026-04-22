@@ -3293,6 +3293,25 @@ func (s *MandatoryLabels) Validate() error {
 		})
 	}
 	if err := func() error {
+		if s.Component == nil {
+			return errors.New("nil is invalid value")
+		}
+		if err := (validate.Array{
+			MinLength:    1,
+			MinLengthSet: true,
+			MaxLength:    0,
+			MaxLengthSet: false,
+		}).ValidateLength(len(s.Component)); err != nil {
+			return errors.Wrap(err, "array")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "component",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if s.Environment == nil {
 			return errors.New("nil is invalid value")
 		}

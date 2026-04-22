@@ -10762,8 +10762,9 @@ type LivenessCheckOK struct{}
 type MandatoryLabels struct {
 	// Severity level(s) this workflow is designed for. Always an array. Use '*' to match any severity.
 	Severity []MandatoryLabelsSeverityItem `json:"severity"`
-	// Kubernetes resource type this workflow targets (e.g., pod, deployment, node).
-	Component string `json:"component"`
+	// Kubernetes resource type(s) this workflow targets (e.g., pod, deployment, node). Issue #790: now
+	// an array like severity/environment.
+	Component []string `json:"component"`
 	// Target environments (workflow can declare multiple, '*' matches all).
 	Environment []MandatoryLabelsEnvironmentItem `json:"environment"`
 	// Business priority level (P0, P1, P2, P3, * for any).
@@ -10776,7 +10777,7 @@ func (s *MandatoryLabels) GetSeverity() []MandatoryLabelsSeverityItem {
 }
 
 // GetComponent returns the value of Component.
-func (s *MandatoryLabels) GetComponent() string {
+func (s *MandatoryLabels) GetComponent() []string {
 	return s.Component
 }
 
@@ -10796,7 +10797,7 @@ func (s *MandatoryLabels) SetSeverity(val []MandatoryLabelsSeverityItem) {
 }
 
 // SetComponent sets the value of Component.
-func (s *MandatoryLabels) SetComponent(val string) {
+func (s *MandatoryLabels) SetComponent(val []string) {
 	s.Component = val
 }
 
