@@ -126,6 +126,8 @@ data:
       port: 8080
       health_addr: ":8081"
       metrics_addr: ":9090"
+      tls:
+        certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
     data_storage:
       url: "{{ include "kubernaut.datastorage.url" . }}"
 {{- if include "kubernaut.agent.tlsEnabled" . }}
@@ -250,7 +252,6 @@ spec:
               containerPort: 8081
             - name: metrics
               containerPort: 9090
-{{- if or .Values.kubernautAgent.llm.oauth2.enabled (include "kubernaut.interServiceTLS.enabled" .) }}
           env:
 {{- if .Values.kubernautAgent.llm.oauth2.enabled }}
             - name: OAUTH2_CLIENT_ID
@@ -264,11 +265,8 @@ spec:
                   name: {{ .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
                   key: client-secret
 {{- end }}
-{{- if include "kubernaut.interServiceTLS.enabled" . }}
             - name: TLS_CA_FILE
               value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
-{{- end }}
-{{- end }}
           args:
             - "-config"
             - "/etc/kubernaut-agent/config.yaml"
@@ -289,11 +287,12 @@ spec:
             - name: tmp
               mountPath: /tmp
             {{- end }}
-            {{- if include "kubernaut.interServiceTLS.enabled" . }}
+            - name: tls-certs
+              mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
+              readOnly: true
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true
-            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -330,12 +329,14 @@ spec:
           emptyDir:
             sizeLimit: 1Mi
         {{- end }}
-        {{- if include "kubernaut.interServiceTLS.enabled" . }}
+        - name: tls-certs
+          secret:
+            secretName: kubernautagent-tls
+            optional: true
         - name: tls-ca
           configMap:
             name: inter-service-ca
             optional: true
-        {{- end }}
 ---
 apiVersion: v1
 kind: Service

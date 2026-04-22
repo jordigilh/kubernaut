@@ -203,11 +203,9 @@ spec:
             {{- include "kubernaut.containerSecurityContext" .Values.effectivenessmonitor | nindent 12 }}
           args:
             - "--config=/etc/effectivenessmonitor/effectivenessmonitor.yaml"
-          {{- if include "kubernaut.interServiceTLS.enabled" . }}
           env:
             - name: TLS_CA_FILE
               value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
-          {{- end }}
           ports:
             - containerPort: 9090
               name: metrics
@@ -237,11 +235,9 @@ spec:
               mountPath: /etc/ssl/em
               readOnly: true
             {{- end }}
-            {{- if include "kubernaut.interServiceTLS.enabled" . }}
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true
-            {{- end }}
           resources:
             {{- toYaml .Values.effectivenessmonitor.resources | nindent 12 }}
       volumes:
@@ -253,12 +249,10 @@ spec:
           configMap:
             name: effectivenessmonitor-service-ca
         {{- end }}
-        {{- if include "kubernaut.interServiceTLS.enabled" . }}
         - name: tls-ca
           configMap:
             name: inter-service-ca
             optional: true
-        {{- end }}
 {{- if .Values.effectivenessmonitor.external.ocpMonitoringRbac }}
 ---
 # Issue #452: OCP monitoring RBAC — Prometheus metrics.

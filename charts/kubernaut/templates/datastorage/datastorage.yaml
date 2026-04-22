@@ -16,10 +16,8 @@ data:
       metricsPort: 9090
       readTimeout: 30s
       writeTimeout: 30s
-      {{- if include "kubernaut.interServiceTLS.enabled" . }}
       tls:
         certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
-      {{- end }}
     database:
       host: {{ include "kubernaut.postgresql.host" . }}
       port: {{ include "kubernaut.postgresql.port" . }}
@@ -123,11 +121,9 @@ spec:
             - name: secrets
               mountPath: /etc/datastorage/secrets
               readOnly: true
-            {{- if include "kubernaut.interServiceTLS.enabled" . }}
             - name: tls-certs
               mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
               readOnly: true
-            {{- end }}
           resources:
             {{- toYaml .Values.datastorage.resources | nindent 12 }}
           readinessProbe:
@@ -163,12 +159,10 @@ spec:
                   items:
                     - key: valkey-secrets.yaml
                       path: valkey-secrets.yaml
-        {{- if include "kubernaut.interServiceTLS.enabled" . }}
         - name: tls-certs
           secret:
             secretName: datastorage-tls
             optional: true
-        {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -178,10 +172,8 @@ metadata:
   labels:
     app: datastorage
     {{- include "kubernaut.labels" . | nindent 4 }}
-  {{- if include "kubernaut.interServiceTLS.enabled" . }}
   annotations:
     service.beta.openshift.io/serving-cert-secret-name: datastorage-tls
-  {{- end }}
 spec:
   type: {{ .Values.datastorage.service.type }}
   ports:
