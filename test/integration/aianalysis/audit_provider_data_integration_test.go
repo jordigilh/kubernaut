@@ -86,18 +86,15 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 		// Data Storage URL for audit event queries
 		datastorageURL = "http://127.0.0.1:18095" // AIAnalysis integration test DS port (DD-TEST-001)
+		datastorageHealthURL := "http://127.0.0.1:28095" // Issue #753: dedicated health probe port
 
-		// CI FIX: Ensure DataStorage is reachable before test starts
-		// Rationale: CI environment may have resource contention causing DataStorage to be temporarily unavailable
-		// even though SynchronizedBeforeSuite health check passed. Add defensive health check.
 		By("Verifying DataStorage connectivity before test")
 		Eventually(func() error {
-		healthURL := datastorageURL + "/health"
-		resp, err := http.Get(healthURL)
+		resp, err := http.Get(datastorageHealthURL + "/readyz")
 		if err != nil {
 			return fmt.Errorf("health check failed: %w", err)
 		}
-		defer func() { _ = resp.Body.Close() }() // Explicitly ignore - test cleanup
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != 200 {
 			return fmt.Errorf("health check returned status %d", resp.StatusCode)
 		}

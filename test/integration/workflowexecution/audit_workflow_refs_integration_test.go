@@ -82,7 +82,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 		// Per TESTING_GUIDELINES.md: test skipping is ABSOLUTELY FORBIDDEN - tests MUST fail
 		// Per DD-AUDIT-003: WorkflowExecution REQUIRES audit capability
 		httpClient := &http.Client{Timeout: 5 * time.Second}
-		resp, err := httpClient.Get(dataStorageBaseURL + "/health")
+		resp, err := httpClient.Get(dataStorageHealthURL + "/readyz")
 		if err != nil || resp.StatusCode != http.StatusOK {
 			Fail(fmt.Sprintf(
 				"REQUIRED: Data Storage not available at %s\n"+
@@ -91,7 +91,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 					"  Per TESTING_GUIDELINES.md: test skipping is FORBIDDEN - tests must FAIL\n\n"+
 					"  Health check error: %v\n"+
 					"  Start infrastructure: make test-integration-workflowexecution\n",
-				dataStorageBaseURL, err))
+				dataStorageHealthURL, err))
 		}
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
