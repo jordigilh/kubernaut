@@ -37,6 +37,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	"github.com/jordigilh/kubernaut/pkg/shared/health"
 )
 
 // TDD RED PHASE: These tests define DD-007 graceful shutdown requirements
@@ -58,12 +59,13 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: Pod receives SIGTERM during rolling update
 			// Expected: Readiness probe returns 503 to trigger endpoint removal
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 		// Verify readiness is healthy before shutdown
 		// DD-AUTH-014: Use authenticated request
-		resp, err := makeAuthenticatedRequest("GET", testServer.URL+"/health/ready")
+		resp, err := makeAuthenticatedRequest("GET", healthServer.URL+"/readyz")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(200))
 		_ = resp.Body.Close()
@@ -80,7 +82,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 		// Per TESTING_GUIDELINES.md: Use Eventually() instead of time.Sleep()
 		// DD-AUTH-014: Use authenticated request
 		Eventually(func() int {
-			r, e := makeAuthenticatedRequest("GET", testServer.URL+"/health/ready")
+			r, e := makeAuthenticatedRequest("GET", healthServer.URL+"/readyz")
 			if e != nil || r == nil {
 				return 0
 			}
@@ -91,7 +93,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 
 		// Get final response for detailed checks
 		// DD-AUTH-014: Use authenticated request
-		resp, err = makeAuthenticatedRequest("GET", testServer.URL+"/health/ready")
+		resp, err = makeAuthenticatedRequest("GET", healthServer.URL+"/readyz")
 		Expect(err).ToNot(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 
@@ -117,12 +119,13 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: Kubernetes checks liveness during termination
 			// Expected: Liveness returns 200 (pod is still "alive", just shutting down)
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 		// Verify liveness is healthy before shutdown
 		// DD-AUTH-014: Use authenticated request
-		resp, err := makeAuthenticatedRequest("GET", testServer.URL+"/health/live")
+		resp, err := makeAuthenticatedRequest("GET", healthServer.URL+"/healthz")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(200))
 		_ = resp.Body.Close()
@@ -139,7 +142,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 		// Per TESTING_GUIDELINES.md: Use Eventually() instead of time.Sleep()
 		// DD-AUTH-014: Use authenticated request
 		Eventually(func() int {
-			r, e := makeAuthenticatedRequest("GET", testServer.URL+"/health/live")
+			r, e := makeAuthenticatedRequest("GET", healthServer.URL+"/healthz")
 			if e != nil || r == nil {
 				return 0
 			}
@@ -150,7 +153,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 
 		// Get final response for detailed checks
 		// DD-AUTH-014: Use authenticated request
-		resp, err = makeAuthenticatedRequest("GET", testServer.URL+"/health/live")
+		resp, err = makeAuthenticatedRequest("GET", healthServer.URL+"/healthz")
 		Expect(err).ToNot(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 
@@ -168,8 +171,9 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: Long-running request in progress when SIGTERM arrives
 			// Expected: Request completes successfully within shutdown timeout
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 			// Start long-running request (simulated delay)
 			responseChan := make(chan int, 1)
@@ -216,8 +220,9 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: New request arrives after shutdown initiated
 			// Expected: Connection refused or timeout (server not accepting new connections)
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 			// Initiate shutdown
 			shutdownDone := make(chan error, 1)
@@ -235,7 +240,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Verify server stopped accepting connections (Eventually pattern)
 			Eventually(func() bool {
 				client := &http.Client{Timeout: 500 * time.Millisecond}
-				r, e := client.Get(testServer.URL + "/health/ready")
+				r, e := client.Get(healthServer.URL + "/readyz")
 				if e != nil {
 					return true // Connection refused = server not accepting
 				}
@@ -276,12 +281,13 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: Pod terminating, all resources must be released
 			// Expected: Shutdown completes without errors, all resources closed
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 		// Verify server is operational before shutdown
 		// DD-AUTH-014: Use authenticated request
-		resp, err := makeAuthenticatedRequest("GET", testServer.URL+"/health/ready")
+		resp, err := makeAuthenticatedRequest("GET", healthServer.URL+"/readyz")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(200))
 		_ = resp.Body.Close()
@@ -306,8 +312,9 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: Clean shutdown with no active connections
 			// Expected: Shutdown completes in ~5-6 seconds (endpoint wait + minimal drain)
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 			// No in-flight requests, clean shutdown
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -330,8 +337,9 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: Shutdown timeout expires before completion
 			// Expected: Shutdown handles timeout gracefully
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 			// Use very short timeout (shorter than 5-second endpoint wait)
 			// This should cause timeout during STEP 2 (endpoint propagation wait)
@@ -367,8 +375,9 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: Multiple goroutines call Shutdown() (defensive)
 			// Expected: Only first call executes shutdown, others wait/return gracefully
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 			// Call shutdown from multiple goroutines
 			var wg sync.WaitGroup
@@ -406,8 +415,9 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: Database connections must be released on termination
 			// Expected: Connection pool closes cleanly, no connection leaks
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 		// Verify database is accessible before shutdown
 		// DD-AUTH-014: Use authenticated request
@@ -431,8 +441,9 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: Database query in progress when SIGTERM arrives
 			// Expected: Query completes before database connections close
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 			// Start database query that should complete during shutdown window
 			responseChan := make(chan int, 1)
@@ -482,8 +493,9 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: Multiple requests in progress when SIGTERM arrives
 			// Expected: All requests complete successfully
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 			// Start multiple concurrent requests
 			var wg sync.WaitGroup
@@ -550,8 +562,9 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: Write operation (POST) in progress when SIGTERM arrives
 			// Expected: Write completes successfully (no data loss)
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 			// Note: This test validates behavior if POST endpoints exist
 			// Current Phase 1 is Read-only API, but this validates graceful shutdown
@@ -604,12 +617,13 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: Redis cache connections must be released on termination
 			// Expected: Redis connections close cleanly in DD-007 STEP 4
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 		// Verify server is operational (Redis is used for DLQ and caching)
 		// DD-AUTH-014: Use authenticated request
-		resp, err := makeAuthenticatedRequest("GET", testServer.URL+"/health/ready")
+		resp, err := makeAuthenticatedRequest("GET", healthServer.URL+"/readyz")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(200))
 		_ = resp.Body.Close()
@@ -631,8 +645,9 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: Service under moderate load when SIGTERM arrives
 			// Expected: All requests complete, shutdown succeeds
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 			// Generate moderate load (10 concurrent requests)
 			var wg sync.WaitGroup
@@ -651,7 +666,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 					case 1:
 						url = testServer.URL + "/api/v1/success-rate/multi-dimensional"
 					case 2:
-						url = testServer.URL + "/health/ready"
+						url = healthServer.URL + "/readyz"
 					}
 
 				// DD-AUTH-014: Use authenticated request
@@ -705,8 +720,9 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Business Scenario: DD-007 STEP 2 timing validation
 			// Expected: Shutdown waits exactly 5 seconds before draining connections
 
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 			// Measure time for STEP 1 (flag set) + STEP 2 (propagation wait)
 			startTime := time.Now()
@@ -723,7 +739,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 		// Per TESTING_GUIDELINES.md: Use Eventually() instead of time.Sleep()
 		// DD-AUTH-014: Use authenticated request
 		Eventually(func() int {
-			r, e := makeAuthenticatedRequest("GET", testServer.URL+"/health/ready")
+			r, e := makeAuthenticatedRequest("GET", healthServer.URL+"/readyz")
 			if e != nil || r == nil {
 				return 0
 			}
@@ -734,7 +750,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 
 		// Get final response for timing measurement
 		// DD-AUTH-014: Use authenticated request
-		resp, err := makeAuthenticatedRequest("GET", testServer.URL+"/health/ready")
+		resp, err := makeAuthenticatedRequest("GET", healthServer.URL+"/readyz")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(503))
 		_ = resp.Body.Close()
@@ -767,8 +783,9 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Expected: DLQ messages are persisted to database before shutdown completes
 
 			// ARRANGE: Create test server with real PostgreSQL + Redis
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 			// Get DLQ client from server for testing
 			// We'll simulate DLQ messages by adding them directly to Redis
@@ -786,10 +803,8 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 
 			// Add messages to DLQ by simulating write failures
 			// We'll use the DLQ client's enqueue methods directly
-			dlqClient := srv.GetDLQClient() // Assuming we expose this for testing
-			if dlqClient == nil {
-				Skip("DLQ client not available on server - test cannot run")
-			}
+			dlqClient := srv.GetDLQClient()
+			Expect(dlqClient).ToNot(BeNil(), "DLQ client must be available on server")
 
 			// Enqueue notification audit messages to DLQ
 			for _, tc := range testEvents {
@@ -880,15 +895,14 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// DD-008: Graceful degradation - shutdown should work even with no DLQ messages
 
 			// ARRANGE: Create test server (DLQ will be empty)
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 			// Ensure DLQ is empty (clean up from previous tests)
 			ctx := context.Background()
 			dlqClient := srv.GetDLQClient()
-			if dlqClient == nil {
-				Skip("DLQ client not available on server - test cannot run")
-			}
+			Expect(dlqClient).ToNot(BeNil(), "DLQ client must be available on server")
 
 			// Check DLQ depth and drain if necessary
 			dlqDepth, err := dlqClient.GetDLQDepth(ctx, "notifications")
@@ -946,15 +960,14 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// DD-008: Verify DLQ drain step (Step 4) is executed in shutdown sequence
 
 			// ARRANGE: Create test server
-			testServer, srv := createTestServerWithAccess()
+			testServer, healthServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
+			defer healthServer.Close()
 
 			// Add a few messages to DLQ to ensure drain step executes
 			ctx := context.Background()
 			dlqClient := srv.GetDLQClient()
-			if dlqClient == nil {
-				Skip("DLQ client not available on server - test cannot run")
-			}
+			Expect(dlqClient).ToNot(BeNil(), "DLQ client must be available on server")
 
 			// Add 5 messages to DLQ
 			for i := 0; i < 5; i++ {
@@ -1011,7 +1024,7 @@ func makeAuthenticatedRequest(method, url string) (*http.Response, error) {
 	return http.DefaultClient.Do(req)
 }
 
-func createTestServerWithAccess() (*httptest.Server, *server.Server) {
+func createTestServerWithAccess() (*httptest.Server, *httptest.Server, *server.Server) {
 	// Create server config
 	serverCfg := &server.Config{
 		Port:         18090, // DD-TEST-001
@@ -1093,5 +1106,9 @@ func createTestServerWithAccess() (*httptest.Server, *server.Server) {
 	// Wrap in httptest.Server for HTTP testing
 	httpServer := httptest.NewServer(srv.Handler())
 
-	return httpServer, srv
+	// Dedicated health server (Issue #753: health probes on separate port)
+	healthSrv := health.NewHealthServer(":0", srv.LivenessHandler(), srv.ReadinessHandler())
+	healthTestServer := httptest.NewServer(healthSrv.Handler)
+
+	return httpServer, healthTestServer, srv
 }
