@@ -1358,6 +1358,7 @@ spec:
       - name: tls-certs
         secret:
           secretName: datastorage-tls
+          optional: true
       - name: secrets
         projected:
           sources:
