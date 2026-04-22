@@ -207,7 +207,7 @@ Operators creating/deleting `RemediationWorkflow` CRDs need standard Kubernetes 
 - `spec.actionType`: Required
 - `spec.labels.severity`: MinItems=1
 - `spec.labels.environment`: MinItems=1
-- `spec.labels.component`: Required
+- `spec.labels.component`: MinItems=1 (Issue #790: now an array like severity/environment)
 - `spec.labels.priority`: Required
 - `spec.parameters`: MinItems=1
 - `spec.execution.engine`: Enum `tekton|job|ansible`

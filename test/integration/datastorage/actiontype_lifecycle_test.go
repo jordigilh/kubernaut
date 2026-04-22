@@ -61,7 +61,7 @@ func buildMinimalWorkflow(workflowName, actionType string, seq int) *models.Reme
 		ContentHash:     contentHash,
 		ActionType:      actionType,
 		ExecutionEngine: models.ExecutionEngineJob,
-		Labels:          models.MandatoryLabels{Severity: []string{"critical"}, Component: "pod"},
+		Labels:          models.MandatoryLabels{Severity: []string{"critical"}, Component: []string{"pod"}},
 		Status:          "Active",
 		IsLatestVersion: true,
 		CreatedBy:       &createdBy,

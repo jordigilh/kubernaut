@@ -18,7 +18,7 @@ spec:
   labels:
     severity: [high]
     environment: [test]
-    component: deployment
+    component: [deployment]
     priority: P2
   
   execution:

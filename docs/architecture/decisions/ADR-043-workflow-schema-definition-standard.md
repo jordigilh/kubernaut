@@ -15,7 +15,7 @@
 - **Issue #292**: `apiVersion: kubernaut.ai/v1alpha1` and `kind: RemediationWorkflow` re-introduced as CRD envelope. All operational fields moved under `spec`.
 - **Issue #299**: Registration is via `RemediationWorkflow` CRD applied with `kubectl apply`. AuthWebhook forwards inline schema to DS internal API. OCI-based registration (`schemaImage`) removed.
 - **BR-WORKFLOW-004 v1.2**: `signalType`/`signalName` removed from labels. Discovery is by `actionType` (DD-WORKFLOW-016).
-- **Labels**: `severity` and `environment` are now arrays (e.g., `severity: [critical, high]`). `component` and `priority` remain scalar strings.
+- **Labels**: `severity`, `environment`, and `component` are now arrays (e.g., `severity: [critical, high]`, `component: [deployment]`). `priority` remains a scalar string. Issue #790: `component` changed from scalar to array.
 - Schema file location: Inline in `RemediationWorkflow` CRD `spec` (no longer extracted from OCI bundles). OCI bundles retained for execution only (`spec.execution.bundle`).
 - See: BR-WORKFLOW-006, ADR-058, DD-WORKFLOW-017
 
@@ -187,7 +187,7 @@ spec:
   labels:
     severity: [string]     # REQUIRED - array: [critical, high, medium, low]
     environment: [string]  # REQUIRED - array: [production, staging, "*"]
-    component: string      # REQUIRED - K8s resource type (pod, deployment, node)
+    component: [string]     # REQUIRED - array: K8s resource type(s) (pod, deployment, node)
     priority: string       # REQUIRED - P0, P1, P2, P3, or "*"
 
   # ============================================
@@ -281,7 +281,7 @@ spec:
   labels:
     severity: [critical, high]
     environment: [production, staging]
-    component: deployment
+    component: [deployment]
     priority: P1
 
   detectedLabels:
@@ -364,7 +364,7 @@ Validation is performed in two stages by the parser at `pkg/datastorage/schema/p
 | `spec.actionType` | Required. PascalCase from action type taxonomy. |
 | `spec.labels.severity` | Required. Array of severity values. |
 | `spec.labels.environment` | Required. Array of environment values. |
-| `spec.labels.component` | Required. K8s resource type string. |
+| `spec.labels.component` | Required. Array of K8s resource type(s). MinItems=1. |
 | `spec.labels.priority` | Required. Normalized to uppercase. |
 | `spec.execution.bundle` | Required. Must include `@sha256:<64 hex>` digest for tekton/job engines. |
 | `spec.parameters` | At least one required. Each must have `name`, `type`, `description`. |

@@ -2887,9 +2887,12 @@ components:
           description: "Severity level(s) this workflow is designed for. Always an array. Use '*' to match any severity."
           example: [critical]
         component:
-          type: string
-          description: "Kubernetes resource type this workflow targets (e.g., pod, deployment, node)"
-          example: "pod"
+          type: array
+          items:
+            type: string
+          minItems: 1
+          description: "Kubernetes resource type(s) this workflow targets (e.g., pod, deployment, node). Issue #790: now an array like severity/environment."
+          example: [pod]
         environment:
           type: array
           items:

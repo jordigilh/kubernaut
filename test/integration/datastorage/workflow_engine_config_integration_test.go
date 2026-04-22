@@ -66,7 +66,7 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 
 			labels := models.MandatoryLabels{
 				Severity:    []string{"critical"},
-				Component:   "pod",
+				Component:   []string{"pod"},
 				Environment: []string{"production"},
 				Priority:    "P0",
 			}
@@ -118,7 +118,7 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 
 			labels := models.MandatoryLabels{
 				Severity:    []string{"high"},
-				Component:   "pod",
+				Component:   []string{"pod"},
 				Environment: []string{"production"},
 				Priority:    "P1",
 			}
@@ -178,7 +178,7 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 				Description:     models.StructuredDescription{What: "List test", WhenToUse: "IT-WE-016-002"},
 				Content:         content,
 				ContentHash:     contentHash,
-				Labels:          models.MandatoryLabels{Severity: []string{"critical"}, Component: "pod", Environment: []string{"production"}, Priority: "P0"},
+				Labels:          models.MandatoryLabels{Severity: []string{"critical"}, Component: []string{"pod"}, Environment: []string{"production"}, Priority: "P0"},
 				CustomLabels:    models.CustomLabels{},
 				DetectedLabels:  models.DetectedLabels{},
 				Status:          "Active",
@@ -248,7 +248,7 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 				Description:     models.StructuredDescription{What: "Float params test", WhenToUse: "IT-WF-005-001"},
 				Content:         content,
 				ContentHash:     contentHash,
-				Labels:          models.MandatoryLabels{Severity: []string{"high"}, Component: "pod", Environment: []string{"production"}, Priority: "P1"},
+				Labels:          models.MandatoryLabels{Severity: []string{"high"}, Component: []string{"pod"}, Environment: []string{"production"}, Priority: "P1"},
 				CustomLabels:    models.CustomLabels{},
 				DetectedLabels:  models.DetectedLabels{},
 				Status:          "Active",

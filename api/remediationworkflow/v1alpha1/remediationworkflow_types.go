@@ -106,9 +106,9 @@ type RemediationWorkflowLabels struct {
 	// +kubebuilder:validation:MinItems=1
 	Environment []string `json:"environment"`
 
-	// Component is the Kubernetes resource type
-	// +kubebuilder:validation:Required
-	Component string `json:"component"`
+	// Component is the Kubernetes resource type(s)
+	// +kubebuilder:validation:MinItems=1
+	Component []string `json:"component"`
 
 	// Priority is the business priority level
 	// +kubebuilder:validation:Required
