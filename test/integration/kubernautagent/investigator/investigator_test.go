@@ -64,6 +64,8 @@ type mockLLMClient struct {
 	callIdx   int
 }
 
+func (m *mockLLMClient) Close() error { return nil }
+
 func (m *mockLLMClient) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
 	m.calls = append(m.calls, req)
 	if m.callIdx < len(m.responses) {

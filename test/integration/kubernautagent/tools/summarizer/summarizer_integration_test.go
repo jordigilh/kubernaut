@@ -25,6 +25,8 @@ func (f *fakeLLM) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse
 	}, nil
 }
 
+func (f *fakeLLM) Close() error { return nil }
+
 var _ = Describe("Kubernaut Agent Summarizer Integration — #433", func() {
 
 	Describe("IT-KA-433-037: Summarizer produces shortened output via secondary llm.Client", func() {

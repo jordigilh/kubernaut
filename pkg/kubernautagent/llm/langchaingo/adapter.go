@@ -47,6 +47,7 @@ type options struct {
 	vertexLocation  string
 	bedrockRegion   string
 	httpClient      *http.Client
+	closeFn         func() error
 }
 
 // WithAzureAPIVersion sets the Azure OpenAI API version (required for "azure" provider).
@@ -76,10 +77,17 @@ func WithHTTPClient(c *http.Client) Option {
 	return func(o *options) { o.httpClient = c }
 }
 
+// WithCloser sets an optional cleanup function called by Close. Use this to
+// release HTTP idle connections from a custom transport chain.
+func WithCloser(fn func() error) Option {
+	return func(o *options) { o.closeFn = fn }
+}
+
 // Adapter implements llm.Client by delegating to LangChainGo.
 // Authority: DD-HAPI-019-001 — Framework Isolation Pattern
 type Adapter struct {
-	model llms.Model
+	model   llms.Model
+	closeFn func() error
 }
 
 // New creates a new LangChainGo adapter for the given provider.
@@ -93,7 +101,7 @@ func New(provider, endpoint, model, apiKey string, opts ...Option) (*Adapter, er
 	if err != nil {
 		return nil, fmt.Errorf("langchaingo: %w", err)
 	}
-	return &Adapter{model: m}, nil
+	return &Adapter{model: m, closeFn: o.closeFn}, nil
 }
 
 func newModel(provider, endpoint, model, apiKey string, o *options) (llms.Model, error) {
@@ -305,6 +313,23 @@ func fromContentResponse(cr *llms.ContentResponse) llm.ChatResponse {
 	}
 
 	return resp
+}
+
+// Close releases resources held by the adapter. For providers with gRPC
+// connections (e.g. vertex via genai.Client), it calls the model's Close
+// method. The optional closeFn is called to release HTTP idle connections
+// from the custom transport chain.
+func (a *Adapter) Close() error {
+	var firstErr error
+	if c, ok := a.model.(interface{ Close() error }); ok {
+		firstErr = c.Close()
+	}
+	if a.closeFn != nil {
+		if err := a.closeFn(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 // compile-time interface check

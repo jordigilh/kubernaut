@@ -54,6 +54,8 @@ func (s *stubLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatResp
 	}, nil
 }
 
+func (s *stubLLMClient) Close() error { return nil }
+
 var _ = Describe("TP-433-ADV P1: Critical Wiring — GAP-006/GAP-007", func() {
 
 	Describe("UT-KA-433-WIR-001: InstrumentedClient satisfies llm.Client interface (GAP-006)", func() {

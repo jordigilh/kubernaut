@@ -43,6 +43,8 @@ func (f *alwaysFailLLM) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatResp
 	return llm.ChatResponse{}, errors.New("simulated context window overflow")
 }
 
+func (f *alwaysFailLLM) Close() error { return nil }
+
 var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", func() {
 
 	var (

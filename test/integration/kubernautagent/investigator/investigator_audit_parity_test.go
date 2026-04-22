@@ -55,6 +55,8 @@ func (e *errorLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatRes
 	return llm.ChatResponse{}, e.err
 }
 
+func (e *errorLLMClient) Close() error { return nil }
+
 var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 	var (
