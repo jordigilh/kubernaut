@@ -19,6 +19,10 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+    # Allow kubelet health probes (Issue #753: dedicated health port)
+    - ports:
+        - protocol: TCP
+          port: 8081
     # Allow Prometheus scraping
     - from:
         - namespaceSelector:

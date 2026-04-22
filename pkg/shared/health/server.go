@@ -21,6 +21,7 @@ package health
 
 import (
 	"net/http"
+	"time"
 )
 
 // NewHealthServer creates an http.Server on the given address with /healthz
@@ -34,7 +35,8 @@ func NewHealthServer(addr string, liveness, readiness http.HandlerFunc) *http.Se
 	mux.HandleFunc("/healthz", liveness)
 	mux.HandleFunc("/readyz", readiness)
 	return &http.Server{
-		Addr:    addr,
-		Handler: mux,
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 }
