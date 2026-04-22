@@ -88,7 +88,7 @@ var _ = Describe("Kubernaut Agent Summarizer Unit — #433", func() {
 		})
 	})
 
-	Describe("UT-KA-433-540: Wrap passes through short output unchanged", func() {
+	Describe("UT-KA-433-540b: Wrap passes through short output unchanged", func() {
 		It("should return original output when below threshold", func() {
 			fake := &fakeLLM{response: "should not be called"}
 			s := summarizer.New(fake, 1000)

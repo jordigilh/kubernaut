@@ -140,7 +140,7 @@ var _ = Describe("Phase Separation: Schema Contracts — #700", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			props, ok := parsed["properties"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "properties" in InvestigationResultSchema to be a map[string]interface{}`)
 
 			By("retaining all workflow selection fields")
 			Expect(props).To(HaveKey("selected_workflow"))

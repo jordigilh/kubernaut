@@ -145,11 +145,11 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			Expect(result.DetectedLabels).NotTo(BeNil(), "DetectedLabels must be populated from enrichment")
 
 			gitOps, ok := result.DetectedLabels["gitOpsManaged"]
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), "expected key 'gitOpsManaged' to exist in DetectedLabels")
 			Expect(gitOps).To(BeTrue(), "argocd annotation should set gitOpsManaged=true")
 
 			hpaEnabled, ok := result.DetectedLabels["hpaEnabled"]
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), "expected key 'hpaEnabled' to exist in DetectedLabels")
 			Expect(hpaEnabled).To(BeTrue(), "HPA targeting the Deployment should set hpaEnabled=true")
 		})
 	})

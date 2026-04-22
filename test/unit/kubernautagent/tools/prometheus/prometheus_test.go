@@ -132,7 +132,7 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 			Expect(schema["type"]).To(Equal("object"))
 
 			required, ok := schema["required"].([]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "required" in get_series schema to be a []interface{}`)
 			Expect(required).To(ContainElement("match"))
 		})
 	})
@@ -227,13 +227,13 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 			Expect(json.Unmarshal(seriesTool.Parameters(), &schema)).To(Succeed())
 
 			props, ok := schema["properties"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "properties" in get_series schema to be a map[string]interface{}`)
 			Expect(props).To(HaveKey("start"), "schema should declare start property")
 			Expect(props).To(HaveKey("end"), "schema should declare end property")
 			Expect(props).To(HaveKey("match"), "schema should declare match property")
 
 			required, ok := schema["required"].([]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "required" in get_series schema to be a []interface{}`)
 			Expect(required).To(ContainElement("match"))
 			Expect(required).NotTo(ContainElement("start"), "start should be optional")
 			Expect(required).NotTo(ContainElement("end"), "end should be optional")

@@ -186,7 +186,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 		})
 	})
 
-	Describe("UT-KA-433W-004: DS adapter sends correct endpoint and query params via ogen client", func() {
+	Describe("UT-KA-433W-004b: DS adapter sends correct endpoint and query params via ogen client", func() {
 		It("should send targetKind, targetName, targetNamespace, currentSpecHash to the correct endpoint", func() {
 			var capturedURL string
 			var capturedParams map[string]string

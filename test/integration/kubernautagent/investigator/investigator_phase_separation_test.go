@@ -96,7 +96,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 			err = json.Unmarshal(submitResultDef.Parameters, &schema)
 			Expect(err).NotTo(HaveOccurred())
 			props, ok := schema["properties"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "properties" in RCA submit_result schema to be a map[string]interface{}`)
 
 			Expect(props).NotTo(HaveKey("selected_workflow"),
 				"RCA submit_result schema must NOT include selected_workflow")
@@ -139,7 +139,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 			err = json.Unmarshal(submitResultDef.Parameters, &schema)
 			Expect(err).NotTo(HaveOccurred())
 			props, ok := schema["properties"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "properties" in workflow submit_result_with_workflow schema to be a map[string]interface{}`)
 
 			Expect(props).To(HaveKey("selected_workflow"),
 				"workflow submit_result_with_workflow schema must include selected_workflow")
