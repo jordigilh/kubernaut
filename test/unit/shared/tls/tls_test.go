@@ -152,6 +152,41 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 		})
 	})
 
+	Describe("DefaultBaseTransport (#753)", func() {
+
+		AfterEach(func() {
+			sharedtls.ResetDefaultTransportForTesting()
+			os.Unsetenv("TLS_CA_FILE")
+		})
+
+		// UT-TLS-753-002: DefaultBaseTransport retries after initial failure
+		// BR-SECURITY-753: Transient CA file unavailability must not cause permanent failure
+		It("UT-TLS-753-002: should retry after initial CA file failure", func() {
+			os.Setenv("TLS_CA_FILE", "/nonexistent/ca.crt")
+
+			_, err := sharedtls.DefaultBaseTransport()
+			Expect(err).To(HaveOccurred(), "first call must fail when CA file is missing")
+
+			generateSelfSignedCert(certPath, keyPath)
+			os.Setenv("TLS_CA_FILE", certPath)
+
+			rt, err := sharedtls.DefaultBaseTransport()
+			Expect(err).ToNot(HaveOccurred(), "second call must succeed after CA file becomes available")
+			_, isCAReloader := rt.(*sharedtls.CAReloader)
+			Expect(isCAReloader).To(BeTrue(), "must return *CAReloader when TLS_CA_FILE is valid")
+		})
+
+		// UT-TLS-753-003: DefaultBaseTransport returns plain transport when TLS_CA_FILE unset
+		It("UT-TLS-753-003: should return plain transport when TLS_CA_FILE is unset", func() {
+			os.Unsetenv("TLS_CA_FILE")
+
+			rt, err := sharedtls.DefaultBaseTransport()
+			Expect(err).ToNot(HaveOccurred())
+			_, isPlain := rt.(*http.Transport)
+			Expect(isPlain).To(BeTrue(), "must return plain *http.Transport when no CA file")
+		})
+	})
+
 	Describe("Config Parsing", func() {
 
 		// UT-TLS-493-007: TLSConfig accessors (Enabled, CertPath, KeyPath)

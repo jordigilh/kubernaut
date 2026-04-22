@@ -240,4 +240,20 @@ var _ = Describe("CAReloader (#756)", func() {
 		Expect(poolContainsSubject(transport.TLSClientConfig.RootCAs, subjectFromPEM(pemBytes))).To(BeTrue(),
 			"transport must have the CA in its root CA pool")
 	})
+
+	// UT-TLS-753-001: CA pool uses file-only trust (no system roots)
+	// BR-SECURITY-753: Private PKI isolation -- system CAs must not verify internal certs
+	It("UT-TLS-753-001: should use file-only CA pool without system roots", func() {
+		pemBytes := generateCAPEM("isolated-ca")
+
+		reloader, err := sharedtls.NewCAReloader(pemBytes)
+		Expect(err).ToNot(HaveOccurred())
+
+		pool := reloader.GetCertPool()
+		subjects := pool.Subjects() //nolint:staticcheck
+		Expect(subjects).To(HaveLen(1),
+			"CA pool must contain exactly one certificate (the file CA), not system roots")
+		Expect(poolContainsSubject(pool, subjectFromPEM(pemBytes))).To(BeTrue(),
+			"the single cert must be our file CA")
+	})
 })
