@@ -557,7 +557,7 @@ data:
       leaderElection: false
       leaderElectionId: "aianalysis.kubernaut.ai"
     agent:
-      url: "http://kubernaut-agent:8080"
+      url: "https://kubernaut-agent:8080"
       timeout: "60s"
       sessionPollInterval: "2s"
     datastorage:
