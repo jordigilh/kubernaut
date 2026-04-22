@@ -42,6 +42,7 @@ type DSBootstrapConfig struct {
 	RedisPort       int // Redis port (e.g., 16383 for Gateway)
 	DataStoragePort int // DataStorage HTTP API port (e.g., 18091 for Gateway)
 	MetricsPort     int // DataStorage metrics port (e.g., 19091 for Gateway)
+	HealthPort      int // DataStorage health probe port (Issue #753: defaults to DataStoragePort+1000)
 
 	// Service-specific configuration directory
 	ConfigDir string // Path to DataStorage config.yaml (e.g., "test/integration/gateway/config")
@@ -143,6 +144,7 @@ type DSBootstrapInfra struct {
 	Network              string // Network name: {service}_test_network
 
 	ServiceURL string // DataStorage HTTP URL: http://localhost:{DataStoragePort}
+	HealthURL  string // DataStorage health URL: http://localhost:{HealthPort} (Issue #753)
 	MetricsURL string // DataStorage metrics URL: http://localhost:{MetricsPort}
 
 	// Image information for cleanup (DD-TEST-001 v1.3)
@@ -292,6 +294,11 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 // - *DSBootstrapInfra: Infrastructure references for cleanup
 // - error: Any errors during infrastructure startup
 func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfra, error) {
+	// Default HealthPort to DataStoragePort+1000 if not explicitly set
+	if cfg.HealthPort == 0 {
+		cfg.HealthPort = cfg.DataStoragePort + 1000
+	}
+
 	// Build infrastructure references
 	infra := &DSBootstrapInfra{
 		PostgresContainer:    fmt.Sprintf("%s_postgres_test", cfg.ServiceName),
@@ -300,6 +307,7 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 		MigrationsContainer:  fmt.Sprintf("%s_migrations", cfg.ServiceName),
 		Network:              fmt.Sprintf("%s_test_network", cfg.ServiceName),
 		ServiceURL:           fmt.Sprintf("http://localhost:%d", cfg.DataStoragePort),
+		HealthURL:            fmt.Sprintf("http://localhost:%d", cfg.HealthPort),
 		MetricsURL:           fmt.Sprintf("http://localhost:%d", cfg.MetricsPort),
 		Config:               cfg,
 	}
@@ -610,6 +618,7 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 		args = append(args,
 			"--network", infra.Network,
 			"-p", fmt.Sprintf("%d:8080", cfg.DataStoragePort),
+			"-p", fmt.Sprintf("%d:8081", cfg.HealthPort),
 			"-p", fmt.Sprintf("%d:9090", cfg.MetricsPort),
 		)
 	}
@@ -619,6 +628,7 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 	var postgresPort int
 	var redisAddr string
 	var listenPort int
+	var healthListenPort int
 
 	if useHostNetwork {
 		// Host network: Access PostgreSQL/Redis via localhost at their exposed ports
@@ -631,16 +641,18 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 		// CRITICAL: Host network - no port mapping, so listen on external port
 		// Test infrastructure expects DataStorage on cfg.DataStoragePort
 		listenPort = cfg.DataStoragePort
+		healthListenPort = cfg.HealthPort
 	} else {
 		// Bridge network: Access via container names at internal ports
 		postgresHost = infra.PostgresContainer
 		postgresPort = 5432 // Internal PostgreSQL port
 		redisAddr = fmt.Sprintf("%s:6379", infra.RedisContainer)
 
-		// Bridge network: Always listen on 8080, port mapping handles external
+		// Bridge network: Always listen on 8080/8081, port mapping handles external
 		// BACKWARDS COMPATIBLE: This is the original behavior for macOS
 		// Example: -p 18096:8080 maps external 18096 → internal 8080
 		listenPort = 8080
+		healthListenPort = 8081
 	}
 
 	// Common configuration
@@ -655,6 +667,7 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 		"-e", "CONN_MAX_LIFETIME=30m",
 		"-e", fmt.Sprintf("REDIS_ADDR=%s", redisAddr),
 		"-e", fmt.Sprintf("PORT=%d", listenPort),
+		"-e", fmt.Sprintf("HEALTH_PORT=%d", healthListenPort),
 	)
 
 	// DD-AUTH-014: If EnvtestKubeconfig provided, mount it for real K8s auth
@@ -686,13 +699,14 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 	return nil
 }
 
-// waitForDSBootstrapHTTPHealth waits for DataStorage /health endpoint to respond with 200 OK
+// waitForDSBootstrapHTTPHealth waits for DataStorage health endpoint to respond with 200 OK.
+// Issue #753: Health probes moved to dedicated port (8081) with /readyz endpoint.
 func waitForDSBootstrapHTTPHealth(infra *DSBootstrapInfra, timeout time.Duration, writer io.Writer) error {
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(infra.ServiceURL + "/health")
+		resp, err := client.Get(infra.HealthURL + "/readyz")
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			return nil
@@ -703,11 +717,11 @@ func waitForDSBootstrapHTTPHealth(infra *DSBootstrapInfra, timeout time.Duration
 
 		// Log progress every 10 seconds
 		if time.Now().Unix()%10 == 0 {
-			_, _ = fmt.Fprintf(writer, "   Still waiting for %s/health...\n", infra.ServiceURL)
+			_, _ = fmt.Fprintf(writer, "   Still waiting for %s/readyz...\n", infra.HealthURL)
 		}
 
 		time.Sleep(2 * time.Second)
 	}
 
-	return fmt.Errorf("timeout waiting for %s/health to become healthy after %v", infra.ServiceURL, timeout)
+	return fmt.Errorf("timeout waiting for %s/readyz to become healthy after %v", infra.HealthURL, timeout)
 }

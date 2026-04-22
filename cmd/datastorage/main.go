@@ -134,6 +134,21 @@ func main() {
 		}
 	}
 
+	// Issue #753: Allow HEALTH_PORT override for host-network integration tests
+	if healthPortEnv := os.Getenv("HEALTH_PORT"); healthPortEnv != "" {
+		if port, err := strconv.Atoi(healthPortEnv); err == nil {
+			cfg.Server.HealthPort = port
+			logger.Info("Health port overridden by HEALTH_PORT environment variable",
+				"healthPort", port,
+			)
+		} else {
+			logger.Error(err, "Invalid HEALTH_PORT environment variable, using config value",
+				"health_port_env", healthPortEnv,
+				"config_health_port", cfg.Server.HealthPort,
+			)
+		}
+	}
+
 	logger.Info("Configuration loaded successfully (ADR-030)",
 		"service", "data-storage",
 		"port", cfg.Server.Port,
