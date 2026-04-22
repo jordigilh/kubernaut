@@ -27,6 +27,18 @@ import (
 
 // Health check handlers
 
+// LivenessHandler returns the liveness probe handler for use with the
+// dedicated health server (Issue #753: port 8081, /healthz).
+func (s *Server) LivenessHandler() http.HandlerFunc {
+	return s.handleLiveness
+}
+
+// ReadinessHandler returns the readiness probe handler for use with the
+// dedicated health server (Issue #753: port 8081, /readyz).
+func (s *Server) ReadinessHandler() http.HandlerFunc {
+	return s.handleReadiness
+}
+
 // handleHealth handles GET /health - overall health check
 // DD-AUTH-014: Verifies database connectivity and auth middleware configuration
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

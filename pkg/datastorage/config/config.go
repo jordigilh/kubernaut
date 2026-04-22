@@ -58,6 +58,7 @@ type ServerConfig struct {
 	Port         int                 `yaml:"port"`
 	Host         string              `yaml:"host"`
 	MetricsPort  int                 `yaml:"metricsPort"`  // Dedicated Prometheus metrics port (default: 9090, Issue #283)
+	HealthPort   int                 `yaml:"healthPort"`   // Dedicated health probe port (default: 8081, Issue #753)
 	MaxBatchSize int                 `yaml:"maxBatchSize"` // Issue #667: Max events per batch API request (default: 500)
 	ReadTimeout  string              `yaml:"readTimeout"`  // e.g., "30s"
 	WriteTimeout string              `yaml:"writeTimeout"` // e.g., "30s"
@@ -274,6 +275,11 @@ func (c *Config) Validate() error {
 	// Issue #283: Default metricsPort to 9090 (Kubernaut standard) when omitted
 	if c.Server.MetricsPort == 0 {
 		c.Server.MetricsPort = 9090
+	}
+
+	// Issue #753: Default healthPort to 8081 (CONFIG_STANDARDS.md) when omitted
+	if c.Server.HealthPort == 0 {
+		c.Server.HealthPort = 8081
 	}
 
 	// Issue #667 / BR-STORAGE-043: Default MaxBatchSize to 500 when omitted

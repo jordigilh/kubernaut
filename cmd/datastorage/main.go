@@ -42,6 +42,7 @@ import (
 	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	"github.com/jordigilh/kubernaut/pkg/shared/health"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
@@ -324,6 +325,7 @@ func main() {
 	logger.Info("Starting Data Storage service (ADR-030 + DD-007)",
 		"port", cfg.Server.Port,
 		"metricsPort", cfg.Server.MetricsPort,
+		"healthPort", cfg.Server.HealthPort,
 		"host", cfg.Server.Host,
 		"shutdown_timeout", shutdownTimeout,
 	)
@@ -341,6 +343,21 @@ func main() {
 		logger.Info("Metrics server listening", "addr", metricsServer.Addr)
 		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			metricsErrors <- err
+		}
+	}()
+
+	// Issue #753: Dedicated health probe server on standardised port (CONFIG_STANDARDS.md)
+	healthServer := health.NewHealthServer(
+		fmt.Sprintf(":%d", cfg.Server.HealthPort),
+		srv.LivenessHandler(),
+		srv.ReadinessHandler(),
+	)
+
+	healthErrors := make(chan error, 1)
+	go func() {
+		logger.Info("Health server listening", "addr", healthServer.Addr)
+		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			healthErrors <- err
 		}
 	}()
 
@@ -364,6 +381,19 @@ func main() {
 		serverErrors <- srv.Start()
 	}()
 
+	// gracefulShutdown shuts down all servers with the given context.
+	gracefulShutdown := func(shutdownCtx context.Context) {
+		if err := healthServer.Shutdown(shutdownCtx); err != nil {
+			logger.Error(err, "Health server shutdown failed")
+		}
+		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+			logger.Error(err, "Metrics server shutdown failed")
+		}
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Error(err, "Graceful shutdown failed (DD-007)")
+		}
+	}
+
 	// Wait for shutdown signal or server error
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -371,24 +401,27 @@ func main() {
 	select {
 	case err := <-serverErrors:
 		logger.Error(err, "Server error")
+		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, shutdownTimeout)
+		defer shutdownCancel()
+		gracefulShutdown(shutdownCtx)
 	case err := <-metricsErrors:
 		logger.Error(err, "Metrics server error")
+		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, shutdownTimeout)
+		defer shutdownCancel()
+		gracefulShutdown(shutdownCtx)
+	case err := <-healthErrors:
+		logger.Error(err, "Health server error")
+		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, shutdownTimeout)
+		defer shutdownCancel()
+		gracefulShutdown(shutdownCtx)
 	case sig := <-sigChan:
 		logger.Info("Shutdown signal received (DD-007)",
 			"signal", sig.String(),
 		)
 
-		// DD-007: Graceful shutdown (already implemented in server.Shutdown)
-		// 4-step pattern: flag set → endpoint propagation → drain → close resources
 		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, shutdownTimeout)
 		defer shutdownCancel()
-
-		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
-			logger.Error(err, "Metrics server shutdown failed")
-		}
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			logger.Error(err, "Graceful shutdown failed (DD-007)")
-		}
+		gracefulShutdown(shutdownCtx)
 	}
 
 	logger.Info("Data Storage service stopped (ADR-030 + DD-007)")
