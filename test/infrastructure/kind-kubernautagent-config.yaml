@@ -16,6 +16,10 @@ nodes:
   - containerPort: 30089
     hostPort: 8089
     protocol: TCP
+  # Data Storage health - Issue #753
+  - containerPort: 30281
+    hostPort: 28089
+    protocol: TCP
   # PostgreSQL - Per DD-TEST-001 v1.8
   - containerPort: 30439
     hostPort: 30439

@@ -36,6 +36,9 @@ nodes:
   - containerPort: 30081  # Data Storage NodePort in cluster
     hostPort: 18091       # Port on host machine (localhost:18091)
     protocol: TCP         # Note: 18091 avoids conflicts with Gateway metrics (9090)
+  - containerPort: 30281  # Data Storage health NodePort (Issue #753)
+    hostPort: 28091       # Port on host machine (localhost:28091)
+    protocol: TCP
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration
