@@ -17,6 +17,7 @@ limitations under the License.
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"runtime/debug"
@@ -93,12 +94,14 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprint(w, `{"status":"ready"}`)
 }
 
-// handleLiveness handles GET /health/live - liveness probe for Kubernetes
-func (s *Server) handleLiveness(w http.ResponseWriter, r *http.Request) {
-	// Liveness is always true unless the process is completely stuck
-	// Don't check database here - that's the readiness probe's job
+// handleLiveness handles GET /healthz - liveness probe for Kubernetes.
+// Issue #753 H-3: Standardized response across all stateless services.
+func (s *Server) handleLiveness(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprint(w, `{"status":"alive"}`)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status":    "healthy",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 // Middleware

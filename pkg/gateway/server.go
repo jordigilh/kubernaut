@@ -41,6 +41,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"                 // BR-GATEWAY-036/037: Shared auth middleware
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"    // BR-AUDIT-005 Gap #7: Standardized error details
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"              // ADR-052 Addendum 001: Exponential backoff with jitter
+	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"   // Issue #753: Dedicated health server
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"             // Issue #756: FileWatcher for cert rotation
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"        // Issue #493/#678: Conditional TLS
 
@@ -123,12 +124,14 @@ const (
 // - Structured logging: JSON format with trace IDs
 // - Distributed tracing: OpenTelemetry integration (future)
 type Server struct {
-	// HTTP server
-	httpServer   *http.Server
-	router       chi.Router // Chi router for adapter registration and route grouping
-	certReloader *sharedtls.CertReloader      // Issue #756: nil when TLS disabled
-	certWatcher  *hotreload.FileWatcher        // Issue #756: nil when TLS disabled
-	tlsCertDir   string                        // Issue #756: cert dir for FileWatcher path
+	// HTTP servers (Issue #753: 3-port standard — API :8080, Health :8081, Metrics :9090)
+	httpServer    *http.Server
+	healthServer  *http.Server // Issue #753: dedicated health probe server (/healthz, /readyz)
+	metricsServer *http.Server // Issue #753: dedicated metrics server (/metrics)
+	router        chi.Router   // Chi router for adapter registration and route grouping
+	certReloader  *sharedtls.CertReloader      // Issue #756: nil when TLS disabled
+	certWatcher   *hotreload.FileWatcher        // Issue #756: nil when TLS disabled
+	tlsCertDir    string                        // Issue #756: cert dir for FileWatcher path
 
 	// Configuration
 	config *config.ServerConfig // ADR-030: Service configuration (needed for middleware setup)
@@ -185,8 +188,17 @@ type Server struct {
 	isShuttingDown atomic.Bool
 }
 
-// Configuration types have been moved to pkg/gateway/config/config.go
-// This improves separation of concerns and allows for better testability
+// LivenessHandler returns the liveness probe handler for use with the
+// dedicated health server (Issue #753: port 8081, /healthz).
+func (s *Server) LivenessHandler() http.HandlerFunc {
+	return s.healthHandler
+}
+
+// ReadinessHandler returns the readiness probe handler for use with the
+// dedicated health server (Issue #753: port 8081, /readyz).
+func (s *Server) ReadinessHandler() http.HandlerFunc {
+	return s.readinessHandler
+}
 
 // NewServer creates a new Gateway server with default metrics registry
 //
@@ -328,6 +340,27 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		ReadTimeout:       cfg.Server.ReadTimeout,
 		WriteTimeout:      cfg.Server.WriteTimeout,
 		ReadHeaderTimeout: 5 * time.Second, // Issue #673 L-2: Slowloris mitigation (gosec G112)
+	}
+
+	// Issue #753: Dedicated health and metrics servers for testing
+	server.healthServer = sharedhealth.NewHealthServer(
+		cfg.Server.HealthAddr,
+		server.LivenessHandler(),
+		server.ReadinessHandler(),
+	)
+
+	metricsMux := http.NewServeMux()
+	var metricsHandler http.Handler
+	if metricsInstance.Registry() != nil {
+		metricsHandler = promhttp.HandlerFor(metricsInstance.Registry(), promhttp.HandlerOpts{})
+	} else {
+		metricsHandler = promhttp.Handler()
+	}
+	metricsMux.Handle("/metrics", metricsHandler)
+	server.metricsServer = &http.Server{
+		Addr:              cfg.Server.MetricsAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	if cfg.Server.TLS.Enabled() {
@@ -644,6 +677,28 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		ReadHeaderTimeout: 5 * time.Second, // Issue #673 L-2: Slowloris mitigation (gosec G112)
 	}
 
+	// Issue #753: Dedicated health probe server (plain HTTP, never TLS)
+	server.healthServer = sharedhealth.NewHealthServer(
+		cfg.Server.HealthAddr,
+		server.LivenessHandler(),
+		server.ReadinessHandler(),
+	)
+
+	// Issue #753: Dedicated metrics server (plain HTTP, never TLS)
+	metricsMux := http.NewServeMux()
+	var metricsHandler http.Handler
+	if metricsInstance.Registry() != nil {
+		metricsHandler = promhttp.HandlerFor(metricsInstance.Registry(), promhttp.HandlerOpts{})
+	} else {
+		metricsHandler = promhttp.Handler()
+	}
+	metricsMux.Handle("/metrics", metricsHandler)
+	server.metricsServer = &http.Server{
+		Addr:              cfg.Server.MetricsAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
 	if cfg.Server.TLS.Enabled() {
 		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(server.httpServer, cfg.Server.TLS.CertDir)
 		if tlsErr != nil {
@@ -734,23 +789,8 @@ func (s *Server) setupRoutes() chi.Router {
 	// Records request counts and duration metrics
 	r.Use(middleware.HTTPMetrics(s.metricsInstance))
 
-	// Health endpoints
-	r.Get("/health", s.healthHandler)
-	r.Get("/healthz", s.healthHandler) // Kubernetes-style alias
-	r.Get("/ready", s.readinessHandler)
-
-	// Prometheus metrics
-	// Expose metrics from custom registry (for test isolation)
-	// If metricsInstance is nil, this will use the default registry
-	var metricsHandler http.Handler
-	if s.metricsInstance != nil && s.metricsInstance.Registry() != nil {
-		metricsHandler = promhttp.HandlerFor(s.metricsInstance.Registry(), promhttp.HandlerOpts{})
-	} else {
-		metricsHandler = promhttp.Handler() // Default registry
-	}
-	r.Handle("/metrics", metricsHandler)
-
-	// Note: Adapter routes will be registered dynamically when adapters are registered
+	// Issue #753: Health and metrics routes moved to dedicated servers (:8081, :9090).
+	// API routes are registered dynamically when adapters call RegisterAdapter().
 	// via RegisterAdapter(). Each adapter exposes its own route (e.g. /api/v1/signals/prometheus)
 
 	return r
@@ -1073,7 +1113,10 @@ func (s *Server) sendSuccessResponse(
 //	    }
 //	}()
 func (s *Server) Start(ctx context.Context) error {
-	s.logger.Info("Starting Gateway server", "addr", s.httpServer.Addr)
+	s.logger.Info("Starting Gateway server",
+		"api_addr", s.httpServer.Addr,
+		"health_addr", s.healthServer.Addr,
+		"metrics_addr", s.metricsServer.Addr)
 
 	// Issue #756: Start cert file watcher for hot-reload before accepting connections
 	if s.certReloader != nil {
@@ -1090,6 +1133,20 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 		s.certWatcher = watcher
 	}
+
+	// Issue #753: Start dedicated health and metrics servers (plain HTTP, never TLS)
+	go func() {
+		s.logger.Info("Starting dedicated health server", "addr", s.healthServer.Addr)
+		if err := s.healthServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			s.logger.Error(err, "Health server failed")
+		}
+	}()
+	go func() {
+		s.logger.Info("Starting dedicated metrics server", "addr", s.metricsServer.Addr)
+		if err := s.metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			s.logger.Error(err, "Metrics server failed")
+		}
+	}()
 
 	// Issue #493: Conditional TLS — serve HTTPS when TLSConfig is set
 	if s.httpServer.TLSConfig != nil {
@@ -1154,6 +1211,18 @@ func (s *Server) Stop(ctx context.Context) error {
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		s.logger.Error(err, "Failed to gracefully shutdown HTTP server")
 		return err
+	}
+
+	// Issue #753: Shutdown dedicated health and metrics servers
+	if s.healthServer != nil {
+		if err := s.healthServer.Shutdown(ctx); err != nil {
+			s.logger.Error(err, "Failed to shutdown health server")
+		}
+	}
+	if s.metricsServer != nil {
+		if err := s.metricsServer.Shutdown(ctx); err != nil {
+			s.logger.Error(err, "Failed to shutdown metrics server")
+		}
 	}
 
 	// Issue #756: Stop cert file watcher after HTTP server is down

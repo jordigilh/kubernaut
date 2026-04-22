@@ -74,10 +74,12 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("")
 
-		// Step 1: Test /health endpoint
-		testLogger.Info("Step 1: Test /health endpoint")
+		// Issue #753: Health/readiness probes on dedicated port 8081 (/healthz, /readyz)
 
-		resp, err := httpClient.Get(gatewayURL + "/health")
+		// Step 1: Test /healthz endpoint (liveness)
+		testLogger.Info("Step 1: Test /healthz endpoint (liveness)")
+
+		resp, err := httpClient.Get(gatewayHealthURL + "/healthz")
 		Expect(err).ToNot(HaveOccurred())
 
 		healthBody, err := io.ReadAll(resp.Body)
@@ -85,73 +87,38 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(resp.StatusCode).To(Equal(http.StatusOK),
-			"/health should return 200 OK")
+			"/healthz should return 200 OK")
 
-		testLogger.Info(fmt.Sprintf("  /health: HTTP %d", resp.StatusCode))
+		testLogger.Info(fmt.Sprintf("  /healthz: HTTP %d", resp.StatusCode))
 		testLogger.Info(fmt.Sprintf("  Response: %s", string(healthBody)))
-		testLogger.Info("  ✅ /health endpoint working")
+		testLogger.Info("  ✅ /healthz endpoint working")
 
-		// Step 2: Test /ready endpoint (if available)
+		// Step 2: Test /readyz endpoint (readiness)
 		testLogger.Info("")
-		testLogger.Info("Step 2: Test /ready endpoint")
+		testLogger.Info("Step 2: Test /readyz endpoint (readiness)")
 
-		// Use Eventually() to handle Gateway startup timing (may return 503 initially)
 		var readyResp *http.Response
 		Eventually(func() int {
 			var err error
-			readyResp, err = httpClient.Get(gatewayURL + "/ready")
+			readyResp, err = httpClient.Get(gatewayHealthURL + "/readyz")
 			if err != nil {
 				return 0
 			}
 			defer func() { _ = readyResp.Body.Close() }()
 			return readyResp.StatusCode
-		}, 30*time.Second, 2*time.Second).Should(Or(
+		}, 30*time.Second, 2*time.Second).Should(
 			Equal(http.StatusOK),
-			Equal(http.StatusNotFound), // Some services don't have /ready
-		), "Gateway /ready endpoint should be available")
+			"Gateway /readyz endpoint should be available")
 
-		// Re-fetch for body reading
-		readyResp, err = httpClient.Get(gatewayURL + "/ready")
-		if err == nil {
-			readyBody, _ := io.ReadAll(readyResp.Body)
-			_ = readyResp.Body.Close()
+		readyResp, err = httpClient.Get(gatewayHealthURL + "/readyz")
+		Expect(err).ToNot(HaveOccurred())
+		readyBody, _ := io.ReadAll(readyResp.Body)
+		_ = readyResp.Body.Close()
 
-			// /ready should return 200 when service is ready
-			Expect(readyResp.StatusCode).To(Or(
-				Equal(http.StatusOK),
-				Equal(http.StatusNotFound), // Some services don't have /ready
-			))
-
-			if readyResp.StatusCode == http.StatusOK {
-				testLogger.Info(fmt.Sprintf("  /ready: HTTP %d", readyResp.StatusCode))
-				testLogger.Info(fmt.Sprintf("  Response: %s", string(readyBody)))
-				testLogger.Info("  ✅ /ready endpoint working")
-			} else {
-				testLogger.Info("  /ready endpoint not implemented (optional)")
-			}
-		} else {
-			testLogger.Info("  /ready endpoint not available (optional)")
-		}
-
-		// Step 3: Test /healthz endpoint (alternative naming)
-		testLogger.Info("")
-		testLogger.Info("Step 3: Test /healthz endpoint (K8s convention)")
-
-		healthzResp, err := httpClient.Get(gatewayURL + "/healthz")
-		if err == nil {
-			healthzBody, _ := io.ReadAll(healthzResp.Body)
-			_ = healthzResp.Body.Close()
-
-			if healthzResp.StatusCode == http.StatusOK {
-				testLogger.Info(fmt.Sprintf("  /healthz: HTTP %d", healthzResp.StatusCode))
-				testLogger.Info(fmt.Sprintf("  Response: %s", string(healthzBody)))
-				testLogger.Info("  ✅ /healthz endpoint working")
-			} else {
-				testLogger.Info("  /healthz endpoint not implemented (optional)")
-			}
-		} else {
-			testLogger.Info("  /healthz endpoint not available (optional)")
-		}
+		Expect(readyResp.StatusCode).To(Equal(http.StatusOK))
+		testLogger.Info(fmt.Sprintf("  /readyz: HTTP %d", readyResp.StatusCode))
+		testLogger.Info(fmt.Sprintf("  Response: %s", string(readyBody)))
+		testLogger.Info("  ✅ /readyz endpoint working")
 
 		// Step 4: Test health under load
 		testLogger.Info("")
@@ -185,15 +152,15 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 
 		// Verify health endpoint still responds quickly
 		start := time.Now()
-		healthAfterLoad, err := httpClient.Get(gatewayURL + "/health")
+		healthAfterLoad, err := httpClient.Get(gatewayHealthURL + "/healthz")
 		latency := time.Since(start)
 		Expect(err).ToNot(HaveOccurred())
 		_ = healthAfterLoad.Body.Close()
 
 		Expect(healthAfterLoad.StatusCode).To(Equal(http.StatusOK),
-			"/health should return 200 OK after load")
+			"/healthz should return 200 OK after load")
 		Expect(latency).To(BeNumerically("<", 5*time.Second),
-			"/health should respond within 5 seconds")
+			"/healthz should respond within 5 seconds")
 
 		testLogger.Info(fmt.Sprintf("  Health check latency after load: %v", latency))
 		testLogger.Info("  ✅ Health endpoint responsive under load")
@@ -204,7 +171,7 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 
 		successCount := 0
 		for i := 0; i < 10; i++ {
-			rapidResp, err := httpClient.Get(gatewayURL + "/health")
+			rapidResp, err := httpClient.Get(gatewayHealthURL + "/healthz")
 			if err == nil && rapidResp.StatusCode == http.StatusOK {
 				successCount++
 				_ = rapidResp.Body.Close()

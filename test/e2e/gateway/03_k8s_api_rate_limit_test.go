@@ -208,7 +208,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		testLogger.Info("")
 		testLogger.Info("Step 2: Verify Gateway is still responsive after burst")
 
-		resp, err := httpClient.Get(gatewayURL + "/health")
+		resp, err := httpClient.Get(gatewayHealthURL + "/healthz")
 		Expect(err).ToNot(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK), "Gateway should still be healthy after burst")

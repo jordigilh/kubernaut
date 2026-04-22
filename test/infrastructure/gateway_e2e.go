@@ -45,7 +45,8 @@ import (
 // Gateway E2E service ports (DD-TEST-001 port allocation strategy)
 const (
 	GatewayE2EHostPort     = 8080  // Gateway API (NodePort 30080 → host port 8080)
-	GatewayE2EMetricsPort  = 9080  // Gateway metrics
+	GatewayE2EHealthPort   = 28080 // Gateway health (NodePort 30180 → host port 28080) -- Issue #753
+	GatewayE2EMetricsPort  = 9090  // Gateway metrics (NodePort 30090 → host port 9090)
 	GatewayDataStoragePort = 30081 // Data Storage NodePort (from shared deployDataStorage)
 	DataStorageE2EHostPort = 18091 // Data Storage host port (NodePort 30081 → host port 18091)
 
@@ -707,29 +708,35 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
           volumeMounts:
             - name: config
               mountPath: /etc/gateway
               readOnly: true%s
           startupProbe:
             httpGet:
-              path: /health
-              port: 8080
+              path: /healthz
+              port: 8081
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 30
           livenessProbe:
             httpGet:
-              path: /health
-              port: 8080
+              path: /healthz
+              port: 8081
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /ready
-              port: 8080
+              path: /readyz
+              port: 8081
             initialDelaySeconds: 30
             periodSeconds: 5
             timeoutSeconds: 5
@@ -763,6 +770,16 @@ spec:
       port: 8080
       targetPort: 8080
       nodePort: 30080
+    - name: health
+      protocol: TCP
+      port: 8081
+      targetPort: 8081
+      nodePort: 30180
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+      nodePort: 30090
 `, coverageSecurityContextYAML, imageName, pullPolicy, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
 }
 
@@ -954,12 +971,10 @@ func DeployGatewayCoverageManifest(kubeconfigPath string, gatewayImageName strin
 	return waitForGatewayHealth(kubeconfigPath, writer, 90*time.Second)
 }
 
-// waitForGatewayHealth waits for the Gateway service to become healthy
-// This is a helper wrapper around WaitForHTTPHealth specifically for Gateway E2E tests
+// waitForGatewayHealth waits for the Gateway service to become healthy.
+// Issue #753: Uses dedicated health port (8081) instead of the API port (8080).
 func waitForGatewayHealth(kubeconfigPath string, writer io.Writer, timeout time.Duration) error {
-	// Gateway health endpoint is available via NodePort on the Kind cluster
-	// Using localhost as the cluster is accessible from the test machine
-	healthURL := fmt.Sprintf("http://localhost:%d/health", GatewayE2EHostPort)
+	healthURL := fmt.Sprintf("http://localhost:%d/readyz", GatewayE2EHealthPort)
 	return WaitForHTTPHealth(healthURL, timeout, writer)
 }
 

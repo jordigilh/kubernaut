@@ -11,6 +11,8 @@ data:
   config.yaml: |
     server:
       listenAddr: ":8080"
+      healthAddr: ":8081"
+      metricsAddr: ":9090"
       maxConcurrentRequests: {{ .Values.gateway.config.server.maxConcurrentRequests | default 100 }}
       readTimeout: {{ .Values.gateway.config.server.readTimeout | default "30s" }}
       writeTimeout: {{ .Values.gateway.config.server.writeTimeout | default "30s" }}
@@ -124,7 +126,7 @@ spec:
         app: gateway
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
+        prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: gateway
@@ -144,6 +146,12 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
               protocol: TCP
           env:
             - name: POD_NAME
@@ -177,16 +185,16 @@ spec:
             {{- end }}
           livenessProbe:
             httpGet:
-              path: /health
-              port: 8080
+              path: /healthz
+              port: 8081
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /ready
-              port: 8080
+              path: /readyz
+              port: 8081
             initialDelaySeconds: 30
             periodSeconds: 5
             timeoutSeconds: 5
@@ -229,3 +237,11 @@ spec:
       protocol: TCP
       port: 8080
       targetPort: 8080
+    - name: health
+      protocol: TCP
+      port: 8081
+      targetPort: 8081
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
