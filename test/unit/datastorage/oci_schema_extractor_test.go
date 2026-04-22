@@ -235,9 +235,9 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 			parser = schema.NewParser()
 		})
 
-		It("UT-DS-522-004: should extract wildcard component as scalar string", func() {
+		It("UT-DS-522-004: should extract wildcard component as JSONB array", func() {
 			crd := testutil.NewTestWorkflowCRD("wc-522", "RestartPod", "tekton")
-			crd.Spec.Labels.Component = "*"
+			crd.Spec.Labels.Component = []string{"*"}
 			crd.Spec.Labels.Severity = []string{"critical", "high"}
 			crd.Spec.Labels.Environment = []string{"*"}
 			crd.Spec.Labels.Priority = "*"
@@ -252,8 +252,8 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 			var labels map[string]interface{}
 			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
 
-			Expect(labels).To(HaveKeyWithValue("component", "*"),
-				"UT-DS-522-004: wildcard component must be stored as scalar '*'")
+			Expect(labels["component"]).To(Equal([]interface{}{"*"}),
+				"UT-DS-522-004: wildcard component must be stored as JSONB array ['*']")
 			Expect(labels["severity"]).To(Equal([]interface{}{"critical", "high"}),
 				"UT-DS-522-004: severity must be stored as JSONB array")
 			Expect(labels["environment"]).To(Equal([]interface{}{"*"}),
@@ -264,7 +264,7 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 
 		It("UT-DS-522-005: wildcard labels survive round-trip through MandatoryLabels", func() {
 			crd := testutil.NewTestWorkflowCRD("wc-522-rt", "RestartPod", "tekton")
-			crd.Spec.Labels.Component = "*"
+			crd.Spec.Labels.Component = []string{"*"}
 			crd.Spec.Labels.Severity = []string{"critical", "high"}
 			crd.Spec.Labels.Environment = []string{"*"}
 			crd.Spec.Labels.Priority = "*"
@@ -280,7 +280,7 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 			var ml models.MandatoryLabels
 			Expect(json.Unmarshal(labelsJSON, &ml)).To(Succeed())
 
-			Expect(ml.Component).To(Equal("*"),
+			Expect(ml.Component).To(Equal([]string{"*"}),
 				"UT-DS-522-005: wildcard component must survive round-trip")
 			Expect(ml.Severity).To(Equal([]string{"critical", "high"}),
 				"UT-DS-522-005: mixed severity must survive round-trip")
@@ -297,8 +297,8 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 
 			var stored map[string]interface{}
 			Expect(json.Unmarshal(dbBytes, &stored)).To(Succeed())
-			Expect(stored).To(HaveKeyWithValue("component", "*"),
-				"UT-DS-522-005: DB-stored component must be scalar '*'")
+			Expect(stored["component"]).To(Equal([]interface{}{"*"}),
+				"UT-DS-522-005: DB-stored component must be array ['*']")
 			Expect(stored["environment"]).To(Equal([]interface{}{"*"}),
 				"UT-DS-522-005: DB-stored environment must be array ['*']")
 			Expect(stored).To(HaveKeyWithValue("priority", "*"),

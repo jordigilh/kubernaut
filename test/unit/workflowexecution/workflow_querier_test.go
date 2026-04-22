@@ -44,7 +44,7 @@ func (m *mockWorkflowCatalogClient) GetWorkflowByID(_ context.Context, _ ogencli
 // dependencies. Uses the builder pattern to avoid brittle string concatenation.
 func buildTestSchema(deps *models.WorkflowDependencies) string {
 	crd := testutil.NewTestWorkflowCRD("test-workflow", "CertificateRenewal", "job")
-	crd.Spec.Labels.Component = "deployment"
+	crd.Spec.Labels.Component = []string{"deployment"}
 	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	crd.Spec.Parameters = []models.WorkflowParameter{
 		{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Target namespace for certificate renewal"},

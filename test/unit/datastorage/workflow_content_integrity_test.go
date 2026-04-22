@@ -115,7 +115,7 @@ var integrityModifiedYAML = func() string {
 		What:      "Rolls back a deployment experiencing CrashLoopBackOff",
 		WhenToUse: "When pods are crash-looping due to a bad config",
 	}
-	crd.Spec.Labels.Component = "deployment"
+	crd.Spec.Labels.Component = []string{"deployment"}
 	crd.Spec.Execution.Bundle = "quay.io/kubernaut/workflows/rollback:v1.0.0@sha256:def456abc123def456abc123def456abc123def456abc123def456abc123def4"
 	crd.Spec.Parameters = []models.WorkflowParameter{
 		{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target deployment"},

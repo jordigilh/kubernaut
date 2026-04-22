@@ -96,7 +96,7 @@ func NewTestWorkflowCRD(name, actionType, engine string) *models.WorkflowSchemaC
 			Labels: models.WorkflowSchemaLabels{
 				Severity:    []string{"critical"},
 				Environment: []string{"production"},
-				Component:   "pod",
+				Component:   []string{"pod"},
 				Priority:    "P1",
 			},
 			Execution: &models.WorkflowExecution{

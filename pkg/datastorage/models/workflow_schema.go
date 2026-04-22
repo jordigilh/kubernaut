@@ -151,9 +151,10 @@ type WorkflowSchemaLabels struct {
 	// Examples: ["production"], ["staging", "production"], ["*"] (wildcard for all)
 	Environment []string `yaml:"environment" json:"environment" validate:"required,min=1"`
 
-	// Component is the Kubernetes resource type this workflow remediates (REQUIRED)
-	// Examples: "pod", "deployment", "node", "service"
-	Component string `yaml:"component" json:"component" validate:"required"`
+	// Component is the Kubernetes resource type(s) this workflow remediates (REQUIRED)
+	// Examples: ["pod"], ["deployment", "statefulset"], ["*"] (wildcard for all)
+	// Issue #790: Changed from string to []string to match severity/environment pattern
+	Component []string `yaml:"component" json:"component" validate:"required,min=1"`
 
 	// Priority is the business priority level (REQUIRED)
 	// Values: "P0", "P1", "P2", "P3", "*" (wildcard for all)
@@ -524,8 +525,8 @@ func (l *WorkflowSchemaLabels) ValidateMandatoryLabels() error {
 	if len(l.Environment) == 0 {
 		return NewSchemaValidationError("labels.environment", "environment is required (at least one value)")
 	}
-	if l.Component == "" {
-		return NewSchemaValidationError("labels.component", "component is required")
+	if len(l.Component) == 0 {
+		return NewSchemaValidationError("labels.component", "component is required (at least one value)")
 	}
 	if l.Priority == "" {
 		return NewSchemaValidationError("labels.priority", "priority is required")

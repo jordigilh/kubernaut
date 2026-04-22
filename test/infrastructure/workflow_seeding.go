@@ -47,7 +47,8 @@ func workflowIDToImageName(workflowID string) string {
 //
 // ADR-058: Registration uses inline CRD YAML content read from fixture files.
 // DataStorage parses the CRD envelope to populate labels (severity, environment, etc.).
-// The string metadata fields below (Severity, Component, Environment, Priority) are
+// The string metadata fields below (Severity, Environment, Priority) and the
+// component slice (mirroring workflow schema labels) are
 // NOT sent to the API; they serve as human-readable documentation and as key
 // components for workflowUUIDs map lookups (key format: "workflowID:environment").
 type TestWorkflow struct {
@@ -56,7 +57,7 @@ type TestWorkflow struct {
 	Description     string
 	ActionType      string // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "ScaleReplicas", "RestartPod")
 	Severity        string // Metadata only: "critical", "high", "medium", "low" (actual value from fixture)
-	Component       string // Metadata only: "deployment", "pod", "node", etc. (actual value from fixture)
+	Component       []string // Metadata only: e.g. []string{"deployment"}, []string{"pod"} (actual value from fixture)
 	Environment     string // Metadata only + map key: "staging", "production", "test" (actual value from fixture)
 	Priority        string // Metadata only: "P0", "P1", "P2", "P3" (actual value from fixture)
 	SchemaImage     string // Legacy: retained for fixture directory name mapping

@@ -77,7 +77,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 		labels := models.MandatoryLabels{
 			Severity:    []string{severity},
-			Component:   component,
+			Component:   []string{component},
 			Environment: []string{environment},
 			Priority:    priority,
 		}
@@ -344,7 +344,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 		labels := models.MandatoryLabels{
 			Severity:    severity,
-			Component:   component,
+			Component:   []string{component},
 			Environment: environment,
 			Priority:    priority,
 		}

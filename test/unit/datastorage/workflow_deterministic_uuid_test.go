@@ -103,7 +103,7 @@ var deterministicModifiedYAML = func() string {
 		What:      "Modified deterministic UUID test workflow",
 		WhenToUse: "Testing supersede with new content",
 	}
-	crd.Spec.Labels.Component = "deployment"
+	crd.Spec.Labels.Component = []string{"deployment"}
 	crd.Spec.Execution.Bundle = "quay.io/kubernaut/workflows/rollback:v1.0.0@sha256:def456abc123def456abc123def456abc123def456abc123def456abc123def4"
 	crd.Spec.Parameters = []models.WorkflowParameter{
 		{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target deployment"},

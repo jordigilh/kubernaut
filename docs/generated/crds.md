@@ -1437,7 +1437,7 @@ _Appears in:_
 | ---| ---| ---|
 | `severity`| _string array_| Severity is the severity level(s)|
 | `environment`| _string array_| Environment is the target environment(s)|
-| `component`| _string_| Component is the Kubernetes resource type|
+| `component`| _string array_| Component is the Kubernetes resource type(s)|
 | `priority`| _string_| Priority is the business priority level|
 
 

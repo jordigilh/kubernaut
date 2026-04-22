@@ -41,7 +41,7 @@ var _ = Describe("UT-KA-779-CC-T: Tool Execute context cancellation", func() {
 			Environment:  "production",
 			Priority:     "P0",
 		})
-		cancelledCtx, _ = context.WithCancel(ctx)
+		cancelledCtx = ctx
 	})
 
 	Describe("UT-KA-779-CC-T-001: list_available_actions does not panic with cancelled context", func() {

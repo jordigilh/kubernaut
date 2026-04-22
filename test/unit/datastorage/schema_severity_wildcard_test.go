@@ -35,7 +35,7 @@ var _ = Describe("ValidateMandatoryLabels severity wildcard", func() {
 		It("should accept severity ['*'] as a valid wildcard value", func() {
 			labels := &models.WorkflowSchemaLabels{
 				Severity:    []string{"*"},
-				Component:   "pod",
+				Component:   []string{"pod"},
 				Environment: []string{"production"},
 				Priority:    "P1",
 			}
@@ -48,7 +48,7 @@ var _ = Describe("ValidateMandatoryLabels severity wildcard", func() {
 		It("should accept severity ['*'] alongside explicit values", func() {
 			labels := &models.WorkflowSchemaLabels{
 				Severity:    []string{"critical", "*"},
-				Component:   "pod",
+				Component:   []string{"pod"},
 				Environment: []string{"production"},
 				Priority:    "P1",
 			}
@@ -61,7 +61,7 @@ var _ = Describe("ValidateMandatoryLabels severity wildcard", func() {
 		It("should still reject invalid severity values", func() {
 			labels := &models.WorkflowSchemaLabels{
 				Severity:    []string{"invalid-value"},
-				Component:   "pod",
+				Component:   []string{"pod"},
 				Environment: []string{"production"},
 				Priority:    "P1",
 			}
@@ -74,7 +74,7 @@ var _ = Describe("ValidateMandatoryLabels severity wildcard", func() {
 		It("should still accept standard severity values", func() {
 			labels := &models.WorkflowSchemaLabels{
 				Severity:    []string{"critical", "high", "medium", "low"},
-				Component:   "pod",
+				Component:   []string{"pod"},
 				Environment: []string{"production"},
 				Priority:    "P1",
 			}

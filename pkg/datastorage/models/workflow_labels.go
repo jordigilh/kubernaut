@@ -43,10 +43,11 @@ type MandatoryLabels struct {
 	// DD-WORKFLOW-001 v2.8: Always stored as JSONB array. Supports "*" wildcard (like environment).
 	Severity []string `json:"severity" validate:"required,min=1"`
 
-	// Component is the Kubernetes resource type this workflow remediates (REQUIRED)
-	// Examples: "pod", "deployment", "node", "service", "pvc"
+	// Component is the Kubernetes resource type(s) this workflow remediates (REQUIRED)
+	// Examples: ["pod"], ["deployment", "statefulset"], ["*"] (wildcard for all)
 	// Source: K8s Resource (auto-populated by Signal Processing)
-	Component string `json:"component" validate:"required"`
+	// Issue #790: Changed from string to []string to match severity/environment pattern
+	Component []string `json:"component" validate:"required,min=1"`
 
 	// Environment is the deployment environment(s) this workflow targets (REQUIRED)
 	// Values: ["production"], ["staging", "production"], ["*"] (wildcard for all)
@@ -300,7 +301,8 @@ func (d StructuredDescription) String() string {
 // DD-WORKFLOW-001 v2.5: environment is []string (workflow declares target environments)
 // DD-WORKFLOW-001 v2.8: severity is []string (always array, supports "*" wildcard like environment)
 // Issue #274: signalName parameter removed — LLM selects by actionType.
-func NewMandatoryLabels(severity []string, component string, environment []string, priority string) *MandatoryLabels {
+// Issue #790: component is now []string (matches severity/environment pattern)
+func NewMandatoryLabels(severity []string, component []string, environment []string, priority string) *MandatoryLabels {
 	return &MandatoryLabels{
 		Severity:    severity,
 		Component:   component,

@@ -308,7 +308,7 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 	if len(schema.Labels.Environment) > 0 {
 		labels["environment"] = schema.Labels.Environment
 	}
-	if schema.Labels.Component != "" {
+	if len(schema.Labels.Component) > 0 {
 		labels["component"] = schema.Labels.Component
 	}
 	if schema.Labels.Priority != "" {

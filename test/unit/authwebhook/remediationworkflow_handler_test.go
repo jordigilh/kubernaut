@@ -113,7 +113,7 @@ func buildRemediationWorkflow(name, namespace string) *rwv1alpha1.RemediationWor
 			Labels: rwv1alpha1.RemediationWorkflowLabels{
 				Severity:    []string{"critical"},
 				Environment: []string{"production"},
-				Component:   "pod",
+				Component:   []string{"pod"},
 				Priority:    "P1",
 			},
 			Execution: rwv1alpha1.RemediationWorkflowExecution{

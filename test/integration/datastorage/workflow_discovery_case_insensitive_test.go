@@ -79,7 +79,7 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 			ContentHash:     hash,
 			Labels: models.MandatoryLabels{
 				Severity:    severity,
-				Component:   component,
+				Component:   []string{component},
 				Environment: environment,
 				Priority:    priority,
 			},

@@ -40,7 +40,7 @@ type TestWorkflow struct {
 	Description      string
 	SignalType       string // Must match test scenarios (e.g., "OOMKilled")
 	Severity         string
-	Component        string
+	Component        []string
 	Environment      string
 	Priority         string
 	SchemaParameters []models.WorkflowParameter // BR-HAPI-191: Must match Mock LLM parameters
@@ -69,7 +69,7 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Description: "Increase memory limits for pods hitting OOMKill",
 			SignalType:  "OOMKilled",
 			Severity:    "critical",
-			Component:   "deployment",
+			Component:   []string{"deployment"},
 			Priority:    "P0",
 			// Must match workflow-schema.yaml and Mock LLM "oomkilled" scenario parameters
 			SchemaParameters: []models.WorkflowParameter{
@@ -85,7 +85,7 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Description: "Fix missing configuration causing CrashLoopBackOff",
 			SignalType:  "CrashLoopBackOff",
 			Severity:    "high",
-			Component:   "deployment",
+			Component:   []string{"deployment"},
 			Priority:    "P1",
 			// Mock LLM "crashloop" scenario returns: NAMESPACE, DEPLOYMENT_NAME
 			SchemaParameters: []models.WorkflowParameter{
@@ -100,7 +100,7 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Description: "Drain node and reboot to resolve NodeNotReady",
 			SignalType:  "NodeNotReady",
 			Severity:    "critical",
-			Component:   "node",
+			Component:   []string{"node"},
 			Priority:    "P0",
 			// Mock LLM "node_not_ready" scenario returns: NODE_NAME
 			SchemaParameters: []models.WorkflowParameter{
@@ -114,7 +114,7 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Description: "Optimize memory usage after failed scaling attempt",
 			SignalType:  "OOMKilled",
 			Severity:    "critical",
-			Component:   "deployment",
+			Component:   []string{"deployment"},
 			Priority:    "P0",
 			// Mock LLM returns: NAMESPACE, DEPLOYMENT_NAME
 			SchemaParameters: []models.WorkflowParameter{
@@ -129,7 +129,7 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Description: "Generic pod restart for unknown issues",
 			SignalType:  "Unknown",
 			Severity:    "medium",
-			Component:   "deployment",
+			Component:   []string{"deployment"},
 			Priority:    "P2",
 			// Mock LLM "low_confidence" scenario returns: NAMESPACE, POD_NAME
 			SchemaParameters: []models.WorkflowParameter{
@@ -143,7 +143,7 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Description: "Generic workflow for test signals (graceful shutdown tests)",
 			SignalType:  "TestSignal",
 			Severity:    "critical",
-			Component:   "pod",
+			Component:   []string{"pod"},
 			Priority:    "P1",
 			// Mock LLM "test_signal" scenario returns: NAMESPACE, POD_NAME
 			SchemaParameters: []models.WorkflowParameter{

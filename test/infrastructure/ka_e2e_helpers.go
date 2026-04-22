@@ -122,7 +122,7 @@ func GetKAE2ETestWorkflows() []TestWorkflow {
 	// These images contain /workflow-schema.yaml (BR-WORKFLOW-004) for pullspec-only registration
 	const kaWorkflowRegistry = "quay.io/kubernaut-cicd/test-workflows"
 	baseWorkflows := []TestWorkflow{
-		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Remediation - Increase Memory Limits", Description: "Increases memory limits for pods experiencing OOMKilled events", ActionType: "IncreaseMemoryLimits", Severity: "critical", Component: "pod", Priority: "P0", SchemaImage: kaWorkflowRegistry + "/oomkill-increase-memory:v1.0.0",
+		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Remediation - Increase Memory Limits", Description: "Increases memory limits for pods experiencing OOMKilled events", ActionType: "IncreaseMemoryLimits", Severity: "critical", Component: []string{"pod"}, Priority: "P0", SchemaImage: kaWorkflowRegistry + "/oomkill-increase-memory:v1.0.0",
 			// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
 			// Actual schema comes from OCI image via pullspec-only registration.
 			SchemaParameters: []models.WorkflowParameter{
@@ -131,25 +131,25 @@ func GetKAE2ETestWorkflows() []TestWorkflow {
 				{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the resource"},
 				{Name: "MEMORY_LIMIT_NEW", Type: "string", Required: true, Description: "New memory limit to apply (e.g., 128Mi, 256Mi, 1Gi)"},
 			}},
-		{WorkflowID: "memory-optimize-v1", Name: "OOMKill Remediation - Scale Down Replicas", Description: "Reduces replica count for deployments experiencing OOMKilled", ActionType: "ScaleReplicas", Severity: "high", Component: "deployment", Priority: "P1", SchemaImage: kaWorkflowRegistry + "/memory-optimize:v1.0.0",
+		{WorkflowID: "memory-optimize-v1", Name: "OOMKill Remediation - Scale Down Replicas", Description: "Reduces replica count for deployments experiencing OOMKilled", ActionType: "ScaleReplicas", Severity: "high", Component: []string{"deployment"}, Priority: "P1", SchemaImage: kaWorkflowRegistry + "/memory-optimize:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Name of the deployment to scale"},
 				{Name: "REPLICA_COUNT", Type: "integer", Required: false, Description: "Target number of replicas"},
 			}},
-		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Fix Configuration", Description: "Identifies and fixes configuration issues causing CrashLoopBackOff", ActionType: "RestartDeployment", Severity: "high", Component: "pod", Priority: "P1", SchemaImage: kaWorkflowRegistry + "/crashloop-config-fix:v1.0.0",
+		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Fix Configuration", Description: "Identifies and fixes configuration issues causing CrashLoopBackOff", ActionType: "RestartDeployment", Severity: "high", Component: []string{"pod"}, Priority: "P1", SchemaImage: kaWorkflowRegistry + "/crashloop-config-fix:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Name of the deployment to restart"},
 				{Name: "GRACE_PERIOD_SECONDS", Type: "integer", Required: false, Description: "Graceful shutdown period in seconds"},
 			}},
-		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Safely drains and reboots nodes in NotReady state", ActionType: "DrainNode", Severity: "critical", Component: "node", Priority: "P0", SchemaImage: kaWorkflowRegistry + "/node-drain-reboot:v1.0.0",
+		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Safely drains and reboots nodes in NotReady state", ActionType: "DrainNode", Severity: "critical", Component: []string{"node"}, Priority: "P0", SchemaImage: kaWorkflowRegistry + "/node-drain-reboot:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NODE_NAME", Type: "string", Required: true, Description: "Name of the node to drain and reboot"},
 				{Name: "DRAIN_TIMEOUT_SECONDS", Type: "integer", Required: false, Description: "Timeout for drain operation in seconds"},
 			}},
-		{WorkflowID: "image-pull-backoff-fix-credentials", Name: "ImagePullBackOff - Fix Registry Credentials", Description: "Fixes ImagePullBackOff errors by updating registry credentials", ActionType: "RollbackDeployment", Severity: "high", Component: "pod", Priority: "P1", SchemaImage: kaWorkflowRegistry + "/imagepull-fix-creds:v1.0.0"},
-		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", ActionType: "RestartPod", Severity: "medium", Component: "deployment", Priority: "P2", SchemaImage: kaWorkflowRegistry + "/generic-restart:v1.0.0",
+		{WorkflowID: "image-pull-backoff-fix-credentials", Name: "ImagePullBackOff - Fix Registry Credentials", Description: "Fixes ImagePullBackOff errors by updating registry credentials", ActionType: "RollbackDeployment", Severity: "high", Component: []string{"pod"}, Priority: "P1", SchemaImage: kaWorkflowRegistry + "/imagepull-fix-creds:v1.0.0"},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", ActionType: "RestartPod", Severity: "medium", Component: []string{"deployment"}, Priority: "P2", SchemaImage: kaWorkflowRegistry + "/generic-restart:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to restart"},
