@@ -695,6 +695,74 @@ run_tls_003() {
     "ST-CHART-TLS-003c: authwebhook-tls Secret exists after recovery"
 }
 
+# Issue #753: Inter-service TLS assertions (mandatory TLS).
+run_tls_interservice() {
+  local pass=true
+
+  for secret_name in datastorage-tls gateway-tls kubernautagent-tls; do
+    assert_resource_exists secret "$secret_name" "$NAMESPACE" \
+      "ST-TLS-INTERSERVICE-001: ${secret_name} Secret exists" || pass=false
+
+    local tls_crt
+    tls_crt=$(kubectl get secret "$secret_name" -n "$NAMESPACE" \
+      -o jsonpath='{.data.tls\.crt}' 2>/dev/null || echo "")
+    if [[ -n "$tls_crt" ]]; then
+      tap_ok "ST-TLS-INTERSERVICE-002: ${secret_name} has tls.crt"
+    else
+      tap_not_ok "ST-TLS-INTERSERVICE-002: ${secret_name} has tls.crt" "tls.crt missing"
+      pass=false
+    fi
+  done
+
+  assert_resource_exists configmap inter-service-ca "$NAMESPACE" \
+    "ST-TLS-INTERSERVICE-003: inter-service-ca ConfigMap exists" || pass=false
+
+  local ca_crt
+  ca_crt=$(kubectl get configmap inter-service-ca -n "$NAMESPACE" \
+    -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
+  if [[ -n "$ca_crt" ]]; then
+    tap_ok "ST-TLS-INTERSERVICE-004: inter-service-ca has ca.crt"
+  else
+    tap_not_ok "ST-TLS-INTERSERVICE-004: inter-service-ca has ca.crt" "ca.crt missing"
+    pass=false
+  fi
+
+  # Verify leaf certs are signed by the CA
+  local ca_pem
+  ca_pem=$(kubectl get secret authwebhook-tls -n "$NAMESPACE" \
+    -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+  if [[ -n "$ca_pem" ]]; then
+    for secret_name in datastorage-tls gateway-tls kubernautagent-tls; do
+      local leaf_pem
+      leaf_pem=$(kubectl get secret "$secret_name" -n "$NAMESPACE" \
+        -o jsonpath='{.data.tls\.crt}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+      if [[ -n "$leaf_pem" ]]; then
+        if printf '%s' "$leaf_pem" | openssl verify -CAfile <(printf '%s' "$ca_pem") 2>/dev/null | grep -q "OK"; then
+          tap_ok "ST-TLS-INTERSERVICE-005: ${secret_name} cert signed by shared CA"
+        else
+          tap_not_ok "ST-TLS-INTERSERVICE-005: ${secret_name} cert signed by shared CA" "verification failed"
+          pass=false
+        fi
+      fi
+    done
+  fi
+
+  # Verify ECDSA P-256 key type (Issue #753 2F)
+  local ds_cert_pem
+  ds_cert_pem=$(kubectl get secret datastorage-tls -n "$NAMESPACE" \
+    -o jsonpath='{.data.tls\.crt}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+  if [[ -n "$ds_cert_pem" ]]; then
+    local key_type
+    key_type=$(printf '%s' "$ds_cert_pem" | openssl x509 -noout -text 2>/dev/null | grep "Public Key Algorithm" || echo "")
+    if echo "$key_type" | grep -qi "ec\|ecdsa"; then
+      tap_ok "ST-TLS-INTERSERVICE-006: Leaf certs use ECDSA (not RSA)"
+    else
+      tap_not_ok "ST-TLS-INTERSERVICE-006: Leaf certs use ECDSA (not RSA)" "key type: ${key_type}"
+      pass=false
+    fi
+  fi
+}
+
 run_upg_001() {
   local desc_crd="ST-CHART-UPG-001a: CRD apply before upgrade"
   assert_exit_code "$desc_crd" kubectl apply --server-side --force-conflicts -f "${CHART_PATH}/crds/"
@@ -905,8 +973,10 @@ flow_a_production() {
 
   if [[ "$PLATFORM" == "kind" ]]; then
     run_tls_001
+    run_tls_interservice
   else
     run_tls_002
+    run_tls_interservice
   fi
 
   run_upg_001 || flow_failed=true
@@ -936,6 +1006,7 @@ flow_b_quickstart() {
   run_tls_patch
   run_verify_001 || flow_failed=true
   run_verify_policies || flow_failed=true
+  run_tls_interservice
   run_edge_001
 
   if $flow_failed; then

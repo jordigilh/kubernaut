@@ -147,21 +147,32 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 		dsClient, err = ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
 		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage OpenAPI client")
 
-		// MANDATORY: Verify Data Storage is running
+		// MANDATORY: Verify Data Storage is running (with retry for Kind NodePort stability)
 		// Per TESTING_GUIDELINES.md: Tests MUST FAIL if infrastructure unavailable
 		// Issue #753: Health probes moved to dedicated port 8081
 		dsHealthURL := os.Getenv("TEST_DATA_STORAGE_HEALTH_URL")
 		if dsHealthURL == "" {
 			dsHealthURL = "http://127.0.0.1:28091"
 		}
-		healthResp, err := http.Get(dsHealthURL + "/readyz")
-		if err != nil {
+		var healthResp *http.Response
+		var healthErr error
+		for attempt := 1; attempt <= 15; attempt++ {
+			healthResp, healthErr = http.Get(dsHealthURL + "/readyz")
+			if healthErr == nil && healthResp.StatusCode == http.StatusOK {
+				break
+			}
+			if healthResp != nil {
+				_ = healthResp.Body.Close()
+			}
+			time.Sleep(2 * time.Second)
+		}
+		if healthErr != nil {
 			Fail(fmt.Sprintf(
-				"REQUIRED: Data Storage not available at %s\n"+
+				"REQUIRED: Data Storage not available at %s after retries\n"+
 					"  Per DD-AUDIT-003: Gateway MUST have audit capability\n"+
 					"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n\n"+
 					"  Start with: podman-compose -f test/infrastructure/podman-compose.test.yml up -d\n\n"+
-					"  Error: %v", dsHealthURL, err))
+					"  Error: %v", dsHealthURL, healthErr))
 		}
 		defer func() { _ = healthResp.Body.Close() }()
 		if healthResp.StatusCode != http.StatusOK {

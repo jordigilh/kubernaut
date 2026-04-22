@@ -183,11 +183,9 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 6
-          {{- if include "kubernaut.interServiceTLS.enabled" . }}
           env:
             - name: TLS_CA_FILE
               value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
-          {{- end }}
           volumeMounts:
             - name: config
               mountPath: /etc/signalprocessing/config.yaml
@@ -198,11 +196,9 @@ spec:
             - name: proactive-signal-mappings
               mountPath: /etc/signalprocessing/proactive-signal-mappings.yaml
               subPath: proactive-signal-mappings.yaml
-            {{- if include "kubernaut.interServiceTLS.enabled" . }}
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true
-            {{- end }}
           resources:
             {{- toYaml .Values.signalprocessing.resources | nindent 12 }}
       volumes:
@@ -215,12 +211,10 @@ spec:
         - name: proactive-signal-mappings
           configMap:
             name: {{ .Values.signalprocessing.proactiveSignalMappings.existingConfigMap | default "signalprocessing-proactive-signal-mappings" }}
-        {{- if include "kubernaut.interServiceTLS.enabled" . }}
         - name: tls-ca
           configMap:
             name: inter-service-ca
             optional: true
-        {{- end }}
 ---
 apiVersion: v1
 kind: Service

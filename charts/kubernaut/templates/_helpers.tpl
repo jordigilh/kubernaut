@@ -216,14 +216,10 @@ valkey.{{ .Release.Namespace }}.svc.cluster.local:6379
 {{/*
 Return the in-cluster DataStorage service URL.
 Derives the FQDN from .Release.Namespace so the chart works in any namespace.
-Issue #678: switches to https:// when tls.interService.enabled is true.
+Issue #753: always HTTPS — inter-service TLS is mandatory.
 */}}
 {{- define "kubernaut.datastorage.url" -}}
-{{- if and .Values.tls .Values.tls.interService .Values.tls.interService.enabled -}}
 https://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8080
-{{- else -}}
-http://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8080
-{{- end -}}
 {{- end }}
 
 {{/*
@@ -231,19 +227,8 @@ Return the in-cluster Gateway service URL.
 Issue #678: switches to https:// when tls.interService.enabled is true.
 */}}
 {{- define "kubernaut.gateway.url" -}}
-{{- if and .Values.tls .Values.tls.interService .Values.tls.interService.enabled -}}
 https://gateway-service.{{ .Release.Namespace }}.svc.cluster.local:8080
-{{- else -}}
-http://gateway-service.{{ .Release.Namespace }}.svc.cluster.local:8080
-{{- end -}}
 {{- end }}
-
-{{/*
-Whether inter-service TLS is enabled (Issue #678).
-*/}}
-{{- define "kubernaut.interServiceTLS.enabled" -}}
-{{- if and .Values.tls .Values.tls.interService .Values.tls.interService.enabled -}}true{{- end -}}
-{{- end -}}
 
 {{/*
 Inter-service TLS cert directory (server side).
