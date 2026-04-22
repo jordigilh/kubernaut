@@ -251,7 +251,7 @@ func (b *Builder) RenderWorkflowSelection(in WorkflowSelectionInput) (string, er
 		ClusterName:         withDefault(sanitized.ClusterName, "default"),
 		SignalMode:          withDefault(sanitized.SignalMode, "reactive"),
 		PriorityDescription: withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
-		Environment:         withDefault(sanitized.Environment, "default"),
+		Environment:         withDefault(sanitized.Environment, sanitized.Namespace),
 		RiskDescription:     withDefault(sanitized.RiskTolerance, inferRisk(sanitized.Severity)),
 		RCASummary:            sanitizeField(in.RCASummary),
 		StructuredOutput:      b.structuredOutput,
