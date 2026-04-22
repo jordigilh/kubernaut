@@ -126,10 +126,10 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			first := reqEvents[0]
 			Expect(first.Data["model"]).To(Equal("claude-sonnet-4-20250514"))
 			preview, ok := first.Data["prompt_preview"].(string)
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), "expected type assertion to string for prompt_preview in llm.request event data to succeed")
 			Expect(preview).To(ContainSubstring(signal.Name), "prompt_preview should embed signal name")
 			promptLen, ok := first.Data["prompt_length"].(int)
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), "expected type assertion to int for prompt_length in llm.request event data to succeed")
 			Expect(promptLen).To(BeNumerically(">=", len(preview)), "prompt_length should be at least as long as the preview")
 		})
 	})
@@ -280,7 +280,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 				rawID, ok := e.Data["event_id"]
 				Expect(ok).To(BeTrue(), "event_id missing on %s event", e.EventType)
 				idStr, ok := rawID.(string)
-				Expect(ok).To(BeTrue())
+				Expect(ok).To(BeTrue(), "expected type assertion to string for event_id in audit event data to succeed")
 				_, parseErr := uuid.Parse(idStr)
 				Expect(parseErr).NotTo(HaveOccurred(), "invalid UUID on %s event: %s", e.EventType, idStr)
 			}
@@ -431,7 +431,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			failedRaw, hasFailed := result.DetectedLabels["failedDetections"]
 			if hasFailed {
 				failedSlice, ok := failedRaw.([]string)
-				Expect(ok).To(BeTrue())
+				Expect(ok).To(BeTrue(), "expected type assertion to []string for failedDetections in DetectedLabels to succeed")
 				Expect(failedSlice).NotTo(HaveLen(len(enrichment.AllDetectionCategories)),
 					"should NOT have all categories failed — signal-target labels were preserved")
 			}

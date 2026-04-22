@@ -89,13 +89,11 @@ var _ = Describe("Kubernaut Agent Investigator — #433", func() {
 		})
 	})
 
-	Describe("UT-KA-433-016: Max-turn exhaustion produces human-review flag", func() {
-		It("should set HumanReviewNeeded when investigation exceeds max turns", func() {
-			result := &katypes.InvestigationResult{
-				HumanReviewNeeded: false,
-			}
+	Describe("UT-KA-433-016: InvestigationResult HumanReviewNeeded field exists and defaults to false", func() {
+		It("should default to false before the investigator sets it", func() {
+			result := &katypes.InvestigationResult{}
 			Expect(result.HumanReviewNeeded).To(BeFalse(),
-				"stub result has HumanReviewNeeded=false; GREEN will make Investigate set it to true on exhaustion")
+				"HumanReviewNeeded must default to false; actual max-turn exhaustion behavior is verified by IT-KA-433-DEC-* integration tests")
 		})
 	})
 })

@@ -48,8 +48,9 @@ var _ = Describe("BR-TESTING-001 Phase 6: Parser Golden Tests", func() {
 	goldenDir := os.Getenv("KA_GOLDEN_TRANSCRIPTS_DIR")
 
 	if goldenDir == "" {
-		// No golden transcripts directory configured — no test cases generated.
-		// This is expected until kubernaut-demo-scenarios#300 delivers transcripts.
+		It("requires KA_GOLDEN_TRANSCRIPTS_DIR to be set", func() {
+			Skip("KA_GOLDEN_TRANSCRIPTS_DIR not set — golden parser tests skipped (not silently empty)")
+		})
 		return
 	}
 
