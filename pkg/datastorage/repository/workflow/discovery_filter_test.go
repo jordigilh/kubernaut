@@ -190,11 +190,11 @@ func TestBuildContextFilterSQL_Issue464_ComponentWildcard(t *testing.T) {
 
 	sql, args := buildContextFilterSQL(filters)
 
-	if !strings.Contains(sql, "labels->>'component' = '*'") {
-		t.Errorf("UT-DS-464-001: expected component wildcard fallback (labels->>'component' = '*'), got: %s", sql)
+	if !strings.Contains(sql, "labels->'component' ? '*'") {
+		t.Errorf("UT-DS-464-001: expected component wildcard fallback (labels->'component' ? '*'), got: %s", sql)
 	}
-	if !strings.Contains(sql, "LOWER(labels->>'component')") {
-		t.Errorf("UT-DS-464-001: expected case-insensitive exact match, got: %s", sql)
+	if !strings.Contains(sql, "jsonb_array_elements_text(labels->'component')") {
+		t.Errorf("UT-DS-464-001: expected array-based component matching, got: %s", sql)
 	}
 	if len(args) != 1 || args[0] != "Pod" {
 		t.Errorf("UT-DS-464-001: expected args=[Pod], got: %v", args)
@@ -277,8 +277,8 @@ func TestBuildContextFilterSQL_Issue464_AllMandatoryWildcards(t *testing.T) {
 	if !strings.Contains(sql, "labels->'severity' ? '*'") {
 		t.Errorf("UT-DS-464-006: missing severity wildcard fallback, got: %s", sql)
 	}
-	// Component wildcard
-	if !strings.Contains(sql, "labels->>'component' = '*'") {
+	// Component wildcard (Issue #790: now array-based)
+	if !strings.Contains(sql, "labels->'component' ? '*'") {
 		t.Errorf("UT-DS-464-006: missing component wildcard fallback, got: %s", sql)
 	}
 	// Environment wildcard
@@ -396,8 +396,8 @@ func TestBuildContextFilterSQL_Issue595_CombinedCaseInsensitive(t *testing.T) {
 	if !strings.Contains(sql, "jsonb_array_elements_text(labels->'environment')") {
 		t.Errorf("UT-DS-595-004: expected case-insensitive environment pattern, got: %s", sql)
 	}
-	if !strings.Contains(sql, "LOWER(labels->>'component')") {
-		t.Errorf("UT-DS-595-004: expected case-insensitive component (existing LOWER), got: %s", sql)
+	if !strings.Contains(sql, "jsonb_array_elements_text(labels->'component')") {
+		t.Errorf("UT-DS-595-004: expected array-based component matching, got: %s", sql)
 	}
 	thenIdx := strings.Index(sql, "THEN")
 	elseIdx := strings.Index(sql, "ELSE")
