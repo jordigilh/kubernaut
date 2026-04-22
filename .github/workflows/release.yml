@@ -437,14 +437,14 @@ jobs:
 
   # ========================================
   # STAGE 3: MULTI-ARCH MANIFESTS
-  # After both arch builds complete, create manifest lists so a single
-  # tag (e.g., 1.0.0) resolves to the correct arch automatically.
-  # Also tags every image as :latest for GA releases.
+  # After both arch builds AND helm smoke tests complete, create manifest
+  # lists so a single tag (e.g., 1.0.0) resolves to the correct arch
+  # automatically. Also tags every image as :latest for GA releases.
   # ========================================
 
   create-manifests:
     name: Create Multi-Arch Manifests
-    needs: [prepare, build-amd64, build-arm64, build-arm64-qemu]
+    needs: [prepare, build-amd64, build-arm64, build-arm64-qemu, helm-smoke-test]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -485,6 +485,7 @@ jobs:
 
   # ========================================
   # STAGE 4: HELM CHART PUBLISH
+  # Gated on all image builds AND helm smoke tests (Issue #569).
   # Packages the Helm chart with the release version and pushes
   # to the OCI registry at oci://quay.io/kubernaut-ai/charts
   #
@@ -494,7 +495,7 @@ jobs:
 
   helm-publish:
     name: Publish Helm Chart
-    needs: [prepare, build-amd64, build-arm64, build-arm64-qemu]
+    needs: [prepare, build-amd64, build-arm64, build-arm64-qemu, helm-smoke-test]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
