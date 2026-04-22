@@ -586,8 +586,9 @@ run_verify_002() {
 
 run_verify_003() {
   assert_port_forward_responds \
-    "data-storage-service" 8081 "/health" \
-    "ST-CHART-VERIFY-003: DataStorage health endpoint"
+    "data-storage-service" 8081 "/readyz" \
+    "ST-CHART-VERIFY-003: DataStorage health endpoint" \
+    "$NAMESPACE" 8081
 }
 
 run_tls_patch() {

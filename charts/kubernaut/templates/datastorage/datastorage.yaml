@@ -12,6 +12,7 @@ data:
     server:
       port: 8080
       host: "0.0.0.0"
+      healthPort: 8081
       metricsPort: 9090
       readTimeout: 30s
       writeTimeout: 30s
@@ -104,6 +105,8 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+            - name: health
+              containerPort: 8081
             - name: metrics
               containerPort: 9090
           env:
@@ -129,16 +132,16 @@ spec:
             {{- toYaml .Values.datastorage.resources | nindent 12 }}
           readinessProbe:
             httpGet:
-              path: /health
-              port: 8080
+              path: /readyz
+              port: 8081
             initialDelaySeconds: 30
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /health
-              port: 8080
+              path: /healthz
+              port: 8081
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
@@ -185,6 +188,10 @@ spec:
     - name: http
       port: 8080
       targetPort: 8080
+      protocol: TCP
+    - name: health
+      port: 8081
+      targetPort: 8081
       protocol: TCP
     - name: metrics
       port: 9090
